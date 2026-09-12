@@ -111,6 +111,55 @@ class TestLogscaleMultipleColumns:
         np.testing.assert_array_equal(out_a, [1.0, 2.0, 4.0])
         np.testing.assert_array_equal(out_b, [10.0, 20.0, 40.0])
 
+    def test_an_object_column_of_nulls_is_filtered_rather_than_raising(
+        self, view: _ConcreteView
+    ) -> None:
+        """
+        A column that is NULL for every row *in the requested scope* comes back from
+        pandas as an object array of ``None`` - there is nothing for it to infer a
+        numeric dtype from - and ``np.isnan`` cannot take that.
+
+        Reported from a real run: a subset filter that selected only rows where a
+        protein fit column was NULL raised
+        ``TypeError: ufunc 'isnan' not supported for the input types``. Coercing
+        first turns those into ``nan``, which is what the mask already exists to drop.
+        """
+        nulls = np.array([None, None, None], dtype=object)
+
+        (out,) = view._logscale_and_filter_multiple_columns(nulls)
+
+        assert len(out) == 0
+
+    def test_an_object_column_mixing_nulls_and_numbers_keeps_the_numbers(
+        self, view: _ConcreteView
+    ) -> None:
+        """
+        The partially-populated case has to survive the coercion intact, or the fix
+        for the empty one would quietly drop real data.
+        """
+        mixed = np.array([1.0, None, 3.0], dtype=object)
+
+        (out,) = view._logscale_and_filter_multiple_columns(mixed)
+
+        np.testing.assert_array_equal(out, [1.0, 3.0])
+
+    def test_a_non_numeric_column_is_reported_rather_than_raising(
+        self, view: _ConcreteView
+    ) -> None:
+        """
+        Genuinely non-numeric is a different thing from empty, and the user can act
+        on it, so it is named. The arity of the return is part of the contract -
+        every caller unpacks it positionally - so the column is masked out rather
+        than the tuple being shortened.
+        """
+        text = np.array([1.0, "oops", 3.0], dtype=object)
+
+        (out,) = view._logscale_and_filter_multiple_columns(text)
+
+        assert len(out) == 0
+        said = [call.args[0] for call in view.add_text_to_display.emit.call_args_list]
+        assert any("not numeric" in message for message in said)
+
     def test_a_nan_in_one_array_drops_the_row_from_all(
         self, view: _ConcreteView
     ) -> None:

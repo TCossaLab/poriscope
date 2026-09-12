@@ -616,6 +616,18 @@ class MetadataView(MetaSubsetTabView):
 
         (data,) = self._logscale_and_filter_multiple_columns(data, log_flags=[logx])
 
+        if len(data) == 0:
+            # Every point was filtered out - the commonest cause being a column that
+            # is NULL for every row the subset filter selected, as a fit column is
+            # outside the scope it was fitted over. The reductions below are the
+            # first thing to touch the array, and np.min of an empty one raises.
+            self.add_text_to_display.emit(
+                f"No {x_label} values in this subset, so there is nothing to "
+                "histogram",
+                self.__class__.__name__,
+            )
+            return
+
         # Update global min/max
         if self.hist_min is None or np.min(data) < self.hist_min:
             self.hist_min = float(np.min(data))
@@ -1239,6 +1251,8 @@ class MetadataView(MetaSubsetTabView):
         """
 
         selected_filters = self.get_selected_filters()
+        if self._refuse_raw_filters(selected_filters):
+            return False
         loader = parameters["db_loader"]
         plot_type = parameters["plot_type"]
         experiments_and_channels: Optional[
@@ -1984,6 +1998,8 @@ class MetadataView(MetaSubsetTabView):
         :type parameters: Dict[str, Any]
         """
         selected_filters = self.get_selected_filters()
+        if self._refuse_raw_filters(selected_filters):
+            return
         loader_name = parameters["db_loader"]
         experiments_and_channels = self.selected_experiment_and_channels_by_loader.get(
             loader_name

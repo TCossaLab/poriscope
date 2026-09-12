@@ -1,368 +1,214 @@
 """
-Characterization tests for the scope clause a raw SQL subset gets appended to it.
+Raw SQL subset filters are refused before a plot is attempted.
 
-Was ``tests/unit/views/test_view_authored_sql.py``. Step 4a moved this string surgery
-out of ``ProteinView._build_load_event_data_args`` and into
-``ProteinController._scope_raw_subset_query``, so the module moved with it - the SQL is
-not authored in a View any more, which was the premise of the old name.
+This module used to pin ``ProteinController._scope_raw_subset_query`` - the string
+surgery that appended an experiment and channel scope to a user's raw ``SELECT`` - and
+before that, the same code as ``ProteinView._build_load_event_data_args``. All of it is
+gone, because measurement showed **the route it served could never produce a plot**:
 
-``_scope_raw_subset_query`` takes a user's raw SQL filter and appends a scope clause to
-it by string surgery, choosing between ``AND`` and ``WHERE`` on a bare
-``"WHERE" in query.upper()`` test. That test is wrong for any filter whose only
-``WHERE`` sits inside a subquery or a string literal - exactly the case
-``MetaDatabaseLoader._split_on_opaque_spans`` exists to handle, and which this path does
-not use. The mis-fire is pinned below as current behaviour and queued in
-``future_fixes.md``; **this file records what the code does, it does not endorse it**.
+    >>> loader.load_event_data("SELECT * FROM events WHERE duration > 0", None)
 
-Two of the old tests pinned behaviour this step deliberately changed. A scope lookup
-that failed used to leave the filter unscoped, which silently widened a raw query to
-the whole database; it stops the plot now. Those two are rewritten rather than moved,
-and named for what they assert.
+``load_event_data`` passes its ``conditions`` argument to
+``construct_event_data_query``, which splices it in after ``WHERE``. A complete
+``SELECT`` therefore produced ``WHERE SELECT * FROM events WHERE ...``, SQLite rejected
+it as ``near "SELECT": syntax error``, the builder reported that by returning an empty
+query, and the generator yielded nothing - silently. Measured against a real
+``SQLiteDBLoader`` over a synthetic database: the same filter as an ordinary
+WHERE-clause body yields every event, and as a raw ``SELECT`` yields none.
 
-Step 4b moves this into ``MetaDatabaseLoader``, which is what these tests exist to make
-safe.
+So there was nothing to convert and nothing to fix in place. What replaces it is a
+refusal at the plot entry points, which is what these tests pin, plus the assertion
+that the dead branch has not come back.
+
+The one thing carried over unchanged is the projection comparison at the bottom: both
+tabs' event-plot chains are live, they differ, and Step 4b has to reconcile them.
 """
+
+import inspect
 
 import pytest
 from pytest_mock import MockerFixture
 
+from poriscope.plugins.analysistabs.MetadataController import MetadataController
 from poriscope.plugins.analysistabs.ProteinController import ProteinController
+from poriscope.plugins.analysistabs.ProteinView import ProteinView
 from tests.unit.controllers._recording_model import RecordingModel
+from tests.unit.views._qt_mocks import shadow_signals
 
 pytestmark = pytest.mark.characterization
 
-
 @pytest.fixture
-def controller(mocker: MockerFixture) -> ProteinController:
+def view(qapp: object) -> ProteinView:
     """
-    A ``ProteinController`` whose loader answers the two id lookups.
+    A subset-tab View with its signals shadowed, for the refusal guard.
 
-    :param mocker: pytest-mock's fixture
-    :type mocker: MockerFixture
-    :return: the controller under test
-    :rtype: ProteinController
+    :param qapp: the QApplication the view fixture needs
+    :type qapp: object
+    :return: the view under test
+    :rtype: ProteinView
     """
-    ctrl = ProteinController.__new__(ProteinController)  # type: ignore[type-abstract]
-    ctrl.view = mocker.Mock()
-    ctrl.logger = mocker.Mock()  # type: ignore[assignment,method-assign]
-    ctrl.add_text_to_display = mocker.Mock()  # type: ignore[assignment,method-assign]
-    ctrl.model = RecordingModel(
-        {"get_experiment_id_by_name": 7, "get_channel_db_id": 3}
-    )
-    return ctrl
+    instance = ProteinView.__new__(ProteinView)
+    shadow_signals(instance, ProteinView)
+    return instance
 
 
-def scope(controller: ProteinController, sql_filter: str, exp="exp1"):
+def said(view: ProteinView) -> str:
     """
-    Scope a raw filter with the arguments a plot request supplies.
+    Everything the view put on the status panel, joined.
 
-    :param controller: the controller under test
-    :type controller: ProteinController
-    :param sql_filter: the user's filter text
-    :type sql_filter: str
-    :param exp: the experiment name, or None
-    :type exp: Any
-    :return: the scoped query, or None if the scope could not be resolved
-    :rtype: Optional[str]
-    """
-    return controller._scope_raw_subset_query("loader", sql_filter, exp, 2)
-
-
-def panel_text(controller: ProteinController) -> str:
-    """
-    Everything the controller put on the status panel, joined.
-
-    :param controller: the controller under test
-    :type controller: ProteinController
+    :param view: the view under test
+    :type view: ProteinView
     :return: the concatenated message text
     :rtype: str
     """
     return "\n".join(
-        call.args[0] for call in controller.add_text_to_display.emit.call_args_list
+        call.args[0] for call in view.add_text_to_display.emit.call_args_list
     )
 
 
-class TestOnlyRawSubsetsTakeThisPath:
-    """A managed subset never reaches the string surgery at all."""
-
-    def test_a_named_subset_is_handed_to_the_query_builder(
-        self, controller: ProteinController
-    ) -> None:
-        """
-        The loader does the scoping itself for a managed subset, so the filter goes
-        to ``construct_event_data_query`` with its scope alongside it.
-
-        :param controller: the controller under test
-        :type controller: ProteinController
-        """
-        controller.model = RecordingModel(
-            {
-                "construct_event_data_query": ("SELECT * FROM data", ""),
-                "load_event_data": iter([]),
-            }
-        )
-
-        controller.load_event_distribution_data(
-            "loader", "duration > 5", "mine", "exp1", 2, {"exp1": [2]}
-        )
-
-        assert controller.model.calls_to("construct_event_data_query") == [
-            ("duration > 5", {"exp1": [2]})
-        ]
-        assert controller.model.calls_to("load_event_data") == [
-            ("duration > 5", {"exp1": [2]})
-        ]
-        assert controller.model.calls_to("get_experiment_id_by_name") == []
-
-    def test_a_raw_subset_runs_its_own_scoped_query_instead(
-        self, controller: ProteinController
-    ) -> None:
-        """
-        The filter is already a complete SELECT, so it is scoped and run as it
-        stands - ``construct_event_data_query`` is never asked, and the scope travels
-        in the SQL rather than as a separate argument.
-
-        Also the fix for what the tab *shows*: the View used to display the
-        constructed query while loading through the scoped raw one.
-
-        :param controller: the controller under test
-        :type controller: ProteinController
-        """
-        controller.model = RecordingModel(
-            {
-                "get_experiment_id_by_name": 7,
-                "get_channel_db_id": 3,
-                "load_event_data": iter([]),
-            }
-        )
-
-        controller.load_event_distribution_data(
-            "loader",
-            "SELECT * FROM events",
-            "mine_raw",
-            "exp1",
-            2,
-            {"exp1": [2]},
-        )
-
-        expected = (
-            "SELECT * FROM events WHERE experiment_id = 7 AND channel_db_id = 3"
-        )
-        assert controller.model.calls_to("construct_event_data_query") == []
-        assert controller.model.calls_to("load_event_data") == [(expected, None)]
-        controller.view.set_event_query.assert_called_once_with(expected)
-
-
-class TestRawSubsetScoping:
-    """The ``_raw`` path appends an experiment and channel scope by hand."""
-
-    def test_a_filter_without_where_gains_one(
-        self, controller: ProteinController
-    ) -> None:
-        """
-        The common case, and the reason the branch exists.
-
-        :param controller: the controller under test
-        :type controller: ProteinController
-        """
-        assert scope(controller, "duration > 5") == (
-            "duration > 5 WHERE experiment_id = 7 AND channel_db_id = 3"
-        )
-
-    def test_a_filter_with_where_gains_an_and(
-        self, controller: ProteinController
-    ) -> None:
-        """
-        The other branch of the same choice.
-
-        :param controller: the controller under test
-        :type controller: ProteinController
-        """
-        assert scope(controller, "SELECT * FROM events WHERE duration > 5") == (
-            "SELECT * FROM events WHERE duration > 5 "
-            "AND experiment_id = 7 AND channel_db_id = 3"
-        )
-
-    def test_a_trailing_semicolon_is_stripped_before_appending(
-        self, controller: ProteinController
-    ) -> None:
-        """
-        Otherwise the scope would land after the statement terminator.
-
-        :param controller: the controller under test
-        :type controller: ProteinController
-        """
-        assert scope(controller, "duration > 5;") == (
-            "duration > 5 WHERE experiment_id = 7 AND channel_db_id = 3"
-        )
-
-    def test_surrounding_whitespace_is_stripped(
-        self, controller: ProteinController
-    ) -> None:
-        """
-        Users paste filters with stray newlines.
-
-        :param controller: the controller under test
-        :type controller: ProteinController
-        """
-        assert scope(controller, "  duration > 5  \n").startswith("duration > 5 WHERE")
-
-    def test_no_experiment_means_no_scope_is_appended(
-        self, controller: ProteinController
-    ) -> None:
-        """
-        Nothing to scope to, so the filter is returned as the user wrote it, and
-        neither lookup is made.
-
-        :param controller: the controller under test
-        :type controller: ProteinController
-        """
-        assert scope(controller, "duration > 5;", exp=None) == "duration > 5"
-        assert controller.model.calls == []
-
-
-class TestAnUnresolvableScopeStopsThePlot:
+class TestRawFiltersAreRefused:
     """
-    The behaviour this step changed, and why.
-
-    The View appended the scope only when **both** lookups had answered, and returned
-    the filter unscoped otherwise - so a lookup the bus had swallowed silently widened
-    a raw query from one channel to the whole database. That is the same class of
-    fault as the unscoped event-id query, and it is reported now.
+    The guard that replaced the branch, shared by both subset tabs.
     """
 
-    def test_an_experiment_that_does_not_resolve_refuses_the_scope(
-        self, controller: ProteinController
+    def test_an_assisted_filter_is_allowed_through(self, view: ProteinView) -> None:
+        """
+        The ordinary case must not pay for the guard, and must say nothing.
+
+        :param view: the view under test
+        :type view: ProteinView
+        """
+        assert view._refuse_raw_filters({"short events": "duration < 300"}) is False
+        view.add_text_to_display.emit.assert_not_called()
+
+    def test_no_filter_at_all_is_allowed_through(self, view: ProteinView) -> None:
+        """
+        Plotting the whole dataset is not a filter, raw or otherwise.
+
+        :param view: the view under test
+        :type view: ProteinView
+        """
+        assert view._refuse_raw_filters({}) is False
+
+    def test_a_raw_filter_is_refused_and_named(self, view: ProteinView) -> None:
+        """
+        Named, because the user has to know which one to deselect - the combobox can
+        hold several and only some of them are raw.
+
+        :param view: the view under test
+        :type view: ProteinView
+        """
+        assert view._refuse_raw_filters({"mine_raw": "SELECT * FROM events"}) is True
+        assert "mine_raw" in said(view)
+        assert "cannot be used for plotting" in said(view)
+
+    def test_one_raw_filter_among_several_refuses_the_plot(
+        self, view: ProteinView
     ) -> None:
         """
-        :param controller: the controller under test
-        :type controller: ProteinController
+        Refusing only the raw one and plotting the rest would silently plot something
+        other than what was selected, which is the fault class this whole step exists
+        to remove.
+
+        :param view: the view under test
+        :type view: ProteinView
         """
-        controller.model = RecordingModel(
-            {"get_experiment_id_by_name": None, "get_channel_db_id": 3}
-        )
+        selected = {"short events": "duration < 300", "mine_raw": "SELECT 1"}
 
-        assert scope(controller, "duration > 5") is None
-        assert "could not place experiment exp1" in panel_text(controller)
+        assert view._refuse_raw_filters(selected) is True
+        assert "mine_raw" in said(view)
 
-    def test_a_partial_lookup_refuses_too(
-        self, controller: ProteinController
+    def test_a_name_merely_containing_raw_is_not_refused(
+        self, view: ProteinView
     ) -> None:
         """
-        Both ids are required; one alone would scope to the wrong rows, and the old
-        guard being a conjunction is what made a partial answer look like no answer.
+        The marker is the suffix the filter dialog appends, not the word. A filter
+        called "raw current" is an ordinary assisted filter.
 
-        :param controller: the controller under test
-        :type controller: ProteinController
+        :param view: the view under test
+        :type view: ProteinView
         """
-        controller.model = RecordingModel(
-            {"get_experiment_id_by_name": 7, "get_channel_db_id": None}
-        )
-
-        assert scope(controller, "duration > 5") is None
-        assert "could not place experiment exp1" in panel_text(controller)
-
-    def test_a_lookup_that_raises_is_reported(
-        self, controller: ProteinController
-    ) -> None:
-        """
-        The bus swallowed this entirely; ``call()`` raises where it happens.
-
-        :param controller: the controller under test
-        :type controller: ProteinController
-        """
-        controller.model = RecordingModel(
-            {"get_experiment_id_by_name": RuntimeError("db gone")}
-        )
-
-        assert scope(controller, "duration > 5") is None
-        assert "Could not scope this raw filter" in panel_text(controller)
-
-    def test_nothing_is_loaded_when_the_scope_is_refused(
-        self, controller: ProteinController
-    ) -> None:
-        """
-        The refusal has to stop the whole chain, not just skip the scope.
-
-        :param controller: the controller under test
-        :type controller: ProteinController
-        """
-        controller.model = RecordingModel(
-            {"get_experiment_id_by_name": None, "get_channel_db_id": 3}
-        )
-
-        controller.load_event_distribution_data(
-            "loader", "SELECT * FROM events", "mine_raw", "exp1", 2, {"exp1": [2]}
-        )
-
-        assert controller.model.calls_to("load_event_data") == []
-        controller.view.set_event_query.assert_not_called()
-        controller.view.set_event_data_generator.assert_not_called()
+        assert view._refuse_raw_filters({"raw current": "x > 1"}) is False
+        assert view._refuse_raw_filters({"my_raw_events": "x > 1"}) is False
 
 
-class TestTheNaiveWhereDetection:
+class TestEveryPlotEntryPointAsks:
     """
-    Where the string surgery is wrong, recorded rather than endorsed.
+    The guard is only worth anything where a plot actually starts.
 
-    ``"WHERE" in query.upper()`` cannot tell a real outer ``WHERE`` from one inside a
-    subquery or a string literal. ``MetaDatabaseLoader`` solves exactly this with
-    ``_split_on_opaque_spans``; this path does not use it. Queued in
-    ``future_fixes.md``.
+    Derived rather than listed: every method that reads the selected filters and can
+    begin a plot must consult it, so a new plot path cannot quietly skip it. The
+    nested helpers those methods call are covered by their callers.
     """
 
-    def test_a_where_inside_a_subquery_produces_invalid_sql(
-        self, controller: ProteinController
+    ENTRY_POINTS = {
+        "poriscope.plugins.analysistabs.MetadataView": [
+            "_overlay_plot",
+            "_handle_plot_events",
+        ],
+        "poriscope.plugins.analysistabs.ProteinView": [
+            "_handle_plot_events",
+            "_handle_plot_histogram",
+            "_update_distribution_individual",
+            "_update_distribution_ensemble",
+        ],
+    }
+
+    @pytest.mark.parametrize(
+        ("module_name", "method_name"),
+        [
+            (module, method)
+            for module, methods in ENTRY_POINTS.items()
+            for method in methods
+        ],
+    )
+    def test_the_entry_point_consults_the_guard(
+        self, module_name: str, method_name: str
     ) -> None:
         """
-        The filter has no outer WHERE, so the scope needs one - and it gets ``AND``.
-
-        The result cannot execute. Today the user sees a database error they cannot
-        act on; after Step 4b this should route through the loader instead.
-
-        :param controller: the controller under test
-        :type controller: ProteinController
+        :param module_name: the tab View module the entry point lives in
+        :type module_name: str
+        :param method_name: the entry point
+        :type method_name: str
         """
-        query = scope(controller, "duration > (SELECT AVG(x) FROM t WHERE y = 1)")
+        import importlib
 
-        assert query == (
-            "duration > (SELECT AVG(x) FROM t WHERE y = 1) "
-            "AND experiment_id = 7 AND channel_db_id = 3"
+        module = importlib.import_module(module_name)
+        view_cls = getattr(module, module_name.rsplit(".", 1)[-1])
+        source = inspect.getsource(getattr(view_cls, method_name))
+
+        assert "_refuse_raw_filters" in source, (
+            f"{module_name}.{method_name} starts a plot from the selected filters "
+            "without asking whether any of them is raw"
         )
-        assert " WHERE experiment_id" not in query
 
-    def test_a_where_inside_a_string_literal_does_the_same(
-        self, controller: ProteinController
-    ) -> None:
-        """
-        A value that merely contains the word is enough to mis-fire.
 
-        :param controller: the controller under test
-        :type controller: ProteinController
-        """
-        assert scope(controller, "label = 'WHERE'").endswith(
-            "AND experiment_id = 7 AND channel_db_id = 3"
-        )
+def test_the_dead_raw_branch_has_not_come_back() -> None:
+    """
+    The branch was removed because it could not work, not because it was untidy.
 
-    def test_the_detection_is_case_insensitive(
-        self, controller: ProteinController
-    ) -> None:
-        """
-        Lowercase SQL takes the same branch, which is correct here.
+    Re-adding an ``endswith("_raw")`` route in the distribution chain would restore a
+    path that hands a complete SELECT where a WHERE-clause body is expected - so this
+    names the measurement rather than the style rule.
 
-        :param controller: the controller under test
-        :type controller: ProteinController
-        """
-        assert scope(
-            controller, "select * from events where duration > 5"
-        ).endswith("AND experiment_id = 7 AND channel_db_id = 3")
+    :return: None
+    :rtype: None
+    """
+    source = inspect.getsource(ProteinController.load_event_distribution_data)
+
+    assert "_raw" not in source.split('"""')[2], (
+        "load_event_distribution_data has regained a raw-filter branch; "
+        "load_event_data takes a WHERE-clause body, so a complete SELECT cannot work"
+    )
+    assert not hasattr(ProteinController, "_scope_raw_subset_query")
 
 
 def test_the_two_tabs_build_different_projections() -> None:
     """
     The near-twin event-plot queries in the two tabs are not interchangeable.
 
-    Both halves now live in Controllers - Step 4a moved the protein tab out of the
-    widget in the same shape the metadata tab went - so this compares the two
+    Both halves live in Controllers - Step 4a moved the protein tab out of the widget
+    in the same shape the metadata tab went - so this compares the two
     ``load_event_plot_data`` methods. The protein copy selects ``id, event_id``
     because it re-sorts the rows into the order the navigation asked for them in; the
     metadata copy selects ``id`` alone because it does not.
@@ -370,19 +216,46 @@ def test_the_two_tabs_build_different_projections() -> None:
     That difference is the open question for the promotion to
     ``MetaSubsetTabController`` (``DECISIONS.md``, 2026-09-09), so it is asserted here
     rather than left to be rediscovered during the merge. **This test is meant to be
-    rewritten by whichever commit promotes them**, not deleted: if one shared method
-    ends up serving both, what it selects is exactly what needs pinning.
+    rewritten by whichever commit promotes them**, not deleted.
 
     :return: None
     :rtype: None
     """
-    import inspect
-
-    from poriscope.plugins.analysistabs.MetadataController import MetadataController
-
     protein = inspect.getsource(ProteinController.load_event_plot_data)
     metadata = inspect.getsource(MetadataController.load_event_plot_data)
 
     assert "SELECT id, event_id FROM events WHERE" in protein
     assert "SELECT id FROM events WHERE" in metadata
     assert "id, event_id" not in metadata
+
+
+def test_the_distribution_chain_still_loads_an_assisted_subset(
+    mocker: MockerFixture,
+) -> None:
+    """
+    Removing the branch must not have taken the ordinary path with it.
+
+    :param mocker: pytest-mock's fixture
+    :type mocker: MockerFixture
+    :return: None
+    :rtype: None
+    """
+    controller = ProteinController.__new__(ProteinController)  # type: ignore[type-abstract]
+    controller.view = mocker.Mock()
+    controller.logger = mocker.Mock()  # type: ignore[assignment,method-assign]
+    controller.add_text_to_display = mocker.Mock()  # type: ignore[assignment,method-assign]
+    generator = iter([])
+    controller.model = RecordingModel(
+        {
+            "construct_event_data_query": ("SELECT * FROM data", ""),
+            "load_event_data": generator,
+        }
+    )
+
+    controller.load_event_distribution_data("ldr", "duration < 300", {"exp1": [2]})
+
+    assert controller.model.calls_to("load_event_data") == [
+        ("duration < 300", {"exp1": [2]})
+    ]
+    controller.view.set_event_query.assert_called_once_with("SELECT * FROM data")
+    controller.view.set_event_data_generator.assert_called_once_with(generator)

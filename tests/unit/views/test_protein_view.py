@@ -652,6 +652,37 @@ class TestConstructAllPointsHistogram:
         assert isinstance(df, pd.DataFrame)
         assert "Normalized Current" in df.columns
 
+    def test_an_empty_subset_yields_no_histogram(self, mock_view):
+        """
+        Reported from a real run: plotting a distribution over a subset holding no
+        events drew empty axes and said nothing.
+
+        The generator exists - so the caller's ``is None`` guard passes - and simply
+        yields nothing, which used to divide the accumulated histogram by a count of
+        zero and hand back a frame of NaN. ``None`` is what the caller already
+        reports on.
+        """
+        assert (
+            mock_view._construct_all_points_histogram(iter([]), "Filtered Histogram")
+            is None
+        )
+
+    def test_an_empty_subset_does_not_poison_the_next_plot(self, mock_view):
+        """
+        The bail-out is before the bounds are recorded, not after.
+
+        With no event the running bounds are still +/-inf, and letting those reach
+        hist_min/hist_max would make the *next* plot's bin edges nan - a failure one
+        action away from its cause.
+        """
+        mock_view.hist_min = None
+        mock_view.hist_max = None
+
+        mock_view._construct_all_points_histogram(iter([]), "Filtered Histogram")
+
+        assert mock_view.hist_min is None
+        assert mock_view.hist_max is None
+
     def test_default_100_bins(self, mock_view):
         df = mock_view._construct_all_points_histogram(
             iter(self._events()), "Filtered Histogram"

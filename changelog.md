@@ -22,6 +22,12 @@
 
 * **Fixed the Metadata tab plotting another channel's events when the experiment could not be looked up**: the events to plot were resolved without their experiment and channel scope, so an event number that exists in more than one channel could return the wrong channel's data
 
+* **Fixed plotting a column that is empty for the selected subset failing with an error** instead of saying there is nothing to plot - most easily hit by histogramming a protein fit column over a subset that was never fitted
+
+* **Fixed the Protein tab drawing empty axes in silence** when the selected subset holds no events; both distribution modes now say so
+
+* **Breaking: raw SQL subset filters can no longer be selected for a plot**, on either tab, and say so when chosen. They never worked - the filter was passed where a WHERE clause was expected, so the database rejected the query and the plot came back empty without a word. Creating, saving and loading them is unchanged
+
 * **Fixed the Protein tab offering to overwrite fit data based on a stale answer**: if it could not read whether the database already held fit columns it reused the previous answer, so the "overwrite?" prompt could appear for a database with nothing to overwrite, or be skipped for one that had; it now reports the failure and commits nothing
 
 * Committing protein fits now reports a database that refuses the write instead of announcing new columns to the other tabs regardless

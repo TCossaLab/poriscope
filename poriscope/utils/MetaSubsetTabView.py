@@ -191,6 +191,38 @@ class MetaSubsetTabView(MetaView):
         controls.delete_filter_requested.connect(self._delete_filter_by_name)
 
     @log(logger=logger)
+    def _refuse_raw_filters(self, selected_filters: Dict[str, str]) -> bool:
+        """
+        Refuse a plot whose subset filter is a raw ``SELECT``, and say so.
+
+        A raw filter can be written, validated, saved and loaded, but **nothing
+        downstream can consume one**. Every plotting path passes the filter text where
+        a WHERE-clause body is expected, so a complete ``SELECT`` gets spliced in after
+        ``WHERE``; measured against a real loader, SQLite rejects the result as a
+        syntax error, the query builder reports it by returning an empty query, and the
+        plot draws nothing while saying nothing.
+
+        The protein tab carried a branch that tried to scope such a filter and hand it
+        over as the query; it was removed once measurement showed it had the same
+        shape and had therefore never produced a plot either. Refusing here is the
+        honest state until raw filters are either made to work or withdrawn.
+
+        :param selected_filters: the filters selected for this plot, by name
+        :type selected_filters: Dict[str, str]
+        :return: True if a raw filter was selected, in which case the caller must stop
+        :rtype: bool
+        """
+        raw = [name for name in selected_filters if name.endswith("_raw")]
+        if not raw:
+            return False
+        self.add_text_to_display.emit(
+            f"Raw SQL filters cannot be used for plotting, so {', '.join(raw)} was "
+            "not applied - deselect it to plot this subset",
+            self.__class__.__name__,
+        )
+        return True
+
+    @log(logger=logger)
     def set_event_id_rows(self, rows: Optional[Any]) -> None:
         """
         Receive the ``event_id`` rows the filtered-event cache asked for.

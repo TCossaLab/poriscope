@@ -35,20 +35,6 @@ pause, but the schema cannot change while a loader is open, so a dict cache buil
 `_finalize_initialization` would remove all of them. Re-measure on a network-mounted
 database before deciding it does not matter.
 
-## The Metadata tab has no downstream handling for raw SQL filters (2026-09-08)
-
-It can create, save and load them, but every plotting path takes
-`next(iter(selected_filters.values()))` and passes it as a WHERE-clause body -
-`MetadataView.py` into `_rebuild_event_id_cache`, and the same on the two other plot paths.
-Measured: `construct_metadata_query` does not refuse a complete SELECT passed as
-`conditions` - it splices it in after `WHERE` and returns an empty debug message - so the
-failure is silent. **The handling now exists**, in
-`ProteinController._scope_raw_subset_query` and the `_raw` branch of
-`load_event_distribution_data` (Step 4a); sharing it with the metadata tab is the fix, and
-needs `MetadataController._echo_applied_query`/`_last_echoed_query` to move to
-`MetaSubsetTabController` with it, which would start the protein tab echoing SQL on the
-panel. Decide that with the Step 4a promotion review.
-
 ## `_validation_columns`' fallback triple is wrong twice over (2026-09-08)
 
 `MetaSubsetTabView._validation_columns` falls back to

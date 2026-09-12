@@ -1293,6 +1293,29 @@ def test_plot_1d_histogram_sets_log10_label_when_logscale_true(
     assert "log10" in xlabel_call.args[0]
 
 
+def test_plot_1d_histogram_reports_a_subset_with_no_values(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """
+    Reported from a real run, and the second half of the same defect.
+
+    Coercing an all-NULL column to float leaves every point NaN, so the filter
+    returns zero points - and ``np.min`` of an empty array raises, one line below
+    where the original TypeError was. The commonest way to reach it is a subset
+    filter selecting only rows where a protein fit column is NULL.
+    """
+    data = pd.DataFrame({"x": np.array([1.0, 2.0])})
+    view._logscale_and_filter_multiple_columns = mocker.Mock(  # type: ignore[method-assign]
+        return_value=(np.array([]),)
+    )
+
+    view._plot_1d_histogram(view.axes, data, ["x"], ["units"], [False])
+
+    said = [call.args[0] for call in view.add_text_to_display.emit.call_args_list]
+    assert any("nothing to histogram" in message for message in said)
+    view.axes.hist.assert_not_called()
+
+
 def test_plot_1d_histogram_handles_bin_sizes(
     view: MetadataView, mocker: MockerFixture
 ) -> None:

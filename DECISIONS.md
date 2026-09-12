@@ -109,6 +109,62 @@ parameters, they stay separate and this entry becomes the record of why.
 
 ---
 
+## 2026-09-12 - The protein tab's raw-filter branch is deleted, because it never worked
+
+**Context.** `ProteinView._build_load_event_data_args` - converted to
+`ProteinController._scope_raw_subset_query` earlier the same day - scoped a raw SQL subset
+filter and handed it to `load_event_data` as its `conditions` argument. Kyle could not
+construct any raw filter that produced a plot, and proposed removing the branch.
+
+**Decision.** Removed, along with the three signal arguments that fed it. Raw filters are
+refused at the plot entry points instead (`MetaSubsetTabView._refuse_raw_filters`, six call
+sites across the two tabs). Creating, validating, saving and loading them is unchanged.
+
+**Evidence.** There is no valid query, and that is a property of the plumbing rather than of
+the filter. `load_event_data` passes `conditions` straight to `construct_event_data_query`,
+which splices it in after `WHERE`, so a complete `SELECT` becomes
+`... WHERE SELECT * FROM events WHERE ...`. Measured against a real `SQLiteDBLoader`:
+SQLite reports `near "SELECT": syntax error`, the builder returns `("", debug)`, and the
+generator yields **0 events** where the same filter as an ordinary WHERE body yields 10. So
+the branch has never produced a plot, and the earlier commit's fix to *what it displayed*
+was a fix to a dead path.
+
+**This also voids the queued "share it with the metadata tab" item**, which read the metadata
+tab's lack of a `_raw` branch as a gap. It is not a gap: the branch being shared does not
+work. Raw filters are refused on both tabs now rather than half-implemented on one.
+
+**Revisit if** raw filters are wanted for real, which is a feature build rather than a fix:
+the filter would have to travel as the whole query rather than as a WHERE-clause body, which
+is a `MetaDatabaseLoader` change and wants its own plan.
+
+---
+
+## 2026-09-12 - An all-NULL column reads back as object, and np.isnan cannot take it
+
+**Context.** Reported from a real run: histogramming a protein fit column on the metadata
+tab raised `TypeError: ufunc 'isnan' not supported for the input types` from
+`MetaView._logscale_and_filter_multiple_columns`. The filter had selected only rows where
+that column was NULL.
+
+**Decision.** Coerce an object array to float before masking, so NULLs become `nan` - which
+the mask already exists to drop - and report a genuinely non-numeric column by name rather
+than raising out of a Qt slot. `_plot_1d_histogram` also guards the zero-surviving-points
+case, because `np.min` of an empty array raises one line below where the original error was.
+
+**Evidence.** Measured against a real loader: a **partly** NULL column comes back `float64`
+and works; a column that is NULL for **every row in the requested scope** comes back
+`object`, because pandas has nothing to infer a numeric dtype from. A column mixing floats
+with numeric *text* also comes back `float64`; only genuinely non-numeric text yields an
+object array `isnan` cannot take. Reverting either guard fails exactly the tests written for
+it.
+
+**Pre-existing**, in `MetaView`, untouched by this branch since Step 3a-bis. The artifact had
+already recorded that `_logscale_and_filter_multiple_columns` has 38 test references of which
+every one is a `Mock`, so the body had no behavioural coverage while sitting on every plot
+path. That is why it shipped.
+
+---
+
 ## 2026-09-12 - A nested function can hide pydoclint's raise checks, so hoisting one can surface real violations
 
 **Context.** Collapsing three byte-identical nested `tuple_builder` helpers in

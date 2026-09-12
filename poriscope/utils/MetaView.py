@@ -681,8 +681,31 @@ class MetaView(QWidget, WalkthroughMixin, metaclass=QWidgetABCMeta):
 
         # --- NaN Filtering ---
         # Create a combined mask to filter NaNs across all arrays
+        #
+        # Coerced first, because a column read back from the database is not always a
+        # float array. SQLite is dynamically typed and pandas infers per column, so a
+        # column that is NULL for every row *in the requested scope* comes back as an
+        # object array of ``None`` - there is nothing for pandas to infer a numeric
+        # type from - and ``np.isnan`` cannot take that. Plotting a protein fit column
+        # over a scope that was never fitted does exactly this. Coercing turns those
+        # into ``nan``, which is what the mask below already exists to drop.
         mask = np.ones(num_points_init, dtype=bool)
-        for d in current_data:
+        for i, d in enumerate(current_data):
+            if np.asarray(d).dtype == object:
+                try:
+                    d = np.asarray(d, dtype=float)
+                except (TypeError, ValueError):
+                    # Genuinely non-numeric rather than merely empty. Masked out
+                    # entirely, which leaves the caller the same "no points survived"
+                    # result an all-NULL column gives it - the arity of the return is
+                    # part of this method's contract, and every caller unpacks it.
+                    self.add_text_to_display.emit(
+                        f"Column {i + 1} of this plot holds values that are not "
+                        "numeric, so none of it can be plotted",
+                        self.__class__.__name__,
+                    )
+                    d = np.full(len(d), np.nan)
+                current_data[i] = d
             mask &= ~np.isnan(d)
 
         # Apply the NaN mask

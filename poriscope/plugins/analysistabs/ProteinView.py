@@ -139,15 +139,16 @@ class ProteinView(MetaSubsetTabView):
     #: failed, which is not the widget.
     event_plot_data_requested = Signal(str, list, object, object, object, str)
 
-    #: Asks for one subset's event data: the loader's key, the filter, the filter's
-    #: name (whose ``_raw`` suffix picks the route), the experiment and channel in
-    #: scope, and the scope dict an assisted filter is built against. The answers
-    #: arrive through ``set_event_query`` and ``set_event_data_generator``.
+    #: Asks for one subset's event data: the loader's key, the filter, and the scope
+    #: it is built against. The answers arrive through ``set_event_query`` and
+    #: ``set_event_data_generator``.
     #:
     #: Step 4a. Both distribution modes ran the same four emits - build the query,
-    #: resolve the two scope ids a ``_raw`` filter needs, load the events - so both
-    #: now raise this one intent.
-    event_distribution_data_requested = Signal(str, str, str, object, object, object)
+    #: resolve the two scope ids a ``_raw`` filter needed, load the events - so both
+    #: now raise this one intent. The raw half is gone: measurement showed that route
+    #: handed a complete SELECT where a WHERE-clause body was expected and could never
+    #: return an event, so raw filters are refused before a plot is attempted.
+    event_distribution_data_requested = Signal(str, str, object)
 
     #: Asks whether the database already holds fit columns, before any are written.
     #: Answered through ``confirm_fit_commit``.
@@ -1078,6 +1079,7 @@ class ProteinView(MetaSubsetTabView):
 
         min_current = float("inf")
         max_current = float("-inf")
+        usable = 0
         for event in egen1:
 
             if plot_type == "Raw Histogram":
@@ -1104,6 +1106,14 @@ class ProteinView(MetaSubsetTabView):
                 min_current = min_curr
             if max_curr > max_current:
                 max_current = max_curr
+            usable += 1
+
+        # Before the bounds are recorded, not after: with no usable event the bounds
+        # are still +/-inf, and letting those reach hist_min/hist_max would make the
+        # *next* plot's bin edges nan too. Returning None here is what the caller
+        # already reports on.
+        if usable == 0:
+            return None
 
         if self.hist_min is None or min_current < self.hist_min:
             self.hist_min = min_current
@@ -1579,6 +1589,8 @@ class ProteinView(MetaSubsetTabView):
             return
 
         selected_filters = self.get_selected_filters()
+        if self._refuse_raw_filters(selected_filters):
+            return
         if not selected_filters:
             selected_filters = {"Full Dataset": ""}
 
@@ -1673,6 +1685,8 @@ class ProteinView(MetaSubsetTabView):
         plot_type = "Filtered Histogram"
 
         selected_filters = self.get_selected_filters()
+        if self._refuse_raw_filters(selected_filters):
+            return
         if not selected_filters:
             selected_filters = {"Full Dataset": ""}
 
@@ -1937,6 +1951,8 @@ class ProteinView(MetaSubsetTabView):
         self._clear_cache()
 
         selected_filters = self.get_selected_filters()
+        if self._refuse_raw_filters(selected_filters):
+            return
         loader = parameters["db_loader"]
         plot_type = parameters["plot_type"]
         d = float(parameters["pore_diameter"])
@@ -1977,6 +1993,12 @@ class ProteinView(MetaSubsetTabView):
             )
             return
 
+        # Declared out here because the guard that reads it is out here too: the
+        # loop is the only thing that binds it, and the guards above make it run
+        # exactly once - but 'exactly once' is a property of those guards, not of
+        # this line, and a NameError would be a poor way to discover they changed.
+        processed = 0
+
         for exp, channels in experiments_and_channels.items():
             for channel in channels:
                 exp_and_ch_arg = {exp: [channel]}
@@ -1988,12 +2010,7 @@ class ProteinView(MetaSubsetTabView):
                     self.event_query = ""
                     self.event_data_generator = None
                     self.event_distribution_data_requested.emit(
-                        loader,
-                        sql_filter,
-                        subset_name,
-                        exp,
-                        int(channel) if channel is not None else None,
-                        exp_and_ch_arg,
+                        loader, sql_filter, exp_and_ch_arg
                     )
 
                     if self.event_query == "":
@@ -2121,6 +2138,17 @@ class ProteinView(MetaSubsetTabView):
             # --- Create the Pandas DataFrames ---
             df_prolate = pd.DataFrame(prolate_solutions, columns=["V", "m", "a", "b"])
             df_oblate = pd.DataFrame(oblate_solutions, columns=["V", "m", "a", "b"])
+
+            if processed == 0:
+                # The generator existed but yielded nothing, which is what an empty
+                # subset looks like from here. Every guard below tests a frame built
+                # from these events, so without this the tab drew empty axes and said
+                # nothing at all.
+                self.add_text_to_display.emit(
+                    "No events in the selected subset, so there is nothing to plot",
+                    self.__class__.__name__,
+                )
+                return
 
             self.fit_data = pd.DataFrame(averaged_event_data)
 
@@ -2406,6 +2434,8 @@ class ProteinView(MetaSubsetTabView):
         self._clear_cache()
 
         selected_filters = self.get_selected_filters()
+        if self._refuse_raw_filters(selected_filters):
+            return
         loader = parameters["db_loader"]
         plot_type = parameters["plot_type"]
         d = float(parameters["pore_diameter"])
@@ -2475,12 +2505,7 @@ class ProteinView(MetaSubsetTabView):
                     self.event_query = ""
                     self.event_data_generator = None
                     self.event_distribution_data_requested.emit(
-                        loader,
-                        sql_filter,
-                        subset_name,
-                        exp,
-                        int(channel) if channel is not None else None,
-                        exp_and_ch_arg,
+                        loader, sql_filter, exp_and_ch_arg
                     )
 
                     if self.event_query == "":
@@ -2519,10 +2544,12 @@ class ProteinView(MetaSubsetTabView):
                             )
                         else:
                             self.logger.info(
-                                "No plot data generates for the requested plot configuration"
+                                "No usable events in the selected subset for "
+                                f"{plot_type}"
                             )
                             self.add_text_to_display.emit(
-                                "No plot data generates for the requested plot configuration",
+                                "No events in the selected subset, so there is "
+                                "nothing to plot",
                                 self.__class__.__name__,
                             )
                             return

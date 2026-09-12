@@ -26,7 +26,7 @@
 
 
 import logging
-from typing import Dict, List, Optional, Tuple, override
+from typing import Dict, List, Optional, override
 
 import pandas as pd
 from PySide6.QtCore import Slot
@@ -186,90 +186,71 @@ class ProteinController(MetaSubsetTabController):
         self.view.on_fit_commit_finished(loader)
 
     @log(logger=logger)
-    @Slot(str, str, str, object, object, object)
+    @Slot(str, str, object)
     def load_event_distribution_data(
         self,
         loader: str,
         sql_filter: str,
-        subset_name: str,
-        exp: Optional[str],
-        channel: Optional[int],
         experiments_and_channels: Optional[Dict[str, List[Optional[int]]]],
     ) -> None:
         """
         Build the query for one subset, load its events, and hand both to the View.
 
-        Step 4a, replacing four emits across three View methods:
-        ``construct_event_data_query``, the two scope lookups a ``_raw`` filter needs,
-        and ``load_event_data``. Both distribution modes - individual and ensemble -
-        run this same chain, so there is one slot rather than one per mode.
+        Step 4a, replacing four emits across three View methods. Both distribution
+        modes - individual and ensemble - run this same chain, so there is one slot
+        rather than one per mode.
 
-        **A ``_raw`` subset takes a different route.** Its filter is already a complete
-        ``SELECT``, so it is scoped here and run as it stands rather than handed to
-        ``construct_event_data_query``, which does not refuse a complete ``SELECT`` -
-        it splices it in after ``WHERE`` and returns an empty debug message. The View
-        asked for the constructed query first and then quietly loaded through the
-        scoped raw one, so the SQL it displayed was not the SQL that ran. The query
-        handed back now is the one that ran.
-
-        **An unresolvable experiment or channel stops the plot**, as it does in
-        :py:meth:`load_event_plot_data`. The View appended the scope only when both
-        lookups had answered, which silently widened a raw query to the whole
-        database.
+        **The ``_raw`` branch this replaced could never work**, which is why it is
+        gone rather than converted. It handed a complete ``SELECT`` to
+        ``load_event_data`` as its ``conditions`` argument, and that argument is a
+        WHERE-clause body: the loader spliced it in after ``WHERE``, SQLite rejected
+        the result as a syntax error, ``construct_event_data_query`` returned
+        ``("", debug)`` and the generator yielded nothing. Measured against a real
+        loader - the same filter as an ordinary WHERE body yields every event, and as
+        a raw ``SELECT`` yields none. Raw filters are refused before a plot is
+        attempted now; see ``MetaSubsetTabView._refuse_raw_filters``.
 
         :param loader: the database loader plugin's key
         :type loader: str
-        :param sql_filter: the subset filter - a WHERE-clause body, or a complete SELECT for a ``_raw`` subset
+        :param sql_filter: the subset filter's WHERE-clause body, empty for all rows
         :type sql_filter: str
-        :param subset_name: the filter's name, whose ``_raw`` suffix picks the route
-        :type subset_name: str
-        :param exp: the experiment name in scope, or None
-        :type exp: Optional[str]
-        :param channel: the channel in scope, or None
-        :type channel: Optional[int]
-        :param experiments_and_channels: the scope an assisted filter is built against
+        :param experiments_and_channels: the scope the filter is built against
         :type experiments_and_channels: Optional[Dict[str, List[Optional[int]]]]
         :return: None
         :rtype: None
         """
-        load_args: Tuple[str, Optional[Dict[str, List[Optional[int]]]]]
-        if subset_name.endswith("_raw"):
-            built = self._scope_raw_subset_query(loader, sql_filter, exp, channel)
-            if built is None:
-                return
-            # None, not the scope dict: the scope is already inside the query text,
-            # and passing it again would filter twice.
-            query, load_args = built, (built, None)
-        else:
-            try:
-                # Two values: construct_event_data_query is declared
-                # -> Tuple[str, str] and reports a filter it cannot build as
-                # ("", debug). call() does not splat it the way the bus did.
-                query, debug = self.model.call(
-                    "MetaDatabaseLoader",
-                    loader,
-                    "construct_event_data_query",
-                    sql_filter,
-                    experiments_and_channels,
-                )
-            except Exception as e:
-                self.logger.error(f"Failed to build the event subset query: {e!r}")
-                self.add_text_to_display.emit(
-                    f"Could not build the event query for this subset: {e}",
-                    self.__class__.__name__,
-                )
-                return
-            if not query:
-                self.add_text_to_display.emit(
-                    debug or "The event query for this subset could not be built",
-                    self.__class__.__name__,
-                )
-                return
-            load_args = (sql_filter, experiments_and_channels)
+        try:
+            # Two values: construct_event_data_query is declared
+            # -> Tuple[str, str] and reports a filter it cannot build as
+            # ("", debug). call() does not splat it the way the bus did.
+            query, debug = self.model.call(
+                "MetaDatabaseLoader",
+                loader,
+                "construct_event_data_query",
+                sql_filter,
+                experiments_and_channels,
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to build the event subset query: {e!r}")
+            self.add_text_to_display.emit(
+                f"Could not build the event query for this subset: {e}",
+                self.__class__.__name__,
+            )
+            return
+        if not query:
+            self.add_text_to_display.emit(
+                debug or "The event query for this subset could not be built",
+                self.__class__.__name__,
+            )
+            return
 
         try:
             generator = self.model.call(
-                "MetaDatabaseLoader", loader, "load_event_data", *load_args
+                "MetaDatabaseLoader",
+                loader,
+                "load_event_data",
+                sql_filter,
+                experiments_and_channels,
             )
         except Exception as e:
             self.logger.error(f"Failed to load the event subset: {e!r}")
@@ -290,75 +271,6 @@ class ProteinController(MetaSubsetTabController):
         # "not fetched" from "fetched and empty" by these two being untouched.
         self.view.set_event_query(query)
         self.view.set_event_data_generator(generator)
-
-    @log(logger=logger)
-    def _scope_raw_subset_query(
-        self,
-        loader: str,
-        sql_filter: str,
-        exp: Optional[str],
-        channel: Optional[int],
-    ) -> Optional[str]:
-        """
-        Narrow a raw ``SELECT`` filter to one experiment and channel.
-
-        The only place in the codebase that understands a ``_raw`` subset downstream
-        of its creation. The scope is appended as SQL rather than passed as a
-        structured argument because the filter is already a complete statement; there
-        is nothing left for the query builder to build.
-
-        :param loader: the database loader plugin's key
-        :type loader: str
-        :param sql_filter: the raw filter, a complete SELECT
-        :type sql_filter: str
-        :param exp: the experiment name in scope, or None for no scoping
-        :type exp: Optional[str]
-        :param channel: the channel in scope
-        :type channel: Optional[int]
-        :return: the scoped query, or None if the scope could not be resolved
-        :rtype: Optional[str]
-        """
-        query = sql_filter.strip().rstrip(";")
-        if exp is None:
-            return query
-        if channel is None:
-            # Both ids or neither: a raw filter scoped to an experiment but not a
-            # channel would still read every channel of it. The View cannot reach
-            # here that way today - the old code would have raised on int(None) -
-            # but refusing is the same answer the two lookups below get.
-            self.add_text_to_display.emit(
-                f"No channel is in scope, so this raw filter cannot be scoped to "
-                f"{exp}",
-                self.__class__.__name__,
-            )
-            return None
-
-        try:
-            exp_id = self.model.call(
-                "MetaDatabaseLoader", loader, "get_experiment_id_by_name", exp
-            )
-            channel_db_id = self.model.call(
-                "MetaDatabaseLoader", loader, "get_channel_db_id", exp, int(channel)
-            )
-        except Exception as e:
-            self.logger.error(f"Failed to scope the raw filter to {exp}: {e!r}")
-            self.add_text_to_display.emit(
-                f"Could not scope this raw filter to {exp} in {loader}: {e}",
-                self.__class__.__name__,
-            )
-            return None
-
-        if exp_id is None or channel_db_id is None:
-            self.add_text_to_display.emit(
-                f"{loader} could not place experiment {exp} channel {channel}, so this "
-                "raw filter cannot be scoped to it",
-                self.__class__.__name__,
-            )
-            return None
-
-        scope = f"experiment_id = {exp_id} AND channel_db_id = {channel_db_id}"
-        joiner = "AND" if "WHERE" in query.upper() else "WHERE"
-        return f"{query} {joiner} {scope}"
 
     @log(logger=logger)
     @Slot(str, list, object, object, object, str)
