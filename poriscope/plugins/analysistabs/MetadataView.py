@@ -1664,16 +1664,6 @@ class MetadataView(MetaSubsetTabView):
         return pd.DataFrame({"Current": bincenters, "Count": hist})
 
     @log(logger=logger)
-    def set_baseline_duration(self, duration: Optional[float]) -> None:
-        """
-        a callback from a global_signal call that sets the baseline_duration variable for further processing
-
-        :param duration: total duration of baseline data in the scoped subset, or None if it could not be resolved.
-        :type duration: Optional[float]
-        """
-        self.baseline_duration = duration
-
-    @log(logger=logger)
     def set_column_type(self, column_type: Optional[str]) -> None:
         """
         Receive the type asked for by ``column_type_requested``.

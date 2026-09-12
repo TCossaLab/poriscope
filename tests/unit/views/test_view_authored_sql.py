@@ -217,22 +217,25 @@ def test_the_two_tabs_build_different_projections() -> None:
     """
     The near-twin queries in the two tabs are not interchangeable.
 
-    ``ProteinView._resolve_event_db_ids`` selects ``id, event_id`` while the metadata
-    tab selects ``id`` alone. Step 4b folds both into the loader, and a single shared
-    query would have to serve both - so the difference is recorded here rather than
-    discovered during the merge.
+    Both halves now live in Controllers - Step 4a moved the protein tab out of the
+    widget in the same shape the metadata tab went - so this compares the two
+    ``load_event_plot_data`` methods rather than a View method against a Controller
+    one. The protein copy selects ``id, event_id`` because it re-sorts the rows into
+    the order the navigation asked for them in; the metadata copy selects ``id``
+    alone because it does not.
 
-    The metadata half moved out of the View in Step 4a: the whole three-call chain it
-    sat in is ``MetadataController.load_event_plot_data`` now, which is also why its
-    text is asserted rather than only its projection - the query is built from a list
-    of clauses there, so the ``SELECT`` and the clauses are checked separately, and
-    ``test_metadata_fetch_slots`` pins what the clauses come out as.
+    That difference is the open question for the promotion to
+    ``MetaSubsetTabController`` (``DECISIONS.md``, 2026-09-09), so it is asserted here
+    rather than left to be rediscovered during the merge. **This test is meant to be
+    rewritten by whichever commit promotes them**, not deleted: if one shared method
+    ends up serving both, what it selects is exactly what needs pinning.
     """
     import inspect
 
     from poriscope.plugins.analysistabs.MetadataController import MetadataController
+    from poriscope.plugins.analysistabs.ProteinController import ProteinController
 
-    protein = inspect.getsource(ProteinView._resolve_event_db_ids)
+    protein = inspect.getsource(ProteinController.load_event_plot_data)
     metadata = inspect.getsource(MetadataController.load_event_plot_data)
 
     assert "SELECT id, event_id FROM events WHERE" in protein

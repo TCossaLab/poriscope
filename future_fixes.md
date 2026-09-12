@@ -504,12 +504,6 @@ refactoring lands, to avoid generating triads against a layout about to change.
 
 ## Still queued
 
-- **The `baseline_duration` relay chain is write-only.**
-  `MetaSubsetTabController.relay_baseline_duration:85` sets `view.baseline_duration` through
-  `set_baseline_duration` on both subset Views, and **nothing in `poriscope/` ever reads that
-  attribute**; no emit or `call()` produces the value either, so the whole chain is dead - one
-  base method, two View methods, six tests. Delete it with Protein's Step 4a commit, which is
-  already in both files.
 - **The metadata query's table aliases are only half parameterised.**
   `MetaDatabaseLoader.py:1021-1029` builds an alias map that feeds the projection and the
   WHERE qualification, but the JOIN's `ON` clause hardcodes `s.event_db_id`. Renaming the

@@ -47,9 +47,9 @@ class MetaSubsetTabController(MetaController):
     What a subclass inherits:
 
     - **Relays into the View.** relay_plot_data, relay_units,
-      relay_event_query, relay_baseline_duration
-      and the two generator relays hand a Model or plugin result to the View, which
-      is the Model-to-View half of the mediation pattern Decision B keeps.
+      relay_event_query and the two generator relays hand a Model or plugin result
+      to the View, which is the Model-to-View half of the mediation pattern
+      Decision B keeps.
     - **Experiment and column state.** set_experiment_id, set_channel_db_id,
       update_column_names, update_column_units,
       get_experiment_structure_ready and get_experiment_names_for_tree
@@ -80,16 +80,6 @@ class MetaSubsetTabController(MetaController):
     """
 
     logger = logging.getLogger(__name__)
-
-    @log(logger=logger)
-    def relay_baseline_duration(self, duration: Optional[float]) -> None:
-        """
-        Relay the computed baseline duration to the view.
-
-        :param duration: Duration of the baseline in appropriate units, or None if it could not be resolved.
-        :type duration: Optional[float]
-        """
-        self.view.set_baseline_duration(duration)
 
     @log(logger=logger)
     def set_exported_event_count(self, written: int) -> None:

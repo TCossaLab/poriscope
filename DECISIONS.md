@@ -38,6 +38,51 @@ be shared rather than copied.
 
 ---
 
+## 2026-09-12 - Protein's event-plot chain stops on an unresolvable experiment, as Metadata's does
+
+**Context.** `ProteinView._resolve_event_db_ids` appended the experiment scope only when
+`get_experiment_id_by_name` had answered, so a failed lookup ran
+`SELECT id, event_id FROM events WHERE event_id IN (...)` with no experiment scope. The bus
+swallowed the failure, so nothing said anything. `event_id` is unique only within an
+experiment and channel.
+
+**Decision.** `ProteinController.load_event_plot_data` reports and returns, matching
+`MetadataController` (2026-09-09). A user-visible behaviour change on the protein tab, called
+out in `changelog.md`.
+
+**Evidence.** Reverting the guard to the permissive form fails exactly one test,
+`test_an_unresolvable_experiment_stops_the_plot`, and no other.
+
+**Revisit if** a protein database legitimately holds events whose experiment is unknown, in
+which case the fallback needs channel scoping rather than none - the same caveat the metadata
+entry carries.
+
+---
+
+## 2026-09-12 - The two event-plot chains stay separate until both are converted
+
+**Context.** The 2026-09-09 entry deferred promoting `MetaSubsetTabController` until Protein's
+half was converted, on the grounds that "there is nothing to diff until then". It is converted
+now.
+
+**Decision.** Not promoted in this commit either. The diff is real but the commit that makes
+it is a promotion, not a conversion, and mixing the two would put a behaviour change and a
+move in one diff.
+
+**Evidence.** With both halves converted the SQL core is the same shape and four differences
+remain: Protein selects `id, event_id` because it re-sorts rows into the caller's requested
+order and Metadata selects `id`; Protein's messages name the plot type (`events` /
+`histograms`) where Metadata's name the event ids; Protein guards an empty id list where
+Metadata does not; and Protein's caller supplies the scope from its own state.
+`test_view_authored_sql.py::test_the_two_tabs_build_different_projections` asserts the
+projection difference against both Controllers and says in its own docstring that the
+promoting commit is meant to rewrite it.
+
+**Revisit at** the promotion commit: if carrying those four needs more than one or two
+parameters, they stay separate and this entry becomes the record of why.
+
+---
+
 ## 2026-09-12 - A nested function can hide pydoclint's raise checks, so hoisting one can surface real violations
 
 **Context.** Collapsing three byte-identical nested `tuple_builder` helpers in

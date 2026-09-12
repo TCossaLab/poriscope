@@ -4,7 +4,6 @@ Tests for poriscope.plugins.analysistabs.MetadataController.
 Covers:
 - _init creates view and model
 - _setup_connections wires signals
-- relay_baseline_duration delegation
 - set_exported_event_count delegation
 - relay_event_query (query present, query empty with debug)
 - relay_event_data_generator delegation
@@ -119,37 +118,6 @@ def test_setup_connections_runs_without_error(mocker: MockerFixture) -> None:
     ctrl.view = mocker.Mock()
     ctrl.model = mocker.Mock()
     ctrl._setup_connections()  # should not raise
-
-
-# ---------------------- relay_baseline_duration ----------------------
-
-
-def test_relay_baseline_duration_passes_value_to_view(
-    controller: MetadataController,
-    mock_view: MagicMock,
-) -> None:
-    """
-    Delegate a non-zero baseline duration to the view.
-
-    :param controller: Controller under test.
-    :param mock_view: Mocked metadata view.
-    """
-    controller.relay_baseline_duration(9.81)
-    mock_view.set_baseline_duration.assert_called_once_with(9.81)
-
-
-def test_relay_baseline_duration_passes_zero_to_view(
-    controller: MetadataController,
-    mock_view: MagicMock,
-) -> None:
-    """
-    Delegate a zero baseline duration to the view.
-
-    :param controller: Controller under test.
-    :param mock_view: Mocked metadata view.
-    """
-    controller.relay_baseline_duration(0.0)
-    mock_view.set_baseline_duration.assert_called_once_with(0.0)
 
 
 # -------------------- set_exported_event_count -----------------------

@@ -751,10 +751,6 @@ class TestStateSetters:
         mock_view.set_channel_db_id(42)
         assert mock_view.channel_db_id == 42
 
-    def test_set_baseline_duration(self, mock_view):
-        mock_view.set_baseline_duration(500)
-        assert mock_view.baseline_duration == 500
-
     def test_set_event_data_generator(self, mock_view):
         g = iter([1, 2, 3])
         mock_view.set_event_data_generator(g)
@@ -764,7 +760,6 @@ class TestStateSetters:
         g = iter([])
         mock_view.set_event_plot_data_generator(g)
         assert mock_view.plot_events_generator is g
-        assert mock_view.plot_events_generator_updated is True
 
     def test_set_experiment_id(self, mock_view):
         mock_view.set_experiment_id(99)
@@ -1806,20 +1801,68 @@ class TestFetchEventData:
         result = mock_view._fetch_event_data(params)
         assert result == []
 
-    def test_fetches_fresh_via_resolve_and_generator(self, mock_view):
+    def test_asks_the_controller_for_exactly_the_events_requested(self, mock_view):
+        """
+        Step 4a: the resolve-and-load chain is one intent answered by
+        ``ProteinController.load_event_plot_data``, so the stub stands in for the
+        Controller by setting the generator the way it does - a stub that does nothing
+        where the real collaborator sets the answer would make every assertion below
+        vacuous.
+        """
         mock_view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": ["0"]}}
         mock_view.get_selected_filters = MagicMock(return_value={"Full Dataset": ""})
         mock_view.current_sql_filter = ""
         mock_view.current_experiment = "exp1"
         mock_view.current_channel = 0
-        mock_view._resolve_event_db_ids = MagicMock(
-            return_value=pd.DataFrame({"id": [10], "event_id": [1]})
-        )
-        mock_view.global_signal = MagicMock()
-        mock_view.plot_events_generator = iter([_make_event(1)])
+
+        requested = []
+
+        def answer(loader, event_ids, exp, channel, scope, action_label):
+            requested.append((loader, event_ids, exp, channel, scope, action_label))
+            mock_view.plot_events_generator = iter([_make_event(1)])
+
+        mock_view.event_plot_data_requested.connect(answer)
+
         result = mock_view._fetch_event_data(self._params())
+
+        assert requested == [("ldr", [1], "exp1", 0, {"exp1": ["0"]}, "events")]
         assert len(result) == 1
         assert result[0]["event_id"] == 1
+
+    def test_a_chain_that_did_not_finish_plots_nothing(self, mock_view):
+        """
+        The generator is cleared before the intent goes out, so a Controller that
+        returned early leaves None rather than the previous plot's events - the stale
+        read this step exists to remove.
+        """
+        mock_view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": ["0"]}}
+        mock_view.get_selected_filters = MagicMock(return_value={"Full Dataset": ""})
+        mock_view.plot_events_generator = iter([_make_event(99)])
+        mock_view.event_plot_data_requested.connect(lambda *a: None)
+
+        assert mock_view._fetch_event_data(self._params()) == []
+
+    def test_the_answer_comes_back_in_the_order_it_was_asked_for(self, mock_view):
+        """
+        ``load_event_data`` yields in whatever order the database gives, and the
+        navigation cares about the order it requested; the re-sort is why the query
+        selects ``event_id`` alongside ``id``.
+        """
+        mock_view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": ["0"]}}
+        mock_view.get_selected_filters = MagicMock(return_value={"Full Dataset": ""})
+        mock_view.event_plot_data_requested.connect(
+            lambda *a: setattr(
+                mock_view,
+                "plot_events_generator",
+                iter([_make_event(7), _make_event(3), _make_event(5)]),
+            )
+        )
+
+        result = mock_view._fetch_event_data(
+            {"db_loader": "ldr", "event_index": [3, 5, 7]}
+        )
+
+        assert [e["event_id"] for e in result] == [3, 5, 7]
 
 
 class TestHandlePlotEvents:

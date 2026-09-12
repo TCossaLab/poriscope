@@ -76,17 +76,6 @@ class TestAlterDatabaseStatus:
 
 
 # ===========================================================================
-# relay_baseline_duration
-# ===========================================================================
-
-
-class TestRelayBaselineDuration:
-    def test_forwards_duration_to_view(self, controller):
-        controller.relay_baseline_duration(500)
-        assert controller.view.baseline_duration == 500
-
-
-# ===========================================================================
 # relay_query — the big dispatch method
 # ===========================================================================
 
@@ -339,7 +328,6 @@ class TestRelayGenerators:
         g = iter([])
         controller.relay_event_plot_data_generator(g)
         assert controller.view.plot_events_generator is g
-        assert controller.view.plot_events_generator_updated is True
 
 
 # ===========================================================================

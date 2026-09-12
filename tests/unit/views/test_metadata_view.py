@@ -3025,16 +3025,6 @@ def test_construct_all_points_histogram_handles_multiple_events(
     assert result["Count"].sum() == 6  # 3 points from each event
 
 
-# ----------------------------- Set Baseline Duration Tests ------------------------------
-
-
-def test_set_baseline_duration_sets_value(view: MetadataView) -> None:
-    """Verify baseline_duration is set correctly."""
-    view.set_baseline_duration(0.5)
-
-    assert view.baseline_duration == 0.5
-
-
 # ----------------------------- Construct Event Overlay Tests ------------------------------
 
 

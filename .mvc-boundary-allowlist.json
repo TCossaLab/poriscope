@@ -1,6 +1,6 @@
 {
   "emits": {
-    "poriscope/plugins/analysistabs/ProteinView.py": 12,
+    "poriscope/plugins/analysistabs/ProteinView.py": 9,
     "poriscope/utils/MetaSubsetTabView.py": 1
   },
   "imports": {

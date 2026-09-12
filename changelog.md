@@ -22,6 +22,10 @@
 
 * **Fixed the Metadata tab plotting another channel's events when the experiment could not be looked up**: the events to plot were resolved without their experiment and channel scope, so an event number that exists in more than one channel could return the wrong channel's data
 
+* **Fixed the Protein tab plotting another channel's events when the experiment could not be looked up**: the events to plot were resolved without their experiment scope, so an event number that exists in more than one channel could return the wrong channel's data; it now stops and says so
+
+* The Protein tab now asks its database loader for event plot data through a direct call from its controller rather than through the signal bus, so a lookup that fails is reported instead of silently widening the query
+
 * **Fixed the Raw Data tab drawing nothing when the requested time range ran past the end of the file**: it now plots what the channel holds and says on the status panel that it trimmed the range, and says so too when the range starts past the end
 
 * Fixed `construct_event_data_query` not documenting that it raises for an unknown experiment name, and collapsed three identical copies of its SQL id-list helper onto one

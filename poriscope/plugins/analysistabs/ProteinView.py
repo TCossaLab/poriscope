@@ -51,7 +51,7 @@ from matplotlib.backends.backend_qt5agg import (
     NavigationToolbar2QT as NavigationToolbar,
 )
 from matplotlib.figure import Figure
-from PySide6.QtCore import Slot
+from PySide6.QtCore import Signal, Slot
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLayout,
@@ -88,6 +88,20 @@ class ProteinView(MetaSubsetTabView):
     """
 
     logger = logging.getLogger(__name__)
+
+    #: Asks for the full data of specific events, named by the ``event_id`` values the
+    #: navigation snapped to: the loader's key, those ids, the experiment name, the
+    #: channel, the experiment/channel scope ``load_event_data`` wants, and what the
+    #: caller is plotting so the Controller's messages can name it. The answer arrives
+    #: through ``set_event_plot_data_generator``.
+    #:
+    #: Step 4a replaced a three-emit chain spread over two methods - resolve the
+    #: experiment name to an id, query the events table for the ids matching those
+    #: ``event_id`` values within that scope, then load exactly those rows - each of
+    #: whose answers was parked on an attribute and read back on the next statement.
+    #: The whole chain belongs to whoever can run it end to end and report which part
+    #: failed, which is not the widget.
+    event_plot_data_requested = Signal(str, list, object, object, object, str)
 
     @property
     def fig_hist(self) -> Figure:
@@ -200,7 +214,6 @@ class ProteinView(MetaSubsetTabView):
             "individual"  # default mode; toggled by Individual/Ensemble buttons
         )
 
-        self.subset_export_count = 0
         self.hist_min: Optional[float] = None
         self.hist_max: Optional[float] = None
         # Heterogeneous by design: _plot_all_points_histogram appends (x, y)
@@ -1219,16 +1232,6 @@ class ProteinView(MetaSubsetTabView):
         return pd.DataFrame({"Normalized Current": bincenters, "Amplitude": event_hist})
 
     @log(logger=logger)
-    def set_baseline_duration(self, duration: Optional[float]) -> None:
-        """
-        A callback from a global_signal call that sets the baseline_duration variable for further processing.
-
-        :param duration: total duration of baseline data in the scoped subset, or None if it could not be resolved.
-        :type duration: Optional[float]
-        """
-        self.baseline_duration = duration
-
-    @log(logger=logger)
     def restore_subset_filters(self, filters: Dict[str, str]) -> None:
         """
         Restore subset filters captured in a saved session.
@@ -1430,104 +1433,32 @@ class ProteinView(MetaSubsetTabView):
         self, generator: Iterator[Dict[str, Any]]
     ) -> None:
         """
-        A callback from a global signal call that sets the generator to be used to construct event plots and overlays.
+        Receive the generator over the events the Controller was asked to load.
+
+        Called only once the whole resolve-and-load chain has succeeded, so the caller
+        reading it back on the next statement can treat ``None`` as "that chain did not
+        finish" rather than as "the previous plot's events are still good".
 
         :param generator: a generator of event data
         :type generator: Iterator[Dict[str, Any]]
         """
         self.plot_events_generator = generator
-        self.plot_events_generator_updated = True
-
-    # -------------------------------------------------------------------------
-    # NOTE: This targeted-fetch-by-id pattern (_resolve_event_db_ids +
-    # _fetch_event_data) is factored out here because ProteinView has two
-    # callers that need it — _handle_plot_events and _handle_plot_histogram.
-    # MetadataView's equivalent id-resolution/fetch logic is only used by
-    # _handle_plot_events, so it's kept inline there rather than duplicating
-    # this abstraction for a single call site. If another tab ever grows a
-    # second consumer of "fetch these event_ids' full data" (e.g. a
-    # histogram feature mirroring this one), port this pattern over rather
-    # than reinventing it — see ProteinView._resolve_event_db_ids/
-    # _fetch_event_data for the scoped-query approach both should use.
-    # -------------------------------------------------------------------------
-
-    @log(logger=logger)
-    def _resolve_event_db_ids(
-        self,
-        loader: str,
-        event_ids: Sequence[int],
-        exp: Optional[str],
-        channel: Optional[int],
-    ) -> Optional[pd.DataFrame]:
-        """
-        Resolve a list of event_id values, scoped to a specific experiment and
-        channel, to their corresponding database primary keys (id) via a single
-        direct query. event_id is only unique within an experiment/channel
-        scope, not across the whole events table, so this scoping is required
-        to avoid resolving to the wrong row when two channels share an event_id.
-
-        :param loader: Name of the database loader.
-        :type loader: str
-        :param event_ids: List of event_id values to resolve.
-        :type event_ids: Sequence[int]
-        :param exp: Experiment name, or None.
-        :type exp: Optional[str]
-        :param channel: Channel identifier, or None.
-        :type channel: Optional[int]
-        :return: DataFrame with columns id, event_id for the matching rows, or None on failure.
-        :rtype: Optional[pd.DataFrame]
-        """
-        if not event_ids:
-            return None
-
-        id_tuple = f"({','.join(str(eid) for eid in event_ids)})"
-        where_parts = [f"event_id IN {id_tuple}"]
-
-        if exp is not None:
-            self.experiment_id = None
-            self.global_signal.emit(
-                "MetaDatabaseLoader",
-                loader,
-                "get_experiment_id_by_name",
-                (exp,),
-                "set_experiment_id",
-                (),
-            )
-            if self.experiment_id is not None:
-                where_parts.append(f"experiment_id = {self.experiment_id}")
-
-        if channel is not None:
-            where_parts.append(f"channel_id = {channel}")
-
-        query = f"SELECT id, event_id FROM events WHERE {' AND '.join(where_parts)}"
-        self.relayed_query_result = None
-        self.global_signal.emit(
-            "MetaDatabaseLoader",
-            loader,
-            "query_database_directly",
-            (query,),
-            "relay_query_result",
-            (),
-        )
-        result = getattr(self, "relayed_query_result", None)
-        if result is None or result.empty or "id" not in result.columns:
-            return None
-        return result
 
     @log(logger=logger)
     def _fetch_event_data(
         self, parameters: Dict[str, Any], action_label: str = "events"
     ) -> list[dict]:
         """
-        Shared validation and targeted data fetching for event-based plots.
-        Resolves the requested event_index list to database ids via a single
-        query scoped to the current experiment/channel, then fetches exactly
-        those rows. Always fetches fresh rather than caching event blobs in
-        memory — event_id is only unique within an experiment/channel scope,
-        and a per-event_id blob cache is an easy invariant to accidentally
-        violate later; the targeted DB query is already O(events requested)
-        rather than O(distance into the dataset), so the extra memoization
-        isn't worth the correctness risk.
+        Validate the request, ask for exactly the events named, and order the answer.
+
+        The scope guards stay here because they are about what the widget is showing;
+        resolving ``event_index`` to database ids and loading those rows is one intent
+        answered by ``ProteinController.load_event_plot_data`` (Step 4a). Always
+        fetches fresh rather than caching event blobs in memory — event_id is only
+        unique within an experiment/channel scope, and a per-event_id blob cache is an
+        easy invariant to accidentally violate later; the targeted DB query is already
+        O(events requested) rather than O(distance into the dataset), so the extra
+        memoization isn't worth the correctness risk.
 
         :param parameters: Dictionary containing db_loader, filter, channels, and event indices.
         :type parameters: Dict[str, Any]
@@ -1590,34 +1521,15 @@ class ProteinView(MetaSubsetTabView):
         selected_channel = next(iter(exp_and_ch.values()))[0]
         channel = int(selected_channel) if selected_channel is not None else None
 
-        id_result = self._resolve_event_db_ids(loader_name, event_index, exp, channel)
-        if id_result is None or id_result.empty:
-            self.add_text_to_display.emit(
-                f"No data available for the requested {action_label}",
-                self.__class__.__name__,
-            )
-            return []
-
-        db_ids = id_result["id"].tolist()
-        id_tuple = f"({','.join(str(i) for i in db_ids)})"
-        event_db_id_filter = f"e.id IN {id_tuple}"
-
-        self.plot_events_generator_updated = False
-        self.global_signal.emit(
-            "MetaDatabaseLoader",
-            loader_name,
-            "load_event_data",
-            (event_db_id_filter, exp_and_ch),
-            "relay_event_plot_data_generator",
-            (),
+        # Cleared first: the Controller sets the generator only once the whole chain
+        # has succeeded, and reports which part did not, so a failure here is not
+        # mistaken for the previous plot's events.
+        self.plot_events_generator = None
+        self.event_plot_data_requested.emit(
+            loader_name, list(event_index), exp, channel, exp_and_ch, action_label
         )
-
-        generator = getattr(self, "plot_events_generator", None)
+        generator = self.plot_events_generator
         if generator is None:
-            self.add_text_to_display.emit(
-                f"No data available for the requested {action_label}",
-                self.__class__.__name__,
-            )
             return []
 
         data_list = list(generator)
