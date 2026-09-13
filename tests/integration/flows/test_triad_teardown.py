@@ -76,9 +76,7 @@ def test_closing_the_triad_leaves_no_worker_thread_running(
 
     model = metadata_tab.tab_controller.model
     started = [
-        thread
-        for threads in model.threads.values()
-        for thread in threads.values()
+        thread for threads in model.threads.values() for thread in threads.values()
     ]
     assert started, (
         "the export staged no worker, so this test is not exercising the teardown "
@@ -122,6 +120,6 @@ def test_the_harness_kills_workers_the_way_the_app_does() -> None:
             f"{label} closes the data plugins before killing the workers that run "
             "against them"
         )
-        assert "exiting=True" in source, (
-            f"{label} asks the workers to stop without waiting for them to finish"
-        )
+        assert (
+            "exiting=True" in source
+        ), f"{label} asks the workers to stop without waiting for them to finish"
