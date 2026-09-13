@@ -1926,3 +1926,61 @@ coverage staged first, the large god-methods
 (`construct_metadata_query`, `edit_plugin`) and the range-parsing
 consolidation (which needs a decision about which widget's edge-case
 behavior is "correct" before it can be unified, not just extracted).
+
+---
+
+# Part 13: Make Raw SQL Subset Filters Work
+
+**Queued 2026-09-13, after the 2.0.0 refactor.** A feature build, not a fix — the
+behaviour today is correct, it is just a refusal.
+
+## What happens now
+
+A subset filter can be created as *raw SQL*: a complete `SELECT` the user writes
+themselves, saved with a `_raw` suffix. It can be created, validated, named,
+saved to a file and loaded back. **It cannot be used to scope a plot**, on either
+tab: `MetaSubsetTabView._refuse_raw_filters` stops every plotting path and says
+so on the status panel.
+
+That refusal is Step 4a's, and it replaced silent failure rather than working
+behaviour. Measured against a real database at the time: the filter was handed to
+`load_event_data` as its `conditions` argument, which is a **WHERE-clause body**,
+so the loader spliced a complete `SELECT` in after its own `WHERE`. SQLite
+rejected the result as a syntax error, the builder reported that by returning an
+empty query, and the generator yielded nothing — silently. The protein tab
+additionally carried a branch that tried to scope such a filter; it had the same
+shape and had therefore never returned a row either, so it was deleted rather
+than repaired.
+
+Six call sites refuse: `MetadataView._overlay_plot` and `_handle_plot_events`;
+`ProteinView._handle_plot_events`, `_handle_plot_histogram`,
+`_update_distribution_individual` and `_update_distribution_ensemble`.
+
+## What making it work would take
+
+The work is in `MetaDatabaseLoader`, not in the tabs. It needs a path that accepts
+a complete `SELECT` and **scopes** it — applies the experiment and channel
+restriction to a query the user wrote — rather than splicing it where a condition
+is expected. That is a different operation from `construct_metadata_query`, which
+builds its own SQL around a condition fragment, and from `validate_filter_query`,
+which only asks the database whether the text parses.
+
+Two questions to settle before writing any of it:
+
+- **What does scoping a user's `SELECT` mean?** Wrapping it as a subquery and
+  filtering the outer result is the obvious answer and changes which columns are
+  available downstream. `SQLiteDBLoader.scoped_query` already appends a scope
+  clause on a naive `"WHERE" in query.upper()` test; it is pinned by a golden and
+  explicitly marked "do not fix here", and it is the natural place to start.
+- **Which plot types can consume one?** The event-data paths need `id` and
+  `event_id` columns; the metadata plots need whatever columns the axes name. A
+  raw filter that omits them cannot drive those plots, so either the projection is
+  constrained or the failure is reported per plot type.
+
+## The alternative, which is smaller
+
+**Withdraw raw filters from the UI.** They have never produced a plot in any
+released version, so nothing depends on them working; removing the option is less
+work than making it correct and leaves no half-feature on screen. Worth pricing
+against the above rather than assuming the feature is wanted — the deciding
+question is whether anyone has a filter they can only express as raw SQL.

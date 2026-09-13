@@ -12,6 +12,10 @@ number, not the narrative.
 Everything outside the tooling tiers is a logic change and needs an approved plan first.
 Read-only investigation and measurement do not.
 
+- **Raw SQL subset filters still cannot scope a plot**, and the fix is a feature build in
+  `MetaDatabaseLoader` rather than a defect repair - see `future_refactors_and_features.md`
+  Part 13. Queued deliberately for after the 2.0.0 refactor.
+
 ## `SQLiteDBLoader` opens a fresh connection per schema lookup (2026-09-08)
 
 `get_table_by_column:454` and `get_column_names_by_table:382` each call

@@ -151,7 +151,14 @@ were fixed and re-passed. One could not be run:
    builds three messages from it. That is a question about what the user is told, not
    about SQL, which is the form the promotion decision should be taken in. The two
    `resolve_event_ids` are the better merge candidate and want a shared subset-tab Model
-   that does not exist yet. The two
+   that does not exist yet.
+
+   **Manual Windows pass run 2026-09-13, all clear**, over both tabs' event plotting, the
+   fit overwrite, and raw-filter validation. One thing confirmed rather than found: raw
+   SQL filters are still refused for plotting on every path, which is Step 4a's deliberate
+   breaking change and not 4b's doing. **Making them work is queued as a feature for after
+   the refactor** - `future_refactors_and_features.md` Part 13, which also prices the
+   smaller alternative of withdrawing them from the UI. The two
    `load_event_plot_data` bodies are 122 and 129 lines with 94 identical. Three of their
    four differences are about the query and the messages, and moving the query to the
    Models takes the largest one out, so 4b should be done first and the promotion judged
