@@ -21,6 +21,25 @@ import pytest
 from poriscope.plugins.analysistabs.ProteinModel import ProteinModel
 from poriscope.utils.MetaModel import MetaModel
 
+
+def _make_double_gaussian_histogram(
+    mean1=0.2, std1=0.02, amp1=1.0, mean2=0.6, std2=0.03, amp2=0.8, n_bins=200
+):
+    """
+    Build a clean two-peak histogram.
+
+    Moved verbatim from ``tests/unit/views/test_protein_view.py`` with the methods it
+    exercises, so the pins below are the same inputs they were before Step 4c.
+
+    :return: the bin centers and the amplitudes
+    :rtype: tuple
+    """
+    x = np.linspace(0.0, 1.0, n_bins)
+    g1 = amp1 * np.exp(-((x - mean1) ** 2) / (2 * std1**2))
+    g2 = amp2 * np.exp(-((x - mean2) ** 2) / (2 * std2**2))
+    return x, g1 + g2
+
+
 # ===========================================================================
 # Construction / inheritance
 # ===========================================================================
@@ -115,6 +134,40 @@ class TestDoubleGaussian:
 
         np.testing.assert_allclose(at_mean, [1.5])
 
+    # --- pins moved from test_protein_view.py by Step 4c, receiver re-pointed ---
+
+    def test_peak_at_mean1(self, model):
+        r = model._double_gaussian(np.array([0.2]), 1.0, 0.2, 0.05, 0.8, 0.6, 0.05)
+        assert r[0] == pytest.approx(1.0, rel=1e-6)
+
+    def test_peak_at_mean2(self, model):
+        r = model._double_gaussian(np.array([0.6]), 1.0, 0.2, 0.05, 0.8, 0.6, 0.05)
+        assert r[0] == pytest.approx(0.8, rel=1e-6)
+
+    def test_zero_amplitudes(self, model):
+        x = np.linspace(0, 1, 50)
+        np.testing.assert_array_equal(
+            model._double_gaussian(x, 0, 0.3, 0.05, 0, 0.7, 0.05), 0
+        )
+
+    def test_output_shape(self, model):
+        x = np.linspace(0, 1, 100)
+        assert model._double_gaussian(x, 1, 0.3, 0.1, 1, 0.7, 0.1).shape == (100,)
+
+    def test_tails_near_zero(self, model):
+        x = np.array([-10.0, 10.0])
+        assert np.all(model._double_gaussian(x, 1, 0.3, 0.05, 1, 0.7, 0.05) < 1e-10)
+
+    def test_symmetry(self, model):
+        x = np.linspace(0, 1, 50)
+        r1 = model._double_gaussian(x, 1.0, 0.3, 0.05, 0.5, 0.7, 0.05)
+        r2 = model._double_gaussian(x, 0.5, 0.7, 0.05, 1.0, 0.3, 0.05)
+        np.testing.assert_allclose(r1, r2, rtol=1e-12)
+
+    def test_non_negative(self, model):
+        x = np.linspace(-1, 2, 200)
+        assert np.all(model._double_gaussian(x, 2, 0.3, 0.1, 1.5, 0.8, 0.15) >= 0)
+
 
 class TestFitDoubleGaussian:
     """The raw fit, before any sanity checking."""
@@ -140,6 +193,28 @@ class TestFitDoubleGaussian:
 
         assert popt is None
         assert pcov is None
+
+    # --- pins moved from test_protein_view.py by Step 4c, receiver re-pointed ---
+    # The ``qt_app`` fixture and its ``processEvents()`` calls went with the move:
+    # a Model builds no widget, so there is no event loop to pump.
+
+    def test_clean_two_peak_signal(self, model):
+        x, y = _make_double_gaussian_histogram()
+        popt, pcov = model._fit_double_gaussian(x, y)
+        assert popt is not None and len(popt) == 6
+
+    def test_single_peak_fallback_degenerate_bug(self, model):
+        # BUG: fallback produces a degenerate two-component fit at the same position
+        x = np.linspace(0, 1, 200)
+        y = np.exp(-((x - 0.5) ** 2) / (2 * 0.05**2))
+        popt, _ = model._fit_double_gaussian(x, y)
+        assert popt is not None and len(popt) == 6
+        assert abs(popt[1] - popt[4]) < 0.05
+
+    def test_flat_returns_none(self, model):
+        x = np.linspace(0, 1, 100)
+        popt, _ = model._fit_double_gaussian(x, np.zeros_like(x))
+        assert popt is None
 
 
 class TestFitAndSanityCheckDoubleGaussian:
@@ -182,6 +257,57 @@ class TestFitAndSanityCheckDoubleGaussian:
 
         assert raw is not None
         assert checked is None
+
+    # --- pins moved from test_protein_view.py by Step 4c, receiver re-pointed ---
+
+    def test_clean_signal_passes(self, model):
+        x, y = _make_double_gaussian_histogram()
+        popt = model._fit_and_sanity_check_double_gaussian(x, y)
+        assert popt is not None and len(popt) == 6
+
+    def test_recovered_means(self, model):
+        x, y = _make_double_gaussian_histogram(mean1=0.2, mean2=0.6)
+        popt = model._fit_and_sanity_check_double_gaussian(x, y)
+        assert popt is not None
+        means = sorted([popt[1], popt[4]])
+        assert means[0] == pytest.approx(0.2, abs=0.01)
+        assert means[1] == pytest.approx(0.6, abs=0.01)
+
+    def test_flat_input_returns_none(self, model):
+        x = np.linspace(0, 1, 100)
+        assert model._fit_and_sanity_check_double_gaussian(x, np.zeros_like(x)) is None
+
+    def test_single_peak_behaviour_documented(self, model):
+        # Documents that single-peak input may pass or fail the sanity check
+        x = np.linspace(0, 1, 200)
+        y = np.exp(-((x - 0.5) ** 2) / (2 * 0.05**2))
+        result = model._fit_and_sanity_check_double_gaussian(x, y)
+        assert result is None or (
+            len(result) == 6 and abs(result[1] - result[4]) < 0.05
+        )
+
+    def test_dominated_peak_behaviour_documented(self, model):
+        # BUG: dominated-peak guard is unreliable when fallback co-locates both
+        # components. This is the same observation as the amplitude-ratio guard
+        # never firing in TestFitAndSanityCheckDoubleGaussian above - the repo had
+        # already recorded it here, which is why it is not filed as a new finding.
+        x = np.linspace(0, 1, 300)
+        y = model._double_gaussian(x, 1.0, 0.2, 0.02, 0.001, 0.7, 0.02)
+        result = model._fit_and_sanity_check_double_gaussian(x, y)
+        assert result is None or len(result) == 6
+
+    def test_roundtrip_residuals(self, model):
+        x, y = _make_double_gaussian_histogram()
+        popt = model._fit_and_sanity_check_double_gaussian(x, y)
+        assert popt is not None
+        assert np.max(np.abs(y - model._double_gaussian(x, *popt))) < 0.02
+
+    def test_double_gaussian_roundtrip(self, model):
+        x, y = _make_double_gaussian_histogram()
+        popt = model._fit_and_sanity_check_double_gaussian(x, y)
+        assert popt is not None
+        y_fit = model._double_gaussian(x, *popt)
+        assert np.max(np.abs(y - y_fit)) < 0.02
 
 
 class TestFitHistogram:

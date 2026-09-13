@@ -78,6 +78,7 @@ class ProteinController(MetaSubsetTabController):
         self.view.fit_commit_confirmed.connect(self.commit_fits)
         self.view.ensemble_fit_requested.connect(self.fit_ensemble_geometry)
         self.view.event_histogram_fits_requested.connect(self.fit_event_histograms)
+        self.view.distribution_fits_requested.connect(self.fit_distribution_events)
 
     @log(logger=logger)
     @Slot(object, object, object, str, float, float, int)
@@ -172,6 +173,51 @@ class ProteinController(MetaSubsetTabController):
             )
             return
         self.view.set_event_histogram_fits(fits, frames, event_data)
+
+    @log(logger=logger)
+    @Slot(object, object, object, float, float, int)
+    def fit_distribution_events(
+        self,
+        histograms: Sequence[
+            Optional[Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]]
+        ],
+        frames: Sequence[Optional[pd.DataFrame]],
+        event_data: Sequence[Dict[str, Any]],
+        d: float,
+        L: float,
+        N: int,
+    ) -> None:
+        """
+        Fit every event on the individual distribution path, and hand them back.
+
+        Decision B's command path, the same shape as ``fit_event_histograms``. The
+        frames, the events and the pore geometry pass straight through; this slot
+        marshals and does not interpret them.
+
+        :param histograms: one (bins, amplitude) pair per event, or None where no histogram could be built
+        :type histograms: Sequence[Optional[Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]]]
+        :param frames: each event's histogram, passed back to the View unchanged
+        :type frames: Sequence[Optional[pd.DataFrame]]
+        :param event_data: the events being plotted, passed back to the View unchanged
+        :type event_data: Sequence[Dict[str, Any]]
+        :param d: the diameter of the pore in nanometers
+        :type d: float
+        :param L: the length of the pore in nanometers
+        :type L: float
+        :param N: target number of samples to draw for each ensemble
+        :type N: int
+        :return: None
+        :rtype: None
+        """
+        try:
+            fits = self.model.fit_histograms(histograms)
+        except (ValueError, TypeError, IndexError) as e:
+            self.logger.error(f"Unable to fit the event histograms: {repr(e)}")
+            self.add_text_to_display.emit(
+                f"Unable to fit the event histograms: {e}", self.__class__.__name__
+            )
+            return
+        self.view.set_distribution_fits(fits, frames, event_data, d, L, N)
 
     @log(logger=logger)
     @Slot(str)

@@ -147,13 +147,6 @@ MOVED: Tuple[Tuple[str, str, str], ...] = (
     ),
     ("poriscope/plugins/analysistabs/MetadataView.py", "is_categorical_type", "4c"),
     ("poriscope/plugins/analysistabs/MetadataView.py", "format_axis_label", "4c"),
-    ("poriscope/plugins/analysistabs/ProteinView.py", "_double_gaussian", "4c"),
-    ("poriscope/plugins/analysistabs/ProteinView.py", "_fit_double_gaussian", "4c"),
-    (
-        "poriscope/plugins/analysistabs/ProteinView.py",
-        "_fit_and_sanity_check_double_gaussian",
-        "4c",
-    ),
     (
         "poriscope/plugins/analysistabs/ProteinView.py",
         "_compute_theoretical_blockages",
@@ -191,6 +184,19 @@ MOVED: Tuple[Tuple[str, str, str], ...] = (
     (
         "poriscope/plugins/analysistabs/ProteinView.py",
         "_update_event_histogram",
+        "4c",
+    ),
+    ("poriscope/plugins/analysistabs/ProteinView.py", "set_event_histogram_fits", "4c"),
+    ("poriscope/plugins/analysistabs/ProteinView.py", "set_distribution_fits", "4c"),
+    # Landed 2026-09-13: the three fit methods moved to ProteinModel, so they are
+    # tracked at their destination now. `_double_gaussian` went with them because
+    # every View caller evaluated the fit at the bins it was fitted on, and the
+    # Model returns that curve alongside the parameters.
+    ("poriscope/plugins/analysistabs/ProteinModel.py", "_double_gaussian", "4c"),
+    ("poriscope/plugins/analysistabs/ProteinModel.py", "_fit_double_gaussian", "4c"),
+    (
+        "poriscope/plugins/analysistabs/ProteinModel.py",
+        "_fit_and_sanity_check_double_gaussian",
         "4c",
     ),
     # The RawData half of 4c landed 2026-09-07. These two moved to RawDataModel and

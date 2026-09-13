@@ -278,121 +278,6 @@ class TestFormatAxisLabel:
 
 
 # ===========================================================================
-# _double_gaussian
-# ===========================================================================
-
-
-class TestDoubleGaussian:
-    def test_peak_at_mean1(self, mock_view):
-        r = mock_view._double_gaussian(np.array([0.2]), 1.0, 0.2, 0.05, 0.8, 0.6, 0.05)
-        assert r[0] == pytest.approx(1.0, rel=1e-6)
-
-    def test_peak_at_mean2(self, mock_view):
-        r = mock_view._double_gaussian(np.array([0.6]), 1.0, 0.2, 0.05, 0.8, 0.6, 0.05)
-        assert r[0] == pytest.approx(0.8, rel=1e-6)
-
-    def test_zero_amplitudes(self, mock_view):
-        x = np.linspace(0, 1, 50)
-        np.testing.assert_array_equal(
-            mock_view._double_gaussian(x, 0, 0.3, 0.05, 0, 0.7, 0.05), 0
-        )
-
-    def test_output_shape(self, mock_view):
-        x = np.linspace(0, 1, 100)
-        assert mock_view._double_gaussian(x, 1, 0.3, 0.1, 1, 0.7, 0.1).shape == (100,)
-
-    def test_tails_near_zero(self, mock_view):
-        x = np.array([-10.0, 10.0])
-        assert np.all(mock_view._double_gaussian(x, 1, 0.3, 0.05, 1, 0.7, 0.05) < 1e-10)
-
-    def test_symmetry(self, mock_view):
-        x = np.linspace(0, 1, 50)
-        r1 = mock_view._double_gaussian(x, 1.0, 0.3, 0.05, 0.5, 0.7, 0.05)
-        r2 = mock_view._double_gaussian(x, 0.5, 0.7, 0.05, 1.0, 0.3, 0.05)
-        np.testing.assert_allclose(r1, r2, rtol=1e-12)
-
-    def test_non_negative(self, mock_view):
-        x = np.linspace(-1, 2, 200)
-        assert np.all(mock_view._double_gaussian(x, 2, 0.3, 0.1, 1.5, 0.8, 0.15) >= 0)
-
-
-# ===========================================================================
-# _fit_double_gaussian
-# ===========================================================================
-
-
-class TestFitDoubleGaussian:
-    def test_clean_two_peak_signal(self, mock_view, qt_app):
-        x, y = _make_double_gaussian_histogram()
-        popt, pcov = mock_view._fit_double_gaussian(x, y)
-        qt_app.processEvents()
-        assert popt is not None and len(popt) == 6
-
-    def test_single_peak_fallback_degenerate_bug(self, mock_view, qt_app):
-        # BUG: fallback produces a degenerate two-component fit at the same position
-        x = np.linspace(0, 1, 200)
-        y = np.exp(-((x - 0.5) ** 2) / (2 * 0.05**2))
-        popt, _ = mock_view._fit_double_gaussian(x, y)
-        qt_app.processEvents()
-        assert popt is not None and len(popt) == 6
-        assert abs(popt[1] - popt[4]) < 0.05
-
-    def test_flat_returns_none(self, mock_view, qt_app):
-        x = np.linspace(0, 1, 100)
-        popt, _ = mock_view._fit_double_gaussian(x, np.zeros_like(x))
-        qt_app.processEvents()
-        assert popt is None
-
-
-# ===========================================================================
-# _fit_and_sanity_check_double_gaussian
-# ===========================================================================
-
-
-class TestFitAndSanityCheck:
-    def test_clean_signal_passes(self, mock_view):
-        x, y = _make_double_gaussian_histogram()
-        popt = mock_view._fit_and_sanity_check_double_gaussian(x, y)
-        assert popt is not None and len(popt) == 6
-
-    def test_recovered_means(self, mock_view):
-        x, y = _make_double_gaussian_histogram(mean1=0.2, mean2=0.6)
-        popt = mock_view._fit_and_sanity_check_double_gaussian(x, y)
-        assert popt is not None
-        means = sorted([popt[1], popt[4]])
-        assert means[0] == pytest.approx(0.2, abs=0.01)
-        assert means[1] == pytest.approx(0.6, abs=0.01)
-
-    def test_flat_returns_none(self, mock_view):
-        x = np.linspace(0, 1, 100)
-        assert (
-            mock_view._fit_and_sanity_check_double_gaussian(x, np.zeros_like(x)) is None
-        )
-
-    def test_single_peak_behaviour_documented(self, mock_view):
-        # Documents that single-peak input may pass or fail the sanity check
-        x = np.linspace(0, 1, 200)
-        y = np.exp(-((x - 0.5) ** 2) / (2 * 0.05**2))
-        result = mock_view._fit_and_sanity_check_double_gaussian(x, y)
-        assert result is None or (
-            len(result) == 6 and abs(result[1] - result[4]) < 0.05
-        )
-
-    def test_dominated_peak_behaviour_documented(self, mock_view):
-        # BUG: dominated-peak guard is unreliable when fallback co-locates both components
-        x = np.linspace(0, 1, 300)
-        y = mock_view._double_gaussian(x, 1.0, 0.2, 0.02, 0.001, 0.7, 0.02)
-        result = mock_view._fit_and_sanity_check_double_gaussian(x, y)
-        assert result is None or len(result) == 6
-
-    def test_roundtrip_residuals(self, mock_view):
-        x, y = _make_double_gaussian_histogram()
-        popt = mock_view._fit_and_sanity_check_double_gaussian(x, y)
-        assert popt is not None
-        assert np.max(np.abs(y - mock_view._double_gaussian(x, *popt))) < 0.02
-
-
-# ===========================================================================
 # _compute_theoretical_blockages
 # ===========================================================================
 
@@ -1552,16 +1437,12 @@ class TestPipeline:
         df = mock_view._construct_all_points_histogram(iter(evs), "Filtered Histogram")
         assert isinstance(df, pd.DataFrame) and len(df) == 100
 
-    def test_double_gaussian_roundtrip(self, mock_view):
-        x, y = _make_double_gaussian_histogram()
-        popt = mock_view._fit_and_sanity_check_double_gaussian(x, y)
-        assert popt is not None
-        y_fit = mock_view._double_gaussian(x, *popt)
-        assert np.max(np.abs(y - y_fit)) < 0.02
-
     def test_vm_ensemble_from_histogram_fit(self, mock_view):
+        # Genuinely cross-layer: Step 4c moved the fit to ProteinModel while the
+        # sampling stayed on the View, so this asks the real Model for the fit
+        # rather than stubbing one - the shape of popt is the collaborator's.
         x, y = _make_double_gaussian_histogram(mean1=0.1, mean2=0.3)
-        popt = mock_view._fit_and_sanity_check_double_gaussian(x, y)
+        popt = ProteinModel()._fit_and_sanity_check_double_gaussian(x, y)
         if popt is None:
             pytest.skip("fit did not converge")
         means = sorted([popt[1], popt[4]])

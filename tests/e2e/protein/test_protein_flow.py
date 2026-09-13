@@ -148,7 +148,7 @@ def _fake_generate_vm_ensemble(
 
 def _fake_fit_and_sanity_check_double_gaussian(self, bins, amplitude):
     """
-    Drop-in replacement for ProteinView._fit_and_sanity_check_double_gaussian
+    Drop-in replacement for ProteinModel._fit_and_sanity_check_double_gaussian
     that skips the real curve_fit + statistical sanity checks (p-value on
     peak separation, min(amp)/max(amp) >= 0.05 ratio). Whether an arbitrary
     synthetic dataset's aggregate current histogram is bimodal enough to
@@ -240,19 +240,10 @@ def test_protein_individual_ensemble_flow(
         raising=True,
     )
 
-    # See module docstring's FIT DETERMINISM note.
-    monkeypatch.setattr(
-        protein_view_mod.ProteinView,
-        "_fit_and_sanity_check_double_gaussian",
-        _fake_fit_and_sanity_check_double_gaussian,
-        raising=True,
-    )
-    # Step 4c moved the fit to ProteinModel, and the ensemble path now reaches it
-    # through the Controller - so patching only the View's copy stops intercepting
-    # that half and the flow waits forever on a plot that never comes. Both copies
-    # are patched while the two per-event callers still use the View's; when they
-    # are converted and the View's copy is deleted, `raising=True` makes the stale
-    # patch above fail by name rather than silently stop covering anything.
+    # See module docstring's FIT DETERMINISM note. Step 4c moved the fit off
+    # ProteinView onto ProteinModel, so this patches the one copy that now exists;
+    # `raising=True` is what turned the View's stale target into a named failure
+    # rather than a patch that silently stopped covering anything.
     monkeypatch.setattr(
         protein_model_mod.ProteinModel,
         "_fit_and_sanity_check_double_gaussian",

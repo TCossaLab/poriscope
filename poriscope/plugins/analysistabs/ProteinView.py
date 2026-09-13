@@ -60,9 +60,6 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from scipy.optimize import curve_fit
-from scipy.signal import find_peaks, peak_widths
-from scipy.stats import t
 
 from poriscope.plugins.analysistabs.utils.proteincontrols import ProteinControls
 from poriscope.utils.DocstringDecorator import inherit_docstrings
@@ -183,6 +180,15 @@ class ProteinView(MetaSubsetTabView):
     #: Step 4a exists to delete. A ``None`` pair marks an event whose histogram could
     #: not be built, so every list stays index-aligned with the events.
     event_histogram_fits_requested = Signal(object, object, object)
+
+    #: Asks for one fit per event on the individual distribution path, with the pore
+    #: geometry the sampling needs. Answered through ``set_distribution_fits``.
+    #:
+    #: Step 4c. Separate from ``event_histogram_fits_requested`` because the answers
+    #: are used for different work - that one draws per-event subplots, this one
+    #: Monte Carlo samples V/m from each fit - and one intent answering two unrelated
+    #: consumers would have to be told which it was serving.
+    distribution_fits_requested = Signal(object, object, object, float, float, int)
 
     @property
     def fig_hist(self) -> Figure:
@@ -2047,8 +2053,6 @@ class ProteinView(MetaSubsetTabView):
         exp_and_ch_arg = {exp: [channel]}
         subset_name, sql_filter = next(iter(selected_filters.items()))
 
-        processed = 0
-
         # Both cleared before asking: the Controller sets them only once
         # the whole chain has succeeded, so a failure leaves them empty
         # rather than describing the previous subset.
@@ -2073,33 +2077,80 @@ class ProteinView(MetaSubsetTabView):
             )
             return
 
-        processed = 0
-        prolate_solutions: List[Any] = []
-        oblate_solutions: List[Any] = []
-        averaged_event_data: List[Dict[str, Any]] = []
+        events = list(self.event_data_generator)
 
-        for event in self.event_data_generator:
-            processed += 1
+        frames: List[Optional[pd.DataFrame]] = []
+        for event in events:
             try:
-                plot_data = self._construct_single_event_histogram(
-                    event,
-                    plot_type,
-                    bins=bins,
-                    sizes=sizes,
+                frames.append(
+                    self._construct_single_event_histogram(
+                        event,
+                        plot_type,
+                        bins=bins,
+                        sizes=sizes,
+                    )
                 )
             except ValueError as e:
                 self.logger.info(
                     f'Unable to construct histogram for event {event["event_id"]}: {e}'
                 )
-                continue
+                frames.append(None)
+
+        histograms = [
+            (
+                (frame["Normalized Current"].values, frame["Amplitude"].values)
+                if frame is not None
+                else None
+            )
+            for frame in frames
+        ]
+        self.distribution_fits_requested.emit(histograms, frames, events, d, L, N)
+
+    @log(logger=logger)
+    def set_distribution_fits(
+        self,
+        fits: Sequence[
+            Tuple[Optional[npt.NDArray[np.float64]], Optional[npt.NDArray[np.float64]]]
+        ],
+        frames: Sequence[Optional[pd.DataFrame]],
+        event_data: Sequence[Dict[str, Any]],
+        d: float,
+        L: float,
+        N: int,
+    ) -> None:
+        """
+        Sample each fitted event's V/m geometry and plot the solutions.
+
+        The answering half of ``distribution_fits_requested``. Every list is
+        index-aligned with ``event_data``, so an event whose histogram could not be
+        built and one whose fit was refused are skipped the same way and neither
+        shifts the others.
+
+        :param fits: one (fit parameters, fitted curve) pair per event, index-aligned with event_data
+        :type fits: Sequence[Tuple[Optional[npt.NDArray[np.float64]], Optional[npt.NDArray[np.float64]]]]
+        :param frames: each event's histogram, or None where none could be built
+        :type frames: Sequence[Optional[pd.DataFrame]]
+        :param event_data: the events that were fitted
+        :type event_data: Sequence[Dict[str, Any]]
+        :param d: the diameter of the pore in nanometers
+        :type d: float
+        :param L: the length of the pore in nanometers
+        :type L: float
+        :param N: target number of samples to draw for each ensemble
+        :type N: int
+        :return: None
+        :rtype: None
+        """
+        prolate_solutions: List[Any] = []
+        oblate_solutions: List[Any] = []
+        averaged_event_data: List[Dict[str, Any]] = []
+
+        for index, event in enumerate(event_data):
+            plot_data = frames[index]
             if plot_data is None:
                 continue
 
-            popt = self._fit_and_sanity_check_double_gaussian(
-                plot_data["Normalized Current"].values,
-                plot_data["Amplitude"].values,
-            )
-
+            popt, _ = fits[index]
             if popt is None:
                 continue
 
@@ -2166,11 +2217,10 @@ class ProteinView(MetaSubsetTabView):
                 }
             )
 
-        # --- Create the Pandas DataFrames ---
         df_prolate = pd.DataFrame(prolate_solutions, columns=["V", "m", "a", "b"])
         df_oblate = pd.DataFrame(oblate_solutions, columns=["V", "m", "a", "b"])
 
-        if processed == 0:
+        if not event_data:
             # The generator existed but yielded nothing, which is what an empty
             # subset looks like from here. Every guard below tests a frame built
             # from these events, so without this the tab drew empty axes and said
@@ -2214,242 +2264,6 @@ class ProteinView(MetaSubsetTabView):
                     "max_fractional_blockage_std",
                 ],
             )
-
-    @log(logger=logger)
-    def _double_gaussian(
-        self,
-        x: npt.NDArray[np.float64],
-        amp1: float,
-        mean1: float,
-        std1: float,
-        amp2: float,
-        mean2: float,
-        std2: float,
-    ) -> npt.NDArray[np.float64]:
-        """
-        return the value of a double gaussian with the specified paramters
-
-        :param x: array of x values at which to calculate double gaussian
-        :type x: npt.NDArray[np.float64]
-        :param amp1: amplitude of the first gaussian
-        :type amp1: float
-        :param mean1: mean of the first gaussian
-        :type mean1: float
-        :param std1: standard deviation of the first gaussian
-        :type std1: float
-        :param amp2: amplitude of the second gaussian
-        :type amp2: float
-        :param mean2: mean of the second gaussian
-        :type mean2: float
-        :param std2: standard deviation of the second gaussian
-        :type std2: float
-        :return: array of gaussian values at the given x positions
-        :rtype: npt.NDArray[np.float64]
-        """
-        g1 = amp1 * np.exp(-((x - mean1) ** 2) / (2 * std1**2))
-        g2 = amp2 * np.exp(-((x - mean2) ** 2) / (2 * std2**2))
-        return g1 + g2
-
-    @log(logger=logger)
-    def _fit_double_gaussian(
-        self, bins: npt.NDArray[np.float64], amplitude: npt.NDArray[np.float64]
-    ) -> tuple:
-        """
-        Attempt to fit a double gaussian to data or return None on failure.
-
-        :param bins: numpy array of bin centers
-        :type bins: npt.NDArray[np.float64]
-        :param amplitude: numpy array of amplitude in bins
-        :type amplitude: npt.NDArray[np.float64]
-        :return: Tuple of (best-fit parameters (amplitude, mean, std, amplitude_2,
-                mean_2, std_2), parameter covariance matrix), or (None, None) if
-                fitting fails.
-        :rtype: tuple
-        :raises ValueError: If curve fitting fails or peaks/split points cannot be
-            determined; caught internally by nested fallback logic, so it never
-            propagates to the caller.
-        """
-        try:
-            min_prominence = np.max(amplitude) * 0.05
-            peaks, properties = find_peaks(amplitude, prominence=min_prominence)
-
-            if len(peaks) < 2:
-                raise ValueError("Not enough peaks for initial guess")
-
-            prominences = properties["prominences"]
-
-            largest_prominence_indices = np.argsort(prominences)[-2:][::-1]
-            top_two_peaks = peaks[largest_prominence_indices]
-
-            widths, _, _, _ = peak_widths(amplitude, top_two_peaks, rel_height=0.5)
-
-            bin_width = bins[1] - bins[0]
-            fwhm_guesses = widths * bin_width
-
-            std_guesses = fwhm_guesses / 2.355
-
-            p0 = (
-                amplitude[top_two_peaks[0]],
-                bins[top_two_peaks[0]],
-                std_guesses[0],
-                amplitude[top_two_peaks[1]],
-                bins[top_two_peaks[1]],
-                std_guesses[1],
-            )
-            min_mean = np.min(bins)
-            max_mean = np.max(bins)
-            min_amp = 0
-            max_amp = np.max(amplitude)
-            min_std = 0
-            max_std = np.abs(bins[-1] - bins[1])
-
-            popt, pcov = curve_fit(
-                self._double_gaussian,
-                bins,
-                amplitude,
-                p0=p0,
-                bounds=(
-                    [min_amp, min_mean, min_std, min_amp, min_mean, min_std],
-                    [max_amp, max_mean, max_std, max_amp, max_mean, max_std],
-                ),
-            )
-            return popt, pcov
-        except (RuntimeError, ValueError):
-            try:
-                n = len(amplitude)
-                amax = np.max(amplitude)
-                left_start = 0
-                while amplitude[left_start] < 0.05 * amax and left_start < n:
-                    left_start += 1
-                right_start = n - 1
-                while amplitude[right_start] < 0.05 * amax and right_start > 0:
-                    right_start -= 1
-
-                if left_start >= right_start:
-                    raise ValueError(
-                        "Cannot determine where to split the histogram for initial guess"
-                    )
-
-                left = amplitude[left_start : (left_start + right_start) // 2]
-                right = amplitude[(left_start + right_start) // 2 : right_start]
-
-                leftmax = np.max(left)
-                leftargmax = np.argmax(left)
-
-                rightmax = np.max(right)
-                rightargmax = np.argmax(right)
-
-                left_half_max = leftmax / 2.0
-                idx_left = leftargmax
-                while idx_left > 0 and left[idx_left] > left_half_max:
-                    idx_left -= 1
-
-                left_dist = abs(
-                    bins[left_start + idx_left] - bins[left_start + leftargmax]
-                )
-                left_std_guess = left_dist / 1.177
-
-                right_half_max = rightmax / 2.0
-                idx_right = rightargmax
-                while idx_right > 0 and right[idx_right] > right_half_max:
-                    idx_right -= 1
-
-                right_dist = abs(
-                    bins[(left_start + right_start) // 2 + idx_right]
-                    - bins[(left_start + right_start) // 2 + rightargmax]
-                )
-                right_std_guess = right_dist / 1.177
-
-                p0 = (
-                    leftmax,
-                    bins[left_start + leftargmax],
-                    left_std_guess,
-                    rightmax,
-                    bins[(left_start + right_start) // 2 + rightargmax],
-                    right_std_guess,
-                )
-                min_mean = np.min(bins)
-                max_mean = np.max(bins)
-                min_amp = 0
-                max_amp = np.max(amplitude)
-                min_std = 0
-                max_std = np.abs(bins[-1] - bins[1])
-
-                popt, pcov = curve_fit(
-                    self._double_gaussian,
-                    bins,
-                    amplitude,
-                    p0=p0,
-                    bounds=(
-                        [min_amp, min_mean, min_std, min_amp, min_mean, min_std],
-                        [max_amp, max_mean, max_std, max_amp, max_mean, max_std],
-                    ),
-                )
-                return popt, pcov
-            except (RuntimeError, ValueError):
-                return None, None
-
-    @log(logger=logger)
-    def _fit_and_sanity_check_double_gaussian(
-        self, bins: npt.NDArray[np.float64], amplitude: npt.NDArray[np.float64]
-    ) -> Optional[npt.NDArray[np.float64]]:
-        """
-        Attempt to fit a double gaussian to data or None on failure.
-
-        :param bins: numpy array of bin centers
-        :type bins: npt.NDArray[np.float64]
-        :param amplitude: numpy array of amplitude in bins
-        :type amplitude: npt.NDArray[np.float64]
-        :return: fit parameters for a double gaussian (amplitude, mean, std, amplitude_2, mean_2, std_2)
-        :rtype: Optional[npt.NDArray[np.float64]]
-        """
-        popt, pcov = self._fit_double_gaussian(
-            bins,
-            amplitude,
-        )
-
-        if (
-            popt is None
-            or pcov is None
-            or np.any(np.isinf(pcov))
-            or np.any(np.isnan(pcov))
-        ):
-            return None
-
-        perr = np.sqrt(np.diag(pcov))
-        if np.any(perr > np.abs(popt) * 10):
-            return None
-
-        mu1_idx, mu2_idx = 1, 4
-        mu1, mu2 = popt[mu1_idx], popt[mu2_idx]
-        var_mu1, var_mu2 = (
-            pcov[mu1_idx, mu1_idx],
-            pcov[mu2_idx, mu2_idx],
-        )
-        cov_mu1_mu2 = pcov[mu1_idx, mu2_idx]
-        variance_diff = var_mu1 + var_mu2 - 2 * cov_mu1_mu2
-
-        if variance_diff <= 0:
-            return None
-
-        se_diff = np.sqrt(variance_diff)
-        t_stat = abs(mu1 - mu2) / se_diff
-        N_points = len(bins)
-        df = N_points - len(popt)
-        p_value = 2 * t.sf(t_stat, df)
-
-        if p_value > 0.05:
-            return None
-
-        A1, A2 = popt[0], popt[3]
-        abs_A1, abs_A2 = abs(A1), abs(A2)
-        if max(abs_A1, abs_A2) == 0:
-            return None
-
-        if min(abs_A1, abs_A2) / max(abs_A1, abs_A2) < 0.05:
-            return None
-
-        return popt
 
     @log(logger=logger)
     @register_action()
