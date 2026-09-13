@@ -56,14 +56,20 @@ were fixed and re-passed. One could not be run:
 | 3d moves **two** methods, **15** call sites | overstated 2x | **one** method, **8** call sites, one each in 8 methods. 3d-pre deleted the frame form; 3e moved the range helpers down |
 | 3d blocked on a synchronous View-to-Model path | **still true** | `self.model` appears **0** times in all five Views and `MetaView`. 4a established the pattern, it did not give Views a Model |
 | 3d's allowlist win | unrecorded | **2, and the best-placed two left** - the helper is the only user of `numpy` *and* `numpy.typing` in `MetaView`, so the published plugin base sheds numpy entirely |
+| 3d's helper is a **pure array transform** | **wrong** (2026-09-13) | It emits `add_text_to_display` **three times** (`MetaView.py:702`, `:717`, `:752`) and reads `self.__class__.__name__`. Silencing them fails exactly 2 characterization tests |
+| 3d's helper is **unpinned**, 38 refs all `Mock` | **stale** (2026-09-13) | `tests/unit/views/test_meta_view_characterization.py` covers it with **12 behavioural tests**. The 38 `Mock`s are `test_metadata_view.py` alone |
+| 3d is a step of its own, run before 4c | **folded into 4c** (2026-09-13) | **7 of its 8 call sites are already 4c targets**, and 5 sit inside `_overlay_plot`'s 4-deep loop nest. Doing 3d first restructures them twice |
 | 4c's value per tab | uncounted | **Protein 3 for 2 methods** (`scipy.optimize` + `scipy.signal` both only in `_fit_double_gaussian`, `scipy.stats` only in `_fit_and_sanity_check_double_gaussian`); **Metadata 2** (`scipy`, `scipy.optimize`), its `scipy.stats` having 4 users |
 | promotion: four surviving differences | **three, one inert** | 65 of 73/78 lines identical; Protein's empty-id guard cannot fire on the metadata side |
 
-1. **3d, as a utils module rather than a Model move** - the helper is a pure array
-   transform with 8 call sites, so it becomes `poriscope/utils/logscale.py` and no caller
-   is restructured. Reasoning, including the honest rule-24 caveat, in `DECISIONS.md`.
-2. **Then 4c**, Protein first because it is worth 3 allowlist points for two methods.
-3. **The promotion waits for Step 4b**, which moves the SQL that is most of what would be
+1. **4c Protein first**, worth 3 allowlist points for two methods.
+2. **Then 4c Metadata**, worth 2.
+3. **3d is folded into 4c and is no longer a step.** The logscale helper goes to
+   `MetaModel` as originally planned, but each caller carries its logscale call across as
+   part of its own 4c restructure, so no caller is rewritten twice. The utils-module
+   decision of 2026-09-12 is superseded: the helper is not a pure transform. `DECISIONS.md`
+   carries both the correction and the caller arithmetic.
+4. **The promotion waits for Step 4b**, which moves the SQL that is most of what would be
    shared. Promoting first produces two methods 4b immediately re-opens.
 
 **Read before writing code:** method rules **42, 45, 50, 51, 52** in the artifact
