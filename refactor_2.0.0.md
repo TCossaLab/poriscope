@@ -220,12 +220,26 @@ were fixed and re-passed. One could not be run:
    OK. The thing it was trying to probe - that nothing is carried over from one request to
    the next - is covered by adding two filters in succession, which passed.
 
-   **Still open, and deliberately not done here:** moving `subset_filters` to the Model.
-   It moves no gate, costs 157 test references across 82 test functions (35 e2e), and
-   wants a `MetaSubsetTabModel` that does not exist - the same missing base that stopped
-   4b's last Controller site and the `resolve_event_ids` merge. The free promotion of
-   `restore_subset_filters` (21 of 22 lines identical) is still on the table and still
-   free.
+   **The promotion is taken: `restore_subset_filters` is on the base**, 20 of 21 lines
+   identical with the panel name the only difference. Invisible to the ratchet, as rules
+   24 and 36 predict - the copies were never byte-identical so `removable` was already 0,
+   and the base sits outside the measured `*View.py` family, so only `functions` moves
+   (199 -> 197).
+
+   **`subset_filters` does not move to the Model - decided 2026-09-13, see
+   `DECISIONS.md`.** The plan flagged this as "a design decision, not a move", and the
+   measurement settles it: **no Model reads the dict**, because 4b's query construction
+   takes the filter *text* as an argument, so the Model would gain a field nothing in it
+   reads while all **16 synchronous View reads** (11 `get_selected_filters()` on the plot
+   and export paths, plus both filter dialogs, `_load_filter` and `_save_filter`) became
+   round trips. No gate moves either way - it is public, so rule 3 never counted it -
+   against 165 test references over 72 test functions, 35 e2e. **Re-measured: the plan's
+   157/82 were stale**, the 82 by 4d's own test deletions.
+
+   What was actually wrong is narrower and is fixed instead: `MetaSubsetTabController`
+   reaches into `self.view.subset_filters` at four sites, mutating the dict in
+   `relay_query` and copying it in `get_session_state`. Those become two View methods, so
+   the Controller asks rather than mutates.
 
 **Read before writing code:** method rules **42, 45, 50, 51, 52** in the artifact
 (<https://claude.ai/code/artifact/304ba119-d177-4918-90af-471d6de6bb80>), plus **53-57**

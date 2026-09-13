@@ -10,6 +10,50 @@ which ran through August 2026 and is complete. The step numbers only date the de
 
 ---
 
+## 2026-09-13 - `subset_filters` stays on the View; the Controller stops reaching into it
+
+**Context.** `refactor_2.0.0.md` listed Step 4d as "domain state off the View", moving
+`subset_filters` from `MetaSubsetTabView` to the Model alongside the three `_pending_*`
+attributes. The plan itself flagged the obstacle without resolving it: moving the dict
+"needs either a synchronous View-to-Model accessor that Decision B currently forbids, or a
+View-side cache. That is a design decision, not a move."
+
+**Decision.** The dict stays on `MetaSubsetTabView`. Instead the four sites where
+`MetaSubsetTabController` reaches into it directly become two small View methods, so the
+Controller asks rather than mutates. The first half of 4d - threading the per-request
+filter context through the intent, which deleted the three `_pending_*` attributes - landed
+separately and carried all of the step's gate value.
+
+**Evidence.** Three measurements, all taken at `3d1d457f`:
+
+- **No Model reads it.** Zero references to `subset_filters` in `MetadataModel`,
+  `ProteinModel` or `MetaModel`. Step 4b moved query construction into the Models, and it
+  receives the filter *text* as an argument; the dict never reaches that layer. Moving it
+  there would give a Model a field nothing in it reads, and every access would be a round
+  trip back to the View.
+- **16 synchronous View reads**, each needing the value inside the same call: 11
+  `get_selected_filters()` at plot and export entry points, plus the add dialog's duplicate
+  check, the edit dialog's contents, `_load_filter`'s duplicate check and `_save_filter`'s
+  JSON dump. Four of the five non-plot sites sit immediately before a modal opens.
+- **No gate moves either way.** `subset_filters` is public, so boundary rule 3 never
+  counted it; the allowlist's remaining 14 entries are all rule 2 View imports. Against
+  that, the move costs 165 test references across 72 test functions, 35 of them e2e.
+
+**What was rejected.** A View-side cache with the Model as source of truth keeps the 16
+reads working but stores the same dict twice, which is the stale-read shape Step 4a spent
+nine commits removing everywhere else. Splitting all 16 readers into two-phase intents is
+the architecturally pure form and was priced: 11 plot entry points and 4 dialogs each cut
+in half.
+
+**Revisit if** a Model ever needs the filter set rather than one filter's text - a headless
+or scripted mode that applies named subsets without a GUI is the plausible trigger - or if
+`get_selected_filters` stops being the only synchronous consumer on the plot path. The
+honest reading today is that `subset_filters` is user-authored widget configuration, the
+same category as the ticked channels and selected columns the refactor leaves on the View
+everywhere else, and not domain state that happens to be in the wrong place.
+
+---
+
 ## 2026-09-12 - The trace plot trims its own request; the reader's clamp is not restored
 
 **Context.** The merge from `develop` made `MetaReader.load_data` raise `ValueError` on an
