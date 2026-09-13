@@ -148,7 +148,7 @@ def _fake_generate_vm_ensemble(
 
 def _fake_fit_and_sanity_check_double_gaussian(self, bins, amplitude):
     """
-    Drop-in replacement for ProteinView._fit_and_sanity_check_double_gaussian
+    Drop-in replacement for ProteinModel._fit_and_sanity_check_double_gaussian
     that skips the real curve_fit + statistical sanity checks (p-value on
     peak separation, min(amp)/max(amp) >= 0.05 ratio). Whether an arbitrary
     synthetic dataset's aggregate current histogram is bimodal enough to
@@ -200,6 +200,7 @@ def test_protein_individual_ensemble_flow(
     # test_multiple_channels_warns_and_returns), so this fixture's
     # multi-experiment shape must be narrowed down after Scope, same as
     # test_metadata_flow.py's own Stage 2 does.
+    import poriscope.plugins.analysistabs.ProteinModel as protein_model_mod
     import poriscope.plugins.analysistabs.ProteinView as protein_view_mod
     from poriscope.views.widgets.SelectionTree import SelectionTree
 
@@ -239,9 +240,12 @@ def test_protein_individual_ensemble_flow(
         raising=True,
     )
 
-    # See module docstring's FIT DETERMINISM note.
+    # See module docstring's FIT DETERMINISM note. Step 4c moved the fit off
+    # ProteinView onto ProteinModel, so this patches the one copy that now exists;
+    # `raising=True` is what turned the View's stale target into a named failure
+    # rather than a patch that silently stopped covering anything.
     monkeypatch.setattr(
-        protein_view_mod.ProteinView,
+        protein_model_mod.ProteinModel,
         "_fit_and_sanity_check_double_gaussian",
         _fake_fit_and_sanity_check_double_gaussian,
         raising=True,

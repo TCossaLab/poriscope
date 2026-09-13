@@ -109,35 +109,66 @@ parameters, they stay separate and this entry becomes the record of why.
 
 ---
 
-## 2026-09-12 - Step 3d's logscale helper goes to a utils module, not to MetaModel
+## 2026-09-13 - ProteinModel's fit returns the fitted curve, not just the parameters
 
-**Context.** The plan files 3d as "Model code already sitting in `MetaView`" and moves
-`_logscale_and_filter_multiple_columns` to `MetaModel`. Re-measured immediately before
-working it: the helper has **8 call sites**, one each in 8 methods across three Views, and
-**no View holds a Model reference** - `self.model` appears zero times in all five tab Views
-and in `MetaView`. So the planned move is 8 caller restructures into the
-View-emits-intent/Controller-calls-Model/setter-answers round trip.
+**Context.** Step 4c moves the protein tab's double-gaussian fit to `ProteinModel`.
+`_double_gaussian`, the model function `curve_fit` is handed, had three further callers
+in `ProteinView` that evaluate the fit for drawing. Moving only the fit would have left
+the View importing numpy to evaluate a model it no longer owns.
 
-**Decision.** Move it to `poriscope/utils/logscale.py` as a module-level function instead.
-The Views call it directly, synchronously, and none of the 8 call sites is restructured.
+**Decision.** `fit_histogram` returns `(popt, curve)`, the curve evaluated at the bins
+that were fitted, and `_double_gaussian` moves with the fit.
 
-**Evidence.** The method is a pure array transform - no I/O, no plugin, no state - so the
-mediation Decision B exists for does not apply to it; that rule is about plugin calls and
-data access. Routing arithmetic through a signal round trip would add one to each of eight
-plot paths for nothing. The measured win is identical either way and is larger than the plan
-recorded: this helper is the **only** user of `numpy` *and* `numpy.typing` in `MetaView`, so
-either destination takes the published plugin base's forbidden-import count to **zero** and
-the allowlist from 25 to 23.
+**Evidence.** All three View sites evaluate at exactly the x the fit was made on
+(`plot_data["Normalized Current"].values` in every case), so the curve the Model can
+compute is the curve every caller wanted. No site needed the model function for anything
+else. A test pins that the curve is drawn as handed over, so reintroducing a View-side
+evaluation would fail rather than merely duplicate.
 
-**Stated plainly, because it is rule 24's shape:** the boundary gate reads View-ness off the
-`View.py`/`controls.py` suffixes, so a helper in `poriscope/utils/logscale.py` is not
-scanned, and the violation leaves the count by leaving the scanned path. The difference from
-the trap rule 24 warns about is that the computation genuinely leaves the widget layer rather
-than being relocated within it - but the honest test is whether we would still make this
-move with no gate watching, and we would.
+**Revisit if** a caller ever needs the fit evaluated on a *different* grid - a smooth
+overlay at higher resolution than the histogram, say - at which point the model function
+is wanted as well and should be exposed on the Model rather than copied back.
 
-**Revisit if** the helper ever needs tab state or a plugin, at which point it is Model code
-after all and the 8 call sites have to be restructured properly.
+---
+
+## 2026-09-13 - Step 3d folds into 4c; the logscale helper is not a pure transform
+
+**Supersedes the 2026-09-12 entry that sent it to `poriscope/utils/logscale.py`.** That
+entry's premise was wrong. The helper is **not** a pure array transform: it emits
+`add_text_to_display` at three sites (`MetaView.py:702`, `:717`, `:752`), reporting
+dropped-point counts to the status panel, and reads `self.__class__.__name__`. Silencing
+the three emits fails exactly two characterization tests, so the reporting is real and
+pinned. A module-level function has no `self` and cannot do it, and leaving a wrapper on
+`MetaView` was rejected - it would drag either a re-exported `numpy` type alias or
+`numpy.typing` itself back onto the published plugin base.
+
+**Decision.** The helper goes to `MetaModel`, as the plan originally said, and **3d stops
+being a separate step**. Each caller carries its logscale call across as part of its own
+Step 4c restructure, so every caller is rewritten exactly once.
+
+**Evidence.** 8 call sites, one each in 8 methods. **Seven are already 4c targets** in
+`check_refactor_coverage.py`'s `MOVED` table. Doing 3d first restructures seven callers
+that 4c then restructures again - the argument the event-plot promotion already accepted
+for 4b. The eighth, `ClusteringView.on_metadata_loaded`, is already a result slot.
+
+Five of the seven are reached through `update_plot` from inside `_overlay_plot`, 327 lines
+with 5 nested `for` loops and 14 returns. **Corrected 2026-09-13, same day:** an earlier
+version of this entry said a round trip "cannot resume" such a loop. Measured, it can - a
+same-thread Qt signal is synchronous, the slot running to completion before `emit()`
+returns. What is unavailable is a *return value to the emitting line*, so using the answer
+where it was asked for means parking it on the widget, which is the pattern Step 4a exists
+to delete. The conclusion is unchanged and the sequencing argument never depended on it.
+
+**The allowlist win is deferred, not lost.** The helper is the only user of `numpy` *and*
+`numpy.typing` in `MetaView`, so rule 2 goes 20 to 18 and the published base sheds numpy
+when the last caller moves.
+
+**Also corrected:** the helper is no longer unpinned.
+`tests/unit/views/test_meta_view_characterization.py` covers it with 12 behavioural tests.
+The "38 references, every one a `Mock`" figure describes `test_metadata_view.py` alone.
+
+**Revisit if** 4c is re-scoped so these plotting methods are not restructured, at which
+point 3d needs its own answer again.
 
 ---
 

@@ -20,10 +20,7 @@
     "poriscope/plugins/analysistabs/ProteinView.py": [
       "numpy",
       "numpy.typing",
-      "pandas",
-      "scipy.optimize",
-      "scipy.signal",
-      "scipy.stats"
+      "pandas"
     ],
     "poriscope/plugins/analysistabs/RawDataView.py": [
       "numpy",

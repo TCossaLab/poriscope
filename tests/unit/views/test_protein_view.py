@@ -60,6 +60,7 @@ import pandas as pd
 import pytest
 from PySide6.QtWidgets import QApplication, QMessageBox, QVBoxLayout, QWidget
 
+from poriscope.plugins.analysistabs.ProteinModel import ProteinModel
 from poriscope.plugins.analysistabs.ProteinView import (
     FIT_COLUMN_UNITS,
     FIT_COLUMNS,
@@ -274,121 +275,6 @@ class TestFormatAxisLabel:
 
     def test_none_unit_equivalent(self):
         assert format_axis_label("X", "") == "X"
-
-
-# ===========================================================================
-# _double_gaussian
-# ===========================================================================
-
-
-class TestDoubleGaussian:
-    def test_peak_at_mean1(self, mock_view):
-        r = mock_view._double_gaussian(np.array([0.2]), 1.0, 0.2, 0.05, 0.8, 0.6, 0.05)
-        assert r[0] == pytest.approx(1.0, rel=1e-6)
-
-    def test_peak_at_mean2(self, mock_view):
-        r = mock_view._double_gaussian(np.array([0.6]), 1.0, 0.2, 0.05, 0.8, 0.6, 0.05)
-        assert r[0] == pytest.approx(0.8, rel=1e-6)
-
-    def test_zero_amplitudes(self, mock_view):
-        x = np.linspace(0, 1, 50)
-        np.testing.assert_array_equal(
-            mock_view._double_gaussian(x, 0, 0.3, 0.05, 0, 0.7, 0.05), 0
-        )
-
-    def test_output_shape(self, mock_view):
-        x = np.linspace(0, 1, 100)
-        assert mock_view._double_gaussian(x, 1, 0.3, 0.1, 1, 0.7, 0.1).shape == (100,)
-
-    def test_tails_near_zero(self, mock_view):
-        x = np.array([-10.0, 10.0])
-        assert np.all(mock_view._double_gaussian(x, 1, 0.3, 0.05, 1, 0.7, 0.05) < 1e-10)
-
-    def test_symmetry(self, mock_view):
-        x = np.linspace(0, 1, 50)
-        r1 = mock_view._double_gaussian(x, 1.0, 0.3, 0.05, 0.5, 0.7, 0.05)
-        r2 = mock_view._double_gaussian(x, 0.5, 0.7, 0.05, 1.0, 0.3, 0.05)
-        np.testing.assert_allclose(r1, r2, rtol=1e-12)
-
-    def test_non_negative(self, mock_view):
-        x = np.linspace(-1, 2, 200)
-        assert np.all(mock_view._double_gaussian(x, 2, 0.3, 0.1, 1.5, 0.8, 0.15) >= 0)
-
-
-# ===========================================================================
-# _fit_double_gaussian
-# ===========================================================================
-
-
-class TestFitDoubleGaussian:
-    def test_clean_two_peak_signal(self, mock_view, qt_app):
-        x, y = _make_double_gaussian_histogram()
-        popt, pcov = mock_view._fit_double_gaussian(x, y)
-        qt_app.processEvents()
-        assert popt is not None and len(popt) == 6
-
-    def test_single_peak_fallback_degenerate_bug(self, mock_view, qt_app):
-        # BUG: fallback produces a degenerate two-component fit at the same position
-        x = np.linspace(0, 1, 200)
-        y = np.exp(-((x - 0.5) ** 2) / (2 * 0.05**2))
-        popt, _ = mock_view._fit_double_gaussian(x, y)
-        qt_app.processEvents()
-        assert popt is not None and len(popt) == 6
-        assert abs(popt[1] - popt[4]) < 0.05
-
-    def test_flat_returns_none(self, mock_view, qt_app):
-        x = np.linspace(0, 1, 100)
-        popt, _ = mock_view._fit_double_gaussian(x, np.zeros_like(x))
-        qt_app.processEvents()
-        assert popt is None
-
-
-# ===========================================================================
-# _fit_and_sanity_check_double_gaussian
-# ===========================================================================
-
-
-class TestFitAndSanityCheck:
-    def test_clean_signal_passes(self, mock_view):
-        x, y = _make_double_gaussian_histogram()
-        popt = mock_view._fit_and_sanity_check_double_gaussian(x, y)
-        assert popt is not None and len(popt) == 6
-
-    def test_recovered_means(self, mock_view):
-        x, y = _make_double_gaussian_histogram(mean1=0.2, mean2=0.6)
-        popt = mock_view._fit_and_sanity_check_double_gaussian(x, y)
-        assert popt is not None
-        means = sorted([popt[1], popt[4]])
-        assert means[0] == pytest.approx(0.2, abs=0.01)
-        assert means[1] == pytest.approx(0.6, abs=0.01)
-
-    def test_flat_returns_none(self, mock_view):
-        x = np.linspace(0, 1, 100)
-        assert (
-            mock_view._fit_and_sanity_check_double_gaussian(x, np.zeros_like(x)) is None
-        )
-
-    def test_single_peak_behaviour_documented(self, mock_view):
-        # Documents that single-peak input may pass or fail the sanity check
-        x = np.linspace(0, 1, 200)
-        y = np.exp(-((x - 0.5) ** 2) / (2 * 0.05**2))
-        result = mock_view._fit_and_sanity_check_double_gaussian(x, y)
-        assert result is None or (
-            len(result) == 6 and abs(result[1] - result[4]) < 0.05
-        )
-
-    def test_dominated_peak_behaviour_documented(self, mock_view):
-        # BUG: dominated-peak guard is unreliable when fallback co-locates both components
-        x = np.linspace(0, 1, 300)
-        y = mock_view._double_gaussian(x, 1.0, 0.2, 0.02, 0.001, 0.7, 0.02)
-        result = mock_view._fit_and_sanity_check_double_gaussian(x, y)
-        assert result is None or len(result) == 6
-
-    def test_roundtrip_residuals(self, mock_view):
-        x, y = _make_double_gaussian_histogram()
-        popt = mock_view._fit_and_sanity_check_double_gaussian(x, y)
-        assert popt is not None
-        assert np.max(np.abs(y - mock_view._double_gaussian(x, *popt))) < 0.02
 
 
 # ===========================================================================
@@ -1218,21 +1104,78 @@ class TestUpdateEventPlot:
 # ===========================================================================
 
 
+def _answer_event_histogram_fits(view):
+    """
+    Run the round trip ProteinController runs, and hand the answer back to the View.
+
+    Step 4c split ``_update_event_histogram`` into a request and
+    ``set_event_histogram_fits``; these tests drive both halves, because driving only
+    the first asserts against a View that has not drawn anything yet.
+
+    The fits come from a **real ProteinModel** rather than a stub, so their arity and
+    their ``(popt, curve)`` shape are the collaborator's own rather than this test's
+    idea of them.
+
+    :param view: the view whose request has just been emitted
+    :type view: ProteinView
+    :return: None
+    :rtype: None
+    """
+    args = view.event_histogram_fits_requested.emit.call_args.args
+    histograms, frames, event_data = args
+    view.set_event_histogram_fits(
+        ProteinModel().fit_histograms(histograms), frames, event_data
+    )
+
+
 class TestUpdateEventHistogram:
+    def test_the_request_carries_one_entry_per_event(self, mock_view):
+        """The three lists stay index-aligned, which the drawing half relies on."""
+        events = [_make_event(i, rng_seed=i) for i in range(1, 4)]
+
+        mock_view._update_event_histogram(events)
+
+        histograms, frames, event_data = (
+            mock_view.event_histogram_fits_requested.emit.call_args.args
+        )
+        assert len(histograms) == len(frames) == len(event_data) == 3
+
     def test_switches_to_event_mode(self, mock_view):
         mock_view._update_event_histogram([_make_event(1)])
+        _answer_event_histogram_fits(mock_view)
         assert mock_view._display_mode == "event"
 
     def test_multiple_events(self, mock_view):
         mock_view._update_event_histogram(
             [_make_event(i, rng_seed=i) for i in range(1, 4)]
         )
+        _answer_event_histogram_fits(mock_view)
 
     def test_custom_bins(self, mock_view):
         mock_view._update_event_histogram([_make_event(1)], bins=[50])
+        _answer_event_histogram_fits(mock_view)
 
     def test_cache_committed(self, mock_view):
         mock_view._update_event_histogram([_make_event(1)])
+        _answer_event_histogram_fits(mock_view)
+
+    def test_an_event_with_no_fit_still_gets_its_histogram_drawn(self, mock_view):
+        """
+        A failed fit removes the overlay, not the subplot.
+
+        Every fit is refused here, so the only thing that can still be drawn is the
+        histogram itself - which is what stops a fit regression showing up as an
+        empty grid rather than as a missing orange line.
+        """
+        mock_view._update_event_histogram([_make_event(1)])
+        _, frames, event_data = (
+            mock_view.event_histogram_fits_requested.emit.call_args.args
+        )
+
+        mock_view.set_event_histogram_fits([(None, None)], frames, event_data)
+
+        assert mock_view._display_mode == "event"
+        assert mock_view.fig_event.add_subplot.call_count == 1
 
 
 # ===========================================================================
@@ -1494,16 +1437,12 @@ class TestPipeline:
         df = mock_view._construct_all_points_histogram(iter(evs), "Filtered Histogram")
         assert isinstance(df, pd.DataFrame) and len(df) == 100
 
-    def test_double_gaussian_roundtrip(self, mock_view):
-        x, y = _make_double_gaussian_histogram()
-        popt = mock_view._fit_and_sanity_check_double_gaussian(x, y)
-        assert popt is not None
-        y_fit = mock_view._double_gaussian(x, *popt)
-        assert np.max(np.abs(y - y_fit)) < 0.02
-
     def test_vm_ensemble_from_histogram_fit(self, mock_view):
+        # Genuinely cross-layer: Step 4c moved the fit to ProteinModel while the
+        # sampling stayed on the View, so this asks the real Model for the fit
+        # rather than stubbing one - the shape of popt is the collaborator's.
         x, y = _make_double_gaussian_histogram(mean1=0.1, mean2=0.3)
-        popt = mock_view._fit_and_sanity_check_double_gaussian(x, y)
+        popt = ProteinModel()._fit_and_sanity_check_double_gaussian(x, y)
         if popt is None:
             pytest.skip("fit did not converge")
         means = sorted([popt[1], popt[4]])
@@ -1519,6 +1458,7 @@ class TestPipeline:
 
     def test_update_event_histogram_end_to_end(self, mock_view):
         mock_view._update_event_histogram([_make_event(1)])
+        _answer_event_histogram_fits(mock_view)
         assert mock_view._display_mode == "event"
 
 
@@ -2305,6 +2245,48 @@ class TestUpdateDistributionIndividual:
         mock_view._update_distribution_individual(self._params())
         assert mock_view.plot_initialized is True
 
+    # These four assert on the *status panel*, not the log. The caplog tests above
+    # passed throughout while the user was told nothing: QtHandler sits at ERROR and
+    # deliberately does not surface WARNING, and its own docstring says anything the
+    # user should be told belongs on add_text_to_display. Reported from a real run.
+
+    def test_multiple_experiments_are_reported_on_the_status_panel(self, mock_view):
+        mock_view.selected_experiment_and_channels_by_loader = {
+            "ldr": {"exp1": ["0"], "exp2": ["0"]}
+        }
+        mock_view.get_selected_filters = MagicMock(return_value={})
+
+        mock_view._update_distribution_individual(self._params())
+
+        said = [c.args[0] for c in mock_view.add_text_to_display.emit.call_args_list]
+        assert any("single experiment" in m for m in said)
+
+    def test_multiple_channels_are_reported_on_the_status_panel(self, mock_view):
+        mock_view.selected_experiment_and_channels_by_loader = {
+            "ldr": {"exp1": ["0", "1"]}
+        }
+        mock_view.get_selected_filters = MagicMock(return_value={})
+
+        mock_view._update_distribution_individual(self._params())
+
+        said = [c.args[0] for c in mock_view.add_text_to_display.emit.call_args_list]
+        assert any("single channel" in m for m in said)
+
+    def test_an_experiment_with_no_channel_is_reported(self, mock_view):
+        """
+        The empty case reaches the same guard as the too-many case.
+
+        Before Step 4c the guard read ``> 1`` and a ``for channel in channels:`` over
+        an empty list simply never ran, so the tab drew nothing and said nothing.
+        """
+        mock_view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": []}}
+        mock_view.get_selected_filters = MagicMock(return_value={})
+
+        mock_view._update_distribution_individual(self._params())
+
+        said = [c.args[0] for c in mock_view.add_text_to_display.emit.call_args_list]
+        assert any("single channel" in m for m in said)
+
 
 # ===========================================================================
 # _update_distribution_ensemble — guard clauses
@@ -2355,6 +2337,48 @@ class TestUpdateDistributionEnsemble:
         mock_view.plot_initialized = False
         mock_view._update_distribution_ensemble(self._params())
         assert mock_view.plot_initialized is True
+
+    # These four assert on the *status panel*, not the log. The caplog tests above
+    # passed throughout while the user was told nothing: QtHandler sits at ERROR and
+    # deliberately does not surface WARNING, and its own docstring says anything the
+    # user should be told belongs on add_text_to_display. Reported from a real run.
+
+    def test_multiple_experiments_are_reported_on_the_status_panel(self, mock_view):
+        mock_view.selected_experiment_and_channels_by_loader = {
+            "ldr": {"exp1": ["0"], "exp2": ["0"]}
+        }
+        mock_view.get_selected_filters = MagicMock(return_value={})
+
+        mock_view._update_distribution_ensemble(self._params())
+
+        said = [c.args[0] for c in mock_view.add_text_to_display.emit.call_args_list]
+        assert any("single experiment" in m for m in said)
+
+    def test_multiple_channels_are_reported_on_the_status_panel(self, mock_view):
+        mock_view.selected_experiment_and_channels_by_loader = {
+            "ldr": {"exp1": ["0", "1"]}
+        }
+        mock_view.get_selected_filters = MagicMock(return_value={})
+
+        mock_view._update_distribution_ensemble(self._params())
+
+        said = [c.args[0] for c in mock_view.add_text_to_display.emit.call_args_list]
+        assert any("single channel" in m for m in said)
+
+    def test_an_experiment_with_no_channel_is_reported(self, mock_view):
+        """
+        The empty case reaches the same guard as the too-many case.
+
+        Before Step 4c the guard read ``> 1`` and a ``for channel in channels:`` over
+        an empty list simply never ran, so the tab drew nothing and said nothing.
+        """
+        mock_view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": []}}
+        mock_view.get_selected_filters = MagicMock(return_value={})
+
+        mock_view._update_distribution_ensemble(self._params())
+
+        said = [c.args[0] for c in mock_view.add_text_to_display.emit.call_args_list]
+        assert any("single channel" in m for m in said)
 
 
 def _fit_frame() -> pd.DataFrame:
