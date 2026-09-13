@@ -44,11 +44,20 @@ def mock_view(mocker: MockerFixture) -> MagicMock:
     view.add_text_to_display = mocker.Mock()
     view.add_text_to_display.emit = mocker.Mock()
 
-    # State attributes read directly by relay_query
+    # The filter store, plus the two methods the controller reaches it through.
+    # These carry the real bodies rather than bare Mocks: what relay_query decides
+    # is the suffixed name and which entry it replaces, and a Mock would accept any
+    # of that silently. Step 4d took the controller's direct writes to the dict out
+    # (DECISIONS.md, 2026-09-13); the dict itself stays on the view.
     view.subset_filters = {}  # type: ignore[misc]
-    view._pending_filter_name = None  # type: ignore[misc]
-    view._pending_filter_text = None  # type: ignore[misc]
-    view._pending_old_filter_name = None  # type: ignore[misc]
+
+    def commit_filter(name, filter_text, old_name=None):
+        if old_name is not None:
+            view.subset_filters.pop(old_name, None)
+        view.subset_filters[name] = filter_text or ""
+
+    view.commit_filter = commit_filter  # type: ignore[misc]
+    view.get_subset_filters = lambda: dict(view.subset_filters)  # type: ignore[misc]
 
     # Dicts populated by get_experiment_structure_ready
     view.available_experiment_and_channels_by_loader = {}  # type: ignore[misc]

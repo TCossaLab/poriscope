@@ -23,6 +23,7 @@ is taken rather than discovered.
 
 import json
 from pathlib import Path
+from types import MethodType
 from typing import Any, Dict
 
 import pytest
@@ -159,12 +160,19 @@ class TestSessionStateRoundTrip:
 
         Session state is persisted as JSON, so anything that does not survive
         ``json.dumps``/``loads`` - a tuple, a set, a numpy scalar - would be lost
-        between sessions while an in-memory test passed. Step 4d moves this state
-        to the Model, so the round trip is what must be preserved.
+        between sessions while an in-memory test passed.
+
+        The view's ``get_subset_filters`` is the real one bound onto the mock, not a
+        stub: Step 4d routed the controller through it instead of reading the dict
+        directly, and a stub would answer with whatever it was told rather than with
+        what the method does.
         """
         controller = MetadataController.__new__(MetadataController)  # type: ignore[type-abstract]
         controller.view = mocker.Mock()
         controller.view.subset_filters = {"mine": "duration > 5", "other": "amp < 2"}
+        controller.view.get_subset_filters = MethodType(
+            MetadataView.get_subset_filters, controller.view
+        )
 
         state = controller.get_session_state()
         path = tmp_path / "session.json"
@@ -198,12 +206,17 @@ class TestSessionStateRoundTrip:
         ``get_session_state`` copies, so a later edit cannot rewrite saved history.
 
         Without the copy the session entry would alias the view's live dict and
-        change under the saver's feet before it reached disk.
+        change under the saver's feet before it reached disk. Step 4d moved the copy
+        itself into ``MetaSubsetTabView.get_subset_filters``, which is why the real
+        method is bound onto the mock here rather than stubbed.
         """
         controller = MetadataController.__new__(MetadataController)  # type: ignore[type-abstract]
         controller.view = mocker.Mock()
         live = {"mine": "duration > 5"}
         controller.view.subset_filters = live
+        controller.view.get_subset_filters = MethodType(
+            MetadataView.get_subset_filters, controller.view
+        )
 
         state = controller.get_session_state()
         live["added_later"] = "amp < 2"

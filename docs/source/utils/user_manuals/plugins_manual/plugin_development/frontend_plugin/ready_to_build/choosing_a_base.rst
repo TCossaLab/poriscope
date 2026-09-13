@@ -67,7 +67,8 @@ setters (``set_query``, ``set_event_query``, ``update_available_columns``,
 ``_delete_filter_by_name``, ``_show_filter_info_dialog``,
 ``get_selected_filters``, ``_show_add_filter_dialog``,
 ``show_edit_filter_dialog``, ``_load_filter``, ``_delete_filter``,
-``replace_filter_item``, ``update_filter_name``, ``on_raw_filter_validated``), the
+``replace_filter_item``, ``update_filter_name``, ``on_raw_filter_validated``,
+``restore_subset_filters``, ``commit_filter``, ``get_subset_filters``), the
 filtered-event cache
 (``_rebuild_event_id_cache``), the experiment-selection tree (``show_selection_tree``,
 ``request_experiment_structure``) and ``get_save_filename``.

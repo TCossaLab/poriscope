@@ -552,9 +552,14 @@ class MetaSubsetTabController(MetaController):
         docstring recorded this method as deliberately not shared, because "the two
         tabs' copies differ" and each reaches into its own View's pending-filter
         state, with the promotion deferred to Step 4d. Neither half held up: the
-        copies differed **by one blank line**, and the pending-filter state has been
-        declared on ``MetaSubsetTabView`` since earlier in this step, so both copies
-        were already reaching into the same shared attributes.
+        copies differed **by one blank line**, and both were reaching into the same
+        attributes on ``MetaSubsetTabView`` by then anyway.
+
+        Step 4d finished the job from the other end. There is no pending-filter state
+        left to reach into - ``name``, ``old_name`` and ``filter_text`` arrive as
+        arguments now, carried from the request that asked for the validation - and
+        committing the result goes through ``view.commit_filter`` rather than an
+        assignment into the View's dict.
 
         :param query: SQL query string to display or execute.
         :type query: str
@@ -595,7 +600,7 @@ class MetaSubsetTabController(MetaController):
                 suffixed_name = (
                     f"{name}_assisted" if not name.endswith("_assisted") else name
                 )
-                self.view.subset_filters[suffixed_name] = filter_text or ""
+                self.view.commit_filter(suffixed_name, filter_text)
 
                 if not filter_text:
                     self.view.add_text_to_display.emit(
@@ -619,9 +624,7 @@ class MetaSubsetTabController(MetaController):
                     if not new_name.endswith("_assisted")
                     else new_name
                 )
-                if old_name is not None:
-                    self.view.subset_filters.pop(old_name, None)
-                self.view.subset_filters[suffixed_new_name] = new_filter or ""
+                self.view.commit_filter(suffixed_new_name, new_filter, old_name)
 
                 if not new_filter:
                     self.view.add_text_to_display.emit(
@@ -669,7 +672,7 @@ class MetaSubsetTabController(MetaController):
         :return: Extra state to serialize into this tab's session history entry.
         :rtype: Dict[str, Any]
         """
-        return {"subset_filters": dict(self.view.subset_filters)}
+        return {"subset_filters": self.view.get_subset_filters()}
 
     @log(logger=logger)
     @override
