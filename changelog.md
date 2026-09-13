@@ -1,5 +1,7 @@
 ## Poriscope 2.0.0: in progress
 
+* The Protein tab now says so when an experiment is selected with no channel, instead of drawing nothing and giving no reason
+
 * **Finding or fitting events with no filter selected now asks for confirmation first**: on a noisy trace an unfiltered run can register almost every sample as an event, which takes a very long time and is hard to tell apart from the application hanging; cancelling works, but only takes effect at the end of the current chunk, so it can be slow to respond
 
 * **Fixed the Raw Data tab asking about the wrong channel before re-running event finding**: if it could not read whether a channel was already finished, it reused the previous channel's answer, so the "start over?" prompt could appear for a channel that was not finished or be skipped for one that was

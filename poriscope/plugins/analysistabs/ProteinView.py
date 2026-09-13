@@ -2024,13 +2024,6 @@ class ProteinView(MetaSubsetTabView):
             self.logger.warning(f"Only a single experiment can be used for {plot_type}")
             return
 
-        for channels in experiments_and_channels.values():
-            if len(channels) > 1:
-                self.logger.warning(
-                    "Only a single channel at a time can be used for protein ensemble analysis"
-                )
-                return
-
         if len(selected_filters) > 1:
             self.add_text_to_display.emit(
                 "Only a single subset can be used for protein analysis",
@@ -2038,196 +2031,189 @@ class ProteinView(MetaSubsetTabView):
             )
             return
 
-        # Declared out here because the guard that reads it is out here too: the
-        # loop is the only thing that binds it, and the guards above make it run
-        # exactly once - but 'exactly once' is a property of those guards, not of
-        # this line, and a NameError would be a poor way to discover they changed.
+        # Unpacked rather than looped over. Every one of these is guaranteed to hold
+        # exactly one entry by the guards above, and writing them as loops implied a
+        # multiplicity the method refuses - which is misleading enough that it was
+        # read, in review, as a bug where per-subset accumulators are consumed
+        # outside the subset loop. They are, and it is harmless, because there is
+        # only ever one subset.
+        exp, channels = next(iter(experiments_and_channels.items()))
+        if len(channels) != 1:
+            self.logger.warning(
+                "Only a single channel at a time can be used for protein ensemble analysis"
+            )
+            return
+        channel = channels[0]
+        exp_and_ch_arg = {exp: [channel]}
+        subset_name, sql_filter = next(iter(selected_filters.items()))
+
         processed = 0
 
-        for exp, channels in experiments_and_channels.items():
-            for channel in channels:
-                exp_and_ch_arg = {exp: [channel]}
+        # Both cleared before asking: the Controller sets them only once
+        # the whole chain has succeeded, so a failure leaves them empty
+        # rather than describing the previous subset.
+        self.event_query = ""
+        self.event_data_generator = None
+        self.event_distribution_data_requested.emit(loader, sql_filter, exp_and_ch_arg)
 
-                for subset_name, sql_filter in selected_filters.items():
-                    # Both cleared before asking: the Controller sets them only once
-                    # the whole chain has succeeded, so a failure leaves them empty
-                    # rather than describing the previous subset.
-                    self.event_query = ""
-                    self.event_data_generator = None
-                    self.event_distribution_data_requested.emit(
-                        loader, sql_filter, exp_and_ch_arg
-                    )
+        if self.event_query == "":
+            return
 
-                    if self.event_query == "":
-                        return
+        if plot_type not in ["Raw Histogram", "Filtered Histogram"]:
+            self.logger.warning(f"Invalid plot type: {plot_type}")
+            return
 
-                    if plot_type not in ["Raw Histogram", "Filtered Histogram"]:
-                        self.logger.warning(f"Invalid plot type: {plot_type}")
-                        return
+        if self.event_data_generator is None:
+            self.logger.warning(
+                "No events in dataset or unable to create event generator",
+            )
+            self.add_text_to_display.emit(
+                "No events in dataset or unable to create event generator",
+                self.__class__.__name__,
+            )
+            return
 
-                    if self.event_data_generator is None:
-                        self.logger.warning(
-                            "No events in dataset or unable to create event generator",
-                        )
-                        self.add_text_to_display.emit(
-                            "No events in dataset or unable to create event generator",
-                            self.__class__.__name__,
-                        )
-                        return
+        processed = 0
+        prolate_solutions: List[Any] = []
+        oblate_solutions: List[Any] = []
+        averaged_event_data: List[Dict[str, Any]] = []
 
-                    processed = 0
-                    prolate_solutions: List[Any] = []
-                    oblate_solutions: List[Any] = []
-                    averaged_event_data: List[Dict[str, Any]] = []
-
-                    for event in self.event_data_generator:
-                        processed += 1
-                        try:
-                            plot_data = self._construct_single_event_histogram(
-                                event,
-                                plot_type,
-                                bins=bins,
-                                sizes=sizes,
-                            )
-                        except ValueError as e:
-                            self.logger.info(
-                                f'Unable to construct histogram for event {event["event_id"]}: {e}'
-                            )
-                            continue
-                        if plot_data is None:
-                            continue
-
-                        popt = self._fit_and_sanity_check_double_gaussian(
-                            plot_data["Normalized Current"].values,
-                            plot_data["Amplitude"].values,
-                        )
-
-                        if popt is None:
-                            continue
-
-                        amp1, mean1, std1, amp2, mean2, std2 = popt
-
-                        if mean1 > mean2:
-                            mean_max, std_max = mean1, np.abs(std1)
-                            mean_min, std_min = mean2, np.abs(std2)
-                        else:
-                            mean_max, std_max = mean2, np.abs(std2)
-                            mean_min, std_min = mean1, np.abs(std1)
-
-                        # --- OPTIMIZED GENERATIVE SAMPLING ---
-                        # Call the Monte Carlo generators directly for this specific event
-                        prolate_V, prolate_m = self._generate_vm_ensemble(
-                            N, mean_max, std_max, mean_min, std_min, d, L, prolate=True
-                        )
-
-                        prolate_b = (3 * prolate_V / (4 * np.pi * prolate_m)) ** (1 / 3)
-                        prolate_a = prolate_b * prolate_m
-
-                        # Pack the returned arrays into tuples and extend the master list
-                        prolate_solutions.extend(
-                            zip(prolate_V, prolate_m, prolate_a, prolate_b)
-                        )
-
-                        oblate_V, oblate_m = self._generate_vm_ensemble(
-                            N, mean_max, std_max, mean_min, std_min, d, L, prolate=False
-                        )
-                        oblate_b = (3 * oblate_V / (4 * np.pi * oblate_m)) ** (1 / 3)
-                        oblate_a = oblate_b * oblate_m
-                        # Pack the returned arrays into tuples and extend the master list
-                        oblate_solutions.extend(
-                            zip(oblate_V, oblate_m, oblate_a, oblate_b)
-                        )
-
-                        averaged_event_data.append(
-                            {
-                                "id": event["id"],
-                                "prolate_volume": (
-                                    np.median(prolate_V)
-                                    if len(prolate_V) > 0
-                                    else np.nan
-                                ),
-                                "prolate_shape_factor": (
-                                    np.median(prolate_m)
-                                    if len(prolate_m) > 0
-                                    else np.nan
-                                ),
-                                "prolate_major_axis": (
-                                    np.median(prolate_a)
-                                    if len(prolate_a) > 0
-                                    else np.nan
-                                ),
-                                "prolate_minor_axis": (
-                                    np.median(prolate_b)
-                                    if len(prolate_b) > 0
-                                    else np.nan
-                                ),
-                                "oblate_volume": (
-                                    np.median(oblate_V) if len(oblate_V) > 0 else np.nan
-                                ),
-                                "oblate_shape_factor": (
-                                    np.median(oblate_m) if len(oblate_m) > 0 else np.nan
-                                ),
-                                "oblate_major_axis": (
-                                    np.median(oblate_a) if len(oblate_a) > 0 else np.nan
-                                ),
-                                "oblate_minor_axis": (
-                                    np.median(oblate_b) if len(oblate_b) > 0 else np.nan
-                                ),
-                                "min_fractional_blockage": mean_min,
-                                "min_fractional_blockage_std": std_min,
-                                "max_fractional_blockage": mean_max,
-                                "max_fractional_blockage_std": std_max,
-                            }
-                        )
-
-            # --- Create the Pandas DataFrames ---
-            df_prolate = pd.DataFrame(prolate_solutions, columns=["V", "m", "a", "b"])
-            df_oblate = pd.DataFrame(oblate_solutions, columns=["V", "m", "a", "b"])
-
-            if processed == 0:
-                # The generator existed but yielded nothing, which is what an empty
-                # subset looks like from here. Every guard below tests a frame built
-                # from these events, so without this the tab drew empty axes and said
-                # nothing at all.
-                self.add_text_to_display.emit(
-                    "No events in the selected subset, so there is nothing to plot",
-                    self.__class__.__name__,
+        for event in self.event_data_generator:
+            processed += 1
+            try:
+                plot_data = self._construct_single_event_histogram(
+                    event,
+                    plot_type,
+                    bins=bins,
+                    sizes=sizes,
                 )
-                return
+            except ValueError as e:
+                self.logger.info(
+                    f'Unable to construct histogram for event {event["event_id"]}: {e}'
+                )
+                continue
+            if plot_data is None:
+                continue
 
-            self.fit_data = pd.DataFrame(averaged_event_data)
+            popt = self._fit_and_sanity_check_double_gaussian(
+                plot_data["Normalized Current"].values,
+                plot_data["Amplitude"].values,
+            )
 
-            if not df_prolate.empty:
-                self.update_plot(
-                    "Scatterplot",
-                    df_prolate,
-                    ["V", "m"],
-                    ["nm$^{3}$", None],
-                    logscales=[False, False],
-                    dataset_label="Prolate Solutions",
-                )
-            if not df_oblate.empty:
-                self.update_plot(
-                    "Scatterplot",
-                    df_oblate,
-                    ["V", "m"],
-                    ["nm$^{3}$", None],
-                    logscales=[False, False],
-                    dataset_label="Oblate Solutions",
-                )
-            if not self.fit_data.empty:
-                self.update_plot(
-                    "Peak Scatterplot",
-                    self.fit_data,
-                    ["min_fractional_blockage", "max_fractional_blockage"],
-                    ["arb. units", "arb. units"],
-                    logscales=[False, False],
-                    dataset_label="Event Peak Fit Parameters",
-                    err_cols=[
-                        "min_fractional_blockage_std",
-                        "max_fractional_blockage_std",
-                    ],
-                )
+            if popt is None:
+                continue
+
+            amp1, mean1, std1, amp2, mean2, std2 = popt
+
+            if mean1 > mean2:
+                mean_max, std_max = mean1, np.abs(std1)
+                mean_min, std_min = mean2, np.abs(std2)
+            else:
+                mean_max, std_max = mean2, np.abs(std2)
+                mean_min, std_min = mean1, np.abs(std1)
+
+            # --- OPTIMIZED GENERATIVE SAMPLING ---
+            # Call the Monte Carlo generators directly for this specific event
+            prolate_V, prolate_m = self._generate_vm_ensemble(
+                N, mean_max, std_max, mean_min, std_min, d, L, prolate=True
+            )
+
+            prolate_b = (3 * prolate_V / (4 * np.pi * prolate_m)) ** (1 / 3)
+            prolate_a = prolate_b * prolate_m
+
+            # Pack the returned arrays into tuples and extend the master list
+            prolate_solutions.extend(zip(prolate_V, prolate_m, prolate_a, prolate_b))
+
+            oblate_V, oblate_m = self._generate_vm_ensemble(
+                N, mean_max, std_max, mean_min, std_min, d, L, prolate=False
+            )
+            oblate_b = (3 * oblate_V / (4 * np.pi * oblate_m)) ** (1 / 3)
+            oblate_a = oblate_b * oblate_m
+            # Pack the returned arrays into tuples and extend the master list
+            oblate_solutions.extend(zip(oblate_V, oblate_m, oblate_a, oblate_b))
+
+            averaged_event_data.append(
+                {
+                    "id": event["id"],
+                    "prolate_volume": (
+                        np.median(prolate_V) if len(prolate_V) > 0 else np.nan
+                    ),
+                    "prolate_shape_factor": (
+                        np.median(prolate_m) if len(prolate_m) > 0 else np.nan
+                    ),
+                    "prolate_major_axis": (
+                        np.median(prolate_a) if len(prolate_a) > 0 else np.nan
+                    ),
+                    "prolate_minor_axis": (
+                        np.median(prolate_b) if len(prolate_b) > 0 else np.nan
+                    ),
+                    "oblate_volume": (
+                        np.median(oblate_V) if len(oblate_V) > 0 else np.nan
+                    ),
+                    "oblate_shape_factor": (
+                        np.median(oblate_m) if len(oblate_m) > 0 else np.nan
+                    ),
+                    "oblate_major_axis": (
+                        np.median(oblate_a) if len(oblate_a) > 0 else np.nan
+                    ),
+                    "oblate_minor_axis": (
+                        np.median(oblate_b) if len(oblate_b) > 0 else np.nan
+                    ),
+                    "min_fractional_blockage": mean_min,
+                    "min_fractional_blockage_std": std_min,
+                    "max_fractional_blockage": mean_max,
+                    "max_fractional_blockage_std": std_max,
+                }
+            )
+
+        # --- Create the Pandas DataFrames ---
+        df_prolate = pd.DataFrame(prolate_solutions, columns=["V", "m", "a", "b"])
+        df_oblate = pd.DataFrame(oblate_solutions, columns=["V", "m", "a", "b"])
+
+        if processed == 0:
+            # The generator existed but yielded nothing, which is what an empty
+            # subset looks like from here. Every guard below tests a frame built
+            # from these events, so without this the tab drew empty axes and said
+            # nothing at all.
+            self.add_text_to_display.emit(
+                "No events in the selected subset, so there is nothing to plot",
+                self.__class__.__name__,
+            )
+            return
+
+        self.fit_data = pd.DataFrame(averaged_event_data)
+
+        if not df_prolate.empty:
+            self.update_plot(
+                "Scatterplot",
+                df_prolate,
+                ["V", "m"],
+                ["nm$^{3}$", None],
+                logscales=[False, False],
+                dataset_label="Prolate Solutions",
+            )
+        if not df_oblate.empty:
+            self.update_plot(
+                "Scatterplot",
+                df_oblate,
+                ["V", "m"],
+                ["nm$^{3}$", None],
+                logscales=[False, False],
+                dataset_label="Oblate Solutions",
+            )
+        if not self.fit_data.empty:
+            self.update_plot(
+                "Peak Scatterplot",
+                self.fit_data,
+                ["min_fractional_blockage", "max_fractional_blockage"],
+                ["arb. units", "arb. units"],
+                logscales=[False, False],
+                dataset_label="Event Peak Fit Parameters",
+                err_cols=[
+                    "min_fractional_blockage_std",
+                    "max_fractional_blockage_std",
+                ],
+            )
 
     @log(logger=logger)
     def _double_gaussian(
@@ -2503,13 +2489,6 @@ class ProteinView(MetaSubsetTabView):
             self.logger.warning(f"Only a single experiment can be used for {plot_type}")
             return
 
-        for channels in experiments_and_channels.values():
-            if len(channels) > 1:
-                self.logger.warning(
-                    "Only a single channel at a time can be used for protein ensemble analysis"
-                )
-                return
-
         if len(selected_filters) > 1:
             self.add_text_to_display.emit(
                 f"Only a single subset can be used for {plot_type}",
@@ -2517,98 +2496,94 @@ class ProteinView(MetaSubsetTabView):
             )
             return
 
-        # The three guards above guarantee that experiments_and_channels, every
-        # channels list, and selected_filters each contain exactly one entry,
-        # so the triple-nested loop below runs exactly once.
-        #
-        # Declared out here all the same: the loop is the only thing that binds it,
-        # and reaching the ensemble fit below without it would be a NameError rather
+        # Unpacked rather than looped over: the guards above guarantee exactly one
+        # experiment, one channel and one subset, and writing them as a triple-nested
+        # loop implied a multiplicity this method refuses.
+        exp, channels = next(iter(experiments_and_channels.items()))
+        if len(channels) != 1:
+            self.logger.warning(
+                "Only a single channel at a time can be used for protein ensemble analysis"
+            )
+            return
+        channel = channels[0]
+        exp_and_ch_arg = {exp: [channel]}
+        # The selection tree hands back the channel as a display string;
+        # plotted_datasets keys on the real int channel id. Normalise once so that a
+        # future membership test cannot disagree with the insert below, as it did in
+        # MetadataView.
+        channel_id = int(channel) if channel is not None else None
+        subset_name, sql_filter = next(iter(selected_filters.items()))
+
+        # Declared ahead of the work below because the guard that reads it comes
+        # after: reaching the ensemble fit without it would be a NameError rather
         # than a plot that did not happen.
         plot_data: Optional[pd.DataFrame] = None
 
-        for exp, channels in experiments_and_channels.items():
-            for channel in channels:
-                exp_and_ch_arg = {exp: [channel]}
-                # The selection tree hands back the channel as a display
-                # string; plotted_datasets keys on the real int channel id.
-                # Normalise once so that a future membership test cannot
-                # disagree with the insert below, as it did in MetadataView.
-                channel_id = int(channel) if channel is not None else None
+        bins = None
+        dataset_label = (
+            f"{loader} | {exp} Ch {channel}: {subset_name}"
+            if exp is not None
+            else f"{loader} | {subset_name}"
+        )
+        sizes = False
 
-                for subset_name, sql_filter in selected_filters.items():
-                    bins = None
-                    dataset_label = (
-                        f"{loader} | {exp} Ch {channel}: {subset_name}"
-                        if exp is not None
-                        else f"{loader} | {subset_name}"
-                    )
-                    sizes = False
+        # Both cleared before asking: the Controller sets them only once
+        # the whole chain has succeeded, so a failure leaves them empty
+        # rather than describing the previous subset.
+        self.event_query = ""
+        self.event_data_generator = None
+        self.event_distribution_data_requested.emit(loader, sql_filter, exp_and_ch_arg)
 
-                    # Both cleared before asking: the Controller sets them only once
-                    # the whole chain has succeeded, so a failure leaves them empty
-                    # rather than describing the previous subset.
-                    self.event_query = ""
-                    self.event_data_generator = None
-                    self.event_distribution_data_requested.emit(
-                        loader, sql_filter, exp_and_ch_arg
-                    )
+        if self.event_query == "":
+            return
 
-                    if self.event_query == "":
-                        return
+        if self.event_data_generator:
+            if plot_type in ["Raw Histogram", "Filtered Histogram"]:
+                bins = parameters["bins"]
+                sizes = parameters["sizes"]
 
-                    if self.event_data_generator:
-                        if plot_type in ["Raw Histogram", "Filtered Histogram"]:
-                            bins = parameters["bins"]
-                            sizes = parameters["sizes"]
+                bin_sensitive = True
+                bins_changed = getattr(self, "allowed_bins", None) != bins
+                sizes_changed = getattr(self, "allowed_sizes", None) != sizes
 
-                            bin_sensitive = True
-                            bins_changed = getattr(self, "allowed_bins", None) != bins
-                            sizes_changed = (
-                                getattr(self, "allowed_sizes", None) != sizes
-                            )
+                if bin_sensitive and (bins_changed or sizes_changed):
+                    axis_type = "2d"
+                    self._reset_actions(axis_type=axis_type)
 
-                            if bin_sensitive and (bins_changed or sizes_changed):
-                                axis_type = "2d"
-                                self._reset_actions(axis_type=axis_type)
+            plot_data = self._construct_all_points_histogram(
+                self.event_data_generator,
+                plot_type,
+                bins=bins,
+                sizes=sizes,
+            )
 
-                        plot_data = self._construct_all_points_histogram(
-                            self.event_data_generator,
-                            plot_type,
-                            bins=bins,
-                            sizes=sizes,
-                        )
+            if plot_data is not None:
+                self.update_plot(
+                    plot_type,
+                    plot_data,
+                    plot_data.columns,
+                    ["pA", ""],
+                    logscales=[False, False],
+                    dataset_label=dataset_label,
+                )
+            else:
+                self.logger.info(
+                    "No usable events in the selected subset for " f"{plot_type}"
+                )
+                self.add_text_to_display.emit(
+                    "No events in the selected subset, so there is " "nothing to plot",
+                    self.__class__.__name__,
+                )
+                return
+        else:
+            self.logger.warning(f"Invalid plot type: {plot_type}")
+            return
 
-                        if plot_data is not None:
-                            self.update_plot(
-                                plot_type,
-                                plot_data,
-                                plot_data.columns,
-                                ["pA", ""],
-                                logscales=[False, False],
-                                dataset_label=dataset_label,
-                            )
-                        else:
-                            self.logger.info(
-                                "No usable events in the selected subset for "
-                                f"{plot_type}"
-                            )
-                            self.add_text_to_display.emit(
-                                "No events in the selected subset, so there is "
-                                "nothing to plot",
-                                self.__class__.__name__,
-                            )
-                            return
-                    else:
-                        self.logger.warning(f"Invalid plot type: {plot_type}")
-                        return
+        self.allowed_plot_type = plot_type
+        self.allowed_bins = bins
+        self.allowed_sizes = sizes
 
-                    self.allowed_plot_type = plot_type
-                    self.allowed_bins = bins
-                    self.allowed_sizes = sizes
-
-                    self.plotted_datasets.add(
-                        (loader, exp, channel_id, sql_filter, subset_name)
-                    )
+        self.plotted_datasets.add((loader, exp, channel_id, sql_filter, subset_name))
 
         if plot_data is None:
             return
