@@ -133,7 +133,25 @@ were fixed and re-passed. One could not be run:
    38 says to check that before starting - here the answer is zero, and the step has to
    stand on the layering alone.
 
-5. **The promotion is assessable once 4b lands, and is smaller than it looks.** The two
+   **LANDED 2026-09-13.** Layer counts by the recorded rule: **View 0, Controller 1,
+   Model 6**. One View site the scan had missed turned up on the way - `MetaSubsetTabView`
+   appended `" LIMIT 0"` to a raw filter before validation, which is a string
+   concatenation rather than a loader-call argument and so matched nothing; it moved to
+   `MetaSubsetTabController`. The single remaining Controller site is that clause, and it
+   stops there deliberately: going further wants a Model shared by both subset tabs, and
+   there is no `MetaSubsetTabModel`.
+
+5. **The promotion, re-measured after 4b - the blocker has changed.** The two
+   `load_event_plot_data` Controllers are now 110 and 115 lines with 83 identical
+   (0.738, barely moved), but the query construction 4b pulled out landed as two
+   `resolve_event_ids` Model methods that are **49 of 50/55 lines identical, ratio
+   0.933** - they differ only in the projection. So the near-duplication is concentrated
+   rather than removed, and it moved layer. **What now separates the two Controllers is
+   `action_label`**: the Protein copy takes it, guards an empty `event_ids` with it, and
+   builds three messages from it. That is a question about what the user is told, not
+   about SQL, which is the form the promotion decision should be taken in. The two
+   `resolve_event_ids` are the better merge candidate and want a shared subset-tab Model
+   that does not exist yet. The two
    `load_event_plot_data` bodies are 122 and 129 lines with 94 identical. Three of their
    four differences are about the query and the messages, and moving the query to the
    Models takes the largest one out, so 4b should be done first and the promotion judged
