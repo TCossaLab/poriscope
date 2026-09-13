@@ -1,5 +1,7 @@
 ## Poriscope 2.0.0: in progress
 
+* The subset tabs' controllers no longer write into the view's filter list directly; `MetaSubsetTabView` gained `commit_filter` and `get_subset_filters` for them to go through
+
 * `restore_subset_filters` has moved from `MetadataView` and `ProteinView` to `MetaSubsetTabView`; the two copies were identical apart from the name each held its controls panel under
 
 * **Fixed restoring a session losing the last-restored tab's subset filters**: the session was written back while that tab's filter list was still empty, so the filters survived one restore and were gone from the next - in practice the Metadata tab kept its filters and the Protein tab did not

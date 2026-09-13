@@ -270,6 +270,50 @@ class MetaSubsetTabView(MetaView):
         self._subset_controls.filter_comboBox.refreshDisplayText()
 
     @log(logger=logger)
+    def commit_filter(
+        self, name: str, filter_text: Optional[str], old_name: Optional[str] = None
+    ) -> None:
+        """
+        Store a validated subset filter under ``name``, replacing ``old_name`` if given.
+
+        The Controller used to do this by assigning into ``subset_filters``
+        directly - three sites in ``relay_query``, plus a fourth reading the dict
+        back in ``get_session_state``. The dict stays here, because nothing in the
+        Model reads it and sixteen reads on this side need it synchronously
+        (``DECISIONS.md``, 2026-09-13); what changes is that the Controller asks
+        rather than mutates.
+
+        Only the dict is touched. The combobox is a separate step, because the two
+        commit paths update it differently - an added filter goes through
+        ``replace_filter_item`` and an edited one through ``update_filter_name``.
+
+        :param name: the name to store the filter under, suffix already applied
+        :type name: str
+        :param filter_text: the filter expression; None and "" both store ""
+        :type filter_text: Optional[str]
+        :param old_name: on an edit, the name being replaced; None when adding
+        :type old_name: Optional[str]
+        :return: None
+        :rtype: None
+        """
+        if old_name is not None:
+            self.subset_filters.pop(old_name, None)
+        self.subset_filters[name] = filter_text or ""
+
+    @log(logger=logger)
+    def get_subset_filters(self) -> Dict[str, str]:
+        """
+        A copy of this tab's named subset filters.
+
+        A copy rather than the live dict, because the caller is the session-state
+        serializer and the filters go on changing after it has taken its snapshot.
+
+        :return: filter name to SQL WHERE clause
+        :rtype: Dict[str, str]
+        """
+        return dict(self.subset_filters)
+
+    @log(logger=logger)
     def restore_subset_filters(self, filters: Dict[str, str]) -> None:
         """
         Restore subset filters captured in a saved session.
@@ -410,15 +454,14 @@ class MetaSubsetTabView(MetaView):
             return
 
         if old_name is not None:  # edit path
-            self.subset_filters.pop(old_name, None)
-            self.subset_filters[name] = filter_text or ""
+            self.commit_filter(name, filter_text, old_name)
             self.update_filter_name(old_name, name)
             self.add_text_to_display.emit(
                 f"Filter '{old_name}' updated to '{name}'.",
                 self.__class__.__name__,
             )
         else:  # add path
-            self.subset_filters[name] = filter_text or ""
+            self.commit_filter(name, filter_text)
             self._subset_controls.filter_comboBox.addItem(name)
             self._subset_controls.filter_comboBox.selectItem(name, select=True)
             self._subset_controls.filter_comboBox.refreshDisplayText()
