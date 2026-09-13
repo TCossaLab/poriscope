@@ -2399,9 +2399,7 @@ class TestCommitFitsExtended:
     def test_no_existing_columns_commits_without_asking_the_user(self, mock_view):
         mock_view.fit_data = _fit_frame()
         sent = []
-        mock_view.fit_commit_confirmed.connect(
-            lambda *args: sent.append(args)
-        )
+        mock_view.fit_commit_confirmed.connect(lambda *args: sent.append(args))
 
         with patch.object(QMessageBox, "question") as dialog:
             mock_view.confirm_fit_commit("ldr", None)

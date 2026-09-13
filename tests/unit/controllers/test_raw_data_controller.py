@@ -619,7 +619,6 @@ class TestCommitEvents:
 LONG_CHANNEL = 25_000_000.0
 
 
-
 def test_load_and_filter_returns_data_and_surviving_channels(
     controller: RawDataController,
     mocker: MockerFixture,
@@ -642,9 +641,7 @@ def test_load_and_filter_returns_data_and_surviving_channels(
 
     assert (data, kept) == (["ch0", "ch1"], [0, 1])
     assert [
-        c
-        for c in controller.model.call.call_args_list
-        if c.args[2] == "load_data"
+        c for c in controller.model.call.call_args_list if c.args[2] == "load_data"
     ] == [
         mocker.call("MetaReader", "R", "load_data", 2.0, 9.0, 0),
         mocker.call("MetaReader", "R", "load_data", 2.0, 9.0, 1),

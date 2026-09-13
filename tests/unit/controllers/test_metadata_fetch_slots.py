@@ -260,7 +260,6 @@ class TestLoadEventSubset:
         controller.view.set_event_data_generator.assert_not_called()
         assert "no such table: events" in panel_text(controller)
 
-
     def test_a_query_the_loader_refuses_to_build_stops_the_plot(
         self, controller: MetadataController
     ) -> None:
@@ -642,7 +641,9 @@ class TestExportCsvSubset:
             lambda *args: staged.append(args)
         )
 
-        controller.export_csv_subset("ldr", "/out", "Subset_0", "duration < 0", SCOPE, 0)
+        controller.export_csv_subset(
+            "ldr", "/out", "Subset_0", "duration < 0", SCOPE, 0
+        )
 
         assert staged == []
         assert controller.model.calls_to("export_subset_to_csv") == []
@@ -660,7 +661,11 @@ class TestExportCsvSubset:
         nothing said.
         """
         controller.model = RecordingModel(
-            {"count_subset_events": KeyError("Could not find experiment ID(s) for: exp")}
+            {
+                "count_subset_events": KeyError(
+                    "Could not find experiment ID(s) for: exp"
+                )
+            }
         )
         staged: list = []
         controller.model.set_generator = (  # type: ignore[attr-defined]

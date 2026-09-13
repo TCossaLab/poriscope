@@ -386,8 +386,7 @@ class TestLoadEventIdCache:
 
         controller.view.set_event_id_rows.assert_not_called()
         messages = [
-            call.args[0]
-            for call in controller.add_text_to_display.emit.call_args_list
+            call.args[0] for call in controller.add_text_to_display.emit.call_args_list
         ]
         assert any("no column" in message for message in messages)
 

@@ -37,6 +37,7 @@ from tests.unit.views._qt_mocks import shadow_signals
 
 pytestmark = pytest.mark.characterization
 
+
 @pytest.fixture
 def view(qapp: object) -> ProteinView:
     """
