@@ -173,6 +173,17 @@ class ProteinView(MetaSubsetTabView):
     #: this widget between the halves, which is the pattern Step 4a exists to delete.
     ensemble_fit_requested = Signal(object, object, object, str, float, float, int)
 
+    #: Asks for one double-gaussian fit per event: the (bins, amplitude) pairs, the
+    #: frames they came from, and the events themselves. Answered through
+    #: ``set_event_histogram_fits``.
+    #:
+    #: Step 4c. One intent for the whole set rather than one per event: a per-event
+    #: round trip would work, since a same-thread Qt signal is synchronous, but only
+    #: by parking each answer where the loop body could read it back - the pattern
+    #: Step 4a exists to delete. A ``None`` pair marks an event whose histogram could
+    #: not be built, so every list stays index-aligned with the events.
+    event_histogram_fits_requested = Signal(object, object, object)
+
     @property
     def fig_hist(self) -> Figure:
         return (
@@ -1837,7 +1848,16 @@ class ProteinView(MetaSubsetTabView):
         plot_type: str = "Filtered Histogram",
     ) -> None:
         """
-        Update the event canvas with per-event ΔI/I histograms, one subplot per event.
+        Build each event's histogram and ask for their fits; the answer draws them.
+
+        Step 4c split the fitting out. The histograms are built here, because binning
+        is this widget's own presentation choice, but the double-gaussian fit belongs
+        to ``ProteinModel`` - so this half ends at the intent and
+        ``set_event_histogram_fits`` does every bit of drawing.
+
+        An event whose histogram cannot be built contributes ``None`` rather than
+        being dropped, so the lists stay index-aligned with ``event_data`` and the
+        drawing half still lays out one subplot per event in the original order.
 
         :param event_data: List of event dictionaries, each containing data and metadata for one event.
         :type event_data: Sequence[Dict[str, Any]]
@@ -1847,13 +1867,71 @@ class ProteinView(MetaSubsetTabView):
         :type sizes: bool
         :param plot_type: Type of histogram to construct.
         :type plot_type: str
-        :raises ValueError: If the double-Gaussian fit fails for an event; caught internally
-            and skipped, so it never propagates to the caller.
+        :return: None
+        :rtype: None
+        """
+        frames: List[Optional[pd.DataFrame]] = []
+        for event in event_data:
+            # Reset per-event so bin edges are determined solely by this event's
+            # current range, not influenced by other events in the same plot call.
+            self.hist_min = None
+            self.hist_max = None
+
+            try:
+                frames.append(
+                    self._construct_single_event_histogram(
+                        event, plot_type, bins=bins, sizes=sizes
+                    )
+                )
+            except ValueError as e:
+                self.logger.info(
+                    f'Unable to construct histogram for event {event["event_id"]}: {e}'
+                )
+                frames.append(None)
+
+        histograms = [
+            (
+                (frame["Normalized Current"].values, frame["Amplitude"].values)
+                if frame is not None
+                else None
+            )
+            for frame in frames
+        ]
+        self.event_histogram_fits_requested.emit(histograms, frames, event_data)
+
+    @log(logger=logger)
+    def set_event_histogram_fits(
+        self,
+        fits: Sequence[
+            Tuple[Optional[npt.NDArray[np.float64]], Optional[npt.NDArray[np.float64]]]
+        ],
+        frames: Sequence[Optional[pd.DataFrame]],
+        event_data: Sequence[Dict[str, Any]],
+    ) -> None:
+        """
+        Draw one subplot per event, overlaying each fit that succeeded.
+
+        The answering half of ``event_histogram_fits_requested``. Every list is
+        index-aligned with ``event_data``, so the subplot grid keeps its original
+        positions whether or not a given event produced a histogram or a fit.
+
+        A fit that failed is simply not overlaid - the histogram is still drawn. That
+        was previously expressed as a ``ValueError`` raised into a bare ``except`` in
+        the same loop body; it is a plain branch now, because the fit no longer
+        happens here and there is nothing left to catch.
+
+        :param fits: one (fit parameters, fitted curve) pair per event, index-aligned with event_data
+        :type fits: Sequence[Tuple[Optional[npt.NDArray[np.float64]], Optional[npt.NDArray[np.float64]]]]
+        :param frames: each event's histogram, or None where none could be built
+        :type frames: Sequence[Optional[pd.DataFrame]]
+        :param event_data: List of event dictionaries, each containing data and metadata for one event.
+        :type event_data: Sequence[Dict[str, Any]]
+        :return: None
+        :rtype: None
         """
         self._set_display_mode("event")
         self._clear_figure_state(create_default_axes=False)
         num_events = len(event_data)
-        ##herehere
         num_rows, num_cols = self._factors(num_events)
 
         x_label = format_axis_label("Normalized Current", "pA")
@@ -1864,65 +1942,22 @@ class ProteinView(MetaSubsetTabView):
             label = f'Exp {event["experiment_id"]}/Ch {event["channel_id"]}/Event {event["event_id"]}'
             ax.set_title(label)
 
-            # Reset per-event so bin edges are determined solely by this event's
-            # current range, not influenced by other events in the same plot call.
-            self.hist_min = None
-            self.hist_max = None
-
-            try:
-                plot_data = self._construct_single_event_histogram(
-                    event, plot_type, bins=bins, sizes=sizes
-                )
-            except ValueError as e:
-                self.logger.info(
-                    f'Unable to construct histogram for event {event["event_id"]}: {e}'
-                )
-                continue
+            plot_data = frames[j]
             if plot_data is None:
                 continue
 
-            try:  # try to fit a histogram, ignore if it fails. This code should be split out into a function since it is duplicated.
-                popt = self._fit_and_sanity_check_double_gaussian(
-                    plot_data["Normalized Current"].values,
-                    plot_data["Amplitude"].values,
-                )
-                if popt is None:
-                    raise ValueError("Unable to fit double gaussian")
-
-                amp1, mean1, std1, amp2, mean2, std2 = popt
-
+            _, curve = fits[j]
+            if curve is not None:
                 ax.plot(
                     plot_data["Normalized Current"].values,
-                    self._double_gaussian(
-                        plot_data["Normalized Current"].values,
-                        amp1,
-                        mean1,
-                        std1,
-                        amp2,
-                        mean2,
-                        std2,
-                    ),
+                    curve,
                     color="orange",
                     zorder=2,
                 )
                 self._update_cache(
                     (plot_data["Normalized Current"].values, label + " " + x_label),
-                    (
-                        self._double_gaussian(
-                            plot_data["Normalized Current"].values,
-                            amp1,
-                            mean1,
-                            std1,
-                            amp2,
-                            mean2,
-                            std2,
-                        ),
-                        label + " " + y_label,
-                    ),
+                    (curve, label + " " + y_label),
                 )
-
-            except (ValueError, RuntimeError):
-                pass
 
             ax.plot(
                 plot_data["Normalized Current"].values,

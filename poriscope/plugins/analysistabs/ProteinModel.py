@@ -314,22 +314,33 @@ class ProteinModel(MetaModel):
     @log(logger=logger)
     def fit_histograms(
         self,
-        histograms: Sequence[Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]],
+        histograms: Sequence[
+            Optional[Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]]
+        ],
     ) -> List[
         Tuple[Optional[npt.NDArray[np.float64]], Optional[npt.NDArray[np.float64]]]
     ]:
         """
         Fit a double gaussian to each histogram in turn.
 
-        The per-event plotting paths fit inside a loop, and a Controller round trip
-        cannot be resumed from inside one - so the loop runs here, in a single call,
-        and the View draws from the list that comes back. A histogram that cannot be
-        fitted yields ``(None, None)`` in its own position, so the result stays
-        index-aligned with the input and the caller can skip exactly that event.
+        The per-event plotting paths fit one histogram per event. Doing them in a
+        single call keeps every answer off the widget: a per-event round trip would
+        work - a same-thread Qt signal is synchronous, measured - but only by parking
+        each answer somewhere for the loop body to read back, which is the pattern
+        Step 4a exists to delete. It also means the View does not depend on the
+        connection staying ``Direct``.
 
-        :param histograms: (bins, amplitude) pairs, one per event
-        :type histograms: Sequence[Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]]
+        ``None`` stands for an event whose histogram could not be built at all, and
+        answers the same way as one that could not be fitted, so the result is
+        index-aligned with the input either way and the caller skips exactly the
+        events that have no fit.
+
+        :param histograms: (bins, amplitude) pairs, one per event, or None where no histogram could be built
+        :type histograms: Sequence[Optional[Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]]]
         :return: one (fit parameters, fitted curve) pair per input histogram, index-aligned with it
         :rtype: List[Tuple[Optional[npt.NDArray[np.float64]], Optional[npt.NDArray[np.float64]]]]
         """
-        return [self.fit_histogram(bins, amplitude) for bins, amplitude in histograms]
+        return [
+            self.fit_histogram(*histogram) if histogram is not None else (None, None)
+            for histogram in histograms
+        ]

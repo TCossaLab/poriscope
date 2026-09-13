@@ -60,6 +60,7 @@ import pandas as pd
 import pytest
 from PySide6.QtWidgets import QApplication, QMessageBox, QVBoxLayout, QWidget
 
+from poriscope.plugins.analysistabs.ProteinModel import ProteinModel
 from poriscope.plugins.analysistabs.ProteinView import (
     FIT_COLUMN_UNITS,
     FIT_COLUMNS,
@@ -1218,21 +1219,78 @@ class TestUpdateEventPlot:
 # ===========================================================================
 
 
+def _answer_event_histogram_fits(view):
+    """
+    Run the round trip ProteinController runs, and hand the answer back to the View.
+
+    Step 4c split ``_update_event_histogram`` into a request and
+    ``set_event_histogram_fits``; these tests drive both halves, because driving only
+    the first asserts against a View that has not drawn anything yet.
+
+    The fits come from a **real ProteinModel** rather than a stub, so their arity and
+    their ``(popt, curve)`` shape are the collaborator's own rather than this test's
+    idea of them.
+
+    :param view: the view whose request has just been emitted
+    :type view: ProteinView
+    :return: None
+    :rtype: None
+    """
+    args = view.event_histogram_fits_requested.emit.call_args.args
+    histograms, frames, event_data = args
+    view.set_event_histogram_fits(
+        ProteinModel().fit_histograms(histograms), frames, event_data
+    )
+
+
 class TestUpdateEventHistogram:
+    def test_the_request_carries_one_entry_per_event(self, mock_view):
+        """The three lists stay index-aligned, which the drawing half relies on."""
+        events = [_make_event(i, rng_seed=i) for i in range(1, 4)]
+
+        mock_view._update_event_histogram(events)
+
+        histograms, frames, event_data = (
+            mock_view.event_histogram_fits_requested.emit.call_args.args
+        )
+        assert len(histograms) == len(frames) == len(event_data) == 3
+
     def test_switches_to_event_mode(self, mock_view):
         mock_view._update_event_histogram([_make_event(1)])
+        _answer_event_histogram_fits(mock_view)
         assert mock_view._display_mode == "event"
 
     def test_multiple_events(self, mock_view):
         mock_view._update_event_histogram(
             [_make_event(i, rng_seed=i) for i in range(1, 4)]
         )
+        _answer_event_histogram_fits(mock_view)
 
     def test_custom_bins(self, mock_view):
         mock_view._update_event_histogram([_make_event(1)], bins=[50])
+        _answer_event_histogram_fits(mock_view)
 
     def test_cache_committed(self, mock_view):
         mock_view._update_event_histogram([_make_event(1)])
+        _answer_event_histogram_fits(mock_view)
+
+    def test_an_event_with_no_fit_still_gets_its_histogram_drawn(self, mock_view):
+        """
+        A failed fit removes the overlay, not the subplot.
+
+        Every fit is refused here, so the only thing that can still be drawn is the
+        histogram itself - which is what stops a fit regression showing up as an
+        empty grid rather than as a missing orange line.
+        """
+        mock_view._update_event_histogram([_make_event(1)])
+        _, frames, event_data = (
+            mock_view.event_histogram_fits_requested.emit.call_args.args
+        )
+
+        mock_view.set_event_histogram_fits([(None, None)], frames, event_data)
+
+        assert mock_view._display_mode == "event"
+        assert mock_view.fig_event.add_subplot.call_count == 1
 
 
 # ===========================================================================
@@ -1519,6 +1577,7 @@ class TestPipeline:
 
     def test_update_event_histogram_end_to_end(self, mock_view):
         mock_view._update_event_histogram([_make_event(1)])
+        _answer_event_histogram_fits(mock_view)
         assert mock_view._display_mode == "event"
 
 

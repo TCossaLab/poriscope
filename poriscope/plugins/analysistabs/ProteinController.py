@@ -26,7 +26,7 @@
 
 
 import logging
-from typing import Dict, List, Optional, override
+from typing import Any, Dict, List, Optional, Sequence, Tuple, override
 
 import numpy as np
 import numpy.typing as npt
@@ -77,6 +77,7 @@ class ProteinController(MetaSubsetTabController):
         self.view.fit_commit_requested.connect(self.check_for_existing_fit_columns)
         self.view.fit_commit_confirmed.connect(self.commit_fits)
         self.view.ensemble_fit_requested.connect(self.fit_ensemble_geometry)
+        self.view.event_histogram_fits_requested.connect(self.fit_event_histograms)
 
     @log(logger=logger)
     @Slot(object, object, object, str, float, float, int)
@@ -131,6 +132,46 @@ class ProteinController(MetaSubsetTabController):
             )
             return
         self.view.set_ensemble_geometry_fit(popt, curve, plot_data, plot_type, d, L, N)
+
+    @log(logger=logger)
+    @Slot(object, object, object)
+    def fit_event_histograms(
+        self,
+        histograms: Sequence[
+            Optional[Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]]
+        ],
+        frames: Sequence[Optional[pd.DataFrame]],
+        event_data: Sequence[Dict[str, Any]],
+    ) -> None:
+        """
+        Fit every event's histogram in one call, and hand the results back to draw.
+
+        Decision B's command path. One call rather than one per event keeps each
+        answer off the widget; see ``ProteinModel.fit_histograms``.
+
+        The frames and the events pass straight through: this slot marshals, it does
+        not interpret them. A failure is reported on the status panel rather than
+        raised, because Qt invoked this from a signal and nothing above it could
+        handle it.
+
+        :param histograms: one (bins, amplitude) pair per event, or None where no histogram could be built
+        :type histograms: Sequence[Optional[Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]]]
+        :param frames: each event's histogram, passed back to the View unchanged
+        :type frames: Sequence[Optional[pd.DataFrame]]
+        :param event_data: the events being plotted, passed back to the View unchanged
+        :type event_data: Sequence[Dict[str, Any]]
+        :return: None
+        :rtype: None
+        """
+        try:
+            fits = self.model.fit_histograms(histograms)
+        except (ValueError, TypeError, IndexError) as e:
+            self.logger.error(f"Unable to fit the event histograms: {repr(e)}")
+            self.add_text_to_display.emit(
+                f"Unable to fit the event histograms: {e}", self.__class__.__name__
+            )
+            return
+        self.view.set_event_histogram_fits(fits, frames, event_data)
 
     @log(logger=logger)
     @Slot(str)

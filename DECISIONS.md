@@ -125,12 +125,17 @@ being a separate step**. Each caller carries its logscale call across as part of
 Step 4c restructure, so every caller is rewritten exactly once.
 
 **Evidence.** 8 call sites, one each in 8 methods. **Seven are already 4c targets** in
-`check_refactor_coverage.py`'s `MOVED` table. Five of those are reached through
-`update_plot` from inside `_overlay_plot` - 327 lines, 5 nested `for` loops, 14 returns -
-which a View-to-Controller-to-Model-to-setter round trip cannot resume from a Qt callback
-without becoming a state machine. Doing 3d first restructures seven callers that 4c then
-restructures again. This is the argument the event-plot promotion already accepted for 4b.
-The eighth, `ClusteringView.on_metadata_loaded`, is already a result slot.
+`check_refactor_coverage.py`'s `MOVED` table. Doing 3d first restructures seven callers
+that 4c then restructures again - the argument the event-plot promotion already accepted
+for 4b. The eighth, `ClusteringView.on_metadata_loaded`, is already a result slot.
+
+Five of the seven are reached through `update_plot` from inside `_overlay_plot`, 327 lines
+with 5 nested `for` loops and 14 returns. **Corrected 2026-09-13, same day:** an earlier
+version of this entry said a round trip "cannot resume" such a loop. Measured, it can - a
+same-thread Qt signal is synchronous, the slot running to completion before `emit()`
+returns. What is unavailable is a *return value to the emitting line*, so using the answer
+where it was asked for means parking it on the widget, which is the pattern Step 4a exists
+to delete. The conclusion is unchanged and the sequencing argument never depended on it.
 
 **The allowlist win is deferred, not lost.** The helper is the only user of `numpy` *and*
 `numpy.typing` in `MetaView`, so rule 2 goes 20 to 18 and the published base sheds numpy
