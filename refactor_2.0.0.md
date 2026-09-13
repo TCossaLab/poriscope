@@ -172,6 +172,52 @@ were fixed and re-passed. One could not be run:
    them out of the measured set: `functions` falls, `removable` stays 0, and the win is
    real but invisible to the ratchet (rules 24 and 36).
 
+6. **4d's first half - threading the filter context - LANDED 2026-09-13** on
+   `feature/step-4d-domain-state`. **Allowlist 19 -> 14 and rule 3 to zero**, which is
+   the whole of the step's gate value and came from the half that deletes state rather
+   than the half that relocates it. `filter_validation_requested` and
+   `raw_filter_validation_requested` now carry the filter's name and the name it
+   replaces; `validate_filter`, `validate_raw_filter`, `relay_query` and
+   `MetaSubsetTabView.on_raw_filter_validated` take them as arguments; and the three
+   `_pending_*` attributes and `clear_pending_filter_state` are gone with nothing left
+   to clear.
+
+   **A dead Controller method fell out of it.**
+   `MetaSubsetTabController.on_raw_filter_validated` was a two-argument passthrough left
+   behind by Step 4a, which replaced the bus round-trip it served with the
+   `raw_filter_validation_requested` intent. Nothing connected to it or called it
+   afterwards, and only its three tests kept it alive - which is method rule 42's shape
+   at one remove: tests that exercise a method no production caller reaches keep it
+   looking live. Worth a check of the connection sites, not only the call sites, whenever
+   a converted emit leaves a slot behind.
+
+   **Test fallout was 73 failures, and the shape of it is the point.** Almost all of them
+   set `_pending_*` on the widget and then asserted on what the Controller did with it -
+   they pinned the mechanism, not the behaviour. Those were deleted rather than
+   re-pointed; the ones that asserted on an outcome were re-pointed by passing the
+   context as arguments.
+
+   **Found while verifying, and fixed in its own commit: restoring a session dropped the
+   last-restored tab's subset filters.** Kyle reported it as Metadata keeping its filters
+   and Protein not, and the cause is order, not tab: restoring a tab is
+   `instantiate_analysis_tab` then `restore_session_state`, and only the first refreshes
+   `plugin_history` - via the `update_plugin_history` it ends on, which snapshots every
+   open tab while the one being restored still has an empty filter list. Each tab was
+   corrected only by the sync that the *next* tab's instantiation happened to trigger,
+   so the last one was saved empty and lost its filters on the following restore.
+   Protein was simply opened second. `load_session` now re-syncs and saves once the loop
+   has finished. **Reproduced at `develop` in a worktree before being called a defect**,
+   per method rule 64, and the on-disk session file was read directly rather than the
+   in-memory state - the in-memory restore was correct on both tabs the whole time, which
+   is why unit coverage of `restore_session_state` never saw it.
+
+   **Still open, and deliberately not done here:** moving `subset_filters` to the Model.
+   It moves no gate, costs 157 test references across 82 test functions (35 e2e), and
+   wants a `MetaSubsetTabModel` that does not exist - the same missing base that stopped
+   4b's last Controller site and the `resolve_event_ids` merge. The free promotion of
+   `restore_subset_filters` (21 of 22 lines identical) is still on the table and still
+   free.
+
 **Read before writing code:** method rules **42, 45, 50, 51, 52** in the artifact
 (<https://claude.ai/code/artifact/304ba119-d177-4918-90af-471d6de6bb80>), plus **53-57**
 earned in the final session: a generator's guards run on whoever advances it; a stub answered
