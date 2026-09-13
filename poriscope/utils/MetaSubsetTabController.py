@@ -396,8 +396,15 @@ class MetaSubsetTabController(MetaController):
         )
 
     @log(logger=logger)
-    @Slot(str, str, str)
-    def validate_filter(self, loader: str, filter_text: str, intent: str) -> None:
+    @Slot(str, str, str, str, object)
+    def validate_filter(
+        self,
+        loader: str,
+        filter_text: str,
+        intent: str,
+        name: str,
+        old_name: Optional[str],
+    ) -> None:
         """
         Validate an assisted subset filter by asking the loader to build a query.
 
@@ -423,6 +430,10 @@ class MetaSubsetTabController(MetaController):
         :param intent: ``validate_new_filter`` or ``validate_edited_filter``, passed
             through to ``relay_query`` to say what to do with the answer
         :type intent: str
+        :param name: the name to commit the filter under, carried from the request
+        :type name: str
+        :param old_name: on an edit, the name being replaced; None when adding
+        :type old_name: Optional[str]
         :return: None
         :rtype: None
         """
@@ -462,11 +473,13 @@ class MetaSubsetTabController(MetaController):
             self._refuse_filter(f"The filter could not be validated: {e}")
             return
 
-        self.relay_query(query, debug, table_name, intent)
+        self.relay_query(query, debug, table_name, intent, name, old_name, filter_text)
 
     @log(logger=logger)
-    @Slot(str, str)
-    def validate_raw_filter(self, loader: str, query: str) -> None:
+    @Slot(str, str, str, object)
+    def validate_raw_filter(
+        self, loader: str, query: str, name: str, old_name: Optional[str]
+    ) -> None:
         """
         Validate a raw subset filter, which the loader checks without building.
 
@@ -483,6 +496,10 @@ class MetaSubsetTabController(MetaController):
         :type loader: str
         :param query: the raw filter as the user wrote it, without a trailing semicolon
         :type query: str
+        :param name: the name to commit the filter under, carried from the request
+        :type name: str
+        :param old_name: on an edit, the name being replaced; None when adding
+        :type old_name: Optional[str]
         :return: None
         :rtype: None
         """
@@ -495,20 +512,20 @@ class MetaSubsetTabController(MetaController):
             )
         except Exception as e:
             self.logger.error(f"Failed to validate raw filter {query!r}: {e!r}")
-            self.view.on_raw_filter_validated(False, str(e))
+            self.view.on_raw_filter_validated(False, str(e), name, old_name, query)
             return
 
-        self.view.on_raw_filter_validated(valid, error_msg)
+        self.view.on_raw_filter_validated(valid, error_msg, name, old_name, query)
 
     @log(logger=logger)
     def _refuse_filter(self, message: str) -> None:
         """
-        Report why a filter could not be validated, and drop the pending state.
+        Report why a filter could not be validated.
 
-        Both halves matter: without the clear, the refused name and text stay parked
-        on the View and the next validation to succeed would commit them under the
-        wrong name. ``relay_query`` does the same on its own failure path, which is
-        the shape this follows.
+        It used to clear the View's pending filter state as well, because a refused
+        name left parked there would have been committed by the next validation that
+        succeeded. Step 4d threads the name through the request instead, so there is
+        nothing parked to go stale and nothing to clear.
 
         :param message: what to tell the user
         :type message: str
@@ -516,10 +533,18 @@ class MetaSubsetTabController(MetaController):
         :rtype: None
         """
         self.add_text_to_display.emit(message, self.__class__.__name__)
-        self.view.clear_pending_filter_state()
 
     @log(logger=logger)
-    def relay_query(self, query: str, debug: str, table_name: str, *args: str) -> None:
+    def relay_query(
+        self,
+        query: str,
+        debug: str,
+        table_name: str,
+        intent: Optional[str] = None,
+        name: Optional[str] = None,
+        old_name: Optional[str] = None,
+        filter_text: Optional[str] = None,
+    ) -> None:
         r"""
         Relay a query and optional debug message to the view, handling optional filter intents.
 
@@ -537,10 +562,19 @@ class MetaSubsetTabController(MetaController):
         :type debug: str
         :param table_name: Name of the table associated with the query.
         :type table_name: str
-        :param \*args: Optional intent string (e.g. 'validate_new_filter', 'validate_edited_filter').
-        :type \*args: str
+        :param intent: 'validate_new_filter', 'validate_edited_filter', or None when
+            the query is only being displayed
+        :type intent: Optional[str]
+        :param name: the name to commit the filter under, carried from the request
+        :type name: Optional[str]
+        :param old_name: on an edit, the name being replaced; None when adding
+        :type old_name: Optional[str]
+        :param filter_text: the expression to commit under ``name``, as the user
+            wrote it; the query built around it is displayed, not stored
+        :type filter_text: Optional[str]
+        :return: None
+        :rtype: None
         """
-        intent = args[0] if args else None
 
         if debug and not query:
             # Also on the display panel, not only in the modal: the dialog is
@@ -552,16 +586,11 @@ class MetaSubsetTabController(MetaController):
                 "Invalid Filter",
                 f"The filter could not be validated:\n\n{debug}",
             )
-            if intent in ("validate_new_filter", "validate_edited_filter"):
-                self.view.clear_pending_filter_state()
             return
 
         self.view.set_query(query, table_name)
 
         if intent == "validate_new_filter":
-            name = self.view._pending_filter_name
-            filter_text = self.view._pending_filter_text
-
             if name is not None:
                 suffixed_name = (
                     f"{name}_assisted" if not name.endswith("_assisted") else name
@@ -581,9 +610,8 @@ class MetaSubsetTabController(MetaController):
                 self.view.replace_filter_item(suffixed_name)
 
         elif intent == "validate_edited_filter":
-            old_name = self.view._pending_old_filter_name
-            new_name = self.view._pending_filter_name
-            new_filter = self.view._pending_filter_text
+            new_name = name
+            new_filter = filter_text
 
             if new_name is not None:
                 suffixed_new_name = (
@@ -606,12 +634,11 @@ class MetaSubsetTabController(MetaController):
                     self.__class__.__name__,
                 )
 
-                # NOTE: old_name is Optional[str] on the attribute, but
-                # show_edit_filter_dialog sets it from a `str` parameter before
-                # emitting this intent, so it is never None here. The guarantee
-                # travels through a signal connection mypy cannot follow.
+                # NOTE: old_name is Optional[str] because an *added* filter has no
+                # name to replace, but show_edit_filter_dialog always sends one, so
+                # it is never None on this branch. The guarantee travels through a
+                # signal connection mypy cannot follow.
                 self.view.update_filter_name(old_name, suffixed_new_name)  # type: ignore[arg-type]
-        self.view.clear_pending_filter_state()
 
     @log(logger=logger)
     def set_experiment_id(self, experiment_id: Optional[int]) -> None:
@@ -632,18 +659,6 @@ class MetaSubsetTabController(MetaController):
         :type channel_db_id: Optional[int]
         """
         self.view.set_channel_db_id(channel_db_id)
-
-    @log(logger=logger)
-    def on_raw_filter_validated(self, valid: bool, error_msg: str) -> None:
-        """
-        Relay the result of raw filter validation to the view.
-
-        :param valid: Whether the query is valid.
-        :type valid: bool
-        :param error_msg: Error message if invalid.
-        :type error_msg: str
-        """
-        self.view.on_raw_filter_validated(valid, error_msg)
 
     @log(logger=logger)
     @override

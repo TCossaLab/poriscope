@@ -920,6 +920,19 @@ class MainController(QObject):
                         f"Unable to restore plugin {key} of type {metaclass}/{subclass} due to {str(e)}"
                     )
 
+        # Write the restored workspace back out before announcing it. Restoring a
+        # tab is two steps - instantiate_analysis_tab, then restore_session_state -
+        # and only the first of them refreshes plugin_history, via the
+        # update_plugin_history call it ends on. Each tab's entry is therefore
+        # snapshotted while its filter list is still empty, and is only corrected by
+        # the sync that the *next* tab's instantiation happens to trigger. The last
+        # tab restored has no next tab, so the session saved during this loop
+        # recorded it with no subset filters at all, and the restore after that one
+        # lost them: Metadata kept its filters and Protein did not, purely because
+        # Protein was opened second and so is restored second.
+        self._sync_tab_session_state_into_history()
+        self.main_model.save_session(self.plugin_history)
+
         if file_name:
             message = f"Loaded session from {file_name}."
         else:

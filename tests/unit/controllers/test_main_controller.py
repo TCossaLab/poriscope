@@ -1350,6 +1350,76 @@ def test_load_session_restores_subset_filters_for_newly_created_tab(
     tab_instance.restore_session_state.assert_called_once_with(history["tab_key"])
 
 
+def test_load_session_persists_restored_tab_state_before_returning(
+    mocker: MockerFixture,
+    mock_main_model: MagicMock,
+    mock_main_view: MagicMock,
+) -> None:
+    """
+    Write the restored tabs' own state back into the saved session, not an empty copy.
+
+    Restoring a tab takes two steps, and only the first of them refreshes
+    plugin_history: instantiate_analysis_tab ends on update_plugin_history, which
+    snapshots every open tab while this one's filter list is still empty, and
+    restore_session_state fills it in afterwards. Each tab's entry was therefore
+    only corrected by the sync the *next* tab's instantiation happened to trigger,
+    so the last tab restored was saved with no subset filters and lost them on the
+    following restore - which is why Metadata kept its filters and Protein, opened
+    and so restored second, did not.
+
+    :param mocker: Pytest-mock fixture.
+    :param mock_main_model: Mocked main model.
+    :param mock_main_view: Mocked main view.
+    """
+    mocker.patch("poriscope.controllers.main_controller.DataPluginController")
+
+    ctrl = MainController(mock_main_model, mock_main_view)
+
+    history: Dict[str, dict] = {
+        "MetadataController": {
+            "metaclass": "MetaController",
+            "subclass": "MetadataController",
+            "subset_filters": {"f1": "voltage > 0"},
+        },
+    }
+    mock_main_model.load_session.return_value = history
+
+    # A tab that answers get_session_state from what it was actually restored with,
+    # the way MetaSubsetTabController does. A Mock returning a fixed dict would pass
+    # whether or not the restore had happened yet, which is the whole question here.
+    restored: Dict[str, str] = {}
+
+    tab_instance = mocker.Mock()
+    tab_instance.view = mocker.Mock()
+    for signal in (
+        "global_signal",
+        "create_plugin",
+        "data_plugin_controller_signal",
+        "plugin_state_changed",
+        "add_text_to_display",
+        "update_tab_action_history",
+        "save_tab_action_history",
+    ):
+        setattr(tab_instance, signal, mocker.Mock(connect=mocker.Mock()))
+    tab_instance.update_available_plugins = mocker.Mock()
+    tab_instance.restore_session_state.side_effect = lambda state: restored.update(
+        state.get("subset_filters", {})
+    )
+    tab_instance.get_session_state.side_effect = lambda: {
+        "subset_filters": dict(restored)
+    }
+
+    mock_main_model.get_plugin_classes.return_value = {
+        "MetadataController": lambda available: tab_instance
+    }
+    mock_main_model.get_available_plugins.return_value = {}
+
+    ctrl.load_session("session.json")
+
+    saved = mock_main_model.save_session.call_args_list[-1][0][0]
+    assert saved["MetadataController"]["subset_filters"] == {"f1": "voltage > 0"}
+
+
 def test_load_session_resets_an_already_open_tab_before_restoring(
     controller: MainController,
     mocker: MockerFixture,

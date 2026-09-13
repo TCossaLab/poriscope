@@ -65,7 +65,7 @@ class MetaSubsetTabView(MetaView):
       ``update_filter_name`` and ``on_raw_filter_validated`` keep the filter combobox
       in step with ``subset_filters``, reaching the combobox through
       ``_subset_controls``. ``_save_filter``, ``_delete_filter_by_name``,
-      ``_show_filter_info_dialog`` and ``clear_pending_filter_state`` manage the named
+      ``_show_filter_info_dialog`` manages the named
       filters in ``subset_filters`` and the three pending fields the Controller reads
       back after a validation round-trip. ``_show_add_filter_dialog`` and
       ``show_edit_filter_dialog`` open the two filter dialogs and validate what they
@@ -121,12 +121,17 @@ class MetaSubsetTabView(MetaView):
     #:
     #: The columns the throwaway validation query selects are resolved by the
     #: Controller, not carried here - see ``MetaSubsetTabController.validate_filter``.
-    filter_validation_requested = Signal(str, str, str)
+    #:
+    #: Step 4d widened it to carry the filter's name and, on an edit, the name it
+    #: replaces. Those used to be parked on ``_pending_*`` attributes and read back
+    #: off this widget when the answer returned - the pattern Step 4a exists to
+    #: delete, surviving here on the *request* rather than the answer.
+    filter_validation_requested = Signal(str, str, str, str, object)
 
     #: The same for a raw filter, which is a complete SELECT the loader checks with
     #: ``validate_filter_query`` rather than building a query around. The answer
-    #: arrives through ``on_raw_filter_validated``.
-    raw_filter_validation_requested = Signal(str, str)
+    #: arrives through ``on_raw_filter_validated``, carrying the same context back.
+    raw_filter_validation_requested = Signal(str, str, str, object)
 
     #: Asks for the ``event_id`` values a subset holds, so the navigation cache can be
     #: rebuilt: the loader's key, the filter (``None`` for all rows) and the
@@ -156,9 +161,6 @@ class MetaSubsetTabView(MetaView):
     current_experiment: Optional[str]
     current_sql_filter: Optional[str]
     filtered_event_ids: List[int]
-    _pending_filter_name: Optional[str]
-    _pending_filter_text: Optional[str]
-    _pending_old_filter_name: Optional[str]
     selected_experiment_and_channels_by_loader: Dict[str, Dict[str, List[str]]]
     subset_filters: Dict[str, str]
 
@@ -334,7 +336,14 @@ class MetaSubsetTabView(MetaView):
         self._subset_controls.filter_comboBox.refreshDisplayText()
 
     @log(logger=logger)
-    def on_raw_filter_validated(self, valid: bool, error_msg: str) -> None:
+    def on_raw_filter_validated(
+        self,
+        valid: bool,
+        error_msg: str,
+        name: str,
+        old_name: Optional[str],
+        filter_text: str,
+    ) -> None:
         """
         Commit a raw SQL filter once the loader has said the query is valid.
 
@@ -347,6 +356,12 @@ class MetaSubsetTabView(MetaView):
         :type valid: bool
         :param error_msg: Error message if invalid.
         :type error_msg: str
+        :param name: the name to commit the filter under, carried from the request
+        :type name: str
+        :param old_name: on an edit, the name being replaced; None when adding
+        :type old_name: Optional[str]
+        :param filter_text: the raw SQL to commit under ``name``
+        :type filter_text: str
         :return: None
         :rtype: None
         """
@@ -356,20 +371,12 @@ class MetaSubsetTabView(MetaView):
                 "Invalid Raw SQL Filter",
                 f"The filter could not be validated:\n\n{error_msg}",
             )
-            self.clear_pending_filter_state()
             return
-
-        name = self._pending_filter_name
-        filter_text = self._pending_filter_text
-        old_name = self._pending_old_filter_name
 
         if name is None:
             # Mirrors the guard the assisted-filter path already applies in
-            # relay_query: with no pending name there is nothing to commit.
-            self.logger.warning(
-                "Raw filter validated with no pending filter name, ignoring."
-            )
-            self.clear_pending_filter_state()
+            # relay_query: with no name there is nothing to commit.
+            self.logger.warning("Raw filter validated with no name, ignoring.")
             return
 
         if old_name is not None:  # edit path
@@ -389,8 +396,6 @@ class MetaSubsetTabView(MetaView):
                 f"Filter '{name}' added.",
                 self.__class__.__name__,
             )
-
-        self.clear_pending_filter_state()
 
     @log(logger=logger)
     def _load_filter(self, parameters: Dict[str, Any]) -> None:
@@ -456,11 +461,8 @@ class MetaSubsetTabView(MetaView):
             # A raw filter is a complete SELECT the loader runs verbatim, and it
             # was already validated when it was created, so it goes straight in.
             if loader and not name.endswith("_raw"):
-                # Read back by relay_query once the round-trip returns.
-                self._pending_filter_name = name
-                self._pending_filter_text = filter_text
                 self.filter_validation_requested.emit(
-                    loader, filter_text, "validate_new_filter"
+                    loader, filter_text, "validate_new_filter", name, None
                 )
             else:
                 self.subset_filters[name] = filter_text
@@ -539,11 +541,6 @@ class MetaSubsetTabView(MetaView):
                 )
                 return
 
-            # Read back by relay_query once the validation round-trip returns.
-            self._pending_filter_name = name
-            self._pending_filter_text = filter_text
-            self._pending_old_filter_name = None
-
             if dialog.is_raw:
                 # Raw SQL is validated by validate_filter_query, not by
                 # construct_metadata_query, which builds its own SQL. The filter goes
@@ -553,14 +550,13 @@ class MetaSubsetTabView(MetaView):
                 if self._reject_non_select_raw_filter(filter_text):
                     return
                 name = f"{name}_raw" if not name.endswith("_raw") else name
-                self._pending_filter_name = name
                 self.raw_filter_validation_requested.emit(
-                    loader, filter_text.strip().rstrip(";")
+                    loader, filter_text.strip().rstrip(";"), name, None
                 )
                 return
 
             self.filter_validation_requested.emit(
-                loader, filter_text, "validate_new_filter"
+                loader, filter_text, "validate_new_filter", name, None
             )
 
     @log(logger=logger)
@@ -597,25 +593,19 @@ class MetaSubsetTabView(MetaView):
                 )
                 return
 
-            self._pending_filter_name = new_name
-            self._pending_filter_text = new_filter
-            # The old name is what relay_query replaces, so it has to travel too.
-            self._pending_old_filter_name = name
-
             if dialog.is_raw:
                 if self._reject_non_select_raw_filter(new_filter):
                     return
                 new_name = (
                     f"{new_name}_raw" if not new_name.endswith("_raw") else new_name
                 )
-                self._pending_filter_name = new_name
                 self.raw_filter_validation_requested.emit(
-                    loader, new_filter.strip().rstrip(";")
+                    loader, new_filter.strip().rstrip(";"), new_name, name
                 )
                 return
 
             self.filter_validation_requested.emit(
-                loader, new_filter, "validate_edited_filter"
+                loader, new_filter, "validate_edited_filter", new_name, name
             )
 
     @log(logger=logger)
@@ -910,15 +900,6 @@ class MetaSubsetTabView(MetaView):
 
         self.selected_experiment_and_channels_by_loader[loader_name] = selected
         self.logger.debug(f"Updated selection for {loader_name}: {selected}")
-
-    @log(logger=logger)
-    def clear_pending_filter_state(self) -> None:
-        """
-        reset all filters to factory settings
-        """
-        self._pending_filter_name = None
-        self._pending_filter_text = None
-        self._pending_old_filter_name = None
 
     @log(logger=logger)
     def _show_filter_info_dialog(

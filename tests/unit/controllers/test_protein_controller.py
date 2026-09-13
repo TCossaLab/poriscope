@@ -90,75 +90,54 @@ class TestRelayQuery:
         assert args[0] is controller.view
         assert "syntax error here" in args[2]
 
-    def test_debug_no_query_clears_pending_for_new_filter(self, controller):
-        controller.view._pending_filter_name = "f1"
-        controller.view._pending_filter_text = "dur > 5"
-        controller.view._pending_old_filter_name = None
-        with patch("poriscope.utils.MetaSubsetTabController.QMessageBox.warning"):
-            controller.relay_query("", "bad syntax", "events", "validate_new_filter")
-        assert controller.view._pending_filter_name is None
-        assert controller.view._pending_filter_text is None
-
-    def test_debug_no_query_clears_pending_for_edited_filter(self, controller):
-        controller.view._pending_filter_name = "f2"
-        controller.view._pending_filter_text = "dur > 10"
-        controller.view._pending_old_filter_name = "f1"
-        with patch("poriscope.utils.MetaSubsetTabController.QMessageBox.warning"):
-            controller.relay_query("", "bad syntax", "events", "validate_edited_filter")
-        assert controller.view._pending_old_filter_name is None
-
-    def test_debug_no_query_no_intent_leaves_pending_untouched(self, controller):
-        controller.view._pending_filter_name = "f1"
-        controller.view._pending_filter_text = "dur > 5"
-        controller.view._pending_old_filter_name = None
-        with patch("poriscope.utils.MetaSubsetTabController.QMessageBox.warning"):
-            controller.relay_query("", "bad syntax", "events")
-        # no intent arg supplied -> early return before clear_pending_filter_state,
-        # so pending state should be untouched
-        assert controller.view._pending_filter_name == "f1"
-
     def test_valid_query_sets_view_query(self, controller):
         controller.relay_query("SELECT * FROM events", "", "events")
         assert controller.view.query == "SELECT * FROM events"
         assert controller.view.table_name == "events"
 
     def test_new_filter_added_with_assisted_suffix(self, controller):
-        controller.view._pending_filter_name = "f1"
-        controller.view._pending_filter_text = "dur > 100"
+        # Step 4d: the name and text arrive as arguments. They used to be read back
+        # off the View, which is the private access this step removes.
         controller.relay_query(
             "SELECT dur FROM events WHERE dur > 100",
             "",
             "events",
             "validate_new_filter",
+            "f1",
+            None,
+            "dur > 100",
         )
         assert "f1_assisted" in controller.view.subset_filters
         assert controller.view.subset_filters["f1_assisted"] == "dur > 100"
 
     def test_new_filter_does_not_double_suffix(self, controller):
-        controller.view._pending_filter_name = "f1_assisted"
-        controller.view._pending_filter_text = "dur > 100"
         controller.relay_query(
             "SELECT dur FROM events WHERE dur > 100",
             "",
             "events",
             "validate_new_filter",
+            "f1_assisted",
+            None,
+            "dur > 100",
         )
         assert "f1_assisted" in controller.view.subset_filters
         assert "f1_assisted_assisted" not in controller.view.subset_filters
 
     def test_new_filter_empty_text_emits_full_dataset_message(self, controller):
-        controller.view._pending_filter_name = "f1"
-        controller.view._pending_filter_text = ""
         received = []
         controller.view.add_text_to_display.connect(lambda m, s: received.append(m))
         controller.relay_query(
-            "SELECT dur FROM events", "", "events", "validate_new_filter"
+            "SELECT dur FROM events",
+            "",
+            "events",
+            "validate_new_filter",
+            "f1",
+            None,
+            "",
         )
         assert any("no WHERE clause" in m for m in received)
 
     def test_new_filter_emits_added_message(self, controller):
-        controller.view._pending_filter_name = "f1"
-        controller.view._pending_filter_text = "dur > 100"
         received = []
         controller.view.add_text_to_display.connect(lambda m, s: received.append(m))
         controller.relay_query(
@@ -166,74 +145,79 @@ class TestRelayQuery:
             "",
             "events",
             "validate_new_filter",
+            "f1",
+            None,
+            "dur > 100",
         )
         assert any("added" in m for m in received)
 
     def test_new_filter_calls_replace_filter_item(self, controller):
-        controller.view._pending_filter_name = "f1"
-        controller.view._pending_filter_text = "dur > 100"
         with patch.object(controller.view, "replace_filter_item") as mock_replace:
             controller.relay_query(
                 "SELECT dur FROM events WHERE dur > 100",
                 "",
                 "events",
                 "validate_new_filter",
+                "f1",
+                None,
+                "dur > 100",
             )
         mock_replace.assert_called_once_with("f1_assisted")
 
     def test_new_filter_none_name_skips_add(self, controller):
-        controller.view._pending_filter_name = None
-        controller.view._pending_filter_text = "dur > 100"
         controller.relay_query(
             "SELECT dur FROM events WHERE dur > 100",
             "",
             "events",
             "validate_new_filter",
+            None,
+            None,
+            "dur > 100",
         )
         assert controller.view.subset_filters == {}
 
     def test_edited_filter_removes_old_adds_new(self, controller):
         controller.view.subset_filters["old_assisted"] = "dur > 1"
-        controller.view._pending_old_filter_name = "old_assisted"
-        controller.view._pending_filter_name = "new"
-        controller.view._pending_filter_text = "dur > 200"
         controller.relay_query(
             "SELECT dur FROM events WHERE dur > 200",
             "",
             "events",
             "validate_edited_filter",
+            "new",
+            "old_assisted",
+            "dur > 200",
         )
         assert "old_assisted" not in controller.view.subset_filters
         assert "new_assisted" in controller.view.subset_filters
         assert controller.view.subset_filters["new_assisted"] == "dur > 200"
 
     def test_edited_filter_no_old_name_only_adds_new(self, controller):
-        controller.view._pending_old_filter_name = None
-        controller.view._pending_filter_name = "new"
-        controller.view._pending_filter_text = "dur > 200"
         controller.relay_query(
             "SELECT dur FROM events WHERE dur > 200",
             "",
             "events",
             "validate_edited_filter",
+            "new",
+            None,
+            "dur > 200",
         )
         assert "new_assisted" in controller.view.subset_filters
 
     def test_edited_filter_empty_text_emits_full_dataset_message(self, controller):
-        controller.view._pending_old_filter_name = "old"
-        controller.view._pending_filter_name = "new"
-        controller.view._pending_filter_text = ""
         received = []
         controller.view.add_text_to_display.connect(lambda m, s: received.append(m))
         controller.relay_query(
-            "SELECT dur FROM events", "", "events", "validate_edited_filter"
+            "SELECT dur FROM events",
+            "",
+            "events",
+            "validate_edited_filter",
+            "new",
+            "old",
+            "",
         )
         assert any("FULL DATASET" in m for m in received)
 
     def test_edited_filter_emits_updated_message(self, controller):
-        controller.view._pending_old_filter_name = "old"
-        controller.view._pending_filter_name = "new"
-        controller.view._pending_filter_text = "dur > 200"
         received = []
         controller.view.add_text_to_display.connect(lambda m, s: received.append(m))
         controller.relay_query(
@@ -241,52 +225,38 @@ class TestRelayQuery:
             "",
             "events",
             "validate_edited_filter",
+            "new",
+            "old",
+            "dur > 200",
         )
         assert any("updated" in m for m in received)
 
     def test_edited_filter_calls_update_filter_name(self, controller):
-        controller.view._pending_old_filter_name = "old"
-        controller.view._pending_filter_name = "new"
-        controller.view._pending_filter_text = "dur > 200"
         with patch.object(controller.view, "update_filter_name") as mock_update:
             controller.relay_query(
                 "SELECT dur FROM events WHERE dur > 200",
                 "",
                 "events",
                 "validate_edited_filter",
+                "new",
+                "old",
+                "dur > 200",
             )
         mock_update.assert_called_once_with("old", "new_assisted")
 
     def test_edited_filter_none_name_skips_update(self, controller):
         controller.view.subset_filters["old"] = "dur > 1"
-        controller.view._pending_old_filter_name = "old"
-        controller.view._pending_filter_name = None
-        controller.view._pending_filter_text = "dur > 200"
         controller.relay_query(
             "SELECT dur FROM events WHERE dur > 200",
             "",
             "events",
             "validate_edited_filter",
+            None,
+            "old",
+            "dur > 200",
         )
         # old filter should remain untouched since new_name is None
         assert controller.view.subset_filters.get("old") == "dur > 1"
-
-    def test_unknown_intent_still_clears_pending(self, controller):
-        controller.view._pending_filter_name = "f1"
-        controller.view._pending_filter_text = "dur > 5"
-        controller.view._pending_old_filter_name = None
-        controller.relay_query(
-            "SELECT dur FROM events", "", "events", "some_other_intent"
-        )
-        assert controller.view._pending_filter_name is None
-        assert controller.view._pending_filter_text is None
-        assert controller.view._pending_old_filter_name is None
-
-    def test_no_intent_still_clears_pending_on_valid_query(self, controller):
-        controller.view._pending_filter_name = "f1"
-        controller.view._pending_filter_text = "dur > 5"
-        controller.relay_query("SELECT dur FROM events", "", "events")
-        assert controller.view._pending_filter_name is None
 
 
 # ===========================================================================
@@ -424,30 +394,12 @@ class TestSetExperimentAndChannelIds:
 # ===========================================================================
 
 
-class TestOnRawFilterValidated:
-    def test_invalid_forwards_to_view(self, controller):
-        controller.view._pending_filter_name = "f1"
-        controller.view._pending_filter_text = "SELECT * FROM events"
-        controller.view._pending_old_filter_name = None
-        controller.on_raw_filter_validated(False, "bad syntax")
-        assert controller.view._pending_filter_name is None
-
-    def test_valid_add_path_forwards_to_view(self, controller):
-        controller.view._pending_filter_name = "f1_raw"
-        controller.view._pending_filter_text = "SELECT * FROM events"
-        controller.view._pending_old_filter_name = None
-        controller.on_raw_filter_validated(True, "")
-        assert "f1_raw" in controller.view.subset_filters
-
-    def test_valid_edit_path_forwards_to_view(self, controller):
-        controller.view.subset_filters["old_raw"] = "SELECT * FROM events"
-        controller.view.proteincontrols.filter_comboBox.addItem("old_raw")
-        controller.view._pending_filter_name = "new_raw"
-        controller.view._pending_filter_text = "SELECT dur FROM events"
-        controller.view._pending_old_filter_name = "old_raw"
-        controller.on_raw_filter_validated(True, "")
-        assert "old_raw" not in controller.view.subset_filters
-        assert "new_raw" in controller.view.subset_filters
+# ``TestOnRawFilterValidated`` lived here and is gone with the method it called.
+# ``MetaSubsetTabController.on_raw_filter_validated`` was a two-argument passthrough
+# left behind by Step 4a, which replaced the bus round-trip it served with the
+# ``raw_filter_validation_requested`` intent; nothing connected to it or called it
+# afterwards. ``validate_raw_filter`` answers the View directly, and the View's half
+# is covered in ``test_protein_view`` and ``test_duplicated_helpers``.
 
 
 # ``TestRelayQueryResult`` lived here and is gone with the method: Step 4a's last

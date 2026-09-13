@@ -66,6 +66,11 @@ were fixed and re-passed. One could not be run:
 | 4b's raw-SQL surface is wider than recorded - 4 filter-dialog sites plus 2 commit methods | **now 5 arguments in 3 Controller methods** (2026-09-13) | `MetadataController.load_event_plot_data` (2), `ProteinController.load_event_plot_data` (2) and `ProteinController.commit_fits` (1). The filter-dialog sites are gone. **Counting rule, because the definition is the number:** an argument the analysis-tab layer *builds* and passes to a loader method that takes SQL - `query_database_directly`, `alter_database`, `load_event_data`, `construct_metadata_query`, `construct_event_data_query`, `validate_filter_query`, `export_subset_to_csv`. Passing a user's filter text or a column list through is marshalling, not authoring, and is not counted; by that rule 9 of the layer's 14 such calls are marshalling. A first attempt grepped for SQL keywords and gave 3, then a widened pattern gave 27 by matching the word "Select" in walkthrough prose |
 | the correct destination shape | **already exists in-repo** (2026-09-13) | `ClusteringModel.drop_cluster_columns` builds its `ALTER`/`DELETE` and calls the loader itself, which 4c Clustering landed. It is the only SQL-authoring site in any Model, and the template the other three should match |
 | **4b's value** | **zero on every gate** (2026-09-13) | No View or Controller imports `sqlite3`, so rule 2 cannot move; and the two promotion candidates are not byte-identical, so `*Controller.py` reads 0 identical / 0 removable and the ratchet cannot move either. The step is a layering fix, and has to be justified as one |
+| 4d moves `subset_filters` **and** the three `_pending_*` to the Model | **two problems, not one** (2026-09-13) | `_pending_*` is per-request *context* parked on the widget and read back; the fix is to **thread it through the intent**, which deletes it, not to relocate it (rule 51's lesson applied to a request rather than an answer). `subset_filters` is real domain state and does belong on the Model. They have different fixes, different sizes and different value |
+| 4d's rule-3 surface: **10** sites across two Controllers | **5, all on one base** (2026-09-13) | 3b promoted `relay_query` to `MetaSubsetTabController` and merged the two copies; the gate has read 5 since. All five are in that one method, reading `_pending_filter_name`, `_pending_filter_text` and `_pending_old_filter_name` |
+| 4d's **12** public `subset_filters` reach-ins | **4** (2026-09-13) | Four direct dict touches in `MetaSubsetTabController` (`:569`, `:595`, `:596`, `:657`) plus one `restore_subset_filters` call. The 12 in `MetaSubsetTabView` are the View's own state, not reach-ins |
+| 4d's value | **all 5 points, from the `_pending_*` half alone** (2026-09-13) | Threading the context removes every rule-3 violation: allowlist **19 -> 14** and rule 3 to **zero**. Moving `subset_filters` moves **no** gate - it is public, so rule 3 never saw it - and costs 157 test references across 82 test functions, 35 of them in e2e |
+| bonus, unrecorded | **a promotion 3b missed** (2026-09-13) | `restore_subset_filters` is **21 of 22 lines identical** between the two tab Views, differing only in the controls-panel name - exactly what the `_subset_controls` accessor introduced in 3b exists to resolve (rule 44) |
 | promotion: 65 identical lines of 73/78 | **re-measured** (2026-09-13) | They are Controller methods now at **122 and 129 lines, 94 identical**, ratio 0.749. Four real differences: an extra `action_label` parameter, an empty-`event_ids` guard Metadata lacks, `SELECT id` against `SELECT id, event_id`, and messages built from `action_label` |
 | promotion: four surviving differences | **three, one inert** | 65 of 73/78 lines identical; Protein's empty-id guard cannot fire on the metadata side |
 
@@ -166,6 +171,61 @@ were fixed and re-passed. One could not be run:
    family while `MetaSubsetTabController` does not, so promoting them to the base drops
    them out of the measured set: `functions` falls, `removable` stays 0, and the win is
    real but invisible to the ratchet (rules 24 and 36).
+
+6. **4d's first half - threading the filter context - LANDED 2026-09-13** on
+   `feature/step-4d-domain-state`. **Allowlist 19 -> 14 and rule 3 to zero**, which is
+   the whole of the step's gate value and came from the half that deletes state rather
+   than the half that relocates it. `filter_validation_requested` and
+   `raw_filter_validation_requested` now carry the filter's name and the name it
+   replaces; `validate_filter`, `validate_raw_filter`, `relay_query` and
+   `MetaSubsetTabView.on_raw_filter_validated` take them as arguments; and the three
+   `_pending_*` attributes and `clear_pending_filter_state` are gone with nothing left
+   to clear.
+
+   **A dead Controller method fell out of it.**
+   `MetaSubsetTabController.on_raw_filter_validated` was a two-argument passthrough left
+   behind by Step 4a, which replaced the bus round-trip it served with the
+   `raw_filter_validation_requested` intent. Nothing connected to it or called it
+   afterwards, and only its three tests kept it alive - which is method rule 42's shape
+   at one remove: tests that exercise a method no production caller reaches keep it
+   looking live. Worth a check of the connection sites, not only the call sites, whenever
+   a converted emit leaves a slot behind.
+
+   **Test fallout was 73 failures, and the shape of it is the point.** Almost all of them
+   set `_pending_*` on the widget and then asserted on what the Controller did with it -
+   they pinned the mechanism, not the behaviour. Those were deleted rather than
+   re-pointed; the ones that asserted on an outcome were re-pointed by passing the
+   context as arguments.
+
+   **Found while verifying, and fixed in its own commit: restoring a session dropped the
+   last-restored tab's subset filters.** Kyle reported it as Metadata keeping its filters
+   and Protein not, and the cause is order, not tab: restoring a tab is
+   `instantiate_analysis_tab` then `restore_session_state`, and only the first refreshes
+   `plugin_history` - via the `update_plugin_history` it ends on, which snapshots every
+   open tab while the one being restored still has an empty filter list. Each tab was
+   corrected only by the sync that the *next* tab's instantiation happened to trigger,
+   so the last one was saved empty and lost its filters on the following restore.
+   Protein was simply opened second. `load_session` now re-syncs and saves once the loop
+   has finished. **Reproduced at `develop` in a worktree before being called a defect**,
+   per method rule 64, and the on-disk session file was read directly rather than the
+   in-memory state - the in-memory restore was correct on both tabs the whole time, which
+   is why unit coverage of `restore_session_state` never saw it.
+
+   **Manual Windows pass run 2026-09-13, all clear.** Ten checks over both tabs: adding,
+   editing and renaming assisted and raw filters, an empty filter text, a filter naming a
+   column that does not exist, save/load to file, and a session round trip restored
+   **twice** - the second restore being where the defect above used to bite. No defects.
+   One checklist item was itself wrong: it asked for two filters added back to back
+   *without closing the dialog*, which the UI does not allow, since the dialog closes on
+   OK. The thing it was trying to probe - that nothing is carried over from one request to
+   the next - is covered by adding two filters in succession, which passed.
+
+   **Still open, and deliberately not done here:** moving `subset_filters` to the Model.
+   It moves no gate, costs 157 test references across 82 test functions (35 e2e), and
+   wants a `MetaSubsetTabModel` that does not exist - the same missing base that stopped
+   4b's last Controller site and the `resolve_event_ids` merge. The free promotion of
+   `restore_subset_filters` (21 of 22 lines identical) is still on the table and still
+   free.
 
 **Read before writing code:** method rules **42, 45, 50, 51, 52** in the artifact
 (<https://claude.ai/code/artifact/304ba119-d177-4918-90af-471d6de6bb80>), plus **53-57**
