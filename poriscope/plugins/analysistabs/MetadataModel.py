@@ -56,11 +56,17 @@ class MetadataModel(MetaModel):
         Choose a bin count for a 1-D histogram by the Freedman-Diaconis rule.
 
         Shared verbatim by the density, histogram and capture-rate paths, which used
-        three byte-identical copies of it in ``MetadataView``. ``OverflowError`` is
-        **not** caught here because the three callers do not agree on what to do
-        about it - two fall back to 100 bins and one to the same expression used when
-        the interquartile range is zero - and unifying that would be a behaviour
-        change rather than a move. The caller catches it.
+        three byte-identical copies of it in ``MetadataView``.
+
+        **The exponent is 1/(2 + D), where D is the number of dimensions being
+        binned** - so 1/3 here and 1/4 in :meth:`_auto_bins_2d`. That is the
+        Freedman-Diaconis rule generalised to D dimensions, and the difference
+        between the two methods is deliberate rather than drift. Do not unify them.
+
+        ``OverflowError`` is **not** caught here because the three callers do not
+        agree on what to do about it - two fall back to 100 bins and one to the same
+        expression used when the interquartile range is zero - and unifying *that*
+        would be a behaviour change rather than a move. The caller catches it.
 
         An ``OverflowError`` from ``int()`` on an infinite ratio propagates out
         rather than being handled - there is no ``raise`` here to document, but the
@@ -82,11 +88,15 @@ class MetadataModel(MetaModel):
         """
         Choose one axis's bin count for a 2-D heatmap.
 
-        Deliberately separate from :meth:`_auto_bins_1d`, which it resembles: the
-        heatmap uses a fourth root rather than a cube root and falls back to the
-        square root of the sample size rather than to Sturges' expression. Both
-        divergences are real and are preserved rather than unified, so this move
-        changes no output.
+        Deliberately separate from :meth:`_auto_bins_1d`, and for a stated reason:
+        **the exponent is 1/(2 + D) for D binning dimensions**, so a heatmap's two
+        dimensions give a fourth root where a histogram's one gives a cube root.
+        Freedman-Diaconis generalised to D dimensions. The two methods must not be
+        collapsed into one.
+
+        The degenerate fallback also differs - the square root of the sample size
+        rather than Sturges' expression - and that one is simply how each path was
+        written. It is preserved as-is, so this move changes no output.
 
         ``count`` is the sample size to raise to the fourth power, and is passed
         rather than taken from ``data`` because the heatmap's y-axis calculation uses
