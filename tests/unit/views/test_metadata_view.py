@@ -85,8 +85,12 @@ def view(mocker: MockerFixture, mock_qt_dependencies: None) -> MetadataView:
     # Mock helper methods
     view_instance._update_cache = mocker.Mock()
     view_instance._clear_cache = mocker.Mock()
+    # One array out per array in, which is what the real method guarantees and what
+    # every caller unpacks positionally. It used to return a 1-tuple whatever it was
+    # given; that was invisible while only single-column callers reached it, and
+    # wrong the moment a two-column one did.
     view_instance._logscale_and_filter_multiple_columns = mocker.Mock(
-        side_effect=lambda *args, **kwargs: (args[0],) if args else ()
+        side_effect=lambda *args, **kwargs: tuple(args)
     )
 
     # Mock methods called by _overlay_plot
@@ -124,6 +128,10 @@ def view(mocker: MockerFixture, mock_qt_dependencies: None) -> MetadataView:
     )
     view_instance.plot_features_requested = mocker.Mock()
     view_instance.csv_subset_export_requested = mocker.Mock()
+    # Answered by MetadataController.calculate_heatmap in the real app; the tests
+    # that drive _plot_heatmap supply the binning themselves via _answer_heatmap,
+    # exactly as they used to supply it to a mocked _calculate_heatmap.
+    view_instance.heatmap_requested = mocker.Mock()
     # Answered by MetaSubsetTabController.load_event_id_cache in the real app;
     # each test that drives _rebuild_event_id_cache sets its own answer.
     view_instance.event_id_cache_requested = mocker.Mock()
@@ -1359,31 +1367,43 @@ def test_plot_1d_histogram_overlays_multiple_datasets(
 # ----------------------------- Plot Heatmap Tests ------------------------------
 
 
-def test_plot_heatmap_calls_calculate_heatmap(
+def _answer_heatmap(view, x_bins, y_bins, z_grid):
+    """
+    Answer ``heatmap_requested`` the way MetadataController does.
+
+    Step 4c split ``_plot_heatmap`` at the binning: it emits the filtered columns
+    and ``set_heatmap`` does every bit of drawing. The binning result is supplied
+    here rather than computed, which is what the mocked ``_calculate_heatmap``
+    used to do for these tests.
+
+    :param view: the view whose request has just been emitted
+    :type view: MetadataView
+    :param x_bins: bin-center x values to answer with
+    :type x_bins: np.ndarray
+    :param y_bins: bin-center y values to answer with
+    :type y_bins: np.ndarray
+    :param z_grid: the log2-scaled counts to answer with
+    :type z_grid: np.ndarray
+    :return: None
+    :rtype: None
+    """
+    context = view.heatmap_requested.emit.call_args.args[4:]
+    view.set_heatmap(x_bins, y_bins, z_grid, *context)
+
+
+def test_plot_heatmap_requests_the_binning(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify _calculate_heatmap is called."""
+    """Verify the binning is asked for rather than done here."""
     data = pd.DataFrame({"x": np.array([1.0, 2.0]), "y": np.array([3.0, 4.0])})
-
-    # Create explicit arrays before mocking to avoid evaluation issues
-    x_bins = np.array([1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5])
-    y_bins = np.array([3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0, 7.5])
-    z_grid = np.ones((10, 10))
-
-    view._calculate_heatmap = mocker.Mock(  # type: ignore[method-assign]
-        return_value=(x_bins, y_bins, z_grid)
-    )
-
-    # Mock the colorbar to return proper ticks
-    mock_colorbar = mocker.Mock()
-    mock_colorbar.get_ticks = mocker.Mock(
-        return_value=np.array([0.0, 0.5, 1.0, 1.5, 2.0])
-    )
-    view.figure.colorbar = mocker.Mock(return_value=mock_colorbar)
 
     view._plot_heatmap(view.axes, data, ["x", "y"], ["u1", "u2"], [False, False])
 
-    view._calculate_heatmap.assert_called_once()
+    view.heatmap_requested.emit.assert_called_once()
+    # the filtered columns go out, and the drawing context comes back untouched
+    emitted = view.heatmap_requested.emit.call_args.args
+    assert emitted[4] is view.axes
+    assert len(emitted) == 8
 
 
 def test_plot_heatmap_sets_axis_labels(
@@ -1396,10 +1416,6 @@ def test_plot_heatmap_sets_axis_labels(
     y_bins = np.array([3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0, 7.5])
     z_grid = np.ones((10, 10))
 
-    view._calculate_heatmap = mocker.Mock(  # type: ignore[method-assign]
-        return_value=(x_bins, y_bins, z_grid)
-    )
-
     # Mock the colorbar
     mock_colorbar = mocker.Mock()
     mock_colorbar.get_ticks = mocker.Mock(
@@ -1408,6 +1424,7 @@ def test_plot_heatmap_sets_axis_labels(
     view.figure.colorbar = mocker.Mock(return_value=mock_colorbar)
 
     view._plot_heatmap(view.axes, data, ["x", "y"], ["u1", "u2"], [False, False])
+    _answer_heatmap(view, x_bins, y_bins, z_grid)
 
     view.axes.set_xlabel.assert_called()
     view.axes.set_ylabel.assert_called()
@@ -1423,10 +1440,6 @@ def test_plot_heatmap_sets_log10_labels_when_logscale_true(
     y_bins = np.array([3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0, 7.5])
     z_grid = np.ones((10, 10))
 
-    view._calculate_heatmap = mocker.Mock(  # type: ignore[method-assign]
-        return_value=(x_bins, y_bins, z_grid)
-    )
-
     # Mock the colorbar
     mock_colorbar = mocker.Mock()
     mock_colorbar.get_ticks = mocker.Mock(
@@ -1435,6 +1448,7 @@ def test_plot_heatmap_sets_log10_labels_when_logscale_true(
     view.figure.colorbar = mocker.Mock(return_value=mock_colorbar)
 
     view._plot_heatmap(view.axes, data, ["x", "y"], ["u1", "u2"], [True, True])
+    _answer_heatmap(view, x_bins, y_bins, z_grid)
 
     xlabel_call = view.axes.set_xlabel.call_args
     ylabel_call = view.axes.set_ylabel.call_args
@@ -1454,10 +1468,6 @@ def test_plot_heatmap_removes_previous_colorbar(
     y_bins = np.array([3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0, 7.5])
     z_grid = np.ones((10, 10))
 
-    view._calculate_heatmap = mocker.Mock(  # type: ignore[method-assign]
-        return_value=(x_bins, y_bins, z_grid)
-    )
-
     # Mock the colorbar
     mock_new_colorbar = mocker.Mock()
     mock_new_colorbar.get_ticks = mocker.Mock(
@@ -1472,6 +1482,7 @@ def test_plot_heatmap_removes_previous_colorbar(
     view._heatmap_colorbar = mock_old_colorbar  # type: ignore[attr-defined]
 
     view._plot_heatmap(view.axes, data, ["x", "y"], ["u1", "u2"], [False, False])
+    _answer_heatmap(view, x_bins, y_bins, z_grid)
 
     mock_old_colorbar.remove.assert_called_once()
 
@@ -4514,117 +4525,24 @@ def test_handle_other_actions_raises_not_implemented(
 # ----------------------------- Calculate Heatmap Tests ------------------------------
 
 
-def test_calculate_heatmap_returns_three_arrays(
+def test_plot_heatmap_applies_logscale_before_asking_for_the_binning(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify calculate_heatmap returns x, y, z arrays."""
-    xdata = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
-    ydata = np.array([10.0, 20.0, 30.0, 40.0, 50.0])
-    view._logscale_and_filter_multiple_columns = mocker.Mock(
-        return_value=(xdata, ydata)
-    )
+    """
+    The filter is still the View's, and runs before the request goes out.
 
-    x, y, z = view._calculate_heatmap(xdata, ydata, bins=[5])
+    Step 4c moved the binning to ``MetadataModel`` but left
+    ``_logscale_and_filter_multiple_columns`` on ``MetaView``, so this is the half
+    of the old ``_calculate_heatmap`` behaviour that stayed here. The rest moved to
+    ``tests/unit/models/test_metadata_model.py``.
+    """
+    data = pd.DataFrame({"x": np.array([1.0, 10.0]), "y": np.array([1.0, 10.0])})
 
-    assert len(x) == 5
-    assert len(y) == 5
-    assert z.shape == (5, 5)
-
-
-def test_calculate_heatmap_applies_logscale(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
-    """Verify logscale is applied when requested."""
-    xdata = np.array([1.0, 10.0, 100.0])
-    ydata = np.array([1.0, 10.0, 100.0])
-    view._logscale_and_filter_multiple_columns = mocker.Mock(
-        return_value=(xdata, ydata)
-    )
-
-    view._calculate_heatmap(xdata, ydata, logx=True, logy=True)
+    view._plot_heatmap(view.axes, data, ["x", "y"], ["u1", "u2"], [True, True])
 
     view._logscale_and_filter_multiple_columns.assert_called_once()
     call_args = view._logscale_and_filter_multiple_columns.call_args
     assert call_args.kwargs["log_flags"] == [True, True]
-
-
-def test_calculate_heatmap_uses_different_bins_for_x_and_y(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
-    """Verify different bin counts can be specified for x and y."""
-    xdata = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
-    ydata = np.array([10.0, 20.0, 30.0, 40.0, 50.0])
-    view._logscale_and_filter_multiple_columns = mocker.Mock(
-        return_value=(xdata, ydata)
-    )
-
-    x, y, z = view._calculate_heatmap(xdata, ydata, bins=[3, 5])
-
-    assert z.shape == (5, 3)  # Note: transposed, so y bins first
-
-
-def test_calculate_heatmap_calculates_bin_sizes_when_sizes_true(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
-    """Verify bin sizes are calculated when sizes=True."""
-    xdata = np.array([0.0, 10.0, 20.0, 30.0])
-    ydata = np.array([0.0, 10.0, 20.0, 30.0])
-    view._logscale_and_filter_multiple_columns = mocker.Mock(
-        return_value=(xdata, ydata)
-    )
-
-    x, y, z = view._calculate_heatmap(xdata, ydata, bins=[5.0], sizes=True)
-
-    # (30 - 0) / 5.0 = 6 bins per axis
-    assert z.shape[0] == 6
-    assert z.shape[1] == 6
-
-
-def test_calculate_heatmap_raises_for_invalid_bins(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
-    """Verify ValueError is raised for empty bins list."""
-    xdata = np.array([1.0, 2.0, 3.0])
-    ydata = np.array([10.0, 20.0, 30.0])
-    view._logscale_and_filter_multiple_columns = mocker.Mock(
-        return_value=(xdata, ydata)
-    )
-
-    with pytest.raises(ValueError, match="Invalid bin entry"):
-        view._calculate_heatmap(xdata, ydata, bins=[], sizes=False)
-
-
-def test_calculate_heatmap_defaults_to_iqr_when_bins_none(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
-    """Verify IQR-based bin calculation when bins=None."""
-    xdata = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
-    ydata = np.array([10.0, 20.0, 30.0, 40.0, 50.0])
-    view._logscale_and_filter_multiple_columns = mocker.Mock(
-        return_value=(xdata, ydata)
-    )
-    mocker.patch("poriscope.plugins.analysistabs.MetadataView.iqr", return_value=2.0)
-
-    x, y, z = view._calculate_heatmap(xdata, ydata, bins=None)
-
-    assert z.shape[0] > 0
-    assert z.shape[1] > 0
-
-
-def test_calculate_heatmap_applies_log2_to_counts(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
-    """Verify counts are log2 transformed."""
-    xdata = np.array([1.0, 1.0, 2.0, 2.0])
-    ydata = np.array([10.0, 10.0, 20.0, 20.0])
-    view._logscale_and_filter_multiple_columns = mocker.Mock(
-        return_value=(xdata, ydata)
-    )
-
-    x, y, z = view._calculate_heatmap(xdata, ydata, bins=[2])
-
-    # All non-zero entries should be log2 transformed
-    assert np.all((z == -1) | (z >= 0))  # -1 for zero counts, >=0 for others
 
 
 # ----------------------------- Show Add Filter Dialog Tests ------------------------------

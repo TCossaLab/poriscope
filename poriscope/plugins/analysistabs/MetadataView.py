@@ -146,6 +146,14 @@ class MetadataView(MetaSubsetTabView):
     #: export is keyed under. ``on_subset_export_started`` comes back if it was staged.
     csv_subset_export_requested = Signal(str, str, str, object, object, int)
 
+    #: Asks for the heatmap's 2-D binning: the already-filtered columns, the bin
+    #: request, and the drawing context handed back unchanged. Answered through
+    #: ``set_heatmap``.
+    #:
+    #: Step 4c. The binning uses ``scipy.stats.iqr``, which is why it crosses; the
+    #: imshow, the colourbar and the cache entry all stay here.
+    heatmap_requested = Signal(object, object, object, bool, object, str, str, str)
+
     logger = logging.getLogger(__name__)
 
     @log(logger=logger)
@@ -833,9 +841,48 @@ class MetadataView(MetaSubsetTabView):
         if logy:
             y_label = f"log10({y_label})"
 
-        x, y, z = self._calculate_heatmap(
-            x, y, logx=logx, logy=logy, bins=bins, sizes=sizes
+        # The filter stays here: it lives on ``MetaView`` and emits to the status
+        # panel, and it moves only when all eight of its call sites can go together.
+        x, y = self._logscale_and_filter_multiple_columns(x, y, log_flags=[logx, logy])
+        self.heatmap_requested.emit(
+            x, y, bins, sizes, ax, x_label, y_label, dataset_label
         )
+
+    @log(logger=logger)
+    def set_heatmap(
+        self,
+        x: npt.NDArray[np.float64],
+        y: npt.NDArray[np.float64],
+        z: npt.NDArray[np.float64],
+        ax: Axes,
+        x_label: str,
+        y_label: str,
+        dataset_label: str,
+    ) -> None:
+        """
+        Draw the binned heatmap, its colourbar and its cache entry.
+
+        The answering half of ``heatmap_requested``. Step 4c moved the binning to
+        ``MetadataModel`` so that ``scipy.stats`` could leave the View; everything
+        here is matplotlib, which stays.
+
+        :param x: bin-center x values
+        :type x: npt.NDArray[np.float64]
+        :param y: bin-center y values
+        :type y: npt.NDArray[np.float64]
+        :param z: the log2-scaled 2-D histogram counts
+        :type z: npt.NDArray[np.float64]
+        :param ax: the axis object on which to plot
+        :type ax: Axes
+        :param x_label: the x axis label, already formatted
+        :type x_label: str
+        :param y_label: the y axis label, already formatted
+        :type y_label: str
+        :param dataset_label: string to label the dataset
+        :type dataset_label: str
+        :return: None
+        :rtype: None
+        """
         im = ax.imshow(
             z,
             origin="lower",
@@ -2587,101 +2634,6 @@ class MetadataView(MetaSubsetTabView):
         :raises NotImplementedError: Always
         """
         raise NotImplementedError(f"{action_name} handler not implemented")
-
-    @log(logger=logger)
-    def _calculate_heatmap(
-        self,
-        xdata: npt.NDArray[np.float64],
-        ydata: npt.NDArray[np.float64],
-        logx: bool = False,
-        logy: bool = False,
-        bins: Any = None,
-        sizes: bool = False,
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """
-        :param xdata: the data on the x axis
-        :type xdata: npt.NDArray[np.float64]
-        :param ydata: the data on the y axis
-        :type ydata: npt.NDArray[np.float64]
-        :param logx: logscale the x data before building the heatmap?
-        :type logx: bool
-        :param logy: logscale the y data before building the heatmap?
-        :type logy: bool
-        :param bins: number of bins (if sizes==False) or size of bins (if sizes==True) for use when binning. Arrives as a list from the controls and may be rebound to None in the body, hence the loose annotation.
-        :type bins: Any
-        :param sizes: does the bins parameter refer to bin sizes (True) or widths (False)
-        :type sizes: bool
-        :return: Bin-center x values, bin-center y values, and the log2-scaled 2D histogram counts.
-        :rtype: tuple[np.ndarray, np.ndarray, np.ndarray]
-        :raises ValueError: If bins is an invalid entry when sizes is False.
-
-        Build a heatmap of the provided data
-        """
-        xdata, ydata = self._logscale_and_filter_multiple_columns(
-            xdata, ydata, log_flags=[logx, logy]
-        )
-
-        if bins is not None:
-            if sizes is False:
-                if isinstance(bins, list) and len(bins) >= 2:
-                    xbins = bins[0]
-                    ybins = bins[1]
-                elif isinstance(bins, list) and len(bins) == 1:
-                    xbins = bins[0]
-                    ybins = bins[0]
-                else:
-                    raise ValueError(f"Invalid bin entry: {bins}")
-            elif sizes is True:
-                if isinstance(bins, list) and len(bins) >= 2:
-                    xbins = int((max(xdata) - min(xdata)) / bins[0])
-                    ybins = int((max(ydata) - min(ydata)) / bins[1])
-                elif isinstance(bins, list) and len(bins) == 1:
-                    xbins = int((max(xdata) - min(xdata)) / bins[0])
-                    ybins = int((max(ydata) - min(ydata)) / bins[0])
-                else:
-                    self.logger.info(
-                        f"Invalid entry in bins: {bins}, defaulting to iqr"
-                    )
-                    bins = None
-                if xbins <= 1 or ybins <= 1:
-                    self.logger.info(
-                        f"Invalid entry in bins: {bins}, defaulting to iqr"
-                    )
-                    bins = None
-        if bins is None:
-            try:
-                if iqr(xdata) > 0:
-                    xbins = int(
-                        (max(xdata) - min(xdata))
-                        * len(xdata) ** (1.0 / 4.0)
-                        / (iqr(xdata))
-                    )
-                else:
-                    xbins = int(np.sqrt(len(xdata)))
-            except OverflowError:
-                xbins = int(np.sqrt(len(xdata)))
-            try:
-                if iqr(ydata) > 0:
-                    ybins = int(
-                        (max(ydata) - min(ydata))
-                        * len(xdata) ** (1.0 / 4.0)
-                        / (iqr(ydata))
-                    )
-                else:
-                    ybins = int(np.sqrt(len(ydata)))
-            except OverflowError:
-                ybins = int(np.sqrt(len(ydata)))
-
-        z, x, y = np.histogram2d(xdata, ydata, bins=[int(xbins), int(ybins)])
-        logged_z = np.empty_like(z)
-        for i in range(z.shape[0]):
-            for j in range(z.shape[1]):
-                logged_z[i, j] = np.log2(z[i, j]) if z[i, j] > 0 else -1
-
-        x = x[:-1] + np.diff(x) / 2.0
-        y = y[:-1] + np.diff(y) / 2.0
-
-        return x, y, logged_z.T
 
     @log(logger=logger)
     def _delete_all_selected_filters(self) -> None:

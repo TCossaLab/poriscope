@@ -139,7 +139,6 @@ MOVED: Tuple[Tuple[str, str, str], ...] = (
         "cluster_gaussian_mixture",
         "4c",
     ),
-    ("poriscope/plugins/analysistabs/MetadataView.py", "_calculate_heatmap", "4c"),
     (
         "poriscope/plugins/analysistabs/MetadataView.py",
         "_construct_all_points_histogram",
@@ -231,6 +230,11 @@ MOVED: Tuple[Tuple[str, str, str], ...] = (
     ("poriscope/plugins/analysistabs/MetadataView.py", "_plot_capture_rate", "4c"),
     ("poriscope/plugins/analysistabs/MetadataView.py", "_plot_1d_histogram", "4c"),
     ("poriscope/plugins/analysistabs/MetadataView.py", "_plot_heatmap", "4c"),
+    ("poriscope/plugins/analysistabs/MetadataView.py", "set_heatmap", "4c"),
+    # Landed 2026-09-13: the 2-D binning moved to MetadataModel, tracked at its
+    # destination now. The log-scaling that used to precede it inside this method
+    # stays on MetaView, so `_plot_heatmap` still carries that 3d call site.
+    ("poriscope/plugins/analysistabs/MetadataModel.py", "calculate_heatmap", "4c"),
     (
         "poriscope/plugins/analysistabs/MetadataView.py",
         "_plot_categorical_histogram",

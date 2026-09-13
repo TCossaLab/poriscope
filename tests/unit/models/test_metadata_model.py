@@ -128,3 +128,86 @@ class TestAutoBins2d:
         data = np.array([1.0, 2.0, 3.0, 4.0])
 
         assert model._auto_bins_2d(data, 4) != model._auto_bins_2d(data, 100000)
+
+
+# ===========================================================================
+# calculate_heatmap - pins moved from test_metadata_view.py by Step 4c
+# ===========================================================================
+
+
+class TestCalculateHeatmap:
+    """
+    The 2-D binning, moved off MetadataView with its tests.
+
+    These are the pins that predate the move: their passing here against
+    ``MetadataModel`` is what says the computation is unchanged. Each lost the
+    ``_logscale_and_filter_multiple_columns`` mock it used to need, because the
+    Model is handed arrays the View has already filtered.
+    """
+
+    def test_returns_three_arrays(self, model):
+        """Verify calculate_heatmap returns x, y, z arrays."""
+        xdata = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
+        ydata = np.array([10.0, 20.0, 30.0, 40.0, 50.0])
+
+        x, y, z = model.calculate_heatmap(xdata, ydata, [5], False)
+
+        assert len(x) == 5
+        assert len(y) == 5
+        assert z.shape == (5, 5)
+
+    def test_uses_different_bins_for_x_and_y(self, model):
+        """Verify different bin counts can be specified for x and y."""
+        xdata = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
+        ydata = np.array([10.0, 20.0, 30.0, 40.0, 50.0])
+
+        x, y, z = model.calculate_heatmap(xdata, ydata, [3, 5], False)
+
+        assert z.shape == (5, 3)  # Note: transposed, so y bins first
+
+    def test_calculates_bin_sizes_when_sizes_true(self, model):
+        """Verify bin sizes are calculated when sizes=True."""
+        xdata = np.array([0.0, 10.0, 20.0, 30.0])
+        ydata = np.array([0.0, 10.0, 20.0, 30.0])
+
+        x, y, z = model.calculate_heatmap(xdata, ydata, [5.0], True)
+
+        # (30 - 0) / 5.0 = 6 bins per axis
+        assert z.shape[0] == 6
+        assert z.shape[1] == 6
+
+    def test_raises_for_invalid_bins(self, model):
+        """Verify ValueError is raised for empty bins list."""
+        xdata = np.array([1.0, 2.0, 3.0])
+        ydata = np.array([10.0, 20.0, 30.0])
+
+        with pytest.raises(ValueError, match="Invalid bin entry"):
+            model.calculate_heatmap(xdata, ydata, [], False)
+
+    def test_defaults_to_iqr_when_bins_none(self, model, mocker):
+        """
+        Verify IQR-based bin calculation when bins=None.
+
+        The patch target moved with the method - it names the module that
+        *imported* ``iqr``, which is now the Model's (method rule 45).
+        """
+        xdata = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
+        ydata = np.array([10.0, 20.0, 30.0, 40.0, 50.0])
+        mocker.patch(
+            "poriscope.plugins.analysistabs.MetadataModel.iqr", return_value=2.0
+        )
+
+        x, y, z = model.calculate_heatmap(xdata, ydata, None, False)
+
+        assert z.shape[0] > 0
+        assert z.shape[1] > 0
+
+    def test_applies_log2_to_counts(self, model):
+        """Verify counts are log2 transformed."""
+        xdata = np.array([1.0, 1.0, 2.0, 2.0])
+        ydata = np.array([10.0, 10.0, 20.0, 20.0])
+
+        x, y, z = model.calculate_heatmap(xdata, ydata, [2], False)
+
+        # All non-zero entries should be log2 transformed
+        assert np.all((z == -1) | (z >= 0))  # -1 for zero counts, >=0 for others

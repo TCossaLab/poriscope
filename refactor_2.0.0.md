@@ -90,9 +90,11 @@ were fixed and re-passed. One could not be run:
    `_plot_capture_rate` emits `add_text_to_display`, so the split has to place that
    deliberately. Coverage is 7-14 direct calls per method, so **no pinning commit**.
 
-   **Does not finish 3d**: these four carry 3 of `MetaView`'s 8 logscale call sites.
-   Metadata's other two, Protein's two and Clustering's one remain, so `MetaView` keeps
-   `numpy`/`numpy.typing` until all eight are converted. `_plot_scatterplot` and
+   **Advances 3d by zero, deliberately.** Three of the four contain a logscale call,
+   but the helper emits to the status panel and lives on `MetaView`, so it moves only
+   when all eight of its call sites can convert together. Each request half therefore
+   calls it *before* emitting and hands the Model arrays that are already filtered.
+   `MetaView` keeps `numpy`/`numpy.typing` until 3d proper. `_plot_scatterplot` and
    `_plot_3d_scatterplot` are deliberately **not** in scope: they free no import, so by
    method rule 38 they do not belong in a step aimed at the allowlist.
 3. **3d is folded into 4c and is no longer a step.** The logscale helper goes to

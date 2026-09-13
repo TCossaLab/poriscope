@@ -26,8 +26,11 @@
 
 
 import logging
-from typing import Dict, List, Optional, override
+from typing import Any, Dict, List, Optional, override
 
+import numpy as np
+import numpy.typing as npt
+from matplotlib.axes import Axes
 from PySide6.QtCore import Slot
 
 from poriscope.plugins.analysistabs.MetadataModel import MetadataModel
@@ -65,7 +68,7 @@ class MetadataController(MetaSubsetTabController):
     @override
     def _setup_connections(self) -> None:
         """
-        Wire this tab's own seven intents on top of the four the subset base wires.
+        Wire this tab's own eight intents on top of the four the subset base wires.
 
         :return: None
         :rtype: None
@@ -78,6 +81,60 @@ class MetadataController(MetaSubsetTabController):
         self.view.event_plot_data_requested.connect(self.load_event_plot_data)
         self.view.plot_features_requested.connect(self.request_plot_features)
         self.view.csv_subset_export_requested.connect(self.export_csv_subset)
+        self.view.heatmap_requested.connect(self.calculate_heatmap)
+
+    @log(logger=logger)
+    @Slot(object, object, object, bool, object, str, str, str)
+    def calculate_heatmap(
+        self,
+        xdata: npt.NDArray[np.float64],
+        ydata: npt.NDArray[np.float64],
+        bins: Any,
+        sizes: bool,
+        ax: Axes,
+        x_label: str,
+        y_label: str,
+        dataset_label: str,
+    ) -> None:
+        """
+        Bin the heatmap's two columns, and hand the result back to the View to draw.
+
+        Decision B's command path, the same shape as
+        ``ClusteringController.cluster``. The drawing context arrives and departs
+        unchanged; this slot marshals and does not interpret it.
+
+        An invalid bin entry raises out of the Model, and is reported here rather
+        than propagating: before Step 4c it escaped the plotting call unhandled,
+        because nothing between here and ``_overlay_plot`` catches it.
+
+        :param xdata: the already-filtered x values
+        :type xdata: npt.NDArray[np.float64]
+        :param ydata: the already-filtered y values
+        :type ydata: npt.NDArray[np.float64]
+        :param bins: number of bins, or size of bins when sizes is True, or None to estimate
+        :type bins: Any
+        :param sizes: does the bins parameter refer to bin sizes (True) or counts (False)
+        :type sizes: bool
+        :param ax: the axis object the View will draw on
+        :type ax: Axes
+        :param x_label: the x axis label, already formatted
+        :type x_label: str
+        :param y_label: the y axis label, already formatted
+        :type y_label: str
+        :param dataset_label: string to label the dataset
+        :type dataset_label: str
+        :return: None
+        :rtype: None
+        """
+        try:
+            x, y, z = self.model.calculate_heatmap(xdata, ydata, bins, sizes)
+        except (ValueError, TypeError, IndexError) as e:
+            self.logger.error(f"Unable to build the heatmap: {repr(e)}")
+            self.add_text_to_display.emit(
+                f"Unable to build the heatmap: {e}", self.__class__.__name__
+            )
+            return
+        self.view.set_heatmap(x, y, z, ax, x_label, y_label, dataset_label)
 
     @log(logger=logger)
     @Slot(str, list, str, object)
