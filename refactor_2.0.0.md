@@ -73,8 +73,11 @@ were fixed and re-passed. One could not be run:
    distribution plot refused for too many channels reported only to the console, because
    `QtHandler` sits at `ERROR`. Its four existing tests assert on `caplog` and passed
    throughout. Fixed, with six tests that assert on the status panel instead.
-2. **Then 4c Metadata - in progress on `feature/step-4c-metadata`, and worth 3 rather
-   than 2.** Re-derived 2026-09-13 immediately before starting. Scope is the **four**
+2. ~~**Then 4c Metadata**~~ **LANDED 2026-09-13** on `feature/step-4c-metadata`,
+   allowlist **22 -> 19** and rule 2 **17 -> 14**: `scipy`, `scipy.optimize` and
+   `scipy.stats` are all out of the View layer and `MetadataView` is down from 6
+   forbidden imports to 3. **Manual Windows pass owed** over the four plot types.
+   Worth 3 rather than the 2 the plan recorded. Re-derived 2026-09-13 before starting. Scope is the **four**
    methods that use scipy, not the two the plan named: `_plot_1d_density` (frees `scipy`),
    `_plot_capture_rate` (frees `scipy.optimize`), `_plot_1d_histogram` and
    `_calculate_heatmap` - the last two matter because `iqr` lives in all four, so

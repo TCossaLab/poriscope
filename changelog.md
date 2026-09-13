@@ -1,5 +1,7 @@
 ## Poriscope 2.0.0: in progress
 
+* The Metadata tab now reports a heatmap or capture-rate plot it cannot compute on the status panel, instead of failing with an unhandled error
+
 * **The Protein tab now says on the status panel why a distribution plot was refused** - more than one experiment or channel selected, or an experiment with no channel - instead of writing only to the log and drawing nothing
 
 * **Finding or fitting events with no filter selected now asks for confirmation first**: on a noisy trace an unfiltered run can register almost every sample as an event, which takes a very long time and is hard to tell apart from the application hanging; cancelling works, but only takes effect at the end of the current chunk, so it can be slow to respond
