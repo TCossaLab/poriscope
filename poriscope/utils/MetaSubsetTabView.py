@@ -270,6 +270,36 @@ class MetaSubsetTabView(MetaView):
         self._subset_controls.filter_comboBox.refreshDisplayText()
 
     @log(logger=logger)
+    def restore_subset_filters(self, filters: Dict[str, str]) -> None:
+        """
+        Restore subset filters captured in a saved session.
+
+        Unlike :meth:`_load_filter`, this does not re-validate the filters against a
+        database loader, since they were already valid when the session was saved.
+
+        Promoted from both subset tabs, whose copies were 20 of 21 lines identical
+        and differed only in the name each held its controls panel under -
+        ``_subset_controls`` again. Step 3b, which introduced that accessor and
+        promoted this method's neighbours, missed this one.
+
+        :param filters: Mapping of filter name to filter expression to restore.
+        :type filters: Dict[str, str]
+        :return: None
+        :rtype: None
+        """
+        combo = self._subset_controls.filter_comboBox
+        for name, filter_text in filters.items():
+            if name in self.subset_filters:
+                self.logger.warning(
+                    f"Filter '{name}' already exists; skipping restore of duplicate."
+                )
+                continue
+            self.subset_filters[name] = filter_text
+            combo.addItem(name)
+            combo.selectItem(name, select=True)
+        combo.refreshDisplayText()
+
+    @log(logger=logger)
     def replace_filter_item(self, name: str) -> None:
         """
         Remove any existing filter item with the same name and add the new one.

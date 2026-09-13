@@ -1,5 +1,7 @@
 ## Poriscope 2.0.0: in progress
 
+* `restore_subset_filters` has moved from `MetadataView` and `ProteinView` to `MetaSubsetTabView`; the two copies were identical apart from the name each held its controls panel under
+
 * **Fixed restoring a session losing the last-restored tab's subset filters**: the session was written back while that tab's filter list was still empty, so the filters survived one restore and were gone from the next - in practice the Metadata tab kept its filters and the Protein tab did not
 
 * **Breaking:** a subset filter being validated now travels with the request instead of being parked on the view: `filter_validation_requested` and `raw_filter_validation_requested` carry the filter's name and the name it replaces, `MetaSubsetTabController.relay_query` and `validate_raw_filter` take them as arguments, and `MetaSubsetTabView.clear_pending_filter_state` and `MetaSubsetTabController.on_raw_filter_validated` are gone

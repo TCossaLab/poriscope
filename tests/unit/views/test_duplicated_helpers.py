@@ -821,7 +821,7 @@ class TestLoadFilterWasPromoted:
 
 
 # ===========================================================================
-# the five methods _subset_controls unlocked - promoted by Step 4a
+# the six methods _subset_controls unlocked - five in Step 4a, one in 4d
 # ===========================================================================
 
 
@@ -831,17 +831,22 @@ PANEL_NAME_ONLY = (
     "_delete_filter",
     "set_event_id_rows",
     "on_raw_filter_validated",
+    "restore_subset_filters",
 )
 
 
 class TestThePanelNameMethodsWerePromoted:
     """
-    The five that collapsed once the base had a name for the controls panel.
+    The six that collapsed once the base had a name for the controls panel.
 
-    Four differed only in ``metadatacontrols`` against ``proteincontrols``, and the
+    Five differed only in ``metadatacontrols`` against ``proteincontrols``, and the
     answer-parking one only in its docstring - so with ``_subset_controls`` in place
     there was nothing left to decide except ``on_raw_filter_validated``'s modal,
     which the filter dialogs had already settled.
+
+    ``restore_subset_filters`` is the late one: 20 of its 21 lines were identical
+    and the odd one out was the panel name, but Step 4a did not sweep it up and it
+    was only spotted while measuring Step 4d.
 
     That answer-parking method was ``relay_query_result``, filled over the signal
     bus. Step 4a's last conversion replaced it with ``set_event_id_rows``, filled by
