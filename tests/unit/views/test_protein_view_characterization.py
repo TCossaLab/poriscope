@@ -61,16 +61,22 @@ def shape_frame(v: list, a: list, b: list, m: list) -> pd.DataFrame:
     return pd.DataFrame({"V": v, "a": a, "b": b, "m": m})
 
 
-class TestFitAndPlotEnsembleGeometry:
+class TestEnsembleGeometryFit:
     """
-    The orchestrator that chains the fit, the sampling and the summary.
+    The two halves of the chain: ask for the fit, then sample and plot from it.
 
-    Also had zero references in ``tests/``. Its *numeric* content is already
-    covered - ``_fit_and_sanity_check_double_gaussian`` and
-    ``_generate_vm_ensemble`` each have direct tests of their own - so what is
-    pinned here is the wiring: which branch returns ``False``, what the user is
-    told, and which ``ensemble_fit_*`` attributes ``_report_ensemble_fit`` will
-    later read back.
+    **Step 4c split this.** ``_fit_and_plot_ensemble_geometry`` used to fit inline
+    and return a ``bool``; the fit now lives on ``ProteinModel`` and the pair is
+    ``_request_ensemble_geometry_fit`` and ``set_ensemble_geometry_fit``. The
+    ``bool`` is gone with it, because the single caller's ``if not ...: return`` was
+    its own last statement and so decided nothing - the tests that asserted on it
+    assert on what the user is told instead.
+
+    The numeric content is covered elsewhere and deliberately not repeated here:
+    the fit in ``tests/unit/models/test_protein_model.py``, the sampler in its own
+    tests. What is pinned here is the wiring - what the request carries, which
+    branch bails out, what the user is told, and which ``ensemble_fit_*``
+    attributes ``_report_ensemble_fit`` will later read back.
 
     ``_generate_vm_ensemble`` is stubbed to return arrays because it is a Monte
     Carlo rejection sampler that would otherwise dominate the runtime; it is
@@ -93,28 +99,45 @@ class TestFitAndPlotEnsembleGeometry:
         ) + 60.0 * np.exp(-((current - 0.40) ** 2) / (2 * 0.04**2))
         return pd.DataFrame({"Normalized Current": current, "Amplitude": amplitude})
 
-    def test_an_unfittable_histogram_returns_false_and_says_so(
-        self, view: ProteinView, mocker, plot_data: pd.DataFrame
+    def test_the_request_half_emits_the_histogram_and_its_context(
+        self, view: ProteinView, plot_data: pd.DataFrame
+    ) -> None:
+        """
+        The asking half does nothing but ask, and carries the context with it.
+
+        Pinned because the context travelling through the round trip is what keeps
+        it off the widget between the halves; parking it here instead would still
+        draw the right plot and would reintroduce exactly the pattern Step 4a
+        deleted.
+        """
+        view._request_ensemble_geometry_fit(plot_data, "Histogram", 10.0, 12.0, 50)
+
+        emitted = view.ensemble_fit_requested.emit.call_args.args
+        np.testing.assert_array_equal(
+            emitted[0], plot_data["Normalized Current"].values
+        )
+        np.testing.assert_array_equal(emitted[1], plot_data["Amplitude"].values)
+        assert emitted[3:] == ("Histogram", 10.0, 12.0, 50)
+
+    def test_an_unfittable_histogram_is_reported_on_the_status_panel(
+        self, view: ProteinView, plot_data: pd.DataFrame
     ) -> None:
         """
         The first bail-out: no double Gaussian could be fitted.
 
         The user is told on the status panel rather than left with an unchanged
-        plot and no explanation.
+        plot and no explanation. This used to assert a ``False`` return as well,
+        which Step 4c deleted: the only caller's ``if not ...: return`` was its own
+        last statement, so the value decided nothing.
         """
-        mocker.patch.object(
-            view, "_fit_and_sanity_check_double_gaussian", return_value=None
-        )
-
-        assert (
-            view._fit_and_plot_ensemble_geometry(plot_data, "Histogram", 10.0, 10.0, 50)
-            is False
+        view.set_ensemble_geometry_fit(
+            None, None, plot_data, "Histogram", 10.0, 10.0, 50
         )
 
         messages = [c.args[0] for c in view.add_text_to_display.emit.call_args_list]
         assert any("Unable to fit a double gaussian" in m for m in messages)
 
-    def test_unphysical_geometry_returns_false_and_says_so(
+    def test_unphysical_geometry_is_reported_on_the_status_panel(
         self, view: ProteinView, mocker, plot_data: pd.DataFrame
     ) -> None:
         """
@@ -128,18 +151,18 @@ class TestFitAndPlotEnsembleGeometry:
         mocker.patch.object(view, "update_plot")
         mocker.patch.object(
             view,
-            "_fit_and_sanity_check_double_gaussian",
-            return_value=np.array([100.0, 0.15, 0.03, 60.0, 0.40, 0.04]),
-        )
-        mocker.patch.object(
-            view,
             "_generate_vm_ensemble",
             return_value=(np.array([]), np.array([])),
         )
 
-        assert (
-            view._fit_and_plot_ensemble_geometry(plot_data, "Histogram", 10.0, 10.0, 50)
-            is False
+        view.set_ensemble_geometry_fit(
+            np.array([100.0, 0.15, 0.03, 60.0, 0.40, 0.04]),
+            plot_data["Amplitude"].values,
+            plot_data,
+            "Histogram",
+            10.0,
+            10.0,
+            50,
         )
 
         messages = [c.args[0] for c in view.add_text_to_display.emit.call_args_list]
@@ -151,7 +174,7 @@ class TestFitAndPlotEnsembleGeometry:
         """
         The success path, pinned by the attributes it leaves behind.
 
-        ``_report_ensemble_fit`` reads every one of these, and Step 4c moves the
+        ``_report_ensemble_fit`` reads every one of these, and Step 4c moved the
         computation that produces them, so a wiring regression here would surface
         as an empty or stale report rather than as an exception.
         """
@@ -159,18 +182,14 @@ class TestFitAndPlotEnsembleGeometry:
         view.allowed_sizes = True
         popt = np.array([100.0, 0.15, 0.03, 60.0, 0.40, 0.04])
         mocker.patch.object(
-            view, "_fit_and_sanity_check_double_gaussian", return_value=popt
-        )
-        mocker.patch.object(
             view,
             "_generate_vm_ensemble",
             return_value=(np.array([100.0, 200.0, 300.0]), np.array([2.0, 3.0, 4.0])),
         )
         update_plot = mocker.patch.object(view, "update_plot")
 
-        assert (
-            view._fit_and_plot_ensemble_geometry(plot_data, "Histogram", 10.0, 10.0, 3)
-            is True
+        view.set_ensemble_geometry_fit(
+            popt, plot_data["Amplitude"].values, plot_data, "Histogram", 10.0, 10.0, 3
         )
 
         np.testing.assert_array_equal(view.ensemble_fit_params, popt)
@@ -182,6 +201,38 @@ class TestFitAndPlotEnsembleGeometry:
         assert update_plot.call_count == 3
         labels = [c.kwargs["dataset_label"] for c in update_plot.call_args_list[1:]]
         assert labels == ["Prolate Solutions", "Oblate Solutions"]
+
+    def test_the_curve_that_arrives_is_what_gets_plotted(
+        self, view: ProteinView, mocker, plot_data: pd.DataFrame
+    ) -> None:
+        """
+        The fitted curve is drawn as handed over, not recomputed here.
+
+        This is the assertion that would fail if ``_double_gaussian`` were quietly
+        reintroduced into the View to evaluate the fit a second time.
+        """
+        view.allowed_bins = 100
+        view.allowed_sizes = False
+        curve = np.linspace(1.0, 2.0, len(plot_data))
+        mocker.patch.object(
+            view,
+            "_generate_vm_ensemble",
+            return_value=(np.array([100.0]), np.array([2.0])),
+        )
+        update_plot = mocker.patch.object(view, "update_plot")
+
+        view.set_ensemble_geometry_fit(
+            np.array([100.0, 0.15, 0.03, 60.0, 0.40, 0.04]),
+            curve,
+            plot_data,
+            "Histogram",
+            10.0,
+            10.0,
+            1,
+        )
+
+        drawn = update_plot.call_args_list[0].args[1]
+        np.testing.assert_array_equal(drawn["Amplitude"].values, curve)
 
     def test_the_larger_fitted_peak_is_taken_as_the_maximum(
         self, view: ProteinView, mocker, plot_data: pd.DataFrame
@@ -197,9 +248,6 @@ class TestFitAndPlotEnsembleGeometry:
         view.allowed_sizes = False
         # deliberately given with the larger mean first
         popt = np.array([60.0, 0.40, -0.04, 100.0, 0.15, 0.03])
-        mocker.patch.object(
-            view, "_fit_and_sanity_check_double_gaussian", return_value=popt
-        )
         sampler = mocker.patch.object(
             view,
             "_generate_vm_ensemble",
@@ -207,7 +255,9 @@ class TestFitAndPlotEnsembleGeometry:
         )
         mocker.patch.object(view, "update_plot")
 
-        view._fit_and_plot_ensemble_geometry(plot_data, "Histogram", 10.0, 10.0, 1)
+        view.set_ensemble_geometry_fit(
+            popt, plot_data["Amplitude"].values, plot_data, "Histogram", 10.0, 10.0, 1
+        )
 
         _, mean_max, std_max, mean_min, std_min, _, _ = sampler.call_args_list[0].args
         assert mean_max == 0.40

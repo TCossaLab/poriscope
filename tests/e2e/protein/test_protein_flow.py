@@ -200,6 +200,7 @@ def test_protein_individual_ensemble_flow(
     # test_multiple_channels_warns_and_returns), so this fixture's
     # multi-experiment shape must be narrowed down after Scope, same as
     # test_metadata_flow.py's own Stage 2 does.
+    import poriscope.plugins.analysistabs.ProteinModel as protein_model_mod
     import poriscope.plugins.analysistabs.ProteinView as protein_view_mod
     from poriscope.views.widgets.SelectionTree import SelectionTree
 
@@ -242,6 +243,18 @@ def test_protein_individual_ensemble_flow(
     # See module docstring's FIT DETERMINISM note.
     monkeypatch.setattr(
         protein_view_mod.ProteinView,
+        "_fit_and_sanity_check_double_gaussian",
+        _fake_fit_and_sanity_check_double_gaussian,
+        raising=True,
+    )
+    # Step 4c moved the fit to ProteinModel, and the ensemble path now reaches it
+    # through the Controller - so patching only the View's copy stops intercepting
+    # that half and the flow waits forever on a plot that never comes. Both copies
+    # are patched while the two per-event callers still use the View's; when they
+    # are converted and the View's copy is deleted, `raising=True` makes the stale
+    # patch above fail by name rather than silently stop covering anything.
+    monkeypatch.setattr(
+        protein_model_mod.ProteinModel,
         "_fit_and_sanity_check_double_gaussian",
         _fake_fit_and_sanity_check_double_gaussian,
         raising=True,

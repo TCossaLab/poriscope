@@ -28,6 +28,8 @@
 import logging
 from typing import Dict, List, Optional, override
 
+import numpy as np
+import numpy.typing as npt
 import pandas as pd
 from PySide6.QtCore import Slot
 
@@ -74,6 +76,61 @@ class ProteinController(MetaSubsetTabController):
         )
         self.view.fit_commit_requested.connect(self.check_for_existing_fit_columns)
         self.view.fit_commit_confirmed.connect(self.commit_fits)
+        self.view.ensemble_fit_requested.connect(self.fit_ensemble_geometry)
+
+    @log(logger=logger)
+    @Slot(object, object, object, str, float, float, int)
+    def fit_ensemble_geometry(
+        self,
+        bins: npt.NDArray[np.float64],
+        amplitude: npt.NDArray[np.float64],
+        plot_data: pd.DataFrame,
+        plot_type: str,
+        d: float,
+        L: float,
+        N: int,
+    ) -> None:
+        """
+        Fit the ensemble histogram, and hand the result back to the View to draw.
+
+        Decision B's command path, the same shape as
+        ``ClusteringController.cluster``: the View emits an intent, this slot calls
+        the Model, and the answer goes back through a setter. Step 4c introduced it,
+        when the double-gaussian fitting moved off the widget.
+
+        The context arrives and departs unchanged rather than being held here or on
+        the View between the halves. A fit that fails its sanity checks is not an
+        error - ``(None, None)`` is a legitimate answer the View reports to the user -
+        so only an unexpected failure is caught, and it is reported rather than
+        raised, because Qt invoked this from a signal and nothing above it could
+        handle it.
+
+        :param bins: the histogram's bin centers
+        :type bins: npt.NDArray[np.float64]
+        :param amplitude: the amplitude in each bin
+        :type amplitude: npt.NDArray[np.float64]
+        :param plot_data: the frame the View will draw the fit into
+        :type plot_data: pd.DataFrame
+        :param plot_type: the plot type label to reuse when plotting the fit
+        :type plot_type: str
+        :param d: the diameter of the pore in nanometers
+        :type d: float
+        :param L: the length of the pore in nanometers
+        :type L: float
+        :param N: target number of samples to draw for each ensemble
+        :type N: int
+        :return: None
+        :rtype: None
+        """
+        try:
+            popt, curve = self.model.fit_histogram(bins, amplitude)
+        except (ValueError, TypeError, IndexError) as e:
+            self.logger.error(f"Unable to fit the ensemble histogram: {repr(e)}")
+            self.add_text_to_display.emit(
+                f"Unable to fit the ensemble histogram: {e}", self.__class__.__name__
+            )
+            return
+        self.view.set_ensemble_geometry_fit(popt, curve, plot_data, plot_type, d, L, N)
 
     @log(logger=logger)
     @Slot(str)

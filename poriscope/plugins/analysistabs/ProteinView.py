@@ -163,6 +163,16 @@ class ProteinView(MetaSubsetTabView):
     #: this widget between the two phases.
     fit_commit_confirmed = Signal(str, object, object, object)
 
+    #: Asks for the ensemble histogram's double-gaussian fit: the bin centers, the
+    #: amplitudes, and the context the drawing half needs back unchanged. Answered
+    #: through ``set_ensemble_geometry_fit``.
+    #:
+    #: Step 4c. The fit and its sanity checks moved to ``ProteinModel`` so that
+    #: ``scipy.optimize``, ``scipy.signal`` and ``scipy.stats`` leave the View. The
+    #: context travels out and back through the round trip rather than being parked on
+    #: this widget between the halves, which is the pattern Step 4a exists to delete.
+    ensemble_fit_requested = Signal(object, object, object, str, float, float, int)
+
     @property
     def fig_hist(self) -> Figure:
         return (
@@ -2567,20 +2577,22 @@ class ProteinView(MetaSubsetTabView):
 
         if plot_data is None:
             return
-        if not self._fit_and_plot_ensemble_geometry(plot_data, plot_type, d, L, N):
-            return
+        self._request_ensemble_geometry_fit(plot_data, plot_type, d, L, N)
 
     @log(logger=logger)
-    def _fit_and_plot_ensemble_geometry(
+    def _request_ensemble_geometry_fit(
         self, plot_data: pd.DataFrame, plot_type: str, d: float, L: float, N: int
-    ) -> bool:
+    ) -> None:
         """
-        Fit a double Gaussian to the aggregated ensemble histogram, then Monte
-        Carlo sample prolate/oblate V/m ensembles from that fit and plot them.
+        Ask for the ensemble histogram's fit; ``set_ensemble_geometry_fit`` draws it.
 
         Called once by _update_distribution_ensemble after its single
         (experiment, channel, filter) combination has been plotted, using
         whatever plot_data that produced.
+
+        Step 4c split this from the plotting half. It previously returned ``bool``,
+        but the single caller's ``if not ...: return`` was its own last statement, so
+        the value decided nothing and is not reproduced across the round trip.
 
         :param plot_data: the aggregated histogram DataFrame to fit against.
         :type plot_data: pd.DataFrame
@@ -2592,24 +2604,63 @@ class ProteinView(MetaSubsetTabView):
         :type L: float
         :param N: target number of samples to draw for each of the prolate/oblate ensembles
         :type N: int
-
-        :return: True if fitting and plotting succeeded, False if any failure occurred (already logged/displayed to the user).
-        :rtype: bool
+        :return: None
+        :rtype: None
         """
-        popt = self._fit_and_sanity_check_double_gaussian(
-            plot_data["Normalized Current"].values, plot_data["Amplitude"].values
+        self.ensemble_fit_requested.emit(
+            plot_data["Normalized Current"].values,
+            plot_data["Amplitude"].values,
+            plot_data,
+            plot_type,
+            d,
+            L,
+            N,
         )
 
-        if popt is None:
+    @log(logger=logger)
+    def set_ensemble_geometry_fit(
+        self,
+        popt: Optional[npt.NDArray[np.float64]],
+        curve: Optional[npt.NDArray[np.float64]],
+        plot_data: pd.DataFrame,
+        plot_type: str,
+        d: float,
+        L: float,
+        N: int,
+    ) -> None:
+        """
+        Draw the fitted ensemble, then Monte Carlo sample prolate/oblate V/m from it.
+
+        The answering half of ``ensemble_fit_requested``. The fitted curve arrives
+        already evaluated at the bins it was fitted on, which is what lets the model
+        function itself live on ``ProteinModel`` rather than here.
+
+        :param popt: the fit parameters, or None if no double gaussian could be fitted
+        :type popt: Optional[npt.NDArray[np.float64]]
+        :param curve: the fitted curve evaluated at the histogram's bins, or None
+        :type curve: Optional[npt.NDArray[np.float64]]
+        :param plot_data: the aggregated histogram DataFrame that was fitted.
+        :type plot_data: pd.DataFrame
+        :param plot_type: the plot type label to reuse when plotting the fit.
+        :type plot_type: str
+        :param d: the diameter of the pore in nanometers
+        :type d: float
+        :param L: the length of the pore in nanometers
+        :type L: float
+        :param N: target number of samples to draw for each of the prolate/oblate ensembles
+        :type N: int
+        :return: None
+        :rtype: None
+        """
+        if popt is None or curve is None:
             self.logger.info("Unable to fit a double gaussian to the histogram")
             self.add_text_to_display.emit(
                 "Unable to fit a double gaussian to the histogram",
                 self.__class__.__name__,
             )
-            return False
+            return
 
-        fit_data = self._double_gaussian(plot_data["Normalized Current"].values, *popt)
-        plot_data["Amplitude"] = fit_data
+        plot_data["Amplitude"] = curve
         self.update_plot(
             plot_type,
             plot_data,
@@ -2649,7 +2700,7 @@ class ProteinView(MetaSubsetTabView):
                 "Generative sampling bailed out: The ensemble Gaussian fit represents an unphysical geometry.",
                 self.__class__.__name__,
             )
-            return False
+            return
         elif len(prolate_V) < N or len(oblate_V) < N:
             self.logger.info(
                 "Sampling hit bailout limit; returning partial ensemble arrays."
@@ -2695,8 +2746,6 @@ class ProteinView(MetaSubsetTabView):
                 logscales=[False, False],
                 dataset_label="Oblate Solutions",
             )
-
-        return True
 
     @log(logger=logger)
     def _compute_theoretical_blockages(

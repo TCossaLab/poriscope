@@ -171,9 +171,26 @@ MOVED: Tuple[Tuple[str, str, str], ...] = (
         "_construct_all_points_histogram",
         "4c",
     ),
+    # Step 4c split `_fit_and_plot_ensemble_geometry` in two, 2026-09-13: the fit
+    # moved to ProteinModel, so the View now asks and then draws what comes back.
+    # Both halves stay targets - the sampling and summarising they still do is 4c's.
     (
         "poriscope/plugins/analysistabs/ProteinView.py",
-        "_fit_and_plot_ensemble_geometry",
+        "_request_ensemble_geometry_fit",
+        "4c",
+    ),
+    (
+        "poriscope/plugins/analysistabs/ProteinView.py",
+        "set_ensemble_geometry_fit",
+        "4c",
+    ),
+    # Added 2026-09-13: a caller of the moving fit chain that this list had never
+    # carried, found by cross-referencing the chain's call sites against the table
+    # rather than by reading the table. It drives a fit and evaluates the curve, so
+    # it is a 4c target on the same grounds as the `_plot_*` methods above.
+    (
+        "poriscope/plugins/analysistabs/ProteinView.py",
+        "_update_event_histogram",
         "4c",
     ),
     # The RawData half of 4c landed 2026-09-07. These two moved to RawDataModel and
