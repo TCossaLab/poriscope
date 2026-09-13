@@ -49,7 +49,11 @@ import pytest
 from pytest_mock import MockerFixture
 
 from poriscope.plugins.analysistabs.MetadataController import MetadataController
-from tests.unit.controllers._recording_model import RecordingModel
+from poriscope.plugins.analysistabs.MetadataModel import MetadataModel
+from tests.unit.controllers._recording_model import (
+    RecordingModel,
+    recording_tab_model,
+)
 
 pytestmark = pytest.mark.characterization
 
@@ -344,7 +348,7 @@ class TestLoadEventPlotData:
         The reason the middle query exists: ``event_id`` is unique only within a
         channel, so an unscoped match returns another channel's rows.
         """
-        controller.model = RecordingModel(dict(self.ANSWERS))
+        controller.model = recording_tab_model(MetadataModel, dict(self.ANSWERS))
 
         controller.load_event_plot_data("ldr", [5, 10], "exp1", 1, SCOPE)
 
@@ -364,7 +368,7 @@ class TestLoadEventPlotData:
         answers = dict(self.ANSWERS)
         generator = iter([{"event_id": 5}])
         answers["load_event_data"] = generator
-        controller.model = RecordingModel(answers)
+        controller.model = recording_tab_model(MetadataModel, answers)
 
         controller.load_event_plot_data("ldr", [5], "exp1", 1, SCOPE)
 
@@ -382,7 +386,7 @@ class TestLoadEventPlotData:
         """
         answers = dict(self.ANSWERS)
         answers["get_experiment_id_by_name"] = None
-        controller.model = RecordingModel(answers)
+        controller.model = recording_tab_model(MetadataModel, answers)
 
         controller.load_event_plot_data("ldr", [5], "exp1", 1, SCOPE)
 
@@ -396,7 +400,7 @@ class TestLoadEventPlotData:
         """ """
         answers = dict(self.ANSWERS)
         answers["get_experiment_id_by_name"] = RuntimeError("database is locked")
-        controller.model = RecordingModel(answers)
+        controller.model = recording_tab_model(MetadataModel, answers)
 
         controller.load_event_plot_data("ldr", [5], "exp1", 1, SCOPE)
 
@@ -412,7 +416,7 @@ class TestLoadEventPlotData:
         """
         answers = dict(self.ANSWERS)
         answers["query_database_directly"] = pd.DataFrame()
-        controller.model = RecordingModel(answers)
+        controller.model = recording_tab_model(MetadataModel, answers)
 
         controller.load_event_plot_data("ldr", [5], "exp1", 1, SCOPE)
 
@@ -429,7 +433,7 @@ class TestLoadEventPlotData:
         """
         answers = dict(self.ANSWERS)
         answers["query_database_directly"] = pd.DataFrame({"event_id": [5]})
-        controller.model = RecordingModel(answers)
+        controller.model = recording_tab_model(MetadataModel, answers)
 
         controller.load_event_plot_data("ldr", [5], "exp1", 1, SCOPE)
 
@@ -443,7 +447,7 @@ class TestLoadEventPlotData:
         """ """
         answers = dict(self.ANSWERS)
         answers["load_event_data"] = RuntimeError("cannot read event blob")
-        controller.model = RecordingModel(answers)
+        controller.model = recording_tab_model(MetadataModel, answers)
 
         controller.load_event_plot_data("ldr", [5], "exp1", 1, SCOPE)
 
@@ -458,7 +462,7 @@ class TestLoadEventPlotData:
         """
         answers = dict(self.ANSWERS)
         answers["load_event_data"] = None
-        controller.model = RecordingModel(answers)
+        controller.model = recording_tab_model(MetadataModel, answers)
 
         controller.load_event_plot_data("ldr", [5], "exp1", 1, SCOPE)
 
@@ -473,7 +477,7 @@ class TestLoadEventPlotData:
         independently of it - where the bus's version appended the channel only
         *inside* the branch that had resolved an experiment id.
         """
-        controller.model = RecordingModel(dict(self.ANSWERS))
+        controller.model = recording_tab_model(MetadataModel, dict(self.ANSWERS))
 
         controller.load_event_plot_data("ldr", [5], None, 1, SCOPE)
 

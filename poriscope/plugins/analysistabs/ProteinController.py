@@ -286,13 +286,9 @@ class ProteinController(MetaSubsetTabController):
         """
         if overwrite_table is not None:
             columns = [column for column in fit_data.columns if column != "id"]
-            queries = [
-                f"ALTER TABLE {overwrite_table} DROP COLUMN {column}"
-                for column in columns
-            ] + [f"DELETE FROM columns WHERE name = '{column}'" for column in columns]
             try:
-                succeeded = self.model.call(
-                    "MetaDatabaseLoader", loader, "alter_database", queries
+                succeeded = self.model.drop_fit_columns(
+                    loader, overwrite_table, columns
                 )
             except Exception as e:
                 self.logger.error(f"Failed to drop the existing fit columns: {e!r}")
@@ -466,9 +462,7 @@ class ProteinController(MetaSubsetTabController):
             )
             return
 
-        id_list = ",".join(str(eid) for eid in event_ids)
-        where_parts = [f"event_id IN ({id_list})"]
-
+        exp_id = None
         if exp is not None:
             try:
                 exp_id = self.model.call(
@@ -488,18 +482,9 @@ class ProteinController(MetaSubsetTabController):
                     self.__class__.__name__,
                 )
                 return
-            where_parts.append(f"experiment_id = {exp_id}")
 
-        if channel is not None:
-            where_parts.append(f"channel_id = {channel}")
-
-        # event_id comes back alongside id because the caller re-sorts the rows into
-        # the order it asked for them in, which it cannot do from the primary keys.
-        query = f"SELECT id, event_id FROM events WHERE {' AND '.join(where_parts)}"
         try:
-            id_result = self.model.call(
-                "MetaDatabaseLoader", loader, "query_database_directly", query
-            )
+            id_result = self.model.resolve_event_ids(loader, event_ids, exp_id, channel)
         except Exception as e:
             self.logger.error(f"Failed to resolve event ids for {event_ids}: {e!r}")
             self.add_text_to_display.emit(
@@ -516,18 +501,15 @@ class ProteinController(MetaSubsetTabController):
             return
         if "id" not in id_result.columns:
             self.logger.error(
-                f"{loader} returned rows with no id column for query {query!r}"
+                f"{loader} returned rows with no id column for events {event_ids} "
+                f"in experiment {exp} channel {channel}"
             )
             return
 
         db_ids = ",".join(str(i) for i in id_result["id"].tolist())
         try:
-            generator = self.model.call(
-                "MetaDatabaseLoader",
-                loader,
-                "load_event_data",
-                f"e.id IN ({db_ids})",
-                experiments_and_channels,
+            generator = self.model.load_events_by_id(
+                loader, db_ids, experiments_and_channels
             )
         except Exception as e:
             self.logger.error(f"Failed to load events {event_ids}: {e!r}")

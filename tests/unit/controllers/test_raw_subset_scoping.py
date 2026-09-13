@@ -29,8 +29,9 @@ import inspect
 import pytest
 from pytest_mock import MockerFixture
 
-from poriscope.plugins.analysistabs.MetadataController import MetadataController
+from poriscope.plugins.analysistabs.MetadataModel import MetadataModel
 from poriscope.plugins.analysistabs.ProteinController import ProteinController
+from poriscope.plugins.analysistabs.ProteinModel import ProteinModel
 from poriscope.plugins.analysistabs.ProteinView import ProteinView
 from tests.unit.controllers._recording_model import RecordingModel
 from tests.unit.views._qt_mocks import shadow_signals
@@ -208,22 +209,23 @@ def test_the_two_tabs_build_different_projections() -> None:
     """
     The near-twin event-plot queries in the two tabs are not interchangeable.
 
-    Both halves live in Controllers - Step 4a moved the protein tab out of the widget
-    in the same shape the metadata tab went - so this compares the two
-    ``load_event_plot_data`` methods. The protein copy selects ``id, event_id``
-    because it re-sorts the rows into the order the navigation asked for them in; the
-    metadata copy selects ``id`` alone because it does not.
+    **Step 4b moved both queries into the Models**, so this reads
+    ``resolve_event_ids`` rather than ``load_event_plot_data``; it used to compare the
+    two Controllers. The protein copy selects ``id, event_id`` because it re-sorts the
+    rows into the order the navigation asked for them in; the metadata copy selects
+    ``id`` alone because it does not.
 
     That difference is the open question for the promotion to
     ``MetaSubsetTabController`` (``DECISIONS.md``, 2026-09-09), so it is asserted here
     rather than left to be rediscovered during the merge. **This test is meant to be
-    rewritten by whichever commit promotes them**, not deleted.
+    rewritten by whichever commit promotes them**, not deleted - which is what Step 4b
+    has just done to it once already.
 
     :return: None
     :rtype: None
     """
-    protein = inspect.getsource(ProteinController.load_event_plot_data)
-    metadata = inspect.getsource(MetadataController.load_event_plot_data)
+    protein = inspect.getsource(ProteinModel.resolve_event_ids)
+    metadata = inspect.getsource(MetadataModel.resolve_event_ids)
 
     assert "SELECT id, event_id FROM events WHERE" in protein
     assert "SELECT id FROM events WHERE" in metadata

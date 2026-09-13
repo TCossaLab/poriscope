@@ -41,8 +41,12 @@ import pytest
 from pytest_mock import MockerFixture
 
 from poriscope.plugins.analysistabs.ProteinController import ProteinController
+from poriscope.plugins.analysistabs.ProteinModel import ProteinModel
 from poriscope.plugins.analysistabs.ProteinView import FIT_COLUMNS
-from tests.unit.controllers._recording_model import RecordingModel
+from tests.unit.controllers._recording_model import (
+    RecordingModel,
+    recording_tab_model,
+)
 
 pytestmark = pytest.mark.characterization
 
@@ -120,12 +124,13 @@ class TestLoadEventPlotData:
         :type controller: ProteinController
         """
         generator = iter([])
-        controller.model = RecordingModel(
+        controller.model = recording_tab_model(
+            ProteinModel,
             {
                 "get_experiment_id_by_name": 3,
                 "query_database_directly": ids_frame(),
                 "load_event_data": generator,
-            }
+            },
         )
 
         controller.load_event_plot_data("ldr", [4, 7], "exp1", 1, SCOPE, "events")
@@ -157,8 +162,9 @@ class TestLoadEventPlotData:
         :param controller: the controller under test
         :type controller: ProteinController
         """
-        controller.model = RecordingModel(
-            {"get_experiment_id_by_name": None, "query_database_directly": ids_frame()}
+        controller.model = recording_tab_model(
+            ProteinModel,
+            {"get_experiment_id_by_name": None, "query_database_directly": ids_frame()},
         )
 
         controller.load_event_plot_data("ldr", [4], "exp1", 1, SCOPE, "events")
@@ -174,8 +180,8 @@ class TestLoadEventPlotData:
         :param controller: the controller under test
         :type controller: ProteinController
         """
-        controller.model = RecordingModel(
-            {"get_experiment_id_by_name": RuntimeError("db gone")}
+        controller.model = recording_tab_model(
+            ProteinModel, {"get_experiment_id_by_name": RuntimeError("db gone")}
         )
 
         controller.load_event_plot_data("ldr", [4], "exp1", 1, SCOPE, "events")
@@ -193,8 +199,9 @@ class TestLoadEventPlotData:
         :param controller: the controller under test
         :type controller: ProteinController
         """
-        controller.model = RecordingModel(
-            {"query_database_directly": ids_frame(), "load_event_data": iter([])}
+        controller.model = recording_tab_model(
+            ProteinModel,
+            {"query_database_directly": ids_frame(), "load_event_data": iter([])},
         )
 
         controller.load_event_plot_data("ldr", [4, 7], None, None, None, "events")
@@ -213,7 +220,7 @@ class TestLoadEventPlotData:
         :param controller: the controller under test
         :type controller: ProteinController
         """
-        controller.model = RecordingModel({})
+        controller.model = recording_tab_model(ProteinModel, {})
 
         controller.load_event_plot_data("ldr", [], "exp1", 1, SCOPE, "histograms")
 
@@ -225,11 +232,12 @@ class TestLoadEventPlotData:
         :param controller: the controller under test
         :type controller: ProteinController
         """
-        controller.model = RecordingModel(
+        controller.model = recording_tab_model(
+            ProteinModel,
             {
                 "get_experiment_id_by_name": 3,
                 "query_database_directly": RuntimeError("bad sql"),
-            }
+            },
         )
 
         controller.load_event_plot_data("ldr", [4], "exp1", 1, SCOPE, "events")
@@ -247,11 +255,12 @@ class TestLoadEventPlotData:
         :param controller: the controller under test
         :type controller: ProteinController
         """
-        controller.model = RecordingModel(
+        controller.model = recording_tab_model(
+            ProteinModel,
             {
                 "get_experiment_id_by_name": 3,
                 "query_database_directly": pd.DataFrame({"id": [], "event_id": []}),
-            }
+            },
         )
 
         controller.load_event_plot_data("ldr", [4], "exp1", 1, SCOPE, "histograms")
@@ -271,11 +280,12 @@ class TestLoadEventPlotData:
         :param controller: the controller under test
         :type controller: ProteinController
         """
-        controller.model = RecordingModel(
+        controller.model = recording_tab_model(
+            ProteinModel,
             {
                 "get_experiment_id_by_name": 3,
                 "query_database_directly": pd.DataFrame({"event_id": [4]}),
-            }
+            },
         )
 
         controller.load_event_plot_data("ldr", [4], "exp1", 1, SCOPE, "events")
@@ -289,12 +299,13 @@ class TestLoadEventPlotData:
         :param controller: the controller under test
         :type controller: ProteinController
         """
-        controller.model = RecordingModel(
+        controller.model = recording_tab_model(
+            ProteinModel,
             {
                 "get_experiment_id_by_name": 3,
                 "query_database_directly": ids_frame(),
                 "load_event_data": RuntimeError("no blobs"),
-            }
+            },
         )
 
         controller.load_event_plot_data("ldr", [4, 7], "exp1", 1, SCOPE, "events")
@@ -309,12 +320,13 @@ class TestLoadEventPlotData:
         :param controller: the controller under test
         :type controller: ProteinController
         """
-        controller.model = RecordingModel(
+        controller.model = recording_tab_model(
+            ProteinModel,
             {
                 "get_experiment_id_by_name": 3,
                 "query_database_directly": ids_frame(),
                 "load_event_data": None,
-            }
+            },
         )
 
         controller.load_event_plot_data("ldr", [4, 7], "exp1", 1, SCOPE, "events")
@@ -432,8 +444,10 @@ class TestCommitFits:
         :param controller: the controller under test
         :type controller: ProteinController
         """
-        controller.model = RecordingModel(
-            {"alter_database": True, "add_columns_to_table": True}
+        # A real ProteinModel with only its plugin boundary recorded: Step 4b moved
+        # the query construction there, and stubbing the Model method would hide it.
+        controller.model = recording_tab_model(
+            ProteinModel, {"alter_database": True, "add_columns_to_table": True}
         )
 
         controller.commit_fits("ldr", fit_frame(), [None] * len(FIT_COLUMNS), "events")

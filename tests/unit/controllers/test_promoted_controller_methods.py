@@ -275,9 +275,11 @@ class TestValidateRawFilter:
         """The ``Tuple[bool, str]`` is unpacked here, as the bus used to splat it."""
         controller.model = RecordingModel({"validate_filter_query": (True, "")})
 
-        controller.validate_raw_filter("ldr", "SELECT 1 LIMIT 0")
+        controller.validate_raw_filter("ldr", "SELECT 1")
 
         assert controller.model.calls[0][2] == "validate_filter_query"
+        # Step 4b appends the clause here rather than in the View: knowing that
+        # LIMIT 0 is what makes the check cheap is knowing SQL.
         assert controller.model.calls[0][3] == ("SELECT 1 LIMIT 0",)
         controller.view.on_raw_filter_validated.assert_called_once_with(True, "")
 
@@ -289,7 +291,7 @@ class TestValidateRawFilter:
             {"validate_filter_query": (False, "near SELEC: syntax error")}
         )
 
-        controller.validate_raw_filter("ldr", "SELEC 1 LIMIT 0")
+        controller.validate_raw_filter("ldr", "SELEC 1")
 
         controller.view.on_raw_filter_validated.assert_called_once_with(
             False, "near SELEC: syntax error"
@@ -309,7 +311,7 @@ class TestValidateRawFilter:
             {"validate_filter_query": RuntimeError("no such table: events")}
         )
 
-        controller.validate_raw_filter("ldr", "SELECT 1 LIMIT 0")
+        controller.validate_raw_filter("ldr", "SELECT 1")
 
         controller.view.on_raw_filter_validated.assert_called_once()
         valid, message = controller.view.on_raw_filter_validated.call_args[0]
