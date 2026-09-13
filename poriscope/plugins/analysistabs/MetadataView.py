@@ -54,9 +54,6 @@ from PySide6.QtCore import Signal, Slot
 from PySide6.QtWidgets import (
     QMessageBox,
 )
-from scipy import stats
-from scipy.optimize import curve_fit
-from scipy.stats import iqr, t
 
 from poriscope.plugins.analysistabs.utils.metadatacontrols import MetadataControls
 from poriscope.utils.DocstringDecorator import inherit_docstrings
@@ -145,6 +142,42 @@ class MetadataView(MetaSubsetTabView):
     #: None for the whole dataset), the experiment/channel scope, and the index this
     #: export is keyed under. ``on_subset_export_started`` comes back if it was staged.
     csv_subset_export_requested = Signal(str, str, str, object, object, int)
+
+    #: Asks for the heatmap's 2-D binning: the already-filtered columns, the bin
+    #: request, and the drawing context handed back unchanged. Answered through
+    #: ``set_heatmap``.
+    #:
+    #: Step 4c. The binning uses ``scipy.stats.iqr``, which is why it crosses; the
+    #: imshow, the colourbar and the cache entry all stay here.
+    heatmap_requested = Signal(object, object, object, bool, object, str, str, str)
+
+    #: Asks for every overlaid dataset's kernel density: the already-filtered
+    #: columns, the bin request, the shared histogram limits, and the drawing
+    #: context handed back unchanged. Answered through ``set_kernel_densities``.
+    #:
+    #: Step 4c. One intent for all the datasets rather than one each, so no answer
+    #: is parked on the widget between them.
+    density_requested = Signal(
+        object, object, object, bool, object, object, object, str
+    )
+
+    #: Asks for the shared bin edges every overlaid histogram dataset is drawn on:
+    #: all the filtered data at once, the bin request, and the limits that span it.
+    #: Answered through ``set_histogram_bins``.
+    #:
+    #: Step 4c. Only the bin *decision* crosses - it uses ``scipy.stats.iqr``. The
+    #: counting is ``np.histogram`` and stays with the drawing.
+    histogram_bins_requested = Signal(
+        object, object, bool, object, object, object, str, bool, bool
+    )
+
+    #: Asks for the capture-rate binning and its exponential fit: the log
+    #: inter-event times, the bin request, and the drawing context. Answered
+    #: through ``set_capture_rate``.
+    #:
+    #: Step 4c. The bin edges come back with the fit so the histogram is drawn on
+    #: exactly the edges the fit was made against.
+    capture_rate_requested = Signal(object, object, bool, object, str, str, str)
 
     logger = logging.getLogger(__name__)
 
@@ -397,55 +430,68 @@ class MetadataView(MetaSubsetTabView):
         self.hist_data.append(data)
         self.hist_labels.append(dataset_label)
 
-        for data, dataset_label in zip(self.hist_data, self.hist_labels):
-            (x_label,) = cols
-            (x_units,) = units
-            (logx,) = logscales
-            data = data[x_label].values
-            x_label = self.format_axis_label(x_label, x_units)
-            y_label = "Probability Density"
+        # The filter stays here: it lives on ``MetaView`` and emits to the status
+        # panel, so it runs before the request goes out and the Model is handed
+        # arrays that are already filtered.
+        (column,) = cols
+        (x_units,) = units
+        (logx,) = logscales
 
-            if logx:
-                x_label = f"log10({x_label})"
+        filtered: List[npt.NDArray[np.float64]] = []
+        for dataset in self.hist_data:
+            (values,) = self._logscale_and_filter_multiple_columns(
+                dataset[column].values, log_flags=[logx]
+            )
+            filtered.append(values)
 
-            logx = logscales[0]
+        x_label = self.format_axis_label(column, x_units)
+        if logx:
+            x_label = f"log10({x_label})"
 
-            (data,) = self._logscale_and_filter_multiple_columns(data, log_flags=[logx])
+        self.density_requested.emit(
+            filtered,
+            list(self.hist_labels),
+            bins,
+            sizes,
+            self.hist_min,
+            self.hist_max,
+            ax,
+            x_label,
+        )
 
-            if bins is not None:
-                if sizes is False:
-                    numbins = bins
-                else:
-                    try:
-                        if self.hist_max is not None and self.hist_min is not None:
-                            numbins = int((self.hist_max - self.hist_min) / bins)
-                        else:
-                            bins = None
-                            numbins = 0
-                    except TypeError:
-                        bins = None
-                        numbins = 0
-                    if numbins <= 1:
-                        bins = None
-            if bins is None:
-                try:
-                    if iqr(data) > 0:
-                        numbins = int(
-                            (np.max(data) - np.min(data))
-                            * len(data) ** (1.0 / 3.0)
-                            / (iqr(data))
-                        )
-                    else:
-                        numbins = int(3.332 * np.log10(len(data)))
-                except OverflowError:
-                    numbins = 100
+    @log(logger=logger)
+    def set_kernel_densities(
+        self,
+        densities: Sequence[Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]],
+        labels: Sequence[str],
+        ax: Axes,
+        x_label: str,
+    ) -> None:
+        """
+        Draw one filled density curve per overlaid dataset.
 
-            density = stats.kde.gaussian_kde(data.T)
-            x = np.linspace(np.min(data), np.max(data), numbins)
-            ax.plot(x, density(x), label=dataset_label)
-            ax.fill_between(x, density(x), alpha=0.3)
+        The answering half of ``density_requested``. Step 4c moved the estimate to
+        ``MetadataModel`` so that ``scipy`` could leave the View; the curve arrives
+        already evaluated, which also means it is computed once rather than the three
+        times this method used to.
 
-            self._update_cache((x, x_label), (density(x), y_label))
+        :param densities: one (positions, density) pair per dataset
+        :type densities: Sequence[Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]]
+        :param labels: each dataset's label, index-aligned with densities
+        :type labels: Sequence[str]
+        :param ax: the axis object on which to plot
+        :type ax: Axes
+        :param x_label: the x axis label, already formatted
+        :type x_label: str
+        :return: None
+        :rtype: None
+        """
+        y_label = "Probability Density"
+
+        for (x, y), dataset_label in zip(densities, labels, strict=True):
+            ax.plot(x, y, label=dataset_label)
+            ax.fill_between(x, y, alpha=0.3)
+            self._update_cache((x, x_label), (y, y_label))
 
         ax.set_xlabel(x_label)
         ax.set_ylabel(y_label)
@@ -485,12 +531,6 @@ class MetadataView(MetaSubsetTabView):
         Calculate the capture rate for the given subset
         """
 
-        def log_exp_pdf(
-            logt: npt.NDArray[np.float64], rate: float, amplitude: float
-        ) -> npt.NDArray[np.float64]:
-            x = amplitude * np.exp(-rate * 10.0**logt) * 10.0**logt * np.log(10)
-            return x
-
         if bins is not None:
             if isinstance(bins, list) and len(bins) >= 1:
                 bins = bins[0]
@@ -522,44 +562,72 @@ class MetadataView(MetaSubsetTabView):
         if logx:
             x_label = f"log10({x_label})"
 
-        if bins is None:
-            try:
-                if iqr(data) > 0:
-                    numbins = int(
-                        (np.max(data) - np.min(data))
-                        * len(data) ** (1.0 / 3.0)
-                        / (iqr(data))
-                    )
-                else:
-                    numbins = int(3.332 * np.log10(len(data)))
-            except OverflowError:
-                numbins = int(3.332 * np.log10(len(data)))
-        else:
-            numbins = bins
+        self.capture_rate_requested.emit(
+            data, bins, sizes, ax, x_label, y_label, dataset_label
+        )
 
-        val, bins, patches = ax.hist(
+    @log(logger=logger)
+    def set_capture_rate(
+        self,
+        bin_edges: npt.NDArray[np.float64],
+        bincenters: npt.NDArray[np.float64],
+        val: npt.NDArray[np.float64],
+        fit: npt.NDArray[np.float64],
+        rate: float,
+        error: float,
+        data: npt.NDArray[np.float64],
+        ax: Axes,
+        x_label: str,
+        y_label: str,
+        dataset_label: str,
+    ) -> None:
+        """
+        Draw the inter-event time histogram and the exponential fitted to it.
+
+        The answering half of ``capture_rate_requested``. Step 4c moved the binning
+        and the fit to ``MetadataModel`` so that ``scipy.optimize`` and
+        ``scipy.stats`` could leave the View.
+
+        The histogram is drawn on the **edges the fit was made against**, rather than
+        on this widget's own binning of the same request. Handing matplotlib a bin
+        count instead would let it bin independently, and the counts the fit used and
+        the bars the user sees could then differ with nothing to say so.
+
+        :param bin_edges: the edges the counts and the fit were computed on
+        :type bin_edges: npt.NDArray[np.float64]
+        :param bincenters: the center of each bin
+        :type bincenters: npt.NDArray[np.float64]
+        :param val: the counts in each bin
+        :type val: npt.NDArray[np.float64]
+        :param fit: the fitted curve evaluated at the bin centers
+        :type fit: npt.NDArray[np.float64]
+        :param rate: the fitted capture rate in Hz
+        :type rate: float
+        :param error: the 95% confidence half-width on the rate
+        :type error: float
+        :param data: the log inter-event times the histogram is built from
+        :type data: npt.NDArray[np.float64]
+        :param ax: the axis object on which to plot
+        :type ax: Axes
+        :param x_label: the x axis label, already formatted
+        :type x_label: str
+        :param y_label: the y axis label
+        :type y_label: str
+        :param dataset_label: string to label the dataset
+        :type dataset_label: str
+        :return: None
+        :rtype: None
+        """
+        ax.hist(
             data,
-            bins=numbins,
+            bins=bin_edges,
             histtype="step",
             stacked=False,
             fill=False,
             label=dataset_label,
         )
 
-        bincenters = bins[:-1] + np.diff(bins) / 2.0
-
-        rate_guess = 1.0 / (10 ** bincenters[np.argmax(val)])
-        amp_guess = np.max(val) / (np.log(10) / (rate_guess * np.exp(1)))
-        p0 = [rate_guess, amp_guess]
-
-        popt, pcov = curve_fit(log_exp_pdf, bincenters, val, p0=p0)
-        rate = popt[0]
-        amp = popt[1]
-        error = -t.isf(0.975, len(val)) * np.sqrt(np.diag(pcov))[0]
-
-        fit = log_exp_pdf(bincenters, rate, amp)
-
-        ax.plot(bincenters, fit, label=f"{rate:.3g} \u00b1 {error:.1g} Hz")
+        ax.plot(bincenters, fit, label=f"{rate:.3g} ± {error:.1g} Hz")
 
         self._update_cache((bincenters, x_label), (val, y_label))
 
@@ -649,49 +717,56 @@ class MetadataView(MetaSubsetTabView):
             else self.hist_data[0]
         )
 
-        # Decide numbins once
-        numbins: int
-        if bins is not None:
-            if sizes is False:
-                numbins = int(bins)
-            else:
-                # bins is interpreted as a bin *size*
-                try:
-                    if self.hist_max is not None and self.hist_min is not None:
-                        numbins = int((self.hist_max - self.hist_min) / float(bins))
-                    else:
-                        numbins = 0
-                except Exception:
-                    numbins = 0
-                if numbins <= 1:
-                    # fall back to auto
-                    bins = None
+        self.histogram_bins_requested.emit(
+            all_data,
+            bins,
+            sizes,
+            self.hist_min,
+            self.hist_max,
+            ax,
+            self.format_axis_label(x_label, x_units),
+            logx,
+            norm,
+        )
 
-        if bins is None:
-            try:
-                if iqr(all_data) > 0:
-                    numbins = int(
-                        (np.max(all_data) - np.min(all_data))
-                        * len(all_data) ** (1.0 / 3.0)
-                        / iqr(all_data)
-                    )
-                else:
-                    numbins = int(3.332 * np.log10(len(all_data)))
-            except OverflowError:
-                numbins = 100
+    @log(logger=logger)
+    def set_histogram_bins(
+        self,
+        bin_edges: npt.NDArray[np.float64],
+        bincenters: npt.NDArray[np.float64],
+        widths: npt.NDArray[np.float64],
+        ax: Axes,
+        x_label: str,
+        logx: bool,
+        norm: bool,
+    ) -> None:
+        """
+        Draw every overlaid dataset onto one shared set of bin edges.
 
-        # Guardrail
-        if numbins < 2:
-            numbins = 2
+        The answering half of ``histogram_bins_requested``. Step 4c moved the bin
+        decision to ``MetadataModel`` so that ``scipy.stats`` could leave the View;
+        the counting is ``np.histogram`` and stays here with the drawing.
 
-        # Shared bin edges for every dataset
-        bin_edges = np.linspace(self.hist_min, self.hist_max, numbins + 1)
-        bincenters = bin_edges[:-1] + np.diff(bin_edges) / 2.0
-        widths = np.diff(bin_edges)
-
+        :param bin_edges: the shared bin edges
+        :type bin_edges: npt.NDArray[np.float64]
+        :param bincenters: the center of each bin
+        :type bincenters: npt.NDArray[np.float64]
+        :param widths: the width of each bin
+        :type widths: npt.NDArray[np.float64]
+        :param ax: the axis object on which to plot
+        :type ax: Axes
+        :param x_label: the x axis label, already formatted but not yet log-marked
+        :type x_label: str
+        :param logx: was the data log-scaled, and so should the label say so
+        :type logx: bool
+        :param norm: normalise each dataset to a fraction rather than a count
+        :type norm: bool
+        :return: None
+        :rtype: None
+        """
         # Plot all datasets using the same bin_edges
         for d, lab in zip(self.hist_data, self.hist_labels):
-            x_lab = self.format_axis_label(x_label, x_units)
+            x_lab = x_label
             y_lab = "Count" if not norm else "Fraction"
             if logx:
                 x_lab = f"log10({x_lab})"
@@ -763,13 +838,28 @@ class MetadataView(MetaSubsetTabView):
             x_lab = self.format_axis_label(x_label, x_units)
             y_lab = "Count"
 
-            # Extract unique categorical values and their respective counts
-            unique_vals, counts = np.unique(d, return_counts=True)
+            # Missing values are counted as their own category rather than being
+            # allowed to reach np.unique, which sorts and so raises
+            # "'<' not supported between instances of 'NoneType' and 'str'" on a
+            # column holding SQL NULLs. A float column does not raise but labels the
+            # bar "nan", which tells the user no more than "null" does and does not
+            # match what they see elsewhere. Counting them separately also keeps the
+            # real categories in the order they had before, which stringifying
+            # everything up front would not: "10" sorts before "2".
+            series = pd.Series(d)
+            missing = int(series.isna().sum())
+            present = series.dropna().to_numpy()
+
+            unique_vals, counts = np.unique(present, return_counts=True)
 
             val = counts.astype(float)
 
             # Convert unique values to strings so matplotlib natively aligns them as discrete categories
             categories = [str(uv) for uv in unique_vals]
+
+            if missing:
+                categories.append("null")
+                val = np.append(val, float(missing))
 
             ax.bar(
                 categories,
@@ -833,9 +923,48 @@ class MetadataView(MetaSubsetTabView):
         if logy:
             y_label = f"log10({y_label})"
 
-        x, y, z = self._calculate_heatmap(
-            x, y, logx=logx, logy=logy, bins=bins, sizes=sizes
+        # The filter stays here: it lives on ``MetaView`` and emits to the status
+        # panel, and it moves only when all eight of its call sites can go together.
+        x, y = self._logscale_and_filter_multiple_columns(x, y, log_flags=[logx, logy])
+        self.heatmap_requested.emit(
+            x, y, bins, sizes, ax, x_label, y_label, dataset_label
         )
+
+    @log(logger=logger)
+    def set_heatmap(
+        self,
+        x: npt.NDArray[np.float64],
+        y: npt.NDArray[np.float64],
+        z: npt.NDArray[np.float64],
+        ax: Axes,
+        x_label: str,
+        y_label: str,
+        dataset_label: str,
+    ) -> None:
+        """
+        Draw the binned heatmap, its colourbar and its cache entry.
+
+        The answering half of ``heatmap_requested``. Step 4c moved the binning to
+        ``MetadataModel`` so that ``scipy.stats`` could leave the View; everything
+        here is matplotlib, which stays.
+
+        :param x: bin-center x values
+        :type x: npt.NDArray[np.float64]
+        :param y: bin-center y values
+        :type y: npt.NDArray[np.float64]
+        :param z: the log2-scaled 2-D histogram counts
+        :type z: npt.NDArray[np.float64]
+        :param ax: the axis object on which to plot
+        :type ax: Axes
+        :param x_label: the x axis label, already formatted
+        :type x_label: str
+        :param y_label: the y axis label, already formatted
+        :type y_label: str
+        :param dataset_label: string to label the dataset
+        :type dataset_label: str
+        :return: None
+        :rtype: None
+        """
         im = ax.imshow(
             z,
             origin="lower",
@@ -1508,7 +1637,21 @@ class MetadataView(MetaSubsetTabView):
                                 sizes_changed = (
                                     getattr(self, "allowed_sizes", None) != sizes
                                 )
-                                if bin_sensitive and (bins_changed or sizes_changed):
+                                # A change of plot type resets here as it does for
+                                # the metadata plots above. Without it, `hist_data`
+                                # kept whatever the previous type left in it, and the
+                                # shapes are not interchangeable: the 1-D paths store
+                                # a column and this one stores an (x, y) pair, so
+                                # drawing a histogram and then an all-points
+                                # histogram unpacked a bare array as a pair and
+                                # raised "too many values to unpack".
+                                plot_type_changed = (
+                                    self.allowed_plot_type is not None
+                                    and plot_type != self.allowed_plot_type
+                                )
+                                if plot_type_changed or (
+                                    bin_sensitive and (bins_changed or sizes_changed)
+                                ):
                                     axis_type = (
                                         "3d"
                                         if isinstance(
@@ -2587,101 +2730,6 @@ class MetadataView(MetaSubsetTabView):
         :raises NotImplementedError: Always
         """
         raise NotImplementedError(f"{action_name} handler not implemented")
-
-    @log(logger=logger)
-    def _calculate_heatmap(
-        self,
-        xdata: npt.NDArray[np.float64],
-        ydata: npt.NDArray[np.float64],
-        logx: bool = False,
-        logy: bool = False,
-        bins: Any = None,
-        sizes: bool = False,
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """
-        :param xdata: the data on the x axis
-        :type xdata: npt.NDArray[np.float64]
-        :param ydata: the data on the y axis
-        :type ydata: npt.NDArray[np.float64]
-        :param logx: logscale the x data before building the heatmap?
-        :type logx: bool
-        :param logy: logscale the y data before building the heatmap?
-        :type logy: bool
-        :param bins: number of bins (if sizes==False) or size of bins (if sizes==True) for use when binning. Arrives as a list from the controls and may be rebound to None in the body, hence the loose annotation.
-        :type bins: Any
-        :param sizes: does the bins parameter refer to bin sizes (True) or widths (False)
-        :type sizes: bool
-        :return: Bin-center x values, bin-center y values, and the log2-scaled 2D histogram counts.
-        :rtype: tuple[np.ndarray, np.ndarray, np.ndarray]
-        :raises ValueError: If bins is an invalid entry when sizes is False.
-
-        Build a heatmap of the provided data
-        """
-        xdata, ydata = self._logscale_and_filter_multiple_columns(
-            xdata, ydata, log_flags=[logx, logy]
-        )
-
-        if bins is not None:
-            if sizes is False:
-                if isinstance(bins, list) and len(bins) >= 2:
-                    xbins = bins[0]
-                    ybins = bins[1]
-                elif isinstance(bins, list) and len(bins) == 1:
-                    xbins = bins[0]
-                    ybins = bins[0]
-                else:
-                    raise ValueError(f"Invalid bin entry: {bins}")
-            elif sizes is True:
-                if isinstance(bins, list) and len(bins) >= 2:
-                    xbins = int((max(xdata) - min(xdata)) / bins[0])
-                    ybins = int((max(ydata) - min(ydata)) / bins[1])
-                elif isinstance(bins, list) and len(bins) == 1:
-                    xbins = int((max(xdata) - min(xdata)) / bins[0])
-                    ybins = int((max(ydata) - min(ydata)) / bins[0])
-                else:
-                    self.logger.info(
-                        f"Invalid entry in bins: {bins}, defaulting to iqr"
-                    )
-                    bins = None
-                if xbins <= 1 or ybins <= 1:
-                    self.logger.info(
-                        f"Invalid entry in bins: {bins}, defaulting to iqr"
-                    )
-                    bins = None
-        if bins is None:
-            try:
-                if iqr(xdata) > 0:
-                    xbins = int(
-                        (max(xdata) - min(xdata))
-                        * len(xdata) ** (1.0 / 4.0)
-                        / (iqr(xdata))
-                    )
-                else:
-                    xbins = int(np.sqrt(len(xdata)))
-            except OverflowError:
-                xbins = int(np.sqrt(len(xdata)))
-            try:
-                if iqr(ydata) > 0:
-                    ybins = int(
-                        (max(ydata) - min(ydata))
-                        * len(xdata) ** (1.0 / 4.0)
-                        / (iqr(ydata))
-                    )
-                else:
-                    ybins = int(np.sqrt(len(ydata)))
-            except OverflowError:
-                ybins = int(np.sqrt(len(ydata)))
-
-        z, x, y = np.histogram2d(xdata, ydata, bins=[int(xbins), int(ybins)])
-        logged_z = np.empty_like(z)
-        for i in range(z.shape[0]):
-            for j in range(z.shape[1]):
-                logged_z[i, j] = np.log2(z[i, j]) if z[i, j] > 0 else -1
-
-        x = x[:-1] + np.diff(x) / 2.0
-        y = y[:-1] + np.diff(y) / 2.0
-
-        return x, y, logged_z.T
 
     @log(logger=logger)
     def _delete_all_selected_filters(self) -> None:

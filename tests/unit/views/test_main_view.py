@@ -1076,3 +1076,32 @@ class TestRefreshAvailablePlugins:
 
         assert len(main_view.findChildren(QAction)) <= before_actions + 3
         assert len(main_view.findChildren(QMenu)) <= before_menus + 3
+
+
+def test_add_text_to_display_stamps_each_line_with_a_time(main_view):
+    """
+    Every status line carries the time it arrived.
+
+    Without it a message repeated verbatim is indistinguishable from the panel not
+    having changed, which is how a plot refused twice read as never reported.
+    """
+    import re
+
+    main_view.add_text_to_display("Test message", "Logger")
+    text = main_view.text_display_widget.toPlainText()
+
+    assert re.search(r"\[\d{2}:\d{2}:\d{2}\] Logger: Test message", text)
+
+
+def test_add_text_to_display_keeps_repeated_messages_distinguishable(main_view):
+    """The same message twice leaves two lines, not one that may or may not be new."""
+    main_view.add_text_to_display("Only a single channel can be used", "MetadataView")
+    main_view.add_text_to_display("Only a single channel can be used", "MetadataView")
+
+    lines = [
+        line
+        for line in main_view.text_display_widget.toPlainText().splitlines()
+        if "Only a single channel" in line
+    ]
+
+    assert len(lines) == 2

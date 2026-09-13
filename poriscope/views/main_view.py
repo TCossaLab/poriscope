@@ -26,6 +26,7 @@
 
 import logging
 import sys
+from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 import matplotlib.pyplot as plt
@@ -188,9 +189,24 @@ class MainView(QMainWindow, WalkthroughMixin):
     @log(logger=logger)
     @Slot(str, str)
     def add_text_to_display(self, text: str, source: str) -> None:
-        """Method to dynamically add text to the QTextEdit and scroll to bottom"""
+        """
+        Append a status message to the panel and scroll to it.
+
+        Each line is stamped with the wall-clock time it arrived. Without it two
+        identical messages are indistinguishable from one: a refused plot reported
+        twice looks exactly like the panel not having changed at all, which is
+        precisely how one was read as never having been reported.
+
+        :param text: the message to show; an empty one is ignored
+        :type text: str
+        :param source: the class that raised it, shown before the message
+        :type source: str
+        :return: None
+        :rtype: None
+        """
         if text:
-            self.text_display_widget.append(f"{source}: {text}\n")  # Add new text
+            stamp = datetime.now().strftime("%H:%M:%S")
+            self.text_display_widget.append(f"[{stamp}] {source}: {text}\n")
             cursor = self.text_display_widget.textCursor()  # Get current text cursor
             cursor.movePosition(
                 QTextCursor.MoveOperation.End

@@ -85,8 +85,12 @@ def view(mocker: MockerFixture, mock_qt_dependencies: None) -> MetadataView:
     # Mock helper methods
     view_instance._update_cache = mocker.Mock()
     view_instance._clear_cache = mocker.Mock()
+    # One array out per array in, which is what the real method guarantees and what
+    # every caller unpacks positionally. It used to return a 1-tuple whatever it was
+    # given; that was invisible while only single-column callers reached it, and
+    # wrong the moment a two-column one did.
     view_instance._logscale_and_filter_multiple_columns = mocker.Mock(
-        side_effect=lambda *args, **kwargs: (args[0],) if args else ()
+        side_effect=lambda *args, **kwargs: tuple(args)
     )
 
     # Mock methods called by _overlay_plot
@@ -124,6 +128,16 @@ def view(mocker: MockerFixture, mock_qt_dependencies: None) -> MetadataView:
     )
     view_instance.plot_features_requested = mocker.Mock()
     view_instance.csv_subset_export_requested = mocker.Mock()
+    # Answered by MetadataController.calculate_heatmap in the real app; the tests
+    # that drive _plot_heatmap supply the binning themselves via _answer_heatmap,
+    # exactly as they used to supply it to a mocked _calculate_heatmap.
+    view_instance.heatmap_requested = mocker.Mock()
+    # Answered by MetadataController.estimate_kernel_densities in the real app.
+    view_instance.density_requested = mocker.Mock()
+    # Answered by MetadataController.calculate_histogram_bins in the real app.
+    view_instance.histogram_bins_requested = mocker.Mock()
+    # Answered by MetadataController.fit_capture_rate in the real app.
+    view_instance.capture_rate_requested = mocker.Mock()
     # Answered by MetaSubsetTabController.load_event_id_cache in the real app;
     # each test that drives _rebuild_event_id_cache sets its own answer.
     view_instance.event_id_cache_requested = mocker.Mock()
@@ -516,13 +530,6 @@ def test_plot_1d_density_updates_hist_min(
     """Verify hist_min is updated with minimum data value."""
     data: pd.DataFrame = pd.DataFrame({"x": np.array([1.0, 2.0, 5.0, 10.0])})
 
-    mock_kde_class: MagicMock = mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.stats.kde.gaussian_kde"
-    )
-    mock_kde_instance: MagicMock = mocker.Mock()
-    mock_kde_instance.return_value = np.array([0.1, 0.2, 0.3])
-    mock_kde_class.return_value = mock_kde_instance
-
     view._logscale_and_filter_multiple_columns = mocker.Mock(  # type: ignore[method-assign]
         return_value=(np.array([1.0, 2.0, 5.0, 10.0]),)
     )
@@ -547,13 +554,6 @@ def test_plot_1d_density_updates_hist_max(
     """Verify hist_max is updated with maximum data value."""
     data: pd.DataFrame = pd.DataFrame({"x": np.array([1.0, 2.0, 5.0, 10.0])})
 
-    mock_kde_class: MagicMock = mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.stats.kde.gaussian_kde"
-    )
-    mock_kde_instance: MagicMock = mocker.Mock()
-    mock_kde_instance.return_value = np.array([0.1, 0.2, 0.3])
-    mock_kde_class.return_value = mock_kde_instance
-
     view._logscale_and_filter_multiple_columns = mocker.Mock(  # type: ignore[method-assign]
         return_value=(np.array([1.0, 2.0, 5.0, 10.0]),)
     )
@@ -576,13 +576,6 @@ def test_plot_1d_density_clears_axes(view: MetadataView, mocker: MockerFixture) 
     """Verify axes are cleared before plotting."""
     data: pd.DataFrame = pd.DataFrame({"x": np.array([1.0, 2.0])})
 
-    mock_kde_class: MagicMock = mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.stats.kde.gaussian_kde"
-    )
-    mock_kde_instance: MagicMock = mocker.Mock()
-    mock_kde_instance.return_value = np.array([0.1, 0.2])
-    mock_kde_class.return_value = mock_kde_instance
-
     view._logscale_and_filter_multiple_columns = mocker.Mock(  # type: ignore[method-assign]
         return_value=(np.array([1.0, 2.0]),)
     )
@@ -597,13 +590,6 @@ def test_plot_1d_density_appends_to_hist_data(
 ) -> None:
     """Verify data is appended to hist_data."""
     data: pd.DataFrame = pd.DataFrame({"x": np.array([1.0, 2.0, 3.0])})
-
-    mock_kde_class: MagicMock = mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.stats.kde.gaussian_kde"
-    )
-    mock_kde_instance: MagicMock = mocker.Mock()
-    mock_kde_instance.return_value = np.array([0.1, 0.2, 0.3])
-    mock_kde_class.return_value = mock_kde_instance
 
     view._logscale_and_filter_multiple_columns = mocker.Mock(  # type: ignore[method-assign]
         return_value=(np.array([1.0, 2.0, 3.0]),)
@@ -624,24 +610,42 @@ def test_plot_1d_density_raises_on_invalid_bins_list(view: MetadataView) -> None
         view._plot_1d_density(view.axes, data, ["x"], [""], [False], bins=[])
 
 
+def _answer_density(view, densities):
+    """
+    Answer ``density_requested`` the way MetadataController does.
+
+    Step 4c split ``_plot_1d_density`` at the estimate: it emits the filtered
+    columns and ``set_kernel_densities`` does every bit of drawing. The estimate is
+    supplied here rather than computed, so these tests need no scipy stub at all -
+    the ``gaussian_kde`` patch they used to carry went with the method.
+
+    :param view: the view whose request has just been emitted
+    :type view: MetadataView
+    :param densities: one (positions, density) pair per dataset, to answer with
+    :type densities: list
+    :return: None
+    :rtype: None
+    """
+    labels, ax, x_label = (
+        view.density_requested.emit.call_args.args[1],
+        view.density_requested.emit.call_args.args[6],
+        view.density_requested.emit.call_args.args[7],
+    )
+    view.set_kernel_densities(densities, labels, ax, x_label)
+
+
 def test_plot_1d_density_sets_log10_label_when_logscale_true(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify log10 label is set when logscale is True."""
     data: pd.DataFrame = pd.DataFrame({"x": np.array([1.0, 10.0, 100.0])})
 
-    mock_kde_class: MagicMock = mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.stats.kde.gaussian_kde"
-    )
-    mock_kde_instance: MagicMock = mocker.Mock()
-    mock_kde_instance.return_value = np.array([0.1, 0.2, 0.3])
-    mock_kde_class.return_value = mock_kde_instance
-
     view._logscale_and_filter_multiple_columns = mocker.Mock(  # type: ignore[method-assign]
         return_value=(np.array([0.0, 1.0, 2.0]),)
     )
 
     view._plot_1d_density(view.axes, data, ["x"], ["units"], [True])
+    _answer_density(view, [(np.array([0.0, 1.0, 2.0]), np.array([0.1, 0.2, 0.3]))])
 
     view.axes.set_xlabel.assert_called()
     call_args: str = str(view.axes.set_xlabel.call_args)
@@ -710,276 +714,44 @@ def test_no_tab_defines_its_own_dunder_init() -> None:
         assert "__init__" not in cls.__dict__, f"{cls.__name__} regrew an __init__"
 
 
-def test_plot_1d_density_uses_first_bins_entry(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
-    """Verify a non-empty bins list is reduced to its first entry."""
-    data = pd.DataFrame({"x": np.array([1.0, 2.0, 3.0, 4.0])})
-    mock_kde_class: MagicMock = mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.stats.kde.gaussian_kde"
-    )
-    mock_kde_instance: MagicMock = mocker.Mock()
-    mock_kde_instance.return_value = np.array([0.1, 0.2, 0.3, 0.4])
-    mock_kde_class.return_value = mock_kde_instance
-
-    view._logscale_and_filter_multiple_columns = mocker.Mock(  # type: ignore[method-assign]
-        return_value=(np.array([1.0, 2.0, 3.0, 4.0]),)
-    )
-
-    view._plot_1d_density(view.axes, data, ["x"], ["u"], [False], bins=[4])
-
-    assert view.hist_data
-
-
-def test_plot_1d_density_uses_bin_count_directly_when_sizes_false(
-    view: MetadataView,
-    mocker: MockerFixture,
-) -> None:
-    """Verify scalar bin counts are used directly when sizes is False."""
-    data = pd.DataFrame({"x": np.array([1.0, 2.0, 3.0, 4.0])})
-    mock_kde_class: MagicMock = mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.stats.kde.gaussian_kde"
-    )
-    mock_kde_instance: MagicMock = mocker.Mock()
-    mock_kde_instance.return_value = np.array([0.1, 0.2, 0.3, 0.4])
-    mock_kde_class.return_value = mock_kde_instance
-
-    view._logscale_and_filter_multiple_columns = mocker.Mock(  # type: ignore[method-assign]
-        return_value=(np.array([1.0, 2.0, 3.0, 4.0]),)
-    )
-
-    view._plot_1d_density(view.axes, data, ["x"], ["u"], [False], bins=[6], sizes=False)
-
-    assert view.hist_data
-
-
-def test_plot_1d_density_handles_bin_size_without_hist_bounds(
-    view: MetadataView,
-    mocker: MockerFixture,
-) -> None:
-    """Verify size-based bins fall back when histogram bounds are unavailable."""
-    data = pd.DataFrame({"x": np.array([1.0, 2.0, 3.0, 4.0])})
-    mock_kde_class: MagicMock = mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.stats.kde.gaussian_kde"
-    )
-    mock_kde_instance: MagicMock = mocker.Mock()
-    mock_kde_instance.return_value = np.array([0.1, 0.2, 0.3, 0.4])
-    mock_kde_class.return_value = mock_kde_instance
-
-    view.hist_min = None
-    view.hist_max = None
-    view._logscale_and_filter_multiple_columns = mocker.Mock(  # type: ignore[method-assign]
-        return_value=(np.array([1.0, 2.0, 3.0, 4.0]),)
-    )
-
-    view._plot_1d_density(
-        view.axes, data, ["x"], ["u"], [False], bins=[0.5], sizes=True
-    )
-
-    assert view.hist_data
-
-
-def test_plot_1d_density_resets_to_auto_bins_when_hist_bounds_are_cleared_before_loop(
-    view: MetadataView,
-    mocker: MockerFixture,
-) -> None:
-    """Verify missing histogram bounds force the size-based bins path back to auto-bin estimation."""
-
-    class ResettingList(list[pd.DataFrame]):
-        def __init__(self, owner: MetadataView) -> None:
-            super().__init__()
-            self._owner = owner
-
-        def append(self, item: pd.DataFrame) -> None:
-            super().append(item)
-            self._owner.hist_min = None
-            self._owner.hist_max = None
-
-    data = pd.DataFrame({"x": np.array([1.0, 2.0, 3.0, 4.0])})
-
-    mock_kde_class: MagicMock = mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.stats.kde.gaussian_kde"
-    )
-    mock_kde_instance: MagicMock = mocker.Mock()
-    mock_kde_instance.return_value = np.array([0.1, 0.2, 0.3, 0.4])
-    mock_kde_class.return_value = mock_kde_instance
-
-    mock_iqr: MagicMock = mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.iqr",
-        return_value=1.0,
-    )
-
-    view.hist_data = ResettingList(view)  # type: ignore[assignment]
-    view.hist_labels = []
-    view._logscale_and_filter_multiple_columns = mocker.Mock(  # type: ignore[method-assign]
-        return_value=(np.array([1.0, 2.0, 3.0, 4.0]),)
-    )
-
-    original_min = min
-    original_max = max
-
-    def mock_min(*args: Any, **kwargs: Any) -> Any:
-        if len(args) == 1 and isinstance(args[0], pd.DataFrame):
-            return args[0].min().min()
-        return original_min(*args, **kwargs)
-
-    def mock_max(*args: Any, **kwargs: Any) -> Any:
-        if len(args) == 1 and isinstance(args[0], pd.DataFrame):
-            return args[0].max().max()
-        return original_max(*args, **kwargs)
-
-    mocker.patch("builtins.min", side_effect=mock_min)
-    mocker.patch("builtins.max", side_effect=mock_max)
-
-    view._plot_1d_density(
-        view.axes, data, ["x"], ["u"], [False], bins=[0.5], sizes=True
-    )
-
-    assert mock_iqr.call_count >= 1
-    assert len(view.hist_data) == 1
-
-
-def test_plot_1d_density_handles_type_error_for_bin_size(
-    view: MetadataView,
-    mocker: MockerFixture,
-) -> None:
-    """Verify invalid size-based bin entries fall back without crashing."""
-    data = pd.DataFrame({"x": np.array([1.0, 2.0, 3.0, 4.0])})
-    mock_kde_class: MagicMock = mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.stats.kde.gaussian_kde"
-    )
-    mock_kde_instance: MagicMock = mocker.Mock()
-    mock_kde_instance.return_value = np.array([0.1, 0.2, 0.3, 0.4])
-    mock_kde_class.return_value = mock_kde_instance
-
-    original_min = min
-    original_max = max
-
-    def mock_min(*args: Any, **kwargs: Any) -> Any:
-        if len(args) == 1 and isinstance(args[0], pd.DataFrame):
-            return args[0].min().min()
-        return original_min(*args, **kwargs)
-
-    def mock_max(*args: Any, **kwargs: Any) -> Any:
-        if len(args) == 1 and isinstance(args[0], pd.DataFrame):
-            return args[0].max().max()
-        return original_max(*args, **kwargs)
-
-    mocker.patch("builtins.min", side_effect=mock_min)
-    mocker.patch("builtins.max", side_effect=mock_max)
-
-    view.hist_min = 0.0
-    view.hist_max = 10.0
-    view._logscale_and_filter_multiple_columns = mocker.Mock(  # type: ignore[method-assign]
-        return_value=(np.array([1.0, 2.0, 3.0, 4.0]),)
-    )
-
-    view._plot_1d_density(
-        view.axes,
-        data,
-        ["x"],
-        ["u"],
-        [False],
-        bins=[None],  # type: ignore[list-item]
-        sizes=True,
-    )
-
-    assert view.hist_data
-
-
-def test_plot_1d_density_discards_size_bins_that_produce_one_or_fewer_bins(
-    view: MetadataView,
-    mocker: MockerFixture,
-) -> None:
-    """Verify tiny histogram ranges disable invalid computed bin counts."""
-    data = pd.DataFrame({"x": np.array([1.0, 2.0, 3.0, 4.0])})
-    mock_kde_class: MagicMock = mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.stats.kde.gaussian_kde"
-    )
-    mock_kde_instance: MagicMock = mocker.Mock()
-    mock_kde_instance.return_value = np.array([0.1, 0.2, 0.3, 0.4])
-    mock_kde_class.return_value = mock_kde_instance
-
-    original_min = min
-    original_max = max
-
-    def mock_min(*args: Any, **kwargs: Any) -> Any:
-        if len(args) == 1 and isinstance(args[0], pd.DataFrame):
-            return args[0].min().min()
-        return original_min(*args, **kwargs)
-
-    def mock_max(*args: Any, **kwargs: Any) -> Any:
-        if len(args) == 1 and isinstance(args[0], pd.DataFrame):
-            return args[0].max().max()
-        return original_max(*args, **kwargs)
-
-    mocker.patch("builtins.min", side_effect=mock_min)
-    mocker.patch("builtins.max", side_effect=mock_max)
-
-    view.hist_min = 0.0
-    view.hist_max = 0.4
-    view._logscale_and_filter_multiple_columns = mocker.Mock(  # type: ignore[method-assign]
-        return_value=(np.array([1.0, 2.0, 3.0, 4.0]),)
-    )
-
-    view._plot_1d_density(
-        view.axes, data, ["x"], ["u"], [False], bins=[1.0], sizes=True
-    )
-
-    assert view.hist_data
-
-
-def test_plot_1d_density_uses_log_length_fallback_when_iqr_is_zero(
-    view: MetadataView,
-    mocker: MockerFixture,
-) -> None:
-    """Verify the zero-IQR branch computes a fallback number of bins."""
-    data = pd.DataFrame({"x": np.array([5.0] * 12)})
-    mock_kde_class: MagicMock = mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.stats.kde.gaussian_kde"
-    )
-    mock_kde_instance: MagicMock = mocker.Mock()
-    mock_kde_instance.return_value = np.array([0.1, 0.2, 0.3])
-    mock_kde_class.return_value = mock_kde_instance
-    mocker.patch("poriscope.plugins.analysistabs.MetadataView.iqr", return_value=0.0)
-
-    view._logscale_and_filter_multiple_columns = mocker.Mock(  # type: ignore[method-assign]
-        return_value=(np.array([5.0] * 12),)
-    )
-
-    view._plot_1d_density(view.axes, data, ["x"], ["u"], [False], bins=None)
-
-    assert view.hist_data
-
-
-def test_plot_1d_density_handles_overflow_when_estimating_bins(
-    view: MetadataView,
-    mocker: MockerFixture,
-) -> None:
-    """Verify OverflowError during fallback bin estimation is handled."""
-    data = pd.DataFrame({"x": np.array([5.0] * 12)})
-    mock_kde_class: MagicMock = mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.stats.kde.gaussian_kde"
-    )
-    mock_kde_instance: MagicMock = mocker.Mock()
-    mock_kde_instance.return_value = np.array([0.1, 0.2, 0.3])
-    mock_kde_class.return_value = mock_kde_instance
-    mocker.patch("poriscope.plugins.analysistabs.MetadataView.iqr", return_value=0.0)
-    mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.np.log10",
-        side_effect=OverflowError,
-    )
-
-    view._logscale_and_filter_multiple_columns = mocker.Mock(  # type: ignore[method-assign]
-        return_value=(np.array([5.0] * 12),)
-    )
-
-    view._plot_1d_density(view.axes, data, ["x"], ["u"], [False], bins=None)
-
-    assert view.hist_data
-
-
 # ----------------------------- Plot Capture Rate Tests ------------------------------
+
+
+def _answer_capture_rate(view, numbins=4):
+    """
+    Answer ``capture_rate_requested`` the way MetadataController does.
+
+    Step 4c moved the binning and the exponential fit to ``MetadataModel``, so the
+    View no longer decides either. These tests supplied a stubbed ``curve_fit``
+    before; they supply the finished fit here instead, and what the fit actually
+    produces is asserted in ``tests/unit/models/test_metadata_model.py``.
+
+    :param view: the view whose request has just been emitted
+    :type view: MetadataView
+    :param numbins: how many bins to answer with
+    :type numbins: int
+    :return: None
+    :rtype: None
+    """
+    data, _bins, _sizes, ax, x_label, y_label, dataset_label = (
+        view.capture_rate_requested.emit.call_args.args
+    )
+    edges = np.linspace(np.min(data), np.max(data), numbins + 1)
+    centers = edges[:-1] + np.diff(edges) / 2.0
+    counts = np.ones_like(centers)
+    view.set_capture_rate(
+        edges,
+        centers,
+        counts,
+        counts,
+        1.0,
+        0.1,
+        data,
+        ax,
+        x_label,
+        y_label,
+        dataset_label,
+    )
 
 
 def test_plot_capture_rate_raises_on_insufficient_data(view: MetadataView) -> None:
@@ -1002,12 +774,8 @@ def test_plot_capture_rate_calls_hist(
         }
     )
 
-    mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.curve_fit",
-        return_value=(np.array([1.0, 1.0]), np.array([[0.01, 0], [0, 0.01]])),
-    )
-
     view._plot_capture_rate(view.axes, data, ["time"], ["s"], [False])
+    _answer_capture_rate(view)
 
     view.axes.hist.assert_called()
 
@@ -1024,14 +792,11 @@ def test_plot_capture_rate_fits_exponential_curve(
         }
     )
 
-    mock_curve_fit: MagicMock = mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.curve_fit",
-        return_value=(np.array([1.5, 2.5]), np.array([[0.01, 0], [0, 0.01]])),
-    )
-
     view._plot_capture_rate(view.axes, data, ["time"], ["s"], [False])
+    _answer_capture_rate(view)
 
-    mock_curve_fit.assert_called_once()
+    # the curve itself is fitted by MetadataModel and tested there; what is pinned
+    # here is that the answer is drawn, as a line over the histogram
     view.axes.plot.assert_called()
 
 
@@ -1047,12 +812,8 @@ def test_plot_capture_rate_emits_message_for_filtered_rows(
         }
     )
 
-    mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.curve_fit",
-        return_value=(np.array([1.0, 1.0]), np.array([[0.01, 0], [0, 0.01]])),
-    )
-
     view._plot_capture_rate(view.axes, data, ["time"], ["s"], [False])
+    _answer_capture_rate(view)
 
     view.add_text_to_display.emit.assert_called()
 
@@ -1083,20 +844,14 @@ def test_plot_capture_rate_sets_axis_labels(
         }
     )
 
-    mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.curve_fit",
-        return_value=(np.array([1.0, 1.0]), np.array([[0.01, 0], [0, 0.01]])),
-    )
-
     view._plot_capture_rate(view.axes, data, ["time"], ["s"], [False])
+    _answer_capture_rate(view)
 
     view.axes.set_xlabel.assert_called()
     view.axes.set_ylabel.assert_called()
 
 
-def test_plot_capture_rate_uses_first_bins_entry(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
+def test_plot_capture_rate_uses_first_bins_entry(view: MetadataView) -> None:
     """Verify capture-rate plotting uses the first element from a bins list."""
     data = pd.DataFrame(
         {
@@ -1105,16 +860,11 @@ def test_plot_capture_rate_uses_first_bins_entry(
             )
         }
     )
-    mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.curve_fit",
-        return_value=(np.array([1.0, 1.0]), np.array([[0.01, 0.0], [0.0, 0.01]])),
-    )
-
     view._plot_capture_rate(view.axes, data, ["time"], ["s"], [False], bins=[4])
 
-    hist_call = view.axes.hist.call_args
-    assert hist_call is not None
-    assert hist_call.kwargs.get("bins") == 4
+    # the list is unwrapped before the request goes out; that the Model then makes
+    # four bins of it is asserted in tests/unit/models/test_metadata_model.py
+    assert view.capture_rate_requested.emit.call_args.args[1] == 4
 
 
 def test_plot_capture_rate_sets_log10_label_when_logscale_true(
@@ -1129,65 +879,13 @@ def test_plot_capture_rate_sets_log10_label_when_logscale_true(
             )
         }
     )
-    mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.curve_fit",
-        return_value=(np.array([1.0, 1.0]), np.array([[0.01, 0.0], [0.0, 0.01]])),
-    )
-
     view._plot_capture_rate(view.axes, data, ["time"], ["s"], [True])
+    _answer_capture_rate(view)
 
     xlabel_call = view.axes.set_xlabel.call_args
     assert xlabel_call is not None
     xlabel = xlabel_call.args[0]
     assert "log10" in xlabel
-
-
-def test_plot_capture_rate_uses_log_length_fallback_when_iqr_is_zero(
-    view: MetadataView,
-    mocker: MockerFixture,
-) -> None:
-    """Verify zero-IQR capture-rate data uses the fallback bin estimator."""
-    data = pd.DataFrame({"time": np.linspace(1.0, 1.11, 12)})
-    mocker.patch("poriscope.plugins.analysistabs.MetadataView.iqr", return_value=0.0)
-    mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.curve_fit",
-        return_value=(np.array([1.0, 1.0]), np.array([[0.01, 0.0], [0.0, 0.01]])),
-    )
-
-    view._plot_capture_rate(view.axes, data, ["time"], ["s"], [False], bins=None)
-
-    view.axes.hist.assert_called()
-
-
-def test_plot_capture_rate_handles_overflow_when_estimating_bins(
-    view: MetadataView,
-    mocker: MockerFixture,
-) -> None:
-    """Verify OverflowError in the primary estimator falls back to log-length bins."""
-    data = pd.DataFrame({"time": np.linspace(1.0, 1.11, 12)})
-    mocker.patch("poriscope.plugins.analysistabs.MetadataView.iqr", return_value=1.0)
-
-    original_max = np.max
-
-    def mock_np_max(values: Any, *args: Any, **kwargs: Any) -> Any:
-        if isinstance(values, np.ndarray):
-            raise OverflowError
-        return original_max(values, *args, **kwargs)
-
-    mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.np.max",
-        side_effect=mock_np_max,
-    )
-    mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.curve_fit",
-        return_value=(np.array([1.0, 1.0]), np.array([[0.01, 0.0], [0.0, 0.01]])),
-    )
-
-    view._plot_capture_rate(view.axes, data, ["time"], ["s"], [False], bins=None)
-
-    hist_call = view.axes.hist.call_args
-    assert hist_call is not None
-    assert hist_call.kwargs.get("bins") == int(3.332 * np.log10(len(data)))
 
 
 # ----------------------------- Format Axis Label Tests ------------------------------
@@ -1220,6 +918,29 @@ def test_format_axis_label_handles_multiple_parentheses(view: MetadataView) -> N
 # ----------------------------- Plot 1D Histogram Tests ------------------------------
 
 
+def _answer_histogram_bins(view, numbins=8):
+    """
+    Answer ``histogram_bins_requested`` the way MetadataController does.
+
+    Step 4c split ``_plot_1d_histogram`` at the bin decision: it emits all the
+    filtered data and ``set_histogram_bins`` does every bit of drawing. The edges
+    are supplied here rather than computed; what the decision *returns* for a given
+    request is asserted directly in ``tests/unit/models/test_metadata_model.py``.
+
+    :param view: the view whose request has just been emitted
+    :type view: MetadataView
+    :param numbins: how many bins to answer with
+    :type numbins: int
+    :return: None
+    :rtype: None
+    """
+    args = view.histogram_bins_requested.emit.call_args.args
+    hist_min, hist_max, ax, x_label, logx, norm = args[3:]
+    edges = np.linspace(hist_min, hist_max, numbins + 1)
+    centers = edges[:-1] + np.diff(edges) / 2.0
+    view.set_histogram_bins(edges, centers, np.diff(edges), ax, x_label, logx, norm)
+
+
 def test_plot_1d_histogram_raises_on_invalid_bins_list(view: MetadataView) -> None:
     """Verify ValueError is raised for invalid bins list."""
     data: pd.DataFrame = pd.DataFrame({"x": np.array([1.0, 2.0, 3.0])})
@@ -1241,6 +962,9 @@ def test_plot_1d_histogram_uses_first_bins_entry(
     view._plot_1d_histogram(view.axes, data, ["x"], ["u"], [False], bins=[10])
 
     assert len(view.hist_data) == 1
+    # the list is unwrapped to its first entry before the request goes out; what
+    # the bin decision then does with it is asserted on the Model
+    assert view.histogram_bins_requested.emit.call_args.args[1] == 10
 
 
 def test_plot_1d_histogram_updates_hist_min_max(
@@ -1270,6 +994,7 @@ def test_plot_1d_histogram_normalizes_when_norm_true(
     )
 
     view._plot_1d_histogram(view.axes, data, ["x"], ["u"], [False], norm=True)
+    _answer_histogram_bins(view)
 
     ylabel_call = view.axes.set_ylabel.call_args
     assert ylabel_call is not None
@@ -1287,6 +1012,7 @@ def test_plot_1d_histogram_sets_log10_label_when_logscale_true(
     )
 
     view._plot_1d_histogram(view.axes, data, ["x"], ["units"], [True])
+    _answer_histogram_bins(view)
 
     xlabel_call = view.axes.set_xlabel.call_args
     assert xlabel_call is not None
@@ -1333,6 +1059,9 @@ def test_plot_1d_histogram_handles_bin_sizes(
     )
 
     assert len(view.hist_data) == 1
+    emitted = view.histogram_bins_requested.emit.call_args.args
+    assert emitted[1] == 0.5
+    assert emitted[2] is True
 
 
 def test_plot_1d_histogram_overlays_multiple_datasets(
@@ -1359,31 +1088,43 @@ def test_plot_1d_histogram_overlays_multiple_datasets(
 # ----------------------------- Plot Heatmap Tests ------------------------------
 
 
-def test_plot_heatmap_calls_calculate_heatmap(
+def _answer_heatmap(view, x_bins, y_bins, z_grid):
+    """
+    Answer ``heatmap_requested`` the way MetadataController does.
+
+    Step 4c split ``_plot_heatmap`` at the binning: it emits the filtered columns
+    and ``set_heatmap`` does every bit of drawing. The binning result is supplied
+    here rather than computed, which is what the mocked ``_calculate_heatmap``
+    used to do for these tests.
+
+    :param view: the view whose request has just been emitted
+    :type view: MetadataView
+    :param x_bins: bin-center x values to answer with
+    :type x_bins: np.ndarray
+    :param y_bins: bin-center y values to answer with
+    :type y_bins: np.ndarray
+    :param z_grid: the log2-scaled counts to answer with
+    :type z_grid: np.ndarray
+    :return: None
+    :rtype: None
+    """
+    context = view.heatmap_requested.emit.call_args.args[4:]
+    view.set_heatmap(x_bins, y_bins, z_grid, *context)
+
+
+def test_plot_heatmap_requests_the_binning(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify _calculate_heatmap is called."""
+    """Verify the binning is asked for rather than done here."""
     data = pd.DataFrame({"x": np.array([1.0, 2.0]), "y": np.array([3.0, 4.0])})
-
-    # Create explicit arrays before mocking to avoid evaluation issues
-    x_bins = np.array([1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5])
-    y_bins = np.array([3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0, 7.5])
-    z_grid = np.ones((10, 10))
-
-    view._calculate_heatmap = mocker.Mock(  # type: ignore[method-assign]
-        return_value=(x_bins, y_bins, z_grid)
-    )
-
-    # Mock the colorbar to return proper ticks
-    mock_colorbar = mocker.Mock()
-    mock_colorbar.get_ticks = mocker.Mock(
-        return_value=np.array([0.0, 0.5, 1.0, 1.5, 2.0])
-    )
-    view.figure.colorbar = mocker.Mock(return_value=mock_colorbar)
 
     view._plot_heatmap(view.axes, data, ["x", "y"], ["u1", "u2"], [False, False])
 
-    view._calculate_heatmap.assert_called_once()
+    view.heatmap_requested.emit.assert_called_once()
+    # the filtered columns go out, and the drawing context comes back untouched
+    emitted = view.heatmap_requested.emit.call_args.args
+    assert emitted[4] is view.axes
+    assert len(emitted) == 8
 
 
 def test_plot_heatmap_sets_axis_labels(
@@ -1396,10 +1137,6 @@ def test_plot_heatmap_sets_axis_labels(
     y_bins = np.array([3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0, 7.5])
     z_grid = np.ones((10, 10))
 
-    view._calculate_heatmap = mocker.Mock(  # type: ignore[method-assign]
-        return_value=(x_bins, y_bins, z_grid)
-    )
-
     # Mock the colorbar
     mock_colorbar = mocker.Mock()
     mock_colorbar.get_ticks = mocker.Mock(
@@ -1408,6 +1145,7 @@ def test_plot_heatmap_sets_axis_labels(
     view.figure.colorbar = mocker.Mock(return_value=mock_colorbar)
 
     view._plot_heatmap(view.axes, data, ["x", "y"], ["u1", "u2"], [False, False])
+    _answer_heatmap(view, x_bins, y_bins, z_grid)
 
     view.axes.set_xlabel.assert_called()
     view.axes.set_ylabel.assert_called()
@@ -1423,10 +1161,6 @@ def test_plot_heatmap_sets_log10_labels_when_logscale_true(
     y_bins = np.array([3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0, 7.5])
     z_grid = np.ones((10, 10))
 
-    view._calculate_heatmap = mocker.Mock(  # type: ignore[method-assign]
-        return_value=(x_bins, y_bins, z_grid)
-    )
-
     # Mock the colorbar
     mock_colorbar = mocker.Mock()
     mock_colorbar.get_ticks = mocker.Mock(
@@ -1435,6 +1169,7 @@ def test_plot_heatmap_sets_log10_labels_when_logscale_true(
     view.figure.colorbar = mocker.Mock(return_value=mock_colorbar)
 
     view._plot_heatmap(view.axes, data, ["x", "y"], ["u1", "u2"], [True, True])
+    _answer_heatmap(view, x_bins, y_bins, z_grid)
 
     xlabel_call = view.axes.set_xlabel.call_args
     ylabel_call = view.axes.set_ylabel.call_args
@@ -1454,10 +1189,6 @@ def test_plot_heatmap_removes_previous_colorbar(
     y_bins = np.array([3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0, 7.5])
     z_grid = np.ones((10, 10))
 
-    view._calculate_heatmap = mocker.Mock(  # type: ignore[method-assign]
-        return_value=(x_bins, y_bins, z_grid)
-    )
-
     # Mock the colorbar
     mock_new_colorbar = mocker.Mock()
     mock_new_colorbar.get_ticks = mocker.Mock(
@@ -1472,6 +1203,7 @@ def test_plot_heatmap_removes_previous_colorbar(
     view._heatmap_colorbar = mock_old_colorbar  # type: ignore[attr-defined]
 
     view._plot_heatmap(view.axes, data, ["x", "y"], ["u1", "u2"], [False, False])
+    _answer_heatmap(view, x_bins, y_bins, z_grid)
 
     mock_old_colorbar.remove.assert_called_once()
 
@@ -4514,117 +4246,24 @@ def test_handle_other_actions_raises_not_implemented(
 # ----------------------------- Calculate Heatmap Tests ------------------------------
 
 
-def test_calculate_heatmap_returns_three_arrays(
+def test_plot_heatmap_applies_logscale_before_asking_for_the_binning(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify calculate_heatmap returns x, y, z arrays."""
-    xdata = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
-    ydata = np.array([10.0, 20.0, 30.0, 40.0, 50.0])
-    view._logscale_and_filter_multiple_columns = mocker.Mock(
-        return_value=(xdata, ydata)
-    )
+    """
+    The filter is still the View's, and runs before the request goes out.
 
-    x, y, z = view._calculate_heatmap(xdata, ydata, bins=[5])
+    Step 4c moved the binning to ``MetadataModel`` but left
+    ``_logscale_and_filter_multiple_columns`` on ``MetaView``, so this is the half
+    of the old ``_calculate_heatmap`` behaviour that stayed here. The rest moved to
+    ``tests/unit/models/test_metadata_model.py``.
+    """
+    data = pd.DataFrame({"x": np.array([1.0, 10.0]), "y": np.array([1.0, 10.0])})
 
-    assert len(x) == 5
-    assert len(y) == 5
-    assert z.shape == (5, 5)
-
-
-def test_calculate_heatmap_applies_logscale(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
-    """Verify logscale is applied when requested."""
-    xdata = np.array([1.0, 10.0, 100.0])
-    ydata = np.array([1.0, 10.0, 100.0])
-    view._logscale_and_filter_multiple_columns = mocker.Mock(
-        return_value=(xdata, ydata)
-    )
-
-    view._calculate_heatmap(xdata, ydata, logx=True, logy=True)
+    view._plot_heatmap(view.axes, data, ["x", "y"], ["u1", "u2"], [True, True])
 
     view._logscale_and_filter_multiple_columns.assert_called_once()
     call_args = view._logscale_and_filter_multiple_columns.call_args
     assert call_args.kwargs["log_flags"] == [True, True]
-
-
-def test_calculate_heatmap_uses_different_bins_for_x_and_y(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
-    """Verify different bin counts can be specified for x and y."""
-    xdata = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
-    ydata = np.array([10.0, 20.0, 30.0, 40.0, 50.0])
-    view._logscale_and_filter_multiple_columns = mocker.Mock(
-        return_value=(xdata, ydata)
-    )
-
-    x, y, z = view._calculate_heatmap(xdata, ydata, bins=[3, 5])
-
-    assert z.shape == (5, 3)  # Note: transposed, so y bins first
-
-
-def test_calculate_heatmap_calculates_bin_sizes_when_sizes_true(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
-    """Verify bin sizes are calculated when sizes=True."""
-    xdata = np.array([0.0, 10.0, 20.0, 30.0])
-    ydata = np.array([0.0, 10.0, 20.0, 30.0])
-    view._logscale_and_filter_multiple_columns = mocker.Mock(
-        return_value=(xdata, ydata)
-    )
-
-    x, y, z = view._calculate_heatmap(xdata, ydata, bins=[5.0], sizes=True)
-
-    # (30 - 0) / 5.0 = 6 bins per axis
-    assert z.shape[0] == 6
-    assert z.shape[1] == 6
-
-
-def test_calculate_heatmap_raises_for_invalid_bins(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
-    """Verify ValueError is raised for empty bins list."""
-    xdata = np.array([1.0, 2.0, 3.0])
-    ydata = np.array([10.0, 20.0, 30.0])
-    view._logscale_and_filter_multiple_columns = mocker.Mock(
-        return_value=(xdata, ydata)
-    )
-
-    with pytest.raises(ValueError, match="Invalid bin entry"):
-        view._calculate_heatmap(xdata, ydata, bins=[], sizes=False)
-
-
-def test_calculate_heatmap_defaults_to_iqr_when_bins_none(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
-    """Verify IQR-based bin calculation when bins=None."""
-    xdata = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
-    ydata = np.array([10.0, 20.0, 30.0, 40.0, 50.0])
-    view._logscale_and_filter_multiple_columns = mocker.Mock(
-        return_value=(xdata, ydata)
-    )
-    mocker.patch("poriscope.plugins.analysistabs.MetadataView.iqr", return_value=2.0)
-
-    x, y, z = view._calculate_heatmap(xdata, ydata, bins=None)
-
-    assert z.shape[0] > 0
-    assert z.shape[1] > 0
-
-
-def test_calculate_heatmap_applies_log2_to_counts(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
-    """Verify counts are log2 transformed."""
-    xdata = np.array([1.0, 1.0, 2.0, 2.0])
-    ydata = np.array([10.0, 10.0, 20.0, 20.0])
-    view._logscale_and_filter_multiple_columns = mocker.Mock(
-        return_value=(xdata, ydata)
-    )
-
-    x, y, z = view._calculate_heatmap(xdata, ydata, bins=[2])
-
-    # All non-zero entries should be log2 transformed
-    assert np.all((z == -1) | (z >= 0))  # -1 for zero counts, >=0 for others
 
 
 # ----------------------------- Show Add Filter Dialog Tests ------------------------------
@@ -5986,3 +5625,60 @@ def test_handle_plot_events_leaves_the_reporting_to_the_controller(
     assert view.plot_events_generator is None
     view._update_event_plot.assert_not_called()
     view.add_text_to_display.emit.assert_not_called()
+
+
+# ----------------------------- Categorical nulls / plot-type reset -------------------
+
+
+def test_plot_categorical_histogram_counts_nulls_as_their_own_category(
+    view: MetadataView,
+) -> None:
+    """
+    A column holding SQL NULLs plots, with the missing rows as a "null" bar.
+
+    Reported from a real run: it raised instead. ``np.unique`` sorts, and sorting an
+    object column that mixes ``None`` with strings raises
+    "'<' not supported between instances of 'NoneType' and 'str'".
+    """
+    data = pd.DataFrame({"kind": np.array(["a", "b", None, "a"], dtype=object)})
+
+    view._plot_categorical_histogram(view.axes, data, ["kind"], ["u"])
+
+    categories, counts = view.axes.bar.call_args.args
+    assert categories == ["a", "b", "null"]
+    assert list(counts) == [2.0, 1.0, 1.0]
+
+
+def test_plot_categorical_histogram_labels_a_float_nan_null_too(
+    view: MetadataView,
+) -> None:
+    """
+    A float column does not raise on NaN, but labelled the bar "nan".
+
+    "null" is what the user sees everywhere else for a missing value, and this is
+    the same absence, so it gets the same word.
+    """
+    data = pd.DataFrame({"kind": np.array([1.0, 2.0, np.nan, 1.0])})
+
+    view._plot_categorical_histogram(view.axes, data, ["kind"], ["u"])
+
+    categories, _counts = view.axes.bar.call_args.args
+    assert categories[-1] == "null"
+    assert "nan" not in categories
+
+
+def test_plot_categorical_histogram_keeps_numeric_categories_in_numeric_order(
+    view: MetadataView,
+) -> None:
+    """
+    Real categories keep the order they had, which is why nulls are counted apart.
+
+    Stringifying the whole column before ``np.unique`` would have been shorter and
+    would have sorted 10 before 2.
+    """
+    data = pd.DataFrame({"kind": np.array([1, 2, 10, 2])})
+
+    view._plot_categorical_histogram(view.axes, data, ["kind"], ["u"])
+
+    categories, _counts = view.axes.bar.call_args.args
+    assert categories == ["1", "2", "10"]

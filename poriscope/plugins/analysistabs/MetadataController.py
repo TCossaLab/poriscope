@@ -26,8 +26,11 @@
 
 
 import logging
-from typing import Dict, List, Optional, override
+from typing import Any, Dict, List, Optional, Sequence, override
 
+import numpy as np
+import numpy.typing as npt
+from matplotlib.axes import Axes
 from PySide6.QtCore import Slot
 
 from poriscope.plugins.analysistabs.MetadataModel import MetadataModel
@@ -65,7 +68,7 @@ class MetadataController(MetaSubsetTabController):
     @override
     def _setup_connections(self) -> None:
         """
-        Wire this tab's own seven intents on top of the four the subset base wires.
+        Wire this tab's own eleven intents on top of the four the subset base wires.
 
         :return: None
         :rtype: None
@@ -78,6 +81,227 @@ class MetadataController(MetaSubsetTabController):
         self.view.event_plot_data_requested.connect(self.load_event_plot_data)
         self.view.plot_features_requested.connect(self.request_plot_features)
         self.view.csv_subset_export_requested.connect(self.export_csv_subset)
+        self.view.heatmap_requested.connect(self.calculate_heatmap)
+        self.view.density_requested.connect(self.estimate_kernel_densities)
+        self.view.histogram_bins_requested.connect(self.calculate_histogram_bins)
+        self.view.capture_rate_requested.connect(self.fit_capture_rate)
+
+    @log(logger=logger)
+    @Slot(object, object, object, bool, object, str, str, str)
+    def calculate_heatmap(
+        self,
+        xdata: npt.NDArray[np.float64],
+        ydata: npt.NDArray[np.float64],
+        bins: Any,
+        sizes: bool,
+        ax: Axes,
+        x_label: str,
+        y_label: str,
+        dataset_label: str,
+    ) -> None:
+        """
+        Bin the heatmap's two columns, and hand the result back to the View to draw.
+
+        Decision B's command path, the same shape as
+        ``ClusteringController.cluster``. The drawing context arrives and departs
+        unchanged; this slot marshals and does not interpret it.
+
+        An invalid bin entry raises out of the Model, and is reported here rather
+        than propagating: before Step 4c it escaped the plotting call unhandled,
+        because nothing between here and ``_overlay_plot`` catches it.
+
+        :param xdata: the already-filtered x values
+        :type xdata: npt.NDArray[np.float64]
+        :param ydata: the already-filtered y values
+        :type ydata: npt.NDArray[np.float64]
+        :param bins: number of bins, or size of bins when sizes is True, or None to estimate
+        :type bins: Any
+        :param sizes: does the bins parameter refer to bin sizes (True) or counts (False)
+        :type sizes: bool
+        :param ax: the axis object the View will draw on
+        :type ax: Axes
+        :param x_label: the x axis label, already formatted
+        :type x_label: str
+        :param y_label: the y axis label, already formatted
+        :type y_label: str
+        :param dataset_label: string to label the dataset
+        :type dataset_label: str
+        :return: None
+        :rtype: None
+        """
+        try:
+            x, y, z = self.model.calculate_heatmap(xdata, ydata, bins, sizes)
+        except (ValueError, TypeError, IndexError) as e:
+            self.logger.error(f"Unable to build the heatmap: {repr(e)}")
+            self.add_text_to_display.emit(
+                f"Unable to build the heatmap: {e}", self.__class__.__name__
+            )
+            return
+        self.view.set_heatmap(x, y, z, ax, x_label, y_label, dataset_label)
+
+    @log(logger=logger)
+    @Slot(object, object, object, bool, object, object, object, str)
+    def estimate_kernel_densities(
+        self,
+        datasets: Sequence[npt.NDArray[np.float64]],
+        labels: Sequence[str],
+        bins: Any,
+        sizes: bool,
+        hist_min: Optional[float],
+        hist_max: Optional[float],
+        ax: Axes,
+        x_label: str,
+    ) -> None:
+        """
+        Estimate every overlaid dataset's density, and hand them back to be drawn.
+
+        Decision B's command path, the same shape as :meth:`calculate_heatmap`. One
+        call rather than one per dataset keeps each answer off the widget.
+
+        :param datasets: one already-filtered array per overlaid dataset
+        :type datasets: Sequence[npt.NDArray[np.float64]]
+        :param labels: each dataset's label, passed back to the View unchanged
+        :type labels: Sequence[str]
+        :param bins: a bin count, or a bin width when sizes is True, or None
+        :type bins: Any
+        :param sizes: does bins refer to a bin size (True) or a count (False)
+        :type sizes: bool
+        :param hist_min: the shared lower limit across overlaid datasets, if known
+        :type hist_min: Optional[float]
+        :param hist_max: the shared upper limit across overlaid datasets, if known
+        :type hist_max: Optional[float]
+        :param ax: the axis object the View will draw on
+        :type ax: Axes
+        :param x_label: the x axis label, already formatted
+        :type x_label: str
+        :return: None
+        :rtype: None
+        """
+        try:
+            densities = self.model.kernel_densities(
+                datasets, bins, sizes, hist_min, hist_max
+            )
+        except (ValueError, TypeError, IndexError, np.linalg.LinAlgError) as e:
+            self.logger.error(f"Unable to estimate the density: {repr(e)}")
+            self.add_text_to_display.emit(
+                f"Unable to estimate the density: {e}", self.__class__.__name__
+            )
+            return
+        self.view.set_kernel_densities(densities, labels, ax, x_label)
+
+    @log(logger=logger)
+    @Slot(object, object, bool, object, object, object, str, bool, bool)
+    def calculate_histogram_bins(
+        self,
+        all_data: npt.NDArray[np.float64],
+        bins: Any,
+        sizes: bool,
+        hist_min: float,
+        hist_max: float,
+        ax: Axes,
+        x_label: str,
+        logx: bool,
+        norm: bool,
+    ) -> None:
+        """
+        Choose the shared histogram bin edges, and hand them back to be drawn on.
+
+        Decision B's command path, the same shape as :meth:`calculate_heatmap`.
+
+        :param all_data: every overlaid dataset's filtered values, concatenated
+        :type all_data: npt.NDArray[np.float64]
+        :param bins: a bin count, or a bin width when sizes is True, or None
+        :type bins: Any
+        :param sizes: does bins refer to a bin size (True) or a count (False)
+        :type sizes: bool
+        :param hist_min: the shared lower limit across overlaid datasets
+        :type hist_min: float
+        :param hist_max: the shared upper limit across overlaid datasets
+        :type hist_max: float
+        :param ax: the axis object the View will draw on
+        :type ax: Axes
+        :param x_label: the x axis label, already formatted
+        :type x_label: str
+        :param logx: was the data log-scaled
+        :type logx: bool
+        :param norm: normalise each dataset to a fraction rather than a count
+        :type norm: bool
+        :return: None
+        :rtype: None
+        """
+        try:
+            bin_edges, bincenters, widths = self.model.histogram_bin_edges(
+                all_data, bins, sizes, hist_min, hist_max
+            )
+        except (ValueError, TypeError, IndexError) as e:
+            self.logger.error(f"Unable to bin the histogram: {repr(e)}")
+            self.add_text_to_display.emit(
+                f"Unable to bin the histogram: {e}", self.__class__.__name__
+            )
+            return
+        self.view.set_histogram_bins(
+            bin_edges, bincenters, widths, ax, x_label, logx, norm
+        )
+
+    @log(logger=logger)
+    @Slot(object, object, bool, object, str, str, str)
+    def fit_capture_rate(
+        self,
+        data: npt.NDArray[np.float64],
+        bins: Any,
+        sizes: bool,
+        ax: Axes,
+        x_label: str,
+        y_label: str,
+        dataset_label: str,
+    ) -> None:
+        """
+        Bin and fit the capture rate, and hand the result back to the View to draw.
+
+        Decision B's command path, the same shape as :meth:`calculate_heatmap`. A
+        fit that will not converge raises ``RuntimeError`` out of ``curve_fit``, and
+        is reported rather than allowed to escape a Qt slot.
+
+        :param data: the base-10 logarithm of the inter-event times
+        :type data: npt.NDArray[np.float64]
+        :param bins: a bin count, or a bin width when sizes is True, or None
+        :type bins: Any
+        :param sizes: does bins refer to a bin width (True) or a count (False)
+        :type sizes: bool
+        :param ax: the axis object the View will draw on
+        :type ax: Axes
+        :param x_label: the x axis label, already formatted
+        :type x_label: str
+        :param y_label: the y axis label
+        :type y_label: str
+        :param dataset_label: string to label the dataset
+        :type dataset_label: str
+        :return: None
+        :rtype: None
+        """
+        try:
+            bin_edges, bincenters, val, fit, rate, error = self.model.fit_capture_rate(
+                data, bins, sizes
+            )
+        except (ValueError, TypeError, IndexError, RuntimeError) as e:
+            self.logger.error(f"Unable to fit the capture rate: {repr(e)}")
+            self.add_text_to_display.emit(
+                f"Unable to fit the capture rate: {e}", self.__class__.__name__
+            )
+            return
+        self.view.set_capture_rate(
+            bin_edges,
+            bincenters,
+            val,
+            fit,
+            rate,
+            error,
+            data,
+            ax,
+            x_label,
+            y_label,
+            dataset_label,
+        )
 
     @log(logger=logger)
     @Slot(str, list, str, object)

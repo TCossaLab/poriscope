@@ -61,6 +61,7 @@ were fixed and re-passed. One could not be run:
 | 3d is a step of its own, run before 4c | **folded into 4c** (2026-09-13) | **7 of its 8 call sites are already 4c targets**. Doing 3d first restructures them twice |
 | a round trip cannot resume a loop from a Qt callback | **overstated** (2026-09-13, same day) | Measured: a same-thread Qt signal is **synchronous**, the slot completing before `emit()` returns. What is unavailable is a *return value to the emitting line*. The 3d conclusion never depended on this |
 | 4c's value per tab | uncounted | **Protein 3 for 2 methods** (`scipy.optimize` + `scipy.signal` both only in `_fit_double_gaussian`, `scipy.stats` only in `_fit_and_sanity_check_double_gaussian`); **Metadata 2** (`scipy`, `scipy.optimize`), its `scipy.stats` having 4 users |
+| 4c Metadata is worth **2** | **understated** (2026-09-13) | Worth **3**. `scipy.stats`' four users are `_plot_1d_density`, `_plot_capture_rate`, `_plot_1d_histogram` and `_calculate_heatmap` - and **all four are already 4c targets**, so taking them together frees `scipy.stats` as well. Moving only the two the plan names leaves `iqr` behind in the other two and a later step has to re-open both |
 | promotion: four surviving differences | **three, one inert** | 65 of 73/78 lines identical; Protein's empty-id guard cannot fire on the metadata side |
 
 1. ~~**4c Protein first**, worth 3 allowlist points for two methods.~~ **LANDED
@@ -72,7 +73,42 @@ were fixed and re-passed. One could not be run:
    distribution plot refused for too many channels reported only to the console, because
    `QtHandler` sits at `ERROR`. Its four existing tests assert on `caplog` and passed
    throughout. Fixed, with six tests that assert on the status panel instead.
-2. **Then 4c Metadata**, worth 2. Next.
+2. ~~**Then 4c Metadata**~~ **LANDED 2026-09-13** on `feature/step-4c-metadata`,
+   allowlist **22 -> 19** and rule 2 **17 -> 14**: `scipy`, `scipy.optimize` and
+   `scipy.stats` are all out of the View layer and `MetadataView` is down from 6
+   forbidden imports to 3. **Manual Windows pass run 2026-09-13** over the four plot
+   types, which returned four defects and one non-defect. Three were **pre-existing**,
+   established by reproducing them in a worktree at `develop` rather than by reading
+   the diff: capture-rate bin widths accepted and ignored, a categorical histogram
+   failing on NULLs, and an all-points histogram unpacking the previous plot type's
+   data. The fourth was a scope silently widened back to every channel by any
+   structure refresh, also pre-existing and on the shared subset base. The non-defect
+   was a status message reported as never sent that had always been sent - the panel
+   could not show that an identical line arrived twice, which is now fixed with a
+   timestamp. All fixed on this branch; see method rule 64.
+   Worth 3 rather than the 2 the plan recorded. Re-derived 2026-09-13 before starting. Scope is the **four**
+   methods that use scipy, not the two the plan named: `_plot_1d_density` (frees `scipy`),
+   `_plot_capture_rate` (frees `scipy.optimize`), `_plot_1d_histogram` and
+   `_calculate_heatmap` - the last two matter because `iqr` lives in all four, so
+   `scipy.stats` only leaves if all four do. Allowlist **22 -> 19**, rule 2 **17 -> 14**,
+   `MetadataView` 6 forbidden imports -> 3. `numpy` (11 methods) and `pandas` (7) stay.
+
+   Four structural facts, all measured rather than assumed: the three `_plot_*` returns
+   are **ignored** by `update_plot`, so a request/setter split is transparent to it;
+   `_calculate_heatmap` takes no `ax` and is the clean one, but its return *is* consumed,
+   so its caller `_plot_heatmap` is what gets restructured; `update_plot`'s
+   `try/except ValueError` around `_plot_capture_rate` keeps working, because both
+   `raise` sites sit before the scipy work and stay in the request half; and
+   `_plot_capture_rate` emits `add_text_to_display`, so the split has to place that
+   deliberately. Coverage is 7-14 direct calls per method, so **no pinning commit**.
+
+   **Advances 3d by zero, deliberately.** Three of the four contain a logscale call,
+   but the helper emits to the status panel and lives on `MetaView`, so it moves only
+   when all eight of its call sites can convert together. Each request half therefore
+   calls it *before* emitting and hands the Model arrays that are already filtered.
+   `MetaView` keeps `numpy`/`numpy.typing` until 3d proper. `_plot_scatterplot` and
+   `_plot_3d_scatterplot` are deliberately **not** in scope: they free no import, so by
+   method rule 38 they do not belong in a step aimed at the allowlist.
 3. **3d is folded into 4c and is no longer a step.** The logscale helper goes to
    `MetaModel` as originally planned, but each caller carries its logscale call across as
    part of its own 4c restructure, so no caller is rewritten twice. The utils-module

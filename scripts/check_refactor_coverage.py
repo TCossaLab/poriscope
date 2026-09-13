@@ -139,7 +139,6 @@ MOVED: Tuple[Tuple[str, str, str], ...] = (
         "cluster_gaussian_mixture",
         "4c",
     ),
-    ("poriscope/plugins/analysistabs/MetadataView.py", "_calculate_heatmap", "4c"),
     (
         "poriscope/plugins/analysistabs/MetadataView.py",
         "_construct_all_points_histogram",
@@ -231,6 +230,24 @@ MOVED: Tuple[Tuple[str, str, str], ...] = (
     ("poriscope/plugins/analysistabs/MetadataView.py", "_plot_capture_rate", "4c"),
     ("poriscope/plugins/analysistabs/MetadataView.py", "_plot_1d_histogram", "4c"),
     ("poriscope/plugins/analysistabs/MetadataView.py", "_plot_heatmap", "4c"),
+    ("poriscope/plugins/analysistabs/MetadataView.py", "set_heatmap", "4c"),
+    # Landed 2026-09-13: the 2-D binning moved to MetadataModel, tracked at its
+    # destination now. The log-scaling that used to precede it inside this method
+    # stays on MetaView, so `_plot_heatmap` still carries that 3d call site.
+    ("poriscope/plugins/analysistabs/MetadataModel.py", "calculate_heatmap", "4c"),
+    ("poriscope/plugins/analysistabs/MetadataView.py", "set_kernel_densities", "4c"),
+    # Landed 2026-09-13: the kernel density estimate moved to MetadataModel, taking
+    # `scipy` out of the View. `_resolve_1d_bins` is the bin decision the density,
+    # histogram and capture-rate paths all made separately.
+    ("poriscope/plugins/analysistabs/MetadataModel.py", "kernel_densities", "4c"),
+    ("poriscope/plugins/analysistabs/MetadataModel.py", "_resolve_1d_bins", "4c"),
+    ("poriscope/plugins/analysistabs/MetadataView.py", "set_histogram_bins", "4c"),
+    ("poriscope/plugins/analysistabs/MetadataModel.py", "histogram_bin_edges", "4c"),
+    ("poriscope/plugins/analysistabs/MetadataView.py", "set_capture_rate", "4c"),
+    # Landed 2026-09-13: the capture-rate binning and exponential fit moved to
+    # MetadataModel, taking `scipy.optimize` and the last `scipy.stats` with them.
+    ("poriscope/plugins/analysistabs/MetadataModel.py", "fit_capture_rate", "4c"),
+    ("poriscope/plugins/analysistabs/MetadataModel.py", "_log_exp_pdf", "4c"),
     (
         "poriscope/plugins/analysistabs/MetadataView.py",
         "_plot_categorical_histogram",

@@ -12,10 +12,7 @@
     "poriscope/plugins/analysistabs/MetadataView.py": [
       "numpy",
       "numpy.typing",
-      "pandas",
-      "scipy",
-      "scipy.optimize",
-      "scipy.stats"
+      "pandas"
     ],
     "poriscope/plugins/analysistabs/ProteinView.py": [
       "numpy",
