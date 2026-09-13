@@ -569,9 +569,7 @@ class MetadataController(MetaSubsetTabController):
         :return: None
         :rtype: None
         """
-        id_list = ",".join(str(eid) for eid in event_ids)
-        where_parts = [f"event_id IN ({id_list})"]
-
+        exp_id = None
         if exp is not None:
             try:
                 exp_id = self.model.call(
@@ -591,16 +589,9 @@ class MetadataController(MetaSubsetTabController):
                     self.__class__.__name__,
                 )
                 return
-            where_parts.append(f"experiment_id = {exp_id}")
 
-        if channel is not None:
-            where_parts.append(f"channel_id = {channel}")
-
-        query = f"SELECT id FROM events WHERE {' AND '.join(where_parts)}"
         try:
-            id_result = self.model.call(
-                "MetaDatabaseLoader", loader, "query_database_directly", query
-            )
+            id_result = self.model.resolve_event_ids(loader, event_ids, exp_id, channel)
         except Exception as e:
             self.logger.error(f"Failed to resolve event ids for {event_ids}: {e!r}")
             self.add_text_to_display.emit(
@@ -620,18 +611,15 @@ class MetadataController(MetaSubsetTabController):
             # did not honour its own contract, which is a different problem from an
             # empty subset and would raise on the read below.
             self.logger.error(
-                f"{loader} returned rows with no id column for query {query!r}"
+                f"{loader} returned rows with no id column for events {event_ids} "
+                f"in experiment {exp} channel {channel}"
             )
             return
 
         db_ids = ",".join(str(i) for i in id_result["id"].tolist())
         try:
-            generator = self.model.call(
-                "MetaDatabaseLoader",
-                loader,
-                "load_event_data",
-                f"e.id IN ({db_ids})",
-                experiments_and_channels,
+            generator = self.model.load_events_by_id(
+                loader, db_ids, experiments_and_channels
             )
         except Exception as e:
             self.logger.error(f"Failed to load events {event_ids}: {e!r}")

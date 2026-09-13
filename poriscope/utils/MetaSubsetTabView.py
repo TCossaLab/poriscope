@@ -546,13 +546,16 @@ class MetaSubsetTabView(MetaView):
 
             if dialog.is_raw:
                 # Raw SQL is validated by validate_filter_query, not by
-                # construct_metadata_query, which builds its own SQL.
+                # construct_metadata_query, which builds its own SQL. The filter goes
+                # out as the user wrote it, trailing semicolon aside: Step 4b moved the
+                # "LIMIT 0" that makes the check cheap to the Controller, since knowing
+                # that clause is knowing SQL and this is a widget.
                 if self._reject_non_select_raw_filter(filter_text):
                     return
                 name = f"{name}_raw" if not name.endswith("_raw") else name
                 self._pending_filter_name = name
                 self.raw_filter_validation_requested.emit(
-                    loader, filter_text.strip().rstrip(";") + " LIMIT 0"
+                    loader, filter_text.strip().rstrip(";")
                 )
                 return
 
@@ -607,7 +610,7 @@ class MetaSubsetTabView(MetaView):
                 )
                 self._pending_filter_name = new_name
                 self.raw_filter_validation_requested.emit(
-                    loader, new_filter.strip().rstrip(";") + " LIMIT 0"
+                    loader, new_filter.strip().rstrip(";")
                 )
                 return
 

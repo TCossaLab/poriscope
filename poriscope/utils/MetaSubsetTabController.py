@@ -475,16 +475,23 @@ class MetaSubsetTabController(MetaController):
         Step 4a converted the emit; as with the assisted path, a failure that the bus
         swallowed now reaches the user.
 
+        ``LIMIT 0`` is appended here rather than by the View. The clause is what makes
+        the check cheap - the database parses and plans the filter without returning a
+        row - and choosing it is knowing SQL, which Step 4b takes out of the widget.
+
         :param loader: the database loader plugin's key
         :type loader: str
-        :param query: the raw filter, already suffixed with LIMIT 0 by the View
+        :param query: the raw filter as the user wrote it, without a trailing semicolon
         :type query: str
         :return: None
         :rtype: None
         """
         try:
             valid, error_msg = self.model.call(
-                "MetaDatabaseLoader", loader, "validate_filter_query", query
+                "MetaDatabaseLoader",
+                loader,
+                "validate_filter_query",
+                f"{query} LIMIT 0",
             )
         except Exception as e:
             self.logger.error(f"Failed to validate raw filter {query!r}: {e!r}")

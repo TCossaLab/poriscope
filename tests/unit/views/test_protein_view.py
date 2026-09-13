@@ -2064,7 +2064,10 @@ class TestShowAddFilterDialog:
         ):
             mock_view._show_add_filter_dialog({"db_loader": "ldr"})
         mock_view.raw_filter_validation_requested.emit.assert_called_once_with(
-            "ldr", "SELECT * FROM events LIMIT 0"
+            # Step 4b: the View sends the filter as written; the Controller adds
+            # the LIMIT 0 that makes the check cheap.
+            "ldr",
+            "SELECT * FROM events",
         )
         mock_view.global_signal.emit.assert_not_called()
 
@@ -2179,7 +2182,10 @@ class TestShowEditFilterDialog:
         ):
             mock_view.show_edit_filter_dialog("f1", "ldr")
         mock_view.raw_filter_validation_requested.emit.assert_called_once_with(
-            "ldr", "SELECT * FROM events LIMIT 0"
+            # Step 4b: the View sends the filter as written; the Controller adds
+            # the LIMIT 0 that makes the check cheap.
+            "ldr",
+            "SELECT * FROM events",
         )
         mock_view.global_signal.emit.assert_not_called()
 

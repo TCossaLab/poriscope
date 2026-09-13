@@ -91,3 +91,32 @@ class RecordingModel:
         :rtype: list
         """
         return [args for _, _, name, args in self.calls if name == method]
+
+
+def recording_tab_model(model_class, answers: dict):
+    """
+    A real tab Model whose plugin calls are recorded instead of made.
+
+    Step 4b moved query construction out of the Controllers and into the Models, so
+    a Controller test that wants to assert on the SQL can no longer see it: the
+    Controller now calls a Model method and the text is built a layer further down.
+    Stubbing that Model method would hide the very thing the test exists to check.
+
+    This builds the **real** Model and replaces only its ``call`` - the plugin
+    boundary - so the query construction runs for real and the arguments that reach
+    the loader are still recorded. ``__new__`` skips ``MetaModel.__init__`` because
+    these methods need no instance state beyond ``call`` and the class-level logger.
+
+    :param model_class: the tab Model class to build
+    :type model_class: type
+    :param answers: plugin method name to canned answer, or to an exception to raise
+    :type answers: dict
+    :return: the model, carrying ``calls`` and ``calls_to`` from the recorder
+    :rtype: object
+    """
+    model = model_class.__new__(model_class)
+    recorder = RecordingModel(answers)
+    model.call = recorder.call
+    model.calls = recorder.calls
+    model.calls_to = recorder.calls_to
+    return model
