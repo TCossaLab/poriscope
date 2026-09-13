@@ -319,3 +319,52 @@ class MetadataModel(MetaModel):
             self.kernel_density(data, bins, sizes, hist_min, hist_max)
             for data in datasets
         ]
+
+    @log(logger=logger)
+    def histogram_bin_edges(
+        self,
+        all_data: npt.NDArray[np.float64],
+        bins: Any,
+        sizes: bool,
+        hist_min: float,
+        hist_max: float,
+    ) -> Tuple[
+        npt.NDArray[np.float64], npt.NDArray[np.float64], npt.NDArray[np.float64]
+    ]:
+        """
+        Choose one set of bin edges for every overlaid histogram dataset.
+
+        The count is decided from all the overlaid data at once and the edges span
+        the shared limits, which is what puts every dataset on the same bins and lets
+        them be compared.
+
+        The histogram path used to coerce the bin width with ``float()`` inside a
+        bare ``except Exception`` where the density path divided directly inside an
+        ``except TypeError``. The two differ only for a width of zero or a
+        non-numeric one, and the controls refuse both - ``validate_inputs`` disables
+        the plot button on ``bin_value <= 0`` or a value ``float()`` rejects - so
+        :meth:`_resolve_1d_bins` serves both and no behaviour changes.
+
+        :param all_data: every overlaid dataset's filtered values, concatenated
+        :type all_data: npt.NDArray[np.float64]
+        :param bins: a bin count, or a bin width when sizes is True, or None
+        :type bins: Any
+        :param sizes: does bins refer to a bin size (True) or a count (False)
+        :type sizes: bool
+        :param hist_min: the shared lower limit across overlaid datasets
+        :type hist_min: float
+        :param hist_max: the shared upper limit across overlaid datasets
+        :type hist_max: float
+        :return: the bin edges, the bin centers, and the bin widths
+        :rtype: Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64], npt.NDArray[np.float64]]
+        """
+        numbins = self._resolve_1d_bins(all_data, bins, sizes, hist_min, hist_max)
+
+        # A single bin is not a histogram, and zero would make linspace degenerate.
+        if numbins < 2:
+            numbins = 2
+
+        bin_edges = np.linspace(hist_min, hist_max, numbins + 1)
+        bincenters = bin_edges[:-1] + np.diff(bin_edges) / 2.0
+        widths = np.diff(bin_edges)
+        return bin_edges, bincenters, widths

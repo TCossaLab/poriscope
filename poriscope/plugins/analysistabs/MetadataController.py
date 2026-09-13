@@ -68,7 +68,7 @@ class MetadataController(MetaSubsetTabController):
     @override
     def _setup_connections(self) -> None:
         """
-        Wire this tab's own nine intents on top of the four the subset base wires.
+        Wire this tab's own ten intents on top of the four the subset base wires.
 
         :return: None
         :rtype: None
@@ -83,6 +83,7 @@ class MetadataController(MetaSubsetTabController):
         self.view.csv_subset_export_requested.connect(self.export_csv_subset)
         self.view.heatmap_requested.connect(self.calculate_heatmap)
         self.view.density_requested.connect(self.estimate_kernel_densities)
+        self.view.histogram_bins_requested.connect(self.calculate_histogram_bins)
 
     @log(logger=logger)
     @Slot(object, object, object, bool, object, str, str, str)
@@ -186,6 +187,60 @@ class MetadataController(MetaSubsetTabController):
             )
             return
         self.view.set_kernel_densities(densities, labels, ax, x_label)
+
+    @log(logger=logger)
+    @Slot(object, object, bool, object, object, object, str, bool, bool)
+    def calculate_histogram_bins(
+        self,
+        all_data: npt.NDArray[np.float64],
+        bins: Any,
+        sizes: bool,
+        hist_min: float,
+        hist_max: float,
+        ax: Axes,
+        x_label: str,
+        logx: bool,
+        norm: bool,
+    ) -> None:
+        """
+        Choose the shared histogram bin edges, and hand them back to be drawn on.
+
+        Decision B's command path, the same shape as :meth:`calculate_heatmap`.
+
+        :param all_data: every overlaid dataset's filtered values, concatenated
+        :type all_data: npt.NDArray[np.float64]
+        :param bins: a bin count, or a bin width when sizes is True, or None
+        :type bins: Any
+        :param sizes: does bins refer to a bin size (True) or a count (False)
+        :type sizes: bool
+        :param hist_min: the shared lower limit across overlaid datasets
+        :type hist_min: float
+        :param hist_max: the shared upper limit across overlaid datasets
+        :type hist_max: float
+        :param ax: the axis object the View will draw on
+        :type ax: Axes
+        :param x_label: the x axis label, already formatted
+        :type x_label: str
+        :param logx: was the data log-scaled
+        :type logx: bool
+        :param norm: normalise each dataset to a fraction rather than a count
+        :type norm: bool
+        :return: None
+        :rtype: None
+        """
+        try:
+            bin_edges, bincenters, widths = self.model.histogram_bin_edges(
+                all_data, bins, sizes, hist_min, hist_max
+            )
+        except (ValueError, TypeError, IndexError) as e:
+            self.logger.error(f"Unable to bin the histogram: {repr(e)}")
+            self.add_text_to_display.emit(
+                f"Unable to bin the histogram: {e}", self.__class__.__name__
+            )
+            return
+        self.view.set_histogram_bins(
+            bin_edges, bincenters, widths, ax, x_label, logx, norm
+        )
 
     @log(logger=logger)
     @Slot(str, list, str, object)

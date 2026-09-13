@@ -241,6 +241,8 @@ MOVED: Tuple[Tuple[str, str, str], ...] = (
     # histogram and capture-rate paths all made separately.
     ("poriscope/plugins/analysistabs/MetadataModel.py", "kernel_densities", "4c"),
     ("poriscope/plugins/analysistabs/MetadataModel.py", "_resolve_1d_bins", "4c"),
+    ("poriscope/plugins/analysistabs/MetadataView.py", "set_histogram_bins", "4c"),
+    ("poriscope/plugins/analysistabs/MetadataModel.py", "histogram_bin_edges", "4c"),
     (
         "poriscope/plugins/analysistabs/MetadataView.py",
         "_plot_categorical_histogram",

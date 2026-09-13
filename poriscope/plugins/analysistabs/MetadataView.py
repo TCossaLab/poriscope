@@ -163,6 +163,16 @@ class MetadataView(MetaSubsetTabView):
         object, object, object, bool, object, object, object, str
     )
 
+    #: Asks for the shared bin edges every overlaid histogram dataset is drawn on:
+    #: all the filtered data at once, the bin request, and the limits that span it.
+    #: Answered through ``set_histogram_bins``.
+    #:
+    #: Step 4c. Only the bin *decision* crosses - it uses ``scipy.stats.iqr``. The
+    #: counting is ``np.histogram`` and stays with the drawing.
+    histogram_bins_requested = Signal(
+        object, object, bool, object, object, object, str, bool, bool
+    )
+
     logger = logging.getLogger(__name__)
 
     @log(logger=logger)
@@ -679,49 +689,56 @@ class MetadataView(MetaSubsetTabView):
             else self.hist_data[0]
         )
 
-        # Decide numbins once
-        numbins: int
-        if bins is not None:
-            if sizes is False:
-                numbins = int(bins)
-            else:
-                # bins is interpreted as a bin *size*
-                try:
-                    if self.hist_max is not None and self.hist_min is not None:
-                        numbins = int((self.hist_max - self.hist_min) / float(bins))
-                    else:
-                        numbins = 0
-                except Exception:
-                    numbins = 0
-                if numbins <= 1:
-                    # fall back to auto
-                    bins = None
+        self.histogram_bins_requested.emit(
+            all_data,
+            bins,
+            sizes,
+            self.hist_min,
+            self.hist_max,
+            ax,
+            self.format_axis_label(x_label, x_units),
+            logx,
+            norm,
+        )
 
-        if bins is None:
-            try:
-                if iqr(all_data) > 0:
-                    numbins = int(
-                        (np.max(all_data) - np.min(all_data))
-                        * len(all_data) ** (1.0 / 3.0)
-                        / iqr(all_data)
-                    )
-                else:
-                    numbins = int(3.332 * np.log10(len(all_data)))
-            except OverflowError:
-                numbins = 100
+    @log(logger=logger)
+    def set_histogram_bins(
+        self,
+        bin_edges: npt.NDArray[np.float64],
+        bincenters: npt.NDArray[np.float64],
+        widths: npt.NDArray[np.float64],
+        ax: Axes,
+        x_label: str,
+        logx: bool,
+        norm: bool,
+    ) -> None:
+        """
+        Draw every overlaid dataset onto one shared set of bin edges.
 
-        # Guardrail
-        if numbins < 2:
-            numbins = 2
+        The answering half of ``histogram_bins_requested``. Step 4c moved the bin
+        decision to ``MetadataModel`` so that ``scipy.stats`` could leave the View;
+        the counting is ``np.histogram`` and stays here with the drawing.
 
-        # Shared bin edges for every dataset
-        bin_edges = np.linspace(self.hist_min, self.hist_max, numbins + 1)
-        bincenters = bin_edges[:-1] + np.diff(bin_edges) / 2.0
-        widths = np.diff(bin_edges)
-
+        :param bin_edges: the shared bin edges
+        :type bin_edges: npt.NDArray[np.float64]
+        :param bincenters: the center of each bin
+        :type bincenters: npt.NDArray[np.float64]
+        :param widths: the width of each bin
+        :type widths: npt.NDArray[np.float64]
+        :param ax: the axis object on which to plot
+        :type ax: Axes
+        :param x_label: the x axis label, already formatted but not yet log-marked
+        :type x_label: str
+        :param logx: was the data log-scaled, and so should the label say so
+        :type logx: bool
+        :param norm: normalise each dataset to a fraction rather than a count
+        :type norm: bool
+        :return: None
+        :rtype: None
+        """
         # Plot all datasets using the same bin_edges
         for d, lab in zip(self.hist_data, self.hist_labels):
-            x_lab = self.format_axis_label(x_label, x_units)
+            x_lab = x_label
             y_lab = "Count" if not norm else "Fraction"
             if logx:
                 x_lab = f"log10({x_lab})"

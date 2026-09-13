@@ -134,6 +134,8 @@ def view(mocker: MockerFixture, mock_qt_dependencies: None) -> MetadataView:
     view_instance.heatmap_requested = mocker.Mock()
     # Answered by MetadataController.estimate_kernel_densities in the real app.
     view_instance.density_requested = mocker.Mock()
+    # Answered by MetadataController.calculate_histogram_bins in the real app.
+    view_instance.histogram_bins_requested = mocker.Mock()
     # Answered by MetaSubsetTabController.load_event_id_cache in the real app;
     # each test that drives _rebuild_event_id_cache sets its own answer.
     view_instance.event_id_cache_requested = mocker.Mock()
@@ -951,6 +953,29 @@ def test_format_axis_label_handles_multiple_parentheses(view: MetadataView) -> N
 # ----------------------------- Plot 1D Histogram Tests ------------------------------
 
 
+def _answer_histogram_bins(view, numbins=8):
+    """
+    Answer ``histogram_bins_requested`` the way MetadataController does.
+
+    Step 4c split ``_plot_1d_histogram`` at the bin decision: it emits all the
+    filtered data and ``set_histogram_bins`` does every bit of drawing. The edges
+    are supplied here rather than computed; what the decision *returns* for a given
+    request is asserted directly in ``tests/unit/models/test_metadata_model.py``.
+
+    :param view: the view whose request has just been emitted
+    :type view: MetadataView
+    :param numbins: how many bins to answer with
+    :type numbins: int
+    :return: None
+    :rtype: None
+    """
+    args = view.histogram_bins_requested.emit.call_args.args
+    hist_min, hist_max, ax, x_label, logx, norm = args[3:]
+    edges = np.linspace(hist_min, hist_max, numbins + 1)
+    centers = edges[:-1] + np.diff(edges) / 2.0
+    view.set_histogram_bins(edges, centers, np.diff(edges), ax, x_label, logx, norm)
+
+
 def test_plot_1d_histogram_raises_on_invalid_bins_list(view: MetadataView) -> None:
     """Verify ValueError is raised for invalid bins list."""
     data: pd.DataFrame = pd.DataFrame({"x": np.array([1.0, 2.0, 3.0])})
@@ -972,6 +997,9 @@ def test_plot_1d_histogram_uses_first_bins_entry(
     view._plot_1d_histogram(view.axes, data, ["x"], ["u"], [False], bins=[10])
 
     assert len(view.hist_data) == 1
+    # the list is unwrapped to its first entry before the request goes out; what
+    # the bin decision then does with it is asserted on the Model
+    assert view.histogram_bins_requested.emit.call_args.args[1] == 10
 
 
 def test_plot_1d_histogram_updates_hist_min_max(
@@ -1001,6 +1029,7 @@ def test_plot_1d_histogram_normalizes_when_norm_true(
     )
 
     view._plot_1d_histogram(view.axes, data, ["x"], ["u"], [False], norm=True)
+    _answer_histogram_bins(view)
 
     ylabel_call = view.axes.set_ylabel.call_args
     assert ylabel_call is not None
@@ -1018,6 +1047,7 @@ def test_plot_1d_histogram_sets_log10_label_when_logscale_true(
     )
 
     view._plot_1d_histogram(view.axes, data, ["x"], ["units"], [True])
+    _answer_histogram_bins(view)
 
     xlabel_call = view.axes.set_xlabel.call_args
     assert xlabel_call is not None
@@ -1064,6 +1094,9 @@ def test_plot_1d_histogram_handles_bin_sizes(
     )
 
     assert len(view.hist_data) == 1
+    emitted = view.histogram_bins_requested.emit.call_args.args
+    assert emitted[1] == 0.5
+    assert emitted[2] is True
 
 
 def test_plot_1d_histogram_overlays_multiple_datasets(
