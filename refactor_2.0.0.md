@@ -67,8 +67,11 @@ were fixed and re-passed. One could not be run:
    2026-09-13** on `feature/step-4c-protein`, allowlist **25 -> 22**: `scipy.optimize`,
    `scipy.signal` and `scipy.stats` are gone from the View layer entirely and rule 2
    reads 17. The fit chain, `_double_gaussian` included, is on `ProteinModel`; its three
-   callers go through `ProteinController`. **Manual Windows pass owed** over the protein
-   tab's three plotting surfaces.
+   callers go through `ProteinController`. **Manual Windows pass run 2026-09-13**, all
+   three plotting surfaces working; one defect found that no gate could have - a
+   distribution plot refused for too many channels reported only to the console, because
+   `QtHandler` sits at `ERROR`. Its four existing tests assert on `caplog` and passed
+   throughout. Fixed, with six tests that assert on the status panel instead.
 2. **Then 4c Metadata**, worth 2. Next.
 3. **3d is folded into 4c and is no longer a step.** The logscale helper goes to
    `MetaModel` as originally planned, but each caller carries its logscale call across as
