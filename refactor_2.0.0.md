@@ -211,6 +211,15 @@ were fixed and re-passed. One could not be run:
    in-memory state - the in-memory restore was correct on both tabs the whole time, which
    is why unit coverage of `restore_session_state` never saw it.
 
+   **Manual Windows pass run 2026-09-13, all clear.** Ten checks over both tabs: adding,
+   editing and renaming assisted and raw filters, an empty filter text, a filter naming a
+   column that does not exist, save/load to file, and a session round trip restored
+   **twice** - the second restore being where the defect above used to bite. No defects.
+   One checklist item was itself wrong: it asked for two filters added back to back
+   *without closing the dialog*, which the UI does not allow, since the dialog closes on
+   OK. The thing it was trying to probe - that nothing is carried over from one request to
+   the next - is covered by adding two filters in succession, which passed.
+
    **Still open, and deliberately not done here:** moving `subset_filters` to the Model.
    It moves no gate, costs 157 test references across 82 test functions (35 e2e), and
    wants a `MetaSubsetTabModel` that does not exist - the same missing base that stopped
