@@ -3096,7 +3096,13 @@ def test_load_filter_validates_with_loader_when_provided(
     view._load_filter(parameters)
 
     view.filter_validation_requested.emit.assert_called_once_with(
-        "test_loader", "WHERE x > 1", "validate_new_filter"
+        # Step 4d: the name the filter will be stored under travels with the
+        # request, so a validation reply carries everything needed to act on it.
+        "test_loader",
+        "WHERE x > 1",
+        "validate_new_filter",
+        "Filter1",
+        None,
     )
 
 
@@ -4308,7 +4314,11 @@ def test_show_add_filter_dialog_validates_filter_on_accept(
     # Step 4a: the Controller makes the construct_metadata_query call now, and picks
     # the columns to validate against, so the View's half is the intent alone.
     view.filter_validation_requested.emit.assert_called_once_with(
-        "test_loader", "WHERE duration > 100", "validate_new_filter"
+        "test_loader",
+        "WHERE duration > 100",
+        "validate_new_filter",
+        "NewFilter",
+        None,
     )
     view.global_signal.emit.assert_not_called()
 
@@ -4332,24 +4342,6 @@ def test_show_add_filter_dialog_returns_when_no_loader(
     view._show_add_filter_dialog({"db_loader": ""})
 
     view.global_signal.emit.assert_not_called()
-
-
-# ----------------------------- Clear Pending Filter State Tests ------------------------------
-
-
-def test_clear_pending_filter_state_resets_all_pending_values(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
-    """Verify all pending filter values are reset to None."""
-    view._pending_filter_name = "Filter"
-    view._pending_filter_text = "WHERE x > 1"
-    view._pending_old_filter_name = "OldFilter"
-
-    view.clear_pending_filter_state()
-
-    assert view._pending_filter_name is None
-    assert view._pending_filter_text is None
-    assert view._pending_old_filter_name is None
 
 
 # ----------------------------- Show Filter Info Dialog Tests ------------------------------
@@ -4433,30 +4425,14 @@ def test_show_edit_filter_dialog_validates_on_accept(
     view.show_edit_filter_dialog("Filter1", "test_loader")
 
     view.filter_validation_requested.emit.assert_called_once_with(
-        "test_loader", "WHERE x > 10", "validate_edited_filter"
+        # Step 4d: an edit carries the new name and the one it replaces, which is
+        # what used to be parked on the widget as _pending_old_filter_name.
+        "test_loader",
+        "WHERE x > 10",
+        "validate_edited_filter",
+        "Filter1Updated",
+        "Filter1",
     )
-
-
-def test_show_edit_filter_dialog_stores_pending_data_including_old_name(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
-    """Verify pending data includes old filter name for replacement."""
-    view.subset_filters = {"Filter1": "WHERE x > 1"}
-    mock_dialog_class = mocker.patch(
-        "poriscope.utils.MetaSubsetTabView.EditSubsetFilterDialog"
-    )
-    mock_dialog = mocker.Mock()
-    mock_dialog.exec.return_value = 1
-    mock_dialog.new_name = "Filter1Updated"
-    mock_dialog.new_filter = "WHERE x > 10"
-    mock_dialog.is_raw = False  # Ensure assisted path
-    mock_dialog_class.return_value = mock_dialog
-
-    view.show_edit_filter_dialog("Filter1", "test_loader")
-
-    assert view._pending_filter_name == "Filter1Updated"
-    assert view._pending_filter_text == "WHERE x > 10"
-    assert view._pending_old_filter_name == "Filter1"
 
 
 # ----------------------------- Delete Filter By Name Tests ------------------------------
@@ -4940,96 +4916,6 @@ class TestOnRawFilterValidated:
     def _setup(self, view: MetadataView, mocker: MockerFixture) -> None:
         view.metadatacontrols = mocker.Mock()
         view.metadatacontrols.filter_comboBox = mocker.Mock()
-
-    def test_invalid_shows_warning_and_clears_pending(
-        self, view: MetadataView, mocker: MockerFixture
-    ) -> None:
-        self._setup(view, mocker)
-        view._pending_filter_name = "F"
-        view._pending_filter_text = "SELECT * FROM events"
-        view._pending_old_filter_name = None
-        mock_warn = mocker.patch(
-            "poriscope.utils.MetaSubsetTabView.QMessageBox.warning"
-        )
-        view.on_raw_filter_validated(False, "syntax error")
-        mock_warn.assert_called_once()
-        assert view._pending_filter_name is None
-        assert view._pending_filter_text is None
-
-    def test_valid_add_path_stores_filter(
-        self, view: MetadataView, mocker: MockerFixture
-    ) -> None:
-        self._setup(view, mocker)
-        view._pending_filter_name = "NewFilter"
-        view._pending_filter_text = "SELECT * FROM events"
-        view._pending_old_filter_name = None
-        view.on_raw_filter_validated(True, "")
-        assert "NewFilter" in view.subset_filters
-        assert view.subset_filters["NewFilter"] == "SELECT * FROM events"
-        view.metadatacontrols.filter_comboBox.addItem.assert_called_with("NewFilter")
-
-    def test_valid_add_path_emits_message(
-        self, view: MetadataView, mocker: MockerFixture
-    ) -> None:
-        self._setup(view, mocker)
-        view._pending_filter_name = "NewFilter"
-        view._pending_filter_text = "SELECT * FROM events"
-        view._pending_old_filter_name = None
-        view.on_raw_filter_validated(True, "")
-        view.add_text_to_display.emit.assert_called()
-
-    def test_valid_add_path_clears_pending(
-        self, view: MetadataView, mocker: MockerFixture
-    ) -> None:
-        self._setup(view, mocker)
-        view._pending_filter_name = "NewFilter"
-        view._pending_filter_text = "SELECT * FROM events"
-        view._pending_old_filter_name = None
-        view.on_raw_filter_validated(True, "")
-        assert view._pending_filter_name is None
-        assert view._pending_filter_text is None
-        assert view._pending_old_filter_name is None
-
-    def test_valid_edit_path_replaces_filter(
-        self, view: MetadataView, mocker: MockerFixture
-    ) -> None:
-        self._setup(view, mocker)
-        view.subset_filters = {"OldFilter": "WHERE x > 1"}
-        view._pending_filter_name = "NewFilter"
-        view._pending_filter_text = "WHERE x > 10"
-        view._pending_old_filter_name = "OldFilter"
-        view.update_filter_name = mocker.Mock()
-        view.on_raw_filter_validated(True, "")
-        assert "OldFilter" not in view.subset_filters
-        assert "NewFilter" in view.subset_filters
-        assert view.subset_filters["NewFilter"] == "WHERE x > 10"
-        view.update_filter_name.assert_called_once_with("OldFilter", "NewFilter")
-
-    def test_valid_edit_path_emits_message(
-        self, view: MetadataView, mocker: MockerFixture
-    ) -> None:
-        self._setup(view, mocker)
-        view.subset_filters = {"OldFilter": "WHERE x > 1"}
-        view._pending_filter_name = "NewFilter"
-        view._pending_filter_text = "WHERE x > 10"
-        view._pending_old_filter_name = "OldFilter"
-        view.update_filter_name = mocker.Mock()
-        view.on_raw_filter_validated(True, "")
-        view.add_text_to_display.emit.assert_called()
-
-    def test_valid_edit_path_clears_pending(
-        self, view: MetadataView, mocker: MockerFixture
-    ) -> None:
-        self._setup(view, mocker)
-        view.subset_filters = {"OldFilter": "WHERE x > 1"}
-        view._pending_filter_name = "NewFilter"
-        view._pending_filter_text = "WHERE x > 10"
-        view._pending_old_filter_name = "OldFilter"
-        view.update_filter_name = mocker.Mock()
-        view.on_raw_filter_validated(True, "")
-        assert view._pending_filter_name is None
-        assert view._pending_filter_text is None
-        assert view._pending_old_filter_name is None
 
 
 # ===========================================================================

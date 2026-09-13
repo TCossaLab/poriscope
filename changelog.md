@@ -1,5 +1,7 @@
 ## Poriscope 2.0.0: in progress
 
+* **Breaking:** a subset filter being validated now travels with the request instead of being parked on the view: `filter_validation_requested` and `raw_filter_validation_requested` carry the filter's name and the name it replaces, `MetaSubsetTabController.relay_query` and `validate_raw_filter` take them as arguments, and `MetaSubsetTabView.clear_pending_filter_state` and `MetaSubsetTabController.on_raw_filter_validated` are gone
+
 * **Status panel messages are now timestamped**, so the same message arriving twice is visibly two messages rather than looking like the panel never changed
 
 * **Fixed the Metadata and Protein tabs silently widening the experiment and channel scope back to everything**: re-reading the database structure - which happens whenever the loader changes or the selection tree is opened - overwrote the scope you had chosen, so plots quietly used more data than was asked for and heatmaps refused with "Only a single channel can be used"

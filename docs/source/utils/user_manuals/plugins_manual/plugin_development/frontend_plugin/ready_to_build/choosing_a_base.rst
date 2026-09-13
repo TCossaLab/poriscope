@@ -65,7 +65,7 @@ What ``MetaSubsetTabView`` gives you, on top of ``MetaView``: the query and colu
 setters (``set_query``, ``set_event_query``, ``update_available_columns``,
 ``set_units``), subset-filter management (``_save_filter``,
 ``_delete_filter_by_name``, ``_show_filter_info_dialog``,
-``clear_pending_filter_state``, ``get_selected_filters``, ``_show_add_filter_dialog``,
+``get_selected_filters``, ``_show_add_filter_dialog``,
 ``show_edit_filter_dialog``, ``_load_filter``, ``_delete_filter``,
 ``replace_filter_item``, ``update_filter_name``, ``on_raw_filter_validated``), the
 filtered-event cache

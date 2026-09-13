@@ -249,9 +249,6 @@ class MetadataView(MetaSubsetTabView):
         self.hlabels: Optional[List[str]] = None
         self.plabels: Optional[List[str]] = None
         self._heatmap_colorbar: Optional[Colorbar] = None
-        self._pending_filter_name = None
-        self._pending_filter_text = None
-        self._pending_old_filter_name = None
         # list of tuples of things already plotted: (loader, experiment, channel, filter, subset name), which can be None
 
         # Cache for filter-aware event navigation — rebuilt only when filter/scope changes

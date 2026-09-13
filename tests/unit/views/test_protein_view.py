@@ -661,15 +661,6 @@ class TestStateSetters:
         mock_view.set_units("nm")
         assert mock_view.units == "nm"
 
-    def test_clear_pending_filter_state(self, mock_view):
-        mock_view._pending_filter_name = "x"
-        mock_view._pending_filter_text = "y"
-        mock_view._pending_old_filter_name = "z"
-        mock_view.clear_pending_filter_state()
-        assert mock_view._pending_filter_name is None
-        assert mock_view._pending_filter_text is None
-        assert mock_view._pending_old_filter_name is None
-
     def test_get_current_view(self, mock_view):
         assert mock_view.get_current_view() == "ProteinView"
         assert mock_view.get_current_view() == "ProteinView"
@@ -1242,15 +1233,13 @@ class TestFilterManagement:
 
 
 class TestOnRawFilterValidated:
-    def _setup(self, mock_view, old_name=None):
-        mock_view._pending_filter_name = "newfilter"
-        mock_view._pending_filter_text = "SELECT * FROM events"
-        mock_view._pending_old_filter_name = old_name
-
-    def test_invalid_clears_pending(self, mock_view):
-        self._setup(mock_view)
-        mock_view.on_raw_filter_validated(False, "syntax error")
-        assert mock_view._pending_filter_name is None
+    # Step 4d: the filter's name, the name it replaces and its text travel through
+    # the call now. They used to be parked on the widget by a _setup helper and read
+    # back off it here, which is the pattern the step deletes.
+    def _answer(self, mock_view, valid=True, error_msg="", old_name=None):
+        mock_view.on_raw_filter_validated(
+            valid, error_msg, "newfilter", old_name, "SELECT * FROM events"
+        )
 
     def test_invalid_shows_warning(self, mock_view, monkeypatch):
         """
@@ -1262,28 +1251,24 @@ class TestOnRawFilterValidated:
         """
         warned = MagicMock()
         monkeypatch.setattr(QMessageBox, "warning", staticmethod(warned))
-        self._setup(mock_view)
-        mock_view.on_raw_filter_validated(False, "syntax error")
+        self._answer(mock_view, False, "syntax error")
         warned.assert_called_once()
         assert "syntax error" in warned.call_args[0][2]
 
     def test_valid_add_path(self, mock_view):
-        self._setup(mock_view)
-        mock_view.on_raw_filter_validated(True, "")
+        self._answer(mock_view)
         assert "newfilter" in mock_view.subset_filters
 
     def test_valid_add_emits_added(self, mock_view):
         received = []
         mock_view.add_text_to_display.connect(lambda m, s: received.append(m))
-        self._setup(mock_view)
-        mock_view.on_raw_filter_validated(True, "")
+        self._answer(mock_view)
         assert any("added" in m for m in received)
 
     def test_valid_edit_path(self, mock_view):
         mock_view.subset_filters["oldfilter"] = "old text"
         mock_view.proteincontrols.filter_comboBox.addItem("oldfilter")
-        self._setup(mock_view, old_name="oldfilter")
-        mock_view.on_raw_filter_validated(True, "")
+        self._answer(mock_view, old_name="oldfilter")
         assert "oldfilter" not in mock_view.subset_filters
         assert "newfilter" in mock_view.subset_filters
 
@@ -1292,14 +1277,8 @@ class TestOnRawFilterValidated:
         mock_view.add_text_to_display.connect(lambda m, s: received.append(m))
         mock_view.subset_filters["oldfilter"] = "old text"
         mock_view.proteincontrols.filter_comboBox.addItem("oldfilter")
-        self._setup(mock_view, old_name="oldfilter")
-        mock_view.on_raw_filter_validated(True, "")
+        self._answer(mock_view, old_name="oldfilter")
         assert any("updated" in m for m in received)
-
-    def test_clears_pending_after_success(self, mock_view):
-        self._setup(mock_view)
-        mock_view.on_raw_filter_validated(True, "")
-        assert mock_view._pending_filter_name is None
 
 
 # ===========================================================================
@@ -2021,7 +2000,13 @@ class TestShowAddFilterDialog:
         ):
             mock_view._show_add_filter_dialog({"db_loader": "ldr"})
         mock_view.filter_validation_requested.emit.assert_called_once_with(
-            "ldr", "dur>1", "validate_new_filter"
+            # Step 4d: the filter's name and the name it replaces (None, for a new
+            # one) ride along with the intent instead of being parked on the widget.
+            "ldr",
+            "dur>1",
+            "validate_new_filter",
+            "f1",
+            None,
         )
         mock_view.global_signal.emit.assert_not_called()
 
@@ -2065,27 +2050,15 @@ class TestShowAddFilterDialog:
             mock_view._show_add_filter_dialog({"db_loader": "ldr"})
         mock_view.raw_filter_validation_requested.emit.assert_called_once_with(
             # Step 4b: the View sends the filter as written; the Controller adds
-            # the LIMIT 0 that makes the check cheap.
+            # the LIMIT 0 that makes the check cheap. Step 4d: the name it will be
+            # stored under - already _raw-suffixed - and the name it replaces
+            # travel with it.
             "ldr",
             "SELECT * FROM events",
+            "f1_raw",
+            None,
         )
         mock_view.global_signal.emit.assert_not_called()
-
-    def test_raw_filter_appends_raw_suffix(self, mock_view):
-        mock_view._walkthrough_active = False
-        mock_view.global_signal = MagicMock()
-        with patch(
-            "poriscope.utils.MetaSubsetTabView.AddSubsetFilterDialog",
-            return_value=self._mock_dialog(
-                None,
-                accepted=True,
-                is_raw=True,
-                name="f1",
-                text="SELECT * FROM events",
-            ),
-        ):
-            mock_view._show_add_filter_dialog({"db_loader": "ldr"})
-        assert mock_view._pending_filter_name == "f1_raw"
 
 
 # ===========================================================================
@@ -2147,7 +2120,13 @@ class TestShowEditFilterDialog:
         ):
             mock_view.show_edit_filter_dialog("f1", "ldr")
         mock_view.filter_validation_requested.emit.assert_called_once_with(
-            "ldr", dialog.new_filter, "validate_edited_filter"
+            # Step 4d: an edit carries both names, so the Controller knows which
+            # entry to replace without reading anything off the widget.
+            "ldr",
+            dialog.new_filter,
+            "validate_edited_filter",
+            dialog.new_name,
+            "f1",
         )
         mock_view.global_signal.emit.assert_not_called()
 
@@ -2183,22 +2162,13 @@ class TestShowEditFilterDialog:
             mock_view.show_edit_filter_dialog("f1", "ldr")
         mock_view.raw_filter_validation_requested.emit.assert_called_once_with(
             # Step 4b: the View sends the filter as written; the Controller adds
-            # the LIMIT 0 that makes the check cheap.
+            # the LIMIT 0 that makes the check cheap. Step 4d: both names ride along.
             "ldr",
             "SELECT * FROM events",
+            "f1_raw",
+            "f1",
         )
         mock_view.global_signal.emit.assert_not_called()
-
-    def test_pending_old_filter_name_set(self, mock_view):
-        mock_view.subset_filters = {"f1": "dur>1"}
-        mock_view.global_signal = MagicMock()
-        with patch(
-            "poriscope.utils.MetaSubsetTabView.EditSubsetFilterDialog",
-            return_value=self._mock_dialog(accepted=True, is_raw=False, new_name="f2"),
-        ):
-            mock_view.show_edit_filter_dialog("f1", "ldr")
-        assert mock_view._pending_old_filter_name == "f1"
-        assert mock_view._pending_filter_name == "f2"
 
 
 # ===========================================================================

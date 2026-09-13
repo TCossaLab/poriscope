@@ -30,7 +30,5 @@
   },
   "layering": {},
   "plugin_reach": {},
-  "private_access": {
-    "poriscope/utils/MetaSubsetTabController.py": 5
-  }
+  "private_access": {}
 }

@@ -597,48 +597,6 @@ def test_relay_query_does_not_call_set_query_when_query_is_empty(
     mock_view.set_query.assert_not_called()
 
 
-def test_relay_query_debug_path_clears_pending_for_validate_new_filter(
-    controller: MetadataController,
-    mock_view: MagicMock,
-) -> None:
-    """
-    Clear pending filter state on the debug path for the validate_new_filter intent.
-
-    :param controller: Controller under test.
-    :param mock_view: Mocked metadata view.
-    """
-    controller.relay_query("", "err", "t", "validate_new_filter")
-    mock_view.clear_pending_filter_state.assert_called_once()
-
-
-def test_relay_query_debug_path_clears_pending_for_validate_edited_filter(
-    controller: MetadataController,
-    mock_view: MagicMock,
-) -> None:
-    """
-    Clear pending filter state on the debug path for the validate_edited_filter intent.
-
-    :param controller: Controller under test.
-    :param mock_view: Mocked metadata view.
-    """
-    controller.relay_query("", "err", "t", "validate_edited_filter")
-    mock_view.clear_pending_filter_state.assert_called_once()
-
-
-def test_relay_query_debug_path_no_intent_does_not_clear_pending(
-    controller: MetadataController,
-    mock_view: MagicMock,
-) -> None:
-    """
-    Do not clear pending state on the debug path when no intent is supplied.
-
-    :param controller: Controller under test.
-    :param mock_view: Mocked metadata view.
-    """
-    controller.relay_query("", "err", "t")
-    mock_view.clear_pending_filter_state.assert_not_called()
-
-
 # -- happy path, no intent --------------------------------------------
 
 
@@ -656,20 +614,6 @@ def test_relay_query_calls_set_query_with_correct_args(
     mock_view.set_query.assert_called_once_with("SELECT 1", "my_table")
 
 
-def test_relay_query_clears_pending_state_after_valid_query(
-    controller: MetadataController,
-    mock_view: MagicMock,
-) -> None:
-    """
-    Call clear_pending_filter_state after successfully forwarding a query.
-
-    :param controller: Controller under test.
-    :param mock_view: Mocked metadata view.
-    """
-    controller.relay_query("SELECT 1", "", "my_table")
-    mock_view.clear_pending_filter_state.assert_called_once()
-
-
 # -- validate_new_filter ----------------------------------------------
 
 
@@ -683,9 +627,17 @@ def test_relay_query_new_filter_stored_in_subset_filters(
     :param controller: Controller under test.
     :param mock_view: Mocked metadata view.
     """
-    mock_view._pending_filter_name = "fast_events"
-    mock_view._pending_filter_text = "duration < 1.0"
-    controller.relay_query("SELECT 1", "", "t", "validate_new_filter")
+    # Step 4d: the name and text arrive as arguments rather than being read back off
+    # the view, which is the Controller-reads-View-private access this step removes.
+    controller.relay_query(
+        "SELECT 1",
+        "",
+        "t",
+        "validate_new_filter",
+        "fast_events",
+        None,
+        "duration < 1.0",
+    )
     assert mock_view.subset_filters["fast_events_assisted"] == "duration < 1.0"
 
 
@@ -699,9 +651,15 @@ def test_relay_query_new_filter_calls_replace_filter_item(
     :param controller: Controller under test.
     :param mock_view: Mocked metadata view.
     """
-    mock_view._pending_filter_name = "fast_events"
-    mock_view._pending_filter_text = "duration < 1.0"
-    controller.relay_query("SELECT 1", "", "t", "validate_new_filter")
+    controller.relay_query(
+        "SELECT 1",
+        "",
+        "t",
+        "validate_new_filter",
+        "fast_events",
+        None,
+        "duration < 1.0",
+    )
     mock_view.replace_filter_item.assert_called_once_with("fast_events_assisted")
 
 
@@ -715,9 +673,9 @@ def test_relay_query_new_filter_empty_text_stored_as_empty_string(
     :param controller: Controller under test.
     :param mock_view: Mocked metadata view.
     """
-    mock_view._pending_filter_name = "all_events"
-    mock_view._pending_filter_text = ""
-    controller.relay_query("SELECT 1", "", "t", "validate_new_filter")
+    controller.relay_query(
+        "SELECT 1", "", "t", "validate_new_filter", "all_events", None, ""
+    )
     assert mock_view.subset_filters["all_events_assisted"] == ""
 
 
@@ -731,9 +689,9 @@ def test_relay_query_new_filter_empty_text_emits_all_rows_message(
     :param controller: Controller under test.
     :param mock_view: Mocked metadata view.
     """
-    mock_view._pending_filter_name = "all_events"
-    mock_view._pending_filter_text = ""
-    controller.relay_query("SELECT 1", "", "t", "validate_new_filter")
+    controller.relay_query(
+        "SELECT 1", "", "t", "validate_new_filter", "all_events", None, ""
+    )
     emitted: str = " ".join(
         str(c) for c in mock_view.add_text_to_display.emit.call_args_list
     )
@@ -750,9 +708,9 @@ def test_relay_query_new_filter_emits_added_confirmation(
     :param controller: Controller under test.
     :param mock_view: Mocked metadata view.
     """
-    mock_view._pending_filter_name = "my_filter"
-    mock_view._pending_filter_text = "x > 0"
-    controller.relay_query("SELECT 1", "", "t", "validate_new_filter")
+    controller.relay_query(
+        "SELECT 1", "", "t", "validate_new_filter", "my_filter", None, "x > 0"
+    )
     emitted: str = " ".join(
         str(c) for c in mock_view.add_text_to_display.emit.call_args_list
     )
@@ -769,8 +727,7 @@ def test_relay_query_new_filter_skipped_when_pending_name_is_none(
     :param controller: Controller under test.
     :param mock_view: Mocked metadata view.
     """
-    mock_view._pending_filter_name = None
-    controller.relay_query("SELECT 1", "", "t", "validate_new_filter")
+    controller.relay_query("SELECT 1", "", "t", "validate_new_filter", None, None, "x")
     mock_view.replace_filter_item.assert_not_called()
     assert mock_view.subset_filters == {}
 
@@ -789,10 +746,9 @@ def test_relay_query_edited_filter_removes_old_key(
     :param mock_view: Mocked metadata view.
     """
     mock_view.subset_filters["old_name"] = "x > 0"
-    mock_view._pending_old_filter_name = "old_name"
-    mock_view._pending_filter_name = "new_name"
-    mock_view._pending_filter_text = "x > 5"
-    controller.relay_query("SELECT 1", "", "t", "validate_edited_filter")
+    controller.relay_query(
+        "SELECT 1", "", "t", "validate_edited_filter", "new_name", "old_name", "x > 5"
+    )
     assert "old_name" not in mock_view.subset_filters
 
 
@@ -807,10 +763,9 @@ def test_relay_query_edited_filter_adds_new_key(
     :param mock_view: Mocked metadata view.
     """
     mock_view.subset_filters["old_name"] = "x > 0"
-    mock_view._pending_old_filter_name = "old_name"
-    mock_view._pending_filter_name = "new_name"
-    mock_view._pending_filter_text = "x > 5"
-    controller.relay_query("SELECT 1", "", "t", "validate_edited_filter")
+    controller.relay_query(
+        "SELECT 1", "", "t", "validate_edited_filter", "new_name", "old_name", "x > 5"
+    )
     assert mock_view.subset_filters["new_name_assisted"] == "x > 5"
 
 
@@ -824,10 +779,9 @@ def test_relay_query_edited_filter_calls_update_filter_name(
     :param controller: Controller under test.
     :param mock_view: Mocked metadata view.
     """
-    mock_view._pending_old_filter_name = "old_name"
-    mock_view._pending_filter_name = "new_name"
-    mock_view._pending_filter_text = "x > 5"
-    controller.relay_query("SELECT 1", "", "t", "validate_edited_filter")
+    controller.relay_query(
+        "SELECT 1", "", "t", "validate_edited_filter", "new_name", "old_name", "x > 5"
+    )
     mock_view.update_filter_name.assert_called_once_with(
         "old_name", "new_name_assisted"
     )
@@ -838,10 +792,9 @@ def test_relay_query_edited_filter_empty_text_stored_as_empty_string(
     mock_view: MagicMock,
 ) -> None:
     """Store an empty string in subset_filters when the edited filter text is blank."""
-    mock_view._pending_old_filter_name = "alpha"
-    mock_view._pending_filter_name = "beta"
-    mock_view._pending_filter_text = ""
-    controller.relay_query("SELECT 1", "", "t", "validate_edited_filter")
+    controller.relay_query(
+        "SELECT 1", "", "t", "validate_edited_filter", "beta", "alpha", ""
+    )
     assert mock_view.subset_filters["beta_assisted"] == ""
 
 
@@ -855,10 +808,9 @@ def test_relay_query_edited_filter_empty_text_emits_full_dataset_message(
     :param controller: Controller under test.
     :param mock_view: Mocked metadata view.
     """
-    mock_view._pending_old_filter_name = "alpha"
-    mock_view._pending_filter_name = "beta"
-    mock_view._pending_filter_text = ""
-    controller.relay_query("SELECT 1", "", "t", "validate_edited_filter")
+    controller.relay_query(
+        "SELECT 1", "", "t", "validate_edited_filter", "beta", "alpha", ""
+    )
     emitted: str = " ".join(
         str(c) for c in mock_view.add_text_to_display.emit.call_args_list
     )
@@ -875,10 +827,9 @@ def test_relay_query_edited_filter_emits_updated_confirmation(
     :param controller: Controller under test.
     :param mock_view: Mocked metadata view.
     """
-    mock_view._pending_old_filter_name = "alpha"
-    mock_view._pending_filter_name = "beta"
-    mock_view._pending_filter_text = "y < 10"
-    controller.relay_query("SELECT 1", "", "t", "validate_edited_filter")
+    controller.relay_query(
+        "SELECT 1", "", "t", "validate_edited_filter", "beta", "alpha", "y < 10"
+    )
     emitted: str = " ".join(
         str(c) for c in mock_view.add_text_to_display.emit.call_args_list
     )
@@ -895,8 +846,9 @@ def test_relay_query_edited_filter_skipped_when_new_name_is_none(
     :param controller: Controller under test.
     :param mock_view: Mocked metadata view.
     """
-    mock_view._pending_filter_name = None
-    controller.relay_query("SELECT 1", "", "t", "validate_edited_filter")
+    controller.relay_query(
+        "SELECT 1", "", "t", "validate_edited_filter", None, "alpha", "y < 10"
+    )
 
 
 # ----------------------------- session state ------------------------------

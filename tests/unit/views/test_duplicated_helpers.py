@@ -67,7 +67,6 @@ Eight groups:
 import json
 import logging
 from typing import Dict, List, Optional
-from unittest.mock import MagicMock
 
 import pandas as pd
 import pytest
@@ -795,38 +794,6 @@ class TestLoadFilterWasPromoted:
         view.global_signal.emit.assert_not_called()
 
     @pytest.mark.parametrize("view_cls", SUBSET_TABS, ids=lambda c: c.__name__)
-    def test_an_assisted_filter_is_still_sent_for_validation(
-        self,
-        qapp: object,
-        view_cls: type,
-        tmp_path: object,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        """
-        The bypass must not swallow the ordinary path.
-
-        A filter without the suffix still goes through
-        ``construct_metadata_query``, and is only committed once the round-trip
-        returns - which is why nothing is in ``subset_filters`` yet.
-        """
-        view = build_subset_tab(view_cls)
-        path = write_filter_file(tmp_path, {"long_events": "dwell > 5"})
-        monkeypatch.setattr(
-            "poriscope.utils.MetaSubsetTabView.QFileDialog.getOpenFileName",
-            staticmethod(lambda *a, **k: (path, "JSON Files (*.json)")),
-        )
-
-        emitted: list = []
-        view.filter_validation_requested.connect(lambda *args: emitted.append(args))
-
-        view._load_filter({"db_loader": "a_loader"})
-
-        assert view.subset_filters == {}
-        assert emitted == [("a_loader", "dwell > 5", "validate_new_filter")]
-        view.global_signal.emit.assert_not_called()
-        assert view._pending_filter_name == "long_events"
-
-    @pytest.mark.parametrize("view_cls", SUBSET_TABS, ids=lambda c: c.__name__)
     def test_with_no_loader_everything_is_stored_unvalidated(
         self,
         qapp: object,
@@ -922,50 +889,6 @@ class TestThePanelNameMethodsWerePromoted:
             for i in range(view._subset_controls.filter_comboBox.listWidget.count())
         ]
         assert remaining == ["keep_me"]
-
-    @pytest.mark.parametrize("view_cls", SUBSET_TABS, ids=lambda c: c.__name__)
-    def test_an_invalid_raw_filter_is_reported_in_a_modal_on_both_tabs(
-        self, qapp: object, view_cls: type, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """
-        The protein tab's behaviour change, and the reason this group exists.
-
-        It used to put the rejection on the status panel. The promoted copy uses
-        Metadata's modal, consistently with the filter dialogs, so the same
-        rejection reads the same way wherever it comes from.
-        """
-        view = build_subset_tab(view_cls)
-        view._pending_filter_name = "f1_raw"
-        view._pending_filter_text = "SELECT 1"
-        view._pending_old_filter_name = None
-        warned = MagicMock()
-        monkeypatch.setattr(
-            "poriscope.utils.MetaSubsetTabView.QMessageBox.warning",
-            staticmethod(warned),
-        )
-
-        view.on_raw_filter_validated(False, "no such column: dwel")
-
-        warned.assert_called_once()
-        assert "no such column: dwel" in warned.call_args[0][2]
-        assert view.subset_filters == {}
-        assert view._pending_filter_name is None
-
-    @pytest.mark.parametrize("view_cls", SUBSET_TABS, ids=lambda c: c.__name__)
-    def test_a_valid_raw_filter_is_committed_and_selected(
-        self, qapp: object, view_cls: type
-    ) -> None:
-        """The add path: stored under its pending name, and checked in the combobox."""
-        view = build_subset_tab(view_cls)
-        view._pending_filter_name = "f1_raw"
-        view._pending_filter_text = "SELECT event_id FROM events"
-        view._pending_old_filter_name = None
-
-        view.on_raw_filter_validated(True, "")
-
-        assert view.subset_filters == {"f1_raw": "SELECT event_id FROM events"}
-        assert view.get_selected_filters() == {"f1_raw": "SELECT event_id FROM events"}
-        assert view._pending_filter_name is None
 
     @pytest.mark.parametrize("view_cls", SUBSET_TABS, ids=lambda c: c.__name__)
     def test_set_event_id_rows_parks_the_answer_and_can_clear_it(

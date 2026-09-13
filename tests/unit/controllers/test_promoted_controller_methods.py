@@ -140,7 +140,9 @@ class TestValidateFilter:
             }
         )
 
-        controller.validate_filter("ldr", "duration < 300", "validate_new_filter")
+        controller.validate_filter(
+            "ldr", "duration < 300", "validate_new_filter", "f1", None
+        )
 
         lookup, build = controller.model.calls
         assert lookup[2] == "get_column_names_by_table"
@@ -171,10 +173,18 @@ class TestValidateFilter:
             }
         )
 
-        controller.validate_filter("ldr", "duration < 300", "validate_edited_filter")
+        controller.validate_filter(
+            "ldr", "duration < 300", "validate_edited_filter", "f1", "old"
+        )
 
         controller.relay_query.assert_called_once_with(
-            "SELECT 1", "", "events", "validate_edited_filter"
+            "SELECT 1",
+            "",
+            "events",
+            "validate_edited_filter",
+            "f1",
+            "old",
+            "duration < 300",
         )
 
     def test_a_debug_message_is_relayed_rather_than_swallowed(
@@ -193,13 +203,21 @@ class TestValidateFilter:
             }
         )
 
-        controller.validate_filter("ldr", "dwel < 300", "validate_new_filter")
-
-        controller.relay_query.assert_called_once_with(
-            "", "no such column: dwel", "events", "validate_new_filter"
+        controller.validate_filter(
+            "ldr", "dwel < 300", "validate_new_filter", "f1", None
         )
 
-    def test_a_raising_build_is_reported_and_clears_the_pending_state(
+        controller.relay_query.assert_called_once_with(
+            "",
+            "no such column: dwel",
+            "events",
+            "validate_new_filter",
+            "f1",
+            None,
+            "dwel < 300",
+        )
+
+    def test_a_raising_build_is_reported(
         self, controller: MetaSubsetTabController
     ) -> None:
         """
@@ -208,8 +226,9 @@ class TestValidateFilter:
         ``construct_metadata_query`` **raises** ``ValueError`` for a column it cannot
         map to a table. Under the bus, ``_dispatch_to`` swallowed it, so the filter
         vanished with nothing but a log line. Both halves are asserted: the user is
-        told, and the pending name and text are dropped - without the clear, the next
-        validation to succeed would commit them under the wrong name.
+        told, and nothing is committed. **Step 4d deleted the pending state**, so the
+        second half of this test went with it: the name now travels through the
+        request, so a refused filter leaves nothing parked to go stale.
         """
         controller.model = RecordingModel(
             {
@@ -220,14 +239,15 @@ class TestValidateFilter:
             }
         )
 
-        controller.validate_filter("ldr", "dwel < 300", "validate_new_filter")
+        controller.validate_filter(
+            "ldr", "dwel < 300", "validate_new_filter", "f1", None
+        )
 
         controller.relay_query.assert_not_called()
         controller.add_text_to_display.emit.assert_called_once()
         assert (
             "could not be mapped" in controller.add_text_to_display.emit.call_args[0][0]
         )
-        controller.view.clear_pending_filter_state.assert_called_once()
 
     def test_a_loader_with_no_events_columns_is_refused(
         self, controller: MetaSubsetTabController
@@ -242,12 +262,13 @@ class TestValidateFilter:
         """
         controller.model = RecordingModel({"get_column_names_by_table": None})
 
-        controller.validate_filter("ldr", "duration < 300", "validate_new_filter")
+        controller.validate_filter(
+            "ldr", "duration < 300", "validate_new_filter", "f1", None
+        )
 
         assert len(controller.model.calls) == 1
         controller.relay_query.assert_not_called()
         controller.add_text_to_display.emit.assert_called_once()
-        controller.view.clear_pending_filter_state.assert_called_once()
 
     def test_a_loader_that_cannot_be_read_is_refused(
         self, controller: MetaSubsetTabController
@@ -257,13 +278,14 @@ class TestValidateFilter:
             {"get_column_names_by_table": RuntimeError("database is locked")}
         )
 
-        controller.validate_filter("ldr", "duration < 300", "validate_new_filter")
+        controller.validate_filter(
+            "ldr", "duration < 300", "validate_new_filter", "f1", None
+        )
 
         controller.relay_query.assert_not_called()
         assert (
             "database is locked" in controller.add_text_to_display.emit.call_args[0][0]
         )
-        controller.view.clear_pending_filter_state.assert_called_once()
 
 
 class TestValidateRawFilter:
@@ -275,13 +297,15 @@ class TestValidateRawFilter:
         """The ``Tuple[bool, str]`` is unpacked here, as the bus used to splat it."""
         controller.model = RecordingModel({"validate_filter_query": (True, "")})
 
-        controller.validate_raw_filter("ldr", "SELECT 1")
+        controller.validate_raw_filter("ldr", "SELECT 1", "f1", None)
 
         assert controller.model.calls[0][2] == "validate_filter_query"
         # Step 4b appends the clause here rather than in the View: knowing that
         # LIMIT 0 is what makes the check cheap is knowing SQL.
         assert controller.model.calls[0][3] == ("SELECT 1 LIMIT 0",)
-        controller.view.on_raw_filter_validated.assert_called_once_with(True, "")
+        controller.view.on_raw_filter_validated.assert_called_once_with(
+            True, "", "f1", None, "SELECT 1"
+        )
 
     def test_an_invalid_answer_carries_its_message(
         self, controller: MetaSubsetTabController
@@ -291,10 +315,10 @@ class TestValidateRawFilter:
             {"validate_filter_query": (False, "near SELEC: syntax error")}
         )
 
-        controller.validate_raw_filter("ldr", "SELEC 1")
+        controller.validate_raw_filter("ldr", "SELEC 1", "f1", None)
 
         controller.view.on_raw_filter_validated.assert_called_once_with(
-            False, "near SELEC: syntax error"
+            False, "near SELEC: syntax error", "f1", None, "SELEC 1"
         )
 
     def test_a_raising_validation_is_reported_as_invalid(
@@ -303,18 +327,18 @@ class TestValidateRawFilter:
         """
         Also previously swallowed.
 
-        Reported as invalid rather than merely logged, because the View's handler is
-        what clears the pending state - returning silently would leave the refused
-        filter parked and committable by the next success.
+        Reported as invalid rather than merely logged: the View's handler is what
+        tells the user, and returning silently would leave a failed validation
+        looking like nothing had happened.
         """
         controller.model = RecordingModel(
             {"validate_filter_query": RuntimeError("no such table: events")}
         )
 
-        controller.validate_raw_filter("ldr", "SELECT 1")
+        controller.validate_raw_filter("ldr", "SELECT 1", "f1", None)
 
         controller.view.on_raw_filter_validated.assert_called_once()
-        valid, message = controller.view.on_raw_filter_validated.call_args[0]
+        valid, message = controller.view.on_raw_filter_validated.call_args[0][:2]
         assert valid is False
         assert "no such table" in message
 
