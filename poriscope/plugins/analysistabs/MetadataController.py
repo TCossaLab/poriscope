@@ -244,11 +244,12 @@ class MetadataController(MetaSubsetTabController):
         )
 
     @log(logger=logger)
-    @Slot(object, object, object, str, str, str)
+    @Slot(object, object, bool, object, str, str, str)
     def fit_capture_rate(
         self,
         data: npt.NDArray[np.float64],
         bins: Any,
+        sizes: bool,
         ax: Axes,
         x_label: str,
         y_label: str,
@@ -263,8 +264,10 @@ class MetadataController(MetaSubsetTabController):
 
         :param data: the base-10 logarithm of the inter-event times
         :type data: npt.NDArray[np.float64]
-        :param bins: an explicit bin count, or None to estimate one
+        :param bins: a bin count, or a bin width when sizes is True, or None
         :type bins: Any
+        :param sizes: does bins refer to a bin width (True) or a count (False)
+        :type sizes: bool
         :param ax: the axis object the View will draw on
         :type ax: Axes
         :param x_label: the x axis label, already formatted
@@ -278,7 +281,7 @@ class MetadataController(MetaSubsetTabController):
         """
         try:
             bin_edges, bincenters, val, fit, rate, error = self.model.fit_capture_rate(
-                data, bins
+                data, bins, sizes
             )
         except (ValueError, TypeError, IndexError, RuntimeError) as e:
             self.logger.error(f"Unable to fit the capture rate: {repr(e)}")

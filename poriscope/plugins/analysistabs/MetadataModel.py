@@ -397,7 +397,9 @@ class MetadataModel(MetaModel):
         return amplitude * np.exp(-rate * 10.0**logt) * 10.0**logt * np.log(10)
 
     @log(logger=logger)
-    def fit_capture_rate(self, data: npt.NDArray[np.float64], bins: Any) -> Tuple[
+    def fit_capture_rate(
+        self, data: npt.NDArray[np.float64], bins: Any, sizes: bool = False
+    ) -> Tuple[
         npt.NDArray[np.float64],
         npt.NDArray[np.float64],
         npt.NDArray[np.float64],
@@ -418,18 +420,30 @@ class MetadataModel(MetaModel):
 
         :param data: the base-10 logarithm of the inter-event times
         :type data: npt.NDArray[np.float64]
-        :param bins: an explicit bin count, or None to estimate one
+        :param bins: a bin count, or a bin width when sizes is True, or None to estimate one
         :type bins: Any
+        :param sizes: does bins refer to a bin width (True) or a count (False)
+        :type sizes: bool
         :return: bin edges, bin centers, counts, the fitted curve, the rate in Hz, and its error
         :rtype: Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64], npt.NDArray[np.float64], npt.NDArray[np.float64], float, float]
         """
+        if bins is not None and sizes:
+            # A width in the data's own units, which are log10 seconds - so a width
+            # in decades. There are no shared histogram limits on this path, because
+            # the inter-event times are derived here rather than carried between
+            # overlaid datasets, so the span is this data's own.
+            span = float(np.max(data) - np.min(data))
+            numbins = int(span / bins) if bins else 0
+            if numbins <= 1:
+                bins = None
+
         if bins is None:
             try:
                 numbins = self._auto_bins_1d(data)
             except OverflowError:
                 numbins = int(3.332 * np.log10(len(data)))
-        else:
-            numbins = bins
+        elif not sizes:
+            numbins = int(bins)
 
         counts, bin_edges = np.histogram(data, bins=numbins)
         val = counts.astype(float)

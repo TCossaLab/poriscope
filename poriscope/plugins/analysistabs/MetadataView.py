@@ -177,7 +177,7 @@ class MetadataView(MetaSubsetTabView):
     #:
     #: Step 4c. The bin edges come back with the fit so the histogram is drawn on
     #: exactly the edges the fit was made against.
-    capture_rate_requested = Signal(object, object, object, str, str, str)
+    capture_rate_requested = Signal(object, object, bool, object, str, str, str)
 
     logger = logging.getLogger(__name__)
 
@@ -563,7 +563,7 @@ class MetadataView(MetaSubsetTabView):
             x_label = f"log10({x_label})"
 
         self.capture_rate_requested.emit(
-            data, bins, ax, x_label, y_label, dataset_label
+            data, bins, sizes, ax, x_label, y_label, dataset_label
         )
 
     @log(logger=logger)
@@ -838,13 +838,28 @@ class MetadataView(MetaSubsetTabView):
             x_lab = self.format_axis_label(x_label, x_units)
             y_lab = "Count"
 
-            # Extract unique categorical values and their respective counts
-            unique_vals, counts = np.unique(d, return_counts=True)
+            # Missing values are counted as their own category rather than being
+            # allowed to reach np.unique, which sorts and so raises
+            # "'<' not supported between instances of 'NoneType' and 'str'" on a
+            # column holding SQL NULLs. A float column does not raise but labels the
+            # bar "nan", which tells the user no more than "null" does and does not
+            # match what they see elsewhere. Counting them separately also keeps the
+            # real categories in the order they had before, which stringifying
+            # everything up front would not: "10" sorts before "2".
+            series = pd.Series(d)
+            missing = int(series.isna().sum())
+            present = series.dropna().to_numpy()
+
+            unique_vals, counts = np.unique(present, return_counts=True)
 
             val = counts.astype(float)
 
             # Convert unique values to strings so matplotlib natively aligns them as discrete categories
             categories = [str(uv) for uv in unique_vals]
+
+            if missing:
+                categories.append("null")
+                val = np.append(val, float(missing))
 
             ax.bar(
                 categories,
@@ -1622,7 +1637,21 @@ class MetadataView(MetaSubsetTabView):
                                 sizes_changed = (
                                     getattr(self, "allowed_sizes", None) != sizes
                                 )
-                                if bin_sensitive and (bins_changed or sizes_changed):
+                                # A change of plot type resets here as it does for
+                                # the metadata plots above. Without it, `hist_data`
+                                # kept whatever the previous type left in it, and the
+                                # shapes are not interchangeable: the 1-D paths store
+                                # a column and this one stores an (x, y) pair, so
+                                # drawing a histogram and then an all-points
+                                # histogram unpacked a bare array as a pair and
+                                # raised "too many values to unpack".
+                                plot_type_changed = (
+                                    self.allowed_plot_type is not None
+                                    and plot_type != self.allowed_plot_type
+                                )
+                                if plot_type_changed or (
+                                    bin_sensitive and (bins_changed or sizes_changed)
+                                ):
                                     axis_type = (
                                         "3d"
                                         if isinstance(

@@ -733,7 +733,7 @@ def _answer_capture_rate(view, numbins=4):
     :return: None
     :rtype: None
     """
-    data, _bins, ax, x_label, y_label, dataset_label = (
+    data, _bins, _sizes, ax, x_label, y_label, dataset_label = (
         view.capture_rate_requested.emit.call_args.args
     )
     edges = np.linspace(np.min(data), np.max(data), numbins + 1)
@@ -5625,3 +5625,60 @@ def test_handle_plot_events_leaves_the_reporting_to_the_controller(
     assert view.plot_events_generator is None
     view._update_event_plot.assert_not_called()
     view.add_text_to_display.emit.assert_not_called()
+
+
+# ----------------------------- Categorical nulls / plot-type reset -------------------
+
+
+def test_plot_categorical_histogram_counts_nulls_as_their_own_category(
+    view: MetadataView,
+) -> None:
+    """
+    A column holding SQL NULLs plots, with the missing rows as a "null" bar.
+
+    Reported from a real run: it raised instead. ``np.unique`` sorts, and sorting an
+    object column that mixes ``None`` with strings raises
+    "'<' not supported between instances of 'NoneType' and 'str'".
+    """
+    data = pd.DataFrame({"kind": np.array(["a", "b", None, "a"], dtype=object)})
+
+    view._plot_categorical_histogram(view.axes, data, ["kind"], ["u"])
+
+    categories, counts = view.axes.bar.call_args.args
+    assert categories == ["a", "b", "null"]
+    assert list(counts) == [2.0, 1.0, 1.0]
+
+
+def test_plot_categorical_histogram_labels_a_float_nan_null_too(
+    view: MetadataView,
+) -> None:
+    """
+    A float column does not raise on NaN, but labelled the bar "nan".
+
+    "null" is what the user sees everywhere else for a missing value, and this is
+    the same absence, so it gets the same word.
+    """
+    data = pd.DataFrame({"kind": np.array([1.0, 2.0, np.nan, 1.0])})
+
+    view._plot_categorical_histogram(view.axes, data, ["kind"], ["u"])
+
+    categories, _counts = view.axes.bar.call_args.args
+    assert categories[-1] == "null"
+    assert "nan" not in categories
+
+
+def test_plot_categorical_histogram_keeps_numeric_categories_in_numeric_order(
+    view: MetadataView,
+) -> None:
+    """
+    Real categories keep the order they had, which is why nulls are counted apart.
+
+    Stringifying the whole column before ``np.unique`` would have been shorter and
+    would have sorted 10 before 2.
+    """
+    data = pd.DataFrame({"kind": np.array([1, 2, 10, 2])})
+
+    view._plot_categorical_histogram(view.axes, data, ["kind"], ["u"])
+
+    categories, _counts = view.axes.bar.call_args.args
+    assert categories == ["1", "2", "10"]

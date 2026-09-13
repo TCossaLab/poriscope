@@ -1,5 +1,13 @@
 ## Poriscope 2.0.0: in progress
 
+* **Fixed the Metadata and Protein tabs silently widening the experiment and channel scope back to everything**: re-reading the database structure - which happens whenever the loader changes or the selection tree is opened - overwrote the scope you had chosen, so plots quietly used more data than was asked for and heatmaps refused with "Only a single channel can be used"
+
+* **The Metadata tab's Capture Rate plot now honours an explicit bin width**, which was accepted and then ignored, failing with an unhandled error
+
+* Fixed the Metadata tab failing with an error when an All Points Histogram is plotted after a different plot type
+
+* **Categorical histograms now show missing values as an explicit "null" category** instead of failing on a column that contains any
+
 * The Metadata tab now reports a heatmap or capture-rate plot it cannot compute on the status panel, instead of failing with an unhandled error
 
 * **The Protein tab now says on the status panel why a distribution plot was refused** - more than one experiment or channel selected, or an experiment with no channel - instead of writing only to the log and drawing nothing
