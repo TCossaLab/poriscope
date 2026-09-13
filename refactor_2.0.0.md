@@ -1,3 +1,98 @@
+## Step 4d handoff, 2026-09-13 - COMPLETE
+
+**Both halves of 4d are done and merged; `develop` is at `b1f9b911`.** Suite **3,795 passed
+/ 16 skipped**, `pre-commit run --all-files` green, `sphinx-build -W` green. Two feature
+branches: `step-4d-domain-state` (four commits) and `step-4d-subset-state` (four commits).
+
+| Gate | Refactor start | Now | Target |
+| --- | --- | --- | --- |
+| Boundary allowlist | 111 | **14** | 0 |
+| - rule 1, View emits | 75 | **0** | 0 |
+| - rule 2, View computation imports | 22 | **14** | 0 |
+| - rule 3, Controller reads a View private | 10 | **0** | 0 |
+| - rules 4 and 5 | 4 / - | **0 / 0** | 0 |
+| Duplication, removable - repo-wide, 6 families | 1,889 | **721** | - |
+| - the 3 analysis-tab families | 1,199 | **31** | 0 |
+| - the 3 Step-5 families, untouched by design | 690 | **690** | Step 5 |
+
+**Rules 1, 3, 4 and 5 are all at zero. Every remaining allowlist entry is rule 2**, and the
+composition has changed enough to be worth stating: `scipy`, `sklearn`, `hdbscan`,
+`fast_histogram` and `sqlite3` are **gone from the View layer entirely**. What is left is
+numpy (6 files), `numpy.typing` (5) and pandas (3).
+
+### What landed
+
+**The first half - threading the filter context.** The Views parked a filter's name, text
+and the name it replaces on themselves while validation went out to the loader, and both
+Controllers read those privates back. All of it now travels with the request. The three
+`_pending_*` attributes, `clear_pending_filter_state` and a dead
+`MetaSubsetTabController.on_raw_filter_validated` are gone. **Allowlist 19 -> 14, rule 3 to
+zero** - the whole of 4d's gate value, from the half that deletes state rather than the half
+that relocates it.
+
+**The second half - and the plan's premise did not survive measurement.** `subset_filters`
+does **not** move to the Model; see `DECISIONS.md` 2026-09-13. **No Model reads it** - Step
+4b moved query construction down and it takes a single filter's *text* as an argument - so
+the move would have installed a field nothing in the Model touches and turned **16
+synchronous View reads** into round trips, for no gate movement and 165 test references.
+What was actually wrong was narrower: the Controller mutating the View's dict at four sites.
+`MetaSubsetTabView` gained `commit_filter` and `get_subset_filters`, and the Controller asks
+rather than assigns. `restore_subset_filters` was promoted to the base on the way (20 of 21
+lines identical, panel name the only difference).
+
+**One user-visible defect, found while verifying and fixed in its own commit.** Restoring a
+session dropped the subset filters of whichever tab was restored **last**, because
+`instantiate_analysis_tab` snapshots `plugin_history` before `restore_session_state` fills
+the tab in, and only the *next* tab's instantiation corrects it. Reported as "Metadata keeps
+them, Protein does not"; the cause is order, not tab. Reproduced at `develop` first, so
+pre-existing.
+
+### Resume here
+
+**Step 4's remainder is 3d plus 4c for the three tabs it never reached**, and the sizes are
+very uneven. Measured 2026-09-13 at `b1f9b911`, as uses of `np.`/`npt.`/`pd.` and the number
+of methods carrying them:
+
+| File | numpy | numpy.typing | pandas | allowlist points |
+| --- | --- | --- | --- | --- |
+| `MetaView.py` | 10 in **1** method | 4 in 1 | - | 2 |
+| `EventAnalysisView.py` | 5 in 2 | 4 in 2 | - | 2 |
+| `ClusteringView.py` | 8 in 2 | - | 8 in 4 | 2 |
+| `RawDataView.py` | 33 in 7 | 22 in 7 | - | 2 |
+| `MetadataView.py` | 72 in 12 | 27 in 5 | 16 in 7 | 3 |
+| `ProteinView.py` | 100 in 9 | 24 in 5 | 32 in 15 | 3 |
+
+**Take `MetaView` first.** Its numpy use is confined to **one method** - the logscale helper,
+which is 3d - and freeing it sheds numpy *and* `numpy.typing` from the published plugin base,
+which is the best-placed 2 points on the board. The 2026-09-13 correction stands: the helper
+is **not** a pure array transform, it emits `add_text_to_display` three times, so it goes to
+`MetaModel` and its eight call sites each carry the logscale call across as part of their own
+restructure. `EventAnalysisView` and `ClusteringView` are the next two cheapest at 2 methods
+and 4 methods respectively.
+
+**A trap specific to what is left.** Many `npt.` uses are *type annotations* on signatures,
+not computation - they do not go away by moving a body, only by the method ceasing to take or
+return an array. The related failure is already recorded: annotating a base member as
+`Optional[pd.DataFrame]` put a pandas import in a View and the gate refused it;
+`Optional[Any]` was the right trade for a member already scheduled for deletion. **Count how
+many of a file's points are annotation-only before pricing it**, or a file will look like two
+points of body-moving when one of them is a signature change.
+
+**Then Step 5**, which is the 690 removable lines in the three untouched families and is
+scoped in its own section below. Nothing in Step 5 is blocked by anything still open in
+Step 4.
+
+### Owed, carried forward
+
+- **The 4a exit-review item is still open**: an unresolvable experiment on the protein tab
+  cannot be provoked with the available data, so that hard stop has never run against a real
+  database. Reverting the guard fails exactly one Controller test, so it is not unverified -
+  but it is untried where it matters.
+- **Making raw SQL subset filters work** is queued as a post-refactor feature,
+  `future_refactors_and_features.md` Part 13, which also prices withdrawing them from the UI
+  instead. Step 4a's breaking change stands until then.
+- **Method rules 65-68** were added this session and the artifact is at **v45**.
+
 ## Step 4a handoff, 2026-09-12 - COMPLETE
 
 **Step 4a is done, the manual pass is run, and CI is green on `7fbeca37`.** `global_signal.emit` has **no callers left
