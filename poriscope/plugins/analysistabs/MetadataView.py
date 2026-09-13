@@ -54,7 +54,6 @@ from PySide6.QtCore import Signal, Slot
 from PySide6.QtWidgets import (
     QMessageBox,
 )
-from scipy import stats
 from scipy.optimize import curve_fit
 from scipy.stats import iqr, t
 
@@ -153,6 +152,16 @@ class MetadataView(MetaSubsetTabView):
     #: Step 4c. The binning uses ``scipy.stats.iqr``, which is why it crosses; the
     #: imshow, the colourbar and the cache entry all stay here.
     heatmap_requested = Signal(object, object, object, bool, object, str, str, str)
+
+    #: Asks for every overlaid dataset's kernel density: the already-filtered
+    #: columns, the bin request, the shared histogram limits, and the drawing
+    #: context handed back unchanged. Answered through ``set_kernel_densities``.
+    #:
+    #: Step 4c. One intent for all the datasets rather than one each, so no answer
+    #: is parked on the widget between them.
+    density_requested = Signal(
+        object, object, object, bool, object, object, object, str
+    )
 
     logger = logging.getLogger(__name__)
 
@@ -405,55 +414,68 @@ class MetadataView(MetaSubsetTabView):
         self.hist_data.append(data)
         self.hist_labels.append(dataset_label)
 
-        for data, dataset_label in zip(self.hist_data, self.hist_labels):
-            (x_label,) = cols
-            (x_units,) = units
-            (logx,) = logscales
-            data = data[x_label].values
-            x_label = self.format_axis_label(x_label, x_units)
-            y_label = "Probability Density"
+        # The filter stays here: it lives on ``MetaView`` and emits to the status
+        # panel, so it runs before the request goes out and the Model is handed
+        # arrays that are already filtered.
+        (column,) = cols
+        (x_units,) = units
+        (logx,) = logscales
 
-            if logx:
-                x_label = f"log10({x_label})"
+        filtered: List[npt.NDArray[np.float64]] = []
+        for dataset in self.hist_data:
+            (values,) = self._logscale_and_filter_multiple_columns(
+                dataset[column].values, log_flags=[logx]
+            )
+            filtered.append(values)
 
-            logx = logscales[0]
+        x_label = self.format_axis_label(column, x_units)
+        if logx:
+            x_label = f"log10({x_label})"
 
-            (data,) = self._logscale_and_filter_multiple_columns(data, log_flags=[logx])
+        self.density_requested.emit(
+            filtered,
+            list(self.hist_labels),
+            bins,
+            sizes,
+            self.hist_min,
+            self.hist_max,
+            ax,
+            x_label,
+        )
 
-            if bins is not None:
-                if sizes is False:
-                    numbins = bins
-                else:
-                    try:
-                        if self.hist_max is not None and self.hist_min is not None:
-                            numbins = int((self.hist_max - self.hist_min) / bins)
-                        else:
-                            bins = None
-                            numbins = 0
-                    except TypeError:
-                        bins = None
-                        numbins = 0
-                    if numbins <= 1:
-                        bins = None
-            if bins is None:
-                try:
-                    if iqr(data) > 0:
-                        numbins = int(
-                            (np.max(data) - np.min(data))
-                            * len(data) ** (1.0 / 3.0)
-                            / (iqr(data))
-                        )
-                    else:
-                        numbins = int(3.332 * np.log10(len(data)))
-                except OverflowError:
-                    numbins = 100
+    @log(logger=logger)
+    def set_kernel_densities(
+        self,
+        densities: Sequence[Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]],
+        labels: Sequence[str],
+        ax: Axes,
+        x_label: str,
+    ) -> None:
+        """
+        Draw one filled density curve per overlaid dataset.
 
-            density = stats.kde.gaussian_kde(data.T)
-            x = np.linspace(np.min(data), np.max(data), numbins)
-            ax.plot(x, density(x), label=dataset_label)
-            ax.fill_between(x, density(x), alpha=0.3)
+        The answering half of ``density_requested``. Step 4c moved the estimate to
+        ``MetadataModel`` so that ``scipy`` could leave the View; the curve arrives
+        already evaluated, which also means it is computed once rather than the three
+        times this method used to.
 
-            self._update_cache((x, x_label), (density(x), y_label))
+        :param densities: one (positions, density) pair per dataset
+        :type densities: Sequence[Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]]
+        :param labels: each dataset's label, index-aligned with densities
+        :type labels: Sequence[str]
+        :param ax: the axis object on which to plot
+        :type ax: Axes
+        :param x_label: the x axis label, already formatted
+        :type x_label: str
+        :return: None
+        :rtype: None
+        """
+        y_label = "Probability Density"
+
+        for (x, y), dataset_label in zip(densities, labels, strict=True):
+            ax.plot(x, y, label=dataset_label)
+            ax.fill_between(x, y, alpha=0.3)
+            self._update_cache((x, x_label), (y, y_label))
 
         ax.set_xlabel(x_label)
         ax.set_ylabel(y_label)

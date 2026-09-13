@@ -235,6 +235,12 @@ MOVED: Tuple[Tuple[str, str, str], ...] = (
     # destination now. The log-scaling that used to precede it inside this method
     # stays on MetaView, so `_plot_heatmap` still carries that 3d call site.
     ("poriscope/plugins/analysistabs/MetadataModel.py", "calculate_heatmap", "4c"),
+    ("poriscope/plugins/analysistabs/MetadataView.py", "set_kernel_densities", "4c"),
+    # Landed 2026-09-13: the kernel density estimate moved to MetadataModel, taking
+    # `scipy` out of the View. `_resolve_1d_bins` is the bin decision the density,
+    # histogram and capture-rate paths all made separately.
+    ("poriscope/plugins/analysistabs/MetadataModel.py", "kernel_densities", "4c"),
+    ("poriscope/plugins/analysistabs/MetadataModel.py", "_resolve_1d_bins", "4c"),
     (
         "poriscope/plugins/analysistabs/MetadataView.py",
         "_plot_categorical_histogram",

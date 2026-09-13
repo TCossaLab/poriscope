@@ -211,3 +211,80 @@ class TestCalculateHeatmap:
 
         # All non-zero entries should be log2 transformed
         assert np.all((z == -1) | (z >= 0))  # -1 for zero counts, >=0 for others
+
+
+# ===========================================================================
+# _resolve_1d_bins - the explicit-or-automatic decision the 1-D paths share
+# ===========================================================================
+
+
+class TestResolve1dBins:
+    """
+    Rewritten from seven tests in ``test_metadata_view.py``.
+
+    Those drove every branch of this decision through ``_plot_1d_density`` and then
+    asserted ``assert view.hist_data`` - that the dataset had been appended, which
+    is true whatever bin count came out. The branches had coverage and the numbers
+    had none. Moving the logic somewhere it can return a value is what makes them
+    assertable, so they are rewritten here rather than re-pointed (rule 43).
+    """
+
+    def test_an_explicit_count_is_used_as_given(self, model):
+        """``sizes`` False means ``bins`` is already the count."""
+        data = np.array([1.0, 2.0, 3.0, 4.0])
+
+        assert model._resolve_1d_bins(data, 6, False, 0.0, 10.0) == 6
+
+    def test_a_bin_width_is_divided_into_the_shared_span(self, model):
+        """
+        The span comes from the shared limits, not from this dataset, which is what
+        keeps overlaid datasets on comparable bins.
+        """
+        data = np.array([1.0, 2.0, 3.0, 4.0])
+
+        assert model._resolve_1d_bins(data, 2.0, True, 0.0, 10.0) == 5
+
+    def test_a_bin_width_without_shared_limits_falls_back_to_automatic(self, model):
+        """No span to divide, so the data decides."""
+        data = np.array([1.0, 2.0, 3.0, 4.0, 9.0, 16.0])
+
+        assert model._resolve_1d_bins(
+            data, 2.0, True, None, None
+        ) == model._auto_bins_1d(data)
+
+    def test_a_non_numeric_bin_width_falls_back_to_automatic(self, model):
+        """The ``TypeError`` branch: a width that cannot divide the span."""
+        data = np.array([1.0, 2.0, 3.0, 4.0, 9.0, 16.0])
+
+        assert model._resolve_1d_bins(
+            data, "wide", True, 0.0, 10.0
+        ) == model._auto_bins_1d(data)
+
+    def test_a_width_yielding_one_bin_or_fewer_falls_back_to_automatic(self, model):
+        """A width as wide as the span is not a binning, so it is discarded."""
+        data = np.array([1.0, 2.0, 3.0, 4.0, 9.0, 16.0])
+
+        assert model._resolve_1d_bins(
+            data, 20.0, True, 0.0, 10.0
+        ) == model._auto_bins_1d(data)
+
+    def test_no_bins_request_uses_the_automatic_rule(self, model):
+        """The ordinary path, and the one every plot takes by default."""
+        data = np.array([1.0, 2.0, 3.0, 4.0, 9.0, 16.0])
+
+        assert model._resolve_1d_bins(
+            data, None, False, 0.0, 10.0
+        ) == model._auto_bins_1d(data)
+
+    def test_an_overflow_in_the_automatic_rule_falls_back_to_one_hundred(
+        self, model, mocker
+    ):
+        """
+        The density and histogram paths answer an overflow with 100 bins; the
+        capture-rate path answers it differently, which is why `_auto_bins_1d` does
+        not handle it itself.
+        """
+        mocker.patch.object(model, "_auto_bins_1d", side_effect=OverflowError)
+        data = np.array([1.0, 2.0, 3.0, 4.0])
+
+        assert model._resolve_1d_bins(data, None, False, 0.0, 10.0) == 100

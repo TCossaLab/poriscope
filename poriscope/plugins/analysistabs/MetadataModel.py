@@ -25,10 +25,11 @@
 # Kyle Briggs
 
 import logging
-from typing import Any, Tuple, override
+from typing import Any, List, Optional, Sequence, Tuple, override
 
 import numpy as np
 import numpy.typing as npt
+from scipy import stats
 from scipy.stats import iqr
 
 from poriscope.utils.DocstringDecorator import inherit_docstrings
@@ -186,3 +187,125 @@ class MetadataModel(MetaModel):
         y = y[:-1] + np.diff(y) / 2.0
 
         return x, y, logged_z.T
+
+    @log(logger=logger)
+    def _resolve_1d_bins(
+        self,
+        data: npt.NDArray[np.float64],
+        bins: Any,
+        sizes: bool,
+        hist_min: Optional[float],
+        hist_max: Optional[float],
+    ) -> int:
+        """
+        Decide a 1-D bin count from the user's request, falling back to the data.
+
+        ``bins`` is a count when ``sizes`` is False and a bin *width* when it is True,
+        in which case the span comes from the shared histogram limits rather than from
+        this dataset - that is what keeps overlaid datasets on the same bin edges. A
+        width that yields one bin or fewer is discarded and the automatic rule used
+        instead, which is the behaviour the density path had.
+
+        :param data: the filtered values to be binned
+        :type data: npt.NDArray[np.float64]
+        :param bins: a bin count, or a bin width when sizes is True, or None
+        :type bins: Any
+        :param sizes: does bins refer to a bin size (True) or a count (False)
+        :type sizes: bool
+        :param hist_min: the shared lower limit across overlaid datasets, if known
+        :type hist_min: Optional[float]
+        :param hist_max: the shared upper limit across overlaid datasets, if known
+        :type hist_max: Optional[float]
+        :return: the number of bins
+        :rtype: int
+        """
+        numbins = 0
+        if bins is not None:
+            if sizes is False:
+                return int(bins)
+            try:
+                if hist_max is not None and hist_min is not None:
+                    numbins = int((hist_max - hist_min) / bins)
+                else:
+                    bins = None
+                    numbins = 0
+            except TypeError:
+                bins = None
+                numbins = 0
+            if numbins <= 1:
+                bins = None
+        if bins is None:
+            try:
+                numbins = self._auto_bins_1d(data)
+            except OverflowError:
+                numbins = 100
+        return numbins
+
+    @log(logger=logger)
+    def kernel_density(
+        self,
+        data: npt.NDArray[np.float64],
+        bins: Any,
+        sizes: bool,
+        hist_min: Optional[float],
+        hist_max: Optional[float],
+    ) -> Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]:
+        """
+        Estimate one dataset's kernel density, evaluated across its own range.
+
+        The evaluated curve comes back with the positions, rather than the estimator
+        itself, so the View needs no scipy to draw it. The View used to call the
+        estimator three times on the same points - once to plot, once to shade, once
+        to cache - and gets one array now.
+
+        :param data: the filtered values
+        :type data: npt.NDArray[np.float64]
+        :param bins: a bin count, or a bin width when sizes is True, or None
+        :type bins: Any
+        :param sizes: does bins refer to a bin size (True) or a count (False)
+        :type sizes: bool
+        :param hist_min: the shared lower limit across overlaid datasets, if known
+        :type hist_min: Optional[float]
+        :param hist_max: the shared upper limit across overlaid datasets, if known
+        :type hist_max: Optional[float]
+        :return: the positions the density was evaluated at, and the density there
+        :rtype: Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]
+        """
+        numbins = self._resolve_1d_bins(data, bins, sizes, hist_min, hist_max)
+        density = stats.kde.gaussian_kde(data.T)
+        x = np.linspace(np.min(data), np.max(data), numbins)
+        return x, density(x)
+
+    @log(logger=logger)
+    def kernel_densities(
+        self,
+        datasets: Sequence[npt.NDArray[np.float64]],
+        bins: Any,
+        sizes: bool,
+        hist_min: Optional[float],
+        hist_max: Optional[float],
+    ) -> List[Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]]:
+        """
+        Estimate the kernel density of every overlaid dataset in one call.
+
+        The density plot redraws every accumulated dataset on each update, so the
+        loop runs here rather than round-tripping per dataset and parking each
+        answer on the widget.
+
+        :param datasets: one filtered array per overlaid dataset
+        :type datasets: Sequence[npt.NDArray[np.float64]]
+        :param bins: a bin count, or a bin width when sizes is True, or None
+        :type bins: Any
+        :param sizes: does bins refer to a bin size (True) or a count (False)
+        :type sizes: bool
+        :param hist_min: the shared lower limit across overlaid datasets, if known
+        :type hist_min: Optional[float]
+        :param hist_max: the shared upper limit across overlaid datasets, if known
+        :type hist_max: Optional[float]
+        :return: one (positions, density) pair per dataset, index-aligned with them
+        :rtype: List[Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]]
+        """
+        return [
+            self.kernel_density(data, bins, sizes, hist_min, hist_max)
+            for data in datasets
+        ]

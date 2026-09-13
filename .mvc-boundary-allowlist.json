@@ -13,7 +13,6 @@
       "numpy",
       "numpy.typing",
       "pandas",
-      "scipy",
       "scipy.optimize",
       "scipy.stats"
     ],
