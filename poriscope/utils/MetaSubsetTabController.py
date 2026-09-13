@@ -552,9 +552,14 @@ class MetaSubsetTabController(MetaController):
         docstring recorded this method as deliberately not shared, because "the two
         tabs' copies differ" and each reaches into its own View's pending-filter
         state, with the promotion deferred to Step 4d. Neither half held up: the
-        copies differed **by one blank line**, and the pending-filter state has been
-        declared on ``MetaSubsetTabView`` since earlier in this step, so both copies
-        were already reaching into the same shared attributes.
+        copies differed **by one blank line**, and both were reaching into the same
+        attributes on ``MetaSubsetTabView`` by then anyway.
+
+        Step 4d finished the job from the other end. There is no pending-filter state
+        left to reach into - ``name``, ``old_name`` and ``filter_text`` arrive as
+        arguments now, carried from the request that asked for the validation - and
+        committing the result goes through ``view.commit_filter`` rather than an
+        assignment into the View's dict.
 
         :param query: SQL query string to display or execute.
         :type query: str

@@ -61,17 +61,18 @@ class MetaSubsetTabView(MetaView):
     - **Column and experiment state.** ``update_available_columns`` and
       ``set_units`` keep the tab's column comboboxes and axis labels in step with the
       loader's description of the database.
-    - **Subset filters.** ``_delete_filter``, ``replace_filter_item``,
-      ``update_filter_name`` and ``on_raw_filter_validated`` keep the filter combobox
-      in step with ``subset_filters``, reaching the combobox through
-      ``_subset_controls``. ``_save_filter``, ``_delete_filter_by_name``,
-      ``_show_filter_info_dialog`` manages the named
-      filters in ``subset_filters`` and the three pending fields the Controller reads
-      back after a validation round-trip. ``_show_add_filter_dialog`` and
+    - **Subset filters.** ``subset_filters`` is the store, and
+      ``commit_filter``/``get_subset_filters`` are how the Controller reaches it -
+      it asks rather than assigning into the dict (``DECISIONS.md``, 2026-09-13).
+      ``_delete_filter``, ``replace_filter_item``, ``update_filter_name``,
+      ``restore_subset_filters`` and ``on_raw_filter_validated`` keep the filter
+      combobox in step with it, reaching the combobox through ``_subset_controls``,
+      and ``_delete_filter_by_name`` and ``_show_filter_info_dialog`` are the
+      combobox's own entry points into that set. ``_show_add_filter_dialog`` and
       ``show_edit_filter_dialog`` open the two filter dialogs and validate what they
       return, through ``_reject_non_select_raw_filter`` and the Controller;
-      ``_save_filter`` and ``_load_filter`` write them to and read them back from a
-      JSON file.
+      ``_save_filter`` and ``_load_filter`` write the filters to and read them back
+      from a JSON file.
     - **Experiment selection.** ``show_selection_tree`` and
       ``request_experiment_structure`` drive the ``SelectionTree`` dialog and remember
       what was chosen per loader.
@@ -92,8 +93,11 @@ class MetaSubsetTabView(MetaView):
     - **The five abstract methods ``MetaView`` declares**, unchanged - this base
       implements none of them.
 
-    Deliberately *not* shared: ``relay_query`` and the pending-filter state it reads
-    stay per-tab until Step 4d moves that state to the Model.
+    ``subset_filters`` stays here rather than moving to a Model, decided in Step 4d:
+    no Model reads it - Step 4b's query construction takes a single filter's text as
+    an argument - while sixteen reads on this side need it inside the same call, the
+    eleven ``get_selected_filters`` on the plot paths among them. See
+    ``DECISIONS.md``, 2026-09-13, which also records what was rejected.
 
     :ivar logger: the module logger the shared methods below log under
     :ivar subset_filters: named subset filters, filter name to SQL WHERE clause
