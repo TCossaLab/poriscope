@@ -1,12 +1,20 @@
 ## Step 4a handoff, 2026-09-12 - COMPLETE
 
-**Step 4a is done and the manual pass is run.** `global_signal.emit` has **no callers left
+**Step 4a is done, the manual pass is run, and CI is green on `7fbeca37`.** `global_signal.emit` has **no callers left
 in the analysis tabs**: boundary rule 1 reads **0**, down from 75 at the start of the step
 and 13 at the start of the final session. Allowlist total **25** - 20 forbidden View imports
-(Step 4c) and 5 Controller reach-ins (4d). Suite **3,783 passed / 16 skipped**; all static
+(Step 4c) and 5 Controller reach-ins (4d). Suite **3,785 passed / 16 skipped**; all static
 gates and `sphinx-build -W` green.
 
-Eleven commits: merge-artifact doc fixes, the CSV export regression, the Raw Data range
+**One post-merge fix, worth knowing about before trusting a green local run.** CI aborted at
+**exit 134** after the merge, in `sample_metadata_db` fixture setup. Cause: `Triad.close()`
+closed the data plugins without killing the tab's workers first, which the app's own
+shutdown does - so a flow test that started an export left a live `QThread` for Qt to
+destroy. This was the "intermittent exit 127" that had been recorded as unexplained
+flakiness and was in fact **three runs out of three** on one module, every test passing.
+Fixed in `7e13af11`, pinned by two tests, and the `future_fixes.md` entry deleted.
+
+Twelve commits, eleven on the branch plus the post-merge harness fix: merge-artifact doc fixes, the CSV export regression, the Raw Data range
 trim, Protein's event-plot chain, `construct_event_data_query`'s tuple, Protein's
 distribution subsets, `_commit_fits`, the base's last emit, the `call()` docs, and the
 manual pass's own fixes.

@@ -11,8 +11,9 @@ cause, which is why it read as flakiness for days and was recorded in
 It is a race, so it bit only when a worker outlived its test: the export, event-fitting
 and event-finding flows are the three that start one. Before the fix,
 ``test_metadata_export_flow_no_gui.py`` exited 127 on **three runs out of three** while
-reporting ``8 passed``; after it, zero out of four, and CI went from aborting at exit
-134 to green.
+reporting ``8 passed``; after it, zero out of four locally, and **CI green on
+``7fbeca37``**, which is the run that matters - the abort had only ever been seen on
+Linux under Xvfb.
 
 So the assertion here is not about worker threads for their own sake. It is that **the
 harness's teardown matches the application's**, which is the property that makes every

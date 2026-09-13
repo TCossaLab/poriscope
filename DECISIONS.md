@@ -184,8 +184,9 @@ does. It previously did only the second half.
 live `QThread`, and Qt aborts when it destroys one. Measured:
 `test_metadata_export_flow_no_gui.py` exited 127 on **three runs out of three** while
 reporting `8 passed`; with the fix, **zero out of four**, and the integration directory
-three out of three clean. Reverting it fails both new tests in
-`test_triad_teardown.py`.
+three out of three clean. Reverting it fails both new tests in `test_triad_teardown.py`.
+**CI green on `7fbeca37`**, which is the confirmation that counts - the abort had only ever
+been seen on Linux under Xvfb, so the local runs could narrow the cause but never close it.
 
 **Why it read as flakiness.** Every test passes and the summary line prints - the process
 dies *after* that, so there is no failing test, no traceback pointing at a cause, and the
