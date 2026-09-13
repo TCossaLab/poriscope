@@ -62,6 +62,10 @@ were fixed and re-passed. One could not be run:
 | a round trip cannot resume a loop from a Qt callback | **overstated** (2026-09-13, same day) | Measured: a same-thread Qt signal is **synchronous**, the slot completing before `emit()` returns. What is unavailable is a *return value to the emitting line*. The 3d conclusion never depended on this |
 | 4c's value per tab | uncounted | **Protein 3 for 2 methods** (`scipy.optimize` + `scipy.signal` both only in `_fit_double_gaussian`, `scipy.stats` only in `_fit_and_sanity_check_double_gaussian`); **Metadata 2** (`scipy`, `scipy.optimize`), its `scipy.stats` having 4 users |
 | 4c Metadata is worth **2** | **understated** (2026-09-13) | Worth **3**. `scipy.stats`' four users are `_plot_1d_density`, `_plot_capture_rate`, `_plot_1d_histogram` and `_calculate_heatmap` - and **all four are already 4c targets**, so taking them together frees `scipy.stats` as well. Moving only the two the plan names leaves `iqr` behind in the other two and a later step has to re-open both |
+| 4b moves SQL out of the widget: `_rebuild_event_id_cache`, `_resolve_event_db_ids`, `_fetch_event_data`, `_build_load_event_data_args`, the raw `SELECT` | **mostly done by 4a** (2026-09-13) | The View layer authors **3** SQL-bearing lines, all in `_reject_non_select_raw_filter`, and they *validate* a filter rather than build a query. `_resolve_event_db_ids` and `_build_load_event_data_args` no longer exist |
+| 4b's raw-SQL surface is wider than recorded - 4 filter-dialog sites plus 2 commit methods | **now 3 lines, all in Controllers** (2026-09-13) | `MetadataController.load_event_plot_data`, `ProteinController.load_event_plot_data` and `ProteinController.commit_fits`. The filter-dialog sites are gone |
+| **4b's value** | **zero on every gate** (2026-09-13) | No View or Controller imports `sqlite3`, so rule 2 cannot move; and the two promotion candidates are not byte-identical, so `*Controller.py` reads 0 identical / 0 removable and the ratchet cannot move either. The step is a layering fix, and has to be justified as one |
+| promotion: 65 identical lines of 73/78 | **re-measured** (2026-09-13) | They are Controller methods now at **122 and 129 lines, 94 identical**, ratio 0.749. Four real differences: an extra `action_label` parameter, an empty-`event_ids` guard Metadata lacks, `SELECT id` against `SELECT id, event_id`, and messages built from `action_label` |
 | promotion: four surviving differences | **three, one inert** | 65 of 73/78 lines identical; Protein's empty-id guard cannot fire on the metadata side |
 
 1. ~~**4c Protein first**, worth 3 allowlist points for two methods.~~ **LANDED
@@ -114,8 +118,28 @@ were fixed and re-passed. One could not be run:
    part of its own 4c restructure, so no caller is rewritten twice. The utils-module
    decision of 2026-09-12 is superseded: the helper is not a pure transform. `DECISIONS.md`
    carries both the correction and the caller arithmetic.
-4. **The promotion waits for Step 4b**, which moves the SQL that is most of what would be
-   shared. Promoting first produces two methods 4b immediately re-opens.
+4. **Then 4b, which is much smaller than recorded** - re-derived 2026-09-13 on
+   `feature/step-4b-sql`. Step 4a took most of it: the View layer authors **3**
+   SQL-bearing lines and all three *validate* a raw filter rather than build a query.
+   What is left is **3 query-builders sitting in Controllers**, which is a layer out:
+   the Controller assembles the SQL and then uses `self.model.call(...)` as a conduit
+   to the loader, where Decision A has the *Model* make the plugin call. So 4b is now
+   "SQL out of the Controller", not "out of the widget".
+
+   **It moves no gate, and that is stated rather than discovered.** Nothing imports
+   `sqlite3`, so rule 2 cannot move; the two promotion candidates are not byte-identical,
+   so `*Controller.py` reads 0 removable and the ratchet cannot move either. Method rule
+   38 says to check that before starting - here the answer is zero, and the step has to
+   stand on the layering alone.
+
+5. **The promotion is assessable once 4b lands, and is smaller than it looks.** The two
+   `load_event_plot_data` bodies are 122 and 129 lines with 94 identical. Three of their
+   four differences are about the query and the messages, and moving the query to the
+   Models takes the largest one out, so 4b should be done first and the promotion judged
+   afterwards rather than planned now. Note both live in the five-file `*Controller.py`
+   family while `MetaSubsetTabController` does not, so promoting them to the base drops
+   them out of the measured set: `functions` falls, `removable` stays 0, and the win is
+   real but invisible to the ratchet (rules 24 and 36).
 
 **Read before writing code:** method rules **42, 45, 50, 51, 52** in the artifact
 (<https://claude.ai/code/artifact/304ba119-d177-4918-90af-471d6de6bb80>), plus **53-57**
