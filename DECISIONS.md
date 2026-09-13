@@ -109,6 +109,28 @@ parameters, they stay separate and this entry becomes the record of why.
 
 ---
 
+## 2026-09-13 - ProteinModel's fit returns the fitted curve, not just the parameters
+
+**Context.** Step 4c moves the protein tab's double-gaussian fit to `ProteinModel`.
+`_double_gaussian`, the model function `curve_fit` is handed, had three further callers
+in `ProteinView` that evaluate the fit for drawing. Moving only the fit would have left
+the View importing numpy to evaluate a model it no longer owns.
+
+**Decision.** `fit_histogram` returns `(popt, curve)`, the curve evaluated at the bins
+that were fitted, and `_double_gaussian` moves with the fit.
+
+**Evidence.** All three View sites evaluate at exactly the x the fit was made on
+(`plot_data["Normalized Current"].values` in every case), so the curve the Model can
+compute is the curve every caller wanted. No site needed the model function for anything
+else. A test pins that the curve is drawn as handed over, so reintroducing a View-side
+evaluation would fail rather than merely duplicate.
+
+**Revisit if** a caller ever needs the fit evaluated on a *different* grid - a smooth
+overlay at higher resolution than the histogram, say - at which point the model function
+is wanted as well and should be exposed on the Model rather than copied back.
+
+---
+
 ## 2026-09-13 - Step 3d folds into 4c; the logscale helper is not a pure transform
 
 **Supersedes the 2026-09-12 entry that sent it to `poriscope/utils/logscale.py`.** That
