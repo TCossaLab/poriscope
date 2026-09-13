@@ -393,9 +393,9 @@ def test_the_name_a_refused_export_kept_is_reused_by_the_next_one(
     try:
         _StubDictDialog.folder = str(out)
         _StubDictDialog.subset_name = "refused"
-        metadata_tab.tab_view.selected_experiment_and_channels_by_loader[
-            LOADER_KEY
-        ] = {"exp_a": [7]}
+        metadata_tab.tab_view.selected_experiment_and_channels_by_loader[LOADER_KEY] = {
+            "exp_a": [7]
+        }
         metadata_tab.tab_view.handle_parameter_change(
             "metadatacontrols", "export_csv_subset", ({"db_loader": LOADER_KEY},)
         )

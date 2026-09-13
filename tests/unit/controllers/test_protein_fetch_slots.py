@@ -414,7 +414,7 @@ class TestCommitFits:
         controller.commit_fits("ldr", frame, units, None)
 
         assert controller.model.calls_to("alter_database") == []
-        (written, sent_units, table), = controller.model.calls_to(
+        ((written, sent_units, table),) = controller.model.calls_to(
             "add_columns_to_table"
         )
         assert written is frame
@@ -438,7 +438,7 @@ class TestCommitFits:
 
         controller.commit_fits("ldr", fit_frame(), [None] * len(FIT_COLUMNS), "events")
 
-        (queries,), = controller.model.calls_to("alter_database")
+        ((queries,),) = controller.model.calls_to("alter_database")
         assert len(queries) == 2 * len(FIT_COLUMNS)
         for column in FIT_COLUMNS:
             assert f"ALTER TABLE events DROP COLUMN {column}" in queries
