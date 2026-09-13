@@ -12,19 +12,6 @@ number, not the narrative.
 Everything outside the tooling tiers is a logic change and needs an approved plan first.
 Read-only investigation and measurement do not.
 
-## `test_metadata_export_flow_no_gui.py` exits 127 at interpreter shutdown (2026-09-12)
-
-Run on its own, the module reports `8 passed` and the process then exits **127** with no
-faulthandler dump - a Qt teardown crash after the summary line, not a test failure.
-Reproduced at `8ffd3ce6` with only the six pre-existing tests, so it predates Step 4a's
-last commits. In full runs it is intermittent and kills the run mid-way at this same
-module: **2 of 8 full runs** over one session, each time immediately after this file's
-tests. Nothing is currently red, because a re-run passes and CI runs the whole suite; the
-risk is that a future genuine crash here reads as this one, and that CI goes red for
-reasons nobody can reproduce. Diagnose with `faulthandler` and a narrowed fixture -
-`metadata_tab` builds a real `MainView` per test and the worker threads outlive some of
-them - before trusting any green run scoped to this file.
-
 ## `SQLiteDBLoader` opens a fresh connection per schema lookup (2026-09-08)
 
 `get_table_by_column:454` and `get_column_names_by_table:382` each call

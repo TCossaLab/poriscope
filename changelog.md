@@ -22,6 +22,8 @@
 
 * **Fixed the Metadata tab plotting another channel's events when the experiment could not be looked up**: the events to plot were resolved without their experiment and channel scope, so an event number that exists in more than one channel could return the wrong channel's data
 
+* Fixed the headless flow tests aborting the interpreter instead of finishing: the harness closed a tab without stopping its worker threads, so Qt destroyed a thread that was still running
+
 * **Fixed plotting a column that is empty for the selected subset failing with an error** instead of saying there is nothing to plot - most easily hit by histogramming a protein fit column over a subset that was never fitted
 
 * **Fixed the Protein tab drawing empty axes in silence** when the selected subset holds no events; both distribution modes now say so

@@ -109,6 +109,95 @@ parameters, they stay separate and this entry becomes the record of why.
 
 ---
 
+## 2026-09-12 - Step 3d's logscale helper goes to a utils module, not to MetaModel
+
+**Context.** The plan files 3d as "Model code already sitting in `MetaView`" and moves
+`_logscale_and_filter_multiple_columns` to `MetaModel`. Re-measured immediately before
+working it: the helper has **8 call sites**, one each in 8 methods across three Views, and
+**no View holds a Model reference** - `self.model` appears zero times in all five tab Views
+and in `MetaView`. So the planned move is 8 caller restructures into the
+View-emits-intent/Controller-calls-Model/setter-answers round trip.
+
+**Decision.** Move it to `poriscope/utils/logscale.py` as a module-level function instead.
+The Views call it directly, synchronously, and none of the 8 call sites is restructured.
+
+**Evidence.** The method is a pure array transform - no I/O, no plugin, no state - so the
+mediation Decision B exists for does not apply to it; that rule is about plugin calls and
+data access. Routing arithmetic through a signal round trip would add one to each of eight
+plot paths for nothing. The measured win is identical either way and is larger than the plan
+recorded: this helper is the **only** user of `numpy` *and* `numpy.typing` in `MetaView`, so
+either destination takes the published plugin base's forbidden-import count to **zero** and
+the allowlist from 25 to 23.
+
+**Stated plainly, because it is rule 24's shape:** the boundary gate reads View-ness off the
+`View.py`/`controls.py` suffixes, so a helper in `poriscope/utils/logscale.py` is not
+scanned, and the violation leaves the count by leaving the scanned path. The difference from
+the trap rule 24 warns about is that the computation genuinely leaves the widget layer rather
+than being relocated within it - but the honest test is whether we would still make this
+move with no gate watching, and we would.
+
+**Revisit if** the helper ever needs tab state or a plugin, at which point it is Model code
+after all and the 8 call sites have to be restructured properly.
+
+---
+
+## 2026-09-12 - The event-plot promotion waits for Step 4b
+
+**Context.** `DECISIONS.md` (2026-09-09) deferred promoting the two event-plot chains to
+`MetaSubsetTabController` until both were converted. Both are converted now, so the diff
+exists.
+
+**Decision.** Still deferred, and now against a named step: **4b**, not "the next commit".
+
+**Evidence.** Measured: the two `load_event_plot_data` bodies are **65 identical lines of
+73 and 78**, and the two subset chains **39 of 45 and 49** - so the promotion is real. But
+almost everything shared is the SQL that **Step 4b moves into `MetaDatabaseLoader`**.
+Promoting now produces two methods that 4b immediately re-opens and largely empties; doing
+it after 4b promotes two thin methods instead of two 75-line ones.
+
+Three differences survive conversion rather than the four recorded: the `id, event_id`
+projection against `id`, the failure wording (`action_label` against the event ids), and
+Protein's empty-id guard - which is **inert** on the metadata side, since `snap_idx` wraps to
+0 and the caller has already returned on an empty cache, so it cannot fire. The subset pair
+differs only by a `generator is None` guard and `_echo_applied_query`; sharing them needs
+that echo and its `_last_echoed_query` state on the base, which would start the protein tab
+showing SQL on its panel - a user-visible change to take deliberately rather than as a side
+effect of a move.
+
+**Revisit at** Step 4b, which should either do the promotion or record why the two survive it.
+
+---
+
+## 2026-09-12 - The flow harness kills a tab's workers, because the app does
+
+**Context.** CI aborted at **exit 134** (`Fatal Python error: Aborted`) during
+`sample_metadata_db` fixture setup, with a second thread carrying `<no Python frame>`.
+The same fault had been recorded in `future_fixes.md` as an unexplained intermittent
+**exit 127** on Windows, reproducing on the metadata export flow module.
+
+**Decision.** `Triad.close()` now kills each tab's workers with `exiting=True` *before*
+closing the data plugins, which is exactly what `MainController.handle_about_to_quit`
+does. It previously did only the second half.
+
+**Evidence.** The tab's worker threads live on its `MetaModel`; `handle_exit()` closes the
+*data plugin* model and touches none of them. So a flow test that started an export left a
+live `QThread`, and Qt aborts when it destroys one. Measured:
+`test_metadata_export_flow_no_gui.py` exited 127 on **three runs out of three** while
+reporting `8 passed`; with the fix, **zero out of four**, and the integration directory
+three out of three clean. Reverting it fails both new tests in
+`test_triad_teardown.py`.
+
+**Why it read as flakiness.** Every test passes and the summary line prints - the process
+dies *after* that, so there is no failing test, no traceback pointing at a cause, and the
+harness reports success. Three of the flow modules start workers, so it could surface
+anywhere in the integration block, which is why CI's abort landed at a different place
+from the local one.
+
+**Revisit if** a flow test ever needs a worker to outlive its triad. Nothing does today,
+and the shutdown blocks by design.
+
+---
+
 ## 2026-09-12 - The protein tab's raw-filter branch is deleted, because it never worked
 
 **Context.** `ProteinView._build_load_event_data_args` - converted to

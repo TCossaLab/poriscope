@@ -89,10 +89,26 @@ class Triad:
         """
         Tear the shell down the way closing the app would.
 
+        **Including the tab's own worker threads**, which is the whole of what this
+        used to miss. ``MainController.handle_about_to_quit`` kills those first and
+        *then* closes the data plugins; this closed the plugins and left any worker
+        the tab had started still running, so Qt destroyed a live ``QThread`` when the
+        triad went out of scope. That aborts the interpreter - exit 134 on Linux,
+        127 on Windows - with no failing test and no traceback pointing at the cause,
+        which is what made it read as flakiness for days.
+
+        It is a race, so it only bites when a worker outlives its test: the export
+        flows are the ones that start one. ``exiting=True`` is what makes
+        ``stop_workers`` block until each thread has actually finished rather than
+        asking it to stop and returning.
+
         :return: None
         :rtype: None
         """
         try:
+            for key, tab in self.controller.analysis_tabs.items():
+                if tab:
+                    tab.handle_kill_all_workers(key, exiting=True)
             self.controller.data_plugin_controller.handle_exit()
         finally:
             self.view.close()

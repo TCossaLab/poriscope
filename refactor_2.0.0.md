@@ -40,17 +40,23 @@ were fixed and re-passed. One could not be run:
   run against a real database. Reverting the guard fails exactly one Controller test, so it
   is not unverified - but it is untried where it matters.
 
-**Next, in order:**
+**Next, re-derived 2026-09-12 and decided.** Four plan claims moved; see
+`DECISIONS.md` for the two calls taken.
 
-1. **The promotion review.** Deliberately not done here: it is a decision, not a conversion,
-   and merging one into the other would put a behaviour change and a move in one diff. Both
-   event-plot chains are converted, so there is finally something to diff (`DECISIONS.md`,
-   2026-09-09 and 2026-09-12); four differences survived conversion - the `id, event_id`
-   projection, the failure wording, the empty-id guard and where the scope comes from.
-   Separately, `load_event_subset` and `load_event_distribution_data` are now the same chain,
-   and sharing them needs `_echo_applied_query`/`_last_echoed_query` to move to
-   `MetaSubsetTabController`, which would start the protein tab echoing SQL on the panel.
-2. **Then 3d**, which 4a's commit 1 unblocked, and **4c**, much cheaper after 4a.
+| Claim as written | Verdict | Measured |
+| --- | --- | --- |
+| 3d moves **two** methods, **15** call sites | overstated 2x | **one** method, **8** call sites, one each in 8 methods. 3d-pre deleted the frame form; 3e moved the range helpers down |
+| 3d blocked on a synchronous View-to-Model path | **still true** | `self.model` appears **0** times in all five Views and `MetaView`. 4a established the pattern, it did not give Views a Model |
+| 3d's allowlist win | unrecorded | **2, and the best-placed two left** - the helper is the only user of `numpy` *and* `numpy.typing` in `MetaView`, so the published plugin base sheds numpy entirely |
+| 4c's value per tab | uncounted | **Protein 3 for 2 methods** (`scipy.optimize` + `scipy.signal` both only in `_fit_double_gaussian`, `scipy.stats` only in `_fit_and_sanity_check_double_gaussian`); **Metadata 2** (`scipy`, `scipy.optimize`), its `scipy.stats` having 4 users |
+| promotion: four surviving differences | **three, one inert** | 65 of 73/78 lines identical; Protein's empty-id guard cannot fire on the metadata side |
+
+1. **3d, as a utils module rather than a Model move** - the helper is a pure array
+   transform with 8 call sites, so it becomes `poriscope/utils/logscale.py` and no caller
+   is restructured. Reasoning, including the honest rule-24 caveat, in `DECISIONS.md`.
+2. **Then 4c**, Protein first because it is worth 3 allowlist points for two methods.
+3. **The promotion waits for Step 4b**, which moves the SQL that is most of what would be
+   shared. Promoting first produces two methods 4b immediately re-opens.
 
 **Read before writing code:** method rules **42, 45, 50, 51, 52** in the artifact
 (<https://claude.ai/code/artifact/304ba119-d177-4918-90af-471d6de6bb80>), plus **53-57**
