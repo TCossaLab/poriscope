@@ -2245,6 +2245,48 @@ class TestUpdateDistributionIndividual:
         mock_view._update_distribution_individual(self._params())
         assert mock_view.plot_initialized is True
 
+    # These four assert on the *status panel*, not the log. The caplog tests above
+    # passed throughout while the user was told nothing: QtHandler sits at ERROR and
+    # deliberately does not surface WARNING, and its own docstring says anything the
+    # user should be told belongs on add_text_to_display. Reported from a real run.
+
+    def test_multiple_experiments_are_reported_on_the_status_panel(self, mock_view):
+        mock_view.selected_experiment_and_channels_by_loader = {
+            "ldr": {"exp1": ["0"], "exp2": ["0"]}
+        }
+        mock_view.get_selected_filters = MagicMock(return_value={})
+
+        mock_view._update_distribution_individual(self._params())
+
+        said = [c.args[0] for c in mock_view.add_text_to_display.emit.call_args_list]
+        assert any("single experiment" in m for m in said)
+
+    def test_multiple_channels_are_reported_on_the_status_panel(self, mock_view):
+        mock_view.selected_experiment_and_channels_by_loader = {
+            "ldr": {"exp1": ["0", "1"]}
+        }
+        mock_view.get_selected_filters = MagicMock(return_value={})
+
+        mock_view._update_distribution_individual(self._params())
+
+        said = [c.args[0] for c in mock_view.add_text_to_display.emit.call_args_list]
+        assert any("single channel" in m for m in said)
+
+    def test_an_experiment_with_no_channel_is_reported(self, mock_view):
+        """
+        The empty case reaches the same guard as the too-many case.
+
+        Before Step 4c the guard read ``> 1`` and a ``for channel in channels:`` over
+        an empty list simply never ran, so the tab drew nothing and said nothing.
+        """
+        mock_view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": []}}
+        mock_view.get_selected_filters = MagicMock(return_value={})
+
+        mock_view._update_distribution_individual(self._params())
+
+        said = [c.args[0] for c in mock_view.add_text_to_display.emit.call_args_list]
+        assert any("single channel" in m for m in said)
+
 
 # ===========================================================================
 # _update_distribution_ensemble — guard clauses
@@ -2295,6 +2337,48 @@ class TestUpdateDistributionEnsemble:
         mock_view.plot_initialized = False
         mock_view._update_distribution_ensemble(self._params())
         assert mock_view.plot_initialized is True
+
+    # These four assert on the *status panel*, not the log. The caplog tests above
+    # passed throughout while the user was told nothing: QtHandler sits at ERROR and
+    # deliberately does not surface WARNING, and its own docstring says anything the
+    # user should be told belongs on add_text_to_display. Reported from a real run.
+
+    def test_multiple_experiments_are_reported_on_the_status_panel(self, mock_view):
+        mock_view.selected_experiment_and_channels_by_loader = {
+            "ldr": {"exp1": ["0"], "exp2": ["0"]}
+        }
+        mock_view.get_selected_filters = MagicMock(return_value={})
+
+        mock_view._update_distribution_ensemble(self._params())
+
+        said = [c.args[0] for c in mock_view.add_text_to_display.emit.call_args_list]
+        assert any("single experiment" in m for m in said)
+
+    def test_multiple_channels_are_reported_on_the_status_panel(self, mock_view):
+        mock_view.selected_experiment_and_channels_by_loader = {
+            "ldr": {"exp1": ["0", "1"]}
+        }
+        mock_view.get_selected_filters = MagicMock(return_value={})
+
+        mock_view._update_distribution_ensemble(self._params())
+
+        said = [c.args[0] for c in mock_view.add_text_to_display.emit.call_args_list]
+        assert any("single channel" in m for m in said)
+
+    def test_an_experiment_with_no_channel_is_reported(self, mock_view):
+        """
+        The empty case reaches the same guard as the too-many case.
+
+        Before Step 4c the guard read ``> 1`` and a ``for channel in channels:`` over
+        an empty list simply never ran, so the tab drew nothing and said nothing.
+        """
+        mock_view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": []}}
+        mock_view.get_selected_filters = MagicMock(return_value={})
+
+        mock_view._update_distribution_ensemble(self._params())
+
+        said = [c.args[0] for c in mock_view.add_text_to_display.emit.call_args_list]
+        assert any("single channel" in m for m in said)
 
 
 def _fit_frame() -> pd.DataFrame:

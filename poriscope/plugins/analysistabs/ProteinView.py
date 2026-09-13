@@ -2028,6 +2028,10 @@ class ProteinView(MetaSubsetTabView):
 
         if len(experiments_and_channels) > 1:
             self.logger.warning(f"Only a single experiment can be used for {plot_type}")
+            self.add_text_to_display.emit(
+                f"Only a single experiment can be used for {plot_type}",
+                self.__class__.__name__,
+            )
             return
 
         if len(selected_filters) > 1:
@@ -2046,7 +2050,11 @@ class ProteinView(MetaSubsetTabView):
         exp, channels = next(iter(experiments_and_channels.items()))
         if len(channels) != 1:
             self.logger.warning(
-                "Only a single channel at a time can be used for protein ensemble analysis"
+                "Only a single channel at a time can be used for protein analysis"
+            )
+            self.add_text_to_display.emit(
+                "Only a single channel at a time can be used for protein analysis",
+                self.__class__.__name__,
             )
             return
         channel = channels[0]
@@ -2301,6 +2309,10 @@ class ProteinView(MetaSubsetTabView):
 
         if len(experiments_and_channels) > 1:
             self.logger.warning(f"Only a single experiment can be used for {plot_type}")
+            self.add_text_to_display.emit(
+                f"Only a single experiment can be used for {plot_type}",
+                self.__class__.__name__,
+            )
             return
 
         if len(selected_filters) > 1:
@@ -2316,7 +2328,11 @@ class ProteinView(MetaSubsetTabView):
         exp, channels = next(iter(experiments_and_channels.items()))
         if len(channels) != 1:
             self.logger.warning(
-                "Only a single channel at a time can be used for protein ensemble analysis"
+                "Only a single channel at a time can be used for protein analysis"
+            )
+            self.add_text_to_display.emit(
+                "Only a single channel at a time can be used for protein analysis",
+                self.__class__.__name__,
             )
             return
         channel = channels[0]
