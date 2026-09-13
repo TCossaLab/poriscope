@@ -1,5 +1,7 @@
 ## Poriscope 2.0.0: in progress
 
+* **Status panel messages are now timestamped**, so the same message arriving twice is visibly two messages rather than looking like the panel never changed
+
 * **Fixed the Metadata and Protein tabs silently widening the experiment and channel scope back to everything**: re-reading the database structure - which happens whenever the loader changes or the selection tree is opened - overwrote the scope you had chosen, so plots quietly used more data than was asked for and heatmaps refused with "Only a single channel can be used"
 
 * **The Metadata tab's Capture Rate plot now honours an explicit bin width**, which was accepted and then ignored, failing with an unhandled error
