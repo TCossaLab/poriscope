@@ -282,7 +282,7 @@ class MetaSubsetTabController(MetaController):
             str_structure
         )
         self.view.selected_experiment_and_channels_by_loader[loader_name] = (
-            str_structure.copy()
+            self._reconcile_scope_selection(loader_name, str_structure)
         )
 
     @log(logger=logger)
@@ -316,6 +316,57 @@ class MetaSubsetTabController(MetaController):
         self.view.get_experiment_names_for_tree(experiments, loader_name)
 
     @log(logger=logger)
+    def _reconcile_scope_selection(
+        self, loader_name: str, structure: Dict[str, List[str]]
+    ) -> Dict[str, List[str]]:
+        """
+        Keep the user's experiment and channel scope across a structure refresh.
+
+        The structure is re-read whenever the loader changes or the selection tree is
+        opened, and both sites used to overwrite the *selection* with the whole
+        structure. Any refresh therefore widened a narrowed scope back to everything,
+        silently: the tree was not open to show it, and only the heatmap and the event
+        overlays check, so every other plot type simply drew more data than was asked
+        for. Reported from a real run as a heatmap refusing a scope that looked right.
+
+        An existing selection is kept and pruned to what the database still holds, so
+        a remembered channel that has gone cannot scope a query to nothing. With no
+        selection yet, everything is selected, which is the useful default and what
+        both sites did unconditionally before.
+
+        The channel lists are rebuilt rather than shared: ``dict.copy()`` is shallow,
+        so the selection and the available structure held the *same* list objects, and
+        narrowing one in place would have narrowed what the tree offers.
+
+        :param loader_name: the key of the loader whose structure was read
+        :type loader_name: str
+        :param structure: every experiment and channel the loader now reports
+        :type structure: Dict[str, List[str]]
+        :return: the scope to store against this loader
+        :rtype: Dict[str, List[str]]
+        """
+        existing = self.view.selected_experiment_and_channels_by_loader.get(loader_name)
+        if existing:
+            kept = {}
+            for experiment, channels in existing.items():
+                if experiment not in structure:
+                    continue
+                survivors = [
+                    channel for channel in channels if channel in structure[experiment]
+                ]
+                if survivors:
+                    kept[experiment] = survivors
+            if kept:
+                return kept
+            self.logger.info(
+                f"The remembered scope for {loader_name} no longer matches the "
+                "database, so every experiment and channel is selected again"
+            )
+        return {
+            experiment: list(channels) for experiment, channels in structure.items()
+        }
+
+    @log(logger=logger)
     def get_experiment_structure_ready(
         self, structure: dict[str, list[int]], loader_name: str
     ) -> None:
@@ -341,7 +392,7 @@ class MetaSubsetTabController(MetaController):
         )
 
         self.view.selected_experiment_and_channels_by_loader[loader_name] = (
-            str_structure.copy()
+            self._reconcile_scope_selection(loader_name, str_structure)
         )
 
     @log(logger=logger)

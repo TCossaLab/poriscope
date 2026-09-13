@@ -495,20 +495,26 @@ def test_get_experiment_structure_ready_selected_equals_available(
     assert avail == sel
 
 
-def test_get_experiment_structure_ready_selected_is_shallow_copy(
+def test_get_experiment_structure_ready_selection_is_independent_of_available(
     controller: MetadataController,
     mock_view: MagicMock,
 ) -> None:
     """
-    Document that str_structure.copy() is shallow: inner channel lists are shared.
+    The selection's channel lists are its own, not the available structure's.
 
-    Mutating a channel list in available also mutates the same list in
-    selected. This test pins the current behaviour; consider
-    copy.deepcopy if independent mutation is required.
+    **This assertion is reversed from what it used to be.** It pinned
+    ``str_structure.copy()`` being shallow - the two dicts sharing their inner
+    lists - and said in its own docstring to "consider copy.deepcopy if independent
+    mutation is required". That turned out to be required: the scope fix narrows the
+    selection, and sharing the lists would have narrowed what the selection tree
+    offers at the same time.
 
     :param controller: Controller under test.
     :param mock_view: Mocked metadata view.
     """
+    mock_view.available_experiment_and_channels_by_loader = {}
+    mock_view.selected_experiment_and_channels_by_loader = {}
+
     controller.get_experiment_structure_ready({"exp1": [5]}, "ldr")
     avail: Dict[str, List[str]] = mock_view.available_experiment_and_channels_by_loader[
         "ldr"
@@ -517,7 +523,7 @@ def test_get_experiment_structure_ready_selected_is_shallow_copy(
         "ldr"
     ]
     avail["exp1"].append("MUTATED")
-    assert "MUTATED" in sel["exp1"]
+    assert "MUTATED" not in sel["exp1"]
 
 
 def test_get_experiment_structure_ready_handles_empty_structure(
@@ -944,3 +950,86 @@ def test_restore_session_state_is_noop_without_subset_filters(
 
     mock_view.restore_subset_filters.assert_not_called()
     mock_view.update_filter_name.assert_not_called()
+
+
+def test_get_experiment_structure_ready_keeps_an_existing_channel_selection(
+    controller: MetadataController,
+    mock_view: MagicMock,
+) -> None:
+    """
+    Re-reading the structure must not throw away the scope the user chose.
+
+    Reported from a real run: a heatmap refused with "Only a single channel can be
+    used for Heatmap" while one channel was ticked in Scope. Every fetch of the
+    experiment structure overwrote the *selection* with the whole structure, so any
+    later refresh silently widened a one-channel scope back to every channel - and
+    the heatmap guard, which is the only plot type that checks, was the one that
+    noticed.
+    """
+    mock_view.available_experiment_and_channels_by_loader = {}
+    mock_view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": ["2"]}}
+
+    controller.get_experiment_structure_ready({"exp1": [1, 2, 3]}, "ldr")
+
+    assert mock_view.selected_experiment_and_channels_by_loader["ldr"] == {
+        "exp1": ["2"]
+    }
+
+
+def test_get_experiment_structure_ready_selects_everything_when_nothing_is_chosen(
+    controller: MetadataController,
+    mock_view: MagicMock,
+) -> None:
+    """With no prior scope, defaulting to the whole structure is the useful start."""
+    mock_view.available_experiment_and_channels_by_loader = {}
+    mock_view.selected_experiment_and_channels_by_loader = {}
+
+    controller.get_experiment_structure_ready({"exp1": [1, 2]}, "ldr")
+
+    assert mock_view.selected_experiment_and_channels_by_loader["ldr"] == {
+        "exp1": ["1", "2"]
+    }
+
+
+def test_get_experiment_structure_ready_drops_channels_that_no_longer_exist(
+    controller: MetadataController,
+    mock_view: MagicMock,
+) -> None:
+    """
+    A remembered scope is pruned to what the database still holds.
+
+    Keeping a selection must not mean keeping a channel that has gone, which would
+    scope a query to nothing and plot an empty figure.
+    """
+    mock_view.available_experiment_and_channels_by_loader = {}
+    mock_view.selected_experiment_and_channels_by_loader = {
+        "ldr": {"exp1": ["2", "9"], "gone": ["1"]}
+    }
+
+    controller.get_experiment_structure_ready({"exp1": [1, 2, 3]}, "ldr")
+
+    assert mock_view.selected_experiment_and_channels_by_loader["ldr"] == {
+        "exp1": ["2"]
+    }
+
+
+def test_get_experiment_structure_ready_does_not_alias_the_available_structure(
+    controller: MetadataController,
+    mock_view: MagicMock,
+) -> None:
+    """
+    The selection must not share its channel lists with the available structure.
+
+    ``dict.copy()`` is shallow, so the two dicts held the *same* list objects and
+    narrowing the scope in place would have narrowed what the tree offers.
+    """
+    mock_view.available_experiment_and_channels_by_loader = {}
+    mock_view.selected_experiment_and_channels_by_loader = {}
+
+    controller.get_experiment_structure_ready({"exp1": [1, 2]}, "ldr")
+
+    selected = mock_view.selected_experiment_and_channels_by_loader["ldr"]
+    available = mock_view.available_experiment_and_channels_by_loader["ldr"]
+    selected["exp1"].remove("1")
+
+    assert available["exp1"] == ["1", "2"]
