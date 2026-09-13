@@ -76,7 +76,16 @@ were fixed and re-passed. One could not be run:
 2. ~~**Then 4c Metadata**~~ **LANDED 2026-09-13** on `feature/step-4c-metadata`,
    allowlist **22 -> 19** and rule 2 **17 -> 14**: `scipy`, `scipy.optimize` and
    `scipy.stats` are all out of the View layer and `MetadataView` is down from 6
-   forbidden imports to 3. **Manual Windows pass owed** over the four plot types.
+   forbidden imports to 3. **Manual Windows pass run 2026-09-13** over the four plot
+   types, which returned four defects and one non-defect. Three were **pre-existing**,
+   established by reproducing them in a worktree at `develop` rather than by reading
+   the diff: capture-rate bin widths accepted and ignored, a categorical histogram
+   failing on NULLs, and an all-points histogram unpacking the previous plot type's
+   data. The fourth was a scope silently widened back to every channel by any
+   structure refresh, also pre-existing and on the shared subset base. The non-defect
+   was a status message reported as never sent that had always been sent - the panel
+   could not show that an identical line arrived twice, which is now fixed with a
+   timestamp. All fixed on this branch; see method rule 64.
    Worth 3 rather than the 2 the plan recorded. Re-derived 2026-09-13 before starting. Scope is the **four**
    methods that use scipy, not the two the plan named: `_plot_1d_density` (frees `scipy`),
    `_plot_capture_rate` (frees `scipy.optimize`), `_plot_1d_histogram` and
