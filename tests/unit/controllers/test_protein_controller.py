@@ -13,7 +13,6 @@ Run with:
 
 from unittest.mock import MagicMock, patch
 
-import pandas as pd
 import pytest
 from PySide6.QtWidgets import QApplication
 
@@ -76,17 +75,6 @@ class TestAlterDatabaseStatus:
 
 
 # ===========================================================================
-# relay_baseline_duration
-# ===========================================================================
-
-
-class TestRelayBaselineDuration:
-    def test_forwards_duration_to_view(self, controller):
-        controller.relay_baseline_duration(500)
-        assert controller.view.baseline_duration == 500
-
-
-# ===========================================================================
 # relay_query — the big dispatch method
 # ===========================================================================
 
@@ -94,7 +82,7 @@ class TestRelayBaselineDuration:
 class TestRelayQuery:
     def test_debug_no_query_shows_warning_dialog(self, controller):
         with patch(
-            "poriscope.plugins.analysistabs.ProteinController.QMessageBox.warning"
+            "poriscope.utils.MetaSubsetTabController.QMessageBox.warning"
         ) as mock_warn:
             controller.relay_query("", "syntax error here", "events")
         mock_warn.assert_called_once()
@@ -106,9 +94,7 @@ class TestRelayQuery:
         controller.view._pending_filter_name = "f1"
         controller.view._pending_filter_text = "dur > 5"
         controller.view._pending_old_filter_name = None
-        with patch(
-            "poriscope.plugins.analysistabs.ProteinController.QMessageBox.warning"
-        ):
+        with patch("poriscope.utils.MetaSubsetTabController.QMessageBox.warning"):
             controller.relay_query("", "bad syntax", "events", "validate_new_filter")
         assert controller.view._pending_filter_name is None
         assert controller.view._pending_filter_text is None
@@ -117,9 +103,7 @@ class TestRelayQuery:
         controller.view._pending_filter_name = "f2"
         controller.view._pending_filter_text = "dur > 10"
         controller.view._pending_old_filter_name = "f1"
-        with patch(
-            "poriscope.plugins.analysistabs.ProteinController.QMessageBox.warning"
-        ):
+        with patch("poriscope.utils.MetaSubsetTabController.QMessageBox.warning"):
             controller.relay_query("", "bad syntax", "events", "validate_edited_filter")
         assert controller.view._pending_old_filter_name is None
 
@@ -127,9 +111,7 @@ class TestRelayQuery:
         controller.view._pending_filter_name = "f1"
         controller.view._pending_filter_text = "dur > 5"
         controller.view._pending_old_filter_name = None
-        with patch(
-            "poriscope.plugins.analysistabs.ProteinController.QMessageBox.warning"
-        ):
+        with patch("poriscope.utils.MetaSubsetTabController.QMessageBox.warning"):
             controller.relay_query("", "bad syntax", "events")
         # no intent arg supplied -> early return before clear_pending_filter_state,
         # so pending state should be untouched
@@ -345,7 +327,6 @@ class TestRelayGenerators:
         g = iter([])
         controller.relay_event_plot_data_generator(g)
         assert controller.view.plot_events_generator is g
-        assert controller.view.plot_events_generator_updated is True
 
 
 # ===========================================================================
@@ -469,20 +450,12 @@ class TestOnRawFilterValidated:
         assert "new_raw" in controller.view.subset_filters
 
 
-# ===========================================================================
-# relay_query_result
-# ===========================================================================
-
-
-class TestRelayQueryResult:
-    def test_forwards_dataframe_to_view(self, controller):
-        df = pd.DataFrame({"event_id": [1, 2, 3]})
-        controller.relay_query_result(df)
-        assert controller.view.relayed_query_result is df
-
-    def test_forwards_none_to_view(self, controller):
-        controller.relay_query_result(None)
-        assert controller.view.relayed_query_result is None
+# ``TestRelayQueryResult`` lived here and is gone with the method: Step 4a's last
+# conversion replaced the ``relay_query_result`` bus round-trip with the
+# ``event_id_cache_requested`` intent, answered by
+# ``MetaSubsetTabController.load_event_id_cache`` and parked by ``set_event_id_rows``.
+# The promoted-method side is covered in ``test_duplicated_helpers``, and the
+# Controller slot in ``test_subset_tab_controller``.
 
 
 # ===========================================================================

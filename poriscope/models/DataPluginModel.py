@@ -145,6 +145,21 @@ class DataPluginModel(QObject):
             self.plugins.setdefault(metaclass, {})
 
     @log(logger=logger)
+    def get_plugin_instances(self) -> Dict[str, Dict[str, BaseDataPlugin]]:
+        """
+        Get every instantiated plugin, keyed by metaclass then by key.
+
+        The same registry ``get_instantiated_plugins_list`` reports the *names* of, so
+        the two cannot disagree about what exists. Step 4a needs the instances
+        themselves: an analysis tab calls its plugins directly through
+        ``MetaModel.call`` rather than over the signal bus, and this is where that map
+        comes from. Shallow-copied per level so a receiver cannot mutate the registry.
+
+        :return: A dict keyed by metaclass, each holding key -> live instance
+        :rtype: Dict[str, Dict[str, BaseDataPlugin]]
+        """
+        return {metaclass: dict(plugins) for metaclass, plugins in self.plugins.items()}
+
     def get_instantiated_plugins_list(self) -> Dict[str, List[str]]:
         """
         Get a dict keyed by metaclass with a list of all keys for plugins that have been instantiated

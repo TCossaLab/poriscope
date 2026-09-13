@@ -27,7 +27,7 @@ import ast
 import os
 import shutil
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Set, Tuple
 
 # Resolve base paths
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -71,6 +71,30 @@ def classify_method(method_node: ast.FunctionDef) -> Tuple[str, str]:
     return (
         "private" if is_private else "public",
         "abstract" if is_abstract else "concrete",
+    )
+
+
+def is_property(method_node: ast.FunctionDef) -> bool:
+    """
+    Report whether a ``def`` is really a property.
+
+    ``.. automethod::`` on a property makes Sphinx warn that the object "is not a
+    callable object", and both docs workflows build with ``-W``, so one property
+    documented as a method turns the docs job red. ``MetaSubsetTabView``'s
+    ``_subset_controls`` did exactly that from the moment Step 3b added it.
+
+    Only the bare ``@property`` form is recognised, which is every property under
+    ``poriscope/utils/`` today; a setter is written ``@<name>.setter`` and is
+    deliberately not documented separately.
+
+    :param method_node: the function definition to classify
+    :type method_node: ast.FunctionDef
+    :return: True if the definition carries a ``@property`` decorator
+    :rtype: bool
+    """
+    return any(
+        isinstance(decorator, ast.Name) and decorator.id == "property"
+        for decorator in method_node.decorator_list
     )
 
 
@@ -129,10 +153,13 @@ for filename in os.listdir(FOLDER_ORIGIN):
                 ("private", "abstract"): [],
                 ("private", "concrete"): [],
             }
+            properties: Set[str] = set()
             for item in node.body:
                 if isinstance(item, ast.FunctionDef):
                     visibility, abstractness = classify_method(item)
                     methods[(visibility, abstractness)].append(item.name)
+                    if is_property(item):
+                        properties.add(item.name)
 
             # Base class references
             base_classes = parse_base_classes(node.bases)
@@ -203,8 +230,13 @@ for filename in os.listdir(FOLDER_ORIGIN):
                             )
                         key = (visibility, abstractness)
                         for method_name in sorted(methods[key]):
+                            directive = (
+                                "autoproperty"
+                                if method_name in properties
+                                else "automethod"
+                            )
                             f.write(
-                                f".. automethod:: {full_class_path}.{method_name}\n"
+                                f".. {directive}:: {full_class_path}.{method_name}\n"
                             )
                         if not methods[key]:
                             f.write("(none)\n")

@@ -244,24 +244,92 @@ class TestTargetList:
                 path
             ), f"{step}: {file} no longer defines {method}"
 
-    def test_emit_bearing_methods_are_found(self, mod: types.ModuleType) -> None:
+    def test_emit_bearing_methods_are_derived_correctly(
+        self, mod: types.ModuleType, tmp_path
+    ) -> None:
         """
-        Step 4a's targets are derived, not listed, so the derivation must work.
+        Step 4a's targets are derived, not listed, so the derivation must work -
+        which is a different claim from the live list being non-empty.
 
-        There are 75 emit sites across the five Views, so the method count is
-        non-zero and smaller than that.
+        **This used to assert ``found`` was non-empty**, and that was right only
+        while 4a had work left in the tab Views. The list is *supposed* to reach
+        zero, so asserting a value rather than the invariant reads the gate
+        backwards (method rule 21). The derivation is checked against a source that
+        does have an emit, so an emit that stopped being detected still fails here.
+        """
+        source = tmp_path / "ThingView.py"
+        source.write_text(
+            "\n".join(
+                [
+                    "class ThingView:",
+                    "    def asks(self):",
+                    "        self.global_signal.emit(1, 2, 3, (), 4, ())",
+                    "    def does_not(self):",
+                    "        self.other_signal.emit(1)",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        names = mod.method_names_with_emits(source)
+
+        assert names == ["asks"]
+
+    def test_no_tab_view_still_emits_on_the_bus(self, mod: types.ModuleType) -> None:
+        """
+        The live reading, stated as the invariant Step 4a is driving to.
+
+        **Blind spot, deliberately recorded:** this scanner walks the five files in
+        ``VIEW_FILES`` under ``analysistabs/`` only, so it cannot see
+        ``MetaSubsetTabView`` in ``poriscope/utils/`` - which is a View by the
+        boundary gate's own rules and still has one emit. An empty list here is
+        therefore "no *tab* View emits", not "no View emits". The gate that can see
+        both is ``check_mvc_boundary``'s rule 1.
         """
         found = mod.emit_bearing_methods()
 
-        assert found
         assert all(step == "4a" for _, _, step in found)
-        assert len({m for _, m, _ in found}) <= 75
+        assert found == [], (
+            "Step 4a is done for the five tab Views; a new emit in one of them is a "
+            f"regression: {found}"
+        )
 
-    def test_sql_authoring_methods_are_found(self, mod: types.ModuleType) -> None:
-        """Step 4b's targets are derived too, and the Views really do author SQL."""
+    def test_sql_authoring_methods_are_derived_correctly(
+        self, mod: types.ModuleType, tmp_path
+    ) -> None:
+        """
+        Step 4b's targets are derived too. Same correction as above: what has to
+        hold is that the detection works, not that the Views still author SQL.
+        """
+        source = tmp_path / "ThingView.py"
+        source.write_text(
+            "\n".join(
+                [
+                    "class ThingView:",
+                    "    def builds(self):",
+                    "        return 'SELECT id FROM events'",
+                    "    def drops(self):",
+                    "        return 'ALTER TABLE events DROP COLUMN x'",
+                    "    def does_not(self):",
+                    "        return 'just a message'",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        names = mod.method_names_with_sql(source)
+
+        assert names == ["builds", "drops"]
+
+    def test_the_tab_views_author_no_sql_the_scanner_can_see(
+        self, mod: types.ModuleType
+    ) -> None:
+        """
+        The live reading. Carries the same blind spot as the emit one: SQL that
+        moved to a Controller or to ``MetaSubsetTabView`` leaves this list without
+        leaving the codebase, which is why Step 4b is tracked by what it deletes
+        rather than by this number alone.
+        """
         found = mod.sql_authoring_methods()
 
-        assert found
         assert all(step == "4b" for _, _, step in found)
 
     def test_the_deduplicated_half_comes_from_the_duplication_measure(

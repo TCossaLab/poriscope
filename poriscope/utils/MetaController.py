@@ -84,6 +84,8 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
         ) in kwargs.items():  # set class parameters with kwargs dict for use later
             setattr(self, k, v)
 
+        # Pushed by MainController on every plugin lifecycle event (Step 4a).
+        self._plugin_instances: Dict[str, Dict[str, object]] = {}
         self._init()
         self._connect_global_signal()
         self.view.set_available_subclasses(available_subclasses)
@@ -156,6 +158,93 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
         if file_name:
             df = df.fillna("")
             df.to_csv(file_name, index=False)
+
+    # ---------------------------------------------------------------- Step 4a
+    # Direct access to the data plugins, replacing the return-value signal bus. The
+    # instances arrive from MainController on every plugin lifecycle event and are
+    # forwarded straight to the Model, which is where the calls belong; this class
+    # keeps a copy so that a Controller-side call is possible where it is genuinely
+    # Controller work. See Decision A in refactor_2.0.0.md.
+
+    @log(logger=logger)
+    def set_plugin_instances(
+        self, instances: Mapping[str, Mapping[str, object]]
+    ) -> None:
+        """
+        Receive the live data plugin instances and pass them to the Model.
+
+        Called by ``MainController`` whenever the app's plugin set changes, on the same
+        path that refreshes the plugin *names* the View shows in its comboboxes - so a
+        rename or a re-instantiation cannot leave either of them stale.
+
+        :param instances: metaclass name -> plugin key -> live instance
+        :type instances: Mapping[str, Mapping[str, object]]
+        :return: None
+        :rtype: None
+        """
+        self._plugin_instances = {k: dict(v) for k, v in instances.items()}
+        if self.model is not None:
+            self.model.set_plugin_instances(instances)
+
+    def _get_plugin(self, metaclass: str, key: str) -> object:
+        """
+        Return the live plugin instance registered under a metaclass and key.
+
+        :param metaclass: the plugin family, e.g. ``"MetaDatabaseLoader"``
+        :type metaclass: str
+        :param key: the instance's unique key, e.g. ``"SQLiteDBLoader_0"``
+        :type key: str
+        :return: the plugin instance
+        :rtype: object
+        :raises KeyError: if no instance is registered under that metaclass and key
+        """
+        try:
+            return self._plugin_instances[metaclass][key]
+        except KeyError:
+            raise KeyError(f"No {metaclass} plugin registered under {key!r}") from None
+
+    def call(
+        self, metaclass: str, key: str, method: str, *args: Any, **kwargs: Any
+    ) -> Any:
+        """
+        Call a method on a data plugin and return its result.
+
+        Prefer calling this from the Model: the Model is where data access belongs, and
+        it has the same two methods. This exists for the cases that are genuinely
+        Controller work, such as resolving something needed to wire a connection.
+
+        **Failures raise here**, at the call site, rather than being logged and
+        swallowed several hops away. Keyword arguments are accepted, which the signal
+        bus could not carry - see ``MetaModel.call`` for why that matters. Returns
+        ``Any``, so mypy cannot catch a renamed plugin method or a misspelled keyword -
+        the accepted price of a string-keyed plugin API.
+
+        :param metaclass: the plugin family, e.g. ``"MetaDatabaseLoader"``
+        :type metaclass: str
+        :param key: the instance's unique key
+        :type key: str
+        :param method: the name of the method to call on it
+        :type method: str
+        :param \\*args: positional arguments for that method
+        :type \\*args: Any
+        :param \\**kwargs: keyword arguments for that method
+        :type \\**kwargs: Any
+        :return: whatever the plugin method returned
+        :rtype: Any
+        :raises AttributeError: if the instance has no such method, or it is not callable
+        """
+        # A KeyError from _get_plugin propagates: an unknown plugin is the caller's
+        # problem to see, not something to translate into a different failure here.
+        if method.startswith("_"):
+            raise AttributeError(
+                f"{method!r} is not part of {metaclass}'s public interface; "
+                f"call() reaches a plugin's public API only"
+            )
+        instance = self._get_plugin(metaclass, key)
+        func = getattr(instance, method, None)
+        if not callable(func):
+            raise AttributeError(f"{metaclass}/{key} has no callable method {method!r}")
+        return func(*args, **kwargs)
 
     # private API, should generally be left alone by subclasses
     @log(logger=logger)

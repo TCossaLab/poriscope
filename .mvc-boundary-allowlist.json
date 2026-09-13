@@ -1,12 +1,5 @@
 {
-  "emits": {
-    "poriscope/plugins/analysistabs/ClusteringView.py": 7,
-    "poriscope/plugins/analysistabs/EventAnalysisView.py": 13,
-    "poriscope/plugins/analysistabs/MetadataView.py": 17,
-    "poriscope/plugins/analysistabs/ProteinView.py": 18,
-    "poriscope/plugins/analysistabs/RawDataView.py": 14,
-    "poriscope/utils/MetaSubsetTabView.py": 3
-  },
+  "emits": {},
   "imports": {
     "poriscope/plugins/analysistabs/ClusteringView.py": [
       "numpy",
@@ -42,8 +35,8 @@
     ]
   },
   "layering": {},
+  "plugin_reach": {},
   "private_access": {
-    "poriscope/plugins/analysistabs/MetadataController.py": 5,
-    "poriscope/plugins/analysistabs/ProteinController.py": 5
+    "poriscope/utils/MetaSubsetTabController.py": 5
   }
 }

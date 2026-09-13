@@ -58,9 +58,14 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pandas as pd
 import pytest
-from PySide6.QtWidgets import QApplication, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QApplication, QMessageBox, QVBoxLayout, QWidget
 
-from poriscope.plugins.analysistabs.ProteinView import ProteinView, format_axis_label
+from poriscope.plugins.analysistabs.ProteinView import (
+    FIT_COLUMN_UNITS,
+    FIT_COLUMNS,
+    ProteinView,
+    format_axis_label,
+)
 from tests.unit.views._qt_mocks import mock_axes, shadow_signals
 
 # ===========================================================================
@@ -647,6 +652,37 @@ class TestConstructAllPointsHistogram:
         assert isinstance(df, pd.DataFrame)
         assert "Normalized Current" in df.columns
 
+    def test_an_empty_subset_yields_no_histogram(self, mock_view):
+        """
+        Reported from a real run: plotting a distribution over a subset holding no
+        events drew empty axes and said nothing.
+
+        The generator exists - so the caller's ``is None`` guard passes - and simply
+        yields nothing, which used to divide the accumulated histogram by a count of
+        zero and hand back a frame of NaN. ``None`` is what the caller already
+        reports on.
+        """
+        assert (
+            mock_view._construct_all_points_histogram(iter([]), "Filtered Histogram")
+            is None
+        )
+
+    def test_an_empty_subset_does_not_poison_the_next_plot(self, mock_view):
+        """
+        The bail-out is before the bounds are recorded, not after.
+
+        With no event the running bounds are still +/-inf, and letting those reach
+        hist_min/hist_max would make the *next* plot's bin edges nan - a failure one
+        action away from its cause.
+        """
+        mock_view.hist_min = None
+        mock_view.hist_max = None
+
+        mock_view._construct_all_points_histogram(iter([]), "Filtered Histogram")
+
+        assert mock_view.hist_min is None
+        assert mock_view.hist_max is None
+
     def test_default_100_bins(self, mock_view):
         df = mock_view._construct_all_points_histogram(
             iter(self._events()), "Filtered Histogram"
@@ -686,47 +722,17 @@ class TestConstructAllPointsHistogram:
         assert df["Normalized Current"].max() - df["Normalized Current"].min() > 0
 
 
-# ===========================================================================
-# _build_load_event_data_args
-# ===========================================================================
-
-
-class TestBuildLoadEventDataArgs:
-    def test_non_raw_returns_filter_and_exp(self, mock_view):
-        exp_ch = {"ExpA": ["0"]}
-        result = mock_view._build_load_event_data_args(
-            "dur > 100", "myfilter", "ExpA", "0", exp_ch, "loader1"
-        )
-        assert result == ("dur > 100", exp_ch)
-
-    def test_raw_returns_none_second(self, mock_view):
-        result = mock_view._build_load_event_data_args(
-            "SELECT * FROM events", "myfilter_raw", "ExpA", "0", {}, "loader1"
-        )
-        assert result[1] is None
-
-    def test_raw_strips_trailing_semicolon(self, mock_view):
-        result = mock_view._build_load_event_data_args(
-            "SELECT * FROM events;", "filter_raw", None, "0", {}, "loader1"
-        )
-        assert not result[0].endswith(";")
-
-    def test_raw_no_exp_no_scope(self, mock_view):
-        result = mock_view._build_load_event_data_args(
-            "SELECT * FROM events", "filter_raw", None, "0", {}, "loader1"
-        )
-        assert "WHERE" not in result[0].upper()
-
-    def test_raw_scope_requires_live_bus(self, mock_view):
-        # global_signal.emit() has no connected slots in tests so
-        # experiment_id stays None and the scope clause is not appended.
-        mock_view.experiment_id = 5
-        mock_view.channel_db_id = 2
-        result = mock_view._build_load_event_data_args(
-            "SELECT * FROM events", "filter_raw", "ExpA", "0", {}, "loader1"
-        )
-        assert result[1] is None
-        assert "SELECT * FROM events" in result[0]
+# ``TestBuildLoadEventDataArgs`` lived here and is gone with the method: Step 4a moved
+# the raw-subset scoping into ``ProteinController._scope_raw_subset_query``. Its
+# coverage is ``tests/unit/controllers/test_raw_subset_scoping.py``, which was
+# ``test_view_authored_sql.py`` before the same move.
+#
+# ``test_raw_scope_requires_live_bus`` is not carried over. It asserted that the scope
+# clause is *not* appended, on the grounds that "global_signal.emit() has no connected
+# slots in tests so experiment_id stays None" - so it passed by describing the test
+# harness rather than the code, and would have gone on passing whatever the scoping
+# did. The behaviour it stood in front of is now two tests that drive a lookup
+# answering None and assert the plot stops.
 
 
 # ===========================================================================
@@ -751,10 +757,6 @@ class TestStateSetters:
         mock_view.set_channel_db_id(42)
         assert mock_view.channel_db_id == 42
 
-    def test_set_baseline_duration(self, mock_view):
-        mock_view.set_baseline_duration(500)
-        assert mock_view.baseline_duration == 500
-
     def test_set_event_data_generator(self, mock_view):
         g = iter([1, 2, 3])
         mock_view.set_event_data_generator(g)
@@ -764,7 +766,6 @@ class TestStateSetters:
         g = iter([])
         mock_view.set_event_plot_data_generator(g)
         assert mock_view.plot_events_generator is g
-        assert mock_view.plot_events_generator_updated is True
 
     def test_set_experiment_id(self, mock_view):
         mock_view.set_experiment_id(99)
@@ -796,14 +797,6 @@ class TestStateSetters:
         mock_view.set_query("", "events")
         assert mock_view.query == ""
 
-    def test_set_query_shows_sql_when_flag(self, mock_view):
-        received = []
-        mock_view.add_text_to_display.connect(lambda msg, src: received.append(msg))
-        mock_view._show_sql_in_display = True
-        mock_view.set_query("SELECT 1", "events")
-        assert any("SELECT 1" in m for m in received)
-        assert mock_view._show_sql_in_display is False
-
     def test_set_event_query_stores(self, mock_view):
         mock_view.set_event_query("SELECT * FROM events")
         assert mock_view.event_query == "SELECT * FROM events"
@@ -811,14 +804,6 @@ class TestStateSetters:
     def test_set_event_query_empty(self, mock_view):
         mock_view.set_event_query("")
         assert mock_view.event_query == ""
-
-    def test_set_event_query_shows_when_flag(self, mock_view):
-        received = []
-        mock_view.add_text_to_display.connect(lambda msg, src: received.append(msg))
-        mock_view._show_event_sql_in_display = True
-        mock_view.set_event_query("SELECT 2")
-        assert any("SELECT 2" in m for m in received)
-        assert mock_view._show_event_sql_in_display is False
 
 
 # ===========================================================================
@@ -1324,12 +1309,20 @@ class TestOnRawFilterValidated:
         mock_view.on_raw_filter_validated(False, "syntax error")
         assert mock_view._pending_filter_name is None
 
-    def test_invalid_emits_message(self, mock_view):
-        received = []
-        mock_view.add_text_to_display.connect(lambda m, s: received.append(m))
+    def test_invalid_shows_warning(self, mock_view, monkeypatch):
+        """
+        Renamed from test_invalid_emits_message: it is a modal now, not a message.
+
+        Step 4a promoted on_raw_filter_validated to MetaSubsetTabView taking
+        Metadata's QMessageBox over this tab's status-panel line, so that a rejected
+        raw filter reads the same on both tabs.
+        """
+        warned = MagicMock()
+        monkeypatch.setattr(QMessageBox, "warning", staticmethod(warned))
         self._setup(mock_view)
         mock_view.on_raw_filter_validated(False, "syntax error")
-        assert any("syntax error" in m for m in received)
+        warned.assert_called_once()
+        assert "syntax error" in warned.call_args[0][2]
 
     def test_valid_add_path(self, mock_view):
         self._setup(mock_view)
@@ -1390,7 +1383,7 @@ class TestSaveLoadFilter:
         mock_view._save_filter()
         mock_dialog.assert_not_called()
 
-    @patch("poriscope.plugins.analysistabs.ProteinView.QFileDialog.getOpenFileName")
+    @patch("poriscope.utils.MetaSubsetTabView.QFileDialog.getOpenFileName")
     def test_load_filter_adds_filters(self, mock_dialog, mock_view):
         filters = {"loaded_f": "dur>50"}
         with tempfile.NamedTemporaryFile(suffix=".json", delete=False, mode="w") as fp:
@@ -1402,7 +1395,7 @@ class TestSaveLoadFilter:
         assert "loaded_f" in mock_view.subset_filters
         os.unlink(path)
 
-    @patch("poriscope.plugins.analysistabs.ProteinView.QFileDialog.getOpenFileName")
+    @patch("poriscope.utils.MetaSubsetTabView.QFileDialog.getOpenFileName")
     def test_load_filter_blocks_duplicates(self, mock_dialog, mock_view):
         mock_view.subset_filters = {"existing": "dur>0"}
         filters = {"existing": "dur>999"}
@@ -1414,7 +1407,7 @@ class TestSaveLoadFilter:
         assert mock_view.subset_filters["existing"] == "dur>0"
         os.unlink(path)
 
-    @patch("poriscope.plugins.analysistabs.ProteinView.QFileDialog.getOpenFileName")
+    @patch("poriscope.utils.MetaSubsetTabView.QFileDialog.getOpenFileName")
     def test_load_filter_no_path_is_noop(self, mock_dialog, mock_view):
         mock_dialog.return_value = ("", "")
         mock_view._load_filter({})
@@ -1448,8 +1441,11 @@ class TestMiscMethods:
     def test_update_available_columns_no_error(self, mock_view):
         mock_view.update_available_columns("my_loader")
 
-    def test_update_units_no_error(self, mock_view):
-        mock_view.update_units("ldr", "duration", "x_axis")
+    # update_units is gone from this tab: Step 4a moved it down to MetadataView, which
+    # was its only caller. The protein tab has no units label, keeps no units cache and
+    # labels its axes with hardcoded literals, so there was nothing here for the answer
+    # to reach - which is also why ProteinView's missing update_column_units was
+    # unreachable rather than merely swallowed.
 
     def test_update_available_plugins_no_error(self, mock_view):
         mock_view.update_available_plugins({"MetaDatabaseLoader": ["ldr1"]})
@@ -1811,20 +1807,68 @@ class TestFetchEventData:
         result = mock_view._fetch_event_data(params)
         assert result == []
 
-    def test_fetches_fresh_via_resolve_and_generator(self, mock_view):
+    def test_asks_the_controller_for_exactly_the_events_requested(self, mock_view):
+        """
+        Step 4a: the resolve-and-load chain is one intent answered by
+        ``ProteinController.load_event_plot_data``, so the stub stands in for the
+        Controller by setting the generator the way it does - a stub that does nothing
+        where the real collaborator sets the answer would make every assertion below
+        vacuous.
+        """
         mock_view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": ["0"]}}
         mock_view.get_selected_filters = MagicMock(return_value={"Full Dataset": ""})
         mock_view.current_sql_filter = ""
         mock_view.current_experiment = "exp1"
         mock_view.current_channel = 0
-        mock_view._resolve_event_db_ids = MagicMock(
-            return_value=pd.DataFrame({"id": [10], "event_id": [1]})
-        )
-        mock_view.global_signal = MagicMock()
-        mock_view.plot_events_generator = iter([_make_event(1)])
+
+        requested = []
+
+        def answer(loader, event_ids, exp, channel, scope, action_label):
+            requested.append((loader, event_ids, exp, channel, scope, action_label))
+            mock_view.plot_events_generator = iter([_make_event(1)])
+
+        mock_view.event_plot_data_requested.connect(answer)
+
         result = mock_view._fetch_event_data(self._params())
+
+        assert requested == [("ldr", [1], "exp1", 0, {"exp1": ["0"]}, "events")]
         assert len(result) == 1
         assert result[0]["event_id"] == 1
+
+    def test_a_chain_that_did_not_finish_plots_nothing(self, mock_view):
+        """
+        The generator is cleared before the intent goes out, so a Controller that
+        returned early leaves None rather than the previous plot's events - the stale
+        read this step exists to remove.
+        """
+        mock_view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": ["0"]}}
+        mock_view.get_selected_filters = MagicMock(return_value={"Full Dataset": ""})
+        mock_view.plot_events_generator = iter([_make_event(99)])
+        mock_view.event_plot_data_requested.connect(lambda *a: None)
+
+        assert mock_view._fetch_event_data(self._params()) == []
+
+    def test_the_answer_comes_back_in_the_order_it_was_asked_for(self, mock_view):
+        """
+        ``load_event_data`` yields in whatever order the database gives, and the
+        navigation cares about the order it requested; the re-sort is why the query
+        selects ``event_id`` alongside ``id``.
+        """
+        mock_view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": ["0"]}}
+        mock_view.get_selected_filters = MagicMock(return_value={"Full Dataset": ""})
+        mock_view.event_plot_data_requested.connect(
+            lambda *a: setattr(
+                mock_view,
+                "plot_events_generator",
+                iter([_make_event(7), _make_event(3), _make_event(5)]),
+            )
+        )
+
+        result = mock_view._fetch_event_data(
+            {"db_loader": "ldr", "event_index": [3, 5, 7]}
+        )
+
+        assert [e["event_id"] for e in result] == [3, 5, 7]
 
 
 class TestHandlePlotEvents:
@@ -2001,20 +2045,11 @@ class TestShowAddFilterDialog:
         dialog.walkthrough_dialog = None
         return dialog
 
-    def test_sets_show_sql_flag(self, mock_view):
-        mock_view._walkthrough_active = False
-        with patch(
-            "poriscope.plugins.analysistabs.ProteinView.AddSubsetFilterDialog",
-            return_value=self._mock_dialog(None, accepted=False),
-        ):
-            mock_view._show_add_filter_dialog({"db_loader": "ldr"})
-        assert mock_view._show_sql_in_display is True
-
     def test_cancelled_dialog_does_not_emit_signal(self, mock_view):
         mock_view._walkthrough_active = False
         mock_view.global_signal = MagicMock()
         with patch(
-            "poriscope.plugins.analysistabs.ProteinView.AddSubsetFilterDialog",
+            "poriscope.utils.MetaSubsetTabView.AddSubsetFilterDialog",
             return_value=self._mock_dialog(None, accepted=False),
         ):
             mock_view._show_add_filter_dialog({"db_loader": "ldr"})
@@ -2024,44 +2059,61 @@ class TestShowAddFilterDialog:
         mock_view._walkthrough_active = False
         mock_view.global_signal = MagicMock()
         with patch(
-            "poriscope.plugins.analysistabs.ProteinView.AddSubsetFilterDialog",
+            "poriscope.utils.MetaSubsetTabView.AddSubsetFilterDialog",
             return_value=self._mock_dialog(None, accepted=True),
         ):
             mock_view._show_add_filter_dialog({"db_loader": None})
         mock_view.global_signal.emit.assert_not_called()
 
-    def test_assisted_filter_emits_construct_metadata_query(self, mock_view):
+    def test_assisted_filter_asks_the_controller_to_validate(self, mock_view):
+        """
+        Renamed: Step 4a replaced the construct_metadata_query emit with an intent.
+
+        The Controller makes that call now, and chooses the columns to validate
+        against, so what this tab does is state the intent.
+        """
         mock_view._walkthrough_active = False
         mock_view.global_signal = MagicMock()
+        mock_view.filter_validation_requested = MagicMock()
         with patch(
-            "poriscope.plugins.analysistabs.ProteinView.AddSubsetFilterDialog",
+            "poriscope.utils.MetaSubsetTabView.AddSubsetFilterDialog",
             return_value=self._mock_dialog(None, accepted=True, is_raw=False),
         ):
             mock_view._show_add_filter_dialog({"db_loader": "ldr"})
-        mock_view.global_signal.emit.assert_called_once()
-        call_args = mock_view.global_signal.emit.call_args[0]
-        assert call_args[2] == "construct_metadata_query"
+        mock_view.filter_validation_requested.emit.assert_called_once_with(
+            "ldr", "dur>1", "validate_new_filter"
+        )
+        mock_view.global_signal.emit.assert_not_called()
 
-    def test_raw_filter_requires_select_statement(self, mock_view):
+    def test_raw_filter_requires_select_statement(self, mock_view, monkeypatch):
+        """
+        Reported in a modal since Step 4a promoted this method.
+
+        This tab used to put the rejection on the status panel and the metadata tab
+        put it in a QMessageBox; the promoted copy uses the modal, by decision,
+        because the dialog has just closed and a status line is easy to miss then.
+        """
         mock_view._walkthrough_active = False
         mock_view.global_signal = MagicMock()
-        received = []
-        mock_view.add_text_to_display.connect(lambda m, s: received.append(m))
+        warned = MagicMock()
+        monkeypatch.setattr(QMessageBox, "warning", staticmethod(warned))
         with patch(
-            "poriscope.plugins.analysistabs.ProteinView.AddSubsetFilterDialog",
+            "poriscope.utils.MetaSubsetTabView.AddSubsetFilterDialog",
             return_value=self._mock_dialog(
                 None, accepted=True, is_raw=True, text="dur > 100"
             ),
         ):
             mock_view._show_add_filter_dialog({"db_loader": "ldr"})
-        assert any("SELECT statements" in m for m in received)
+        warned.assert_called_once()
+        assert "SELECT statements" in warned.call_args[0][2]
         mock_view.global_signal.emit.assert_not_called()
 
     def test_raw_filter_with_select_validates(self, mock_view):
         mock_view._walkthrough_active = False
         mock_view.global_signal = MagicMock()
+        mock_view.raw_filter_validation_requested = MagicMock()
         with patch(
-            "poriscope.plugins.analysistabs.ProteinView.AddSubsetFilterDialog",
+            "poriscope.utils.MetaSubsetTabView.AddSubsetFilterDialog",
             return_value=self._mock_dialog(
                 None,
                 accepted=True,
@@ -2071,15 +2123,16 @@ class TestShowAddFilterDialog:
             ),
         ):
             mock_view._show_add_filter_dialog({"db_loader": "ldr"})
-        mock_view.global_signal.emit.assert_called_once()
-        call_args = mock_view.global_signal.emit.call_args[0]
-        assert call_args[2] == "validate_filter_query"
+        mock_view.raw_filter_validation_requested.emit.assert_called_once_with(
+            "ldr", "SELECT * FROM events LIMIT 0"
+        )
+        mock_view.global_signal.emit.assert_not_called()
 
     def test_raw_filter_appends_raw_suffix(self, mock_view):
         mock_view._walkthrough_active = False
         mock_view.global_signal = MagicMock()
         with patch(
-            "poriscope.plugins.analysistabs.ProteinView.AddSubsetFilterDialog",
+            "poriscope.utils.MetaSubsetTabView.AddSubsetFilterDialog",
             return_value=self._mock_dialog(
                 None,
                 accepted=True,
@@ -2113,20 +2166,11 @@ class TestShowEditFilterDialog:
         yield
         qt_app.processEvents()
 
-    def test_sets_show_sql_flag(self, mock_view):
-        mock_view.subset_filters = {"f1": "dur>1"}
-        with patch(
-            "poriscope.plugins.analysistabs.ProteinView.EditSubsetFilterDialog",
-            return_value=self._mock_dialog(accepted=False),
-        ):
-            mock_view.show_edit_filter_dialog("f1", "ldr")
-        assert mock_view._show_sql_in_display is True
-
     def test_cancelled_dialog_no_emit(self, mock_view):
         mock_view.subset_filters = {"f1": "dur>1"}
         mock_view.global_signal = MagicMock()
         with patch(
-            "poriscope.plugins.analysistabs.ProteinView.EditSubsetFilterDialog",
+            "poriscope.utils.MetaSubsetTabView.EditSubsetFilterDialog",
             return_value=self._mock_dialog(accepted=False),
         ):
             mock_view.show_edit_filter_dialog("f1", "ldr")
@@ -2136,45 +2180,56 @@ class TestShowEditFilterDialog:
         mock_view.subset_filters = {"f1": "dur>1"}
         mock_view.global_signal = MagicMock()
         with patch(
-            "poriscope.plugins.analysistabs.ProteinView.EditSubsetFilterDialog",
+            "poriscope.utils.MetaSubsetTabView.EditSubsetFilterDialog",
             return_value=self._mock_dialog(accepted=True),
         ):
             mock_view.show_edit_filter_dialog("f1", None)
         mock_view.global_signal.emit.assert_not_called()
 
-    def test_assisted_edit_emits_construct_metadata_query(self, mock_view):
+    def test_assisted_edit_asks_the_controller_to_validate(self, mock_view):
+        """
+        Renamed: Step 4a replaced the construct_metadata_query emit with an intent.
+
+        The edited filter carries validate_edited_filter rather than
+        validate_new_filter, which is what tells relay_query to replace the old name
+        instead of adding a second entry.
+        """
         mock_view.subset_filters = {"f1": "dur>1"}
         mock_view.global_signal = MagicMock()
+        mock_view.filter_validation_requested = MagicMock()
         dialog = self._mock_dialog(accepted=True, is_raw=False)
         with patch(
-            "poriscope.plugins.analysistabs.ProteinView.EditSubsetFilterDialog",
+            "poriscope.utils.MetaSubsetTabView.EditSubsetFilterDialog",
             return_value=dialog,
         ):
             mock_view.show_edit_filter_dialog("f1", "ldr")
-        mock_view.global_signal.emit.assert_called_once()
-        assert (
-            mock_view.global_signal.emit.call_args[0][2] == "construct_metadata_query"
+        mock_view.filter_validation_requested.emit.assert_called_once_with(
+            "ldr", dialog.new_filter, "validate_edited_filter"
         )
+        mock_view.global_signal.emit.assert_not_called()
 
-    def test_raw_edit_requires_select(self, mock_view):
+    def test_raw_edit_requires_select(self, mock_view, monkeypatch):
+        """Modal rather than status panel, for the reason above."""
         mock_view.subset_filters = {"f1": "dur>1"}
         mock_view.global_signal = MagicMock()
-        received = []
-        mock_view.add_text_to_display.connect(lambda m, s: received.append(m))
+        warned = MagicMock()
+        monkeypatch.setattr(QMessageBox, "warning", staticmethod(warned))
         with patch(
-            "poriscope.plugins.analysistabs.ProteinView.EditSubsetFilterDialog",
+            "poriscope.utils.MetaSubsetTabView.EditSubsetFilterDialog",
             return_value=self._mock_dialog(
                 accepted=True, is_raw=True, new_filter="dur > 5"
             ),
         ):
             mock_view.show_edit_filter_dialog("f1", "ldr")
-        assert any("SELECT statements" in m for m in received)
+        warned.assert_called_once()
+        assert "SELECT statements" in warned.call_args[0][2]
 
     def test_raw_edit_with_select_validates(self, mock_view):
         mock_view.subset_filters = {"f1": "dur>1"}
         mock_view.global_signal = MagicMock()
+        mock_view.raw_filter_validation_requested = MagicMock()
         with patch(
-            "poriscope.plugins.analysistabs.ProteinView.EditSubsetFilterDialog",
+            "poriscope.utils.MetaSubsetTabView.EditSubsetFilterDialog",
             return_value=self._mock_dialog(
                 accepted=True,
                 is_raw=True,
@@ -2183,14 +2238,16 @@ class TestShowEditFilterDialog:
             ),
         ):
             mock_view.show_edit_filter_dialog("f1", "ldr")
-        mock_view.global_signal.emit.assert_called_once()
-        assert mock_view.global_signal.emit.call_args[0][2] == "validate_filter_query"
+        mock_view.raw_filter_validation_requested.emit.assert_called_once_with(
+            "ldr", "SELECT * FROM events LIMIT 0"
+        )
+        mock_view.global_signal.emit.assert_not_called()
 
     def test_pending_old_filter_name_set(self, mock_view):
         mock_view.subset_filters = {"f1": "dur>1"}
         mock_view.global_signal = MagicMock()
         with patch(
-            "poriscope.plugins.analysistabs.ProteinView.EditSubsetFilterDialog",
+            "poriscope.utils.MetaSubsetTabView.EditSubsetFilterDialog",
             return_value=self._mock_dialog(accepted=True, is_raw=False, new_name="f2"),
         ):
             mock_view.show_edit_filter_dialog("f1", "ldr")
@@ -2300,36 +2357,89 @@ class TestUpdateDistributionEnsemble:
         assert mock_view.plot_initialized is True
 
 
+def _fit_frame() -> pd.DataFrame:
+    """
+    A fit-data frame carrying every column the commit writes.
+
+    Built from ``FIT_COLUMNS`` rather than typed out, so a column added to the
+    production list cannot leave this fixture silently short of it.
+
+    :return: one row, keyed by event id
+    :rtype: pd.DataFrame
+    """
+    frame = {"id": [1]}
+    frame.update({column: [1.0] for column in FIT_COLUMNS})
+    return pd.DataFrame(frame)
+
+
 # ===========================================================================
 # set_alter_database_status / _commit_fits boundary (extra)
 # ===========================================================================
 
 
 class TestCommitFitsExtended:
-    def test_emits_get_table_by_column(self, mock_view):
-        mock_view.fit_data = pd.DataFrame(
-            {
-                "id": [1],
-                "prolate_volume": [1.0],
-                "prolate_shape_factor": [1.0],
-                "prolate_major_axis": [1.0],
-                "prolate_minor_axis": [1.0],
-                "oblate_volume": [1.0],
-                "oblate_shape_factor": [1.0],
-                "oblate_major_axis": [1.0],
-                "oblate_minor_axis": [1.0],
-                "min_fractional_blockage": [0.1],
-                "min_fractional_blockage_std": [0.01],
-                "max_fractional_blockage": [0.3],
-                "max_fractional_blockage_std": [0.02],
-            }
-        )
-        mock_view.column_table = None
-        mock_view.global_signal = MagicMock()
+    """
+    Step 4a made the commit two-phase, so the View asks and the Controller looks.
+
+    What is left to pin on this side is that the question goes out and that the
+    answer decides whether the user is asked - the plugin call itself is
+    ``ProteinController.check_for_existing_fit_columns``, covered in
+    ``test_protein_fetch_slots``.
+    """
+
+    def test_asks_whether_the_database_already_holds_fit_data(self, mock_view):
+        mock_view.fit_data = _fit_frame()
+        asked = []
+        mock_view.fit_commit_requested.connect(asked.append)
+
         mock_view._commit_fits("ldr")
-        emit_calls = mock_view.global_signal.emit.call_args_list
-        actions = [c[0][2] for c in emit_calls]
-        assert "get_table_by_column" in actions
+
+        assert asked == ["ldr"]
+
+    def test_no_existing_columns_commits_without_asking_the_user(self, mock_view):
+        mock_view.fit_data = _fit_frame()
+        sent = []
+        mock_view.fit_commit_confirmed.connect(
+            lambda *args: sent.append(args)
+        )
+
+        with patch.object(QMessageBox, "question") as dialog:
+            mock_view.confirm_fit_commit("ldr", None)
+
+        dialog.assert_not_called()
+        assert len(sent) == 1
+        loader, frame, units, table = sent[0]
+        assert (loader, table) == ("ldr", None)
+        assert list(frame.columns) == ["id"] + FIT_COLUMNS
+        assert len(units) == len(FIT_COLUMNS)
+
+    def test_existing_columns_ask_first_and_carry_the_table_through(self, mock_view):
+        mock_view.fit_data = _fit_frame()
+        sent = []
+        mock_view.fit_commit_confirmed.connect(lambda *args: sent.append(args))
+
+        with patch.object(QMessageBox, "question", return_value=QMessageBox.Ok):
+            mock_view.confirm_fit_commit("ldr", "events")
+
+        assert sent[0][0] == "ldr"
+        assert sent[0][3] == "events"
+
+    def test_declining_the_overwrite_sends_nothing(self, mock_view):
+        mock_view.fit_data = _fit_frame()
+        sent = []
+        mock_view.fit_commit_confirmed.connect(lambda *args: sent.append(args))
+
+        with patch.object(QMessageBox, "question", return_value=QMessageBox.Cancel):
+            mock_view.confirm_fit_commit("ldr", "events")
+
+        assert sent == []
+
+    def test_the_units_line_up_with_the_columns(self, mock_view):
+        """
+        A column added to one list and not the other would mislabel every column
+        after it, and nothing downstream could notice.
+        """
+        assert len(FIT_COLUMN_UNITS) == len(FIT_COLUMNS)
 
 
 # ===========================================================================

@@ -1,7 +1,7 @@
 """
 Tests for ``scripts/check_mvc_boundary.py``, the analysis-tab MVC boundary measure.
 
-These drive the four rules against small synthetic module texts rather than the
+These drive the five rules against small synthetic module texts rather than the
 real Views and Controllers, so they pin the *definition* of each rule and do not
 move every time the refactor removes a violation. That matters more here than
 usual: an earlier count of "21 import statements over 12 View x module pairs"
@@ -483,3 +483,121 @@ class TestPluginImports:
         an oversight.
         """
         assert not any(p.name == "__init__.py" for p in mod.shell_modules())
+
+
+# ===========================================================================
+# Rule 5 - an analysis-tab module reaching a plugin outside call()
+# ===========================================================================
+
+
+class TestPluginReach:
+    """
+    ``call()`` is the whole plugin-facing API a tab gets, and this counts the ways
+    around it.
+
+    Added by Step 4a, reading **zero** from the start - so unlike rules 1 to 3 it is a
+    ratchet rather than a backlog. Python cannot enforce this at runtime without
+    inspecting the call stack on every plugin call, which would cost more than it is
+    worth and would reject the worker-thread path; failing on the commit is earlier and
+    cheaper.
+    """
+
+    def test_resolving_an_instance_directly_counts(self, mod: types.ModuleType) -> None:
+        """The most direct way around ``call()``."""
+        source = "x = self.controller.get_plugin_instance('MetaReader', 'r0')"
+
+        assert mod.plugin_reaches(parse(source)) == ["get_plugin_instance"]
+
+    def test_touching_the_data_plugin_controller_counts(
+        self, mod: types.ModuleType
+    ) -> None:
+        """Holding the registry is holding every plugin in it."""
+        source = "x = self.data_plugin_controller"
+
+        assert mod.plugin_reaches(parse(source)) == ["data_plugin_controller"]
+
+    def test_the_signal_of_a_similar_name_does_not_count(
+        self, mod: types.ModuleType
+    ) -> None:
+        """
+        ``data_plugin_controller_signal`` is a different identifier.
+
+        Tabs emit it legitimately, so matching it would make the rule unusable - and a
+        substring check would have done exactly that.
+        """
+        source = "self.data_plugin_controller_signal.emit('a', 'b', 'c', (), 'd', ())"
+
+        assert mod.plugin_reaches(parse(source)) == []
+
+    def test_importing_a_concrete_plugin_counts(self, mod: types.ModuleType) -> None:
+        """A tab names plugins by key, never by class."""
+        source = (
+            "from poriscope.plugins.db_loaders.SQLiteDBLoader import SQLiteDBLoader"
+        )
+
+        assert mod.plugin_reaches(parse(source)) == [
+            "poriscope.plugins.db_loaders.SQLiteDBLoader"
+        ]
+
+    def test_importing_another_analysis_tab_does_not_count_here(
+        self, mod: types.ModuleType
+    ) -> None:
+        """
+        Rule 5 is about *data* plugins.
+
+        A tab importing its own sibling module is ordinary; the cross-tab rule is the
+        signal-relay convention in CLAUDE.md, not this.
+        """
+        source = (
+            "from poriscope.plugins.analysistabs.MetadataModel import MetadataModel"
+        )
+
+        assert mod.plugin_reaches(parse(source)) == []
+
+    def test_all_eight_families_are_covered(self, mod: types.ModuleType) -> None:
+        """
+        Missing one would leave a hole exactly where a plugin lives.
+
+        Named as a set so that adding a ninth family fails here rather than silently
+        going unwatched.
+        """
+        assert mod.PLUGIN_FAMILIES == {
+            "datareaders",
+            "datawriters",
+            "db_loaders",
+            "db_writers",
+            "eventfinders",
+            "eventfitters",
+            "eventloaders",
+            "filters",
+        }
+
+    def test_the_data_plugin_bases_are_not_tab_modules(
+        self, mod: types.ModuleType
+    ) -> None:
+        """
+        ``MetaReader`` and its siblings legitimately hold one another.
+
+        ``MetaEventFinder`` holds a ``MetaReader`` and ``MetaDatabaseWriter`` holds a
+        ``MetaEventFitter``, so rule 5 must not apply to them - which is why the
+        tab-layer suffixes are narrower than the View and Controller layers above.
+        """
+        scanned = {p.name for p in mod.tab_layer_modules()}
+
+        assert "MetaReader.py" not in scanned
+        assert "MetaEventFinder.py" not in scanned
+        assert "MetaView.py" in scanned
+        assert "MetaModel.py" in scanned
+
+    def test_the_tab_layer_includes_every_analysis_tab_module(
+        self, mod: types.ModuleType
+    ) -> None:
+        """Everything under analysistabs/, plus the bases those tabs inherit."""
+        scanned = {
+            p.resolve().relative_to(REPO_ROOT).as_posix()
+            for p in mod.tab_layer_modules()
+        }
+
+        assert "poriscope/plugins/analysistabs/MetadataView.py" in scanned
+        assert "poriscope/plugins/analysistabs/utils/metadatacontrols.py" in scanned
+        assert "poriscope/utils/MetaSubsetTabController.py" in scanned

@@ -1,3 +1,65 @@
+## Step 4a handoff, 2026-09-12 - COMPLETE
+
+**Step 4a is done and the manual pass is run.** `global_signal.emit` has **no callers left
+in the analysis tabs**: boundary rule 1 reads **0**, down from 75 at the start of the step
+and 13 at the start of the final session. Allowlist total **25** - 20 forbidden View imports
+(Step 4c) and 5 Controller reach-ins (4d). Suite **3,783 passed / 16 skipped**; all static
+gates and `sphinx-build -W` green.
+
+Eleven commits: merge-artifact doc fixes, the CSV export regression, the Raw Data range
+trim, Protein's event-plot chain, `construct_event_data_query`'s tuple, Protein's
+distribution subsets, `_commit_fits`, the base's last emit, the `call()` docs, and the
+manual pass's own fixes.
+
+**Six defects were found rather than converted**, every one invisible to the suite:
+
+- `MetadataController.load_event_subset` bound `construct_event_data_query`'s declared
+  `Tuple[str, str]` to one name, so a filter the database refused was neither reported nor
+  able to stop the plot. **The Controller test pinned it**, because its stub answered with a
+  bare string - rule 42's failure mode on the return value.
+- The CSV subset export is a generator, so its own empty-subset check fired on the worker's
+  first advance, after the export index had advanced. `changelog.md` had claimed this fixed
+  for three days.
+- `sphinx-build -W` is a gate in two workflows and had been failing since Step 3b, on a
+  property the autodoc generator emitted as a method.
+- **The protein tab's `_raw` filter branch had never worked**, on any version. It handed a
+  complete `SELECT` where `load_event_data` expects a WHERE-clause body; measured, SQLite
+  rejects it and the generator yields nothing, silently. Deleted, and raw filters are now
+  refused at the plot entry points. This **voids the queued "share it with the metadata tab"
+  item** - not a gap, a branch that does not work.
+- A column that is NULL for every row *in the selected scope* comes back from pandas as an
+  object array, and `np.isnan` cannot take it. Pre-existing in `MetaView`, whose 38 test
+  references for that method are every one a `Mock`.
+- Both protein distribution modes drew empty axes in silence for a subset holding no events.
+
+**Manual pass, Windows, 2026-09-12.** Nine checks across the three tabs; eight passed or
+were fixed and re-passed. One could not be run:
+
+- **Open, for the exit review: an unresolvable experiment on the protein tab (#5).** The
+  available data cannot provoke a failed experiment lookup, so the new hard stop has never
+  run against a real database. Reverting the guard fails exactly one Controller test, so it
+  is not unverified - but it is untried where it matters.
+
+**Next, in order:**
+
+1. **The promotion review.** Deliberately not done here: it is a decision, not a conversion,
+   and merging one into the other would put a behaviour change and a move in one diff. Both
+   event-plot chains are converted, so there is finally something to diff (`DECISIONS.md`,
+   2026-09-09 and 2026-09-12); four differences survived conversion - the `id, event_id`
+   projection, the failure wording, the empty-id guard and where the scope comes from.
+   Separately, `load_event_subset` and `load_event_distribution_data` are now the same chain,
+   and sharing them needs `_echo_applied_query`/`_last_echoed_query` to move to
+   `MetaSubsetTabController`, which would start the protein tab echoing SQL on the panel.
+2. **Then 3d**, which 4a's commit 1 unblocked, and **4c**, much cheaper after 4a.
+
+**Read before writing code:** method rules **42, 45, 50, 51, 52** in the artifact
+(<https://claude.ai/code/artifact/304ba119-d177-4918-90af-471d6de6bb80>), plus **53-57**
+earned in the final session: a generator's guards run on whoever advances it; a stub answered
+from the caller rather than the collaborator pins the bug; a derived gate reaching zero is
+success; a nested function can hide a static check; and **check that a branch can do its job
+before improving what it displays** - one commit here fixed the display of a code path that
+had never been able to return a row.
+
 # Poriscope 2.0.0 Refactor Plan
 
 Approved 2026-09-03. **Step 0 and the whole of Step 1 (Tiers A, B2 and C) landed
@@ -521,10 +583,11 @@ reorder joins, reassign aliases or change the projection and every one would sti
 - `test(views):` the View-authored SQL, pinned *before* the refactor moves it into the loader.
   `ProteinView.py:1778` was already pinned in branch 5 via `_resolve_event_db_ids`;
   `ProteinView.py:1957-1967`'s `scoped_query` is pinned here including both mis-fires of its
-  naive `"WHERE" in query.upper()` test. **`MetadataView.py:2351` is pinned only indirectly** —
-  it is inline, 120 lines into a 244-line orchestrator, so its text cannot be reached without
-  driving the whole method. Extract it before Step 4b moves it; queued in `future_fixes.md`,
-  and the projection difference against its Protein twin (`id` vs `id, event_id`) is asserted.
+  naive `"WHERE" in query.upper()` test. Metadata's twin **was** pinned only indirectly —
+  inline, 120 lines into a 244-line orchestrator — until Step 4a moved that whole chain to
+  `MetadataController.load_event_plot_data`, where `test_metadata_fetch_slots` drives it
+  directly. The projection difference against its Protein twin (`id` vs `id, event_id`) is
+  still asserted, because Step 4b has to reconcile them.
 - **Two findings from verifying the goldens are actually sensitive.** The alias map at
   `MetaDatabaseLoader.py:1021-1029` feeds the projection and the WHERE qualification while the
   JOIN's `ON` clause hardcodes `s.`, so renaming an alias emits invalid SQL — latent today,
@@ -657,6 +720,24 @@ unconditionally, which is asserted so the asymmetry is not rediscovered.
    delete the four pages they own (`IntroDialog`, `Overlay`, `StepDialog`, `WalkthroughMixin`).
    Gated by `tests/unit/scripts/test_autodoc_coverage.py`.
 
+#### A sixth gap, found 2026-09-08 — nothing asserted the golden net was armed
+
+`pytest-regressions` is declared correctly in **both** dependency sources and was
+nonetheless absent from one working environment. Every golden then errored at **setup**
+with `fixture 'num_regression' not found` — four errors beside 3,400 passes, which reads
+as an environment nit rather than as *the entire numeric golden net not running*. That net
+is what licenses Step 4 to move computation at all, including `RawDataModel.gaussian_fit`,
+whose own comment calls it "THE CRITICAL MATH FIX" and which the audit found had no
+behavioural coverage.
+
+None of the three gates can see it: the audit reads a coverage JSON, so an uncollected
+test is indistinguishable from one that never existed. **CLOSED** by
+`tests/test_safety_net_is_armed.py`, verified red-then-green — with `regressions`
+deregistered both tests fail naming the cause and the install command. The plugin
+registration name was measured, not guessed: it is **`regressions`**, and neither
+`pytest_regressions` nor `pytest-regressions` resolves; `pytest-datadir` is asserted too,
+since the goldens fail without it as well.
+
 #### Two things the review confirmed rather than found
 
 - **`createButton`'s divergence is real and unpinned.** `eventAnalysisControls.py` omits the
@@ -720,434 +801,191 @@ The 13 dead `sys.path` shims in the e2e modules (placed *after* the import they 
 `c99249ea`; `ProteinView`'s naive `WHERE` substring test; and `ClusteringView`'s GMM branch
 (`:660-670`), which has no extracted method to pin and gets one in Step 4c.
 
-## Next up — state as of 2026-09-06
+## Next up — state as of 2026-09-08
 
-**Steps 0, 1, 2 and 3 are complete.** Also landed: the boundary-gate widening, and two fixes
-found on the way (the dead `involved_tables` trio; a flaky `test_raw_data_flow_no_gui` wait).
+**Steps 0–3 complete.** Step 4 in progress on `feature/step-4a-plugin-call`, **17 commits,
+not yet merged to `develop`**. Every row below re-measured 2026-09-08 on the
+working tree; suite **3,573 passed / 4 skipped**. Re-measured 2026-09-09 after Metadata's
+last six emits; the artifact's table carries the same numbers and the reasoning behind the
+rows that moved.
 
-| Gate | Start | Now |
-| --- | --- | --- |
-| Duplication, removable lines | 1,889 | **737** |
-| — `*controls.py` family | 641 | **0** |
-| Boundary allowlist | 111 | **106** |
-| — rule 4, layering | 4 | **0** |
-| Suite | 3,339 | **3,330 passed / 4 skipped** |
+| Gate | Start of refactor | Now | Target |
+| --- | --- | --- | --- |
+| Duplication, removable — repo-wide, 6 families | 1,889 | **721** | — |
+| — the 3 analysis-tab families | 1,199 | **31** | 0 |
+| — the 3 Step-5 families, untouched by design | 690 | **690** | Step 5 |
+| Boundary allowlist | 111 | **38** | 0 |
+| — rule 1, View emits | 75 | **13** | 0 |
+| — rule 2, View computation imports | 22 | **20** | 0 |
+| — rule 3, Controller reads a View private | 10 | **5** | 0 (4d) |
+| — rule 4, layering | 4 | **0** | 0 |
+| — rule 5, tab reaches a plugin | 0 | **0** | 0 (added at zero) |
+| Refactor-coverage audit | — | **100% pinned** | 100% |
 
-Six new bases exist: `MetaControls`; `MetaSubsetTabView`/`Controller`/`Controls` (Metadata,
-Protein); `MetaEventTabView`/`Controller`/`Controls` (RawData, EventAnalysis).
+**Rule 3 halved without anything being fixed.** Promoting `relay_query` to
+`MetaSubsetTabController` merged two copies of the same five reach-ins into one, so the count
+went 10 → 5 while the violations are unchanged in kind and still wait on 4d moving the
+pending-filter state to the Model. Recorded because a ratchet that falls without a fix is the
+reading error method rule 21 warns about. **Rule 2 is unmoved and one attempt would have made
+it worse**: annotating the base's `relayed_query_result` as `Optional[pd.DataFrame]` put a
+pandas import in a View and the gate refused it; `Optional[Any]` was the right trade for a
+member already scheduled for deletion.
 
-**Next: Step 4**, then **3d after 4a** — see the reordering note below, and section 05 of the
-artifact. 3d needs Decision A's `call()` before it can move anything.
+**Corrected 2026-09-08: the duplication row was comparing two scopes.** It read
+`1,889 → 31`. **1,889 is the six-family repo-wide total** — the ratchet was widened in
+the Step 2 exit review — while **31 is the three analysis-tab families alone**. Read
+against 31 the refactor looks finished when Step 5 has not begun, and the ≥ 2,500
+target in the Verification table is a repo-wide number. Method rule 2's fourth firing,
+and the first one that arose *after* the rule was written: **when a gate's scope is
+widened, every recorded before/after pair using the old scope becomes wrong in the same
+commit.**
 
-**Manual Windows pass — CLEAR, 2026-09-06, all of Step 3.** Run against `5c4ea613`, covering
-all five tabs' controls, both channel multiselects, the event-index field and navigation arrows
-on all four tabs that have them, subset filter add/edit/delete/save/load on Metadata and
-Protein, the selection tree, CSV export, progress bars appearing *and* clearing, the
-Clustering and Protein second-commit overwrite dialogs, the walkthrough on every tab from
-Help ▸ Tutorial, both nested dialog walkthroughs, and clean shutdown with a worker running.
-So 3f's widget move, 3g's construction change and 3a-bis's control-area template are all
-confirmed in the running app, not only in the suite.
+### Resume here
 
-**Contributor docs on what to inherit from — WRITTEN 2026-09-06.**
-`docs/.../ready_to_build/choosing_a_base.rst`, first in that section's toctree, covers the two
-tab families, all three choices (View, Controller, controls panel), what each base demands and
-supplies, the `_build_controls` hook, and the rule for deciding when only half of an
-intermediate is wanted. It records the non-obvious part explicitly: **an intermediate does not
-always ask less than the base** — `MetaEventTabView` needs two methods where `MetaView` needs
-four, while `MetaSubsetTabView` needs six.
+**Finish 4a, tab by tab.** The conversion pattern is established and proven four times:
+the View emits a **typed intent**, the Controller's slot calls the plugin through
+`self.model.call(...)`, and the result goes back through a setter on the View. Remaining:
 
-**Still open from 3f:** `WalkthroughStep` as a frozen dataclass — 90 tuple literals across 7
-files, moves no gate.
+- **RawData is done — the second View in the repo at zero emits**, after Clustering. Six
+  commits, 2026-09-08, taking it 14 → 0. The conversions in order:
+  `update_available_plugins`, the trace and PSD loading, the event plots,
+  `_handle_commit_events`, and `_start_eventfinder`.
 
-**Standing method notes** live in the artifact's section 08, now **34 rules**, which is the
-source material for the refactor skill.
+  **Nine unguarded stale reads were closed along the way**, all of the same shape: an
+  answer parked on a View attribute written only on success and never cleared before the
+  emit, with `_dispatch_to` swallowing the failure. The plan had described this whole
+  surface in one line as "all emit-then-read on `self.plot_data`". Two of the nine
+  decided *what the user saw*: the event count bounded which event indices were in range,
+  and the finder's status decided whether the "already completed, start over?" prompt was
+  shown — both for the previous channel rather than this one. Two emits genuinely had no
+  stale read (`commit_events` and `find_events` both hand back a generator as an argument
+  to `set_generator`), which is recorded so the absence does not read as an oversight.
 
-## Step 3 — promotion to `Meta*` bases
+  **`_start_eventfinder` was the awkward one**, and it is a two-phase launch now: it
+  interleaved a plugin call with a question for the user, so the Controller resolves the
+  statuses, the View prompts about already-finished channels, and the approved channels
+  come forward again. The filter key travels through both halves rather than being held
+  on the View between them.
 
-- **3a `MetaControls(QWidget)`** — highest value, independent of the test gate, **gated on
-  ownership** (the five files are solely @Carogg28's and the shared code moves into Kyle's
-  `poriscope/utils/`). Re-verified at `062ef6f`, where nine of thirteen sub-claims moved; the
-  files are byte-unchanged since `fc4fdf7`, so every correction below was a measurement error.
-  New file `poriscope/utils/MetaControls.py` (name is free; no `Meta*` enumeration needs it -
-  `main_model.py:197-207`'s dict is data-plugin families plus the triad).
-  - **444 removable lines, not ~590** — the 10 groups identical in all five files.
-    `create_info_button` **29** L×5, `create_delete_button` **29** L×5, `create_add_button`
-    **17** L×5 (Step 0's own table already said 29/29/17), plus **7** more, not 6. The
-    remaining 197 of the family's 641 belong to 3b/3c or to 4-of-5 and 3-of-5 groups.
-  - The **4 signals redeclared 5 times** holds, byte-identical including the trailing comment.
-    Metadata and Protein carry two more (`edit_filter_requested`, `delete_filter_requested`)
-    that are 3b-scoped.
-  - The **duplicate `logger =` in 3 of 5** holds exactly (`clusteringcontrols.py:59`,
-    `metadatacontrols.py:72`, `proteincontrols.py:71`).
-  - `is_signal_connected` is **fully dead** — 5 definitions, 0 reads, 0 writes anywhere. Delete
-    it; do not promote it.
-  - `setupUi` is **523/438/235/222/107** and stays per-tab, decomposed into per-panel builders.
-    `connect_signals` (18/26/57/61/43) is 5-way distinct and must stay per-tab too.
-  - **Four things that stop this being "zero risk".** `createButton` is identical in 4 of 5 but
-    EventAnalysis's copy omits `button.setStyleSheet("")`, so promoting the majority version
-    changes EventAnalysis behaviour — almost certainly a no-op, but decide it rather than merge
-    it silently. `update_filters` exists in 4 files under **incompatible contracts** (a plain
-    `QComboBox` in EventAnalysis/RawData, a `MultiSelectFilterComboBox` in Metadata/Protein), so
-    defining it on the base creates a silent override hazard — leave it to 3b/3c. Promoting any
-    `@log(logger=logger)` method re-binds `logging.getLogger(__name__)` from the tab module to
-    `poriscope.utils.MetaControls`, changing every record's logger name. And the autodoc
-    generators emit **own methods only**, and skip classes with no docstring — none of the five
-    has one — so ~50 `automethod` lines would vanish from the published docs with CI still green
-    unless `MetaControls` gets a class docstring and its own page.
-  - **Three near-misses the byte-identity measure cannot see**, worth ~45 more lines:
-    `is_placeholder_item` (5 copies differing only in a string list → base method plus a
-    `_placeholder_texts` attribute), `on_loader_changed` (3 copies differing only in the view
-    name → a `_view_name` attribute), and `retranslateUi` (semantically `pass` in all five,
-    four textual variants).
-  - Only **12 test functions** touch anything 3a moves, all in
-    `tests/unit/views/utils/test_metadata_controls.py` and `test_event_analysis_controls.py`;
-    Protein, RawData and Clustering controls have no unit test file at all. Pulling a method up
-    to a base preserves every `view.method(...)` call site, so **3a re-points no test** — but
-    the duplication ratchet that would prove no copy was lost is Step 2's, which 3a precedes.
-    *(Re-measured 2026-09-06 against the whole suite rather than those two files: **90** test
-    functions touch a promoted method or one of the four signals. All reach them through a real
-    widget instance or an instance-level connection, so the "re-points no test" conclusion
-    holds — the 12 was an undercount of the same fact.)*
+- **EventAnalysis is done — the third View at zero emits**, after Clustering and
+  RawData. Four commits, 2026-09-08, taking it 13 → 0. `_handle_plot_events` was the
+  largest single conversion in 4a at 243 lines and all eight of its remaining emits, and
+  it was **pinned as its own commit first** (24 tests) precisely because RawData's
+  equivalent had shown what a one-line plan description can hide.
 
-#### 3a — LANDED 2026-09-06
+  **The pinning pass is what made the conversion correct**, and three of its five
+  findings would otherwise have shipped silently:
+  - **The bus applies three unpacking rules in that one method**, chosen from each
+    callee's declared return type by `MainController._unpack_result`: `load_event`
+    returns a dict whose `data` key is the samples, `get_fitted_event` returns a bare
+    array that must *not* be unwrapped, and `get_plot_features` returns a six-tuple that
+    is **splatted** across `update_features`' six parameters. None of it is visible at a
+    call site.
+  - **Two return-function names differ from their View methods** — `set_event_filter` →
+    `set_data_filter_function`, `update_features` → `update_plot_features` — because the
+    bus resolves them on the Controller.
+  - **The per-event feature alignment.** `event_data` and `labels` take one to three
+    entries per event; the six feature lists take exactly one placeholder each. Breaking
+    it attaches a fit's features to another event's subplot, which no gate would notice.
+    Perturbation confirmed three tests catch it.
 
-**Five commits on one branch, each banking a measured fall in the ratchet. Every predicted
-figure below was met exactly.** Every figure below
-was produced by simulating the stage through `measure_duplication.collect_functions` against
-modified source text, not by arithmetic. Branch `feature/step-3a-metacontrols`.
+  Only two of the eight emits were stale reads, not the four-plus RawData had — this
+  method cleared most of its parked answers, which is worth having measured rather than
+  assumed.
 
-| # | Commit | Promotes | family removable | repo removable | Δ | targets |
-| --- | --- | --- | --- | --- | --- | --- |
-| 0 | `docs:` this section | — | 641 | 1,889 | — | 308 |
-| 1 | base + plain widget factories | `createLabel`, `create_comboBox`, `createButton`, the 4 signals, `__init__`/`active_popups` | 554 | 1,802 | −87 | 293 |
-| 2 | plugin-management handlers | `show_plugin_edit_manager`, `show_plugin_add_manager`, `delete_plugin`, `clear_popup_reference` | 486 | 1,734 | −68 | 273 |
-| 3 | placeholder guard + toggle | `is_placeholder_item` (+ `placeholder_texts`), `toggle_info_button` | 452 | 1,700 | −34 | 263 |
-| 4 | the three icon-button factories | `create_info_button`, `create_add_button`, `create_delete_button` | 152 | 1,400 | −300 | 248 |
-| 5 | `docs:` 3a landed | — | 152 | 1,400 | — | 248 |
+- **`MetaSubsetTabView` is at zero emits**, landed 2026-09-08. Its two genuinely shared
+  lookups — `get_column_names_by_table` and `get_experiments_and_channels` — became
+  intents wired by a shared `_setup_connections` on `MetaSubsetTabController`, so the
+  pair is connected once rather than in each tab. Both threaded a `ret_args` the
+  conversion had to carry: the loader key, so the experiment structure can be filed
+  under it.
 
-Family `functions` falls at every stage (143 → 128 → 108 → 98 → 83), so
-`measure_duplication`'s `_divergence_warning` stays silent; `identical_bodies` 25 → 22 → 18 →
-16 → 13. `check_mvc_boundary --check` stays at **111 in every commit** and must never need
-`--update` — `poriscope/utils/` is scanned by none of its four rules, so movement there means
-something unintended happened.
+  **The third emit was not a base concern at all.** `update_units` moved *down* to
+  `MetadataView`, its only caller, which is 3e's category rather than 4a's. That also
+  retired the base's now-dead `update_column_units` relay and settled the
+  `future_fixes.md` entry that had been misdiagnosed since 2026-09-04 — `ProteinView`'s
+  missing `update_column_units` was **unreachable**, not swallowed, because the protein
+  tab has no units label, no units cache, and hardcoded axis-label units.
+- **Metadata is done — the fourth View at zero emits**, 2026-09-09, taking it 17 → 0 over
+  nine commits shared with the base and the protein tab. The last six: the categorical
+  guard's `get_column_type`, the CSV subset export, and `_handle_plot_events`' four -
+  three of which were **one chain** (resolve the experiment, resolve the event ids within
+  scope, load those rows) and became a single intent answered by
+  `MetadataController.load_event_plot_data`, rather than three intents keeping three
+  answer-slot attributes on the View.
 
-**The order is forced by the call graph, not chosen.** A promoted method may only call things
-already on the base: `create_info_button` → `show_plugin_edit_manager` + `is_placeholder_item`
-+ `toggle_info_button`; `create_delete_button` → `delete_plugin` + the same two;
-`create_add_button` → `show_plugin_add_manager`; `toggle_info_button` →
-`is_placeholder_item`; `clear_popup_reference` → `self.active_popups`; the three
-`show_*`/`delete_plugin` → their signals; `createLabel`/`create_comboBox`/`createButton` →
-nothing. So the leaves go first and the largest single win lands last.
+  **One more unscoped-query fault**, of the same class as commit 4's three stale reads: a
+  failed experiment lookup left the id `None` and the id query ran with no scope, so an
+  `event_id` that exists in two channels could return the wrong channel's events. It stops
+  the plot now. Reasoning in `DECISIONS.md`.
 
-**Outcome, all three gates verified.** Duplication 1,889 → **1,400** removable repo-wide, the
-`*controls.py` family 641 → **152** over 143 → 83 functions and 25 → 13 identical bodies — 489
-lines, matching the simulation at every stage. Boundary allowlist **111, unmoved**. Refactor
-coverage **248 targets, 248 pinned**, down from 308 exactly as predicted, since the twelve
-promoted names contributed five targets each. Suite 3,339 → **3,346 passed, 4 skipped**.
+  **Two dead guards went with the emits.** The View's `try/except` around the per-event
+  feature lookup and around the export could never fire - the bus swallowed plugin
+  exceptions before they reached it, and a Qt slot's exception does not propagate back to
+  the emitter either. Measured on PySide6 6.9.0: `emit()` returns normally, the traceback
+  goes to `sys.excepthook`, and the remaining slots still run.
 
-**What is left in the family is now entirely tab-pair work, cleanly split.** Every one of the
-thirteen remaining groups is a two-file pair: `update_channels` (52), `update_filters` (15) and
-`set_event_index_input` (5) between EventAnalysis and RawData, which is **3c**; and
-`update_loaders`, the three filter-button factories, `update_filters` (13),
-`_on_sizes_checkbox_toggled`, `show_filter_info_dialog_single`, `delete_filter_by_name`,
-`get_selected_filter_names` and `retranslateUi` between Metadata and Protein, which is **3b**.
-Nothing five-way survives, which is the check that 3a's scope was complete.
+  **The commit-4 methods had no Controller-side test.** `load_metadata_subset` and
+  `load_event_subset` shipped covered only by View tests that stub the answer, so a wrong
+  call signature or a swallowed failure would have satisfied the whole suite.
+  `tests/unit/controllers/test_metadata_fetch_slots.py` covers them alongside this commit's
+  four, 24 tests, and two mutations - dropping the scope guard, and handing the query over
+  before the rows load - each fail exactly one of them.
+- **Protein is done — the fifth and last View at zero emits**, 2026-09-12, taking it
+  12 → 0 over three commits. The event-plot chain (`_resolve_event_db_ids` +
+  `_fetch_event_data`) went as one intent, as Metadata's had; the two distribution twins
+  and `_build_load_event_data_args` went as one more, because all three ran the same
+  four-emit chain; and `_commit_fits` went two-phase, because it interleaves a plugin call
+  with a modal question.
 
-**Still owed: the manual Windows pass.** 3a rewrote all five controls widgets, so this is
-exactly the case `refactor_2.0.0.md`'s verification section names. Baseline 2026-09-04 was
-clear, so a failure is attributable.
+  **Three unscoped-query faults of the same family closed with them**, each one the bus
+  swallowing a lookup and the View then dropping the scope rather than stopping: the
+  experiment on the event-id query, and the experiment *and* channel on a `_raw` filter's
+  scope clause. A raw filter meant for one channel read the whole database.
 
-**Three decisions taken, 2026-09-06.**
+  **And the tab showed one query while running another.** For a `_raw` subset it displayed
+  what `construct_event_data_query` built - which does not refuse a complete SELECT, it
+  splices it in after `WHERE` - and then loaded through a separately scoped raw query.
 
-- **`createButton`: promote the majority version, keeping `setStyleSheet("")`.** EventAnalysis's
-  four buttons gain the call. Measured inert: two `QPushButton`s under a parent carrying
-  `QPushButton { color: rgb(1,2,3); }`, one reset and one not, both report `styleSheet() == ""`
-  and both still resolve `ButtonText` to `(1,2,3,255)`. The call changes nothing *and* does not
-  do what its comment claims — an empty stylesheet does not block a parent's cascade.
-- **`max_range_size` is deleted**, with its only assertion
-  (`test_event_analysis_controls.py:112-113`). Set in Clustering/EventAnalysis/RawData, read
-  nowhere in `poriscope/`. Same category as `is_signal_connected`.
-- **`MetaControls` is exported from `poriscope/exposed.py`**, alongside `MetaView`/`MetaModel`/
-  `MetaController`.
+- **`MetaSubsetTabView` is at zero for the second time**, 2026-09-12. Its last emit was
+  `_rebuild_event_id_cache`'s `load_metadata`, and the recorded claim that its callers
+  needed restructuring first was false: re-derived, **all five** call sites (not the two the
+  plan named - the method lives on the base, so ProteinView has three) consume only the
+  `bool` return and read `filtered_event_ids` a statement later. `relayed_query_result` and
+  its three relay methods went with it.
 
-**`is_placeholder_item` becomes one base method reading a per-subclass class attribute**
-(`placeholder_texts`, default `()`): `("No Event Database",)` for Clustering/Metadata/Protein,
-the four loader/writer/filter/fitter strings for EventAnalysis, the four reader/writer/filter/
-eventfinder strings for RawData. `active_popups` moves to `MetaControls.__init__`, which
-initialises it *before* `setupUi()` rather than after — safe, because `clear_popup_reference`
-is its only reader in `poriscope/`.
+**Then 3d**, which 4a's commit 1 unblocked, and **4c Protein and Metadata**, which are much
+cheaper after 4a for the reason recorded under 4c below.
 
-**Four corrections to the bullets above, found while planning 3a.**
+### Standing rules added this session
 
-1. **`retranslateUi` is not "semantically `pass` in all five".** It is called from `setupUi` in
-   all five, and `eventAnalysisControls.py:536` and `rawdatacontrols.py:567` really do
-   `setWindowTitle(...)` plus `{loaders,readers}_comboBox.setCurrentText("")`. Metadata (`:768`)
-   and Protein (`:682`) are a bare `pass`; Clustering (`:294`) is a docstring plus `pass`. It
-   stays per-tab, and the "three near-misses worth ~45 lines" estimate shrinks accordingly.
-2. **`on_loader_changed` belongs to 3b, not 3a.** Its three carriers — Clustering, Metadata,
-   Protein — are exactly the three DB-loader tabs, and it calls `self.collect_parameters()`,
-   which is not on the base. It is in no duplication group, so promoting it moves the ratchet by
-   zero and the coverage gate does not guard it.
-3. **The `@log(logger=logger)` rebinding risk does not apply to 3a.** None of the twelve
-   promoted methods is decorated, and every logging call in the family goes through
-   `self.logger`, which resolves through the MRO to the subclass's own class attribute. Each
-   subclass keeps exactly one `logger = logging.getLogger(__name__)`; the base declares none.
-   The risk is real for `set_event_index_input` (2 copies, a 3c candidate).
-4. **The autodoc hazard's mechanism is the docstring gate, not "own methods only".** Both
-   generators emit own methods only, and the plugins generator documents docstring-free classes
-   happily — the five controls classes prove it. The live gate is
-   `metaclasses_generate_autodoc.py:111-114`, which `continue`s past a docstring-free class and
-   emits **no page at all**, silently, with `sphinx-build -W` green. So **`MetaControls` must
-   carry a class docstring**, and the five subclasses must not gain one
-   (`test_autodoc_coverage.py:142` asserts they have none).
+- **New runtime mechanisms are written test-first, verified red-then-green.** Not for
+  moves — the ratchets cover those — but for anything with wiring that did not exist
+  before. This session's only escaped regression was the refactor's first new mechanism.
+- **A regression the suite missed gets a test once positively diagnosed**, written against
+  the *invariant* rather than the symptom, and seen red before it is trusted.
+- **New tests are owned by whoever adds the mechanism**, not the usual test owner.
+- **When a gate's scope is widened, restate every recorded before/after pair for it in the
+  same commit** — otherwise the old-scope figures survive as a self-contradiction, which is
+  how `1,889 → 31` happened.
+- **A safety net's absence has no signature, so assert the net is armed.** A missing test
+  dependency errors at setup rather than failing, which reads as a pass.
+- **A converted slot needs its own test, not just its caller's.** The View tests stub the
+  Controller's answer, so they cannot see a wrong call signature or a swallowed failure, and
+  no gate covers a method that did not exist before the commit. Rule 52.
+- **Delete a guard the conversion makes unreachable, once you have measured that it is.** A
+  Qt slot's exception does not reach the emitter, so a `try/except` around an emit is dead
+  code that reads as error handling. Rule 50.
+- Method notes are at **52 rules** in the artifact, grouped by refactor phase; the
+  artifact is the source material for an end-to-end refactor skill, not only a metrics one.
 
-**Two tests fail by design and are rewritten in the commit that breaks them.**
-`test_duplicated_helpers.py`'s `TestCreateButtonDivergence` *raises* rather than fails once
-`createButton` leaves the five files (commit 1); `test_autodoc_coverage.py:168` asserts the
-three icon-button directives appear ≥5 times across the per-tab pages, and all three sit at
-exactly 5 today (commit 4). Nothing currently asserts that `metacontrols.rst` exists at all —
-commit 1 adds that.
-- **3a-bis `_set_control_area` as a `MetaView` template method** — separable from `MetaControls`,
-  and **the recorded premise was wrong twice over**. The five bodies are in the *View* files, not
-  the controls files, and they are pairwise distinct at 21/22/23/25/27 lines: Clustering has a
-  stray blank line, EventAnalysis wraps one connect over three lines, and Metadata and Protein
-  each add two filter connects. The stale comment naming `rawdatacontrols` is in **4 of 5** and
-  genuinely stale in **3** (RawData's is correct; EventAnalysis's names its own widget).
-  `MetaView.py:210` **already declares the hook `@abstractmethod`**, called once from
-  `_setup_ui:690`, so making it concrete relaxes an ABC contract every subclass satisfies today -
-  no break, but it is a contract change Decision C does not list, and the two docs tutorial
-  examples (`HelloWorldView.py`, `SimpleCalcView.py`) override it, so the tutorial prose moves
-  with it. Six tests call it directly, and the Metadata ones patch
-  `poriscope.plugins.analysistabs.MetadataView.MetadataControls`, so any template method must
-  preserve that patch target.
-- **3b `MetaSubsetTabView` + `MetaSubsetTabController`** (Metadata/Protein) — largest
-  cluster in the repo. **No longer blocked on 4d.** It was recorded as "subset-filter state must
-  find its layer first"; verified 2026-09-06, that was never the blocker, and the real one is
-  different.
-  - **The state is the most *uniform* thing in the cluster, not a source of conflict.** Same
-    name, same `Dict[str, str]`, same three `Optional[str]` pendings
-    (`_pending_filter_name`, `_pending_filter_text`, `_pending_old_filter_name`), same
-    `_assisted`/`_raw` conventions — `MetadataView.py:152`/`:184-186` against
-    `ProteinView.py:232`/`:228-230`. The methods around it are already byte-identical: ~194
-    View lines (`_save_filter`, `restore_subset_filters`, the delete/replace/update group) and
-    ~96 Controller lines. Four declarations promote verbatim. Writing `MetaSubsetTabView`
-    today hits **no** state conflict; what actually bites is the controls attribute name
-    (`self.metadatacontrols` vs `self.proteincontrols`, 60 and 58 references), which needs a
-    uniform accessor and is a different problem.
-  - **The real blocker: the boundary gate would read zero for the wrong reason.**
-    `check_mvc_boundary.py`'s rules 1-3 scan hardcoded filename tuples under
-    `poriscope/plugins/analysistabs/`, and `poriscope/utils/` is scanned by none of them —
-    the same property 3a relied on to assert its allowlist must stay at 111. Here it inverts:
-    promote `relay_query`, the natural centrepiece of 3b, and all **10** allowlisted
-    private-read sites — 100% of that rule's violations — leave the measurement while still
-    existing. Up to **41** of the 75 emits go the same way. The allowlist is the refactor's
-    headline metric, and it falling for free is worse than it not falling.
-  - **Decision: widen the gate's scan, then run 3b before 4d.** Teach
-    `check_mvc_boundary.py` to discover the analysis-tab MVC classes by hierarchy or by
-    `rglob` over both `analysistabs/` and `utils/Meta*`, rather than a five-name tuple. Small,
-    and it de-risks 3c, 3d and 3g, which have the same shape. **Do this before any Step 3
-    promotion that moves an emit or a `self.view._private` read onto a base.**
-  - Within 3b, order the promotions so the state-touching methods land last: bank the ~194
-    identical View lines and the identical Controller group first, leave `relay_query`
-    per-tab until 4d.
+### Owed
 
-#### 3b — approved series, 2026-09-06
-
-Three banked commits, one per class family. **Every figure was produced by simulating the
-stage through `measure_duplication.collect_functions` against modified source held in
-memory**, not by adding up group sizes.
-
-| # | Commit | Promotes | repo removable | Δ |
-| --- | --- | --- | --- | --- |
-| 0 | `docs:` the approved series | — | 1,400 | — |
-| 1 | `MetaSubsetTabController` + 17 methods | Controller | **1,221** | −179 |
-| 2 | `MetaSubsetTabView` + 15 methods | View | **986** | −235 |
-| 3 | `MetaSubsetTabControls` + 10 methods | Controls | **906** | −80 |
-
-−494 removable lines, larger than 3a. Family `functions` falls at every stage (Controller
-81→47, View 258→228, controls 83→63), so `_divergence_warning` stays silent.
-
-**Stage 2's −235 is 8 more than the pair list adds up to (227)**, because at least one
-promoted method belongs to a *three*-file group — deleting two of three copies collapses
-the group entirely rather than halving it. That is the reason to simulate rather than add.
-
-**The boundary allowlist falls 113 → 110**, earned. Three promoted View methods carry a
-`global_signal.emit` (`update_available_columns`, `request_experiment_structure`,
-`update_units`), so 3+3 copies become 3 on the base. Under the pre-widening scan this would
-have been an unearned fall of the same size, which is exactly what the widening prevented.
-No promoted body needs numpy, pandas or scipy, so rule 2 is unchanged.
-
-**Order: Controller → View → Controls**, cheapest surface first — the 17 Controller methods
-reference exactly one thing not already on `MetaController`, `self.view`. `relay_query` is
-**not** promoted: its bodies differ, so it is worth zero on the ratchet, and leaving it
-per-tab keeps all 10 rule-3 violations visible until 4d.
-
-Verified rather than assumed:
-
-- **`@log(logger=logger)` rebinding is real here and benign.** Unlike 3a, *every* promoted
-  View and Controller method is decorated. The decorator does nothing unless the logger is
-  at DEBUG; the level is set globally on the root logger (`main_model.py:548`, no per-module
-  UI); and the record's message already carries `MetadataView.set_query` from
-  `self.__class__.__name__`. Only `%(name)s` changes — and `MetaView`/`MetaController`
-  already log their shared methods under their own module names, so this is the existing
-  convention.
-- **The state is uniform and forces no decisions.** Six attributes are annotated identically
-  in both `_init`s. Eight more (`experiment_id`, `query`, `table_name`, `units`,
-  `event_query`, `event_data_generator`, `selection_tree`, `involved_tables`) are set only
-  by their setters in *both* tabs; they go on the base as bare annotations, which declare
-  them to mypy and create nothing at runtime, preserving today's behaviour exactly.
-- **`self.involved_tables` is never initialised anywhere in `poriscope/`**, so
-  `set_table_by_column("events")` would raise `AttributeError`. Unreachable:
-  `relay_table_by_column` has no caller in the app, only in tests, which assign the
-  attribute first. Not fixed inside 3b — the bare annotation preserves current behaviour and
-  the dead trio goes to `future_fixes.md` for 3e.
-- **`MetaSubsetTabView` needs `SelectionTree` and `MultiSelectComboBox` from
-  `poriscope/views/widgets/`, and no module in `poriscope/utils/` imports from
-  `poriscope/views/` today.** Accepted: shared bases depending on shared widgets is the
-  direction 3f moves `walkthrough` in, neither depends on plugins, and those widget modules
-  import nothing from `poriscope.utils`, so there is no cycle. `DECISIONS.md` carries it.
-- **3c `MetaEventTabView`** (RawData/EventAnalysis). Both re-override `_factors`, shadowing
-  the concrete base version they could inherit — delete those two.
-  **Correction, 2026-09-05: `notify_plugin_state_changed` is NOT an instance of this.**
-  `MetaView` declares it `@abstractmethod` (`:518`) and its docstring says it "must be
-  implemented by subclasses, even if the correct" response is nothing, so RawData's and
-  EventAnalysis's `pass` bodies are required by the ABC. Deleting them makes both classes
-  uninstantiable. Asserted in `tests/unit/views/test_plugin_state_notifications.py` so the
-  claim cannot be acted on by mistake.
-- **3d** Move `_logscale_and_filter_multiple_columns` (`MetaView.py:696`) and
-  `_logscale_and_filter_dataframe` (`:789`) — ~170 lines of pandas in a `QWidget` base — and the
-  five event-index range helpers to `MetaModel`. Note this is `MetaView` → `MetaModel`, **not**
-  View → Model: both already live on the base, which is why the first has 34 tests (all
-  exercising it as a stub through `MetadataView`, one of them baked into the fixture 346 of 347
-  tests use) and the second has none.
-  - **3d-pre — the two logscale methods collapse to one, approved 2026-09-06.** The Step 2
-    coverage the unification needed now exists (45 characterization tests), and measuring the
-    pair reduced the "different edge cases" to almost nothing: **dtype behaviour is identical**
-    in both (logged column → `float64`, others preserved — the characterization docstring
-    claiming the array form "preserves dtype" was wrong), and the status-panel text and counts
-    are **byte-identical**. Only two real divergences survive — `dropna()` sees every column
-    while the array form masks only the arrays it is handed, and the frame form therefore
-    tolerates a text column — and **both are inert at the only frame call site**, which passes
-    exactly `columns + ["id"]`.
-  - **Decision: keep `_logscale_and_filter_multiple_columns`, delete
-    `_logscale_and_filter_dataframe`.** The frame form has **one** caller against the array
-    form's eight, so this is ~3 lines of adapter at `ClusteringView.py:624` instead of ~24
-    across eight sites, and it avoids pushing more pandas into the Views that Step 4 exists to
-    take it out of. Both guards the frame form supplies are already redundant there —
-    `ClusteringView.py:608` rejects an empty frame and `:611` rejects missing columns, before
-    the call. Net −77 lines.
-  - **Performance was measured, not assumed.** Naive delegation the other way (array → frame)
-    cost 2.7–4.7×, but that is the frame form's own N+1 full copies — it re-slices the whole
-    frame once per log column. A single-slice rewrite is at **parity** with the array form
-    (1.06× at 1M rows, faster at 10k) and 2.4× faster than the frame form. Keeping the array
-    form costs nothing at all, which is why it wins on both churn and speed.
-  - **This commit banks no ratchet win, by construction.** Both methods live in one file, and
-    `measure_duplication` only counts identical bodies *across files in a family* — so it has
-    never seen this duplication and cannot record its removal. Recorded here so the absence is
-    not read later as a missed opportunity.
-  - **LANDED 2026-09-06**, −191 lines against +68, suite 3,338 passed / 4 skipped, both ratchets
-    unmoved as predicted. **Unpredicted bonus: `MetaView` no longer imports `pandas` at all.**
-    A `QWidget` base shedding its dataframe dependency was a large part of 3d's stated
-    rationale, and it fell out of the deletion rather than the move — so what remains for 3d
-    proper is a numpy-only method plus the five range helpers.
-  - **The audit's `MOVED` table listed the deleted method as a 3d target**, so both of its
-    existence tests failed the moment it went. The tripwire working as designed; the entry is
-    removed with a comment saying 3d-pre deleted rather than moved it. Any future step that
-    *removes* rather than moves code owes its instruments the same edit in the same commit.
-- **3e** Remove tab-specific leakage: `MetaController.check_column_exists` and
-  `MetaView.set_column_exists` are Clustering-only; `_setup_canvas`'s `num_channels` unused;
-  `MetaView.lock` is a class attribute shared by every tab view guarding 1 of 4 accesses.
-- **3f** Layering inversion: `views/main_view.py:53,58`,
-  `views/widgets/add_subset_filter_dialog.py:30` and
-  `views/widgets/clustering_settings_widget.py:52` import *up* from
-  `plugins/analysistabs/utils/walkthrough*`. Move to `poriscope/views/widgets/`. **Gated on
-  ownership like 3a** — `walkthrough.py` (495 lines) and `walkthrough_mixin.py` (387) are in
-  the solely-owned directory, and `walkthrough.py` also holds `IntroDialog`, `Overlay` and
-  `StepDialog`, each of which has its own autodoc page keyed off the module path. Make
-  `WalkthroughStep` (a 4-tuple alias used across 8 modules) a frozen dataclass.
-  - **The autodoc question, settled 2026-09-06.** The generators scan `poriscope/utils` (flat,
-    skips docstring-free classes, pages keyed by *module*) and `poriscope/plugins` (two levels,
-    no docstring gate, pages keyed by *class*). `poriscope/views/` is scanned by neither, so the
-    move deletes four pages: `introdialog` (3 directives), `overlay` (4), `stepdialog` (9),
-    `walkthroughmixin` (10) — **26 in total**.
-  - **Decision: move to `views/widgets/` as planned, accept losing three of the four pages, and
-    hand-write the fourth.** `IntroDialog`, `Overlay` and `StepDialog` are named in no prose
-    documentation anywhere — internal UI machinery a plugin author never instantiates, and the
-    docs exist for developers and users rather than for completeness. `WalkthroughMixin` is
-    different: `docs/.../next_steps/adding_walkthrough.rst` is a live tutorial telling authors
-    to inherit it, so it gets a small hand-written `.. autoclass::` page carrying a real
-    `.. _walkthrough_mixin:` label. That page also repairs two **backslash-escaped pseudo-links**
-    in that tutorial, which point at labels (`mainview_walkthrough`, `walkthrough_mixin`) that
-    exist nowhere in `docs/` — they have never resolved.
-  - **Both rejected options were costed.** Adding `poriscope/views/` as a third root needs a
-    genuinely new recursive generator (the plugins one is hard-shaped to
-    `<root>/<category>/*.py` and would miss `widgets/validators/` entirely) and would publish
-    **26 classes / 260 directives** of mostly-undocumented internal widgets to preserve 26 — and
-    it breaks `sphinx-build -W`, because `docs/source/utils/MainMVC/MainView.rst` already
-    hand-declares `.. _MainView:`. Moving to `poriscope/utils/` instead clears the layering
-    equally but loses Intro and Overlay anyway to the module-keyed filename (three classes, one
-    `walkthrough.rst`, last writer wins) and emits three duplicate TOC entries, failing the
-    build outright.
-  - `tests/unit/scripts/test_autodoc_coverage.py` asserts the current location and the four page
-    stems, so 3f edits `WALKTHROUGH_CLASSES`,
-    `test_the_walkthrough_modules_are_currently_inside_a_scanned_root` and
-    `test_the_walkthrough_classes_each_have_a_page` — deliberately, in the same commit.
-- **3g** `__init__` is byte-identical in all 5 Views (8 lines, `super().__init__()` +
-  `_init_walkthrough()`). Delete; fold into `MetaView`/mixin.
-
-## Step 4 — View code that is Model code
-
-#### 4c RawData — LANDED 2026-09-07
-
-**Allowlist 103 → 102, and `fast_histogram` reaches zero** — the import rule 2 was extended
-to include *specifically* because `RawDataView` held it and this step moves it.
-`RawDataModel` gains `get_baseline_stats` and `gaussian_fit`.
-
-Cheap because `update_plot` takes its data as arguments: the stats are computed **once for
-all channels before the loop** rather than inside it. `baseline: bool` became
-`baseline_stats`, the View emits `baseline_stats_requested`, and the Controller's slot loops
-the channels and hands the list back. A failed channel contributes `None`, so its trace is
-still drawn without a band — what the View did when it computed these itself.
-
-**`RawDataView._gaussian` was deleted, not moved: zero callers anywhere in `poriscope/`.**
-`gaussian_fit` fits a parabola to `log(histogram)` rather than calling a model function, so
-nothing ever needed it. `ClassicBlockageFinder` keeps its own separate copy.
-
-**The golden files were verified rather than regenerated.** `pytest-regressions` wrote fresh
-goldens in the new location first; all three came out **byte-identical** to the pre-move ones,
-so the computation is numerically unchanged — and *then* the originals were `git mv`'d into
-place, so the tests compare against values recorded before the move rather than against the
-new code's own output. **Never keep a self-generated golden across a move; that is the one
-thing that turns a golden test into a tautology.**
-
-#### 4c Protein and Metadata — recommend doing these AFTER 4a, 2026-09-07
-
-Measured after the two cheap tabs landed. 4c's cost is dominated by the **caller
-restructure**, and it scales with how bus-driven the callers are:
-
-| Tab | External callers | Their total lines | `emit`s among them | Status |
-| --- | --- | --- | --- | --- |
-| Clustering | 1 | 30 restructured | 0 | landed |
-| RawData | 1 | 92 | 0 | landed |
-| **Protein** | **3** | **483** | **6** | recommend after 4a |
-| **Metadata** | **9** | **1,041** | **19** | recommend after 4a |
-
-The two remaining tabs' callers are the *plotting orchestrators*
-(`_update_distribution_individual` 239L/4 emits, `_fit_and_plot_ensemble_geometry` 126L/2,
-`MetadataView._overlay_plot` 352L/**13**). Their flows are emit → read → compute → emit →
-read → compute → plot, so extracting the computation *now* means splitting each into several
-async handlers — and **4a then rewrites the same code**, because it collapses every
-emit-then-read pair into a direct call and makes those methods linear again. Doing 4a first
-makes both tabs much cheaper; doing them first means doing the work twice.
-
-**Two 4c targets should not move at all, and the plan is wrong to list them:**
-
-- **`MetadataView.format_axis_label`** has **6 callers**, all plot methods, and formats a
-  label string from a column name and a unit. That is presentation, not computation. Moving it
-  would mean six Controller round trips to format a string.
-- **`ProteinView._update_distribution_individual`** is 239 lines with **19** `self.*`
-  references including `global_signal`, `update_plot` and `_reset_actions`. It is an
-  orchestrator, not a computation — 4a/4b work, not 4c's.
+- **Metadata's last six emits are unchecked on Windows** — the event-plot chain, the CSV
+  export and the categorical-histogram guard. Everything earlier is cleared, the five paused
+  subset-tab commits on 2026-09-09.
+- **`WalkthroughStep` as a frozen dataclass** — 90 tuple literals across 7 files, moves no
+  gate. Still open from 3f.
 
 #### 4c Clustering pilot — LANDED 2026-09-07
 
@@ -1182,6 +1020,67 @@ finds coverage that never existed — the Gaussian-mixture branch was fifteen li
 and it now has four direct tests including one pinning that 1.9.0's seeding survived the
 move.
 
+#### 4a — CONVERSIONS DONE 2026-09-12. Mechanism + Clustering landed 2026-09-07
+
+**Allowlist 102 → 95.** `ClusteringView` is the **first View in the repo at zero emits**;
+the View-layer total is 72 → 65.
+
+| Commit | What | Allowlist |
+| --- | --- | --- |
+| 1 | `call()` on `MetaController`/`MetaModel`, instances pushed | 102 (unchanged, by design) |
+| 2 | Clustering's column lookups | 100 |
+| 3 | The cluster commit path, and its SQL (4b for that path) | 97 |
+| 4 | Clustering's metadata load | 95 |
+| 5-6 | The regression below | 95 |
+
+**Design decisions taken in commit 1**, all measured free before being taken: `call()`
+refuses a `_`-prefixed method name (all 75 bus calls targeted public methods, so nothing
+broke); `get_plugin` is **private**, so `call()` is the only public door; and
+`check_mvc_boundary` gained **rule 5**, counting the ways around it, reading **zero**
+across 32 tab-layer modules. `call()` also takes `**kwargs`, which the bus could not — 48
+methods on the data-plugin bases have default parameters, several last in the signature.
+Deliberately **no call-stack inspection**: it would cost real time on a path that runs per
+chunk and per event, reject the worker-thread path whose stack starts at Qt's thread entry,
+and fail on a user's machine rather than on the developer's commit. `DECISIONS.md` carries
+the reasoning.
+
+##### The first escaped regression of the refactor, and why it escaped
+
+Reported from a real run: restoring a session with one clustering tab and one loader gave
+`KeyError("No MetaDatabaseLoader plugin registered under 'SQLiteDBLoader_0'")` for a key
+listed one widget away. **Two faults**, and it took two attempts:
+
+1. `instantiate_analysis_tab` pushed plugin *names* to a new tab but not the instances.
+2. **The ordering.** Fixing (1) was not enough. Handing a tab the names populates its
+   comboboxes, and populating a combobox fires a selection change **synchronously** —
+   which is when the tab asks the selected loader for its columns. Names were pushed
+   first, so that call ran against an empty map. Instances now go first at both sites, and
+   the instances come from `DataPluginModel.get_plugin_instances()` — the same dict the
+   *names* are read from — rather than being rebuilt key by key inside `MainController`.
+   Every create/delete/rename route already emitted, so the creation path was never the
+   problem: the payload and the order were.
+
+It also unmasked a latent fault: `ClusteringView.columns` was created only by the
+`update_column_names` callback and never initialised, so **any** failed column fetch left
+the settings dialog raising `AttributeError` instead of opening empty.
+
+**Why no gate caught it.** Steps 0–3 were all *moves*, and the three gates are built for
+moves: the ratchet checks that copies vanished, the allowlist that nothing crossed a layer,
+the audit that everything moved stays pinned. This was the refactor's first new **runtime
+mechanism**, and a missing call at one of two sites is not duplication, not a boundary
+crossing and not an uncovered target — **absence has no signature**. It also only bit under
+session restore, the one ordering nothing exercises: the e2e suite builds a tab and *then*
+creates plugins, which is the order that works.
+
+Two standing rules came out of it: **new runtime mechanisms are written test-first,
+verified red-then-green**, and **any regression the suite missed gets a test once
+positively diagnosed**. The first regression test written here was itself too weak — it
+asserted both pushes happen, which the broken code satisfied, because the counts were right
+and only the order was wrong. Stating the invariant as *"a tab can call what it is being
+told about, at the moment it is told"* has the ordering in it; asserting that two calls
+happened does not. Verified on Windows against a live session and a restored one,
+2026-09-07.
+
 ### Fifth verification pass — Step 4 re-checked after Step 3, 2026-09-06
 
 Step 3 moved a great deal of what Step 4 names, so every checkable claim below was
@@ -1194,7 +1093,7 @@ under the step — but ten claims moved, and two change what the work *is*.
 | 4a · `global_signal` in **142** test functions, **46** assert on the emit | **156** and **37** | Counting rule, stated so it can be re-derived: a test function counts if `global_signal` appears anywhere in its source segment; it counts as *asserting* if that segment matches `assert.*global_signal` or `global_signal.*assert_` on one line. Step 2 added references, hence 142 → 156; the assertion figure is lower than 46 under this definition and 46 was never written down precisely enough to reproduce |
 | 4a · the stale-read guard is at `MetadataView.py:2334-2336` | **8 sites, two files** | `MetadataView.py:1369, 1982, 2238, 2257` and `ProteinView.py:1499, 1678, 1694, 1852`. All eight are clear-before-emit guards and all eight are code this step deletes |
 | 4d · **eight** further `self.view.subset_filters` reach-ins, **two** `restore_subset_filters` calls | **six**, and **zero** | 3 per Controller, not 4, and `restore_subset_filters` is no longer called from either Controller at all — 3b promoted `get_session_state`/`restore_session_state` to `MetaSubsetTabController` and took those reach-ins with them. **4d's Controller-side surface shrank from 10 to 6, and part of it is now on a base.** The 10 `self.view._pending` private reads are unchanged, 5 per Controller |
-| 4d · 15 of 16 `subset_filters` reads are synchronous | **shape changed** | The reads now span three files: 13 mentions in `MetadataView`, 14 in `ProteinView` and 5 in `MetaSubsetTabView` (`_save_filter`). The synchronous-access problem is unchanged in kind, but the fix now lands once on the base for `_save_filter`, `show_edit_filter_dialog`, `_delete_filter` and `get_selected_filters` |
+| 4d · 15 of 16 `subset_filters` reads are synchronous | **shape changed** | The reads now span three files: 13 mentions in `MetadataView`, 14 in `ProteinView` and 6 in `MetaSubsetTabView` (`_save_filter` and, since Step 4a promoted it, `get_selected_filters`). The synchronous-access problem is unchanged in kind, but the fix now lands once on the base for `_save_filter`, `show_edit_filter_dialog`, `_delete_filter` and `get_selected_filters` |
 | 4d · `hist_data` · 21 tests | **confirmed exactly** | 21 test functions, 13 mentions in `MetadataView` and 4 in `ProteinView` |
 | 4c · Clustering pilot has **6** existing tests | **understated** | 5 for `_update_clusters_hdbscan`, 8 for `_load_metadata_and_cluster`, 6 for `_normalize_column_data`. The "6" matches one method, not the trio |
 | 4e · `_save_filter`/`_load_filter` | **half shared now** | `_save_filter` moved to `MetaSubsetTabView` in 3b (one copy); `_load_filter` is still per-tab (two copies). `_export_csv_subset` exists only in `MetadataView` |
@@ -1249,8 +1148,8 @@ relocation. **Budget for the caller rewrite, not the method move.**
     references `self.model`** — verified 2026-09-06, zero occurrences across all five `*View.py`
     and `MetaView.py`. Views reach the Model only asynchronously, through `global_signal` via
     the Controller. But **15 of the 16 `subset_filters` reads are synchronous**: dialog
-    construction at `MetadataView.py:3108` and `:3195`, and `get_selected_filters` on every
-    plot. Moving the dict to the Model therefore needs either a synchronous View→Model accessor
+    construction at `MetadataView.py:3108` and `:3195`, and `get_selected_filters` - now one
+    copy on `MetaSubsetTabView` - on every plot. Moving the dict to the Model therefore needs either a synchronous View→Model accessor
     that Decision B currently forbids, or a View-side cache. That is a design decision, not a
     move, and doing it before 3b means taking it twice — once per tab — instead of once on the
     base.
@@ -1326,7 +1225,8 @@ from `exposed.py` so changing it is breaking.
 | Metric | Baseline | Target | Instrument |
 | --- | --- | --- | --- |
 | MVC boundary allowlist | **107** (75 emits, 22 imports, 10 privates) | 0 | `ast` test (Step 2 branch 3) |
-| Duplicated lines removed | 0 of 1,199 (re-derived, baselined) | ≥ 2,500 | `scripts/measure_duplication.py` + ratchet |
+| Duplicated lines removed | 0 of **1,889** repo-wide, 6 families (re-derived, baselined) | ≥ 2,500 | `scripts/measure_duplication.py` + ratchet |
+| Golden net armed | unasserted | asserted | `tests/test_safety_net_is_armed.py` |
 | Analysis-tab coverage | unmeasured | ratchet up | `pytest-cov` (Step 0) |
 | Numerical output | unpinned | unchanged | golden files (2A) |
 | Minimal runnable triad | n/a | ~100 lines | `new_plugin.py` (Step 6) |
@@ -1342,6 +1242,46 @@ select-all, dismiss on an outside click, reopen with the selection intact); and 
 outliving the app on close. That is the pre-refactor baseline, so a later failure is
 attributable. **Re-run it after each structural step** — certainly after 3a, which rewrites all
 five controls widgets, and after 3f, which moves the walkthrough modules.
+
+**Subset-base manual pass: run 2026-09-08, all clear.** The first of the five
+checkpoints scheduled for the subset tabs. Covers the column and experiment pickers on
+both Metadata and Protein — which now go through the two shared base slots — and
+Metadata's axis unit labels, which go through its own slot after `update_units` moved
+down. The next is owed after the filter dialogs are converted.
+
+**Step 4a EventAnalysis manual pass: run 2026-09-08, all clear.** Covers the four
+conversions that took the tab 13 emits to 0 — the loader channel lookup, the event write,
+the two-phase fitting launch, and the 243-line event-plot path. **Clustering, RawData and
+EventAnalysis are all at zero emits and every path they have converted has been seen
+working on Windows.** The next pass is owed after the subset tabs.
+
+**Third Step 4a RawData manual pass: run 2026-09-08, all clear.** Covers the event
+finding and commit paths rewritten by `ac26f71c` and `67f335b1` — including the two-phase
+launch, where the "already completed, start over?" prompt now follows a Controller-side
+status call rather than a bus emit. **RawData is at zero emits and every path it has
+converted has been seen working on Windows.** The next pass is owed after EventAnalysis.
+
+**Second Step 4a RawData manual pass: run 2026-09-08, all clear.** Covers the three plots
+rewritten after the first pass — the trace and noise spectrum (`a572644`) and the event
+plots (`8446eb4`) — so every path 4a has converted has now been seen working on Windows.
+This pass also surfaced three clarity defects rather than correctness ones, all fixed in
+`2ad8ba0`: an out-of-range event index reported "No data available for plotting" instead
+of naming the bound, stepping the index below 0 was declined silently, and finding or
+fitting events with no filter selected could register almost every sample as an event with
+no warning. The last of those was reported as a hang and correctly diagnosed as user
+error; it is guarded by a confirmation now.
+
+**Step 4a RawData manual pass: run 2026-09-08, all clear.** The two paths that had no
+cover, verified as separate checks because they exercise different widgets and would fail
+in different places. **The channel multiselect** (`f1fd81c`): a reader's channels populate
+`channel_comboBox`, which `DECISIONS.md` 2026-09-01 records as structurally unexercisable
+on Linux CI. **The event-finding time limits** (`1ff9e92`): a new event finder's Timer
+dialog opens with one row per channel, ranges set there survive a later plugin
+add/delete, and `find_events` runs over them — `analysis_time_limits` is reached only
+through `_handle_timer` and `_start_eventfinder`, so no combobox is involved. Together
+with the Clustering tab and session restore verified 2026-09-07, **every path Step 4a has
+converted so far has now been seen working on Windows.** The next one is owed after the
+remaining RawData conversions.
 
 **Post-3a manual pass: run 2026-09-06, all clear.** Same scope as the baseline, against a
 branch that had rewritten all five controls widgets — so the promoted widget factories, the

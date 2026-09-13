@@ -311,3 +311,97 @@ def test_a_second_export_does_not_overwrite_the_first(
     assert "second_events.csv" in names
     assert len(pd.read_csv(out / "first_events.csv")) == 25
     assert len(pd.read_csv(out / "second_events.csv")) == 15
+
+
+@pytest.mark.timeout(90)
+def test_an_empty_subset_is_refused_and_keeps_its_name(
+    metadata_tab: Triad, qtbot, tmp_path: Path
+) -> None:
+    """
+    The layer that can see this: a real loader, so a real generator.
+
+    ``export_subset_to_csv`` is a generator function, so every guard in its body -
+    including its own "No events found matching subset criteria" - runs on the
+    worker's first advance, long after the Controller's ``try/except`` has passed
+    and the View has advanced the export index. A Controller unit test cannot see
+    that at all, because its model's ``call`` is free to raise synchronously, which
+    the real plugin can never do. Hence a flow test, driving the real thing.
+
+    Channel 7 does not exist in the synthetic database, so the subset is empty
+    while the experiment name still resolves - an empty result, not a lookup
+    failure.
+    """
+    out = tmp_path / "export_empty"
+    out.mkdir()
+
+    messages: List[str] = []
+    metadata_tab.tab_controller.add_text_to_display.connect(
+        lambda text, source: messages.append(text)
+    )
+    before = metadata_tab.tab_view.subset_export_count
+
+    _StubDictDialog.folder = str(out)
+    _StubDictDialog.subset_name = "empty_subset"
+    metadata_tab.tab_view.selected_experiment_and_channels_by_loader[LOADER_KEY] = {
+        "exp_a": [7]
+    }
+    metadata_tab.tab_view.handle_parameter_change(
+        "metadatacontrols", "export_csv_subset", ({"db_loader": LOADER_KEY},)
+    )
+
+    # Nothing was staged, so there is no worker to wait on and no progress bar to
+    # run to the end; the refusal is complete by the time the call returns.
+    assert list(out.glob("*.csv")) == []
+    assert metadata_tab.tab_view.subset_export_count == before
+    assert any("No events match empty_subset" in text for text in messages)
+    assert any("still available" in text for text in messages)
+
+
+@pytest.mark.timeout(90)
+def test_the_name_a_refused_export_kept_is_reused_by_the_next_one(
+    metadata_tab: Triad, qtbot, tmp_path: Path
+) -> None:
+    """
+    The user-visible half of the same guard.
+
+    The export index names the file *and* keys the worker, so a refusal that
+    advanced it would leave a gap in the user's numbering for an export that never
+    produced a file. Asserting the index is unchanged proves the counter; this
+    proves what the counter is for.
+    """
+    out = tmp_path / "export_reuse"
+    out.mkdir()
+
+    offered: List[str] = []
+    original_init = _StubDictDialog.__init__
+
+    def record_name(self: Any, *args: Any, **kwargs: Any) -> None:
+        """
+        Record the name the dialog was offered before standing in for it.
+
+        :param args: positional arguments from the caller
+        :type args: Any
+        :param kwargs: keyword arguments from the caller
+        :type kwargs: Any
+        :return: None
+        :rtype: None
+        """
+        offered.append(str(kwargs.get("name")))
+        original_init(self, *args, **kwargs)
+
+    _StubDictDialog.__init__ = record_name  # type: ignore[method-assign]
+    try:
+        _StubDictDialog.folder = str(out)
+        _StubDictDialog.subset_name = "refused"
+        metadata_tab.tab_view.selected_experiment_and_channels_by_loader[
+            LOADER_KEY
+        ] = {"exp_a": [7]}
+        metadata_tab.tab_view.handle_parameter_change(
+            "metadatacontrols", "export_csv_subset", ({"db_loader": LOADER_KEY},)
+        )
+
+        export(metadata_tab, qtbot, out, "accepted", {"exp_a": [0]})
+    finally:
+        _StubDictDialog.__init__ = original_init  # type: ignore[method-assign]
+
+    assert offered == ["Subset_0", "Subset_0"]

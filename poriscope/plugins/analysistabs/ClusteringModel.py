@@ -184,3 +184,75 @@ class ClusteringModel(MetaModel):
         probs = clusterer.predict_proba(df[columns_except_id])
         probs = np.max(probs, axis=1) / np.sum(probs, axis=1)
         return labels, probs
+
+    @log(logger=logger)
+    def find_cluster_column_table(self, loader: str) -> Optional[str]:
+        """
+        Return the table already holding cluster columns, or None if there is none.
+
+        :param loader: the database loader's plugin key
+        :type loader: str
+        :return: the table name, or None if ``cluster_label`` is not in the database
+        :rtype: Optional[str]
+        """
+        table: Optional[str] = self.call(
+            "MetaDatabaseLoader", loader, "get_table_by_column", "cluster_label"
+        )
+        return table
+
+    @log(logger=logger)
+    def drop_cluster_columns(self, loader: str, table: str) -> bool:
+        """
+        Delete an existing clustering result so a new one can replace it.
+
+        Owns the SQL, which Step 4a moved out of ``ClusteringView`` - a widget was
+        authoring ``ALTER TABLE`` statements. ``DECISIONS.md`` (2026-08-25) accepts the
+        f-string interpolation itself, because the database is a local file owned by
+        the user running the app; this is about *where* the SQL lives.
+
+        :param loader: the database loader's plugin key
+        :type loader: str
+        :param table: the table the cluster columns are in
+        :type table: str
+        :return: True if the loader reported success
+        :rtype: bool
+        """
+        queries = [
+            f"ALTER TABLE {table} DROP COLUMN cluster_label",
+            f"ALTER TABLE {table} DROP COLUMN cluster_confidence",
+            "DELETE FROM columns WHERE name = 'cluster_label'",
+            "DELETE FROM columns WHERE name = 'cluster_confidence'",
+        ]
+        status: bool = self.call(
+            "MetaDatabaseLoader", loader, "alter_database", queries
+        )
+        return status
+
+    @log(logger=logger)
+    def commit_cluster_columns(
+        self, loader: str, cluster_data: pd.DataFrame, table_name: str
+    ) -> bool:
+        """
+        Write the cluster labels and confidences into the database.
+
+        The two new columns are unitless, which is what the ``[None, None]`` says. It
+        was a local in the View before Step 4a; it belongs with the call it describes.
+
+        :param loader: the database loader's plugin key
+        :type loader: str
+        :param cluster_data: the id, label and confidence columns to write
+        :type cluster_data: pd.DataFrame
+        :param table_name: the table to write them into
+        :type table_name: str
+        :return: True if the loader reported success
+        :rtype: bool
+        """
+        status: bool = self.call(
+            "MetaDatabaseLoader",
+            loader,
+            "add_columns_to_table",
+            cluster_data,
+            [None, None],
+            table_name,
+        )
+        return status

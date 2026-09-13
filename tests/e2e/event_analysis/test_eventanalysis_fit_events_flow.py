@@ -163,6 +163,7 @@ def test_event_fitting_flow_clicks(
     synthetic_events_database,
     step_size,
     expected_good_fits,
+    auto_dismiss_message_boxes,
 ):
     db = synthetic_events_database
 

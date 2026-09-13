@@ -284,9 +284,19 @@ def test_event_analysis_nav_and_plotting_matrix(
 
     schedule_dialog_autofill(fill_filter_dialog)
     QTest.mouseClick(controls.filters_add_button, Qt.MouseButton.LeftButton)
+    # "No Filter" is a permanent option on filter dropdowns, so the new filter takes the
+    # count to 2 rather than replacing a placeholder, and it has to be selected the way a
+    # user selects it. This step used to rely on the placeholder vanishing and the
+    # selection-restore logic falling through to index 0.
     qtbot.waitUntil(
-        lambda: controls.filters_comboBox.count() > 0, timeout=QT_WAIT_TIMEOUT_MS
+        lambda: controls.filters_comboBox.count() > 1, timeout=QT_WAIT_TIMEOUT_MS
     )
+    new_filter = next(
+        controls.filters_comboBox.itemText(i)
+        for i in range(controls.filters_comboBox.count())
+        if controls.filters_comboBox.itemText(i) != "No Filter"
+    )
+    controls.filters_comboBox.setCurrentText(new_filter)
     assert controls.filters_comboBox.currentText() != "No Filter"
 
     lines_with_filter_raw_off = _replot_and_count(qtbot, controls, ea_view)

@@ -12,6 +12,55 @@ number, not the narrative.
 Everything outside the tooling tiers is a logic change and needs an approved plan first.
 Read-only investigation and measurement do not.
 
+## `test_metadata_export_flow_no_gui.py` exits 127 at interpreter shutdown (2026-09-12)
+
+Run on its own, the module reports `8 passed` and the process then exits **127** with no
+faulthandler dump - a Qt teardown crash after the summary line, not a test failure.
+Reproduced at `8ffd3ce6` with only the six pre-existing tests, so it predates Step 4a's
+last commits. In full runs it is intermittent and kills the run mid-way at this same
+module: **2 of 8 full runs** over one session, each time immediately after this file's
+tests. Nothing is currently red, because a re-run passes and CI runs the whole suite; the
+risk is that a future genuine crash here reads as this one, and that CI goes red for
+reasons nobody can reproduce. Diagnose with `faulthandler` and a narrowed fixture -
+`metadata_tab` builds a real `MainView` per test and the worker threads outlive some of
+them - before trusting any green run scoped to this file.
+
+## `SQLiteDBLoader` opens a fresh connection per schema lookup (2026-09-08)
+
+`get_table_by_column:454` and `get_column_names_by_table:382` each call
+`sqlite3.connect(self.db_path)` per invocation, with no cache. Measured: **10 connections
+per `construct_metadata_query`** with a WHERE body, 4 without. Cheap on a local file
+(1.5 ms/call, so 0.08 s to validate 50 filters) and not the cause of the filter-loading
+pause, but the schema cannot change while a loader is open, so a dict cache built in
+`_finalize_initialization` would remove all of them. Re-measure on a network-mounted
+database before deciding it does not matter.
+
+## `_validation_columns`' fallback triple is wrong twice over (2026-09-08)
+
+`MetaSubsetTabView._validation_columns` falls back to
+`["sublevel_current", "voltage", "duration"]`, which is one column from each of the three
+tables - so **every** filter validation joins all three, measured as 2 JOINs even for a
+filter with no conditions at all. A single events column yields the joins the filter itself
+needs and nothing more: 0 for `dwell_time < 300`, 1 for a sublevels- or experiments-only
+filter, and all of them still build, so validation is unaffected. The triple is also not
+guaranteed to exist in a given database, which is the second half of the same defect: only
+`ProteinView.update_column_names:626` fills `available_columns`, so
+`MetadataView.update_column_names:2677` - which updates its axis comboboxes and stores
+nothing - always takes the fallback.
+
+One fix, two lines: store `column_names` in Metadata's `update_column_names`, and narrow the
+fallback to a single column. **`["event_id"]` does not work** as that column - it is in
+`construct_metadata_query`'s `redundant_cols` and `get_table_by_column("event_id")` returns
+None, so it raises `ValueError: columns could not be mapped to tables`. Two tests in
+`tests/unit/views/test_duplicated_helpers.py` are written to flip when this lands.
+
+## `MetaSubsetTabControls.get_selected_filter_names` has no production caller (2026-09-08)
+
+`MetaSubsetTabControls.py:153` wraps `filter_comboBox.getSelectedItems()` and is called only
+from `tests/unit/views/utils/test_metadata_controls.py:544`. Its obvious caller,
+`MetaSubsetTabView.get_selected_filters`, reaches past it to the combobox. Either delegate or
+delete; delegating changes what the tab tests mock, so it was left out of the promotion.
+
 ## The 2.0.0 refactor plan claims much of this queue (2026-09-03)
 
 **Read `refactor_2.0.0.md` before picking anything up here**, and check whether the item is
@@ -279,11 +328,23 @@ the oversized `setupUi` methods. This review re-confirmed each with fresh counts
 
 Findings the plan's own steps already claim are recorded in `refactor_2.0.0.md`, not here.
 
-- **`ProteinView` has no `update_column_units`, but `ProteinController.py:290` calls it**, and
-  `ProteinView.py:3508` also names it as a bus return function.
-  Not inherited from `MetaView` either; the `AttributeError` is swallowed by
-  `main_controller._dispatch_to`, so protein-tab unit labels silently never update. The other
-  four tabs either define the method or use `set_units`.
+- **Step 4a leaves dead callback sinks behind it; sweep them once a tab reaches zero
+  emits.** In `EventAnalysisView` the seven attributes `update_plot_features` and
+  `set_num_events_allowed` assign are now written and never read, and with no emits left
+  in the View nothing reaches those methods or their Controller relays
+  (`update_features`, `set_num_events_allowed`) either. The plan's 4a bullet predicts
+  ~30 such `relay_*`/`set_*` sinks across the tabs. Check for callers in `tests/` and
+  the other tabs before deleting any, and do it per tab as each hits zero.
+- **`MetaSubsetTabView.update_units` is Metadata-only behaviour on a shared base.**
+  Re-diagnosed 2026-09-08; the earlier entry here said "protein-tab unit labels silently
+  never update", which implied Protein has unit labels it should be updating. It has none:
+  `proteincontrols` contains no units label, `ProteinView` keeps no units cache, and its
+  axis labels use hardcoded unit literals. `update_units` is called from
+  `MetadataView:1878` and nowhere else, so `ProteinView`'s missing `update_column_units`
+  is **unreachable rather than swallowed**. The fix is to move `update_units` down to
+  `MetadataView` and make `MetaSubsetTabController.update_column_units` a Metadata-only
+  relay — the same shape as the Clustering-only `check_column_exists`/`set_column_exists`
+  that Step 3e moved down. Folded into Step 4a's first subset-tab commit.
 - **`MetaDatabaseLoader.export_subset_to_csv:605` assumes one `data` row per event id.**
   `data["filename"] = filenames` raises a length mismatch if the `data` table holds rows for
   only some of the selected events. An empty `data` table is now rejected explicitly; a
@@ -435,13 +496,6 @@ refactoring lands, to avoid generating triads against a layout about to change.
 
 ## Still queued
 
-- **`MetadataView._handle_plot_events` builds SQL inline, 120 lines into a 244-line method.**
-  `MetadataView.py:2351` emits `SELECT id FROM events WHERE {' AND '.join(where_parts)}`, the
-  near-twin of `ProteinView._resolve_event_db_ids:1778`'s `SELECT id, event_id FROM events
-  WHERE ...` - different projection, same scoping. The Protein one is pinned directly; this one
-  is not, because pinning its text means driving the whole orchestrator. **Extract it before
-  Step 4b moves it**, then pin it the same way. The projection difference is recorded in
-  `tests/unit/views/test_view_authored_sql.py` so the merge cannot assume they are identical.
 - **The metadata query's table aliases are only half parameterised.**
   `MetaDatabaseLoader.py:1021-1029` builds an alias map that feeds the projection and the
   WHERE qualification, but the JOIN's `ON` clause hardcodes `s.event_db_id`. Renaming the

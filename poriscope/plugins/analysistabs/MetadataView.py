@@ -26,9 +26,7 @@
 
 import bisect
 import itertools
-import json
 import logging
-import os
 import re
 import warnings
 from typing import (
@@ -52,11 +50,8 @@ from matplotlib.axes import Axes
 from matplotlib.colorbar import Colorbar
 from matplotlib.lines import Line2D
 from mpl_toolkits.mplot3d import Axes3D
-from PySide6.QtCore import Slot
+from PySide6.QtCore import Signal, Slot
 from PySide6.QtWidgets import (
-    QCheckBox,
-    QDialog,
-    QFileDialog,
     QMessageBox,
 )
 from scipy import stats
@@ -66,10 +61,9 @@ from scipy.stats import iqr, t
 from poriscope.plugins.analysistabs.utils.metadatacontrols import MetadataControls
 from poriscope.utils.DocstringDecorator import inherit_docstrings
 from poriscope.utils.LogDecorator import log, register_action
+from poriscope.utils.MetaSubsetTabControls import MetaSubsetTabControls
 from poriscope.utils.MetaSubsetTabView import MetaSubsetTabView
-from poriscope.views.widgets.add_subset_filter_dialog import AddSubsetFilterDialog
 from poriscope.views.widgets.dict_dialog_widget import DictDialog
-from poriscope.views.widgets.edit_subset_filter_dialog import EditSubsetFilterDialog
 from poriscope.views.widgets.walkthrough_mixin import (
     WalkthroughStep,
 )
@@ -96,6 +90,61 @@ class MetadataView(MetaSubsetTabView):
         plot_initialized (bool): Indicates whether a plot is currently initialized.
         no_cached_data (bool): True if data is not cached due to size.
     """
+
+    #: Asks the Controller for one column's units, for one axis label. The axis is
+    #: carried so the answer can be applied to the right label, which is what the bus
+    #: used its ``ret_args`` for. This tab is the only caller, which is why
+    #: ``update_units`` moved down here from ``MetaSubsetTabView``.
+    column_units_requested = Signal(str, str, str)
+
+    #: Asks the Controller for one metadata subset, ready to plot: the loader's key,
+    #: the columns this plot type needs, the filter, and the experiment/channel scope.
+    #: The Controller builds the query, loads the rows and looks up each column's
+    #: units, then hands all three back through ``set_query``, ``update_plot_data``
+    #: and ``set_column_units`` - or hands back nothing and reports why.
+    #:
+    #: Step 4a replaced three separate ``global_signal`` emits, of which two parked
+    #: their answer on an attribute that was never cleared first: a failed
+    #: ``construct_metadata_query`` left the *previous* subset's query in
+    #: ``self.query``, and a failed ``get_column_units`` appended the previous
+    #: column's units, mislabelling the axis.
+    metadata_subset_requested = Signal(str, list, str, object)
+
+    #: The same for an event-data subset: the loader's key, the filter and the scope.
+    #: The answer arrives through ``set_event_query`` and
+    #: ``set_event_data_generator``. Both of those were unguarded reads too - a
+    #: failed load replotted the previous subset's events.
+    event_subset_requested = Signal(str, str, object)
+
+    #: Asks for one column's declared type, which the categorical-histogram guard
+    #: needs before it will let the plot proceed. The answer arrives through
+    #: ``set_column_type``, and stays ``None`` when the lookup failed.
+    column_type_requested = Signal(str, str)
+
+    #: Asks for the full data of specific events, named by the ``event_id`` values the
+    #: navigation snapped to: the loader's key, those ids, the experiment name, the
+    #: channel, and the experiment/channel scope ``load_event_data`` wants. The answer
+    #: arrives through ``set_event_plot_data_generator``.
+    #:
+    #: Step 4a replaced a three-emit chain - resolve the experiment name to an id,
+    #: query the events table for the ids matching those ``event_id`` values within
+    #: that scope, then load exactly those rows - each of whose answers was parked on
+    #: an attribute and read back on the next statement. The whole chain belongs to
+    #: whoever can run it end to end and report which part failed, which is not the
+    #: widget.
+    event_plot_data_requested = Signal(str, list, object, object, object)
+
+    #: Asks for one event's plot features - the lines, points and labels a fitter left
+    #: behind. Emitted once per event on the plot path, and answered through
+    #: ``update_plot_features``, which the Controller calls only when the lookup
+    #: succeeded and the labels it returned match their features.
+    plot_features_requested = Signal(str, int, int, int)
+
+    #: Asks for a filtered subset to be written to CSV in a worker thread: the loader's
+    #: key, the destination folder, the export's name, the single selected filter (or
+    #: None for the whole dataset), the experiment/channel scope, and the index this
+    #: export is keyed under. ``on_subset_export_started`` comes back if it was staged.
+    csv_subset_export_requested = Signal(str, str, str, object, object, int)
 
     logger = logging.getLogger(__name__)
 
@@ -129,11 +178,12 @@ class MetadataView(MetaSubsetTabView):
         ]
         self.hist_min: Optional[float] = None
         self.hist_max: Optional[float] = None
-        # Bus results, written by relay_experiment_id/relay_query_result and read
-        # back by the emitter on the next statement. Declared here so the type is
-        # stated once and the callers' cleared-before-emit assignment type-checks.
-        self.relayed_experiment_id: Optional[int] = None
-        self.relayed_query_result: Optional[pd.DataFrame] = None
+        # Set by set_event_plot_data_generator once the whole event-plot chain has
+        # succeeded. None means it has not been fetched.
+        self.plot_events_generator: Optional[Iterator[Dict[str, Any]]] = None
+        # One units string per plotted column, set by set_column_units once the
+        # whole subset has been fetched. None means it has not been.
+        self.column_units: Optional[List[Optional[str]]] = None
         # Heterogeneous by design: the histogram paths append 1-D arrays, the
         # density path appends whole DataFrames, and the all-points path appends
         # (x, y) tuples. Flagged for review.
@@ -149,9 +199,6 @@ class MetadataView(MetaSubsetTabView):
         self.allowed_logs: List[bool] = []
         self.allowed_bins: Optional[Union[int, float]] = None
         self.allowed_sizes: Optional[bool] = None
-
-        self._show_sql_in_display = False
-        self._show_event_sql_in_display = False
 
         self.plotted_datasets: Set[
             Tuple[
@@ -175,10 +222,24 @@ class MetadataView(MetaSubsetTabView):
         # list of tuples of things already plotted: (loader, experiment, channel, filter, subset name), which can be None
 
         # Cache for filter-aware event navigation — rebuilt only when filter/scope changes
-        self.filtered_event_ids: List[int] = []
-        self.current_sql_filter: Optional[str] = None
-        self.current_experiment: Optional[str] = None
-        self.current_channel: Optional[int] = None
+        self.filtered_event_ids = []
+        self.current_sql_filter = None
+        self.current_experiment = None
+        self.current_channel = None
+
+    @property
+    def _subset_controls(self) -> MetaSubsetTabControls:
+        """
+        The controls panel, under the name ``MetaSubsetTabView``'s shared methods use.
+
+        Annotated with the base's type rather than ``MetadataControls`` so the override
+        matches the declaration verbatim, which is what the plugin compliance test
+        compares. Tab-specific code keeps using ``self.metadatacontrols``.
+
+        :return: the panel built by ``_build_controls``
+        :rtype: MetaSubsetTabControls
+        """
+        return self.metadatacontrols
 
     @log(logger=logger)
     def _build_controls(self) -> MetadataControls:
@@ -554,6 +615,18 @@ class MetadataView(MetaSubsetTabView):
         data = data[x_label].values
 
         (data,) = self._logscale_and_filter_multiple_columns(data, log_flags=[logx])
+
+        if len(data) == 0:
+            # Every point was filtered out - the commonest cause being a column that
+            # is NULL for every row the subset filter selected, as a fit column is
+            # outside the scope it was fitted over. The reductions below are the
+            # first thing to touch the array, and np.min of an empty one raises.
+            self.add_text_to_display.emit(
+                f"No {x_label} values in this subset, so there is nothing to "
+                "histogram",
+                self.__class__.__name__,
+            )
+            return
 
         # Update global min/max
         if self.hist_min is None or np.min(data) < self.hist_min:
@@ -1176,10 +1249,10 @@ class MetadataView(MetaSubsetTabView):
         :return: True if at least one dataset was plotted, False otherwise - including when every requested dataset was skipped as already plotted, so that the caller can roll the recorded action back rather than leave an undo step that would restore an identical figure.
         :rtype: bool
         """
-        self._show_sql_in_display = False
-        self._show_event_sql_in_display = False
 
         selected_filters = self.get_selected_filters()
+        if self._refuse_raw_filters(selected_filters):
+            return False
         loader = parameters["db_loader"]
         plot_type = parameters["plot_type"]
         experiments_and_channels: Optional[
@@ -1350,31 +1423,20 @@ class MetadataView(MetaSubsetTabView):
                         ):  # do not overlay the same thing twice
                             continue
 
-                        self.global_signal.emit(
-                            "MetaDatabaseLoader",
-                            loader,
-                            "construct_metadata_query",
-                            (columns, sql_filter, exp_and_ch_arg),
-                            "relay_query",
-                            (),
+                        # All three cleared before asking, not just plot_data: the
+                        # Controller sets them only once the whole subset has been
+                        # fetched, so a partial failure leaves them empty rather than
+                        # holding the previous subset's query, rows or units. Before
+                        # Step 4a only plot_data was cleared, and the other two were
+                        # read back stale.
+                        self.query = ""
+                        self.plot_data = None
+                        self.column_units = None
+                        self.metadata_subset_requested.emit(
+                            loader, columns, sql_filter, exp_and_ch_arg
                         )
                         if self.query == "":
                             return False
-
-                        # Cleared first: a dispatch that fails never calls
-                        # update_plot_data, so without this the guard below would
-                        # read the previous subset's rows and plot them under this
-                        # subset's label. .empty as well as None because the loader
-                        # returns an empty frame for a query that matched nothing.
-                        self.plot_data = None
-                        self.global_signal.emit(
-                            "MetaDatabaseLoader",
-                            loader,
-                            "load_metadata",
-                            (columns, sql_filter, exp_and_ch_arg),
-                            "update_plot_data",
-                            (),
-                        )
 
                         if self.plot_data is None or self.plot_data.empty:
                             self.add_text_to_display.emit(
@@ -1388,17 +1450,13 @@ class MetadataView(MetaSubsetTabView):
                                 self.__class__.__name__,
                             )
 
-                        units = []
-                        for column in columns:
-                            self.global_signal.emit(
-                                "MetaDatabaseLoader",
-                                loader,
-                                "get_column_units",
-                                (column,),
-                                "relay_units",
-                                (),
+                        units = self.column_units
+                        if units is None:
+                            self.add_text_to_display.emit(
+                                f"Could not read the units of {columns} from {loader}",
+                                self.__class__.__name__,
                             )
-                            units.append(self.units)
+                            return False
 
                         if len(columns) != len(units):
                             self.add_text_to_display.emit(
@@ -1425,24 +1483,14 @@ class MetadataView(MetaSubsetTabView):
                         )
 
                     elif plot_type in self.event_data_plots:
-                        self.global_signal.emit(
-                            "MetaDatabaseLoader",
-                            loader,
-                            "construct_event_data_query",
-                            (sql_filter, exp_and_ch_arg),
-                            "relay_event_query",
-                            (),
+                        # Cleared for the same reason as the metadata group above.
+                        self.event_query = ""
+                        self.event_data_generator = None
+                        self.event_subset_requested.emit(
+                            loader, sql_filter, exp_and_ch_arg
                         )
                         if self.event_query == "":
                             return False
-                        self.global_signal.emit(
-                            "MetaDatabaseLoader",
-                            loader,
-                            "load_event_data",
-                            (sql_filter, exp_and_ch_arg),
-                            "relay_event_data_generator",
-                            (),
-                        )
                         if self.event_data_generator:
                             if plot_type in [
                                 "Raw All Points Histogram",
@@ -1624,19 +1672,12 @@ class MetadataView(MetaSubsetTabView):
         return pd.DataFrame({"Current": bincenters, "Count": hist})
 
     @log(logger=logger)
-    def set_baseline_duration(self, duration: Optional[float]) -> None:
-        """
-        a callback from a global_signal call that sets the baseline_duration variable for further processing
-
-        :param duration: total duration of baseline data in the scoped subset, or None if it could not be resolved.
-        :type duration: Optional[float]
-        """
-        self.baseline_duration = duration
-
-    @log(logger=logger)
     def set_column_type(self, column_type: Optional[str]) -> None:
         """
-        a callback from a global_signal call that sets the column type of a specified variable
+        Receive the type asked for by ``column_type_requested``.
+
+        Set only when the lookup succeeded, so the ``None`` the caller cleared it to
+        survives a failure and the categorical guard refuses the plot.
 
         :param column_type: SQL type name of the queried column, or None on failure.
         :type column_type: Optional[str]
@@ -1726,85 +1767,6 @@ class MetadataView(MetaSubsetTabView):
         self.update_tab_action_history.emit(None, True)
 
     @log(logger=logger)
-    def _load_filter(self, parameters: Dict[str, Any]) -> None:
-        """
-        Append filters from a JSON file, warn if duplicates are found,
-        and apply all new filters only if none conflict with existing ones.
-
-        :param parameters: Dictionary with 'db_loader'.
-        :type parameters: Dict[str, Any]
-        """
-        path, _ = QFileDialog.getOpenFileName(
-            self, "Load Filters", os.path.expanduser("~"), "JSON Files (*.json)"
-        )
-        if not path:
-            return
-
-        try:
-            with open(path, "r") as f:
-                new_filters = json.load(f)
-        except (OSError, json.JSONDecodeError) as e:
-            message = f"Failed to load filters from {path}: {e}"
-            self.logger.error(message)
-            self.add_text_to_display.emit(message, self.__class__.__name__)
-            return
-
-        if not isinstance(new_filters, dict):
-            message = (
-                f"Invalid filter file format in {path}: expected a dictionary, "
-                f"got {type(new_filters).__name__}."
-            )
-            self.logger.error(message)
-            self.add_text_to_display.emit(message, self.__class__.__name__)
-            return
-
-        # Check for name conflicts
-        existing_names = set(self.subset_filters.keys())
-        new_names = set(new_filters.keys())
-        duplicate_names = existing_names & new_names
-
-        if duplicate_names:
-            message = (
-                f"Duplicate filter names found when loading from {path}: "
-                f"{', '.join(duplicate_names)}. No filters were loaded."
-            )
-            self.logger.warning(message)
-            self.add_text_to_display.emit(message, self.__class__.__name__)
-            return
-
-        combo = self.metadatacontrols.filter_comboBox
-        loader = parameters.get("db_loader")
-
-        if not loader:
-            self.logger.warning("No loader found – filters loaded but not validated.")
-
-        for name, filter_text in new_filters.items():
-            if loader:
-                # Temporarily store to validate
-                self._pending_filter_name = name
-                self._pending_filter_text = filter_text
-
-                self.global_signal.emit(
-                    "MetaDatabaseLoader",
-                    loader,
-                    "construct_metadata_query",
-                    (
-                        ["sublevel_current", "voltage", "duration"],
-                        filter_text,
-                        None,
-                    ),
-                    "relay_query",
-                    ("validate_new_filter",),
-                )
-            else:
-                self.subset_filters[name] = filter_text
-                combo.addItem(name)
-                combo.selectItem(name, select=True)
-
-        combo.refreshDisplayText()
-        self.logger.info(f"Filters loaded from {path}")
-
-    @log(logger=logger)
     def restore_subset_filters(self, filters: Dict[str, str]) -> None:
         """
         Restore subset filters captured in a saved session.
@@ -1884,15 +1846,11 @@ class MetadataView(MetaSubsetTabView):
                 loader = parameters["db_loader"]
                 x_axis_col = parameters["x_axis"]
 
+                # Cleared first: the Controller sets it only when the lookup
+                # succeeded, so a failure reads as "not a categorical column"
+                # rather than as the previous column's type.
                 self.column_type = None
-                self.global_signal.emit(
-                    "MetaDatabaseLoader",
-                    loader,
-                    "get_column_type",
-                    (x_axis_col,),
-                    "relay_column_type",
-                    (),
-                )
+                self.column_type_requested.emit(loader, x_axis_col)
 
                 if not self.is_categorical_type(self.column_type):
                     self.add_text_to_display.emit(
@@ -1936,98 +1894,6 @@ class MetadataView(MetaSubsetTabView):
             self._export_csv_subset(loader, selected_filters, selection)
         else:
             self._handle_other_actions(action_name, parameters)
-
-    @log(logger=logger)
-    def _rebuild_event_id_cache(
-        self,
-        loader: str,
-        sql_filter: str,
-        exp: Optional[str],
-        channel: Optional[int],
-    ) -> bool:
-        """
-        Rebuild the filtered event_id cache when filter or scope changes.
-        Also emits the display panel message (first plot or filter change only).
-
-        Goes through ``load_metadata`` rather than querying the events table
-        directly, so that the filter is evaluated against the same joins the
-        subset and scatter paths give it. A filter on a sublevels column -
-        ``filtered = 5``, meaning every event with at least one sublevel that
-        matches - is only meaningful against ``events JOIN sublevels``, and the
-        hand-built ``SELECT event_id FROM events`` this replaces made every such
-        filter fail as an unknown column and then report itself as an empty
-        subset.
-
-        :param loader: Name of the active database loader.
-        :type loader: str
-        :param sql_filter: Current SQL filter string.
-        :type sql_filter: str
-        :param exp: Current experiment name.
-        :type exp: Optional[str]
-        :param channel: Current channel identifier.
-        :type channel: Optional[int]
-        :return: True if cache was rebuilt successfully, False otherwise.
-        :rtype: bool
-        """
-        # event_id is only unique within an experiment/channel, so without this
-        # scoping the cache mixes duplicate ids from every channel and navigation
-        # jumps to ids the active channel does not have.
-        exp_and_ch: Optional[Dict[str, Optional[List[int]]]] = None
-        if exp is not None:
-            exp_and_ch = {exp: [channel] if channel is not None else None}
-
-        # Cleared first: a dispatch that fails never calls the return
-        # function, so without this the read below sees the previous call's
-        # value and treats it as this call's answer.
-        self.relayed_query_result = None
-        self.global_signal.emit(
-            "MetaDatabaseLoader",
-            loader,
-            "load_metadata",
-            (["event_id"], sql_filter or None, exp_and_ch),
-            "relay_query_result",
-            (),
-        )
-        cache_result = getattr(self, "relayed_query_result", None)
-        if cache_result is None:
-            # None means the query could not be built or run at all, which is a
-            # real problem and not an empty subset. Logged at ERROR so QtHandler
-            # raises its dialog from the place that can tell the two apart.
-            self.logger.error(
-                f"Could not query event ids for filter {sql_filter!r} - check that "
-                "the columns it names exist in the database"
-            )
-            return False
-        if cache_result.empty:
-            self.add_text_to_display.emit(
-                "No filtered events found",
-                self.__class__.__name__,
-            )
-            return False
-
-        # load_metadata applies no ORDER BY of its own, and the navigation that
-        # reads this list bisects it.
-        self.filtered_event_ids = sorted(cache_result["event_id"].tolist())
-        self.current_sql_filter = sql_filter
-        self.current_experiment = exp
-        self.current_channel = channel
-
-        # Display panel — only on cache rebuild (filter change or first plot)
-        total = len(self.filtered_event_ids)
-        first_id = self.filtered_event_ids[0]
-        last_id = self.filtered_event_ids[-1]
-        if sql_filter:
-            # Get the filter name from the current selected filters
-            selected_filters = self.get_selected_filters()
-            filter_name = next(iter(selected_filters.keys()), "Filter")
-            label = f'"{filter_name}" subset'
-        else:
-            label = "All events"
-        self.add_text_to_display.emit(
-            f"{label}: {total} total | first event_id: {first_id} | last event_id: {last_id}",
-            self.__class__.__name__,
-        )
-        return True
 
     @log(logger=logger)
     def _shift_range_and_update_plot(
@@ -2132,6 +1998,8 @@ class MetadataView(MetaSubsetTabView):
         :type parameters: Dict[str, Any]
         """
         selected_filters = self.get_selected_filters()
+        if self._refuse_raw_filters(selected_filters):
+            return
         loader_name = parameters["db_loader"]
         experiments_and_channels = self.selected_experiment_and_channels_by_loader.get(
             loader_name
@@ -2200,8 +2068,11 @@ class MetadataView(MetaSubsetTabView):
             if not self._rebuild_event_id_cache(loader, sql_filter, exp, channel):
                 return
         elif not self.filtered_event_ids:
+            # Worded exactly as _rebuild_event_id_cache words it, since the two are
+            # the same finding reached by different routes: the cache is current and
+            # empty here, rather than having just been rebuilt and come back empty.
             self.add_text_to_display.emit(
-                "No filtered events found",
+                "No filtered events found for the current scope.",
                 self.__class__.__name__,
             )
             return
@@ -2217,77 +2088,21 @@ class MetadataView(MetaSubsetTabView):
         # Update the event_id field to reflect the snapped position
         self.metadatacontrols.set_event_id_input(snapped_start_id)
 
-        # Resolve snapped event_ids to event_db_ids for load_event_data, scoped
-        # to the current experiment/channel — event_id is only unique within a
-        # channel, not across the whole events table, so without this scoping
-        # the query can silently match rows from other channels that happen to
-        # share the same event_id.
-
-        # NOTE: id-resolution + fetch logic is kept inline here rather than
-        # factored into a shared helper (unlike ProteinView, which extracts
-        # this into _resolve_event_db_ids/_fetch_event_data) because this is
-        # currently the only caller in this view. If a second consumer shows
-        # up, port ProteinView's extracted pattern instead of duplicating
-        # this block.
-        id_tuple = f"({','.join(str(eid) for eid in snapped_event_ids)})"
-        where_parts = [f"event_id IN {id_tuple}"]
-
-        # Cleared first: a dispatch that fails never calls the return
-        # function, so without this the read below sees the previous call's
-        # value and treats it as this call's answer.
-        self.relayed_experiment_id = None
-        self.global_signal.emit(
-            "MetaDatabaseLoader",
-            loader,
-            "get_experiment_id_by_name",
-            (exp,),
-            "relay_experiment_id",
-            (),
+        # Ask for exactly these events' data. Resolving the snapped event_ids to
+        # database ids is part of that request rather than something done here: the
+        # ids have to be scoped to the current experiment and channel, because
+        # event_id is only unique within a channel and an unscoped match silently
+        # picks up rows from other channels that happen to share one.
+        #
+        # Cleared first: the Controller sets the generator only once the whole chain
+        # has succeeded, and reports which part did not, so a failure here is not
+        # mistaken for the previous plot's events.
+        self.plot_events_generator = None
+        self.event_plot_data_requested.emit(
+            loader, snapped_event_ids, exp, channel, exp_and_ch
         )
-        exp_id = getattr(self, "relayed_experiment_id", None)
-        if exp_id is not None:
-            where_parts.append(f"experiment_id = {exp_id}")
-            if channel is not None:
-                where_parts.append(f"channel_id = {channel}")
-
-        db_id_query = f"SELECT id FROM events WHERE {' AND '.join(where_parts)}"
-        # Cleared first: a dispatch that fails never calls the return
-        # function, so without this the read below sees the previous call's
-        # value and treats it as this call's answer.
-        self.relayed_query_result = None
-        self.global_signal.emit(
-            "MetaDatabaseLoader",
-            loader,
-            "query_database_directly",
-            (db_id_query,),
-            "relay_query_result",
-            (),
-        )
-        db_id_result = getattr(self, "relayed_query_result", None)
-        if db_id_result is None or db_id_result.empty:
-            self.add_text_to_display.emit(
-                f"No data available for plotting with indices in the specified range {snapped_event_ids}",
-                self.__class__.__name__,
-            )
-            return
-        db_ids = db_id_result["id"].tolist()
-        db_id_tuple = f"({','.join(str(i) for i in db_ids)})"
-        event_db_id_filter = f"e.id IN {db_id_tuple}"
-
-        self.global_signal.emit(
-            "MetaDatabaseLoader",
-            loader,
-            "load_event_data",
-            (event_db_id_filter, exp_and_ch),
-            "relay_event_plot_data_generator",
-            (),
-        )
-        event_generator = getattr(self, "plot_events_generator", None)
+        event_generator = self.plot_events_generator
         if event_generator is None:
-            self.add_text_to_display.emit(
-                f"No data available for plotting with indices in the specified range {snapped_event_ids}",
-                self.__class__.__name__,
-            )
             return
 
         data_list = []
@@ -2311,44 +2126,34 @@ class MetadataView(MetaSubsetTabView):
             experiment_id = event["experiment_id"]
             channel_id = event["channel_id"]
             event_id_val = event["event_id"]
-            try:
-                load_feature_args = (experiment_id, channel_id, event_id_val)
-                self.global_signal.emit(
-                    "MetaDatabaseLoader",
-                    loader,
-                    "get_plot_features",
-                    load_feature_args,
-                    "update_features",
-                    (),
-                )
-            except RuntimeError as e:
-                self.logger.error(
-                    f"Features for event {event} could not be loaded in channel {channel}, skipping: {e}"
-                )
-            except KeyError as e:
-                self.logger.info(
-                    f"Event {event} not found in channel {channel} to get features, skipping: {e}"
-                )
-            except Exception as e:
-                self.logger.error(
-                    f"An unexpected error occured while trying to overlay features on the event: {e}"
-                )
-            else:
-                if self.vertical is not None:
-                    vertical_lines[-1] = self.vertical
-                    vertical_labels[-1] = self.vlabels
-                    self.vertical = None
-                    self.vlabels = None
-                if self.horizontal is not None:
-                    horizontal_lines[-1] = self.horizontal
-                    horizontal_labels[-1] = self.hlabels
-                    self.horizontal = None
-                    self.hlabels = None
-                if self.points is not None:
-                    points[-1] = self.points
-                    plabels[-1] = self.plabels
-                    self.points = None
-                    self.plabels = None
+            # Called with no arguments to clear all six before asking, for the same
+            # reason the generator is cleared above: a lookup that fails leaves them
+            # unset, and this event gets no features rather than the last one's.
+            #
+            # The try/except that used to wrap this emit is gone with it. It could
+            # never fire: the bus swallowed every exception a plugin raised, and a
+            # Qt slot's exception does not propagate back to the emitter either
+            # (measured on PySide6 6.9.0 - emit returns normally and the traceback
+            # goes to sys.excepthook), so the Controller reports failures itself.
+            self.update_plot_features()
+            self.plot_features_requested.emit(
+                loader, experiment_id, channel_id, event_id_val
+            )
+            if self.vertical is not None:
+                vertical_lines[-1] = self.vertical
+                vertical_labels[-1] = self.vlabels
+                self.vertical = None
+                self.vlabels = None
+            if self.horizontal is not None:
+                horizontal_lines[-1] = self.horizontal
+                horizontal_labels[-1] = self.hlabels
+                self.horizontal = None
+                self.hlabels = None
+            if self.points is not None:
+                points[-1] = self.points
+                plabels[-1] = self.plabels
+                self.points = None
+                self.plabels = None
 
         if data_list:
             self._update_event_plot(
@@ -2375,36 +2180,16 @@ class MetadataView(MetaSubsetTabView):
         self, generator: Iterator[Dict[str, Any]]
     ) -> None:
         """
-        A callback from a global signal call that sets the generator to be used to construct event plots and overlays.
+        Receive the events asked for by ``event_plot_data_requested``.
+
+        Set only once the Controller has resolved the requested event_ids to database
+        ids and loaded exactly those rows, so ``None`` means the request failed and
+        has already been reported.
 
         :param generator: a generator of event data
         :type generator: Iterator[Dict[str, Any]]
         """
         self.plot_events_generator = generator
-
-    @log(logger=logger)
-    def relay_query_result(self, result: Optional[pd.DataFrame]) -> None:
-        """
-        A callback from a global_signal call that stores the result of a DB query.
-
-        Shared by the ``query_database_directly`` and ``load_metadata`` dispatches,
-        which return the same thing: the rows, an empty frame if none matched, or
-        None if the query could not be built or run.
-
-        :param result: DataFrame returned by the query, or None if it failed.
-        :type result: Optional[pd.DataFrame]
-        """
-        self.relayed_query_result = result
-
-    @log(logger=logger)
-    def relay_experiment_id(self, exp_id: Optional[int]) -> None:
-        """
-        A callback from a global_signal call that stores a resolved experiment id.
-
-        :param exp_id: Integer experiment id.
-        :type exp_id: Optional[int]
-        """
-        self.relayed_experiment_id = exp_id
 
     @log(logger=logger)
     def update_plot_features(
@@ -2683,22 +2468,33 @@ class MetadataView(MetaSubsetTabView):
 
         folder = result["Folder"]["Value"]
 
-        export_subset_args = (folder, name, filters, selection)
-        ret_args = (self.subset_export_count, loader, "MetaDatabaseLoader")
-        try:
-            self.global_signal.emit(
-                "MetaDatabaseLoader",
-                loader,
-                "export_subset_to_csv",
-                export_subset_args,
-                "set_generator",
-                ret_args,
-            )
-        except Exception as e:
-            self.logger.error(f"Failed to export subset: {repr(e)}")
-        else:
-            self.run_generators.emit(loader)
-            self.subset_export_count += 1
+        # The export runs in a worker thread, so there is no answer to read back
+        # here: the Controller stages the generator, starts it, and calls
+        # on_subset_export_started only if it got that far. The try/except that used
+        # to wrap this emit went with it - it could not catch a plugin failure, which
+        # the bus swallowed before it, and cannot catch one now either, since a Qt
+        # slot's exception does not propagate back to the emitter.
+        self.csv_subset_export_requested.emit(
+            loader, folder, name, filters, selection, self.subset_export_count
+        )
+
+    @log(logger=logger)
+    def on_subset_export_started(self) -> None:
+        """
+        Move to the next export index, now that this one is running.
+
+        The index names the export in the dialog and keys its worker, so it advances
+        only for an export that was actually staged - which is what the Controller
+        calling this says. The Controller counts the subset before staging anything,
+        so an export refused for being empty never reaches here and the next dialog
+        offers the same name again. Kept here rather than counted in the Controller
+        because the dialog needs it before the request goes out, and one owner cannot
+        drift from itself.
+
+        :return: None
+        :rtype: None
+        """
+        self.subset_export_count += 1
 
     @log(logger=logger)
     def set_exported_event_count(self, written: int) -> None:
@@ -2709,6 +2505,51 @@ class MetadataView(MetaSubsetTabView):
         :type written: int
         """
         self.exported_event_count = written
+
+    @log(logger=logger)
+    def update_units(self, loader: str, column: str, axis: str) -> None:
+        """
+        Ask the Controller for a column's units, for this tab's axis unit labels.
+
+        Moved down from ``MetaSubsetTabView`` in Step 4a, and converted in the same
+        commit. It sat on the shared base but was only ever called from here: the protein
+        tab has no units label, keeps no units cache and labels its axes with hardcoded
+        literals, so it had nothing to do with the answer - and ``ProteinView``'s missing
+        ``update_column_units`` was unreachable rather than merely swallowed. Same shape
+        as the Clustering-only helpers Step 3e moved down.
+
+        :param loader: Name of the database loader.
+        :type loader: str
+        :param column: Name of the column to get units for.
+        :type column: str
+        :param axis: Axis being updated ('x_axis', 'y_axis', etc.).
+        :type axis: str
+        :return: None
+        :rtype: None
+        """
+        # "No Event Database" is the combobox's placeholder, i.e. a normal empty state
+        # rather than an error, so do not dispatch it as a plugin key.
+        if not loader or loader == "No Event Database":
+            return
+        self.column_units_requested.emit(loader, column, axis)
+
+    @log(logger=logger)
+    def set_column_units(self, units: List[Optional[str]]) -> None:
+        """
+        Receive one units string per plotted column, in the columns' own order.
+
+        Step 4a. The units used to arrive one at a time, through ``set_units``, with
+        ``_overlay_plot`` appending ``self.units`` after each round trip - so a
+        lookup that failed appended the previous column's units instead of nothing,
+        and the axis was labelled with the wrong unit. Handed over as a list in one
+        call, the count either matches the columns or the answer is missing entirely.
+
+        :param units: one units string per column, None where the loader has none
+        :type units: List[Optional[str]]
+        :return: None
+        :rtype: None
+        """
+        self.column_units = units
 
     @log(logger=logger)
     def update_column_names(self, column_names: List[str]) -> None:
@@ -2843,162 +2684,6 @@ class MetadataView(MetaSubsetTabView):
         return x, y, logged_z.T
 
     @log(logger=logger)
-    def _show_add_filter_dialog(self, parameters: dict) -> None:
-        """
-        Displays the dialog for adding a new subset filter. Validates filter syntax
-        before actually saving the filter.
-
-        :param parameters: Dictionary with 'db_loader'.
-        :type parameters: dict
-        """
-        self._show_sql_in_display = True
-
-        dialog = AddSubsetFilterDialog(
-            self, existing_names=list(self.subset_filters.keys())
-        )
-
-        if self._walkthrough_active:
-            self.logger.info("Launching walkthrough from _show_add_filter_dialog()")
-            dialog._init_walkthrough()
-            dialog.launch_walkthrough()
-            if dialog.walkthrough_dialog:
-                dialog.finished.connect(
-                    lambda _: dialog.walkthrough_dialog.force_close()
-                )
-
-        if dialog.exec() == QDialog.Accepted:
-            # These are Optional[str] until the dialog's try_accept/accept
-            # fills them, and exec() cannot return Accepted without that
-            # having run - but the guarantee travels through a signal
-            # connection mypy cannot follow, so it is asserted here once
-            # rather than guarded at each of the six downstream uses.
-            name: str = dialog.name  # type: ignore[assignment]
-            filter_text: str = dialog.filter_text  # type: ignore[assignment]
-            loader = parameters["db_loader"]
-
-            if not loader:
-                self.add_text_to_display.emit(
-                    "No event database selected", self.__class__.__name__
-                )
-                return
-
-            # Store pending data for use in relay_query
-            self._pending_filter_name = name
-            self._pending_filter_text = filter_text
-            self._pending_old_filter_name = None
-
-            if dialog.is_raw:
-                # Raw SQL path — validate via validate_filter_query, not construct_metadata_query
-                if not filter_text.strip().upper().startswith("SELECT"):
-                    QMessageBox.warning(
-                        self,
-                        "Invalid Raw SQL Filter",
-                        "Raw SQL filters must be complete SELECT statements, e.g. SELECT duration FROM events WHERE duration > 1000",
-                    )
-                    return
-                name = f"{name}_raw" if not name.endswith("_raw") else name
-                self._pending_filter_name = name
-                self.global_signal.emit(
-                    "MetaDatabaseLoader",
-                    loader,
-                    "validate_filter_query",
-                    (filter_text.strip().rstrip(";") + " LIMIT 0",),
-                    "on_raw_filter_validated",
-                    (),
-                )
-                return
-
-            self._show_sql_in_display = True
-
-            # Validate assisted filter via construct_metadata_query
-            self.global_signal.emit(
-                "MetaDatabaseLoader",
-                loader,
-                "construct_metadata_query",
-                (
-                    ["sublevel_current", "voltage", "duration"],
-                    filter_text,
-                    None,
-                ),
-                "relay_query",
-                ("validate_new_filter",),
-            )
-
-    @log(logger=logger)
-    def show_edit_filter_dialog(self, name: str, loader: str) -> None:
-        """
-        Displays the dialog to edit an existing filter, and validates the updated
-        SQL filter syntax via construct_metadata_query before saving it.
-
-        :param name: The name of the filter to edit.
-        :type name: str
-        :param loader: Name of the active database loader.
-        :type loader: str
-        """
-        self._show_sql_in_display = True
-
-        self.logger.debug(f"Editing filter: {name}")
-        self.logger.debug(f"Filters available: {self.subset_filters}")
-
-        dialog = EditSubsetFilterDialog(self, name, self.subset_filters)
-
-        if dialog.exec():
-            # These are Optional[str] until the dialog's try_accept/accept
-            # fills them, and exec() cannot return Accepted without that
-            # having run - but the guarantee travels through a signal
-            # connection mypy cannot follow, so it is asserted here once
-            # rather than guarded at each of the six downstream uses.
-            new_name: str = dialog.new_name  # type: ignore[assignment]
-            new_filter: str = dialog.new_filter  # type: ignore[assignment]
-
-            self.logger.debug(f"Updated filter: {name} -> {new_name}: {new_filter}")
-
-            if not loader:
-                self.add_text_to_display.emit(
-                    "No event database selected", self.__class__.__name__
-                )
-                return
-
-            # Store pending update info to be committed in relay_query after validation
-            self._pending_filter_name = new_name
-            self._pending_filter_text = new_filter
-            self._pending_old_filter_name = name  # important for replacing key
-
-            if dialog.is_raw:
-                # Raw SQL path — validate via validate_filter_query, not construct_metadata_query
-                if not new_filter.strip().upper().startswith("SELECT"):
-                    QMessageBox.warning(
-                        self,
-                        "Invalid Raw SQL Filter",
-                        "Raw SQL filters must be complete SELECT statements, e.g. SELECT duration FROM events WHERE duration > 1000",
-                    )
-                    return
-                new_name = (
-                    f"{new_name}_raw" if not new_name.endswith("_raw") else new_name
-                )
-                self._pending_filter_name = new_name
-                self.global_signal.emit(
-                    "MetaDatabaseLoader",
-                    loader,
-                    "validate_filter_query",
-                    (new_filter.strip().rstrip(";") + " LIMIT 0",),
-                    "on_raw_filter_validated",
-                    (),
-                )
-                return
-
-            self._show_sql_in_display = True
-            # Emit signal to validate the updated assisted filter
-            self.global_signal.emit(
-                "MetaDatabaseLoader",
-                loader,
-                "construct_metadata_query",
-                (["sublevel_current", "voltage", "duration"], new_filter, None),
-                "relay_query",
-                ("validate_edited_filter",),
-            )
-
-    @log(logger=logger)
     def _delete_all_selected_filters(self) -> None:
         """
         Deletes multiple selected filters.
@@ -3013,93 +2698,6 @@ class MetadataView(MetaSubsetTabView):
             self._delete_filter(name)
 
     @log(logger=logger)
-    def _delete_filter(self, name: str) -> None:
-        """
-        Internal method to remove a filter and update the UI.
-
-        :param name: The name of the filter to remove.
-        :type name: str
-        """
-        self.subset_filters.pop(name, None)
-
-        list_widget = self.metadatacontrols.filter_comboBox.listWidget
-        for i in reversed(range(list_widget.count())):
-            widget = list_widget.itemWidget(list_widget.item(i))
-            if widget:
-                checkbox = widget.findChild(QCheckBox)
-                if checkbox and checkbox.text() == name:
-                    list_widget.takeItem(i)
-                    break
-
-        self.metadatacontrols.filter_comboBox.refreshDisplayText()
-
-    @log(logger=logger)
-    def get_selected_filters(self) -> dict:
-        """
-        Get a dict of the filters that the user has indicated should be active for the current plotting task
-        """
-        return {
-            name: self.subset_filters.get(name, "")
-            for name in self.metadatacontrols.filter_comboBox.getSelectedItems()
-        }
-
-    @log(logger=logger)
-    def replace_filter_item(self, name: str) -> None:
-        """
-        Remove any existing filter item with the same name and add the new one.
-
-        :param name: The name of the filter to (re)add.
-        :type name: str
-        """
-        list_widget = self.metadatacontrols.filter_comboBox.listWidget
-        for i in range(list_widget.count()):
-            item = list_widget.item(i)
-            widget = list_widget.itemWidget(item)
-            checkbox = widget.findChild(QCheckBox)
-            if checkbox and checkbox.text() == name:
-                list_widget.takeItem(i)
-                break
-
-        self.metadatacontrols.filter_comboBox.addItem(name)
-        self.metadatacontrols.filter_comboBox.selectItem(name, select=True)
-
-    @log(logger=logger)
-    def update_filter_name(self, old_name: str, new_name: str) -> None:
-        """
-        Replace old filter name with new one in the ComboBox, removing any duplicates.
-
-        :param old_name: The filter name being replaced.
-        :type old_name: str
-        :param new_name: The filter name to display instead.
-        :type new_name: str
-        """
-        list_widget = self.metadatacontrols.filter_comboBox.listWidget
-
-        # Remove old name
-        for i in range(list_widget.count()):
-            item = list_widget.item(i)
-            widget = list_widget.itemWidget(item)
-            checkbox = widget.findChild(QCheckBox)
-            if checkbox and checkbox.text() == old_name:
-                list_widget.takeItem(i)
-                break
-
-        # Remove new name if it already exists and is different
-        if new_name != old_name:
-            for i in range(list_widget.count()):
-                item = list_widget.item(i)
-                widget = list_widget.itemWidget(item)
-                checkbox = widget.findChild(QCheckBox)
-                if checkbox and checkbox.text() == new_name:
-                    list_widget.takeItem(i)
-                    break
-
-        # Add updated name
-        self.metadatacontrols.filter_comboBox.addItem(new_name)
-        self.metadatacontrols.filter_comboBox.selectItem(new_name, select=True)
-        self.metadatacontrols.filter_comboBox.refreshDisplayText()
-
-    @log(logger=logger)
     def set_channel_db_id(self, channel_db_id: Optional[int]) -> None:
         """
         a global signal callback that provides the channel_db_id for raw query scoping
@@ -3108,58 +2706,6 @@ class MetadataView(MetaSubsetTabView):
         :type channel_db_id: Optional[int]
         """
         self.channel_db_id = channel_db_id
-
-    @log(logger=logger)
-    def on_raw_filter_validated(self, valid: bool, error_msg: str) -> None:
-        """
-        Relay callback from validate_filter_query for raw SQL filter validation.
-
-        :param valid: Whether the query is valid.
-        :type valid: bool
-        :param error_msg: Error message if invalid.
-        :type error_msg: str
-        """
-        if not valid:
-            QMessageBox.warning(
-                self,
-                "Invalid Raw SQL Filter",
-                f"The filter could not be validated:\n\n{error_msg}",
-            )
-            self.clear_pending_filter_state()
-            return
-
-        name = self._pending_filter_name
-        filter_text = self._pending_filter_text
-        old_name = self._pending_old_filter_name
-
-        if name is None:
-            # Mirrors the guard the assisted-filter path already applies in
-            # relay_query: with no pending name there is nothing to commit.
-            self.logger.warning(
-                "Raw filter validated with no pending filter name, ignoring."
-            )
-            self.clear_pending_filter_state()
-            return
-
-        if old_name is not None:  # edit path
-            self.subset_filters.pop(old_name, None)
-            self.subset_filters[name] = filter_text or ""
-            self.update_filter_name(old_name, name)
-            self.add_text_to_display.emit(
-                f"Filter '{old_name}' updated to '{name}'.",
-                self.__class__.__name__,
-            )
-        else:  # add path
-            self.subset_filters[name] = filter_text or ""
-            self.metadatacontrols.filter_comboBox.addItem(name)
-            self.metadatacontrols.filter_comboBox.selectItem(name, select=True)
-            self.metadatacontrols.filter_comboBox.refreshDisplayText()
-            self.add_text_to_display.emit(
-                f"Filter '{name}' added.",
-                self.__class__.__name__,
-            )
-
-        self.clear_pending_filter_state()
 
     @log(logger=logger)
     def get_walkthrough_steps(self) -> List[WalkthroughStep]:

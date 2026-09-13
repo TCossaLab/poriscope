@@ -239,6 +239,26 @@ MOVED: Tuple[Tuple[str, str, str], ...] = (
     ("poriscope/plugins/analysistabs/ProteinView.py", "_plot_xyerr_scatterplot", "4c"),
     ("poriscope/plugins/analysistabs/ProteinView.py", "_report_ensemble_fit", "4c"),
     ("poriscope/plugins/analysistabs/RawDataView.py", "update_psd", "4c"),
+    # Step 4a - the bus round trips the hand-typed list had missed. Added 2026-09-08
+    # after checking coverage rather than assuming it: every reference to
+    # _handle_plot_events in tests/ replaced it with a Mock, and _load_event_data was
+    # named by no test at all, so both read as covered and were not. This is the exit
+    # review's own finding (a curated list narrows silently) recurring in the same list.
+    # EventAnalysis's own copy, added 2026-09-08 for the same reason RawData's was: no
+    # test named it, so it read as covered and was not. Its 8 emits are the largest
+    # single conversion left in 4a.
+    (
+        "poriscope/plugins/analysistabs/EventAnalysisView.py",
+        "_handle_plot_events",
+        "4a",
+    ),
+    ("poriscope/plugins/analysistabs/RawDataView.py", "_handle_plot_events", "4a"),
+    ("poriscope/plugins/analysistabs/RawDataView.py", "_start_eventfinder", "4a"),
+    ("poriscope/plugins/analysistabs/RawDataView.py", "_handle_commit_events", "4a"),
+    # _load_event_data was listed here for one commit and is now gone: 4a *deleted* it
+    # rather than moving it, because it was a one-emit wrapper and the Controller loads
+    # each event inline. Removed rather than left pointing at nothing (rule 28) - and it
+    # was this tripwire that caught the deletion, which is what it is for.
     # Step 4e - file I/O to the Model, dialog selection left in the View
     ("poriscope/plugins/analysistabs/MetadataView.py", "_export_csv_subset", "4e"),
 )
@@ -316,21 +336,41 @@ def emit_bearing_methods() -> List[Tuple[str, str, str]]:
     found: List[Tuple[str, str, str]] = []
     for name in VIEW_FILES:
         path = TABS / name
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=name)
-        for node in ast.walk(tree):
-            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                continue
-            for child in ast.walk(node):
-                if (
-                    isinstance(child, ast.Call)
-                    and isinstance(child.func, ast.Attribute)
-                    and child.func.attr == "emit"
-                    and isinstance(child.func.value, ast.Attribute)
-                    and child.func.value.attr == "global_signal"
-                ):
-                    found.append((f"{display(path)}", node.name, "4a"))
-                    break
+        for method in method_names_with_emits(path):
+            found.append((f"{display(path)}", method, "4a"))
     return found
+
+
+def method_names_with_emits(path: Path) -> List[str]:
+    """
+    Name every method in one file that emits on the plugin bus.
+
+    Split out from :py:func:`emit_bearing_methods` so the detection can be checked
+    against a source that has an emit. The derived list it feeds is *supposed* to
+    reach zero as Step 4a lands, so a test asserting that list is non-empty measures
+    how much work is left rather than whether the instrument works.
+
+    :param path: the file to scan
+    :type path: Path
+    :return: the method names, in source order
+    :rtype: List[str]
+    """
+    names: List[str] = []
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=path.name)
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        for child in ast.walk(node):
+            if (
+                isinstance(child, ast.Call)
+                and isinstance(child.func, ast.Attribute)
+                and child.func.attr == "emit"
+                and isinstance(child.func.value, ast.Attribute)
+                and child.func.value.attr == "global_signal"
+            ):
+                names.append(node.name)
+                break
+    return names
 
 
 def sql_authoring_methods() -> List[Tuple[str, str, str]]:
@@ -343,22 +383,41 @@ def sql_authoring_methods() -> List[Tuple[str, str, str]]:
     :return: (file, method, step) triples
     :rtype: List[Tuple[str, str, str]]
     """
-    markers = ("SELECT ", "ALTER TABLE", "DELETE FROM")
     found: List[Tuple[str, str, str]] = []
     for name in VIEW_FILES:
         path = TABS / name
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=name)
-        for node in ast.walk(tree):
-            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                continue
-            for child in ast.walk(node):
-                text: Optional[str] = None
-                if isinstance(child, ast.Constant) and isinstance(child.value, str):
-                    text = child.value
-                if text and any(marker in text for marker in markers):
-                    found.append((f"{display(path)}", node.name, "4b"))
-                    break
+        for method in method_names_with_sql(path):
+            found.append((f"{display(path)}", method, "4b"))
     return found
+
+
+def method_names_with_sql(path: Path) -> List[str]:
+    """
+    Name every method in one file that builds SQL as a string.
+
+    Split out from :py:func:`sql_authoring_methods` for the same reason
+    :py:func:`method_names_with_emits` was: the derived list falls as the work
+    lands, so the instrument needs checking against a source that does author SQL.
+
+    :param path: the file to scan
+    :type path: Path
+    :return: the method names, in source order
+    :rtype: List[str]
+    """
+    markers = ("SELECT ", "ALTER TABLE", "DELETE FROM")
+    names: List[str] = []
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=path.name)
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        for child in ast.walk(node):
+            text: Optional[str] = None
+            if isinstance(child, ast.Constant) and isinstance(child.value, str):
+                text = child.value
+            if text and any(marker in text for marker in markers):
+                names.append(node.name)
+                break
+    return names
 
 
 def deduplicated_targets() -> List[Tuple[str, str, str]]:

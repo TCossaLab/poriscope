@@ -1,5 +1,109 @@
 ## Poriscope 2.0.0: in progress
 
+* **Finding or fitting events with no filter selected now asks for confirmation first**: on a noisy trace an unfiltered run can register almost every sample as an event, which takes a very long time and is hard to tell apart from the application hanging; cancelling works, but only takes effect at the end of the current chunk, so it can be slow to respond
+
+* **Fixed the Raw Data tab asking about the wrong channel before re-running event finding**: if it could not read whether a channel was already finished, it reused the previous channel's answer, so the "start over?" prompt could appear for a channel that was not finished or be skipped for one that was
+
+* Event finding now reports a channel it cannot read or start and continues with the others, and says on the status panel when a channel has no time range set instead of failing silently
+
+* Fixed the Raw Data and Event Analysis tabs failing with an unhandled error, rather than reporting it, when an action arrived with no channel selection
+
+* The Metadata and Protein tabs now report a database whose columns or experiment list cannot be read, instead of leaving the pickers silently unchanged
+
+* **Fixed the Metadata tab renaming a raw SQL filter when it was loaded from a file**: the filter came back as `<name>_raw_assisted` and was treated as an assisted filter from then on, rather than as the raw filter that was saved
+
+* The Protein tab now also reports a raw SQL filter the database itself rejects in a dialog rather than on the status panel, so both ways a raw filter can be refused read the same on both tabs
+
+* **The SQL shown on the status panel is now the query that actually pulls the subset**, rather than the smaller one built to validate the filter, and it is shown when the filter is applied rather than when it is created - repeated only when it changes
+
+* **Fixed the Metadata tab plotting the wrong subset's data when a database call failed**: the query, the column units and the event generator were each reused from the previous subset, so a failure mid-plot drew the previous subset under this one's label, or labelled the axes with another column's units
+
+* A subset the Metadata tab cannot query, load or read the units of is now reported instead of failing silently
+
+* **Fixed the Metadata tab plotting another channel's events when the experiment could not be looked up**: the events to plot were resolved without their experiment and channel scope, so an event number that exists in more than one channel could return the wrong channel's data
+
+* **Fixed plotting a column that is empty for the selected subset failing with an error** instead of saying there is nothing to plot - most easily hit by histogramming a protein fit column over a subset that was never fitted
+
+* **Fixed the Protein tab drawing empty axes in silence** when the selected subset holds no events; both distribution modes now say so
+
+* **Breaking: raw SQL subset filters can no longer be selected for a plot**, on either tab, and say so when chosen. They never worked - the filter was passed where a WHERE clause was expected, so the database rejected the query and the plot came back empty without a word. Creating, saving and loading them is unchanged
+
+* **Fixed the Protein tab offering to overwrite fit data based on a stale answer**: if it could not read whether the database already held fit columns it reused the previous answer, so the "overwrite?" prompt could appear for a database with nothing to overwrite, or be skipped for one that had; it now reports the failure and commits nothing
+
+* Committing protein fits now reports a database that refuses the write instead of announcing new columns to the other tabs regardless
+
+* **Fixed the Protein tab showing one query on the status panel while running another**: for a raw SQL subset it displayed the query built from the filter and then loaded through a differently scoped one; it now shows the query that runs
+
+* **Fixed the Protein tab reading the whole database when a raw SQL subset could not be scoped**: an experiment or channel it could not place was dropped from the query without a word, so a filter meant for one channel returned every channel's events; it now stops and says so
+
+* The Protein tab now builds and loads its distribution subsets through a direct call from its controller rather than through the signal bus, so a filter the database refuses is reported instead of silently plotting nothing
+
+* Fixed the Protein tab's ensemble distribution failing with an unhandled error, rather than stopping quietly, when no subset produced any data to fit
+
+* **Fixed the Metadata tab not reporting an event-data filter the database refuses, and never showing the SQL for an event plot**: the refusal was invisible and the plot went ahead, because the query builder returns the query and the reason together and only the pair was being checked
+
+* **Fixed the Protein tab plotting another channel's events when the experiment could not be looked up**: the events to plot were resolved without their experiment scope, so an event number that exists in more than one channel could return the wrong channel's data; it now stops and says so
+
+* The Protein tab now asks its database loader for event plot data through a direct call from its controller rather than through the signal bus, so a lookup that fails is reported instead of silently widening the query
+
+* **Fixed the Raw Data tab drawing nothing when the requested time range ran past the end of the file**: it now plots what the channel holds and says on the status panel that it trimmed the range, and says so too when the range starts past the end
+
+* Fixed `construct_event_data_query` not documenting that it raises for an unknown experiment name, and collapsed three identical copies of its SQL id-list helper onto one
+
+* A subset export to CSV that matches no events, or that the database refuses, is now reported before the export starts instead of running the progress bar to the end in silence, and no longer uses up the next export's name
+
+* **A subset filter naming a column the database does not have is now reported instead of silently disappearing**: the Metadata and Protein tabs discarded such a filter with nothing but a line in the log, so it looked as though nothing had happened
+
+* Validating a subset filter no longer queries across all three metadata tables regardless of what the filter references, which was joining `sublevels` and `experiments` even for a filter over `events` alone
+
+* `relay_query` is now provided by `MetaSubsetTabController` instead of being implemented separately by each subset tab
+
+* `_delete_filter` is now provided by `MetaSubsetTabView` instead of being abstract, so a subset-tab plugin no longer has to implement it
+
+* The Protein tab now reports a raw SQL filter that is not a complete SELECT statement in a dialog rather than on the status panel, matching the Metadata tab - the filter dialog has just closed at that point, so a status line was easy to miss
+
+* `show_edit_filter_dialog` is now provided by `MetaSubsetTabView` instead of being abstract, so a subset-tab plugin no longer has to implement it
+
+* Fixed the Metadata tab failing with an unhandled error, rather than reporting it, when the database returned rows with no `event_id` column while rebuilding its filtered-event cache
+
+* The Metadata tab now says the current scope when no events match a filter, and labels a subset with the filter expression when no filter name is selected instead of the word "Filter" - both matching the Protein tab
+
+* **Breaking:** `get_selected_filters` has moved from `MetadataView` and `ProteinView` to `MetaSubsetTabView`, which now requires subclasses to implement a `_subset_controls` property returning their controls panel
+
+* **Breaking:** `update_units` has moved from `MetaSubsetTabView` to `MetadataView` and `update_column_units` is no longer on `MetaSubsetTabController`; only the metadata tab displays column units, so a plugin subclassing the shared subset-tab base no longer inherits either
+
+* The Event Analysis tab now says which event indices were out of range and how many events the channel actually holds, instead of reporting "No data available for plotting"
+
+* An event the Event Analysis tab cannot load, or whose fit features cannot be read, no longer abandons the whole plot: the remaining events are still drawn
+
+* **Fixed the Event Analysis tab asking about the wrong channel before re-fitting**: if it could not read whether a channel was already fitted, it reused the previous channel's answer, so the "start over?" prompt could appear for a channel that was not fitted or be skipped for one that was
+
+* Event fitting now reports a channel it cannot read or start and continues with the others, instead of abandoning the whole batch
+
+* Writing the Event Analysis tab's fitted events now reports a channel the database writer cannot accept and writes the rest, instead of abandoning the whole write; and a loader whose channels cannot be read is reported rather than leaving the channel list silently unchanged
+
+* Committing the Raw Data tab's found events now reports a channel the writer cannot accept and commits the rest, instead of abandoning the whole commit
+
+* The Raw Data tab now says which event indices were out of range and how many events the channel actually holds, instead of reporting "No data available for plotting"
+
+* Stepping the Raw Data tab's event index below 0 now says so on the status panel, instead of declining silently and only logging to the console
+
+* **The "No Filter" option no longer disappears from the Raw Data and Event Analysis filter dropdowns once a filter exists**: choosing not to filter is a valid selection, so it stays available, and it is now also what a dropdown falls back to when the filter it was showing is deleted (a newly created filter is no longer selected for you)
+
+* **Fixed the Raw Data tab's event plots showing the wrong events**: if the tab could not read an event finder's state, it silently reused the previous channel's answers — including the event count that decides which event indices are in range — and an event that failed to load was replaced by the previous one under the wrong index
+
+* **Fixed the Raw Data tab plotting one channel's trace under another channel's label**, and the same fault when a filter failed: a channel the reader could not supply silently reused whichever channel was loaded before it, on both the trace and the noise-spectrum plots
+
+* The Raw Data tab now asks each event finder for its channels through a direct call from its controller rather than through the signal bus, so a finder that cannot answer is reported rather than silently leaving its time ranges unset
+
+* The golden files that pin the app's numerical output are now checked to be running at all, so a missing test dependency can no longer leave those numbers unpinned while the test suite still reports a pass
+
+* **Fixed a tab being unable to use a plugin it was showing in its dropdown**, reported when restoring a saved session: the tab was given the list of plugins before it was given access to them, and filling the dropdown immediately asks the selected plugin for its columns
+
+* **Fixed the clustering settings dialog failing with an error instead of opening** when the column list could not be read from the database
+
+* Analysis tabs can now call a data plugin directly through `call()` on their model or controller, so a failed plugin call raises where it happened instead of being logged several hops away and leaving the caller with the previous call's answer
+
 * The behavioural conformance suite's resource-leak check is extended to readers and loaders, not just writers
 
 * The behavioural conformance suite's readers, database loaders and event loaders now fail with a clear message (matching writers) if a new plugin declares a required parameter with no recipe entry, instead of an unrelated validation error
@@ -11,7 +115,6 @@
 * Peak-based fitters are now checked against the depth of the planted dip, which their previous conformance checks could not distinguish from a flat blockage
 
 * Which synthetic recording each event fitter is tested against is now one entry in `FITTER_FIXTURES`, replacing three separate sets
-
 
 * `NanoTrees` is checked against a planted sublevel count too, which its previous conformance settings would have merged into a single level
 

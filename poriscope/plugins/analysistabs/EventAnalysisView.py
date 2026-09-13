@@ -28,12 +28,12 @@
 import logging
 import os
 import warnings
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union, override
+from typing import Any, Dict, List, Optional, Sequence, Tuple, Union, override
 
 import matplotlib.pyplot as pl
 import numpy as np
 import numpy.typing as npt
-from PySide6.QtCore import Slot
+from PySide6.QtCore import Signal, Slot
 from PySide6.QtWidgets import QFileDialog, QMessageBox
 
 from poriscope.plugins.analysistabs.utils.eventAnalysisControls import (
@@ -54,6 +54,33 @@ class EventAnalysisView(MetaEventTabView):
 
     Handles event plotting, plugin integration, and user-triggered actions.
     """
+
+    #: Asks the Controller for an event loader's channel list. Step 4a's first intent in
+    #: this tab, and the same conversion RawData's reader lookup got: the answer arrives
+    #: one hop later through ``update_channels`` instead of seven, and a loader that
+    #: cannot be read is reported instead of failing silently inside the dispatcher.
+    loader_channels_requested = Signal(str)
+
+    #: Asks the Controller to write this tab's fitted events through a database writer,
+    #: one channel at a time. No answer is expected: the plugin hands back a generator,
+    #: which the Controller registers with the Model and runs.
+    write_requested = Signal(str, list)
+
+    #: Asks the Controller which of these channels the fitter has already completed.
+    #: eventfitter, channels, filter key. The answer arrives as
+    #: ``set_fitting_statuses``, because the prompt that follows it belongs to the View
+    #: and the call that answers it does not - the same two-phase launch RawData's event
+    #: finding uses.
+    fitting_statuses_requested = Signal(str, list, str)
+
+    #: Asks the Controller for the selected events, their raw traces and their fits,
+    #: ready to plot. loader, eventfitter, channel, event indices, filter key, raw
+    #: wanted. The answer arrives as ``set_event_plot_data``.
+    event_plot_requested = Signal(str, str, int, list, str, bool)
+
+    #: The second half: the channels the user approved, plus the filter key. No answer
+    #: is expected; each channel's generator is registered and run by the Controller.
+    fitting_requested = Signal(str, list, str)
 
     logger = logging.getLogger(__name__)
 
@@ -316,10 +343,18 @@ class EventAnalysisView(MetaEventTabView):
     @log(logger=logger)
     def _handle_plot_events(self, parameters: Dict[str, Any]) -> None:
         """
-        Handle loading and plotting of selected events based on provided parameters.
+        Ask the Controller for the selected events, their raw traces and their fits.
+
+        Step 4a: this ran eight bus round trips itself - the event count, the filter
+        callable, the samplerate, a load per event, an optional unfiltered load, the
+        fitting status, the fit, and its features - assembling the answers into plot
+        arguments as they arrived off attributes the next line read back. All of it is
+        the Controller's now, and the plot happens in ``set_event_plot_data``.
 
         :param parameters: Dictionary containing eventfinder, filter, channels, and event indices.
         :type parameters: Dict[str, Any]
+        :return: None
+        :rtype: None
         """
         try:
             loader, eventfitter, data_filter, channels, events = (
@@ -327,236 +362,82 @@ class EventAnalysisView(MetaEventTabView):
             )
             self.validate_single_channel(channels)
             channel = channels[0]
-            # self._load_and_plot_events(loader, data_filter, channels, events)
         except (IndexError, ValueError) as e:
             self.logger.error(f"Parameter extraction failed: {repr(e)}")
             return
-        try:
-            get_num_events_args = (channel,)
-            self.global_signal.emit(
-                "MetaEventLoader",
-                loader,
-                "get_num_events",
-                get_num_events_args,
-                "set_num_events_allowed",
-                (),
+
+        filter_key = "" if data_filter in (None, "No Filter") else str(data_filter)
+        self.event_plot_requested.emit(
+            loader,
+            eventfitter,
+            channel,
+            list(events or []),
+            filter_key,
+            bool(parameters.get("raw", False)),
+        )
+
+    @log(logger=logger)
+    def set_event_plot_data(
+        self,
+        event_data: Sequence[npt.NDArray[np.float64]],
+        labels: Sequence[str],
+        num_events: int,
+        vertical_lines: Sequence[Optional[List[float]]],
+        horizontal_lines: Sequence[Optional[List[float]]],
+        points: Sequence[Optional[List[Tuple[float, float]]]],
+        vlabels: Sequence[Optional[Sequence[Optional[str]]]],
+        hlabels: Sequence[Optional[Sequence[Optional[str]]]],
+        plabels: Sequence[Optional[Sequence[Optional[str]]]],
+        use_raw: bool,
+    ) -> None:
+        """
+        Draw the events the Controller assembled, or report that there were none.
+
+        The six feature sequences carry one entry per *event* while ``event_data`` and
+        ``labels`` carry one to three per event, so this method must not try to line them
+        up - the Controller built them aligned and ``_update_event_plot`` indexes them by
+        event.
+
+        :param event_data: the traces to draw, in order
+        :type event_data: Sequence[npt.NDArray[np.float64]]
+        :param labels: one label per trace, index-aligned with event_data
+        :type labels: Sequence[str]
+        :param num_events: how many events those traces belong to
+        :type num_events: int
+        :param vertical_lines: per event, its vertical feature lines or None
+        :type vertical_lines: Sequence[Optional[List[float]]]
+        :param horizontal_lines: per event, its horizontal feature lines or None
+        :type horizontal_lines: Sequence[Optional[List[float]]]
+        :param points: per event, its labelled feature points or None
+        :type points: Sequence[Optional[List[Tuple[float, float]]]]
+        :param vlabels: per event, the labels for its vertical lines or None
+        :type vlabels: Sequence[Optional[Sequence[Optional[str]]]]
+        :param hlabels: per event, the labels for its horizontal lines or None
+        :type hlabels: Sequence[Optional[Sequence[Optional[str]]]]
+        :param plabels: per event, the labels for its points or None
+        :type plabels: Sequence[Optional[Sequence[Optional[str]]]]
+        :param use_raw: whether unfiltered traces are among those being drawn
+        :type use_raw: bool
+        :return: None
+        :rtype: None
+        """
+        if not len(event_data):
+            self.add_text_to_display.emit(
+                "No data available for plotting", self.__class__.__name__
             )
-        except Exception as e:
-            self.logger.error(f"Parameter extraction failed: {repr(e)}")
-        if events and max(events) >= self.num_events_allowed:
-            self.logger.info(
-                f"Some event indices were out of bounds, truncating indices above {self.num_events_allowed - 1}"
-            )
-            events = [x for x in events if x < self.num_events_allowed]
-
-        if events:
-            # get the data filter to use
-            try:
-                data_filter_args = ()
-                self.data_filter: Optional[Callable] = None
-                if data_filter != "No Filter":
-                    self.global_signal.emit(
-                        "MetaFilter",
-                        data_filter,
-                        "get_callable_filter",
-                        data_filter_args,
-                        "set_event_filter",
-                        (),
-                    )
-            except Exception:
-                self.data_filter = None
-                self.logger.warning(
-                    f"Unable to load filter {data_filter}, proceeding without a filter"
-                )
-
-            # set plot samplerate
-            try:
-                samplerate_args = (channel,)
-                self.global_signal.emit(
-                    "MetaEventLoader",
-                    loader,
-                    "get_samplerate",
-                    samplerate_args,
-                    "update_plot_samplerate",
-                    (),
-                )
-            except Exception:
-                self.plot_samplerate = 1
-                self.logger.warning(
-                    "Unable to get samplerate, time axis will indicate raw data index"
-                )
-
-            try:
-                # Load data and update plot
-                data_list: List[npt.NDArray[np.float64]] = []
-                label_list: List[str] = []
-                # One entry per subplot; each entry is the whole feature list for
-                # that subplot, or None when the fitter supplied no features.
-                vertical_lines: List[Optional[List[float]]] = []
-                vertical_labels: List[Optional[List[str]]] = []
-                horizontal_lines: List[Optional[List[float]]] = []
-                horizontal_labels: List[Optional[List[str]]] = []
-                points: List[Optional[List[Tuple[float, float]]]] = []
-                plabels: List[Optional[List[str]]] = []
-                num_events = 0
-                for event in events[:]:  # to allow removal if needed
-                    try:
-                        load_data_args = (channel, event, self.data_filter)
-                        # Emit the signal with the correct handler name for when the data is ready
-                        self.global_signal.emit(
-                            "MetaEventLoader",
-                            loader,
-                            "load_event",
-                            load_data_args,
-                            "update_plot_data",
-                            (),
-                        )
-                    except (IndexError, ValueError) as e:
-                        self.logger.error(
-                            f"Unable to retrieve requested data for event {event}: {repr(e)}"
-                        )
-                        self.plot_data = None
-                        continue
-                    if self.plot_data is not None:
-                        data_list.append(self.plot_data)
-                        vertical_lines.append(None)
-                        vertical_labels.append(None)
-                        horizontal_lines.append(None)
-                        horizontal_labels.append(None)
-                        points.append(None)
-                        plabels.append(None)
-                        self.plot_data = None
-
-                        label_list.append(f"Event {event} Data")
-                        num_events += 1
-
-                        # If a filter is active and raw is requested, also load the unfiltered signal
-                        if (
-                            parameters.get("raw", False)
-                            and self.data_filter is not None
-                        ):
-                            try:
-                                load_raw_args = (channel, event, None)
-                                self.global_signal.emit(
-                                    "MetaEventLoader",
-                                    loader,
-                                    "load_event",
-                                    load_raw_args,
-                                    "update_plot_data",
-                                    (),
-                                )
-                            except (IndexError, ValueError) as e:
-                                self.logger.error(
-                                    f"Unable to retrieve raw data for event {event}: {repr(e)}"
-                                )
-                            if self.plot_data is not None:
-                                data_list.append(self.plot_data)
-                                self.plot_data = None
-                                label_list.append(f"Event {event} Raw")
-                                # Raw trace shares the same subplot — no new feature placeholders needed
-
-                        if eventfitter != "No Event Fitter":
-                            self.eventfitting_status = False
-                            eventfitting_status_args = (channel,)
-                            self.global_signal.emit(
-                                "MetaEventFitter",
-                                eventfitter,
-                                "get_eventfitting_status",
-                                eventfitting_status_args,
-                                "set_eventfitting_status",
-                                (),
-                            )
-                            if self.eventfitting_status is True:
-                                try:
-                                    load_fit_args = (channel, event)
-                                    self.global_signal.emit(
-                                        "MetaEventFitter",
-                                        eventfitter,
-                                        "get_fitted_event",
-                                        load_fit_args,
-                                        "update_plot_data",
-                                        (),
-                                    )
-                                except RuntimeError as e:
-                                    self.logger.error(
-                                        f"Fit for event {event} could not be loaded in channel {channel}, skipping: {e}"
-                                    )
-                                except KeyError as e:
-                                    self.logger.error(
-                                        f"Event {event} not found in channel {channel}, skipping: {e}"
-                                    )
-                                except Exception as e:
-                                    self.logger.error(
-                                        f"An unexpected error occured while trying to overlay the fit on the event: {e}"
-                                    )
-                                else:
-                                    if self.plot_data is not None:
-                                        data_list.append(self.plot_data)
-                                        self.plot_data = None
-                                        label_list.append(f"Event {event} Fit")
-                                try:
-                                    load_feature_args = (channel, event)
-                                    self.global_signal.emit(
-                                        "MetaEventFitter",
-                                        eventfitter,
-                                        "get_plot_features",
-                                        load_feature_args,
-                                        "update_features",
-                                        (),
-                                    )
-                                except RuntimeError as e:
-                                    self.logger.error(
-                                        f"Features for event {event} could not be loaded in channel {channel}, skipping: {e}"
-                                    )
-                                except KeyError as e:
-                                    self.logger.info(
-                                        f"Event {event} not found in channel {channel} to get features, skipping: {e}"
-                                    )
-                                except Exception as e:
-                                    self.logger.error(
-                                        f"An unexpected error occured while trying to overlay features on the event: {e}"
-                                    )
-                                else:
-                                    if self.vertical is not None:
-                                        vertical_lines[-1] = self.vertical
-                                        vertical_labels[-1] = self.vlabels
-                                        self.vertical = None
-                                        self.vlabels = None
-                                    if self.horizontal is not None:
-                                        horizontal_lines[-1] = self.horizontal
-                                        horizontal_labels[-1] = self.hlabels
-                                        self.horizontal = None
-                                        self.hlabels = None
-                                    if self.points is not None:
-                                        points[-1] = self.points
-                                        plabels[-1] = self.plabels
-                                        self.points = None
-                                        self.plabels = None
-
-                    else:
-                        self.logger.warning(
-                            f"No data loaded for event {event}, skipping"
-                        )
-                        events.remove(event)
-                if data_list:
-                    self._update_event_plot(
-                        data_list,
-                        label_list,
-                        num_events,
-                        vertical_lines,
-                        horizontal_lines,
-                        points,
-                        vertical_labels,
-                        horizontal_labels,
-                        plabels,
-                        use_raw=parameters.get("raw", False),
-                    )
-                else:
-                    self.add_text_to_display.emit(
-                        "No data available for plotting", self.__class__.__name__
-                    )
-            except Exception as e:
-                self.logger.error(f"Unable to plot event data: {e}")
+            return
+        self._update_event_plot(
+            event_data,
+            labels,
+            num_events,
+            vertical_lines,
+            horizontal_lines,
+            points,
+            vlabels,
+            hlabels,
+            plabels,
+            use_raw=use_raw,
+        )
 
     @log(logger=logger)
     def set_eventfitting_status(self, status: bool) -> None:
@@ -567,38 +448,6 @@ class EventAnalysisView(MetaEventTabView):
         :type status: bool
         """
         self.eventfitting_status = status
-
-    @log(logger=logger)
-    def _start_writer(self, writer: str, channels: Union[int, List[int]]) -> None:
-        """
-        Start the process of writing committed events to the database for the given channels.
-
-        :param writer: Identifier of the database writer plugin.
-        :type writer: str
-        :param channels: Channel index, or list of channel indices, for which to write events.
-        :type channels: Union[int, List[int]]
-        """
-        if not isinstance(channels, list):
-            channels = [channels]
-        try:
-            for channel in channels:
-                write_events_args = (channel,)
-                # Emit the signal with the correct handler name for when the data is ready
-                ret_args = (channel, writer, "MetaDatabaseWriter")
-                self.global_signal.emit(
-                    "MetaDatabaseWriter",
-                    writer,
-                    "write_events",
-                    write_events_args,
-                    "set_generator",
-                    ret_args,
-                )  # update here to unify generators
-        except (IndexError, ValueError) as e:
-            self.logger.error(
-                f"Unable to set up database writer {writer} for channel {channel}: {repr(e)}"
-            )
-        else:
-            self.run_generators.emit(writer)
 
     @log(logger=logger)
     def set_num_events_allowed(self, num_events: int) -> None:
@@ -834,6 +683,11 @@ class EventAnalysisView(MetaEventTabView):
             self.logger.error(f"Parameter extraction failed: {repr(e)}")
             return
         if eventfitter is not None and channels is not None and data_filter is not None:
+            # See RawDataView._handle_find_events: asked where the click arrives.
+            if data_filter == "No Filter" and not self.confirm_unfiltered_run(
+                "Event fitting"
+            ):
+                return
             self._start_eventfitter(eventfitter, data_filter, channels)
 
     @log(logger=logger)
@@ -851,14 +705,24 @@ class EventAnalysisView(MetaEventTabView):
             return
 
         if writer is not None and channels is not None:
-            self._start_writer(writer, channels)
+            # Step 4a: the write call itself is the Controller's.
+            self.write_requested.emit(
+                writer, channels if isinstance(channels, list) else [channels]
+            )
 
     @log(logger=logger)
     def _start_eventfitter(
         self, eventfitter: str, data_filter: str, channels: Union[int, List[int]]
     ) -> None:
         """
-        Start the event fitting process for the selected channel(s) using the given fitter and filter.
+        Ask the Controller which of these channels the fitter has already completed.
+
+        Step 4a, and the same two-phase launch RawData's event finding uses: this method
+        interleaved a plugin call with a question for the user, asking each channel's
+        fitting status over the bus and prompting before redoing a finished channel. The
+        prompt stays here and the call leaves, so the statuses go out, the answers come
+        back, and the approved channels go out again. The reply arrives as
+        ``set_fitting_statuses``.
 
         :param eventfitter: Identifier of the event fitter plugin.
         :type eventfitter: str
@@ -866,65 +730,51 @@ class EventAnalysisView(MetaEventTabView):
         :type data_filter: str
         :param channels: Channel index, or list of integer channel indices.
         :type channels: Union[int, List[int]]
+        :return: None
+        :rtype: None
         """
         if not isinstance(channels, list):
             channels = [channels]
-        try:
-            # If channels is not a list, make it a list
-            data_filter_args = ()
-            self.data_filter = None
-            if data_filter != "No Filter":
-                self.global_signal.emit(
-                    "MetaFilter",
-                    data_filter,
-                    "get_callable_filter",
-                    data_filter_args,
-                    "set_event_filter",
-                    (),
-                )
-        except Exception:
-            self.data_filter = None
-            self.logger.warning(
-                f"Unable to load filter {data_filter}, proceeding without a filter"
-            )
 
-        try:
-            for channel in channels:
-                self.global_signal.emit(
-                    "MetaEventFitter",
-                    eventfitter,
-                    "get_eventfitting_status",
-                    (channel,),
-                    "relay_eventfitting_status",
-                    (),
-                )  # update here to unify generators
-                if self.eventfitting_status is True:
-                    reply = QMessageBox.question(
-                        self,
-                        "Confirmation",
-                        f"Fitting was already completed in channel {channel}. Start over anyway?",
-                        QMessageBox.Yes | QMessageBox.No,
-                        QMessageBox.No,
-                    )
-                    if reply == QMessageBox.No:
-                        continue
-                fit_events_args = (channel, False, self.data_filter, None)
-                # Emit the signal with the correct handler name for when the data is ready
-                ret_args = (channel, eventfitter, "MetaEventFitter")
-                self.global_signal.emit(
-                    "MetaEventFitter",
-                    eventfitter,
-                    "fit_events",
-                    fit_events_args,
-                    "set_generator",
-                    ret_args,
-                )  # update here to unify generators
-        except (IndexError, ValueError) as e:
-            self.logger.error(
-                f"Unable to set up event fitter generator {eventfitter} for channel {channel}: {repr(e)}"
-            )
-        else:
-            self.run_generators.emit(eventfitter)
+        filter_key = "" if data_filter in (None, "No Filter") else str(data_filter)
+        self.fitting_statuses_requested.emit(eventfitter, channels, filter_key)
+
+    @log(logger=logger)
+    def set_fitting_statuses(
+        self, eventfitter: str, statuses: List[Tuple[int, bool]], data_filter: str
+    ) -> None:
+        """
+        Confirm any already-fitted channels, then ask for the approved ones to run.
+
+        The per-channel prompt is kept exactly as it was, including that declining one
+        channel skips only that channel. There are no stored ranges to look up here, so
+        unlike RawData's equivalent nothing in this half can fail.
+
+        :param eventfitter: the event fitter plugin's key
+        :type eventfitter: str
+        :param statuses: (channel, already_fitted) for each channel that answered
+        :type statuses: List[Tuple[int, bool]]
+        :param data_filter: the filter plugin's key, or "" for no filtering
+        :type data_filter: str
+        :return: None
+        :rtype: None
+        """
+        approved: List[int] = []
+        for channel, fitted in statuses:
+            if fitted:
+                reply = QMessageBox.question(
+                    self,
+                    "Confirmation",
+                    f"Fitting was already completed in channel {channel}. Start over anyway?",
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.No,
+                )
+                if reply == QMessageBox.No:
+                    continue
+            approved.append(channel)
+
+        if approved:
+            self.fitting_requested.emit(eventfitter, approved, data_filter)
 
     @log(logger=logger)
     def _extract_plot_event_parameters(
@@ -943,7 +793,7 @@ class EventAnalysisView(MetaEventTabView):
         loader = parameters.get("loader")
         eventfitter = parameters.get("eventfitter")
         data_filter = parameters.get("filter")
-        channels = [int(ch) for ch in parameters["channel"]]
+        channels = self._channels_from(parameters)
         events = parameters.get("event_index")
         return loader, eventfitter, data_filter, channels, events
 
@@ -961,7 +811,7 @@ class EventAnalysisView(MetaEventTabView):
         """
         eventfitter = parameters.get("eventfitter")
         data_filter = parameters.get("filter")
-        channels = [int(ch) for ch in parameters["channel"]]
+        channels = self._channels_from(parameters)
         return eventfitter, data_filter, channels
 
     @log(logger=logger)
@@ -989,9 +839,7 @@ class EventAnalysisView(MetaEventTabView):
         """
         loader = parameters.get("loader")
         if loader and loader != "No Loader":
-            self.global_signal.emit(
-                "MetaEventLoader", loader, "get_channels", (), "update_channels", ()
-            )
+            self.loader_channels_requested.emit(loader)
 
     def get_walkthrough_steps(self) -> List[WalkthroughStep]:
         return [

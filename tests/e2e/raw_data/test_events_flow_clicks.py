@@ -332,7 +332,7 @@ def eventfinder_added(qtbot, monkeypatch, trace_drawn):
 
 
 @pytest.fixture
-def events_found(qtbot, eventfinder_added):
+def events_found(qtbot, eventfinder_added, auto_dismiss_message_boxes):
     """
     Run event detection over the recording and wait for it to yield results.
 

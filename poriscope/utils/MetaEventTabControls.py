@@ -155,7 +155,12 @@ class MetaEventTabControls(MetaControls, metaclass=QWidgetABCMeta):
         current_selection = self.filters_comboBox.currentText()
 
         self.filters_comboBox.clear()
-        display_filters = filters if filters != [] else ["No Filter"]
+        # "No Filter" is not an empty-list placeholder here, unlike the reader, writer
+        # and eventfinder dropdowns: not filtering is a legitimate choice rather than
+        # the absence of one, so the option stays available however many filters exist.
+        # Keeping it at index 0 also makes it the fallback when the selected filter is
+        # deleted, instead of silently landing the user on some other filter.
+        display_filters = ["No Filter"] + list(filters)
         self.filters_comboBox.addItems(display_filters)
 
         # Restore selection if it still exists

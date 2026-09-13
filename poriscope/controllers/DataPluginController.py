@@ -447,6 +447,18 @@ class DataPluginController(QObject):
         self.model.handle_exit()
 
     @log(logger=logger)
+    def get_plugin_instances(self) -> Dict[str, Dict[str, Any]]:
+        """
+        Get every instantiated plugin, keyed by metaclass then by key.
+
+        ``MainController`` pushes this to every analysis tab whenever the plugin set
+        changes, on the same notification that refreshes the names those tabs show.
+
+        :return: A dict keyed by metaclass, each holding key -> live instance
+        :rtype: Dict[str, Dict[str, Any]]
+        """
+        return self.model.get_plugin_instances()
+
     def get_plugin_instance(self, metaclass: str, key: str) -> object:
         """
         Get the plugin instance corresponding to the given key.

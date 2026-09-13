@@ -27,6 +27,8 @@
 import logging
 from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple, override
 
+from PySide6.QtWidgets import QMessageBox
+
 from poriscope.utils.LogDecorator import log
 from poriscope.utils.MetaView import MetaView
 
@@ -49,6 +51,8 @@ class MetaEventTabView(MetaView):
       not their business - and ``_reset_actions`` clears the figure identically in
       each. ``MetaView`` still declares both abstract; satisfying them here is what
       keeps both subclasses instantiable without a per-tab copy.
+    - ``_channels_from``, which reads the channel selection out of a parameter dict
+      and reports a missing one as ``ValueError``, which every caller already guards.
     - **Commit-time helpers.** ``_extract_commit_event_parameters`` and
       ``validate_single_channel`` read the controls panel's channel selection and
       reject anything that is not exactly one channel.
@@ -208,6 +212,32 @@ class MetaEventTabView(MetaView):
         pass
 
     @log(logger=logger)
+    def _channels_from(self, parameters: Dict[str, Any]) -> List[int]:
+        """
+        The selected channels, as ints, from a controls-panel parameter dict.
+
+        Raises ``ValueError`` rather than letting ``KeyError`` out when the key is
+        absent. Every caller of the six extractors that need this already guards
+        ``ValueError`` and none guarded ``KeyError``, so a parameter dict without a
+        ``channel`` key escaped a handler advertising "Parameter extraction failed" -
+        in one case out of the tab entirely, since ``handle_parameter_change`` has no
+        handler of its own. Latent rather than live, because the controls panel always
+        supplies the key.
+
+        Those six extractors across the two event tabs each repeated this comprehension,
+        which is why the guard goes here rather than being written out six times.
+
+        :param parameters: the parameter dict the controls panel emitted
+        :type parameters: Dict[str, Any]
+        :raises ValueError: if the parameters carry no channel selection
+        :return: the selected channel numbers
+        :rtype: List[int]
+        """
+        if "channel" not in parameters:
+            raise ValueError("No channel supplied in the parameters")
+        return [int(ch) for ch in parameters["channel"]]
+
+    @log(logger=logger)
     def validate_single_channel(self, channels: Sequence[int]) -> None:
         """
         Ensure only one channel is selected.
@@ -234,8 +264,46 @@ class MetaEventTabView(MetaView):
         :rtype: Tuple[Optional[str], List[int]]
         """
         writer = parameters.get("writer")
-        channels = [int(ch) for ch in parameters["channel"]]
+        channels = self._channels_from(parameters)
         return writer, channels
+
+    @log(logger=logger)
+    def confirm_unfiltered_run(self, operation: str) -> bool:
+        """
+        Ask the user to confirm launching an analysis with no filter selected.
+
+        Running an event finder or fitter on unfiltered data is a legitimate choice, but
+        on a noisy trace it can be a **degenerate** one: the threshold is crossed
+        constantly and effectively every sample registers as an event, which grinds for a
+        very long time and is easy to mistake for a hang. Cancelling does work -
+        ``find_events`` reads the abort flag at every chunk boundary and breaks out of the
+        range immediately - but with that many events a single chunk takes long enough
+        that the cancel can look as though it has not registered.
+
+        Shared by the two tabs that launch this kind of work rather than copied into both.
+        It is stateless and adds no contract, which is what makes it safe on the common
+        base rather than needing an intermediate (method rule 34).
+
+        :param operation: what is about to run, named for the prompt, e.g. "Event finding"
+        :type operation: str
+        :return: True to proceed, False if the user declined
+        :rtype: bool
+        """
+        reply = QMessageBox.question(
+            self,
+            "No filter selected",
+            f"{operation} is about to run on unfiltered data."
+            "\n\nOn a noisy trace this can register almost every sample as an event, "
+            "which may take a very long time. Cancelling will work, but it only takes "
+            "effect at the end of the current chunk, so it may be slow to respond."
+            "\n\nContinue without a filter?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if reply == QMessageBox.No:
+            self.logger.info(f"{operation} cancelled: no filter selected")
+            return False
+        return True
 
     @log(logger=logger)
     def set_data_filter_function(self, data_filter: Callable) -> None:

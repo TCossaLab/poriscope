@@ -4,7 +4,6 @@ Tests for poriscope.plugins.analysistabs.MetadataController.
 Covers:
 - _init creates view and model
 - _setup_connections wires signals
-- relay_baseline_duration delegation
 - set_exported_event_count delegation
 - relay_event_query (query present, query empty with debug)
 - relay_event_data_generator delegation
@@ -75,9 +74,7 @@ def controller(mock_view: MagicMock, mocker: MockerFixture) -> MetadataControlle
     ctrl.view = mock_view
     ctrl.model = mocker.Mock()
     ctrl.logger = mocker.Mock()  # type: ignore[assignment,method-assign]
-    mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataController.QMessageBox.warning"
-    )
+    mocker.patch("poriscope.utils.MetaSubsetTabController.QMessageBox.warning")
     return ctrl
 
 
@@ -121,37 +118,6 @@ def test_setup_connections_runs_without_error(mocker: MockerFixture) -> None:
     ctrl.view = mocker.Mock()
     ctrl.model = mocker.Mock()
     ctrl._setup_connections()  # should not raise
-
-
-# ---------------------- relay_baseline_duration ----------------------
-
-
-def test_relay_baseline_duration_passes_value_to_view(
-    controller: MetadataController,
-    mock_view: MagicMock,
-) -> None:
-    """
-    Delegate a non-zero baseline duration to the view.
-
-    :param controller: Controller under test.
-    :param mock_view: Mocked metadata view.
-    """
-    controller.relay_baseline_duration(9.81)
-    mock_view.set_baseline_duration.assert_called_once_with(9.81)
-
-
-def test_relay_baseline_duration_passes_zero_to_view(
-    controller: MetadataController,
-    mock_view: MagicMock,
-) -> None:
-    """
-    Delegate a zero baseline duration to the view.
-
-    :param controller: Controller under test.
-    :param mock_view: Mocked metadata view.
-    """
-    controller.relay_baseline_duration(0.0)
-    mock_view.set_baseline_duration.assert_called_once_with(0.0)
 
 
 # -------------------- set_exported_event_count -----------------------
@@ -353,32 +319,79 @@ def test_update_column_names_logs_warning_when_list_is_empty(
 # ---------------------- update_column_units --------------------------
 
 
-def test_update_column_units_passes_units_and_y_axis_to_view(
+def test_request_column_units_applies_the_y_axis_too(
     controller: MetadataController,
     mock_view: MagicMock,
 ) -> None:
     """
-    Forward unit labels and axis identifier 'y' to the view.
+    The twin of the x-axis case: the axis is carried, not inferred.
 
     :param controller: Controller under test.
     :param mock_view: Mocked metadata view.
     """
-    controller.update_column_units({"voltage": "mV"}, "y")
-    mock_view.update_column_units.assert_called_once_with({"voltage": "mV"}, "y")
+    controller.model.call.return_value = "mV"
+
+    controller.request_column_units("ldr", "voltage", "y_axis")
+
+    mock_view.update_column_units.assert_called_once_with("mV", "y_axis")
 
 
-def test_update_column_units_passes_units_and_x_axis_to_view(
+def test_request_column_units_asks_the_loader_and_applies_the_axis(
     controller: MetadataController,
     mock_view: MagicMock,
 ) -> None:
     """
-    Forward unit labels and axis identifier 'x' to the view.
+    Step 4a: the base's ``update_column_units`` relay became this slot.
+
+    The relay existed only as a bus return function; nothing names it now. The axis
+    travels with the request and back out again, which is what the bus carried in its
+    ``ret_args``.
 
     :param controller: Controller under test.
     :param mock_view: Mocked metadata view.
     """
-    controller.update_column_units({"time": "ms"}, "x")
-    mock_view.update_column_units.assert_called_once_with({"time": "ms"}, "x")
+    controller.model.call.return_value = "ms"
+
+    controller.request_column_units("ldr", "duration", "x_axis")
+
+    controller.model.call.assert_called_once_with(
+        "MetaDatabaseLoader", "ldr", "get_column_units", "duration"
+    )
+    mock_view.update_column_units.assert_called_once_with("ms", "x_axis")
+
+
+def test_request_column_units_leaves_the_label_alone_on_failure(
+    controller: MetadataController,
+    mock_view: MagicMock,
+) -> None:
+    """
+    A loader that cannot answer leaves the existing label rather than blanking it.
+
+    ``DECISIONS.md`` 2026-09-04 records that ``get_column_units``' empty-string
+    conflation is inert because every consumer collapses the distinction, so writing a
+    blank would be indistinguishable from a real unitless column.
+
+    :param controller: Controller under test.
+    :param mock_view: Mocked metadata view.
+    """
+    controller.model.call.side_effect = RuntimeError("boom")
+
+    controller.request_column_units("ldr", "duration", "x_axis")
+
+    mock_view.update_column_units.assert_not_called()
+
+
+def test_request_column_units_does_not_raise_out_of_the_slot(
+    controller: MetadataController,
+) -> None:
+    """
+    Qt invoked this from a signal; an exception must not escape into C++.
+
+    :param controller: Controller under test.
+    """
+    controller.model.call.side_effect = RuntimeError("boom")
+
+    controller.request_column_units("ldr", "duration", "x_axis")
 
 
 # ------------------ get_experiment_names_for_tree --------------------
@@ -556,7 +569,7 @@ def test_relay_query_emits_debug_message_when_query_is_empty(
     :param mocker: Pytest-mock fixture.
     """
     mock_warning = mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataController.QMessageBox.warning"
+        "poriscope.utils.MetaSubsetTabController.QMessageBox.warning"
     )
     controller.relay_query("", "something went wrong", "my_table")
     mock_warning.assert_called_once()

@@ -77,6 +77,33 @@ class ClusteringView(MetaView):
     #: :meth:`set_clustering_result`.
     cluster_requested = Signal(object, list, str, dict)
 
+    #: Asks the Controller for the column names a database loader offers. Step 4a
+    #: replaced a ``global_signal`` emit whose answer came back seven hops later
+    #: through ``update_column_names``; the answer now arrives one hop later, and a
+    #: failed lookup raises in the Controller's slot instead of being swallowed.
+    column_names_requested = Signal(str)
+
+    #: Asks the Controller for one column's unit string. Same conversion as above.
+    column_units_requested = Signal(str, str)
+
+    #: Asks whether the database already holds a clustering result. Step 4a: the answer
+    #: used to be parked on ``self.cluster_column_table`` by a bus callback and read
+    #: back on the next statement; it now arrives at ``on_cluster_column_checked``,
+    #: which is also where the overwrite confirmation lives.
+    cluster_column_check_requested = Signal(str)
+
+    #: Asks the Controller to commit the current clustering result, dropping an
+    #: existing one first when the last argument names its table. Two round trips
+    #: rather than one because a modal confirmation sits between them.
+    cluster_commit_requested = Signal(str, object, str, object)
+
+    #: Asks the Controller to build the metadata query and load the rows for it. Step 4a:
+    #: this replaced the last two ``global_signal`` emits in this tab, whose answers were
+    #: parked on ``self.query`` and ``self.plot_data`` and read back on the next
+    #: statement - the pattern that twice shipped a plot of the *previous* subset's rows.
+    #: The rows arrive at ``on_metadata_loaded``.
+    metadata_load_requested = Signal(dict, str)
+
     logger = logging.getLogger(__name__)
 
     @log(logger=logger)
@@ -88,6 +115,11 @@ class ClusteringView(MetaView):
         self._clear_cache()
         self.cluster_data: Optional[pd.DataFrame] = None
         self.query = ""
+        # Set by update_column_names when the loader answers. Initialised here
+        # because the clustering settings dialog reads it: before Step 4a it was
+        # created only by that callback, so a loader whose columns could not be
+        # read left the dialog raising AttributeError instead of opening empty.
+        self.columns: List[str] = []
         # Positional units for the currently plotted columns, set by
         # update_plot and read back by _merge_clusters when it replots.
         # Declared here so the attribute exists before the first plot.
@@ -238,29 +270,15 @@ class ClusteringView(MetaView):
         )
 
     @log(logger=logger)
-    def set_cluster_column_exists(self, exists_in_table: Optional[str]) -> None:
-        """
-        Sets the status indicating if cluster columns already exist.
-
-        :param exists_in_table: Name of table where columns exist or None.
-        :type exists_in_table: Optional[str]
-        """
-        self.cluster_column_table = exists_in_table
-
-    @log(logger=logger)
-    def set_alter_database_status(self, status: bool) -> None:
-        """
-        Sets the success status of a database operation.
-
-        :param status: True if successful, False otherwise.
-        :type status: bool
-        """
-        self.operation_success = status
-
-    @log(logger=logger)
     def _commit_clusters(self, loader: str) -> None:
         """
-        Commits clustered data to the database, optionally overwriting existing clustering columns.
+        Begin committing the clustering result, checking for an existing one first.
+
+        Step 4a split this into three parts. It used to make three bus calls and read
+        each answer back off an attribute on the next statement, with a modal
+        confirmation in the middle - so a dispatch that failed silently left it acting
+        on the *previous* commit's answers. Now it asks, and
+        :meth:`on_cluster_column_checked` continues when the answer arrives.
 
         :param loader: Name or ID of the database loader plugin.
         :type loader: str
@@ -268,59 +286,59 @@ class ClusteringView(MetaView):
         """
         if self.cluster_data is None:
             raise AttributeError("cluster data has not been set, unable to commit")
-        cluster_data = self.cluster_data[["id", "cluster_label", "cluster_confidence"]]
-        units = [None, None]
-        table_name = self.table_name
+        self.cluster_column_check_requested.emit(loader)
 
-        self.cluster_column_table = None
-        self.global_signal.emit(
-            "MetaDatabaseLoader",
-            loader,
-            "get_table_by_column",
-            ("cluster_label",),
-            "check_cluster_column_exists",
-            (),
-        )
-        if self.cluster_column_table is not None:
+    @log(logger=logger)
+    def on_cluster_column_checked(
+        self, loader: str, existing_table: Optional[str]
+    ) -> None:
+        """
+        Confirm an overwrite if needed, then ask the Controller to commit.
+
+        The confirmation stays in the View - it is a modal dialog - which is why this
+        is two round trips rather than one. ``existing_table`` being None means there
+        is nothing to overwrite and the commit proceeds without asking.
+
+        :param loader: Name or ID of the database loader plugin.
+        :type loader: str
+        :param existing_table: The table already holding cluster columns, or None.
+        :type existing_table: Optional[str]
+        :return: None
+        :rtype: None
+        """
+        if self.cluster_data is None:
+            self.logger.error("Cluster column check returned with no data to commit")
+            return
+        cluster_data = self.cluster_data[["id", "cluster_label", "cluster_confidence"]]
+
+        if existing_table is not None:
             reply = QMessageBox.question(
                 self,
                 "Confirm Overwrite",
                 "Clustering data already exists, are you sure you want to overwrite? This action cannot be undone.",
                 QMessageBox.Ok | QMessageBox.Cancel,
             )
-            if reply == QMessageBox.Ok:
-                self.operation_success = False
-                queries = [
-                    f"ALTER TABLE {self.cluster_column_table} DROP COLUMN cluster_label",
-                    f"ALTER TABLE {self.cluster_column_table} DROP COLUMN cluster_confidence",
-                    "DELETE FROM columns WHERE name = 'cluster_label'",
-                    "DELETE FROM columns WHERE name = 'cluster_confidence'",
-                ]
-
-                self.global_signal.emit(
-                    "MetaDatabaseLoader",
-                    loader,
-                    "alter_database",
-                    (queries,),
-                    "alter_database_status",
-                    (),
-                )
-                if self.operation_success is not True:
-                    self.add_text_to_display.emit(
-                        "Unable to delete clustering data, you will have to clean it up manually",
-                        self.__class__.__name__,
-                    )
-                    return
-            else:
+            if reply != QMessageBox.Ok:
                 return
-        self.global_signal.emit(
-            "MetaDatabaseLoader",
-            loader,
-            "add_columns_to_table",
-            (cluster_data, units, table_name),
-            "display_write_status",
-            (),
+
+        self.cluster_commit_requested.emit(
+            loader, cluster_data, self.table_name, existing_table
         )
+
+    @log(logger=logger)
+    def on_clusters_committed(self, loader: str, status: bool) -> None:
+        """
+        Refresh this tab and tell the rest of the app, once the write has landed.
+
+        :param loader: Name or ID of the database loader plugin.
+        :type loader: str
+        :param status: True if the write succeeded.
+        :type status: bool
+        :return: None
+        :rtype: None
+        """
+        if not status:
+            return
         self.update_available_columns(loader)  # refresh this tab locally
         self.plugin_state_changed.emit(
             "MetaDatabaseLoader", loader, "columns"
@@ -352,29 +370,28 @@ class ClusteringView(MetaView):
     @log(logger=logger)
     def update_available_columns(self, loader: str) -> None:
         """
-        Requests updated column names from the specified database loader.
+        Ask the Controller for the column names the given loader offers.
+
+        The answer arrives at ``update_column_names``. Step 4a replaced the
+        ``global_signal`` emit this used to make: the try/except around it went too,
+        because it guarded against a Qt emit raising rather than against the plugin
+        call failing - the call is the Controller's now, and a failure raises there
+        where it can be reported.
 
         :param loader: Identifier for the loader plugin.
         :type loader: str
         """
         if not loader or loader == "No Event Database":
             return
-        try:
-            self.global_signal.emit(
-                "MetaDatabaseLoader",
-                loader,
-                "get_column_names_by_table",
-                (),
-                "update_column_names",
-                (),
-            )
-        except Exception as e:
-            self.logger.error(f"Failed to request column data: {repr(e)}")
+        self.column_names_requested.emit(loader)
 
     @log(logger=logger)
     def update_units(self, loader: str, column: str) -> None:
         """
-        Requests units for a specific column from the database loader.
+        Ask the Controller for one column's unit string.
+
+        The answer arrives at ``update_column_units``. Step 4a replaced the
+        ``global_signal`` emit this used to make.
 
         :param loader: Plugin name or ID.
         :type loader: str
@@ -385,17 +402,7 @@ class ClusteringView(MetaView):
         # rather than an error, so do not dispatch it as a plugin key.
         if not loader or loader == "No Event Database":
             return
-        try:
-            self.global_signal.emit(
-                "MetaDatabaseLoader",
-                loader,
-                "get_column_units",
-                (column,),
-                "update_column_units",
-                (column,),
-            )
-        except Exception as e:
-            self.logger.error(f"Failed to request units for column {column}: {repr(e)}")
+        self.column_units_requested.emit(loader, column)
 
     @log(logger=logger)
     def update_column_names(self, column_names: List[str]) -> None:
@@ -522,18 +529,15 @@ class ClusteringView(MetaView):
         self, config: Dict[str, Any], loader: str
     ) -> None:
         """
-        Load metadata from the database and ask the Model to cluster it.
+        Validate the settings dialog's config and ask the Controller for the rows.
 
-        Returns nothing. Step 4c moved the clustering onto ClusteringModel, so this
-        method ends by emitting cluster_requested rather than by returning a result. The
-        answer arrives at set_clustering_result, which is where the plotting that used
-        to follow this call inline now lives.
+        Step 4a split this in two. It used to emit ``global_signal`` twice and read each
+        answer back off an attribute on the following statement; the rows now arrive at
+        :meth:`on_metadata_loaded`, which does the filtering and the clustering request.
 
-        What stays here is what belongs to the View: reading the settings dialog's
-        config, rejecting a duplicate column selection, fetching the rows over the
-        plugin bus, filtering and log-scaling them, and parsing the method parameters
-        the user typed - so a malformed parameter is reported against the form it came
-        from rather than raised from inside the Model.
+        What stays here is validation of what the user just selected, which is the
+        View's own business: a duplicate column makes for a meaningless plot and is
+        worth refusing before anything is loaded.
 
         :param config: Dictionary with selected columns and method configuration.
         :type config: Dict[str, Any]
@@ -541,14 +545,9 @@ class ClusteringView(MetaView):
         :type loader: str
         :return: None
         :rtype: None
-        :raises KeyError: If a duplicate column is selected, or if a selected column is missing from the loaded dataframe.
-        :raises ValueError: If the metadata query cannot be generated, no data matches the query, or the clustering method/parameters are invalid or missing.
+        :raises KeyError: If a duplicate column is selected.
         """
         columns = [val["column"] for val in config["columns"]]
-        units = [val["unit"] for val in config["columns"]]
-        logs = [val["log"] for val in config["columns"]]
-        norm = [val["norm"] for val in config["columns"]]
-        plot = [val["plot"] for val in config["columns"]]
 
         seen = set()
         for col in columns:
@@ -556,39 +555,37 @@ class ClusteringView(MetaView):
                 raise KeyError("All columns should be different for a meaningful plot")
             seen.add(col)
 
-        sql_filter = config["filter"]
-        self.global_signal.emit(
-            "MetaDatabaseLoader",
-            loader,
-            "construct_metadata_query",
-            (columns, sql_filter),
-            "relay_query",
-            (),
-        )
-        if self.query == "":
-            raise ValueError(
-                "Unable to generate metadata query, double check your solumn selections"
-            )
+        self.metadata_load_requested.emit(config, loader)
 
-        # Cleared first: a dispatch that fails never calls update_plot_data, so
-        # without this the guard below would cluster the previous run's rows.
-        self.plot_data = None
-        self.global_signal.emit(
-            "MetaDatabaseLoader",
-            loader,
-            "load_metadata",
-            (columns, sql_filter),
-            "update_plot_data",
-            (),
-        )
+    @log(logger=logger)
+    def on_metadata_loaded(
+        self, config: Dict[str, Any], loader: str, plot_data: pd.DataFrame
+    ) -> None:
+        """
+        Filter and log-scale the loaded rows, then ask for them to be clustered.
 
-        # .empty as well as None: the loader now returns an empty frame for a
-        # query that matched nothing, and clustering an empty frame raises an
-        # opaque error from deep inside sklearn.
-        if self.plot_data is None or self.plot_data.empty:
-            raise ValueError("No data matches the given query")
+        The second half of :meth:`_load_metadata_and_request_clustering`. The rows are a
+        parameter now rather than something read back off ``self.plot_data``, so the
+        clear-before-emit guard that used to protect that read is gone with the read.
 
-        if not all(col in self.plot_data.columns for col in columns):
+        :param config: Dictionary with selected columns and method configuration.
+        :type config: Dict[str, Any]
+        :param loader: Identifier of the loader plugin.
+        :type loader: str
+        :param plot_data: the rows the Controller loaded
+        :type plot_data: pd.DataFrame
+        :return: None
+        :rtype: None
+        :raises KeyError: If a selected column is missing from the loaded dataframe.
+        :raises ValueError: If the clustering method or its parameters are invalid or missing.
+        """
+        columns = [val["column"] for val in config["columns"]]
+        units = [val["unit"] for val in config["columns"]]
+        logs = [val["log"] for val in config["columns"]]
+        norm = [val["norm"] for val in config["columns"]]
+        plot = [val["plot"] for val in config["columns"]]
+
+        if not all(col in plot_data.columns for col in columns):
             raise KeyError(
                 f"All columns {columns} must be present in the provided dataframe"
             )
@@ -608,8 +605,9 @@ class ClusteringView(MetaView):
         # was its sole caller. It filters rows across every array it is handed, so
         # passing `frame_columns` reproduces exactly what the frame form's `dropna()`
         # saw, and the frame is rebuilt for the DataFrame-shaped work that follows.
+        # Step 3d moves it to `MetaModel`; it is still a View method today.
         filtered = self._logscale_and_filter_multiple_columns(
-            *(self.plot_data[c].to_numpy() for c in frame_columns),
+            *(plot_data[c].to_numpy() for c in frame_columns),
             log_flags=[c in logged for c in frame_columns],
         )
         clustering_data = pd.DataFrame(dict(zip(frame_columns, filtered, strict=True)))
