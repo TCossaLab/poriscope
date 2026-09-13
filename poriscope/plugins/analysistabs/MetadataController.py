@@ -68,7 +68,7 @@ class MetadataController(MetaSubsetTabController):
     @override
     def _setup_connections(self) -> None:
         """
-        Wire this tab's own ten intents on top of the four the subset base wires.
+        Wire this tab's own eleven intents on top of the four the subset base wires.
 
         :return: None
         :rtype: None
@@ -84,6 +84,7 @@ class MetadataController(MetaSubsetTabController):
         self.view.heatmap_requested.connect(self.calculate_heatmap)
         self.view.density_requested.connect(self.estimate_kernel_densities)
         self.view.histogram_bins_requested.connect(self.calculate_histogram_bins)
+        self.view.capture_rate_requested.connect(self.fit_capture_rate)
 
     @log(logger=logger)
     @Slot(object, object, object, bool, object, str, str, str)
@@ -240,6 +241,63 @@ class MetadataController(MetaSubsetTabController):
             return
         self.view.set_histogram_bins(
             bin_edges, bincenters, widths, ax, x_label, logx, norm
+        )
+
+    @log(logger=logger)
+    @Slot(object, object, object, str, str, str)
+    def fit_capture_rate(
+        self,
+        data: npt.NDArray[np.float64],
+        bins: Any,
+        ax: Axes,
+        x_label: str,
+        y_label: str,
+        dataset_label: str,
+    ) -> None:
+        """
+        Bin and fit the capture rate, and hand the result back to the View to draw.
+
+        Decision B's command path, the same shape as :meth:`calculate_heatmap`. A
+        fit that will not converge raises ``RuntimeError`` out of ``curve_fit``, and
+        is reported rather than allowed to escape a Qt slot.
+
+        :param data: the base-10 logarithm of the inter-event times
+        :type data: npt.NDArray[np.float64]
+        :param bins: an explicit bin count, or None to estimate one
+        :type bins: Any
+        :param ax: the axis object the View will draw on
+        :type ax: Axes
+        :param x_label: the x axis label, already formatted
+        :type x_label: str
+        :param y_label: the y axis label
+        :type y_label: str
+        :param dataset_label: string to label the dataset
+        :type dataset_label: str
+        :return: None
+        :rtype: None
+        """
+        try:
+            bin_edges, bincenters, val, fit, rate, error = self.model.fit_capture_rate(
+                data, bins
+            )
+        except (ValueError, TypeError, IndexError, RuntimeError) as e:
+            self.logger.error(f"Unable to fit the capture rate: {repr(e)}")
+            self.add_text_to_display.emit(
+                f"Unable to fit the capture rate: {e}", self.__class__.__name__
+            )
+            return
+        self.view.set_capture_rate(
+            bin_edges,
+            bincenters,
+            val,
+            fit,
+            rate,
+            error,
+            data,
+            ax,
+            x_label,
+            y_label,
+            dataset_label,
         )
 
     @log(logger=logger)

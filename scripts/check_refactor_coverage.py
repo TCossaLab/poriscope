@@ -243,6 +243,11 @@ MOVED: Tuple[Tuple[str, str, str], ...] = (
     ("poriscope/plugins/analysistabs/MetadataModel.py", "_resolve_1d_bins", "4c"),
     ("poriscope/plugins/analysistabs/MetadataView.py", "set_histogram_bins", "4c"),
     ("poriscope/plugins/analysistabs/MetadataModel.py", "histogram_bin_edges", "4c"),
+    ("poriscope/plugins/analysistabs/MetadataView.py", "set_capture_rate", "4c"),
+    # Landed 2026-09-13: the capture-rate binning and exponential fit moved to
+    # MetadataModel, taking `scipy.optimize` and the last `scipy.stats` with them.
+    ("poriscope/plugins/analysistabs/MetadataModel.py", "fit_capture_rate", "4c"),
+    ("poriscope/plugins/analysistabs/MetadataModel.py", "_log_exp_pdf", "4c"),
     (
         "poriscope/plugins/analysistabs/MetadataView.py",
         "_plot_categorical_histogram",

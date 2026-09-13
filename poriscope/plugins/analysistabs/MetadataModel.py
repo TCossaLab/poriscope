@@ -30,7 +30,8 @@ from typing import Any, List, Optional, Sequence, Tuple, override
 import numpy as np
 import numpy.typing as npt
 from scipy import stats
-from scipy.stats import iqr
+from scipy.optimize import curve_fit
+from scipy.stats import iqr, t
 
 from poriscope.utils.DocstringDecorator import inherit_docstrings
 from poriscope.utils.LogDecorator import log
@@ -368,3 +369,80 @@ class MetadataModel(MetaModel):
         bincenters = bin_edges[:-1] + np.diff(bin_edges) / 2.0
         widths = np.diff(bin_edges)
         return bin_edges, bincenters, widths
+
+    @log(logger=logger)
+    def _log_exp_pdf(
+        self,
+        logt: npt.NDArray[np.float64],
+        rate: float,
+        amplitude: float,
+    ) -> npt.NDArray[np.float64]:
+        """
+        An exponential inter-event time distribution, in log-time coordinates.
+
+        The model ``curve_fit`` is handed. Capture is Poisson, so inter-event times
+        are exponential; binning their base-10 logarithm carries a Jacobian of
+        ``ln(10) * 10**logt``, which is why that factor appears here rather than in
+        the caller.
+
+        :param logt: the base-10 logarithm of the inter-event times
+        :type logt: npt.NDArray[np.float64]
+        :param rate: the capture rate in Hz
+        :type rate: float
+        :param amplitude: the scale factor fitting the distribution to the counts
+        :type amplitude: float
+        :return: the modelled counts at each logt
+        :rtype: npt.NDArray[np.float64]
+        """
+        return amplitude * np.exp(-rate * 10.0**logt) * 10.0**logt * np.log(10)
+
+    @log(logger=logger)
+    def fit_capture_rate(self, data: npt.NDArray[np.float64], bins: Any) -> Tuple[
+        npt.NDArray[np.float64],
+        npt.NDArray[np.float64],
+        npt.NDArray[np.float64],
+        npt.NDArray[np.float64],
+        float,
+        float,
+    ]:
+        """
+        Bin log inter-event times, fit an exponential to them, and report the rate.
+
+        The bin edges come back so the View can draw the histogram on exactly the
+        edges the fit was made against, rather than on its own binning of the same
+        request. The counts come back for the same reason.
+
+        This path answers an overflow in the automatic bin rule with Sturges'
+        expression rather than the 100 bins the density and histogram paths use,
+        which is why it does not share :meth:`_resolve_1d_bins`.
+
+        :param data: the base-10 logarithm of the inter-event times
+        :type data: npt.NDArray[np.float64]
+        :param bins: an explicit bin count, or None to estimate one
+        :type bins: Any
+        :return: bin edges, bin centers, counts, the fitted curve, the rate in Hz, and its error
+        :rtype: Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64], npt.NDArray[np.float64], npt.NDArray[np.float64], float, float]
+        """
+        if bins is None:
+            try:
+                numbins = self._auto_bins_1d(data)
+            except OverflowError:
+                numbins = int(3.332 * np.log10(len(data)))
+        else:
+            numbins = bins
+
+        counts, bin_edges = np.histogram(data, bins=numbins)
+        val = counts.astype(float)
+        bincenters = bin_edges[:-1] + np.diff(bin_edges) / 2.0
+
+        rate_guess = 1.0 / (10 ** bincenters[np.argmax(val)])
+        amp_guess = np.max(val) / (np.log(10) / (rate_guess * np.exp(1)))
+        p0 = [rate_guess, amp_guess]
+
+        popt, pcov = curve_fit(self._log_exp_pdf, bincenters, val, p0=p0)
+        rate = popt[0]
+        amp = popt[1]
+        error = -t.isf(0.975, len(val)) * np.sqrt(np.diag(pcov))[0]
+
+        fit = self._log_exp_pdf(bincenters, rate, amp)
+        return bin_edges, bincenters, val, fit, float(rate), float(error)

@@ -136,6 +136,8 @@ def view(mocker: MockerFixture, mock_qt_dependencies: None) -> MetadataView:
     view_instance.density_requested = mocker.Mock()
     # Answered by MetadataController.calculate_histogram_bins in the real app.
     view_instance.histogram_bins_requested = mocker.Mock()
+    # Answered by MetadataController.fit_capture_rate in the real app.
+    view_instance.capture_rate_requested = mocker.Mock()
     # Answered by MetaSubsetTabController.load_event_id_cache in the real app;
     # each test that drives _rebuild_event_id_cache sets its own answer.
     view_instance.event_id_cache_requested = mocker.Mock()
@@ -715,6 +717,43 @@ def test_no_tab_defines_its_own_dunder_init() -> None:
 # ----------------------------- Plot Capture Rate Tests ------------------------------
 
 
+def _answer_capture_rate(view, numbins=4):
+    """
+    Answer ``capture_rate_requested`` the way MetadataController does.
+
+    Step 4c moved the binning and the exponential fit to ``MetadataModel``, so the
+    View no longer decides either. These tests supplied a stubbed ``curve_fit``
+    before; they supply the finished fit here instead, and what the fit actually
+    produces is asserted in ``tests/unit/models/test_metadata_model.py``.
+
+    :param view: the view whose request has just been emitted
+    :type view: MetadataView
+    :param numbins: how many bins to answer with
+    :type numbins: int
+    :return: None
+    :rtype: None
+    """
+    data, _bins, ax, x_label, y_label, dataset_label = (
+        view.capture_rate_requested.emit.call_args.args
+    )
+    edges = np.linspace(np.min(data), np.max(data), numbins + 1)
+    centers = edges[:-1] + np.diff(edges) / 2.0
+    counts = np.ones_like(centers)
+    view.set_capture_rate(
+        edges,
+        centers,
+        counts,
+        counts,
+        1.0,
+        0.1,
+        data,
+        ax,
+        x_label,
+        y_label,
+        dataset_label,
+    )
+
+
 def test_plot_capture_rate_raises_on_insufficient_data(view: MetadataView) -> None:
     """Verify ValueError is raised when insufficient data after filtering."""
     data: pd.DataFrame = pd.DataFrame({"time": np.array([1.0, 1.01])})
@@ -735,12 +774,8 @@ def test_plot_capture_rate_calls_hist(
         }
     )
 
-    mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.curve_fit",
-        return_value=(np.array([1.0, 1.0]), np.array([[0.01, 0], [0, 0.01]])),
-    )
-
     view._plot_capture_rate(view.axes, data, ["time"], ["s"], [False])
+    _answer_capture_rate(view)
 
     view.axes.hist.assert_called()
 
@@ -757,14 +792,11 @@ def test_plot_capture_rate_fits_exponential_curve(
         }
     )
 
-    mock_curve_fit: MagicMock = mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.curve_fit",
-        return_value=(np.array([1.5, 2.5]), np.array([[0.01, 0], [0, 0.01]])),
-    )
-
     view._plot_capture_rate(view.axes, data, ["time"], ["s"], [False])
+    _answer_capture_rate(view)
 
-    mock_curve_fit.assert_called_once()
+    # the curve itself is fitted by MetadataModel and tested there; what is pinned
+    # here is that the answer is drawn, as a line over the histogram
     view.axes.plot.assert_called()
 
 
@@ -780,12 +812,8 @@ def test_plot_capture_rate_emits_message_for_filtered_rows(
         }
     )
 
-    mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.curve_fit",
-        return_value=(np.array([1.0, 1.0]), np.array([[0.01, 0], [0, 0.01]])),
-    )
-
     view._plot_capture_rate(view.axes, data, ["time"], ["s"], [False])
+    _answer_capture_rate(view)
 
     view.add_text_to_display.emit.assert_called()
 
@@ -816,20 +844,14 @@ def test_plot_capture_rate_sets_axis_labels(
         }
     )
 
-    mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.curve_fit",
-        return_value=(np.array([1.0, 1.0]), np.array([[0.01, 0], [0, 0.01]])),
-    )
-
     view._plot_capture_rate(view.axes, data, ["time"], ["s"], [False])
+    _answer_capture_rate(view)
 
     view.axes.set_xlabel.assert_called()
     view.axes.set_ylabel.assert_called()
 
 
-def test_plot_capture_rate_uses_first_bins_entry(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
+def test_plot_capture_rate_uses_first_bins_entry(view: MetadataView) -> None:
     """Verify capture-rate plotting uses the first element from a bins list."""
     data = pd.DataFrame(
         {
@@ -838,16 +860,11 @@ def test_plot_capture_rate_uses_first_bins_entry(
             )
         }
     )
-    mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.curve_fit",
-        return_value=(np.array([1.0, 1.0]), np.array([[0.01, 0.0], [0.0, 0.01]])),
-    )
-
     view._plot_capture_rate(view.axes, data, ["time"], ["s"], [False], bins=[4])
 
-    hist_call = view.axes.hist.call_args
-    assert hist_call is not None
-    assert hist_call.kwargs.get("bins") == 4
+    # the list is unwrapped before the request goes out; that the Model then makes
+    # four bins of it is asserted in tests/unit/models/test_metadata_model.py
+    assert view.capture_rate_requested.emit.call_args.args[1] == 4
 
 
 def test_plot_capture_rate_sets_log10_label_when_logscale_true(
@@ -862,65 +879,13 @@ def test_plot_capture_rate_sets_log10_label_when_logscale_true(
             )
         }
     )
-    mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.curve_fit",
-        return_value=(np.array([1.0, 1.0]), np.array([[0.01, 0.0], [0.0, 0.01]])),
-    )
-
     view._plot_capture_rate(view.axes, data, ["time"], ["s"], [True])
+    _answer_capture_rate(view)
 
     xlabel_call = view.axes.set_xlabel.call_args
     assert xlabel_call is not None
     xlabel = xlabel_call.args[0]
     assert "log10" in xlabel
-
-
-def test_plot_capture_rate_uses_log_length_fallback_when_iqr_is_zero(
-    view: MetadataView,
-    mocker: MockerFixture,
-) -> None:
-    """Verify zero-IQR capture-rate data uses the fallback bin estimator."""
-    data = pd.DataFrame({"time": np.linspace(1.0, 1.11, 12)})
-    mocker.patch("poriscope.plugins.analysistabs.MetadataView.iqr", return_value=0.0)
-    mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.curve_fit",
-        return_value=(np.array([1.0, 1.0]), np.array([[0.01, 0.0], [0.0, 0.01]])),
-    )
-
-    view._plot_capture_rate(view.axes, data, ["time"], ["s"], [False], bins=None)
-
-    view.axes.hist.assert_called()
-
-
-def test_plot_capture_rate_handles_overflow_when_estimating_bins(
-    view: MetadataView,
-    mocker: MockerFixture,
-) -> None:
-    """Verify OverflowError in the primary estimator falls back to log-length bins."""
-    data = pd.DataFrame({"time": np.linspace(1.0, 1.11, 12)})
-    mocker.patch("poriscope.plugins.analysistabs.MetadataView.iqr", return_value=1.0)
-
-    original_max = np.max
-
-    def mock_np_max(values: Any, *args: Any, **kwargs: Any) -> Any:
-        if isinstance(values, np.ndarray):
-            raise OverflowError
-        return original_max(values, *args, **kwargs)
-
-    mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.np.max",
-        side_effect=mock_np_max,
-    )
-    mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.curve_fit",
-        return_value=(np.array([1.0, 1.0]), np.array([[0.01, 0.0], [0.0, 0.01]])),
-    )
-
-    view._plot_capture_rate(view.axes, data, ["time"], ["s"], [False], bins=None)
-
-    hist_call = view.axes.hist.call_args
-    assert hist_call is not None
-    assert hist_call.kwargs.get("bins") == int(3.332 * np.log10(len(data)))
 
 
 # ----------------------------- Format Axis Label Tests ------------------------------

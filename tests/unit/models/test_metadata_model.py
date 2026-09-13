@@ -296,3 +296,87 @@ class TestResolve1dBins:
         data = np.array([1.0, 2.0, 3.0, 4.0])
 
         assert model._resolve_1d_bins(data, None, False, 0.0, 10.0) == 100
+
+
+# ===========================================================================
+# fit_capture_rate - pins moved from test_metadata_view.py by Step 4c
+# ===========================================================================
+
+
+class TestFitCaptureRate:
+    """
+    The capture-rate binning and exponential fit, moved off MetadataView.
+
+    The two bin-fallback tests came with the rule they exercise: they patched
+    ``MetadataView.iqr``, and ``mock.patch`` names the module that imported the
+    symbol, so the target moved too (method rule 45). Both now assert the bin count
+    the fallback produces, which the View-side versions could not - there the count
+    was only visible as a keyword handed to ``ax.hist``.
+    """
+
+    @pytest.fixture
+    def log_times(self):
+        """
+        Log inter-event times of the shape the capture-rate path consumes.
+
+        :return: the base-10 logarithm of a set of inter-event times
+        :rtype: np.ndarray
+        """
+        rng = np.random.default_rng(11)
+        # Arrival times are the cumulative sum, so diffing them gives the
+        # exponential gaps. Diffing the draws themselves would give order-statistic
+        # spacings instead, which are far shorter and describe nothing physical.
+        arrivals = np.cumsum(rng.exponential(scale=0.02, size=2000))
+        gaps = np.diff(np.sort(arrivals))
+        return np.log10(gaps[gaps > 0])
+
+    def test_an_explicit_bin_count_is_used_as_given(self, model, log_times):
+        """A count from the controls is passed through to the binning."""
+        edges, centers, counts, fit, rate, error = model.fit_capture_rate(log_times, 4)
+
+        assert len(centers) == 4
+        assert len(edges) == 5
+        assert len(counts) == 4
+        assert len(fit) == 4
+
+    def test_a_zero_interquartile_range_falls_back_to_sturges(self, model, mocker):
+        """Verify zero-IQR capture-rate data uses the fallback bin estimator."""
+        mocker.patch(
+            "poriscope.plugins.analysistabs.MetadataModel.iqr", return_value=0.0
+        )
+        data = np.linspace(1.0, 1.11, 40)
+
+        edges, centers, *_ = model.fit_capture_rate(data, None)
+
+        assert len(centers) == int(3.332 * np.log10(len(data)))
+
+    def test_an_overflow_falls_back_to_sturges_too(self, model, mocker):
+        """
+        Verify OverflowError in the primary estimator falls back to log-length bins.
+
+        **This path answers an overflow differently from the density and histogram
+        paths**, which use 100 bins, and that is the reason it does not share
+        ``_resolve_1d_bins``. The assertion is what would fail if it were unified.
+        """
+        mocker.patch.object(model, "_auto_bins_1d", side_effect=OverflowError)
+        data = np.linspace(1.0, 1.11, 40)
+
+        edges, centers, *_ = model.fit_capture_rate(data, None)
+
+        assert len(centers) == int(3.332 * np.log10(len(data)))
+        assert len(centers) != 100
+
+    def test_the_rate_is_recovered_from_a_known_distribution(self, model, log_times):
+        """
+        The fit is exercised for real rather than stubbed.
+
+        The View-side tests all replaced ``curve_fit`` with a canned answer, so
+        nothing anywhere asserted that the capture rate came back near the rate the
+        data was drawn with. A scale of 0.02 s is 50 Hz.
+        """
+        _edges, _centers, _counts, _fit, rate, error = model.fit_capture_rate(
+            log_times, None
+        )
+
+        assert rate == pytest.approx(50.0, rel=0.1)
+        assert error != 0.0

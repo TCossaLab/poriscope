@@ -54,8 +54,6 @@ from PySide6.QtCore import Signal, Slot
 from PySide6.QtWidgets import (
     QMessageBox,
 )
-from scipy.optimize import curve_fit
-from scipy.stats import iqr, t
 
 from poriscope.plugins.analysistabs.utils.metadatacontrols import MetadataControls
 from poriscope.utils.DocstringDecorator import inherit_docstrings
@@ -172,6 +170,14 @@ class MetadataView(MetaSubsetTabView):
     histogram_bins_requested = Signal(
         object, object, bool, object, object, object, str, bool, bool
     )
+
+    #: Asks for the capture-rate binning and its exponential fit: the log
+    #: inter-event times, the bin request, and the drawing context. Answered
+    #: through ``set_capture_rate``.
+    #:
+    #: Step 4c. The bin edges come back with the fit so the histogram is drawn on
+    #: exactly the edges the fit was made against.
+    capture_rate_requested = Signal(object, object, object, str, str, str)
 
     logger = logging.getLogger(__name__)
 
@@ -525,12 +531,6 @@ class MetadataView(MetaSubsetTabView):
         Calculate the capture rate for the given subset
         """
 
-        def log_exp_pdf(
-            logt: npt.NDArray[np.float64], rate: float, amplitude: float
-        ) -> npt.NDArray[np.float64]:
-            x = amplitude * np.exp(-rate * 10.0**logt) * 10.0**logt * np.log(10)
-            return x
-
         if bins is not None:
             if isinstance(bins, list) and len(bins) >= 1:
                 bins = bins[0]
@@ -562,44 +562,72 @@ class MetadataView(MetaSubsetTabView):
         if logx:
             x_label = f"log10({x_label})"
 
-        if bins is None:
-            try:
-                if iqr(data) > 0:
-                    numbins = int(
-                        (np.max(data) - np.min(data))
-                        * len(data) ** (1.0 / 3.0)
-                        / (iqr(data))
-                    )
-                else:
-                    numbins = int(3.332 * np.log10(len(data)))
-            except OverflowError:
-                numbins = int(3.332 * np.log10(len(data)))
-        else:
-            numbins = bins
+        self.capture_rate_requested.emit(
+            data, bins, ax, x_label, y_label, dataset_label
+        )
 
-        val, bins, patches = ax.hist(
+    @log(logger=logger)
+    def set_capture_rate(
+        self,
+        bin_edges: npt.NDArray[np.float64],
+        bincenters: npt.NDArray[np.float64],
+        val: npt.NDArray[np.float64],
+        fit: npt.NDArray[np.float64],
+        rate: float,
+        error: float,
+        data: npt.NDArray[np.float64],
+        ax: Axes,
+        x_label: str,
+        y_label: str,
+        dataset_label: str,
+    ) -> None:
+        """
+        Draw the inter-event time histogram and the exponential fitted to it.
+
+        The answering half of ``capture_rate_requested``. Step 4c moved the binning
+        and the fit to ``MetadataModel`` so that ``scipy.optimize`` and
+        ``scipy.stats`` could leave the View.
+
+        The histogram is drawn on the **edges the fit was made against**, rather than
+        on this widget's own binning of the same request. Handing matplotlib a bin
+        count instead would let it bin independently, and the counts the fit used and
+        the bars the user sees could then differ with nothing to say so.
+
+        :param bin_edges: the edges the counts and the fit were computed on
+        :type bin_edges: npt.NDArray[np.float64]
+        :param bincenters: the center of each bin
+        :type bincenters: npt.NDArray[np.float64]
+        :param val: the counts in each bin
+        :type val: npt.NDArray[np.float64]
+        :param fit: the fitted curve evaluated at the bin centers
+        :type fit: npt.NDArray[np.float64]
+        :param rate: the fitted capture rate in Hz
+        :type rate: float
+        :param error: the 95% confidence half-width on the rate
+        :type error: float
+        :param data: the log inter-event times the histogram is built from
+        :type data: npt.NDArray[np.float64]
+        :param ax: the axis object on which to plot
+        :type ax: Axes
+        :param x_label: the x axis label, already formatted
+        :type x_label: str
+        :param y_label: the y axis label
+        :type y_label: str
+        :param dataset_label: string to label the dataset
+        :type dataset_label: str
+        :return: None
+        :rtype: None
+        """
+        ax.hist(
             data,
-            bins=numbins,
+            bins=bin_edges,
             histtype="step",
             stacked=False,
             fill=False,
             label=dataset_label,
         )
 
-        bincenters = bins[:-1] + np.diff(bins) / 2.0
-
-        rate_guess = 1.0 / (10 ** bincenters[np.argmax(val)])
-        amp_guess = np.max(val) / (np.log(10) / (rate_guess * np.exp(1)))
-        p0 = [rate_guess, amp_guess]
-
-        popt, pcov = curve_fit(log_exp_pdf, bincenters, val, p0=p0)
-        rate = popt[0]
-        amp = popt[1]
-        error = -t.isf(0.975, len(val)) * np.sqrt(np.diag(pcov))[0]
-
-        fit = log_exp_pdf(bincenters, rate, amp)
-
-        ax.plot(bincenters, fit, label=f"{rate:.3g} \u00b1 {error:.1g} Hz")
+        ax.plot(bincenters, fit, label=f"{rate:.3g} ± {error:.1g} Hz")
 
         self._update_cache((bincenters, x_label), (val, y_label))
 
