@@ -1734,6 +1734,29 @@ class MetadataView(MetaSubsetTabView):
 
         return plotted_any
 
+    def _rectify_event_current(
+        self,
+        timeseries: npt.NDArray[np.float64],
+        padding_before: int,
+    ) -> npt.NDArray[np.float64]:
+        """
+        Subtract an event's own baseline from it and orient the blockage positive.
+
+        The baseline is the median of the samples preceding the event, and
+        multiplying through by its sign makes a negative-baseline trace read the
+        same way as a positive-baseline one, so events recorded at either polarity
+        can share a histogram or an overlay.
+
+        :param timeseries: one event's raw or filtered samples
+        :type timeseries: npt.NDArray[np.float64]
+        :param padding_before: how many leading samples are pre-event baseline
+        :type padding_before: int
+        :return: the baseline-subtracted, sign-corrected samples
+        :rtype: npt.NDArray[np.float64]
+        """
+        baseline = np.median(timeseries[:padding_before])
+        return np.sign(baseline) * timeseries - np.sign(baseline) * baseline
+
     @log(logger=logger)
     def _construct_all_points_histogram(
         self,
@@ -1778,14 +1801,10 @@ class MetadataView(MetaSubsetTabView):
                 raise ValueError(f"Unknown plot_type {plot_type!r}")
 
             padding_before = int(event["padding_before"] * event["samplerate"] * 1e-6)
-            baseline = np.median(timeseries[:padding_before])
+            rectified = self._rectify_event_current(timeseries, padding_before)
 
-            min_curr = np.min(
-                np.sign(baseline) * timeseries - np.sign(baseline) * baseline
-            )
-            max_curr = np.max(
-                np.sign(baseline) * timeseries - np.sign(baseline) * baseline
-            )
+            min_curr = np.min(rectified)
+            max_curr = np.max(rectified)
             if min_curr < min_current:
                 min_current = min_curr
             if max_curr > max_current:
@@ -1828,9 +1847,8 @@ class MetadataView(MetaSubsetTabView):
             else:
                 raise ValueError(f"Unknown plot_type {plot_type!r}")
             padding_before = int(event["padding_before"] * event["samplerate"] * 1e-6)
-            baseline = np.median(timeseries[:padding_before])
             event_hist, _ = np.histogram(
-                np.sign(baseline) * timeseries - np.sign(baseline) * baseline,
+                self._rectify_event_current(timeseries, padding_before),
                 bins=bin_edges,
             )
             hist += event_hist
@@ -1894,9 +1912,8 @@ class MetadataView(MetaSubsetTabView):
 
             padding_before = int(event["padding_before"] * event["samplerate"] * 1e-6)
             padding_after = int(event["padding_after"] * event["samplerate"] * 1e-6)
-            baseline = np.median(data[:padding_before])
 
-            data = np.sign(baseline) * data - np.sign(baseline) * baseline
+            data = self._rectify_event_current(data, padding_before)
             time = np.array(range(len(data)), dtype=np.float64)
             time -= padding_before
             time /= len(data) - padding_after - padding_before
