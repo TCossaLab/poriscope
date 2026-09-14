@@ -1,5 +1,7 @@
 ## Poriscope 2.0.0: in progress
 
+* **Fixed the Metadata tab drawing an Event Overlay on top of the previous plot** instead of replacing it: switching to a Raw or Filtered Event Overlay from any other plot type left whatever was already on the axes, so two unrelated pictures were superimposed
+
 * **Breaking:** the Metadata tab's Kernel Density Plot and Histogram are filtered, log-scaled and given their shared plot limits by `MetadataModel` rather than in the view, so `density_requested` and `histogram_bins_requested` carry the raw columns and their log flag, and `set_kernel_densities` and `set_histogram_bins` take the newest dataset and the widened limits and accumulate it themselves
 
 * **A 1D Density plot on a subset with no usable values now leaves the previous plot in place**, rather than clearing the axes and drawing nothing

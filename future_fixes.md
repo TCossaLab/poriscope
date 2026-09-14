@@ -616,6 +616,13 @@ refactoring lands, to avoid generating triads against a layout about to change.
 - **`MetaView.lock` is a class attribute shared by every tab view** (`MetaView.py:90`). It
   guards `progress_bars` in `remove_progress_bar` only; the other three accesses (`:282`,
   `:287`, `:325`) are unguarded, so the lock does not establish the invariant it appears to.
+- **`ProteinView._update_distribution_ensemble` does not reset on a plot-type change**
+  (`ProteinView.py:2345`). It resets only when the bin request changes, so switching Raw
+  Histogram to Filtered Histogram with the same bins superimposes the two. The same defect
+  the Metadata tab's event overlay had, fixed 2026-09-14; Step 4's branch 5 owns this file.
+- **A short status-panel message can be lost under a long SQL echo.** Reported 2026-09-14:
+  a plot refusal did reach the panel and was scrolled past beneath the applied-query echo,
+  which runs to many lines. The panel has no severity marking and no filtering.
 - **`hist_data` holds two shapes in `MetadataView`.** The three 1-D paths now all append a
   raw column array; the all-points path appends an `(x, y)` tuple. Step 4's closeout took it
   from four shapes to two. `ProteinView`'s copy holds only the tuple. Typed `List[Any]` with

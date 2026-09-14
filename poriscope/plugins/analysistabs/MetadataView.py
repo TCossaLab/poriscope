@@ -1760,7 +1760,19 @@ class MetadataView(MetaSubsetTabView):
                             "Raw Event Overlay",
                             "Filtered Event Overlay",
                         ]:
-                            if not self._axes_valid(axis_type="2d"):
+                            # A change of plot type resets here as it does
+                            # everywhere else in this method. Checking only that
+                            # the axes are *valid* is not enough: a 2-D axes still
+                            # carrying an all-points histogram's line is perfectly
+                            # valid, so the overlay drew straight over it and two
+                            # unrelated pictures ended up superimposed.
+                            plot_type_changed = (
+                                self.allowed_plot_type is not None
+                                and plot_type != self.allowed_plot_type
+                            )
+                            if plot_type_changed or not self._axes_valid(
+                                axis_type="2d"
+                            ):
                                 self._reset_actions(axis_type="2d")
                             self.event_overlay_requested.emit(
                                 loader, sql_filter, exp_and_ch_arg, plot_type

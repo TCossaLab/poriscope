@@ -5499,3 +5499,61 @@ def test_handle_plot_events_leaves_the_reporting_to_the_controller(
 
 
 # ----------------------------- Categorical nulls / plot-type reset -------------------
+
+
+# ----------------------------- _overlay_plot scope guards ------------------------------
+
+
+def test_overlay_plot_reports_multiple_channels_for_a_heatmap(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Probe: does the refusal reach the status panel, or only the log?"""
+    view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
+    view.selected_experiment_and_channels_by_loader = {  # type: ignore[assignment]
+        "test_loader": {"exp1": ["1", "2"]}
+    }
+
+    result = view._overlay_plot({"db_loader": "test_loader", "plot_type": "Heatmap"})
+
+    assert result is False
+    said = [call.args[0] for call in view.add_text_to_display.emit.call_args_list]
+    assert any("single channel" in message for message in said), said
+
+
+def test_overlay_plot_resets_before_an_event_overlay_after_another_plot_type(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """
+    Reported from a real run: an All Points Histogram was still on the axes when
+    an Event Overlay drew over it, which superimposes two unrelated pictures.
+
+    Every other plot type resets on a change of type. The overlay branch checked
+    only whether the axes were *valid* - and a 2-D axes carrying someone else's
+    bars is perfectly valid - so nothing cleared them.
+    """
+    view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
+    view.selected_experiment_and_channels_by_loader = {}
+    view.canned_event_query = "SELECT * FROM events"
+    view.allowed_plot_type = "Raw All Points Histogram"
+    view._axes_valid = mocker.Mock(return_value=True)
+    view._reset_actions = mocker.Mock()
+
+    view._overlay_plot({"db_loader": "test_loader", "plot_type": "Raw Event Overlay"})
+
+    view._reset_actions.assert_called_once_with(axis_type="2d")
+
+
+def test_overlay_plot_does_not_reset_a_second_overlay_of_the_same_type(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Overlaying another subset of the same type is what the plot is for."""
+    view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
+    view.selected_experiment_and_channels_by_loader = {}
+    view.canned_event_query = "SELECT * FROM events"
+    view.allowed_plot_type = "Raw Event Overlay"
+    view._axes_valid = mocker.Mock(return_value=True)
+    view._reset_actions = mocker.Mock()
+
+    view._overlay_plot({"db_loader": "test_loader", "plot_type": "Raw Event Overlay"})
+
+    view._reset_actions.assert_not_called()
