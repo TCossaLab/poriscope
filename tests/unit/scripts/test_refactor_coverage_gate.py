@@ -52,11 +52,40 @@ def mod() -> types.ModuleType:
     return module
 
 
+def _coverage_is_current() -> bool:
+    """
+    Whether ``coverage.json`` describes the code as it stands right now.
+
+    The file is written when a ``--cov`` run *finishes*, so during a run it always
+    describes the previous one. Adding a method and its tests in a single commit
+    therefore failed these two on the first full run and passed on the second, which
+    reads as a regression and is not - it cost a confusing debugging detour during
+    Step 4's closeout before being diagnosed.
+
+    Comparing timestamps settles it: if any source file has been touched since the
+    coverage data was written, that data cannot be judging this code. In CI a fresh
+    checkout has no ``coverage.json`` at all, so both tests skip there and the audit
+    step that runs after the suite is the real gate either way.
+
+    :return: True if coverage data exists and predates no source change
+    :rtype: bool
+    """
+    if not COVERAGE.is_file():
+        return False
+    written = COVERAGE.stat().st_mtime
+    return all(
+        source.stat().st_mtime <= written
+        for source in (REPO_ROOT / "poriscope").rglob("*.py")
+    )
+
+
 needs_coverage = pytest.mark.skipif(
-    not COVERAGE.is_file(),
+    not _coverage_is_current(),
     reason=(
-        "no coverage.json at the repository root; generate it with "
-        "`pytest --cov=poriscope --cov-report=json:coverage.json`"
+        "no current coverage.json at the repository root; generate it with "
+        "`pytest --cov=poriscope --cov-report=json:coverage.json`. Data written "
+        "before the most recent source edit is skipped rather than trusted, since "
+        "it describes the previous run."
     ),
 )
 

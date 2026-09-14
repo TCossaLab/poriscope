@@ -16,6 +16,8 @@ Covers:
 - relay_units delegation
 - update_column_names (names provided with info log, empty list with warning log)
 - update_column_units (units provided with info log, empty dict skips view)
+- cluster, the Decision B command path: the Model builds the clustering frame from
+  the rows and the spec the View sent, then clusters it
 - request_column_names / request_column_units, the Step 4a replacements for two
   ``global_signal`` round trips: they call the plugin through ``self.model.call`` and
   report a failure instead of leaving the View with the previous loader's answer
@@ -670,3 +672,115 @@ def test_update_column_units_skips_view_when_units_empty(
     """
     controller.update_column_units({}, "x")
     mock_view.update_column_units.assert_not_called()
+
+
+# --------------------------- cluster ---------------------------------
+#
+# The slot had no test at all before Step 4's closeout, which is method rule 52's
+# shape for a third time: its callers were covered, so the gap was invisible. It now
+# makes two Model calls in sequence - build the frame, then cluster it - so the order
+# and the failure handling are both pinned.
+
+
+class TestCluster:
+    """Decision B's command path: intent in, two Model calls, result out through a setter."""
+
+    @staticmethod
+    def _request():
+        """
+        The arguments ``cluster_requested`` carries since the closeout.
+
+        :return: rows, frame columns, log flags, excluded columns, method, params
+        :rtype: tuple
+        """
+        rows = MagicMock(name="plot_data")
+        return (rows, ["a", "b", "id"], [False, True, False], ["id"], "HDBSCAN", {})
+
+    def test_the_frame_is_built_from_the_request_before_clustering(
+        self, controller: ClusteringController
+    ) -> None:
+        """
+        The Model filters and the Model clusters; the View hands over rows and a spec.
+
+        Asserted on the arguments rather than on call counts, because a Controller that
+        passed its own reduction of the rows would still make two calls.
+        """
+        rows, frame_columns, log_flags, exclude_cols, method, params = self._request()
+        controller.model.cluster.return_value = (MagicMock(), [], [])
+
+        controller.cluster(rows, frame_columns, log_flags, exclude_cols, method, params)
+
+        controller.model.build_clustering_frame.assert_called_once_with(
+            rows, frame_columns, log_flags
+        )
+
+    def test_what_the_builder_returns_is_what_gets_clustered(
+        self, controller: ClusteringController
+    ) -> None:
+        """A Controller that rebuilt or reordered the frame in between would fail here."""
+        rows, frame_columns, log_flags, exclude_cols, method, params = self._request()
+        built = controller.model.build_clustering_frame.return_value
+        controller.model.cluster.return_value = (MagicMock(), [], [])
+
+        controller.cluster(rows, frame_columns, log_flags, exclude_cols, method, params)
+
+        controller.model.cluster.assert_called_once_with(
+            built, exclude_cols, method, params
+        )
+
+    def test_the_result_goes_back_through_the_view(
+        self, controller: ClusteringController, mock_view: MagicMock
+    ) -> None:
+        rows, frame_columns, log_flags, exclude_cols, method, params = self._request()
+        clustered, labels, confidence = MagicMock(), [0, 1], [0.5, 0.5]
+        controller.model.cluster.return_value = (clustered, labels, confidence)
+
+        controller.cluster(rows, frame_columns, log_flags, exclude_cols, method, params)
+
+        mock_view.set_clustering_result.assert_called_once_with(
+            clustered, labels, confidence
+        )
+
+    def test_a_missing_column_is_reported_rather_than_raised(
+        self, controller: ClusteringController, mock_view: MagicMock
+    ) -> None:
+        """
+        The guard moved to the Model with the filtering, so the KeyError now arrives
+        here instead of out of the View. Qt invoked this slot from a signal, so there
+        is no call site above it that could handle a raise.
+        """
+        rows, frame_columns, log_flags, exclude_cols, method, params = self._request()
+        controller.model.build_clustering_frame.side_effect = KeyError(
+            "All columns must be present in the provided dataframe"
+        )
+
+        controller.cluster(rows, frame_columns, log_flags, exclude_cols, method, params)
+
+        controller.add_text_to_display.emit.assert_called_once()
+        assert (
+            "Unable to cluster data"
+            in controller.add_text_to_display.emit.call_args[0][0]
+        )
+
+    def test_a_failed_build_does_not_go_on_to_cluster(
+        self, controller: ClusteringController
+    ) -> None:
+        """Reporting is not enough: the run has to stop, or sklearn sees a mock."""
+        rows, frame_columns, log_flags, exclude_cols, method, params = self._request()
+        controller.model.build_clustering_frame.side_effect = KeyError("nope")
+
+        controller.cluster(rows, frame_columns, log_flags, exclude_cols, method, params)
+
+        controller.model.cluster.assert_not_called()
+
+    def test_a_failed_clustering_leaves_the_view_alone(
+        self, controller: ClusteringController, mock_view: MagicMock
+    ) -> None:
+        """A stale result must not be drawn under this request's label."""
+        rows, frame_columns, log_flags, exclude_cols, method, params = self._request()
+        controller.model.cluster.side_effect = ValueError("boom")
+
+        controller.cluster(rows, frame_columns, log_flags, exclude_cols, method, params)
+
+        mock_view.set_clustering_result.assert_not_called()
+        controller.add_text_to_display.emit.assert_called_once()

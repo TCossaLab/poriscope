@@ -26,9 +26,10 @@
 
 import logging
 from abc import abstractmethod
-from typing import Any, Dict, Generator, List, Mapping, Optional
+from typing import Any, Dict, Generator, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
+import numpy.typing as npt
 import pandas as pd
 from PySide6.QtCore import QObject, Qt, Signal, Slot
 
@@ -456,3 +457,125 @@ class MetaModel(QObject, metaclass=QObjectABCMeta):
         :type identifier: str
         """
         self.add_text_to_display.emit(text, identifier)
+
+    @log(logger=logger)
+    def logscale_and_filter_columns(
+        self, *data: npt.NDArray[Any], log_flags: Optional[Sequence[bool]] = None
+    ) -> Tuple[npt.NDArray[Any], ...]:
+        """
+        Filters multiple data columns for NaN values and applies logarithmic scaling.
+
+        Public here, unlike the ``MetaView`` copy it was taken from: concrete Models
+        call it, and after Step 4's closeout it is the only copy. ``MetaView`` keeps
+        its own until the last of the eight View call sites converts, which is when
+        that one is deleted - see ``DECISIONS.md`` 2026-09-14.
+
+        This function takes an arbitrary number of 1D NumPy arrays as input.
+        It first removes any data points (rows) where any of the input arrays
+        contain a NaN value.
+        Then, it optionally applies a base-10 logarithmic scale to specified
+        columns. When applying log scale, it handles potentially negative data
+        by 'rectifying' it based on its average sign and filters out any
+        non-positive values after rectification. This filtering is applied
+        sequentially, meaning filtering based on one column affects all others.
+
+        :param \\*data: A variable number of 1D NumPy arrays representing the data columns.
+        :type \\*data: npt.NDArray[Any]
+        :param log_flags: A sequence of booleans, one for each data array. If True, the corresponding array will be log-scaled. If None, no log scaling is applied. Defaults to None.
+        :type log_flags: Optional[Sequence[bool]]
+        :raises ValueError: If log_flags is provided but is not a list or tuple with the same length as the number of data arguments.
+        :return: A tuple containing the processed 1D NumPy arrays. The number of arrays returned matches the number of input arrays.
+        :rtype: Tuple[npt.NDArray[Any], ...]
+        """
+        if not data:
+            return ()
+
+        num_arrays = len(data)
+        current_data = list(data)  # Work with a list
+
+        # --- Input Validation ---
+        if log_flags is None:
+            log_flags = [False] * num_arrays
+        elif not isinstance(log_flags, (list, tuple)) or len(log_flags) != num_arrays:
+            raise ValueError(
+                "log_flags must be a list or tuple with the same length as the number of data arguments."
+            )
+
+        num_points_init = len(current_data[0])
+
+        # --- NaN Filtering ---
+        # Create a combined mask to filter NaNs across all arrays
+        #
+        # Coerced first, because a column read back from the database is not always a
+        # float array. SQLite is dynamically typed and pandas infers per column, so a
+        # column that is NULL for every row *in the requested scope* comes back as an
+        # object array of ``None`` - there is nothing for pandas to infer a numeric
+        # type from - and ``np.isnan`` cannot take that. Plotting a protein fit column
+        # over a scope that was never fitted does exactly this. Coercing turns those
+        # into ``nan``, which is what the mask below already exists to drop.
+        mask = np.ones(num_points_init, dtype=bool)
+        for i, d in enumerate(current_data):
+            if np.asarray(d).dtype == object:
+                try:
+                    d = np.asarray(d, dtype=float)
+                except (TypeError, ValueError):
+                    # Genuinely non-numeric rather than merely empty. Masked out
+                    # entirely, which leaves the caller the same "no points survived"
+                    # result an all-NULL column gives it - the arity of the return is
+                    # part of this method's contract, and every caller unpacks it.
+                    self.add_text_to_display.emit(
+                        f"Column {i + 1} of this plot holds values that are not "
+                        "numeric, so none of it can be plotted",
+                        self.__class__.__name__,
+                    )
+                    d = np.full(len(d), np.nan)
+                current_data[i] = d
+            mask &= ~np.isnan(d)
+
+        # Apply the NaN mask
+        current_data = [d[mask] for d in current_data]
+
+        num_points_after_nan = len(current_data[0])
+        num_points_nan = num_points_init - num_points_after_nan
+        if num_points_nan > 0:
+            self.add_text_to_display.emit(
+                f"Removed {num_points_nan} out of {num_points_init} points that contained NaN",
+                self.__class__.__name__,
+            )
+
+        # --- Log Scaling (Sequential) ---
+        num_points_before_log = num_points_after_nan
+
+        for i in range(num_arrays):
+            if log_flags[i]:
+                d = current_data[i]
+
+                # Skip if no data left or data is already scaled
+                if len(d) == 0:
+                    continue
+
+                # Rectify: Flip data based on average sign, then filter > 0
+                avg = np.average(d)
+                sign = (
+                    np.sign(avg) if avg != 0 else 1
+                )  # Default to positive sign if avg is zero
+                rectified = sign * d
+
+                log_mask = rectified > 0
+
+                # Apply the mask to *all* current data arrays
+                current_data = [arr[log_mask] for arr in current_data]
+
+                current_data[i] = np.log10(
+                    current_data[i] * sign
+                )  # Apply log10 to the *rectified* value
+
+        num_points_final = len(current_data[0])
+        num_points_log_removed = num_points_before_log - num_points_final
+        if num_points_log_removed > 0:
+            self.add_text_to_display.emit(
+                f"Removed {num_points_log_removed} out of {num_points_before_log} points that could not be logscaled",
+                self.__class__.__name__,
+            )
+
+        return tuple(current_data)
