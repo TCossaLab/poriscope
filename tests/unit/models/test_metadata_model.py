@@ -809,17 +809,47 @@ class TestCategoricalCounts:
         assert categories[-1] == "null"
         assert "nan" not in categories
 
-    def test_numeric_categories_keep_numeric_order(self, model):
+    def test_the_tallest_bar_comes_first(self, model):
         """
-        Real categories keep the order they had, which is why nulls are counted
-        apart. Stringifying the whole column before ``np.unique`` would have been
-        shorter and would have sorted 10 before 2.
+        Requested by a user: the bars read largest on the left, smallest on the
+        right, rather than in whatever order the categories happened to sort into.
+        """
+        values = np.array(["A", "B", "B", "C", "C", "C"], dtype=object)
+
+        (categories, counts) = model.categorical_counts([values])[0]
+
+        assert categories == ["C", "B", "A"]
+        assert list(counts) == [3.0, 2.0, 1.0]
+
+    def test_overlaid_datasets_share_one_order(self, model):
+        """
+        The order is decided from the total across every dataset, not per dataset.
+
+        Matplotlib takes a category axis's order from the first series drawn, so
+        ordering each dataset by its own counts would leave the second one's bars
+        under the first one's headings and only the first looking sorted. Here "B"
+        wins on the total while losing inside the first dataset.
+        """
+        first = np.array(["A", "A", "B"], dtype=object)
+        second = np.array(["B", "B", "B"], dtype=object)
+
+        results = model.categorical_counts([first, second])
+
+        assert [cats for cats, _ in results] == [["B", "A"], ["B"]]
+        assert [list(counts) for _, counts in results] == [[1.0, 2.0], [3.0]]
+
+    def test_numeric_categories_keep_numeric_order_on_a_tie(self, model):
+        """
+        Real categories are counted apart from nulls so that they keep their own
+        order; stringifying the whole column before ``np.unique`` would have been
+        shorter and would have sorted 10 before 2. Count ordering is stable, so
+        that order is what survives a tie - here 1 and 10, both counted once.
         """
         values = np.array([1, 2, 10, 2])
 
         (categories, _counts) = model.categorical_counts([values])[0]
 
-        assert categories == ["1", "2", "10"]
+        assert categories == ["2", "1", "10"]
 
     def test_one_pair_per_dataset_in_order(self, model):
         """The bar chart redraws every accumulated dataset, index-aligned with labels."""

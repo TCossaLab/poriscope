@@ -487,6 +487,13 @@ class MetadataModel(MetaModel):
         separately also keeps the real categories in the order they had before, which
         stringifying everything up front would not: "10" sorts before "2".
 
+        **The bars come back largest first**, so the tallest is drawn on the left.
+        The order is decided from the total across *every* overlaid dataset rather
+        than per dataset, because matplotlib takes a category axis's order from the
+        first series drawn: ordering each dataset by its own counts would leave only
+        the first one looking sorted. Ties keep the order the tally gave them, which
+        is the numeric order for a numeric column.
+
         :param datasets: one array of raw column values per overlaid dataset
         :type datasets: Sequence[npt.NDArray[Any]]
         :return: per dataset, its category names and their counts as floats
@@ -509,7 +516,26 @@ class MetadataModel(MetaModel):
                 val = np.append(val, float(missing))
 
             results.append((categories, val))
-        return results
+
+        totals: Dict[str, float] = {}
+        for categories, val in results:
+            for category, count in zip(categories, val, strict=True):
+                totals[category] = totals.get(category, 0.0) + float(count)
+
+        # sorted() is stable and `totals` is in first-seen order, so a tie between
+        # two categories leaves them as the tally had them.
+        rank = {
+            category: position
+            for position, category in enumerate(
+                sorted(totals, key=lambda name: -totals[name])
+            )
+        }
+
+        ordered: List[Tuple[List[str], npt.NDArray[np.float64]]] = []
+        for categories, val in results:
+            order = np.argsort([rank[name] for name in categories], kind="stable")
+            ordered.append(([categories[i] for i in order], val[order]))
+        return ordered
 
     @log(logger=logger)
     def interevent_log_times(

@@ -1,5 +1,7 @@
 ## Poriscope 2.0.0: in progress
 
+* **Categorical Histograms are now ordered by count**, tallest bar on the left; when more than one subset is overlaid the order comes from their combined totals, so every subset shares one axis
+
 * **Breaking:** the Metadata tab's All Points Histogram and Event Overlay are built by `MetadataModel.build_all_points_histogram` and `build_event_overlay`, so `MetadataView._construct_all_points_histogram`, `_construct_event_overlay` and `MetadataController.load_event_subset` are gone, and `MetadataView.update_plot` no longer draws the all-points histogram types
 
 * The Metadata tab now reports an All Points Histogram or Event Overlay it cannot build on the status panel, instead of failing with an unhandled error
