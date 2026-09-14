@@ -16,6 +16,27 @@ Read-only investigation and measurement do not.
   `MetaDatabaseLoader` rather than a defect repair - see `future_refactors_and_features.md`
   Part 13. Queued deliberately for after the 2.0.0 refactor.
 
+## `MetadataModel.kernel_density` uses a deprecated SciPy namespace (2026-09-14)
+
+`MetadataModel.py:296` calls `stats.kde.gaussian_kde`, which warns
+"the `scipy.stats.kde` namespace is deprecated and will be removed in SciPy 2.0.0" on
+every density plot. The fix is one line - import `gaussian_kde` from `scipy.stats` - and
+the only reason it is queued rather than done is that it belongs with a test run that
+exercises the density path rather than with an unrelated branch.
+
+## The experiment/channel scope has three annotations for one value (2026-09-14)
+
+The analysis-tab layer declares it `Optional[Dict[str, List[Optional[int]]]]` at **14**
+sites; `MetaDatabaseLoader.load_event_data` and its neighbours declare
+`Optional[Dict[str, Optional[List[int]]]]` at **19**; and the selection tree stores
+`Dict[str, Dict[str, List[str]]]` (`MetaSubsetTabView.py:169`), converted with
+`int(selected_channel)` at `MetadataView.py:2048`. The producer at
+`MetaSubsetTabView.py:742` builds `{exp: [channel] or None}`, so the loader's form is the
+correct one and the tab layer's 14 are transposed. Invisible to mypy because the value is
+passed through `call()`, which returns `Any`. Found writing tests against the loader's real
+signature; not fixed with them, because it is a layer-wide annotation change rather than
+part of pinning two methods.
+
 ## `SQLiteDBLoader` opens a fresh connection per schema lookup (2026-09-08)
 
 `get_table_by_column:454` and `get_column_names_by_table:382` each call

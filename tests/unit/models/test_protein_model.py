@@ -16,6 +16,7 @@ Run with:
 """
 
 import numpy as np
+import pandas as pd
 import pytest
 
 from poriscope.plugins.analysistabs.ProteinModel import ProteinModel
@@ -353,3 +354,197 @@ class TestFitHistograms:
     def test_no_histograms_gives_no_results(self, model):
         """The empty case is a plain empty list, not None."""
         assert model.fit_histograms([]) == []
+
+
+# ===========================================================================
+# The SQL Step 4b moved down - drop_fit_columns, resolve_event_ids,
+# load_events_by_id
+# ===========================================================================
+#
+# All three are destinations of a Step 4b move and none had a test naming it, so
+# the refactor-coverage audit read RUNS ONLY for all three: their bodies ran under
+# the e2e suite and nothing asserted what they authored. These assert on the exact
+# statements handed to the loader, and the stubbed ``call`` answers from the
+# declared return types on ``MetaDatabaseLoader`` - bool for alter_database,
+# Optional[pd.DataFrame] for query_database_directly, a generator for
+# load_event_data.
+
+
+class TestDropFitColumns:
+    """
+    Two statements per column: one drops it from the events table, one removes its
+    row from the ``columns`` metadata table, which is what tells the rest of the
+    application the column exists. Dropping only the first leaves the column
+    advertised and gone.
+    """
+
+    def test_both_statements_are_issued_for_one_column(self, model, mocker):
+        call = mocker.patch.object(model, "call", return_value=True)
+
+        model.drop_fit_columns("L", "events", ["fit_a"])
+
+        assert call.call_args.args[3] == [
+            "ALTER TABLE events DROP COLUMN fit_a",
+            "DELETE FROM columns WHERE name = 'fit_a'",
+        ]
+
+    def test_all_alters_precede_all_deletes(self, model, mocker):
+        """
+        The order is a property of how the list is built - every ALTER, then every
+        DELETE - rather than column by column. Pinned because an interleaved rewrite
+        would look equivalent and is not: a failure partway through would leave a
+        different half-state.
+        """
+        call = mocker.patch.object(model, "call", return_value=True)
+
+        model.drop_fit_columns("L", "events", ["a", "b"])
+
+        assert call.call_args.args[3] == [
+            "ALTER TABLE events DROP COLUMN a",
+            "ALTER TABLE events DROP COLUMN b",
+            "DELETE FROM columns WHERE name = 'a'",
+            "DELETE FROM columns WHERE name = 'b'",
+        ]
+
+    def test_the_table_name_is_used_as_given(self, model, mocker):
+        call = mocker.patch.object(model, "call", return_value=True)
+
+        model.drop_fit_columns("L", "sublevels", ["x"])
+
+        assert call.call_args.args[3][0] == "ALTER TABLE sublevels DROP COLUMN x"
+
+    def test_the_call_is_routed_to_alter_database(self, model, mocker):
+        call = mocker.patch.object(model, "call", return_value=True)
+
+        model.drop_fit_columns("SQLiteDBLoader_0", "events", ["x"])
+
+        assert call.call_args.args[:3] == (
+            "MetaDatabaseLoader",
+            "SQLiteDBLoader_0",
+            "alter_database",
+        )
+
+    def test_no_columns_issues_no_statements(self, model, mocker):
+        call = mocker.patch.object(model, "call", return_value=True)
+
+        model.drop_fit_columns("L", "events", [])
+
+        assert call.call_args.args[3] == []
+
+    def test_the_loaders_verdict_is_returned(self, model, mocker):
+        """
+        A refused write must not read as a success - the caller announces new columns
+        to the other tabs on the strength of this.
+        """
+        mocker.patch.object(model, "call", return_value=False)
+
+        assert model.drop_fit_columns("L", "events", ["x"]) is False
+
+
+def _authored_query(model, mocker, event_ids, exp_id, channel):
+    """
+    Run resolve_event_ids against a stubbed loader and return the SQL it authored.
+
+    :param model: the model under test
+    :type model: ProteinModel
+    :param mocker: the pytest-mock fixture
+    :type mocker: pytest_mock.MockerFixture
+    :param event_ids: the event_id values to resolve
+    :type event_ids: list
+    :param exp_id: the experiment's database id, or None
+    :type exp_id: object
+    :param channel: the channel to scope to, or None
+    :type channel: object
+    :return: the query string passed to the loader
+    :rtype: str
+    """
+    call = mocker.patch.object(model, "call", return_value=pd.DataFrame())
+    model.resolve_event_ids("L", event_ids, exp_id, channel)
+    query: str = call.call_args.args[3]
+    return query
+
+
+class TestResolveEventIds:
+    """
+    The protein copy projects ``id, event_id`` where the metadata copy projects
+    ``id`` alone, because its caller re-sorts the rows into the order it asked for
+    them in and cannot do that from the primary keys. That is one of the real
+    differences the queued promotion review has to preserve, so it is pinned on both
+    sides.
+    """
+
+    def test_projects_id_and_event_id(self, model, mocker):
+        query = _authored_query(model, mocker, [7], None, None)
+
+        assert query == "SELECT id, event_id FROM events WHERE event_id IN (7)"
+
+    def test_an_experiment_narrows_the_scope(self, model, mocker):
+        query = _authored_query(model, mocker, [7, 9], 3, None)
+
+        assert query == (
+            "SELECT id, event_id FROM events WHERE event_id IN (7,9) "
+            "AND experiment_id = 3"
+        )
+
+    def test_a_channel_narrows_the_scope(self, model, mocker):
+        query = _authored_query(model, mocker, [7], None, 2)
+
+        assert query == (
+            "SELECT id, event_id FROM events WHERE event_id IN (7) AND channel_id = 2"
+        )
+
+    def test_both_scopes_are_applied_in_order(self, model, mocker):
+        query = _authored_query(model, mocker, [7], 3, 2)
+
+        assert query == (
+            "SELECT id, event_id FROM events WHERE event_id IN (7) "
+            "AND experiment_id = 3 AND channel_id = 2"
+        )
+
+    def test_the_call_is_routed_to_the_named_loader(self, model, mocker):
+        call = mocker.patch.object(model, "call", return_value=pd.DataFrame())
+
+        model.resolve_event_ids("SQLiteDBLoader_0", [1], None, None)
+
+        assert call.call_args.args[:3] == (
+            "MetaDatabaseLoader",
+            "SQLiteDBLoader_0",
+            "query_database_directly",
+        )
+
+    def test_a_failed_query_comes_back_as_none(self, model, mocker):
+        mocker.patch.object(model, "call", return_value=None)
+
+        assert model.resolve_event_ids("L", [1], None, None) is None
+
+
+class TestLoadEventsById:
+    """``e.id IN (...)`` is a WHERE-clause body, which is what load_event_data takes."""
+
+    def test_builds_a_where_clause_body_not_a_select(self, model, mocker):
+        """
+        A complete ``SELECT`` here is the shape that made the protein tab's raw
+        filter branch never return a row - the loader splices this in after its own
+        ``WHERE``.
+        """
+        call = mocker.patch.object(model, "call", return_value=iter(()))
+
+        model.load_events_by_id("L", "3,4,5", None)
+
+        conditions = call.call_args.args[3]
+        assert conditions == "e.id IN (3,4,5)"
+        assert "SELECT" not in conditions
+
+    def test_the_scope_is_passed_through_untouched(self, model, mocker):
+        call = mocker.patch.object(model, "call", return_value=iter(()))
+        scope = {"exp_a": [2]}
+
+        model.load_events_by_id("L", "3", scope)
+
+        assert call.call_args.args[4] is scope
+
+    def test_the_generator_is_returned_unchanged(self, model, mocker):
+        generator = iter([{"data": [1.0]}])
+        mocker.patch.object(model, "call", return_value=generator)
+
+        assert model.load_events_by_id("L", "3", None) is generator

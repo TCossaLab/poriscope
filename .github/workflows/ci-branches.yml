@@ -130,6 +130,22 @@ jobs:
       # ---------------------------------------------------------------------
       # Runs the whole suite, e2e included - no marker filter. At ~6 minutes the
       # e2e tests are worth their cost.
+      #
+      # Coverage is collected here so the refactor-coverage audit below can run.
+      # It used to be collected only in ci-internal-pr.yml, which meant the audit
+      # never saw this refactor's work at all: feature branches finish into
+      # develop through `git flow feature finish`, which merges locally and opens
+      # no pull request. Nine audit targets had drifted to RUNS ONLY by the time
+      # anyone ran it by hand. See refactor_2.0.0.md, 2026-09-14.
       - name: Run tests under Xvfb
         run: |
-          xvfb-run -a pytest -q
+          xvfb-run -a pytest -q --cov=poriscope --cov-report=json:coverage.json
+
+      # ---------------------------------------------------------------------
+      # Refactor-coverage audit
+      # ---------------------------------------------------------------------
+      # Every method the 2.0.0 refactor moves or deduplicates must be pinned by a
+      # test that names it *and* have its body execute. The second half needs
+      # coverage data, which the step above now produces.
+      - name: Refactor-coverage audit
+        run: python scripts/check_refactor_coverage.py --coverage coverage.json
