@@ -1,5 +1,7 @@
 ## Poriscope 2.0.0: in progress
 
+* **Breaking:** the Protein tab's Monte Carlo geometry sampling is `ProteinModel.sample_vm_solutions` and `sample_event_geometries` rather than the view's, so `ProteinView._generate_vm_ensemble` and `_compute_theoretical_blockages` are gone, `set_distribution_fits` takes the three frames it draws, and `set_ensemble_geometry_fit` takes the two solution sets instead of the pore geometry
+
 * **Breaking:** the Protein tab's Ensemble distribution histogram is averaged by `ProteinModel.build_all_points_histogram` rather than in the view, so `_update_distribution_ensemble` asks for the subset instead of fetching and walking it, `set_ensemble_histogram` draws what comes back, and `ProteinView._construct_all_points_histogram`, `hist_min` and `hist_max` are gone
 
 * **An event with no samples between its paddings no longer fails the Protein tab's Ensemble distribution plot** with an unhandled error - it is skipped, with a note in the log, as a zero-baseline event already was

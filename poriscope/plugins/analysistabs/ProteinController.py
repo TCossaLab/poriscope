@@ -133,7 +133,45 @@ class ProteinController(MetaSubsetTabController):
                 f"Unable to fit the ensemble histogram: {e}", self.__class__.__name__
             )
             return
-        self.view.set_ensemble_geometry_fit(popt, curve, plot_data, plot_type, d, L, N)
+
+        if popt is None or curve is None:
+            self.logger.info("Unable to fit a double gaussian to the histogram")
+            self.add_text_to_display.emit(
+                "Unable to fit a double gaussian to the histogram",
+                self.__class__.__name__,
+            )
+            return
+
+        try:
+            df_prolate, df_oblate = self.model.sample_vm_solutions(popt, d, L, N)
+        except (ValueError, TypeError, IndexError) as e:
+            self.logger.error(f"Unable to sample the ensemble geometry: {repr(e)}")
+            self.add_text_to_display.emit(
+                f"Unable to sample the ensemble geometry: {e}",
+                self.__class__.__name__,
+            )
+            return
+
+        if df_prolate.empty and df_oblate.empty:
+            self.logger.warning(
+                "Generative sampling bailed out: The ensemble Gaussian fit "
+                "represents an unphysical geometry."
+            )
+            self.add_text_to_display.emit(
+                "Generative sampling bailed out: The ensemble Gaussian fit "
+                "represents an unphysical geometry.",
+                self.__class__.__name__,
+            )
+        elif len(df_prolate) < N or len(df_oblate) < N:
+            self.logger.info(
+                "Sampling hit bailout limit; returning partial ensemble arrays."
+            )
+
+        # Called even when nothing was sampled: the fit itself is still worth
+        # drawing, and the two empty frames skip their own scatterplots.
+        self.view.set_ensemble_geometry_fit(
+            popt, curve, plot_data, plot_type, df_prolate, df_oblate
+        )
 
     @log(logger=logger)
     @Slot(str, str, object, str, object, bool, str, object, float, float, int)
@@ -306,13 +344,28 @@ class ProteinController(MetaSubsetTabController):
                 event_data, plot_type, bins, sizes
             )
             fits = self.model.fit_histograms(histograms)
+            df_prolate, df_oblate, fit_data = self.model.sample_event_geometries(
+                fits, histograms, event_data, d, L, N
+            )
         except (ValueError, TypeError, IndexError) as e:
             self.logger.error(f"Unable to fit the event histograms: {repr(e)}")
             self.add_text_to_display.emit(
                 f"Unable to fit the event histograms: {e}", self.__class__.__name__
             )
             return
-        self.view.set_distribution_fits(fits, histograms, event_data, d, L, N)
+
+        if fit_data.empty:
+            # Every event was refused, or the subset held none at all. Every guard in
+            # the drawing half tests a frame built from these events, so without this
+            # the tab drew empty axes and said nothing.
+            self.add_text_to_display.emit(
+                "No events in the selected subset could be fitted, so there is "
+                "nothing to plot",
+                self.__class__.__name__,
+            )
+            return
+
+        self.view.set_distribution_fits(df_prolate, df_oblate, fit_data)
 
     @log(logger=logger)
     @Slot(str)

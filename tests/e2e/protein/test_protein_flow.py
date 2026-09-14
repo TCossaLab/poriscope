@@ -132,12 +132,12 @@ def _fake_generate_vm_ensemble(
     cutoff_std=4,
 ):
     """
-    Drop-in replacement for ProteinView._generate_vm_ensemble that skips the
+    Drop-in replacement for ProteinModel._generate_vm_ensemble that skips the
     real rejection-sampling loop. Returns a small fixed (V, m) sample that
     satisfies the same domain constraints the real sampler enforces
     (m>1 for prolate, 0<m<1 for oblate; V>0), so downstream shape math
     (b = (3V/(4*pi*m))**(1/3), a = b*m) and DataFrame construction in
-    _update_distribution_individual/_ensemble run unmodified on real,
+    ProteinModel.sample_vm_solutions run unmodified on real,
     valid-shaped data -- only the sampling cost is removed.
     """
     n = min(N_target, 5) if N_target else 5
@@ -201,7 +201,6 @@ def test_protein_individual_ensemble_flow(
     # multi-experiment shape must be narrowed down after Scope, same as
     # test_metadata_flow.py's own Stage 2 does.
     import poriscope.plugins.analysistabs.ProteinModel as protein_model_mod
-    import poriscope.plugins.analysistabs.ProteinView as protein_view_mod
     from poriscope.views.widgets.SelectionTree import SelectionTree
 
     def _patched_show_dialog(
@@ -232,9 +231,12 @@ def test_protein_individual_ensemble_flow(
         raising=True,
     )
 
-    # See module docstring's SPEED note.
+    # See module docstring's SPEED note. Step 4's closeout moved the sampler onto
+    # ProteinModel with the rest of the geometry, so this patches the one copy that
+    # now exists; `raising=True` is again what turned the View's stale target into a
+    # named failure rather than a patch that silently stopped covering anything.
     monkeypatch.setattr(
-        protein_view_mod.ProteinView,
+        protein_model_mod.ProteinModel,
         "_generate_vm_ensemble",
         _fake_generate_vm_ensemble,
         raising=True,

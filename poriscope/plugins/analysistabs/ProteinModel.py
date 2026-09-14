@@ -750,3 +750,444 @@ class ProteinModel(MetaModel):
             )
             return None
         return blockage
+
+    @log(logger=logger)
+    def _compute_theoretical_blockages(
+        self,
+        V: npt.NDArray[np.float64],
+        m: npt.NDArray[np.float64],
+        d: float,
+        L: float,
+    ) -> Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]:
+        """
+        Vectorized forward model: Calculates theoretical max and min blockages
+        for arrays of volume (V) and shape factor (m).
+
+        :param V: array of volumes of spheroids in cubic nanometers
+        :type V: npt.NDArray[np.float64]
+        :param m: array of shape factors of spheroids (major axis / minor axis) of the same length as V. All must be either 0<m<1 or all m>1.
+        :type m: npt.NDArray[np.float64]
+        :param d: the diameter of the pore in nanometers
+        :type d: float
+        :param L: the length of the pore in nanometers
+        :type L: float
+        :return: Tuple of arrays of theoretical max and min blockage values for the given parameters, one per V,m pair
+        :rtype: Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]
+        :raises ValueError: If `m` contains a mix of oblate (0<m<1) and prolate (m>1)
+            form factors, or any negative form factor.
+        """
+        m_sq = m**2
+
+        if all(m <= 1):
+            prolate = False
+        elif all(m >= 1):
+            prolate = True
+        elif any(m < 0):
+            raise ValueError("Cannot have negative form factors")
+        else:
+            raise ValueError(
+                "Cannot mix oblate and prolate form factors in a single call to _compute_theoretical_blockages"
+            )
+
+        try:
+            if not prolate:
+                gamma_parallel = 1 / (
+                    1 - (1 / (1 - m_sq)) * (1 - (m / np.sqrt(1 - m_sq)) * np.arccos(m))
+                )
+            else:
+                gamma_parallel = 1 / (
+                    1
+                    - (1 / (m_sq - 1))
+                    * ((m / np.sqrt(m_sq - 1)) * np.log(m + np.sqrt(m_sq - 1)) - 1)
+                )
+
+            gamma_perpendicular = 1 / (1 - 0.5 / gamma_parallel)
+        except ValueError:  # divide by zero from a m=1 case
+            gamma_perpendicular = 1.5
+            gamma_parallel = 1.5
+
+        b = (3 * V / (4 * np.pi * m)) ** (1 / 3)
+        a = b * m
+        d_ptn = 2 * b
+        l_ptn = 2 * a
+
+        gamma_parallel_prime = gamma_parallel / (
+            1 - 0.71 * ((d_ptn**2 + l_ptn**2) / (d**2 + l_ptn**2)) * (d_ptn / d) ** 2
+        )
+
+        gamma_perpendicular_prime = gamma_perpendicular / (
+            1 - (0.32 + 0.48 * l_ptn / d) * (l_ptn * d_ptn**2 / d**3)
+        )
+
+        volume_factor = (4 * V) / (np.pi * d**2 * (L + 0.8 * d))
+
+        parallel_term = volume_factor * gamma_parallel_prime
+        perpendicular_term = volume_factor * gamma_perpendicular_prime
+
+        # Map parallel/perpendicular to max/min based on your original logic
+        if not prolate:
+            dI_max = parallel_term
+            dI_min = perpendicular_term
+        else:
+            dI_max = perpendicular_term
+            dI_min = parallel_term
+
+        return dI_max, dI_min
+
+    @log(logger=logger)
+    def _generate_vm_ensemble(
+        self,
+        N_target: int,
+        mean_max: float,
+        std_max: float,
+        mean_min: float,
+        std_min: float,
+        d: float,
+        L: float,
+        prolate: bool = True,
+        cutoff_std: float = 4,
+    ) -> Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]:
+        """
+        Uses Monte Carlo rejection sampling with dynamic bounds to find valid (V, m) pairs.
+        Bails out after a maximum number of consecutive failed batches if the experimental
+        data represents an unphysical geometry.
+
+        :param N_target: number of value V,m pairs to generate, if possible
+        :type N_target: int
+        :param mean_max: The mean value of the larger of the two blockage histograms
+        :type mean_max: float
+        :param std_max: The standard deviation value of the larger of the two blockage histograms
+        :type std_max: float
+        :param mean_min: The mean value of the smaller of the two blockage histograms
+        :type mean_min: float
+        :param std_min: The standard deviation value of the smaller of the two blockage histograms
+        :type std_min: float
+        :param d: the length of the pore in nanometers
+        :type d: float
+        :param L: the length of the pore in nanometers
+        :type L: float
+        :param prolate: whether we are looking for prolate (m>1) solutions or oblate (0<m<1) solutions
+        :type prolate: bool
+        :param cutoff_std: the number of standard deviations outside the mean after which to cut off solutions
+        :type cutoff_std: float
+        :return: Tuple of arrays of V,m pairs
+        :rtype: Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]
+        """
+        accepted_V: list[float] = []
+        accepted_m: list[float] = []
+        # Seeded and local: the ensemble is reproducible for a given geometry,
+        # and drawing here no longer perturbs the global NumPy RNG for the rest
+        # of the process. 42 matches the convention already used in PeakFinder.
+        rng = np.random.default_rng(42)
+        x = np.minimum(d, L)
+        # --- Dynamic Bounds Calculation ---
+        K = (np.pi * d**2 * (L + 0.8 * d)) / 4.0  # assumes gamma == 1
+        gamma_min = 1
+
+        highest_blockage = mean_max + cutoff_std * std_max
+        V_max = highest_blockage * K / gamma_min
+
+        V_min = 1  # we cannot see a 1 nm^3 object anyway so this will always be a safe minimum
+
+        if V_min >= V_max:
+            V_max = V_min * 10.0
+
+        batch_size = 50000
+
+        # --- Bailout Logic Variables ---
+        max_consecutive_zeros = 5
+        consecutive_zeros = 0
+        max_batches = 200
+        batches = 0
+
+        while (
+            len(accepted_V) < N_target
+            and consecutive_zeros < max_consecutive_zeros
+            and batches < max_batches
+        ):
+            batches += 1
+            # 1. Propose physically valid uniform samples
+            V_prop_raw = rng.uniform(V_min, V_max, batch_size)
+            ## pick max(a,b) < min(d,L), use a,b equations for a given V sample to calculate m limit in both cases. Prolate case: a>b, oblate: a<b.
+            if prolate:
+                m_upper_bounds_raw = np.sqrt((np.pi * x**3) / (6 * V_prop_raw))
+                valid_mask = m_upper_bounds_raw >= 1
+
+                V_prop = V_prop_raw[valid_mask]
+
+                # Clip the upper bound to a physical maximum (e.g., m=50.0)
+                # to prevent sampling impossible "1D string" geometries
+                m_upper_bounds = np.clip(m_upper_bounds_raw[valid_mask], 1, 50.0)
+
+                if len(V_prop) == 0:
+                    consecutive_zeros += 1
+                    continue
+
+                m_prop = rng.uniform(1, m_upper_bounds)
+
+            else:
+                m_lower_bounds_raw = (6 * V_prop_raw) / (np.pi * x**3)
+                valid_mask = m_lower_bounds_raw <= 1
+
+                V_prop = V_prop_raw[valid_mask]
+
+                # Clip the lower bound to a physical minimum (e.g., m=0.01)
+                # to prevent divide-by-zero errors and impossible "2D sheet" geometries
+                m_lower_bounds = np.clip(m_lower_bounds_raw[valid_mask], 0.02, 1)
+
+                if len(V_prop) == 0:
+                    consecutive_zeros += 1
+                    continue
+
+                m_prop = rng.uniform(m_lower_bounds, 1)
+
+            # 2. Forward Calculation
+
+            dI_max_calc, dI_min_calc = self._compute_theoretical_blockages(
+                V_prop, m_prop, d, L
+            )
+
+            # Clean up unexpected NaNs
+            nan_mask = np.isnan(dI_max_calc) | np.isnan(dI_min_calc)
+            if np.all(nan_mask):
+                consecutive_zeros += 1
+                continue
+
+            valid_math = ~nan_mask
+            V_prop = V_prop[valid_math]
+            m_prop = m_prop[valid_math]
+            dI_max_calc = dI_max_calc[valid_math]
+            dI_min_calc = dI_min_calc[valid_math]
+
+            # 3. Calculate probability
+            # Use safe standard deviations to prevent infinite Z-scores on artificially sharp fits
+            safe_std_max = max(std_max, mean_max * 0.01)
+            safe_std_min = max(std_min, mean_min * 0.01)
+
+            z_sq_max = ((dI_max_calc - mean_max) / safe_std_max) ** 2
+            z_sq_min = ((dI_min_calc - mean_min) / safe_std_min) ** 2
+
+            # Absolute physical constraint: Ignore guesses that are > 4 standard deviations away
+            # This prevents the sampler from accepting the "best of the worst" in terrible batches
+            physical_mask = (z_sq_max < cutoff_std**2) & (z_sq_min < cutoff_std**2)
+
+            if not np.any(physical_mask):
+                consecutive_zeros += 1
+                continue
+
+            # Filter arrays to only physically reasonable points before probability rejection
+            V_prop = V_prop[physical_mask]
+            m_prop = m_prop[physical_mask]
+            z_sq_max = z_sq_max[physical_mask]
+            z_sq_min = z_sq_min[physical_mask]
+
+            likelihood = np.exp(-0.5 * (z_sq_max + z_sq_min))
+            max_likelihood = np.max(likelihood)
+
+            if max_likelihood == 0 or np.isnan(max_likelihood):
+                consecutive_zeros += 1
+                continue
+
+            prob_accept = likelihood / max_likelihood
+
+            # 4. Accept / Reject
+            random_thresh = rng.uniform(0, 1, len(prob_accept))
+            accepted_indices = random_thresh < prob_accept
+
+            new_V = V_prop[accepted_indices]
+            new_m = m_prop[accepted_indices]
+
+            if len(new_V) == 0:
+                consecutive_zeros += 1
+            else:
+                consecutive_zeros = (
+                    0  # Reset counter if we got at least one valid point
+                )
+                accepted_V.extend(new_V)
+                accepted_m.extend(new_m)
+
+        if len(accepted_V) < N_target:
+            self.logger.warning(
+                f"_generate_vm_ensemble stopped with only {len(accepted_V)}/{N_target} "
+                f"accepted samples after {batches} batches (consecutive_zeros={consecutive_zeros})"
+            )
+
+        return np.array(accepted_V[:N_target]), np.array(accepted_m[:N_target])
+
+    @log(logger=logger)
+    def _ordered_blockages(
+        self, popt: npt.NDArray[np.float64]
+    ) -> Tuple[float, float, float, float]:
+        """
+        Sort a double-gaussian fit's two peaks into the larger and smaller blockage.
+
+        ``curve_fit`` returns the two components in whatever order it converged on,
+        not in blockage order, so which is which has to be decided here rather than
+        assumed. The standard deviations come back signed and are made positive.
+
+        :param popt: the six fitted parameters, two amplitude/mean/sigma triples
+        :type popt: npt.NDArray[np.float64]
+        :return: the larger mean and its sigma, then the smaller mean and its sigma
+        :rtype: Tuple[float, float, float, float]
+        """
+        _amp1, mean1, std1, _amp2, mean2, std2 = popt
+        if mean1 > mean2:
+            return mean1, float(np.abs(std1)), mean2, float(np.abs(std2))
+        return mean2, float(np.abs(std2)), mean1, float(np.abs(std1))
+
+    @log(logger=logger)
+    def _vm_frame(
+        self, V: npt.NDArray[np.float64], m: npt.NDArray[np.float64]
+    ) -> pd.DataFrame:
+        """
+        Turn a sampled volume and shape factor into the four geometry columns.
+
+        ``b`` is the minor semi-axis a spheroid of that volume and shape factor has,
+        and ``a`` is ``b * m`` by the definition of the shape factor.
+
+        :param V: the sampled volumes in cubic nanometers
+        :type V: npt.NDArray[np.float64]
+        :param m: the sampled shape factors, one per volume
+        :type m: npt.NDArray[np.float64]
+        :return: the volume, shape factor and both semi-axes
+        :rtype: pd.DataFrame
+        """
+        b = (3 * V / (4 * np.pi * m)) ** (1 / 3)
+        return pd.DataFrame({"V": V, "m": m, "a": b * m, "b": b})
+
+    @log(logger=logger)
+    def sample_vm_solutions(
+        self, popt: npt.NDArray[np.float64], d: float, L: float, N: int
+    ) -> Tuple[pd.DataFrame, pd.DataFrame]:
+        """
+        Monte Carlo the prolate and oblate geometries one fit is consistent with.
+
+        A pair of blockage levels does not determine a shape: a long thin spheroid
+        and a flat wide one can block the same pore by the same amounts. Both
+        families are sampled, and it is for the reader to say which is physical.
+
+        :param popt: the six fitted parameters, two amplitude/mean/sigma triples
+        :type popt: npt.NDArray[np.float64]
+        :param d: the diameter of the pore in nanometers
+        :type d: float
+        :param L: the length of the pore in nanometers
+        :type L: float
+        :param N: target number of samples to draw for each family
+        :type N: int
+        :return: the prolate and the oblate solutions
+        :rtype: Tuple[pd.DataFrame, pd.DataFrame]
+        """
+        mean_max, std_max, mean_min, std_min = self._ordered_blockages(popt)
+
+        prolate_V, prolate_m = self._generate_vm_ensemble(
+            N, mean_max, std_max, mean_min, std_min, d, L, prolate=True
+        )
+        oblate_V, oblate_m = self._generate_vm_ensemble(
+            N, mean_max, std_max, mean_min, std_min, d, L, prolate=False
+        )
+        return self._vm_frame(prolate_V, prolate_m), self._vm_frame(oblate_V, oblate_m)
+
+    @log(logger=logger)
+    def sample_event_geometries(
+        self,
+        fits: Sequence[
+            Tuple[Optional[npt.NDArray[np.float64]], Optional[npt.NDArray[np.float64]]]
+        ],
+        histograms: Sequence[
+            Optional[Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]]
+        ],
+        event_data: Sequence[Dict[str, Any]],
+        d: float,
+        L: float,
+        N: int,
+    ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+        """
+        Sample every fitted event's geometry, and summarise each one to a row.
+
+        Every list is index-aligned with ``event_data``, so an event whose histogram
+        could not be built and one whose fit was refused drop out the same way and
+        neither shifts the others. The per-event row is the median of that event's
+        own ensembles, which is what the fit columns written back to the database
+        hold.
+
+        :param fits: one (fit parameters, fitted curve) pair per event
+        :type fits: Sequence[Tuple[Optional[npt.NDArray[np.float64]], Optional[npt.NDArray[np.float64]]]]
+        :param histograms: one histogram per event, or None where none could be built
+        :type histograms: Sequence[Optional[Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]]]
+        :param event_data: the events that were fitted
+        :type event_data: Sequence[Dict[str, Any]]
+        :param d: the diameter of the pore in nanometers
+        :type d: float
+        :param L: the length of the pore in nanometers
+        :type L: float
+        :param N: target number of samples to draw for each family
+        :type N: int
+        :return: every event's prolate solutions, its oblate solutions, and one summary row per fitted event
+        :rtype: Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]
+        """
+        prolate_frames: List[pd.DataFrame] = []
+        oblate_frames: List[pd.DataFrame] = []
+        rows: List[Dict[str, Any]] = []
+
+        for index, event in enumerate(event_data):
+            # An event with no histogram had no fit either; skipping it here is what
+            # keeps both ensembles describing exactly the events that were fitted.
+            if histograms[index] is None:
+                continue
+            popt, _curve = fits[index]
+            if popt is None:
+                continue
+
+            mean_max, std_max, mean_min, std_min = self._ordered_blockages(popt)
+            df_prolate, df_oblate = self.sample_vm_solutions(popt, d, L, N)
+            prolate_frames.append(df_prolate)
+            oblate_frames.append(df_oblate)
+
+            rows.append(
+                {
+                    "id": event["id"],
+                    "prolate_volume": self._median_or_nan(df_prolate["V"]),
+                    "prolate_shape_factor": self._median_or_nan(df_prolate["m"]),
+                    "prolate_major_axis": self._median_or_nan(df_prolate["a"]),
+                    "prolate_minor_axis": self._median_or_nan(df_prolate["b"]),
+                    "oblate_volume": self._median_or_nan(df_oblate["V"]),
+                    "oblate_shape_factor": self._median_or_nan(df_oblate["m"]),
+                    "oblate_major_axis": self._median_or_nan(df_oblate["a"]),
+                    "oblate_minor_axis": self._median_or_nan(df_oblate["b"]),
+                    "min_fractional_blockage": mean_min,
+                    "min_fractional_blockage_std": std_min,
+                    "max_fractional_blockage": mean_max,
+                    "max_fractional_blockage_std": std_max,
+                }
+            )
+
+        columns = ["V", "m", "a", "b"]
+        return (
+            (
+                pd.concat(prolate_frames, ignore_index=True)
+                if prolate_frames
+                else pd.DataFrame(columns=columns)
+            ),
+            (
+                pd.concat(oblate_frames, ignore_index=True)
+                if oblate_frames
+                else pd.DataFrame(columns=columns)
+            ),
+            pd.DataFrame(rows),
+        )
+
+    @log(logger=logger)
+    def _median_or_nan(self, values: "pd.Series[float]") -> float:
+        """
+        The median of a sampled column, or NaN when the sampler returned nothing.
+
+        A bailed-out ensemble is a legitimate answer - the fit describes a geometry
+        no spheroid has - and it has to reach the database as a missing value rather
+        than as a number.
+
+        :param values: one sampled geometry column
+        :type values: pd.Series[float]
+        :return: the median, or NaN for an empty column
+        :rtype: float
+        """
+        return float(np.median(values)) if len(values) > 0 else float(np.nan)

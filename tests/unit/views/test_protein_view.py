@@ -52,7 +52,6 @@ Run with:
 import json
 import os
 import tempfile
-import warnings
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -280,161 +279,6 @@ class TestFormatAxisLabel:
 # ===========================================================================
 # _compute_theoretical_blockages
 # ===========================================================================
-
-
-class TestComputeTheoreticalBlockages:
-    D, L = 20.0, 30.0
-
-    def test_prolate_output_shape(self, mock_view):
-        V, m = np.array([500.0] * 3), np.array([2.0] * 3)
-        dmax, dmin = mock_view._compute_theoretical_blockages(V, m, self.D, self.L)
-        assert dmax.shape == (3,) and dmin.shape == (3,)
-
-    def test_oblate_output_shape(self, mock_view):
-        V, m = np.array([500.0] * 3), np.array([0.5] * 3)
-        dmax, dmin = mock_view._compute_theoretical_blockages(V, m, self.D, self.L)
-        assert dmax.shape == (3,) and dmin.shape == (3,)
-
-    def test_blockages_positive(self, mock_view):
-        for m_val in [2.0, 0.5]:
-            V, m = np.array([500.0]), np.array([m_val])
-            dmax, dmin = mock_view._compute_theoretical_blockages(V, m, self.D, self.L)
-            assert np.all(dmax > 0) and np.all(dmin > 0)
-
-    def test_max_ge_min(self, mock_view):
-        for m_val in [2.0, 0.5]:
-            V, m = np.array([500.0]), np.array([m_val])
-            dmax, dmin = mock_view._compute_theoretical_blockages(V, m, self.D, self.L)
-            assert np.all(dmax >= dmin)
-
-    def test_monotone_in_volume(self, mock_view):
-        m = np.array([2.0])
-        dmax_s, _ = mock_view._compute_theoretical_blockages(
-            np.array([100.0]), m, self.D, self.L
-        )
-        dmax_l, _ = mock_view._compute_theoretical_blockages(
-            np.array([1000.0]), m, self.D, self.L
-        )
-        assert dmax_l > dmax_s
-
-    def test_mixed_raises(self, mock_view):
-        V, m = np.array([500.0, 500.0]), np.array([0.5, 2.0])
-        with pytest.raises(ValueError, match="Cannot mix"):
-            mock_view._compute_theoretical_blockages(V, m, self.D, self.L)
-
-    def test_negative_m_silent_nan_bug(self, mock_view):
-        # BUG: negative m satisfies all(m<=1) so the ValueError guard is never reached
-        V, m = np.array([500.0]), np.array([-1.0])
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            dmax, dmin = mock_view._compute_theoretical_blockages(V, m, self.D, self.L)
-        assert np.any(np.isnan(dmax)) or np.any(np.isinf(dmax))
-
-    def test_single_element(self, mock_view):
-        V, m = np.array([500.0]), np.array([3.0])
-        dmax, _ = mock_view._compute_theoretical_blockages(V, m, self.D, self.L)
-        assert dmax.shape == (1,)
-
-    def test_linear_scaling_small_objects(self, mock_view):
-        m = np.array([2.0])
-        dmax1, _ = mock_view._compute_theoretical_blockages(
-            np.array([10.0]), m, self.D, self.L
-        )
-        dmax2, _ = mock_view._compute_theoretical_blockages(
-            np.array([20.0]), m, self.D, self.L
-        )
-        assert dmax2[0] / dmax1[0] == pytest.approx(2.0, abs=0.5)
-
-
-# ===========================================================================
-# _generate_vm_ensemble
-# ===========================================================================
-
-
-class TestGenerateVmEnsemble:
-    D, L = 20.0, 30.0
-    MMAX, SMAX, MMIN, SMIN = 0.30, 0.03, 0.10, 0.02
-
-    def test_prolate_count(self, mock_view):
-        V, m = mock_view._generate_vm_ensemble(
-            20, self.MMAX, self.SMAX, self.MMIN, self.SMIN, self.D, self.L, prolate=True
-        )
-        assert len(V) == 20 and len(m) == 20
-
-    def test_oblate_count(self, mock_view):
-        V, m = mock_view._generate_vm_ensemble(
-            20,
-            self.MMAX,
-            self.SMAX,
-            self.MMIN,
-            self.SMIN,
-            self.D,
-            self.L,
-            prolate=False,
-        )
-        assert len(V) == 20 and len(m) == 20
-
-    def test_prolate_m_gt1(self, mock_view):
-        _, m = mock_view._generate_vm_ensemble(
-            20, self.MMAX, self.SMAX, self.MMIN, self.SMIN, self.D, self.L, prolate=True
-        )
-        assert np.all(m >= 1.0)
-
-    def test_oblate_m_lt1(self, mock_view):
-        _, m = mock_view._generate_vm_ensemble(
-            20,
-            self.MMAX,
-            self.SMAX,
-            self.MMIN,
-            self.SMIN,
-            self.D,
-            self.L,
-            prolate=False,
-        )
-        assert np.all(m > 0) and np.all(m <= 1.0)
-
-    def test_volumes_positive(self, mock_view):
-        for p in (True, False):
-            V, _ = mock_view._generate_vm_ensemble(
-                20,
-                self.MMAX,
-                self.SMAX,
-                self.MMIN,
-                self.SMIN,
-                self.D,
-                self.L,
-                prolate=p,
-            )
-            assert np.all(V > 0)
-
-    def test_unphysical_bails_out(self, mock_view):
-        V, m = mock_view._generate_vm_ensemble(50, 5.0, 0.01, 4.0, 0.01, self.D, self.L)
-        assert len(V) < 50
-
-    def test_zero_target(self, mock_view):
-        V, m = mock_view._generate_vm_ensemble(
-            0, self.MMAX, self.SMAX, self.MMIN, self.SMIN, self.D, self.L
-        )
-        assert len(V) == 0 and len(m) == 0
-
-    def test_accepted_within_cutoff(self, mock_view):
-        cutoff = 4
-        V, m = mock_view._generate_vm_ensemble(
-            30,
-            self.MMAX,
-            self.SMAX,
-            self.MMIN,
-            self.SMIN,
-            self.D,
-            self.L,
-            prolate=True,
-            cutoff_std=cutoff,
-        )
-        if len(V) == 0:
-            pytest.skip("no results for this seed")
-        dmax, dmin = mock_view._compute_theoretical_blockages(V, m, self.D, self.L)
-        assert np.all(np.abs(dmax - self.MMAX) / self.SMAX <= cutoff + 1e-6)
-        assert np.all(np.abs(dmin - self.MMIN) / self.SMIN <= cutoff + 1e-6)
 
 
 # ===========================================================================
@@ -1276,19 +1120,21 @@ class TestPipeline:
         assert isinstance(df, pd.DataFrame) and len(df) == 100
 
     def test_vm_ensemble_from_histogram_fit(self, mock_view):
-        # Genuinely cross-layer: Step 4c moved the fit to ProteinModel while the
-        # sampling stayed on the View, so this asks the real Model for the fit
-        # rather than stubbing one - the shape of popt is the collaborator's.
+        """
+        The fit and the sampling are both the Model's since Step 4's closeout, so
+        this is no longer cross-layer: it checks that one really does take the
+        other's output, which is the join a stub on either side would hide.
+        """
+        model = ProteinModel()
         x, y = _make_double_gaussian_histogram(mean1=0.1, mean2=0.3)
-        popt = ProteinModel()._fit_and_sanity_check_double_gaussian(x, y)
+        popt = model._fit_and_sanity_check_double_gaussian(x, y)
         if popt is None:
             pytest.skip("fit did not converge")
-        means = sorted([popt[1], popt[4]])
-        stds = [abs(popt[2]), abs(popt[5])]
-        V, m = mock_view._generate_vm_ensemble(
-            20, max(means), stds[1], min(means), stds[0], self.D, self.L
-        )
-        assert len(V) <= 20
+
+        df_prolate, df_oblate = model.sample_vm_solutions(popt, self.D, self.L, 20)
+
+        assert len(df_prolate) <= 20 and len(df_oblate) <= 20
+        assert list(df_prolate.columns) == ["V", "m", "a", "b"]
 
     def test_update_event_plot_end_to_end(self, mock_view):
         mock_view._update_event_plot([_make_event(1), _make_event(2)])
@@ -2418,134 +2264,45 @@ def _histogram_pair():
 
 class TestSetDistributionFits:
     """
-    Every list is index-aligned with ``event_data``, so an event whose histogram
-    could not be built and one whose fit was refused are skipped the same way and
-    neither shifts the others. That is the method's own documented contract and it
-    is what these assert.
+    What is left here is the drawing. The sampling and every question about which
+    events survive it moved to ``ProteinModel.sample_event_geometries`` in Step 4's
+    closeout, and are pinned in ``tests/unit/models/test_protein_model.py``.
     """
 
-    def test_one_row_per_fitted_event(self, mock_view, mocker):
-        mocker.patch.object(mock_view, "update_plot")
+    def _frames(self, rows=1):
+        """
+        The three frames the Model hands back.
 
-        mock_view.set_distribution_fits(
-            fits=[(_blockage_fit(), None), (_blockage_fit(), None)],
-            histograms=[_histogram_pair(), _histogram_pair()],
-            event_data=[{"id": 1}, {"id": 2}],
-            d=10.0,
-            L=20.0,
-            N=10,
+        :param rows: how many fitted events to describe
+        :type rows: int
+        :return: the prolate solutions, the oblate solutions, and the summary rows
+        :rtype: tuple
+        """
+        solutions = pd.DataFrame(
+            {"V": [100.0, 200.0], "m": [2.0, 3.0], "a": [4.0, 5.0], "b": [2.0, 2.5]}
         )
+        fit_data = pd.DataFrame(
+            [
+                {
+                    "id": i + 1,
+                    "min_fractional_blockage": 0.3,
+                    "min_fractional_blockage_std": 0.02,
+                    "max_fractional_blockage": 0.6,
+                    "max_fractional_blockage_std": 0.02,
+                }
+                for i in range(rows)
+            ]
+        )
+        return solutions, solutions.copy(), fit_data
 
-        assert len(mock_view.fit_data) == 2
+    def test_the_summary_rows_are_kept_for_the_commit(self, mock_view, mocker):
+        """``_commit_fits`` writes these back to the database."""
+        mocker.patch.object(mock_view, "update_plot")
+        prolate, oblate, fit_data = self._frames(rows=2)
+
+        mock_view.set_distribution_fits(prolate, oblate, fit_data)
+
         assert mock_view.fit_data["id"].tolist() == [1, 2]
-
-    def test_an_event_with_no_histogram_is_skipped(self, mock_view, mocker):
-        """
-        A None frame is an event whose histogram could not be built. It must drop
-        out without taking its neighbour's row with it.
-        """
-        mocker.patch.object(mock_view, "update_plot")
-
-        mock_view.set_distribution_fits(
-            fits=[(_blockage_fit(), None), (_blockage_fit(), None)],
-            histograms=[None, _histogram_pair()],
-            event_data=[{"id": 1}, {"id": 2}],
-            d=10.0,
-            L=20.0,
-            N=10,
-        )
-
-        assert mock_view.fit_data["id"].tolist() == [2]
-
-    def test_an_event_whose_fit_was_refused_is_skipped(self, mock_view, mocker):
-        """
-        The same outcome by the other route: the histogram was built but the
-        double-gaussian fit was rejected, so ``popt`` is None.
-        """
-        mocker.patch.object(mock_view, "update_plot")
-
-        mock_view.set_distribution_fits(
-            fits=[(None, None), (_blockage_fit(), None)],
-            histograms=[_histogram_pair(), _histogram_pair()],
-            event_data=[{"id": 1}, {"id": 2}],
-            d=10.0,
-            L=20.0,
-            N=10,
-        )
-
-        assert mock_view.fit_data["id"].tolist() == [2]
-
-    def test_a_skipped_event_does_not_shift_the_others(self, mock_view, mocker):
-        """
-        The indices are the alignment, not the position in the surviving list. With
-        the middle event dropped, the third event must still be described by the
-        third fit rather than by the second.
-        """
-        mocker.patch.object(mock_view, "update_plot")
-
-        mock_view.set_distribution_fits(
-            fits=[
-                (_blockage_fit(0.1, 0.2), None),
-                (_blockage_fit(0.3, 0.4), None),
-                (_blockage_fit(0.5, 0.9), None),
-            ],
-            histograms=[_histogram_pair(), None, _histogram_pair()],
-            event_data=[{"id": 1}, {"id": 2}, {"id": 3}],
-            d=10.0,
-            L=20.0,
-            N=10,
-        )
-
-        rows = mock_view.fit_data.set_index("id")
-        assert rows.index.tolist() == [1, 3]
-        assert rows.loc[3, "max_fractional_blockage"] == pytest.approx(0.9)
-        assert rows.loc[1, "max_fractional_blockage"] == pytest.approx(0.2)
-
-    def test_the_larger_mean_becomes_the_maximum_blockage(self, mock_view, mocker):
-        """
-        The fit returns its two peaks in no guaranteed order, so the method sorts
-        them. Both orderings are given, and both must come out the same way round -
-        an if/else that always took the first peak would pass one and fail the other.
-        """
-        mocker.patch.object(mock_view, "update_plot")
-
-        mock_view.set_distribution_fits(
-            fits=[
-                ((1.0, 0.25, 0.02, 1.0, 0.75, 0.02), None),
-                ((1.0, 0.75, 0.02, 1.0, 0.25, 0.02), None),
-            ],
-            histograms=[_histogram_pair(), _histogram_pair()],
-            event_data=[{"id": 1}, {"id": 2}],
-            d=10.0,
-            L=20.0,
-            N=10,
-        )
-
-        rows = mock_view.fit_data.set_index("id")
-        for event_id in (1, 2):
-            assert rows.loc[event_id, "max_fractional_blockage"] == pytest.approx(0.75)
-            assert rows.loc[event_id, "min_fractional_blockage"] == pytest.approx(0.25)
-
-    def test_the_standard_deviations_are_made_positive(self, mock_view, mocker):
-        """
-        ``curve_fit`` is free to return a negative sigma - the gaussian is even in
-        it - and a negative width would be carried into the sampler and out to the
-        error bars.
-        """
-        mocker.patch.object(mock_view, "update_plot")
-
-        mock_view.set_distribution_fits(
-            fits=[((1.0, 0.3, -0.02, 1.0, 0.6, -0.05), None)],
-            histograms=[_histogram_pair()],
-            event_data=[{"id": 1}],
-            d=10.0,
-            L=20.0,
-            N=10,
-        )
-
-        row = mock_view.fit_data.iloc[0]
-        assert row["max_fractional_blockage_std"] == pytest.approx(0.05)
-        assert row["min_fractional_blockage_std"] == pytest.approx(0.02)
 
     def test_the_three_plots_are_requested(self, mock_view, mocker):
         """
@@ -2554,14 +2311,7 @@ class TestSetDistributionFits:
         """
         update_plot = mocker.patch.object(mock_view, "update_plot")
 
-        mock_view.set_distribution_fits(
-            fits=[(_blockage_fit(), None)],
-            histograms=[_histogram_pair()],
-            event_data=[{"id": 1}],
-            d=10.0,
-            L=20.0,
-            N=10,
-        )
+        mock_view.set_distribution_fits(*self._frames())
 
         labels = [call.kwargs["dataset_label"] for call in update_plot.call_args_list]
         assert labels == [
@@ -2574,58 +2324,29 @@ class TestSetDistributionFits:
         """The errorbar plot is the only one given ``err_cols``."""
         update_plot = mocker.patch.object(mock_view, "update_plot")
 
-        mock_view.set_distribution_fits(
-            fits=[(_blockage_fit(), None)],
-            histograms=[_histogram_pair()],
-            event_data=[{"id": 1}],
-            d=10.0,
-            L=20.0,
-            N=10,
-        )
+        mock_view.set_distribution_fits(*self._frames())
 
-        peak_call = update_plot.call_args_list[-1]
-        assert peak_call.args[0] == "Peak Scatterplot"
-        assert peak_call.kwargs["err_cols"] == [
-            "min_fractional_blockage_std",
-            "max_fractional_blockage_std",
+        with_errors = [
+            call
+            for call in update_plot.call_args_list
+            if call.kwargs.get("err_cols") is not None
         ]
+        assert len(with_errors) == 1
+        assert with_errors[0].args[0] == "Peak Scatterplot"
 
-    def test_an_empty_subset_is_reported_and_nothing_is_plotted(
-        self, mock_view, mocker
-    ):
+    def test_an_empty_solution_set_draws_only_what_there_is(self, mock_view, mocker):
         """
-        An empty subset used to draw empty axes and say nothing at all, which is the
-        defect the guard was added for. Pinned so a later restructure cannot lose it.
+        A fit that sampled nothing still has its peak parameters worth plotting, so
+        the empty scatterplots are skipped rather than the whole figure.
         """
         update_plot = mocker.patch.object(mock_view, "update_plot")
-        received = []
-        mock_view.add_text_to_display.connect(lambda m, s: received.append(m))
+        _prolate, _oblate, fit_data = self._frames()
+        empty = pd.DataFrame(columns=["V", "m", "a", "b"])
 
-        mock_view.set_distribution_fits(
-            fits=[], histograms=[], event_data=[], d=10.0, L=20.0, N=10
-        )
+        mock_view.set_distribution_fits(empty, empty, fit_data)
 
-        assert any("nothing to plot" in message for message in received)
-        update_plot.assert_not_called()
-
-    def test_every_event_skipped_still_leaves_an_empty_frame(self, mock_view, mocker):
-        """
-        Distinct from the empty-subset case above: there were events, but none of
-        them produced a fit. ``fit_data`` is set and empty rather than left holding
-        the previous plot's rows.
-        """
-        mocker.patch.object(mock_view, "update_plot")
-
-        mock_view.set_distribution_fits(
-            fits=[(None, None)],
-            histograms=[_histogram_pair()],
-            event_data=[{"id": 1}],
-            d=10.0,
-            L=20.0,
-            N=10,
-        )
-
-        assert mock_view.fit_data.empty
+        labels = [call.kwargs["dataset_label"] for call in update_plot.call_args_list]
+        assert labels == ["Event Peak Fit Parameters"]
 
 
 # ===========================================================================

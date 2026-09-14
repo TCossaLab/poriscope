@@ -15,6 +15,8 @@ Run with:
     pytest test_protein_model.py --cov=poriscope --cov-report=html
 """
 
+import warnings
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -894,3 +896,402 @@ class TestBuildAllPointsHistogram:
             model.build_all_points_histogram(
                 iter(self._events()), "Sideways Histogram", None, False
             )
+
+
+# ===========================================================================
+# The Monte Carlo forward model, moved off ProteinView in Step 4's closeout
+# ===========================================================================
+#
+# Both classes came from ``tests/unit/views/test_protein_view.py`` with the
+# methods, receiver renamed and nothing else: they are the pins that predate the
+# move, so their passing against the Model is the evidence the computation is
+# unchanged (method rule 39).
+
+
+class TestComputeTheoreticalBlockages:
+    D, L = 20.0, 30.0
+
+    def test_prolate_output_shape(self, model):
+        V, m = np.array([500.0] * 3), np.array([2.0] * 3)
+        dmax, dmin = model._compute_theoretical_blockages(V, m, self.D, self.L)
+        assert dmax.shape == (3,) and dmin.shape == (3,)
+
+    def test_oblate_output_shape(self, model):
+        V, m = np.array([500.0] * 3), np.array([0.5] * 3)
+        dmax, dmin = model._compute_theoretical_blockages(V, m, self.D, self.L)
+        assert dmax.shape == (3,) and dmin.shape == (3,)
+
+    def test_blockages_positive(self, model):
+        for m_val in [2.0, 0.5]:
+            V, m = np.array([500.0]), np.array([m_val])
+            dmax, dmin = model._compute_theoretical_blockages(V, m, self.D, self.L)
+            assert np.all(dmax > 0) and np.all(dmin > 0)
+
+    def test_max_ge_min(self, model):
+        for m_val in [2.0, 0.5]:
+            V, m = np.array([500.0]), np.array([m_val])
+            dmax, dmin = model._compute_theoretical_blockages(V, m, self.D, self.L)
+            assert np.all(dmax >= dmin)
+
+    def test_monotone_in_volume(self, model):
+        m = np.array([2.0])
+        dmax_s, _ = model._compute_theoretical_blockages(
+            np.array([100.0]), m, self.D, self.L
+        )
+        dmax_l, _ = model._compute_theoretical_blockages(
+            np.array([1000.0]), m, self.D, self.L
+        )
+        assert dmax_l > dmax_s
+
+    def test_mixed_raises(self, model):
+        V, m = np.array([500.0, 500.0]), np.array([0.5, 2.0])
+        with pytest.raises(ValueError, match="Cannot mix"):
+            model._compute_theoretical_blockages(V, m, self.D, self.L)
+
+    def test_negative_m_silent_nan_bug(self, model):
+        # BUG: negative m satisfies all(m<=1) so the ValueError guard is never reached
+        V, m = np.array([500.0]), np.array([-1.0])
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            dmax, dmin = model._compute_theoretical_blockages(V, m, self.D, self.L)
+        assert np.any(np.isnan(dmax)) or np.any(np.isinf(dmax))
+
+    def test_single_element(self, model):
+        V, m = np.array([500.0]), np.array([3.0])
+        dmax, _ = model._compute_theoretical_blockages(V, m, self.D, self.L)
+        assert dmax.shape == (1,)
+
+    def test_linear_scaling_small_objects(self, model):
+        m = np.array([2.0])
+        dmax1, _ = model._compute_theoretical_blockages(
+            np.array([10.0]), m, self.D, self.L
+        )
+        dmax2, _ = model._compute_theoretical_blockages(
+            np.array([20.0]), m, self.D, self.L
+        )
+        assert dmax2[0] / dmax1[0] == pytest.approx(2.0, abs=0.5)
+
+
+# ===========================================================================
+# _generate_vm_ensemble
+# ===========================================================================
+
+
+class TestGenerateVmEnsemble:
+    D, L = 20.0, 30.0
+    MMAX, SMAX, MMIN, SMIN = 0.30, 0.03, 0.10, 0.02
+
+    def test_prolate_count(self, model):
+        V, m = model._generate_vm_ensemble(
+            20, self.MMAX, self.SMAX, self.MMIN, self.SMIN, self.D, self.L, prolate=True
+        )
+        assert len(V) == 20 and len(m) == 20
+
+    def test_oblate_count(self, model):
+        V, m = model._generate_vm_ensemble(
+            20,
+            self.MMAX,
+            self.SMAX,
+            self.MMIN,
+            self.SMIN,
+            self.D,
+            self.L,
+            prolate=False,
+        )
+        assert len(V) == 20 and len(m) == 20
+
+    def test_prolate_m_gt1(self, model):
+        _, m = model._generate_vm_ensemble(
+            20, self.MMAX, self.SMAX, self.MMIN, self.SMIN, self.D, self.L, prolate=True
+        )
+        assert np.all(m >= 1.0)
+
+    def test_oblate_m_lt1(self, model):
+        _, m = model._generate_vm_ensemble(
+            20,
+            self.MMAX,
+            self.SMAX,
+            self.MMIN,
+            self.SMIN,
+            self.D,
+            self.L,
+            prolate=False,
+        )
+        assert np.all(m > 0) and np.all(m <= 1.0)
+
+    def test_volumes_positive(self, model):
+        for p in (True, False):
+            V, _ = model._generate_vm_ensemble(
+                20,
+                self.MMAX,
+                self.SMAX,
+                self.MMIN,
+                self.SMIN,
+                self.D,
+                self.L,
+                prolate=p,
+            )
+            assert np.all(V > 0)
+
+    def test_unphysical_bails_out(self, model):
+        V, m = model._generate_vm_ensemble(50, 5.0, 0.01, 4.0, 0.01, self.D, self.L)
+        assert len(V) < 50
+
+    def test_zero_target(self, model):
+        V, m = model._generate_vm_ensemble(
+            0, self.MMAX, self.SMAX, self.MMIN, self.SMIN, self.D, self.L
+        )
+        assert len(V) == 0 and len(m) == 0
+
+    def test_accepted_within_cutoff(self, model):
+        cutoff = 4
+        V, m = model._generate_vm_ensemble(
+            30,
+            self.MMAX,
+            self.SMAX,
+            self.MMIN,
+            self.SMIN,
+            self.D,
+            self.L,
+            prolate=True,
+            cutoff_std=cutoff,
+        )
+        if len(V) == 0:
+            pytest.skip("no results for this seed")
+        dmax, dmin = model._compute_theoretical_blockages(V, m, self.D, self.L)
+        assert np.all(np.abs(dmax - self.MMAX) / self.SMAX <= cutoff + 1e-6)
+        assert np.all(np.abs(dmin - self.MMIN) / self.SMIN <= cutoff + 1e-6)
+
+
+# ===========================================================================
+# sample_event_geometries - one geometry per fitted event
+# ===========================================================================
+
+
+def _blockage_fit(mean_low=0.3, mean_high=0.6, std=0.02):
+    """
+    Build a popt tuple in the order the double-gaussian fit returns it.
+
+    :param mean_low: the smaller fractional blockage
+    :type mean_low: float
+    :param mean_high: the larger fractional blockage
+    :type mean_high: float
+    :param std: the standard deviation given to both peaks
+    :type std: float
+    :return: a six-element popt, as (amp1, mean1, std1, amp2, mean2, std2)
+    :rtype: tuple
+    """
+    return (1.0, mean_low, std, 1.0, mean_high, std)
+
+
+def _histogram_pair():
+    """
+    A stand-in for one event's histogram.
+
+    Only its presence is read - a None entry means the histogram could not be
+    built - so the contents are deliberately minimal.
+
+    :return: a (bin centers, amplitude) pair
+    :rtype: tuple
+    """
+    return (np.array([0.1, 0.2, 0.3]), np.array([1.0, 2.0, 1.0]))
+
+
+class TestSampleEventGeometries:
+    """
+    Every list is index-aligned with ``event_data``, so an event whose histogram
+    could not be built and one whose fit was refused are skipped the same way and
+    neither shifts the others. That was ``ProteinView.set_distribution_fits``'s
+    documented contract; it moved here with the sampling, which is the half that
+    can get it wrong.
+    """
+
+    def test_one_row_per_fitted_event(self, model):
+        _prolate, _oblate, fit_data = model.sample_event_geometries(
+            [(_blockage_fit(), None), (_blockage_fit(), None)],
+            [_histogram_pair(), _histogram_pair()],
+            [{"id": 1}, {"id": 2}],
+            10.0,
+            20.0,
+            10,
+        )
+
+        assert fit_data["id"].tolist() == [1, 2]
+
+    def test_an_event_with_no_histogram_is_skipped(self, model):
+        """
+        A None histogram is an event that could not be binned. It must drop out
+        without taking its neighbour's row with it.
+        """
+        _prolate, _oblate, fit_data = model.sample_event_geometries(
+            [(_blockage_fit(), None), (_blockage_fit(), None)],
+            [None, _histogram_pair()],
+            [{"id": 1}, {"id": 2}],
+            10.0,
+            20.0,
+            10,
+        )
+
+        assert fit_data["id"].tolist() == [2]
+
+    def test_an_event_whose_fit_was_refused_is_skipped(self, model):
+        """The same outcome by the other route: binned, but the fit was rejected."""
+        _prolate, _oblate, fit_data = model.sample_event_geometries(
+            [(None, None), (_blockage_fit(), None)],
+            [_histogram_pair(), _histogram_pair()],
+            [{"id": 1}, {"id": 2}],
+            10.0,
+            20.0,
+            10,
+        )
+
+        assert fit_data["id"].tolist() == [2]
+
+    def test_a_skipped_event_does_not_shift_the_others(self, model):
+        """
+        The indices are the alignment, not the position in the surviving list. With
+        the middle event dropped, the third must still be described by the third
+        fit rather than by the second.
+        """
+        _prolate, _oblate, fit_data = model.sample_event_geometries(
+            [
+                (_blockage_fit(0.1, 0.2), None),
+                (_blockage_fit(0.3, 0.4), None),
+                (_blockage_fit(0.5, 0.9), None),
+            ],
+            [_histogram_pair(), None, _histogram_pair()],
+            [{"id": 1}, {"id": 2}, {"id": 3}],
+            10.0,
+            20.0,
+            10,
+        )
+
+        rows = fit_data.set_index("id")
+        assert rows.index.tolist() == [1, 3]
+        assert rows.loc[3, "max_fractional_blockage"] == pytest.approx(0.9)
+
+    def test_the_larger_mean_becomes_the_maximum_blockage(self, model):
+        """
+        The fit returns its two peaks in no guaranteed order, so they are sorted.
+        Both orderings are given, and both must come out the same way round - an
+        if/else that always took the first peak would pass one and fail the other.
+        """
+        _prolate, _oblate, fit_data = model.sample_event_geometries(
+            [
+                ((1.0, 0.25, 0.02, 1.0, 0.75, 0.02), None),
+                ((1.0, 0.75, 0.02, 1.0, 0.25, 0.02), None),
+            ],
+            [_histogram_pair(), _histogram_pair()],
+            [{"id": 1}, {"id": 2}],
+            10.0,
+            20.0,
+            10,
+        )
+
+        rows = fit_data.set_index("id")
+        for event_id in (1, 2):
+            assert rows.loc[event_id, "max_fractional_blockage"] == pytest.approx(0.75)
+            assert rows.loc[event_id, "min_fractional_blockage"] == pytest.approx(0.25)
+
+    def test_the_standard_deviations_are_made_positive(self, model):
+        """
+        ``curve_fit`` is free to return a negative sigma - the gaussian is even in
+        it - and a negative width would be carried into the sampler and out to the
+        error bars.
+        """
+        _prolate, _oblate, fit_data = model.sample_event_geometries(
+            [((1.0, 0.3, -0.02, 1.0, 0.6, -0.05), None)],
+            [_histogram_pair()],
+            [{"id": 1}],
+            10.0,
+            20.0,
+            10,
+        )
+
+        row = fit_data.iloc[0]
+        assert row["max_fractional_blockage_std"] == pytest.approx(0.05)
+        assert row["min_fractional_blockage_std"] == pytest.approx(0.02)
+
+    def test_every_event_skipped_still_leaves_usable_frames(self, model):
+        """
+        The caller's guards test the frames, so they have to be frames - the
+        columns are what the two scatterplots are drawn from.
+        """
+        prolate, oblate, fit_data = model.sample_event_geometries(
+            [(None, None)], [None], [{"id": 1}], 10.0, 20.0, 10
+        )
+
+        assert prolate.empty and oblate.empty and fit_data.empty
+        assert list(prolate.columns) == ["V", "m", "a", "b"]
+
+    def test_no_events_leaves_usable_frames(self, model):
+        prolate, oblate, fit_data = model.sample_event_geometries(
+            [], [], [], 10.0, 20.0, 10
+        )
+
+        assert prolate.empty and oblate.empty and fit_data.empty
+
+    def test_an_unsampleable_fit_is_a_row_of_blanks_not_a_missing_row(self, model):
+        """
+        A fit describing a geometry no spheroid has samples nothing, and that has to
+        reach the database as missing values rather than as a number or as a gap in
+        the rows - the event was fitted, it just has no geometry.
+        """
+        _prolate, _oblate, fit_data = model.sample_event_geometries(
+            [(_blockage_fit(0.98, 0.99), None)],
+            [_histogram_pair()],
+            [{"id": 7}],
+            1.0,
+            1.0,
+            5,
+        )
+
+        assert fit_data["id"].tolist() == [7]
+        assert np.isnan(fit_data.iloc[0]["prolate_volume"])
+
+
+class TestSampleVmSolutions:
+    """One fit in, two families of geometry out."""
+
+    def test_the_larger_fitted_peak_is_taken_as_the_maximum(self, model):
+        """
+        The two Gaussians arrive in arbitrary order and are sorted by mean. Pinned
+        because ``_generate_vm_ensemble``'s mean_max/mean_min arguments are
+        positional, so swapping them would silently invert the geometry rather
+        than raise. The negative sigma is normalised on the way through.
+        """
+        # deliberately given with the larger mean first, and one sigma negative
+        popt = np.array([60.0, 0.40, -0.04, 100.0, 0.15, 0.03])
+
+        assert model._ordered_blockages(popt) == pytest.approx((0.40, 0.04, 0.15, 0.03))
+
+    def test_both_families_carry_the_four_geometry_columns(self, model):
+        df_prolate, df_oblate = model.sample_vm_solutions(
+            np.array([100.0, 0.15, 0.03, 60.0, 0.40, 0.04]), 10.0, 10.0, 5
+        )
+
+        for frame in (df_prolate, df_oblate):
+            assert list(frame.columns) == ["V", "m", "a", "b"]
+
+    def test_the_major_axis_is_the_minor_times_the_shape_factor(self, model):
+        """``m`` is defined as a/b, so the two axes cannot be derived separately."""
+        df_prolate, _df_oblate = model.sample_vm_solutions(
+            np.array([100.0, 0.15, 0.03, 60.0, 0.40, 0.04]), 10.0, 10.0, 5
+        )
+        if df_prolate.empty:
+            pytest.skip("no prolate solution for this geometry")
+
+        assert (df_prolate["a"] / df_prolate["b"]).tolist() == pytest.approx(
+            df_prolate["m"].tolist()
+        )
+
+    def test_an_unphysical_fit_samples_nothing(self, model):
+        """
+        A pair of blockages no spheroid can produce in this pore bails out, and the
+        caller reports that rather than plotting an empty scatter.
+        """
+        df_prolate, df_oblate = model.sample_vm_solutions(
+            np.array([1.0, 0.98, 0.001, 1.0, 0.99, 0.001]), 1.0, 1.0, 5
+        )
+
+        assert df_prolate.empty and df_oblate.empty

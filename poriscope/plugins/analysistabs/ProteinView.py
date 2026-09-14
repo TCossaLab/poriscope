@@ -1833,133 +1833,28 @@ class ProteinView(MetaSubsetTabView):
     @log(logger=logger)
     def set_distribution_fits(
         self,
-        fits: Sequence[
-            Tuple[Optional[npt.NDArray[np.float64]], Optional[npt.NDArray[np.float64]]]
-        ],
-        histograms: Sequence[
-            Optional[Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]]
-        ],
-        event_data: Sequence[Dict[str, Any]],
-        d: float,
-        L: float,
-        N: int,
+        df_prolate: pd.DataFrame,
+        df_oblate: pd.DataFrame,
+        fit_data: pd.DataFrame,
     ) -> None:
         """
-        Sample each fitted event's V/m geometry and plot the solutions.
+        Plot the geometries every fitted event is consistent with.
 
-        The answering half of ``distribution_fits_requested``. Every list is
-        index-aligned with ``event_data``, so an event whose histogram could not be
-        built and one whose fit was refused are skipped the same way and neither
-        shifts the others.
+        The answering half of ``distribution_fits_requested``. Step 4's closeout
+        moved the sampling to :meth:`ProteinModel.sample_event_geometries`: a Monte
+        Carlo over a forward model is not drawing, and its output is written back to
+        the database as this tab's fit columns.
 
-        :param fits: one (fit parameters, fitted curve) pair per event, index-aligned with event_data
-        :type fits: Sequence[Tuple[Optional[npt.NDArray[np.float64]], Optional[npt.NDArray[np.float64]]]]
-        :param histograms: each event's (bin centers, amplitude) pair, or None where none could be built
-        :type histograms: Sequence[Optional[Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]]]
-        :param event_data: the events that were fitted
-        :type event_data: Sequence[Dict[str, Any]]
-        :param d: the diameter of the pore in nanometers
-        :type d: float
-        :param L: the length of the pore in nanometers
-        :type L: float
-        :param N: target number of samples to draw for each ensemble
-        :type N: int
+        :param df_prolate: every fitted event's prolate solutions, pooled
+        :type df_prolate: pd.DataFrame
+        :param df_oblate: every fitted event's oblate solutions, pooled
+        :type df_oblate: pd.DataFrame
+        :param fit_data: one summary row per fitted event, keyed by its database id
+        :type fit_data: pd.DataFrame
         :return: None
         :rtype: None
         """
-        prolate_solutions: List[Any] = []
-        oblate_solutions: List[Any] = []
-        averaged_event_data: List[Dict[str, Any]] = []
-
-        for index, event in enumerate(event_data):
-            # Only a guard: the histogram itself is drawn by the other answer half.
-            # An event with none had no fit either, and skipping it here keeps both
-            # ensembles describing exactly the events that were fitted.
-            if histograms[index] is None:
-                continue
-
-            popt, _ = fits[index]
-            if popt is None:
-                continue
-
-            amp1, mean1, std1, amp2, mean2, std2 = popt
-
-            if mean1 > mean2:
-                mean_max, std_max = mean1, np.abs(std1)
-                mean_min, std_min = mean2, np.abs(std2)
-            else:
-                mean_max, std_max = mean2, np.abs(std2)
-                mean_min, std_min = mean1, np.abs(std1)
-
-            # --- OPTIMIZED GENERATIVE SAMPLING ---
-            # Call the Monte Carlo generators directly for this specific event
-            prolate_V, prolate_m = self._generate_vm_ensemble(
-                N, mean_max, std_max, mean_min, std_min, d, L, prolate=True
-            )
-
-            prolate_b = (3 * prolate_V / (4 * np.pi * prolate_m)) ** (1 / 3)
-            prolate_a = prolate_b * prolate_m
-
-            # Pack the returned arrays into tuples and extend the master list
-            prolate_solutions.extend(zip(prolate_V, prolate_m, prolate_a, prolate_b))
-
-            oblate_V, oblate_m = self._generate_vm_ensemble(
-                N, mean_max, std_max, mean_min, std_min, d, L, prolate=False
-            )
-            oblate_b = (3 * oblate_V / (4 * np.pi * oblate_m)) ** (1 / 3)
-            oblate_a = oblate_b * oblate_m
-            # Pack the returned arrays into tuples and extend the master list
-            oblate_solutions.extend(zip(oblate_V, oblate_m, oblate_a, oblate_b))
-
-            averaged_event_data.append(
-                {
-                    "id": event["id"],
-                    "prolate_volume": (
-                        np.median(prolate_V) if len(prolate_V) > 0 else np.nan
-                    ),
-                    "prolate_shape_factor": (
-                        np.median(prolate_m) if len(prolate_m) > 0 else np.nan
-                    ),
-                    "prolate_major_axis": (
-                        np.median(prolate_a) if len(prolate_a) > 0 else np.nan
-                    ),
-                    "prolate_minor_axis": (
-                        np.median(prolate_b) if len(prolate_b) > 0 else np.nan
-                    ),
-                    "oblate_volume": (
-                        np.median(oblate_V) if len(oblate_V) > 0 else np.nan
-                    ),
-                    "oblate_shape_factor": (
-                        np.median(oblate_m) if len(oblate_m) > 0 else np.nan
-                    ),
-                    "oblate_major_axis": (
-                        np.median(oblate_a) if len(oblate_a) > 0 else np.nan
-                    ),
-                    "oblate_minor_axis": (
-                        np.median(oblate_b) if len(oblate_b) > 0 else np.nan
-                    ),
-                    "min_fractional_blockage": mean_min,
-                    "min_fractional_blockage_std": std_min,
-                    "max_fractional_blockage": mean_max,
-                    "max_fractional_blockage_std": std_max,
-                }
-            )
-
-        df_prolate = pd.DataFrame(prolate_solutions, columns=["V", "m", "a", "b"])
-        df_oblate = pd.DataFrame(oblate_solutions, columns=["V", "m", "a", "b"])
-
-        if not event_data:
-            # The generator existed but yielded nothing, which is what an empty
-            # subset looks like from here. Every guard below tests a frame built
-            # from these events, so without this the tab drew empty axes and said
-            # nothing at all.
-            self.add_text_to_display.emit(
-                "No events in the selected subset, so there is nothing to plot",
-                self.__class__.__name__,
-            )
-            return
-
-        self.fit_data = pd.DataFrame(averaged_event_data)
+        self.fit_data = fit_data
 
         if not df_prolate.empty:
             self.update_plot(
@@ -2204,46 +2099,41 @@ class ProteinView(MetaSubsetTabView):
     @log(logger=logger)
     def set_ensemble_geometry_fit(
         self,
-        popt: Optional[npt.NDArray[np.float64]],
-        curve: Optional[npt.NDArray[np.float64]],
+        popt: npt.NDArray[np.float64],
+        curve: npt.NDArray[np.float64],
         plot_data: pd.DataFrame,
         plot_type: str,
-        d: float,
-        L: float,
-        N: int,
+        df_prolate: pd.DataFrame,
+        df_oblate: pd.DataFrame,
     ) -> None:
         """
-        Draw the fitted ensemble, then Monte Carlo sample prolate/oblate V/m from it.
+        Draw the fitted ensemble and the geometries it is consistent with.
 
         The answering half of ``ensemble_fit_requested``. The fitted curve arrives
         already evaluated at the bins it was fitted on, which is what lets the model
-        function itself live on ``ProteinModel`` rather than here.
+        function live on ``ProteinModel``; Step 4's closeout sent the Monte Carlo
+        after it, so the solutions arrive sampled too.
 
-        :param popt: the fit parameters, or None if no double gaussian could be fitted
-        :type popt: Optional[npt.NDArray[np.float64]]
-        :param curve: the fitted curve evaluated at the histogram's bins, or None
-        :type curve: Optional[npt.NDArray[np.float64]]
-        :param plot_data: the aggregated histogram DataFrame that was fitted.
+        An ensemble that sampled nothing still reaches here, and still draws the fit:
+        the Controller reports the bail-out, and the two empty frames simply skip
+        their scatterplots. Refusing to call this at all would have taken the fitted
+        curve off the screen with them.
+
+        :param popt: the fit parameters
+        :type popt: npt.NDArray[np.float64]
+        :param curve: the fitted curve evaluated at the histogram's bins
+        :type curve: npt.NDArray[np.float64]
+        :param plot_data: the aggregated histogram DataFrame that was fitted
         :type plot_data: pd.DataFrame
-        :param plot_type: the plot type label to reuse when plotting the fit.
+        :param plot_type: the plot type label to reuse when plotting the fit
         :type plot_type: str
-        :param d: the diameter of the pore in nanometers
-        :type d: float
-        :param L: the length of the pore in nanometers
-        :type L: float
-        :param N: target number of samples to draw for each of the prolate/oblate ensembles
-        :type N: int
+        :param df_prolate: the prolate solutions, empty if none were sampled
+        :type df_prolate: pd.DataFrame
+        :param df_oblate: the oblate solutions, empty if none were sampled
+        :type df_oblate: pd.DataFrame
         :return: None
         :rtype: None
         """
-        if popt is None or curve is None:
-            self.logger.info("Unable to fit a double gaussian to the histogram")
-            self.add_text_to_display.emit(
-                "Unable to fit a double gaussian to the histogram",
-                self.__class__.__name__,
-            )
-            return
-
         plot_data["Amplitude"] = curve
         self.update_plot(
             plot_type,
@@ -2257,52 +2147,6 @@ class ProteinView(MetaSubsetTabView):
         self.ensemble_fit_params = popt
         self.ensemble_fit_bins = self.allowed_bins
         self.ensemble_fit_sizes = self.allowed_sizes
-
-        amp1, mean1, std1, amp2, mean2, std2 = popt
-
-        if mean1 > mean2:
-            mean_max, std_max = mean1, np.abs(std1)
-            mean_min, std_min = mean2, np.abs(std2)
-        else:
-            mean_max, std_max = mean2, np.abs(std2)
-            mean_min, std_min = mean1, np.abs(std1)
-
-        # --- OPTIMIZED GENERATIVE SAMPLING ---
-        # Call the Monte Carlo generators directly
-        prolate_V, prolate_m = self._generate_vm_ensemble(
-            N, mean_max, std_max, mean_min, std_min, d, L, prolate=True
-        )
-        oblate_V, oblate_m = self._generate_vm_ensemble(
-            N, mean_max, std_max, mean_min, std_min, d, L, prolate=False
-        )
-
-        if len(prolate_V) == 0 and len(oblate_V) == 0:
-            self.logger.warning(
-                "Generative sampling bailed out: The ensemble Gaussian fit represents an unphysical geometry."
-            )
-            self.add_text_to_display.emit(
-                "Generative sampling bailed out: The ensemble Gaussian fit represents an unphysical geometry.",
-                self.__class__.__name__,
-            )
-            return
-        elif len(prolate_V) < N or len(oblate_V) < N:
-            self.logger.info(
-                "Sampling hit bailout limit; returning partial ensemble arrays."
-            )
-
-        prolate_b = (3 * prolate_V / (4 * np.pi * prolate_m)) ** (1 / 3)
-        prolate_a = prolate_b * prolate_m
-
-        oblate_b = (3 * oblate_V / (4 * np.pi * oblate_m)) ** (1 / 3)
-        oblate_a = oblate_b * oblate_m
-
-        # --- Create the Pandas DataFrames ---
-        df_prolate = pd.DataFrame(
-            {"V": prolate_V, "m": prolate_m, "a": prolate_a, "b": prolate_b}
-        )
-        df_oblate = pd.DataFrame(
-            {"V": oblate_V, "m": oblate_m, "a": oblate_a, "b": oblate_b}
-        )
 
         # --- record V/m summaries for Report All reporting ---
         self.ensemble_fit_prolate_summary = (
@@ -2330,269 +2174,6 @@ class ProteinView(MetaSubsetTabView):
                 logscales=[False, False],
                 dataset_label="Oblate Solutions",
             )
-
-    @log(logger=logger)
-    def _compute_theoretical_blockages(
-        self,
-        V: npt.NDArray[np.float64],
-        m: npt.NDArray[np.float64],
-        d: float,
-        L: float,
-    ) -> Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]:
-        """
-        Vectorized forward model: Calculates theoretical max and min blockages
-        for arrays of volume (V) and shape factor (m).
-
-        :param V: array of volumes of spheroids in cubic nanometers
-        :type V: npt.NDArray[np.float64]
-        :param m: array of shape factors of spheroids (major axis / minor axis) of the same length as V. All must be either 0<m<1 or all m>1.
-        :type m: npt.NDArray[np.float64]
-        :param d: the diameter of the pore in nanometers
-        :type d: float
-        :param L: the length of the pore in nanometers
-        :type L: float
-        :return: Tuple of arrays of theoretical max and min blockage values for the given parameters, one per V,m pair
-        :rtype: Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]
-        :raises ValueError: If `m` contains a mix of oblate (0<m<1) and prolate (m>1)
-            form factors, or any negative form factor.
-        """
-        m_sq = m**2
-
-        if all(m <= 1):
-            prolate = False
-        elif all(m >= 1):
-            prolate = True
-        elif any(m < 0):
-            raise ValueError("Cannot have negative form factors")
-        else:
-            raise ValueError(
-                "Cannot mix oblate and prolate form factors in a single call to _compute_theoretical_blockages"
-            )
-
-        try:
-            if not prolate:
-                gamma_parallel = 1 / (
-                    1 - (1 / (1 - m_sq)) * (1 - (m / np.sqrt(1 - m_sq)) * np.arccos(m))
-                )
-            else:
-                gamma_parallel = 1 / (
-                    1
-                    - (1 / (m_sq - 1))
-                    * ((m / np.sqrt(m_sq - 1)) * np.log(m + np.sqrt(m_sq - 1)) - 1)
-                )
-
-            gamma_perpendicular = 1 / (1 - 0.5 / gamma_parallel)
-        except ValueError:  # divide by zero from a m=1 case
-            gamma_perpendicular = 1.5
-            gamma_parallel = 1.5
-
-        b = (3 * V / (4 * np.pi * m)) ** (1 / 3)
-        a = b * m
-        d_ptn = 2 * b
-        l_ptn = 2 * a
-
-        gamma_parallel_prime = gamma_parallel / (
-            1 - 0.71 * ((d_ptn**2 + l_ptn**2) / (d**2 + l_ptn**2)) * (d_ptn / d) ** 2
-        )
-
-        gamma_perpendicular_prime = gamma_perpendicular / (
-            1 - (0.32 + 0.48 * l_ptn / d) * (l_ptn * d_ptn**2 / d**3)
-        )
-
-        volume_factor = (4 * V) / (np.pi * d**2 * (L + 0.8 * d))
-
-        parallel_term = volume_factor * gamma_parallel_prime
-        perpendicular_term = volume_factor * gamma_perpendicular_prime
-
-        # Map parallel/perpendicular to max/min based on your original logic
-        if not prolate:
-            dI_max = parallel_term
-            dI_min = perpendicular_term
-        else:
-            dI_max = perpendicular_term
-            dI_min = parallel_term
-
-        return dI_max, dI_min
-
-    @log(logger=logger)
-    def _generate_vm_ensemble(
-        self,
-        N_target: int,
-        mean_max: float,
-        std_max: float,
-        mean_min: float,
-        std_min: float,
-        d: float,
-        L: float,
-        prolate: bool = True,
-        cutoff_std: float = 4,
-    ) -> Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]:
-        """
-        Uses Monte Carlo rejection sampling with dynamic bounds to find valid (V, m) pairs.
-        Bails out after a maximum number of consecutive failed batches if the experimental
-        data represents an unphysical geometry.
-
-        :param N_target: number of value V,m pairs to generate, if possible
-        :type N_target: int
-        :param mean_max: The mean value of the larger of the two blockage histograms
-        :type mean_max: float
-        :param std_max: The standard deviation value of the larger of the two blockage histograms
-        :type std_max: float
-        :param mean_min: The mean value of the smaller of the two blockage histograms
-        :type mean_min: float
-        :param std_min: The standard deviation value of the smaller of the two blockage histograms
-        :type std_min: float
-        :param d: the length of the pore in nanometers
-        :type d: float
-        :param L: the length of the pore in nanometers
-        :type L: float
-        :param prolate: whether we are looking for prolate (m>1) solutions or oblate (0<m<1) solutions
-        :type prolate: bool
-        :param cutoff_std: the number of standard deviations outside the mean after which to cut off solutions
-        :type cutoff_std: float
-        :return: Tuple of arrays of V,m pairs
-        :rtype: Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]
-        """
-        accepted_V: list[float] = []
-        accepted_m: list[float] = []
-        # Seeded and local: the ensemble is reproducible for a given geometry,
-        # and drawing here no longer perturbs the global NumPy RNG for the rest
-        # of the process. 42 matches the convention already used in PeakFinder.
-        rng = np.random.default_rng(42)
-        x = np.minimum(d, L)
-        # --- Dynamic Bounds Calculation ---
-        K = (np.pi * d**2 * (L + 0.8 * d)) / 4.0  # assumes gamma == 1
-        gamma_min = 1
-
-        highest_blockage = mean_max + cutoff_std * std_max
-        V_max = highest_blockage * K / gamma_min
-
-        V_min = 1  # we cannot see a 1 nm^3 object anyway so this will always be a safe minimum
-
-        if V_min >= V_max:
-            V_max = V_min * 10.0
-
-        batch_size = 50000
-
-        # --- Bailout Logic Variables ---
-        max_consecutive_zeros = 5
-        consecutive_zeros = 0
-        max_batches = 200
-        batches = 0
-
-        while (
-            len(accepted_V) < N_target
-            and consecutive_zeros < max_consecutive_zeros
-            and batches < max_batches
-        ):
-            batches += 1
-            # 1. Propose physically valid uniform samples
-            V_prop_raw = rng.uniform(V_min, V_max, batch_size)
-            ## pick max(a,b) < min(d,L), use a,b equations for a given V sample to calculate m limit in both cases. Prolate case: a>b, oblate: a<b.
-            if prolate:
-                m_upper_bounds_raw = np.sqrt((np.pi * x**3) / (6 * V_prop_raw))
-                valid_mask = m_upper_bounds_raw >= 1
-
-                V_prop = V_prop_raw[valid_mask]
-
-                # Clip the upper bound to a physical maximum (e.g., m=50.0)
-                # to prevent sampling impossible "1D string" geometries
-                m_upper_bounds = np.clip(m_upper_bounds_raw[valid_mask], 1, 50.0)
-
-                if len(V_prop) == 0:
-                    consecutive_zeros += 1
-                    continue
-
-                m_prop = rng.uniform(1, m_upper_bounds)
-
-            else:
-                m_lower_bounds_raw = (6 * V_prop_raw) / (np.pi * x**3)
-                valid_mask = m_lower_bounds_raw <= 1
-
-                V_prop = V_prop_raw[valid_mask]
-
-                # Clip the lower bound to a physical minimum (e.g., m=0.01)
-                # to prevent divide-by-zero errors and impossible "2D sheet" geometries
-                m_lower_bounds = np.clip(m_lower_bounds_raw[valid_mask], 0.02, 1)
-
-                if len(V_prop) == 0:
-                    consecutive_zeros += 1
-                    continue
-
-                m_prop = rng.uniform(m_lower_bounds, 1)
-
-            # 2. Forward Calculation
-
-            dI_max_calc, dI_min_calc = self._compute_theoretical_blockages(
-                V_prop, m_prop, d, L
-            )
-
-            # Clean up unexpected NaNs
-            nan_mask = np.isnan(dI_max_calc) | np.isnan(dI_min_calc)
-            if np.all(nan_mask):
-                consecutive_zeros += 1
-                continue
-
-            valid_math = ~nan_mask
-            V_prop = V_prop[valid_math]
-            m_prop = m_prop[valid_math]
-            dI_max_calc = dI_max_calc[valid_math]
-            dI_min_calc = dI_min_calc[valid_math]
-
-            # 3. Calculate probability
-            # Use safe standard deviations to prevent infinite Z-scores on artificially sharp fits
-            safe_std_max = max(std_max, mean_max * 0.01)
-            safe_std_min = max(std_min, mean_min * 0.01)
-
-            z_sq_max = ((dI_max_calc - mean_max) / safe_std_max) ** 2
-            z_sq_min = ((dI_min_calc - mean_min) / safe_std_min) ** 2
-
-            # Absolute physical constraint: Ignore guesses that are > 4 standard deviations away
-            # This prevents the sampler from accepting the "best of the worst" in terrible batches
-            physical_mask = (z_sq_max < cutoff_std**2) & (z_sq_min < cutoff_std**2)
-
-            if not np.any(physical_mask):
-                consecutive_zeros += 1
-                continue
-
-            # Filter arrays to only physically reasonable points before probability rejection
-            V_prop = V_prop[physical_mask]
-            m_prop = m_prop[physical_mask]
-            z_sq_max = z_sq_max[physical_mask]
-            z_sq_min = z_sq_min[physical_mask]
-
-            likelihood = np.exp(-0.5 * (z_sq_max + z_sq_min))
-            max_likelihood = np.max(likelihood)
-
-            if max_likelihood == 0 or np.isnan(max_likelihood):
-                consecutive_zeros += 1
-                continue
-
-            prob_accept = likelihood / max_likelihood
-
-            # 4. Accept / Reject
-            random_thresh = rng.uniform(0, 1, len(prob_accept))
-            accepted_indices = random_thresh < prob_accept
-
-            new_V = V_prop[accepted_indices]
-            new_m = m_prop[accepted_indices]
-
-            if len(new_V) == 0:
-                consecutive_zeros += 1
-            else:
-                consecutive_zeros = (
-                    0  # Reset counter if we got at least one valid point
-                )
-                accepted_V.extend(new_V)
-                accepted_m.extend(new_m)
-
-        if len(accepted_V) < N_target:
-            self.logger.warning(
-                f"_generate_vm_ensemble stopped with only {len(accepted_V)}/{N_target} "
-                f"accepted samples after {batches} batches (consecutive_zeros={consecutive_zeros})"
-            )
-
-        return np.array(accepted_V[:N_target]), np.array(accepted_m[:N_target])
 
     @log(logger=logger)
     def _handle_other_actions(
