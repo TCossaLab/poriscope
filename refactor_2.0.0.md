@@ -203,7 +203,7 @@ sites are converted**, and they sit in Clustering (1), Metadata (5) and Protein 
      reason method rule 72 records. **The generator no longer reaches the View at all** -
      `event_subset_requested` and `load_event_subset` went with it, and the query is set
      only once the reduction has succeeded too, so one guard refuses both failures.
-     `hist_data` went from **four element types to two**. Two smaller behaviour changes
+     `hist_data` went from **four element types to two**. **Manual pass run the same day**: three reports, one a real pre-existing defect - an event overlay drew over whatever plot type preceded it, since that branch checked only that the axes were valid - and two that turned out to be a status-panel line scrolled past under the applied-query echo, settled by driving `handle_parameter_change` against a real app shell and reading the panel widget back. Two smaller behaviour changes
      fell out and are in `changelog.md`: a density plot on an empty subset no longer wipes
      the figure, and an unrecognised event plot type is refused rather than redrawing the
      previous event. **Five logscale callers, not four**, because 4b handed one back.
