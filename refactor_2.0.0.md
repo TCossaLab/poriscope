@@ -144,7 +144,16 @@ sites are converted**, and they sit in Clustering (1), Metadata (5) and Protein 
    `on_metadata_loaded` holds the logscale call at `:609` and the tab's only pandas use at
    `:613`, four lines apart: the Model logscales and returns the frame.
    **Allowlist 7 -> 6**, and 1 of 8 logscale sites.
-3. **RawData - two time bases and the PSD limits.** `update_plot` and `_update_event_plot`
+3. **RawData - LANDED 2026-09-14.** **Allowlist 6 -> 5**, `RawDataView` off the list.
+   The two time bases went to the Model and `event_time_bases` was promoted to
+   `MetaModel.time_bases` with a scale and an offset, since RawData is the second caller
+   and Metadata and Protein are the third and fourth. `update_psd`'s axis limits **stayed
+   in the View** on Kyle's ruling and shed numpy by using `math` and `bisect` - proved
+   equivalent over six hand-built cases and 2,000 randomised ones, zero mismatches.
+   **Manual Windows pass run 2026-09-14 over the trace plot with and without the baseline
+   band, a non-zero start time, the event plot and the PSD, all clear.**
+
+   *The original framing:* `update_plot` and `_update_event_plot`
    take branch 1's shape. `update_psd` is kind 3 and **blocked on the open decision above**.
    **Allowlist 6 -> 5 only if the limits move.**
 4. **Metadata's 4c remainder, carrying five logscale sites.** 11 methods, 2 points.
