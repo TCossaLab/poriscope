@@ -151,9 +151,12 @@ MOVED: Tuple[Tuple[str, str, str], ...] = (
         "cluster_gaussian_mixture",
         "4c",
     ),
+    # Landed in Step 4's closeout: the tally moved to MetadataModel and is tracked
+    # at its destination now. The View's copy walked the event generator itself,
+    # which is what kept the events - and pandas - above the Model.
     (
-        "poriscope/plugins/analysistabs/MetadataView.py",
-        "_construct_all_points_histogram",
+        "poriscope/plugins/analysistabs/MetadataModel.py",
+        "build_all_points_histogram",
         "4c",
     ),
     ("poriscope/plugins/analysistabs/MetadataView.py", "is_categorical_type", "4c"),
@@ -233,9 +236,12 @@ MOVED: Tuple[Tuple[str, str, str], ...] = (
         "_load_metadata_and_request_clustering",
         "4c",
     ),
+    # Landed in Step 4's closeout, with the tally above: the baseline subtraction
+    # and the normalised time base moved to MetadataModel, and the drawing that is
+    # left behind is `set_event_overlay`.
     (
-        "poriscope/plugins/analysistabs/MetadataView.py",
-        "_construct_event_overlay",
+        "poriscope/plugins/analysistabs/MetadataModel.py",
+        "build_event_overlay",
         "4c",
     ),
     ("poriscope/plugins/analysistabs/MetadataView.py", "_plot_1d_density", "4c"),

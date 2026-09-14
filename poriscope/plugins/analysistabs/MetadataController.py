@@ -26,7 +26,7 @@
 
 
 import logging
-from typing import Any, Dict, List, Optional, Sequence, override
+from typing import Any, Dict, Generator, List, Optional, Sequence, Tuple, override
 
 import numpy as np
 import numpy.typing as npt
@@ -77,22 +77,28 @@ class MetadataController(MetaSubsetTabController):
         self.view.column_units_requested.connect(self.request_column_units)
         self.view.column_type_requested.connect(self.request_column_type)
         self.view.metadata_subset_requested.connect(self.load_metadata_subset)
-        self.view.event_subset_requested.connect(self.load_event_subset)
+        self.view.all_points_histogram_requested.connect(
+            self.build_all_points_histogram
+        )
+        self.view.event_overlay_requested.connect(self.build_event_overlay)
         self.view.event_plot_data_requested.connect(self.load_event_plot_data)
         self.view.plot_features_requested.connect(self.request_plot_features)
         self.view.csv_subset_export_requested.connect(self.export_csv_subset)
         self.view.heatmap_requested.connect(self.calculate_heatmap)
+        self.view.scatterplot_requested.connect(self.filter_scatterplot)
+        self.view.scatterplot_3d_requested.connect(self.filter_3d_scatterplot)
         self.view.density_requested.connect(self.estimate_kernel_densities)
         self.view.histogram_bins_requested.connect(self.calculate_histogram_bins)
         self.view.capture_rate_requested.connect(self.fit_capture_rate)
         self.view.categorical_counts_requested.connect(self.count_categories)
 
     @log(logger=logger)
-    @Slot(object, object, object, bool, object, str, str, str)
+    @Slot(object, object, object, object, bool, object, str, str, str)
     def calculate_heatmap(
         self,
         xdata: npt.NDArray[np.float64],
         ydata: npt.NDArray[np.float64],
+        log_flags: Sequence[bool],
         bins: Any,
         sizes: bool,
         ax: Axes,
@@ -101,7 +107,7 @@ class MetadataController(MetaSubsetTabController):
         dataset_label: str,
     ) -> None:
         """
-        Bin the heatmap's two columns, and hand the result back to the View to draw.
+        Filter and bin the heatmap's two columns, and hand the result back to draw.
 
         Decision B's command path, the same shape as
         ``ClusteringController.cluster``. The drawing context arrives and departs
@@ -111,10 +117,12 @@ class MetadataController(MetaSubsetTabController):
         than propagating: before Step 4c it escaped the plotting call unhandled,
         because nothing between here and ``_overlay_plot`` catches it.
 
-        :param xdata: the already-filtered x values
+        :param xdata: the raw x values
         :type xdata: npt.NDArray[np.float64]
-        :param ydata: the already-filtered y values
+        :param ydata: the raw y values
         :type ydata: npt.NDArray[np.float64]
+        :param log_flags: log-scale the x and y values before binning?
+        :type log_flags: Sequence[bool]
         :param bins: number of bins, or size of bins when sizes is True, or None to estimate
         :type bins: Any
         :param sizes: does the bins parameter refer to bin sizes (True) or counts (False)
@@ -131,7 +139,10 @@ class MetadataController(MetaSubsetTabController):
         :rtype: None
         """
         try:
-            x, y, z = self.model.calculate_heatmap(xdata, ydata, bins, sizes)
+            xfiltered, yfiltered = self.model.logscale_and_filter_columns(
+                xdata, ydata, log_flags=list(log_flags)
+            )
+            x, y, z = self.model.calculate_heatmap(xfiltered, yfiltered, bins, sizes)
         except (ValueError, TypeError, IndexError) as e:
             self.logger.error(f"Unable to build the heatmap: {repr(e)}")
             self.add_text_to_display.emit(
@@ -141,46 +152,163 @@ class MetadataController(MetaSubsetTabController):
         self.view.set_heatmap(x, y, z, ax, x_label, y_label, dataset_label)
 
     @log(logger=logger)
-    @Slot(object, object, object, bool, object, object, object, str)
+    @Slot(object, object, object, object, str)
+    def filter_scatterplot(
+        self,
+        columns: Sequence[npt.NDArray[np.float64]],
+        log_flags: Sequence[bool],
+        ax: Axes,
+        axis_labels: Sequence[str],
+        dataset_label: str,
+    ) -> None:
+        """
+        Filter and log-scale a scatterplot's columns, and hand them back to draw.
+
+        Decision B's command path. Step 4's closeout brought this plot type down:
+        Step 4c had left it alone because it freed no import on its own, and the
+        filter's move is what puts it back in scope. The values that survive are
+        exported with the plot, so they are the Model's to produce.
+
+        :param columns: the raw x and y values
+        :type columns: Sequence[npt.NDArray[np.float64]]
+        :param log_flags: log-scale each column?
+        :type log_flags: Sequence[bool]
+        :param ax: the axis object the View will draw on
+        :type ax: Axes
+        :param axis_labels: the axis labels, already formatted
+        :type axis_labels: Sequence[str]
+        :param dataset_label: string to label the dataset
+        :type dataset_label: str
+        :return: None
+        :rtype: None
+        """
+        try:
+            filtered = self.model.logscale_and_filter_columns(
+                *columns, log_flags=list(log_flags)
+            )
+        except (ValueError, TypeError, IndexError) as e:
+            self.logger.error(f"Unable to filter the scatterplot: {repr(e)}")
+            self.add_text_to_display.emit(
+                f"Unable to filter the scatterplot: {e}", self.__class__.__name__
+            )
+            return
+        self.view.set_scatterplot(filtered, ax, axis_labels, dataset_label)
+
+    @log(logger=logger)
+    @Slot(object, object, object, object, str)
+    def filter_3d_scatterplot(
+        self,
+        columns: Sequence[npt.NDArray[np.float64]],
+        log_flags: Sequence[bool],
+        ax: Axes,
+        axis_labels: Sequence[str],
+        dataset_label: str,
+    ) -> None:
+        """
+        The same for a 3-D scatterplot's three columns.
+
+        Separate from :meth:`filter_scatterplot` because the View's two drawing
+        halves are separate: a 3-D scatter rebuilds the axes and carries a z label.
+
+        :param columns: the raw x, y and z values
+        :type columns: Sequence[npt.NDArray[np.float64]]
+        :param log_flags: log-scale each column?
+        :type log_flags: Sequence[bool]
+        :param ax: the axis object the View will draw on
+        :type ax: Axes
+        :param axis_labels: the axis labels, already formatted
+        :type axis_labels: Sequence[str]
+        :param dataset_label: string to label the dataset
+        :type dataset_label: str
+        :return: None
+        :rtype: None
+        """
+        try:
+            filtered = self.model.logscale_and_filter_columns(
+                *columns, log_flags=list(log_flags)
+            )
+        except (ValueError, TypeError, IndexError) as e:
+            self.logger.error(f"Unable to filter the 3D scatterplot: {repr(e)}")
+            self.add_text_to_display.emit(
+                f"Unable to filter the 3D scatterplot: {e}", self.__class__.__name__
+            )
+            return
+        self.view.set_3d_scatterplot(filtered, ax, axis_labels, dataset_label)
+
+    @log(logger=logger)
+    @Slot(object, bool, object, bool, object, object, object, str, str, str)
     def estimate_kernel_densities(
         self,
         datasets: Sequence[npt.NDArray[np.float64]],
-        labels: Sequence[str],
+        logx: bool,
         bins: Any,
         sizes: bool,
         hist_min: Optional[float],
         hist_max: Optional[float],
         ax: Axes,
         x_label: str,
+        column: str,
+        dataset_label: str,
     ) -> None:
         """
-        Estimate every overlaid dataset's density, and hand them back to be drawn.
+        Filter every overlaid dataset, then estimate each one's density.
 
-        Decision B's command path, the same shape as :meth:`calculate_heatmap`. One
-        call rather than one per dataset keeps each answer off the widget.
+        Decision B's command path, the same shape as :meth:`calculate_heatmap`. The
+        drawing context arrives and departs unchanged; this slot marshals and does
+        not interpret it.
 
-        :param datasets: one already-filtered array per overlaid dataset
+        The newest dataset is the last of ``datasets`` and has not been accumulated
+        by the View yet, so a subset that loses every point to the filter is refused
+        here and leaves no label behind.
+
+        :param datasets: one raw column array per overlaid dataset, newest last
         :type datasets: Sequence[npt.NDArray[np.float64]]
-        :param labels: each dataset's label, passed back to the View unchanged
-        :type labels: Sequence[str]
-        :param bins: a bin count, or a bin width when sizes is True, or None
+        :param logx: log-scale the values before binning them?
+        :type logx: bool
+        :param bins: number of bins, or size of bins when sizes is True, or None to estimate
         :type bins: Any
-        :param sizes: does bins refer to a bin size (True) or a count (False)
+        :param sizes: does the bins parameter refer to bin sizes (True) or counts (False)
         :type sizes: bool
-        :param hist_min: the shared lower limit across overlaid datasets, if known
+        :param hist_min: the shared lower limit so far, or None for the first dataset
         :type hist_min: Optional[float]
-        :param hist_max: the shared upper limit across overlaid datasets, if known
+        :param hist_max: the shared upper limit so far, or None for the first dataset
         :type hist_max: Optional[float]
         :param ax: the axis object the View will draw on
         :type ax: Axes
         :param x_label: the x axis label, already formatted
         :type x_label: str
+        :param column: the column's own name, for the message when nothing survives
+        :type column: str
+        :param dataset_label: the newest dataset's label
+        :type dataset_label: str
         :return: None
         :rtype: None
         """
         try:
+            filtered = self.model.logscale_and_filter_datasets(datasets, logx)
+        except (ValueError, TypeError, IndexError) as e:
+            self.logger.error(f"Unable to filter the density plot: {repr(e)}")
+            self.add_text_to_display.emit(
+                f"Unable to filter the density plot: {e}", self.__class__.__name__
+            )
+            return
+
+        if len(filtered[-1]) == 0:
+            # Every point was filtered out, the commonest cause being a column that
+            # is NULL for every row the subset filter selected.
+            self.add_text_to_display.emit(
+                f"No {column} values in this subset, so there is nothing to plot",
+                self.__class__.__name__,
+            )
+            return
+
+        hist_min, hist_max = self.model.widen_shared_limits(
+            filtered[-1], hist_min, hist_max
+        )
+
+        try:
             densities = self.model.kernel_densities(
-                datasets, bins, sizes, hist_min, hist_max
+                filtered, bins, sizes, hist_min, hist_max
             )
         except (ValueError, TypeError, IndexError, np.linalg.LinAlgError) as e:
             self.logger.error(f"Unable to estimate the density: {repr(e)}")
@@ -188,53 +316,84 @@ class MetadataController(MetaSubsetTabController):
                 f"Unable to estimate the density: {e}", self.__class__.__name__
             )
             return
-        self.view.set_kernel_densities(densities, labels, ax, x_label)
+
+        self.view.set_kernel_densities(
+            datasets[-1], dataset_label, densities, hist_min, hist_max, ax, x_label
+        )
 
     @log(logger=logger)
-    @Slot(object, object, bool, object, object, object, str, bool, bool)
+    @Slot(object, bool, object, bool, object, object, bool, object, str, str, str)
     def calculate_histogram_bins(
         self,
-        datasets: List[npt.NDArray[np.float64]],
+        datasets: Sequence[npt.NDArray[np.float64]],
+        logx: bool,
         bins: Any,
         sizes: bool,
-        hist_min: float,
-        hist_max: float,
+        hist_min: Optional[float],
+        hist_max: Optional[float],
+        norm: bool,
         ax: Axes,
         x_label: str,
-        logx: bool,
-        norm: bool,
+        column: str,
+        dataset_label: str,
     ) -> None:
         """
-        Bin every overlaid dataset onto shared edges, and hand the counts back.
+        Filter every overlaid dataset, bin them onto shared edges, and count them.
 
-        Decision B's command path, the same shape as :meth:`calculate_heatmap`. Step
-        4's closeout brought the counting down to join the bin decision, so the View
-        is handed tallies rather than edges to tally against.
+        Decision B's command path, the same shape as
+        :meth:`estimate_kernel_densities` - deliberately, since the two write the
+        same accumulator and the same pair of shared limits, which is why they
+        converted in one branch rather than one each.
 
-        :param datasets: one filtered array per overlaid dataset
-        :type datasets: List[npt.NDArray[np.float64]]
+        :param datasets: one raw column array per overlaid dataset, newest last
+        :type datasets: Sequence[npt.NDArray[np.float64]]
+        :param logx: log-scale the values before binning them?
+        :type logx: bool
         :param bins: a bin count, or a bin width when sizes is True, or None
         :type bins: Any
         :param sizes: does bins refer to a bin size (True) or a count (False)
         :type sizes: bool
-        :param hist_min: the shared lower limit across overlaid datasets
-        :type hist_min: float
-        :param hist_max: the shared upper limit across overlaid datasets
-        :type hist_max: float
+        :param hist_min: the shared lower limit so far, or None for the first dataset
+        :type hist_min: Optional[float]
+        :param hist_max: the shared upper limit so far, or None for the first dataset
+        :type hist_max: Optional[float]
+        :param norm: normalise each dataset to a fraction rather than a count
+        :type norm: bool
         :param ax: the axis object the View will draw on
         :type ax: Axes
         :param x_label: the x axis label, already formatted
         :type x_label: str
-        :param logx: was the data log-scaled
-        :type logx: bool
-        :param norm: normalise each dataset to a fraction rather than a count
-        :type norm: bool
+        :param column: the column's own name, for the message when nothing survives
+        :type column: str
+        :param dataset_label: the newest dataset's label
+        :type dataset_label: str
         :return: None
         :rtype: None
         """
         try:
-            bin_edges, bincenters, widths, counts = self.model.overlaid_histograms(
-                datasets, bins, sizes, hist_min, hist_max, norm
+            filtered = self.model.logscale_and_filter_datasets(datasets, logx)
+        except (ValueError, TypeError, IndexError) as e:
+            self.logger.error(f"Unable to filter the histogram: {repr(e)}")
+            self.add_text_to_display.emit(
+                f"Unable to filter the histogram: {e}", self.__class__.__name__
+            )
+            return
+
+        if len(filtered[-1]) == 0:
+            self.add_text_to_display.emit(
+                f"No {column} values in this subset, so there is nothing to "
+                "histogram",
+                self.__class__.__name__,
+            )
+            return
+
+        hist_min, hist_max = self.model.widen_shared_limits(
+            filtered[-1], hist_min, hist_max
+        )
+
+        try:
+            _, bincenters, widths, counts = self.model.overlaid_histograms(
+                filtered, bins, sizes, hist_min, hist_max, norm
             )
         except (ValueError, TypeError, IndexError) as e:
             self.logger.error(f"Unable to bin the histogram: {repr(e)}")
@@ -242,8 +401,19 @@ class MetadataController(MetaSubsetTabController):
                 f"Unable to bin the histogram: {e}", self.__class__.__name__
             )
             return
+
         self.view.set_histogram_bins(
-            bincenters, widths, counts, ax, x_label, logx, norm
+            datasets[-1],
+            dataset_label,
+            bincenters,
+            widths,
+            counts,
+            hist_min,
+            hist_max,
+            ax,
+            x_label,
+            logx,
+            norm,
         )
 
     @log(logger=logger)
@@ -472,20 +642,18 @@ class MetadataController(MetaSubsetTabController):
         self._echo_applied_query(query, table_name)
 
     @log(logger=logger)
-    @Slot(str, str, object)
-    def load_event_subset(
+    def _fetch_event_subset(
         self,
         loader: str,
         sql_filter: str,
         experiments_and_channels: Optional[Dict[str, List[Optional[int]]]],
-    ) -> None:
+    ) -> Optional[Tuple[str, Generator]]:
         """
-        Fetch one event-data subset - query and generator - and hand it to the View.
+        Build one event-data subset's query and open a generator over its events.
 
-        The same conversion as ``load_metadata_subset``, for the event-data plots.
-        Both of its answers were unguarded reads before Step 4a: a failed
-        ``load_event_data`` left the previous subset's generator in place and the
-        tab replotted that subset's events under this one's label.
+        Shared by the two event-data plot types, which differ only in what they then
+        reduce the events to. Reports its own failure and answers with None, so a
+        caller has nothing to handle beyond stopping.
 
         :param loader: the database loader plugin's key
         :type loader: str
@@ -493,8 +661,8 @@ class MetadataController(MetaSubsetTabController):
         :type sql_filter: str
         :param experiments_and_channels: the experiment and channel scope, or None
         :type experiments_and_channels: Optional[Dict[str, List[Optional[int]]]]
-        :return: None
-        :rtype: None
+        :return: the query that ran and a generator over its events, or None
+        :rtype: Optional[Tuple[str, Generator]]
         """
         try:
             # Two values, because construct_event_data_query is declared
@@ -516,14 +684,14 @@ class MetadataController(MetaSubsetTabController):
                 f"Could not build the event query for this subset: {e}",
                 self.__class__.__name__,
             )
-            return
+            return None
 
         if not query:
             self.add_text_to_display.emit(
                 debug or "The event query for this subset could not be built",
                 self.__class__.__name__,
             )
-            return
+            return None
 
         try:
             generator = self.model.call(
@@ -539,11 +707,122 @@ class MetadataController(MetaSubsetTabController):
                 f"Could not load this event subset from {loader}: {e}",
                 self.__class__.__name__,
             )
+            return None
+
+        return query, generator
+
+    @log(logger=logger)
+    @Slot(str, str, object, str, object, bool, object, object, str)
+    def build_all_points_histogram(
+        self,
+        loader: str,
+        sql_filter: str,
+        experiments_and_channels: Optional[Dict[str, List[Optional[int]]]],
+        plot_type: str,
+        bins: Any,
+        sizes: bool,
+        hist_min: Optional[float],
+        hist_max: Optional[float],
+        dataset_label: str,
+    ) -> None:
+        """
+        Tally one event-data subset into an all-points histogram for the View.
+
+        Decision B's command path. Step 4's closeout moved the tally down: the events
+        themselves were being walked in the widget, twice, and nothing above the Model
+        ever wanted them. The query is set only once the tally succeeded, which is
+        what lets the View tell a fetch that failed from one that returned nothing.
+
+        :param loader: the database loader plugin's key
+        :type loader: str
+        :param sql_filter: the subset filter's WHERE-clause body, empty for all rows
+        :type sql_filter: str
+        :param experiments_and_channels: the experiment and channel scope, or None
+        :type experiments_and_channels: Optional[Dict[str, List[Optional[int]]]]
+        :param plot_type: the all-points histogram variant being drawn
+        :type plot_type: str
+        :param bins: a bin count, or a bin width when sizes is True, or None
+        :type bins: Any
+        :param sizes: does bins refer to a bin width (True) or a count (False)
+        :type sizes: bool
+        :param hist_min: the shared lower limit so far, or None for the first dataset
+        :type hist_min: Optional[float]
+        :param hist_max: the shared upper limit so far, or None for the first dataset
+        :type hist_max: Optional[float]
+        :param dataset_label: the label this subset is drawn under
+        :type dataset_label: str
+        :return: None
+        :rtype: None
+        """
+        fetched = self._fetch_event_subset(loader, sql_filter, experiments_and_channels)
+        if fetched is None:
+            return
+        query, generator = fetched
+
+        try:
+            bincenters, counts, new_min, new_max = (
+                self.model.build_all_points_histogram(
+                    generator, plot_type, bins, sizes, hist_min, hist_max
+                )
+            )
+        except (ValueError, TypeError, IndexError, KeyError) as e:
+            self.logger.error(f"Unable to build the all points histogram: {e!r}")
+            self.add_text_to_display.emit(
+                f"Unable to build the all points histogram: {e}",
+                self.__class__.__name__,
+            )
             return
 
         self.view.set_event_query(query)
-        self.view.set_event_data_generator(generator)
         self._echo_applied_query(query, "events")
+        self.view.set_all_points_histogram(
+            bincenters, counts, new_min, new_max, plot_type, dataset_label
+        )
+
+    @log(logger=logger)
+    @Slot(str, str, object, str)
+    def build_event_overlay(
+        self,
+        loader: str,
+        sql_filter: str,
+        experiments_and_channels: Optional[Dict[str, List[Optional[int]]]],
+        plot_type: str,
+    ) -> None:
+        """
+        Put one event-data subset on a shared normalised axis for the View to draw.
+
+        Decision B's command path, the same shape as
+        :meth:`build_all_points_histogram`.
+
+        :param loader: the database loader plugin's key
+        :type loader: str
+        :param sql_filter: the subset filter's WHERE-clause body, empty for all rows
+        :type sql_filter: str
+        :param experiments_and_channels: the experiment and channel scope, or None
+        :type experiments_and_channels: Optional[Dict[str, List[Optional[int]]]]
+        :param plot_type: either 'Raw Event Overlay' or 'Filtered Event Overlay'
+        :type plot_type: str
+        :return: None
+        :rtype: None
+        """
+        fetched = self._fetch_event_subset(loader, sql_filter, experiments_and_channels)
+        if fetched is None:
+            return
+        query, generator = fetched
+
+        try:
+            traces = self.model.build_event_overlay(generator, plot_type)
+        except (ValueError, TypeError, IndexError, KeyError) as e:
+            self.logger.error(f"Unable to build the event overlay: {e!r}")
+            self.add_text_to_display.emit(
+                f"Unable to build the event overlay: {e}",
+                self.__class__.__name__,
+            )
+            return
+
+        self.view.set_event_query(query)
+        self._echo_applied_query(query, "events")
+        self.view.set_event_overlay(traces)
 
     @log(logger=logger)
     def _echo_applied_query(self, query: str, table_name: str) -> None:

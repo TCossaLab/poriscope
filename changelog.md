@@ -1,5 +1,19 @@
 ## Poriscope 2.0.0: in progress
 
+* **Fixed the Metadata tab drawing an Event Overlay on top of the previous plot** instead of replacing it: switching to a Raw or Filtered Event Overlay from any other plot type left whatever was already on the axes, so two unrelated pictures were superimposed
+
+* **Breaking:** the Metadata tab's Kernel Density Plot and Histogram are filtered, log-scaled and given their shared plot limits by `MetadataModel` rather than in the view, so `density_requested` and `histogram_bins_requested` carry the raw columns and their log flag, and `set_kernel_densities` and `set_histogram_bins` take the newest dataset and the widened limits and accumulate it themselves
+
+* **A 1D Density plot on a subset with no usable values now leaves the previous plot in place**, rather than clearing the axes and drawing nothing
+
+* **Breaking:** the Metadata tab's Heatmap, Scatterplot and 3D Scatterplot are filtered and log-scaled by `MetaModel.logscale_and_filter_columns` rather than in the view, so `MetadataView.heatmap_requested` carries the raw columns and their log flags, and `_plot_scatterplot` and `_plot_3d_scatterplot` now request the filtering and draw the answer through `set_scatterplot` and `set_3d_scatterplot`
+
+* **Categorical Histograms are now ordered by count**, tallest bar on the left; when more than one subset is overlaid the order comes from their combined totals, so every subset shares one axis
+
+* **Breaking:** the Metadata tab's All Points Histogram and Event Overlay are built by `MetadataModel.build_all_points_histogram` and `build_event_overlay`, so `MetadataView._construct_all_points_histogram`, `_construct_event_overlay` and `MetadataController.load_event_subset` are gone, and `MetadataView.update_plot` no longer draws the all-points histogram types
+
+* The Metadata tab now reports an All Points Histogram or Event Overlay it cannot build on the status panel, instead of failing with an unhandled error
+
 * **Fixed the Metadata tab's 1D Density plot accepting a bin width and ignoring it.** The shared plot limits were being read off the dataframe rather than the data, so they came out as column names and the width could not be divided into them
 
 * **The 1D Density plot now says when a column is empty for the selected subset** instead of failing with an unhandled error, matching what the 1D Histogram already did

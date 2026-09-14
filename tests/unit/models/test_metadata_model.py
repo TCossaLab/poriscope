@@ -809,17 +809,47 @@ class TestCategoricalCounts:
         assert categories[-1] == "null"
         assert "nan" not in categories
 
-    def test_numeric_categories_keep_numeric_order(self, model):
+    def test_the_tallest_bar_comes_first(self, model):
         """
-        Real categories keep the order they had, which is why nulls are counted
-        apart. Stringifying the whole column before ``np.unique`` would have been
-        shorter and would have sorted 10 before 2.
+        Requested by a user: the bars read largest on the left, smallest on the
+        right, rather than in whatever order the categories happened to sort into.
+        """
+        values = np.array(["A", "B", "B", "C", "C", "C"], dtype=object)
+
+        (categories, counts) = model.categorical_counts([values])[0]
+
+        assert categories == ["C", "B", "A"]
+        assert list(counts) == [3.0, 2.0, 1.0]
+
+    def test_overlaid_datasets_share_one_order(self, model):
+        """
+        The order is decided from the total across every dataset, not per dataset.
+
+        Matplotlib takes a category axis's order from the first series drawn, so
+        ordering each dataset by its own counts would leave the second one's bars
+        under the first one's headings and only the first looking sorted. Here "B"
+        wins on the total while losing inside the first dataset.
+        """
+        first = np.array(["A", "A", "B"], dtype=object)
+        second = np.array(["B", "B", "B"], dtype=object)
+
+        results = model.categorical_counts([first, second])
+
+        assert [cats for cats, _ in results] == [["B", "A"], ["B"]]
+        assert [list(counts) for _, counts in results] == [[1.0, 2.0], [3.0]]
+
+    def test_numeric_categories_keep_numeric_order_on_a_tie(self, model):
+        """
+        Real categories are counted apart from nulls so that they keep their own
+        order; stringifying the whole column before ``np.unique`` would have been
+        shorter and would have sorted 10 before 2. Count ordering is stable, so
+        that order is what survives a tie - here 1 and 10, both counted once.
         """
         values = np.array([1, 2, 10, 2])
 
         (categories, _counts) = model.categorical_counts([values])[0]
 
-        assert categories == ["1", "2", "10"]
+        assert categories == ["2", "1", "10"]
 
     def test_one_pair_per_dataset_in_order(self, model):
         """The bar chart redraws every accumulated dataset, index-aligned with labels."""
@@ -936,3 +966,220 @@ class TestOverlaidHistograms:
 
         np.testing.assert_allclose(centers, (edges[:-1] + edges[1:]) / 2.0)
         np.testing.assert_allclose(widths, np.diff(edges))
+
+
+# ===========================================================================
+# _rectify_event_current - the baseline subtraction all three event paths share
+# ===========================================================================
+
+
+class TestRectifyEventCurrent:
+    """
+    Three byte-identical copies in ``MetadataView`` before Step 4's closeout.
+
+    The sign factor is the part worth pinning: without it a negative-baseline
+    recording's blockages come out negative and cannot share a histogram with a
+    positive-baseline one.
+    """
+
+    def test_a_positive_baseline_leaves_a_blockage_negative_going(self, model):
+        timeseries = np.array([10.0, 10.0, 10.0, 4.0])
+
+        result = model._rectify_event_current(timeseries, 3)
+
+        assert list(result) == [0.0, 0.0, 0.0, -6.0]
+
+    def test_a_negative_baseline_reads_the_same_way(self, model):
+        """
+        The two polarities must produce the same numbers, which is the whole point
+        of multiplying through by the baseline's sign.
+        """
+        positive = model._rectify_event_current(np.array([10.0, 10.0, 10.0, 4.0]), 3)
+        negative = model._rectify_event_current(
+            np.array([-10.0, -10.0, -10.0, -4.0]), 3
+        )
+
+        assert list(positive) == list(negative)
+
+    def test_a_zero_baseline_collapses_the_trace(self, model):
+        """
+        ``np.sign(0)`` is zero, so the whole trace multiplies out. Pinned because it
+        is pre-existing behaviour that survived the move, not because it is wanted.
+        """
+        result = model._rectify_event_current(np.array([0.0, 0.0, 5.0]), 2)
+
+        assert list(result) == [0.0, 0.0, 0.0]
+
+
+# ===========================================================================
+# build_all_points_histogram - every sample of every event in one subset
+# ===========================================================================
+
+
+def _event(**overrides):
+    """
+    One event payload, with three samples of pre-event baseline.
+
+    :param overrides: fields to replace on the default payload
+    :type overrides: object
+    :return: an event dict shaped as the loader yields them
+    :rtype: dict
+    """
+    event = {
+        "raw_data": np.array([5.0, 5.0, 5.0, 12.0, 13.0, 14.0]),
+        "filtered_data": np.array([7.0, 7.0, 7.0, 20.0, 21.0, 22.0]),
+        "padding_before": 300.0,  # 300 us * 10 kHz / 1e6 = 3 samples
+        "padding_after": 100.0,
+        "samplerate": 10000.0,
+    }
+    event.update(overrides)
+    return event
+
+
+class TestBuildAllPointsHistogram:
+    """
+    Moved off ``MetadataView`` in Step 4's closeout, where it walked the generator
+    inside the widget.
+    """
+
+    def test_it_returns_one_count_per_bin_center(self, model):
+        bincenters, counts, _, _ = model.build_all_points_histogram(
+            iter([_event()]), "Raw All Points Histogram", [10], False, None, None
+        )
+
+        assert len(bincenters) == 10
+        assert len(counts) == 10
+
+    def test_every_sample_of_every_event_is_counted(self, model):
+        bincenters, counts, _, _ = model.build_all_points_histogram(
+            iter([_event(), _event()]),
+            "Raw All Points Histogram",
+            [10],
+            False,
+            None,
+            None,
+        )
+
+        assert counts.sum() == 12
+
+    def test_a_raw_plot_type_reads_the_raw_trace(self, model):
+        """
+        The two traces are far enough apart that the limits alone say which was used.
+        """
+        _, _, hist_min, hist_max = model.build_all_points_histogram(
+            iter([_event()]), "Raw All Points Histogram", [10], False, None, None
+        )
+
+        assert hist_min == 0.0
+        assert hist_max == 9.0
+
+    def test_a_filtered_plot_type_reads_the_filtered_trace(self, model):
+        _, _, hist_min, hist_max = model.build_all_points_histogram(
+            iter([_event()]), "Filtered All Points Histogram", [10], False, None, None
+        )
+
+        assert hist_min == 0.0
+        assert hist_max == 15.0
+
+    def test_the_limits_it_is_given_are_widened_not_replaced(self, model):
+        """
+        The shared limits are what put overlaid subsets on comparable bins, so a
+        subset lying inside an existing range must leave it alone.
+        """
+        _, _, hist_min, hist_max = model.build_all_points_histogram(
+            iter([_event()]), "Raw All Points Histogram", [10], False, -100.0, 100.0
+        )
+
+        assert hist_min == -100.0
+        assert hist_max == 100.0
+
+    def test_a_bin_width_is_divided_into_the_shared_range(self, model):
+        """
+        ``sizes=True`` means the number is a width, and the count falls out of the
+        range it has to span.
+        """
+        bincenters, _, _, _ = model.build_all_points_histogram(
+            iter([_event()]), "Raw All Points Histogram", [1.0], True, 0.0, 10.0
+        )
+
+        assert len(bincenters) == 10
+
+    def test_an_empty_bins_list_is_refused(self, model):
+        with pytest.raises(ValueError, match="Invalid bins entry"):
+            model.build_all_points_histogram(
+                iter([_event()]), "Raw All Points Histogram", [], False, None, None
+            )
+
+    def test_a_width_that_cannot_be_divided_is_refused(self, model):
+        with pytest.raises(ValueError, match="Unable to calculate bins"):
+            model.build_all_points_histogram(
+                iter([_event()]), "Raw All Points Histogram", ["wide"], True, 0.0, 10.0
+            )
+
+    def test_no_bin_request_falls_back_to_a_hundred(self, model):
+        bincenters, _, _, _ = model.build_all_points_histogram(
+            iter([_event()]), "Raw All Points Histogram", None, False, None, None
+        )
+
+        assert len(bincenters) == 100
+
+    def test_an_unknown_plot_type_is_refused(self, model):
+        with pytest.raises(ValueError, match="Unknown plot_type"):
+            model.build_all_points_histogram(
+                iter([_event()]), "Sideways Histogram", [10], False, None, None
+            )
+
+
+# ===========================================================================
+# build_event_overlay - one normalised trace per event
+# ===========================================================================
+
+
+class TestBuildEventOverlay:
+    """
+    The other half of the event-data reduction, moved with it.
+    """
+
+    def test_it_returns_one_pair_per_event(self, model):
+        traces = model.build_event_overlay(
+            iter([_event(), _event()]), "Raw Event Overlay"
+        )
+
+        assert len(traces) == 2
+        for time, data in traces:
+            assert len(time) == len(data) == 6
+
+    def test_the_event_starts_at_zero_on_the_normalised_axis(self, model):
+        """
+        The padding is what the axis is normalised against: the event proper runs
+        from zero to one however long it is, and the paddings fall outside that.
+        """
+        ((time, _),) = model.build_event_overlay(iter([_event()]), "Raw Event Overlay")
+
+        # 6 samples, 3 of pre-event padding and 1 of post-event, so the event is 2
+        # samples long and the axis divides by 2.
+        assert list(time) == [-1.5, -1.0, -0.5, 0.0, 0.5, 1.0]
+
+    def test_the_trace_is_baseline_subtracted(self, model):
+        ((_, data),) = model.build_event_overlay(iter([_event()]), "Raw Event Overlay")
+
+        assert list(data) == [0.0, 0.0, 0.0, 7.0, 8.0, 9.0]
+
+    def test_a_filtered_overlay_reads_the_filtered_trace(self, model):
+        ((_, data),) = model.build_event_overlay(
+            iter([_event()]), "Filtered Event Overlay"
+        )
+
+        assert list(data) == [0.0, 0.0, 0.0, 13.0, 14.0, 15.0]
+
+    def test_an_empty_subset_returns_nothing(self, model):
+        assert model.build_event_overlay(iter([]), "Raw Event Overlay") == []
+
+    def test_an_unknown_plot_type_is_refused(self, model):
+        """
+        The two-branch ``if`` this replaced had no ``else``, so an unrecognised type
+        left the previous event's samples bound and redrew them under this event's
+        label from the second event onwards.
+        """
+        with pytest.raises(ValueError, match="Unknown plot_type"):
+            model.build_event_overlay(iter([_event()]), "Sideways Event Overlay")

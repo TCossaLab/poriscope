@@ -83,6 +83,10 @@ for the categorical bar chart, an `(x, y)` tuple for the all-points histogram - 
 polymorphism, not the logscale helper, is what makes these conversions entangled. The reset
 is what keeps it safe today.
 
+**Landed** in the same closeout, on `feature/step-4-branch-4c-overlay-plot`. Both paths now
+append the raw column, so `hist_data` holds two element types rather than four - a raw
+column array from the three 1-D paths, an `(x, y)` tuple from the all-points one.
+
 **Revisit** when the overlay accumulator is given one element type, which would let each
 plot type convert independently and is the larger fix underneath this.
 

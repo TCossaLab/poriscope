@@ -28,13 +28,22 @@ Step 2: Choose Plot Type and Configure Axes
 
 1. From the **Plot Type** dropdown, select the type of visualization you want to generate. Options include:
 
-   - Histogram
+   - Histogram / Normalized Histogram
+   - Categorical Histogram
    - Kernel Density Plot
    - Capture Rate
    - Heatmap
    - Scatterplot / 3D Scatterplot
    - Raw Event Overlay / Filtered Event Overlay
-   - Raw All Points Histogram / Filtered All Points Histogram
+   - Raw All Points Histogram / Filtered All Points Histogram, and the normalized
+     form of each
+
+.. note::
+
+   A **Categorical Histogram** is for a column holding names rather than numbers.
+   Its bars are ordered by count, tallest on the left; rows where the column is
+   empty are counted together under ``null``. When several subsets are overlaid the
+   order is taken from their combined totals, so they share one axis.
 
 2. Define the number of **bins** for your plot:
 

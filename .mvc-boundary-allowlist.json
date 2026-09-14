@@ -2,8 +2,7 @@
   "emits": {},
   "imports": {
     "poriscope/plugins/analysistabs/MetadataView.py": [
-      "numpy",
-      "pandas"
+      "numpy"
     ],
     "poriscope/plugins/analysistabs/ProteinView.py": [
       "numpy",

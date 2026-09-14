@@ -24,6 +24,7 @@
 # Alejandra Carolina González González
 # Kyle Briggs
 
+import itertools
 import logging
 from typing import (
     Any,
@@ -298,6 +299,62 @@ class MetadataModel(MetaModel):
         return x, density(x)
 
     @log(logger=logger)
+    def logscale_and_filter_datasets(
+        self, datasets: Sequence[npt.NDArray[Any]], logscale: bool
+    ) -> List[npt.NDArray[np.float64]]:
+        """
+        Filter and log-scale each overlaid dataset on its own.
+
+        The columns *within* one plot are filtered together, because a row dropped
+        for one axis has to go for all of them. Overlaid datasets are different
+        subsets of different lengths, so each is filtered by itself - handing them
+        to :meth:`logscale_and_filter_columns` together would mask them against one
+        another and fail on the first pair whose lengths differ.
+
+        :param datasets: one raw column array per overlaid dataset
+        :type datasets: Sequence[npt.NDArray[Any]]
+        :param logscale: log-scale the values before they are binned?
+        :type logscale: bool
+        :return: the surviving values, one array per dataset and in the same order
+        :rtype: List[npt.NDArray[np.float64]]
+        """
+        return [
+            self.logscale_and_filter_columns(dataset, log_flags=[logscale])[0]
+            for dataset in datasets
+        ]
+
+    @log(logger=logger)
+    def widen_shared_limits(
+        self,
+        values: npt.NDArray[np.float64],
+        hist_min: Optional[float],
+        hist_max: Optional[float],
+    ) -> Tuple[float, float]:
+        """
+        Stretch the limits the overlay is binned against to take one more dataset.
+
+        The limits describe the *filtered* values, which is what is drawn, and they
+        only ever widen: a dataset lying inside the range already accumulated leaves
+        it alone, so every overlaid subset stays on comparable bins.
+
+        :param values: the newest dataset's filtered values
+        :type values: npt.NDArray[np.float64]
+        :param hist_min: the lower limit so far, or None for the first dataset
+        :type hist_min: Optional[float]
+        :param hist_max: the upper limit so far, or None for the first dataset
+        :type hist_max: Optional[float]
+        :return: the widened lower and upper limits
+        :rtype: Tuple[float, float]
+        """
+        low = float(np.min(values))
+        high = float(np.max(values))
+        if hist_min is None or low < hist_min:
+            hist_min = low
+        if hist_max is None or high > hist_max:
+            hist_max = high
+        return hist_min, hist_max
+
+    @log(logger=logger)
     def kernel_densities(
         self,
         datasets: Sequence[npt.NDArray[np.float64]],
@@ -486,6 +543,13 @@ class MetadataModel(MetaModel):
         separately also keeps the real categories in the order they had before, which
         stringifying everything up front would not: "10" sorts before "2".
 
+        **The bars come back largest first**, so the tallest is drawn on the left.
+        The order is decided from the total across *every* overlaid dataset rather
+        than per dataset, because matplotlib takes a category axis's order from the
+        first series drawn: ordering each dataset by its own counts would leave only
+        the first one looking sorted. Ties keep the order the tally gave them, which
+        is the numeric order for a numeric column.
+
         :param datasets: one array of raw column values per overlaid dataset
         :type datasets: Sequence[npt.NDArray[Any]]
         :return: per dataset, its category names and their counts as floats
@@ -508,7 +572,26 @@ class MetadataModel(MetaModel):
                 val = np.append(val, float(missing))
 
             results.append((categories, val))
-        return results
+
+        totals: Dict[str, float] = {}
+        for categories, val in results:
+            for category, count in zip(categories, val, strict=True):
+                totals[category] = totals.get(category, 0.0) + float(count)
+
+        # sorted() is stable and `totals` is in first-seen order, so a tie between
+        # two categories leaves them as the tally had them.
+        rank = {
+            category: position
+            for position, category in enumerate(
+                sorted(totals, key=lambda name: -totals[name])
+            )
+        }
+
+        ordered: List[Tuple[List[str], npt.NDArray[np.float64]]] = []
+        for categories, val in results:
+            order = np.argsort([rank[name] for name in categories], kind="stable")
+            ordered.append(([categories[i] for i in order], val[order]))
+        return ordered
 
     @log(logger=logger)
     def interevent_log_times(
@@ -680,3 +763,177 @@ class MetadataModel(MetaModel):
             experiments_and_channels,
         )
         return generator
+
+    @log(logger=logger)
+    def _rectify_event_current(
+        self,
+        timeseries: npt.NDArray[np.float64],
+        padding_before: int,
+    ) -> npt.NDArray[np.float64]:
+        """
+        Subtract an event's own baseline from it and orient the blockage positive.
+
+        The baseline is the median of the samples preceding the event, and
+        multiplying through by its sign makes a negative-baseline trace read the
+        same way as a positive-baseline one, so events recorded at either polarity
+        can share a histogram or an overlay.
+
+        :param timeseries: one event's raw or filtered samples
+        :type timeseries: npt.NDArray[np.float64]
+        :param padding_before: how many leading samples are pre-event baseline
+        :type padding_before: int
+        :return: the baseline-subtracted, sign-corrected samples
+        :rtype: npt.NDArray[np.float64]
+        """
+        baseline = np.median(timeseries[:padding_before])
+        return np.sign(baseline) * timeseries - np.sign(baseline) * baseline
+
+    @log(logger=logger)
+    def _event_timeseries(
+        self, event: Dict[str, Any], plot_type: str
+    ) -> Tuple[npt.NDArray[np.float64], int]:
+        """
+        Pick the raw or the filtered samples of one event, with its padding.
+
+        Which of the two an event-data plot wants is encoded in its name, and the
+        padding the loader reports is in microseconds while every consumer here
+        counts samples.
+
+        :param event: one event's payload as the loader yields it
+        :type event: Dict[str, Any]
+        :param plot_type: the event-data plot type being drawn
+        :type plot_type: str
+        :return: the chosen samples and the pre-event padding in samples
+        :rtype: Tuple[npt.NDArray[np.float64], int]
+        :raises ValueError: if plot_type names neither the raw nor the filtered trace
+        """
+        if plot_type in [
+            "Raw All Points Histogram",
+            "Normalized Raw All Points Histogram",
+            "Raw Event Overlay",
+        ]:
+            timeseries = event["raw_data"]
+        elif plot_type in [
+            "Filtered All Points Histogram",
+            "Normalized Filtered All Points Histogram",
+            "Filtered Event Overlay",
+        ]:
+            timeseries = event["filtered_data"]
+        else:
+            raise ValueError(f"Unknown plot_type {plot_type!r}")
+
+        padding_before = int(event["padding_before"] * event["samplerate"] * 1e-6)
+        return timeseries, padding_before
+
+    @log(logger=logger)
+    def build_all_points_histogram(
+        self,
+        event_generator: Generator,
+        plot_type: str,
+        bins: Any,
+        sizes: bool,
+        hist_min: Optional[float],
+        hist_max: Optional[float],
+    ) -> Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64], float, float]:
+        """
+        Tally every sample of every event in a subset into one shared histogram.
+
+        The generator is walked twice, because the bins cannot be chosen until the
+        extremes across all the events are known: the first pass takes the limits and
+        the second counts into the edges they decide. The limits widen the shared ones
+        the caller is already holding, so overlaid subsets stay on comparable bins.
+
+        :param event_generator: the events of one subset, as the loader yields them
+        :type event_generator: Generator
+        :param plot_type: the all-points histogram variant being drawn
+        :type plot_type: str
+        :param bins: a bin count, or a bin width when sizes is True, or None
+        :type bins: Any
+        :param sizes: does bins refer to a bin width (True) or a count (False)
+        :type sizes: bool
+        :param hist_min: the shared lower limit so far, or None for the first dataset
+        :type hist_min: Optional[float]
+        :param hist_max: the shared upper limit so far, or None for the first dataset
+        :type hist_max: Optional[float]
+        :return: the bin centers, the counts, and the widened shared limits
+        :rtype: Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64], float, float]
+        :raises ValueError: if plot_type is unrecognised, or bins cannot be resolved
+        """
+        # get global stats from the first event, don't forget to use this one later
+        egen1, egen2 = itertools.tee(event_generator)
+
+        min_current = float("inf")
+        max_current = float("-inf")
+        for event in egen1:
+            timeseries, padding_before = self._event_timeseries(event, plot_type)
+            rectified = self._rectify_event_current(timeseries, padding_before)
+
+            min_curr = np.min(rectified)
+            max_curr = np.max(rectified)
+            if min_curr < min_current:
+                min_current = min_curr
+            if max_curr > max_current:
+                max_current = max_curr
+
+        if hist_min is None or min_current < hist_min:
+            hist_min = min_current
+        if hist_max is None or max_current > hist_max:
+            hist_max = max_current
+
+        if bins is not None:
+            if sizes is False:
+                if isinstance(bins, list) and len(bins) >= 1:
+                    bins = bins[0]
+                else:
+                    raise ValueError(f"Invalid bins entry {bins}")
+            else:
+                try:
+                    bins = int((hist_max - hist_min) / bins[0])
+                except Exception as e:
+                    raise ValueError(
+                        f"Unable to calculate bins given sizes {bins}: {str(e)}"
+                    ) from e
+        else:
+            bins = 100
+
+        bin_edges = np.linspace(hist_min, hist_max, bins + 1)
+        hist = np.zeros(bins)
+        for event in egen2:
+            timeseries, padding_before = self._event_timeseries(event, plot_type)
+            event_hist, _ = np.histogram(
+                self._rectify_event_current(timeseries, padding_before),
+                bins=bin_edges,
+            )
+            hist += event_hist
+        bincenters = bin_edges[:-1] + np.diff(bin_edges) / 2.0
+        return bincenters, hist, hist_min, hist_max
+
+    @log(logger=logger)
+    def build_event_overlay(
+        self, event_generator: Generator, plot_type: str
+    ) -> List[Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]]:
+        """
+        Put every event of a subset on one baseline-subtracted, normalised axis.
+
+        Each event's time base runs from its own padding: zero at the start of the
+        event and one at its end, so events of different durations lie on top of each
+        other and the paddings fall outside ``[0, 1]``.
+
+        :param event_generator: the events of one subset, as the loader yields them
+        :type event_generator: Generator
+        :param plot_type: either 'Raw Event Overlay' or 'Filtered Event Overlay'
+        :type plot_type: str
+        :return: one (normalised time, rectified current) pair per event
+        :rtype: List[Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]]
+        """
+        traces: List[Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]] = []
+        for event in event_generator:
+            timeseries, padding_before = self._event_timeseries(event, plot_type)
+            padding_after = int(event["padding_after"] * event["samplerate"] * 1e-6)
+
+            data = self._rectify_event_current(timeseries, padding_before)
+            time = np.array(range(len(data)), dtype=np.float64)
+            time -= padding_before
+            time /= len(data) - padding_after - padding_before
+            traces.append((time, data))
+        return traces

@@ -25,7 +25,6 @@
 # Kyle Briggs
 
 import bisect
-import itertools
 import logging
 import re
 import warnings
@@ -107,11 +106,26 @@ class MetadataView(MetaSubsetTabView):
     #: column's units, mislabelling the axis.
     metadata_subset_requested = Signal(str, list, str, object)
 
-    #: The same for an event-data subset: the loader's key, the filter and the scope.
-    #: The answer arrives through ``set_event_query`` and
-    #: ``set_event_data_generator``. Both of those were unguarded reads too - a
-    #: failed load replotted the previous subset's events.
-    event_subset_requested = Signal(str, str, object)
+    #: Asks for one event-data subset to be tallied into an all-points histogram: the
+    #: loader's key, the filter, the scope, the plot type, the bin request, the shared
+    #: limits so far, and the label the result is drawn under. Answered through
+    #: ``set_all_points_histogram``.
+    #:
+    #: Step 4's closeout. The subset used to arrive here as a generator the widget
+    #: walked twice; the events themselves never belonged above the Model, and nothing
+    #: outside the histogram ever read them.
+    all_points_histogram_requested = Signal(
+        str, str, object, str, object, bool, object, object, str
+    )
+
+    #: Asks for one event-data subset to be put on a shared normalised axis: the
+    #: loader's key, the filter, the scope and the plot type. Answered through
+    #: ``set_event_overlay``.
+    #:
+    #: Step 4's closeout, and the same reasoning as
+    #: ``all_points_histogram_requested``. The alpha each trace is drawn at stays
+    #: here: it is read by nothing outside the axes it is drawn on.
+    event_overlay_requested = Signal(str, str, object, str)
 
     #: Asks for one column's declared type, which the categorical-histogram guard
     #: needs before it will let the plot proceed. The answer arrives through
@@ -143,35 +157,54 @@ class MetadataView(MetaSubsetTabView):
     #: export is keyed under. ``on_subset_export_started`` comes back if it was staged.
     csv_subset_export_requested = Signal(str, str, str, object, object, int)
 
-    #: Asks for the heatmap's 2-D binning: the already-filtered columns, the bin
+    #: Asks for the heatmap's 2-D binning: the raw columns, their log flags, the bin
     #: request, and the drawing context handed back unchanged. Answered through
     #: ``set_heatmap``.
     #:
     #: Step 4c. The binning uses ``scipy.stats.iqr``, which is why it crosses; the
-    #: imshow, the colourbar and the cache entry all stay here.
-    heatmap_requested = Signal(object, object, object, bool, object, str, str, str)
-
-    #: Asks for every overlaid dataset's kernel density: the already-filtered
-    #: columns, the bin request, the shared histogram limits, and the drawing
-    #: context handed back unchanged. Answered through ``set_kernel_densities``.
-    #:
-    #: Step 4c. One intent for all the datasets rather than one each, so no answer
-    #: is parked on the widget between them.
-    density_requested = Signal(
-        object, object, object, bool, object, object, object, str
+    #: imshow, the colourbar and the cache entry all stay here. Step 4's closeout
+    #: sent the NaN and log filtering down with it, so the columns now leave raw.
+    heatmap_requested = Signal(
+        object, object, object, object, bool, object, str, str, str
     )
 
-    #: Asks for the shared bin edges every overlaid histogram dataset is drawn on:
-    #: all the filtered data at once, the bin request, and the limits that span it.
-    #: Answered through ``set_histogram_bins``.
+    #: Asks for a scatterplot's two columns to be filtered and log-scaled: the raw
+    #: columns, their log flags, and the drawing context handed back unchanged.
+    #: Answered through ``set_scatterplot``.
+    #:
+    #: Step 4's closeout. This plot type was left out of Step 4c because it freed no
+    #: import on its own; the filter's move is what brings it back in, and the
+    #: filtered values are exported with the plot rather than only drawn.
+    scatterplot_requested = Signal(object, object, object, object, str)
+
+    #: The same for the three columns of a 3-D scatterplot. Answered through
+    #: ``set_3d_scatterplot``, which is separate because the 3-D axes and the z label
+    #: are not a special case of the 2-D drawing.
+    scatterplot_3d_requested = Signal(object, object, object, object, str)
+
+    #: Asks for every overlaid dataset's kernel density: the raw columns, the log
+    #: flag, the bin request, the shared limits so far, and the drawing context
+    #: handed back unchanged. Answered through ``set_kernel_densities``.
+    #:
+    #: Step 4c. One intent for all the datasets rather than one each, so no answer
+    #: is parked on the widget between them. Step 4's closeout sent the filtering
+    #: and the shared limits down as well, which is why the columns now leave raw.
+    density_requested = Signal(
+        object, bool, object, bool, object, object, object, str, str, str
+    )
+
+    #: Asks for the shared bin edges every overlaid histogram dataset is drawn on,
+    #: and the counts against them: the raw columns, the log flag, the bin request
+    #: and the limits so far. Answered through ``set_histogram_bins``.
     #:
     #: Step 4c sent only the bin *decision* down, on the grounds that it needed
     #: ``scipy.stats.iqr`` while the counting needed only numpy. Step 4's closeout sent
     #: the counting after it: which import a step frees is not the same question as
     #: whose responsibility the work is, and tallying values into bins is aggregation
-    #: whose result is exported with the plot.
+    #: whose result is exported with the plot. The filtering and the shared limits
+    #: followed in the same branch as the density's, since the two write both.
     histogram_bins_requested = Signal(
-        object, object, bool, object, object, object, str, bool, bool
+        object, bool, object, bool, object, object, bool, object, str, str, str
     )
 
     #: Asks for the capture-rate binning and its exponential fit: the event times
@@ -231,9 +264,11 @@ class MetadataView(MetaSubsetTabView):
         # One units string per plotted column, set by set_column_units once the
         # whole subset has been fetched. None means it has not been.
         self.column_units: Optional[List[Optional[str]]] = None
-        # Heterogeneous by design: the histogram paths append 1-D arrays, the
-        # density path appends whole DataFrames, and the all-points path appends
-        # (x, y) tuples. Flagged for review.
+        # Heterogeneous by design: the three 1-D paths - histogram, density and
+        # categorical - append the raw column as a 1-D array, and the all-points
+        # path appends an (x, y) tuple. Step 4's closeout took it from four shapes
+        # to these two by giving the density path the histogram's. Flagged for
+        # review: one element type is the fix, and it is not this branch's.
         self.hist_data: List[Any] = []
         self.hist_labels: List[Any] = []
         self.subset_filters = {}
@@ -423,7 +458,7 @@ class MetadataView(MetaSubsetTabView):
         :type sizes: bool
         :raises ValueError: If bins is an empty list.
 
-        Calculate a plot a 1d kernel density with optional logscaling before binning
+        Ask for a 1d kernel density, with optional logscaling before binning
         """
 
         if bins is not None:
@@ -432,69 +467,40 @@ class MetadataView(MetaSubsetTabView):
             else:
                 raise ValueError(f"Invalid bins entry {bins}")
 
-        ax.clear()
-        self._clear_cache()
-        self.hist_data.append(data)
-        self.hist_labels.append(dataset_label)
-
-        # The filter stays here: it lives on ``MetaView`` and emits to the status
-        # panel, so it runs before the request goes out and the Model is handed
-        # arrays that are already filtered.
         (column,) = cols
         (x_units,) = units
         (logx,) = logscales
-
-        filtered: List[npt.NDArray[np.float64]] = []
-        for dataset in self.hist_data:
-            (values,) = self._logscale_and_filter_multiple_columns(
-                dataset[column].values, log_flags=[logx]
-            )
-            filtered.append(values)
-
-        if len(filtered[-1]) == 0:
-            # Every point was filtered out, the commonest cause being a column that
-            # is NULL for every row the subset filter selected. The reductions below
-            # are the first thing to touch the array and np.min of an empty one
-            # raises, which is the guard _plot_1d_histogram already carries.
-            self.hist_data.pop()
-            self.hist_labels.pop()
-            self.add_text_to_display.emit(
-                f"No {column} values in this subset, so there is nothing to plot",
-                self.__class__.__name__,
-            )
-            return
-
-        # The shared limits describe the *filtered* data, which is what is drawn and
-        # what the histogram path has always measured. They used to be taken from the
-        # DataFrame itself - min() over a DataFrame iterates its column *names*, so
-        # they were strings, which made a bin width here silently fall back to the
-        # automatic rule and made a later histogram on the same overlay raise.
-        newest = filtered[-1]
-        if self.hist_min is None or np.min(newest) < self.hist_min:
-            self.hist_min = float(np.min(newest))
-        if self.hist_max is None or np.max(newest) > self.hist_max:
-            self.hist_max = float(np.max(newest))
 
         x_label = self.format_axis_label(column, x_units)
         if logx:
             x_label = f"log10({x_label})"
 
+        # The newest dataset travels alongside the ones already accumulated rather
+        # than being appended first: the Model decides whether anything survives the
+        # filter, and a subset that loses every point must not leave a label behind.
+        # ``set_kernel_densities`` does the appending, once there is something to
+        # draw.
         self.density_requested.emit(
-            filtered,
-            list(self.hist_labels),
+            list(self.hist_data) + [data[column].values],
+            logx,
             bins,
             sizes,
             self.hist_min,
             self.hist_max,
             ax,
             x_label,
+            column,
+            dataset_label,
         )
 
     @log(logger=logger)
     def set_kernel_densities(
         self,
+        values: npt.NDArray[np.float64],
+        dataset_label: str,
         densities: Sequence[Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]],
-        labels: Sequence[str],
+        hist_min: float,
+        hist_max: float,
         ax: Axes,
         x_label: str,
     ) -> None:
@@ -504,12 +510,20 @@ class MetadataView(MetaSubsetTabView):
         The answering half of ``density_requested``. Step 4c moved the estimate to
         ``MetadataModel`` so that ``scipy`` could leave the View; the curve arrives
         already evaluated, which also means it is computed once rather than the three
-        times this method used to.
+        times this method used to. Step 4's closeout sent the NaN and log filtering
+        after it, so this is also where the newest dataset joins the overlay - the
+        raw column, since the Model filters every accumulated dataset on each update.
 
+        :param values: the newest dataset's raw column values, to accumulate
+        :type values: npt.NDArray[np.float64]
+        :param dataset_label: the newest dataset's label
+        :type dataset_label: str
         :param densities: one (positions, density) pair per dataset
         :type densities: Sequence[Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]]
-        :param labels: each dataset's label, index-aligned with densities
-        :type labels: Sequence[str]
+        :param hist_min: the shared lower limit, widened by this dataset
+        :type hist_min: float
+        :param hist_max: the shared upper limit, widened by this dataset
+        :type hist_max: float
         :param ax: the axis object on which to plot
         :type ax: Axes
         :param x_label: the x axis label, already formatted
@@ -517,10 +531,18 @@ class MetadataView(MetaSubsetTabView):
         :return: None
         :rtype: None
         """
+        self.hist_data.append(values)
+        self.hist_labels.append(dataset_label)
+        self.hist_min = hist_min
+        self.hist_max = hist_max
+
+        ax.clear()
+        self._clear_cache()
+
         y_label = "Probability Density"
 
-        for (x, y), dataset_label in zip(densities, labels, strict=True):
-            ax.plot(x, y, label=dataset_label)
+        for (x, y), label in zip(densities, self.hist_labels, strict=True):
+            ax.plot(x, y, label=label)
             ax.fill_between(x, y, alpha=0.3)
             self._update_cache((x, x_label), (y, y_label))
 
@@ -692,7 +714,7 @@ class MetadataView(MetaSubsetTabView):
         :type norm: bool
         :raises ValueError: If bins is an empty list.
 
-        Calculate a plot a 1d histogram with optional logscaling and normalization
+        Ask for a 1d histogram, with optional logscaling and normalization
         """
         if bins is not None:
             if isinstance(bins, list) and len(bins) >= 1:
@@ -700,59 +722,40 @@ class MetadataView(MetaSubsetTabView):
             else:
                 raise ValueError(f"Invalid bins entry {bins}")
 
-        (x_label,) = cols
+        (column,) = cols
         (x_units,) = units
         (logx,) = logscales
-        data = data[x_label].values
 
-        (data,) = self._logscale_and_filter_multiple_columns(data, log_flags=[logx])
-
-        if len(data) == 0:
-            # Every point was filtered out - the commonest cause being a column that
-            # is NULL for every row the subset filter selected, as a fit column is
-            # outside the scope it was fitted over. The reductions below are the
-            # first thing to touch the array, and np.min of an empty one raises.
-            self.add_text_to_display.emit(
-                f"No {x_label} values in this subset, so there is nothing to "
-                "histogram",
-                self.__class__.__name__,
-            )
-            return
-
-        # Update global min/max
-        if self.hist_min is None or np.min(data) < self.hist_min:
-            self.hist_min = float(np.min(data))
-        if self.hist_max is None or np.max(data) > self.hist_max:
-            self.hist_max = float(np.max(data))
-
-        ax.clear()
-        self._clear_cache()
-
-        # Store processed data for overlay
-        self.hist_data.append(data)
-        self.hist_labels.append(dataset_label)
-
-        # Every overlaid dataset goes down together: the edges are decided from all
-        # of them at once, which is what makes the bars comparable, and the counts come
-        # back one array per dataset.
+        # Every overlaid dataset goes down together: the filter, the shared limits
+        # and the edges are all decided from all of them at once, which is what
+        # makes the bars comparable, and the counts come back one array per dataset.
+        # The newest travels alongside rather than being accumulated first, for the
+        # reason ``_plot_1d_density`` records - the two share this accumulator and
+        # this pair of limits, which is why they converted together.
         self.histogram_bins_requested.emit(
-            list(self.hist_data),
+            list(self.hist_data) + [data[column].values],
+            logx,
             bins,
             sizes,
             self.hist_min,
             self.hist_max,
-            ax,
-            self.format_axis_label(x_label, x_units),
-            logx,
             norm,
+            ax,
+            self.format_axis_label(column, x_units),
+            column,
+            dataset_label,
         )
 
     @log(logger=logger)
     def set_histogram_bins(
         self,
+        values: npt.NDArray[np.float64],
+        dataset_label: str,
         bincenters: npt.NDArray[np.float64],
         widths: npt.NDArray[np.float64],
         counts: Sequence[npt.NDArray[np.float64]],
+        hist_min: float,
+        hist_max: float,
         ax: Axes,
         x_label: str,
         logx: bool,
@@ -763,16 +766,25 @@ class MetadataView(MetaSubsetTabView):
 
         The answering half of ``histogram_bins_requested``. Step 4c moved the bin
         decision to ``MetadataModel``; Step 4's closeout moved the counting after it,
-        so this is handed each dataset's tallies rather than the edges to tally
-        against. The bin edges themselves no longer come back - nothing here drew with
-        them once the counting left.
+        then the filtering and the shared limits after that, so this is handed each
+        dataset's tallies rather than the edges to tally against. The bin edges
+        themselves no longer come back - nothing here drew with them once the
+        counting left.
 
+        :param values: the newest dataset's raw column values, to accumulate
+        :type values: npt.NDArray[np.float64]
+        :param dataset_label: the newest dataset's label
+        :type dataset_label: str
         :param bincenters: the center of each bin, which the bars are drawn at
         :type bincenters: npt.NDArray[np.float64]
         :param widths: the width of each bin
         :type widths: npt.NDArray[np.float64]
         :param counts: one array of per-bin counts per overlaid dataset, index-aligned with the accumulated labels
         :type counts: Sequence[npt.NDArray[np.float64]]
+        :param hist_min: the shared lower limit, widened by this dataset
+        :type hist_min: float
+        :param hist_max: the shared upper limit, widened by this dataset
+        :type hist_max: float
         :param ax: the axis object on which to plot
         :type ax: Axes
         :param x_label: the x axis label, already formatted but not yet log-marked
@@ -784,6 +796,14 @@ class MetadataView(MetaSubsetTabView):
         :return: None
         :rtype: None
         """
+        self.hist_data.append(values)
+        self.hist_labels.append(dataset_label)
+        self.hist_min = hist_min
+        self.hist_max = hist_max
+
+        ax.clear()
+        self._clear_cache()
+
         # Every accumulated dataset is redrawn, against the tallies the Model made.
         for val, lab in zip(counts, self.hist_labels, strict=True):
             x_lab = x_label
@@ -836,8 +856,9 @@ class MetadataView(MetaSubsetTabView):
         # Extract the specific column's values
         data_vals = data[x_label].values
 
-        # Note: If your categories are strings, ensure this method doesn't attempt mathematical log-scaling on them.
-        # (data_vals,) = self._logscale_and_filter_multiple_columns(data_vals)
+        # Deliberately not filtered or log-scaled, unlike every other 1-D path: the
+        # values here are category names, which have no NaN mask and no logarithm.
+        # A commented-out call to the numeric filter used to stand here saying so.
 
         ax.clear()
         self._clear_cache()
@@ -946,11 +967,8 @@ class MetadataView(MetaSubsetTabView):
         if logy:
             y_label = f"log10({y_label})"
 
-        # The filter stays here: it lives on ``MetaView`` and emits to the status
-        # panel, and it moves only when all eight of its call sites can go together.
-        x, y = self._logscale_and_filter_multiple_columns(x, y, log_flags=[logx, logy])
         self.heatmap_requested.emit(
-            x, y, bins, sizes, ax, x_label, y_label, dataset_label
+            x, y, [logx, logy], bins, sizes, ax, x_label, y_label, dataset_label
         )
 
     @log(logger=logger)
@@ -1045,7 +1063,7 @@ class MetadataView(MetaSubsetTabView):
         dataset_label: str = "",
     ) -> None:
         """
-        Create a scatterplot of two metadata columns.
+        Ask for a scatterplot's two columns, filtered and log-scaled.
 
         :param ax: Matplotlib axes object.
         :type ax: Axes
@@ -1064,8 +1082,7 @@ class MetadataView(MetaSubsetTabView):
         x_units, y_units = units
         logx, logy = logscales
 
-        x = data[x_label].values
-        y = data[y_label].values
+        columns = [data[x_label].values, data[y_label].values]
 
         x_label = self.format_axis_label(x_label, x_units)
         y_label = self.format_axis_label(y_label, y_units)
@@ -1075,9 +1092,40 @@ class MetadataView(MetaSubsetTabView):
         if logy:
             y_label = f"log10({y_label})"
 
-        xdata, ydata = self._logscale_and_filter_multiple_columns(
-            x, y, log_flags=[logx, logy]
+        self.scatterplot_requested.emit(
+            columns, [logx, logy], ax, [x_label, y_label], dataset_label
         )
+
+    @log(logger=logger)
+    def set_scatterplot(
+        self,
+        columns: Sequence[npt.NDArray[np.float64]],
+        ax: Axes,
+        axis_labels: Sequence[str],
+        dataset_label: str,
+    ) -> None:
+        """
+        Draw a scatterplot of two filtered columns.
+
+        The answering half of ``scatterplot_requested``. Step 4's closeout moved the
+        NaN and log filtering to the Model: the values it drops never reach the
+        axes and the ones it keeps are exported with the plot, so they are the
+        Model's to produce.
+
+        :param columns: the filtered x and y values
+        :type columns: Sequence[npt.NDArray[np.float64]]
+        :param ax: the axis object on which to plot
+        :type ax: Axes
+        :param axis_labels: the x and y axis labels, already formatted
+        :type axis_labels: Sequence[str]
+        :param dataset_label: Label for the dataset.
+        :type dataset_label: str
+        :return: None
+        :rtype: None
+        """
+        xdata, ydata = columns
+        x_label, y_label = axis_labels
+
         ax.scatter(xdata, ydata, s=3, alpha=0.5, label=dataset_label)
         ax.set_xlabel(x_label)
         ax.set_ylabel(y_label)
@@ -1096,7 +1144,7 @@ class MetadataView(MetaSubsetTabView):
         dataset_label: str = "",
     ) -> None:
         """
-        Create a 3D scatterplot of three metadata columns.
+        Ask for a 3-D scatterplot's three columns, filtered and log-scaled.
 
         :param ax: A 3D Matplotlib axes object.
         :type ax: Axes3D
@@ -1115,9 +1163,11 @@ class MetadataView(MetaSubsetTabView):
         x_units, y_units, z_units = units
         logx, logy, logz = logscales
 
-        x = data[x_label].values
-        y = data[y_label].values
-        z = data[z_label].values
+        columns = [
+            data[x_label].values,
+            data[y_label].values,
+            data[z_label].values,
+        ]
 
         x_label = self.format_axis_label(x_label, x_units)
         y_label = self.format_axis_label(y_label, y_units)
@@ -1130,9 +1180,42 @@ class MetadataView(MetaSubsetTabView):
         if logz:
             z_label = f"log10({z_label})"
 
-        xdata, ydata, zdata = self._logscale_and_filter_multiple_columns(
-            x, y, z, log_flags=[logx, logy, logz]
+        self.scatterplot_3d_requested.emit(
+            columns,
+            [logx, logy, logz],
+            ax,
+            [x_label, y_label, z_label],
+            dataset_label,
         )
+
+    @log(logger=logger)
+    def set_3d_scatterplot(
+        self,
+        columns: Sequence[npt.NDArray[np.float64]],
+        ax: Axes3D,
+        axis_labels: Sequence[str],
+        dataset_label: str,
+    ) -> None:
+        """
+        Draw a 3-D scatterplot of three filtered columns.
+
+        The answering half of ``scatterplot_3d_requested``, and the same reasoning as
+        :meth:`set_scatterplot`. The axes are rebuilt here if what arrived is a 2-D
+        pair, which a change of plot type can leave behind.
+
+        :param columns: the filtered x, y and z values
+        :type columns: Sequence[npt.NDArray[np.float64]]
+        :param ax: the axis object on which to plot
+        :type ax: Axes3D
+        :param axis_labels: the x, y and z axis labels, already formatted
+        :type axis_labels: Sequence[str]
+        :param dataset_label: Label to apply to the scatter points.
+        :type dataset_label: str
+        :return: None
+        :rtype: None
+        """
+        xdata, ydata, zdata = columns
+        x_label, y_label, z_label = axis_labels
 
         if not isinstance(ax, Axes3D):
             self._reset_actions(axis_type="3d")
@@ -1150,7 +1233,8 @@ class MetadataView(MetaSubsetTabView):
     def _plot_all_points_histogram(
         self,
         ax: Axes,
-        data: pd.DataFrame,
+        x: npt.NDArray[np.float64],
+        y: npt.NDArray[np.float64],
         cols: Sequence[str],
         units: Sequence[Optional[str]],
         dataset_label: str = "",
@@ -1161,9 +1245,11 @@ class MetadataView(MetaSubsetTabView):
 
         :param ax: Matplotlib axes to draw the histogram on.
         :type ax: Axes
-        :param data: DataFrame containing time and current values.
-        :type data: pd.DataFrame
-        :param cols: Column names for x and y axes.
+        :param x: the current level at the middle of each bin
+        :type x: npt.NDArray[np.float64]
+        :param y: how many samples fell in each bin
+        :type y: npt.NDArray[np.float64]
+        :param cols: Names for x and y axes.
         :type cols: Sequence[str]
         :param units: Units corresponding to the axes.
         :type units: Sequence[Optional[str]]
@@ -1174,9 +1260,6 @@ class MetadataView(MetaSubsetTabView):
         """
         x_label, y_label = cols
         x_units, y_units = units
-
-        x = data[x_label].values
-        y = data[y_label].values
 
         x_label = self.format_axis_label(x_label, x_units)
         y_label = self.format_axis_label(y_label, y_units)
@@ -1302,24 +1385,6 @@ class MetadataView(MetaSubsetTabView):
         elif plot_type == "3D Scatterplot":
             self._plot_3d_scatterplot(
                 ax, data, cols, units, logscales, dataset_label=dataset_label
-            )
-        elif plot_type in [
-            "Raw All Points Histogram",
-            "Filtered All Points Histogram",
-            "Normalized Raw All Points Histogram",
-            "Normalized Filtered All Points Histogram",
-        ]:
-            norm = (
-                False
-                if plot_type
-                not in [
-                    "Normalized Raw All Points Histogram",
-                    "Normalized Filtered All Points Histogram",
-                ]
-                else True
-            )
-            self._plot_all_points_histogram(
-                ax, data, cols, units, dataset_label=dataset_label, norm=norm
             )
         else:
             raise NotImplementedError(f"Plot type {plot_type} is not yet supported")
@@ -1636,83 +1701,84 @@ class MetadataView(MetaSubsetTabView):
 
                     elif plot_type in self.event_data_plots:
                         # Cleared for the same reason as the metadata group above.
+                        # The Controller sets it only once the subset has been
+                        # fetched *and* reduced, so a failure at either step leaves
+                        # it empty and the guard below rolls the action back.
                         self.event_query = ""
-                        self.event_data_generator = None
-                        self.event_subset_requested.emit(
-                            loader, sql_filter, exp_and_ch_arg
-                        )
+
+                        if plot_type in [
+                            "Raw All Points Histogram",
+                            "Normalized Raw All Points Histogram",
+                            "Filtered All Points Histogram",
+                            "Normalized Filtered All Points Histogram",
+                        ]:
+                            bins = parameters["bins"]
+                            sizes = parameters["sizes"]
+
+                            bin_sensitive = True
+                            bins_changed = getattr(self, "allowed_bins", None) != bins
+                            sizes_changed = (
+                                getattr(self, "allowed_sizes", None) != sizes
+                            )
+                            # A change of plot type resets here as it does for
+                            # the metadata plots above. Without it, `hist_data`
+                            # kept whatever the previous type left in it, and the
+                            # shapes are not interchangeable: the 1-D paths store
+                            # a column and this one stores an (x, y) pair, so
+                            # drawing a histogram and then an all-points
+                            # histogram unpacked a bare array as a pair and
+                            # raised "too many values to unpack".
+                            plot_type_changed = (
+                                self.allowed_plot_type is not None
+                                and plot_type != self.allowed_plot_type
+                            )
+                            if plot_type_changed or (
+                                bin_sensitive and (bins_changed or sizes_changed)
+                            ):
+                                axis_type = (
+                                    "3d"
+                                    if isinstance(getattr(self, "axes", None), Axes3D)
+                                    else "2d"
+                                )
+                                self._reset_actions(axis_type=axis_type)
+
+                            # After the reset, so the limits handed down are the ones
+                            # this plot is actually accumulating against.
+                            self.all_points_histogram_requested.emit(
+                                loader,
+                                sql_filter,
+                                exp_and_ch_arg,
+                                plot_type,
+                                bins,
+                                sizes,
+                                self.hist_min,
+                                self.hist_max,
+                                dataset_label,
+                            )
+
+                        elif plot_type in [
+                            "Raw Event Overlay",
+                            "Filtered Event Overlay",
+                        ]:
+                            # A change of plot type resets here as it does
+                            # everywhere else in this method. Checking only that
+                            # the axes are *valid* is not enough: a 2-D axes still
+                            # carrying an all-points histogram's line is perfectly
+                            # valid, so the overlay drew straight over it and two
+                            # unrelated pictures ended up superimposed.
+                            plot_type_changed = (
+                                self.allowed_plot_type is not None
+                                and plot_type != self.allowed_plot_type
+                            )
+                            if plot_type_changed or not self._axes_valid(
+                                axis_type="2d"
+                            ):
+                                self._reset_actions(axis_type="2d")
+                            self.event_overlay_requested.emit(
+                                loader, sql_filter, exp_and_ch_arg, plot_type
+                            )
+
                         if self.event_query == "":
-                            return False
-                        if self.event_data_generator:
-                            if plot_type in [
-                                "Raw All Points Histogram",
-                                "Normalized Raw All Points Histogram",
-                                "Filtered All Points Histogram",
-                                "Normalized Filtered All Points Histogram",
-                            ]:
-                                bins = parameters["bins"]
-                                sizes = parameters["sizes"]
-
-                                bin_sensitive = True
-                                bins_changed = (
-                                    getattr(self, "allowed_bins", None) != bins
-                                )
-                                sizes_changed = (
-                                    getattr(self, "allowed_sizes", None) != sizes
-                                )
-                                # A change of plot type resets here as it does for
-                                # the metadata plots above. Without it, `hist_data`
-                                # kept whatever the previous type left in it, and the
-                                # shapes are not interchangeable: the 1-D paths store
-                                # a column and this one stores an (x, y) pair, so
-                                # drawing a histogram and then an all-points
-                                # histogram unpacked a bare array as a pair and
-                                # raised "too many values to unpack".
-                                plot_type_changed = (
-                                    self.allowed_plot_type is not None
-                                    and plot_type != self.allowed_plot_type
-                                )
-                                if plot_type_changed or (
-                                    bin_sensitive and (bins_changed or sizes_changed)
-                                ):
-                                    axis_type = (
-                                        "3d"
-                                        if isinstance(
-                                            getattr(self, "axes", None), Axes3D
-                                        )
-                                        else "2d"
-                                    )
-                                    self._reset_actions(axis_type=axis_type)
-
-                                plot_data = self._construct_all_points_histogram(
-                                    self.event_data_generator,
-                                    plot_type,
-                                    bins=bins,
-                                    sizes=sizes,
-                                )
-
-                                if plot_data is not None:
-                                    self.update_plot(
-                                        plot_type,
-                                        plot_data,
-                                        plot_data.columns,
-                                        ["pA", ""],
-                                        logscales=[False, False],
-                                        dataset_label=dataset_label,
-                                    )
-                                else:
-                                    return False
-
-                            elif plot_type in [
-                                "Raw Event Overlay",
-                                "Filtered Event Overlay",
-                            ]:
-                                if not self._axes_valid(axis_type="2d"):
-                                    self._reset_actions(axis_type="2d")
-                                self._construct_event_overlay(
-                                    self.event_data_generator, plot_type, loader
-                                )
-                        else:
                             return False
 
                     self.allowed_plot_type = plot_type
@@ -1735,107 +1801,64 @@ class MetadataView(MetaSubsetTabView):
         return plotted_any
 
     @log(logger=logger)
-    def _construct_all_points_histogram(
+    def set_all_points_histogram(
         self,
-        event_generator: Iterator[Dict[str, Any]],
+        bincenters: npt.NDArray[np.float64],
+        counts: npt.NDArray[np.float64],
+        hist_min: float,
+        hist_max: float,
         plot_type: str,
-        bins: Any = None,
-        sizes: bool = False,
-    ) -> pd.DataFrame:
+        dataset_label: str,
+    ) -> None:
         """
-        Build a combined histogram across all event current values.
+        Draw one subset's all-points histogram, and take the limits it widened.
 
-        :param event_generator: Generator yielding individual event data.
-        :type event_generator: Iterator[Dict[str, Any]]
-        :param plot_type: Type of histogram to create (raw or filtered).
+        The answering half of ``all_points_histogram_requested``. Step 4's closeout
+        moved the tally to :meth:`MetadataModel.build_all_points_histogram`: walking a
+        subset's events and binning every sample of them is aggregation rather than
+        drawing, and the result is exported with the plot.
+
+        :param bincenters: the current level at the middle of each bin
+        :type bincenters: npt.NDArray[np.float64]
+        :param counts: how many samples fell in each bin
+        :type counts: npt.NDArray[np.float64]
+        :param hist_min: the shared lower limit, widened by this subset
+        :type hist_min: float
+        :param hist_max: the shared upper limit, widened by this subset
+        :type hist_max: float
+        :param plot_type: the all-points histogram variant being drawn
         :type plot_type: str
-        :param bins: Number of histogram bins. Arrives as a single-element list from the controls and is rebound to a scalar (or None) in the body, hence the loose annotation.
-        :type bins: Any
-        :param sizes: does the bins parameter refer to bin sizes (True) or widths (False)
-        :type sizes: bool
-        :return: DataFrame with histogram values and corresponding current levels.
-        :rtype: pd.DataFrame
-        :raises ValueError: If plot_type is not a recognized all-points-histogram variant.
+        :param dataset_label: the label this subset is drawn under
+        :type dataset_label: str
+        :return: None
+        :rtype: None
         """
-        # get global stats from the first event, don't forget to use this one later
-        egen1, egen2 = itertools.tee(event_generator)
+        # The axes check first, then the limits: a reset clears the accumulated
+        # limits, so taking them before it would throw away the ones this subset
+        # just widened. The old arrangement set them inside the tally and then let
+        # ``update_plot`` reset underneath it.
+        if not self._axes_valid(axis_type="2d"):
+            self._reset_actions(axis_type="2d")
+        ax = self.axes
 
-        min_current = float("inf")
-        max_current = float("-inf")
-        for event in egen1:
+        self.hist_min = hist_min
+        self.hist_max = hist_max
 
-            if plot_type in [
-                "Raw All Points Histogram",
-                "Normalized Raw All Points Histogram",
-            ]:
-                timeseries = event["raw_data"]
-            elif plot_type in [
-                "Filtered All Points Histogram",
-                "Normalized Filtered All Points Histogram",
-            ]:
-                timeseries = event["filtered_data"]
-            else:
-                raise ValueError(f"Unknown plot_type {plot_type!r}")
-
-            padding_before = int(event["padding_before"] * event["samplerate"] * 1e-6)
-            baseline = np.median(timeseries[:padding_before])
-
-            min_curr = np.min(
-                np.sign(baseline) * timeseries - np.sign(baseline) * baseline
-            )
-            max_curr = np.max(
-                np.sign(baseline) * timeseries - np.sign(baseline) * baseline
-            )
-            if min_curr < min_current:
-                min_current = min_curr
-            if max_curr > max_current:
-                max_current = max_curr
-
-        if self.hist_min is None or min_current < self.hist_min:
-            self.hist_min = min_current
-        if self.hist_max is None or max_current > self.hist_max:
-            self.hist_max = max_current
-
-        if bins is not None:
-            if sizes is False:
-                if isinstance(bins, list) and len(bins) >= 1:
-                    bins = bins[0]
-                else:
-                    raise ValueError(f"Invalid bins entry {bins}")
-            else:
-                try:
-                    bins = int((self.hist_max - self.hist_min) / bins[0])
-                except Exception as e:
-                    raise ValueError(
-                        f"Unable to calculate bins given sizes {bins}: {str(e)}"
-                    ) from e
-        else:
-            bins = 100
-
-        bin_edges = np.linspace(self.hist_min, self.hist_max, bins + 1)
-        hist = np.zeros(bins)
-        for event in egen2:
-            if plot_type in [
-                "Raw All Points Histogram",
-                "Normalized Raw All Points Histogram",
-            ]:
-                timeseries = event["raw_data"]
-            elif plot_type in [
-                "Filtered All Points Histogram",
-                "Normalized Filtered All Points Histogram",
-            ]:
-                timeseries = event["filtered_data"]
-            else:
-                raise ValueError(f"Unknown plot_type {plot_type!r}")
-            padding_before = int(event["padding_before"] * event["samplerate"] * 1e-6)
-            baseline = np.median(timeseries[:padding_before])
-            event_hist, _ = np.histogram(
-                np.sign(baseline) * timeseries - np.sign(baseline) * baseline,
-                bins=bin_edges,
-            )
-            hist += event_hist
-        bincenters = bin_edges[:-1] + np.diff(bin_edges) / 2.0
-        return pd.DataFrame({"Current": bincenters, "Count": hist})
+        norm = plot_type in [
+            "Normalized Raw All Points Histogram",
+            "Normalized Filtered All Points Histogram",
+        ]
+        self._plot_all_points_histogram(
+            ax,
+            bincenters,
+            counts,
+            ("Current", "Count"),
+            ("pA", ""),
+            dataset_label=dataset_label,
+            norm=norm,
+        )
+        self.canvas.draw()
+        self._commit_cache()
 
     @log(logger=logger)
     def set_column_type(self, column_type: Optional[str]) -> None:
@@ -1851,56 +1874,33 @@ class MetadataView(MetaSubsetTabView):
         self.column_type = column_type
 
     @log(logger=logger)
-    def _construct_event_overlay(
+    def set_event_overlay(
         self,
-        event_generator: Iterator[Dict[str, Any]],
-        plot_type: str,
-        loader: str,
+        traces: Sequence[Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]],
     ) -> None:
         """
-        Overlay multiple event traces in a normalized time plot.
+        Overlay one subset's event traces on a shared normalised time axis.
 
-        :param event_generator: Generator of events to overlay.
-        :type event_generator: Iterator[Dict[str, Any]]
-        :param plot_type: Either 'Raw Event Overlay' or 'Filtered Event Overlay'.
-        :type plot_type: str
-        :param loader: Identifier of the database loader plugin providing the events.
-        :type loader: str
+        The answering half of ``event_overlay_requested``. Step 4's closeout moved the
+        baseline subtraction and the per-event time base to
+        :meth:`MetadataModel.build_event_overlay`; what is left here is the drawing,
+        including the alpha each trace is given - a shorter event is drawn more
+        opaquely than a longer one so the short ones are not lost under the crowd, and
+        that number is read by nothing outside these axes.
+
+        :param traces: one (normalised time, rectified current) pair per event
+        :type traces: Sequence[Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]]
+        :return: None
+        :rtype: None
         """
         ax = self.axes
 
-        egen1, egen2 = itertools.tee(event_generator)
-        min_duration = float("inf")
-        max_duration = float("-inf")
+        num_events = len(traces)
+        durations = [len(data) for _, data in traces]
+        min_duration = min(durations, default=float("inf"))
+        max_duration = max(durations, default=float("-inf"))
 
-        num_events = 0
-        for event in egen1:
-            num_events += 1
-            if plot_type == "Raw Event Overlay":
-                data = event["raw_data"]
-            elif plot_type == "Filtered Event Overlay":
-                data = event["filtered_data"]
-            duration = len(data)
-            if duration < min_duration:
-                min_duration = duration
-            if duration > max_duration:
-                max_duration = duration
-
-        for event in egen2:
-            if plot_type == "Raw Event Overlay":
-                data = event["raw_data"]
-            elif plot_type == "Filtered Event Overlay":
-                data = event["filtered_data"]
-
-            padding_before = int(event["padding_before"] * event["samplerate"] * 1e-6)
-            padding_after = int(event["padding_after"] * event["samplerate"] * 1e-6)
-            baseline = np.median(data[:padding_before])
-
-            data = np.sign(baseline) * data - np.sign(baseline) * baseline
-            time = np.array(range(len(data)), dtype=np.float64)
-            time -= padding_before
-            time /= len(data) - padding_after - padding_before
-
+        for time, data in traces:
             duration = len(data)
             if max_duration > min_duration:
                 alpha = (
@@ -1915,7 +1915,7 @@ class MetadataView(MetaSubsetTabView):
                 )
             else:
                 alpha = 15 / num_events
-            alpha = np.min((alpha, 0.5))
+            alpha = min(alpha, 0.5)
             ax.plot(time, data, alpha=alpha, color="b")
 
         ax.set_xlim(left=-0.333, right=1.333)
