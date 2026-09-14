@@ -1093,8 +1093,10 @@ class TestFitCaptureRate:
 
         self._request(controller, list(range(20)))
 
-        assert any("Not enough data passes the log filter: 9" in m
-                   for m in self._messages(controller))
+        assert any(
+            "Not enough data passes the log filter: 9" in m
+            for m in self._messages(controller)
+        )
         controller.model.fit_capture_rate.assert_not_called()
 
     def test_exactly_ten_survivors_is_enough(self, controller) -> None:
@@ -1112,8 +1114,9 @@ class TestFitCaptureRate:
 
         self._request(controller, list(range(20)))
 
-        assert any("8 rows dropped by log filter" in m
-                   for m in self._messages(controller))
+        assert any(
+            "8 rows dropped by log filter" in m for m in self._messages(controller)
+        )
 
     def test_a_clean_column_still_reports_one_dropped_row(self, controller) -> None:
         """
@@ -1127,8 +1130,9 @@ class TestFitCaptureRate:
 
         self._request(controller, list(range(20)))
 
-        assert any("1 rows dropped by log filter" in m
-                   for m in self._messages(controller))
+        assert any(
+            "1 rows dropped by log filter" in m for m in self._messages(controller)
+        )
 
     def test_the_view_is_handed_the_log_times_not_the_raw_column(
         self, controller, mock_view
@@ -1153,8 +1157,9 @@ class TestFitCaptureRate:
 
         self._request(controller, list(range(30)))
 
-        assert any("Unable to fit the capture rate" in m
-                   for m in self._messages(controller))
+        assert any(
+            "Unable to fit the capture rate" in m for m in self._messages(controller)
+        )
 
 
 # ------------------- count_categories, Step 4 closeout -----------------------

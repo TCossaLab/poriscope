@@ -423,9 +423,7 @@ class MetadataModel(MetaModel):
         :return: the bin edges, the bin centers, the bin widths, and one count array per dataset
         :rtype: Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64], npt.NDArray[np.float64], List[npt.NDArray[np.float64]]]
         """
-        all_data = (
-            np.concatenate(list(datasets)) if len(datasets) > 1 else datasets[0]
-        )
+        all_data = np.concatenate(list(datasets)) if len(datasets) > 1 else datasets[0]
         bin_edges, bincenters, widths = self.histogram_bin_edges(
             all_data, bins, sizes, hist_min, hist_max
         )
