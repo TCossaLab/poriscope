@@ -1115,11 +1115,18 @@ enough to run on their own while you are working on a parser:
 Analysis-Tab Duplication Ratchet
 ---------------------------------
 
-This one only affects you if you edit the analysis tabs — the five ``*View.py`` and
-``*Controller.py`` files under ``poriscope/plugins/analysistabs/`` or the five
-``*controls.py`` under its ``utils/``. Those three families carry a large amount of
-byte-identical duplication, and the 2.0.0 refactor is removing it. The ratchet exists so
-that removal is *demonstrated* rather than asserted.
+This one only affects you if you edit the analysis tabs — the five ``*View.py``,
+``*Controller.py`` and ``*Model.py`` files under ``poriscope/plugins/analysistabs/``, or
+the five ``*controls.py`` under its ``utils/``. Those four families carry a large amount
+of byte-identical duplication, and the 2.0.0 refactor is removing it. The ratchet exists
+so that removal is *demonstrated* rather than asserted.
+
+``*Model.py`` joined them in September 2026, part-way through the refactor, because Step 4
+had been moving computation *into* the Models — which no family covered, so anything
+landing there could be duplicated invisibly. One method already had been. A gate scoped by
+file path stops measuring the moment a refactor moves code out of that path, and it fails
+silently, because the number moves the way you wanted: widen the scope before the step
+that would fool it, not after.
 
 ``scripts/measure_duplication.py`` counts, per family, how many function bodies are
 byte-identical across more than one file and how many lines would be deleted by promoting

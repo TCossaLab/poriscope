@@ -5,6 +5,12 @@
     "identical_bodies": 0,
     "removable_lines": 0
   },
+  "*Model.py": {
+    "files": 5,
+    "functions": 37,
+    "identical_bodies": 2,
+    "removable_lines": 38
+  },
   "*View.py": {
     "files": 5,
     "functions": 196,

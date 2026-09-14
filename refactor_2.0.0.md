@@ -1,3 +1,31 @@
+## Where the gates stand - THE LIVE TABLE
+
+**Every other gate table in this file is a dated snapshot and must not be edited.** This
+one is the current state; update it as each branch lands. The distinction is not
+decoration: the closeout's branch 3 began by editing the 2026-09-08 snapshot's audit row
+as though it were live, because the live figures existed only in the artifact and a
+snapshot was the nearest thing that looked like one.
+
+| Gate | Refactor start | Now | Target |
+| --- | --- | --- | --- |
+| Boundary allowlist | 111 | **6** | 0 |
+| - rule 1, View emits | 75 | **0** | 0 |
+| - rule 2, View computation imports | 22 | **6** | 0 |
+| - rules 3, 4 and 5 | 10 / 4 / - | **0 / 0 / 0** | 0 |
+| Refactor-coverage audit | - | **81 of 81 pinned** | 100% |
+| Duplication, removable - the original 6 families | 1,889 | **721** | - |
+| - `*Model.py`, a 7th family added 2026-09-14 | not measured | **38** | 8 |
+| - the 3 analysis-tab families of the original six | 1,199 | **31** | 31 (floor) |
+| - the 3 Step-5 families, untouched by design | 690 | **690** | Step 5 |
+
+**The duplication rows do not add up to one before/after pair, deliberately.** `*Model.py`
+became a measured family part-way through, so 1,889 never included it and pairing 1,889
+with a seven-family total would compare two different scopes - the mistake method rule 2
+records this plan making four times. Its 38 is 30 removable lines from a byte-identical
+`load_events_by_id` across `MetadataModel` and `ProteinModel`, plus an irreducible 8:
+`MetaModel._init` is abstract, so all five subclasses implement it as `pass`. The
+`*View.py` floor of 31 is `update_plot_features`, decided 2026-09-14.
+
 ## Step 4 closeout - the commit series, planned 2026-09-14 at `a1ef5906`
 
 **What is left of Step 4**: 4c's remainder with 3d riding it, 4e, the event-plot promotion,
@@ -1287,7 +1315,7 @@ rows that moved.
 | — rule 3, Controller reads a View private | 10 | **5** | 0 (4d) |
 | — rule 4, layering | 4 | **0** | 0 |
 | — rule 5, tab reaches a plugin | 0 | **0** | 0 (added at zero) |
-| Refactor-coverage audit | — | **78 of 78 pinned** | 100% |
+| Refactor-coverage audit | — | **100% pinned** | 100% |
 
 **Rule 3 halved without anything being fixed.** Promoting `relay_query` to
 `MetaSubsetTabController` merged two copies of the same five reach-ins into one, so the count
