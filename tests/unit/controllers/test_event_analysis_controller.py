@@ -263,7 +263,7 @@ class TestLoadEventPlot:
         ]
         # The samplerate now reaches the Model, which builds the time axis from it;
         # the View no longer holds one.
-        assert controller.model.event_time_bases.call_args.args[1] == 250000.0
+        assert controller.model.time_bases.call_args.args[1] == 250000.0
 
     def test_an_unreadable_samplerate_falls_back_to_one(
         self, controller: EventAnalysisController, mock_view: MagicMock
@@ -282,7 +282,7 @@ class TestLoadEventPlot:
 
         controller.load_event_plot("ldr", "No Event Fitter", 0, [0], "", False)
 
-        assert controller.model.event_time_bases.call_args.args[1] == 1
+        assert controller.model.time_bases.call_args.args[1] == 1
 
     def test_each_event_is_loaded_with_the_channel_index_and_filter(
         self, controller: EventAnalysisController, mocker: MockerFixture
@@ -663,11 +663,11 @@ class TestLoadEventPlot:
         controller.load_event_plot("ldr", "No Event Fitter", 2, [0], "", False)
 
         traces = self.plotted(mock_view)[0]
-        called_with = controller.model.event_time_bases.call_args.args
+        called_with = controller.model.time_bases.call_args.args
         assert called_with[0] is traces
         assert called_with[1] == 250000.0
         assert self.time_bases(mock_view) is (
-            controller.model.event_time_bases.return_value
+            controller.model.time_bases.return_value
         )
 
     def test_the_raw_flag_is_passed_through_to_the_view(

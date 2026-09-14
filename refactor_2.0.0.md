@@ -1,3 +1,31 @@
+## Where the gates stand - THE LIVE TABLE
+
+**Every other gate table in this file is a dated snapshot and must not be edited.** This
+one is the current state; update it as each branch lands. The distinction is not
+decoration: the closeout's branch 3 began by editing the 2026-09-08 snapshot's audit row
+as though it were live, because the live figures existed only in the artifact and a
+snapshot was the nearest thing that looked like one.
+
+| Gate | Refactor start | Now | Target |
+| --- | --- | --- | --- |
+| Boundary allowlist | 111 | **6** | 0 |
+| - rule 1, View emits | 75 | **0** | 0 |
+| - rule 2, View computation imports | 22 | **6** | 0 |
+| - rules 3, 4 and 5 | 10 / 4 / - | **0 / 0 / 0** | 0 |
+| Refactor-coverage audit | - | **81 of 81 pinned** | 100% |
+| Duplication, removable - the original 6 families | 1,889 | **721** | - |
+| - `*Model.py`, a 7th family added 2026-09-14 | not measured | **38** | 8 |
+| - the 3 analysis-tab families of the original six | 1,199 | **31** | 31 (floor) |
+| - the 3 Step-5 families, untouched by design | 690 | **690** | Step 5 |
+
+**The duplication rows do not add up to one before/after pair, deliberately.** `*Model.py`
+became a measured family part-way through, so 1,889 never included it and pairing 1,889
+with a seven-family total would compare two different scopes - the mistake method rule 2
+records this plan making four times. Its 38 is 30 removable lines from a byte-identical
+`load_events_by_id` across `MetadataModel` and `ProteinModel`, plus an irreducible 8:
+`MetaModel._init` is abstract, so all five subclasses implement it as `pass`. The
+`*View.py` floor of 31 is `update_plot_features`, decided 2026-09-14.
+
 ## Step 4 closeout - the commit series, planned 2026-09-14 at `a1ef5906`
 
 **What is left of Step 4**: 4c's remainder with 3d riding it, 4e, the event-plot promotion,
@@ -33,11 +61,20 @@ rather than discovered inside it.
    `ceil(log10(...))`. This is matplotlib configuration computed from data the Model already
    returned, and the plan's own line is that artist manipulation **stays in the View**.
 
+**How the remaining sites are decided, settled 2026-09-14.** The rule is
+*responsibility separation and maintainable code*, not import purity: does moving it to the
+Model create complexity where none is needed, and does removing an import? Where the View is
+the only consumer of a derived quantity, the Model supplies the **data** and the View does
+the **visualisation calculation**. So branches 4 and 5 **move the computation and record the
+view-side floor** rather than driving numpy to zero - `_construct_all_points_histogram` and
+the Monte Carlo ensembles move, `set_heatmap`'s extent and colorbar ticks do not. Ambiguous
+sites go to Kyle for a ruling rather than being guessed.
+
 **Kind 3 gates exactly 2 of the 8 points** - `RawDataView`'s (`update_psd`) and
-`MetadataView`'s numpy point (`set_heatmap`). **Decided 2026-09-14**, see `DECISIONS.md`:
-the Model returns a derived value **where it is a property of the data** - the PSD roll-off
-index, the heatmap extent, the time base - alongside the data it already returns; **pure
-styling stays in the View**; and any residue is named rather than chased. Per-site
+`MetadataView`'s numpy point (`set_heatmap`). **Decided 2026-09-14 and narrowed the same
+day**, see `DECISIONS.md`: the test is **whether the value leaves the View**. A time base is
+data - it is cached and exported to CSV - so the Model builds it. Axis limits never leave the
+View, so they stay there and shed numpy by using `math` and `bisect` instead. Per-site
 classification is the first task of each branch.
 
 ### The series
@@ -107,7 +144,16 @@ sites are converted**, and they sit in Clustering (1), Metadata (5) and Protein 
    `on_metadata_loaded` holds the logscale call at `:609` and the tab's only pandas use at
    `:613`, four lines apart: the Model logscales and returns the frame.
    **Allowlist 7 -> 6**, and 1 of 8 logscale sites.
-3. **RawData - two time bases and the PSD limits.** `update_plot` and `_update_event_plot`
+3. **RawData - LANDED 2026-09-14.** **Allowlist 6 -> 5**, `RawDataView` off the list.
+   The two time bases went to the Model and `event_time_bases` was promoted to
+   `MetaModel.time_bases` with a scale and an offset, since RawData is the second caller
+   and Metadata and Protein are the third and fourth. `update_psd`'s axis limits **stayed
+   in the View** on Kyle's ruling and shed numpy by using `math` and `bisect` - proved
+   equivalent over six hand-built cases and 2,000 randomised ones, zero mismatches.
+   **Manual Windows pass run 2026-09-14 over the trace plot with and without the baseline
+   band, a non-zero start time, the event plot and the PSD, all clear.**
+
+   *The original framing:* `update_plot` and `_update_event_plot`
    take branch 1's shape. `update_psd` is kind 3 and **blocked on the open decision above**.
    **Allowlist 6 -> 5 only if the limits move.**
 4. **Metadata's 4c remainder, carrying five logscale sites.** 11 methods, 2 points.
@@ -1287,7 +1333,7 @@ rows that moved.
 | — rule 3, Controller reads a View private | 10 | **5** | 0 (4d) |
 | — rule 4, layering | 4 | **0** | 0 |
 | — rule 5, tab reaches a plugin | 0 | **0** | 0 (added at zero) |
-| Refactor-coverage audit | — | **78 of 78 pinned** | 100% |
+| Refactor-coverage audit | — | **100% pinned** | 100% |
 
 **Rule 3 halved without anything being fixed.** Promoting `relay_query` to
 `MetaSubsetTabController` merged two copies of the same five reach-ins into one, so the count

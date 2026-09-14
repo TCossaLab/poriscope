@@ -184,7 +184,7 @@ def test_set_event_plot_data_forwards_every_argument(view):
     once a fit is drawn - one to three traces per event against one placeholder each.
     """
     data = [np.full(4, 1.0), np.full(4, 7.0)]
-    # Built by EventAnalysisModel.event_time_bases since Step 4 and passed straight
+    # Built by MetaModel.time_bases since Step 4 and passed straight
     # through, so this method must not try to derive or re-align it either.
     time_bases = [np.arange(4.0), np.arange(4.0)]
     labels = ["Event 0 Data", "Event 0 Fit"]

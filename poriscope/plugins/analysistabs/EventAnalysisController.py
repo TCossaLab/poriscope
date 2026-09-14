@@ -214,7 +214,7 @@ class EventAnalysisController(MetaEventTabController):
 
         self.view.set_event_plot_data(
             event_data,
-            self.model.event_time_bases(event_data, samplerate),
+            self.model.time_bases(event_data, samplerate, scale=1e6),
             labels,
             num_events,
             vertical_lines,

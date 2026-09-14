@@ -446,7 +446,7 @@ def test_handle_load_data_makes_no_plugin_call_of_its_own(view, mocker):
 
 def test_set_trace_data_reports_when_nothing_loaded(view, mocker):
     view.update_plot = mocker.Mock()
-    view.set_trace_data([], [], 0.0, False)
+    view.set_trace_data([], [], [], 0.0, False)
     view.update_plot.assert_not_called()
     view.baseline_stats_requested.emit.assert_not_called()
     view.add_text_to_display.emit.assert_called_once()
@@ -454,18 +454,36 @@ def test_set_trace_data_reports_when_nothing_loaded(view, mocker):
 
 def test_set_trace_data_plots_what_the_controller_loaded(view, mocker):
     data = [np.array([1.0, 2.0])]
+    times = [np.array([3.0, 3.1])]
     view.update_plot = mocker.Mock()
-    view.set_trace_data(data, [0], 3.0, False)
-    view.update_plot.assert_called_once_with(data, [0], 3.0)
+    view.set_trace_data(data, times, [0], 3.0, False)
+    view.update_plot.assert_called_once_with(data, times, [0], 3.0)
     view.baseline_stats_requested.emit.assert_not_called()
 
 
 def test_set_trace_data_asks_for_baseline_stats_instead_when_wanted(view, mocker):
     data = [np.array([1.0, 2.0])]
+    times = [np.array([3.0, 3.1])]
     view.update_plot = mocker.Mock()
-    view.set_trace_data(data, [0], 3.0, True)
-    view.baseline_stats_requested.emit.assert_called_once_with(data, [0], 3.0)
+    view.set_trace_data(data, times, [0], 3.0, True)
+    view.baseline_stats_requested.emit.assert_called_once_with(data, times, [0], 3.0)
     view.update_plot.assert_not_called()
+
+
+def test_the_baseline_request_carries_the_axes_it_was_given(view, mocker):
+    """
+    The axes travel with the request rather than being rebuilt on the answer.
+
+    The Controller resolved the samplerate to build them and does not have it in
+    scope in the answering slot, so a request that dropped them would leave the
+    slot with no way to draw against time.
+    """
+    times = [np.array([0.0, 1.0])]
+    view.update_plot = mocker.Mock()
+
+    view.set_trace_data([np.array([1.0, 2.0])], times, [0], 0.0, True)
+
+    assert view.baseline_stats_requested.emit.call_args.args[1] == times
 
 
 # ---------------------------------------------------------------------------

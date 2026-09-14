@@ -24,7 +24,9 @@
 # Alejandra Carolina González González
 # Kyle Briggs
 
+import bisect
 import logging
+import math
 import os
 import warnings
 from typing import (
@@ -66,7 +68,7 @@ class RawDataView(MetaEventTabView):
     #: plotted. Step 4c introduced it: the fitting moved to RawDataModel, and this
     #: is Decision B's command path to it. The answer arrives as the
     #: baseline_stats argument of update_plot.
-    baseline_stats_requested = Signal(object, list, object)
+    baseline_stats_requested = Signal(object, list, list, object)
 
     #: Asks the Controller for a reader's channel list. Step 4a replaced a
     #: ``global_signal`` emit whose answer came back seven hops later through
@@ -172,6 +174,7 @@ class RawDataView(MetaEventTabView):
     def update_plot(
         self,
         data: Sequence[npt.NDArray[np.float64]],
+        time_bases: Sequence[npt.NDArray[np.float64]],
         channels: Sequence[int],
         start: float = 0,
         baseline_stats: Optional[List[Optional[Tuple[float, float, float]]]] = None,
@@ -181,6 +184,8 @@ class RawDataView(MetaEventTabView):
 
         :param data: One array of current samples per channel.
         :type data: Sequence[npt.NDArray[np.float64]]
+        :param time_bases: One time axis per channel in seconds from the start of the recording, index-aligned with data. Built by MetaModel.time_bases, since the axis is a property of the samples and the rate they were taken at rather than of the drawing.
+        :type time_bases: Sequence[npt.NDArray[np.float64]]
         :param channels: List of channel identifiers corresponding to the data.
         :type channels: Sequence[int]
         :param start: Time offset added to the plotted time axis, in seconds.
@@ -197,11 +202,12 @@ class RawDataView(MetaEventTabView):
 
         num_rows, num_cols = self._factors(num_channels)
 
-        for i, (channel_data, channel) in enumerate(zip(data, channels)):
+        for i, (channel_data, time, channel) in enumerate(
+            zip(data, time_bases, channels, strict=True)
+        ):
             ax = self.figure.add_subplot(
                 num_rows, num_cols, i + 1
             )  # Create subplots in a grid
-            time = np.arange(len(channel_data)) / self.plot_samplerate + float(start)
             ax.plot(time, channel_data / 1000, zorder=1)
 
             # Computed by RawDataModel since Step 4c and handed over by the
@@ -291,10 +297,16 @@ class RawDataView(MetaEventTabView):
         num_rows, num_cols = self._factors(num_channels)
 
         for i, (psd, rms, channel) in enumerate(zip(psd_data, rms_data, channels)):
-            max_index = np.searchsorted(rms, 0.999 * rms[-1], side="right")
-            max_freq = 10 ** np.ceil(np.log10(frequency[max_index]))
-            psd_min = 10 ** (np.floor(np.log10(np.min(psd[:max_index])) * 2) / 2)
-            psd_max = 10 ** (np.ceil(np.log10(np.max(psd)) * 2) / 2)
+            # Axis limits are only ever view elements - nothing outside this method
+            # reads them and they are not exported with the data - so they are derived
+            # here rather than asked of the Model. The stdlib does all of it: the upper
+            # frequency bound is where the integrated RMS noise reaches 99.9% of its
+            # final value, which is a bisect on a monotonic array, and the bounds are
+            # rounded outward to half-decades so a log axis lands on readable gridlines.
+            max_index = bisect.bisect_right(rms, 0.999 * rms[-1])
+            max_freq = 10 ** math.ceil(math.log10(frequency[max_index]))
+            psd_min = 10 ** (math.floor(math.log10(min(psd[:max_index])) * 2) / 2)
+            psd_max = 10 ** (math.ceil(math.log10(max(psd)) * 2) / 2)
 
             ax = self.figure.add_subplot(
                 num_rows, num_cols, i + 1
@@ -591,6 +603,7 @@ class RawDataView(MetaEventTabView):
     def set_event_plot_data(
         self,
         event_data: Sequence[npt.NDArray[np.float64]],
+        time_bases: Sequence[npt.NDArray[np.float64]],
         event_indices: Sequence[int],
     ) -> None:
         """
@@ -602,6 +615,8 @@ class RawDataView(MetaEventTabView):
 
         :param event_data: one array of samples per surviving event
         :type event_data: Sequence[npt.NDArray[np.float64]]
+        :param time_bases: one time axis per event in microseconds, index-aligned with event_data and built by MetaModel.time_bases
+        :type time_bases: Sequence[npt.NDArray[np.float64]]
         :param event_indices: the event indices that produced data, index-aligned with event_data
         :type event_indices: Sequence[int]
         :return: None
@@ -612,7 +627,7 @@ class RawDataView(MetaEventTabView):
                 "No data available for plotting", self.__class__.__name__
             )
             return
-        self._update_event_plot(event_data, event_indices)
+        self._update_event_plot(event_data, time_bases, event_indices)
 
     @log(logger=logger)
     def set_num_events_allowed(self, num_events: int) -> None:
@@ -638,6 +653,7 @@ class RawDataView(MetaEventTabView):
     def _update_event_plot(
         self,
         event_data: Sequence[npt.NDArray[np.float64]],
+        time_bases: Sequence[npt.NDArray[np.float64]],
         event_indices: Sequence[int],
     ) -> None:
         """
@@ -645,6 +661,8 @@ class RawDataView(MetaEventTabView):
 
         :param event_data: a list of event data to plot in a grid
         :type event_data: Sequence[npt.NDArray[np.float64]]
+        :param time_bases: One time axis per event in microseconds, index-aligned with event_data. Built by MetaModel.time_bases.
+        :type time_bases: Sequence[npt.NDArray[np.float64]]
         :param event_indices: the indices of the events to plot
         :type event_indices: Sequence[int]
         """
@@ -656,11 +674,12 @@ class RawDataView(MetaEventTabView):
         num_events = len(event_indices)
         num_rows, num_cols = self._factors(num_events)
 
-        for i, (data, event) in enumerate(zip(event_data, event_indices)):
+        for i, (data, time, event) in enumerate(
+            zip(event_data, time_bases, event_indices, strict=True)
+        ):
             ax = self.figure.add_subplot(
                 num_rows, num_cols, i + 1
             )  # Create subplots in a grid
-            time = np.arange(len(data)) / self.plot_samplerate * 1e6
             ax.plot(time, data / 1000)
 
             x_label = r"Time (us)"
@@ -1017,6 +1036,7 @@ class RawDataView(MetaEventTabView):
     def set_trace_data(
         self,
         data_list: Sequence[npt.NDArray[np.float64]],
+        time_bases: Sequence[npt.NDArray[np.float64]],
         channels: Sequence[int],
         start: float,
         baseline: bool,
@@ -1031,6 +1051,8 @@ class RawDataView(MetaEventTabView):
 
         :param data_list: one array per surviving channel
         :type data_list: Sequence[npt.NDArray[np.float64]]
+        :param time_bases: one time axis per channel, index-aligned with data_list
+        :type time_bases: Sequence[npt.NDArray[np.float64]]
         :param channels: the channels that produced data, index-aligned with data_list
         :type channels: Sequence[int]
         :param start: the start time being plotted from
@@ -1048,9 +1070,14 @@ class RawDataView(MetaEventTabView):
         if baseline:
             # The fitting is the Model's since Step 4c, so the plot happens
             # when the Controller hands the statistics back.
-            self.baseline_stats_requested.emit(data_list, channels, start)
+            # The axes travel with the request rather than being rebuilt on the way
+            # back: the Controller resolved the samplerate to make them and does not
+            # have it in scope in the answering slot.
+            self.baseline_stats_requested.emit(
+                data_list, list(time_bases), channels, start
+            )
         else:
-            self.update_plot(data_list, channels, start)
+            self.update_plot(data_list, time_bases, channels, start)
 
     @log(logger=logger)
     def _handle_load_data_and_update_psd(self, parameters: Dict[str, Any]) -> None:

@@ -25,10 +25,7 @@
 # Kyle Briggs
 
 import logging
-from typing import List, Sequence, override
-
-import numpy as np
-import numpy.typing as npt
+from typing import override
 
 from poriscope.utils.DocstringDecorator import inherit_docstrings
 from poriscope.utils.LogDecorator import log
@@ -47,28 +44,3 @@ class EventAnalysisModel(MetaModel):
     @override
     def _init(self) -> None:
         pass
-
-    @log(logger=logger)
-    def event_time_bases(
-        self, traces: Sequence[npt.NDArray[np.float64]], samplerate: float
-    ) -> List[npt.NDArray[np.float64]]:
-        """
-        Build the time axis for each trace, in microseconds.
-
-        The time base is a property of the samples and the rate they were taken at,
-        both of which the Model already owns, so it is derived here rather than in
-        the widget that draws it. Step 4's rule: the Model returns a derived value
-        where it is a property of the data, and pure styling stays in the View.
-
-        One array per trace, index-aligned with ``traces``, because an event may
-        contribute up to three of them - its filtered data, its fit and its raw
-        trace - and they need not be the same length.
-
-        :param traces: the current traces to build a time axis for
-        :type traces: Sequence[npt.NDArray[np.float64]]
-        :param samplerate: the sampling rate in Hz, or 1 to fall back to sample indices
-        :type samplerate: float
-        :return: one time array per trace, in microseconds
-        :rtype: List[npt.NDArray[np.float64]]
-        """
-        return [np.arange(len(trace)) / samplerate * 1e6 for trace in traces]

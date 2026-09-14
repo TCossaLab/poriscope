@@ -72,19 +72,52 @@ ticks via `np.linspace`, and `update_psd`'s axis limits from `np.searchsorted` a
 `ceil(log10(...))`. The plan's own line is that matplotlib artist manipulation stays in the
 View, so rule 2 reaching 0 was not obviously reachable by moving computation alone.
 
-**Decision.** The Model returns a derived value **where it is a property of the data** - the
-PSD roll-off index, the heatmap extent, the time base - alongside the data it already
-returns. **Pure styling stays in the View.** Whatever residue that leaves is *named and
-recorded* rather than chased.
+**Decision, narrowed 2026-09-14 after the first case was built.** The test is **whether the
+value leaves the View**, not whether it is derived from the data. A time base is data: it is
+the x-coordinate of every point drawn, it goes into `_update_cache`, and the user exports it
+to CSV - so the Model builds it. **Axis limits never leave the View** - nothing outside the
+plotting method reads them and they are exported nowhere - so they stay, and the numpy they
+needed goes away instead by using `math` and `bisect`.
 
-**Evidence.** The kind-3 sites gate exactly 2 of the 8 points: `RawDataView`
-(`update_psd`) and `MetadataView`'s numpy point (`set_heatmap`). The time base is the
-clearest case for the split - `np.arange(len(data)) / samplerate * 1e6` is computed five
-times in four Views from the samples and the samplerate, both of which the Model already
-owns.
+The first version of this entry sent the PSD roll-off index to the Model on the grounds that
+it is "a property of the data". It was built that way and then reverted: the roll-off index
+is a property of the data *and* useless outside the axis it bounds, which is what makes
+"property of the data" the wrong test. **Pure styling stays in the View** either way.
 
-**Revisit if** a residue turns out to be large enough that rule 2's target of 0 becomes
-misleading, at which point the floor is recorded the way the duplication floor below is.
+**Evidence.** The time base is the clearest case for the split -
+`np.arange(len(data)) / samplerate * 1e6` is computed five times in four Views from the
+samples and the samplerate, both of which the Model already owns, and each copy is then
+cached and exported. For the axis limits the stdlib rewrite was proved equivalent before it
+landed: `bisect.bisect_right` matches `np.searchsorted(..., side="right")` on a monotonic
+array, and `math.ceil`/`floor`/`log10` with builtin `min`/`max` reproduce the old bounds
+exactly on six hand-built cases and **2,000 randomised ones, with zero mismatches**.
+`RawDataView` left the allowlist on that change alone.
+
+**The governing test, Kyle 2026-09-14.** *"The point of MVC separation is responsibility
+separation and clean, maintainable code, and that should be the basis for how we decide.
+The litmus test is this: does moving it to the model create complexity where it is not
+needed? Does removing an import create complexity where it is not needed?"* So **where the
+View is the only consumer of a calculated quantity derived from the data, source the data
+from the Model and do the visualisation calculation in the View** rather than have the
+Model hand back a pile of extras nothing else wants. Rule 2's remaining numpy is therefore
+settled per site by judgement, with the genuinely ambiguous ones put to Kyle rather than
+guessed - and **the computation still moves**: histogram construction and the Monte Carlo
+ensembles are not drawing responsibilities by any reading.
+
+**And numpy in a View is not itself the problem** (Kyle, 2026-09-14). Some array
+manipulation is genuinely a drawing responsibility, and there is nothing wrong with the
+import when that is what it is for. Rule 2 is aimed at *the View doing the Model's job*,
+which for numpy the gate cannot tell apart statically - it can see the import, not the
+intent. Two consequences worth stating before branches 4-6 price themselves on it: rule
+2's target for numpy is **not necessarily 0**, and where a site is genuinely view-side the
+options are to leave it and record the floor, or to shed the import for free as
+`update_psd` did. The other forbidden packages are unaffected: scipy, sklearn, hdbscan and
+`fast_histogram` are never a drawing responsibility, and building a DataFrame is not either.
+
+**Revisit if** a View needs a derived value that is genuinely consumed outside it, which
+would put it back on the Model side of the line - or if a residue turns out large enough
+that rule 2's target of 0 becomes misleading, at which point the floor is recorded the way
+the duplication floor below is.
 
 ---
 

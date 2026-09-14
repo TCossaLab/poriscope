@@ -100,6 +100,21 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 #: policy, so a ratchet over them would fail on their owner's commits and block work
 #: that is not ours to gate. Their duplication is therefore unmeasured by design, not
 #: by oversight.
+#:
+#: ``*Model.py`` was added 2026-09-14, during Step 4's closeout and deliberately
+#: *before* the branch that would have fooled the ratchet without it. Step 4 has
+#: spent itself moving computation into the analysis-tab Models, which were measured
+#: by nothing - so every method it landed there could be duplicated invisibly, and one
+#: already was: ``load_events_by_id`` is byte-identical between ``MetadataModel`` and
+#: ``ProteinModel``, 30 removable lines that no gate had seen. Method rule 24: check
+#: which instruments can still see the code a step is about to move, and widen the
+#: scope before that step rather than after it.
+#:
+#: The family carries an irreducible floor of **8 lines**: ``MetaModel._init`` is
+#: abstract, so all five subclasses must define it and all five are ``pass``. Those
+#: cannot be deduplicated without relaxing the ABC, which is a contract change
+#: Decision C does not list. Recorded here so the residue does not read as unfinished
+#: work.
 FAMILIES: Dict[str, Tuple[str, ...]] = {
     "*View.py": (
         "poriscope/plugins/analysistabs/ClusteringView.py",
@@ -114,6 +129,13 @@ FAMILIES: Dict[str, Tuple[str, ...]] = {
         "poriscope/plugins/analysistabs/MetadataController.py",
         "poriscope/plugins/analysistabs/ProteinController.py",
         "poriscope/plugins/analysistabs/RawDataController.py",
+    ),
+    "*Model.py": (
+        "poriscope/plugins/analysistabs/ClusteringModel.py",
+        "poriscope/plugins/analysistabs/EventAnalysisModel.py",
+        "poriscope/plugins/analysistabs/MetadataModel.py",
+        "poriscope/plugins/analysistabs/ProteinModel.py",
+        "poriscope/plugins/analysistabs/RawDataModel.py",
     ),
     "*controls.py": (
         "poriscope/plugins/analysistabs/utils/clusteringcontrols.py",

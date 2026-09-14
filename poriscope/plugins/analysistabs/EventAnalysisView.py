@@ -475,7 +475,7 @@ class EventAnalysisView(MetaEventTabView):
 
         :param event_data: List of 1D arrays containing current traces for each event.
         :type event_data: Sequence[npt.NDArray[np.float64]]
-        :param time_bases: One time axis per trace in microseconds, index-aligned with event_data. Built by EventAnalysisModel.event_time_bases, since it is a property of the samples and the rate they were taken at rather than of the drawing.
+        :param time_bases: One time axis per trace in microseconds, index-aligned with event_data. Built by MetaModel.time_bases, since it is a property of the samples and the rate they were taken at rather than of the drawing.
         :type time_bases: Sequence[npt.NDArray[np.float64]]
         :param labels: List of strings for each subplot's title.
         :type labels: Sequence[str]

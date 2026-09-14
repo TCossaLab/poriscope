@@ -60,7 +60,7 @@ def real_view(qt_app):
 
 def _time_bases(traces):
     """
-    The time axes EventAnalysisModel.event_time_bases would build for these traces.
+    The time axes MetaModel.time_bases would build for these traces.
 
     Step 4 moved that derivation off the View - it is a property of the samples and
     the rate they were taken at - so the traces now arrive already paired with it.

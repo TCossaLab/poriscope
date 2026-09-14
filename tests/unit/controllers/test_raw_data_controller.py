@@ -619,7 +619,7 @@ def test_load_and_filter_returns_data_and_surviving_channels(
         "ch1",
     ]
 
-    data, kept = controller._load_and_filter("R", [0, 1], 2.0, 9.0, "")
+    data, kept, _rate = controller._load_and_filter("R", [0, 1], 2.0, 9.0, "")
 
     assert (data, kept) == (["ch0", "ch1"], [0, 1])
     assert [
@@ -656,7 +656,7 @@ def test_load_and_filter_drops_a_channel_the_reader_cannot_supply(
         "ch2",
     ]
 
-    data, kept = controller._load_and_filter("R", [0, 1, 2], 0.0, 1.0, "")
+    data, kept, _rate = controller._load_and_filter("R", [0, 1, 2], 0.0, 1.0, "")
 
     assert (data, kept) == (["ch0", "ch2"], [0, 2])
     assert data.count("ch0") == 1
@@ -679,7 +679,7 @@ def test_load_and_filter_drops_a_channel_that_returns_none(
         "ch1",
     ]
 
-    data, kept = controller._load_and_filter("R", [0, 1], 0.0, 1.0, "")
+    data, kept, _rate = controller._load_and_filter("R", [0, 1], 0.0, 1.0, "")
 
     assert (data, kept) == (["ch1"], [1])
 
@@ -699,7 +699,7 @@ def test_load_and_filter_filters_each_channel_when_asked(
         "filtered0",
     ]
 
-    data, kept = controller._load_and_filter("R", [0], 0.0, 1.0, "F1")
+    data, kept, _rate = controller._load_and_filter("R", [0], 0.0, 1.0, "F1")
 
     assert (data, kept) == (["filtered0"], [0])
     assert controller.model.call.call_args_list[-1] == mocker.call(
@@ -729,7 +729,7 @@ def test_load_and_filter_keeps_the_unfiltered_channel_when_the_filter_fails(
         Exception("boom"),
     ]
 
-    data, kept = controller._load_and_filter("R", [0, 1], 0.0, 1.0, "F1")
+    data, kept, _rate = controller._load_and_filter("R", [0, 1], 0.0, 1.0, "F1")
 
     assert (data, kept) == (["filtered0", "raw1"], [0, 1])
 
@@ -795,11 +795,66 @@ def test_load_trace_data_hands_the_result_back_for_plotting(
     :param mock_view: Mocked raw data view.
     :param mocker: Pytest-mock fixture.
     """
-    controller._load_and_filter = mocker.Mock(return_value=(["d0"], [0]))
+    # The helper hands back the samplerate it resolved, so the Model can build the
+    # plot's time axis without asking the reader a second time.
+    controller._load_and_filter = mocker.Mock(return_value=(["d0"], [0], 1e6))
 
     controller.load_trace_data("R", [0], 3.0, 9.0, "", True)
 
-    mock_view.set_trace_data.assert_called_once_with(["d0"], [0], 3.0, True)
+    # time_bases is the second argument now, and is whatever the Model built;
+    # it is pinned on its own in test_the_trace_axes_come_from_the_model.
+    data, time_bases, channels, start, baseline = (
+        mock_view.set_trace_data.call_args.args
+    )
+    assert (data, channels, start, baseline) == (["d0"], [0], 3.0, True)
+    assert time_bases is controller.model.time_bases.return_value
+
+
+def test_the_trace_axes_come_from_the_model(
+    controller: RawDataController,
+    mock_view: MagicMock,
+    mocker: MockerFixture,
+) -> None:
+    """
+    The View is handed the axis rather than the rate it would derive one from.
+
+    The samplerate comes back from ``_load_and_filter`` rather than being resolved a
+    second time, and goes to the Model with the traces; a Controller that rebuilt the
+    axis itself, or asked the reader again, would fail here.
+
+    :param controller: Controller under test.
+    :param mock_view: Mocked raw data view.
+    :param mocker: Pytest-mock fixture.
+    """
+    controller._load_and_filter = mocker.Mock(return_value=(["d0"], [0], 250000.0))
+
+    controller.load_trace_data("R", [0], 3.0, 9.0, "", False)
+
+    controller.model.time_bases.assert_called_once_with(["d0"], 250000.0, offset=3.0)
+    assert (
+        mock_view.set_trace_data.call_args.args[1]
+        is controller.model.time_bases.return_value
+    )
+
+
+def test_the_trace_axis_is_offset_by_the_start_time(
+    controller: RawDataController,
+    mock_view: MagicMock,
+    mocker: MockerFixture,
+) -> None:
+    """
+    A trace plot reads as its part of the recording, not as a fresh window, so the
+    axis carries the start time the user asked for rather than beginning at zero.
+
+    :param controller: Controller under test.
+    :param mock_view: Mocked raw data view.
+    :param mocker: Pytest-mock fixture.
+    """
+    controller._load_and_filter = mocker.Mock(return_value=(["d0"], [0], 1e6))
+
+    controller.load_trace_data("R", [0], 12.5, 1.0, "", False)
+
+    assert controller.model.time_bases.call_args.kwargs["offset"] == 12.5
 
 
 def test_load_psd_data_hands_the_result_back_for_the_psd(
@@ -812,7 +867,9 @@ def test_load_psd_data_hands_the_result_back_for_the_psd(
     :param mock_view: Mocked raw data view.
     :param mocker: Pytest-mock fixture.
     """
-    controller._load_and_filter = mocker.Mock(return_value=(["d0"], [0]))
+    # The helper hands back the samplerate it resolved, so the Model can build the
+    # plot's time axis without asking the reader a second time.
+    controller._load_and_filter = mocker.Mock(return_value=(["d0"], [0], 1e6))
 
     controller.load_psd_data("R", [0], 3.0, 9.0, "F1")
 
@@ -999,7 +1056,8 @@ class TestLoadEventPlotData:
         message = controller.add_text_to_display.emit.call_args[0][0]
         assert "Channel 3 has 2 events (0-1)" in message
         assert "event 7" in message
-        mock_view.set_event_plot_data.assert_called_once_with(["a", "b"], [0, 1])
+        event_data, _time_bases, kept = mock_view.set_event_plot_data.call_args.args
+        assert (event_data, kept) == (["a", "b"], [0, 1])
 
     def test_a_wholly_out_of_range_selection_does_not_report_missing_data(
         self, controller: RawDataController, mock_view: MagicMock
@@ -1130,9 +1188,8 @@ class TestLoadEventPlotData:
 
         controller.load_event_plot_data("finder", 0, [0, 1], "")
 
-        mock_view.set_event_plot_data.assert_called_once_with(
-            ["first", "second"], [0, 1]
-        )
+        event_data, _time_bases, kept = mock_view.set_event_plot_data.call_args.args
+        assert (event_data, kept) == (["first", "second"], [0, 1])
 
     def test_an_event_with_no_data_is_dropped_with_its_index(
         self, controller: RawDataController, mock_view: MagicMock
@@ -1145,9 +1202,8 @@ class TestLoadEventPlotData:
 
         controller.load_event_plot_data("finder", 0, [0, 1, 2], "")
 
-        mock_view.set_event_plot_data.assert_called_once_with(
-            ["first", "third"], [0, 2]
-        )
+        event_data, _time_bases, kept = mock_view.set_event_plot_data.call_args.args
+        assert (event_data, kept) == (["first", "third"], [0, 2])
 
     def test_an_event_that_cannot_be_read_is_dropped_with_its_index(
         self, controller: RawDataController, mock_view: MagicMock
@@ -1169,7 +1225,7 @@ class TestLoadEventPlotData:
 
         controller.load_event_plot_data("finder", 0, [0, 1, 2], "")
 
-        drawn, indices = mock_view.set_event_plot_data.call_args[0]
+        drawn, _time_bases, indices = mock_view.set_event_plot_data.call_args[0]
         assert (drawn, indices) == (["first", "third"], [0, 2])
         assert drawn.count("first") == 1
 
@@ -1181,7 +1237,8 @@ class TestLoadEventPlotData:
 
         controller.load_event_plot_data("finder", 0, [0, 1], "")
 
-        mock_view.set_event_plot_data.assert_called_once_with([], [])
+        event_data, _time_bases, kept = mock_view.set_event_plot_data.call_args.args
+        assert (event_data, kept) == ([], [])
 
 
 # ---------------- eventfinder channel resolution (4a) ----------------
@@ -1441,7 +1498,7 @@ class TestBoundedLength:
             "ch1",
         ]
 
-        data, kept = controller._load_and_filter("R", [0, 1], 0.0, 6.0, "")
+        data, kept, _rate = controller._load_and_filter("R", [0, 1], 0.0, 6.0, "")
 
         assert (data, kept) == (["ch0", "ch1"], [0, 1])
         loads = [

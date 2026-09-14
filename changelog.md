@@ -1,5 +1,9 @@
 ## Poriscope 2.0.0: in progress
 
+* **Breaking:** the Raw Data tab's plot time axes are built by `MetaModel.time_bases` rather than in the view, so `RawDataView.update_plot`, `set_trace_data`, `set_event_plot_data` and `_update_event_plot` take the axis alongside the samples and `baseline_stats_requested` carries it
+
+* **Breaking:** `EventAnalysisModel.event_time_bases` is now `MetaModel.time_bases`, taking a scale and an offset so one derivation serves both an event plot in microseconds and a trace plot in seconds from the start of the recording
+
 * **The Clustering tab now says what is actually wrong with a rejected SQL filter** instead of also telling you to check your column selections, which was the wrong advice for an unknown column, a syntax error or a complete `SELECT` pasted into the filter box
 
 * **Breaking:** the Clustering tab's filtering and log-scaling moved to `ClusteringModel.build_clustering_frame`, so `ClusteringView.cluster_requested` and `ClusteringController.cluster` now carry the unfiltered rows and the column spec rather than a prepared frame
