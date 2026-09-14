@@ -183,9 +183,15 @@ sites are converted**, and they sit in Clustering (1), Metadata (5) and Protein 
 
    - **4b - four self-contained plot methods.** `_plot_capture_rate`'s inter-event times,
      `_plot_categorical_histogram`'s counting (which takes one of the two pandas uses),
-     `set_histogram_bins`' counts, and `_plot_1d_histogram` **entire** - its shared limits
-     *and* its logscale call, converted together so it is touched once. Ordinary
-     request/setter splits of the kind 4c Metadata already did four of.
+     `set_histogram_bins`' counts, and `_plot_1d_histogram`'s shared limits. Ordinary
+     request/setter splits of the kind 4c Metadata already did four of. **Its logscale
+     call moved to the next branch** - see `DECISIONS.md`: the Model can only filter if
+     `hist_data` holds raw data, which is density's shape, and the two write the same
+     shared limits. **Three defects surfaced while preparing this branch**, all
+     pre-existing and all in code about to be moved: the plot-data export of a
+     categorical histogram had never worked, the capture rate always reported one row
+     dropped, and the density plot's limits were being read off the DataFrame - so a bin
+     width there was accepted and silently ignored.
    - **4c - `_overlay_plot` and what it drives.** The generator moves to the Controller,
      `_construct_all_points_histogram` moves to the Model with the extracted
      baseline-rectify, `_construct_event_overlay` keeps its drawing and loses its

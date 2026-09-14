@@ -62,6 +62,32 @@ passed against a `MagicMock` view and so could not have noticed it was bypassed.
 
 ---
 
+## 2026-09-14 - The 1-D density and histogram logscale calls convert together
+
+**Context.** The closeout's 4b was to convert `_plot_1d_histogram` entire - its shared
+limits and its logscale call - so that it is touched once. The limits half landed. The
+logscale half does not fit in that branch: the Model can only filter if `hist_data` holds
+**raw** data, and the histogram currently appends the *already filtered* array. Switching
+it to raw is exactly the shape `_plot_1d_density` already has, and the two write the same
+`hist_min` and `hist_max`.
+
+**Decision.** They convert together, in the `_overlay_plot` branch, not one in each.
+
+**Evidence.** Converting the histogram alone is *possible* - a plot-type change calls
+`_reset_actions` (`MetadataView.py:1550`), so the two overlays never coexist and the
+divergence would be unobservable. It would nonetheless leave the same shared state computed
+in two layers at once, for no gain, which is the governing test's "complexity where it is
+not needed". **`hist_data` holds four different element types** depending on which plot
+type last ran - a DataFrame for density, a filtered array for the histogram, a raw column
+for the categorical bar chart, an `(x, y)` tuple for the all-points histogram - and that
+polymorphism, not the logscale helper, is what makes these conversions entangled. The reset
+is what keeps it safe today.
+
+**Revisit** when the overlay accumulator is given one element type, which would let each
+plot type convert independently and is the larger fix underneath this.
+
+---
+
 ## 2026-09-14 - `set_heatmap`'s export reshape stays in the View
 
 **Context.** `MetadataView.set_heatmap` turns the Model's heatmap into the long-form rows
