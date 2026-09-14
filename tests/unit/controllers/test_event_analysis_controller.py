@@ -666,9 +666,7 @@ class TestLoadEventPlot:
         called_with = controller.model.time_bases.call_args.args
         assert called_with[0] is traces
         assert called_with[1] == 250000.0
-        assert self.time_bases(mock_view) is (
-            controller.model.time_bases.return_value
-        )
+        assert self.time_bases(mock_view) is (controller.model.time_bases.return_value)
 
     def test_the_raw_flag_is_passed_through_to_the_view(
         self, controller: EventAnalysisController, mock_view: MagicMock
