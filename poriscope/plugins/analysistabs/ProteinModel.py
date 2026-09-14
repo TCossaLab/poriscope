@@ -26,6 +26,7 @@
 
 import logging
 from typing import (
+    Any,
     Dict,
     Generator,
     List,
@@ -475,3 +476,165 @@ class ProteinModel(MetaModel):
             experiments_and_channels,
         )
         return generator
+
+    @log(logger=logger)
+    def _blockage_fraction(
+        self, event: Dict[str, Any], plot_type: str
+    ) -> npt.NDArray[np.float64]:
+        """
+        One event's current expressed as a fraction of its own baseline.
+
+        The baseline is the mean of the medians either side of the event, which is
+        what makes a slow drift across the event average out rather than bias the
+        blockage; the paddings the loader reports are in microseconds while the
+        slicing counts samples.
+
+        :param event: one event's payload as the loader yields it
+        :type event: Dict[str, Any]
+        :param plot_type: 'Raw Histogram' or 'Filtered Histogram'
+        :type plot_type: str
+        :return: the fractional blockage over the event proper, paddings excluded
+        :rtype: npt.NDArray[np.float64]
+        :raises ValueError: if plot_type names neither the raw nor the filtered trace
+        :raises ZeroDivisionError: if the event's baseline is zero
+        """
+        if plot_type == "Raw Histogram":
+            timeseries = event["raw_data"]
+        elif plot_type == "Filtered Histogram":
+            timeseries = event["filtered_data"]
+        else:
+            raise ValueError(f"Unknown plot_type {plot_type!r}")
+
+        padding_before = int(event["padding_before"] * event["samplerate"] * 1e-6)
+        padding_after = int(event["padding_after"] * event["samplerate"] * 1e-6)
+        baseline = 0.5 * (
+            np.median(timeseries[:padding_before])
+            + np.median(timeseries[-padding_after:])
+        )
+        if baseline == 0:
+            raise ZeroDivisionError(
+                f'Event {event.get("event_id")} has a zero baseline'
+            )
+
+        blockage: npt.NDArray[np.float64] = (
+            baseline - timeseries[padding_before:-padding_after]
+        ) / baseline
+        return blockage
+
+    @log(logger=logger)
+    def _resolve_event_bins(
+        self,
+        blockage: npt.NDArray[np.float64],
+        bins: Any,
+        sizes: bool,
+        hist_min: float,
+        hist_max: float,
+    ) -> int:
+        """
+        Decide how many bins one event's histogram gets.
+
+        With no explicit request the width comes from Freedman-Diaconis on this
+        event's own interquartile range and sample count, so events of different
+        durations - which is typical for proteins - get independently sized bins
+        rather than a fixed hundred regardless of length.
+
+        :param blockage: the event's fractional blockage
+        :type blockage: npt.NDArray[np.float64]
+        :param bins: a bin count, or a bin width when sizes is True, or None
+        :type bins: Any
+        :param sizes: does bins refer to a bin width (True) or a count (False)
+        :type sizes: bool
+        :param hist_min: the lower limit the bins must span
+        :type hist_min: float
+        :param hist_max: the upper limit the bins must span
+        :type hist_max: float
+        :return: the number of bins
+        :rtype: int
+        :raises ValueError: if bins is neither a usable count nor a usable width
+        """
+        if bins is not None:
+            if sizes is False:
+                if isinstance(bins, list) and len(bins) >= 1:
+                    return int(bins[0])
+                raise ValueError(f"Invalid bins entry {bins}")
+            try:
+                return int((hist_max - hist_min) / bins[0])
+            except Exception as e:
+                raise ValueError(
+                    f"Unable to calculate bins given sizes {bins}: {str(e)}"
+                ) from e
+
+        iqr = np.percentile(blockage, 75) - np.percentile(blockage, 25)
+        bin_width = 2 * iqr / np.cbrt(np.size(blockage))
+
+        if bin_width <= 0 or not np.isfinite(bin_width):
+            # IQR collapses to 0 (near-constant signal) or the event is too
+            # short/degenerate for FD to produce a sane width; fall back to
+            # the previous fixed default rather than dividing by zero.
+            return 100
+        return max(int((hist_max - hist_min) / bin_width), 1)
+
+    @log(logger=logger)
+    def build_event_histograms(
+        self,
+        events: Sequence[Dict[str, Any]],
+        plot_type: str,
+        bins: Any,
+        sizes: bool,
+    ) -> List[Optional[Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]]]:
+        """
+        Bin each event's fractional blockage, one histogram per event.
+
+        **Each event is binned over its own range**, so the edges of one subplot say
+        nothing about its neighbours. The individual-distribution path used to let
+        the limits accumulate across the events of a single plot, which made the
+        edges depend on the order they arrived in; both paths follow the same rule
+        now, which is the one the event-histogram path already documented.
+
+        An event that cannot be binned contributes ``None`` rather than being
+        dropped, so the result stays index-aligned with ``events`` and the drawing
+        half still lays out one subplot per event in the original order.
+
+        An unusable bin request or an unrecognised plot type raises out of the
+        helpers rather than being absorbed per event: both are the same for every
+        event, so reporting once is what the caller can act on.
+
+        :param events: the events to bin, in the order they are drawn
+        :type events: Sequence[Dict[str, Any]]
+        :param plot_type: 'Raw Histogram' or 'Filtered Histogram'
+        :type plot_type: str
+        :param bins: a bin count, or a bin width when sizes is True, or None
+        :type bins: Any
+        :param sizes: does bins refer to a bin width (True) or a count (False)
+        :type sizes: bool
+        :return: one (bin centers, amplitude) pair per event, or None where none could be built
+        :rtype: List[Optional[Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]]]
+        """
+        histograms: List[
+            Optional[Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]]
+        ] = []
+
+        for event in events:
+            try:
+                blockage = self._blockage_fraction(event, plot_type)
+            except ZeroDivisionError as e:
+                self.logger.info(f"{e}, so it has no histogram")
+                histograms.append(None)
+                continue
+
+            if blockage.size == 0:
+                histograms.append(None)
+                continue
+
+            hist_min = float(np.min(blockage))
+            hist_max = float(np.max(blockage))
+            numbins = self._resolve_event_bins(
+                blockage, bins, sizes, hist_min, hist_max
+            )
+
+            bin_edges = np.linspace(hist_min, hist_max, numbins + 1)
+            amplitude, _ = np.histogram(blockage, bins=bin_edges, density=True)
+            bincenters = bin_edges[:-1] + np.diff(bin_edges) / 2.0
+            histograms.append((bincenters, amplitude))
+
+        return histograms

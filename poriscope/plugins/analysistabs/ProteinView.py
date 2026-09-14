@@ -179,7 +179,10 @@ class ProteinView(MetaSubsetTabView):
     #: by parking each answer where the loop body could read it back - the pattern
     #: Step 4a exists to delete. A ``None`` pair marks an event whose histogram could
     #: not be built, so every list stays index-aligned with the events.
-    event_histogram_fits_requested = Signal(object, object, object)
+    #:
+    #: Step 4's closeout sent the binning down with the fitting, so this carries the
+    #: events and the bin request rather than histograms built here.
+    event_histogram_fits_requested = Signal(object, str, object, bool)
 
     #: Asks for one fit per event on the individual distribution path, with the pore
     #: geometry the sampling needs. Answered through ``set_distribution_fits``.
@@ -188,7 +191,9 @@ class ProteinView(MetaSubsetTabView):
     #: are used for different work - that one draws per-event subplots, this one
     #: Monte Carlo samples V/m from each fit - and one intent answering two unrelated
     #: consumers would have to be told which it was serving.
-    distribution_fits_requested = Signal(object, object, object, float, float, int)
+    #:
+    #: Step 4's closeout sent the binning down with the fitting, as above.
+    distribution_fits_requested = Signal(object, str, object, bool, float, float, int)
 
     @property
     def fig_hist(self) -> Figure:
@@ -1191,96 +1196,6 @@ class ProteinView(MetaSubsetTabView):
         return pd.DataFrame({"Normalized Current": bincenters, "Amplitude": hist})
 
     @log(logger=logger)
-    def _construct_single_event_histogram(
-        self,
-        event: Dict[str, Any],
-        plot_type: str,
-        bins: Any = None,
-        sizes: bool = False,
-    ) -> Optional[pd.DataFrame]:
-        """
-        Build a histogram of the current in a single event
-
-        :param event: a dictionary of event metadata and the underlying timeseries
-        :type event: Dict[str, Any]
-        :param plot_type: Type of histogram to create (raw or filtered).
-        :type plot_type: str
-        :param bins: Number of bins (if sizes==False) or size of bins (if sizes==True) for use when binning. Arrives as a single-element list from the controls and is rebound to a scalar (or None, to fall back to an automatic estimate) in the body, hence the loose annotation.
-        :type bins: Any
-        :param sizes: whether bins represents a number or a binsize
-        :type sizes: bool
-        :return: DataFrame with histogram values and corresponding current levels.
-        :rtype: Optional[pd.DataFrame]
-        :raises ValueError: If `bins` is not a usable bin count/size specification.
-        """
-        min_current = float("inf")
-        max_current = float("-inf")
-
-        if plot_type == "Raw Histogram":
-            timeseries = event["raw_data"]
-        elif plot_type == "Filtered Histogram":
-            timeseries = event["filtered_data"]
-
-        padding_before = int(event["padding_before"] * event["samplerate"] * 1e-6)
-        padding_after = int(event["padding_after"] * event["samplerate"] * 1e-6)
-        baseline = 0.5 * (
-            np.median(timeseries[:padding_before])
-            + np.median(timeseries[-padding_after:])
-        )
-
-        dI_I = (baseline - timeseries[padding_before:-padding_after]) / baseline
-
-        if dI_I.size == 0:
-            return None
-
-        min_curr = np.min(dI_I)
-        max_curr = np.max(dI_I)
-        if min_curr < min_current:
-            min_current = min_curr
-        if max_curr > max_current:
-            max_current = max_curr
-
-        if self.hist_min is None or min_current < self.hist_min:
-            self.hist_min = min_current
-        if self.hist_max is None or max_current > self.hist_max:
-            self.hist_max = max_current
-
-        if bins is not None:
-            if sizes is False:
-                if isinstance(bins, list) and len(bins) >= 1:
-                    bins = bins[0]
-                else:
-                    raise ValueError(f"Invalid bins entry {bins}")
-            else:
-                try:
-                    bins = int((self.hist_max - self.hist_min) / bins[0])
-                except Exception as e:
-                    raise ValueError(
-                        f"Unable to calculate bins given sizes {bins}: {str(e)}"
-                    ) from e
-        else:
-            # Freedman-Diaconis: bin width scales with the event's own IQR and
-            # sample count, so shorter/longer events (typical for proteins,
-            # where duration varies a lot) get independently sized bins instead
-            # of a fixed 100 for every event regardless of length.
-            iqr = np.percentile(dI_I, 75) - np.percentile(dI_I, 25)
-            bin_width = 2 * iqr / np.cbrt(np.size(dI_I))
-
-            if bin_width <= 0 or not np.isfinite(bin_width):
-                # IQR collapses to 0 (near-constant signal) or the event is too
-                # short/degenerate for FD to produce a sane width; fall back to
-                # the previous fixed default rather than dividing by zero.
-                bins = 100
-            else:
-                bins = int((self.hist_max - self.hist_min) / bin_width)
-                bins = max(bins, 1)
-
-        bin_edges = np.linspace(self.hist_min, self.hist_max, bins + 1)
-        event_hist, _ = np.histogram(dI_I, bins=bin_edges, density=True)
-        bincenters = bin_edges[:-1] + np.diff(bin_edges) / 2.0
-        return pd.DataFrame({"Normalized Current": bincenters, "Amplitude": event_hist})
-
-    @log(logger=logger)
     @Slot(str, str, tuple)
     def handle_parameter_change(
         self, submodel_name: str, action_name: str, args: tuple
@@ -1828,12 +1743,12 @@ class ProteinView(MetaSubsetTabView):
         plot_type: str = "Filtered Histogram",
     ) -> None:
         """
-        Build each event's histogram and ask for their fits; the answer draws them.
+        Ask for each event's histogram and its fit; the answer draws them.
 
-        Step 4c split the fitting out. The histograms are built here, because binning
-        is this widget's own presentation choice, but the double-gaussian fit belongs
-        to ``ProteinModel`` - so this half ends at the intent and
-        ``set_event_histogram_fits`` does every bit of drawing.
+        Step 4c split the fitting out and Step 4's closeout sent the binning after
+        it: an event's histogram is an aggregate of its samples, and it is exported
+        with the plot, so ``ProteinModel`` builds it. This half ends at the intent
+        and ``set_event_histogram_fits`` does every bit of drawing.
 
         An event whose histogram cannot be built contributes ``None`` rather than
         being dropped, so the lists stay index-aligned with ``event_data`` and the
@@ -1841,7 +1756,7 @@ class ProteinView(MetaSubsetTabView):
 
         :param event_data: List of event dictionaries, each containing data and metadata for one event.
         :type event_data: Sequence[Dict[str, Any]]
-        :param bins: Number of bins (if sizes==False) or size of bins (if sizes==True) for use when binning. Arrives as a single-element list from the controls and is rebound to a scalar (or None, to fall back to an automatic estimate) in the body, hence the loose annotation.
+        :param bins: Number of bins (if sizes==False) or size of bins (if sizes==True) for use when binning. Arrives as a single-element list from the controls and is passed down as it stands, hence the loose annotation.
         :type bins: Any
         :param sizes: Whether bins represent bin sizes.
         :type sizes: bool
@@ -1850,34 +1765,7 @@ class ProteinView(MetaSubsetTabView):
         :return: None
         :rtype: None
         """
-        frames: List[Optional[pd.DataFrame]] = []
-        for event in event_data:
-            # Reset per-event so bin edges are determined solely by this event's
-            # current range, not influenced by other events in the same plot call.
-            self.hist_min = None
-            self.hist_max = None
-
-            try:
-                frames.append(
-                    self._construct_single_event_histogram(
-                        event, plot_type, bins=bins, sizes=sizes
-                    )
-                )
-            except ValueError as e:
-                self.logger.info(
-                    f'Unable to construct histogram for event {event["event_id"]}: {e}'
-                )
-                frames.append(None)
-
-        histograms = [
-            (
-                (frame["Normalized Current"].values, frame["Amplitude"].values)
-                if frame is not None
-                else None
-            )
-            for frame in frames
-        ]
-        self.event_histogram_fits_requested.emit(histograms, frames, event_data)
+        self.event_histogram_fits_requested.emit(event_data, plot_type, bins, sizes)
 
     @log(logger=logger)
     def set_event_histogram_fits(
@@ -1885,7 +1773,9 @@ class ProteinView(MetaSubsetTabView):
         fits: Sequence[
             Tuple[Optional[npt.NDArray[np.float64]], Optional[npt.NDArray[np.float64]]]
         ],
-        frames: Sequence[Optional[pd.DataFrame]],
+        histograms: Sequence[
+            Optional[Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]]
+        ],
         event_data: Sequence[Dict[str, Any]],
     ) -> None:
         """
@@ -1902,8 +1792,8 @@ class ProteinView(MetaSubsetTabView):
 
         :param fits: one (fit parameters, fitted curve) pair per event, index-aligned with event_data
         :type fits: Sequence[Tuple[Optional[npt.NDArray[np.float64]], Optional[npt.NDArray[np.float64]]]]
-        :param frames: each event's histogram, or None where none could be built
-        :type frames: Sequence[Optional[pd.DataFrame]]
+        :param histograms: each event's (bin centers, amplitude) pair, or None where none could be built
+        :type histograms: Sequence[Optional[Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]]]
         :param event_data: List of event dictionaries, each containing data and metadata for one event.
         :type event_data: Sequence[Dict[str, Any]]
         :return: None
@@ -1922,29 +1812,20 @@ class ProteinView(MetaSubsetTabView):
             label = f'Exp {event["experiment_id"]}/Ch {event["channel_id"]}/Event {event["event_id"]}'
             ax.set_title(label)
 
-            plot_data = frames[j]
-            if plot_data is None:
+            histogram = histograms[j]
+            if histogram is None:
                 continue
+            bincenters, amplitude = histogram
 
             _, curve = fits[j]
             if curve is not None:
-                ax.plot(
-                    plot_data["Normalized Current"].values,
-                    curve,
-                    color="orange",
-                    zorder=2,
-                )
+                ax.plot(bincenters, curve, color="orange", zorder=2)
                 self._update_cache(
-                    (plot_data["Normalized Current"].values, label + " " + x_label),
+                    (bincenters, label + " " + x_label),
                     (curve, label + " " + y_label),
                 )
 
-            ax.plot(
-                plot_data["Normalized Current"].values,
-                plot_data["Amplitude"].values,
-                color="blue",
-                zorder=1,
-            )
+            ax.plot(bincenters, amplitude, color="blue", zorder=1)
 
             if j % num_cols == 0:
                 ax.set_ylabel(y_label)
@@ -1955,8 +1836,8 @@ class ProteinView(MetaSubsetTabView):
                 ax.set_xlabel(x_label)
 
             self._update_cache(
-                (plot_data["Normalized Current"].values, label + " " + x_label),
-                (plot_data["Amplitude"].values, label + " " + y_label),
+                (bincenters, label + " " + x_label),
+                (amplitude, label + " " + y_label),
             )
 
         self.fig_event.set_layout_engine("constrained")
@@ -2061,32 +1942,7 @@ class ProteinView(MetaSubsetTabView):
 
         events = list(self.event_data_generator)
 
-        frames: List[Optional[pd.DataFrame]] = []
-        for event in events:
-            try:
-                frames.append(
-                    self._construct_single_event_histogram(
-                        event,
-                        plot_type,
-                        bins=bins,
-                        sizes=sizes,
-                    )
-                )
-            except ValueError as e:
-                self.logger.info(
-                    f'Unable to construct histogram for event {event["event_id"]}: {e}'
-                )
-                frames.append(None)
-
-        histograms = [
-            (
-                (frame["Normalized Current"].values, frame["Amplitude"].values)
-                if frame is not None
-                else None
-            )
-            for frame in frames
-        ]
-        self.distribution_fits_requested.emit(histograms, frames, events, d, L, N)
+        self.distribution_fits_requested.emit(events, plot_type, bins, sizes, d, L, N)
 
     @log(logger=logger)
     def set_distribution_fits(
@@ -2094,7 +1950,9 @@ class ProteinView(MetaSubsetTabView):
         fits: Sequence[
             Tuple[Optional[npt.NDArray[np.float64]], Optional[npt.NDArray[np.float64]]]
         ],
-        frames: Sequence[Optional[pd.DataFrame]],
+        histograms: Sequence[
+            Optional[Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]]
+        ],
         event_data: Sequence[Dict[str, Any]],
         d: float,
         L: float,
@@ -2110,8 +1968,8 @@ class ProteinView(MetaSubsetTabView):
 
         :param fits: one (fit parameters, fitted curve) pair per event, index-aligned with event_data
         :type fits: Sequence[Tuple[Optional[npt.NDArray[np.float64]], Optional[npt.NDArray[np.float64]]]]
-        :param frames: each event's histogram, or None where none could be built
-        :type frames: Sequence[Optional[pd.DataFrame]]
+        :param histograms: each event's (bin centers, amplitude) pair, or None where none could be built
+        :type histograms: Sequence[Optional[Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]]]
         :param event_data: the events that were fitted
         :type event_data: Sequence[Dict[str, Any]]
         :param d: the diameter of the pore in nanometers
@@ -2128,8 +1986,10 @@ class ProteinView(MetaSubsetTabView):
         averaged_event_data: List[Dict[str, Any]] = []
 
         for index, event in enumerate(event_data):
-            plot_data = frames[index]
-            if plot_data is None:
+            # Only a guard: the histogram itself is drawn by the other answer half.
+            # An event with none had no fit either, and skipping it here keeps both
+            # ensembles describing exactly the events that were fitted.
+            if histograms[index] is None:
                 continue
 
             popt, _ = fits[index]

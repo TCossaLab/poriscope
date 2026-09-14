@@ -13,6 +13,7 @@ Run with:
 
 from unittest.mock import MagicMock, patch
 
+import numpy as np
 import pytest
 from PySide6.QtWidgets import QApplication
 
@@ -429,3 +430,158 @@ class TestSessionState:
     def test_restore_session_state_is_noop_without_subset_filters(self, controller):
         controller.restore_session_state({"metaclass": "MetaController"})
         assert controller.view.subset_filters == {}
+
+
+# ===========================================================================
+# fit_event_histograms / fit_distribution_events - the binning's destination
+# ===========================================================================
+#
+# Neither slot had a test of its own before Step 4's closeout, which is method
+# rule 52 for the fourth time: their callers were covered, and that is exactly
+# what made the gap invisible. They do real work now - bin, then fit, then hand
+# back - so a wrong call shape or a swallowed failure would have satisfied the
+# whole suite.
+
+
+def _event(event_id=1, blockage=0.3, rng_seed=0):
+    """
+    One synthetic event, shaped as ``load_event_data`` yields them.
+
+    :param event_id: the event's id
+    :type event_id: int
+    :param blockage: the fraction of the baseline the event blocks
+    :type blockage: float
+    :param rng_seed: the seed for the synthetic noise
+    :type rng_seed: int
+    :return: one event payload
+    :rtype: dict
+    """
+    rng = np.random.default_rng(rng_seed)
+    n, sr, padding_us = 2000, 1_000_000, 100
+    pad = int(padding_us * sr * 1e-6)
+    baseline = 1000.0
+    trace = np.full(n, baseline * (1.0 - blockage)) + rng.normal(0, 10.0, n)
+    trace[:pad] = baseline + rng.normal(0, 10.0, pad)
+    trace[-pad:] = baseline + rng.normal(0, 10.0, pad)
+    return {
+        "id": event_id,
+        "event_id": event_id,
+        "experiment_id": 1,
+        "channel_id": 0,
+        "raw_data": trace.copy(),
+        "filtered_data": trace.copy(),
+        "samplerate": sr,
+        "padding_before": padding_us,
+        "padding_after": padding_us,
+    }
+
+
+class TestFitEventHistograms:
+    """Bin every event, fit every histogram, hand both back to be drawn."""
+
+    def test_the_view_is_handed_one_histogram_and_one_fit_per_event(
+        self, controller
+    ) -> None:
+        """
+        The drawing half lays out one subplot per event in the order given, so the
+        two lists it receives have to stay index-aligned with the events.
+        """
+        controller.view.set_event_histogram_fits = MagicMock()
+        events = [_event(1), _event(2, rng_seed=1)]
+
+        controller.fit_event_histograms(events, "Filtered Histogram", None, False)
+
+        fits, histograms, event_data = (
+            controller.view.set_event_histogram_fits.call_args.args
+        )
+        assert event_data is events
+        assert len(fits) == len(histograms) == 2
+        for bincenters, amplitude in histograms:
+            assert len(bincenters) == len(amplitude) > 0
+
+    def test_the_bin_request_reaches_the_binning(self, controller) -> None:
+        """An explicit count is the cheapest way to see the request got through."""
+        controller.view.set_event_histogram_fits = MagicMock()
+
+        controller.fit_event_histograms([_event(1)], "Filtered Histogram", [37], False)
+
+        histograms = controller.view.set_event_histogram_fits.call_args.args[1]
+        assert len(histograms[0][0]) == 37
+
+    def test_an_unusable_bin_request_is_reported_and_draws_nothing(
+        self, controller, mocker
+    ) -> None:
+        """
+        A stale grid of subplots must not be left under this request's label, and
+        the refusal has to reach the user rather than only the log.
+        """
+        controller.view.set_event_histogram_fits = MagicMock()
+        controller.add_text_to_display = mocker.Mock()
+        controller.add_text_to_display.emit = mocker.Mock()
+
+        controller.fit_event_histograms([_event(1)], "Filtered Histogram", "bad", False)
+
+        controller.view.set_event_histogram_fits.assert_not_called()
+        messages = [
+            call.args[0] for call in controller.add_text_to_display.emit.call_args_list
+        ]
+        assert any("Unable to fit the event histograms" in m for m in messages)
+
+
+class TestFitDistributionEvents:
+    """The same, plus the pore geometry the sampling half needs."""
+
+    def test_the_geometry_passes_through_untouched(self, controller) -> None:
+        controller.view.set_distribution_fits = MagicMock()
+        events = [_event(1)]
+
+        controller.fit_distribution_events(
+            events, "Filtered Histogram", None, False, 10.0, 20.0, 5
+        )
+
+        fits, histograms, event_data, d, L, N = (
+            controller.view.set_distribution_fits.call_args.args
+        )
+        assert event_data is events
+        assert len(fits) == len(histograms) == 1
+        assert (d, L, N) == (10.0, 20.0, 5)
+
+    def test_an_event_that_cannot_be_binned_still_holds_its_place(
+        self, controller
+    ) -> None:
+        """
+        A None entry is how the drawing half knows to skip an event without
+        shifting its neighbours, so the refusal has to survive the round trip.
+        """
+        controller.view.set_distribution_fits = MagicMock()
+        flat = _event(2)
+        flat["filtered_data"] = np.zeros_like(flat["filtered_data"])
+
+        controller.fit_distribution_events(
+            [_event(1), flat, _event(3, rng_seed=3)],
+            "Filtered Histogram",
+            None,
+            False,
+            10.0,
+            20.0,
+            5,
+        )
+
+        histograms = controller.view.set_distribution_fits.call_args.args[1]
+        assert histograms[1] is None
+        assert histograms[0] is not None and histograms[2] is not None
+
+    def test_a_failure_is_reported_and_draws_nothing(self, controller, mocker) -> None:
+        controller.view.set_distribution_fits = MagicMock()
+        controller.add_text_to_display = mocker.Mock()
+        controller.add_text_to_display.emit = mocker.Mock()
+
+        controller.fit_distribution_events(
+            [_event(1)], "Sideways Histogram", None, False, 10.0, 20.0, 5
+        )
+
+        controller.view.set_distribution_fits.assert_not_called()
+        messages = [
+            call.args[0] for call in controller.add_text_to_display.emit.call_args_list
+        ]
+        assert any("Unable to fit the event histograms" in m for m in messages)

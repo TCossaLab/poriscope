@@ -168,9 +168,13 @@ MOVED: Tuple[Tuple[str, str, str], ...] = (
     ),
     ("poriscope/plugins/analysistabs/ProteinView.py", "_generate_vm_ensemble", "4c"),
     ("poriscope/plugins/analysistabs/ProteinView.py", "_summarize_vm", "4c"),
+    # Landed in Step 4's closeout: the per-event binning moved to ProteinModel and
+    # is tracked at its destination now. The View's copy built a DataFrame that
+    # every reader immediately unpacked into two arrays, which is what kept pandas
+    # in the file; the Model hands back the arrays.
     (
-        "poriscope/plugins/analysistabs/ProteinView.py",
-        "_construct_single_event_histogram",
+        "poriscope/plugins/analysistabs/ProteinModel.py",
+        "build_event_histograms",
         "4c",
     ),
     (

@@ -1,5 +1,13 @@
 ## Poriscope 2.0.0: in progress
 
+* **Breaking:** the Protein tab's per-event histograms are binned by `ProteinModel.build_event_histograms` rather than in the view, so `event_histogram_fits_requested` and `distribution_fits_requested` carry the events and the bin request, `set_event_histogram_fits` and `set_distribution_fits` take the histograms as arrays rather than dataframes, and `ProteinView._construct_single_event_histogram` is gone
+
+* **Breaking:** the Protein tab's Individual Distribution plot now bins each event over its own range, as the Event Histogram plot already did - the range used to accumulate across the events of a plot, so the bins an event was drawn on depended on how many events preceded it
+
+* **An event whose baseline is zero is now skipped** on the Protein tab's per-event histograms, as it already was on the all-points histogram, rather than being drawn as an empty subplot and exported as a column of blanks
+
+* **The Protein tab now reports a bin width or count it cannot use** on the status panel, instead of writing one log line per event and drawing a grid of empty subplots
+
 * **Fixed the Metadata tab drawing an Event Overlay on top of the previous plot** instead of replacing it: switching to a Raw or Filtered Event Overlay from any other plot type left whatever was already on the axes, so two unrelated pictures were superimposed
 
 * **Breaking:** the Metadata tab's Kernel Density Plot and Histogram are filtered, log-scaled and given their shared plot limits by `MetadataModel` rather than in the view, so `density_requested` and `histogram_bins_requested` carry the raw columns and their log flag, and `set_kernel_densities` and `set_histogram_bins` take the newest dataset and the widened limits and accumulate it themselves

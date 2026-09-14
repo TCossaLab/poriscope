@@ -442,86 +442,6 @@ class TestGenerateVmEnsemble:
 # ===========================================================================
 
 
-class TestConstructSingleEventHistogram:
-    def test_returns_dataframe(self, mock_view):
-        df = mock_view._construct_single_event_histogram(
-            _make_event(), "Filtered Histogram"
-        )
-        assert isinstance(df, pd.DataFrame)
-        assert list(df.columns) == ["Normalized Current", "Amplitude"]
-
-    def test_default_uses_freedman_diaconis(self, mock_view):
-        """Default binning (no explicit bins arg) now uses Freedman-Diaconis,
-        which is data-dependent — assert it's a sane positive integer, not a
-        fixed count."""
-        df = mock_view._construct_single_event_histogram(
-            _make_event(), "Filtered Histogram"
-        )
-        assert len(df) > 0
-
-    def test_explicit_100_bins_still_works(self, mock_view):
-        """Explicit bin count still overrides FD and behaves as before."""
-        df = mock_view._construct_single_event_histogram(
-            _make_event(), "Filtered Histogram", bins=[100]
-        )
-        assert len(df) == 100
-
-    def test_custom_bin_count(self, mock_view):
-        df = mock_view._construct_single_event_histogram(
-            _make_event(), "Filtered Histogram", bins=[50]
-        )
-        assert len(df) == 50
-
-    def test_custom_bin_size(self, mock_view):
-        df = mock_view._construct_single_event_histogram(
-            _make_event(), "Filtered Histogram", bins=[0.01], sizes=True
-        )
-        assert len(df) > 0
-
-    def test_empty_event_returns_none(self, mock_view):
-        ev = {
-            "id": 1,
-            "event_id": 1,
-            "experiment_id": 1,
-            "channel_id": 0,
-            "raw_data": np.zeros(400),
-            "filtered_data": np.zeros(400),
-            "fit_data": np.zeros(400),
-            "samplerate": 1_000_000,
-            "padding_before": 200,
-            "padding_after": 200,
-        }
-        assert (
-            mock_view._construct_single_event_histogram(ev, "Filtered Histogram")
-            is None
-        )
-
-    def test_updates_hist_min_max(self, mock_view):
-        mock_view._construct_single_event_histogram(
-            _make_event(blockage=0.4), "Filtered Histogram"
-        )
-        assert mock_view.hist_min is not None
-        assert mock_view.hist_max is not None
-        assert mock_view.hist_min < mock_view.hist_max
-
-    def test_raw_vs_filtered(self, mock_view):
-        ev = _make_event()
-        ev["raw_data"] = ev["filtered_data"].copy()
-        assert (
-            mock_view._construct_single_event_histogram(ev, "Raw Histogram") is not None
-        )
-        assert (
-            mock_view._construct_single_event_histogram(ev, "Filtered Histogram")
-            is not None
-        )
-
-    def test_invalid_bins_raises(self, mock_view):
-        with pytest.raises((ValueError, TypeError)):
-            mock_view._construct_single_event_histogram(
-                _make_event(), "Filtered Histogram", bins="bad", sizes=False
-            )
-
-
 # ===========================================================================
 # _construct_all_points_histogram
 # ===========================================================================
@@ -1103,33 +1023,43 @@ def _answer_event_histogram_fits(view):
     ``set_event_histogram_fits``; these tests drive both halves, because driving only
     the first asserts against a View that has not drawn anything yet.
 
-    The fits come from a **real ProteinModel** rather than a stub, so their arity and
-    their ``(popt, curve)`` shape are the collaborator's own rather than this test's
-    idea of them.
+    The histograms and the fits both come from a **real ProteinModel** rather than a
+    stub, so their arity and their shapes are the collaborator's own rather than this
+    test's idea of them. Step 4's closeout moved the binning down beside the fitting,
+    so this helper runs both calls the Controller runs.
 
     :param view: the view whose request has just been emitted
     :type view: ProteinView
     :return: None
     :rtype: None
     """
-    args = view.event_histogram_fits_requested.emit.call_args.args
-    histograms, frames, event_data = args
+    event_data, plot_type, bins, sizes = (
+        view.event_histogram_fits_requested.emit.call_args.args
+    )
+    model = ProteinModel()
+    histograms = model.build_event_histograms(event_data, plot_type, bins, sizes)
     view.set_event_histogram_fits(
-        ProteinModel().fit_histograms(histograms), frames, event_data
+        model.fit_histograms(histograms), histograms, event_data
     )
 
 
 class TestUpdateEventHistogram:
-    def test_the_request_carries_one_entry_per_event(self, mock_view):
-        """The three lists stay index-aligned, which the drawing half relies on."""
+    def test_the_request_carries_the_events_and_the_bin_request(self, mock_view):
+        """
+        The binning moved below the widget in Step 4's closeout, so what goes out is
+        the events themselves and how the caller asked for them to be binned.
+        """
         events = [_make_event(i, rng_seed=i) for i in range(1, 4)]
 
-        mock_view._update_event_histogram(events)
+        mock_view._update_event_histogram(events, bins=[40], sizes=False)
 
-        histograms, frames, event_data = (
+        event_data, plot_type, bins, sizes = (
             mock_view.event_histogram_fits_requested.emit.call_args.args
         )
-        assert len(histograms) == len(frames) == len(event_data) == 3
+        assert event_data is events
+        assert plot_type == "Filtered Histogram"
+        assert bins == [40]
+        assert sizes is False
 
     def test_switches_to_event_mode(self, mock_view):
         mock_view._update_event_histogram([_make_event(1)])
@@ -1159,11 +1089,14 @@ class TestUpdateEventHistogram:
         empty grid rather than as a missing orange line.
         """
         mock_view._update_event_histogram([_make_event(1)])
-        _, frames, event_data = (
+        event_data, plot_type, bins, sizes = (
             mock_view.event_histogram_fits_requested.emit.call_args.args
         )
+        histograms = ProteinModel().build_event_histograms(
+            event_data, plot_type, bins, sizes
+        )
 
-        mock_view.set_event_histogram_fits([(None, None)], frames, event_data)
+        mock_view.set_event_histogram_fits([(None, None)], histograms, event_data)
 
         assert mock_view._display_mode == "event"
         assert mock_view.fig_event.add_subplot.call_count == 1
@@ -1407,9 +1340,11 @@ class TestPipeline:
     D, L = 20.0, 30.0
 
     def test_single_event_histogram(self, mock_view):
-        ev = _make_event(blockage=0.3)
-        df = mock_view._construct_single_event_histogram(ev, "Filtered Histogram")
-        assert df is not None and len(df) > 0  # FD-derived, not fixed 100
+        """The binning is the Model's since Step 4's closeout; drive it there."""
+        ((bincenters, amplitude),) = ProteinModel().build_event_histograms(
+            [_make_event(blockage=0.3)], "Filtered Histogram", None, False
+        )
+        assert len(bincenters) > 0  # FD-derived, not fixed 100
 
     def test_all_points_histogram_three_events(self, mock_view):
         evs = [_make_event(i, blockage=0.2 + i * 0.05, rng_seed=i) for i in range(3)]
@@ -2542,17 +2477,19 @@ def _blockage_fit(mean_low=0.3, mean_high=0.6, std=0.02):
     return (1.0, mean_low, std, 1.0, mean_high, std)
 
 
-def _histogram_frame():
+def _histogram_pair():
     """
-    A stand-in for one event's histogram frame.
+    A stand-in for one event's histogram.
 
     Only its presence is read by the method under test - a None entry means the
-    histogram could not be built - so the contents are deliberately minimal.
+    histogram could not be built - so the contents are deliberately minimal. It was
+    a one-column DataFrame until Step 4's closeout moved the binning to the Model,
+    which returns the two arrays the drawing half actually uses.
 
-    :return: a one-column frame
-    :rtype: pd.DataFrame
+    :return: a (bin centers, amplitude) pair
+    :rtype: tuple
     """
-    return pd.DataFrame({"counts": [1.0, 2.0, 1.0]})
+    return (np.array([0.1, 0.2, 0.3]), np.array([1.0, 2.0, 1.0]))
 
 
 class TestSetDistributionFits:
@@ -2568,7 +2505,7 @@ class TestSetDistributionFits:
 
         mock_view.set_distribution_fits(
             fits=[(_blockage_fit(), None), (_blockage_fit(), None)],
-            frames=[_histogram_frame(), _histogram_frame()],
+            histograms=[_histogram_pair(), _histogram_pair()],
             event_data=[{"id": 1}, {"id": 2}],
             d=10.0,
             L=20.0,
@@ -2587,7 +2524,7 @@ class TestSetDistributionFits:
 
         mock_view.set_distribution_fits(
             fits=[(_blockage_fit(), None), (_blockage_fit(), None)],
-            frames=[None, _histogram_frame()],
+            histograms=[None, _histogram_pair()],
             event_data=[{"id": 1}, {"id": 2}],
             d=10.0,
             L=20.0,
@@ -2605,7 +2542,7 @@ class TestSetDistributionFits:
 
         mock_view.set_distribution_fits(
             fits=[(None, None), (_blockage_fit(), None)],
-            frames=[_histogram_frame(), _histogram_frame()],
+            histograms=[_histogram_pair(), _histogram_pair()],
             event_data=[{"id": 1}, {"id": 2}],
             d=10.0,
             L=20.0,
@@ -2628,7 +2565,7 @@ class TestSetDistributionFits:
                 (_blockage_fit(0.3, 0.4), None),
                 (_blockage_fit(0.5, 0.9), None),
             ],
-            frames=[_histogram_frame(), None, _histogram_frame()],
+            histograms=[_histogram_pair(), None, _histogram_pair()],
             event_data=[{"id": 1}, {"id": 2}, {"id": 3}],
             d=10.0,
             L=20.0,
@@ -2653,7 +2590,7 @@ class TestSetDistributionFits:
                 ((1.0, 0.25, 0.02, 1.0, 0.75, 0.02), None),
                 ((1.0, 0.75, 0.02, 1.0, 0.25, 0.02), None),
             ],
-            frames=[_histogram_frame(), _histogram_frame()],
+            histograms=[_histogram_pair(), _histogram_pair()],
             event_data=[{"id": 1}, {"id": 2}],
             d=10.0,
             L=20.0,
@@ -2675,7 +2612,7 @@ class TestSetDistributionFits:
 
         mock_view.set_distribution_fits(
             fits=[((1.0, 0.3, -0.02, 1.0, 0.6, -0.05), None)],
-            frames=[_histogram_frame()],
+            histograms=[_histogram_pair()],
             event_data=[{"id": 1}],
             d=10.0,
             L=20.0,
@@ -2695,7 +2632,7 @@ class TestSetDistributionFits:
 
         mock_view.set_distribution_fits(
             fits=[(_blockage_fit(), None)],
-            frames=[_histogram_frame()],
+            histograms=[_histogram_pair()],
             event_data=[{"id": 1}],
             d=10.0,
             L=20.0,
@@ -2715,7 +2652,7 @@ class TestSetDistributionFits:
 
         mock_view.set_distribution_fits(
             fits=[(_blockage_fit(), None)],
-            frames=[_histogram_frame()],
+            histograms=[_histogram_pair()],
             event_data=[{"id": 1}],
             d=10.0,
             L=20.0,
@@ -2741,7 +2678,7 @@ class TestSetDistributionFits:
         mock_view.add_text_to_display.connect(lambda m, s: received.append(m))
 
         mock_view.set_distribution_fits(
-            fits=[], frames=[], event_data=[], d=10.0, L=20.0, N=10
+            fits=[], histograms=[], event_data=[], d=10.0, L=20.0, N=10
         )
 
         assert any("nothing to plot" in message for message in received)
@@ -2757,7 +2694,7 @@ class TestSetDistributionFits:
 
         mock_view.set_distribution_fits(
             fits=[(None, None)],
-            frames=[_histogram_frame()],
+            histograms=[_histogram_pair()],
             event_data=[{"id": 1}],
             d=10.0,
             L=20.0,

@@ -548,3 +548,203 @@ class TestLoadEventsById:
         mocker.patch.object(model, "call", return_value=generator)
 
         assert model.load_events_by_id("L", "3", None) is generator
+
+
+# ===========================================================================
+# build_event_histograms - the per-event binning, moved off ProteinView
+# ===========================================================================
+
+
+def _make_event(
+    event_id=1,
+    n=2000,
+    sr=1_000_000,
+    padding_us=100,
+    blockage=0.3,
+    noise=0.01,
+    rng_seed=0,
+):
+    """
+    Synthetic event dict matching what ``load_event_data`` yields.
+
+    Moved from ``tests/unit/views/test_protein_view.py`` with the binning it feeds,
+    so the pins below are the same inputs they were before Step 4's closeout.
+
+    :param event_id: the event's id
+    :type event_id: int
+    :param n: how many samples the event carries
+    :type n: int
+    :param sr: the sampling rate in Hz
+    :type sr: int
+    :param padding_us: the padding either side, in microseconds
+    :type padding_us: int
+    :param blockage: the fraction of the baseline the event blocks
+    :type blockage: float
+    :param noise: the noise amplitude as a fraction of the baseline
+    :type noise: float
+    :param rng_seed: the seed for the synthetic noise
+    :type rng_seed: int
+    :return: one event payload
+    :rtype: dict
+    """
+    rng = np.random.default_rng(rng_seed)
+    pb = int(padding_us * sr * 1e-6)
+    pa = int(padding_us * sr * 1e-6)
+    baseline = 1000.0
+    event_current = baseline * (1.0 - blockage)
+    ts = np.full(n, event_current) + rng.normal(0, noise * baseline, n)
+    ts[:pb] = baseline + rng.normal(0, noise * baseline, pb)
+    ts[-pa:] = baseline + rng.normal(0, noise * baseline, pa)
+    return {
+        "id": event_id,
+        "event_id": event_id,
+        "experiment_id": 1,
+        "channel_id": 0,
+        "raw_data": ts.copy(),
+        "filtered_data": ts.copy(),
+        "samplerate": sr,
+        "padding_before": padding_us,
+        "padding_after": padding_us,
+    }
+
+
+class TestBuildEventHistograms:
+    """
+    One histogram per event, each binned over its own range.
+
+    These came from ``test_protein_view``'s ``TestConstructSingleEventHistogram``
+    with the method, rewritten against the list-returning shape: the DataFrame the
+    View used to build was unpacked into two arrays at every reader, so the Model
+    hands back the arrays.
+    """
+
+    def test_one_pair_per_event(self, model):
+        events = [_make_event(i, rng_seed=i) for i in range(3)]
+
+        histograms = model.build_event_histograms(
+            events, "Filtered Histogram", None, False
+        )
+
+        assert len(histograms) == 3
+        for bincenters, amplitude in histograms:
+            assert len(bincenters) == len(amplitude) > 0
+
+    def test_default_uses_freedman_diaconis(self, model):
+        """
+        Default binning is data-dependent, so assert it is a sane positive count
+        rather than a fixed one - the fixed hundred is the degenerate fallback.
+        """
+        ((bincenters, _),) = model.build_event_histograms(
+            [_make_event()], "Filtered Histogram", None, False
+        )
+
+        assert len(bincenters) > 0
+
+    def test_an_explicit_count_overrides_the_rule(self, model):
+        ((bincenters, _),) = model.build_event_histograms(
+            [_make_event()], "Filtered Histogram", [50], False
+        )
+
+        assert len(bincenters) == 50
+
+    def test_a_bin_width_is_divided_into_the_event_range(self, model):
+        ((bincenters, _),) = model.build_event_histograms(
+            [_make_event()], "Filtered Histogram", [0.01], True
+        )
+
+        assert len(bincenters) > 0
+
+    def test_an_event_with_no_samples_between_its_paddings_is_none(self, model):
+        """A padding pair covering the whole event leaves nothing to bin."""
+        event = _make_event()
+        event["padding_before"] = 1000
+        event["padding_after"] = 1000
+
+        assert model.build_event_histograms(
+            [event], "Filtered Histogram", None, False
+        ) == [None]
+
+    def test_a_zero_baseline_event_is_none_rather_than_a_row_of_nans(self, model):
+        """
+        Dividing by a zero baseline used to reach ``np.linspace`` as NaN limits,
+        which numpy accepts: the event came back as a histogram of NaN bin centers
+        and zero amplitudes, drawn as an empty subplot and exported as a column of
+        NaNs. The all-points path already skipped such events explicitly; both do
+        now.
+        """
+        event = _make_event()
+        event["filtered_data"] = np.zeros_like(event["filtered_data"])
+
+        assert model.build_event_histograms(
+            [event], "Filtered Histogram", None, False
+        ) == [None]
+
+    def test_a_skipped_event_keeps_the_others_in_place(self, model):
+        """
+        The result is index-aligned with the events, because the drawing half lays
+        out one subplot per event in the original order.
+        """
+        good, bad = _make_event(1), _make_event(2)
+        bad["filtered_data"] = np.zeros_like(bad["filtered_data"])
+
+        histograms = model.build_event_histograms(
+            [good, bad, _make_event(3, rng_seed=3)],
+            "Filtered Histogram",
+            None,
+            False,
+        )
+
+        assert histograms[1] is None
+        assert histograms[0] is not None and histograms[2] is not None
+
+    def test_each_event_is_binned_over_its_own_range(self, model):
+        """
+        Requested 2026-09-14, and the reason the two paths now share this method:
+        the individual-distribution path let the limits accumulate across a plot's
+        events, so the fifth event was binned over the union of the first five and
+        the edges depended on the order they arrived in.
+        """
+        shallow = _make_event(1, blockage=0.1)
+        deep = _make_event(2, blockage=0.8, rng_seed=1)
+
+        forwards = model.build_event_histograms(
+            [shallow, deep], "Filtered Histogram", None, False
+        )
+        backwards = model.build_event_histograms(
+            [deep, shallow], "Filtered Histogram", None, False
+        )
+
+        assert forwards[0][0] == pytest.approx(backwards[1][0])
+        assert forwards[1][0] == pytest.approx(backwards[0][0])
+
+    def test_raw_and_filtered_both_bin(self, model):
+        event = _make_event()
+
+        assert (
+            model.build_event_histograms([event], "Raw Histogram", None, False)[0]
+            is not None
+        )
+        assert (
+            model.build_event_histograms([event], "Filtered Histogram", None, False)[0]
+            is not None
+        )
+
+    def test_an_unusable_bin_request_is_refused_once(self, model):
+        """
+        The request is the same for every event, so it is refused rather than
+        absorbed per event - which used to log one line each and draw a grid of
+        empty subplots.
+        """
+        with pytest.raises((ValueError, TypeError)):
+            model.build_event_histograms(
+                [_make_event(), _make_event(2)], "Filtered Histogram", "bad", False
+            )
+
+    def test_an_unknown_plot_type_is_refused(self, model):
+        with pytest.raises(ValueError, match="Unknown plot_type"):
+            model.build_event_histograms(
+                [_make_event()], "Sideways Histogram", None, False
+            )
+
+    def test_no_events_gives_no_histograms(self, model):
+        assert model.build_event_histograms([], "Filtered Histogram", None, False) == []

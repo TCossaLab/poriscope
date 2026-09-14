@@ -26,7 +26,7 @@
 
 
 import logging
-from typing import Any, Dict, List, Optional, Sequence, Tuple, override
+from typing import Any, Dict, List, Optional, Sequence, override
 
 import numpy as np
 import numpy.typing as npt
@@ -135,36 +135,43 @@ class ProteinController(MetaSubsetTabController):
         self.view.set_ensemble_geometry_fit(popt, curve, plot_data, plot_type, d, L, N)
 
     @log(logger=logger)
-    @Slot(object, object, object)
+    @Slot(object, str, object, bool)
     def fit_event_histograms(
         self,
-        histograms: Sequence[
-            Optional[Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]]
-        ],
-        frames: Sequence[Optional[pd.DataFrame]],
         event_data: Sequence[Dict[str, Any]],
+        plot_type: str,
+        bins: Any,
+        sizes: bool,
     ) -> None:
         """
-        Fit every event's histogram in one call, and hand the results back to draw.
+        Bin and fit every event in one call, and hand the results back to draw.
 
         Decision B's command path. One call rather than one per event keeps each
-        answer off the widget; see ``ProteinModel.fit_histograms``.
+        answer off the widget; see ``ProteinModel.fit_histograms``. Step 4's closeout
+        added the binning ahead of the fitting, so the widget is handed the
+        histograms rather than building them.
 
-        The frames and the events pass straight through: this slot marshals, it does
-        not interpret them. A failure is reported on the status panel rather than
-        raised, because Qt invoked this from a signal and nothing above it could
-        handle it.
+        The events pass straight through: this slot marshals, it does not interpret
+        them. A failure is reported on the status panel rather than raised, because
+        Qt invoked this from a signal and nothing above it could handle it - and an
+        unusable bin request is now reported once here rather than logged once per
+        event and drawn as a grid of empty subplots.
 
-        :param histograms: one (bins, amplitude) pair per event, or None where no histogram could be built
-        :type histograms: Sequence[Optional[Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]]]
-        :param frames: each event's histogram, passed back to the View unchanged
-        :type frames: Sequence[Optional[pd.DataFrame]]
         :param event_data: the events being plotted, passed back to the View unchanged
         :type event_data: Sequence[Dict[str, Any]]
+        :param plot_type: 'Raw Histogram' or 'Filtered Histogram'
+        :type plot_type: str
+        :param bins: a bin count, or a bin width when sizes is True, or None
+        :type bins: Any
+        :param sizes: does bins refer to a bin width (True) or a count (False)
+        :type sizes: bool
         :return: None
         :rtype: None
         """
         try:
+            histograms = self.model.build_event_histograms(
+                event_data, plot_type, bins, sizes
+            )
             fits = self.model.fit_histograms(histograms)
         except (ValueError, TypeError, IndexError) as e:
             self.logger.error(f"Unable to fit the event histograms: {repr(e)}")
@@ -172,34 +179,35 @@ class ProteinController(MetaSubsetTabController):
                 f"Unable to fit the event histograms: {e}", self.__class__.__name__
             )
             return
-        self.view.set_event_histogram_fits(fits, frames, event_data)
+        self.view.set_event_histogram_fits(fits, histograms, event_data)
 
     @log(logger=logger)
-    @Slot(object, object, object, float, float, int)
+    @Slot(object, str, object, bool, float, float, int)
     def fit_distribution_events(
         self,
-        histograms: Sequence[
-            Optional[Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]]
-        ],
-        frames: Sequence[Optional[pd.DataFrame]],
         event_data: Sequence[Dict[str, Any]],
+        plot_type: str,
+        bins: Any,
+        sizes: bool,
         d: float,
         L: float,
         N: int,
     ) -> None:
         """
-        Fit every event on the individual distribution path, and hand them back.
+        Bin and fit every event on the individual distribution path, and hand back.
 
         Decision B's command path, the same shape as ``fit_event_histograms``. The
-        frames, the events and the pore geometry pass straight through; this slot
-        marshals and does not interpret them.
+        events and the pore geometry pass straight through; this slot marshals and
+        does not interpret them.
 
-        :param histograms: one (bins, amplitude) pair per event, or None where no histogram could be built
-        :type histograms: Sequence[Optional[Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]]]
-        :param frames: each event's histogram, passed back to the View unchanged
-        :type frames: Sequence[Optional[pd.DataFrame]]
         :param event_data: the events being plotted, passed back to the View unchanged
         :type event_data: Sequence[Dict[str, Any]]
+        :param plot_type: 'Raw Histogram' or 'Filtered Histogram'
+        :type plot_type: str
+        :param bins: a bin count, or a bin width when sizes is True, or None
+        :type bins: Any
+        :param sizes: does bins refer to a bin width (True) or a count (False)
+        :type sizes: bool
         :param d: the diameter of the pore in nanometers
         :type d: float
         :param L: the length of the pore in nanometers
@@ -210,6 +218,9 @@ class ProteinController(MetaSubsetTabController):
         :rtype: None
         """
         try:
+            histograms = self.model.build_event_histograms(
+                event_data, plot_type, bins, sizes
+            )
             fits = self.model.fit_histograms(histograms)
         except (ValueError, TypeError, IndexError) as e:
             self.logger.error(f"Unable to fit the event histograms: {repr(e)}")
@@ -217,7 +228,7 @@ class ProteinController(MetaSubsetTabController):
                 f"Unable to fit the event histograms: {e}", self.__class__.__name__
             )
             return
-        self.view.set_distribution_fits(fits, frames, event_data, d, L, N)
+        self.view.set_distribution_fits(fits, histograms, event_data, d, L, N)
 
     @log(logger=logger)
     @Slot(str)
