@@ -1,3 +1,122 @@
+## Step 4 closeout - the commit series, planned 2026-09-14 at `a1ef5906`
+
+**What is left of Step 4**: 4c's remainder with 3d riding it, 4e, the event-plot promotion,
+and the 4a exit-review item. Allowlist **8**, every entry rule 2. Duplication in the three
+analysis-tab families **31**.
+
+### The surface, re-measured - and smaller than the 4d handoff recorded
+
+Counting only loads *outside* an annotation, which is what rule 2 now means:
+
+| File | booked | methods | loads | the handoff said |
+| --- | --- | --- | --- | --- |
+| `MetaView.py` | numpy | 1 | 9 | 10 in 1 |
+| `EventAnalysisView.py` | numpy | **1** | **1** | 5 in 2 |
+| `ClusteringView.py` | pandas | **1** | **1** | 8 in 4 |
+| `RawDataView.py` | numpy | **3** | **11** | 33 in 7 |
+| `MetadataView.py` | numpy, pandas | **9 + 2** | **42 + 2** | 72 in 12, 16 in 7 |
+| `ProteinView.py` | numpy, pandas | **8 + 4** | **76 + 7** | 100 in 9, 32 in 15 |
+
+### Three kinds of numpy, and only two of them are Model code
+
+This is what decides whether rule 2 can reach zero, so it is stated before the series
+rather than discovered inside it.
+
+1. **Computation** - histogram construction, the Monte Carlo geometry ensemble, theoretical
+   blockages, the logscale filter. Moves to a Model. Most of the 8 points.
+2. **A derived axis.** `time = np.arange(len(data)) / samplerate * 1e6` appears **five times
+   across four Views** - `EventAnalysisView:536`, `RawDataView:204` (with `+ start`) and
+   `:663`, `MetadataView:2426`, `ProteinView:1787`. The Model already owns the samples and
+   the samplerate, so it hands the time base back with them. One decision, five sites.
+3. **Artist parameters** - `extent=[np.min(x), np.max(x), ...]`, colorbar ticks via
+   `np.linspace`, and the PSD axis limits `update_psd` derives with `np.searchsorted` and
+   `ceil(log10(...))`. This is matplotlib configuration computed from data the Model already
+   returned, and the plan's own line is that artist manipulation **stays in the View**.
+
+**Kind 3 gates exactly 2 of the 8 points** - `RawDataView`'s (`update_psd`) and
+`MetadataView`'s numpy point (`set_heatmap`). **Decided 2026-09-14**, see `DECISIONS.md`:
+the Model returns a derived value **where it is a property of the data** - the PSD roll-off
+index, the heatmap extent, the time base - alongside the data it already returns; **pure
+styling stays in the View**; and any residue is named rather than chased. Per-site
+classification is the first task of each branch.
+
+### The series
+
+Order is forced in one place: **the logscale helper cannot move until all eight of its call
+sites are converted**, and they sit in Clustering (1), Metadata (5) and Protein (2). So
+`MetaView`'s point falls last, not first - the 4d handoff had it first.
+
+0. **Close the nine `RUNS ONLY` targets - the gate is red before the series starts.**
+   Measured 2026-09-14 by running the suite under `--cov` and the audit against it:
+   **69 of 78 pinned, 9 RUNS ONLY, 0 untested**, and the audit exits 1 on anything that is
+   not `PINNED`. All nine are *destinations of moves this refactor already made*: five from
+   4b (`resolve_event_ids` and `load_events_by_id` on both Models, `drop_fit_columns`),
+   three from 4c Metadata (`kernel_densities`, `histogram_bin_edges`, `_log_exp_pdf`), and
+   `ProteinView.set_distribution_fits`, which has **zero** test references anywhere. Their
+   bodies run under the e2e and flow suites; nothing names them. **Method rule 52 for the
+   third time** - a conversion owes tests to its destination - and pinning
+   `set_distribution_fits` here is not wasted work, because rule 39 wants the pre-move
+   golden to be the evidence branch 5's move changed nothing.
+
+   **Why nobody saw it, which is the part worth keeping.** The audit needs coverage data, so
+   it runs in exactly one place: `ci-internal-pr.yml`. Feature branches finish into
+   `develop` through `git flow feature finish`, which merges locally and opens no PR - so
+   every one of these landed without the gate ever running. Locally the two
+   `test_refactor_coverage_gate.py` tests that would notice **skip** with "no coverage.json
+   at the repository root", which reads as a configuration nit rather than as a disarmed
+   net. Rule 41's shape exactly. Worth deciding separately whether the audit should also run
+   on branch pushes, since that is where this work actually lands. **Decided 2026-09-14:
+   it does.** `ci-branches.yml` gains the coverage flags and the audit step, which is what
+   makes the gate see the path this work takes.
+
+1. **EventAnalysis - the time base, decided on the cheapest possible case.** One point, one
+   load, no logscale site. `EventAnalysisModel` is still `def _init: pass`, the last stub
+   Model in the repo, so this gives it its first real method and fixes the shape kind 2 uses
+   four more times. **Allowlist 8 -> 7.**
+2. **Clustering - one restructure closes the tab and converts a logscale caller.**
+   `on_metadata_loaded` holds the logscale call at `:609` and the tab's only pandas use at
+   `:613`, four lines apart: the Model logscales and returns the frame.
+   **Allowlist 7 -> 6**, and 1 of 8 logscale sites.
+3. **RawData - two time bases and the PSD limits.** `update_plot` and `_update_event_plot`
+   take branch 1's shape. `update_psd` is kind 3 and **blocked on the open decision above**.
+   **Allowlist 6 -> 5 only if the limits move.**
+4. **Metadata's 4c remainder, carrying five logscale sites.** 11 methods, 2 points.
+   `_plot_scatterplot` and `_plot_3d_scatterplot` were **deliberately excluded** from 4c
+   Metadata because they freed no import - the logscale move puts them back in scope, which
+   is method rule 60 arriving from the other direction. `set_heatmap` is the kind-3 case.
+5. **Protein's 4c remainder, carrying two logscale sites.** 12 methods, 2 points, and the
+   largest real computation left anywhere in the View layer - `_generate_vm_ensemble` (17
+   loads), `set_distribution_fits` (22), `_compute_theoretical_blockages` (7), both
+   `_construct_*_histogram` (22). **Needs a pinning commit first**: `set_distribution_fits`
+   is a named 4c target with **zero test references** in the whole suite, called once from
+   `ProteinController:220`. Rule 43.
+6. **3d closes.** With the last caller converted the logscale helper goes to `MetaModel`,
+   and the published plugin base sheds numpy. **The last rule-2 point, or the floor.**
+7. **4e - much smaller than recorded.** The View layer's only read/write sites are
+   `MetaSubsetTabView._load_filter` (`:495-503`) and `_save_filter` (`:875-883`), both JSON
+   round-trips; every other hit is `QFileDialog` path selection, which 4e keeps in the View
+   by design. `MetadataView._export_csv_subset`, the audit's only 4e target, was already
+   converted by 4a commit 5 and wants re-checking rather than moving. **Moves no gate** -
+   say so before starting, method rule 38.
+8. **The promotion review.** `load_event_plot_data` is **108 and 113 lines** now, down from
+   122/129 before 4b moved the query construction out. Judge it now that 4b has landed;
+   the two `resolve_event_ids` on the Models are the better merge candidate and want a
+   `MetaSubsetTabModel` that does not exist.
+9. **The 4a exit-review item.** The protein tab's unresolvable-experiment guard has still
+   never run against a real database.
+
+**Two loose ends the audit carries.** Its `MOVED` table still lists the five
+`MetaEventTabView` range helpers as 3d targets, and 3d no longer exists as a step - 3e moved
+them down already. And the last 31 removable lines in `*View.py` are `update_plot_features`,
+identical in `EventAnalysisView` and `MetadataView`, which sit in **different** base families
+- so the only shared destination is `MetaView`, and the method writes six instance
+attributes. Method rule 34 says that wants an intermediate and there is none. **Decided
+2026-09-14: 31 is the floor**, recorded with its reason rather than widening the published
+plugin API by six attributes to delete 31 lines. See `DECISIONS.md`.
+
+**Each tab branch ends with a manual Windows pass over that tab's plotting surfaces**, dated
+in the verification section, and the full suite green before every commit.
+
 ## Rule 2 relaxed, 2026-09-14 - the remainder re-priced
 
 **Boundary rule 2 now counts computation, not annotations**, on Kyle's call: an import that
@@ -1131,7 +1250,7 @@ rows that moved.
 | — rule 3, Controller reads a View private | 10 | **5** | 0 (4d) |
 | — rule 4, layering | 4 | **0** | 0 |
 | — rule 5, tab reaches a plugin | 0 | **0** | 0 (added at zero) |
-| Refactor-coverage audit | — | **100% pinned** | 100% |
+| Refactor-coverage audit | — | **69 of 78 pinned, 9 RUNS ONLY** | 100% |
 
 **Rule 3 halved without anything being fixed.** Promoting `relay_query` to
 `MetaSubsetTabController` merged two copies of the same five reach-ins into one, so the count

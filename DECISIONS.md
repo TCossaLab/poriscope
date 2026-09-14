@@ -10,6 +10,53 @@ which ran through August 2026 and is complete. The step numbers only date the de
 
 ---
 
+## 2026-09-14 - Where the View/Model line falls for plotting numerics
+
+**Context.** With rule 2 down to 8, the remaining numpy in the Views is three different
+things and only two of them are Model code: computation (histograms, the geometry ensemble,
+the logscale filter), a *derived axis* (`np.arange(len(data)) / samplerate`, five times
+across four Views), and *artist parameters* - `extent=[np.min(x), np.max(x), ...]`, colorbar
+ticks via `np.linspace`, and `update_psd`'s axis limits from `np.searchsorted` and
+`ceil(log10(...))`. The plan's own line is that matplotlib artist manipulation stays in the
+View, so rule 2 reaching 0 was not obviously reachable by moving computation alone.
+
+**Decision.** The Model returns a derived value **where it is a property of the data** - the
+PSD roll-off index, the heatmap extent, the time base - alongside the data it already
+returns. **Pure styling stays in the View.** Whatever residue that leaves is *named and
+recorded* rather than chased.
+
+**Evidence.** The kind-3 sites gate exactly 2 of the 8 points: `RawDataView`
+(`update_psd`) and `MetadataView`'s numpy point (`set_heatmap`). The time base is the
+clearest case for the split - `np.arange(len(data)) / samplerate * 1e6` is computed five
+times in four Views from the samples and the samplerate, both of which the Model already
+owns.
+
+**Revisit if** a residue turns out to be large enough that rule 2's target of 0 becomes
+misleading, at which point the floor is recorded the way the duplication floor below is.
+
+---
+
+## 2026-09-14 - The analysis-tab duplication floor is 31 lines, not 0
+
+**Context.** The last identical bodies in the `*View.py` family are
+`update_plot_features`, 31 lines duplicated between `EventAnalysisView` and
+`MetadataView`. Those two tabs sit in **different** base families - `MetaEventTabView` and
+`MetaSubsetTabView` - so the only shared destination is `MetaView`, the published plugin
+base. The method writes six instance attributes and reads nothing else.
+
+**Decision.** Leave it. **31 is the floor for the three analysis-tab families**, recorded
+with its reason rather than driven to 0.
+
+**Evidence.** Method rule 34: interface width on a published base is the expensive axis, and
+a promotion that carries instance state wants an intermediate. There is none here, so the
+alternative is putting six attributes on all five tabs - three of which read none of them -
+to delete 31 lines.
+
+**Revisit if** a third tab grows plot-feature overlays, which would make the behaviour
+genuinely common rather than shared by two tabs that happen to plot.
+
+---
+
 ## 2026-09-14 - Boundary rule 2 counts computation, not annotations
 
 **Context.** Rule 2 is named "no View imports a computation library" but counted every
