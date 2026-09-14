@@ -28,6 +28,15 @@ stubs, which are required ABC implementations and so an irreducible floor. Addin
 family books both; it should land before the closeout's RawData branch, which would
 otherwise create a second identical time-base helper that nothing would notice.
 
+## The capture-rate plot always reports one row dropped (2026-09-14)
+
+`MetadataController.fit_capture_rate` compares the surviving interval count against the
+**event** count, so a column with no repeated timestamps still reports "1 rows dropped by
+log filter" - n events make n-1 intervals by construction. Cosmetic, and preserved exactly
+when the calculation moved from `MetadataView` to the Model so that the move changed
+nothing the user sees; a test pins it as current behaviour. The fix is to compare against
+`initial_length - 1`, and to delete that test with it.
+
 ## `MetadataModel.kernel_density` uses a deprecated SciPy namespace (2026-09-14)
 
 `MetadataModel.py:296` calls `stats.kde.gaussian_kde`, which warns

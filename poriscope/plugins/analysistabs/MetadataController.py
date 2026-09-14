@@ -85,6 +85,7 @@ class MetadataController(MetaSubsetTabController):
         self.view.density_requested.connect(self.estimate_kernel_densities)
         self.view.histogram_bins_requested.connect(self.calculate_histogram_bins)
         self.view.capture_rate_requested.connect(self.fit_capture_rate)
+        self.view.categorical_counts_requested.connect(self.count_categories)
 
     @log(logger=logger)
     @Slot(object, object, object, bool, object, str, str, str)
@@ -193,7 +194,7 @@ class MetadataController(MetaSubsetTabController):
     @Slot(object, object, bool, object, object, object, str, bool, bool)
     def calculate_histogram_bins(
         self,
-        all_data: npt.NDArray[np.float64],
+        datasets: List[npt.NDArray[np.float64]],
         bins: Any,
         sizes: bool,
         hist_min: float,
@@ -204,12 +205,14 @@ class MetadataController(MetaSubsetTabController):
         norm: bool,
     ) -> None:
         """
-        Choose the shared histogram bin edges, and hand them back to be drawn on.
+        Bin every overlaid dataset onto shared edges, and hand the counts back.
 
-        Decision B's command path, the same shape as :meth:`calculate_heatmap`.
+        Decision B's command path, the same shape as :meth:`calculate_heatmap`. Step
+        4's closeout brought the counting down to join the bin decision, so the View
+        is handed tallies rather than edges to tally against.
 
-        :param all_data: every overlaid dataset's filtered values, concatenated
-        :type all_data: npt.NDArray[np.float64]
+        :param datasets: one filtered array per overlaid dataset
+        :type datasets: List[npt.NDArray[np.float64]]
         :param bins: a bin count, or a bin width when sizes is True, or None
         :type bins: Any
         :param sizes: does bins refer to a bin size (True) or a count (False)
@@ -230,8 +233,8 @@ class MetadataController(MetaSubsetTabController):
         :rtype: None
         """
         try:
-            bin_edges, bincenters, widths = self.model.histogram_bin_edges(
-                all_data, bins, sizes, hist_min, hist_max
+            bin_edges, bincenters, widths, counts = self.model.overlaid_histograms(
+                datasets, bins, sizes, hist_min, hist_max, norm
             )
         except (ValueError, TypeError, IndexError) as e:
             self.logger.error(f"Unable to bin the histogram: {repr(e)}")
@@ -240,8 +243,52 @@ class MetadataController(MetaSubsetTabController):
             )
             return
         self.view.set_histogram_bins(
-            bin_edges, bincenters, widths, ax, x_label, logx, norm
+            bincenters, widths, counts, ax, x_label, logx, norm
         )
+
+    @log(logger=logger)
+    @Slot(object, object, object, str, str)
+    def count_categories(
+        self,
+        datasets: List[npt.NDArray[Any]],
+        labels: List[str],
+        ax: Axes,
+        x_label: str,
+        y_label: str,
+    ) -> None:
+        """
+        Tally each overlaid dataset's categories, and hand them back to be drawn.
+
+        Decision B's command path, the same shape as :meth:`estimate_kernel_densities`.
+        The drawing context arrives and departs unchanged; this slot marshals and does
+        not interpret it.
+
+        A column of a type the tally cannot sort raises out of the Model and is reported
+        here rather than escaping a Qt slot - which is what used to happen, since
+        nothing between the View and ``_overlay_plot`` catches it.
+
+        :param datasets: one array of raw column values per overlaid dataset
+        :type datasets: List[npt.NDArray[Any]]
+        :param labels: one label per dataset, index-aligned with datasets
+        :type labels: List[str]
+        :param ax: the axis object the View will draw on
+        :type ax: Axes
+        :param x_label: the x axis label, already formatted
+        :type x_label: str
+        :param y_label: the y axis label
+        :type y_label: str
+        :return: None
+        :rtype: None
+        """
+        try:
+            counts = self.model.categorical_counts(datasets)
+        except (TypeError, ValueError) as e:
+            self.logger.error(f"Unable to count categories: {repr(e)}")
+            self.add_text_to_display.emit(
+                f"Unable to count categories: {e}", self.__class__.__name__
+            )
+            return
+        self.view.set_categorical_counts(counts, labels, ax, x_label, y_label)
 
     @log(logger=logger)
     @Slot(object, object, bool, object, str, str, str)
@@ -262,7 +309,14 @@ class MetadataController(MetaSubsetTabController):
         fit that will not converge raises ``RuntimeError`` out of ``curve_fit``, and
         is reported rather than allowed to escape a Qt slot.
 
-        :param data: the base-10 logarithm of the inter-event times
+        **The inter-event times are computed here rather than in the View**, which is
+        where they were until Step 4's closeout: gaps between consecutive events are the
+        measurement, not the drawing. Both conditions the View used to judge on them move
+        with the computation - too little surviving data is reported instead of raised,
+        which reaches the user with the count in it rather than as ``update_plot``'s
+        generic "no data available after filtering".
+
+        :param data: the event times as they came out of the column, unsorted
         :type data: npt.NDArray[np.float64]
         :param bins: a bin count, or a bin width when sizes is True, or None
         :type bins: Any
@@ -279,9 +333,30 @@ class MetadataController(MetaSubsetTabController):
         :return: None
         :rtype: None
         """
+        initial_length = len(data)
+        log_times = self.model.interevent_log_times(data)
+
+        if len(log_times) < 10:
+            self.add_text_to_display.emit(
+                f"Not enough data passes the log filter: {len(log_times)} is not "
+                "enough to estimate capture rate - skipping",
+                self.__class__.__name__,
+            )
+            return
+
+        if len(log_times) < initial_length:
+            # Preserved exactly, including that a clean column always reports one row
+            # dropped: the interval count is one less than the event count by
+            # construction and the original counted that as a drop. Filed rather than
+            # corrected here, so this move changes nothing the user sees.
+            self.add_text_to_display.emit(
+                f"{initial_length - len(log_times)} rows dropped by log filter",
+                self.__class__.__name__,
+            )
+
         try:
             bin_edges, bincenters, val, fit, rate, error = self.model.fit_capture_rate(
-                data, bins, sizes
+                log_times, bins, sizes
             )
         except (ValueError, TypeError, IndexError, RuntimeError) as e:
             self.logger.error(f"Unable to fit the capture rate: {repr(e)}")
@@ -296,7 +371,7 @@ class MetadataController(MetaSubsetTabController):
             fit,
             rate,
             error,
-            data,
+            log_times,
             ax,
             x_label,
             y_label,

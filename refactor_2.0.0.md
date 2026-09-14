@@ -156,7 +156,69 @@ sites are converted**, and they sit in Clustering (1), Metadata (5) and Protein 
    *The original framing:* `update_plot` and `_update_event_plot`
    take branch 1's shape. `update_psd` is kind 3 and **blocked on the open decision above**.
    **Allowlist 6 -> 5 only if the limits move.**
-4. **Metadata's 4c remainder, carrying five logscale sites.** 11 methods, 2 points.
+4. **Metadata - split into three, 2026-09-14, after reading what it actually touches.**
+   The plan called this "move six methods"; both of the big ones consume
+   `self.event_data_generator` from inside `_overlay_plot`, which measures **341 lines, 5
+   loops, 29 ifs, 14 returns and 100 test references**, with 46 more on the generator
+   attribute. That is a restructure of the densest method in the tab, and it is the reason
+   3d had to ride 4c in the first place - so it gets its own branch rather than being a
+   commit inside a larger one.
+
+   **The split is two, not three - 4a dissolved on being worked, 2026-09-14.** It was to
+   move the shared baseline-and-rectify (three copies in `MetadataView` at `:1755`, `:1805`
+   and `:1871` - the padding in samples, the median of the pre-event baseline, then
+   `sign(baseline) * trace - sign(baseline) * baseline`) to `MetadataModel`. **All three
+   copies are inside View methods and no View can reach a Model**, so the move is not
+   executable until the generator restructure below moves their callers. Extracting them to
+   a single helper *is* executable and is worth doing - three copies of the measurement in
+   one file, where the duplication ratchet cannot see them - but it moves no gate, and the
+   helper is precisely what the generator branch then relocates. So it becomes that
+   branch's first commit rather than a branch, and each call site is touched once. Rule 25:
+   a recorded plan step is a claim like any other.
+
+   **Split by method, not by kind of work** - `_plot_1d_histogram` is both a computation
+   site and one of the five logscale callers, so splitting by kind would rewrite it twice
+   (rule 60). Since branch 2 put `logscale_and_filter_columns` on `MetaModel`, each
+   logscale caller now converts independently, which makes a per-method split possible:
+
+   - **4b - four self-contained plot methods.** `_plot_capture_rate`'s inter-event times,
+     `_plot_categorical_histogram`'s counting (which takes one of the two pandas uses),
+     `set_histogram_bins`' counts, and `_plot_1d_histogram`'s shared limits. Ordinary
+     request/setter splits of the kind 4c Metadata already did four of. **Its logscale
+     call moved to the next branch** - see `DECISIONS.md`: the Model can only filter if
+     `hist_data` holds raw data, which is density's shape, and the two write the same
+     shared limits. **Three defects surfaced while preparing this branch**, all
+     pre-existing and all in code about to be moved: the plot-data export of a
+     categorical histogram had never worked, the capture rate always reported one row
+     dropped, and the density plot's limits were being read off the DataFrame - so a bin
+     width there was accepted and silently ignored.
+   - **4c - `_overlay_plot` and what it drives.** The generator moves to the Controller,
+     `_construct_all_points_histogram` moves to the Model with the extracted
+     baseline-rectify, `_construct_event_overlay` keeps its drawing and loses its
+     computation, and the remaining four logscale callers convert. The expensive one, and
+     the one carrying the 100 test references.
+
+   **Neither branch closes a gate on its own**: the two pandas uses are one in each, so
+   rule 2 for `MetadataView` moves only when 4c lands. Answered before starting, per rule
+   38, so the branches stand on the layering.
+
+   A manual pass follows each, on a tab whose last one returned four defects.
+
+   Classified per site
+   2026-09-14 under the governing test. **Moves to `MetadataModel`:**
+   `_construct_all_points_histogram` (14 numpy + 1 pandas, returns a frame),
+   `_construct_event_overlay`, `_plot_capture_rate`'s inter-event times (which feed the fit
+   already on the Model), `_plot_1d_histogram`'s shared min/max, `set_histogram_bins`' bin
+   counts, and `_plot_categorical_histogram`'s counting (which takes the second pandas
+   use). **`_update_event_plot`'s time base stays here, unlike the other three tabs**: each
+   event carries its own samplerate in its payload and the View materialises the event
+   *generator* itself, so supplying the axis from the Model would mean the Controller
+   consuming a stream the View is built to walk, or a round trip per event. Complexity
+   where none is needed, and it costs no import because the heatmap ruling keeps numpy in
+   this file anyway. `ProteinView` has the same shape and gets the same treatment. **Stays, as a recorded floor:** `set_heatmap`'s extent, colorbar ticks and
+   export reshape - see `DECISIONS.md` for the ruling - and
+   `_plot_all_points_histogram`'s display normalisation. **So pandas closes and numpy does
+   not**: expect allowlist 5 -> 4 with `MetadataView` numpy recorded as floor. 11 methods, 2 points.
    `_plot_scatterplot` and `_plot_3d_scatterplot` were **deliberately excluded** from 4c
    Metadata because they freed no import - the logscale move puts them back in scope, which
    is method rule 60 arriving from the other direction. `set_heatmap` is the kind-3 case.

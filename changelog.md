@@ -1,5 +1,15 @@
 ## Poriscope 2.0.0: in progress
 
+* **Fixed the Metadata tab's 1D Density plot accepting a bin width and ignoring it.** The shared plot limits were being read off the dataframe rather than the data, so they came out as column names and the width could not be divided into them
+
+* **The 1D Density plot now says when a column is empty for the selected subset** instead of failing with an unhandled error, matching what the 1D Histogram already did
+
+* **Breaking:** the Metadata tab's shared plot limits now describe the filtered, log-scaled values rather than the raw column, so a log-scaled density plot bins differently than before - the limits exist to make overlaid datasets comparable on what is actually drawn
+
+* **Fixed exporting the plot data of a categorical histogram failing with an error.** It had never worked: the export coerced every cached series to a number, which category names are not. Numeric exports are unchanged
+
+* **A capture-rate plot with too few events now says how few**, instead of reporting the generic "no data available after filtering"
+
 * **Breaking:** the Raw Data tab's plot time axes are built by `MetaModel.time_bases` rather than in the view, so `RawDataView.update_plot`, `set_trace_data`, `set_event_plot_data` and `_update_event_plot` take the axis alongside the samples and `baseline_stats_requested` carries it
 
 * **Breaking:** `EventAnalysisModel.event_time_bases` is now `MetaModel.time_bases`, taking a scale and an offset so one derivation serves both an event plot in microseconds and a trace plot in seconds from the start of the recording

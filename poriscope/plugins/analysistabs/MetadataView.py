@@ -165,19 +165,33 @@ class MetadataView(MetaSubsetTabView):
     #: all the filtered data at once, the bin request, and the limits that span it.
     #: Answered through ``set_histogram_bins``.
     #:
-    #: Step 4c. Only the bin *decision* crosses - it uses ``scipy.stats.iqr``. The
-    #: counting is ``np.histogram`` and stays with the drawing.
+    #: Step 4c sent only the bin *decision* down, on the grounds that it needed
+    #: ``scipy.stats.iqr`` while the counting needed only numpy. Step 4's closeout sent
+    #: the counting after it: which import a step frees is not the same question as
+    #: whose responsibility the work is, and tallying values into bins is aggregation
+    #: whose result is exported with the plot.
     histogram_bins_requested = Signal(
         object, object, bool, object, object, object, str, bool, bool
     )
 
-    #: Asks for the capture-rate binning and its exponential fit: the log
-    #: inter-event times, the bin request, and the drawing context. Answered
-    #: through ``set_capture_rate``.
+    #: Asks for the capture-rate binning and its exponential fit: the event times
+    #: as they came out of the column, the bin request, and the drawing context.
+    #: Answered through ``set_capture_rate``.
     #:
     #: Step 4c. The bin edges come back with the fit so the histogram is drawn on
-    #: exactly the edges the fit was made against.
+    #: exactly the edges the fit was made against. Step 4's closeout moved the gap
+    #: calculation down too, so this carries the column rather than the log
+    #: inter-event times it used to.
     capture_rate_requested = Signal(object, object, bool, object, str, str, str)
+
+    #: Asks for the per-category counts of every overlaid dataset at once, with the
+    #: drawing context handed back unchanged. Answered through
+    #: ``set_categorical_counts``.
+    #:
+    #: Step 4's closeout. Counting occurrences is aggregation and the answer is
+    #: exported with the plot, so it belongs below the widget; one intent for all
+    #: the datasets, like ``density_requested``, so no answer is parked between them.
+    categorical_counts_requested = Signal(object, object, object, str, str)
 
     logger = logging.getLogger(__name__)
 
@@ -418,10 +432,6 @@ class MetadataView(MetaSubsetTabView):
             else:
                 raise ValueError(f"Invalid bins entry {bins}")
 
-        if self.hist_min is None or min(data) < self.hist_min:
-            self.hist_min = min(data)
-        if self.hist_max is None or max(data) > self.hist_max:
-            self.hist_max = max(data)
         ax.clear()
         self._clear_cache()
         self.hist_data.append(data)
@@ -440,6 +450,30 @@ class MetadataView(MetaSubsetTabView):
                 dataset[column].values, log_flags=[logx]
             )
             filtered.append(values)
+
+        if len(filtered[-1]) == 0:
+            # Every point was filtered out, the commonest cause being a column that
+            # is NULL for every row the subset filter selected. The reductions below
+            # are the first thing to touch the array and np.min of an empty one
+            # raises, which is the guard _plot_1d_histogram already carries.
+            self.hist_data.pop()
+            self.hist_labels.pop()
+            self.add_text_to_display.emit(
+                f"No {column} values in this subset, so there is nothing to plot",
+                self.__class__.__name__,
+            )
+            return
+
+        # The shared limits describe the *filtered* data, which is what is drawn and
+        # what the histogram path has always measured. They used to be taken from the
+        # DataFrame itself - min() over a DataFrame iterates its column *names*, so
+        # they were strings, which made a bin width here silently fall back to the
+        # automatic rule and made a later histogram on the same overlay raise.
+        newest = filtered[-1]
+        if self.hist_min is None or np.min(newest) < self.hist_min:
+            self.hist_min = float(np.min(newest))
+        if self.hist_max is None or np.max(newest) > self.hist_max:
+            self.hist_max = float(np.max(newest))
 
         x_label = self.format_axis_label(column, x_units)
         if logx:
@@ -534,24 +568,16 @@ class MetadataView(MetaSubsetTabView):
             else:
                 raise ValueError(f"Invalid bins entry {bins}")
 
-        initial_length = len(data)
         (x_label,) = cols
         (x_units,) = units
         (logx,) = logscales
+        # The column goes out as it stands. Turning event times into log10 inter-event
+        # times is the measurement rather than the drawing, so the Model does it, and
+        # the two conditions that used to be judged here - too little surviving data,
+        # and how much the log filter dropped - are judged by the Controller on the
+        # answer. The ValueError this method can still raise is the bins one above,
+        # which is why update_plot's handler stays live.
         data = data[x_label].values
-        data = np.diff(np.sort(data))
-        data = np.log10(data[data > 0])
-
-        if len(data) < 10:
-            raise ValueError(
-                f"Not enough data passes the log filter: {len(data)} is not enough to estimate capture rate - skipping"
-            )
-
-        if len(data) < initial_length:
-            self.add_text_to_display.emit(
-                f"{initial_length - len(data)} rows dropped by log filter",
-                self.__class__.__name__,
-            )
 
         x_label = f"Interevent Time ({x_units})"
         y_label = "Count"
@@ -706,16 +732,11 @@ class MetadataView(MetaSubsetTabView):
         self.hist_data.append(data)
         self.hist_labels.append(dataset_label)
 
-        # Compute shared bin edges once
-        # Use ALL currently overlaid data to decide numbins when bins is None (auto)
-        all_data = (
-            np.concatenate(self.hist_data)
-            if len(self.hist_data) > 1
-            else self.hist_data[0]
-        )
-
+        # Every overlaid dataset goes down together: the edges are decided from all
+        # of them at once, which is what makes the bars comparable, and the counts come
+        # back one array per dataset.
         self.histogram_bins_requested.emit(
-            all_data,
+            list(self.hist_data),
             bins,
             sizes,
             self.hist_min,
@@ -729,9 +750,9 @@ class MetadataView(MetaSubsetTabView):
     @log(logger=logger)
     def set_histogram_bins(
         self,
-        bin_edges: npt.NDArray[np.float64],
         bincenters: npt.NDArray[np.float64],
         widths: npt.NDArray[np.float64],
+        counts: Sequence[npt.NDArray[np.float64]],
         ax: Axes,
         x_label: str,
         logx: bool,
@@ -741,15 +762,17 @@ class MetadataView(MetaSubsetTabView):
         Draw every overlaid dataset onto one shared set of bin edges.
 
         The answering half of ``histogram_bins_requested``. Step 4c moved the bin
-        decision to ``MetadataModel`` so that ``scipy.stats`` could leave the View;
-        the counting is ``np.histogram`` and stays here with the drawing.
+        decision to ``MetadataModel``; Step 4's closeout moved the counting after it,
+        so this is handed each dataset's tallies rather than the edges to tally
+        against. The bin edges themselves no longer come back - nothing here drew with
+        them once the counting left.
 
-        :param bin_edges: the shared bin edges
-        :type bin_edges: npt.NDArray[np.float64]
-        :param bincenters: the center of each bin
+        :param bincenters: the center of each bin, which the bars are drawn at
         :type bincenters: npt.NDArray[np.float64]
         :param widths: the width of each bin
         :type widths: npt.NDArray[np.float64]
+        :param counts: one array of per-bin counts per overlaid dataset, index-aligned with the accumulated labels
+        :type counts: Sequence[npt.NDArray[np.float64]]
         :param ax: the axis object on which to plot
         :type ax: Axes
         :param x_label: the x axis label, already formatted but not yet log-marked
@@ -761,19 +784,12 @@ class MetadataView(MetaSubsetTabView):
         :return: None
         :rtype: None
         """
-        # Plot all datasets using the same bin_edges
-        for d, lab in zip(self.hist_data, self.hist_labels):
+        # Every accumulated dataset is redrawn, against the tallies the Model made.
+        for val, lab in zip(counts, self.hist_labels, strict=True):
             x_lab = x_label
             y_lab = "Count" if not norm else "Fraction"
             if logx:
                 x_lab = f"log10({x_lab})"
-
-            val, _ = np.histogram(d, bins=bin_edges)
-            val = val.astype(float)
-            if norm:
-                s = np.sum(val)
-                if s > 0:
-                    val /= s
 
             ax.bar(
                 bincenters,
@@ -830,34 +846,44 @@ class MetadataView(MetaSubsetTabView):
         self.hist_data.append(data_vals)
         self.hist_labels.append(dataset_label)
 
-        # Plot all datasets
-        for d, lab in zip(self.hist_data, self.hist_labels):
-            x_lab = self.format_axis_label(x_label, x_units)
-            y_lab = "Count"
+        self.categorical_counts_requested.emit(
+            list(self.hist_data),
+            list(self.hist_labels),
+            ax,
+            self.format_axis_label(x_label, x_units),
+            "Count",
+        )
 
-            # Missing values are counted as their own category rather than being
-            # allowed to reach np.unique, which sorts and so raises
-            # "'<' not supported between instances of 'NoneType' and 'str'" on a
-            # column holding SQL NULLs. A float column does not raise but labels the
-            # bar "nan", which tells the user no more than "null" does and does not
-            # match what they see elsewhere. Counting them separately also keeps the
-            # real categories in the order they had before, which stringifying
-            # everything up front would not: "10" sorts before "2".
-            series = pd.Series(d)
-            missing = int(series.isna().sum())
-            present = series.dropna().to_numpy()
+    @log(logger=logger)
+    def set_categorical_counts(
+        self,
+        counts: Sequence[Tuple[Sequence[str], npt.NDArray[np.float64]]],
+        labels: Sequence[str],
+        ax: Axes,
+        x_label: str,
+        y_label: str,
+    ) -> None:
+        """
+        Draw one bar series per overlaid dataset.
 
-            unique_vals, counts = np.unique(present, return_counts=True)
+        The answering half of ``categorical_counts_requested``. Step 4's closeout moved
+        the counting to :meth:`MetadataModel.categorical_counts`: tallying occurrences is
+        aggregation rather than drawing, and the tallies are exported with the plot.
 
-            val = counts.astype(float)
-
-            # Convert unique values to strings so matplotlib natively aligns them as discrete categories
-            categories = [str(uv) for uv in unique_vals]
-
-            if missing:
-                categories.append("null")
-                val = np.append(val, float(missing))
-
+        :param counts: per dataset, its category names and their counts, index-aligned with labels
+        :type counts: Sequence[Tuple[Sequence[str], npt.NDArray[np.float64]]]
+        :param labels: one label per overlaid dataset
+        :type labels: Sequence[str]
+        :param ax: the axis object to draw on
+        :type ax: Axes
+        :param x_label: the x axis label, already formatted
+        :type x_label: str
+        :param y_label: the y axis label
+        :type y_label: str
+        :return: None
+        :rtype: None
+        """
+        for (categories, val), lab in zip(counts, labels, strict=True):
             ax.bar(
                 categories,
                 val,
@@ -866,10 +892,10 @@ class MetadataView(MetaSubsetTabView):
                 align="center",
             )
 
-            self._update_cache((categories, x_lab), (val, y_lab))
+            self._update_cache((categories, x_label), (val, y_label))
 
-            ax.set_xlabel(x_lab)
-            ax.set_ylabel(y_lab)
+            ax.set_xlabel(x_label)
+            ax.set_ylabel(y_label)
         ax.tick_params(axis="x", rotation=45)
         ax.legend(loc="best")
 

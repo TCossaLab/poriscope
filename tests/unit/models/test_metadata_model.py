@@ -698,3 +698,241 @@ class TestLoadEventsById:
         mocker.patch.object(model, "call", return_value=generator)
 
         assert model.load_events_by_id("L", "3", None) is generator
+
+
+# ===========================================================================
+# interevent_log_times - the gaps the capture-rate fit is actually about
+# ===========================================================================
+
+
+class TestIntereventLogTimes:
+    """
+    Capture is Poisson, so the fit is about the gap between consecutive events
+    rather than the times themselves. Moved off ``MetadataView`` in Step 4's
+    closeout: the gaps are the measurement, not the drawing.
+    """
+
+    def test_it_returns_the_log_of_the_gaps(self, model):
+        """Times one decade apart give gaps of 9, 90, 900 - logs just under 1, 2, 3."""
+        times = np.array([1.0, 10.0, 100.0, 1000.0])
+
+        result = model.interevent_log_times(times)
+
+        np.testing.assert_allclose(result, np.log10([9.0, 90.0, 900.0]))
+
+    def test_the_column_is_sorted_first(self, model):
+        """
+        A column arrives in whatever order the query returned it, and unsorted gaps
+        are meaningless - some would be negative and silently dropped below.
+        """
+        ordered = model.interevent_log_times(np.array([1.0, 2.0, 4.0, 8.0]))
+        shuffled = model.interevent_log_times(np.array([4.0, 1.0, 8.0, 2.0]))
+
+        np.testing.assert_allclose(ordered, shuffled)
+
+    def test_there_is_one_fewer_gap_than_event(self, model):
+        """
+        The property behind the message a clean column still shows: n events make
+        n-1 intervals, and the caller counts that difference as dropped rows.
+        """
+        assert len(model.interevent_log_times(np.arange(20.0))) == 19
+
+    def test_a_repeated_timestamp_is_dropped(self, model):
+        """
+        Two events sharing a time produce a zero gap, which log10 has nothing to say
+        about - it would be -inf and poison the fit.
+        """
+        times = np.array([1.0, 2.0, 2.0, 4.0])
+
+        result = model.interevent_log_times(times)
+
+        assert len(result) == 2
+        assert np.all(np.isfinite(result))
+
+    def test_every_timestamp_repeated_gives_nothing(self, model):
+        assert len(model.interevent_log_times(np.full(5, 3.0))) == 0
+
+    def test_a_single_event_gives_no_intervals(self, model):
+        assert len(model.interevent_log_times(np.array([1.0]))) == 0
+
+    def test_no_events_gives_no_intervals(self, model):
+        assert len(model.interevent_log_times(np.array([]))) == 0
+
+
+# ===========================================================================
+# categorical_counts - the tallying Step 4's closeout moved off the View
+# ===========================================================================
+
+
+class TestCategoricalCounts:
+    """
+    One (categories, counts) pair per overlaid dataset.
+
+    These three came from ``test_metadata_view.py`` with the method: they were
+    written against real reported defects, and they assert what the counting
+    produces rather than that a bar was drawn, so they belong beside the counting.
+    """
+
+    def test_it_counts_each_category(self, model):
+        values = np.array(["A", "B", "A", "C", "B", "A"], dtype=object)
+
+        (categories, counts) = model.categorical_counts([values])[0]
+
+        assert categories == ["A", "B", "C"]
+        assert list(counts) == [3.0, 2.0, 1.0]
+
+    def test_nulls_are_counted_as_their_own_category(self, model):
+        """
+        A column holding SQL NULLs must plot, with the missing rows as a "null" bar.
+
+        Reported from a real run: it raised instead. ``np.unique`` sorts, and sorting
+        an object column mixing ``None`` with strings raises "'<' not supported
+        between instances of 'NoneType' and 'str'".
+        """
+        values = np.array(["a", "b", None, "a"], dtype=object)
+
+        (categories, counts) = model.categorical_counts([values])[0]
+
+        assert categories == ["a", "b", "null"]
+        assert list(counts) == [2.0, 1.0, 1.0]
+
+    def test_a_float_nan_is_labelled_null_too(self, model):
+        """
+        A float column does not raise on NaN but labelled the bar "nan". "null" is
+        what the user sees everywhere else for a missing value, and this is the same
+        absence, so it gets the same word.
+        """
+        values = np.array([1.0, 2.0, np.nan, 1.0])
+
+        (categories, _counts) = model.categorical_counts([values])[0]
+
+        assert categories[-1] == "null"
+        assert "nan" not in categories
+
+    def test_numeric_categories_keep_numeric_order(self, model):
+        """
+        Real categories keep the order they had, which is why nulls are counted
+        apart. Stringifying the whole column before ``np.unique`` would have been
+        shorter and would have sorted 10 before 2.
+        """
+        values = np.array([1, 2, 10, 2])
+
+        (categories, _counts) = model.categorical_counts([values])[0]
+
+        assert categories == ["1", "2", "10"]
+
+    def test_one_pair_per_dataset_in_order(self, model):
+        """The bar chart redraws every accumulated dataset, index-aligned with labels."""
+        first = np.array(["A", "A"], dtype=object)
+        second = np.array(["B"], dtype=object)
+
+        results = model.categorical_counts([first, second])
+
+        assert [cats for cats, _ in results] == [["A"], ["B"]]
+        assert [list(counts) for _, counts in results] == [[2.0], [1.0]]
+
+    def test_a_column_of_only_nulls_is_all_null(self, model):
+        values = np.array([None, None], dtype=object)
+
+        (categories, counts) = model.categorical_counts([values])[0]
+
+        assert categories == ["null"]
+        assert list(counts) == [2.0]
+
+    def test_no_datasets_gives_no_results(self, model):
+        assert model.categorical_counts([]) == []
+
+
+# ===========================================================================
+# overlaid_histograms - the counting that joined the bin decision
+# ===========================================================================
+
+
+class TestOverlaidHistograms:
+    """
+    Shared edges from all the data at once, then one count array per dataset.
+
+    Step 4c sent the bin decision down because it needed ``scipy.stats.iqr``; the
+    counting followed in Step 4's closeout, on the grounds that which import a step
+    frees is a different question from whose responsibility the work is.
+    """
+
+    def test_one_count_array_per_dataset(self, model):
+        datasets = [np.array([1.0, 2.0]), np.array([2.0, 3.0]), np.array([1.5])]
+
+        _edges, _centers, _widths, counts = model.overlaid_histograms(
+            datasets, 4, False, 1.0, 3.0, False
+        )
+
+        assert len(counts) == 3
+
+    def test_every_dataset_is_counted_on_the_same_edges(self, model):
+        """
+        The point of deciding the edges from all the data at once: two datasets are
+        only comparable if their bars line up.
+        """
+        datasets = [np.array([1.0, 1.1]), np.array([2.9, 3.0])]
+
+        _edges, _centers, _widths, counts = model.overlaid_histograms(
+            datasets, 4, False, 1.0, 3.0, False
+        )
+
+        assert len({len(c) for c in counts}) == 1
+        assert sum(counts[0]) == 2.0
+        assert sum(counts[1]) == 2.0
+
+    def test_the_counts_land_in_the_right_bins(self, model):
+        """Two values at the bottom of the range and one at the top."""
+        datasets = [np.array([1.0, 1.0, 3.0])]
+
+        _edges, _centers, _widths, counts = model.overlaid_histograms(
+            datasets, 2, False, 1.0, 3.0, False
+        )
+
+        assert list(counts[0]) == [2.0, 1.0]
+
+    def test_normalising_gives_fractions_of_each_dataset(self, model):
+        """
+        Each dataset is normalised against *itself*, not against the overlay, so two
+        datasets of different size are still comparable in shape.
+        """
+        datasets = [np.array([1.0, 1.0, 3.0]), np.array([1.0, 3.0])]
+
+        _edges, _centers, _widths, counts = model.overlaid_histograms(
+            datasets, 2, False, 1.0, 3.0, True
+        )
+
+        np.testing.assert_allclose(counts[0], [2 / 3, 1 / 3])
+        np.testing.assert_allclose(counts[1], [0.5, 0.5])
+
+    def test_an_all_empty_dataset_does_not_divide_by_zero(self, model):
+        """A dataset entirely outside the shared limits counts zero everywhere."""
+        datasets = [np.array([99.0, 99.0])]
+
+        _edges, _centers, _widths, counts = model.overlaid_histograms(
+            datasets, 2, False, 1.0, 3.0, True
+        )
+
+        assert list(counts[0]) == [0.0, 0.0]
+
+    def test_the_edges_come_from_every_dataset_together(self, model):
+        """
+        A single dataset must not be concatenated differently from several - the
+        one-dataset case skips ``np.concatenate``, and the two must agree.
+        """
+        one = model.overlaid_histograms(
+            [np.array([1.0, 2.0, 3.0])], None, False, 1.0, 3.0, False
+        )
+        split = model.overlaid_histograms(
+            [np.array([1.0, 2.0]), np.array([3.0])], None, False, 1.0, 3.0, False
+        )
+
+        np.testing.assert_allclose(one[0], split[0])
+
+    def test_the_centers_and_widths_match_the_edges(self, model):
+        edges, centers, widths, _counts = model.overlaid_histograms(
+            [np.array([1.0, 2.0, 3.0])], 4, False, 1.0, 3.0, False
+        )
+
+        np.testing.assert_allclose(centers, (edges[:-1] + edges[1:]) / 2.0)
+        np.testing.assert_allclose(widths, np.diff(edges))

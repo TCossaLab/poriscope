@@ -259,6 +259,27 @@ MOVED: Tuple[Tuple[str, str, str], ...] = (
     # Landed 2026-09-13: the capture-rate binning and exponential fit moved to
     # MetadataModel, taking `scipy.optimize` and the last `scipy.stats` with them.
     ("poriscope/plugins/analysistabs/MetadataModel.py", "fit_capture_rate", "4c"),
+    # The counting that joined the bin decision in the closeout: which import a step
+    # frees is not the same question as whose responsibility the work is.
+    (
+        "poriscope/plugins/analysistabs/MetadataModel.py",
+        "overlaid_histograms",
+        "4c",
+    ),
+    # Tallying categories, moved off the View in the closeout: it is aggregation and
+    # the tallies are exported with the plot.
+    (
+        "poriscope/plugins/analysistabs/MetadataModel.py",
+        "categorical_counts",
+        "4c",
+    ),
+    ("poriscope/plugins/analysistabs/MetadataView.py", "set_categorical_counts", "4c"),
+    # The gaps the capture-rate fit is about, moved off the View in the closeout.
+    (
+        "poriscope/plugins/analysistabs/MetadataModel.py",
+        "interevent_log_times",
+        "4c",
+    ),
     # Step 4b, landed 2026-09-13: the query construction moved out of the Controllers
     # and into the Models, which is where Decision A has the plugin call made.
     ("poriscope/plugins/analysistabs/MetadataModel.py", "resolve_event_ids", "4b"),

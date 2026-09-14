@@ -138,6 +138,8 @@ def view(mocker: MockerFixture, mock_qt_dependencies: None) -> MetadataView:
     view_instance.histogram_bins_requested = mocker.Mock()
     # Answered by MetadataController.fit_capture_rate in the real app.
     view_instance.capture_rate_requested = mocker.Mock()
+    # Answered by MetadataController.count_categories in the real app.
+    view_instance.categorical_counts_requested = mocker.Mock()
     # Answered by MetaSubsetTabController.load_event_id_cache in the real app;
     # each test that drives _rebuild_event_id_cache sets its own answer.
     view_instance.event_id_cache_requested = mocker.Mock()
@@ -527,21 +529,16 @@ def test_reset_actions_resets_plotted_datasets(view: MetadataView) -> None:
 def test_plot_1d_density_updates_hist_min(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify hist_min is updated with minimum data value."""
+    """
+    The shared lower limit describes the filtered data.
+
+    This used to read ``min(data)`` with ``data`` still the DataFrame, and ``min()``
+    over a DataFrame iterates its column *names* - so the limit was the string
+    ``"x"``. The two tests here patched ``builtins.min`` to make that return a
+    number, which is what kept it looking correct: **a test that patches a builtin
+    so the code under test behaves is describing a defect, not pinning behaviour.**
+    """
     data: pd.DataFrame = pd.DataFrame({"x": np.array([1.0, 2.0, 5.0, 10.0])})
-
-    view._logscale_and_filter_multiple_columns = mocker.Mock(  # type: ignore[method-assign]
-        return_value=(np.array([1.0, 2.0, 5.0, 10.0]),)
-    )
-
-    original_min = min
-
-    def mock_min(*args: Any, **kwargs: Any) -> Any:
-        if len(args) == 1 and isinstance(args[0], pd.DataFrame):
-            return args[0].min().min()
-        return original_min(*args, **kwargs)
-
-    mocker.patch("builtins.min", side_effect=mock_min)
 
     view._plot_1d_density(view.axes, data, ["x"], ["units"], [False])
 
@@ -551,25 +548,93 @@ def test_plot_1d_density_updates_hist_min(
 def test_plot_1d_density_updates_hist_max(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify hist_max is updated with maximum data value."""
+    """The shared upper limit, the same way."""
     data: pd.DataFrame = pd.DataFrame({"x": np.array([1.0, 2.0, 5.0, 10.0])})
-
-    view._logscale_and_filter_multiple_columns = mocker.Mock(  # type: ignore[method-assign]
-        return_value=(np.array([1.0, 2.0, 5.0, 10.0]),)
-    )
-
-    original_max = max
-
-    def mock_max(*args: Any, **kwargs: Any) -> Any:
-        if len(args) == 1 and isinstance(args[0], pd.DataFrame):
-            return args[0].max().max()
-        return original_max(*args, **kwargs)
-
-    mocker.patch("builtins.max", side_effect=mock_max)
 
     view._plot_1d_density(view.axes, data, ["x"], ["units"], [False])
 
     assert view.hist_max == 10.0
+
+
+def test_plot_1d_density_limits_are_numbers_not_column_names(
+    view: MetadataView,
+) -> None:
+    """
+    The limits go to ``_resolve_1d_bins``, which subtracts them to turn a bin
+    *width* into a count. A string there raises inside its ``except TypeError``
+    and the width is silently discarded for the automatic rule - which is how this
+    presented: a bin width on the density plot accepted and ignored.
+    """
+    data: pd.DataFrame = pd.DataFrame({"duration": np.array([1.0, 4.0])})
+
+    view._plot_1d_density(view.axes, data, ["duration"], ["s"], [False])
+
+    assert isinstance(view.hist_min, float)
+    assert isinstance(view.hist_max, float)
+    assert view.hist_max - view.hist_min == 3.0
+
+
+def test_plot_1d_density_limits_describe_the_logscaled_values(
+    view: MetadataView,
+) -> None:
+    """
+    With a log scale the drawn values are the log10 ones, so the limits that make
+    overlaid datasets comparable have to be too - which is what the histogram path
+    has always measured. Taken before the filter they described the raw column.
+    """
+    # The fixture replaces the filter with a pass-through, which cannot drop or
+    # scale anything; this test is about what the filter produces, so the real one
+    # is restored by removing the instance attribute the fixture set.
+    del view._logscale_and_filter_multiple_columns
+
+    data: pd.DataFrame = pd.DataFrame({"x": np.array([1.0, 10.0, 100.0])})
+
+    view._plot_1d_density(view.axes, data, ["x"], ["units"], [True])
+
+    assert view.hist_min == pytest.approx(0.0)
+    assert view.hist_max == pytest.approx(2.0)
+
+
+def test_plot_1d_density_reports_a_column_that_filters_away(
+    view: MetadataView,
+) -> None:
+    """
+    Every point dropped - a column that is NULL for every row in the subset. The
+    reductions are the first thing to touch the array and np.min of an empty one
+    raises, which is the guard the histogram path already carried.
+    """
+    # The fixture replaces the filter with a pass-through, which cannot drop or
+    # scale anything; this test is about what the filter produces, so the real one
+    # is restored by removing the instance attribute the fixture set.
+    del view._logscale_and_filter_multiple_columns
+
+    data: pd.DataFrame = pd.DataFrame({"x": np.array([np.nan, np.nan])})
+
+    view._plot_1d_density(view.axes, data, ["x"], ["units"], [False])
+
+    view.density_requested.emit.assert_not_called()
+    view.add_text_to_display.emit.assert_called()
+
+
+def test_plot_1d_density_does_not_accumulate_a_dataset_it_refused(
+    view: MetadataView,
+) -> None:
+    """
+    A dataset that filtered away must not stay in the overlay, or the next plot
+    redraws it and hits the same empty array from inside the loop.
+    """
+    # The fixture replaces the filter with a pass-through, which cannot drop or
+    # scale anything; this test is about what the filter produces, so the real one
+    # is restored by removing the instance attribute the fixture set.
+    del view._logscale_and_filter_multiple_columns
+
+    before = len(view.hist_data)
+    data: pd.DataFrame = pd.DataFrame({"x": np.array([np.nan, np.nan])})
+
+    view._plot_1d_density(view.axes, data, ["x"], ["units"], [False])
+
+    assert len(view.hist_data) == before
+    assert len(view.hist_labels) == before
 
 
 def test_plot_1d_density_clears_axes(view: MetadataView, mocker: MockerFixture) -> None:
@@ -717,6 +782,30 @@ def test_no_tab_defines_its_own_dunder_init() -> None:
 # ----------------------------- Plot Capture Rate Tests ------------------------------
 
 
+def _answer_categorical_counts(view):
+    """
+    Answer ``categorical_counts_requested`` the way MetadataController does.
+
+    Step 4's closeout moved the tallying to ``MetadataModel.categorical_counts``, so
+    the View no longer decides what the categories are. The real Model is used here
+    rather than a canned answer, so these tests still exercise the counting they were
+    written to cover; what the counting *produces* for nulls, NaNs and numeric
+    ordering is asserted directly in ``tests/unit/models/test_metadata_model.py``.
+
+    :param view: the view whose request has just been emitted
+    :type view: MetadataView
+    :return: None
+    :rtype: None
+    """
+    from poriscope.plugins.analysistabs.MetadataModel import MetadataModel
+
+    datasets, labels, ax, x_label, y_label = (
+        view.categorical_counts_requested.emit.call_args.args
+    )
+    counts = MetadataModel.__new__(MetadataModel).categorical_counts(datasets)
+    view.set_categorical_counts(counts, labels, ax, x_label, y_label)
+
+
 def _answer_capture_rate(view, numbins=4):
     """
     Answer ``capture_rate_requested`` the way MetadataController does.
@@ -754,12 +843,23 @@ def _answer_capture_rate(view, numbins=4):
     )
 
 
-def test_plot_capture_rate_raises_on_insufficient_data(view: MetadataView) -> None:
-    """Verify ValueError is raised when insufficient data after filtering."""
-    data: pd.DataFrame = pd.DataFrame({"time": np.array([1.0, 1.01])})
+def test_plot_capture_rate_sends_the_column_as_it_stands(view: MetadataView) -> None:
+    """
+    The request carries the event times, not the inter-event times.
 
-    with pytest.raises(ValueError, match="Not enough data"):
-        view._plot_capture_rate(view.axes, data, ["time"], ["s"], [False])
+    Step 4's closeout moved the gap calculation to the Model, and with it the two
+    conditions that were judged on its result - too little surviving data, and how
+    much the log filter dropped. Both are pinned in
+    ``tests/unit/controllers/test_metadata_controller.py`` now; a View that still
+    reduced the column before emitting would fail here.
+    """
+    times = np.array([1.0, 1.01, 3.0])
+    data: pd.DataFrame = pd.DataFrame({"time": times})
+
+    view._plot_capture_rate(view.axes, data, ["time"], ["s"], [False])
+
+    sent = view.capture_rate_requested.emit.call_args[0][0]
+    np.testing.assert_array_equal(sent, times)
 
 
 def test_plot_capture_rate_calls_hist(
@@ -798,24 +898,6 @@ def test_plot_capture_rate_fits_exponential_curve(
     # the curve itself is fitted by MetadataModel and tested there; what is pinned
     # here is that the answer is drawn, as a line over the histogram
     view.axes.plot.assert_called()
-
-
-def test_plot_capture_rate_emits_message_for_filtered_rows(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
-    """Verify message is emitted when rows are filtered."""
-    data: pd.DataFrame = pd.DataFrame(
-        {
-            "time": np.array(
-                [-1.0, 0.1, 0.2, 0.35, 0.5, 0.7, 0.9, 1.1, 1.3, 1.5, 1.7, 2.0, 2.3]
-            )
-        }
-    )
-
-    view._plot_capture_rate(view.axes, data, ["time"], ["s"], [False])
-    _answer_capture_rate(view)
-
-    view.add_text_to_display.emit.assert_called()
 
 
 def test_plot_capture_rate_raises_on_invalid_bins_list(view: MetadataView) -> None:
@@ -922,10 +1004,12 @@ def _answer_histogram_bins(view, numbins=8):
     """
     Answer ``histogram_bins_requested`` the way MetadataController does.
 
-    Step 4c split ``_plot_1d_histogram`` at the bin decision: it emits all the
-    filtered data and ``set_histogram_bins`` does every bit of drawing. The edges
-    are supplied here rather than computed; what the decision *returns* for a given
-    request is asserted directly in ``tests/unit/models/test_metadata_model.py``.
+    Step 4c split ``_plot_1d_histogram`` at the bin decision, and Step 4's closeout
+    moved the counting down after it: the View emits every overlaid dataset and
+    ``set_histogram_bins`` is handed the tallies. The real Model is used here so these
+    tests still exercise the counting they were written over; what the bin decision
+    returns for a given request is asserted directly in
+    ``tests/unit/models/test_metadata_model.py``.
 
     :param view: the view whose request has just been emitted
     :type view: MetadataView
@@ -934,11 +1018,15 @@ def _answer_histogram_bins(view, numbins=8):
     :return: None
     :rtype: None
     """
-    args = view.histogram_bins_requested.emit.call_args.args
-    hist_min, hist_max, ax, x_label, logx, norm = args[3:]
-    edges = np.linspace(hist_min, hist_max, numbins + 1)
-    centers = edges[:-1] + np.diff(edges) / 2.0
-    view.set_histogram_bins(edges, centers, np.diff(edges), ax, x_label, logx, norm)
+    from poriscope.plugins.analysistabs.MetadataModel import MetadataModel
+
+    datasets, _bins, _sizes, hist_min, hist_max, ax, x_label, logx, norm = (
+        view.histogram_bins_requested.emit.call_args.args
+    )
+    _edges, centers, widths, counts = MetadataModel.__new__(
+        MetadataModel
+    ).overlaid_histograms(datasets, numbins, False, hist_min, hist_max, norm)
+    view.set_histogram_bins(centers, widths, counts, ax, x_label, logx, norm)
 
 
 def test_plot_1d_histogram_raises_on_invalid_bins_list(view: MetadataView) -> None:
@@ -4795,6 +4883,7 @@ class TestPlotCategoricalHistogram:
 
     def test_calls_bar(self, view: MetadataView) -> None:
         view._plot_categorical_histogram(view.axes, self._data(), ["category"], [""])
+        _answer_categorical_counts(view)
         view.axes.bar.assert_called()
 
     def test_clears_axes_before_plot(self, view: MetadataView) -> None:
@@ -4805,11 +4894,13 @@ class TestPlotCategoricalHistogram:
         view._plot_categorical_histogram(
             view.axes, self._data(), ["category"], ["unit"]
         )
+        _answer_categorical_counts(view)
         view.axes.set_xlabel.assert_called()
         view.axes.set_ylabel.assert_called()
 
     def test_rotates_x_tick_labels(self, view: MetadataView) -> None:
         view._plot_categorical_histogram(view.axes, self._data(), ["category"], [""])
+        _answer_categorical_counts(view)
         view.axes.tick_params.assert_called()
 
     def test_appends_to_hist_data(self, view: MetadataView) -> None:
@@ -4823,6 +4914,7 @@ class TestPlotCategoricalHistogram:
     def test_counts_categories_correctly(self, view: MetadataView) -> None:
         # A=3, B=2, C=1
         view._plot_categorical_histogram(view.axes, self._data(), ["category"], [""])
+        _answer_categorical_counts(view)
         call_args = view.axes.bar.call_args
         categories = list(call_args[0][0])
         counts = list(call_args[0][1])
@@ -5514,57 +5606,3 @@ def test_handle_plot_events_leaves_the_reporting_to_the_controller(
 
 
 # ----------------------------- Categorical nulls / plot-type reset -------------------
-
-
-def test_plot_categorical_histogram_counts_nulls_as_their_own_category(
-    view: MetadataView,
-) -> None:
-    """
-    A column holding SQL NULLs plots, with the missing rows as a "null" bar.
-
-    Reported from a real run: it raised instead. ``np.unique`` sorts, and sorting an
-    object column that mixes ``None`` with strings raises
-    "'<' not supported between instances of 'NoneType' and 'str'".
-    """
-    data = pd.DataFrame({"kind": np.array(["a", "b", None, "a"], dtype=object)})
-
-    view._plot_categorical_histogram(view.axes, data, ["kind"], ["u"])
-
-    categories, counts = view.axes.bar.call_args.args
-    assert categories == ["a", "b", "null"]
-    assert list(counts) == [2.0, 1.0, 1.0]
-
-
-def test_plot_categorical_histogram_labels_a_float_nan_null_too(
-    view: MetadataView,
-) -> None:
-    """
-    A float column does not raise on NaN, but labelled the bar "nan".
-
-    "null" is what the user sees everywhere else for a missing value, and this is
-    the same absence, so it gets the same word.
-    """
-    data = pd.DataFrame({"kind": np.array([1.0, 2.0, np.nan, 1.0])})
-
-    view._plot_categorical_histogram(view.axes, data, ["kind"], ["u"])
-
-    categories, _counts = view.axes.bar.call_args.args
-    assert categories[-1] == "null"
-    assert "nan" not in categories
-
-
-def test_plot_categorical_histogram_keeps_numeric_categories_in_numeric_order(
-    view: MetadataView,
-) -> None:
-    """
-    Real categories keep the order they had, which is why nulls are counted apart.
-
-    Stringifying the whole column before ``np.unique`` would have been shorter and
-    would have sorted 10 before 2.
-    """
-    data = pd.DataFrame({"kind": np.array([1, 2, 10, 2])})
-
-    view._plot_categorical_histogram(view.axes, data, ["kind"], ["u"])
-
-    categories, _counts = view.axes.bar.call_args.args
-    assert categories == ["1", "2", "10"]

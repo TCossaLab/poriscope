@@ -381,6 +381,67 @@ class MetadataModel(MetaModel):
         return bin_edges, bincenters, widths
 
     @log(logger=logger)
+    def overlaid_histograms(
+        self,
+        datasets: Sequence[npt.NDArray[np.float64]],
+        bins: Any,
+        sizes: bool,
+        hist_min: float,
+        hist_max: float,
+        norm: bool,
+    ) -> Tuple[
+        npt.NDArray[np.float64],
+        npt.NDArray[np.float64],
+        npt.NDArray[np.float64],
+        List[npt.NDArray[np.float64]],
+    ]:
+        """
+        Bin every overlaid dataset onto one shared set of edges, and count them.
+
+        The bin decision was already here; Step 4's closeout brought the counting down
+        to join it. Tallying values into bins is aggregation, and the counts are
+        exported with the plot, so the widget should not be doing it - the comment that
+        used to say the counting "stays with the drawing" was reasoning from which
+        import it needed rather than from whose responsibility it is.
+
+        The edges come from all the overlaid data at once, which is what puts every
+        dataset on comparable bins; the counts are then per dataset so each draws its
+        own bars.
+
+        :param datasets: one filtered array per overlaid dataset
+        :type datasets: Sequence[npt.NDArray[np.float64]]
+        :param bins: a bin count, or a bin width when sizes is True, or None
+        :type bins: Any
+        :param sizes: does bins refer to a bin width (True) or a count (False)
+        :type sizes: bool
+        :param hist_min: the shared lower limit across overlaid datasets
+        :type hist_min: float
+        :param hist_max: the shared upper limit across overlaid datasets
+        :type hist_max: float
+        :param norm: express each dataset as a fraction of itself rather than a count
+        :type norm: bool
+        :return: the bin edges, the bin centers, the bin widths, and one count array per dataset
+        :rtype: Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64], npt.NDArray[np.float64], List[npt.NDArray[np.float64]]]
+        """
+        all_data = (
+            np.concatenate(list(datasets)) if len(datasets) > 1 else datasets[0]
+        )
+        bin_edges, bincenters, widths = self.histogram_bin_edges(
+            all_data, bins, sizes, hist_min, hist_max
+        )
+
+        counts: List[npt.NDArray[np.float64]] = []
+        for data in datasets:
+            val, _ = np.histogram(data, bins=bin_edges)
+            val = val.astype(float)
+            if norm:
+                total = np.sum(val)
+                if total > 0:
+                    val /= total
+            counts.append(val)
+        return bin_edges, bincenters, widths, counts
+
+    @log(logger=logger)
     def _log_exp_pdf(
         self,
         logt: npt.NDArray[np.float64],
@@ -405,6 +466,74 @@ class MetadataModel(MetaModel):
         :rtype: npt.NDArray[np.float64]
         """
         return amplitude * np.exp(-rate * 10.0**logt) * 10.0**logt * np.log(10)
+
+    @log(logger=logger)
+    def categorical_counts(
+        self, datasets: Sequence[npt.NDArray[Any]]
+    ) -> List[Tuple[List[str], npt.NDArray[np.float64]]]:
+        """
+        Tally how often each category occurs, for every overlaid dataset at once.
+
+        Moved off ``MetadataView`` in Step 4's closeout. Counting occurrences is
+        aggregation rather than drawing, and the tallies are exported with the plot.
+        The loop is here rather than a round trip per dataset, for the reason
+        :meth:`kernel_densities` records: the bar chart redraws every accumulated
+        dataset on each update.
+
+        **Missing values are counted as their own category** rather than being allowed
+        to reach ``np.unique``, which sorts and so raises "'<' not supported between
+        instances of 'NoneType' and 'str'" on a column holding SQL NULLs. A float
+        column does not raise but labels the bar "nan", which tells the user no more
+        than "null" does and does not match what they see elsewhere. Counting them
+        separately also keeps the real categories in the order they had before, which
+        stringifying everything up front would not: "10" sorts before "2".
+
+        :param datasets: one array of raw column values per overlaid dataset
+        :type datasets: Sequence[npt.NDArray[Any]]
+        :return: per dataset, its category names and their counts as floats
+        :rtype: List[Tuple[List[str], npt.NDArray[np.float64]]]
+        """
+        results: List[Tuple[List[str], npt.NDArray[np.float64]]] = []
+        for values in datasets:
+            series = pd.Series(values)
+            missing = int(series.isna().sum())
+            present = series.dropna().to_numpy()
+
+            unique_vals, counts = np.unique(present, return_counts=True)
+            val = counts.astype(float)
+
+            # Strings so matplotlib aligns them as discrete categories.
+            categories = [str(uv) for uv in unique_vals]
+
+            if missing:
+                categories.append("null")
+                val = np.append(val, float(missing))
+
+            results.append((categories, val))
+        return results
+
+    @log(logger=logger)
+    def interevent_log_times(
+        self, times: npt.NDArray[np.float64]
+    ) -> npt.NDArray[np.float64]:
+        """
+        Turn a column of event times into the log10 inter-event times to fit.
+
+        Capture is Poisson, so the quantity the capture-rate fit is about is the gap
+        between consecutive events rather than the times themselves; the fit then works
+        in log-time, which is why :meth:`_log_exp_pdf` carries a Jacobian. Sorting first
+        makes the gaps meaningful for a column that arrived in any order.
+
+        Non-positive intervals are dropped because ``log10`` has nothing to say about
+        them - two events sharing a timestamp produce a zero gap.
+
+        :param times: the event times, in any order
+        :type times: npt.NDArray[np.float64]
+        :return: the base-10 logarithm of the positive inter-event times
+        :rtype: npt.NDArray[np.float64]
+        """
+        intervals = np.diff(np.sort(times))
+        return np.log10(intervals[intervals > 0])
 
     @log(logger=logger)
     def fit_capture_rate(
