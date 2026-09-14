@@ -62,6 +62,37 @@ passed against a `MagicMock` view and so could not have noticed it was bypassed.
 
 ---
 
+## 2026-09-14 - `set_heatmap`'s export reshape stays in the View
+
+**Context.** `MetadataView.set_heatmap` turns the Model's heatmap into the long-form rows
+the CSV export uses: `np.meshgrid(x, y)`, flatten, then
+`count = np.where(z_flat == -1, 0, 2**z_flat)` to undo the log2 `calculate_heatmap`
+applied. Those rows **do** leave the View - `_update_cache` feeds `cache_plot_data`, which
+reaches `MetaModel.cache_plot_data` and then `MetaController.export_plot_data` and a file -
+so the leaves-the-View test says data, while the code is plainly reshaping the Model's own
+output for one consumer.
+
+**Decision, Kyle's ruling.** It stays in the View. `calculate_heatmap` keeps returning one
+shape. **`MetadataView` therefore keeps numpy, and that is a recorded floor rather than
+unfinished work.**
+
+**Evidence.** Moving it means `calculate_heatmap` returns a 2-D grid for `imshow` *and* a
+flattened triple for the CSV - two shapes of the same result, which is the "pile of extras"
+the governing test rules out. The third option, keeping it in the View but replacing
+`meshgrid` with comprehensions, trades two library calls for a nested comprehension that is
+slower and harder to read: complexity where none is needed, by the same test.
+
+**What still moves from that tab**, so the floor is not read as a general licence:
+`_construct_all_points_histogram`, `_construct_event_overlay`, the capture-rate inter-event
+times, the shared histogram limits, the bin counts and the categorical counting are all
+domain computation and go to `MetadataModel`.
+
+**Revisit if** the export ever wants the heatmap in a form the drawing does not, at which
+point the two consumers have genuinely diverged and the Model is the right place for the
+second one.
+
+---
+
 ## 2026-09-14 - Where the View/Model line falls for plotting numerics
 
 **Context.** With rule 2 down to 8, the remaining numpy in the Views is three different
