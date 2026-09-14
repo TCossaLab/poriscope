@@ -534,24 +534,16 @@ class MetadataView(MetaSubsetTabView):
             else:
                 raise ValueError(f"Invalid bins entry {bins}")
 
-        initial_length = len(data)
         (x_label,) = cols
         (x_units,) = units
         (logx,) = logscales
+        # The column goes out as it stands. Turning event times into log10 inter-event
+        # times is the measurement rather than the drawing, so the Model does it, and
+        # the two conditions that used to be judged here - too little surviving data,
+        # and how much the log filter dropped - are judged by the Controller on the
+        # answer. The ValueError this method can still raise is the bins one above,
+        # which is why update_plot's handler stays live.
         data = data[x_label].values
-        data = np.diff(np.sort(data))
-        data = np.log10(data[data > 0])
-
-        if len(data) < 10:
-            raise ValueError(
-                f"Not enough data passes the log filter: {len(data)} is not enough to estimate capture rate - skipping"
-            )
-
-        if len(data) < initial_length:
-            self.add_text_to_display.emit(
-                f"{initial_length - len(data)} rows dropped by log filter",
-                self.__class__.__name__,
-            )
 
         x_label = f"Interevent Time ({x_units})"
         y_label = "Count"

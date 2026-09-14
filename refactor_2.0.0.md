@@ -176,14 +176,25 @@ sites are converted**, and they sit in Clustering (1), Metadata (5) and Protein 
    branch's first commit rather than a branch, and each call site is touched once. Rule 25:
    a recorded plan step is a claim like any other.
 
-   - **4b - the standalone computations.** `_plot_capture_rate`'s inter-event times,
-     `_plot_1d_histogram`'s shared limits, `set_histogram_bins`' counts and
-     `_plot_categorical_histogram`'s counting: ordinary request/setter splits of the kind
-     4c Metadata already did four of. Takes the second pandas use with it.
-   - **4c - `_overlay_plot`.** The generator moves to the Controller,
-     `_construct_all_points_histogram` moves to the Model, `_construct_event_overlay` keeps
-     its drawing and loses its computation, and the five logscale callers convert. The
-     expensive one, and the one that carries the test references.
+   **Split by method, not by kind of work** - `_plot_1d_histogram` is both a computation
+   site and one of the five logscale callers, so splitting by kind would rewrite it twice
+   (rule 60). Since branch 2 put `logscale_and_filter_columns` on `MetaModel`, each
+   logscale caller now converts independently, which makes a per-method split possible:
+
+   - **4b - four self-contained plot methods.** `_plot_capture_rate`'s inter-event times,
+     `_plot_categorical_histogram`'s counting (which takes one of the two pandas uses),
+     `set_histogram_bins`' counts, and `_plot_1d_histogram` **entire** - its shared limits
+     *and* its logscale call, converted together so it is touched once. Ordinary
+     request/setter splits of the kind 4c Metadata already did four of.
+   - **4c - `_overlay_plot` and what it drives.** The generator moves to the Controller,
+     `_construct_all_points_histogram` moves to the Model with the extracted
+     baseline-rectify, `_construct_event_overlay` keeps its drawing and loses its
+     computation, and the remaining four logscale callers convert. The expensive one, and
+     the one carrying the 100 test references.
+
+   **Neither branch closes a gate on its own**: the two pandas uses are one in each, so
+   rule 2 for `MetadataView` moves only when 4c lands. Answered before starting, per rule
+   38, so the branches stand on the layering.
 
    A manual pass follows each, on a tab whose last one returned four defects.
 

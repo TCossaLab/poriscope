@@ -1,5 +1,7 @@
 ## Poriscope 2.0.0: in progress
 
+* **A capture-rate plot with too few events now says how few**, instead of reporting the generic "no data available after filtering"
+
 * **Breaking:** the Raw Data tab's plot time axes are built by `MetaModel.time_bases` rather than in the view, so `RawDataView.update_plot`, `set_trace_data`, `set_event_plot_data` and `_update_event_plot` take the axis alongside the samples and `baseline_stats_requested` carries it
 
 * **Breaking:** `EventAnalysisModel.event_time_bases` is now `MetaModel.time_bases`, taking a scale and an offset so one derivation serves both an event plot in microseconds and a trace plot in seconds from the start of the recording

@@ -407,6 +407,29 @@ class MetadataModel(MetaModel):
         return amplitude * np.exp(-rate * 10.0**logt) * 10.0**logt * np.log(10)
 
     @log(logger=logger)
+    def interevent_log_times(
+        self, times: npt.NDArray[np.float64]
+    ) -> npt.NDArray[np.float64]:
+        """
+        Turn a column of event times into the log10 inter-event times to fit.
+
+        Capture is Poisson, so the quantity the capture-rate fit is about is the gap
+        between consecutive events rather than the times themselves; the fit then works
+        in log-time, which is why :meth:`_log_exp_pdf` carries a Jacobian. Sorting first
+        makes the gaps meaningful for a column that arrived in any order.
+
+        Non-positive intervals are dropped because ``log10`` has nothing to say about
+        them - two events sharing a timestamp produce a zero gap.
+
+        :param times: the event times, in any order
+        :type times: npt.NDArray[np.float64]
+        :return: the base-10 logarithm of the positive inter-event times
+        :rtype: npt.NDArray[np.float64]
+        """
+        intervals = np.diff(np.sort(times))
+        return np.log10(intervals[intervals > 0])
+
+    @log(logger=logger)
     def fit_capture_rate(
         self, data: npt.NDArray[np.float64], bins: Any, sizes: bool = False
     ) -> Tuple[

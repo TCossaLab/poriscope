@@ -22,6 +22,7 @@ from __future__ import annotations
 from typing import Dict, Iterator, List
 from unittest.mock import MagicMock
 
+import numpy as np
 import pytest
 from pytest_mock import MockerFixture
 
@@ -994,3 +995,163 @@ def test_get_experiment_structure_ready_does_not_alias_the_available_structure(
     selected["exp1"].remove("1")
 
     assert available["exp1"] == ["1", "2"]
+
+
+# --------------------- fit_capture_rate, Step 4 closeout ---------------------
+#
+# The inter-event times moved here from MetadataView, and both conditions that were
+# judged on them came with the computation: too little surviving data, and how much
+# the log filter dropped. The View's tests for those were deleted rather than
+# re-pointed, because the behaviour is not there any more.
+
+
+class TestFitCaptureRate:
+    """Decision B's command path, with two guards on the Model's answer."""
+
+    @pytest.fixture(autouse=True)
+    def _stub_status_panel(self, controller, mocker) -> None:
+        """
+        Give the controller a status-panel signal it can emit on.
+
+        ``MetadataController`` is built with ``__new__`` here, so its real Qt signal
+        has no object behind it and emitting raises "Signal source has been deleted".
+        The file's convention is to stub it per test; every test in this class reports
+        or is checked for not reporting, so it is done once for all of them.
+
+        :param controller: the controller under test
+        :type controller: MetadataController
+        :param mocker: the pytest-mock fixture
+        :type mocker: pytest_mock.MockerFixture
+        :return: None
+        :rtype: None
+        """
+        controller.add_text_to_display = mocker.Mock()
+        controller.add_text_to_display.emit = mocker.Mock()
+
+    @staticmethod
+    def _request(controller, times):
+        """
+        Drive the slot with a column of event times.
+
+        :param controller: the controller under test
+        :type controller: MetadataController
+        :param times: the event times the View would have sent
+        :type times: list
+        :return: None
+        :rtype: None
+        """
+        controller.fit_capture_rate(
+            np.asarray(times), None, False, MagicMock(), "x", "y", "label"
+        )
+
+    @staticmethod
+    def _messages(controller):
+        """
+        Every line the slot put on the status panel.
+
+        :param controller: the controller under test
+        :type controller: MetadataController
+        :return: the messages, in order
+        :rtype: list
+        """
+        return [c.args[0] for c in controller.add_text_to_display.emit.call_args_list]
+
+    def test_the_column_goes_to_the_model_unreduced(self, controller) -> None:
+        """
+        The View sends event times; turning them into gaps is the Model's.
+
+        A Controller that reduced the column itself, or forwarded it to the fit
+        untouched, would fail here.
+        """
+        controller.model.interevent_log_times.return_value = np.arange(20.0)
+
+        self._request(controller, [1.0, 2.0, 4.0, 8.0])
+
+        sent = controller.model.interevent_log_times.call_args.args[0]
+        np.testing.assert_array_equal(sent, [1.0, 2.0, 4.0, 8.0])
+
+    def test_the_fit_is_given_what_the_model_returned(self, controller) -> None:
+        """A Controller that fitted the raw times would produce a meaningless rate."""
+        log_times = np.arange(20.0)
+        controller.model.interevent_log_times.return_value = log_times
+        controller.model.fit_capture_rate.return_value = (1, 2, 3, 4, 5.0, 6.0)
+
+        self._request(controller, list(range(30)))
+
+        np.testing.assert_array_equal(
+            controller.model.fit_capture_rate.call_args.args[0], log_times
+        )
+
+    def test_too_little_surviving_data_is_reported_and_stops(self, controller) -> None:
+        """
+        Reported rather than raised, and with the count in it.
+
+        In the View this raised a ValueError that ``update_plot`` turned into the
+        generic "no data available after filtering"; the user now gets the number.
+        """
+        controller.model.interevent_log_times.return_value = np.arange(9.0)
+
+        self._request(controller, list(range(20)))
+
+        assert any("Not enough data passes the log filter: 9" in m
+                   for m in self._messages(controller))
+        controller.model.fit_capture_rate.assert_not_called()
+
+    def test_exactly_ten_survivors_is_enough(self, controller) -> None:
+        """The boundary is ``< 10``, so ten proceeds - pinned so it cannot drift."""
+        controller.model.interevent_log_times.return_value = np.arange(10.0)
+        controller.model.fit_capture_rate.return_value = (1, 2, 3, 4, 5.0, 6.0)
+
+        self._request(controller, list(range(20)))
+
+        controller.model.fit_capture_rate.assert_called_once()
+
+    def test_dropped_rows_are_reported(self, controller) -> None:
+        controller.model.interevent_log_times.return_value = np.arange(12.0)
+        controller.model.fit_capture_rate.return_value = (1, 2, 3, 4, 5.0, 6.0)
+
+        self._request(controller, list(range(20)))
+
+        assert any("8 rows dropped by log filter" in m
+                   for m in self._messages(controller))
+
+    def test_a_clean_column_still_reports_one_dropped_row(self, controller) -> None:
+        """
+        Preserved, not corrected: the interval count is one less than the event count
+        by construction, and the original counted that as a drop. Pinned so the move
+        is provably behaviour-preserving; filed in ``future_fixes.md`` as the cosmetic
+        defect it is.
+        """
+        controller.model.interevent_log_times.return_value = np.arange(19.0)
+        controller.model.fit_capture_rate.return_value = (1, 2, 3, 4, 5.0, 6.0)
+
+        self._request(controller, list(range(20)))
+
+        assert any("1 rows dropped by log filter" in m
+                   for m in self._messages(controller))
+
+    def test_the_view_is_handed_the_log_times_not_the_raw_column(
+        self, controller, mock_view
+    ) -> None:
+        """
+        ``set_capture_rate`` draws the histogram from this, so handing back the raw
+        times would plot event times against inter-event-time bins.
+        """
+        log_times = np.arange(20.0)
+        controller.model.interevent_log_times.return_value = log_times
+        controller.model.fit_capture_rate.return_value = (1, 2, 3, 4, 5.0, 6.0)
+
+        self._request(controller, list(range(30)))
+
+        np.testing.assert_array_equal(
+            mock_view.set_capture_rate.call_args.args[6], log_times
+        )
+
+    def test_a_fit_that_will_not_converge_is_reported(self, controller) -> None:
+        controller.model.interevent_log_times.return_value = np.arange(20.0)
+        controller.model.fit_capture_rate.side_effect = RuntimeError("no convergence")
+
+        self._request(controller, list(range(30)))
+
+        assert any("Unable to fit the capture rate" in m
+                   for m in self._messages(controller))

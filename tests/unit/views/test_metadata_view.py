@@ -754,12 +754,23 @@ def _answer_capture_rate(view, numbins=4):
     )
 
 
-def test_plot_capture_rate_raises_on_insufficient_data(view: MetadataView) -> None:
-    """Verify ValueError is raised when insufficient data after filtering."""
-    data: pd.DataFrame = pd.DataFrame({"time": np.array([1.0, 1.01])})
+def test_plot_capture_rate_sends_the_column_as_it_stands(view: MetadataView) -> None:
+    """
+    The request carries the event times, not the inter-event times.
 
-    with pytest.raises(ValueError, match="Not enough data"):
-        view._plot_capture_rate(view.axes, data, ["time"], ["s"], [False])
+    Step 4's closeout moved the gap calculation to the Model, and with it the two
+    conditions that were judged on its result - too little surviving data, and how
+    much the log filter dropped. Both are pinned in
+    ``tests/unit/controllers/test_metadata_controller.py`` now; a View that still
+    reduced the column before emitting would fail here.
+    """
+    times = np.array([1.0, 1.01, 3.0])
+    data: pd.DataFrame = pd.DataFrame({"time": times})
+
+    view._plot_capture_rate(view.axes, data, ["time"], ["s"], [False])
+
+    sent = view.capture_rate_requested.emit.call_args[0][0]
+    np.testing.assert_array_equal(sent, times)
 
 
 def test_plot_capture_rate_calls_hist(
@@ -798,24 +809,6 @@ def test_plot_capture_rate_fits_exponential_curve(
     # the curve itself is fitted by MetadataModel and tested there; what is pinned
     # here is that the answer is drawn, as a line over the histogram
     view.axes.plot.assert_called()
-
-
-def test_plot_capture_rate_emits_message_for_filtered_rows(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
-    """Verify message is emitted when rows are filtered."""
-    data: pd.DataFrame = pd.DataFrame(
-        {
-            "time": np.array(
-                [-1.0, 0.1, 0.2, 0.35, 0.5, 0.7, 0.9, 1.1, 1.3, 1.5, 1.7, 2.0, 2.3]
-            )
-        }
-    )
-
-    view._plot_capture_rate(view.axes, data, ["time"], ["s"], [False])
-    _answer_capture_rate(view)
-
-    view.add_text_to_display.emit.assert_called()
 
 
 def test_plot_capture_rate_raises_on_invalid_bins_list(view: MetadataView) -> None:

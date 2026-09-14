@@ -698,3 +698,62 @@ class TestLoadEventsById:
         mocker.patch.object(model, "call", return_value=generator)
 
         assert model.load_events_by_id("L", "3", None) is generator
+
+
+# ===========================================================================
+# interevent_log_times - the gaps the capture-rate fit is actually about
+# ===========================================================================
+
+
+class TestIntereventLogTimes:
+    """
+    Capture is Poisson, so the fit is about the gap between consecutive events
+    rather than the times themselves. Moved off ``MetadataView`` in Step 4's
+    closeout: the gaps are the measurement, not the drawing.
+    """
+
+    def test_it_returns_the_log_of_the_gaps(self, model):
+        """Times one decade apart give gaps of 9, 90, 900 - logs just under 1, 2, 3."""
+        times = np.array([1.0, 10.0, 100.0, 1000.0])
+
+        result = model.interevent_log_times(times)
+
+        np.testing.assert_allclose(result, np.log10([9.0, 90.0, 900.0]))
+
+    def test_the_column_is_sorted_first(self, model):
+        """
+        A column arrives in whatever order the query returned it, and unsorted gaps
+        are meaningless - some would be negative and silently dropped below.
+        """
+        ordered = model.interevent_log_times(np.array([1.0, 2.0, 4.0, 8.0]))
+        shuffled = model.interevent_log_times(np.array([4.0, 1.0, 8.0, 2.0]))
+
+        np.testing.assert_allclose(ordered, shuffled)
+
+    def test_there_is_one_fewer_gap_than_event(self, model):
+        """
+        The property behind the message a clean column still shows: n events make
+        n-1 intervals, and the caller counts that difference as dropped rows.
+        """
+        assert len(model.interevent_log_times(np.arange(20.0))) == 19
+
+    def test_a_repeated_timestamp_is_dropped(self, model):
+        """
+        Two events sharing a time produce a zero gap, which log10 has nothing to say
+        about - it would be -inf and poison the fit.
+        """
+        times = np.array([1.0, 2.0, 2.0, 4.0])
+
+        result = model.interevent_log_times(times)
+
+        assert len(result) == 2
+        assert np.all(np.isfinite(result))
+
+    def test_every_timestamp_repeated_gives_nothing(self, model):
+        assert len(model.interevent_log_times(np.full(5, 3.0))) == 0
+
+    def test_a_single_event_gives_no_intervals(self, model):
+        assert len(model.interevent_log_times(np.array([1.0]))) == 0
+
+    def test_no_events_gives_no_intervals(self, model):
+        assert len(model.interevent_log_times(np.array([]))) == 0
