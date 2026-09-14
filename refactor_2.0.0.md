@@ -8,11 +8,11 @@ snapshot was the nearest thing that looked like one.
 
 | Gate | Refactor start | Now | Target |
 | --- | --- | --- | --- |
-| Boundary allowlist | 111 | **6** | 0 |
+| Boundary allowlist | 111 | **5** | 0 |
 | - rule 1, View emits | 75 | **0** | 0 |
-| - rule 2, View computation imports | 22 | **6** | 0 |
+| - rule 2, View computation imports | 22 | **5** | 0 |
 | - rules 3, 4 and 5 | 10 / 4 / - | **0 / 0 / 0** | 0 |
-| Refactor-coverage audit | - | **81 of 81 pinned** | 100% |
+| Refactor-coverage audit | - | **85 of 85 pinned** | 100% |
 | Duplication, removable - the original 6 families | 1,889 | **721** | - |
 | - `*Model.py`, a 7th family added 2026-09-14 | not measured | **38** | 8 |
 | - the 3 analysis-tab families of the original six | 1,199 | **31** | 31 (floor) |
@@ -181,7 +181,9 @@ sites are converted**, and they sit in Clustering (1), Metadata (5) and Protein 
    (rule 60). Since branch 2 put `logscale_and_filter_columns` on `MetaModel`, each
    logscale caller now converts independently, which makes a per-method split possible:
 
-   - **4b - four self-contained plot methods.** `_plot_capture_rate`'s inter-event times,
+   - **4b - four self-contained plot methods. LANDED 2026-09-14** at `d16a4172`, suite
+     3,950 passed / 16 skipped, allowlist unchanged at 5 as predicted, audit 85 of 85.
+     Manually passed on Windows the same day over all five plotting surfaces. `_plot_capture_rate`'s inter-event times,
      `_plot_categorical_histogram`'s counting (which takes one of the two pandas uses),
      `set_histogram_bins`' counts, and `_plot_1d_histogram`'s shared limits. Ordinary
      request/setter splits of the kind 4c Metadata already did four of. **Its logscale
