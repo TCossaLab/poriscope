@@ -10,7 +10,6 @@ Covers:
 - update_plot_data delegates to view (data present, data absent)
 - update_features (all features with matching labels, no labels, mismatched vlabels,
   mismatched hlabels, mismatched plabels, all None)
-- update_plot_samplerate delegates to view
 - update_channels delegates to view
 - set_num_events_allowed delegates to view
 - relay_eventfitting_status delegates to view (True and False)
@@ -136,12 +135,28 @@ class TestLoadEventPlot:
     @staticmethod
     def plotted(mock_view: MagicMock) -> tuple:
         """
-        The arguments handed to the View's setter.
+        The arguments handed to the View's setter, with the time bases left out.
+
+        Step 4 inserted ``time_bases`` as the second argument, since the time axis is
+        a property of the samples rather than of the drawing and the Model now builds
+        it. Dropping it here keeps every index below meaning what it did; it is pinned
+        on its own in ``test_the_time_bases_are_built_by_the_model``.
 
         :param mock_view: Mocked event analysis view.
-        :return: the positional arguments of set_event_plot_data.
+        :return: the positional arguments of set_event_plot_data, without time_bases.
         """
-        return mock_view.set_event_plot_data.call_args[0]
+        args = mock_view.set_event_plot_data.call_args[0]
+        return args[:1] + args[2:]
+
+    @staticmethod
+    def time_bases(mock_view: MagicMock) -> object:
+        """
+        The time bases handed to the View's setter.
+
+        :param mock_view: Mocked event analysis view.
+        :return: the second positional argument of set_event_plot_data.
+        """
+        return mock_view.set_event_plot_data.call_args[0][1]
 
     # -- stopping early ---------------------------------------------------
 
@@ -246,7 +261,9 @@ class TestLoadEventPlot:
         assert self.asked(controller, "get_samplerate") == [
             ("MetaEventLoader", "ldr", "get_samplerate", 2)
         ]
-        mock_view.update_plot_samplerate.assert_called_once_with(250000.0)
+        # The samplerate now reaches the Model, which builds the time axis from it;
+        # the View no longer holds one.
+        assert controller.model.event_time_bases.call_args.args[1] == 250000.0
 
     def test_an_unreadable_samplerate_falls_back_to_one(
         self, controller: EventAnalysisController, mock_view: MagicMock
@@ -265,7 +282,7 @@ class TestLoadEventPlot:
 
         controller.load_event_plot("ldr", "No Event Fitter", 0, [0], "", False)
 
-        mock_view.update_plot_samplerate.assert_called_once_with(1)
+        assert controller.model.event_time_bases.call_args.args[1] == 1
 
     def test_each_event_is_loaded_with_the_channel_index_and_filter(
         self, controller: EventAnalysisController, mocker: MockerFixture
@@ -627,6 +644,31 @@ class TestLoadEventPlot:
         controller.load_event_plot("ldr", "No Event Fitter", 0, [0, 1], "", False)
 
         assert self.plotted(mock_view)[0] == []
+
+    def test_the_time_bases_are_built_by_the_model(
+        self, controller: EventAnalysisController, mock_view: MagicMock
+    ) -> None:
+        """
+        The View is handed the axis rather than the rate it would derive one from.
+
+        The traces and the rate go to the Model together, and whatever it returns is
+        what reaches the View - so a Controller that quietly rebuilt the axis itself,
+        or handed the View a rate again, would fail here.
+
+        :param controller: Controller under test.
+        :param mock_view: Mocked event analysis view.
+        """
+        self.answers(controller, load_event=[{"data": "a"}])
+
+        controller.load_event_plot("ldr", "No Event Fitter", 2, [0], "", False)
+
+        traces = self.plotted(mock_view)[0]
+        called_with = controller.model.event_time_bases.call_args.args
+        assert called_with[0] is traces
+        assert called_with[1] == 250000.0
+        assert self.time_bases(mock_view) is (
+            controller.model.event_time_bases.return_value
+        )
 
     def test_the_raw_flag_is_passed_through_to_the_view(
         self, controller: EventAnalysisController, mock_view: MagicMock
@@ -1242,23 +1284,6 @@ def test_update_features_allows_no_labels(
     mock_view.update_plot_features.assert_called_once_with(
         vertical, None, None, None, None, None
     )
-
-
-# ------------------- update_plot_samplerate --------------------------
-
-
-def test_update_plot_samplerate_delegates_to_view(
-    controller: EventAnalysisController,
-    mock_view: MagicMock,
-) -> None:
-    """
-    Forward the sampling rate to the view.
-
-    :param controller: Controller under test.
-    :param mock_view: Mocked event analysis view.
-    """
-    controller.update_plot_samplerate(50000.0)
-    mock_view.update_plot_samplerate.assert_called_once_with(50000.0)
 
 
 # ----------------------- update_channels ----------------------------

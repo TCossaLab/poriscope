@@ -47,8 +47,6 @@ class MetaEventTabController(MetaController):
 
     - ``update_available_plugins``, which passes the app-wide plugin registry down to
       both the View and the Model when a plugin is instantiated anywhere.
-    - ``update_plot_samplerate``, which relays the sampling rate of the trace being
-      plotted to the View.
     - ``_resolve_callable_filter``, which fetches a filter plugin's callable for the
       paths Step 4a converted, or None where none was asked for or it could not be
       fetched.
@@ -111,13 +109,3 @@ class MetaEventTabController(MetaController):
             )
             return None
         return resolved
-
-    @log(logger=logger)
-    def update_plot_samplerate(self, samplerate: float) -> None:
-        """
-        Set the sampling rate to be used for time axis conversion in the plot.
-
-        :param samplerate: Sampling rate in Hz.
-        :type samplerate: float
-        """
-        self.view.update_plot_samplerate(samplerate)

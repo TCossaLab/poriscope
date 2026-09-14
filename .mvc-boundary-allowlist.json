@@ -4,9 +4,6 @@
     "poriscope/plugins/analysistabs/ClusteringView.py": [
       "pandas"
     ],
-    "poriscope/plugins/analysistabs/EventAnalysisView.py": [
-      "numpy"
-    ],
     "poriscope/plugins/analysistabs/MetadataView.py": [
       "numpy",
       "pandas"

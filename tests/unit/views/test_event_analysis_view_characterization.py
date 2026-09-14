@@ -169,7 +169,7 @@ def test_raw_defaults_to_false_when_absent(view):
 
 def test_set_event_plot_data_reports_when_nothing_loaded(view):
     """The user is told, rather than shown an empty figure."""
-    view.set_event_plot_data([], [], 0, [], [], [], [], [], [], False)
+    view.set_event_plot_data([], [], [], 0, [], [], [], [], [], [], False)
 
     view._update_event_plot.assert_not_called()
     view.add_text_to_display.emit.assert_called_once()
@@ -184,10 +184,14 @@ def test_set_event_plot_data_forwards_every_argument(view):
     once a fit is drawn - one to three traces per event against one placeholder each.
     """
     data = [np.full(4, 1.0), np.full(4, 7.0)]
+    # Built by EventAnalysisModel.event_time_bases since Step 4 and passed straight
+    # through, so this method must not try to derive or re-align it either.
+    time_bases = [np.arange(4.0), np.arange(4.0)]
     labels = ["Event 0 Data", "Event 0 Fit"]
 
     view.set_event_plot_data(
         data,
+        time_bases,
         labels,
         1,
         [[1.0]],
@@ -201,7 +205,8 @@ def test_set_event_plot_data_forwards_every_argument(view):
 
     args, kwargs = view._update_event_plot.call_args
     assert args[0] is data
-    assert args[1] is labels
-    assert args[2] == 1
-    assert args[3:9] == ([[1.0]], [[2.0]], [[(3.0, 4.0)]], [["v"]], [["h"]], [["p"]])
+    assert args[1] is time_bases
+    assert args[2] is labels
+    assert args[3] == 1
+    assert args[4:10] == ([[1.0]], [[2.0]], [[(3.0, 4.0)]], [["v"]], [["h"]], [["p"]])
     assert kwargs == {"use_raw": True}

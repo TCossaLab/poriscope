@@ -10,6 +10,31 @@ which ran through August 2026 and is complete. The step numbers only date the de
 
 ---
 
+## 2026-09-14 - Dead code the refactor exposes comes out with it
+
+**Context.** Moving the event plot's time axis to `EventAnalysisModel` left
+`EventAnalysisView.plot_samplerate` write-only, and reading the samplerate path showed
+`MetaEventTabController.update_plot_samplerate` had **no production callers at all** -
+both event tabs call `self.view.update_plot_samplerate(...)` directly and always did.
+Only tests kept it reachable, which is what made it look alive (method rule 65). Both
+were filed rather than removed, on the grounds that one is a removal from a published
+`Meta*` base and therefore breaking.
+
+**Decision, Kyle's call.** Dead code the current change exposes is removed in the same
+commit, and **breaking changes are acceptable for 2.0.0 provided they are called out
+explicitly in `changelog.md` and justified**. "Dead" has to be demonstrated rather than
+asserted: no production callers, no signal connections, and where the only remaining
+references are tests, saying so.
+
+**Evidence.** `MetaEventTabController.update_plot_samplerate`: 0 callers and 0 `connect`
+sites in `poriscope/`, 2 tests (one per event tab's Controller suite), both of which
+passed against a `MagicMock` view and so could not have noticed it was bypassed.
+`EventAnalysisView.plot_samplerate`: 1 write, 0 reads after the move.
+
+**Revisit** after 2.0.0 ships, when the same removals stop being free.
+
+---
+
 ## 2026-09-14 - Where the View/Model line falls for plotting numerics
 
 **Context.** With rule 2 down to 8, the remaining numpy in the Views is three different

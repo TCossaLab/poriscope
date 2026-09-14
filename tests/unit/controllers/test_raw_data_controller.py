@@ -8,7 +8,6 @@ Covers:
 - update_available_plugins logs debug and delegates to model and view
 - set_event_filter delegates to view
 - update_plot_data delegates to view
-- update_plot_samplerate delegates to view
 - update_channels delegates to view
 - _load_and_filter reads each channel through call(), dropping what fails (4a)
 - load_trace_data / load_psd_data hand the result to the matching view setter
@@ -277,23 +276,6 @@ def test_update_plot_data_delegates_to_view(
     data: dict[str, list[int]] = {"x": [1, 2], "y": [3, 4]}
     controller.update_plot_data(data)
     mock_view.update_plot_data.assert_called_once_with(data)
-
-
-# ------------------- update_plot_samplerate --------------------------
-
-
-def test_update_plot_samplerate_delegates_to_view(
-    controller: RawDataController,
-    mock_view: MagicMock,
-) -> None:
-    """
-    Forward the sampling rate to the view for time axis conversion.
-
-    :param controller: Controller under test.
-    :param mock_view: Mocked raw data view.
-    """
-    controller.update_plot_samplerate(50000.0)
-    mock_view.update_plot_samplerate.assert_called_once_with(50000.0)
 
 
 # ----------------------- update_channels ----------------------------

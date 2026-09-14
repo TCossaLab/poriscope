@@ -58,6 +58,23 @@ def real_view(qt_app):
     return v
 
 
+def _time_bases(traces):
+    """
+    The time axes EventAnalysisModel.event_time_bases would build for these traces.
+
+    Step 4 moved that derivation off the View - it is a property of the samples and
+    the rate they were taken at - so the traces now arrive already paired with it.
+    A 1 MHz rate is used throughout; no test here asserts on the values, only that
+    the arity and the per-trace lengths line up.
+
+    :param traces: the current traces about to be plotted
+    :type traces: list
+    :return: one time array per trace, in microseconds
+    :rtype: list
+    """
+    return [np.arange(len(trace)) / 1_000_000 * 1e6 for trace in traces]
+
+
 @pytest.fixture
 def mock_view():
     """
@@ -177,21 +194,6 @@ class TestUpdatePlotFeatures:
         mock_view.update_plot_features(vertical=[5.0])
         assert mock_view.vertical == [5.0]
         assert mock_view.horizontal is None
-
-
-# ===========================================================================
-# update_plot_samplerate
-# ===========================================================================
-
-
-class TestUpdatePlotSamplerate:
-    def test_stores_samplerate(self, mock_view):
-        mock_view.update_plot_samplerate(1_000_000)
-        assert mock_view.plot_samplerate == 1_000_000
-
-    def test_float_samplerate(self, mock_view):
-        mock_view.update_plot_samplerate(250_000.5)
-        assert mock_view.plot_samplerate == 250_000.5
 
 
 # ===========================================================================
@@ -965,45 +967,45 @@ class TestUpdateEventPlot:
         )
 
     def test_runs_without_error_one_event(self, mock_view):
-        mock_view.plot_samplerate = 1_000_000
         mock_view._update_event_plot(
             [self._make_data()],
+            _time_bases([self._make_data()]),
             ["Event 0 Data"],
             1,
             *self._none_lists(1),
         )
 
     def test_runs_without_error_two_events(self, mock_view):
-        mock_view.plot_samplerate = 1_000_000
         mock_view._update_event_plot(
             [self._make_data(), self._make_data()],
+            _time_bases([self._make_data(), self._make_data()]),
             ["Event 0 Data", "Event 1 Data"],
             2,
             *self._none_lists(2),
         )
 
     def test_runs_without_error_with_fit_trace(self, mock_view):
-        mock_view.plot_samplerate = 1_000_000
         mock_view._update_event_plot(
             [self._make_data(), self._make_data()],
+            _time_bases([self._make_data(), self._make_data()]),
             ["Event 0 Data", "Event 0 Fit"],
             1,
             *self._none_lists(1),
         )
 
     def test_runs_without_error_with_raw_trace(self, mock_view):
-        mock_view.plot_samplerate = 1_000_000
         mock_view._update_event_plot(
             [self._make_data(), self._make_data()],
+            _time_bases([self._make_data(), self._make_data()]),
             ["Event 0 Data", "Event 0 Raw"],
             1,
             *self._none_lists(1),
         )
 
     def test_runs_without_error_with_vlines(self, mock_view):
-        mock_view.plot_samplerate = 1_000_000
         mock_view._update_event_plot(
             [self._make_data()],
+            _time_bases([self._make_data()]),
             ["Event 0 Data"],
             1,
             [[10.0]],
@@ -1015,9 +1017,9 @@ class TestUpdateEventPlot:
         )
 
     def test_runs_without_error_with_hlines(self, mock_view):
-        mock_view.plot_samplerate = 1_000_000
         mock_view._update_event_plot(
             [self._make_data()],
+            _time_bases([self._make_data()]),
             ["Event 0 Data"],
             1,
             [None],
@@ -1029,9 +1031,9 @@ class TestUpdateEventPlot:
         )
 
     def test_runs_without_error_with_points(self, mock_view):
-        mock_view.plot_samplerate = 1_000_000
         mock_view._update_event_plot(
             [self._make_data()],
+            _time_bases([self._make_data()]),
             ["Event 0 Data"],
             1,
             [None],
@@ -1043,9 +1045,9 @@ class TestUpdateEventPlot:
         )
 
     def test_runs_without_error_unlabelled_vline(self, mock_view):
-        mock_view.plot_samplerate = 1_000_000
         mock_view._update_event_plot(
             [self._make_data()],
+            _time_bases([self._make_data()]),
             ["Event 0 Data"],
             1,
             [[10.0]],
@@ -1057,9 +1059,9 @@ class TestUpdateEventPlot:
         )
 
     def test_runs_without_error_unlabelled_hline(self, mock_view):
-        mock_view.plot_samplerate = 1_000_000
         mock_view._update_event_plot(
             [self._make_data()],
+            _time_bases([self._make_data()]),
             ["Event 0 Data"],
             1,
             [None],
@@ -1071,10 +1073,10 @@ class TestUpdateEventPlot:
         )
 
     def test_cache_committed_after_plot(self, mock_view):
-        mock_view.plot_samplerate = 1_000_000
         with patch.object(EventAnalysisView, "_commit_cache") as mock_cache:
             mock_view._update_event_plot(
                 [self._make_data()],
+                _time_bases([self._make_data()]),
                 ["Event 0 Data"],
                 1,
                 *self._none_lists(1),
@@ -1082,9 +1084,9 @@ class TestUpdateEventPlot:
         mock_cache.assert_called()
 
     def test_figure_has_axes_after_plot(self, mock_view):
-        mock_view.plot_samplerate = 1_000_000
         mock_view._update_event_plot(
             [self._make_data()],
+            _time_bases([self._make_data()]),
             ["Event 0 Data"],
             1,
             *self._none_lists(1),
@@ -1092,9 +1094,9 @@ class TestUpdateEventPlot:
         assert len(mock_view.figure.get_axes()) >= 1
 
     def test_two_events_produce_two_axes(self, mock_view):
-        mock_view.plot_samplerate = 1_000_000
         mock_view._update_event_plot(
             [self._make_data(), self._make_data()],
+            _time_bases([self._make_data(), self._make_data()]),
             ["Event 0 Data", "Event 1 Data"],
             2,
             *self._none_lists(2),
@@ -1119,13 +1121,13 @@ class TestUpdateEventPlotExtended:
         )
 
     def test_clear_cache_called(self, mock_view):
-        mock_view.plot_samplerate = 1_000_000
         mock_view.data_cache = []
         mock_view.label_cache = []
         mock_view.data_cache_labels = []
         with patch.object(EventAnalysisView, "_clear_cache") as mock_cc:
             mock_view._update_event_plot(
                 [self._make_data()],
+                _time_bases([self._make_data()]),
                 ["Event 0 Data"],
                 1,
                 *self._none_lists(1),
@@ -1133,10 +1135,10 @@ class TestUpdateEventPlotExtended:
         mock_cc.assert_called()
 
     def test_update_cache_called_per_data_item(self, mock_view):
-        mock_view.plot_samplerate = 1_000_000
         with patch.object(EventAnalysisView, "_update_cache") as mock_uc:
             mock_view._update_event_plot(
                 [self._make_data(), self._make_data()],
+                _time_bases([self._make_data(), self._make_data()]),
                 ["Event 0 Data", "Event 1 Data"],
                 2,
                 *self._none_lists(2),
@@ -1144,9 +1146,9 @@ class TestUpdateEventPlotExtended:
         assert mock_uc.call_count >= 2
 
     def test_multiple_vlines_no_error(self, mock_view):
-        mock_view.plot_samplerate = 1_000_000
         mock_view._update_event_plot(
             [self._make_data()],
+            _time_bases([self._make_data()]),
             ["Event 0 Data"],
             1,
             [[5.0, 10.0, 15.0]],
@@ -1158,9 +1160,9 @@ class TestUpdateEventPlotExtended:
         )
 
     def test_labelled_vline_no_error(self, mock_view):
-        mock_view.plot_samplerate = 1_000_000
         mock_view._update_event_plot(
             [self._make_data()],
+            _time_bases([self._make_data()]),
             ["Event 0 Data"],
             1,
             [[10.0]],
@@ -1172,9 +1174,9 @@ class TestUpdateEventPlotExtended:
         )
 
     def test_labelled_hline_no_error(self, mock_view):
-        mock_view.plot_samplerate = 1_000_000
         mock_view._update_event_plot(
             [self._make_data()],
+            _time_bases([self._make_data()]),
             ["Event 0 Data"],
             1,
             [None],
@@ -1186,9 +1188,9 @@ class TestUpdateEventPlotExtended:
         )
 
     def test_labelled_point_no_error(self, mock_view):
-        mock_view.plot_samplerate = 1_000_000
         mock_view._update_event_plot(
             [self._make_data()],
+            _time_bases([self._make_data()]),
             ["Event 0 Data"],
             1,
             [None],
@@ -1200,11 +1202,11 @@ class TestUpdateEventPlotExtended:
         )
 
     def test_figure_set_constrained_layout_called(self, mock_view):
-        mock_view.plot_samplerate = 1_000_000
         # constrained_layout is set via figure.set_constrained_layout(True)
         # We can verify indirectly: figure should have axes after call
         mock_view._update_event_plot(
             [self._make_data()],
+            _time_bases([self._make_data()]),
             ["Event 0 Data"],
             1,
             *self._none_lists(1),
@@ -1212,9 +1214,9 @@ class TestUpdateEventPlotExtended:
         assert mock_view.figure.get_constrained_layout() is True
 
     def test_legend_no_error_with_labelled_lines(self, mock_view):
-        mock_view.plot_samplerate = 1_000_000
         mock_view._update_event_plot(
             [self._make_data()],
+            _time_bases([self._make_data()]),
             ["Event 0 Data"],
             1,
             [[1.0, 2.0]],
@@ -1226,9 +1228,9 @@ class TestUpdateEventPlotExtended:
         )
 
     def test_grid_is_enabled_on_axes(self, mock_view):
-        mock_view.plot_samplerate = 1_000_000
         mock_view._update_event_plot(
             [self._make_data()],
+            _time_bases([self._make_data()]),
             ["Event 0 Data"],
             1,
             *self._none_lists(1),

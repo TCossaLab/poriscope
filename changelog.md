@@ -1,5 +1,9 @@
 ## Poriscope 2.0.0: in progress
 
+* **Breaking:** the Event Analysis plot's time axis is built by `EventAnalysisModel.event_time_bases` rather than in the view, so `EventAnalysisView.update_plot_samplerate` and `plot_samplerate` are gone and `set_event_plot_data` takes the axis as its second argument
+
+* **Breaking:** `MetaEventTabController.update_plot_samplerate` is removed - it relayed a sampling rate to the view, but both event tabs called the view directly and nothing ever called the relay
+
 * The refactor-coverage audit now runs on every branch push, not only on internal pull requests, so a method the refactor moves cannot lose its test coverage unnoticed
 
 * The analysis-tab MVC boundary check no longer counts an import a view uses only to write a type, since that is not computation; `python scripts/check_mvc_boundary.py --verbose` names the imports it exempted

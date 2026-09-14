@@ -234,17 +234,10 @@ def test_event_fitting_flow_clicks(
     )
     assert getattr(ea_view, "num_events_allowed", None) == db[FIT_CHANNEL].num_events
 
-    ea_view.global_signal.emit(
-        "MetaEventLoader",
-        loader_key,
-        "get_samplerate",
-        (FIT_CHANNEL,),
-        "update_plot_samplerate",
-        (),
-    )
-    assert getattr(ea_view, "plot_samplerate", None) == pytest.approx(
-        db[FIT_CHANNEL].samplerate
-    )
+    # The samplerate used to be fetched onto the view here and read back off
+    # ``plot_samplerate``. Step 4 moved the time axis to EventAnalysisModel, which
+    # builds it from the samples and the rate together, so the view holds neither -
+    # the resolution and its fallback are pinned in test_event_analysis_controller.
 
     # --- Channel ---
     qtbot.waitUntil(

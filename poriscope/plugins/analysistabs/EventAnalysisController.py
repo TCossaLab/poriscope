@@ -149,7 +149,10 @@ class EventAnalysisController(MetaEventTabController):
             return
 
         callable_filter = self._resolve_callable_filter(data_filter)
-        self.view.update_plot_samplerate(self._loader_samplerate(loader, channel))
+        # The View no longer holds a samplerate: the time axis is a property of the
+        # samples and the rate they were taken at, so the Model builds it and the
+        # traces arrive already paired with it.
+        samplerate = self._loader_samplerate(loader, channel)
 
         fitting_done = False
         if eventfitter != "No Event Fitter":
@@ -211,6 +214,7 @@ class EventAnalysisController(MetaEventTabController):
 
         self.view.set_event_plot_data(
             event_data,
+            self.model.event_time_bases(event_data, samplerate),
             labels,
             num_events,
             vertical_lines,

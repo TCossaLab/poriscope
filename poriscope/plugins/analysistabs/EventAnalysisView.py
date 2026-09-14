@@ -202,17 +202,6 @@ class EventAnalysisView(MetaEventTabView):
         self.plabels = plabels
 
     @log(logger=logger)
-    def update_plot_samplerate(self, samplerate: float) -> None:
-        """
-        Update the sampling rate used to convert time units in plots.
-
-        :param samplerate: Sampling rate in Hz.
-        :type samplerate: float
-        """
-        self.logger.debug(f"Received sampling rate: {samplerate}")
-        self.plot_samplerate = samplerate
-
-    @log(logger=logger)
     @override
     def update_available_plugins(self, available_plugins: Dict[str, List[str]]) -> None:
         """
@@ -380,6 +369,7 @@ class EventAnalysisView(MetaEventTabView):
     def set_event_plot_data(
         self,
         event_data: Sequence[npt.NDArray[np.float64]],
+        time_bases: Sequence[npt.NDArray[np.float64]],
         labels: Sequence[str],
         num_events: int,
         vertical_lines: Sequence[Optional[List[float]]],
@@ -400,6 +390,8 @@ class EventAnalysisView(MetaEventTabView):
 
         :param event_data: the traces to draw, in order
         :type event_data: Sequence[npt.NDArray[np.float64]]
+        :param time_bases: one time axis per trace, index-aligned with event_data
+        :type time_bases: Sequence[npt.NDArray[np.float64]]
         :param labels: one label per trace, index-aligned with event_data
         :type labels: Sequence[str]
         :param num_events: how many events those traces belong to
@@ -428,6 +420,7 @@ class EventAnalysisView(MetaEventTabView):
             return
         self._update_event_plot(
             event_data,
+            time_bases,
             labels,
             num_events,
             vertical_lines,
@@ -463,6 +456,7 @@ class EventAnalysisView(MetaEventTabView):
     def _update_event_plot(
         self,
         event_data: Sequence[npt.NDArray[np.float64]],
+        time_bases: Sequence[npt.NDArray[np.float64]],
         labels: Sequence[str],
         num_events: int,
         vertical_lines: Sequence[Optional[List[float]]],
@@ -481,6 +475,8 @@ class EventAnalysisView(MetaEventTabView):
 
         :param event_data: List of 1D arrays containing current traces for each event.
         :type event_data: Sequence[npt.NDArray[np.float64]]
+        :param time_bases: One time axis per trace in microseconds, index-aligned with event_data. Built by EventAnalysisModel.event_time_bases, since it is a property of the samples and the rate they were taken at rather than of the drawing.
+        :type time_bases: Sequence[npt.NDArray[np.float64]]
         :param labels: List of strings for each subplot's title.
         :type labels: Sequence[str]
         :param num_events: Total number of events to plot (i.e., number of subplots).
@@ -520,7 +516,7 @@ class EventAnalysisView(MetaEventTabView):
         num_rows, num_cols = self._factors(num_events)
 
         j = 0
-        for data, label in zip(event_data, labels):
+        for data, time, label in zip(event_data, time_bases, labels, strict=True):
             if "Raw" in label and not use_raw:
                 # Bypass the raw (unfiltered) trace entirely when not requested,
                 # instead of relying on the caller to have omitted it.
@@ -533,7 +529,6 @@ class EventAnalysisView(MetaEventTabView):
                 ax.set_title(label)
                 j += 1
 
-            time = np.arange(len(data)) / self.plot_samplerate * 1e6
             should_plot = (
                 "Fit" in label
                 or "Raw" in label

@@ -306,6 +306,15 @@ MOVED: Tuple[Tuple[str, str, str], ...] = (
     # rather than moving it, because it was a one-emit wrapper and the Controller loads
     # each event inline. Removed rather than left pointing at nothing (rule 28) - and it
     # was this tripwire that caught the deletion, which is what it is for.
+    # Step 4 closeout, branch 1 - the event plot's time axis. A property of the
+    # samples and the rate they were taken at, so the Model builds it; this was the
+    # only computation keeping numpy in EventAnalysisView, and the same expression in
+    # three more Views will arrive here by the same route.
+    (
+        "poriscope/plugins/analysistabs/EventAnalysisModel.py",
+        "event_time_bases",
+        "4c",
+    ),
     # Step 4e - file I/O to the Model, dialog selection left in the View
     ("poriscope/plugins/analysistabs/MetadataView.py", "_export_csv_subset", "4e"),
 )

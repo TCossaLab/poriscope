@@ -98,7 +98,7 @@ The same split, and you normally match it to whichever View you chose.
      - sixteen relays for experiment, column, unit and query results
      - MetadataController, ProteinController
    * - ``MetaEventTabController``
-     - ``update_available_plugins`` and ``update_plot_samplerate``
+     - ``update_available_plugins`` and ``_resolve_callable_filter``
      - RawDataController, EventAnalysisController
 
 All three ask for the same two methods: ``_init`` and ``_setup_connections``.
