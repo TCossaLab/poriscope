@@ -579,3 +579,43 @@ class MetaModel(QObject, metaclass=QObjectABCMeta):
             )
 
         return tuple(current_data)
+
+    @log(logger=logger)
+    def time_bases(
+        self,
+        traces: Sequence[npt.NDArray[np.float64]],
+        samplerate: float,
+        scale: float = 1.0,
+        offset: float = 0.0,
+    ) -> List[npt.NDArray[np.float64]]:
+        """
+        Build the time axis for each trace.
+
+        The time base is a property of the samples and the rate they were taken at,
+        both of which the Model already owns, so it is derived here rather than in the
+        widget that draws it. Pure styling stays in the View; see ``DECISIONS.md``
+        2026-09-14.
+
+        One array per trace, index-aligned with ``traces``, because the traces need not
+        be the same length - an event may contribute its filtered data, its fit and its
+        raw trace, and a PSD run may drop a channel.
+
+        ``scale`` and ``offset`` exist because the same derivation serves two axes that
+        differ only in units and origin: an event plot wants microseconds from the start
+        of the event (``scale=1e6``), and a trace plot wants seconds from the start of
+        the recording (``offset=start``). Four of the five tabs plot event traces this
+        way, which is why this sits on the common base rather than on an event-tab
+        intermediate that does not exist.
+
+        :param traces: the sample arrays to build a time axis for
+        :type traces: Sequence[npt.NDArray[np.float64]]
+        :param samplerate: the sampling rate in Hz, or 1 to fall back to sample indices
+        :type samplerate: float
+        :param scale: multiplier applied to the seconds axis, 1e6 for microseconds
+        :type scale: float
+        :param offset: added after scaling, to place the axis in the recording
+        :type offset: float
+        :return: one time array per trace
+        :rtype: List[npt.NDArray[np.float64]]
+        """
+        return [np.arange(len(trace)) / samplerate * scale + offset for trace in traces]

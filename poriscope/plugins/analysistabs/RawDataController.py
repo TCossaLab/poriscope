@@ -241,10 +241,11 @@ class RawDataController(MetaEventTabController):
         :return: None
         :rtype: None
         """
-        data_list, kept = self._load_and_filter(
+        data_list, kept, samplerate = self._load_and_filter(
             reader, channels, start, length, data_filter
         )
-        self.view.set_trace_data(data_list, kept, start, baseline)
+        time_bases = self.model.time_bases(data_list, samplerate, offset=start)
+        self.view.set_trace_data(data_list, time_bases, kept, start, baseline)
 
     @log(logger=logger)
     @Slot(str, list, float, float, str)
@@ -275,7 +276,9 @@ class RawDataController(MetaEventTabController):
         :return: None
         :rtype: None
         """
-        data_list, kept = self._load_and_filter(
+        # The PSD path does not plot against time, so the samplerate is discarded
+        # here rather than carried - the View still holds one for the PSD request.
+        data_list, kept, _samplerate = self._load_and_filter(
             reader, channels, start, length, data_filter
         )
         self.view.set_trace_for_psd(data_list, kept)
@@ -380,7 +383,10 @@ class RawDataController(MetaEventTabController):
             return
 
         callable_filter = self._resolve_callable_filter(data_filter)
-        self.view.update_plot_samplerate(self._event_samplerate(eventfinder))
+        # Held as well as pushed: the View still needs it for the PSD request, and the
+        # Model needs it to build each event's time axis.
+        samplerate = self._event_samplerate(eventfinder)
+        self.view.update_plot_samplerate(samplerate)
 
         event_data: List[Any] = []
         kept: List[int] = []
@@ -405,7 +411,11 @@ class RawDataController(MetaEventTabController):
                 continue
             event_data.append(payload["data"])
             kept.append(event)
-        self.view.set_event_plot_data(event_data, kept)
+        self.view.set_event_plot_data(
+            event_data,
+            self.model.time_bases(event_data, samplerate, scale=1e6),
+            kept,
+        )
 
     @log(logger=logger)
     def _event_samplerate(self, eventfinder: str) -> float:
@@ -509,7 +519,7 @@ class RawDataController(MetaEventTabController):
         start: float,
         length: float,
         data_filter: str,
-    ) -> Tuple[List[Any], List[int]]:
+    ) -> Tuple[List[Any], List[int], float]:
         """
         Read each channel through call(), filter it if asked, and drop what fails.
 
@@ -542,8 +552,8 @@ class RawDataController(MetaEventTabController):
         :type length: float
         :param data_filter: the filter plugin's key, or "" for no filtering
         :type data_filter: str
-        :return: the loaded arrays and the channels that produced them, index-aligned
-        :rtype: Tuple[List[Any], List[int]]
+        :return: the loaded arrays, the channels that produced them index-aligned, and the samplerate they were read at
+        :rtype: Tuple[List[Any], List[int], float]
         """
         try:
             samplerate = self.model.call("MetaReader", reader, "get_samplerate")
@@ -587,7 +597,10 @@ class RawDataController(MetaEventTabController):
                     )
             data_list.append(channel_data)
             kept.append(channel)
-        return data_list, kept
+        # The samplerate comes back rather than being resolved a second time by the
+        # caller: it is what the Model needs to build the plot's time axis, and asking
+        # the reader twice is two answers that could disagree.
+        return data_list, kept, samplerate
 
     @log(logger=logger)
     def request_reader_channels(self, reader: str) -> None:
@@ -617,7 +630,11 @@ class RawDataController(MetaEventTabController):
 
     @log(logger=logger)
     def compute_baseline_stats(
-        self, data: List[Any], channels: List[int], start: Any
+        self,
+        data: List[Any],
+        time_bases: List[Any],
+        channels: List[int],
+        start: Any,
     ) -> None:
         """
         Fit each channel's baseline and hand the results back for plotting.
@@ -634,6 +651,8 @@ class RawDataController(MetaEventTabController):
 
         :param data: one array of samples per channel
         :type data: List[Any]
+        :param time_bases: one time axis per channel, carried from the request because the samplerate that built it is not in scope here
+        :type time_bases: List[Any]
         :param channels: the channel identifiers, index-aligned with data
         :type channels: List[int]
         :param start: the start time the View is plotting from, passed straight through
@@ -650,7 +669,7 @@ class RawDataController(MetaEventTabController):
                     f"Unable to compute baseline stats for channel {channel}: {e}"
                 )
                 stats.append(None)
-        self.view.update_plot(data, channels, start, stats)
+        self.view.update_plot(data, time_bases, channels, start, stats)
 
     @log(logger=logger)
     @Slot(list, float)

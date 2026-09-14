@@ -9,9 +9,6 @@
       "numpy",
       "pandas"
     ],
-    "poriscope/plugins/analysistabs/RawDataView.py": [
-      "numpy"
-    ],
     "poriscope/utils/MetaView.py": [
       "numpy"
     ]

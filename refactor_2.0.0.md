@@ -61,11 +61,20 @@ rather than discovered inside it.
    `ceil(log10(...))`. This is matplotlib configuration computed from data the Model already
    returned, and the plan's own line is that artist manipulation **stays in the View**.
 
+**How the remaining sites are decided, settled 2026-09-14.** The rule is
+*responsibility separation and maintainable code*, not import purity: does moving it to the
+Model create complexity where none is needed, and does removing an import? Where the View is
+the only consumer of a derived quantity, the Model supplies the **data** and the View does
+the **visualisation calculation**. So branches 4 and 5 **move the computation and record the
+view-side floor** rather than driving numpy to zero - `_construct_all_points_histogram` and
+the Monte Carlo ensembles move, `set_heatmap`'s extent and colorbar ticks do not. Ambiguous
+sites go to Kyle for a ruling rather than being guessed.
+
 **Kind 3 gates exactly 2 of the 8 points** - `RawDataView`'s (`update_psd`) and
-`MetadataView`'s numpy point (`set_heatmap`). **Decided 2026-09-14**, see `DECISIONS.md`:
-the Model returns a derived value **where it is a property of the data** - the PSD roll-off
-index, the heatmap extent, the time base - alongside the data it already returns; **pure
-styling stays in the View**; and any residue is named rather than chased. Per-site
+`MetadataView`'s numpy point (`set_heatmap`). **Decided 2026-09-14 and narrowed the same
+day**, see `DECISIONS.md`: the test is **whether the value leaves the View**. A time base is
+data - it is cached and exported to CSV - so the Model builds it. Axis limits never leave the
+View, so they stay there and shed numpy by using `math` and `bisect` instead. Per-site
 classification is the first task of each branch.
 
 ### The series

@@ -510,7 +510,7 @@ class TestHandlePlotEvents:
         self, wired: RawDataView
     ) -> None:
         """The user is told, rather than being shown an empty figure."""
-        wired.set_event_plot_data([], [])
+        wired.set_event_plot_data([], [], [])
 
         wired._update_event_plot.assert_not_called()
         wired.add_text_to_display.emit.assert_called_once()
@@ -525,9 +525,13 @@ class TestHandlePlotEvents:
         the View draws whatever pair it is handed without pruning anything.
         """
         data = [np.full(4, 1.0), np.full(4, 3.0)]
+        # Built by MetaModel.time_bases since Step 4's closeout and passed straight
+        # through, index-aligned with the traces like the indices are.
+        times = [np.arange(4.0), np.arange(4.0)]
 
-        wired.set_event_plot_data(data, [0, 2])
+        wired.set_event_plot_data(data, times, [0, 2])
 
-        drawn_data, drawn_indices = wired._update_event_plot.call_args[0]
+        drawn_data, drawn_times, drawn_indices = wired._update_event_plot.call_args[0]
         assert list(drawn_indices) == [0, 2]
+        assert drawn_times is times
         assert [float(entry[0]) for entry in drawn_data] == [1.0, 3.0]
