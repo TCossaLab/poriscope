@@ -17,6 +17,7 @@ own formula precisely so that collapsing them would fail.
 """
 
 import numpy as np
+import pandas as pd
 import pytest
 
 from poriscope.plugins.analysistabs.MetadataModel import MetadataModel
@@ -380,3 +381,320 @@ class TestFitCaptureRate:
 
         assert rate == pytest.approx(50.0, rel=0.1)
         assert error != 0.0
+
+
+# ===========================================================================
+# kernel_densities - the per-dataset loop 4c moved off the View
+# ===========================================================================
+
+
+class TestKernelDensities:
+    """
+    One ``(positions, density)`` pair per dataset, index-aligned with the input.
+
+    The density plot redraws every accumulated dataset on each update, so the loop
+    lives here rather than round-tripping per dataset and parking each answer on the
+    widget. These tests exist because the method had **no test naming it** - its body
+    ran under the e2e suite and the refactor-coverage audit read ``RUNS ONLY``.
+    """
+
+    def test_returns_one_pair_per_dataset(self, model):
+        datasets = [
+            np.linspace(0.0, 1.0, 40),
+            np.linspace(0.0, 2.0, 60),
+            np.linspace(0.0, 3.0, 80),
+        ]
+
+        result = model.kernel_densities(datasets, None, False, None, None)
+
+        assert len(result) == 3
+        assert all(len(pair) == 2 for pair in result)
+
+    def test_each_pair_equals_the_single_dataset_call(self, model):
+        """
+        The loop is the whole method, so the contract is that it delegates unchanged.
+
+        Asserted against ``kernel_density`` rather than against recorded numbers: a
+        golden here would go on passing if the loop started dropping an argument.
+        """
+        datasets = [np.linspace(0.0, 1.0, 40), np.linspace(-2.0, 2.0, 50)]
+
+        result = model.kernel_densities(datasets, 12, False, -2.0, 2.0)
+
+        for data, (positions, density) in zip(datasets, result, strict=True):
+            expected_positions, expected_density = model.kernel_density(
+                data, 12, False, -2.0, 2.0
+            )
+            np.testing.assert_allclose(positions, expected_positions)
+            np.testing.assert_allclose(density, expected_density)
+
+    def test_the_order_is_the_input_order(self, model):
+        """
+        The caller indexes the answers against its own dataset list, so a reordering
+        would mislabel every curve without failing anything else.
+        """
+        narrow = np.linspace(0.0, 1.0, 40)
+        wide = np.linspace(0.0, 100.0, 40)
+
+        (narrow_positions, _), (wide_positions, _) = model.kernel_densities(
+            [narrow, wide], None, False, None, None
+        )
+
+        assert narrow_positions.max() < wide_positions.max()
+
+    def test_no_datasets_returns_no_pairs(self, model):
+        assert model.kernel_densities([], None, False, None, None) == []
+
+
+# ===========================================================================
+# histogram_bin_edges - one set of edges for every overlaid dataset
+# ===========================================================================
+
+
+class TestHistogramBinEdges:
+    """
+    The edges span the shared limits, which is what puts overlaid datasets on
+    comparable bins. Added with ``kernel_densities`` for the same reason.
+    """
+
+    def test_edges_span_the_shared_limits(self, model):
+        data = np.linspace(0.0, 10.0, 100)
+
+        edges, _centers, _widths = model.histogram_bin_edges(data, 8, False, 0.0, 10.0)
+
+        assert edges[0] == pytest.approx(0.0)
+        assert edges[-1] == pytest.approx(10.0)
+
+    def test_an_explicit_count_decides_the_number_of_bins(self, model):
+        data = np.linspace(0.0, 10.0, 100)
+
+        edges, centers, widths = model.histogram_bin_edges(data, 8, False, 0.0, 10.0)
+
+        assert len(edges) == 9
+        assert len(centers) == 8
+        assert len(widths) == 8
+
+    def test_centers_sit_midway_between_edges(self, model):
+        data = np.linspace(0.0, 10.0, 100)
+
+        edges, centers, _widths = model.histogram_bin_edges(data, 5, False, 0.0, 10.0)
+
+        np.testing.assert_allclose(centers, (edges[:-1] + edges[1:]) / 2.0)
+
+    def test_widths_are_the_gaps_between_edges(self, model):
+        data = np.linspace(0.0, 10.0, 100)
+
+        edges, _centers, widths = model.histogram_bin_edges(data, 5, False, 0.0, 10.0)
+
+        np.testing.assert_allclose(widths, np.diff(edges))
+
+    def test_a_single_bin_is_raised_to_two(self, model):
+        """
+        A single bin is not a histogram and zero makes ``linspace`` degenerate, so
+        the method floors the count. Pinned because the floor is invisible from the
+        caller - it asks for one bin and silently gets two.
+        """
+        data = np.linspace(0.0, 10.0, 100)
+
+        edges, centers, widths = model.histogram_bin_edges(data, 1, False, 0.0, 10.0)
+
+        assert len(centers) == 2
+        assert len(edges) == 3
+        assert len(widths) == 2
+
+    def test_a_bin_width_is_divided_into_the_shared_span(self, model):
+        """``sizes=True`` makes the second argument a width rather than a count."""
+        data = np.linspace(0.0, 10.0, 100)
+
+        _edges, centers, _widths = model.histogram_bin_edges(data, 2.0, True, 0.0, 10.0)
+
+        assert len(centers) == 5
+
+
+# ===========================================================================
+# _log_exp_pdf - the model curve_fit is handed
+# ===========================================================================
+
+
+class TestLogExpPdf:
+    """
+    Capture is Poisson, so inter-event times are exponential; binning their base-10
+    logarithm carries a Jacobian of ``ln(10) * 10**logt``. That factor is the whole
+    reason this function is not just an exponential, and it is what these assert.
+    """
+
+    def test_matches_the_closed_form(self, model):
+        logt = np.linspace(-3.0, 1.0, 25)
+
+        result = model._log_exp_pdf(logt, rate=50.0, amplitude=2.0)
+
+        expected = 2.0 * np.exp(-50.0 * 10.0**logt) * 10.0**logt * np.log(10)
+        np.testing.assert_allclose(result, expected)
+
+    def test_the_jacobian_factor_is_present(self, model):
+        """
+        Asserted separately, because dropping ``10**logt * ln(10)`` still leaves a
+        plausible decaying curve that a shape-only assertion would accept.
+
+        At ``logt = 0`` the time is 1 s and the factor is exactly ``ln(10)``.
+        """
+        value = model._log_exp_pdf(np.array([0.0]), rate=1.0, amplitude=1.0)[0]
+
+        assert value == pytest.approx(np.exp(-1.0) * np.log(10))
+        assert value != pytest.approx(np.exp(-1.0))
+
+    def test_amplitude_scales_the_curve_linearly(self, model):
+        logt = np.linspace(-2.0, 1.0, 10)
+
+        single = model._log_exp_pdf(logt, rate=10.0, amplitude=1.0)
+        triple = model._log_exp_pdf(logt, rate=10.0, amplitude=3.0)
+
+        np.testing.assert_allclose(triple, 3.0 * single)
+
+    def test_the_shape_matches_the_input(self, model):
+        logt = np.linspace(-2.0, 2.0, 17)
+
+        assert model._log_exp_pdf(logt, 1.0, 1.0).shape == logt.shape
+
+
+# ===========================================================================
+# resolve_event_ids / load_events_by_id - the SQL Step 4b moved down
+# ===========================================================================
+#
+# These assert on the **exact query text** handed to the loader, not on substring
+# containment. All 110 tests in test_meta_database_loader.py used containment, so a
+# refactor could reorder a clause and every one would still pass; Step 2 branch 6
+# fixed that for the builder and these extend it to the two methods 4b created.
+#
+# The stubbed ``call`` answers from MetaDatabaseLoader's declared return types -
+# ``Optional[pd.DataFrame]`` for query_database_directly, a generator for
+# load_event_data - rather than from whatever the method happens to do with them.
+
+
+class TestResolveEventIds:
+    """
+    The scope is why this query exists: ``event_id`` is unique only within an
+    experiment and channel, so an unscoped match returns whichever channel's row
+    happens to share the number. Three unscoped-query faults of exactly this family
+    were found during Step 4a, which is why every combination is pinned here.
+    """
+
+    def _query(self, model, mocker, event_ids, exp_id, channel):
+        """
+        Run the method against a stubbed loader and return the SQL it authored.
+
+        :param model: the model under test
+        :type model: MetadataModel
+        :param mocker: the pytest-mock fixture
+        :type mocker: pytest_mock.MockerFixture
+        :param event_ids: the event_id values to resolve
+        :type event_ids: list
+        :param exp_id: the experiment's database id, or None
+        :type exp_id: object
+        :param channel: the channel to scope to, or None
+        :type channel: object
+        :return: the query string passed to the loader
+        :rtype: str
+        """
+        call = mocker.patch.object(model, "call", return_value=pd.DataFrame())
+        model.resolve_event_ids("L", event_ids, exp_id, channel)
+        return call.call_args.args[3]
+
+    def test_projects_id_only(self, model, mocker):
+        """
+        Metadata asks for ``id`` alone; the protein tab asks for ``id, event_id``
+        because its caller re-sorts the rows. The difference is load-bearing and a
+        promotion that merged the two would have to keep it.
+        """
+        query = self._query(model, mocker, [7], None, None)
+
+        assert query == "SELECT id FROM events WHERE event_id IN (7)"
+
+    def test_an_experiment_narrows_the_scope(self, model, mocker):
+        query = self._query(model, mocker, [7, 9], 3, None)
+
+        assert query == (
+            "SELECT id FROM events WHERE event_id IN (7,9) AND experiment_id = 3"
+        )
+
+    def test_a_channel_narrows_the_scope(self, model, mocker):
+        query = self._query(model, mocker, [7], None, 2)
+
+        assert query == (
+            "SELECT id FROM events WHERE event_id IN (7) AND channel_id = 2"
+        )
+
+    def test_both_scopes_are_applied_in_order(self, model, mocker):
+        query = self._query(model, mocker, [7], 3, 2)
+
+        assert query == (
+            "SELECT id FROM events WHERE event_id IN (7) "
+            "AND experiment_id = 3 AND channel_id = 2"
+        )
+
+    def test_the_call_is_routed_to_the_named_loader(self, model, mocker):
+        call = mocker.patch.object(model, "call", return_value=pd.DataFrame())
+
+        model.resolve_event_ids("SQLiteDBLoader_0", [1], None, None)
+
+        metaclass, key, method, _query = call.call_args.args
+        assert (metaclass, key, method) == (
+            "MetaDatabaseLoader",
+            "SQLiteDBLoader_0",
+            "query_database_directly",
+        )
+
+    def test_the_loaders_answer_is_returned_unchanged(self, model, mocker):
+        frame = pd.DataFrame({"id": [11, 12]})
+        mocker.patch.object(model, "call", return_value=frame)
+
+        assert model.resolve_event_ids("L", [1, 2], None, None) is frame
+
+    def test_a_failed_query_comes_back_as_none(self, model, mocker):
+        """``query_database_directly`` returns None when the query could not run."""
+        mocker.patch.object(model, "call", return_value=None)
+
+        assert model.resolve_event_ids("L", [1], None, None) is None
+
+
+class TestLoadEventsById:
+    """``e.id IN (...)`` is a WHERE-clause body, which is what load_event_data takes."""
+
+    def test_builds_a_where_clause_body_not_a_select(self, model, mocker):
+        """
+        A complete ``SELECT`` here is the shape that made the protein tab's raw
+        filter branch never return a row - the loader splices this in after its own
+        ``WHERE``.
+        """
+        call = mocker.patch.object(model, "call", return_value=iter(()))
+
+        model.load_events_by_id("L", "3,4,5", None)
+
+        conditions = call.call_args.args[3]
+        assert conditions == "e.id IN (3,4,5)"
+        assert "SELECT" not in conditions
+
+    def test_the_scope_is_passed_through_untouched(self, model, mocker):
+        call = mocker.patch.object(model, "call", return_value=iter(()))
+        scope = {"exp_a": [2]}
+
+        model.load_events_by_id("L", "3", scope)
+
+        assert call.call_args.args[4] is scope
+
+    def test_the_call_is_routed_to_load_event_data(self, model, mocker):
+        call = mocker.patch.object(model, "call", return_value=iter(()))
+
+        model.load_events_by_id("SQLiteDBLoader_0", "3", None)
+
+        assert call.call_args.args[:3] == (
+            "MetaDatabaseLoader",
+            "SQLiteDBLoader_0",
+            "load_event_data",
+        )
+
+    def test_the_generator_is_returned_unchanged(self, model, mocker):
+        generator = iter([{"data": [1.0]}])
+        mocker.patch.object(model, "call", return_value=generator)
+
+        assert model.load_events_by_id("L", "3", None) is generator

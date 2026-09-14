@@ -1956,6 +1956,22 @@ Six call sites refuse: `MetadataView._overlay_plot` and `_handle_plot_events`;
 `ProteinView._handle_plot_events`, `_handle_plot_histogram`,
 `_update_distribution_individual` and `_update_distribution_ensemble`.
 
+## The intended behaviour, settled by Kyle 2026-09-14
+
+**The raw SQL is passed to `MetaDatabaseLoader.query_database_directly()` exactly as the
+user wrote it, with nothing added.** No scope clause, no splicing into another query, no
+rewriting of any kind: validate it, then execute it as written.
+
+**Scope becomes the user's responsibility, deliberately.** A raw filter ignores the
+experiment and channel selection, and it is the user who must make the query select the
+rows they mean. It is equally their responsibility that every column the downstream
+operation reads off the returned DataFrame is present in what the query projects.
+
+This settles the design question the rest of this part was weighing: the answer is not to
+teach the loader to merge a user `SELECT` with a generated scope clause, but to stop
+treating a raw filter as a WHERE-clause body at all and give it its own path to
+`query_database_directly`, which already takes a complete statement.
+
 ## What making it work would take
 
 The work is in `MetaDatabaseLoader`, not in the tabs. It needs a path that accepts

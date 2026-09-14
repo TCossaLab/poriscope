@@ -1,5 +1,7 @@
 ## Poriscope 2.0.0: in progress
 
+* The refactor-coverage audit now runs on every branch push, not only on internal pull requests, so a method the refactor moves cannot lose its test coverage unnoticed
+
 * The analysis-tab MVC boundary check no longer counts an import a view uses only to write a type, since that is not computation; `python scripts/check_mvc_boundary.py --verbose` names the imports it exempted
 
 * **Breaking:** `MetaSubsetTabView.event_id_rows` and `set_event_id_rows` are typed `Optional[pandas.DataFrame]` rather than `Optional[Any]`, which is what they have always held

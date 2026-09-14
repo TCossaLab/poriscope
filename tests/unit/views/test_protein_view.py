@@ -2506,3 +2506,262 @@ class TestModeScopedProperties:
         untouched = getattr(mock_view, f"{prop}_ensemble")
         setattr(mock_view, prop, MagicMock())
         assert getattr(mock_view, f"{prop}_ensemble") is untouched
+
+
+# ===========================================================================
+# set_distribution_fits - the answering half of distribution_fits_requested
+# ===========================================================================
+#
+# Added 2026-09-14 because this method had **no test reference anywhere in the
+# suite**, while being a named Step 4c target: the refactor-coverage audit read
+# RUNS ONLY for it, its body executing under the e2e suite with nothing asserting
+# what it produced. It is 157 lines and the largest single piece of computation
+# still sitting on a View, so branch 5 of the Step 4 closeout moves it - and these
+# are the pins that predate that move, which is what makes their passing against
+# the Model afterwards evidence that the computation is unchanged.
+#
+# The ensembles are real, not stubbed: N is kept small so the Monte Carlo stays
+# fast, and every assertion is about index alignment, skipping and the shape of
+# what comes out rather than about sampled values, which are drawn from a seeded
+# generator but are not the contract.
+
+
+def _blockage_fit(mean_low=0.3, mean_high=0.6, std=0.02):
+    """
+    Build a popt tuple in the order the double-gaussian fit returns it.
+
+    :param mean_low: the smaller fractional blockage
+    :type mean_low: float
+    :param mean_high: the larger fractional blockage
+    :type mean_high: float
+    :param std: the standard deviation given to both peaks
+    :type std: float
+    :return: a six-element popt, as (amp1, mean1, std1, amp2, mean2, std2)
+    :rtype: tuple
+    """
+    return (1.0, mean_low, std, 1.0, mean_high, std)
+
+
+def _histogram_frame():
+    """
+    A stand-in for one event's histogram frame.
+
+    Only its presence is read by the method under test - a None entry means the
+    histogram could not be built - so the contents are deliberately minimal.
+
+    :return: a one-column frame
+    :rtype: pd.DataFrame
+    """
+    return pd.DataFrame({"counts": [1.0, 2.0, 1.0]})
+
+
+class TestSetDistributionFits:
+    """
+    Every list is index-aligned with ``event_data``, so an event whose histogram
+    could not be built and one whose fit was refused are skipped the same way and
+    neither shifts the others. That is the method's own documented contract and it
+    is what these assert.
+    """
+
+    def test_one_row_per_fitted_event(self, mock_view, mocker):
+        mocker.patch.object(mock_view, "update_plot")
+
+        mock_view.set_distribution_fits(
+            fits=[(_blockage_fit(), None), (_blockage_fit(), None)],
+            frames=[_histogram_frame(), _histogram_frame()],
+            event_data=[{"id": 1}, {"id": 2}],
+            d=10.0,
+            L=20.0,
+            N=10,
+        )
+
+        assert len(mock_view.fit_data) == 2
+        assert mock_view.fit_data["id"].tolist() == [1, 2]
+
+    def test_an_event_with_no_histogram_is_skipped(self, mock_view, mocker):
+        """
+        A None frame is an event whose histogram could not be built. It must drop
+        out without taking its neighbour's row with it.
+        """
+        mocker.patch.object(mock_view, "update_plot")
+
+        mock_view.set_distribution_fits(
+            fits=[(_blockage_fit(), None), (_blockage_fit(), None)],
+            frames=[None, _histogram_frame()],
+            event_data=[{"id": 1}, {"id": 2}],
+            d=10.0,
+            L=20.0,
+            N=10,
+        )
+
+        assert mock_view.fit_data["id"].tolist() == [2]
+
+    def test_an_event_whose_fit_was_refused_is_skipped(self, mock_view, mocker):
+        """
+        The same outcome by the other route: the histogram was built but the
+        double-gaussian fit was rejected, so ``popt`` is None.
+        """
+        mocker.patch.object(mock_view, "update_plot")
+
+        mock_view.set_distribution_fits(
+            fits=[(None, None), (_blockage_fit(), None)],
+            frames=[_histogram_frame(), _histogram_frame()],
+            event_data=[{"id": 1}, {"id": 2}],
+            d=10.0,
+            L=20.0,
+            N=10,
+        )
+
+        assert mock_view.fit_data["id"].tolist() == [2]
+
+    def test_a_skipped_event_does_not_shift_the_others(self, mock_view, mocker):
+        """
+        The indices are the alignment, not the position in the surviving list. With
+        the middle event dropped, the third event must still be described by the
+        third fit rather than by the second.
+        """
+        mocker.patch.object(mock_view, "update_plot")
+
+        mock_view.set_distribution_fits(
+            fits=[
+                (_blockage_fit(0.1, 0.2), None),
+                (_blockage_fit(0.3, 0.4), None),
+                (_blockage_fit(0.5, 0.9), None),
+            ],
+            frames=[_histogram_frame(), None, _histogram_frame()],
+            event_data=[{"id": 1}, {"id": 2}, {"id": 3}],
+            d=10.0,
+            L=20.0,
+            N=10,
+        )
+
+        rows = mock_view.fit_data.set_index("id")
+        assert rows.index.tolist() == [1, 3]
+        assert rows.loc[3, "max_fractional_blockage"] == pytest.approx(0.9)
+        assert rows.loc[1, "max_fractional_blockage"] == pytest.approx(0.2)
+
+    def test_the_larger_mean_becomes_the_maximum_blockage(self, mock_view, mocker):
+        """
+        The fit returns its two peaks in no guaranteed order, so the method sorts
+        them. Both orderings are given, and both must come out the same way round -
+        an if/else that always took the first peak would pass one and fail the other.
+        """
+        mocker.patch.object(mock_view, "update_plot")
+
+        mock_view.set_distribution_fits(
+            fits=[
+                ((1.0, 0.25, 0.02, 1.0, 0.75, 0.02), None),
+                ((1.0, 0.75, 0.02, 1.0, 0.25, 0.02), None),
+            ],
+            frames=[_histogram_frame(), _histogram_frame()],
+            event_data=[{"id": 1}, {"id": 2}],
+            d=10.0,
+            L=20.0,
+            N=10,
+        )
+
+        rows = mock_view.fit_data.set_index("id")
+        for event_id in (1, 2):
+            assert rows.loc[event_id, "max_fractional_blockage"] == pytest.approx(0.75)
+            assert rows.loc[event_id, "min_fractional_blockage"] == pytest.approx(0.25)
+
+    def test_the_standard_deviations_are_made_positive(self, mock_view, mocker):
+        """
+        ``curve_fit`` is free to return a negative sigma - the gaussian is even in
+        it - and a negative width would be carried into the sampler and out to the
+        error bars.
+        """
+        mocker.patch.object(mock_view, "update_plot")
+
+        mock_view.set_distribution_fits(
+            fits=[((1.0, 0.3, -0.02, 1.0, 0.6, -0.05), None)],
+            frames=[_histogram_frame()],
+            event_data=[{"id": 1}],
+            d=10.0,
+            L=20.0,
+            N=10,
+        )
+
+        row = mock_view.fit_data.iloc[0]
+        assert row["max_fractional_blockage_std"] == pytest.approx(0.05)
+        assert row["min_fractional_blockage_std"] == pytest.approx(0.02)
+
+    def test_the_three_plots_are_requested(self, mock_view, mocker):
+        """
+        Two scatterplots of the sampled solutions and one errorbar plot of the
+        per-event fit parameters.
+        """
+        update_plot = mocker.patch.object(mock_view, "update_plot")
+
+        mock_view.set_distribution_fits(
+            fits=[(_blockage_fit(), None)],
+            frames=[_histogram_frame()],
+            event_data=[{"id": 1}],
+            d=10.0,
+            L=20.0,
+            N=10,
+        )
+
+        labels = [call.kwargs["dataset_label"] for call in update_plot.call_args_list]
+        assert labels == [
+            "Prolate Solutions",
+            "Oblate Solutions",
+            "Event Peak Fit Parameters",
+        ]
+
+    def test_the_peak_plot_carries_the_error_columns(self, mock_view, mocker):
+        """The errorbar plot is the only one given ``err_cols``."""
+        update_plot = mocker.patch.object(mock_view, "update_plot")
+
+        mock_view.set_distribution_fits(
+            fits=[(_blockage_fit(), None)],
+            frames=[_histogram_frame()],
+            event_data=[{"id": 1}],
+            d=10.0,
+            L=20.0,
+            N=10,
+        )
+
+        peak_call = update_plot.call_args_list[-1]
+        assert peak_call.args[0] == "Peak Scatterplot"
+        assert peak_call.kwargs["err_cols"] == [
+            "min_fractional_blockage_std",
+            "max_fractional_blockage_std",
+        ]
+
+    def test_an_empty_subset_is_reported_and_nothing_is_plotted(
+        self, mock_view, mocker
+    ):
+        """
+        An empty subset used to draw empty axes and say nothing at all, which is the
+        defect the guard was added for. Pinned so a later restructure cannot lose it.
+        """
+        update_plot = mocker.patch.object(mock_view, "update_plot")
+        received = []
+        mock_view.add_text_to_display.connect(lambda m, s: received.append(m))
+
+        mock_view.set_distribution_fits(
+            fits=[], frames=[], event_data=[], d=10.0, L=20.0, N=10
+        )
+
+        assert any("nothing to plot" in message for message in received)
+        update_plot.assert_not_called()
+
+    def test_every_event_skipped_still_leaves_an_empty_frame(self, mock_view, mocker):
+        """
+        Distinct from the empty-subset case above: there were events, but none of
+        them produced a fit. ``fit_data`` is set and empty rather than left holding
+        the previous plot's rows.
+        """
+        mocker.patch.object(mock_view, "update_plot")
+
+        mock_view.set_distribution_fits(
+            fits=[(None, None)],
+            frames=[_histogram_frame()],
+            event_data=[{"id": 1}],
+            d=10.0,
+            L=20.0,
+            N=10,
+        )
+
+        assert mock_view.fit_data.empty
