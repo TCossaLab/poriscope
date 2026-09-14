@@ -1,5 +1,7 @@
 ## Poriscope 2.0.0: in progress
 
+* **The Clustering tab now says what is actually wrong with a rejected SQL filter** instead of also telling you to check your column selections, which was the wrong advice for an unknown column, a syntax error or a complete `SELECT` pasted into the filter box
+
 * **Breaking:** the Clustering tab's filtering and log-scaling moved to `ClusteringModel.build_clustering_frame`, so `ClusteringView.cluster_requested` and `ClusteringController.cluster` now carry the unfiltered rows and the column spec rather than a prepared frame
 
 * A clustering request naming a column the loader did not return is now reported on the status panel instead of failing with an unhandled error

@@ -1929,6 +1929,48 @@ behavior is "correct" before it can be unified, not just extracted).
 
 ---
 
+# Part 14: A Shared Home for Named SQL Filters
+
+**Queued 2026-09-14.** A feature, not a de-divergence - the validation is already shared.
+
+## What is and is not shared today
+
+All three tabs that take a SQL filter call the **same** validator:
+`MetaDatabaseLoader.construct_metadata_query`, which builds the whole statement and runs
+it through `validate_filter_query`. `ClusteringController`, `MetadataController` and
+`MetaSubsetTabController` are its three callers, so the semantics of "is this filter
+acceptable" cannot drift between tabs. Measured against a real database: an unknown
+column, a syntax error and a complete `SELECT` are refused identically on all three.
+
+What the Clustering tab does not have is the filter **management** layer:
+
+| | Metadata / Protein | Clustering |
+| --- | --- | --- |
+| when validated | at creation, in the add/edit dialog | at apply |
+| named, saved, selectable | yes, JSON round-trip, several at once | one anonymous text box |
+| `_assisted` / `_raw` suffix | yes | none |
+| raw SQL | its own category, saved and refused for plotting | just invalid SQL |
+
+## Why inheritance is the wrong instrument
+
+`MetaSubsetTabView` is **1,012 lines, 29 methods, 14 declared attributes**, and most of
+that state is things Clustering has no concept of: `selection_tree`, `current_experiment`,
+`current_channel`, `filtered_event_ids`, `event_data_generator`, `event_query`. Putting
+`ClusteringView` under it to reach the filter dict would inherit all of it. Method rule 34:
+behaviour that arrives with instance state and abstract hooks needs an intermediate.
+
+## The shape if it is wanted
+
+A thin base holding **only** the filter concern - the `Dict[str, str]` of named filters,
+the add and edit dialogs, save/load to JSON, and the validation request - with
+`MetaSubsetTabView` and `ClusteringView` both sitting on it. Roughly the 12
+`subset_filters` methods on `MetaSubsetTabView` and nothing else.
+
+**The argument for doing it is Part 13, not tidiness.** When raw SQL filters are made to
+work, a shared base is what lets the Clustering tab get that behaviour rather than needing
+its own copy. Without it, Part 13 lands on two tabs and the third keeps refusing a complete
+`SELECT` as a syntax error.
+
 # Part 13: Make Raw SQL Subset Filters Work
 
 **Queued 2026-09-13, after the 2.0.0 refactor.** A feature build, not a fix — the

@@ -293,6 +293,58 @@ class TestLoadMetadataForClustering:
         ]
         assert any("unknown column: dur" in m for m in messages)
 
+    def test_a_refused_query_is_reported_once_and_blames_the_filter(
+        self, controller
+    ) -> None:
+        """
+        The loader validates the filter, so its message is the whole explanation.
+
+        This used to emit the debug *and* a second line reading "double check your
+        column selections", which misattributed every filter error - an unknown
+        column, a syntax error or a complete SELECT are all refused by
+        ``construct_metadata_query``, and none of them is about the column
+        selection. Asserting the count is what makes this fail against that
+        version: the old code emitted the loader's message too, so a containment
+        check passed either way.
+        """
+        controller.model.call.return_value = ("", "no such column: nosuchcol", "events")
+
+        controller.load_metadata_for_clustering(self._config(), "L")
+
+        messages = [
+            c.args[0] for c in controller.add_text_to_display.emit.call_args_list
+        ]
+        assert messages == ["no such column: nosuchcol"]
+
+    def test_a_refused_query_with_no_explanation_still_says_something(
+        self, controller
+    ) -> None:
+        """
+        ``debug`` is not guaranteed to be populated, so the fallback has to exist -
+        and it is neutral about the cause rather than guessing at it.
+        """
+        controller.model.call.return_value = ("", "", "events")
+
+        controller.load_metadata_for_clustering(self._config(), "L")
+
+        messages = [
+            c.args[0] for c in controller.add_text_to_display.emit.call_args_list
+        ]
+        assert messages == ["The metadata query could not be built"]
+
+    def test_a_refused_query_clears_the_view_s_stored_query(
+        self, controller, mock_view
+    ) -> None:
+        """
+        Left unset, the View would keep the previous run's query - the stale-read
+        shape Step 4a spent itself removing.
+        """
+        controller.model.call.return_value = ("", "nope", "events")
+
+        controller.load_metadata_for_clustering(self._config(), "L")
+
+        mock_view.set_query.assert_called_once_with("", "events")
+
     def test_an_empty_result_stops_and_is_reported(self, controller, mocker) -> None:
         """
         A query that matched nothing.
