@@ -164,11 +164,18 @@ sites are converted**, and they sit in Clustering (1), Metadata (5) and Protein 
    3d had to ride 4c in the first place - so it gets its own branch rather than being a
    commit inside a larger one.
 
-   - **4a - the shared physics.** The same baseline-and-rectify appears **three times** in
-     `MetadataView` (`:1755`, `:1805`, `:1871`): the padding in samples, the median of the
-     pre-event baseline, then `sign(baseline) * trace - sign(baseline) * baseline`. That is
-     the measurement, not the drawing. One `MetadataModel` method serves all three, and the
-     duplication ratchet cannot see it because all three copies are in one file.
+   **The split is two, not three - 4a dissolved on being worked, 2026-09-14.** It was to
+   move the shared baseline-and-rectify (three copies in `MetadataView` at `:1755`, `:1805`
+   and `:1871` - the padding in samples, the median of the pre-event baseline, then
+   `sign(baseline) * trace - sign(baseline) * baseline`) to `MetadataModel`. **All three
+   copies are inside View methods and no View can reach a Model**, so the move is not
+   executable until the generator restructure below moves their callers. Extracting them to
+   a single helper *is* executable and is worth doing - three copies of the measurement in
+   one file, where the duplication ratchet cannot see them - but it moves no gate, and the
+   helper is precisely what the generator branch then relocates. So it becomes that
+   branch's first commit rather than a branch, and each call site is touched once. Rule 25:
+   a recorded plan step is a claim like any other.
+
    - **4b - the standalone computations.** `_plot_capture_rate`'s inter-event times,
      `_plot_1d_histogram`'s shared limits, `set_histogram_bins`' counts and
      `_plot_categorical_histogram`'s counting: ordinary request/setter splits of the kind
