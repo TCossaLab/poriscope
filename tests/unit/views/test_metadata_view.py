@@ -138,6 +138,8 @@ def view(mocker: MockerFixture, mock_qt_dependencies: None) -> MetadataView:
     view_instance.histogram_bins_requested = mocker.Mock()
     # Answered by MetadataController.fit_capture_rate in the real app.
     view_instance.capture_rate_requested = mocker.Mock()
+    # Answered by MetadataController.count_categories in the real app.
+    view_instance.categorical_counts_requested = mocker.Mock()
     # Answered by MetaSubsetTabController.load_event_id_cache in the real app;
     # each test that drives _rebuild_event_id_cache sets its own answer.
     view_instance.event_id_cache_requested = mocker.Mock()
@@ -715,6 +717,30 @@ def test_no_tab_defines_its_own_dunder_init() -> None:
 
 
 # ----------------------------- Plot Capture Rate Tests ------------------------------
+
+
+def _answer_categorical_counts(view):
+    """
+    Answer ``categorical_counts_requested`` the way MetadataController does.
+
+    Step 4's closeout moved the tallying to ``MetadataModel.categorical_counts``, so
+    the View no longer decides what the categories are. The real Model is used here
+    rather than a canned answer, so these tests still exercise the counting they were
+    written to cover; what the counting *produces* for nulls, NaNs and numeric
+    ordering is asserted directly in ``tests/unit/models/test_metadata_model.py``.
+
+    :param view: the view whose request has just been emitted
+    :type view: MetadataView
+    :return: None
+    :rtype: None
+    """
+    from poriscope.plugins.analysistabs.MetadataModel import MetadataModel
+
+    datasets, labels, ax, x_label, y_label = (
+        view.categorical_counts_requested.emit.call_args.args
+    )
+    counts = MetadataModel.__new__(MetadataModel).categorical_counts(datasets)
+    view.set_categorical_counts(counts, labels, ax, x_label, y_label)
 
 
 def _answer_capture_rate(view, numbins=4):
@@ -4788,6 +4814,7 @@ class TestPlotCategoricalHistogram:
 
     def test_calls_bar(self, view: MetadataView) -> None:
         view._plot_categorical_histogram(view.axes, self._data(), ["category"], [""])
+        _answer_categorical_counts(view)
         view.axes.bar.assert_called()
 
     def test_clears_axes_before_plot(self, view: MetadataView) -> None:
@@ -4798,11 +4825,13 @@ class TestPlotCategoricalHistogram:
         view._plot_categorical_histogram(
             view.axes, self._data(), ["category"], ["unit"]
         )
+        _answer_categorical_counts(view)
         view.axes.set_xlabel.assert_called()
         view.axes.set_ylabel.assert_called()
 
     def test_rotates_x_tick_labels(self, view: MetadataView) -> None:
         view._plot_categorical_histogram(view.axes, self._data(), ["category"], [""])
+        _answer_categorical_counts(view)
         view.axes.tick_params.assert_called()
 
     def test_appends_to_hist_data(self, view: MetadataView) -> None:
@@ -4816,6 +4845,7 @@ class TestPlotCategoricalHistogram:
     def test_counts_categories_correctly(self, view: MetadataView) -> None:
         # A=3, B=2, C=1
         view._plot_categorical_histogram(view.axes, self._data(), ["category"], [""])
+        _answer_categorical_counts(view)
         call_args = view.axes.bar.call_args
         categories = list(call_args[0][0])
         counts = list(call_args[0][1])
@@ -5507,57 +5537,3 @@ def test_handle_plot_events_leaves_the_reporting_to_the_controller(
 
 
 # ----------------------------- Categorical nulls / plot-type reset -------------------
-
-
-def test_plot_categorical_histogram_counts_nulls_as_their_own_category(
-    view: MetadataView,
-) -> None:
-    """
-    A column holding SQL NULLs plots, with the missing rows as a "null" bar.
-
-    Reported from a real run: it raised instead. ``np.unique`` sorts, and sorting an
-    object column that mixes ``None`` with strings raises
-    "'<' not supported between instances of 'NoneType' and 'str'".
-    """
-    data = pd.DataFrame({"kind": np.array(["a", "b", None, "a"], dtype=object)})
-
-    view._plot_categorical_histogram(view.axes, data, ["kind"], ["u"])
-
-    categories, counts = view.axes.bar.call_args.args
-    assert categories == ["a", "b", "null"]
-    assert list(counts) == [2.0, 1.0, 1.0]
-
-
-def test_plot_categorical_histogram_labels_a_float_nan_null_too(
-    view: MetadataView,
-) -> None:
-    """
-    A float column does not raise on NaN, but labelled the bar "nan".
-
-    "null" is what the user sees everywhere else for a missing value, and this is
-    the same absence, so it gets the same word.
-    """
-    data = pd.DataFrame({"kind": np.array([1.0, 2.0, np.nan, 1.0])})
-
-    view._plot_categorical_histogram(view.axes, data, ["kind"], ["u"])
-
-    categories, _counts = view.axes.bar.call_args.args
-    assert categories[-1] == "null"
-    assert "nan" not in categories
-
-
-def test_plot_categorical_histogram_keeps_numeric_categories_in_numeric_order(
-    view: MetadataView,
-) -> None:
-    """
-    Real categories keep the order they had, which is why nulls are counted apart.
-
-    Stringifying the whole column before ``np.unique`` would have been shorter and
-    would have sorted 10 before 2.
-    """
-    data = pd.DataFrame({"kind": np.array([1, 2, 10, 2])})
-
-    view._plot_categorical_histogram(view.axes, data, ["kind"], ["u"])
-
-    categories, _counts = view.axes.bar.call_args.args
-    assert categories == ["1", "2", "10"]

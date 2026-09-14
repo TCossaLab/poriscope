@@ -407,6 +407,51 @@ class MetadataModel(MetaModel):
         return amplitude * np.exp(-rate * 10.0**logt) * 10.0**logt * np.log(10)
 
     @log(logger=logger)
+    def categorical_counts(
+        self, datasets: Sequence[npt.NDArray[Any]]
+    ) -> List[Tuple[List[str], npt.NDArray[np.float64]]]:
+        """
+        Tally how often each category occurs, for every overlaid dataset at once.
+
+        Moved off ``MetadataView`` in Step 4's closeout. Counting occurrences is
+        aggregation rather than drawing, and the tallies are exported with the plot.
+        The loop is here rather than a round trip per dataset, for the reason
+        :meth:`kernel_densities` records: the bar chart redraws every accumulated
+        dataset on each update.
+
+        **Missing values are counted as their own category** rather than being allowed
+        to reach ``np.unique``, which sorts and so raises "'<' not supported between
+        instances of 'NoneType' and 'str'" on a column holding SQL NULLs. A float
+        column does not raise but labels the bar "nan", which tells the user no more
+        than "null" does and does not match what they see elsewhere. Counting them
+        separately also keeps the real categories in the order they had before, which
+        stringifying everything up front would not: "10" sorts before "2".
+
+        :param datasets: one array of raw column values per overlaid dataset
+        :type datasets: Sequence[npt.NDArray[Any]]
+        :return: per dataset, its category names and their counts as floats
+        :rtype: List[Tuple[List[str], npt.NDArray[np.float64]]]
+        """
+        results: List[Tuple[List[str], npt.NDArray[np.float64]]] = []
+        for values in datasets:
+            series = pd.Series(values)
+            missing = int(series.isna().sum())
+            present = series.dropna().to_numpy()
+
+            unique_vals, counts = np.unique(present, return_counts=True)
+            val = counts.astype(float)
+
+            # Strings so matplotlib aligns them as discrete categories.
+            categories = [str(uv) for uv in unique_vals]
+
+            if missing:
+                categories.append("null")
+                val = np.append(val, float(missing))
+
+            results.append((categories, val))
+        return results
+
+    @log(logger=logger)
     def interevent_log_times(
         self, times: npt.NDArray[np.float64]
     ) -> npt.NDArray[np.float64]:

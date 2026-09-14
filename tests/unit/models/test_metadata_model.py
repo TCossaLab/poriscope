@@ -757,3 +757,87 @@ class TestIntereventLogTimes:
 
     def test_no_events_gives_no_intervals(self, model):
         assert len(model.interevent_log_times(np.array([]))) == 0
+
+
+# ===========================================================================
+# categorical_counts - the tallying Step 4's closeout moved off the View
+# ===========================================================================
+
+
+class TestCategoricalCounts:
+    """
+    One (categories, counts) pair per overlaid dataset.
+
+    These three came from ``test_metadata_view.py`` with the method: they were
+    written against real reported defects, and they assert what the counting
+    produces rather than that a bar was drawn, so they belong beside the counting.
+    """
+
+    def test_it_counts_each_category(self, model):
+        values = np.array(["A", "B", "A", "C", "B", "A"], dtype=object)
+
+        (categories, counts) = model.categorical_counts([values])[0]
+
+        assert categories == ["A", "B", "C"]
+        assert list(counts) == [3.0, 2.0, 1.0]
+
+    def test_nulls_are_counted_as_their_own_category(self, model):
+        """
+        A column holding SQL NULLs must plot, with the missing rows as a "null" bar.
+
+        Reported from a real run: it raised instead. ``np.unique`` sorts, and sorting
+        an object column mixing ``None`` with strings raises "'<' not supported
+        between instances of 'NoneType' and 'str'".
+        """
+        values = np.array(["a", "b", None, "a"], dtype=object)
+
+        (categories, counts) = model.categorical_counts([values])[0]
+
+        assert categories == ["a", "b", "null"]
+        assert list(counts) == [2.0, 1.0, 1.0]
+
+    def test_a_float_nan_is_labelled_null_too(self, model):
+        """
+        A float column does not raise on NaN but labelled the bar "nan". "null" is
+        what the user sees everywhere else for a missing value, and this is the same
+        absence, so it gets the same word.
+        """
+        values = np.array([1.0, 2.0, np.nan, 1.0])
+
+        (categories, _counts) = model.categorical_counts([values])[0]
+
+        assert categories[-1] == "null"
+        assert "nan" not in categories
+
+    def test_numeric_categories_keep_numeric_order(self, model):
+        """
+        Real categories keep the order they had, which is why nulls are counted
+        apart. Stringifying the whole column before ``np.unique`` would have been
+        shorter and would have sorted 10 before 2.
+        """
+        values = np.array([1, 2, 10, 2])
+
+        (categories, _counts) = model.categorical_counts([values])[0]
+
+        assert categories == ["1", "2", "10"]
+
+    def test_one_pair_per_dataset_in_order(self, model):
+        """The bar chart redraws every accumulated dataset, index-aligned with labels."""
+        first = np.array(["A", "A"], dtype=object)
+        second = np.array(["B"], dtype=object)
+
+        results = model.categorical_counts([first, second])
+
+        assert [cats for cats, _ in results] == [["A"], ["B"]]
+        assert [list(counts) for _, counts in results] == [[2.0], [1.0]]
+
+    def test_a_column_of_only_nulls_is_all_null(self, model):
+        values = np.array([None, None], dtype=object)
+
+        (categories, counts) = model.categorical_counts([values])[0]
+
+        assert categories == ["null"]
+        assert list(counts) == [2.0]
+
+    def test_no_datasets_gives_no_results(self, model):
+        assert model.categorical_counts([]) == []

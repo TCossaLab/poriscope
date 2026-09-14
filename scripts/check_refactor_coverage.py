@@ -259,6 +259,14 @@ MOVED: Tuple[Tuple[str, str, str], ...] = (
     # Landed 2026-09-13: the capture-rate binning and exponential fit moved to
     # MetadataModel, taking `scipy.optimize` and the last `scipy.stats` with them.
     ("poriscope/plugins/analysistabs/MetadataModel.py", "fit_capture_rate", "4c"),
+    # Tallying categories, moved off the View in the closeout: it is aggregation and
+    # the tallies are exported with the plot.
+    (
+        "poriscope/plugins/analysistabs/MetadataModel.py",
+        "categorical_counts",
+        "4c",
+    ),
+    ("poriscope/plugins/analysistabs/MetadataView.py", "set_categorical_counts", "4c"),
     # The gaps the capture-rate fit is about, moved off the View in the closeout.
     (
         "poriscope/plugins/analysistabs/MetadataModel.py",

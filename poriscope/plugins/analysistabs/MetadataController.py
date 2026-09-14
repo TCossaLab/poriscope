@@ -85,6 +85,7 @@ class MetadataController(MetaSubsetTabController):
         self.view.density_requested.connect(self.estimate_kernel_densities)
         self.view.histogram_bins_requested.connect(self.calculate_histogram_bins)
         self.view.capture_rate_requested.connect(self.fit_capture_rate)
+        self.view.categorical_counts_requested.connect(self.count_categories)
 
     @log(logger=logger)
     @Slot(object, object, object, bool, object, str, str, str)
@@ -242,6 +243,50 @@ class MetadataController(MetaSubsetTabController):
         self.view.set_histogram_bins(
             bin_edges, bincenters, widths, ax, x_label, logx, norm
         )
+
+    @log(logger=logger)
+    @Slot(object, object, object, str, str)
+    def count_categories(
+        self,
+        datasets: List[npt.NDArray[Any]],
+        labels: List[str],
+        ax: Axes,
+        x_label: str,
+        y_label: str,
+    ) -> None:
+        """
+        Tally each overlaid dataset's categories, and hand them back to be drawn.
+
+        Decision B's command path, the same shape as :meth:`estimate_kernel_densities`.
+        The drawing context arrives and departs unchanged; this slot marshals and does
+        not interpret it.
+
+        A column of a type the tally cannot sort raises out of the Model and is reported
+        here rather than escaping a Qt slot - which is what used to happen, since
+        nothing between the View and ``_overlay_plot`` catches it.
+
+        :param datasets: one array of raw column values per overlaid dataset
+        :type datasets: List[npt.NDArray[Any]]
+        :param labels: one label per dataset, index-aligned with datasets
+        :type labels: List[str]
+        :param ax: the axis object the View will draw on
+        :type ax: Axes
+        :param x_label: the x axis label, already formatted
+        :type x_label: str
+        :param y_label: the y axis label
+        :type y_label: str
+        :return: None
+        :rtype: None
+        """
+        try:
+            counts = self.model.categorical_counts(datasets)
+        except (TypeError, ValueError) as e:
+            self.logger.error(f"Unable to count categories: {repr(e)}")
+            self.add_text_to_display.emit(
+                f"Unable to count categories: {e}", self.__class__.__name__
+            )
+            return
+        self.view.set_categorical_counts(counts, labels, ax, x_label, y_label)
 
     @log(logger=logger)
     @Slot(object, object, bool, object, str, str, str)

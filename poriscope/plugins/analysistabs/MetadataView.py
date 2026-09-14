@@ -171,13 +171,24 @@ class MetadataView(MetaSubsetTabView):
         object, object, bool, object, object, object, str, bool, bool
     )
 
-    #: Asks for the capture-rate binning and its exponential fit: the log
-    #: inter-event times, the bin request, and the drawing context. Answered
-    #: through ``set_capture_rate``.
+    #: Asks for the capture-rate binning and its exponential fit: the event times
+    #: as they came out of the column, the bin request, and the drawing context.
+    #: Answered through ``set_capture_rate``.
     #:
     #: Step 4c. The bin edges come back with the fit so the histogram is drawn on
-    #: exactly the edges the fit was made against.
+    #: exactly the edges the fit was made against. Step 4's closeout moved the gap
+    #: calculation down too, so this carries the column rather than the log
+    #: inter-event times it used to.
     capture_rate_requested = Signal(object, object, bool, object, str, str, str)
+
+    #: Asks for the per-category counts of every overlaid dataset at once, with the
+    #: drawing context handed back unchanged. Answered through
+    #: ``set_categorical_counts``.
+    #:
+    #: Step 4's closeout. Counting occurrences is aggregation and the answer is
+    #: exported with the plot, so it belongs below the widget; one intent for all
+    #: the datasets, like ``density_requested``, so no answer is parked between them.
+    categorical_counts_requested = Signal(object, object, object, str, str)
 
     logger = logging.getLogger(__name__)
 
@@ -822,34 +833,44 @@ class MetadataView(MetaSubsetTabView):
         self.hist_data.append(data_vals)
         self.hist_labels.append(dataset_label)
 
-        # Plot all datasets
-        for d, lab in zip(self.hist_data, self.hist_labels):
-            x_lab = self.format_axis_label(x_label, x_units)
-            y_lab = "Count"
+        self.categorical_counts_requested.emit(
+            list(self.hist_data),
+            list(self.hist_labels),
+            ax,
+            self.format_axis_label(x_label, x_units),
+            "Count",
+        )
 
-            # Missing values are counted as their own category rather than being
-            # allowed to reach np.unique, which sorts and so raises
-            # "'<' not supported between instances of 'NoneType' and 'str'" on a
-            # column holding SQL NULLs. A float column does not raise but labels the
-            # bar "nan", which tells the user no more than "null" does and does not
-            # match what they see elsewhere. Counting them separately also keeps the
-            # real categories in the order they had before, which stringifying
-            # everything up front would not: "10" sorts before "2".
-            series = pd.Series(d)
-            missing = int(series.isna().sum())
-            present = series.dropna().to_numpy()
+    @log(logger=logger)
+    def set_categorical_counts(
+        self,
+        counts: Sequence[Tuple[Sequence[str], npt.NDArray[np.float64]]],
+        labels: Sequence[str],
+        ax: Axes,
+        x_label: str,
+        y_label: str,
+    ) -> None:
+        """
+        Draw one bar series per overlaid dataset.
 
-            unique_vals, counts = np.unique(present, return_counts=True)
+        The answering half of ``categorical_counts_requested``. Step 4's closeout moved
+        the counting to :meth:`MetadataModel.categorical_counts`: tallying occurrences is
+        aggregation rather than drawing, and the tallies are exported with the plot.
 
-            val = counts.astype(float)
-
-            # Convert unique values to strings so matplotlib natively aligns them as discrete categories
-            categories = [str(uv) for uv in unique_vals]
-
-            if missing:
-                categories.append("null")
-                val = np.append(val, float(missing))
-
+        :param counts: per dataset, its category names and their counts, index-aligned with labels
+        :type counts: Sequence[Tuple[Sequence[str], npt.NDArray[np.float64]]]
+        :param labels: one label per overlaid dataset
+        :type labels: Sequence[str]
+        :param ax: the axis object to draw on
+        :type ax: Axes
+        :param x_label: the x axis label, already formatted
+        :type x_label: str
+        :param y_label: the y axis label
+        :type y_label: str
+        :return: None
+        :rtype: None
+        """
+        for (categories, val), lab in zip(counts, labels, strict=True):
             ax.bar(
                 categories,
                 val,
@@ -858,10 +879,10 @@ class MetadataView(MetaSubsetTabView):
                 align="center",
             )
 
-            self._update_cache((categories, x_lab), (val, y_lab))
+            self._update_cache((categories, x_label), (val, y_label))
 
-            ax.set_xlabel(x_lab)
-            ax.set_ylabel(y_lab)
+            ax.set_xlabel(x_label)
+            ax.set_ylabel(y_label)
         ax.tick_params(axis="x", rotation=45)
         ax.legend(loc="best")
 

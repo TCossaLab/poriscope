@@ -1155,3 +1155,72 @@ class TestFitCaptureRate:
 
         assert any("Unable to fit the capture rate" in m
                    for m in self._messages(controller))
+
+
+# ------------------- count_categories, Step 4 closeout -----------------------
+
+
+class TestCountCategories:
+    """Decision B's command path: datasets in, tallies back through a setter."""
+
+    @pytest.fixture(autouse=True)
+    def _stub_status_panel(self, controller, mocker) -> None:
+        """
+        Give the controller a status-panel signal it can emit on.
+
+        :param controller: the controller under test
+        :type controller: MetadataController
+        :param mocker: the pytest-mock fixture
+        :type mocker: pytest_mock.MockerFixture
+        :return: None
+        :rtype: None
+        """
+        controller.add_text_to_display = mocker.Mock()
+        controller.add_text_to_display.emit = mocker.Mock()
+
+    def test_every_dataset_goes_down_in_one_call(self, controller) -> None:
+        """
+        One round trip for all the overlaid datasets, not one each - the same reason
+        estimate_kernel_densities loops in the Model: no answer is parked between them.
+        """
+        datasets = [np.array(["a"]), np.array(["b"])]
+
+        controller.count_categories(datasets, ["d1", "d2"], MagicMock(), "x", "y")
+
+        assert controller.model.categorical_counts.call_args.args[0] is datasets
+
+    def test_the_tallies_go_back_to_the_view(self, controller, mock_view) -> None:
+        counts = [(["a"], np.array([1.0]))]
+        controller.model.categorical_counts.return_value = counts
+        ax = MagicMock()
+
+        controller.count_categories([np.array(["a"])], ["d1"], ax, "x", "y")
+
+        mock_view.set_categorical_counts.assert_called_once_with(
+            counts, ["d1"], ax, "x", "y"
+        )
+
+    def test_a_column_the_tally_cannot_sort_is_reported(self, controller) -> None:
+        """
+        Reported rather than allowed to escape a Qt slot: nothing between the View and
+        _overlay_plot catches it, which is how the NULL column defect surfaced as a
+        crash before the tally learned to count nulls apart.
+        """
+        controller.model.categorical_counts.side_effect = TypeError(
+            "'<' not supported between instances of 'NoneType' and 'str'"
+        )
+
+        controller.count_categories([np.array(["a"])], ["d1"], MagicMock(), "x", "y")
+
+        messages = [
+            c.args[0] for c in controller.add_text_to_display.emit.call_args_list
+        ]
+        assert any("Unable to count categories" in m for m in messages)
+
+    def test_a_failed_tally_draws_nothing(self, controller, mock_view) -> None:
+        """A stale bar chart must not be left under this dataset's label."""
+        controller.model.categorical_counts.side_effect = ValueError("boom")
+
+        controller.count_categories([np.array(["a"])], ["d1"], MagicMock(), "x", "y")
+
+        mock_view.set_categorical_counts.assert_not_called()
