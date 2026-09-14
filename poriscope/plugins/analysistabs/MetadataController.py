@@ -26,7 +26,7 @@
 
 
 import logging
-from typing import Any, Dict, List, Optional, Sequence, override
+from typing import Any, Dict, Generator, List, Optional, Sequence, Tuple, override
 
 import numpy as np
 import numpy.typing as npt
@@ -77,7 +77,10 @@ class MetadataController(MetaSubsetTabController):
         self.view.column_units_requested.connect(self.request_column_units)
         self.view.column_type_requested.connect(self.request_column_type)
         self.view.metadata_subset_requested.connect(self.load_metadata_subset)
-        self.view.event_subset_requested.connect(self.load_event_subset)
+        self.view.all_points_histogram_requested.connect(
+            self.build_all_points_histogram
+        )
+        self.view.event_overlay_requested.connect(self.build_event_overlay)
         self.view.event_plot_data_requested.connect(self.load_event_plot_data)
         self.view.plot_features_requested.connect(self.request_plot_features)
         self.view.csv_subset_export_requested.connect(self.export_csv_subset)
@@ -472,20 +475,18 @@ class MetadataController(MetaSubsetTabController):
         self._echo_applied_query(query, table_name)
 
     @log(logger=logger)
-    @Slot(str, str, object)
-    def load_event_subset(
+    def _fetch_event_subset(
         self,
         loader: str,
         sql_filter: str,
         experiments_and_channels: Optional[Dict[str, List[Optional[int]]]],
-    ) -> None:
+    ) -> Optional[Tuple[str, Generator]]:
         """
-        Fetch one event-data subset - query and generator - and hand it to the View.
+        Build one event-data subset's query and open a generator over its events.
 
-        The same conversion as ``load_metadata_subset``, for the event-data plots.
-        Both of its answers were unguarded reads before Step 4a: a failed
-        ``load_event_data`` left the previous subset's generator in place and the
-        tab replotted that subset's events under this one's label.
+        Shared by the two event-data plot types, which differ only in what they then
+        reduce the events to. Reports its own failure and answers with None, so a
+        caller has nothing to handle beyond stopping.
 
         :param loader: the database loader plugin's key
         :type loader: str
@@ -493,8 +494,8 @@ class MetadataController(MetaSubsetTabController):
         :type sql_filter: str
         :param experiments_and_channels: the experiment and channel scope, or None
         :type experiments_and_channels: Optional[Dict[str, List[Optional[int]]]]
-        :return: None
-        :rtype: None
+        :return: the query that ran and a generator over its events, or None
+        :rtype: Optional[Tuple[str, Generator]]
         """
         try:
             # Two values, because construct_event_data_query is declared
@@ -516,14 +517,14 @@ class MetadataController(MetaSubsetTabController):
                 f"Could not build the event query for this subset: {e}",
                 self.__class__.__name__,
             )
-            return
+            return None
 
         if not query:
             self.add_text_to_display.emit(
                 debug or "The event query for this subset could not be built",
                 self.__class__.__name__,
             )
-            return
+            return None
 
         try:
             generator = self.model.call(
@@ -539,11 +540,122 @@ class MetadataController(MetaSubsetTabController):
                 f"Could not load this event subset from {loader}: {e}",
                 self.__class__.__name__,
             )
+            return None
+
+        return query, generator
+
+    @log(logger=logger)
+    @Slot(str, str, object, str, object, bool, object, object, str)
+    def build_all_points_histogram(
+        self,
+        loader: str,
+        sql_filter: str,
+        experiments_and_channels: Optional[Dict[str, List[Optional[int]]]],
+        plot_type: str,
+        bins: Any,
+        sizes: bool,
+        hist_min: Optional[float],
+        hist_max: Optional[float],
+        dataset_label: str,
+    ) -> None:
+        """
+        Tally one event-data subset into an all-points histogram for the View.
+
+        Decision B's command path. Step 4's closeout moved the tally down: the events
+        themselves were being walked in the widget, twice, and nothing above the Model
+        ever wanted them. The query is set only once the tally succeeded, which is
+        what lets the View tell a fetch that failed from one that returned nothing.
+
+        :param loader: the database loader plugin's key
+        :type loader: str
+        :param sql_filter: the subset filter's WHERE-clause body, empty for all rows
+        :type sql_filter: str
+        :param experiments_and_channels: the experiment and channel scope, or None
+        :type experiments_and_channels: Optional[Dict[str, List[Optional[int]]]]
+        :param plot_type: the all-points histogram variant being drawn
+        :type plot_type: str
+        :param bins: a bin count, or a bin width when sizes is True, or None
+        :type bins: Any
+        :param sizes: does bins refer to a bin width (True) or a count (False)
+        :type sizes: bool
+        :param hist_min: the shared lower limit so far, or None for the first dataset
+        :type hist_min: Optional[float]
+        :param hist_max: the shared upper limit so far, or None for the first dataset
+        :type hist_max: Optional[float]
+        :param dataset_label: the label this subset is drawn under
+        :type dataset_label: str
+        :return: None
+        :rtype: None
+        """
+        fetched = self._fetch_event_subset(loader, sql_filter, experiments_and_channels)
+        if fetched is None:
+            return
+        query, generator = fetched
+
+        try:
+            bincenters, counts, new_min, new_max = (
+                self.model.build_all_points_histogram(
+                    generator, plot_type, bins, sizes, hist_min, hist_max
+                )
+            )
+        except (ValueError, TypeError, IndexError, KeyError) as e:
+            self.logger.error(f"Unable to build the all points histogram: {e!r}")
+            self.add_text_to_display.emit(
+                f"Unable to build the all points histogram: {e}",
+                self.__class__.__name__,
+            )
             return
 
         self.view.set_event_query(query)
-        self.view.set_event_data_generator(generator)
         self._echo_applied_query(query, "events")
+        self.view.set_all_points_histogram(
+            bincenters, counts, new_min, new_max, plot_type, dataset_label
+        )
+
+    @log(logger=logger)
+    @Slot(str, str, object, str)
+    def build_event_overlay(
+        self,
+        loader: str,
+        sql_filter: str,
+        experiments_and_channels: Optional[Dict[str, List[Optional[int]]]],
+        plot_type: str,
+    ) -> None:
+        """
+        Put one event-data subset on a shared normalised axis for the View to draw.
+
+        Decision B's command path, the same shape as
+        :meth:`build_all_points_histogram`.
+
+        :param loader: the database loader plugin's key
+        :type loader: str
+        :param sql_filter: the subset filter's WHERE-clause body, empty for all rows
+        :type sql_filter: str
+        :param experiments_and_channels: the experiment and channel scope, or None
+        :type experiments_and_channels: Optional[Dict[str, List[Optional[int]]]]
+        :param plot_type: either 'Raw Event Overlay' or 'Filtered Event Overlay'
+        :type plot_type: str
+        :return: None
+        :rtype: None
+        """
+        fetched = self._fetch_event_subset(loader, sql_filter, experiments_and_channels)
+        if fetched is None:
+            return
+        query, generator = fetched
+
+        try:
+            traces = self.model.build_event_overlay(generator, plot_type)
+        except (ValueError, TypeError, IndexError, KeyError) as e:
+            self.logger.error(f"Unable to build the event overlay: {e!r}")
+            self.add_text_to_display.emit(
+                f"Unable to build the event overlay: {e}",
+                self.__class__.__name__,
+            )
+            return
+
+        self.view.set_event_query(query)
+        self._echo_applied_query(query, "events")
+        self.view.set_event_overlay(traces)
 
     @log(logger=logger)
     def _echo_applied_query(self, query: str, table_name: str) -> None:

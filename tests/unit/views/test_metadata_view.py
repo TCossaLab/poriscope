@@ -109,8 +109,12 @@ def view(mocker: MockerFixture, mock_qt_dependencies: None) -> MetadataView:
     view_instance.metadata_subset_requested.emit.side_effect = _subset_answers(
         view_instance
     )
-    view_instance.event_subset_requested = mocker.Mock()
-    view_instance.event_subset_requested.emit.side_effect = _event_subset_answers(
+    view_instance.all_points_histogram_requested = mocker.Mock()
+    view_instance.all_points_histogram_requested.emit.side_effect = (
+        _event_intent_answers(view_instance)
+    )
+    view_instance.event_overlay_requested = mocker.Mock()
+    view_instance.event_overlay_requested.emit.side_effect = _event_intent_answers(
         view_instance
     )
     # The four Step 4a intents that replaced the last of this tab's bus emits. The two
@@ -1423,9 +1427,13 @@ def test_plot_all_points_histogram_plots_data(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify plot is called with data."""
-    data = pd.DataFrame({"x": np.array([1.0, 2.0]), "y": np.array([3.0, 4.0])})
-
-    view._plot_all_points_histogram(view.axes, data, ["x", "y"], ["u1", "u2"])
+    view._plot_all_points_histogram(
+        view.axes,
+        np.array([1.0, 2.0]),
+        np.array([3.0, 4.0]),
+        ["x", "y"],
+        ["u1", "u2"],
+    )
 
     view.axes.plot.assert_called()
 
@@ -1434,10 +1442,13 @@ def test_plot_all_points_histogram_normalizes_when_norm_true(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify data is normalized when norm=True."""
-    data = pd.DataFrame({"x": np.array([1.0, 2.0]), "y": np.array([10.0, 20.0])})
-
     view._plot_all_points_histogram(
-        view.axes, data, ["x", "y"], ["u1", "u2"], norm=True
+        view.axes,
+        np.array([1.0, 2.0]),
+        np.array([10.0, 20.0]),
+        ["x", "y"],
+        ["u1", "u2"],
+        norm=True,
     )
 
     ylabel_call = view.axes.set_ylabel.call_args
@@ -1449,9 +1460,13 @@ def test_plot_all_points_histogram_clears_axes(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify axes are cleared before plotting."""
-    data = pd.DataFrame({"x": np.array([1.0, 2.0]), "y": np.array([3.0, 4.0])})
-
-    view._plot_all_points_histogram(view.axes, data, ["x", "y"], ["u1", "u2"])
+    view._plot_all_points_histogram(
+        view.axes,
+        np.array([1.0, 2.0]),
+        np.array([3.0, 4.0]),
+        ["x", "y"],
+        ["u1", "u2"],
+    )
 
     view.axes.clear.assert_called()
 
@@ -1802,9 +1817,14 @@ def _subset_answers(view: MetadataView) -> Callable[..., None]:
     return _emit
 
 
-def _event_subset_answers(view: MetadataView) -> Callable[..., None]:
+def _event_intent_answers(view: MetadataView) -> Callable[..., None]:
     """
-    The same, for ``event_subset_requested``.
+    The same, for either of the two event-data intents.
+
+    Step 4's closeout took the generator off the widget: the Controller now answers
+    both intents by drawing through a setter, and sets the query only once the whole
+    fetch *and* the reduction succeeded. So the one thing a test parks is
+    ``canned_event_query``, which is what says the round trip got that far.
 
     :param view: the view whose answers to set
     :type view: MetadataView
@@ -1812,9 +1832,8 @@ def _event_subset_answers(view: MetadataView) -> Callable[..., None]:
     :rtype: Callable[..., None]
     """
 
-    def _emit(loader: str, sql_filter: str, scope: object) -> None:
+    def _emit(*args: object) -> None:
         view.event_query = getattr(view, "canned_event_query", "")
-        view.event_data_generator = getattr(view, "canned_event_data_generator", None)
 
     return _emit
 
@@ -2452,10 +2471,10 @@ def test_overlay_plot_adds_dataset_to_plotted_datasets(
     assert ("test_loader", "exp1", 2, "WHERE x > 1", "Filter1") in view.plotted_datasets
 
 
-def test_overlay_plot_handles_raw_all_points_histogram_event_plot(
+def test_overlay_plot_asks_for_a_raw_all_points_histogram(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify Raw All Points Histogram event plot is handled."""
+    """Verify the Raw All Points Histogram branch asks for the tally it draws."""
     parameters = {
         "db_loader": "test_loader",
         "plot_type": "Raw All Points Histogram",
@@ -2465,24 +2484,23 @@ def test_overlay_plot_handles_raw_all_points_histogram_event_plot(
 
     view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
     view.selected_experiment_and_channels_by_loader = {}
-    view.global_signal.emit = mocker.Mock()
     view.canned_event_query = "SELECT * FROM events"
-    view.canned_event_data_generator = iter([{"raw_data": np.array([1.0, 2.0, 3.0])}])
-    view._construct_all_points_histogram = mocker.Mock(
-        return_value=pd.DataFrame({"Current": [1.0, 2.0], "Count": [10, 20]})
-    )
-    view.update_plot = mocker.Mock()
 
-    view._overlay_plot(parameters)
+    assert view._overlay_plot(parameters) is True
 
-    view._construct_all_points_histogram.assert_called_once()
-    view.update_plot.assert_called_once()
+    view.all_points_histogram_requested.emit.assert_called_once()
+    args = view.all_points_histogram_requested.emit.call_args[0]
+    assert args[0] == "test_loader"
+    assert args[3] == "Raw All Points Histogram"
+    assert args[4] == [50]
+    assert args[5] is False
+    view.event_overlay_requested.emit.assert_not_called()
 
 
-def test_overlay_plot_handles_filtered_all_points_histogram_event_plot(
+def test_overlay_plot_asks_for_a_filtered_all_points_histogram(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify Filtered All Points Histogram event plot is handled."""
+    """Verify the plot type reaches the Controller, since it picks the trace."""
     parameters = {
         "db_loader": "test_loader",
         "plot_type": "Filtered All Points Histogram",
@@ -2492,19 +2510,12 @@ def test_overlay_plot_handles_filtered_all_points_histogram_event_plot(
 
     view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
     view.selected_experiment_and_channels_by_loader = {}
-    view.global_signal.emit = mocker.Mock()
     view.canned_event_query = "SELECT * FROM events"
-    view.canned_event_data_generator = iter(
-        [{"filtered_data": np.array([1.0, 2.0, 3.0])}]
-    )
-    view._construct_all_points_histogram = mocker.Mock(
-        return_value=pd.DataFrame({"Current": [1.0, 2.0], "Count": [10, 20]})
-    )
-    view.update_plot = mocker.Mock()
 
     view._overlay_plot(parameters)
 
-    view._construct_all_points_histogram.assert_called_once()
+    args = view.all_points_histogram_requested.emit.call_args[0]
+    assert args[3] == "Filtered All Points Histogram"
 
 
 def test_overlay_plot_resets_for_all_points_histogram_when_bins_change(
@@ -2524,23 +2535,35 @@ def test_overlay_plot_resets_for_all_points_histogram_when_bins_change(
 
     view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
     view.selected_experiment_and_channels_by_loader = {}
-    view.global_signal.emit = mocker.Mock()
     view.canned_event_query = "SELECT * FROM events"
-    view.canned_event_data_generator = iter([{"raw_data": np.array([1.0, 2.0, 3.0])}])
-    view._construct_all_points_histogram = mocker.Mock(
-        return_value=pd.DataFrame({"Current": [1.0, 2.0], "Count": [10, 20]})
-    )
-    view.update_plot = mocker.Mock()
 
     view._overlay_plot(parameters)
 
     view._reset_actions.assert_called_once()
 
 
-def test_overlay_plot_returns_false_when_all_points_histogram_returns_none(
+def test_overlay_plot_sends_the_limits_left_by_the_reset(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify returns False when _construct_all_points_histogram returns None."""
+    """
+    Verify the shared limits are read *after* the reset that clears them.
+
+    The limits decide the bins the whole overlay is drawn on, so sending the ones
+    the previous plot type left behind would bin this one against data no longer on
+    the axes. Reading them before the reset is what that mistake looks like, and it
+    is invisible unless the reset is the thing that changes them.
+    """
+    view.allowed_bins = [30]
+    view.allowed_sizes = False
+    view.hist_min = -99.0
+    view.hist_max = 99.0
+
+    def _clear(axis_type: str = "2d") -> None:
+        view.hist_min = None
+        view.hist_max = None
+
+    view._reset_actions = mocker.Mock(side_effect=_clear)
+
     parameters = {
         "db_loader": "test_loader",
         "plot_type": "Raw All Points Histogram",
@@ -2550,20 +2573,19 @@ def test_overlay_plot_returns_false_when_all_points_histogram_returns_none(
 
     view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
     view.selected_experiment_and_channels_by_loader = {}
-    view.global_signal.emit = mocker.Mock()
     view.canned_event_query = "SELECT * FROM events"
-    view.canned_event_data_generator = iter([{"raw_data": np.array([1.0, 2.0, 3.0])}])
-    view._construct_all_points_histogram = mocker.Mock(return_value=None)
 
-    result = view._overlay_plot(parameters)
+    view._overlay_plot(parameters)
 
-    assert result is False
+    args = view.all_points_histogram_requested.emit.call_args[0]
+    assert args[6] is None
+    assert args[7] is None
 
 
-def test_overlay_plot_handles_raw_event_overlay_plot(
+def test_overlay_plot_asks_for_a_raw_event_overlay(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify Raw Event Overlay plot is handled."""
+    """Verify Raw Event Overlay asks for the traces it draws."""
     parameters = {
         "db_loader": "test_loader",
         "plot_type": "Raw Event Overlay",
@@ -2571,14 +2593,14 @@ def test_overlay_plot_handles_raw_event_overlay_plot(
 
     view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
     view.selected_experiment_and_channels_by_loader = {}
-    view.global_signal.emit = mocker.Mock()
     view.canned_event_query = "SELECT * FROM events"
-    view.canned_event_data_generator = iter([{"raw_data": np.array([1.0, 2.0, 3.0])}])
-    view._construct_event_overlay = mocker.Mock()
 
     view._overlay_plot(parameters)
 
-    view._construct_event_overlay.assert_called_once()
+    view.event_overlay_requested.emit.assert_called_once_with(
+        "test_loader", "", {None: [None]}, "Raw Event Overlay"
+    )
+    view.all_points_histogram_requested.emit.assert_not_called()
 
 
 def test_overlay_plot_returns_false_when_event_query_empty(
@@ -2592,7 +2614,6 @@ def test_overlay_plot_returns_false_when_event_query_empty(
 
     view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
     view.selected_experiment_and_channels_by_loader = {}
-    view.global_signal.emit = mocker.Mock()
     view.canned_event_query = ""
 
     result = view._overlay_plot(parameters)
@@ -2600,24 +2621,28 @@ def test_overlay_plot_returns_false_when_event_query_empty(
     assert result is False
 
 
-def test_overlay_plot_returns_false_when_event_data_generator_none(
+def test_overlay_plot_returns_false_when_the_histogram_could_not_be_built(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify returns False when event_data_generator is None."""
+    """
+    Verify a failed all-points tally rolls the action back.
+
+    The Controller sets the query only once the tally succeeded, so the same empty
+    query that reports a failed fetch reports a failed reduction - which used to be
+    an exception escaping a Qt slot.
+    """
     parameters = {
         "db_loader": "test_loader",
-        "plot_type": "Raw Event Overlay",
+        "plot_type": "Raw All Points Histogram",
+        "bins": [50],
+        "sizes": False,
     }
 
     view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
     view.selected_experiment_and_channels_by_loader = {}
-    view.global_signal.emit = mocker.Mock()
-    view.canned_event_query = "SELECT * FROM events"
-    view.canned_event_data_generator = None
+    view.canned_event_query = ""
 
-    result = view._overlay_plot(parameters)
-
-    assert result is False
+    assert view._overlay_plot(parameters) is False
 
 
 def test_overlay_plot_clears_allowed_columns_for_event_plots(
@@ -2634,10 +2659,7 @@ def test_overlay_plot_clears_allowed_columns_for_event_plots(
 
     view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
     view.selected_experiment_and_channels_by_loader = {}
-    view.global_signal.emit = mocker.Mock()
     view.canned_event_query = "SELECT * FROM events"
-    view.canned_event_data_generator = iter([{"raw_data": np.array([1.0, 2.0, 3.0])}])
-    view._construct_event_overlay = mocker.Mock()
 
     view._overlay_plot(parameters)
 
@@ -2673,287 +2695,189 @@ def test_overlay_plot_returns_true_on_success(
     assert result is True
 
 
-# ----------------------------- Construct All Points Histogram Tests ------------------------------
+# ----------------------------- set_all_points_histogram Tests ------------------------------
+#
+# The tally itself moved to MetadataModel.build_all_points_histogram in Step 4's
+# closeout and is pinned in tests/unit/models/test_metadata_model.py. What is left
+# here is the drawing half, and the shared limits the answer carries back.
 
 
-def test_construct_all_points_histogram_returns_dataframe_with_correct_columns(
+def test_set_all_points_histogram_takes_the_widened_limits(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify returns DataFrame with Current and Count columns."""
-    events = [
-        {
-            "raw_data": np.array([10.0, 11.0, 12.0, 13.0, 14.0]),
-            "padding_before": 100.0,
-            "samplerate": 10000.0,
-        }
-    ]
-
-    result = view._construct_all_points_histogram(
-        iter(events), "Raw All Points Histogram", bins=[10], sizes=False
-    )
-
-    assert result is not None
-    assert "Current" in result.columns
-    assert "Count" in result.columns
-
-
-def test_construct_all_points_histogram_uses_raw_data_for_raw_plot(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
-    """Verify uses raw_data for Raw All Points Histogram."""
-    events = [
-        {
-            "raw_data": np.array([10.0, 11.0, 12.0, 13.0, 14.0]),
-            "filtered_data": np.array([20.0, 21.0, 22.0, 23.0, 24.0]),
-            "padding_before": 100.0,
-            "samplerate": 10000.0,
-        }
-    ]
-
-    result = view._construct_all_points_histogram(
-        iter(events), "Raw All Points Histogram", bins=[10], sizes=False
-    )
-
-    assert result is not None
-    # Verify the histogram was built from raw_data (around 10-14) not filtered (20-24)
-    assert result["Current"].min() < 15.0
-
-
-def test_construct_all_points_histogram_uses_filtered_data_for_filtered_plot(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
-    """Verify uses filtered_data for Filtered All Points Histogram."""
-    # Use larger values and more samples so median baseline is clear
-    events = [
-        {
-            "raw_data": np.array([5.0, 5.0, 5.0, 10.0, 11.0, 12.0, 13.0, 14.0]),
-            "filtered_data": np.array([20.0, 20.0, 20.0, 25.0, 26.0, 27.0, 28.0, 29.0]),
-            "padding_before": 300.0,  # 300 µs * 10000 Hz / 1e6 = 3 samples
-            "samplerate": 10000.0,
-        }
-    ]
-
-    result = view._construct_all_points_histogram(
-        iter(events), "Filtered All Points Histogram", bins=[10], sizes=False
-    )
-
-    assert result is not None
-    # After baseline subtraction with filtered data, values should be different than raw
-    # Check that at least one value is non-zero to confirm data was processed
-    assert result["Count"].sum() > 0
-
-
-def test_construct_all_points_histogram_updates_hist_min_and_max(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
-    """Verify updates hist_min and hist_max based on data."""
+    """Verify the limits the tally widened come back onto the view."""
     view.hist_min = None
     view.hist_max = None
+    view._plot_all_points_histogram = mocker.Mock()
 
-    events = [
-        {
-            "raw_data": np.array([10.0, 11.0, 12.0, 13.0, 14.0]),
-            "padding_before": 100.0,
-            "samplerate": 10000.0,
-        }
-    ]
-
-    view._construct_all_points_histogram(
-        iter(events), "Raw All Points Histogram", bins=[10], sizes=False
+    view.set_all_points_histogram(
+        np.array([1.0, 2.0]),
+        np.array([10.0, 20.0]),
+        -3.0,
+        7.0,
+        "Raw All Points Histogram",
+        "a label",
     )
 
-    assert view.hist_min is not None
-    assert view.hist_max is not None
+    assert view.hist_min == -3.0
+    assert view.hist_max == 7.0
 
 
-def test_construct_all_points_histogram_uses_bins_parameter(
+def test_set_all_points_histogram_draws_the_counts(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify uses bins parameter when provided."""
-    events = [
-        {
-            "raw_data": np.array([10.0, 11.0, 12.0, 13.0, 14.0]),
-            "padding_before": 100.0,
-            "samplerate": 10000.0,
-        }
-    ]
+    """Verify the bin centers and counts reach the drawing method unchanged."""
+    view._plot_all_points_histogram = mocker.Mock()
+    x = np.array([1.0, 2.0])
+    y = np.array([10.0, 20.0])
 
-    result = view._construct_all_points_histogram(
-        iter(events), "Raw All Points Histogram", bins=[15], sizes=False
+    view.set_all_points_histogram(x, y, 0.0, 3.0, "Raw All Points Histogram", "a label")
+
+    view._plot_all_points_histogram.assert_called_once()
+    args, kwargs = view._plot_all_points_histogram.call_args
+    assert args[1] is x
+    assert args[2] is y
+    assert kwargs["dataset_label"] == "a label"
+    assert kwargs["norm"] is False
+
+
+@pytest.mark.parametrize(
+    "plot_type",
+    [
+        "Normalized Raw All Points Histogram",
+        "Normalized Filtered All Points Histogram",
+    ],
+)
+def test_set_all_points_histogram_normalizes_for_a_normalized_type(
+    view: MetadataView, mocker: MockerFixture, plot_type: str
+) -> None:
+    """Verify the two normalized variants ask the drawing method to normalize."""
+    view._plot_all_points_histogram = mocker.Mock()
+
+    view.set_all_points_histogram(
+        np.array([1.0, 2.0]),
+        np.array([10.0, 20.0]),
+        0.0,
+        3.0,
+        plot_type,
+        "a label",
     )
 
-    assert result is not None
-    assert len(result) == 15
+    assert view._plot_all_points_histogram.call_args[1]["norm"] is True
 
 
-def test_construct_all_points_histogram_calculates_bin_size_when_sizes_true(
+def test_set_all_points_histogram_redraws_the_canvas(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify calculates bins from size when sizes=True."""
-    view.hist_min = 0.0
-    view.hist_max = 10.0
+    """Verify the canvas is redrawn and the cache committed."""
+    view._plot_all_points_histogram = mocker.Mock()
 
-    events = [
-        {
-            "raw_data": np.array([10.0, 11.0, 12.0, 13.0, 14.0]),
-            "padding_before": 100.0,
-            "samplerate": 10000.0,
-        }
-    ]
-
-    result = view._construct_all_points_histogram(
-        iter(events), "Raw All Points Histogram", bins=[1.0], sizes=True
+    view.set_all_points_histogram(
+        np.array([1.0, 2.0]),
+        np.array([10.0, 20.0]),
+        0.0,
+        3.0,
+        "Raw All Points Histogram",
+        "a label",
     )
 
-    assert result is not None
+    view.canvas.draw.assert_called()
+    view._commit_cache.assert_called()
 
 
-def test_construct_all_points_histogram_raises_for_invalid_bins(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
-    """Verify raises ValueError for invalid bins."""
-    events = [
-        {
-            "raw_data": np.array([10.0, 11.0, 12.0, 13.0, 14.0]),
-            "padding_before": 100.0,
-            "samplerate": 10000.0,
-        }
-    ]
-
-    with pytest.raises(ValueError, match="Invalid bins entry"):
-        view._construct_all_points_histogram(
-            iter(events), "Raw All Points Histogram", bins=[], sizes=False
-        )
+# ----------------------------- set_event_overlay Tests ------------------------------
+#
+# The baseline subtraction and the normalised time base moved to
+# MetadataModel.build_event_overlay; the alpha stays here, because it is read by
+# nothing outside these axes.
 
 
-def test_construct_all_points_histogram_defaults_to_100_bins_when_none(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
-    """Verify defaults to 100 bins when bins=None."""
-    events = [
-        {
-            "raw_data": np.array([10.0, 11.0, 12.0, 13.0, 14.0]),
-            "padding_before": 100.0,
-            "samplerate": 10000.0,
-        }
-    ]
-
-    result = view._construct_all_points_histogram(
-        iter(events), "Raw All Points Histogram", bins=None, sizes=False
-    )
-
-    assert result is not None
-    assert len(result) == 100
-
-
-def test_construct_all_points_histogram_handles_multiple_events(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
-    """Verify accumulates histogram across multiple events."""
-    events = [
-        {
-            "raw_data": np.array([10.0, 11.0, 12.0]),
-            "padding_before": 100.0,
-            "samplerate": 10000.0,
-        },
-        {
-            "raw_data": np.array([11.0, 12.0, 13.0]),
-            "padding_before": 100.0,
-            "samplerate": 10000.0,
-        },
-    ]
-
-    result = view._construct_all_points_histogram(
-        iter(events), "Raw All Points Histogram", bins=[10], sizes=False
-    )
-
-    assert result is not None
-    assert result["Count"].sum() == 6  # 3 points from each event
-
-
-# ----------------------------- Construct Event Overlay Tests ------------------------------
-
-
-_TWO_EVENTS = [
-    {
-        "raw_data": np.linspace(10.0, 40.0, 30),
-        "filtered_data": np.linspace(10.0, 40.0, 30),
-        "padding_before": 200.0,
-        "padding_after": 200.0,
-        "samplerate": 10000.0,
-    },
-    {
-        "raw_data": np.linspace(10.0, 40.0, 40),  # different length avoids div/zero
-        "filtered_data": np.linspace(10.0, 40.0, 40),
-        "padding_before": 200.0,
-        "padding_after": 200.0,
-        "samplerate": 10000.0,
-    },
+_TWO_TRACES = [
+    (np.linspace(-0.2, 1.2, 30), np.linspace(0.0, 30.0, 30)),
+    (np.linspace(-0.2, 1.2, 40), np.linspace(0.0, 30.0, 40)),
 ]
 
 
-def test_construct_event_overlay_sets_axis_labels(
+def test_set_event_overlay_sets_axis_labels(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify axis labels are set correctly."""
-    view._construct_event_overlay(iter(_TWO_EVENTS), "Raw Event Overlay", "test_loader")
+    view.set_event_overlay(_TWO_TRACES)
 
     view.axes.set_xlabel.assert_called_with("Normalized Time")
     view.axes.set_ylabel.assert_called_with("Rectified Current (pA)")
 
 
-def test_construct_event_overlay_sets_xlim(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
+def test_set_event_overlay_sets_xlim(view: MetadataView, mocker: MockerFixture) -> None:
     """Verify x-axis limits are set correctly."""
-    view._construct_event_overlay(iter(_TWO_EVENTS), "Raw Event Overlay", "test_loader")
+    view.set_event_overlay(_TWO_TRACES)
 
     view.axes.set_xlim.assert_called_with(left=-0.333, right=1.333)
 
 
-def test_construct_event_overlay_plots_raw_data_for_raw_overlay(
+def test_set_event_overlay_draws_one_trace_per_event(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify uses raw_data for Raw Event Overlay."""
-    view._construct_event_overlay(iter(_TWO_EVENTS), "Raw Event Overlay", "test_loader")
-
-    view.axes.plot.assert_called()
-
-
-def test_construct_event_overlay_plots_filtered_data_for_filtered_overlay(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
-    """Verify uses filtered_data for Filtered Event Overlay."""
-    view._construct_event_overlay(
-        iter(_TWO_EVENTS), "Filtered Event Overlay", "test_loader"
-    )
-
-    view.axes.plot.assert_called()
-
-
-def test_construct_event_overlay_adjusts_alpha_based_on_event_count(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
-    """Verify alpha is adjusted based on number of events (plot called once per event)."""
-    view._construct_event_overlay(iter(_TWO_EVENTS), "Raw Event Overlay", "test_loader")
+    """Verify every trace handed back is drawn."""
+    view.set_event_overlay(_TWO_TRACES)
 
     assert view.axes.plot.call_count == 2
 
 
-def test_construct_event_overlay_sets_no_cached_data_true(
+def test_set_event_overlay_draws_a_shorter_event_more_opaquely(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """
+    Verify the alpha falls with duration, and is capped.
+
+    Short events are the ones that would otherwise be lost under a crowd of long
+    ones, so they are drawn more opaquely; the cap keeps a small overlay readable.
+    """
+    view.set_event_overlay(_TWO_TRACES)
+
+    alphas = [call.kwargs["alpha"] for call in view.axes.plot.call_args_list]
+    assert alphas[0] > alphas[1]
+    assert all(alpha <= 0.5 for alpha in alphas)
+
+
+def test_set_event_overlay_uses_one_alpha_when_every_event_is_the_same_length(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify equal durations do not divide by a zero spread."""
+    traces = [
+        (np.linspace(-0.2, 1.2, 30), np.linspace(0.0, 30.0, 30)),
+        (np.linspace(-0.2, 1.2, 30), np.linspace(5.0, 35.0, 30)),
+    ]
+
+    view.set_event_overlay(traces)
+
+    alphas = [call.kwargs["alpha"] for call in view.axes.plot.call_args_list]
+    assert alphas == [0.5, 0.5]
+
+
+def test_set_event_overlay_draws_nothing_for_an_empty_subset(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify no event divides by a zero count."""
+    view.set_event_overlay([])
+
+    view.axes.plot.assert_not_called()
+
+
+def test_set_event_overlay_sets_no_cached_data_true(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify no_cached_data flag is set to True."""
-    view._construct_event_overlay(iter(_TWO_EVENTS), "Raw Event Overlay", "test_loader")
+    view.set_event_overlay(_TWO_TRACES)
 
     assert view.no_cached_data is True
 
 
-def test_construct_event_overlay_redraws_canvas(
+def test_set_event_overlay_redraws_canvas(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify canvas is redrawn after plotting."""
-    view._construct_event_overlay(iter(_TWO_EVENTS), "Raw Event Overlay", "test_loader")
+    view.set_event_overlay(_TWO_TRACES)
 
     view.canvas.draw.assert_called()
 
@@ -4961,42 +4885,40 @@ def test_update_plot_categorical_histogram_redraws_canvas(
 # ===========================================================================
 
 
-def test_update_plot_calls_all_points_histogram_for_normalized_raw(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
-    data = pd.DataFrame(
-        {"Current": np.array([1.0, 2.0]), "Count": np.array([10.0, 20.0])}
-    )
-    view._plot_all_points_histogram = mocker.Mock()
-    view.update_plot(
+@pytest.mark.parametrize(
+    "plot_type",
+    [
+        "Raw All Points Histogram",
+        "Filtered All Points Histogram",
         "Normalized Raw All Points Histogram",
-        data,
-        ["Current", "Count"],
-        ["pA", ""],
-        [False, False],
-    )
-    view._plot_all_points_histogram.assert_called_once()
-    call_kwargs = view._plot_all_points_histogram.call_args[1]
-    assert call_kwargs.get("norm") is True
-
-
-def test_update_plot_calls_all_points_histogram_for_normalized_filtered(
-    view: MetadataView, mocker: MockerFixture
+        "Normalized Filtered All Points Histogram",
+    ],
+)
+def test_update_plot_no_longer_dispatches_the_all_points_histogram(
+    view: MetadataView, mocker: MockerFixture, plot_type: str
 ) -> None:
+    """
+    Verify the four event-data types are refused by the metadata dispatch.
+
+    Step 4's closeout took their data off the widget, so they no longer arrive as a
+    dataframe and ``set_all_points_histogram`` draws them instead. Leaving the
+    branch here would have left a path nothing can reach with a frame to give it.
+    """
+    view._plot_all_points_histogram = mocker.Mock()
     data = pd.DataFrame(
         {"Current": np.array([1.0, 2.0]), "Count": np.array([10.0, 20.0])}
     )
-    view._plot_all_points_histogram = mocker.Mock()
-    view.update_plot(
-        "Normalized Filtered All Points Histogram",
-        data,
-        ["Current", "Count"],
-        ["pA", ""],
-        [False, False],
-    )
-    view._plot_all_points_histogram.assert_called_once()
-    call_kwargs = view._plot_all_points_histogram.call_args[1]
-    assert call_kwargs.get("norm") is True
+
+    with pytest.raises(NotImplementedError):
+        view.update_plot(
+            plot_type,
+            data,
+            ["Current", "Count"],
+            ["pA", ""],
+            [False, False],
+        )
+
+    view._plot_all_points_histogram.assert_not_called()
 
 
 # ===========================================================================
@@ -5088,76 +5010,31 @@ class TestOverlayPlotNormalizedHistograms:
         }
 
     def _setup(self, view: MetadataView, mocker: MockerFixture) -> None:
-        view.global_signal = mocker.Mock()
         view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
         view.selected_experiment_and_channels_by_loader = {}
         view.canned_event_query = "SELECT * FROM events"
-        view.canned_event_data_generator = iter(
-            [
-                {
-                    "raw_data": np.array([1.0, 2.0, 3.0]),
-                    "padding_before": 100.0,
-                    "samplerate": 10000.0,
-                }
-            ]
-        )
-        view._construct_all_points_histogram = mocker.Mock(
-            return_value=pd.DataFrame({"Current": [1.0, 2.0], "Count": [10.0, 20.0]})
-        )
-        view.update_plot = mocker.Mock()
 
-    def test_normalized_raw_all_points_histogram_calls_construct(
+    def test_normalized_raw_all_points_histogram_is_requested(
         self, view: MetadataView, mocker: MockerFixture
     ) -> None:
         self._setup(view, mocker)
         view._overlay_plot(self._base_params("Normalized Raw All Points Histogram"))
-        view._construct_all_points_histogram.assert_called_once()
-
-    def test_normalized_raw_all_points_histogram_calls_update_plot(
-        self, view: MetadataView, mocker: MockerFixture
-    ) -> None:
-        self._setup(view, mocker)
-        view._overlay_plot(self._base_params("Normalized Raw All Points Histogram"))
-        view.update_plot.assert_called_once()
-        assert view.update_plot.call_args[0][0] == "Normalized Raw All Points Histogram"
-
-    def test_normalized_filtered_all_points_histogram_calls_construct(
-        self, view: MetadataView, mocker: MockerFixture
-    ) -> None:
-        self._setup(view, mocker)
-        view.canned_event_data_generator = iter(
-            [
-                {
-                    "filtered_data": np.array([1.0, 2.0, 3.0]),
-                    "padding_before": 100.0,
-                    "samplerate": 10000.0,
-                }
-            ]
-        )
-        view._overlay_plot(
-            self._base_params("Normalized Filtered All Points Histogram")
-        )
-        view._construct_all_points_histogram.assert_called_once()
-
-    def test_normalized_filtered_all_points_histogram_calls_update_plot(
-        self, view: MetadataView, mocker: MockerFixture
-    ) -> None:
-        self._setup(view, mocker)
-        view.canned_event_data_generator = iter(
-            [
-                {
-                    "filtered_data": np.array([1.0, 2.0, 3.0]),
-                    "padding_before": 100.0,
-                    "samplerate": 10000.0,
-                }
-            ]
-        )
-        view._overlay_plot(
-            self._base_params("Normalized Filtered All Points Histogram")
-        )
-        view.update_plot.assert_called_once()
+        view.all_points_histogram_requested.emit.assert_called_once()
         assert (
-            view.update_plot.call_args[0][0]
+            view.all_points_histogram_requested.emit.call_args[0][3]
+            == "Normalized Raw All Points Histogram"
+        )
+
+    def test_normalized_filtered_all_points_histogram_is_requested(
+        self, view: MetadataView, mocker: MockerFixture
+    ) -> None:
+        self._setup(view, mocker)
+        view._overlay_plot(
+            self._base_params("Normalized Filtered All Points Histogram")
+        )
+        view.all_points_histogram_requested.emit.assert_called_once()
+        assert (
+            view.all_points_histogram_requested.emit.call_args[0][3]
             == "Normalized Filtered All Points Histogram"
         )
 

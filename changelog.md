@@ -1,5 +1,9 @@
 ## Poriscope 2.0.0: in progress
 
+* **Breaking:** the Metadata tab's All Points Histogram and Event Overlay are built by `MetadataModel.build_all_points_histogram` and `build_event_overlay`, so `MetadataView._construct_all_points_histogram`, `_construct_event_overlay` and `MetadataController.load_event_subset` are gone, and `MetadataView.update_plot` no longer draws the all-points histogram types
+
+* The Metadata tab now reports an All Points Histogram or Event Overlay it cannot build on the status panel, instead of failing with an unhandled error
+
 * **Fixed the Metadata tab's 1D Density plot accepting a bin width and ignoring it.** The shared plot limits were being read off the dataframe rather than the data, so they came out as column names and the width could not be divided into them
 
 * **The 1D Density plot now says when a column is empty for the selected subset** instead of failing with an unhandled error, matching what the 1D Histogram already did

@@ -44,6 +44,7 @@ this step is deleting, and out of ``test_promoted_controller_methods`` because n
 these is shared with the protein tab - ``ProteinView`` never builds a metadata query.
 """
 
+import numpy as np
 import pandas as pd
 import pytest
 from pytest_mock import MockerFixture
@@ -217,52 +218,94 @@ class TestLoadMetadataSubset:
 
 
 # ===========================================================================
-# load_event_subset
+# build_all_points_histogram - the event-data fetch and its tally
 # ===========================================================================
 
 
-class TestLoadEventSubset:
+class TestBuildAllPointsHistogram:
     """
-    The same shape, for the event-data plot types.
+    The event-data fetch, and the tally it now feeds.
+
+    Step 4's closeout replaced ``load_event_subset``: the generator used to be handed
+    to the View, which walked it twice inside the widget. The Controller keeps it and
+    passes it to the Model, so what has to be pinned here is that the query and the
+    counts arrive together and that every way the round trip can fail leaves the query
+    unset - which is the only thing the View has to tell a failure by.
     """
 
-    def test_it_hands_over_the_query_and_the_generator(
+    #: One event, whose first three samples are the pre-event baseline.
+    EVENT = {
+        "raw_data": np.array([5.0, 5.0, 5.0, 12.0, 13.0, 14.0]),
+        "filtered_data": np.array([7.0, 7.0, 7.0, 20.0, 21.0, 22.0]),
+        "padding_before": 300.0,  # 300 us * 10 kHz / 1e6 = 3 samples
+        "padding_after": 0.0,
+        "samplerate": 10000.0,
+    }
+
+    def test_the_query_and_the_counts_reach_the_view(
         self, controller: MetadataController
     ) -> None:
         """
-        Both were unguarded reads before Step 4a.
+        The happy path, against the real Model rather than a stub of it.
         """
-        generator = iter([{"event_id": 1}])
-        controller.model = RecordingModel(
+        controller.model = recording_tab_model(
+            MetadataModel,
             {
                 "construct_event_data_query": ("SELECT * FROM events", ""),
-                "load_event_data": generator,
-            }
+                "load_event_data": iter([dict(self.EVENT)]),
+            },
         )
 
-        controller.load_event_subset("ldr", "duration < 300", SCOPE)
+        controller.build_all_points_histogram(
+            "ldr",
+            "duration < 300",
+            SCOPE,
+            "Raw All Points Histogram",
+            [4],
+            False,
+            None,
+            None,
+            "a label",
+        )
 
         controller.view.set_event_query.assert_called_once_with("SELECT * FROM events")
-        controller.view.set_event_data_generator.assert_called_once_with(generator)
+        controller.view.set_all_points_histogram.assert_called_once()
+        args = controller.view.set_all_points_histogram.call_args[0]
+        assert len(args[0]) == 4
+        assert args[1].sum() == 6
+        assert args[4] == "Raw All Points Histogram"
+        assert args[5] == "a label"
 
-    def test_a_failed_load_leaves_the_previous_generator_alone(
+    def test_the_limits_it_was_given_are_widened_not_replaced(
         self, controller: MetadataController
     ) -> None:
         """
-        The View clears it before asking, so not setting it is the whole fix: before,
-        a failed load left the previous subset's generator and replotted its events.
+        The shared limits are what makes overlaid subsets comparable, so a second
+        subset inside an existing range must not shrink it.
         """
-        controller.model = RecordingModel(
+        controller.model = recording_tab_model(
+            MetadataModel,
             {
                 "construct_event_data_query": ("SELECT * FROM events", ""),
-                "load_event_data": RuntimeError("no such table: events"),
-            }
+                "load_event_data": iter([dict(self.EVENT)]),
+            },
         )
 
-        controller.load_event_subset("ldr", "", SCOPE)
+        controller.build_all_points_histogram(
+            "ldr",
+            "",
+            SCOPE,
+            "Raw All Points Histogram",
+            [4],
+            False,
+            -100.0,
+            100.0,
+            "a label",
+        )
 
-        controller.view.set_event_data_generator.assert_not_called()
-        assert "no such table: events" in panel_text(controller)
+        args = controller.view.set_all_points_histogram.call_args[0]
+        assert args[2] == -100.0
+        assert args[3] == 100.0
 
     def test_a_query_the_loader_refuses_to_build_stops_the_plot(
         self, controller: MetadataController
@@ -282,12 +325,166 @@ class TestLoadEventSubset:
             }
         )
 
-        controller.load_event_subset("ldr", "nope > 1", SCOPE)
+        controller.build_all_points_histogram(
+            "ldr",
+            "nope > 1",
+            SCOPE,
+            "Raw All Points Histogram",
+            [4],
+            False,
+            None,
+            None,
+            "a label",
+        )
 
         assert controller.model.calls_to("load_event_data") == []
         controller.view.set_event_query.assert_not_called()
-        controller.view.set_event_data_generator.assert_not_called()
+        controller.view.set_all_points_histogram.assert_not_called()
         assert "no such column: nope" in panel_text(controller)
+
+    def test_a_failed_load_reports_and_draws_nothing(
+        self, controller: MetadataController
+    ) -> None:
+        """
+        The View clears the query before asking, so not setting it is what refuses
+        the plot: before Step 4a a failed load replotted the previous subset.
+        """
+        controller.model = RecordingModel(
+            {
+                "construct_event_data_query": ("SELECT * FROM events", ""),
+                "load_event_data": RuntimeError("no such table: events"),
+            }
+        )
+
+        controller.build_all_points_histogram(
+            "ldr",
+            "",
+            SCOPE,
+            "Raw All Points Histogram",
+            [4],
+            False,
+            None,
+            None,
+            "a label",
+        )
+
+        controller.view.set_event_query.assert_not_called()
+        controller.view.set_all_points_histogram.assert_not_called()
+        assert "no such table: events" in panel_text(controller)
+
+    def test_a_tally_that_raises_is_reported_rather_than_escaping(
+        self, controller: MetadataController
+    ) -> None:
+        """
+        A bin request the Model refuses used to raise out of a Qt slot, because
+        nothing between ``_overlay_plot`` and the widget caught it. An empty bins
+        list is the reachable case: ``build_all_points_histogram`` raises ValueError
+        on it rather than guessing.
+        """
+        controller.model = recording_tab_model(
+            MetadataModel,
+            {
+                "construct_event_data_query": ("SELECT * FROM events", ""),
+                "load_event_data": iter([dict(self.EVENT)]),
+            },
+        )
+
+        controller.build_all_points_histogram(
+            "ldr",
+            "",
+            SCOPE,
+            "Raw All Points Histogram",
+            [],
+            False,
+            None,
+            None,
+            "a label",
+        )
+
+        controller.view.set_event_query.assert_not_called()
+        controller.view.set_all_points_histogram.assert_not_called()
+        assert "Invalid bins entry" in panel_text(controller)
+
+
+# ===========================================================================
+# build_event_overlay - the other half of the event-data fetch
+# ===========================================================================
+
+
+class TestBuildEventOverlay:
+    """
+    The same fetch, reduced to one normalised trace per event.
+    """
+
+    EVENT = {
+        "raw_data": np.array([5.0, 5.0, 5.0, 12.0, 13.0, 5.0]),
+        "filtered_data": np.array([7.0, 7.0, 7.0, 20.0, 21.0, 7.0]),
+        "padding_before": 300.0,
+        "padding_after": 100.0,
+        "samplerate": 10000.0,
+    }
+
+    def test_the_traces_reach_the_view(self, controller: MetadataController) -> None:
+        """
+        One pair per event, and the query alongside them.
+        """
+        controller.model = recording_tab_model(
+            MetadataModel,
+            {
+                "construct_event_data_query": ("SELECT * FROM events", ""),
+                "load_event_data": iter([dict(self.EVENT), dict(self.EVENT)]),
+            },
+        )
+
+        controller.build_event_overlay("ldr", "", SCOPE, "Raw Event Overlay")
+
+        controller.view.set_event_query.assert_called_once_with("SELECT * FROM events")
+        traces = controller.view.set_event_overlay.call_args[0][0]
+        assert len(traces) == 2
+        time, data = traces[0]
+        assert len(time) == len(data) == 6
+        # The event proper starts where the padding ends, which is time zero.
+        assert time[3] == pytest.approx(0.0)
+
+    def test_a_failed_load_reports_and_draws_nothing(
+        self, controller: MetadataController
+    ) -> None:
+        """
+        The same refusal as the histogram's, through the same shared fetch.
+        """
+        controller.model = RecordingModel(
+            {
+                "construct_event_data_query": ("SELECT * FROM events", ""),
+                "load_event_data": RuntimeError("no such table: events"),
+            }
+        )
+
+        controller.build_event_overlay("ldr", "", SCOPE, "Raw Event Overlay")
+
+        controller.view.set_event_query.assert_not_called()
+        controller.view.set_event_overlay.assert_not_called()
+        assert "no such table: events" in panel_text(controller)
+
+    def test_an_unknown_plot_type_is_reported_rather_than_escaping(
+        self, controller: MetadataController
+    ) -> None:
+        """
+        Neither trace is named by an unrecognised plot type, which the Model refuses
+        rather than silently redrawing the previous event's samples - which is what
+        the two-branch ``if`` it replaced did, from the second event onwards.
+        """
+        controller.model = recording_tab_model(
+            MetadataModel,
+            {
+                "construct_event_data_query": ("SELECT * FROM events", ""),
+                "load_event_data": iter([dict(self.EVENT)]),
+            },
+        )
+
+        controller.build_event_overlay("ldr", "", SCOPE, "Sideways Event Overlay")
+
+        controller.view.set_event_overlay.assert_not_called()
+        assert "Unknown plot_type" in panel_text(controller)
 
 
 # ===========================================================================
