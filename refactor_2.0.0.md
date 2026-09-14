@@ -46,7 +46,14 @@ Order is forced in one place: **the logscale helper cannot move until all eight 
 sites are converted**, and they sit in Clustering (1), Metadata (5) and Protein (2). So
 `MetaView`'s point falls last, not first - the 4d handoff had it first.
 
-0. **Close the nine `RUNS ONLY` targets - the gate is red before the series starts.**
+0. **Close the nine `RUNS ONLY` targets - LANDED 2026-09-14.** The audit reads **78 of
+   78 pinned** and exits 0; 33 tests, each class checked against four or five deliberate
+   source mutations, all thirteen of which failed the class they were aimed at.
+   `ci-branches.yml` now collects coverage and runs the audit. Two findings filed rather
+   than bundled: the experiment/channel scope carries **three** annotations for one value,
+   and `MetadataModel.py:296` uses the `scipy.stats.kde` namespace SciPy 2.0 removes.
+
+   *The state that made it necessary, kept because it is the lesson:*
    Measured 2026-09-14 by running the suite under `--cov` and the audit against it:
    **69 of 78 pinned, 9 RUNS ONLY, 0 untested**, and the audit exits 1 on anything that is
    not `PINNED`. All nine are *destinations of moves this refactor already made*: five from
@@ -1250,7 +1257,7 @@ rows that moved.
 | — rule 3, Controller reads a View private | 10 | **5** | 0 (4d) |
 | — rule 4, layering | 4 | **0** | 0 |
 | — rule 5, tab reaches a plugin | 0 | **0** | 0 (added at zero) |
-| Refactor-coverage audit | — | **69 of 78 pinned, 9 RUNS ONLY** | 100% |
+| Refactor-coverage audit | — | **78 of 78 pinned** | 100% |
 
 **Rule 3 halved without anything being fixed.** Promoting `relay_query` to
 `MetaSubsetTabController` merged two copies of the same five reach-ins into one, so the count
