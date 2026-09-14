@@ -432,10 +432,6 @@ class MetadataView(MetaSubsetTabView):
             else:
                 raise ValueError(f"Invalid bins entry {bins}")
 
-        if self.hist_min is None or min(data) < self.hist_min:
-            self.hist_min = min(data)
-        if self.hist_max is None or max(data) > self.hist_max:
-            self.hist_max = max(data)
         ax.clear()
         self._clear_cache()
         self.hist_data.append(data)
@@ -454,6 +450,30 @@ class MetadataView(MetaSubsetTabView):
                 dataset[column].values, log_flags=[logx]
             )
             filtered.append(values)
+
+        if len(filtered[-1]) == 0:
+            # Every point was filtered out, the commonest cause being a column that
+            # is NULL for every row the subset filter selected. The reductions below
+            # are the first thing to touch the array and np.min of an empty one
+            # raises, which is the guard _plot_1d_histogram already carries.
+            self.hist_data.pop()
+            self.hist_labels.pop()
+            self.add_text_to_display.emit(
+                f"No {column} values in this subset, so there is nothing to plot",
+                self.__class__.__name__,
+            )
+            return
+
+        # The shared limits describe the *filtered* data, which is what is drawn and
+        # what the histogram path has always measured. They used to be taken from the
+        # DataFrame itself - min() over a DataFrame iterates its column *names*, so
+        # they were strings, which made a bin width here silently fall back to the
+        # automatic rule and made a later histogram on the same overlay raise.
+        newest = filtered[-1]
+        if self.hist_min is None or np.min(newest) < self.hist_min:
+            self.hist_min = float(np.min(newest))
+        if self.hist_max is None or np.max(newest) > self.hist_max:
+            self.hist_max = float(np.max(newest))
 
         x_label = self.format_axis_label(column, x_units)
         if logx:

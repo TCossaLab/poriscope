@@ -529,21 +529,16 @@ def test_reset_actions_resets_plotted_datasets(view: MetadataView) -> None:
 def test_plot_1d_density_updates_hist_min(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify hist_min is updated with minimum data value."""
+    """
+    The shared lower limit describes the filtered data.
+
+    This used to read ``min(data)`` with ``data`` still the DataFrame, and ``min()``
+    over a DataFrame iterates its column *names* - so the limit was the string
+    ``"x"``. The two tests here patched ``builtins.min`` to make that return a
+    number, which is what kept it looking correct: **a test that patches a builtin
+    so the code under test behaves is describing a defect, not pinning behaviour.**
+    """
     data: pd.DataFrame = pd.DataFrame({"x": np.array([1.0, 2.0, 5.0, 10.0])})
-
-    view._logscale_and_filter_multiple_columns = mocker.Mock(  # type: ignore[method-assign]
-        return_value=(np.array([1.0, 2.0, 5.0, 10.0]),)
-    )
-
-    original_min = min
-
-    def mock_min(*args: Any, **kwargs: Any) -> Any:
-        if len(args) == 1 and isinstance(args[0], pd.DataFrame):
-            return args[0].min().min()
-        return original_min(*args, **kwargs)
-
-    mocker.patch("builtins.min", side_effect=mock_min)
 
     view._plot_1d_density(view.axes, data, ["x"], ["units"], [False])
 
@@ -553,25 +548,93 @@ def test_plot_1d_density_updates_hist_min(
 def test_plot_1d_density_updates_hist_max(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify hist_max is updated with maximum data value."""
+    """The shared upper limit, the same way."""
     data: pd.DataFrame = pd.DataFrame({"x": np.array([1.0, 2.0, 5.0, 10.0])})
-
-    view._logscale_and_filter_multiple_columns = mocker.Mock(  # type: ignore[method-assign]
-        return_value=(np.array([1.0, 2.0, 5.0, 10.0]),)
-    )
-
-    original_max = max
-
-    def mock_max(*args: Any, **kwargs: Any) -> Any:
-        if len(args) == 1 and isinstance(args[0], pd.DataFrame):
-            return args[0].max().max()
-        return original_max(*args, **kwargs)
-
-    mocker.patch("builtins.max", side_effect=mock_max)
 
     view._plot_1d_density(view.axes, data, ["x"], ["units"], [False])
 
     assert view.hist_max == 10.0
+
+
+def test_plot_1d_density_limits_are_numbers_not_column_names(
+    view: MetadataView,
+) -> None:
+    """
+    The limits go to ``_resolve_1d_bins``, which subtracts them to turn a bin
+    *width* into a count. A string there raises inside its ``except TypeError``
+    and the width is silently discarded for the automatic rule - which is how this
+    presented: a bin width on the density plot accepted and ignored.
+    """
+    data: pd.DataFrame = pd.DataFrame({"duration": np.array([1.0, 4.0])})
+
+    view._plot_1d_density(view.axes, data, ["duration"], ["s"], [False])
+
+    assert isinstance(view.hist_min, float)
+    assert isinstance(view.hist_max, float)
+    assert view.hist_max - view.hist_min == 3.0
+
+
+def test_plot_1d_density_limits_describe_the_logscaled_values(
+    view: MetadataView,
+) -> None:
+    """
+    With a log scale the drawn values are the log10 ones, so the limits that make
+    overlaid datasets comparable have to be too - which is what the histogram path
+    has always measured. Taken before the filter they described the raw column.
+    """
+    # The fixture replaces the filter with a pass-through, which cannot drop or
+    # scale anything; this test is about what the filter produces, so the real one
+    # is restored by removing the instance attribute the fixture set.
+    del view._logscale_and_filter_multiple_columns
+
+    data: pd.DataFrame = pd.DataFrame({"x": np.array([1.0, 10.0, 100.0])})
+
+    view._plot_1d_density(view.axes, data, ["x"], ["units"], [True])
+
+    assert view.hist_min == pytest.approx(0.0)
+    assert view.hist_max == pytest.approx(2.0)
+
+
+def test_plot_1d_density_reports_a_column_that_filters_away(
+    view: MetadataView,
+) -> None:
+    """
+    Every point dropped - a column that is NULL for every row in the subset. The
+    reductions are the first thing to touch the array and np.min of an empty one
+    raises, which is the guard the histogram path already carried.
+    """
+    # The fixture replaces the filter with a pass-through, which cannot drop or
+    # scale anything; this test is about what the filter produces, so the real one
+    # is restored by removing the instance attribute the fixture set.
+    del view._logscale_and_filter_multiple_columns
+
+    data: pd.DataFrame = pd.DataFrame({"x": np.array([np.nan, np.nan])})
+
+    view._plot_1d_density(view.axes, data, ["x"], ["units"], [False])
+
+    view.density_requested.emit.assert_not_called()
+    view.add_text_to_display.emit.assert_called()
+
+
+def test_plot_1d_density_does_not_accumulate_a_dataset_it_refused(
+    view: MetadataView,
+) -> None:
+    """
+    A dataset that filtered away must not stay in the overlay, or the next plot
+    redraws it and hits the same empty array from inside the loop.
+    """
+    # The fixture replaces the filter with a pass-through, which cannot drop or
+    # scale anything; this test is about what the filter produces, so the real one
+    # is restored by removing the instance attribute the fixture set.
+    del view._logscale_and_filter_multiple_columns
+
+    before = len(view.hist_data)
+    data: pd.DataFrame = pd.DataFrame({"x": np.array([np.nan, np.nan])})
+
+    view._plot_1d_density(view.axes, data, ["x"], ["units"], [False])
+
+    assert len(view.hist_data) == before
+    assert len(view.hist_labels) == before
 
 
 def test_plot_1d_density_clears_axes(view: MetadataView, mocker: MockerFixture) -> None:
