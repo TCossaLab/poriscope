@@ -1,5 +1,9 @@
 ## Poriscope 2.0.0: in progress
 
+* The analysis-tab MVC boundary check no longer counts an import a view uses only to write a type, since that is not computation; `python scripts/check_mvc_boundary.py --verbose` names the imports it exempted
+
+* **Breaking:** `MetaSubsetTabView.event_id_rows` and `set_event_id_rows` are typed `Optional[pandas.DataFrame]` rather than `Optional[Any]`, which is what they have always held
+
 * The subset tabs' controllers no longer write into the view's filter list directly; `MetaSubsetTabView` gained `commit_filter` and `get_subset_filters` for them to go through
 
 * `restore_subset_filters` has moved from `MetadataView` and `ProteinView` to `MetaSubsetTabView`; the two copies were identical apart from the name each held its controls panel under

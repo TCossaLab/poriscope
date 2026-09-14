@@ -30,6 +30,7 @@ import os
 from abc import abstractmethod
 from typing import Any, Dict, Iterator, List, Optional
 
+import pandas as pd
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QCheckBox, QDialog, QFileDialog, QMessageBox
 
@@ -152,9 +153,9 @@ class MetaSubsetTabView(MetaView):
 
     #: Where the Controller leaves the ``event_id`` rows :py:meth:`_rebuild_event_id_cache`
     #: asked for, to be read back on the next statement over the direct connection.
-    #: Typed ``Any`` rather than ``pandas.DataFrame`` because a View may not import
-    #: pandas; the Controller that fills it is allowed to.
-    event_id_rows: Optional[Any]
+    #: ``None`` means the query could not be run, which is ``load_metadata``'s own
+    #: contract; an empty frame means it ran and matched nothing.
+    event_id_rows: Optional[pd.DataFrame]
 
     #: Assigned in each subclass's ``_init``, identically in both tabs today. The
     #: annotation moves here with the methods that read it; the assignment stays with
@@ -229,7 +230,7 @@ class MetaSubsetTabView(MetaView):
         return True
 
     @log(logger=logger)
-    def set_event_id_rows(self, rows: Optional[Any]) -> None:
+    def set_event_id_rows(self, rows: Optional[pd.DataFrame]) -> None:
         """
         Receive the ``event_id`` rows the filtered-event cache asked for.
 
@@ -238,7 +239,7 @@ class MetaSubsetTabView(MetaView):
         answer still stands".
 
         :param rows: the rows the loader returned, or None if the query failed
-        :type rows: Optional[Any]
+        :type rows: Optional[pd.DataFrame]
         :return: None
         :rtype: None
         """

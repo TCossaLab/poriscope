@@ -1,3 +1,30 @@
+## Rule 2 relaxed, 2026-09-14 - the remainder re-priced
+
+**Boundary rule 2 now counts computation, not annotations**, on Kyle's call: an import that
+exists only to write a type is not the thing the rule is named for, and it is not worth
+distorting a signature to shed one. `DECISIONS.md` carries the derivation. **Allowlist 14 ->
+8**, and every remaining entry is a library actually being *used*.
+
+| File | still booked | what it is |
+| --- | --- | --- |
+| `EventAnalysisView.py` | numpy | **one line**, `:536` - `np.arange` builds the time axis for `_plot_events` |
+| `ClusteringView.py` | pandas | **one line**, `:613` - the frame rebuilt straight after the logscale call |
+| `MetaView.py` | numpy | the logscale helper, i.e. 3d |
+| `RawDataView.py` | numpy | 11 sites across 7 methods |
+| `MetadataView.py` | numpy, pandas | numpy in 12 methods; pandas at `:846`, `:1812` |
+| `ProteinView.py` | numpy, pandas | numpy in 9 methods; pandas at 7 sites |
+
+**This re-orders the queue the 4d handoff proposed.** That handoff put `MetaView` first at
+"the cheapest two points on the board"; under the corrected rule it is worth **one** point,
+and it is still gated on all eight logscale callers moving, because 3d is folded into 4c.
+`EventAnalysisView` and `ClusteringView` are now one point each and each is **a single
+expression**, which makes them the cheapest work left by a wide margin.
+
+**The annotation-only exemption also repays a debt.** `MetaSubsetTabView.event_id_rows` had
+been typed `Optional[Any]` with a comment saying the gate was why, although it holds
+`load_metadata`'s `Optional[pd.DataFrame]` and its only consumer uses `.empty`, `.columns`
+and `["event_id"].tolist()`. It is annotated honestly again.
+
 ## Step 4d handoff, 2026-09-13 - COMPLETE
 
 **Both halves of 4d are done and merged; `develop` is at `b1f9b911`.** Suite **3,795 passed

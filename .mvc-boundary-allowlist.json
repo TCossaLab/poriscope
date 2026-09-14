@@ -2,30 +2,24 @@
   "emits": {},
   "imports": {
     "poriscope/plugins/analysistabs/ClusteringView.py": [
-      "numpy",
       "pandas"
     ],
     "poriscope/plugins/analysistabs/EventAnalysisView.py": [
-      "numpy",
-      "numpy.typing"
+      "numpy"
     ],
     "poriscope/plugins/analysistabs/MetadataView.py": [
       "numpy",
-      "numpy.typing",
       "pandas"
     ],
     "poriscope/plugins/analysistabs/ProteinView.py": [
       "numpy",
-      "numpy.typing",
       "pandas"
     ],
     "poriscope/plugins/analysistabs/RawDataView.py": [
-      "numpy",
-      "numpy.typing"
+      "numpy"
     ],
     "poriscope/utils/MetaView.py": [
-      "numpy",
-      "numpy.typing"
+      "numpy"
     ]
   },
   "layering": {},

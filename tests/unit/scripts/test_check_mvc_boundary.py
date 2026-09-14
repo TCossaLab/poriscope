@@ -120,10 +120,16 @@ class TestForbiddenImports:
 
         This is precisely the ambiguity that made the earlier count of 21
         unreproducible: it is 22 statements over 13 distinct pairs.
+
+        Both names are used outside an annotation, since an import used only to
+        write a type is exempt - that is ``TestAnnotationOnlyImports`` below.
         """
         source = """
             import numpy as np
             import numpy.typing as npt
+
+            values = np.zeros(3)
+            alias = npt.NDArray
             """
         assert mod.forbidden_imports(parse(source)) == ["numpy", "numpy.typing"]
 
@@ -131,14 +137,22 @@ class TestForbiddenImports:
         self, mod: types.ModuleType
     ) -> None:
         """``from scipy.stats import iqr, t`` is one entry, however many names it binds."""
-        source = "from scipy.stats import iqr, t"
+        source = """
+            from scipy.stats import iqr, t
+
+            spread = iqr([1, 2, 3])
+            """
         assert mod.forbidden_imports(parse(source)) == ["scipy.stats"]
 
     def test_a_submodule_of_a_forbidden_package_is_forbidden(
         self, mod: types.ModuleType
     ) -> None:
         """The top-level package decides, so a deep submodule still counts."""
-        source = "from pandas.api.types import is_float_dtype"
+        source = """
+            from pandas.api.types import is_float_dtype
+
+            numeric = is_float_dtype(column)
+            """
         assert mod.forbidden_imports(parse(source)) == ["pandas.api.types"]
 
     def test_allowed_imports_are_ignored(self, mod: types.ModuleType) -> None:
@@ -165,7 +179,12 @@ class TestForbiddenImports:
         loader - so this contributes nothing today and would catch it changing.
         """
         assert "sqlite3" in mod.FORBIDDEN_IMPORTS
-        assert mod.forbidden_imports(parse("import sqlite3")) == ["sqlite3"]
+        source = """
+            import sqlite3
+
+            connection = sqlite3.connect(path)
+            """
+        assert mod.forbidden_imports(parse(source)) == ["sqlite3"]
 
     def test_fast_histogram_is_in_the_rule(self, mod: types.ModuleType) -> None:
         """
@@ -175,6 +194,150 @@ class TestForbiddenImports:
         it out would let that completion go unregistered.
         """
         assert "fast_histogram" in mod.FORBIDDEN_IMPORTS
+
+
+class TestAnnotationOnlyImports:
+    """
+    An import used only to write a type is not computation, so it does not count.
+
+    Rule 2 is named for computation. A View annotated
+    ``Sequence[npt.NDArray[np.float64]]`` is describing arrays the loader genuinely
+    hands it to plot, and shedding the import would mean lying about the parameter
+    or adding a marshalling hop. Relaxed 2026-09-14; see ``DECISIONS.md``.
+    """
+
+    def test_a_parameter_annotation_alone_is_exempt(
+        self, mod: types.ModuleType
+    ) -> None:
+        """The shape every plot method in the View layer has."""
+        source = """
+            import numpy.typing as npt
+
+            def plot(data: npt.NDArray) -> None:
+                pass
+            """
+        assert mod.forbidden_imports(parse(source)) == []
+        assert mod.annotation_only_imports(parse(source)) == ["numpy.typing"]
+
+    def test_a_return_annotation_alone_is_exempt(self, mod: types.ModuleType) -> None:
+        """A method that hands an array back is describing it, not computing it."""
+        source = """
+            import pandas as pd
+
+            def rows() -> pd.DataFrame:
+                pass
+            """
+        assert mod.forbidden_imports(parse(source)) == []
+
+    def test_an_attribute_annotation_alone_is_exempt(
+        self, mod: types.ModuleType
+    ) -> None:
+        """``MetaSubsetTabView.event_id_rows`` is exactly this, and was the debt paid."""
+        source = """
+            import pandas as pd
+
+            class View:
+                event_id_rows: Optional[pd.DataFrame]
+            """
+        assert mod.forbidden_imports(parse(source)) == []
+
+    def test_the_value_half_of_an_annotated_assignment_still_counts(
+        self, mod: types.ModuleType
+    ) -> None:
+        """Only the annotation is exempt; the call beside it is computation."""
+        source = """
+            import numpy as np
+
+            mask: np.ndarray = np.ones(3)
+            """
+        assert mod.forbidden_imports(parse(source)) == ["numpy"]
+
+    def test_a_default_value_still_counts(self, mod: types.ModuleType) -> None:
+        """A default is evaluated at definition time, so it is a real use."""
+        source = """
+            import numpy as np
+
+            def f(data: np.ndarray = np.zeros(3)) -> None:
+                pass
+            """
+        assert mod.forbidden_imports(parse(source)) == ["numpy"]
+
+    def test_a_statement_counts_if_any_name_it_binds_computes(
+        self, mod: types.ModuleType
+    ) -> None:
+        """
+        One entry per statement is preserved by taking the statement as a whole.
+
+        ``from scipy.stats import iqr, t`` stays one entry whether one of its names
+        computes or both do, rather than becoming one entry per name.
+        """
+        source = """
+            from scipy.stats import iqr, t
+
+            def f(dist: t) -> float:
+                return iqr([1, 2, 3])
+            """
+        assert mod.forbidden_imports(parse(source)) == ["scipy.stats"]
+
+    def test_the_two_halves_are_reported_separately(
+        self, mod: types.ModuleType
+    ) -> None:
+        """
+        The real shape of every remaining View: npt in the signature, np in the body.
+
+        The exempted half is named under ``--verbose`` rather than left invisible,
+        so a misfire can be seen instead of inferred from a missing row.
+        """
+        source = """
+            import numpy as np
+            import numpy.typing as npt
+
+            def plot(data: npt.NDArray[np.float64]) -> None:
+                time = np.arange(len(data))
+            """
+        assert mod.forbidden_imports(parse(source)) == ["numpy"]
+        assert mod.annotation_only_imports(parse(source)) == ["numpy.typing"]
+
+    def test_a_module_level_type_alias_is_a_known_blind_spot(
+        self, mod: types.ModuleType
+    ) -> None:
+        """
+        Annotation context is read syntactically, so an alias reads as computation.
+
+        Recorded rather than fixed: no View has one, and counting it errs towards
+        booking a violation rather than missing one. A string annotation is the
+        opposite blind spot and is invisible, which is why this is pinned.
+        """
+        source = """
+            import pandas as pd
+
+            Frame = pd.DataFrame
+            """
+        assert mod.forbidden_imports(parse(source)) == ["pandas"]
+
+
+class TestComputedNames:
+    """The subtraction that decides whether a name is computation."""
+
+    def test_a_name_in_both_places_is_computation(self, mod: types.ModuleType) -> None:
+        """One annotation use does not excuse a real one elsewhere."""
+        source = """
+            import numpy as np
+
+            def f(x: np.ndarray) -> None:
+                np.sum(x)
+            """
+        assert "np" in mod.computed_names(parse(source))
+
+    def test_a_name_only_in_an_annotation_is_not(self, mod: types.ModuleType) -> None:
+        """The whole point of the relaxation."""
+        source = """
+            import numpy as np
+
+            def f(x: np.ndarray) -> None:
+                pass
+            """
+        assert "np" not in mod.computed_names(parse(source))
 
 
 # ===========================================================================

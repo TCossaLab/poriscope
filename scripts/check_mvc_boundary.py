@@ -29,23 +29,29 @@ Check the analysis-tab MVC boundary, against a shrinking allowlist.
     python scripts/check_mvc_boundary.py [--verbose] [--update] [--check]
 
 The analysis-tab layer never grew a real Model, so the Views absorbed the work a
-Model should do. Four rules describe the boundary the 2.0.0 refactor is putting
+Model should do. Five rules describe the boundary the 2.0.0 refactor is putting
 back, and the allowlist counts how far it still is from holding. **That count going
 to zero is Steps 3-5 finishing**, which is why it is the refactor's headline metric
 rather than a pass/fail gate: every entry is a known violation, recorded so that a
 *new* one cannot slip in beside it.
 
-The four rules:
+The five rules:
 
 1. **No View emits on the plugin bus.** A ``global_signal.emit`` in a widget means a
    cross-plugin call originates in the View. Step 4a turns these into
    ``self.call(...)`` on the Model.
 2. **No View imports a computation library** - numpy, scipy, sklearn, hdbscan,
-   pandas, ``fast_histogram`` or sqlite3. ``fast_histogram`` is in that list because
-   ``RawDataView`` imports it and Step 4c moves it; without it, 4c could finish with
-   the rule still reporting success. ``sqlite3`` contributes **zero** today - the
-   Views build SQL as f-strings and hand it to the loader rather than importing a
-   driver - and stays in as a ratchet against that changing.
+   pandas, ``fast_histogram`` or sqlite3 - **to compute with**. An import used only
+   to write a type is exempt: a View annotated ``Sequence[npt.NDArray[np.float64]]``
+   is describing arrays the loader genuinely hands it to plot, and shedding the
+   import would mean lying about the parameter or adding a marshalling hop. The rule
+   is named for computation, so it measures computation; the exempted imports are
+   named under ``--verbose`` rather than left invisible. Relaxed 2026-09-14, which
+   took the total from 14 to 8 - see ``DECISIONS.md``. ``fast_histogram`` is in the
+   list because ``RawDataView`` imports it and Step 4c moves it; without it, 4c could
+   finish with the rule still reporting success. ``sqlite3`` contributes **zero**
+   today - the Views build SQL as f-strings and hand it to the loader rather than
+   importing a driver - and stays in as a ratchet against that changing.
 3. **No Controller reads a View private.** ``self.view._x`` is the Controller
    reaching past the View's interface into its internals; Step 4d moves that state
    to the Model.
@@ -73,7 +79,15 @@ pairs" could not be reproduced because it was never written down precisely enoug
   are two entries, ``numpy`` and ``numpy.typing``; ``from pandas.api.types import
   is_float_dtype`` is one entry, ``pandas.api.types``. A statement counts when its
   **top-level** package is in ``FORBIDDEN_IMPORTS``, so a submodule of a forbidden
-  package is forbidden too.
+  package is forbidden too, **and** at least one name it binds is loaded somewhere
+  other than an annotation. "Somewhere other than an annotation" is every load in
+  the module minus every load inside a parameter annotation, a return annotation or
+  the annotation half of an ``x: T = v`` - so ``x: np.ndarray = np.zeros(3)`` still
+  counts, on its right-hand side. A statement binding several names counts if any
+  one of them computes, which keeps a ``from`` import one entry rather than one per
+  name. Two blind spots follow from reading annotations syntactically: a module-level
+  type alias (``Frame = pd.DataFrame``) is an ordinary assignment and counts, and a
+  string annotation is invisible and does not. Neither exists in the View layer today.
 - The distinct (View, top-level module) pair count is a separate, smaller figure
   reported for context. It is not what the allowlist totals.
 - An emit is an ``ast.Call`` on an attribute named ``emit`` whose receiver is an
@@ -123,6 +137,7 @@ import argparse
 import ast
 import json
 import sys
+from collections import Counter
 from pathlib import Path
 from typing import Dict, List, Set, Tuple
 
@@ -235,31 +250,156 @@ def is_global_signal_emit(node: ast.AST) -> bool:
     )
 
 
+def annotation_subtrees(tree: ast.Module) -> List[ast.expr]:
+    """
+    Collect every annotation expression in a module.
+
+    Parameter and return annotations, and the annotation half of an ``x: T = v``
+    assignment. The *value* half is deliberately excluded: in
+    ``x: np.ndarray = np.zeros(3)`` only the annotation is exempt, and the call
+    beside it is computation like any other.
+
+    :param tree: the parsed module
+    :type tree: ast.Module
+    :return: the annotation expressions, in walk order
+    :rtype: List[ast.expr]
+    """
+    found: List[ast.expr] = []
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            args = node.args
+            for arg in (
+                *args.posonlyargs,
+                *args.args,
+                *args.kwonlyargs,
+                args.vararg,
+                args.kwarg,
+            ):
+                if arg is not None and arg.annotation is not None:
+                    found.append(arg.annotation)
+            if node.returns is not None:
+                found.append(node.returns)
+        elif isinstance(node, ast.AnnAssign):
+            found.append(node.annotation)
+    return found
+
+
+def _loaded_names(*trees: ast.AST) -> Counter[str]:
+    """
+    Count every name *read* across the given trees.
+
+    :param \\*trees: the trees to walk
+    :type \\*trees: ast.AST
+    :return: how many times each name is loaded
+    :rtype: Counter[str]
+    """
+    return Counter(
+        node.id
+        for tree in trees
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load)
+    )
+
+
+def computed_names(tree: ast.Module) -> Set[str]:
+    """
+    Name everything the module loads somewhere other than an annotation.
+
+    Subtraction rather than a context-tracking walk, which is the whole trick and
+    the reason this is short: every name loaded anywhere, minus every name loaded
+    inside an annotation, leaves exactly the loads that execute.
+
+    :param tree: the parsed module
+    :type tree: ast.Module
+    :return: the names loaded outside an annotation
+    :rtype: Set[str]
+    """
+    return set(_loaded_names(tree) - _loaded_names(*annotation_subtrees(tree)))
+
+
+def _forbidden_import_statements(tree: ast.Module) -> List[Tuple[str, Set[str]]]:
+    """
+    Pair every forbidden import statement with the names it binds.
+
+    ``import numpy as np`` binds ``np``; ``import numpy.typing`` unaliased binds
+    ``numpy``, because that is the name the code goes on to write; ``from
+    pandas.api.types import is_float_dtype`` binds the imported name. One pair per
+    statement, however many names the statement binds - the entry count is
+    statements, not names. Relative imports are skipped: they are in-package and
+    cannot reach a third-party library.
+
+    :param tree: the parsed module
+    :type tree: ast.Module
+    :return: (dotted module path, bound names) pairs, in walk order
+    :rtype: List[Tuple[str, Set[str]]]
+    """
+    found: List[Tuple[str, Set[str]]] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name.split(".")[0] in FORBIDDEN_IMPORTS:
+                    bound = alias.asname or alias.name.split(".")[0]
+                    found.append((alias.name, {bound}))
+        elif isinstance(node, ast.ImportFrom):
+            if node.level or node.module is None:
+                continue
+            if node.module.split(".")[0] in FORBIDDEN_IMPORTS:
+                found.append((node.module, {a.asname or a.name for a in node.names}))
+    return found
+
+
+def _split_forbidden_imports(tree: ast.Module) -> Tuple[List[str], List[str]]:
+    """
+    Split forbidden imports into the ones that count and the ones exempt.
+
+    A statement counts when any name it binds is loaded outside an annotation.
+    An import that only ever appears in a type is not computation, which is what
+    this rule is named for, so it is exempt rather than counted.
+
+    :param tree: the parsed module
+    :type tree: ast.Module
+    :return: the counted dotted paths and the annotation-only ones, each sorted
+    :rtype: Tuple[List[str], List[str]]
+    """
+    used = computed_names(tree)
+    counted: List[str] = []
+    exempt: List[str] = []
+    for module, bound in _forbidden_import_statements(tree):
+        (counted if bound & used else exempt).append(module)
+    return sorted(counted), sorted(exempt)
+
+
 def forbidden_imports(tree: ast.Module) -> List[str]:
     """
-    List every forbidden import statement, as the dotted module path it names.
+    List every forbidden import the module actually computes with.
 
-    One entry per statement. A statement counts when its top-level package is
-    forbidden, so a submodule of a forbidden package is forbidden too. Relative
-    imports are skipped: they are in-package and cannot reach a third-party library.
+    One entry per statement, as the dotted module path it names. A statement counts
+    when its top-level package is forbidden *and* a name it binds is loaded outside
+    an annotation - so a submodule of a forbidden package is forbidden too, but an
+    import that exists only to write a type is not (see
+    :py:func:`annotation_only_imports`).
 
     :param tree: the parsed module
     :type tree: ast.Module
     :return: the dotted module paths, sorted
     :rtype: List[str]
     """
-    found: List[str] = []
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            for alias in node.names:
-                if alias.name.split(".")[0] in FORBIDDEN_IMPORTS:
-                    found.append(alias.name)
-        elif isinstance(node, ast.ImportFrom):
-            if node.level or node.module is None:
-                continue
-            if node.module.split(".")[0] in FORBIDDEN_IMPORTS:
-                found.append(node.module)
-    return sorted(found)
+    return _split_forbidden_imports(tree)[0]
+
+
+def annotation_only_imports(tree: ast.Module) -> List[str]:
+    """
+    List the forbidden imports this module uses only to write types.
+
+    Reported rather than counted, so that the exemption stays visible under
+    ``--verbose`` and a misfire can be seen rather than inferred from a missing row.
+
+    :param tree: the parsed module
+    :type tree: ast.Module
+    :return: the exempt dotted module paths, sorted
+    :rtype: List[str]
+    """
+    return _split_forbidden_imports(tree)[1]
 
 
 def view_private_reads(tree: ast.Module) -> List[str]:
@@ -457,6 +597,9 @@ def measure() -> Dict[str, Dict[str, object]]:
     """
     Measure all three rules across the Views and Controllers.
 
+    ``annotation_only`` rides along for the report: it is the forbidden imports
+    rule 2 exempted, which the allowlist does not record but ``--verbose`` names.
+
     :return: the per-file findings, grouped by rule
     :rtype: Dict[str, Dict[str, object]]
     :raises FileNotFoundError: if either layer scan comes back empty
@@ -464,6 +607,7 @@ def measure() -> Dict[str, Dict[str, object]]:
     """
     emits: Dict[str, int] = {}
     imports: Dict[str, List[str]] = {}
+    annotation_only: Dict[str, List[str]] = {}
     privates: Dict[str, List[str]] = {}
 
     views = view_modules()
@@ -479,7 +623,7 @@ def measure() -> Dict[str, Dict[str, object]]:
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=path.name)
         name = display(path)
         emits[name] = sum(1 for node in ast.walk(tree) if is_global_signal_emit(node))
-        imports[name] = forbidden_imports(tree)
+        imports[name], annotation_only[name] = _split_forbidden_imports(tree)
 
     for path in controllers:
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=path.name)
@@ -505,6 +649,7 @@ def measure() -> Dict[str, Dict[str, object]]:
     return {
         "emits": emits,
         "imports": imports,
+        "annotation_only": annotation_only,
         "private_access": privates,
         "layering": layering,
         "plugin_reach": plugin_reach,
@@ -658,6 +803,14 @@ def report(results: Dict[str, Dict[str, object]], verbose: bool) -> None:
         detail = f"  {', '.join(modules)}" if verbose else ""
         print(f"     {len(modules):>3}  {name}{detail}")
     print(f"     {sum(len(m) for m in imports.values()):>3}  total")
+    if verbose:
+        exempt: Dict[str, List[str]] = results["annotation_only"]  # type: ignore[assignment]
+        for name, modules in sorted(exempt.items()):
+            if modules:
+                print(
+                    f"       -  {name}  {', '.join(modules)}  "
+                    "(annotation-only, not counted)"
+                )
 
     print("\n3. Controller reading a View private")
     raw: Dict[str, List[str]] = results["private_access"]  # type: ignore[assignment]

@@ -10,6 +10,36 @@ which ran through August 2026 and is complete. The step numbers only date the de
 
 ---
 
+## 2026-09-14 - Boundary rule 2 counts computation, not annotations
+
+**Context.** Rule 2 is named "no View imports a computation library" but counted every
+import statement, including one that exists only to write a type. A View annotated
+`Sequence[npt.NDArray[np.float64]]` describes arrays the loader genuinely hands it to plot;
+removing that annotation means either lying about the parameter or adding a marshalling hop,
+both worse than the import. The cost had already been paid once - `event_id_rows` on
+`MetaSubsetTabView` was typed `Optional[Any]` rather than `Optional[pd.DataFrame]`, in a
+comment naming the gate as the reason.
+
+**Decision.** A forbidden import counts only if its bound name is loaded somewhere other than
+an annotation - parameter and return annotations, and `AnnAssign`. Allowlist **14 -> 8**, and
+all eight are genuine computation. `event_id_rows` and `set_event_id_rows` are restored to
+`Optional[pd.DataFrame]`.
+
+**Evidence.** Measured by AST over the six booked Views: all five `numpy.typing` entries are
+annotation-only, as is `ClusteringView`'s `numpy` (`np.ndarray` in two signatures). That last
+one is why exempting the `numpy.typing` path *by name* was rejected - `npt.NDArray[np.float64]`
+needs both imports, so a by-name exemption leaves a false positive the gate would still demand
+be worked around, and `pandas` would hit the same wall next. No View has a module-level type
+alias or a string annotation, so annotation context is decidable from the AST alone. What
+remains: `MetaView` numpy (the logscale helper, 3d), `RawDataView` numpy, `MetadataView` and
+`ProteinView` numpy and pandas, and a single site each in `EventAnalysisView` (numpy, `:536`)
+and `ClusteringView` (pandas, `:613`).
+
+**Revisit if** a View reaches a forbidden library through a module-level type alias or a
+string annotation, neither of which the annotation scan sees.
+
+---
+
 ## 2026-09-13 - `subset_filters` stays on the View; the Controller stops reaching into it
 
 **Context.** `refactor_2.0.0.md` listed Step 4d as "domain state off the View", moving

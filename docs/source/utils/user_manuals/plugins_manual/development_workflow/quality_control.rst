@@ -1160,17 +1160,25 @@ Analysis-Tab MVC Boundary
 Like the ratchet above, this one affects you if you edit the analysis tabs, the widgets they
 are built from, the app shell's own views and controllers, or the shared bases under
 ``poriscope/utils/``. The analysis-tab layer never grew a real Model, so its Views absorbed
-work a Model should do. Four rules describe the boundary the 2.0.0 refactor is putting back:
+work a Model should do. Five rules describe the boundary the 2.0.0 refactor is putting back:
 
 1. **No View emits on the plugin bus.** A ``global_signal.emit`` inside a widget means a
    cross-plugin call originates in the View.
-2. **No View imports a computation library** — ``numpy``, ``scipy``, ``sklearn``,
-   ``hdbscan``, ``pandas``, ``fast_histogram`` or ``sqlite3``.
+2. **No View imports a computation library to compute with** — ``numpy``, ``scipy``,
+   ``sklearn``, ``hdbscan``, ``pandas``, ``fast_histogram`` or ``sqlite3``. An import used
+   *only* to write a type is exempt: a method annotated ``Sequence[npt.NDArray[np.float64]]``
+   is describing arrays the loader genuinely hands it to plot, and dropping the annotation
+   would mean either lying about the parameter or adding a marshalling hop. ``--verbose``
+   names the exempted imports so the exemption stays visible.
 3. **No Controller reads a View private.** ``self.view._x`` reaches past the View's
    interface into its internals.
 4. **No app-shell module imports from a plugin package.** ``poriscope/views/`` importing
    ``poriscope.plugins.analysistabs.utils.walkthrough`` is a layering inversion: the shell
    depending on a plugin.
+5. **No analysis-tab module reaches a data plugin except through** ``call()``.
+   ``MetaController.call`` and ``MetaModel.call`` are the whole plugin-facing API a tab gets;
+   resolving an instance directly, touching ``data_plugin_controller``, or importing a
+   concrete plugin class has gone around it.
 
 ``.mvc-boundary-allowlist.json`` records every violation that exists today, and
 ``tests/unit/scripts/test_mvc_boundary_allowlist.py`` fails if the measurement disagrees.
@@ -1210,6 +1218,14 @@ a violation, rerun with ``--update`` and commit the new allowlist alongside it.
    ``import numpy.typing`` are two entries, not one module. An earlier hand count that
    conflated statements with distinct modules could not be reproduced, which is the reason
    the rule is now executable rather than described.
+
+   A statement counts only if at least one name it binds is loaded somewhere other than an
+   annotation — every load in the module, minus every load inside a parameter annotation, a
+   return annotation, or the annotation half of ``x: T = v``. So ``x: np.ndarray =
+   np.zeros(3)`` still counts, on its right-hand side. Two blind spots follow from reading
+   annotations syntactically: a module-level type alias such as ``Frame = pd.DataFrame`` is
+   an ordinary assignment and counts, while a string annotation is invisible and does not.
+   Neither exists in the View layer today, and both are pinned by tests.
 
 .. _refactor_coverage_audit:
 
