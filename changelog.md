@@ -1,5 +1,7 @@
 ## Poriscope 2.0.0: in progress
 
+* **Fixed exporting the plot data of a categorical histogram failing with an error.** It had never worked: the export coerced every cached series to a number, which category names are not. Numeric exports are unchanged
+
 * **A capture-rate plot with too few events now says how few**, instead of reporting the generic "no data available after filtering"
 
 * **Breaking:** the Raw Data tab's plot time axes are built by `MetaModel.time_bases` rather than in the view, so `RawDataView.update_plot`, `set_trace_data`, `set_event_plot_data` and `_update_event_plot` take the axis alongside the samples and `baseline_stats_requested` carries it

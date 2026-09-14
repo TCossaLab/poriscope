@@ -351,21 +351,32 @@ class MetaModel(QObject, metaclass=QObjectABCMeta):
 
     @log(logger=logger)
     def format_cache_data(self) -> Optional[pd.DataFrame]:
+        """
+        Lay the cached plot series out side by side, ready to be written as CSV.
+
+        The series need not be the same length - a plot may cache an x array and a
+        shorter y - so the short ones are padded to the longest.
+
+        **Padding is done with ``None`` rather than by coercing to float**, which is
+        what this used to do. ``arr.astype(float)`` assumed every cached series was a
+        numeric array, and two things broke on that: a series cached as a plain list
+        has no ``astype`` at all, and a series of text categories cannot become float
+        even as an array. The categorical histogram caches its category names, so
+        **its export raised for as long as it has existed**, on any revision. Letting
+        pandas infer each column keeps the numeric columns exactly as they were -
+        ``None`` in a numeric column is ``NaN``, which is the empty field the old
+        padding produced - while a text column now survives as text.
+
+        :return: one column per cached series, or None if nothing is cached
+        :rtype: Optional[pd.DataFrame]
+        """
         if self.cache_data and self.cache_labels:
-            max_length = max([len(arr) for arr in self.cache_data])
-            # Convert arrays to float type first to allow np.nan
-            padded_data = np.array(
-                [
-                    np.pad(
-                        arr.astype(float),
-                        pad_width=(0, max_length - len(arr)),
-                        constant_values=np.nan,
-                    )
-                    for arr in self.cache_data
-                ]
-            )
-            df = pd.DataFrame(padded_data.T, columns=self.cache_labels)
-            return df
+            max_length = max(len(arr) for arr in self.cache_data)
+            padded = {
+                label: list(arr) + [None] * (max_length - len(arr))
+                for arr, label in zip(self.cache_data, self.cache_labels, strict=True)
+            }
+            return pd.DataFrame(padded)
         return None
 
     @log(logger=logger)
