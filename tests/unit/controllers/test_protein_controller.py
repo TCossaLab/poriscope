@@ -585,3 +585,133 @@ class TestFitDistributionEvents:
             call.args[0] for call in controller.add_text_to_display.emit.call_args_list
         ]
         assert any("Unable to fit the event histograms" in m for m in messages)
+
+
+class TestBuildEnsembleHistogram:
+    """Fetch one subset, average it, and hand the frame back to be drawn."""
+
+    def _fetch(self, controller, generator):
+        """
+        Answer the fetch with a query and a generator, without a real loader.
+
+        :param controller: the controller under test
+        :type controller: ProteinController
+        :param generator: the events to answer with
+        :type generator: object
+        :return: None
+        :rtype: None
+        """
+        controller._fetch_event_subset = lambda *a: ("SELECT 1", generator)
+
+    def test_the_frame_and_its_context_reach_the_view(self, controller) -> None:
+        controller.view.set_ensemble_histogram = MagicMock()
+        controller.view.set_event_query = MagicMock()
+        self._fetch(controller, iter([_event(1), _event(2, rng_seed=1)]))
+
+        controller.build_ensemble_histogram(
+            "ldr",
+            "",
+            None,
+            "Filtered Histogram",
+            [25],
+            False,
+            "lbl",
+            ("k",),
+            1.0,
+            2.0,
+            3,
+        )
+
+        controller.view.set_event_query.assert_called_once_with("SELECT 1")
+        args = controller.view.set_ensemble_histogram.call_args.args
+        plot_data, plot_type, bins, sizes, label, key, d, L, N = args
+        assert list(plot_data.columns) == ["Normalized Current", "Amplitude"]
+        assert len(plot_data) == 25
+        assert (plot_type, bins, sizes, label, key) == (
+            "Filtered Histogram",
+            [25],
+            False,
+            "lbl",
+            ("k",),
+        )
+        assert (d, L, N) == (1.0, 2.0, 3)
+
+    def test_a_subset_with_no_usable_event_is_reported_and_draws_nothing(
+        self, controller, mocker
+    ) -> None:
+        """
+        The query is not set either, so the previous figure and the previous
+        applied-query echo both stay as they were.
+        """
+        controller.view.set_ensemble_histogram = MagicMock()
+        controller.view.set_event_query = MagicMock()
+        controller.add_text_to_display = mocker.Mock()
+        controller.add_text_to_display.emit = mocker.Mock()
+        self._fetch(controller, iter([]))
+
+        controller.build_ensemble_histogram(
+            "ldr",
+            "",
+            None,
+            "Filtered Histogram",
+            None,
+            False,
+            "lbl",
+            ("k",),
+            1.0,
+            2.0,
+            3,
+        )
+
+        controller.view.set_ensemble_histogram.assert_not_called()
+        controller.view.set_event_query.assert_not_called()
+        messages = [
+            call.args[0] for call in controller.add_text_to_display.emit.call_args_list
+        ]
+        assert any("No usable events" in m for m in messages)
+
+    def test_a_failed_fetch_draws_nothing(self, controller) -> None:
+        controller.view.set_ensemble_histogram = MagicMock()
+        controller._fetch_event_subset = lambda *a: None
+
+        controller.build_ensemble_histogram(
+            "ldr",
+            "",
+            None,
+            "Filtered Histogram",
+            None,
+            False,
+            "lbl",
+            ("k",),
+            1.0,
+            2.0,
+            3,
+        )
+
+        controller.view.set_ensemble_histogram.assert_not_called()
+
+    def test_an_unusable_plot_type_is_reported(self, controller, mocker) -> None:
+        controller.view.set_ensemble_histogram = MagicMock()
+        controller.add_text_to_display = mocker.Mock()
+        controller.add_text_to_display.emit = mocker.Mock()
+        self._fetch(controller, iter([_event(1)]))
+
+        controller.build_ensemble_histogram(
+            "ldr",
+            "",
+            None,
+            "Sideways Histogram",
+            None,
+            False,
+            "lbl",
+            ("k",),
+            1.0,
+            2.0,
+            3,
+        )
+
+        controller.view.set_ensemble_histogram.assert_not_called()
+        messages = [
+            call.args[0] for call in controller.add_text_to_display.emit.call_args_list
+        ]
+        assert any("Unable to build the ensemble histogram" in m for m in messages)

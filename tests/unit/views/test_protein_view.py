@@ -447,87 +447,6 @@ class TestGenerateVmEnsemble:
 # ===========================================================================
 
 
-class TestConstructAllPointsHistogram:
-    def _events(self, n=3):
-        return [_make_event(i, blockage=0.2 + i * 0.05, rng_seed=i) for i in range(n)]
-
-    def test_returns_dataframe(self, mock_view):
-        df = mock_view._construct_all_points_histogram(
-            iter(self._events()), "Filtered Histogram"
-        )
-        assert isinstance(df, pd.DataFrame)
-        assert "Normalized Current" in df.columns
-
-    def test_an_empty_subset_yields_no_histogram(self, mock_view):
-        """
-        Reported from a real run: plotting a distribution over a subset holding no
-        events drew empty axes and said nothing.
-
-        The generator exists - so the caller's ``is None`` guard passes - and simply
-        yields nothing, which used to divide the accumulated histogram by a count of
-        zero and hand back a frame of NaN. ``None`` is what the caller already
-        reports on.
-        """
-        assert (
-            mock_view._construct_all_points_histogram(iter([]), "Filtered Histogram")
-            is None
-        )
-
-    def test_an_empty_subset_does_not_poison_the_next_plot(self, mock_view):
-        """
-        The bail-out is before the bounds are recorded, not after.
-
-        With no event the running bounds are still +/-inf, and letting those reach
-        hist_min/hist_max would make the *next* plot's bin edges nan - a failure one
-        action away from its cause.
-        """
-        mock_view.hist_min = None
-        mock_view.hist_max = None
-
-        mock_view._construct_all_points_histogram(iter([]), "Filtered Histogram")
-
-        assert mock_view.hist_min is None
-        assert mock_view.hist_max is None
-
-    def test_default_100_bins(self, mock_view):
-        df = mock_view._construct_all_points_histogram(
-            iter(self._events()), "Filtered Histogram"
-        )
-        assert len(df) == 100
-
-    def test_custom_bins(self, mock_view):
-        df = mock_view._construct_all_points_histogram(
-            iter(self._events()), "Filtered Histogram", bins=[50]
-        )
-        assert len(df) == 50
-
-    def test_bin_size_mode(self, mock_view):
-        df = mock_view._construct_all_points_histogram(
-            iter(self._events()), "Filtered Histogram", bins=[0.05], sizes=True
-        )
-        assert len(df) > 0
-
-    def test_raw_histogram_type(self, mock_view):
-        df = mock_view._construct_all_points_histogram(
-            iter(self._events()), "Raw Histogram"
-        )
-        assert df is not None
-
-    def test_amplitude_nonnegative(self, mock_view):
-        df = mock_view._construct_all_points_histogram(
-            iter(self._events()), "Filtered Histogram"
-        )
-        assert np.all(df["Amplitude"].values >= 0)
-
-    def test_multiple_events_extend_range(self, mock_view):
-        evs = [
-            _make_event(blockage=0.1, rng_seed=0),
-            _make_event(blockage=0.5, rng_seed=1),
-        ]
-        df = mock_view._construct_all_points_histogram(iter(evs), "Filtered Histogram")
-        assert df["Normalized Current"].max() - df["Normalized Current"].min() > 0
-
-
 # ``TestBuildLoadEventDataArgs`` lived here and is gone with the method: Step 4a moved
 # the raw-subset scoping into ``ProteinController._scope_raw_subset_query``. Its
 # coverage is ``tests/unit/controllers/test_raw_subset_scoping.py``, which was
@@ -676,15 +595,17 @@ class TestCommitFits:
 
 class TestResetActions:
     def test_clears_hist_state(self, mock_view):
-        mock_view.hist_min = 1.0
-        mock_view.hist_max = 2.0
+        """
+        ``hist_min``/``hist_max`` went with the binning in Step 4's closeout: the
+        two methods that wrote them are on the Model now, which left three clears
+        and no reader at all.
+        """
         mock_view.hist_data = [([1], [2])]
         mock_view.hist_labels = ["x"]
         mock_view._reset_actions()
-        assert mock_view.hist_min is None
-        assert mock_view.hist_max is None
         assert mock_view.hist_data == []
         assert mock_view.hist_labels == []
+        assert not hasattr(mock_view, "hist_min")
 
     def test_clears_bins(self, mock_view):
         mock_view.allowed_bins = [10]
@@ -1347,8 +1268,11 @@ class TestPipeline:
         assert len(bincenters) > 0  # FD-derived, not fixed 100
 
     def test_all_points_histogram_three_events(self, mock_view):
+        """The averaging is the Model's since Step 4's closeout; drive it there."""
         evs = [_make_event(i, blockage=0.2 + i * 0.05, rng_seed=i) for i in range(3)]
-        df = mock_view._construct_all_points_histogram(iter(evs), "Filtered Histogram")
+        df = ProteinModel().build_all_points_histogram(
+            iter(evs), "Filtered Histogram", None, False
+        )
         assert isinstance(df, pd.DataFrame) and len(df) == 100
 
     def test_vm_ensemble_from_histogram_fit(self, mock_view):
@@ -2702,3 +2626,153 @@ class TestSetDistributionFits:
         )
 
         assert mock_view.fit_data.empty
+
+
+# ===========================================================================
+# The ensemble histogram's request and answer halves
+# ===========================================================================
+
+
+class TestEnsembleHistogramRequest:
+    """What ``_update_distribution_ensemble`` asks for now that it builds nothing."""
+
+    def _params(self):
+        """
+        The controls' parameters for one ensemble plot.
+
+        :return: the parameter dict
+        :rtype: dict
+        """
+        return {
+            "db_loader": "ldr",
+            "plot_type": "Filtered Histogram",
+            "pore_diameter": "20.0",
+            "pore_length": "30.0",
+            "n_values": "10",
+            "bins": [40],
+            "sizes": False,
+        }
+
+    def _scoped(self, mock_view):
+        """
+        Put one experiment, one channel and one subset in scope.
+
+        :param mock_view: the view under test
+        :type mock_view: ProteinView
+        :return: None
+        :rtype: None
+        """
+        mock_view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": ["3"]}}
+        mock_view.get_selected_filters = MagicMock(return_value={"sub": "duration < 3"})
+
+    def test_the_request_carries_the_subset_and_the_bin_request(self, mock_view):
+        self._scoped(mock_view)
+
+        mock_view._update_distribution_ensemble(self._params())
+
+        args = mock_view.ensemble_histogram_requested.emit.call_args.args
+        loader, sql_filter, scope, plot_type, bins, sizes = args[:6]
+        assert loader == "ldr"
+        assert sql_filter == "duration < 3"
+        assert scope == {"exp1": ["3"]}
+        assert plot_type == "Filtered Histogram"
+        assert bins == [40]
+        assert sizes is False
+
+    def test_the_request_carries_the_drawing_context_and_the_geometry(self, mock_view):
+        """
+        The label, the plotted-datasets key and the pore geometry depart unchanged
+        and come back through the setter, so nothing is parked on the widget
+        between asking and answering.
+        """
+        self._scoped(mock_view)
+
+        mock_view._update_distribution_ensemble(self._params())
+
+        args = mock_view.ensemble_histogram_requested.emit.call_args.args
+        dataset_label, dataset_key, d, L, N = args[6:]
+        assert "sub" in dataset_label
+        assert dataset_key == ("ldr", "exp1", 3, "duration < 3", "sub")
+        assert (d, L, N) == (20.0, 30.0, 10)
+
+    def test_nothing_is_fetched_into_the_widget(self, mock_view):
+        """
+        The events never reach it, so neither does the generator - this path does
+        not touch the attribute at all now, where it used to clear it, fill it and
+        walk it twice.
+        """
+        self._scoped(mock_view)
+
+        mock_view._update_distribution_ensemble(self._params())
+
+        assert not hasattr(mock_view, "event_data_generator")
+
+
+class TestSetEnsembleHistogram:
+    """The answering half: draw, record, then ask for the geometry."""
+
+    def _frame(self):
+        """
+        A stand-in for the averaged histogram the Model hands back.
+
+        :return: a two-column frame
+        :rtype: pd.DataFrame
+        """
+        return pd.DataFrame(
+            {
+                "Normalized Current": np.linspace(0.0, 1.0, 10),
+                "Amplitude": np.linspace(1.0, 2.0, 10),
+            }
+        )
+
+    def test_the_histogram_is_drawn(self, mock_view, mocker):
+        mocker.patch.object(mock_view, "update_plot")
+
+        mock_view.set_ensemble_histogram(
+            self._frame(), "Filtered Histogram", [40], False, "lbl", ("k",), 1.0, 2.0, 3
+        )
+
+        assert mock_view.update_plot.call_args.args[0] == "Filtered Histogram"
+
+    def test_the_bookkeeping_describes_this_plot(self, mock_view, mocker):
+        mocker.patch.object(mock_view, "update_plot")
+
+        mock_view.set_ensemble_histogram(
+            self._frame(), "Filtered Histogram", [40], False, "lbl", ("k",), 1.0, 2.0, 3
+        )
+
+        assert mock_view.allowed_plot_type == "Filtered Histogram"
+        assert mock_view.allowed_bins == [40]
+        assert mock_view.allowed_sizes is False
+        assert ("k",) in mock_view.plotted_datasets
+
+    def test_the_bins_are_recorded_before_the_fit_is_asked_for(self, mock_view, mocker):
+        """
+        ``set_ensemble_geometry_fit`` reads ``allowed_bins`` and ``allowed_sizes``
+        to describe the fit it draws, so they have to describe *this* plot by the
+        time the request goes out. The request half used to set them between the
+        drawing and the fit; moving the drawing into a setter is exactly the change
+        that could have reordered them.
+        """
+        mocker.patch.object(mock_view, "update_plot")
+        seen = {}
+        mock_view._request_ensemble_geometry_fit = lambda *a, **k: seen.update(
+            bins=mock_view.allowed_bins, sizes=mock_view.allowed_sizes
+        )
+
+        mock_view.set_ensemble_histogram(
+            self._frame(), "Filtered Histogram", [40], True, "lbl", ("k",), 1.0, 2.0, 3
+        )
+
+        assert seen == {"bins": [40], "sizes": True}
+
+    def test_the_geometry_reaches_the_fit_request(self, mock_view, mocker):
+        mocker.patch.object(mock_view, "update_plot")
+        frame = self._frame()
+
+        mock_view.set_ensemble_histogram(
+            frame, "Filtered Histogram", [40], False, "lbl", ("k",), 11.0, 22.0, 33
+        )
+
+        args = mock_view.ensemble_fit_requested.emit.call_args.args
+        assert args[3:] == ("Filtered Histogram", 11.0, 22.0, 33)

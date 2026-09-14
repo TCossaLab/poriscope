@@ -177,9 +177,13 @@ MOVED: Tuple[Tuple[str, str, str], ...] = (
         "build_event_histograms",
         "4c",
     ),
+    # Landed in Step 4's closeout with the per-event binning: the ensemble average
+    # moved to ProteinModel and is tracked at its destination now. The View's copy
+    # walked the event generator itself, which is what kept the events - and the
+    # DataFrame construction - above the Model.
     (
-        "poriscope/plugins/analysistabs/ProteinView.py",
-        "_construct_all_points_histogram",
+        "poriscope/plugins/analysistabs/ProteinModel.py",
+        "build_all_points_histogram",
         "4c",
     ),
     # Step 4c split `_fit_and_plot_ensemble_geometry` in two, 2026-09-13: the fit

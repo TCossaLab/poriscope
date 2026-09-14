@@ -26,7 +26,7 @@
 
 
 import logging
-from typing import Any, Dict, List, Optional, Sequence, override
+from typing import Any, Dict, Generator, List, Optional, Sequence, Tuple, override
 
 import numpy as np
 import numpy.typing as npt
@@ -77,6 +77,7 @@ class ProteinController(MetaSubsetTabController):
         self.view.fit_commit_requested.connect(self.check_for_existing_fit_columns)
         self.view.fit_commit_confirmed.connect(self.commit_fits)
         self.view.ensemble_fit_requested.connect(self.fit_ensemble_geometry)
+        self.view.ensemble_histogram_requested.connect(self.build_ensemble_histogram)
         self.view.event_histogram_fits_requested.connect(self.fit_event_histograms)
         self.view.distribution_fits_requested.connect(self.fit_distribution_events)
 
@@ -133,6 +134,89 @@ class ProteinController(MetaSubsetTabController):
             )
             return
         self.view.set_ensemble_geometry_fit(popt, curve, plot_data, plot_type, d, L, N)
+
+    @log(logger=logger)
+    @Slot(str, str, object, str, object, bool, str, object, float, float, int)
+    def build_ensemble_histogram(
+        self,
+        loader: str,
+        sql_filter: str,
+        experiments_and_channels: Optional[Dict[str, List[Optional[int]]]],
+        plot_type: str,
+        bins: Any,
+        sizes: bool,
+        dataset_label: str,
+        dataset_key: Tuple[Any, ...],
+        d: float,
+        L: float,
+        N: int,
+    ) -> None:
+        """
+        Fetch one event subset and average it into a single histogram to draw.
+
+        Decision B's command path. Step 4's closeout took the aggregation down with
+        the fetch: the widget used to be handed the generator and walk it twice
+        itself, which is what kept whole events - and the DataFrame construction -
+        above the Model.
+
+        The drawing context arrives and departs unchanged; this slot marshals and
+        does not interpret it. Nothing is handed back at all if the subset has no
+        usable event, which is what leaves the previous figure in place.
+
+        :param loader: the database loader plugin's key
+        :type loader: str
+        :param sql_filter: the subset filter's WHERE-clause body, empty for all rows
+        :type sql_filter: str
+        :param experiments_and_channels: the experiment and channel scope, or None
+        :type experiments_and_channels: Optional[Dict[str, List[Optional[int]]]]
+        :param plot_type: 'Raw Histogram' or 'Filtered Histogram'
+        :type plot_type: str
+        :param bins: a bin count, or a bin width when sizes is True, or None
+        :type bins: Any
+        :param sizes: does bins refer to a bin width (True) or a count (False)
+        :type sizes: bool
+        :param dataset_label: the label the histogram is drawn under
+        :type dataset_label: str
+        :param dataset_key: the plotted-datasets key, handed back unchanged
+        :type dataset_key: Tuple[Any, ...]
+        :param d: the diameter of the pore in nanometers
+        :type d: float
+        :param L: the length of the pore in nanometers
+        :type L: float
+        :param N: target number of samples to draw for each ensemble
+        :type N: int
+        :return: None
+        :rtype: None
+        """
+        fetched = self._fetch_event_subset(loader, sql_filter, experiments_and_channels)
+        if fetched is None:
+            return
+        query, generator = fetched
+
+        try:
+            plot_data = self.model.build_all_points_histogram(
+                generator, plot_type, bins, sizes
+            )
+        except (ValueError, TypeError, IndexError, KeyError) as e:
+            self.logger.error(f"Unable to build the ensemble histogram: {repr(e)}")
+            self.add_text_to_display.emit(
+                f"Unable to build the ensemble histogram: {e}",
+                self.__class__.__name__,
+            )
+            return
+
+        if plot_data is None:
+            self.add_text_to_display.emit(
+                "No usable events in the selected subset, so there is nothing to "
+                "plot",
+                self.__class__.__name__,
+            )
+            return
+
+        self.view.set_event_query(query)
+        self.view.set_ensemble_histogram(
+            plot_data, plot_type, bins, sizes, dataset_label, dataset_key, d, L, N
+        )
 
     @log(logger=logger)
     @Slot(object, str, object, bool)
@@ -370,6 +454,40 @@ class ProteinController(MetaSubsetTabController):
         :return: None
         :rtype: None
         """
+        fetched = self._fetch_event_subset(loader, sql_filter, experiments_and_channels)
+        if fetched is None:
+            return
+        query, generator = fetched
+
+        # Set together, once the whole chain has succeeded: the View distinguishes
+        # "not fetched" from "fetched and empty" by these two being untouched.
+        self.view.set_event_query(query)
+        self.view.set_event_data_generator(generator)
+
+    @log(logger=logger)
+    def _fetch_event_subset(
+        self,
+        loader: str,
+        sql_filter: str,
+        experiments_and_channels: Optional[Dict[str, List[Optional[int]]]],
+    ) -> Optional[Tuple[str, Generator]]:
+        """
+        Build one event subset's query and open a generator over its events.
+
+        Shared by the two things that need a subset's events: the individual
+        distribution path, which materialises them in the widget, and the ensemble
+        path, which hands them straight to the Model. Reports its own failure and
+        answers with None, so a caller has nothing to handle beyond stopping.
+
+        :param loader: the database loader plugin's key
+        :type loader: str
+        :param sql_filter: the subset filter's WHERE-clause body, empty for all rows
+        :type sql_filter: str
+        :param experiments_and_channels: the scope the filter is built against
+        :type experiments_and_channels: Optional[Dict[str, List[Optional[int]]]]
+        :return: the query that ran and a generator over its events, or None
+        :rtype: Optional[Tuple[str, Generator]]
+        """
         try:
             # Two values: construct_event_data_query is declared
             # -> Tuple[str, str] and reports a filter it cannot build as
@@ -387,13 +505,13 @@ class ProteinController(MetaSubsetTabController):
                 f"Could not build the event query for this subset: {e}",
                 self.__class__.__name__,
             )
-            return
+            return None
         if not query:
             self.add_text_to_display.emit(
                 debug or "The event query for this subset could not be built",
                 self.__class__.__name__,
             )
-            return
+            return None
 
         try:
             generator = self.model.call(
@@ -409,19 +527,16 @@ class ProteinController(MetaSubsetTabController):
                 f"Could not load this event subset from {loader}: {e}",
                 self.__class__.__name__,
             )
-            return
+            return None
 
         if generator is None:
             self.add_text_to_display.emit(
                 "No events in dataset or unable to create event generator",
                 self.__class__.__name__,
             )
-            return
+            return None
 
-        # Set together, once the whole chain has succeeded: the View distinguishes
-        # "not fetched" from "fetched and empty" by these two being untouched.
-        self.view.set_event_query(query)
-        self.view.set_event_data_generator(generator)
+        return query, generator
 
     @log(logger=logger)
     @Slot(str, list, object, object, object, str)

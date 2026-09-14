@@ -24,11 +24,13 @@
 # Alejandra Carolina González González
 # Kyle Briggs
 
+import itertools
 import logging
 from typing import (
     Any,
     Dict,
     Generator,
+    Iterator,
     List,
     Optional,
     Sequence,
@@ -615,14 +617,8 @@ class ProteinModel(MetaModel):
         ] = []
 
         for event in events:
-            try:
-                blockage = self._blockage_fraction(event, plot_type)
-            except ZeroDivisionError as e:
-                self.logger.info(f"{e}, so it has no histogram")
-                histograms.append(None)
-                continue
-
-            if blockage.size == 0:
+            blockage = self._usable_blockage(event, plot_type)
+            if blockage is None:
                 histograms.append(None)
                 continue
 
@@ -638,3 +634,119 @@ class ProteinModel(MetaModel):
             histograms.append((bincenters, amplitude))
 
         return histograms
+
+    @log(logger=logger)
+    def build_all_points_histogram(
+        self,
+        event_generator: Iterator[Dict[str, Any]],
+        plot_type: str,
+        bins: Any,
+        sizes: bool,
+    ) -> Optional[pd.DataFrame]:
+        """
+        Average every event's fractional-blockage histogram into one.
+
+        The generator is walked twice, because the bins cannot be chosen until the
+        extremes across all the events are known: the first pass takes the limits and
+        the second counts into the edges they decide. Each event contributes its own
+        *shape* rather than its length - the counts are divided by the event's sample
+        count before they are summed, and the total by the number of events - so a
+        long event does not outweigh a short one.
+
+        Unlike the per-event binning, there is no Freedman-Diaconis fallback here: the
+        rule is per-event sample count and interquartile range, and a histogram
+        averaged over many events of different lengths has neither.
+
+        :param event_generator: the events of one subset, as the loader yields them
+        :type event_generator: Iterator[Dict[str, Any]]
+        :param plot_type: 'Raw Histogram' or 'Filtered Histogram'
+        :type plot_type: str
+        :param bins: a bin count, or a bin width when sizes is True, or None
+        :type bins: Any
+        :param sizes: does bins refer to a bin width (True) or a count (False)
+        :type sizes: bool
+        :return: the averaged histogram, or None if no event could be used
+        :rtype: Optional[pd.DataFrame]
+        :raises ValueError: if plot_type is unrecognised, or bins cannot be resolved
+        """
+        # get global stats from the first event, don't forget to use this one later
+        egen1, egen2 = itertools.tee(event_generator)
+
+        hist_min = float("inf")
+        hist_max = float("-inf")
+        usable = 0
+        for event in egen1:
+            blockage = self._usable_blockage(event, plot_type)
+            if blockage is None:
+                continue
+            hist_min = min(hist_min, float(np.min(blockage)))
+            hist_max = max(hist_max, float(np.max(blockage)))
+            usable += 1
+
+        # Before the bounds are used, not after: with no usable event they are still
+        # +/-inf, and letting those reach the bin edges would make every one nan.
+        # Returning None here is what the caller already reports on.
+        if usable == 0:
+            return None
+
+        if bins is not None:
+            if sizes is False:
+                if isinstance(bins, list) and len(bins) >= 1:
+                    numbins = int(bins[0])
+                else:
+                    raise ValueError(f"Invalid bins entry {bins}")
+            else:
+                try:
+                    numbins = int((hist_max - hist_min) / bins[0])
+                except Exception as e:
+                    raise ValueError(
+                        f"Unable to calculate bins given sizes {bins}: {str(e)}"
+                    ) from e
+        else:
+            numbins = 100
+
+        bin_edges = np.linspace(hist_min, hist_max, numbins + 1)
+        hist = np.zeros(numbins)
+        count = 0
+        for event in egen2:
+            blockage = self._usable_blockage(event, plot_type)
+            if blockage is None:
+                continue
+            event_hist, _ = np.histogram(blockage, bins=bin_edges)
+            hist += event_hist / len(blockage)
+            count += 1
+        hist /= count
+        bincenters = bin_edges[:-1] + np.diff(bin_edges) / 2.0
+        return pd.DataFrame({"Normalized Current": bincenters, "Amplitude": hist})
+
+    @log(logger=logger)
+    def _usable_blockage(
+        self, event: Dict[str, Any], plot_type: str
+    ) -> Optional[npt.NDArray[np.float64]]:
+        """
+        One event's fractional blockage, or None if it cannot contribute.
+
+        Both walks of the generator have to agree on which events count, or the
+        limits and the tally describe different sets. An event is refused for one of
+        two reasons: its baseline is zero, so the fraction is undefined, or its
+        paddings leave no samples between them to bin.
+
+        :param event: one event's payload as the loader yields it
+        :type event: Dict[str, Any]
+        :param plot_type: 'Raw Histogram' or 'Filtered Histogram'
+        :type plot_type: str
+        :return: the fractional blockage, or None if the event cannot be used
+        :rtype: Optional[npt.NDArray[np.float64]]
+        """
+        try:
+            blockage = self._blockage_fraction(event, plot_type)
+        except ZeroDivisionError as e:
+            self.logger.warning(f"{e}, so it is skipped")
+            return None
+        if blockage.size == 0:
+            self.logger.warning(
+                f'Event {event.get("event_id")} has no samples between its '
+                "paddings, so it is skipped"
+            )
+            return None
+        return blockage

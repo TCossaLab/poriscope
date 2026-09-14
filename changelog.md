@@ -1,5 +1,9 @@
 ## Poriscope 2.0.0: in progress
 
+* **Breaking:** the Protein tab's Ensemble distribution histogram is averaged by `ProteinModel.build_all_points_histogram` rather than in the view, so `_update_distribution_ensemble` asks for the subset instead of fetching and walking it, `set_ensemble_histogram` draws what comes back, and `ProteinView._construct_all_points_histogram`, `hist_min` and `hist_max` are gone
+
+* **An event with no samples between its paddings no longer fails the Protein tab's Ensemble distribution plot** with an unhandled error - it is skipped, with a note in the log, as a zero-baseline event already was
+
 * **Breaking:** the Protein tab's per-event histograms are binned by `ProteinModel.build_event_histograms` rather than in the view, so `event_histogram_fits_requested` and `distribution_fits_requested` carry the events and the bin request, `set_event_histogram_fits` and `set_distribution_fits` take the histograms as arrays rather than dataframes, and `ProteinView._construct_single_event_histogram` is gone
 
 * **Breaking:** the Protein tab's Individual Distribution plot now bins each event over its own range, as the Event Histogram plot already did - the range used to accumulate across the events of a plot, so the bins an event was drawn on depended on how many events preceded it

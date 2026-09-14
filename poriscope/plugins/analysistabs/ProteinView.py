@@ -25,7 +25,6 @@
 # Kyle Briggs
 
 import bisect
-import itertools
 import logging
 import re
 import warnings
@@ -170,6 +169,18 @@ class ProteinView(MetaSubsetTabView):
     #: this widget between the halves, which is the pattern Step 4a exists to delete.
     ensemble_fit_requested = Signal(object, object, object, str, float, float, int)
 
+    #: Asks for one subset's events to be fetched and averaged into a single
+    #: histogram: the loader's key, the filter, the scope, the plot type, the bin
+    #: request, and the drawing context handed back unchanged. Answered through
+    #: ``set_ensemble_histogram``.
+    #:
+    #: Step 4's closeout. The subset used to arrive here as a generator the widget
+    #: walked twice; the events themselves never belonged above the Model, and
+    #: nothing outside the histogram ever read them.
+    ensemble_histogram_requested = Signal(
+        str, str, object, str, object, bool, str, object, float, float, int
+    )
+
     #: Asks for one double-gaussian fit per event: the (bins, amplitude) pairs, the
     #: frames they came from, and the events themselves. Answered through
     #: ``set_event_histogram_fits``.
@@ -306,8 +317,6 @@ class ProteinView(MetaSubsetTabView):
             "individual"  # default mode; toggled by Individual/Ensemble buttons
         )
 
-        self.hist_min: Optional[float] = None
-        self.hist_max: Optional[float] = None
         # Heterogeneous by design: _plot_all_points_histogram appends (x, y)
         # tuples rather than plain arrays. Flagged for review.
         self.hist_data: List[Any] = []
@@ -753,8 +762,6 @@ class ProteinView(MetaSubsetTabView):
         self.canvas_vm.draw()
 
         # Reset plot bookkeeping variables TBD
-        self.hist_min = None
-        self.hist_max = None
         self.hist_data = []
         self.hist_labels = []
         self.allowed_columns = []
@@ -1079,121 +1086,6 @@ class ProteinView(MetaSubsetTabView):
             self.logger.debug(
                 f"notify_plugin_state_changed: ignoring, {plugin_key} != current selection {current}"
             )
-
-    @log(logger=logger)
-    def _construct_all_points_histogram(
-        self,
-        event_generator: Iterator[Dict[str, Any]],
-        plot_type: str,
-        bins: Any = None,
-        sizes: bool = False,
-    ) -> pd.DataFrame:
-        """
-        Build a combined histogram across all event current values.
-
-        :param event_generator: Generator yielding individual event data.
-        :type event_generator: Iterator[Dict[str, Any]]
-        :param plot_type: Type of histogram to create (raw or filtered).
-        :type plot_type: str
-        :param bins: Number of bins (if sizes==False) or size of bins (if sizes==True) for use when binning. Arrives as a single-element list from the controls and is rebound to a scalar (or None, to fall back to an automatic estimate) in the body, hence the loose annotation.
-        :type bins: Any
-        :param sizes: whether bins represents a number of bins or a bin size.
-        :type sizes: bool
-        :return: DataFrame with histogram values and corresponding current levels.
-        :rtype: pd.DataFrame
-        :raises ValueError: If `bins` is not a usable bin count/size specification.
-        """
-        # get global stats from the first event, don't forget to use this one later
-        egen1, egen2 = itertools.tee(event_generator)
-
-        min_current = float("inf")
-        max_current = float("-inf")
-        usable = 0
-        for event in egen1:
-
-            if plot_type == "Raw Histogram":
-                timeseries = event["raw_data"]
-            elif plot_type == "Filtered Histogram":
-                timeseries = event["filtered_data"]
-
-            padding_before = int(event["padding_before"] * event["samplerate"] * 1e-6)
-            padding_after = int(event["padding_after"] * event["samplerate"] * 1e-6)
-            baseline = 0.5 * (
-                np.median(timeseries[:padding_before])
-                + np.median(timeseries[-padding_after:])
-            )
-            if baseline == 0:
-                self.logger.warning(
-                    f'Skipping event {event.get("event_id")} with zero baseline for histogram construction'
-                )
-                continue
-            dI_I = (baseline - timeseries[padding_before:-padding_after]) / baseline
-
-            min_curr = np.min(dI_I)
-            max_curr = np.max(dI_I)
-            if min_curr < min_current:
-                min_current = min_curr
-            if max_curr > max_current:
-                max_current = max_curr
-            usable += 1
-
-        # Before the bounds are recorded, not after: with no usable event the bounds
-        # are still +/-inf, and letting those reach hist_min/hist_max would make the
-        # *next* plot's bin edges nan too. Returning None here is what the caller
-        # already reports on.
-        if usable == 0:
-            return None
-
-        if self.hist_min is None or min_current < self.hist_min:
-            self.hist_min = min_current
-        if self.hist_max is None or max_current > self.hist_max:
-            self.hist_max = max_current
-
-        if bins is not None:
-            if sizes is False:
-                if isinstance(bins, list) and len(bins) >= 1:
-                    bins = bins[0]
-                else:
-                    raise ValueError(f"Invalid bins entry {bins}")
-            else:
-                try:
-                    bins = int((self.hist_max - self.hist_min) / bins[0])
-                except Exception as e:
-                    raise ValueError(
-                        f"Unable to calculate bins given sizes {bins}: {str(e)}"
-                    ) from e
-        else:
-            bins = 100
-
-        bin_edges = np.linspace(self.hist_min, self.hist_max, bins + 1)
-        hist = np.zeros(bins)
-        count = 0
-        for event in egen2:
-            if plot_type == "Raw Histogram":
-                timeseries = event["raw_data"]
-            elif plot_type == "Filtered Histogram":
-                timeseries = event["filtered_data"]
-            padding_before = int(event["padding_before"] * event["samplerate"] * 1e-6)
-            padding_after = int(event["padding_after"] * event["samplerate"] * 1e-6)
-            baseline = 0.5 * (
-                np.median(timeseries[:padding_before])
-                + np.median(timeseries[-padding_after:])
-            )
-            if baseline == 0:
-                self.logger.warning(
-                    f'Skipping event {event.get("event_id")} with zero baseline for histogram construction'
-                )
-                continue
-            dI_I = (baseline - timeseries[padding_before:-padding_after]) / baseline
-            event_hist, _ = np.histogram(
-                dI_I,
-                bins=bin_edges,
-            )
-            hist += event_hist / len(dI_I)
-            count += 1
-        hist /= count
-        bincenters = bin_edges[:-1] + np.diff(bin_edges) / 2.0
-        return pd.DataFrame({"Normalized Current": bincenters, "Amplitude": hist})
 
     @log(logger=logger)
     @Slot(str, str, tuple)
@@ -1581,12 +1473,6 @@ class ProteinView(MetaSubsetTabView):
         """
 
         self._last_event_action = "plot_histogram"
-
-        # Reset bin range so each Plot Histogram click is self-contained
-        # Without this, hist_min/hist_max accumulate across navigation sessions,
-        # causing bin edges to widen and histogram shape/fit to change on return visits
-        self.hist_min = None
-        self.hist_max = None
 
         loader = parameters.get("db_loader")
         if not loader:
@@ -2178,11 +2064,6 @@ class ProteinView(MetaSubsetTabView):
         channel_id = int(channel) if channel is not None else None
         subset_name, sql_filter = next(iter(selected_filters.items()))
 
-        # Declared ahead of the work below because the guard that reads it comes
-        # after: reaching the ensemble fit without it would be a NameError rather
-        # than a plot that did not happen.
-        plot_data: Optional[pd.DataFrame] = None
-
         bins = None
         dataset_label = (
             f"{loader} | {exp} Ch {channel}: {subset_name}"
@@ -2191,66 +2072,95 @@ class ProteinView(MetaSubsetTabView):
         )
         sizes = False
 
-        # Both cleared before asking: the Controller sets them only once
-        # the whole chain has succeeded, so a failure leaves them empty
+        if plot_type in ["Raw Histogram", "Filtered Histogram"]:
+            bins = parameters["bins"]
+            sizes = parameters["sizes"]
+
+            bin_sensitive = True
+            bins_changed = getattr(self, "allowed_bins", None) != bins
+            sizes_changed = getattr(self, "allowed_sizes", None) != sizes
+
+            if bin_sensitive and (bins_changed or sizes_changed):
+                self._reset_actions(axis_type="2d")
+
+        # Cleared before asking: the Controller sets it only once the subset has
+        # been fetched *and* averaged, so a failure at either step leaves it empty
         # rather than describing the previous subset.
         self.event_query = ""
-        self.event_data_generator = None
-        self.event_distribution_data_requested.emit(loader, sql_filter, exp_and_ch_arg)
+        self.ensemble_histogram_requested.emit(
+            loader,
+            sql_filter,
+            exp_and_ch_arg,
+            plot_type,
+            bins,
+            sizes,
+            dataset_label,
+            (loader, exp, channel_id, sql_filter, subset_name),
+            d,
+            L,
+            N,
+        )
 
-        if self.event_query == "":
-            return
+    @log(logger=logger)
+    def set_ensemble_histogram(
+        self,
+        plot_data: pd.DataFrame,
+        plot_type: str,
+        bins: Any,
+        sizes: bool,
+        dataset_label: str,
+        dataset_key: Tuple[Any, ...],
+        d: float,
+        L: float,
+        N: int,
+    ) -> None:
+        """
+        Draw the averaged histogram, then ask for the geometry it implies.
 
-        if self.event_data_generator:
-            if plot_type in ["Raw Histogram", "Filtered Histogram"]:
-                bins = parameters["bins"]
-                sizes = parameters["sizes"]
+        The answering half of ``ensemble_histogram_requested``. Step 4's closeout
+        moved the averaging to :meth:`ProteinModel.build_all_points_histogram`:
+        walking a subset's events and binning every sample of them is aggregation
+        rather than drawing, and the result is exported with the plot.
 
-                bin_sensitive = True
-                bins_changed = getattr(self, "allowed_bins", None) != bins
-                sizes_changed = getattr(self, "allowed_sizes", None) != sizes
+        The bookkeeping happens here rather than back in the request half because
+        ``set_ensemble_geometry_fit`` reads ``allowed_bins`` and ``allowed_sizes``,
+        so they have to describe *this* plot before the fit is asked for.
 
-                if bin_sensitive and (bins_changed or sizes_changed):
-                    axis_type = "2d"
-                    self._reset_actions(axis_type=axis_type)
-
-            plot_data = self._construct_all_points_histogram(
-                self.event_data_generator,
-                plot_type,
-                bins=bins,
-                sizes=sizes,
-            )
-
-            if plot_data is not None:
-                self.update_plot(
-                    plot_type,
-                    plot_data,
-                    plot_data.columns,
-                    ["pA", ""],
-                    logscales=[False, False],
-                    dataset_label=dataset_label,
-                )
-            else:
-                self.logger.info(
-                    "No usable events in the selected subset for " f"{plot_type}"
-                )
-                self.add_text_to_display.emit(
-                    "No events in the selected subset, so there is " "nothing to plot",
-                    self.__class__.__name__,
-                )
-                return
-        else:
-            self.logger.warning(f"Invalid plot type: {plot_type}")
-            return
+        :param plot_data: the averaged histogram, as bin centers and amplitudes
+        :type plot_data: pd.DataFrame
+        :param plot_type: 'Raw Histogram' or 'Filtered Histogram'
+        :type plot_type: str
+        :param bins: the bin request this histogram was built to
+        :type bins: Any
+        :param sizes: did bins refer to a bin width (True) or a count (False)
+        :type sizes: bool
+        :param dataset_label: the label the histogram is drawn under
+        :type dataset_label: str
+        :param dataset_key: the plotted-datasets key for this subset
+        :type dataset_key: Tuple[Any, ...]
+        :param d: the diameter of the pore in nanometers
+        :type d: float
+        :param L: the length of the pore in nanometers
+        :type L: float
+        :param N: target number of samples to draw for each ensemble
+        :type N: int
+        :return: None
+        :rtype: None
+        """
+        self.update_plot(
+            plot_type,
+            plot_data,
+            plot_data.columns,
+            ["pA", ""],
+            logscales=[False, False],
+            dataset_label=dataset_label,
+        )
 
         self.allowed_plot_type = plot_type
         self.allowed_bins = bins
         self.allowed_sizes = sizes
+        self.plotted_datasets.add(dataset_key)
 
-        self.plotted_datasets.add((loader, exp, channel_id, sql_filter, subset_name))
-
-        if plot_data is None:
-            return
         self._request_ensemble_geometry_fit(plot_data, plot_type, d, L, N)
 
     @log(logger=logger)

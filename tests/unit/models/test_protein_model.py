@@ -748,3 +748,149 @@ class TestBuildEventHistograms:
 
     def test_no_events_gives_no_histograms(self, model):
         assert model.build_event_histograms([], "Filtered Histogram", None, False) == []
+
+
+# ===========================================================================
+# build_all_points_histogram - the ensemble average, moved off ProteinView
+# ===========================================================================
+
+
+class TestBuildAllPointsHistogram:
+    """
+    One histogram averaged over a whole subset, moved with its per-event twin.
+
+    These came from ``test_protein_view``'s ``TestConstructAllPointsHistogram``;
+    they still return a frame, because the tab's ``update_plot`` takes one and a
+    Model handing back a frame is the shape ``ClusteringModel`` already set.
+    """
+
+    def _events(self, n=3):
+        """
+        A handful of events with slightly different blockages.
+
+        :param n: how many events to build
+        :type n: int
+        :return: the events
+        :rtype: list
+        """
+        return [_make_event(i, blockage=0.2 + i * 0.05, rng_seed=i) for i in range(n)]
+
+    def test_returns_a_frame_of_bin_centers_and_amplitudes(self, model):
+        frame = model.build_all_points_histogram(
+            iter(self._events()), "Filtered Histogram", None, False
+        )
+
+        assert isinstance(frame, pd.DataFrame)
+        assert list(frame.columns) == ["Normalized Current", "Amplitude"]
+
+    def test_an_empty_subset_yields_no_histogram(self, model):
+        """
+        Reported from a real run: plotting a distribution over a subset holding no
+        events drew empty axes and said nothing.
+
+        The generator exists - so the caller's ``is None`` guard passes - and simply
+        yields nothing, which used to divide the accumulated histogram by a count of
+        zero and hand back a frame of NaN. ``None`` is what the caller reports on.
+        """
+        assert (
+            model.build_all_points_histogram(
+                iter([]), "Filtered Histogram", None, False
+            )
+            is None
+        )
+
+    def test_a_subset_of_unusable_events_yields_no_histogram(self, model):
+        """
+        The bail-out is before the bounds are used, not after: with nothing usable
+        they are still +/-inf, and letting those reach the bin edges makes every one
+        NaN - a plot that fails one action away from its cause.
+        """
+        flat = _make_event()
+        flat["filtered_data"] = np.zeros_like(flat["filtered_data"])
+
+        assert (
+            model.build_all_points_histogram(
+                iter([flat]), "Filtered Histogram", None, False
+            )
+            is None
+        )
+
+    def test_default_is_a_hundred_bins(self, model):
+        """
+        No Freedman-Diaconis fallback here, unlike the per-event rule: that one
+        scales with an event's own sample count and interquartile range, and an
+        average over events of different lengths has neither.
+        """
+        frame = model.build_all_points_histogram(
+            iter(self._events()), "Filtered Histogram", None, False
+        )
+
+        assert len(frame) == 100
+
+    def test_an_explicit_count_is_used(self, model):
+        frame = model.build_all_points_histogram(
+            iter(self._events()), "Filtered Histogram", [50], False
+        )
+
+        assert len(frame) == 50
+
+    def test_a_bin_width_is_divided_into_the_shared_range(self, model):
+        frame = model.build_all_points_histogram(
+            iter(self._events()), "Filtered Histogram", [0.05], True
+        )
+
+        assert len(frame) > 0
+
+    def test_a_raw_plot_type_is_accepted(self, model):
+        assert (
+            model.build_all_points_histogram(
+                iter(self._events()), "Raw Histogram", None, False
+            )
+            is not None
+        )
+
+    def test_the_amplitudes_are_not_negative(self, model):
+        frame = model.build_all_points_histogram(
+            iter(self._events()), "Filtered Histogram", None, False
+        )
+
+        assert np.all(frame["Amplitude"].values >= 0)
+
+    def test_the_range_spans_every_event(self, model):
+        events = [
+            _make_event(blockage=0.1, rng_seed=0),
+            _make_event(blockage=0.5, rng_seed=1),
+        ]
+
+        frame = model.build_all_points_histogram(
+            iter(events), "Filtered Histogram", None, False
+        )
+
+        current = frame["Normalized Current"]
+        assert current.max() - current.min() > 0
+
+    def test_an_unusable_event_does_not_shift_the_average(self, model):
+        """
+        Both walks of the generator have to refuse the same events, or the limits
+        and the tally describe different sets and the average is divided by the
+        wrong count.
+        """
+        flat = _make_event(9)
+        flat["filtered_data"] = np.zeros_like(flat["filtered_data"])
+
+        with_flat = model.build_all_points_histogram(
+            iter(self._events() + [flat]), "Filtered Histogram", None, False
+        )
+        without = model.build_all_points_histogram(
+            iter(self._events()), "Filtered Histogram", None, False
+        )
+
+        assert with_flat["Amplitude"].tolist() == pytest.approx(
+            without["Amplitude"].tolist()
+        )
+
+    def test_an_unknown_plot_type_is_refused(self, model):
+        with pytest.raises(ValueError, match="Unknown plot_type"):
+            model.build_all_points_histogram(
+                iter(self._events()), "Sideways Histogram", None, False
+            )
