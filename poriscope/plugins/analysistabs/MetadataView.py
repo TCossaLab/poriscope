@@ -264,9 +264,11 @@ class MetadataView(MetaSubsetTabView):
         # One units string per plotted column, set by set_column_units once the
         # whole subset has been fetched. None means it has not been.
         self.column_units: Optional[List[Optional[str]]] = None
-        # Heterogeneous by design: the histogram paths append 1-D arrays, the
-        # density path appends whole DataFrames, and the all-points path appends
-        # (x, y) tuples. Flagged for review.
+        # Heterogeneous by design: the three 1-D paths - histogram, density and
+        # categorical - append the raw column as a 1-D array, and the all-points
+        # path appends an (x, y) tuple. Step 4's closeout took it from four shapes
+        # to these two by giving the density path the histogram's. Flagged for
+        # review: one element type is the fix, and it is not this branch's.
         self.hist_data: List[Any] = []
         self.hist_labels: List[Any] = []
         self.subset_filters = {}

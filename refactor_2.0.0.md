@@ -8,9 +8,9 @@ snapshot was the nearest thing that looked like one.
 
 | Gate | Refactor start | Now | Target |
 | --- | --- | --- | --- |
-| Boundary allowlist | 111 | **5** | 0 |
+| Boundary allowlist | 111 | **4** | 0 |
 | - rule 1, View emits | 75 | **0** | 0 |
-| - rule 2, View computation imports | 22 | **5** | 0 |
+| - rule 2, View computation imports | 22 | **4** | 0 |
 | - rules 3, 4 and 5 | 10 / 4 / - | **0 / 0 / 0** | 0 |
 | Refactor-coverage audit | - | **85 of 85 pinned** | 100% |
 | Duplication, removable - the original 6 families | 1,889 | **721** | - |
@@ -194,15 +194,24 @@ sites are converted**, and they sit in Clustering (1), Metadata (5) and Protein 
      categorical histogram had never worked, the capture rate always reported one row
      dropped, and the density plot's limits were being read off the DataFrame - so a bin
      width there was accepted and silently ignored.
-   - **4c - `_overlay_plot` and what it drives.** The generator moves to the Controller,
-     `_construct_all_points_histogram` moves to the Model with the extracted
-     baseline-rectify, `_construct_event_overlay` keeps its drawing and loses its
-     computation, and the remaining four logscale callers convert. The expensive one, and
-     the one carrying the 100 test references.
+   - **4c - `_overlay_plot` and what it drives. LANDED 2026-09-14**, suite 3,987 passed
+     / 16 skipped, **allowlist 5 -> 4** with pandas closed for `MetadataView` and numpy
+     recorded as its floor, audit 85 of 85. Five commits: the baseline-rectify extracted
+     to one body; both event-data reductions moved to `MetadataModel`, which is what took
+     the pandas point; the categorical histogram ordered by count at a user's request; the
+     heatmap and both scatterplots converted; and the 1-D pair last, together, for the
+     reason method rule 72 records. **The generator no longer reaches the View at all** -
+     `event_subset_requested` and `load_event_subset` went with it, and the query is set
+     only once the reduction has succeeded too, so one guard refuses both failures.
+     `hist_data` went from **four element types to two**. Two smaller behaviour changes
+     fell out and are in `changelog.md`: a density plot on an empty subset no longer wipes
+     the figure, and an unrecognised event plot type is refused rather than redrawing the
+     previous event. **Five logscale callers, not four**, because 4b handed one back.
 
    **Neither branch closes a gate on its own**: the two pandas uses are one in each, so
    rule 2 for `MetadataView` moves only when 4c lands. Answered before starting, per rule
-   38, so the branches stand on the layering.
+   38, so the branches stand on the layering. **Both held**: 4b left the allowlist at 5 and
+   4c took it to 4.
 
    A manual pass follows each, on a tab whose last one returned four defects.
 
@@ -221,6 +230,7 @@ sites are converted**, and they sit in Clustering (1), Metadata (5) and Protein 
    export reshape - see `DECISIONS.md` for the ruling - and
    `_plot_all_points_histogram`'s display normalisation. **So pandas closes and numpy does
    not**: expect allowlist 5 -> 4 with `MetadataView` numpy recorded as floor. 11 methods, 2 points.
+   **Confirmed on landing**, and the floor is what the boundary gate now records.
    `_plot_scatterplot` and `_plot_3d_scatterplot` were **deliberately excluded** from 4c
    Metadata because they freed no import - the logscale move puts them back in scope, which
    is method rule 60 arriving from the other direction. `set_heatmap` is the kind-3 case.
@@ -232,6 +242,10 @@ sites are converted**, and they sit in Clustering (1), Metadata (5) and Protein 
    `ProteinController:220`. Rule 43.
 6. **3d closes.** With the last caller converted the logscale helper goes to `MetaModel`,
    and the published plugin base sheds numpy. **The last rule-2 point, or the floor.**
+   After 4c the only callers left are `ProteinView`'s two (`:924`, `:989`), so branch 5
+   unblocks this one; the source-level equivalence test in
+   `tests/unit/models/test_meta_model_logscale.py` raises by name when the `MetaView` copy
+   goes, and is deleted as part of this branch.
 7. **4e - much smaller than recorded.** The View layer's only read/write sites are
    `MetaSubsetTabView._load_filter` (`:495-503`) and `_save_filter` (`:875-883`), both JSON
    round-trips; every other hit is `QFileDialog` path selection, which 4e keeps in the View
