@@ -194,7 +194,7 @@ class MetadataController(MetaSubsetTabController):
     @Slot(object, object, bool, object, object, object, str, bool, bool)
     def calculate_histogram_bins(
         self,
-        all_data: npt.NDArray[np.float64],
+        datasets: List[npt.NDArray[np.float64]],
         bins: Any,
         sizes: bool,
         hist_min: float,
@@ -205,12 +205,14 @@ class MetadataController(MetaSubsetTabController):
         norm: bool,
     ) -> None:
         """
-        Choose the shared histogram bin edges, and hand them back to be drawn on.
+        Bin every overlaid dataset onto shared edges, and hand the counts back.
 
-        Decision B's command path, the same shape as :meth:`calculate_heatmap`.
+        Decision B's command path, the same shape as :meth:`calculate_heatmap`. Step
+        4's closeout brought the counting down to join the bin decision, so the View
+        is handed tallies rather than edges to tally against.
 
-        :param all_data: every overlaid dataset's filtered values, concatenated
-        :type all_data: npt.NDArray[np.float64]
+        :param datasets: one filtered array per overlaid dataset
+        :type datasets: List[npt.NDArray[np.float64]]
         :param bins: a bin count, or a bin width when sizes is True, or None
         :type bins: Any
         :param sizes: does bins refer to a bin size (True) or a count (False)
@@ -231,8 +233,8 @@ class MetadataController(MetaSubsetTabController):
         :rtype: None
         """
         try:
-            bin_edges, bincenters, widths = self.model.histogram_bin_edges(
-                all_data, bins, sizes, hist_min, hist_max
+            bin_edges, bincenters, widths, counts = self.model.overlaid_histograms(
+                datasets, bins, sizes, hist_min, hist_max, norm
             )
         except (ValueError, TypeError, IndexError) as e:
             self.logger.error(f"Unable to bin the histogram: {repr(e)}")
@@ -241,7 +243,7 @@ class MetadataController(MetaSubsetTabController):
             )
             return
         self.view.set_histogram_bins(
-            bin_edges, bincenters, widths, ax, x_label, logx, norm
+            bincenters, widths, counts, ax, x_label, logx, norm
         )
 
     @log(logger=logger)

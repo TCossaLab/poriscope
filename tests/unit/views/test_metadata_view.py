@@ -941,10 +941,12 @@ def _answer_histogram_bins(view, numbins=8):
     """
     Answer ``histogram_bins_requested`` the way MetadataController does.
 
-    Step 4c split ``_plot_1d_histogram`` at the bin decision: it emits all the
-    filtered data and ``set_histogram_bins`` does every bit of drawing. The edges
-    are supplied here rather than computed; what the decision *returns* for a given
-    request is asserted directly in ``tests/unit/models/test_metadata_model.py``.
+    Step 4c split ``_plot_1d_histogram`` at the bin decision, and Step 4's closeout
+    moved the counting down after it: the View emits every overlaid dataset and
+    ``set_histogram_bins`` is handed the tallies. The real Model is used here so these
+    tests still exercise the counting they were written over; what the bin decision
+    returns for a given request is asserted directly in
+    ``tests/unit/models/test_metadata_model.py``.
 
     :param view: the view whose request has just been emitted
     :type view: MetadataView
@@ -953,11 +955,15 @@ def _answer_histogram_bins(view, numbins=8):
     :return: None
     :rtype: None
     """
-    args = view.histogram_bins_requested.emit.call_args.args
-    hist_min, hist_max, ax, x_label, logx, norm = args[3:]
-    edges = np.linspace(hist_min, hist_max, numbins + 1)
-    centers = edges[:-1] + np.diff(edges) / 2.0
-    view.set_histogram_bins(edges, centers, np.diff(edges), ax, x_label, logx, norm)
+    from poriscope.plugins.analysistabs.MetadataModel import MetadataModel
+
+    datasets, _bins, _sizes, hist_min, hist_max, ax, x_label, logx, norm = (
+        view.histogram_bins_requested.emit.call_args.args
+    )
+    _edges, centers, widths, counts = MetadataModel.__new__(
+        MetadataModel
+    ).overlaid_histograms(datasets, numbins, False, hist_min, hist_max, norm)
+    view.set_histogram_bins(centers, widths, counts, ax, x_label, logx, norm)
 
 
 def test_plot_1d_histogram_raises_on_invalid_bins_list(view: MetadataView) -> None:

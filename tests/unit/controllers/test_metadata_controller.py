@@ -1224,3 +1224,96 @@ class TestCountCategories:
         controller.count_categories([np.array(["a"])], ["d1"], MagicMock(), "x", "y")
 
         mock_view.set_categorical_counts.assert_not_called()
+
+
+# ---------------- calculate_histogram_bins, Step 4 closeout ------------------
+#
+# The slot had no test naming it before the closeout - rule 52 again, its callers
+# being covered is what made the gap invisible. It carries the counting now as well
+# as the bin decision, so what it forwards and what it hands back are both pinned.
+
+
+class TestCalculateHistogramBins:
+    """Decision B's command path: datasets in, tallies back through a setter."""
+
+    @pytest.fixture(autouse=True)
+    def _stub_status_panel(self, controller, mocker) -> None:
+        """
+        Give the controller a status-panel signal it can emit on.
+
+        :param controller: the controller under test
+        :type controller: MetadataController
+        :param mocker: the pytest-mock fixture
+        :type mocker: pytest_mock.MockerFixture
+        :return: None
+        :rtype: None
+        """
+        controller.add_text_to_display = mocker.Mock()
+        controller.add_text_to_display.emit = mocker.Mock()
+
+    @staticmethod
+    def _run(controller, datasets, norm=False):
+        """
+        Drive the slot the way the View's request does.
+
+        :param controller: the controller under test
+        :type controller: MetadataController
+        :param datasets: one filtered array per overlaid dataset
+        :type datasets: list
+        :param norm: normalise each dataset to a fraction
+        :type norm: bool
+        :return: None
+        :rtype: None
+        """
+        controller.calculate_histogram_bins(
+            datasets, None, False, 0.0, 1.0, MagicMock(), "x", False, norm
+        )
+
+    def test_the_datasets_and_the_norm_flag_reach_the_model(self, controller) -> None:
+        """
+        Normalising is the Model's now: it divides each dataset by its own total,
+        which cannot be done once the counts have been summed into bars.
+        """
+        controller.model.overlaid_histograms.return_value = (1, 2, 3, [4])
+        datasets = [np.array([0.5])]
+
+        self._run(controller, datasets, norm=True)
+
+        args = controller.model.overlaid_histograms.call_args.args
+        assert args[0] is datasets
+        assert args[5] is True
+
+    def test_the_view_is_handed_tallies_not_edges(self, controller, mock_view) -> None:
+        """
+        The bin edges stop at the Controller: nothing in the View drew with them once
+        the counting moved, so passing them on would be a parameter nobody reads.
+        """
+        controller.model.overlaid_histograms.return_value = (
+            "edges",
+            "centers",
+            "widths",
+            ["counts"],
+        )
+        ax = MagicMock()
+
+        controller.calculate_histogram_bins(
+            [np.array([0.5])], None, False, 0.0, 1.0, ax, "x", False, False
+        )
+
+        mock_view.set_histogram_bins.assert_called_once_with(
+            "centers", "widths", ["counts"], ax, "x", False, False
+        )
+
+    def test_a_binning_failure_is_reported_and_draws_nothing(
+        self, controller, mock_view
+    ) -> None:
+        """A stale histogram must not be left under this dataset's label."""
+        controller.model.overlaid_histograms.side_effect = ValueError("bad bins")
+
+        self._run(controller, [np.array([0.5])])
+
+        messages = [
+            c.args[0] for c in controller.add_text_to_display.emit.call_args_list
+        ]
+        assert any("Unable to bin the histogram" in m for m in messages)
+        mock_view.set_histogram_bins.assert_not_called()

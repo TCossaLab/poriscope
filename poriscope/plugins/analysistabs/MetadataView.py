@@ -165,8 +165,11 @@ class MetadataView(MetaSubsetTabView):
     #: all the filtered data at once, the bin request, and the limits that span it.
     #: Answered through ``set_histogram_bins``.
     #:
-    #: Step 4c. Only the bin *decision* crosses - it uses ``scipy.stats.iqr``. The
-    #: counting is ``np.histogram`` and stays with the drawing.
+    #: Step 4c sent only the bin *decision* down, on the grounds that it needed
+    #: ``scipy.stats.iqr`` while the counting needed only numpy. Step 4's closeout sent
+    #: the counting after it: which import a step frees is not the same question as
+    #: whose responsibility the work is, and tallying values into bins is aggregation
+    #: whose result is exported with the plot.
     histogram_bins_requested = Signal(
         object, object, bool, object, object, object, str, bool, bool
     )
@@ -709,16 +712,11 @@ class MetadataView(MetaSubsetTabView):
         self.hist_data.append(data)
         self.hist_labels.append(dataset_label)
 
-        # Compute shared bin edges once
-        # Use ALL currently overlaid data to decide numbins when bins is None (auto)
-        all_data = (
-            np.concatenate(self.hist_data)
-            if len(self.hist_data) > 1
-            else self.hist_data[0]
-        )
-
+        # Every overlaid dataset goes down together: the edges are decided from all
+        # of them at once, which is what makes the bars comparable, and the counts come
+        # back one array per dataset.
         self.histogram_bins_requested.emit(
-            all_data,
+            list(self.hist_data),
             bins,
             sizes,
             self.hist_min,
@@ -732,9 +730,9 @@ class MetadataView(MetaSubsetTabView):
     @log(logger=logger)
     def set_histogram_bins(
         self,
-        bin_edges: npt.NDArray[np.float64],
         bincenters: npt.NDArray[np.float64],
         widths: npt.NDArray[np.float64],
+        counts: Sequence[npt.NDArray[np.float64]],
         ax: Axes,
         x_label: str,
         logx: bool,
@@ -744,15 +742,17 @@ class MetadataView(MetaSubsetTabView):
         Draw every overlaid dataset onto one shared set of bin edges.
 
         The answering half of ``histogram_bins_requested``. Step 4c moved the bin
-        decision to ``MetadataModel`` so that ``scipy.stats`` could leave the View;
-        the counting is ``np.histogram`` and stays here with the drawing.
+        decision to ``MetadataModel``; Step 4's closeout moved the counting after it,
+        so this is handed each dataset's tallies rather than the edges to tally
+        against. The bin edges themselves no longer come back - nothing here drew with
+        them once the counting left.
 
-        :param bin_edges: the shared bin edges
-        :type bin_edges: npt.NDArray[np.float64]
-        :param bincenters: the center of each bin
+        :param bincenters: the center of each bin, which the bars are drawn at
         :type bincenters: npt.NDArray[np.float64]
         :param widths: the width of each bin
         :type widths: npt.NDArray[np.float64]
+        :param counts: one array of per-bin counts per overlaid dataset, index-aligned with the accumulated labels
+        :type counts: Sequence[npt.NDArray[np.float64]]
         :param ax: the axis object on which to plot
         :type ax: Axes
         :param x_label: the x axis label, already formatted but not yet log-marked
@@ -764,19 +764,12 @@ class MetadataView(MetaSubsetTabView):
         :return: None
         :rtype: None
         """
-        # Plot all datasets using the same bin_edges
-        for d, lab in zip(self.hist_data, self.hist_labels):
+        # Every accumulated dataset is redrawn, against the tallies the Model made.
+        for val, lab in zip(counts, self.hist_labels, strict=True):
             x_lab = x_label
             y_lab = "Count" if not norm else "Fraction"
             if logx:
                 x_lab = f"log10({x_lab})"
-
-            val, _ = np.histogram(d, bins=bin_edges)
-            val = val.astype(float)
-            if norm:
-                s = np.sum(val)
-                if s > 0:
-                    val /= s
 
             ax.bar(
                 bincenters,
