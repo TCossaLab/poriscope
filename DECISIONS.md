@@ -10,6 +10,33 @@ which ran through August 2026 and is complete. The step numbers only date the de
 
 ---
 
+## 2026-09-14 - The logscale helper lands on MetaModel before its callers convert
+
+**Context.** `_logscale_and_filter_multiple_columns` is **115 lines** on `MetaView` with
+**8 View call sites** - Clustering 1, Metadata 5, Protein 2. A caller can only convert once
+the Model side can reach the helper, and no View holds a Model reference, so the ordering is
+forced: either the helper exists on `MetaModel` before the first caller moves, or every
+caller is restructured twice.
+
+**Decision.** `MetaModel` gains the helper at the head of the Clustering branch. `MetaView`
+keeps its copy, which is **not dead** - it still serves the seven callers that have not
+converted - and that copy is deleted in the closeout's branch 6 once the last one does.
+
+**Evidence.** `MetaModel` already declares `add_text_to_display` and already imports numpy
+and pandas, so the move needs no new imports and the helper's three status-panel emits work
+unchanged. The two alternatives were measured and are worse: one branch for all eight
+callers spans three tabs and ~20 methods with no green per-tab state in between, and
+deferring the helper rewrites every caller twice - method rule 60, which is the reason 3d
+was folded into 4c to begin with.
+
+**The window is invisible to the ratchet, deliberately recorded here instead.** `MetaView`
+and `MetaModel` share no measured family, so nothing books the two copies. `*Model.py` is
+not a duplication family at all, which is the wider gap - see `future_fixes.md`.
+
+**Revisit** never: this is scaffolding with a scheduled end, and branch 6 is the end.
+
+---
+
 ## 2026-09-14 - Dead code the refactor exposes comes out with it
 
 **Context.** Moving the event plot's time axis to `EventAnalysisModel` left

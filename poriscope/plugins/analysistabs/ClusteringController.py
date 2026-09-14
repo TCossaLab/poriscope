@@ -72,7 +72,9 @@ class ClusteringController(MetaController):
     @log(logger=logger)
     def cluster(
         self,
-        frame: pd.DataFrame,
+        plot_data: pd.DataFrame,
+        frame_columns: List[str],
+        log_flags: List[bool],
         exclude_cols: List[str],
         method: str,
         params: Dict[str, Any],
@@ -87,10 +89,16 @@ class ClusteringController(MetaController):
 
         A failure is reported on the status panel rather than raised, because nothing
         above this slot is a call site that could handle it - Qt invoked it from a
-        signal.
+        signal. That now covers the filtering as well: Step 4's closeout moved it to
+        ``build_clustering_frame``, so a missing column is reported here rather than
+        raised out of the View.
 
-        :param frame: the rows to cluster, already filtered and log-scaled
-        :type frame: pd.DataFrame
+        :param plot_data: the rows the loader returned, unfiltered
+        :type plot_data: pd.DataFrame
+        :param frame_columns: the columns to carry through, ``"id"`` included
+        :type frame_columns: List[str]
+        :param log_flags: per column, whether to log-scale it, index-aligned with frame_columns
+        :type log_flags: List[bool]
         :param exclude_cols: columns to leave un-normalized
         :type exclude_cols: List[str]
         :param method: the clustering method the user chose
@@ -101,6 +109,9 @@ class ClusteringController(MetaController):
         :rtype: None
         """
         try:
+            frame = self.model.build_clustering_frame(
+                plot_data, frame_columns, log_flags
+            )
             clustered, labels, confidence = self.model.cluster(
                 frame, exclude_cols, method, params
             )
@@ -151,12 +162,21 @@ class ClusteringController(MetaController):
             )
             return
 
-        if debug and not query:
-            self.add_text_to_display.emit(debug, self.__class__.__name__)
+        # Cleared as well as set: an empty query means the build was refused, and
+        # leaving the previous one on the View is the stale-read shape Step 4a spent
+        # itself removing.
         self.view.set_query(query, table_name)
         if not query:
+            # ``construct_metadata_query`` validates the filter it was handed - it
+            # builds the whole statement and runs it through ``validate_filter_query``
+            # - so ``debug`` names what was actually refused: an unknown column, a
+            # syntax error, or a complete SELECT where a WHERE-clause body belongs.
+            # This used to emit that *and* a second line blaming the column selection,
+            # which misattributed every filter error. Same shape as
+            # ``MetadataController.load_metadata_subset``, which has always deferred
+            # to the loader's own message.
             self.add_text_to_display.emit(
-                "Unable to generate metadata query, double check your column selections",
+                debug or "The metadata query could not be built",
                 self.__class__.__name__,
             )
             return

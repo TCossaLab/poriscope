@@ -323,3 +323,140 @@ class TestCluster:
         """
         with pytest.raises(ValueError, match="Unknown clustering method"):
             model.cluster(_make_df("a"), ["id"], "K Means", {})
+
+
+# ===========================================================================
+# build_clustering_frame - the filtering Step 4's closeout moved off the View
+# ===========================================================================
+
+
+class TestBuildClusteringFrame:
+    """
+    Filter, log-scale and rebuild the frame that gets clustered.
+
+    This is what took pandas out of ``ClusteringView``. The View still reads the
+    settings dialog - the per-column flags are strings the user typed - and hands the
+    unfiltered rows over with the spec.
+
+    **The joint masking is the contract.** ``logscale_and_filter_columns`` drops a row
+    from *every* array when any one of them is unusable there, which is what keeps the
+    columns aligned; ``"id"`` therefore rides through the filter with the rest rather
+    than being reattached afterwards, or it would index rows that are no longer there.
+    """
+
+    def _rows(self, n=20):
+        """
+        Rows shaped like the loader's answer.
+
+        :param n: how many rows
+        :type n: int
+        :return: a frame with two value columns and an id
+        :rtype: pd.DataFrame
+        """
+        return pd.DataFrame(
+            {
+                "duration": np.linspace(1.0, 10.0, n),
+                "current": np.linspace(100.0, 200.0, n),
+                "id": np.arange(n),
+            }
+        )
+
+    def test_it_returns_the_requested_columns(self, model):
+        frame = model.build_clustering_frame(
+            self._rows(), ["duration", "current", "id"], [False, False, False]
+        )
+
+        assert list(frame.columns) == ["duration", "current", "id"]
+
+    def test_an_unfiltered_frame_comes_back_whole(self, model):
+        frame = model.build_clustering_frame(
+            self._rows(20), ["duration", "current", "id"], [False, False, False]
+        )
+
+        assert len(frame) == 20
+
+    def test_a_missing_column_raises(self, model):
+        """
+        Moved here from the View with the filtering. The Controller's slot already
+        catches KeyError and reports it on the status panel, so the user sees the same
+        message by a shorter route.
+        """
+        with pytest.raises(KeyError, match="must be present"):
+            model.build_clustering_frame(
+                self._rows(), ["duration", "not_a_column", "id"], [False, False, False]
+            )
+
+    def test_a_missing_id_column_raises_too(self, model):
+        """``"id"`` is named in frame_columns like any other, so it is guarded alike."""
+        rows = self._rows().drop(columns=["id"])
+
+        with pytest.raises(KeyError, match="must be present"):
+            model.build_clustering_frame(
+                rows, ["duration", "current", "id"], [False, False, False]
+            )
+
+    def test_a_nan_row_is_dropped_from_every_column(self, model):
+        """The joint masking, which is why id travels through the filter."""
+        rows = self._rows(5)
+        rows.loc[2, "duration"] = np.nan
+
+        frame = model.build_clustering_frame(
+            rows, ["duration", "current", "id"], [False, False, False]
+        )
+
+        assert len(frame) == 4
+        assert 2 not in frame["id"].tolist()
+
+    def test_the_surviving_ids_still_match_their_own_rows(self, model):
+        """
+        The point of carrying ``"id"`` through the mask rather than reattaching it:
+        each surviving id must still sit beside the values it was loaded with.
+        """
+        rows = self._rows(5)
+        rows.loc[1, "current"] = np.nan
+
+        frame = model.build_clustering_frame(
+            rows, ["duration", "current", "id"], [False, False, False]
+        )
+
+        for _, row in frame.iterrows():
+            original = rows.loc[rows["id"] == row["id"]].iloc[0]
+            assert row["duration"] == pytest.approx(original["duration"])
+            assert row["current"] == pytest.approx(original["current"])
+
+    def test_a_flagged_column_is_log_scaled(self, model):
+        rows = pd.DataFrame(
+            {"duration": [1.0, 10.0, 100.0], "id": [0, 1, 2]},
+        )
+
+        frame = model.build_clustering_frame(rows, ["duration", "id"], [True, False])
+
+        np.testing.assert_allclose(frame["duration"].to_numpy(), [0.0, 1.0, 2.0])
+
+    def test_the_id_column_is_not_log_scaled(self, model):
+        """
+        Its flag is False and must stay so - an id run through ``log10`` would still
+        be a number, and nothing downstream would notice until a label was written
+        against the wrong event.
+        """
+        rows = pd.DataFrame({"duration": [1.0, 10.0], "id": [7, 9]})
+
+        frame = model.build_clustering_frame(rows, ["duration", "id"], [True, False])
+
+        assert frame["id"].tolist() == [7, 9]
+
+    def test_the_flags_are_read_positionally(self, model):
+        """
+        ``log_flags`` is index-aligned with ``frame_columns``, so flagging the second
+        column must scale the second column and not the first.
+        """
+        rows = pd.DataFrame(
+            {"a": [1.0, 10.0], "b": [1.0, 10.0], "id": [0, 1]},
+        )
+
+        frame = model.build_clustering_frame(
+            rows, ["a", "b", "id"], [False, True, False]
+        )
+
+        np.testing.assert_allclose(frame["a"].to_numpy(), [1.0, 10.0])
+        np.testing.assert_allclose(frame["b"].to_numpy(), [0.0, 1.0])

@@ -75,7 +75,7 @@ class ClusteringView(MetaView):
     #: ``ClusteringModel`` now, and this is Decision B's command path to it -
     #: ``RawDataView.calculate_psd`` is the same shape. The answer arrives at
     #: :meth:`set_clustering_result`.
-    cluster_requested = Signal(object, list, str, dict)
+    cluster_requested = Signal(object, list, list, list, str, dict)
 
     #: Asks the Controller for the column names a database loader offers. Step 4a
     #: replaced a ``global_signal`` emit whose answer came back seven hops later
@@ -562,11 +562,16 @@ class ClusteringView(MetaView):
         self, config: Dict[str, Any], loader: str, plot_data: pd.DataFrame
     ) -> None:
         """
-        Filter and log-scale the loaded rows, then ask for them to be clustered.
+        Parse the settings dialog, then ask for the rows to be clustered.
 
         The second half of :meth:`_load_metadata_and_request_clustering`. The rows are a
         parameter now rather than something read back off ``self.plot_data``, so the
         clear-before-emit guard that used to protect that read is gone with the read.
+
+        **The filtering itself moved to** :meth:`ClusteringModel.build_clustering_frame`
+        in Step 4's closeout, and took pandas out of this file with it. What stays here
+        is reading the settings dialog - the per-column flags and the method parameters
+        are strings the user typed, so a bad one is this form's problem to report.
 
         :param config: Dictionary with selected columns and method configuration.
         :type config: Dict[str, Any]
@@ -576,7 +581,6 @@ class ClusteringView(MetaView):
         :type plot_data: pd.DataFrame
         :return: None
         :rtype: None
-        :raises KeyError: If a selected column is missing from the loaded dataframe.
         :raises ValueError: If the clustering method or its parameters are invalid or missing.
         """
         columns = [val["column"] for val in config["columns"]]
@@ -584,11 +588,6 @@ class ClusteringView(MetaView):
         logs = [val["log"] for val in config["columns"]]
         norm = [val["norm"] for val in config["columns"]]
         plot = [val["plot"] for val in config["columns"]]
-
-        if not all(col in plot_data.columns for col in columns):
-            raise KeyError(
-                f"All columns {columns} must be present in the provided dataframe"
-            )
 
         logged = {c for c, b in zip(columns, logs, strict=True) if b}
 
@@ -600,17 +599,9 @@ class ClusteringView(MetaView):
         # normalization despite the code appearing to exclude it.
         frame_columns = columns + ["id"]
 
-        # `_logscale_and_filter_multiple_columns` is the only logscale helper on
-        # `MetaView` - the DataFrame-shaped twin was deleted in Step 3d-pre, since this
-        # was its sole caller. It filters rows across every array it is handed, so
-        # passing `frame_columns` reproduces exactly what the frame form's `dropna()`
-        # saw, and the frame is rebuilt for the DataFrame-shaped work that follows.
-        # Step 3d moves it to `MetaModel`; it is still a View method today.
-        filtered = self._logscale_and_filter_multiple_columns(
-            *(plot_data[c].to_numpy() for c in frame_columns),
-            log_flags=[c in logged for c in frame_columns],
-        )
-        clustering_data = pd.DataFrame(dict(zip(frame_columns, filtered, strict=True)))
+        # Which columns to log-scale, index-aligned with `frame_columns` rather than
+        # with `columns`, since "id" is carried through the filter along with the rest.
+        log_flags = [c in logged for c in frame_columns]
         exclude_cols = [c for c, b in zip(columns, norm, strict=True) if not b] + ["id"]
 
         # Parsed here rather than in the Model: these are the strings the user typed
@@ -646,7 +637,11 @@ class ClusteringView(MetaView):
         # anything the Model or Controller needs, so they are held here rather than
         # sent on a round trip. set_clustering_result reads them back.
         self._pending_cluster_display = (method, logs, norm, units, plot)
-        self.cluster_requested.emit(clustering_data, exclude_cols, method, params)
+        # The unfiltered rows and the spec go out together; the Model filters,
+        # log-scales and rebuilds the frame, which is what took pandas out of this file.
+        self.cluster_requested.emit(
+            plot_data, frame_columns, log_flags, exclude_cols, method, params
+        )
 
     @log(logger=logger)
     def set_clustering_result(

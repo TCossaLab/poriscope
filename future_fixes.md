@@ -16,16 +16,17 @@ Read-only investigation and measurement do not.
   `MetaDatabaseLoader` rather than a defect repair - see `future_refactors_and_features.md`
   Part 13. Queued deliberately for after the 2.0.0 refactor.
 
-## The in-suite refactor-coverage tests read a stale `coverage.json` (2026-09-14)
+## `*Model.py` is not a duplication family (2026-09-14)
 
-`tests/unit/scripts/test_refactor_coverage_gate.py`'s two coverage-dependent tests read
-`coverage.json` from the repository root *while the run that writes it is still going*, so
-locally they always judge the previous run. Adding a method and its tests in one commit
-therefore fails `test_no_target_is_untested` on the first full run and passes on the
-second, which reads as a real regression and is not. Harmless in CI, where a fresh
-checkout has no `coverage.json` at all, so both tests skip and the separate audit step
-after the suite is the real gate. Options: assert the file is newer than the session start
-and skip otherwise, or drop the two tests and let the CI step own it.
+`measure_duplication.py` measures `*View.py`, `*Controller.py`, `*controls.py`,
+`eventfitters`, `datareaders` and `views/widgets` - **not the five analysis-tab Models**,
+which is where Step 4 has been moving computation. Measured: a `*Model.py` family would
+report **38 removable lines over 2 identical bodies** today, of which 30 are a
+byte-identical `load_events_by_id` pair across `MetadataModel` and `ProteinModel` - a real
+promotion wanting the `MetaSubsetTabModel` that does not exist - and 8 are the five `_init`
+stubs, which are required ABC implementations and so an irreducible floor. Adding the
+family books both; it should land before the closeout's RawData branch, which would
+otherwise create a second identical time-base helper that nothing would notice.
 
 ## `MetadataModel.kernel_density` uses a deprecated SciPy namespace (2026-09-14)
 

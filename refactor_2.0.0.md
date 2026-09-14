@@ -90,7 +90,20 @@ sites are converted**, and they sit in Clustering (1), Metadata (5) and Protein 
    load, no logscale site. `EventAnalysisModel` is still `def _init: pass`, the last stub
    Model in the repo, so this gives it its first real method and fixes the shape kind 2 uses
    four more times. **Allowlist 8 -> 7.**
-2. **Clustering - one restructure closes the tab and converts a logscale caller.**
+2. **Clustering - LANDED 2026-09-14.** **Allowlist 7 -> 6**, `ClusteringView` off the
+   list. The restructure was cleaner than "move one line": `ClusteringController` was
+   already loading `plot_data` and handing it *to* the View to filter, so the View now
+   emits the unfiltered rows plus the spec and `ClusteringModel.build_clustering_frame`
+   does the filtering, log-scaling and frame construction - taking the logscale call and
+   the `pd.DataFrame` out together, so **1 of the 8 logscale callers is converted**.
+   `MetaModel` gained the helper at the head of this branch per `DECISIONS.md`, with an
+   equivalence test comparing the two copies as source so they cannot drift. The column
+   guard moved to the Model, which turns a missing column from an unhandled raise into a
+   status-panel message - safe because the Controller already wrapped both paths in the
+   same handler. `ClusteringController.cluster` had **no test at all** (rule 52, third
+   time) and now has six. 21 new tests.
+
+   *The original framing:*
    `on_metadata_loaded` holds the logscale call at `:609` and the tab's only pandas use at
    `:613`, four lines apart: the Model logscales and returns the frame.
    **Allowlist 7 -> 6**, and 1 of 8 logscale sites.

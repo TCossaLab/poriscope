@@ -63,6 +63,47 @@ class ClusteringModel(MetaModel):
         pass
 
     @log(logger=logger)
+    def build_clustering_frame(
+        self,
+        plot_data: pd.DataFrame,
+        frame_columns: List[str],
+        log_flags: List[bool],
+    ) -> pd.DataFrame:
+        """
+        Filter and log-scale the loaded rows into the frame that gets clustered.
+
+        Moved off ``ClusteringView`` in Step 4's closeout, which is what took pandas out
+        of that file. The View still reads the settings dialog, since the per-column
+        flags are strings the user typed; deciding what the numbers mean is this layer's.
+
+        ``logscale_and_filter_columns`` masks rows across **every** array it is handed
+        at once, which is what keeps the columns aligned - so ``"id"`` is passed through
+        the filter with the rest rather than reattached afterwards, or it would index
+        rows that are no longer there.
+
+        :param plot_data: the rows the loader returned
+        :type plot_data: pd.DataFrame
+        :param frame_columns: the columns to carry through, ``"id"`` included
+        :type frame_columns: List[str]
+        :param log_flags: per column, whether to log-scale it, index-aligned with frame_columns
+        :type log_flags: List[bool]
+        :return: the filtered, log-scaled frame to cluster
+        :rtype: pd.DataFrame
+        :raises KeyError: If a requested column is missing from the loaded rows.
+        """
+        missing = [c for c in frame_columns if c not in plot_data.columns]
+        if missing:
+            raise KeyError(
+                f"All columns {frame_columns} must be present in the provided dataframe"
+            )
+
+        filtered = self.logscale_and_filter_columns(
+            *(plot_data[c].to_numpy() for c in frame_columns),
+            log_flags=log_flags,
+        )
+        return pd.DataFrame(dict(zip(frame_columns, filtered, strict=True)))
+
+    @log(logger=logger)
     def cluster(
         self,
         frame: pd.DataFrame,

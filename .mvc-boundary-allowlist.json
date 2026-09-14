@@ -1,9 +1,6 @@
 {
   "emits": {},
   "imports": {
-    "poriscope/plugins/analysistabs/ClusteringView.py": [
-      "pandas"
-    ],
     "poriscope/plugins/analysistabs/MetadataView.py": [
       "numpy",
       "pandas"

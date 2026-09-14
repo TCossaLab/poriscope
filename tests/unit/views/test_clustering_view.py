@@ -387,10 +387,14 @@ class TestLoadMetadataRequest:
 
 class TestOnMetadataLoaded:
     """
-    The second half: filter the rows, then ask for them to be clustered.
+    The second half: read the settings dialog, then ask for the rows to be clustered.
 
     The rows are a parameter, so none of this reads ``self.plot_data`` - and the
     clear-before-emit guard that used to protect that read went with the read.
+
+    **The filtering itself is no longer here.** Step 4's closeout moved it to
+    ``ClusteringModel.build_clustering_frame``, so the request now carries the
+    unfiltered rows plus the spec, and this class pins the parsing and the spec.
     """
 
     def _config_hdbscan(self):
@@ -414,8 +418,10 @@ class TestOnMetadataLoaded:
         with qtbot.waitSignal(view.cluster_requested, timeout=5000) as caught:
             view.on_metadata_loaded(config, "loader1", self._rows())
 
-        frame, exclude_cols, method, params = caught.args
-        assert len(frame) == 100
+        rows, frame_columns, log_flags, exclude_cols, method, params = caught.args
+        assert len(rows) == 100
+        assert frame_columns[-1] == "id"
+        assert len(log_flags) == len(frame_columns)
         assert "id" in exclude_cols
         assert method == "HDBSCAN"
         assert isinstance(params["min_cluster_size"], int)
@@ -436,23 +442,41 @@ class TestOnMetadataLoaded:
         with qtbot.waitSignal(view.cluster_requested, timeout=5000) as caught:
             view.on_metadata_loaded(config, "loader1", self._rows(60, "a", "b"))
 
-        _, _, method, params = caught.args
+        _, _, _, _, method, params = caught.args
         assert method == "Gaussian Mixtures"
         assert params == {"n_components": 2}
 
-    def test_a_missing_column_raises(self, view):
+    def test_the_request_carries_the_rows_unfiltered(self, view, qtbot):
         """
-        The loader returned rows without a column that was asked for.
+        The View hands over what the loader returned, not something it has reduced.
 
-        Raised rather than plotted, because the zips downstream are index-aligned with
-        the per-column flag lists and would silently truncate.
+        A View that filtered first and emitted the result would pass the assertions
+        above just as happily, so the identity is checked rather than the length.
+        """
+        rows = self._rows()
+
+        with qtbot.waitSignal(view.cluster_requested, timeout=5000) as caught:
+            view.on_metadata_loaded(self._config_hdbscan(), "loader1", rows)
+
+        assert caught.args[0] is rows
+
+    def test_the_log_flags_are_aligned_with_the_columns_not_the_flag_lists(
+        self, view, qtbot
+    ):
+        """
+        ``"id"`` rides through the filter with the rest so that the row masking stays
+        joint, which means the flags must be one longer than the user's column list
+        and end in False - ``"id"`` is never log-scaled.
         """
         config = self._config_hdbscan()
 
-        with pytest.raises(KeyError, match="must be present"):
-            view.on_metadata_loaded(
-                config, "loader1", self._rows(50, "duration", "something_else")
-            )
+        with qtbot.waitSignal(view.cluster_requested, timeout=5000) as caught:
+            view.on_metadata_loaded(config, "loader1", self._rows())
+
+        _rows, frame_columns, log_flags, *_ = caught.args
+        assert len(log_flags) == len(config["columns"]) + 1
+        assert frame_columns[-1] == "id"
+        assert log_flags[-1] is False
 
     def test_bad_hdbscan_params_raise(self, view):
         """

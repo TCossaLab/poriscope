@@ -99,6 +99,18 @@ TESTS = REPO_ROOT / "tests"
 MOVED: Tuple[Tuple[str, str, str], ...] = (
     # Step 3d - MetaView -> MetaModel
     ("poriscope/utils/MetaView.py", "_logscale_and_filter_multiple_columns", "3d"),
+    # The Model-side copy, added at the head of the closeout's Clustering branch so
+    # that callers can convert at all - no View holds a Model reference. Both copies
+    # exist until the last of the eight call sites moves, and an equivalence test
+    # guards them against drifting apart in the meantime. DECISIONS.md 2026-09-14.
+    ("poriscope/utils/MetaModel.py", "logscale_and_filter_columns", "3d"),
+    # The filtering Clustering's caller carried across with it, which is what took
+    # pandas out of ClusteringView.
+    (
+        "poriscope/plugins/analysistabs/ClusteringModel.py",
+        "build_clustering_frame",
+        "4c",
+    ),
     # `_logscale_and_filter_dataframe` was a target until Step 3d-pre deleted it
     # (2026-09-06) rather than moving it: it and the entry above implemented one
     # algorithm twice, and its single caller now goes through the survivor. Removed
