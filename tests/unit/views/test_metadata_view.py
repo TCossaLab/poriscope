@@ -534,145 +534,115 @@ def test_reset_actions_resets_plotted_datasets(view: MetadataView) -> None:
 # ----------------------------- Plot 1D Density Tests ------------------------------
 
 
-def test_plot_1d_density_updates_hist_min(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
+def _answer_density(view, densities, hist_min=0.0, hist_max=1.0):
     """
-    The shared lower limit describes the filtered data.
+    Answer ``density_requested`` the way MetadataController does.
 
-    This used to read ``min(data)`` with ``data`` still the DataFrame, and ``min()``
-    over a DataFrame iterates its column *names* - so the limit was the string
-    ``"x"``. The two tests here patched ``builtins.min`` to make that return a
-    number, which is what kept it looking correct: **a test that patches a builtin
-    so the code under test behaves is describing a defect, not pinning behaviour.**
+    Step 4c split ``_plot_1d_density`` at the estimate and Step 4's closeout moved
+    the filter, the shared limits and the accumulation after it: the View emits the
+    raw columns and ``set_kernel_densities`` does every bit of drawing and all of
+    the bookkeeping. What the Controller decides in between is asserted in
+    ``tests/unit/controllers/test_metadata_controller.py``.
+
+    :param view: the view whose request has just been emitted
+    :type view: MetadataView
+    :param densities: one (positions, density) pair per dataset, to answer with
+    :type densities: list
+    :param hist_min: the widened lower limit to answer with
+    :type hist_min: float
+    :param hist_max: the widened upper limit to answer with
+    :type hist_max: float
+    :return: None
+    :rtype: None
     """
-    data: pd.DataFrame = pd.DataFrame({"x": np.array([1.0, 2.0, 5.0, 10.0])})
-
-    view._plot_1d_density(view.axes, data, ["x"], ["units"], [False])
-
-    assert view.hist_min == 1.0
-
-
-def test_plot_1d_density_updates_hist_max(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
-    """The shared upper limit, the same way."""
-    data: pd.DataFrame = pd.DataFrame({"x": np.array([1.0, 2.0, 5.0, 10.0])})
-
-    view._plot_1d_density(view.axes, data, ["x"], ["units"], [False])
-
-    assert view.hist_max == 10.0
-
-
-def test_plot_1d_density_limits_are_numbers_not_column_names(
-    view: MetadataView,
-) -> None:
-    """
-    The limits go to ``_resolve_1d_bins``, which subtracts them to turn a bin
-    *width* into a count. A string there raises inside its ``except TypeError``
-    and the width is silently discarded for the automatic rule - which is how this
-    presented: a bin width on the density plot accepted and ignored.
-    """
-    data: pd.DataFrame = pd.DataFrame({"duration": np.array([1.0, 4.0])})
-
-    view._plot_1d_density(view.axes, data, ["duration"], ["s"], [False])
-
-    assert isinstance(view.hist_min, float)
-    assert isinstance(view.hist_max, float)
-    assert view.hist_max - view.hist_min == 3.0
-
-
-def test_plot_1d_density_limits_describe_the_logscaled_values(
-    view: MetadataView,
-) -> None:
-    """
-    With a log scale the drawn values are the log10 ones, so the limits that make
-    overlaid datasets comparable have to be too - which is what the histogram path
-    has always measured. Taken before the filter they described the raw column.
-    """
-    # The fixture replaces the filter with a pass-through, which cannot drop or
-    # scale anything; this test is about what the filter produces, so the real one
-    # is restored by removing the instance attribute the fixture set.
-    del view._logscale_and_filter_multiple_columns
-
-    data: pd.DataFrame = pd.DataFrame({"x": np.array([1.0, 10.0, 100.0])})
-
-    view._plot_1d_density(view.axes, data, ["x"], ["units"], [True])
-
-    assert view.hist_min == pytest.approx(0.0)
-    assert view.hist_max == pytest.approx(2.0)
-
-
-def test_plot_1d_density_reports_a_column_that_filters_away(
-    view: MetadataView,
-) -> None:
-    """
-    Every point dropped - a column that is NULL for every row in the subset. The
-    reductions are the first thing to touch the array and np.min of an empty one
-    raises, which is the guard the histogram path already carried.
-    """
-    # The fixture replaces the filter with a pass-through, which cannot drop or
-    # scale anything; this test is about what the filter produces, so the real one
-    # is restored by removing the instance attribute the fixture set.
-    del view._logscale_and_filter_multiple_columns
-
-    data: pd.DataFrame = pd.DataFrame({"x": np.array([np.nan, np.nan])})
-
-    view._plot_1d_density(view.axes, data, ["x"], ["units"], [False])
-
-    view.density_requested.emit.assert_not_called()
-    view.add_text_to_display.emit.assert_called()
-
-
-def test_plot_1d_density_does_not_accumulate_a_dataset_it_refused(
-    view: MetadataView,
-) -> None:
-    """
-    A dataset that filtered away must not stay in the overlay, or the next plot
-    redraws it and hits the same empty array from inside the loop.
-    """
-    # The fixture replaces the filter with a pass-through, which cannot drop or
-    # scale anything; this test is about what the filter produces, so the real one
-    # is restored by removing the instance attribute the fixture set.
-    del view._logscale_and_filter_multiple_columns
-
-    before = len(view.hist_data)
-    data: pd.DataFrame = pd.DataFrame({"x": np.array([np.nan, np.nan])})
-
-    view._plot_1d_density(view.axes, data, ["x"], ["units"], [False])
-
-    assert len(view.hist_data) == before
-    assert len(view.hist_labels) == before
-
-
-def test_plot_1d_density_clears_axes(view: MetadataView, mocker: MockerFixture) -> None:
-    """Verify axes are cleared before plotting."""
-    data: pd.DataFrame = pd.DataFrame({"x": np.array([1.0, 2.0])})
-
-    view._logscale_and_filter_multiple_columns = mocker.Mock(  # type: ignore[method-assign]
-        return_value=(np.array([1.0, 2.0]),)
+    args = view.density_requested.emit.call_args.args
+    datasets, ax, x_label, dataset_label = args[0], args[6], args[7], args[9]
+    view.set_kernel_densities(
+        datasets[-1], dataset_label, densities, hist_min, hist_max, ax, x_label
     )
 
-    view._plot_1d_density(view.axes, data, ["x"], [""], [False])
 
-    view.axes.clear.assert_called()
-
-
-def test_plot_1d_density_appends_to_hist_data(
-    view: MetadataView, mocker: MockerFixture
+def test_plot_1d_density_sends_the_raw_column_and_the_log_flag(
+    view: MetadataView,
 ) -> None:
-    """Verify data is appended to hist_data."""
+    """
+    The filter moved down in Step 4's closeout, so the column leaves unfiltered.
+
+    The newest dataset travels at the end of the accumulated ones rather than being
+    appended first, which is what lets the Controller refuse a subset that filters
+    away without the View having to take it back out again.
+    """
+    data: pd.DataFrame = pd.DataFrame({"x": np.array([1.0, 2.0, 5.0, 10.0])})
+
+    view._plot_1d_density(view.axes, data, ["x"], ["units"], [True], bins=[7])
+
+    view._logscale_and_filter_multiple_columns.assert_not_called()
+    emitted = view.density_requested.emit.call_args.args
+    assert [list(dataset) for dataset in emitted[0]] == [[1.0, 2.0, 5.0, 10.0]]
+    assert emitted[1] is True
+    assert emitted[2] == 7
+    assert emitted[8] == "x"
+
+
+def test_plot_1d_density_does_not_accumulate_before_the_answer(
+    view: MetadataView,
+) -> None:
+    """
+    A dataset that filters away must not stay in the overlay, or the next plot
+    redraws it and hits the same empty array from inside the loop. Nothing is
+    accumulated until ``set_kernel_densities`` runs, and the Controller does not
+    call it when nothing survived.
+    """
+    data: pd.DataFrame = pd.DataFrame({"x": np.array([np.nan, np.nan])})
+
+    view._plot_1d_density(view.axes, data, ["x"], ["units"], [False])
+
+    view.density_requested.emit.assert_called_once()
+    assert view.hist_data == []
+    assert view.hist_labels == []
+
+
+def test_set_kernel_densities_accumulates_the_newest_dataset(
+    view: MetadataView,
+) -> None:
+    """Verify the raw column and its label join the overlay when it is drawn."""
     data: pd.DataFrame = pd.DataFrame({"x": np.array([1.0, 2.0, 3.0])})
 
-    view._logscale_and_filter_multiple_columns = mocker.Mock(  # type: ignore[method-assign]
-        return_value=(np.array([1.0, 2.0, 3.0]),)
-    )
-
     view._plot_1d_density(view.axes, data, ["x"], [""], [False], dataset_label="test")
+    _answer_density(view, [(np.array([1.0, 2.0]), np.array([0.1, 0.2]))])
 
     assert len(view.hist_data) == 1
-    assert len(view.hist_labels) == 1
-    assert view.hist_labels[0] == "test"
+    assert list(view.hist_data[0]) == [1.0, 2.0, 3.0]
+    assert view.hist_labels == ["test"]
+
+
+def test_set_kernel_densities_takes_the_widened_limits(view: MetadataView) -> None:
+    """Verify the shared limits the Model widened come back onto the view."""
+    data: pd.DataFrame = pd.DataFrame({"x": np.array([1.0, 2.0, 3.0])})
+
+    view._plot_1d_density(view.axes, data, ["x"], [""], [False])
+    _answer_density(
+        view, [(np.array([1.0, 2.0]), np.array([0.1, 0.2]))], hist_min=1.0, hist_max=3.0
+    )
+
+    assert view.hist_min == 1.0
+    assert view.hist_max == 3.0
+
+
+def test_set_kernel_densities_clears_axes(view: MetadataView) -> None:
+    """
+    Verify the axes are cleared before drawing, and not before that.
+
+    They used to be cleared in the request half, so a subset that filtered away
+    wiped the plot that was there and drew nothing in its place.
+    """
+    data: pd.DataFrame = pd.DataFrame({"x": np.array([1.0, 2.0])})
+
+    view._plot_1d_density(view.axes, data, ["x"], [""], [False])
+    view.axes.clear.assert_not_called()
+
+    _answer_density(view, [(np.array([1.0, 2.0]), np.array([0.1, 0.2]))])
+    view.axes.clear.assert_called()
 
 
 def test_plot_1d_density_raises_on_invalid_bins_list(view: MetadataView) -> None:
@@ -683,39 +653,11 @@ def test_plot_1d_density_raises_on_invalid_bins_list(view: MetadataView) -> None
         view._plot_1d_density(view.axes, data, ["x"], [""], [False], bins=[])
 
 
-def _answer_density(view, densities):
-    """
-    Answer ``density_requested`` the way MetadataController does.
-
-    Step 4c split ``_plot_1d_density`` at the estimate: it emits the filtered
-    columns and ``set_kernel_densities`` does every bit of drawing. The estimate is
-    supplied here rather than computed, so these tests need no scipy stub at all -
-    the ``gaussian_kde`` patch they used to carry went with the method.
-
-    :param view: the view whose request has just been emitted
-    :type view: MetadataView
-    :param densities: one (positions, density) pair per dataset, to answer with
-    :type densities: list
-    :return: None
-    :rtype: None
-    """
-    labels, ax, x_label = (
-        view.density_requested.emit.call_args.args[1],
-        view.density_requested.emit.call_args.args[6],
-        view.density_requested.emit.call_args.args[7],
-    )
-    view.set_kernel_densities(densities, labels, ax, x_label)
-
-
 def test_plot_1d_density_sets_log10_label_when_logscale_true(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify log10 label is set when logscale is True."""
     data: pd.DataFrame = pd.DataFrame({"x": np.array([1.0, 10.0, 100.0])})
-
-    view._logscale_and_filter_multiple_columns = mocker.Mock(  # type: ignore[method-assign]
-        return_value=(np.array([0.0, 1.0, 2.0]),)
-    )
 
     view._plot_1d_density(view.axes, data, ["x"], ["units"], [True])
     _answer_density(view, [(np.array([0.0, 1.0, 2.0]), np.array([0.1, 0.2, 0.3]))])
@@ -1012,11 +954,12 @@ def _answer_histogram_bins(view, numbins=8):
     """
     Answer ``histogram_bins_requested`` the way MetadataController does.
 
-    Step 4c split ``_plot_1d_histogram`` at the bin decision, and Step 4's closeout
-    moved the counting down after it: the View emits every overlaid dataset and
-    ``set_histogram_bins`` is handed the tallies. The real Model is used here so these
-    tests still exercise the counting they were written over; what the bin decision
-    returns for a given request is asserted directly in
+    Step 4c split ``_plot_1d_histogram`` at the bin decision, Step 4's closeout moved
+    the counting down after it, and then the filter, the shared limits and the
+    accumulation as well: the View emits every overlaid dataset raw and
+    ``set_histogram_bins`` is handed the tallies. The real Model is used here so
+    these tests still exercise the counting they were written over; what the bin
+    decision returns for a given request is asserted directly in
     ``tests/unit/models/test_metadata_model.py``.
 
     :param view: the view whose request has just been emitted
@@ -1028,13 +971,39 @@ def _answer_histogram_bins(view, numbins=8):
     """
     from poriscope.plugins.analysistabs.MetadataModel import MetadataModel
 
-    datasets, _bins, _sizes, hist_min, hist_max, ax, x_label, logx, norm = (
-        view.histogram_bins_requested.emit.call_args.args
+    (
+        datasets,
+        logx,
+        _bins,
+        _sizes,
+        hist_min,
+        hist_max,
+        norm,
+        ax,
+        x_label,
+        _column,
+        dataset_label,
+    ) = view.histogram_bins_requested.emit.call_args.args
+
+    model = MetadataModel()
+    filtered = model.logscale_and_filter_datasets(datasets, logx)
+    hist_min, hist_max = model.widen_shared_limits(filtered[-1], hist_min, hist_max)
+    _edges, centers, widths, counts = model.overlaid_histograms(
+        filtered, numbins, False, hist_min, hist_max, norm
     )
-    _edges, centers, widths, counts = MetadataModel.__new__(
-        MetadataModel
-    ).overlaid_histograms(datasets, numbins, False, hist_min, hist_max, norm)
-    view.set_histogram_bins(centers, widths, counts, ax, x_label, logx, norm)
+    view.set_histogram_bins(
+        datasets[-1],
+        dataset_label,
+        centers,
+        widths,
+        counts,
+        hist_min,
+        hist_max,
+        ax,
+        x_label,
+        logx,
+        norm,
+    )
 
 
 def test_plot_1d_histogram_raises_on_invalid_bins_list(view: MetadataView) -> None:
@@ -1051,32 +1020,30 @@ def test_plot_1d_histogram_uses_first_bins_entry(
     """Verify bins list is reduced to first entry."""
     data = pd.DataFrame({"x": np.array([1.0, 2.0, 3.0, 4.0])})
 
-    view._logscale_and_filter_multiple_columns = mocker.Mock(  # type: ignore[method-assign]
-        return_value=(np.array([1.0, 2.0, 3.0, 4.0]),)
-    )
-
     view._plot_1d_histogram(view.axes, data, ["x"], ["u"], [False], bins=[10])
 
-    assert len(view.hist_data) == 1
     # the list is unwrapped to its first entry before the request goes out; what
     # the bin decision then does with it is asserted on the Model
-    assert view.histogram_bins_requested.emit.call_args.args[1] == 10
+    assert view.histogram_bins_requested.emit.call_args.args[2] == 10
 
 
-def test_plot_1d_histogram_updates_hist_min_max(
-    view: MetadataView, mocker: MockerFixture
+def test_plot_1d_histogram_sends_the_raw_column_and_the_log_flag(
+    view: MetadataView,
 ) -> None:
-    """Verify hist_min and hist_max are updated."""
+    """
+    The same shape as the density's, deliberately: the two write the same
+    accumulator and the same pair of shared limits, which is why they converted
+    together rather than one branch each.
+    """
     data = pd.DataFrame({"x": np.array([1.0, 2.0, 5.0, 10.0])})
 
-    view._logscale_and_filter_multiple_columns = mocker.Mock(  # type: ignore[method-assign]
-        return_value=(np.array([1.0, 2.0, 5.0, 10.0]),)
-    )
+    view._plot_1d_histogram(view.axes, data, ["x"], ["units"], [True])
 
-    view._plot_1d_histogram(view.axes, data, ["x"], ["units"], [False])
-
-    assert view.hist_min == 1.0
-    assert view.hist_max == 10.0
+    view._logscale_and_filter_multiple_columns.assert_not_called()
+    emitted = view.histogram_bins_requested.emit.call_args.args
+    assert [list(dataset) for dataset in emitted[0]] == [[1.0, 2.0, 5.0, 10.0]]
+    assert emitted[1] is True
+    assert emitted[9] == "x"
 
 
 def test_plot_1d_histogram_normalizes_when_norm_true(
@@ -1084,10 +1051,6 @@ def test_plot_1d_histogram_normalizes_when_norm_true(
 ) -> None:
     """Verify histogram is normalized when norm=True."""
     data = pd.DataFrame({"x": np.array([1.0, 2.0, 3.0, 4.0])})
-
-    view._logscale_and_filter_multiple_columns = mocker.Mock(  # type: ignore[method-assign]
-        return_value=(np.array([1.0, 2.0, 3.0, 4.0]),)
-    )
 
     view._plot_1d_histogram(view.axes, data, ["x"], ["u"], [False], norm=True)
     _answer_histogram_bins(view)
@@ -1103,10 +1066,6 @@ def test_plot_1d_histogram_sets_log10_label_when_logscale_true(
     """Verify log10 label is set when logscale is True."""
     data = pd.DataFrame({"x": np.array([1.0, 10.0, 100.0])})
 
-    view._logscale_and_filter_multiple_columns = mocker.Mock(  # type: ignore[method-assign]
-        return_value=(np.array([0.0, 1.0, 2.0]),)
-    )
-
     view._plot_1d_histogram(view.axes, data, ["x"], ["units"], [True])
     _answer_histogram_bins(view)
 
@@ -1115,38 +1074,11 @@ def test_plot_1d_histogram_sets_log10_label_when_logscale_true(
     assert "log10" in xlabel_call.args[0]
 
 
-def test_plot_1d_histogram_reports_a_subset_with_no_values(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
-    """
-    Reported from a real run, and the second half of the same defect.
-
-    Coercing an all-NULL column to float leaves every point NaN, so the filter
-    returns zero points - and ``np.min`` of an empty array raises, one line below
-    where the original TypeError was. The commonest way to reach it is a subset
-    filter selecting only rows where a protein fit column is NULL.
-    """
-    data = pd.DataFrame({"x": np.array([1.0, 2.0])})
-    view._logscale_and_filter_multiple_columns = mocker.Mock(  # type: ignore[method-assign]
-        return_value=(np.array([]),)
-    )
-
-    view._plot_1d_histogram(view.axes, data, ["x"], ["units"], [False])
-
-    said = [call.args[0] for call in view.add_text_to_display.emit.call_args_list]
-    assert any("nothing to histogram" in message for message in said)
-    view.axes.hist.assert_not_called()
-
-
 def test_plot_1d_histogram_handles_bin_sizes(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify bin sizes mode calculates bins correctly."""
+    """Verify bin sizes mode reaches the request as a width."""
     data = pd.DataFrame({"x": np.array([1.0, 2.0, 3.0, 4.0])})
-
-    view._logscale_and_filter_multiple_columns = mocker.Mock(  # type: ignore[method-assign]
-        return_value=(np.array([1.0, 2.0, 3.0, 4.0]),)
-    )
     view.hist_min = 0.0
     view.hist_max = 10.0
 
@@ -1154,31 +1086,35 @@ def test_plot_1d_histogram_handles_bin_sizes(
         view.axes, data, ["x"], ["u"], [False], bins=[0.5], sizes=True
     )
 
-    assert len(view.hist_data) == 1
     emitted = view.histogram_bins_requested.emit.call_args.args
-    assert emitted[1] == 0.5
-    assert emitted[2] is True
+    assert emitted[2] == 0.5
+    assert emitted[3] is True
+    assert emitted[4] == 0.0
+    assert emitted[5] == 10.0
 
 
 def test_plot_1d_histogram_overlays_multiple_datasets(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify multiple datasets can be overlaid."""
+    """
+    Verify multiple datasets can be overlaid.
+
+    Each one joins the accumulator as it is drawn, so the second request carries
+    the first dataset as well as its own.
+    """
     data1 = pd.DataFrame({"x": np.array([1.0, 2.0, 3.0])})
     data2 = pd.DataFrame({"x": np.array([4.0, 5.0, 6.0])})
 
-    view._logscale_and_filter_multiple_columns = mocker.Mock(  # type: ignore[method-assign]
-        side_effect=[
-            (np.array([1.0, 2.0, 3.0]),),
-            (np.array([4.0, 5.0, 6.0]),),
-        ]
-    )
-
     view._plot_1d_histogram(view.axes, data1, ["x"], ["u"], [False], dataset_label="d1")
+    _answer_histogram_bins(view)
     view._plot_1d_histogram(view.axes, data2, ["x"], ["u"], [False], dataset_label="d2")
 
+    assert len(view.histogram_bins_requested.emit.call_args.args[0]) == 2
+
+    _answer_histogram_bins(view)
+
     assert len(view.hist_data) == 2
-    assert len(view.hist_labels) == 2
+    assert view.hist_labels == ["d1", "d2"]
 
 
 # ----------------------------- Plot Heatmap Tests ------------------------------

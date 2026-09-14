@@ -616,10 +616,10 @@ refactoring lands, to avoid generating triads against a layout about to change.
 - **`MetaView.lock` is a class attribute shared by every tab view** (`MetaView.py:90`). It
   guards `progress_bars` in `remove_progress_bar` only; the other three accesses (`:282`,
   `:287`, `:325`) are unguarded, so the lock does not establish the invariant it appears to.
-- **`hist_data` holds three shapes.** In both `MetadataView` and `ProteinView` it receives
-  1-D arrays from the histogram path, whole DataFrames from the density path, and `(x, y)`
-  tuples from the all-points path. Widened to `List[Any]` with a comment; unifying it is a
-  real refactor.
+- **`hist_data` holds two shapes in `MetadataView`.** The three 1-D paths now all append a
+  raw column array; the all-points path appends an `(x, y)` tuple. Step 4's closeout took it
+  from four shapes to two. `ProteinView`'s copy holds only the tuple. Typed `List[Any]` with
+  a comment; unifying the last two is a real refactor.
 - **`pydoclint` class-attribute bug - filed upstream, awaiting a fix.**
   https://github.com/jsh9/pydoclint/issues/304. Nothing to do here until a release lands;
   `check-class-attributes` stays `false`. Kept in case the report needs restating: the

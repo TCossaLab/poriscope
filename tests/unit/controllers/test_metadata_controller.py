@@ -1239,102 +1239,6 @@ class TestCountCategories:
 # as the bin decision, so what it forwards and what it hands back are both pinned.
 
 
-class TestCalculateHistogramBins:
-    """Decision B's command path: datasets in, tallies back through a setter."""
-
-    @pytest.fixture(autouse=True)
-    def _stub_status_panel(self, controller, mocker) -> None:
-        """
-        Give the controller a status-panel signal it can emit on.
-
-        :param controller: the controller under test
-        :type controller: MetadataController
-        :param mocker: the pytest-mock fixture
-        :type mocker: pytest_mock.MockerFixture
-        :return: None
-        :rtype: None
-        """
-        controller.add_text_to_display = mocker.Mock()
-        controller.add_text_to_display.emit = mocker.Mock()
-
-    @staticmethod
-    def _run(controller, datasets, norm=False):
-        """
-        Drive the slot the way the View's request does.
-
-        :param controller: the controller under test
-        :type controller: MetadataController
-        :param datasets: one filtered array per overlaid dataset
-        :type datasets: list
-        :param norm: normalise each dataset to a fraction
-        :type norm: bool
-        :return: None
-        :rtype: None
-        """
-        controller.calculate_histogram_bins(
-            datasets, None, False, 0.0, 1.0, MagicMock(), "x", False, norm
-        )
-
-    def test_the_datasets_and_the_norm_flag_reach_the_model(self, controller) -> None:
-        """
-        Normalising is the Model's now: it divides each dataset by its own total,
-        which cannot be done once the counts have been summed into bars.
-        """
-        controller.model.overlaid_histograms.return_value = (1, 2, 3, [4])
-        datasets = [np.array([0.5])]
-
-        self._run(controller, datasets, norm=True)
-
-        args = controller.model.overlaid_histograms.call_args.args
-        assert args[0] is datasets
-        assert args[5] is True
-
-    def test_the_view_is_handed_tallies_not_edges(self, controller, mock_view) -> None:
-        """
-        The bin edges stop at the Controller: nothing in the View drew with them once
-        the counting moved, so passing them on would be a parameter nobody reads.
-        """
-        controller.model.overlaid_histograms.return_value = (
-            "edges",
-            "centers",
-            "widths",
-            ["counts"],
-        )
-        ax = MagicMock()
-
-        controller.calculate_histogram_bins(
-            [np.array([0.5])], None, False, 0.0, 1.0, ax, "x", False, False
-        )
-
-        mock_view.set_histogram_bins.assert_called_once_with(
-            "centers", "widths", ["counts"], ax, "x", False, False
-        )
-
-    def test_a_binning_failure_is_reported_and_draws_nothing(
-        self, controller, mock_view
-    ) -> None:
-        """A stale histogram must not be left under this dataset's label."""
-        controller.model.overlaid_histograms.side_effect = ValueError("bad bins")
-
-        self._run(controller, [np.array([0.5])])
-
-        messages = [
-            c.args[0] for c in controller.add_text_to_display.emit.call_args_list
-        ]
-        assert any("Unable to bin the histogram" in m for m in messages)
-        mock_view.set_histogram_bins.assert_not_called()
-
-
-# ---------------- the filter's move, Step 4 closeout -------------------------
-#
-# `_logscale_and_filter_multiple_columns` used to run in the View, immediately
-# before each plot's request went out. These three slots take the raw columns and
-# the log flags instead, so the values that end up drawn - and exported - are
-# produced once, below the widget. What has to be pinned is the ordering: the
-# filter runs *before* the work that consumes its output, and its output is what
-# reaches the View.
-
-
 class _StatusPanelMixin:
     """Give the controller a status-panel signal it can emit on."""
 
@@ -1350,6 +1254,297 @@ class _StatusPanelMixin:
         """
         controller.add_text_to_display = mocker.Mock()
         controller.add_text_to_display.emit = mocker.Mock()
+
+
+class TestCalculateHistogramBins(_StatusPanelMixin):
+    """Decision B's command path: raw datasets in, tallies back through a setter."""
+
+    @staticmethod
+    def _run(controller, datasets, norm=False, logx=False, ax=None):
+        """
+        Drive the slot the way the View's request does.
+
+        :param controller: the controller under test
+        :type controller: MetadataController
+        :param datasets: one raw column array per overlaid dataset
+        :type datasets: list
+        :param norm: normalise each dataset to a fraction
+        :type norm: bool
+        :param logx: log-scale the values before binning
+        :type logx: bool
+        :param ax: the drawing context to pass through
+        :type ax: object
+        :return: None
+        :rtype: None
+        """
+        controller.calculate_histogram_bins(
+            datasets,
+            logx,
+            None,
+            False,
+            None,
+            None,
+            norm,
+            ax if ax is not None else MagicMock(),
+            "x (ms)",
+            "x",
+            "d1",
+        )
+
+    def test_the_filtered_datasets_and_the_norm_flag_reach_the_binning(
+        self, controller
+    ) -> None:
+        """
+        Binning the raw datasets rather than the filtered ones is the mistake this
+        ordering exists to prevent, and it would be invisible in a plot.
+
+        Normalising is the Model's too: it divides each dataset by its own total,
+        which cannot be done once the counts have been summed into bars.
+        """
+        filtered = [np.array([0.5])]
+        controller.model.logscale_and_filter_datasets.return_value = filtered
+        controller.model.widen_shared_limits.return_value = (0.0, 1.0)
+        controller.model.overlaid_histograms.return_value = (1, 2, 3, [4])
+
+        self._run(controller, [np.array([0.5, np.nan])], norm=True)
+
+        args = controller.model.overlaid_histograms.call_args.args
+        assert args[0] is filtered
+        assert args[5] is True
+
+    def test_the_view_is_handed_tallies_not_edges(self, controller, mock_view) -> None:
+        """
+        The bin edges stop at the Controller: nothing in the View drew with them once
+        the counting moved, so passing them on would be a parameter nobody reads.
+        """
+        raw = np.array([0.5])
+        controller.model.logscale_and_filter_datasets.return_value = [raw]
+        controller.model.widen_shared_limits.return_value = (0.0, 1.0)
+        controller.model.overlaid_histograms.return_value = (
+            "edges",
+            "centers",
+            "widths",
+            ["counts"],
+        )
+        ax = MagicMock()
+
+        self._run(controller, [raw], ax=ax)
+
+        mock_view.set_histogram_bins.assert_called_once_with(
+            raw,
+            "d1",
+            "centers",
+            "widths",
+            ["counts"],
+            0.0,
+            1.0,
+            ax,
+            "x (ms)",
+            False,
+            False,
+        )
+
+    def test_a_binning_failure_is_reported_and_draws_nothing(
+        self, controller, mock_view
+    ) -> None:
+        """A stale histogram must not be left under this dataset's label."""
+        controller.model.logscale_and_filter_datasets.return_value = [np.array([0.5])]
+        controller.model.widen_shared_limits.return_value = (0.0, 1.0)
+        controller.model.overlaid_histograms.side_effect = ValueError("bad bins")
+
+        self._run(controller, [np.array([0.5])])
+
+        messages = [
+            c.args[0] for c in controller.add_text_to_display.emit.call_args_list
+        ]
+        assert any("Unable to bin the histogram" in m for m in messages)
+        mock_view.set_histogram_bins.assert_not_called()
+
+    def test_a_subset_that_filters_away_is_reported_and_draws_nothing(
+        self, controller, mock_view
+    ) -> None:
+        """
+        Reported from a real run, and pinned against the real Model.
+
+        Coercing an all-NULL column to float leaves every point NaN, so the filter
+        returns zero points - and ``np.min`` of an empty array raises, one line
+        below where the original TypeError was. The commonest way to reach it is a
+        subset filter selecting only rows where a protein fit column is NULL.
+        """
+        controller.model = MetadataModel()
+
+        self._run(controller, [np.array([np.nan, np.nan])])
+
+        messages = [
+            c.args[0] for c in controller.add_text_to_display.emit.call_args_list
+        ]
+        assert any("nothing to histogram" in m for m in messages)
+        mock_view.set_histogram_bins.assert_not_called()
+
+    def test_the_limits_describe_the_filtered_values(
+        self, controller, mock_view
+    ) -> None:
+        """
+        The limits go to ``_resolve_1d_bins``, which subtracts them to turn a bin
+        *width* into a count, and they decide the edges every overlaid dataset is
+        drawn on. Taken before the filter they would describe values that are not
+        on the axes.
+        """
+        controller.model = MetadataModel()
+
+        self._run(controller, [np.array([1.0, np.nan, 4.0])])
+
+        args = mock_view.set_histogram_bins.call_args.args
+        assert args[5] == 1.0
+        assert args[6] == 4.0
+
+    def test_the_limits_describe_the_logscaled_values(
+        self, controller, mock_view
+    ) -> None:
+        """
+        With a log scale the drawn values are the log10 ones, so the limits that
+        make overlaid datasets comparable have to be too.
+        """
+        controller.model = MetadataModel()
+
+        self._run(controller, [np.array([1.0, 10.0, 100.0])], logx=True)
+
+        args = mock_view.set_histogram_bins.call_args.args
+        assert args[5] == pytest.approx(0.0)
+        assert args[6] == pytest.approx(2.0)
+
+
+class TestEstimateKernelDensities(_StatusPanelMixin):
+    """
+    The density's half of the same conversion.
+
+    It shares ``hist_data`` and the pair of shared limits with the histogram, which
+    is why the two converted in one branch: the Model can only take over the
+    filtering if what is accumulated is raw, and both write both.
+    """
+
+    @staticmethod
+    def _run(controller, datasets, logx=False, ax=None):
+        """
+        Drive the slot the way the View's request does.
+
+        :param controller: the controller under test
+        :type controller: MetadataController
+        :param datasets: one raw column array per overlaid dataset
+        :type datasets: list
+        :param logx: log-scale the values before binning
+        :type logx: bool
+        :param ax: the drawing context to pass through
+        :type ax: object
+        :return: None
+        :rtype: None
+        """
+        controller.estimate_kernel_densities(
+            datasets,
+            logx,
+            None,
+            False,
+            None,
+            None,
+            ax if ax is not None else MagicMock(),
+            "x (ms)",
+            "x",
+            "d1",
+        )
+
+    def test_the_filtered_datasets_reach_the_estimate(self, controller) -> None:
+        """Estimating the density of an unfiltered column would draw the NaNs."""
+        filtered = [np.array([0.5, 0.6])]
+        controller.model.logscale_and_filter_datasets.return_value = filtered
+        controller.model.widen_shared_limits.return_value = (0.0, 1.0)
+        controller.model.kernel_densities.return_value = [("x", "y")]
+
+        self._run(controller, [np.array([0.5, np.nan, 0.6])])
+
+        assert controller.model.kernel_densities.call_args.args[0] is filtered
+
+    def test_the_view_is_handed_the_raw_newest_dataset_to_accumulate(
+        self, controller, mock_view
+    ) -> None:
+        """
+        The View accumulates the *raw* column, not the filtered one: the Model
+        refilters every accumulated dataset on each update, which it can only do if
+        what it is given has not been filtered already.
+        """
+        raw = np.array([0.5, np.nan, 0.6])
+        controller.model.logscale_and_filter_datasets.return_value = [
+            np.array([0.5, 0.6])
+        ]
+        controller.model.widen_shared_limits.return_value = (0.5, 0.6)
+        controller.model.kernel_densities.return_value = [("x", "y")]
+        ax = MagicMock()
+
+        self._run(controller, [raw], ax=ax)
+
+        mock_view.set_kernel_densities.assert_called_once_with(
+            raw, "d1", [("x", "y")], 0.5, 0.6, ax, "x (ms)"
+        )
+
+    def test_a_subset_that_filters_away_is_reported_and_draws_nothing(
+        self, controller, mock_view
+    ) -> None:
+        """
+        A dataset that filtered away must not stay in the overlay, or the next plot
+        redraws it and hits the same empty array from inside the loop. Refusing it
+        here is what keeps it out, since the View accumulates in the setter.
+        """
+        controller.model = MetadataModel()
+
+        self._run(controller, [np.array([np.nan, np.nan])])
+
+        messages = [
+            c.args[0] for c in controller.add_text_to_display.emit.call_args_list
+        ]
+        assert any("nothing to plot" in m for m in messages)
+        mock_view.set_kernel_densities.assert_not_called()
+
+    def test_the_limits_are_numbers_not_column_names(
+        self, controller, mock_view
+    ) -> None:
+        """
+        These used to be read off the DataFrame, and ``min()`` over a DataFrame
+        iterates its column *names* - so the limit was a string, a bin width could
+        not be divided into it, and it was silently discarded for the automatic
+        rule. That is how it presented: a bin width accepted and ignored.
+        """
+        controller.model = MetadataModel()
+
+        self._run(controller, [np.array([1.0, 4.0])])
+
+        args = mock_view.set_kernel_densities.call_args.args
+        assert isinstance(args[3], float)
+        assert isinstance(args[4], float)
+        assert args[4] - args[3] == 3.0
+
+    def test_an_estimate_failure_is_reported_and_draws_nothing(
+        self, controller, mock_view
+    ) -> None:
+        controller.model.logscale_and_filter_datasets.return_value = [np.array([0.5])]
+        controller.model.widen_shared_limits.return_value = (0.0, 1.0)
+        controller.model.kernel_densities.side_effect = ValueError("singular")
+
+        self._run(controller, [np.array([0.5])])
+
+        messages = [
+            c.args[0] for c in controller.add_text_to_display.emit.call_args_list
+        ]
+        assert any("Unable to estimate the density" in m for m in messages)
+        mock_view.set_kernel_densities.assert_not_called()
+
+
+# ---------------- the filter's move, Step 4 closeout -------------------------
+#
+# `_logscale_and_filter_multiple_columns` used to run in the View, immediately
+# before each plot's request went out. These three slots take the raw columns and
+# the log flags instead, so the values that end up drawn - and exported - are
+# produced once, below the widget. What has to be pinned is the ordering: the
+# filter runs *before* the work that consumes its output, and its output is what
+# reaches the View.
 
 
 class TestCalculateHeatmap(_StatusPanelMixin):

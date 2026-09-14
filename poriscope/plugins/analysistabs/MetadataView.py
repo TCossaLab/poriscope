@@ -182,27 +182,29 @@ class MetadataView(MetaSubsetTabView):
     #: are not a special case of the 2-D drawing.
     scatterplot_3d_requested = Signal(object, object, object, object, str)
 
-    #: Asks for every overlaid dataset's kernel density: the already-filtered
-    #: columns, the bin request, the shared histogram limits, and the drawing
-    #: context handed back unchanged. Answered through ``set_kernel_densities``.
+    #: Asks for every overlaid dataset's kernel density: the raw columns, the log
+    #: flag, the bin request, the shared limits so far, and the drawing context
+    #: handed back unchanged. Answered through ``set_kernel_densities``.
     #:
     #: Step 4c. One intent for all the datasets rather than one each, so no answer
-    #: is parked on the widget between them.
+    #: is parked on the widget between them. Step 4's closeout sent the filtering
+    #: and the shared limits down as well, which is why the columns now leave raw.
     density_requested = Signal(
-        object, object, object, bool, object, object, object, str
+        object, bool, object, bool, object, object, object, str, str, str
     )
 
-    #: Asks for the shared bin edges every overlaid histogram dataset is drawn on:
-    #: all the filtered data at once, the bin request, and the limits that span it.
-    #: Answered through ``set_histogram_bins``.
+    #: Asks for the shared bin edges every overlaid histogram dataset is drawn on,
+    #: and the counts against them: the raw columns, the log flag, the bin request
+    #: and the limits so far. Answered through ``set_histogram_bins``.
     #:
     #: Step 4c sent only the bin *decision* down, on the grounds that it needed
     #: ``scipy.stats.iqr`` while the counting needed only numpy. Step 4's closeout sent
     #: the counting after it: which import a step frees is not the same question as
     #: whose responsibility the work is, and tallying values into bins is aggregation
-    #: whose result is exported with the plot.
+    #: whose result is exported with the plot. The filtering and the shared limits
+    #: followed in the same branch as the density's, since the two write both.
     histogram_bins_requested = Signal(
-        object, object, bool, object, object, object, str, bool, bool
+        object, bool, object, bool, object, object, bool, object, str, str, str
     )
 
     #: Asks for the capture-rate binning and its exponential fit: the event times
@@ -454,7 +456,7 @@ class MetadataView(MetaSubsetTabView):
         :type sizes: bool
         :raises ValueError: If bins is an empty list.
 
-        Calculate a plot a 1d kernel density with optional logscaling before binning
+        Ask for a 1d kernel density, with optional logscaling before binning
         """
 
         if bins is not None:
@@ -463,69 +465,40 @@ class MetadataView(MetaSubsetTabView):
             else:
                 raise ValueError(f"Invalid bins entry {bins}")
 
-        ax.clear()
-        self._clear_cache()
-        self.hist_data.append(data)
-        self.hist_labels.append(dataset_label)
-
-        # The filter stays here: it lives on ``MetaView`` and emits to the status
-        # panel, so it runs before the request goes out and the Model is handed
-        # arrays that are already filtered.
         (column,) = cols
         (x_units,) = units
         (logx,) = logscales
-
-        filtered: List[npt.NDArray[np.float64]] = []
-        for dataset in self.hist_data:
-            (values,) = self._logscale_and_filter_multiple_columns(
-                dataset[column].values, log_flags=[logx]
-            )
-            filtered.append(values)
-
-        if len(filtered[-1]) == 0:
-            # Every point was filtered out, the commonest cause being a column that
-            # is NULL for every row the subset filter selected. The reductions below
-            # are the first thing to touch the array and np.min of an empty one
-            # raises, which is the guard _plot_1d_histogram already carries.
-            self.hist_data.pop()
-            self.hist_labels.pop()
-            self.add_text_to_display.emit(
-                f"No {column} values in this subset, so there is nothing to plot",
-                self.__class__.__name__,
-            )
-            return
-
-        # The shared limits describe the *filtered* data, which is what is drawn and
-        # what the histogram path has always measured. They used to be taken from the
-        # DataFrame itself - min() over a DataFrame iterates its column *names*, so
-        # they were strings, which made a bin width here silently fall back to the
-        # automatic rule and made a later histogram on the same overlay raise.
-        newest = filtered[-1]
-        if self.hist_min is None or np.min(newest) < self.hist_min:
-            self.hist_min = float(np.min(newest))
-        if self.hist_max is None or np.max(newest) > self.hist_max:
-            self.hist_max = float(np.max(newest))
 
         x_label = self.format_axis_label(column, x_units)
         if logx:
             x_label = f"log10({x_label})"
 
+        # The newest dataset travels alongside the ones already accumulated rather
+        # than being appended first: the Model decides whether anything survives the
+        # filter, and a subset that loses every point must not leave a label behind.
+        # ``set_kernel_densities`` does the appending, once there is something to
+        # draw.
         self.density_requested.emit(
-            filtered,
-            list(self.hist_labels),
+            list(self.hist_data) + [data[column].values],
+            logx,
             bins,
             sizes,
             self.hist_min,
             self.hist_max,
             ax,
             x_label,
+            column,
+            dataset_label,
         )
 
     @log(logger=logger)
     def set_kernel_densities(
         self,
+        values: npt.NDArray[np.float64],
+        dataset_label: str,
         densities: Sequence[Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]],
-        labels: Sequence[str],
+        hist_min: float,
+        hist_max: float,
         ax: Axes,
         x_label: str,
     ) -> None:
@@ -535,12 +508,20 @@ class MetadataView(MetaSubsetTabView):
         The answering half of ``density_requested``. Step 4c moved the estimate to
         ``MetadataModel`` so that ``scipy`` could leave the View; the curve arrives
         already evaluated, which also means it is computed once rather than the three
-        times this method used to.
+        times this method used to. Step 4's closeout sent the NaN and log filtering
+        after it, so this is also where the newest dataset joins the overlay - the
+        raw column, since the Model filters every accumulated dataset on each update.
 
+        :param values: the newest dataset's raw column values, to accumulate
+        :type values: npt.NDArray[np.float64]
+        :param dataset_label: the newest dataset's label
+        :type dataset_label: str
         :param densities: one (positions, density) pair per dataset
         :type densities: Sequence[Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]]
-        :param labels: each dataset's label, index-aligned with densities
-        :type labels: Sequence[str]
+        :param hist_min: the shared lower limit, widened by this dataset
+        :type hist_min: float
+        :param hist_max: the shared upper limit, widened by this dataset
+        :type hist_max: float
         :param ax: the axis object on which to plot
         :type ax: Axes
         :param x_label: the x axis label, already formatted
@@ -548,10 +529,18 @@ class MetadataView(MetaSubsetTabView):
         :return: None
         :rtype: None
         """
+        self.hist_data.append(values)
+        self.hist_labels.append(dataset_label)
+        self.hist_min = hist_min
+        self.hist_max = hist_max
+
+        ax.clear()
+        self._clear_cache()
+
         y_label = "Probability Density"
 
-        for (x, y), dataset_label in zip(densities, labels, strict=True):
-            ax.plot(x, y, label=dataset_label)
+        for (x, y), label in zip(densities, self.hist_labels, strict=True):
+            ax.plot(x, y, label=label)
             ax.fill_between(x, y, alpha=0.3)
             self._update_cache((x, x_label), (y, y_label))
 
@@ -723,7 +712,7 @@ class MetadataView(MetaSubsetTabView):
         :type norm: bool
         :raises ValueError: If bins is an empty list.
 
-        Calculate a plot a 1d histogram with optional logscaling and normalization
+        Ask for a 1d histogram, with optional logscaling and normalization
         """
         if bins is not None:
             if isinstance(bins, list) and len(bins) >= 1:
@@ -731,59 +720,40 @@ class MetadataView(MetaSubsetTabView):
             else:
                 raise ValueError(f"Invalid bins entry {bins}")
 
-        (x_label,) = cols
+        (column,) = cols
         (x_units,) = units
         (logx,) = logscales
-        data = data[x_label].values
 
-        (data,) = self._logscale_and_filter_multiple_columns(data, log_flags=[logx])
-
-        if len(data) == 0:
-            # Every point was filtered out - the commonest cause being a column that
-            # is NULL for every row the subset filter selected, as a fit column is
-            # outside the scope it was fitted over. The reductions below are the
-            # first thing to touch the array, and np.min of an empty one raises.
-            self.add_text_to_display.emit(
-                f"No {x_label} values in this subset, so there is nothing to "
-                "histogram",
-                self.__class__.__name__,
-            )
-            return
-
-        # Update global min/max
-        if self.hist_min is None or np.min(data) < self.hist_min:
-            self.hist_min = float(np.min(data))
-        if self.hist_max is None or np.max(data) > self.hist_max:
-            self.hist_max = float(np.max(data))
-
-        ax.clear()
-        self._clear_cache()
-
-        # Store processed data for overlay
-        self.hist_data.append(data)
-        self.hist_labels.append(dataset_label)
-
-        # Every overlaid dataset goes down together: the edges are decided from all
-        # of them at once, which is what makes the bars comparable, and the counts come
-        # back one array per dataset.
+        # Every overlaid dataset goes down together: the filter, the shared limits
+        # and the edges are all decided from all of them at once, which is what
+        # makes the bars comparable, and the counts come back one array per dataset.
+        # The newest travels alongside rather than being accumulated first, for the
+        # reason ``_plot_1d_density`` records - the two share this accumulator and
+        # this pair of limits, which is why they converted together.
         self.histogram_bins_requested.emit(
-            list(self.hist_data),
+            list(self.hist_data) + [data[column].values],
+            logx,
             bins,
             sizes,
             self.hist_min,
             self.hist_max,
-            ax,
-            self.format_axis_label(x_label, x_units),
-            logx,
             norm,
+            ax,
+            self.format_axis_label(column, x_units),
+            column,
+            dataset_label,
         )
 
     @log(logger=logger)
     def set_histogram_bins(
         self,
+        values: npt.NDArray[np.float64],
+        dataset_label: str,
         bincenters: npt.NDArray[np.float64],
         widths: npt.NDArray[np.float64],
         counts: Sequence[npt.NDArray[np.float64]],
+        hist_min: float,
+        hist_max: float,
         ax: Axes,
         x_label: str,
         logx: bool,
@@ -794,16 +764,25 @@ class MetadataView(MetaSubsetTabView):
 
         The answering half of ``histogram_bins_requested``. Step 4c moved the bin
         decision to ``MetadataModel``; Step 4's closeout moved the counting after it,
-        so this is handed each dataset's tallies rather than the edges to tally
-        against. The bin edges themselves no longer come back - nothing here drew with
-        them once the counting left.
+        then the filtering and the shared limits after that, so this is handed each
+        dataset's tallies rather than the edges to tally against. The bin edges
+        themselves no longer come back - nothing here drew with them once the
+        counting left.
 
+        :param values: the newest dataset's raw column values, to accumulate
+        :type values: npt.NDArray[np.float64]
+        :param dataset_label: the newest dataset's label
+        :type dataset_label: str
         :param bincenters: the center of each bin, which the bars are drawn at
         :type bincenters: npt.NDArray[np.float64]
         :param widths: the width of each bin
         :type widths: npt.NDArray[np.float64]
         :param counts: one array of per-bin counts per overlaid dataset, index-aligned with the accumulated labels
         :type counts: Sequence[npt.NDArray[np.float64]]
+        :param hist_min: the shared lower limit, widened by this dataset
+        :type hist_min: float
+        :param hist_max: the shared upper limit, widened by this dataset
+        :type hist_max: float
         :param ax: the axis object on which to plot
         :type ax: Axes
         :param x_label: the x axis label, already formatted but not yet log-marked
@@ -815,6 +794,14 @@ class MetadataView(MetaSubsetTabView):
         :return: None
         :rtype: None
         """
+        self.hist_data.append(values)
+        self.hist_labels.append(dataset_label)
+        self.hist_min = hist_min
+        self.hist_max = hist_max
+
+        ax.clear()
+        self._clear_cache()
+
         # Every accumulated dataset is redrawn, against the tallies the Model made.
         for val, lab in zip(counts, self.hist_labels, strict=True):
             x_lab = x_label
@@ -867,8 +854,9 @@ class MetadataView(MetaSubsetTabView):
         # Extract the specific column's values
         data_vals = data[x_label].values
 
-        # Note: If your categories are strings, ensure this method doesn't attempt mathematical log-scaling on them.
-        # (data_vals,) = self._logscale_and_filter_multiple_columns(data_vals)
+        # Deliberately not filtered or log-scaled, unlike every other 1-D path: the
+        # values here are category names, which have no NaN mask and no logarithm.
+        # A commented-out call to the numeric filter used to stand here saying so.
 
         ax.clear()
         self._clear_cache()

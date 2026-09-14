@@ -299,6 +299,62 @@ class MetadataModel(MetaModel):
         return x, density(x)
 
     @log(logger=logger)
+    def logscale_and_filter_datasets(
+        self, datasets: Sequence[npt.NDArray[Any]], logscale: bool
+    ) -> List[npt.NDArray[np.float64]]:
+        """
+        Filter and log-scale each overlaid dataset on its own.
+
+        The columns *within* one plot are filtered together, because a row dropped
+        for one axis has to go for all of them. Overlaid datasets are different
+        subsets of different lengths, so each is filtered by itself - handing them
+        to :meth:`logscale_and_filter_columns` together would mask them against one
+        another and fail on the first pair whose lengths differ.
+
+        :param datasets: one raw column array per overlaid dataset
+        :type datasets: Sequence[npt.NDArray[Any]]
+        :param logscale: log-scale the values before they are binned?
+        :type logscale: bool
+        :return: the surviving values, one array per dataset and in the same order
+        :rtype: List[npt.NDArray[np.float64]]
+        """
+        return [
+            self.logscale_and_filter_columns(dataset, log_flags=[logscale])[0]
+            for dataset in datasets
+        ]
+
+    @log(logger=logger)
+    def widen_shared_limits(
+        self,
+        values: npt.NDArray[np.float64],
+        hist_min: Optional[float],
+        hist_max: Optional[float],
+    ) -> Tuple[float, float]:
+        """
+        Stretch the limits the overlay is binned against to take one more dataset.
+
+        The limits describe the *filtered* values, which is what is drawn, and they
+        only ever widen: a dataset lying inside the range already accumulated leaves
+        it alone, so every overlaid subset stays on comparable bins.
+
+        :param values: the newest dataset's filtered values
+        :type values: npt.NDArray[np.float64]
+        :param hist_min: the lower limit so far, or None for the first dataset
+        :type hist_min: Optional[float]
+        :param hist_max: the upper limit so far, or None for the first dataset
+        :type hist_max: Optional[float]
+        :return: the widened lower and upper limits
+        :rtype: Tuple[float, float]
+        """
+        low = float(np.min(values))
+        high = float(np.max(values))
+        if hist_min is None or low < hist_min:
+            hist_min = low
+        if hist_max is None or high > hist_max:
+            hist_max = high
+        return hist_min, hist_max
+
+    @log(logger=logger)
     def kernel_densities(
         self,
         datasets: Sequence[npt.NDArray[np.float64]],

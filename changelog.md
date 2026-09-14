@@ -1,5 +1,9 @@
 ## Poriscope 2.0.0: in progress
 
+* **Breaking:** the Metadata tab's Kernel Density Plot and Histogram are filtered, log-scaled and given their shared plot limits by `MetadataModel` rather than in the view, so `density_requested` and `histogram_bins_requested` carry the raw columns and their log flag, and `set_kernel_densities` and `set_histogram_bins` take the newest dataset and the widened limits and accumulate it themselves
+
+* **A 1D Density plot on a subset with no usable values now leaves the previous plot in place**, rather than clearing the axes and drawing nothing
+
 * **Breaking:** the Metadata tab's Heatmap, Scatterplot and 3D Scatterplot are filtered and log-scaled by `MetaModel.logscale_and_filter_columns` rather than in the view, so `MetadataView.heatmap_requested` carries the raw columns and their log flags, and `_plot_scatterplot` and `_plot_3d_scatterplot` now request the filtering and draw the answer through `set_scatterplot` and `set_3d_scatterplot`
 
 * **Categorical Histograms are now ordered by count**, tallest bar on the left; when more than one subset is overlaid the order comes from their combined totals, so every subset shares one axis

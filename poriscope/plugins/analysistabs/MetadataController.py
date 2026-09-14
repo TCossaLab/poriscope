@@ -236,46 +236,79 @@ class MetadataController(MetaSubsetTabController):
         self.view.set_3d_scatterplot(filtered, ax, axis_labels, dataset_label)
 
     @log(logger=logger)
-    @Slot(object, object, object, bool, object, object, object, str)
+    @Slot(object, bool, object, bool, object, object, object, str, str, str)
     def estimate_kernel_densities(
         self,
         datasets: Sequence[npt.NDArray[np.float64]],
-        labels: Sequence[str],
+        logx: bool,
         bins: Any,
         sizes: bool,
         hist_min: Optional[float],
         hist_max: Optional[float],
         ax: Axes,
         x_label: str,
+        column: str,
+        dataset_label: str,
     ) -> None:
         """
-        Estimate every overlaid dataset's density, and hand them back to be drawn.
+        Filter every overlaid dataset, then estimate each one's density.
 
-        Decision B's command path, the same shape as :meth:`calculate_heatmap`. One
-        call rather than one per dataset keeps each answer off the widget.
+        Decision B's command path, the same shape as :meth:`calculate_heatmap`. The
+        drawing context arrives and departs unchanged; this slot marshals and does
+        not interpret it.
 
-        :param datasets: one already-filtered array per overlaid dataset
+        The newest dataset is the last of ``datasets`` and has not been accumulated
+        by the View yet, so a subset that loses every point to the filter is refused
+        here and leaves no label behind.
+
+        :param datasets: one raw column array per overlaid dataset, newest last
         :type datasets: Sequence[npt.NDArray[np.float64]]
-        :param labels: each dataset's label, passed back to the View unchanged
-        :type labels: Sequence[str]
-        :param bins: a bin count, or a bin width when sizes is True, or None
+        :param logx: log-scale the values before binning them?
+        :type logx: bool
+        :param bins: number of bins, or size of bins when sizes is True, or None to estimate
         :type bins: Any
-        :param sizes: does bins refer to a bin size (True) or a count (False)
+        :param sizes: does the bins parameter refer to bin sizes (True) or counts (False)
         :type sizes: bool
-        :param hist_min: the shared lower limit across overlaid datasets, if known
+        :param hist_min: the shared lower limit so far, or None for the first dataset
         :type hist_min: Optional[float]
-        :param hist_max: the shared upper limit across overlaid datasets, if known
+        :param hist_max: the shared upper limit so far, or None for the first dataset
         :type hist_max: Optional[float]
         :param ax: the axis object the View will draw on
         :type ax: Axes
         :param x_label: the x axis label, already formatted
         :type x_label: str
+        :param column: the column's own name, for the message when nothing survives
+        :type column: str
+        :param dataset_label: the newest dataset's label
+        :type dataset_label: str
         :return: None
         :rtype: None
         """
         try:
+            filtered = self.model.logscale_and_filter_datasets(datasets, logx)
+        except (ValueError, TypeError, IndexError) as e:
+            self.logger.error(f"Unable to filter the density plot: {repr(e)}")
+            self.add_text_to_display.emit(
+                f"Unable to filter the density plot: {e}", self.__class__.__name__
+            )
+            return
+
+        if len(filtered[-1]) == 0:
+            # Every point was filtered out, the commonest cause being a column that
+            # is NULL for every row the subset filter selected.
+            self.add_text_to_display.emit(
+                f"No {column} values in this subset, so there is nothing to plot",
+                self.__class__.__name__,
+            )
+            return
+
+        hist_min, hist_max = self.model.widen_shared_limits(
+            filtered[-1], hist_min, hist_max
+        )
+
+        try:
             densities = self.model.kernel_densities(
-                datasets, bins, sizes, hist_min, hist_max
+                filtered, bins, sizes, hist_min, hist_max
             )
         except (ValueError, TypeError, IndexError, np.linalg.LinAlgError) as e:
             self.logger.error(f"Unable to estimate the density: {repr(e)}")
@@ -283,53 +316,84 @@ class MetadataController(MetaSubsetTabController):
                 f"Unable to estimate the density: {e}", self.__class__.__name__
             )
             return
-        self.view.set_kernel_densities(densities, labels, ax, x_label)
+
+        self.view.set_kernel_densities(
+            datasets[-1], dataset_label, densities, hist_min, hist_max, ax, x_label
+        )
 
     @log(logger=logger)
-    @Slot(object, object, bool, object, object, object, str, bool, bool)
+    @Slot(object, bool, object, bool, object, object, bool, object, str, str, str)
     def calculate_histogram_bins(
         self,
-        datasets: List[npt.NDArray[np.float64]],
+        datasets: Sequence[npt.NDArray[np.float64]],
+        logx: bool,
         bins: Any,
         sizes: bool,
-        hist_min: float,
-        hist_max: float,
+        hist_min: Optional[float],
+        hist_max: Optional[float],
+        norm: bool,
         ax: Axes,
         x_label: str,
-        logx: bool,
-        norm: bool,
+        column: str,
+        dataset_label: str,
     ) -> None:
         """
-        Bin every overlaid dataset onto shared edges, and hand the counts back.
+        Filter every overlaid dataset, bin them onto shared edges, and count them.
 
-        Decision B's command path, the same shape as :meth:`calculate_heatmap`. Step
-        4's closeout brought the counting down to join the bin decision, so the View
-        is handed tallies rather than edges to tally against.
+        Decision B's command path, the same shape as
+        :meth:`estimate_kernel_densities` - deliberately, since the two write the
+        same accumulator and the same pair of shared limits, which is why they
+        converted in one branch rather than one each.
 
-        :param datasets: one filtered array per overlaid dataset
-        :type datasets: List[npt.NDArray[np.float64]]
+        :param datasets: one raw column array per overlaid dataset, newest last
+        :type datasets: Sequence[npt.NDArray[np.float64]]
+        :param logx: log-scale the values before binning them?
+        :type logx: bool
         :param bins: a bin count, or a bin width when sizes is True, or None
         :type bins: Any
         :param sizes: does bins refer to a bin size (True) or a count (False)
         :type sizes: bool
-        :param hist_min: the shared lower limit across overlaid datasets
-        :type hist_min: float
-        :param hist_max: the shared upper limit across overlaid datasets
-        :type hist_max: float
+        :param hist_min: the shared lower limit so far, or None for the first dataset
+        :type hist_min: Optional[float]
+        :param hist_max: the shared upper limit so far, or None for the first dataset
+        :type hist_max: Optional[float]
+        :param norm: normalise each dataset to a fraction rather than a count
+        :type norm: bool
         :param ax: the axis object the View will draw on
         :type ax: Axes
         :param x_label: the x axis label, already formatted
         :type x_label: str
-        :param logx: was the data log-scaled
-        :type logx: bool
-        :param norm: normalise each dataset to a fraction rather than a count
-        :type norm: bool
+        :param column: the column's own name, for the message when nothing survives
+        :type column: str
+        :param dataset_label: the newest dataset's label
+        :type dataset_label: str
         :return: None
         :rtype: None
         """
         try:
-            bin_edges, bincenters, widths, counts = self.model.overlaid_histograms(
-                datasets, bins, sizes, hist_min, hist_max, norm
+            filtered = self.model.logscale_and_filter_datasets(datasets, logx)
+        except (ValueError, TypeError, IndexError) as e:
+            self.logger.error(f"Unable to filter the histogram: {repr(e)}")
+            self.add_text_to_display.emit(
+                f"Unable to filter the histogram: {e}", self.__class__.__name__
+            )
+            return
+
+        if len(filtered[-1]) == 0:
+            self.add_text_to_display.emit(
+                f"No {column} values in this subset, so there is nothing to "
+                "histogram",
+                self.__class__.__name__,
+            )
+            return
+
+        hist_min, hist_max = self.model.widen_shared_limits(
+            filtered[-1], hist_min, hist_max
+        )
+
+        try:
+            _, bincenters, widths, counts = self.model.overlaid_histograms(
+                filtered, bins, sizes, hist_min, hist_max, norm
             )
         except (ValueError, TypeError, IndexError) as e:
             self.logger.error(f"Unable to bin the histogram: {repr(e)}")
@@ -337,8 +401,19 @@ class MetadataController(MetaSubsetTabController):
                 f"Unable to bin the histogram: {e}", self.__class__.__name__
             )
             return
+
         self.view.set_histogram_bins(
-            bincenters, widths, counts, ax, x_label, logx, norm
+            datasets[-1],
+            dataset_label,
+            bincenters,
+            widths,
+            counts,
+            hist_min,
+            hist_max,
+            ax,
+            x_label,
+            logx,
+            norm,
         )
 
     @log(logger=logger)
