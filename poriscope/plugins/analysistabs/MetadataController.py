@@ -85,17 +85,20 @@ class MetadataController(MetaSubsetTabController):
         self.view.plot_features_requested.connect(self.request_plot_features)
         self.view.csv_subset_export_requested.connect(self.export_csv_subset)
         self.view.heatmap_requested.connect(self.calculate_heatmap)
+        self.view.scatterplot_requested.connect(self.filter_scatterplot)
+        self.view.scatterplot_3d_requested.connect(self.filter_3d_scatterplot)
         self.view.density_requested.connect(self.estimate_kernel_densities)
         self.view.histogram_bins_requested.connect(self.calculate_histogram_bins)
         self.view.capture_rate_requested.connect(self.fit_capture_rate)
         self.view.categorical_counts_requested.connect(self.count_categories)
 
     @log(logger=logger)
-    @Slot(object, object, object, bool, object, str, str, str)
+    @Slot(object, object, object, object, bool, object, str, str, str)
     def calculate_heatmap(
         self,
         xdata: npt.NDArray[np.float64],
         ydata: npt.NDArray[np.float64],
+        log_flags: Sequence[bool],
         bins: Any,
         sizes: bool,
         ax: Axes,
@@ -104,7 +107,7 @@ class MetadataController(MetaSubsetTabController):
         dataset_label: str,
     ) -> None:
         """
-        Bin the heatmap's two columns, and hand the result back to the View to draw.
+        Filter and bin the heatmap's two columns, and hand the result back to draw.
 
         Decision B's command path, the same shape as
         ``ClusteringController.cluster``. The drawing context arrives and departs
@@ -114,10 +117,12 @@ class MetadataController(MetaSubsetTabController):
         than propagating: before Step 4c it escaped the plotting call unhandled,
         because nothing between here and ``_overlay_plot`` catches it.
 
-        :param xdata: the already-filtered x values
+        :param xdata: the raw x values
         :type xdata: npt.NDArray[np.float64]
-        :param ydata: the already-filtered y values
+        :param ydata: the raw y values
         :type ydata: npt.NDArray[np.float64]
+        :param log_flags: log-scale the x and y values before binning?
+        :type log_flags: Sequence[bool]
         :param bins: number of bins, or size of bins when sizes is True, or None to estimate
         :type bins: Any
         :param sizes: does the bins parameter refer to bin sizes (True) or counts (False)
@@ -134,7 +139,10 @@ class MetadataController(MetaSubsetTabController):
         :rtype: None
         """
         try:
-            x, y, z = self.model.calculate_heatmap(xdata, ydata, bins, sizes)
+            xfiltered, yfiltered = self.model.logscale_and_filter_columns(
+                xdata, ydata, log_flags=list(log_flags)
+            )
+            x, y, z = self.model.calculate_heatmap(xfiltered, yfiltered, bins, sizes)
         except (ValueError, TypeError, IndexError) as e:
             self.logger.error(f"Unable to build the heatmap: {repr(e)}")
             self.add_text_to_display.emit(
@@ -142,6 +150,90 @@ class MetadataController(MetaSubsetTabController):
             )
             return
         self.view.set_heatmap(x, y, z, ax, x_label, y_label, dataset_label)
+
+    @log(logger=logger)
+    @Slot(object, object, object, object, str)
+    def filter_scatterplot(
+        self,
+        columns: Sequence[npt.NDArray[np.float64]],
+        log_flags: Sequence[bool],
+        ax: Axes,
+        axis_labels: Sequence[str],
+        dataset_label: str,
+    ) -> None:
+        """
+        Filter and log-scale a scatterplot's columns, and hand them back to draw.
+
+        Decision B's command path. Step 4's closeout brought this plot type down:
+        Step 4c had left it alone because it freed no import on its own, and the
+        filter's move is what puts it back in scope. The values that survive are
+        exported with the plot, so they are the Model's to produce.
+
+        :param columns: the raw x and y values
+        :type columns: Sequence[npt.NDArray[np.float64]]
+        :param log_flags: log-scale each column?
+        :type log_flags: Sequence[bool]
+        :param ax: the axis object the View will draw on
+        :type ax: Axes
+        :param axis_labels: the axis labels, already formatted
+        :type axis_labels: Sequence[str]
+        :param dataset_label: string to label the dataset
+        :type dataset_label: str
+        :return: None
+        :rtype: None
+        """
+        try:
+            filtered = self.model.logscale_and_filter_columns(
+                *columns, log_flags=list(log_flags)
+            )
+        except (ValueError, TypeError, IndexError) as e:
+            self.logger.error(f"Unable to filter the scatterplot: {repr(e)}")
+            self.add_text_to_display.emit(
+                f"Unable to filter the scatterplot: {e}", self.__class__.__name__
+            )
+            return
+        self.view.set_scatterplot(filtered, ax, axis_labels, dataset_label)
+
+    @log(logger=logger)
+    @Slot(object, object, object, object, str)
+    def filter_3d_scatterplot(
+        self,
+        columns: Sequence[npt.NDArray[np.float64]],
+        log_flags: Sequence[bool],
+        ax: Axes,
+        axis_labels: Sequence[str],
+        dataset_label: str,
+    ) -> None:
+        """
+        The same for a 3-D scatterplot's three columns.
+
+        Separate from :meth:`filter_scatterplot` because the View's two drawing
+        halves are separate: a 3-D scatter rebuilds the axes and carries a z label.
+
+        :param columns: the raw x, y and z values
+        :type columns: Sequence[npt.NDArray[np.float64]]
+        :param log_flags: log-scale each column?
+        :type log_flags: Sequence[bool]
+        :param ax: the axis object the View will draw on
+        :type ax: Axes
+        :param axis_labels: the axis labels, already formatted
+        :type axis_labels: Sequence[str]
+        :param dataset_label: string to label the dataset
+        :type dataset_label: str
+        :return: None
+        :rtype: None
+        """
+        try:
+            filtered = self.model.logscale_and_filter_columns(
+                *columns, log_flags=list(log_flags)
+            )
+        except (ValueError, TypeError, IndexError) as e:
+            self.logger.error(f"Unable to filter the 3D scatterplot: {repr(e)}")
+            self.add_text_to_display.emit(
+                f"Unable to filter the 3D scatterplot: {e}", self.__class__.__name__
+            )
+            return
+        self.view.set_3d_scatterplot(filtered, ax, axis_labels, dataset_label)
 
     @log(logger=logger)
     @Slot(object, object, object, bool, object, object, object, str)

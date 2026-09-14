@@ -27,6 +27,7 @@ import pytest
 from pytest_mock import MockerFixture
 
 from poriscope.plugins.analysistabs.MetadataController import MetadataController
+from poriscope.plugins.analysistabs.MetadataModel import MetadataModel
 
 # ----------------------------- fixtures ------------------------------
 
@@ -1322,3 +1323,184 @@ class TestCalculateHistogramBins:
         ]
         assert any("Unable to bin the histogram" in m for m in messages)
         mock_view.set_histogram_bins.assert_not_called()
+
+
+# ---------------- the filter's move, Step 4 closeout -------------------------
+#
+# `_logscale_and_filter_multiple_columns` used to run in the View, immediately
+# before each plot's request went out. These three slots take the raw columns and
+# the log flags instead, so the values that end up drawn - and exported - are
+# produced once, below the widget. What has to be pinned is the ordering: the
+# filter runs *before* the work that consumes its output, and its output is what
+# reaches the View.
+
+
+class _StatusPanelMixin:
+    """Give the controller a status-panel signal it can emit on."""
+
+    @pytest.fixture(autouse=True)
+    def _stub_status_panel(self, controller, mocker) -> None:
+        """
+        :param controller: the controller under test
+        :type controller: MetadataController
+        :param mocker: the pytest-mock fixture
+        :type mocker: pytest_mock.MockerFixture
+        :return: None
+        :rtype: None
+        """
+        controller.add_text_to_display = mocker.Mock()
+        controller.add_text_to_display.emit = mocker.Mock()
+
+
+class TestCalculateHeatmap(_StatusPanelMixin):
+    """The heatmap filters first, then bins what survived."""
+
+    def test_the_flags_reach_the_filter_and_its_output_reaches_the_binning(
+        self, controller, mock_view
+    ) -> None:
+        """
+        Binning the raw columns instead of the filtered ones is the mistake this
+        ordering exists to prevent, and it would be invisible in a plot.
+        """
+        raw_x = np.array([1.0, 2.0])
+        raw_y = np.array([3.0, 4.0])
+        filtered = (np.array([2.0]), np.array([4.0]))
+        controller.model.logscale_and_filter_columns.return_value = filtered
+        controller.model.calculate_heatmap.return_value = ("xb", "yb", "z")
+
+        controller.calculate_heatmap(
+            raw_x, raw_y, [True, False], None, False, MagicMock(), "xl", "yl", "dl"
+        )
+
+        call = controller.model.logscale_and_filter_columns.call_args
+        assert call.args == (raw_x, raw_y)
+        assert call.kwargs["log_flags"] == [True, False]
+        assert controller.model.calculate_heatmap.call_args.args[:2] == filtered
+
+    def test_a_filter_failure_is_reported_and_draws_nothing(
+        self, controller, mock_view
+    ) -> None:
+        """A stale heatmap must not be left under this dataset's label."""
+        controller.model.logscale_and_filter_columns.side_effect = ValueError("nope")
+
+        controller.calculate_heatmap(
+            np.array([1.0]),
+            np.array([2.0]),
+            [False, False],
+            None,
+            False,
+            MagicMock(),
+            "xl",
+            "yl",
+            "dl",
+        )
+
+        mock_view.set_heatmap.assert_not_called()
+        messages = [
+            call.args[0] for call in controller.add_text_to_display.emit.call_args_list
+        ]
+        assert any("Unable to build the heatmap" in message for message in messages)
+
+
+class TestFilterScatterplot(_StatusPanelMixin):
+    """Two columns in, two filtered columns back through the setter."""
+
+    def test_the_filtered_columns_reach_the_view(self, controller, mock_view) -> None:
+        """
+        Against the real Model rather than a stub of it, because what this slot
+        forwards is exactly the thing a stub cannot get wrong: rule 42.
+        """
+        controller.model = MetadataModel()
+        ax = MagicMock()
+
+        controller.filter_scatterplot(
+            [np.array([1.0, np.nan, 3.0]), np.array([4.0, 5.0, 6.0])],
+            [False, False],
+            ax,
+            ["xl", "yl"],
+            "dl",
+        )
+
+        columns, out_ax, labels, label = mock_view.set_scatterplot.call_args.args
+        assert [list(column) for column in columns] == [[1.0, 3.0], [4.0, 6.0]]
+        assert out_ax is ax
+        assert list(labels) == ["xl", "yl"]
+        assert label == "dl"
+
+    def test_the_log_flags_are_applied(self, controller, mock_view) -> None:
+        """A log-scaled axis comes back as its base-10 logarithm."""
+        controller.model = MetadataModel()
+
+        controller.filter_scatterplot(
+            [np.array([1.0, 100.0]), np.array([4.0, 6.0])],
+            [True, False],
+            MagicMock(),
+            ["xl", "yl"],
+            "dl",
+        )
+
+        columns = mock_view.set_scatterplot.call_args.args[0]
+        assert list(columns[0]) == [0.0, 2.0]
+        assert list(columns[1]) == [4.0, 6.0]
+
+    def test_a_filter_failure_is_reported_and_draws_nothing(
+        self, controller, mock_view
+    ) -> None:
+        controller.model.logscale_and_filter_columns.side_effect = ValueError("nope")
+
+        controller.filter_scatterplot(
+            [np.array([1.0])], [False], MagicMock(), ["xl", "yl"], "dl"
+        )
+
+        mock_view.set_scatterplot.assert_not_called()
+        messages = [
+            call.args[0] for call in controller.add_text_to_display.emit.call_args_list
+        ]
+        assert any("Unable to filter the scatterplot" in m for m in messages)
+
+
+class TestFilter3dScatterplot(_StatusPanelMixin):
+    """The same, for three columns."""
+
+    def test_all_three_columns_are_filtered_together(
+        self, controller, mock_view
+    ) -> None:
+        """
+        One mask across every column, so a row dropped for one axis is dropped for
+        all of them and the three arrays stay the same length.
+        """
+        controller.model = MetadataModel()
+
+        controller.filter_3d_scatterplot(
+            [
+                np.array([1.0, np.nan, 3.0]),
+                np.array([4.0, 5.0, 6.0]),
+                np.array([7.0, 8.0, 9.0]),
+            ],
+            [False, False, False],
+            MagicMock(),
+            ["xl", "yl", "zl"],
+            "dl",
+        )
+
+        columns = mock_view.set_3d_scatterplot.call_args.args[0]
+        assert [list(column) for column in columns] == [
+            [1.0, 3.0],
+            [4.0, 6.0],
+            [7.0, 9.0],
+        ]
+
+    def test_a_filter_failure_is_reported_and_draws_nothing(
+        self, controller, mock_view
+    ) -> None:
+        controller.model.logscale_and_filter_columns.side_effect = ValueError("nope")
+
+        controller.filter_3d_scatterplot(
+            [np.array([1.0])], [False], MagicMock(), ["xl", "yl", "zl"], "dl"
+        )
+
+        mock_view.set_3d_scatterplot.assert_not_called()
+        messages = [
+            call.args[0] for call in controller.add_text_to_display.emit.call_args_list
+        ]
+        assert any("Unable to filter the 3D scatterplot" in m for m in messages)

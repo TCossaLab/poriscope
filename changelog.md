@@ -1,5 +1,7 @@
 ## Poriscope 2.0.0: in progress
 
+* **Breaking:** the Metadata tab's Heatmap, Scatterplot and 3D Scatterplot are filtered and log-scaled by `MetaModel.logscale_and_filter_columns` rather than in the view, so `MetadataView.heatmap_requested` carries the raw columns and their log flags, and `_plot_scatterplot` and `_plot_3d_scatterplot` now request the filtering and draw the answer through `set_scatterplot` and `set_3d_scatterplot`
+
 * **Categorical Histograms are now ordered by count**, tallest bar on the left; when more than one subset is overlaid the order comes from their combined totals, so every subset shares one axis
 
 * **Breaking:** the Metadata tab's All Points Histogram and Event Overlay are built by `MetadataModel.build_all_points_histogram` and `build_event_overlay`, so `MetadataView._construct_all_points_histogram`, `_construct_event_overlay` and `MetadataController.load_event_subset` are gone, and `MetadataView.update_plot` no longer draws the all-points histogram types

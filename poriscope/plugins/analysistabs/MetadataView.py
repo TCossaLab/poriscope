@@ -157,13 +157,30 @@ class MetadataView(MetaSubsetTabView):
     #: export is keyed under. ``on_subset_export_started`` comes back if it was staged.
     csv_subset_export_requested = Signal(str, str, str, object, object, int)
 
-    #: Asks for the heatmap's 2-D binning: the already-filtered columns, the bin
+    #: Asks for the heatmap's 2-D binning: the raw columns, their log flags, the bin
     #: request, and the drawing context handed back unchanged. Answered through
     #: ``set_heatmap``.
     #:
     #: Step 4c. The binning uses ``scipy.stats.iqr``, which is why it crosses; the
-    #: imshow, the colourbar and the cache entry all stay here.
-    heatmap_requested = Signal(object, object, object, bool, object, str, str, str)
+    #: imshow, the colourbar and the cache entry all stay here. Step 4's closeout
+    #: sent the NaN and log filtering down with it, so the columns now leave raw.
+    heatmap_requested = Signal(
+        object, object, object, object, bool, object, str, str, str
+    )
+
+    #: Asks for a scatterplot's two columns to be filtered and log-scaled: the raw
+    #: columns, their log flags, and the drawing context handed back unchanged.
+    #: Answered through ``set_scatterplot``.
+    #:
+    #: Step 4's closeout. This plot type was left out of Step 4c because it freed no
+    #: import on its own; the filter's move is what brings it back in, and the
+    #: filtered values are exported with the plot rather than only drawn.
+    scatterplot_requested = Signal(object, object, object, object, str)
+
+    #: The same for the three columns of a 3-D scatterplot. Answered through
+    #: ``set_3d_scatterplot``, which is separate because the 3-D axes and the z label
+    #: are not a special case of the 2-D drawing.
+    scatterplot_3d_requested = Signal(object, object, object, object, str)
 
     #: Asks for every overlaid dataset's kernel density: the already-filtered
     #: columns, the bin request, the shared histogram limits, and the drawing
@@ -960,11 +977,8 @@ class MetadataView(MetaSubsetTabView):
         if logy:
             y_label = f"log10({y_label})"
 
-        # The filter stays here: it lives on ``MetaView`` and emits to the status
-        # panel, and it moves only when all eight of its call sites can go together.
-        x, y = self._logscale_and_filter_multiple_columns(x, y, log_flags=[logx, logy])
         self.heatmap_requested.emit(
-            x, y, bins, sizes, ax, x_label, y_label, dataset_label
+            x, y, [logx, logy], bins, sizes, ax, x_label, y_label, dataset_label
         )
 
     @log(logger=logger)
@@ -1059,7 +1073,7 @@ class MetadataView(MetaSubsetTabView):
         dataset_label: str = "",
     ) -> None:
         """
-        Create a scatterplot of two metadata columns.
+        Ask for a scatterplot's two columns, filtered and log-scaled.
 
         :param ax: Matplotlib axes object.
         :type ax: Axes
@@ -1078,8 +1092,7 @@ class MetadataView(MetaSubsetTabView):
         x_units, y_units = units
         logx, logy = logscales
 
-        x = data[x_label].values
-        y = data[y_label].values
+        columns = [data[x_label].values, data[y_label].values]
 
         x_label = self.format_axis_label(x_label, x_units)
         y_label = self.format_axis_label(y_label, y_units)
@@ -1089,9 +1102,40 @@ class MetadataView(MetaSubsetTabView):
         if logy:
             y_label = f"log10({y_label})"
 
-        xdata, ydata = self._logscale_and_filter_multiple_columns(
-            x, y, log_flags=[logx, logy]
+        self.scatterplot_requested.emit(
+            columns, [logx, logy], ax, [x_label, y_label], dataset_label
         )
+
+    @log(logger=logger)
+    def set_scatterplot(
+        self,
+        columns: Sequence[npt.NDArray[np.float64]],
+        ax: Axes,
+        axis_labels: Sequence[str],
+        dataset_label: str,
+    ) -> None:
+        """
+        Draw a scatterplot of two filtered columns.
+
+        The answering half of ``scatterplot_requested``. Step 4's closeout moved the
+        NaN and log filtering to the Model: the values it drops never reach the
+        axes and the ones it keeps are exported with the plot, so they are the
+        Model's to produce.
+
+        :param columns: the filtered x and y values
+        :type columns: Sequence[npt.NDArray[np.float64]]
+        :param ax: the axis object on which to plot
+        :type ax: Axes
+        :param axis_labels: the x and y axis labels, already formatted
+        :type axis_labels: Sequence[str]
+        :param dataset_label: Label for the dataset.
+        :type dataset_label: str
+        :return: None
+        :rtype: None
+        """
+        xdata, ydata = columns
+        x_label, y_label = axis_labels
+
         ax.scatter(xdata, ydata, s=3, alpha=0.5, label=dataset_label)
         ax.set_xlabel(x_label)
         ax.set_ylabel(y_label)
@@ -1110,7 +1154,7 @@ class MetadataView(MetaSubsetTabView):
         dataset_label: str = "",
     ) -> None:
         """
-        Create a 3D scatterplot of three metadata columns.
+        Ask for a 3-D scatterplot's three columns, filtered and log-scaled.
 
         :param ax: A 3D Matplotlib axes object.
         :type ax: Axes3D
@@ -1129,9 +1173,11 @@ class MetadataView(MetaSubsetTabView):
         x_units, y_units, z_units = units
         logx, logy, logz = logscales
 
-        x = data[x_label].values
-        y = data[y_label].values
-        z = data[z_label].values
+        columns = [
+            data[x_label].values,
+            data[y_label].values,
+            data[z_label].values,
+        ]
 
         x_label = self.format_axis_label(x_label, x_units)
         y_label = self.format_axis_label(y_label, y_units)
@@ -1144,9 +1190,42 @@ class MetadataView(MetaSubsetTabView):
         if logz:
             z_label = f"log10({z_label})"
 
-        xdata, ydata, zdata = self._logscale_and_filter_multiple_columns(
-            x, y, z, log_flags=[logx, logy, logz]
+        self.scatterplot_3d_requested.emit(
+            columns,
+            [logx, logy, logz],
+            ax,
+            [x_label, y_label, z_label],
+            dataset_label,
         )
+
+    @log(logger=logger)
+    def set_3d_scatterplot(
+        self,
+        columns: Sequence[npt.NDArray[np.float64]],
+        ax: Axes3D,
+        axis_labels: Sequence[str],
+        dataset_label: str,
+    ) -> None:
+        """
+        Draw a 3-D scatterplot of three filtered columns.
+
+        The answering half of ``scatterplot_3d_requested``, and the same reasoning as
+        :meth:`set_scatterplot`. The axes are rebuilt here if what arrived is a 2-D
+        pair, which a change of plot type can leave behind.
+
+        :param columns: the filtered x, y and z values
+        :type columns: Sequence[npt.NDArray[np.float64]]
+        :param ax: the axis object on which to plot
+        :type ax: Axes3D
+        :param axis_labels: the x, y and z axis labels, already formatted
+        :type axis_labels: Sequence[str]
+        :param dataset_label: Label to apply to the scatter points.
+        :type dataset_label: str
+        :return: None
+        :rtype: None
+        """
+        xdata, ydata, zdata = columns
+        x_label, y_label, z_label = axis_labels
 
         if not isinstance(ax, Axes3D):
             self._reset_actions(axis_type="3d")

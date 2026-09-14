@@ -136,6 +136,10 @@ def view(mocker: MockerFixture, mock_qt_dependencies: None) -> MetadataView:
     # that drive _plot_heatmap supply the binning themselves via _answer_heatmap,
     # exactly as they used to supply it to a mocked _calculate_heatmap.
     view_instance.heatmap_requested = mocker.Mock()
+    # Answered by MetadataController.filter_scatterplot / filter_3d_scatterplot in
+    # the real app; the tests that drive them replay the setter via _answer_*.
+    view_instance.scatterplot_requested = mocker.Mock()
+    view_instance.scatterplot_3d_requested = mocker.Mock()
     # Answered by MetadataController.estimate_kernel_densities in the real app.
     view_instance.density_requested = mocker.Mock()
     # Answered by MetadataController.calculate_histogram_bins in the real app.
@@ -1200,7 +1204,7 @@ def _answer_heatmap(view, x_bins, y_bins, z_grid):
     :return: None
     :rtype: None
     """
-    context = view.heatmap_requested.emit.call_args.args[4:]
+    context = view.heatmap_requested.emit.call_args.args[5:]
     view.set_heatmap(x_bins, y_bins, z_grid, *context)
 
 
@@ -1213,10 +1217,10 @@ def test_plot_heatmap_requests_the_binning(
     view._plot_heatmap(view.axes, data, ["x", "y"], ["u1", "u2"], [False, False])
 
     view.heatmap_requested.emit.assert_called_once()
-    # the filtered columns go out, and the drawing context comes back untouched
+    # the raw columns go out, and the drawing context comes back untouched
     emitted = view.heatmap_requested.emit.call_args.args
-    assert emitted[4] is view.axes
-    assert len(emitted) == 8
+    assert emitted[5] is view.axes
+    assert len(emitted) == 9
 
 
 def test_plot_heatmap_sets_axis_labels(
@@ -1303,17 +1307,47 @@ def test_plot_heatmap_removes_previous_colorbar(
 # ----------------------------- Plot Scatterplot Tests ------------------------------
 
 
+def _answer_scatterplot(view: MetadataView, columns: tuple) -> None:
+    """
+    Stand in for the Controller answering ``scatterplot_requested``.
+
+    Replays ``set_scatterplot`` with the drawing context the View emitted, so the
+    test drives the request and the drawing as one, exactly as the app does.
+
+    :param view: the view whose request to answer
+    :type view: MetadataView
+    :param columns: the filtered columns to answer with
+    :type columns: tuple
+    :return: None
+    :rtype: None
+    """
+    context = view.scatterplot_requested.emit.call_args.args[2:]
+    view.set_scatterplot(columns, *context)
+
+
+def test_plot_scatterplot_requests_the_filtering(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify the filter is asked for rather than done here."""
+    data = pd.DataFrame({"x": np.array([1.0, 2.0]), "y": np.array([3.0, 4.0])})
+
+    view._plot_scatterplot(view.axes, data, ["x", "y"], ["u1", "u2"], [True, False])
+
+    view._logscale_and_filter_multiple_columns.assert_not_called()
+    emitted = view.scatterplot_requested.emit.call_args.args
+    assert [list(column) for column in emitted[0]] == [[1.0, 2.0], [3.0, 4.0]]
+    assert emitted[1] == [True, False]
+    assert emitted[2] is view.axes
+
+
 def test_plot_scatterplot_calls_scatter(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify scatter is called on axes."""
     data = pd.DataFrame({"x": np.array([1.0, 2.0]), "y": np.array([3.0, 4.0])})
 
-    view._logscale_and_filter_multiple_columns = mocker.Mock(  # type: ignore[method-assign]
-        return_value=(np.array([1.0, 2.0]), np.array([3.0, 4.0]))
-    )
-
     view._plot_scatterplot(view.axes, data, ["x", "y"], ["u1", "u2"], [False, False])
+    _answer_scatterplot(view, (np.array([1.0, 2.0]), np.array([3.0, 4.0])))
 
     view.axes.scatter.assert_called_once()
 
@@ -1324,11 +1358,8 @@ def test_plot_scatterplot_sets_axis_labels(
     """Verify axis labels are set."""
     data = pd.DataFrame({"x": np.array([1.0, 2.0]), "y": np.array([3.0, 4.0])})
 
-    view._logscale_and_filter_multiple_columns = mocker.Mock(  # type: ignore[method-assign]
-        return_value=(np.array([1.0, 2.0]), np.array([3.0, 4.0]))
-    )
-
     view._plot_scatterplot(view.axes, data, ["x", "y"], ["u1", "u2"], [False, False])
+    _answer_scatterplot(view, (np.array([1.0, 2.0]), np.array([3.0, 4.0])))
 
     view.axes.set_xlabel.assert_called()
     view.axes.set_ylabel.assert_called()
@@ -1340,11 +1371,8 @@ def test_plot_scatterplot_sets_log10_labels_when_logscale_true(
     """Verify log10 labels are set when logscales are True."""
     data = pd.DataFrame({"x": np.array([1.0, 2.0]), "y": np.array([3.0, 4.0])})
 
-    view._logscale_and_filter_multiple_columns = mocker.Mock(  # type: ignore[method-assign]
-        return_value=(np.array([1.0, 2.0]), np.array([3.0, 4.0]))
-    )
-
     view._plot_scatterplot(view.axes, data, ["x", "y"], ["u1", "u2"], [True, True])
+    _answer_scatterplot(view, (np.array([1.0, 2.0]), np.array([3.0, 4.0])))
 
     xlabel_call = view.axes.set_xlabel.call_args
     ylabel_call = view.axes.set_ylabel.call_args
@@ -1357,32 +1385,70 @@ def test_plot_scatterplot_sets_log10_labels_when_logscale_true(
 # ----------------------------- Plot 3D Scatterplot Tests ------------------------------
 
 
+_THREE_COLUMNS = pd.DataFrame(
+    {
+        "x": np.array([1.0, 2.0]),
+        "y": np.array([3.0, 4.0]),
+        "z": np.array([5.0, 6.0]),
+    }
+)
+
+
+def _answer_3d_scatterplot(view: MetadataView, columns: tuple) -> None:
+    """
+    Stand in for the Controller answering ``scatterplot_3d_requested``.
+
+    :param view: the view whose request to answer
+    :type view: MetadataView
+    :param columns: the filtered columns to answer with
+    :type columns: tuple
+    :return: None
+    :rtype: None
+    """
+    context = view.scatterplot_3d_requested.emit.call_args.args[2:]
+    view.set_3d_scatterplot(columns, *context)
+
+
+_THREE_FILTERED = (
+    np.array([1.0, 2.0]),
+    np.array([3.0, 4.0]),
+    np.array([5.0, 6.0]),
+)
+
+
+def test_plot_3d_scatterplot_requests_the_filtering(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify all three columns and all three flags go out to be filtered."""
+    view._plot_3d_scatterplot(
+        view.axes,
+        _THREE_COLUMNS,
+        ["x", "y", "z"],
+        ["u1", "u2", "u3"],
+        [True, False, True],
+    )
+
+    view._logscale_and_filter_multiple_columns.assert_not_called()
+    emitted = view.scatterplot_3d_requested.emit.call_args.args
+    assert len(emitted[0]) == 3
+    assert emitted[1] == [True, False, True]
+
+
 def test_plot_3d_scatterplot_calls_scatter(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify scatter is called on 3D axes."""
-    data = pd.DataFrame(
-        {
-            "x": np.array([1.0, 2.0]),
-            "y": np.array([3.0, 4.0]),
-            "z": np.array([5.0, 6.0]),
-        }
-    )
-
     # Make isinstance check pass by setting view.axes as an instance
     type(view.axes).__name__ = "Axes3D"
 
-    view._logscale_and_filter_multiple_columns = mocker.Mock(  # type: ignore[method-assign]
-        return_value=(
-            np.array([1.0, 2.0]),
-            np.array([3.0, 4.0]),
-            np.array([5.0, 6.0]),
-        )
-    )
-
     view._plot_3d_scatterplot(
-        view.axes, data, ["x", "y", "z"], ["u1", "u2", "u3"], [False, False, False]
+        view.axes,
+        _THREE_COLUMNS,
+        ["x", "y", "z"],
+        ["u1", "u2", "u3"],
+        [False, False, False],
     )
+    _answer_3d_scatterplot(view, _THREE_FILTERED)
 
     view.axes.scatter.assert_called_once()
 
@@ -1391,33 +1457,47 @@ def test_plot_3d_scatterplot_sets_axis_labels(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify all three axis labels are set."""
-    data = pd.DataFrame(
-        {
-            "x": np.array([1.0, 2.0]),
-            "y": np.array([3.0, 4.0]),
-            "z": np.array([5.0, 6.0]),
-        }
-    )
-
     # Make isinstance check pass
     type(view.axes).__name__ = "Axes3D"
-
-    view._logscale_and_filter_multiple_columns = mocker.Mock(  # type: ignore[method-assign]
-        return_value=(
-            np.array([1.0, 2.0]),
-            np.array([3.0, 4.0]),
-            np.array([5.0, 6.0]),
-        )
-    )
     view.axes.set_zlabel = mocker.Mock()
 
     view._plot_3d_scatterplot(
-        view.axes, data, ["x", "y", "z"], ["u1", "u2", "u3"], [False, False, False]
+        view.axes,
+        _THREE_COLUMNS,
+        ["x", "y", "z"],
+        ["u1", "u2", "u3"],
+        [False, False, False],
     )
+    _answer_3d_scatterplot(view, _THREE_FILTERED)
 
     view.axes.set_xlabel.assert_called()
     view.axes.set_ylabel.assert_called()
     view.axes.set_zlabel.assert_called()
+
+
+def test_3d_scatterplot_rebuilds_two_dimensional_axes(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """
+    A 2-D pair left by the previous plot type is replaced before drawing.
+
+    The check used to sit in the request half, after the filtering; it belongs
+    with the drawing, which is the half that needs the axes.
+    """
+    type(view.axes).__name__ = "Axes"
+    view._reset_actions = mocker.Mock()
+    view.axes.set_zlabel = mocker.Mock()
+
+    view._plot_3d_scatterplot(
+        view.axes,
+        _THREE_COLUMNS,
+        ["x", "y", "z"],
+        ["u1", "u2", "u3"],
+        [False, False, False],
+    )
+    _answer_3d_scatterplot(view, _THREE_FILTERED)
+
+    view._reset_actions.assert_called_once_with(axis_type="3d")
 
 
 # ----------------------------- Plot All Points Histogram Tests ------------------------------
@@ -4264,24 +4344,24 @@ def test_handle_other_actions_raises_not_implemented(
 # ----------------------------- Calculate Heatmap Tests ------------------------------
 
 
-def test_plot_heatmap_applies_logscale_before_asking_for_the_binning(
+def test_plot_heatmap_sends_the_raw_columns_and_their_log_flags(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """
-    The filter is still the View's, and runs before the request goes out.
+    The filter went down with the binning in Step 4's closeout.
 
-    Step 4c moved the binning to ``MetadataModel`` but left
-    ``_logscale_and_filter_multiple_columns`` on ``MetaView``, so this is the half
-    of the old ``_calculate_heatmap`` behaviour that stayed here. The rest moved to
-    ``tests/unit/models/test_metadata_model.py``.
+    What the View sends is the column as it came out of the dataframe, plus the
+    flags saying which axes are log-scaled - so the values that survive the filter
+    are produced once, by the layer that also exports them.
     """
     data = pd.DataFrame({"x": np.array([1.0, 10.0]), "y": np.array([1.0, 10.0])})
 
     view._plot_heatmap(view.axes, data, ["x", "y"], ["u1", "u2"], [True, True])
 
-    view._logscale_and_filter_multiple_columns.assert_called_once()
-    call_args = view._logscale_and_filter_multiple_columns.call_args
-    assert call_args.kwargs["log_flags"] == [True, True]
+    view._logscale_and_filter_multiple_columns.assert_not_called()
+    emitted = view.heatmap_requested.emit.call_args.args
+    assert list(emitted[0]) == [1.0, 10.0]
+    assert emitted[2] == [True, True]
 
 
 # ----------------------------- Show Add Filter Dialog Tests ------------------------------
