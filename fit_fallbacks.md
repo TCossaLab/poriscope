@@ -62,7 +62,8 @@ does, since they stretch the range while the IQR-derived width barely moves. See
 
 `_fit_double_gaussian`, which tries two entirely different initial guesses before giving up.
 Both are fitted against the same box in `_curve_fit_bounded`: amplitudes in `[0, tallest bin]`,
-means inside the histogram, widths between half a bin and the full span. The half-bin lower
+means inside the histogram, widths between half a bin and the full span, and — while
+`FIT_CONSTANT_OFFSET` holds — a flat constant in `[0, tallest bin]` too. The half-bin lower
 width bound matters — at `std == 0` the model divides by zero and the component silently
 vanishes from the curve carrying a `nan` onto the plot.
 
@@ -71,6 +72,24 @@ vanishes from the curve carrying a `nan` onto the plot.
 | degrades | `_resolve_two_histogram_peaks` returns `None` — no two maxima clear 5% prominence *and* sit at least one dominant-FWHM apart | Falls to the split-histogram seed: walk in from both ends to the first bin at 5% of maximum, split that support in half, take the argmax of each side. Structurally yields one seed per half, so it stays sane on a single broad mode |
 | degrades | The peak-seeded `curve_fit` raises `RuntimeError` or `ValueError` | Same split-histogram seed. The two triggers are indistinguishable from outside — both arrive at the identical second attempt |
 | **aborts** | The split seed also fails, or the support cannot be split at all (`left_start >= right_start`) | Returns `(None, None)`, which stage 3 turns into a `ValueError` out of `fit_threshold` |
+
+Each initial guess is fitted **twice**, with and without the flat constant, and the constant
+is kept only if it did not make the residual sum of squares meaningfully worse. It only adds
+a degree of freedom, so a larger model that scores worse means the optimizer went somewhere
+worse — measured, from the split-histogram seed alone, to collapse a 5%-minority population
+while scoring 6426 against the six-parameter fit's 4900. Near-ties go to the constant, so
+float noise on background-free data cannot flip the length of `params`.
+
+| | Condition | Result |
+|---|---|---|
+| degrades | The seven-parameter fit's residual exceeds the six-parameter fit's by more than a relative `1e-6` | The constant is dropped for that seed; `params` comes back six long and `offset` is 0.0. Debug log naming both residuals |
+| degrades | One of the two arities raises `RuntimeError`/`ValueError` and the other does not | The survivor is returned. Only if **both** fail does the error propagate to the next initial guess |
+
+`offset` is always present on the returned dict and is `0.0` wherever no constant was fitted,
+so a consumer can read it unconditionally. Because the constant is common to both components
+it cancels out of `_gaussian_intersection`'s crossing and out of both of stage 5's
+constraints, and it is excluded by construction from `_classification_confidence` — so it
+changes fitted widths and amplitudes but **moves no threshold and no class**.
 
 ## Stage 3 — convergence and diagnostics
 
@@ -85,7 +104,8 @@ to see.
 | **aborts** | No parameters returned, or the covariance matrix holds `inf`/`nan` | Returns `None`; `fit_threshold` raises `ValueError`. Debug log only, so the visible failure is the classifier's own error line |
 | degrades | Either fitted std ≤ one bin width — a collapsed component | Fit kept, `n_components = 1`, warning naming the component. The fit is a single Gaussian wearing two sets of parameters, so any midpoint threshold is meaningless |
 | degrades | Centre separation < `SEED_SEPARATION_FWHM` × the narrower component's FWHM | Fit kept, `n_components = 1`, warning. Catches what the collapse test misses: two components of comparable, non-degenerate width sitting on top of each other |
-| logged | Any parameter's standard error exceeds 10× its value | Warning only, deliberately **not** folded into `n_components` — it also fires on genuinely bimodal but small or heavily overlapping data, which is a precision problem rather than a population-count one |
+| logged | Any parameter's standard error exceeds 10× its value | Warning only, deliberately **not** folded into `n_components` — it also fires on genuinely bimodal but small or heavily overlapping data, which is a precision problem rather than a population-count one. The flat constant is **exempt**: it is the one parameter whose correct value is routinely zero, and a relative-error test can never be passed by a parameter that is legitimately near zero, so including it would fire this on almost every clean fit |
+| logged | A flat constant was fitted | Debug line giving its value against the tallest bin, so the pedestal is visible whether or not the plot is looked at |
 
 ## Stage 4 — threshold placement
 
@@ -165,7 +185,7 @@ refinement.
 | The split point falls outside `[bins[0], bins[-1]]` | debug — the only one of the five that is not a warning |
 | `scipy.optimize.minimize` raises | warning, with the exception text |
 | SLSQP reports failure **and** the result violates a constraint or bound | warning |
-| Either refitted std ≤ one bin width | warning |
+| Either refitted std ≤ one bin width | warning — also how a tail valley now declines, see below |
 | `_gaussian_intersection` finds no crossing between the two means | warning, "this should not happen" |
 
 Note the conjunction on the third row. A solution flagged unsuccessful but in fact **feasible
@@ -178,6 +198,17 @@ benchmarking, before the seed was walked into the feasible region first.
 `_gaussian_intersection` itself returns `None` when either amplitude is non-positive, when the
 equal-variance case degenerates (both quadratic and linear coefficients vanish), when the
 discriminant is negative, or when no root lands between the two means.
+
+Where stage 2 fitted a flat constant it stays a free parameter of this refit too, seeded from
+the joint fit and bounded the same way, so both components are re-fitted against the same
+model they were originally fitted against. It takes no part in either constraint. One
+consequence is worth knowing: where the threshold search puts its valley out in a sparse
+tail, the six-parameter refit used to satisfy every constraint by parking a broad, near-flat
+higher component past the end of the data to cover it — on one dataset, mean 8324 with std
+3883 for a valley at 6383. With a pedestal available that flat contribution goes to the
+constant instead, the higher component collapses below the bin width, and the fourth row
+above declines the refit. Keeping the joint fit is the better answer there, but it does mean
+`params_method` reads `"joint"` on tail-valley data where it used to read `"constrained"`.
 
 ## Reading a fit's provenance
 
@@ -223,11 +254,35 @@ peak-filtering section of the report is still populated.
 
 - A **folding** decline means no event gets an `unfolded_level` or `folded_level`. `bound_star`
   then has no depth floor to test candidates against and counts every sequence-bearing event
-  under `no_height_reference`.
+  under `no_height_reference`. That is reported ahead of the widest-peak rule, which needs no
+  fitted level of its own — so a folding decline still shows up as "no floor" rather than
+  being masked as a width rejection.
 - A **direction** decline means no event gets a `translocation_direction`. Sequences are not
   reversed into the molecule's frame, and `bound_star` stays `None` for every event.
 - A **prominence** decline means peaks keep `classified = nan`, so sequence strings come out
   empty and every downstream count keyed on sequence goes to zero.
+- The prominence fit is taken on **log10(normalized prominence)** while
+  `PROMINENCE_FIT_LOG_SCALE` holds, so a Gaussian in the fitted variable is a log-normal in
+  the measured one — the shape the upper population actually has. The base is presentational
+  only: the histogram, the fit and the split are equivariant under it, so the classes are the
+  same for any base, and base 10 was chosen because a reader can convert a decade in their
+  head. Everything the fit returns is in log units: the split and the per-peak confidences
+  stay there, and the report converts the threshold and both centres back with `10**value`,
+  giving each in three forms — the fitted decade, the ratio to the run's unfolded level,
+  and, when a representative unfolded level is available (see `_run_unfolded_level`: the
+  folding fit's own lower centre, or failing that the median per-event `unfolded_level`),
+  the equivalent current in pA. A standard deviation converts differently, because in log
+  space it is a multiplicative spread with no ratio of its own: it is reported as the total
+  pA span of ±1σ, `centre * (factor − 1/factor)` where `factor = 10**std`, which puts it in
+  the same units as the centres. Measured on
+  synthetic double-log-normal data (600 peaks, medians 0.2 and 0.6, sigma_log 0.45), the
+  linear fit returned `n_components = 1` in 10 of 12 trials and recovered the true classes
+  61% of the time, against 1 of 12 and 85% on the log scale — but the log scale also raised
+  `could not fit a double Gaussian` outright in 2 of 12, where the linear fit never did. That
+  exception is the "`fit_threshold` raises" rung below: it logs an error and classifies
+  nothing, which is a harder failure than a degraded threshold, so it is the case to watch
+  when moving a dataset onto this scale. A peak whose normalized prominence is not strictly
+  positive has no logarithm and is dropped from the fit with a warning.
 
 ## The one classifier with input-level fallbacks
 
@@ -272,6 +327,7 @@ their own comments.
 | Constant | Value | Governs |
 |---|---|---|
 | `MIN_FIT_BINS` | 30 | Stage 1 bin floor; also the minimum size of the direction fit's percentile core |
+| `FIT_CONSTANT_OFFSET` | True | Whether stage 2 fits a flat constant as a seventh free parameter. Bounded like an amplitude, kept only if it improves the residual, and excluded from every threshold and confidence calculation |
 | `SEED_SEPARATION_FWHM` | 1.0 | Peak separation for stage-2 seeding, and the centres-not-separated test in stage 3 |
 | `VALLEY_SEPARATION_SIGMA` | 0.5 | How far the valley must sit from each mean, in that component's own σ, in stage 5 |
 | `SPLINE_MAX_MINIMA` | 1 | The λ ladder's acceptance criterion — *at most* this many, so zero is fine |
