@@ -260,6 +260,10 @@ sites are converted**, and they sit in Clustering (1), Metadata (5) and Protein 
 
    **LANDED 2026-09-14**, suite 4,020 passed / 16 skipped, **allowlist 4 -> 3** with
    pandas closed for `ProteinView` and numpy recorded as its floor, audit 85 of 85.
+   **Manual Windows pass the same day: all clear, no defects** - both distribution
+   modes, the per-event grid, the Peak Scatterplot's error bars, Report All and the
+   fit commit. The first pass of the closeout to return nothing, on the tab carrying
+   the most moved computation.
    Five commits: the per-event binning, the ensemble average, the Monte Carlo, and the
    two logscale callers, on top of the re-measurement above. Three things worth
    carrying:
