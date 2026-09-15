@@ -26,11 +26,12 @@
 
 
 import logging
-from typing import Any, Dict, List, Optional, Sequence, Tuple, override
+from typing import Any, Dict, Generator, List, Optional, Sequence, Tuple, override
 
 import numpy as np
 import numpy.typing as npt
 import pandas as pd
+from matplotlib.axes import Axes
 from PySide6.QtCore import Slot
 
 from poriscope.plugins.analysistabs.ProteinModel import ProteinModel
@@ -77,6 +78,8 @@ class ProteinController(MetaSubsetTabController):
         self.view.fit_commit_requested.connect(self.check_for_existing_fit_columns)
         self.view.fit_commit_confirmed.connect(self.commit_fits)
         self.view.ensemble_fit_requested.connect(self.fit_ensemble_geometry)
+        self.view.ensemble_histogram_requested.connect(self.build_ensemble_histogram)
+        self.view.xyerr_scatterplot_requested.connect(self.filter_xyerr_scatterplot)
         self.view.event_histogram_fits_requested.connect(self.fit_event_histograms)
         self.view.distribution_fits_requested.connect(self.fit_distribution_events)
 
@@ -132,39 +135,211 @@ class ProteinController(MetaSubsetTabController):
                 f"Unable to fit the ensemble histogram: {e}", self.__class__.__name__
             )
             return
-        self.view.set_ensemble_geometry_fit(popt, curve, plot_data, plot_type, d, L, N)
+
+        if popt is None or curve is None:
+            self.logger.info("Unable to fit a double gaussian to the histogram")
+            self.add_text_to_display.emit(
+                "Unable to fit a double gaussian to the histogram",
+                self.__class__.__name__,
+            )
+            return
+
+        try:
+            df_prolate, df_oblate = self.model.sample_vm_solutions(popt, d, L, N)
+        except (ValueError, TypeError, IndexError) as e:
+            self.logger.error(f"Unable to sample the ensemble geometry: {repr(e)}")
+            self.add_text_to_display.emit(
+                f"Unable to sample the ensemble geometry: {e}",
+                self.__class__.__name__,
+            )
+            return
+
+        if df_prolate.empty and df_oblate.empty:
+            self.logger.warning(
+                "Generative sampling bailed out: The ensemble Gaussian fit "
+                "represents an unphysical geometry."
+            )
+            self.add_text_to_display.emit(
+                "Generative sampling bailed out: The ensemble Gaussian fit "
+                "represents an unphysical geometry.",
+                self.__class__.__name__,
+            )
+        elif len(df_prolate) < N or len(df_oblate) < N:
+            self.logger.info(
+                "Sampling hit bailout limit; returning partial ensemble arrays."
+            )
+
+        # Called even when nothing was sampled: the fit itself is still worth
+        # drawing, and the two empty frames skip their own scatterplots.
+        self.view.set_ensemble_geometry_fit(
+            popt, curve, plot_data, plot_type, df_prolate, df_oblate
+        )
 
     @log(logger=logger)
-    @Slot(object, object, object)
-    def fit_event_histograms(
+    @Slot(object, object, object, object, str)
+    def filter_xyerr_scatterplot(
         self,
-        histograms: Sequence[
-            Optional[Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]]
-        ],
-        frames: Sequence[Optional[pd.DataFrame]],
-        event_data: Sequence[Dict[str, Any]],
+        columns: Sequence[npt.NDArray[np.float64]],
+        log_flags: Sequence[bool],
+        ax: Axes,
+        axis_labels: Sequence[str],
+        dataset_label: str,
     ) -> None:
         """
-        Fit every event's histogram in one call, and hand the results back to draw.
+        Filter an error-bar scatterplot's columns, and hand them back to draw.
 
-        Decision B's command path. One call rather than one per event keeps each
-        answer off the widget; see ``ProteinModel.fit_histograms``.
+        Separate from the shared ``MetaSubsetTabController.filter_scatterplot``
+        because only this tab draws error bars. The four arrays go down together so
+        one mask covers them all:
+        a row dropped from the values has to be dropped from their error bars, or
+        the bars no longer describe the points they sit on.
 
-        The frames and the events pass straight through: this slot marshals, it does
-        not interpret them. A failure is reported on the status panel rather than
-        raised, because Qt invoked this from a signal and nothing above it could
-        handle it.
-
-        :param histograms: one (bins, amplitude) pair per event, or None where no histogram could be built
-        :type histograms: Sequence[Optional[Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]]]
-        :param frames: each event's histogram, passed back to the View unchanged
-        :type frames: Sequence[Optional[pd.DataFrame]]
-        :param event_data: the events being plotted, passed back to the View unchanged
-        :type event_data: Sequence[Dict[str, Any]]
+        :param columns: the raw x, y, x error and y error values
+        :type columns: Sequence[npt.NDArray[np.float64]]
+        :param log_flags: log-scale each column? the two error columns never are
+        :type log_flags: Sequence[bool]
+        :param ax: the axis object the View will draw on
+        :type ax: Axes
+        :param axis_labels: the axis labels, already formatted
+        :type axis_labels: Sequence[str]
+        :param dataset_label: string to label the dataset
+        :type dataset_label: str
         :return: None
         :rtype: None
         """
         try:
+            filtered = self.model.logscale_and_filter_columns(
+                *columns, log_flags=list(log_flags)
+            )
+        except (ValueError, TypeError, IndexError) as e:
+            self.logger.error(f"Unable to filter the scatterplot: {repr(e)}")
+            self.add_text_to_display.emit(
+                f"Unable to filter the scatterplot: {e}", self.__class__.__name__
+            )
+            return
+        self.view.set_xyerr_scatterplot(filtered, ax, axis_labels, dataset_label)
+
+    @log(logger=logger)
+    @Slot(str, str, object, str, object, bool, str, object, float, float, int)
+    def build_ensemble_histogram(
+        self,
+        loader: str,
+        sql_filter: str,
+        experiments_and_channels: Optional[Dict[str, List[Optional[int]]]],
+        plot_type: str,
+        bins: Any,
+        sizes: bool,
+        dataset_label: str,
+        dataset_key: Tuple[Any, ...],
+        d: float,
+        L: float,
+        N: int,
+    ) -> None:
+        """
+        Fetch one event subset and average it into a single histogram to draw.
+
+        Decision B's command path. Step 4's closeout took the aggregation down with
+        the fetch: the widget used to be handed the generator and walk it twice
+        itself, which is what kept whole events - and the DataFrame construction -
+        above the Model.
+
+        The drawing context arrives and departs unchanged; this slot marshals and
+        does not interpret it. Nothing is handed back at all if the subset has no
+        usable event, which is what leaves the previous figure in place.
+
+        :param loader: the database loader plugin's key
+        :type loader: str
+        :param sql_filter: the subset filter's WHERE-clause body, empty for all rows
+        :type sql_filter: str
+        :param experiments_and_channels: the experiment and channel scope, or None
+        :type experiments_and_channels: Optional[Dict[str, List[Optional[int]]]]
+        :param plot_type: 'Raw Histogram' or 'Filtered Histogram'
+        :type plot_type: str
+        :param bins: a bin count, or a bin width when sizes is True, or None
+        :type bins: Any
+        :param sizes: does bins refer to a bin width (True) or a count (False)
+        :type sizes: bool
+        :param dataset_label: the label the histogram is drawn under
+        :type dataset_label: str
+        :param dataset_key: the plotted-datasets key, handed back unchanged
+        :type dataset_key: Tuple[Any, ...]
+        :param d: the diameter of the pore in nanometers
+        :type d: float
+        :param L: the length of the pore in nanometers
+        :type L: float
+        :param N: target number of samples to draw for each ensemble
+        :type N: int
+        :return: None
+        :rtype: None
+        """
+        fetched = self._fetch_event_subset(loader, sql_filter, experiments_and_channels)
+        if fetched is None:
+            return
+        query, generator = fetched
+
+        try:
+            plot_data = self.model.build_all_points_histogram(
+                generator, plot_type, bins, sizes
+            )
+        except (ValueError, TypeError, IndexError, KeyError) as e:
+            self.logger.error(f"Unable to build the ensemble histogram: {repr(e)}")
+            self.add_text_to_display.emit(
+                f"Unable to build the ensemble histogram: {e}",
+                self.__class__.__name__,
+            )
+            return
+
+        if plot_data is None:
+            self.add_text_to_display.emit(
+                "No usable events in the selected subset, so there is nothing to "
+                "plot",
+                self.__class__.__name__,
+            )
+            return
+
+        self.view.set_event_query(query)
+        self.view.set_ensemble_histogram(
+            plot_data, plot_type, bins, sizes, dataset_label, dataset_key, d, L, N
+        )
+
+    @log(logger=logger)
+    @Slot(object, str, object, bool)
+    def fit_event_histograms(
+        self,
+        event_data: Sequence[Dict[str, Any]],
+        plot_type: str,
+        bins: Any,
+        sizes: bool,
+    ) -> None:
+        """
+        Bin and fit every event in one call, and hand the results back to draw.
+
+        Decision B's command path. One call rather than one per event keeps each
+        answer off the widget; see ``ProteinModel.fit_histograms``. Step 4's closeout
+        added the binning ahead of the fitting, so the widget is handed the
+        histograms rather than building them.
+
+        The events pass straight through: this slot marshals, it does not interpret
+        them. A failure is reported on the status panel rather than raised, because
+        Qt invoked this from a signal and nothing above it could handle it - and an
+        unusable bin request is now reported once here rather than logged once per
+        event and drawn as a grid of empty subplots.
+
+        :param event_data: the events being plotted, passed back to the View unchanged
+        :type event_data: Sequence[Dict[str, Any]]
+        :param plot_type: 'Raw Histogram' or 'Filtered Histogram'
+        :type plot_type: str
+        :param bins: a bin count, or a bin width when sizes is True, or None
+        :type bins: Any
+        :param sizes: does bins refer to a bin width (True) or a count (False)
+        :type sizes: bool
+        :return: None
+        :rtype: None
+        """
+        try:
+            histograms = self.model.build_event_histograms(
+                event_data, plot_type, bins, sizes
+            )
             fits = self.model.fit_histograms(histograms)
         except (ValueError, TypeError, IndexError) as e:
             self.logger.error(f"Unable to fit the event histograms: {repr(e)}")
@@ -172,34 +347,35 @@ class ProteinController(MetaSubsetTabController):
                 f"Unable to fit the event histograms: {e}", self.__class__.__name__
             )
             return
-        self.view.set_event_histogram_fits(fits, frames, event_data)
+        self.view.set_event_histogram_fits(fits, histograms, event_data)
 
     @log(logger=logger)
-    @Slot(object, object, object, float, float, int)
+    @Slot(object, str, object, bool, float, float, int)
     def fit_distribution_events(
         self,
-        histograms: Sequence[
-            Optional[Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]]
-        ],
-        frames: Sequence[Optional[pd.DataFrame]],
         event_data: Sequence[Dict[str, Any]],
+        plot_type: str,
+        bins: Any,
+        sizes: bool,
         d: float,
         L: float,
         N: int,
     ) -> None:
         """
-        Fit every event on the individual distribution path, and hand them back.
+        Bin and fit every event on the individual distribution path, and hand back.
 
         Decision B's command path, the same shape as ``fit_event_histograms``. The
-        frames, the events and the pore geometry pass straight through; this slot
-        marshals and does not interpret them.
+        events and the pore geometry pass straight through; this slot marshals and
+        does not interpret them.
 
-        :param histograms: one (bins, amplitude) pair per event, or None where no histogram could be built
-        :type histograms: Sequence[Optional[Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]]]
-        :param frames: each event's histogram, passed back to the View unchanged
-        :type frames: Sequence[Optional[pd.DataFrame]]
         :param event_data: the events being plotted, passed back to the View unchanged
         :type event_data: Sequence[Dict[str, Any]]
+        :param plot_type: 'Raw Histogram' or 'Filtered Histogram'
+        :type plot_type: str
+        :param bins: a bin count, or a bin width when sizes is True, or None
+        :type bins: Any
+        :param sizes: does bins refer to a bin width (True) or a count (False)
+        :type sizes: bool
         :param d: the diameter of the pore in nanometers
         :type d: float
         :param L: the length of the pore in nanometers
@@ -210,14 +386,32 @@ class ProteinController(MetaSubsetTabController):
         :rtype: None
         """
         try:
+            histograms = self.model.build_event_histograms(
+                event_data, plot_type, bins, sizes
+            )
             fits = self.model.fit_histograms(histograms)
+            df_prolate, df_oblate, fit_data = self.model.sample_event_geometries(
+                fits, histograms, event_data, d, L, N
+            )
         except (ValueError, TypeError, IndexError) as e:
             self.logger.error(f"Unable to fit the event histograms: {repr(e)}")
             self.add_text_to_display.emit(
                 f"Unable to fit the event histograms: {e}", self.__class__.__name__
             )
             return
-        self.view.set_distribution_fits(fits, frames, event_data, d, L, N)
+
+        if fit_data.empty:
+            # Every event was refused, or the subset held none at all. Every guard in
+            # the drawing half tests a frame built from these events, so without this
+            # the tab drew empty axes and said nothing.
+            self.add_text_to_display.emit(
+                "No events in the selected subset could be fitted, so there is "
+                "nothing to plot",
+                self.__class__.__name__,
+            )
+            return
+
+        self.view.set_distribution_fits(df_prolate, df_oblate, fit_data)
 
     @log(logger=logger)
     @Slot(str)
@@ -359,6 +553,40 @@ class ProteinController(MetaSubsetTabController):
         :return: None
         :rtype: None
         """
+        fetched = self._fetch_event_subset(loader, sql_filter, experiments_and_channels)
+        if fetched is None:
+            return
+        query, generator = fetched
+
+        # Set together, once the whole chain has succeeded: the View distinguishes
+        # "not fetched" from "fetched and empty" by these two being untouched.
+        self.view.set_event_query(query)
+        self.view.set_event_data_generator(generator)
+
+    @log(logger=logger)
+    def _fetch_event_subset(
+        self,
+        loader: str,
+        sql_filter: str,
+        experiments_and_channels: Optional[Dict[str, List[Optional[int]]]],
+    ) -> Optional[Tuple[str, Generator]]:
+        """
+        Build one event subset's query and open a generator over its events.
+
+        Shared by the two things that need a subset's events: the individual
+        distribution path, which materialises them in the widget, and the ensemble
+        path, which hands them straight to the Model. Reports its own failure and
+        answers with None, so a caller has nothing to handle beyond stopping.
+
+        :param loader: the database loader plugin's key
+        :type loader: str
+        :param sql_filter: the subset filter's WHERE-clause body, empty for all rows
+        :type sql_filter: str
+        :param experiments_and_channels: the scope the filter is built against
+        :type experiments_and_channels: Optional[Dict[str, List[Optional[int]]]]
+        :return: the query that ran and a generator over its events, or None
+        :rtype: Optional[Tuple[str, Generator]]
+        """
         try:
             # Two values: construct_event_data_query is declared
             # -> Tuple[str, str] and reports a filter it cannot build as
@@ -376,13 +604,13 @@ class ProteinController(MetaSubsetTabController):
                 f"Could not build the event query for this subset: {e}",
                 self.__class__.__name__,
             )
-            return
+            return None
         if not query:
             self.add_text_to_display.emit(
                 debug or "The event query for this subset could not be built",
                 self.__class__.__name__,
             )
-            return
+            return None
 
         try:
             generator = self.model.call(
@@ -398,19 +626,16 @@ class ProteinController(MetaSubsetTabController):
                 f"Could not load this event subset from {loader}: {e}",
                 self.__class__.__name__,
             )
-            return
+            return None
 
         if generator is None:
             self.add_text_to_display.emit(
                 "No events in dataset or unable to create event generator",
                 self.__class__.__name__,
             )
-            return
+            return None
 
-        # Set together, once the whole chain has succeeded: the View distinguishes
-        # "not fetched" from "fetched and empty" by these two being untouched.
-        self.view.set_event_query(query)
-        self.view.set_event_data_generator(generator)
+        return query, generator
 
     @log(logger=logger)
     @Slot(str, list, object, object, object, str)

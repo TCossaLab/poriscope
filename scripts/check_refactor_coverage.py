@@ -162,20 +162,33 @@ MOVED: Tuple[Tuple[str, str, str], ...] = (
     ("poriscope/plugins/analysistabs/MetadataView.py", "is_categorical_type", "4c"),
     ("poriscope/plugins/analysistabs/MetadataView.py", "format_axis_label", "4c"),
     (
-        "poriscope/plugins/analysistabs/ProteinView.py",
+        "poriscope/plugins/analysistabs/ProteinModel.py",
         "_compute_theoretical_blockages",
         "4c",
     ),
-    ("poriscope/plugins/analysistabs/ProteinView.py", "_generate_vm_ensemble", "4c"),
+    # Landed in Step 4's closeout: the Monte Carlo and the forward model it calls
+    # moved to ProteinModel, and are tracked at their destination now.
+    ("poriscope/plugins/analysistabs/ProteinModel.py", "_generate_vm_ensemble", "4c"),
+    # `_summarize_vm` stays on the View, decided 2026-09-14: it formats the display
+    # strings `_report_ensemble_fit` writes to the panel, and nothing outside that
+    # method reads them. Rule 71 - the test is whether the value leaves the View.
     ("poriscope/plugins/analysistabs/ProteinView.py", "_summarize_vm", "4c"),
+    # Landed in Step 4's closeout: the per-event binning moved to ProteinModel and
+    # is tracked at its destination now. The View's copy built a DataFrame that
+    # every reader immediately unpacked into two arrays, which is what kept pandas
+    # in the file; the Model hands back the arrays.
     (
-        "poriscope/plugins/analysistabs/ProteinView.py",
-        "_construct_single_event_histogram",
+        "poriscope/plugins/analysistabs/ProteinModel.py",
+        "build_event_histograms",
         "4c",
     ),
+    # Landed in Step 4's closeout with the per-event binning: the ensemble average
+    # moved to ProteinModel and is tracked at its destination now. The View's copy
+    # walked the event generator itself, which is what kept the events - and the
+    # DataFrame construction - above the Model.
     (
-        "poriscope/plugins/analysistabs/ProteinView.py",
-        "_construct_all_points_histogram",
+        "poriscope/plugins/analysistabs/ProteinModel.py",
+        "build_all_points_histogram",
         "4c",
     ),
     # Step 4c split `_fit_and_plot_ensemble_geometry` in two, 2026-09-13: the fit

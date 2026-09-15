@@ -25,7 +25,6 @@
 # Kyle Briggs
 
 import bisect
-import itertools
 import logging
 import re
 import warnings
@@ -170,6 +169,24 @@ class ProteinView(MetaSubsetTabView):
     #: this widget between the halves, which is the pattern Step 4a exists to delete.
     ensemble_fit_requested = Signal(object, object, object, str, float, float, int)
 
+    #: Asks for one subset's events to be fetched and averaged into a single
+    #: histogram: the loader's key, the filter, the scope, the plot type, the bin
+    #: request, and the drawing context handed back unchanged. Answered through
+    #: ``set_ensemble_histogram``.
+    #:
+    #: Step 4's closeout. The subset used to arrive here as a generator the widget
+    #: walked twice; the events themselves never belonged above the Model, and
+    #: nothing outside the histogram ever read them.
+    ensemble_histogram_requested = Signal(
+        str, str, object, str, object, bool, str, object, float, float, int
+    )
+
+    #: The error-bar variant of ``scatterplot_requested``, which this tab alone
+    #: has: the raw columns and their two error columns, the log flags, and the
+    #: drawing context handed back unchanged. Answered through
+    #: ``set_xyerr_scatterplot``.
+    xyerr_scatterplot_requested = Signal(object, object, object, object, str)
+
     #: Asks for one double-gaussian fit per event: the (bins, amplitude) pairs, the
     #: frames they came from, and the events themselves. Answered through
     #: ``set_event_histogram_fits``.
@@ -179,7 +196,10 @@ class ProteinView(MetaSubsetTabView):
     #: by parking each answer where the loop body could read it back - the pattern
     #: Step 4a exists to delete. A ``None`` pair marks an event whose histogram could
     #: not be built, so every list stays index-aligned with the events.
-    event_histogram_fits_requested = Signal(object, object, object)
+    #:
+    #: Step 4's closeout sent the binning down with the fitting, so this carries the
+    #: events and the bin request rather than histograms built here.
+    event_histogram_fits_requested = Signal(object, str, object, bool)
 
     #: Asks for one fit per event on the individual distribution path, with the pore
     #: geometry the sampling needs. Answered through ``set_distribution_fits``.
@@ -188,7 +208,9 @@ class ProteinView(MetaSubsetTabView):
     #: are used for different work - that one draws per-event subplots, this one
     #: Monte Carlo samples V/m from each fit - and one intent answering two unrelated
     #: consumers would have to be told which it was serving.
-    distribution_fits_requested = Signal(object, object, object, float, float, int)
+    #:
+    #: Step 4's closeout sent the binning down with the fitting, as above.
+    distribution_fits_requested = Signal(object, str, object, bool, float, float, int)
 
     @property
     def fig_hist(self) -> Figure:
@@ -301,8 +323,6 @@ class ProteinView(MetaSubsetTabView):
             "individual"  # default mode; toggled by Individual/Ensemble buttons
         )
 
-        self.hist_min: Optional[float] = None
-        self.hist_max: Optional[float] = None
         # Heterogeneous by design: _plot_all_points_histogram appends (x, y)
         # tuples rather than plain arrays. Flagged for review.
         self.hist_data: List[Any] = []
@@ -748,8 +768,6 @@ class ProteinView(MetaSubsetTabView):
         self.canvas_vm.draw()
 
         # Reset plot bookkeeping variables TBD
-        self.hist_min = None
-        self.hist_max = None
         self.hist_data = []
         self.hist_labels = []
         self.allowed_columns = []
@@ -891,7 +909,10 @@ class ProteinView(MetaSubsetTabView):
         dataset_label: str = "",
     ) -> None:
         """
-        Create a scatterplot of two metadata columns.
+        Ask for a scatterplot's two columns, filtered and log-scaled.
+
+        Answered through ``MetaSubsetTabView.set_scatterplot``, which both subset
+        tabs share.
 
         :param ax: Matplotlib axes object.
         :type ax: Axes
@@ -910,8 +931,7 @@ class ProteinView(MetaSubsetTabView):
         x_units, y_units = units
         logx, logy = logscales
 
-        x = data[x_label].values
-        y = data[y_label].values
+        columns = [data[x_label].values, data[y_label].values]
 
         x_label = format_axis_label(x_label, x_units)
         y_label = format_axis_label(y_label, y_units)
@@ -921,15 +941,9 @@ class ProteinView(MetaSubsetTabView):
         if logy:
             y_label = f"log10({y_label})"
 
-        xdata, ydata = self._logscale_and_filter_multiple_columns(
-            x, y, log_flags=[logx, logy]
+        self.scatterplot_requested.emit(
+            columns, [logx, logy], ax, [x_label, y_label], dataset_label
         )
-        ax.scatter(xdata, ydata, s=3, alpha=0.5, label=dataset_label)
-        ax.set_xlabel(x_label)
-        ax.set_ylabel(y_label)
-
-        self._update_cache((xdata, x_label), (ydata, y_label))
-        ax.legend(loc="best")
 
     @log(logger=logger)
     def _plot_xyerr_scatterplot(
@@ -943,7 +957,13 @@ class ProteinView(MetaSubsetTabView):
         err_cols: Optional[Sequence[str]] = None,
     ) -> None:
         """
-        Create a scatterplot of two metadata columns with error bars.
+        Ask for an error-bar scatterplot's columns, filtered and log-scaled.
+
+        **The error columns travel through the same filter as the values they
+        annotate**, unscaled. They used to be taken straight off the unfiltered
+        frame while the values were filtered, so any row the filter dropped left the
+        two arrays different lengths - latent today only because the one caller
+        passes columns that never contain NaN and never log-scales them.
 
         :param ax: Matplotlib axes object.
         :type ax: Axes
@@ -961,7 +981,7 @@ class ProteinView(MetaSubsetTabView):
         :type err_cols: Optional[Sequence[str]]
         :raises ValueError: If `err_cols` is not a list of exactly two column names.
         """
-        if err_cols is None or len(err_cols) != 2:
+        if err_cols is None or len(err_cols) != 2 or not all(err_cols):
             raise ValueError(
                 "_plot_xyerr_scatterplot() requires exactly two error columns to be specified in err_cols (e.g., [x_err, y_err])"
             )
@@ -971,12 +991,12 @@ class ProteinView(MetaSubsetTabView):
         logx, logy = logscales
         x_err_label, y_err_label = err_cols
 
-        x = data[x_label].values
-        y = data[y_label].values
-
-        # Extract error arrays, allowing for None if one axis doesn't have errors
-        x_err = data[x_err_label].values if x_err_label else None
-        y_err = data[y_err_label].values if y_err_label else None
+        columns = [
+            data[x_label].values,
+            data[y_label].values,
+            data[x_err_label].values,
+            data[y_err_label].values,
+        ]
 
         x_label = format_axis_label(x_label, x_units)
         y_label = format_axis_label(y_label, y_units)
@@ -986,9 +1006,42 @@ class ProteinView(MetaSubsetTabView):
         if logy:
             y_label = f"log10({y_label})"
 
-        xdata, ydata = self._logscale_and_filter_multiple_columns(
-            x, y, log_flags=[logx, logy]
+        # The error columns are masked with the values and never scaled: an error
+        # bar is a width in the value's own units, and log-scaling it would be
+        # meaningless.
+        self.xyerr_scatterplot_requested.emit(
+            columns, [logx, logy, False, False], ax, [x_label, y_label], dataset_label
         )
+
+    @log(logger=logger)
+    def set_xyerr_scatterplot(
+        self,
+        columns: Sequence[npt.NDArray[np.float64]],
+        ax: Axes,
+        axis_labels: Sequence[str],
+        dataset_label: str,
+    ) -> None:
+        """
+        Draw a scatterplot of two filtered columns with their error bars.
+
+        The answering half of ``xyerr_scatterplot_requested``. Separate from
+        ``set_scatterplot`` because only this tab has an error-bar variant. The four
+        arrays arrive filtered together, so the bars still line up with the points
+        after any row is dropped.
+
+        :param columns: the filtered x, y, x error and y error values
+        :type columns: Sequence[npt.NDArray[np.float64]]
+        :param ax: the axis object on which to plot
+        :type ax: Axes
+        :param axis_labels: the x and y axis labels, already formatted
+        :type axis_labels: Sequence[str]
+        :param dataset_label: Label for the dataset.
+        :type dataset_label: str
+        :return: None
+        :rtype: None
+        """
+        xdata, ydata, x_err, y_err = columns
+        x_label, y_label = axis_labels
 
         # Plot the scatter points
         ax.scatter(xdata, ydata, s=4, alpha=0.5, label=dataset_label)
@@ -1074,211 +1127,6 @@ class ProteinView(MetaSubsetTabView):
             self.logger.debug(
                 f"notify_plugin_state_changed: ignoring, {plugin_key} != current selection {current}"
             )
-
-    @log(logger=logger)
-    def _construct_all_points_histogram(
-        self,
-        event_generator: Iterator[Dict[str, Any]],
-        plot_type: str,
-        bins: Any = None,
-        sizes: bool = False,
-    ) -> pd.DataFrame:
-        """
-        Build a combined histogram across all event current values.
-
-        :param event_generator: Generator yielding individual event data.
-        :type event_generator: Iterator[Dict[str, Any]]
-        :param plot_type: Type of histogram to create (raw or filtered).
-        :type plot_type: str
-        :param bins: Number of bins (if sizes==False) or size of bins (if sizes==True) for use when binning. Arrives as a single-element list from the controls and is rebound to a scalar (or None, to fall back to an automatic estimate) in the body, hence the loose annotation.
-        :type bins: Any
-        :param sizes: whether bins represents a number of bins or a bin size.
-        :type sizes: bool
-        :return: DataFrame with histogram values and corresponding current levels.
-        :rtype: pd.DataFrame
-        :raises ValueError: If `bins` is not a usable bin count/size specification.
-        """
-        # get global stats from the first event, don't forget to use this one later
-        egen1, egen2 = itertools.tee(event_generator)
-
-        min_current = float("inf")
-        max_current = float("-inf")
-        usable = 0
-        for event in egen1:
-
-            if plot_type == "Raw Histogram":
-                timeseries = event["raw_data"]
-            elif plot_type == "Filtered Histogram":
-                timeseries = event["filtered_data"]
-
-            padding_before = int(event["padding_before"] * event["samplerate"] * 1e-6)
-            padding_after = int(event["padding_after"] * event["samplerate"] * 1e-6)
-            baseline = 0.5 * (
-                np.median(timeseries[:padding_before])
-                + np.median(timeseries[-padding_after:])
-            )
-            if baseline == 0:
-                self.logger.warning(
-                    f'Skipping event {event.get("event_id")} with zero baseline for histogram construction'
-                )
-                continue
-            dI_I = (baseline - timeseries[padding_before:-padding_after]) / baseline
-
-            min_curr = np.min(dI_I)
-            max_curr = np.max(dI_I)
-            if min_curr < min_current:
-                min_current = min_curr
-            if max_curr > max_current:
-                max_current = max_curr
-            usable += 1
-
-        # Before the bounds are recorded, not after: with no usable event the bounds
-        # are still +/-inf, and letting those reach hist_min/hist_max would make the
-        # *next* plot's bin edges nan too. Returning None here is what the caller
-        # already reports on.
-        if usable == 0:
-            return None
-
-        if self.hist_min is None or min_current < self.hist_min:
-            self.hist_min = min_current
-        if self.hist_max is None or max_current > self.hist_max:
-            self.hist_max = max_current
-
-        if bins is not None:
-            if sizes is False:
-                if isinstance(bins, list) and len(bins) >= 1:
-                    bins = bins[0]
-                else:
-                    raise ValueError(f"Invalid bins entry {bins}")
-            else:
-                try:
-                    bins = int((self.hist_max - self.hist_min) / bins[0])
-                except Exception as e:
-                    raise ValueError(
-                        f"Unable to calculate bins given sizes {bins}: {str(e)}"
-                    ) from e
-        else:
-            bins = 100
-
-        bin_edges = np.linspace(self.hist_min, self.hist_max, bins + 1)
-        hist = np.zeros(bins)
-        count = 0
-        for event in egen2:
-            if plot_type == "Raw Histogram":
-                timeseries = event["raw_data"]
-            elif plot_type == "Filtered Histogram":
-                timeseries = event["filtered_data"]
-            padding_before = int(event["padding_before"] * event["samplerate"] * 1e-6)
-            padding_after = int(event["padding_after"] * event["samplerate"] * 1e-6)
-            baseline = 0.5 * (
-                np.median(timeseries[:padding_before])
-                + np.median(timeseries[-padding_after:])
-            )
-            if baseline == 0:
-                self.logger.warning(
-                    f'Skipping event {event.get("event_id")} with zero baseline for histogram construction'
-                )
-                continue
-            dI_I = (baseline - timeseries[padding_before:-padding_after]) / baseline
-            event_hist, _ = np.histogram(
-                dI_I,
-                bins=bin_edges,
-            )
-            hist += event_hist / len(dI_I)
-            count += 1
-        hist /= count
-        bincenters = bin_edges[:-1] + np.diff(bin_edges) / 2.0
-        return pd.DataFrame({"Normalized Current": bincenters, "Amplitude": hist})
-
-    @log(logger=logger)
-    def _construct_single_event_histogram(
-        self,
-        event: Dict[str, Any],
-        plot_type: str,
-        bins: Any = None,
-        sizes: bool = False,
-    ) -> Optional[pd.DataFrame]:
-        """
-        Build a histogram of the current in a single event
-
-        :param event: a dictionary of event metadata and the underlying timeseries
-        :type event: Dict[str, Any]
-        :param plot_type: Type of histogram to create (raw or filtered).
-        :type plot_type: str
-        :param bins: Number of bins (if sizes==False) or size of bins (if sizes==True) for use when binning. Arrives as a single-element list from the controls and is rebound to a scalar (or None, to fall back to an automatic estimate) in the body, hence the loose annotation.
-        :type bins: Any
-        :param sizes: whether bins represents a number or a binsize
-        :type sizes: bool
-        :return: DataFrame with histogram values and corresponding current levels.
-        :rtype: Optional[pd.DataFrame]
-        :raises ValueError: If `bins` is not a usable bin count/size specification.
-        """
-        min_current = float("inf")
-        max_current = float("-inf")
-
-        if plot_type == "Raw Histogram":
-            timeseries = event["raw_data"]
-        elif plot_type == "Filtered Histogram":
-            timeseries = event["filtered_data"]
-
-        padding_before = int(event["padding_before"] * event["samplerate"] * 1e-6)
-        padding_after = int(event["padding_after"] * event["samplerate"] * 1e-6)
-        baseline = 0.5 * (
-            np.median(timeseries[:padding_before])
-            + np.median(timeseries[-padding_after:])
-        )
-
-        dI_I = (baseline - timeseries[padding_before:-padding_after]) / baseline
-
-        if dI_I.size == 0:
-            return None
-
-        min_curr = np.min(dI_I)
-        max_curr = np.max(dI_I)
-        if min_curr < min_current:
-            min_current = min_curr
-        if max_curr > max_current:
-            max_current = max_curr
-
-        if self.hist_min is None or min_current < self.hist_min:
-            self.hist_min = min_current
-        if self.hist_max is None or max_current > self.hist_max:
-            self.hist_max = max_current
-
-        if bins is not None:
-            if sizes is False:
-                if isinstance(bins, list) and len(bins) >= 1:
-                    bins = bins[0]
-                else:
-                    raise ValueError(f"Invalid bins entry {bins}")
-            else:
-                try:
-                    bins = int((self.hist_max - self.hist_min) / bins[0])
-                except Exception as e:
-                    raise ValueError(
-                        f"Unable to calculate bins given sizes {bins}: {str(e)}"
-                    ) from e
-        else:
-            # Freedman-Diaconis: bin width scales with the event's own IQR and
-            # sample count, so shorter/longer events (typical for proteins,
-            # where duration varies a lot) get independently sized bins instead
-            # of a fixed 100 for every event regardless of length.
-            iqr = np.percentile(dI_I, 75) - np.percentile(dI_I, 25)
-            bin_width = 2 * iqr / np.cbrt(np.size(dI_I))
-
-            if bin_width <= 0 or not np.isfinite(bin_width):
-                # IQR collapses to 0 (near-constant signal) or the event is too
-                # short/degenerate for FD to produce a sane width; fall back to
-                # the previous fixed default rather than dividing by zero.
-                bins = 100
-            else:
-                bins = int((self.hist_max - self.hist_min) / bin_width)
-                bins = max(bins, 1)
-
-        bin_edges = np.linspace(self.hist_min, self.hist_max, bins + 1)
-        event_hist, _ = np.histogram(dI_I, bins=bin_edges, density=True)
-        bincenters = bin_edges[:-1] + np.diff(bin_edges) / 2.0
-        return pd.DataFrame({"Normalized Current": bincenters, "Amplitude": event_hist})
 
     @log(logger=logger)
     @Slot(str, str, tuple)
@@ -1667,12 +1515,6 @@ class ProteinView(MetaSubsetTabView):
 
         self._last_event_action = "plot_histogram"
 
-        # Reset bin range so each Plot Histogram click is self-contained
-        # Without this, hist_min/hist_max accumulate across navigation sessions,
-        # causing bin edges to widen and histogram shape/fit to change on return visits
-        self.hist_min = None
-        self.hist_max = None
-
         loader = parameters.get("db_loader")
         if not loader:
             self.add_text_to_display.emit(
@@ -1828,12 +1670,12 @@ class ProteinView(MetaSubsetTabView):
         plot_type: str = "Filtered Histogram",
     ) -> None:
         """
-        Build each event's histogram and ask for their fits; the answer draws them.
+        Ask for each event's histogram and its fit; the answer draws them.
 
-        Step 4c split the fitting out. The histograms are built here, because binning
-        is this widget's own presentation choice, but the double-gaussian fit belongs
-        to ``ProteinModel`` - so this half ends at the intent and
-        ``set_event_histogram_fits`` does every bit of drawing.
+        Step 4c split the fitting out and Step 4's closeout sent the binning after
+        it: an event's histogram is an aggregate of its samples, and it is exported
+        with the plot, so ``ProteinModel`` builds it. This half ends at the intent
+        and ``set_event_histogram_fits`` does every bit of drawing.
 
         An event whose histogram cannot be built contributes ``None`` rather than
         being dropped, so the lists stay index-aligned with ``event_data`` and the
@@ -1841,7 +1683,7 @@ class ProteinView(MetaSubsetTabView):
 
         :param event_data: List of event dictionaries, each containing data and metadata for one event.
         :type event_data: Sequence[Dict[str, Any]]
-        :param bins: Number of bins (if sizes==False) or size of bins (if sizes==True) for use when binning. Arrives as a single-element list from the controls and is rebound to a scalar (or None, to fall back to an automatic estimate) in the body, hence the loose annotation.
+        :param bins: Number of bins (if sizes==False) or size of bins (if sizes==True) for use when binning. Arrives as a single-element list from the controls and is passed down as it stands, hence the loose annotation.
         :type bins: Any
         :param sizes: Whether bins represent bin sizes.
         :type sizes: bool
@@ -1850,34 +1692,7 @@ class ProteinView(MetaSubsetTabView):
         :return: None
         :rtype: None
         """
-        frames: List[Optional[pd.DataFrame]] = []
-        for event in event_data:
-            # Reset per-event so bin edges are determined solely by this event's
-            # current range, not influenced by other events in the same plot call.
-            self.hist_min = None
-            self.hist_max = None
-
-            try:
-                frames.append(
-                    self._construct_single_event_histogram(
-                        event, plot_type, bins=bins, sizes=sizes
-                    )
-                )
-            except ValueError as e:
-                self.logger.info(
-                    f'Unable to construct histogram for event {event["event_id"]}: {e}'
-                )
-                frames.append(None)
-
-        histograms = [
-            (
-                (frame["Normalized Current"].values, frame["Amplitude"].values)
-                if frame is not None
-                else None
-            )
-            for frame in frames
-        ]
-        self.event_histogram_fits_requested.emit(histograms, frames, event_data)
+        self.event_histogram_fits_requested.emit(event_data, plot_type, bins, sizes)
 
     @log(logger=logger)
     def set_event_histogram_fits(
@@ -1885,7 +1700,9 @@ class ProteinView(MetaSubsetTabView):
         fits: Sequence[
             Tuple[Optional[npt.NDArray[np.float64]], Optional[npt.NDArray[np.float64]]]
         ],
-        frames: Sequence[Optional[pd.DataFrame]],
+        histograms: Sequence[
+            Optional[Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]]
+        ],
         event_data: Sequence[Dict[str, Any]],
     ) -> None:
         """
@@ -1902,8 +1719,8 @@ class ProteinView(MetaSubsetTabView):
 
         :param fits: one (fit parameters, fitted curve) pair per event, index-aligned with event_data
         :type fits: Sequence[Tuple[Optional[npt.NDArray[np.float64]], Optional[npt.NDArray[np.float64]]]]
-        :param frames: each event's histogram, or None where none could be built
-        :type frames: Sequence[Optional[pd.DataFrame]]
+        :param histograms: each event's (bin centers, amplitude) pair, or None where none could be built
+        :type histograms: Sequence[Optional[Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]]]
         :param event_data: List of event dictionaries, each containing data and metadata for one event.
         :type event_data: Sequence[Dict[str, Any]]
         :return: None
@@ -1922,29 +1739,20 @@ class ProteinView(MetaSubsetTabView):
             label = f'Exp {event["experiment_id"]}/Ch {event["channel_id"]}/Event {event["event_id"]}'
             ax.set_title(label)
 
-            plot_data = frames[j]
-            if plot_data is None:
+            histogram = histograms[j]
+            if histogram is None:
                 continue
+            bincenters, amplitude = histogram
 
             _, curve = fits[j]
             if curve is not None:
-                ax.plot(
-                    plot_data["Normalized Current"].values,
-                    curve,
-                    color="orange",
-                    zorder=2,
-                )
+                ax.plot(bincenters, curve, color="orange", zorder=2)
                 self._update_cache(
-                    (plot_data["Normalized Current"].values, label + " " + x_label),
+                    (bincenters, label + " " + x_label),
                     (curve, label + " " + y_label),
                 )
 
-            ax.plot(
-                plot_data["Normalized Current"].values,
-                plot_data["Amplitude"].values,
-                color="blue",
-                zorder=1,
-            )
+            ax.plot(bincenters, amplitude, color="blue", zorder=1)
 
             if j % num_cols == 0:
                 ax.set_ylabel(y_label)
@@ -1955,8 +1763,8 @@ class ProteinView(MetaSubsetTabView):
                 ax.set_xlabel(x_label)
 
             self._update_cache(
-                (plot_data["Normalized Current"].values, label + " " + x_label),
-                (plot_data["Amplitude"].values, label + " " + y_label),
+                (bincenters, label + " " + x_label),
+                (amplitude, label + " " + y_label),
             )
 
         self.fig_event.set_layout_engine("constrained")
@@ -2061,159 +1869,33 @@ class ProteinView(MetaSubsetTabView):
 
         events = list(self.event_data_generator)
 
-        frames: List[Optional[pd.DataFrame]] = []
-        for event in events:
-            try:
-                frames.append(
-                    self._construct_single_event_histogram(
-                        event,
-                        plot_type,
-                        bins=bins,
-                        sizes=sizes,
-                    )
-                )
-            except ValueError as e:
-                self.logger.info(
-                    f'Unable to construct histogram for event {event["event_id"]}: {e}'
-                )
-                frames.append(None)
-
-        histograms = [
-            (
-                (frame["Normalized Current"].values, frame["Amplitude"].values)
-                if frame is not None
-                else None
-            )
-            for frame in frames
-        ]
-        self.distribution_fits_requested.emit(histograms, frames, events, d, L, N)
+        self.distribution_fits_requested.emit(events, plot_type, bins, sizes, d, L, N)
 
     @log(logger=logger)
     def set_distribution_fits(
         self,
-        fits: Sequence[
-            Tuple[Optional[npt.NDArray[np.float64]], Optional[npt.NDArray[np.float64]]]
-        ],
-        frames: Sequence[Optional[pd.DataFrame]],
-        event_data: Sequence[Dict[str, Any]],
-        d: float,
-        L: float,
-        N: int,
+        df_prolate: pd.DataFrame,
+        df_oblate: pd.DataFrame,
+        fit_data: pd.DataFrame,
     ) -> None:
         """
-        Sample each fitted event's V/m geometry and plot the solutions.
+        Plot the geometries every fitted event is consistent with.
 
-        The answering half of ``distribution_fits_requested``. Every list is
-        index-aligned with ``event_data``, so an event whose histogram could not be
-        built and one whose fit was refused are skipped the same way and neither
-        shifts the others.
+        The answering half of ``distribution_fits_requested``. Step 4's closeout
+        moved the sampling to :meth:`ProteinModel.sample_event_geometries`: a Monte
+        Carlo over a forward model is not drawing, and its output is written back to
+        the database as this tab's fit columns.
 
-        :param fits: one (fit parameters, fitted curve) pair per event, index-aligned with event_data
-        :type fits: Sequence[Tuple[Optional[npt.NDArray[np.float64]], Optional[npt.NDArray[np.float64]]]]
-        :param frames: each event's histogram, or None where none could be built
-        :type frames: Sequence[Optional[pd.DataFrame]]
-        :param event_data: the events that were fitted
-        :type event_data: Sequence[Dict[str, Any]]
-        :param d: the diameter of the pore in nanometers
-        :type d: float
-        :param L: the length of the pore in nanometers
-        :type L: float
-        :param N: target number of samples to draw for each ensemble
-        :type N: int
+        :param df_prolate: every fitted event's prolate solutions, pooled
+        :type df_prolate: pd.DataFrame
+        :param df_oblate: every fitted event's oblate solutions, pooled
+        :type df_oblate: pd.DataFrame
+        :param fit_data: one summary row per fitted event, keyed by its database id
+        :type fit_data: pd.DataFrame
         :return: None
         :rtype: None
         """
-        prolate_solutions: List[Any] = []
-        oblate_solutions: List[Any] = []
-        averaged_event_data: List[Dict[str, Any]] = []
-
-        for index, event in enumerate(event_data):
-            plot_data = frames[index]
-            if plot_data is None:
-                continue
-
-            popt, _ = fits[index]
-            if popt is None:
-                continue
-
-            amp1, mean1, std1, amp2, mean2, std2 = popt
-
-            if mean1 > mean2:
-                mean_max, std_max = mean1, np.abs(std1)
-                mean_min, std_min = mean2, np.abs(std2)
-            else:
-                mean_max, std_max = mean2, np.abs(std2)
-                mean_min, std_min = mean1, np.abs(std1)
-
-            # --- OPTIMIZED GENERATIVE SAMPLING ---
-            # Call the Monte Carlo generators directly for this specific event
-            prolate_V, prolate_m = self._generate_vm_ensemble(
-                N, mean_max, std_max, mean_min, std_min, d, L, prolate=True
-            )
-
-            prolate_b = (3 * prolate_V / (4 * np.pi * prolate_m)) ** (1 / 3)
-            prolate_a = prolate_b * prolate_m
-
-            # Pack the returned arrays into tuples and extend the master list
-            prolate_solutions.extend(zip(prolate_V, prolate_m, prolate_a, prolate_b))
-
-            oblate_V, oblate_m = self._generate_vm_ensemble(
-                N, mean_max, std_max, mean_min, std_min, d, L, prolate=False
-            )
-            oblate_b = (3 * oblate_V / (4 * np.pi * oblate_m)) ** (1 / 3)
-            oblate_a = oblate_b * oblate_m
-            # Pack the returned arrays into tuples and extend the master list
-            oblate_solutions.extend(zip(oblate_V, oblate_m, oblate_a, oblate_b))
-
-            averaged_event_data.append(
-                {
-                    "id": event["id"],
-                    "prolate_volume": (
-                        np.median(prolate_V) if len(prolate_V) > 0 else np.nan
-                    ),
-                    "prolate_shape_factor": (
-                        np.median(prolate_m) if len(prolate_m) > 0 else np.nan
-                    ),
-                    "prolate_major_axis": (
-                        np.median(prolate_a) if len(prolate_a) > 0 else np.nan
-                    ),
-                    "prolate_minor_axis": (
-                        np.median(prolate_b) if len(prolate_b) > 0 else np.nan
-                    ),
-                    "oblate_volume": (
-                        np.median(oblate_V) if len(oblate_V) > 0 else np.nan
-                    ),
-                    "oblate_shape_factor": (
-                        np.median(oblate_m) if len(oblate_m) > 0 else np.nan
-                    ),
-                    "oblate_major_axis": (
-                        np.median(oblate_a) if len(oblate_a) > 0 else np.nan
-                    ),
-                    "oblate_minor_axis": (
-                        np.median(oblate_b) if len(oblate_b) > 0 else np.nan
-                    ),
-                    "min_fractional_blockage": mean_min,
-                    "min_fractional_blockage_std": std_min,
-                    "max_fractional_blockage": mean_max,
-                    "max_fractional_blockage_std": std_max,
-                }
-            )
-
-        df_prolate = pd.DataFrame(prolate_solutions, columns=["V", "m", "a", "b"])
-        df_oblate = pd.DataFrame(oblate_solutions, columns=["V", "m", "a", "b"])
-
-        if not event_data:
-            # The generator existed but yielded nothing, which is what an empty
-            # subset looks like from here. Every guard below tests a frame built
-            # from these events, so without this the tab drew empty axes and said
-            # nothing at all.
-            self.add_text_to_display.emit(
-                "No events in the selected subset, so there is nothing to plot",
-                self.__class__.__name__,
-            )
-            return
-
-        self.fit_data = pd.DataFrame(averaged_event_data)
+        self.fit_data = fit_data
 
         if not df_prolate.empty:
             self.update_plot(
@@ -2318,11 +2000,6 @@ class ProteinView(MetaSubsetTabView):
         channel_id = int(channel) if channel is not None else None
         subset_name, sql_filter = next(iter(selected_filters.items()))
 
-        # Declared ahead of the work below because the guard that reads it comes
-        # after: reaching the ensemble fit without it would be a NameError rather
-        # than a plot that did not happen.
-        plot_data: Optional[pd.DataFrame] = None
-
         bins = None
         dataset_label = (
             f"{loader} | {exp} Ch {channel}: {subset_name}"
@@ -2331,66 +2008,95 @@ class ProteinView(MetaSubsetTabView):
         )
         sizes = False
 
-        # Both cleared before asking: the Controller sets them only once
-        # the whole chain has succeeded, so a failure leaves them empty
+        if plot_type in ["Raw Histogram", "Filtered Histogram"]:
+            bins = parameters["bins"]
+            sizes = parameters["sizes"]
+
+            bin_sensitive = True
+            bins_changed = getattr(self, "allowed_bins", None) != bins
+            sizes_changed = getattr(self, "allowed_sizes", None) != sizes
+
+            if bin_sensitive and (bins_changed or sizes_changed):
+                self._reset_actions(axis_type="2d")
+
+        # Cleared before asking: the Controller sets it only once the subset has
+        # been fetched *and* averaged, so a failure at either step leaves it empty
         # rather than describing the previous subset.
         self.event_query = ""
-        self.event_data_generator = None
-        self.event_distribution_data_requested.emit(loader, sql_filter, exp_and_ch_arg)
+        self.ensemble_histogram_requested.emit(
+            loader,
+            sql_filter,
+            exp_and_ch_arg,
+            plot_type,
+            bins,
+            sizes,
+            dataset_label,
+            (loader, exp, channel_id, sql_filter, subset_name),
+            d,
+            L,
+            N,
+        )
 
-        if self.event_query == "":
-            return
+    @log(logger=logger)
+    def set_ensemble_histogram(
+        self,
+        plot_data: pd.DataFrame,
+        plot_type: str,
+        bins: Any,
+        sizes: bool,
+        dataset_label: str,
+        dataset_key: Tuple[Any, ...],
+        d: float,
+        L: float,
+        N: int,
+    ) -> None:
+        """
+        Draw the averaged histogram, then ask for the geometry it implies.
 
-        if self.event_data_generator:
-            if plot_type in ["Raw Histogram", "Filtered Histogram"]:
-                bins = parameters["bins"]
-                sizes = parameters["sizes"]
+        The answering half of ``ensemble_histogram_requested``. Step 4's closeout
+        moved the averaging to :meth:`ProteinModel.build_all_points_histogram`:
+        walking a subset's events and binning every sample of them is aggregation
+        rather than drawing, and the result is exported with the plot.
 
-                bin_sensitive = True
-                bins_changed = getattr(self, "allowed_bins", None) != bins
-                sizes_changed = getattr(self, "allowed_sizes", None) != sizes
+        The bookkeeping happens here rather than back in the request half because
+        ``set_ensemble_geometry_fit`` reads ``allowed_bins`` and ``allowed_sizes``,
+        so they have to describe *this* plot before the fit is asked for.
 
-                if bin_sensitive and (bins_changed or sizes_changed):
-                    axis_type = "2d"
-                    self._reset_actions(axis_type=axis_type)
-
-            plot_data = self._construct_all_points_histogram(
-                self.event_data_generator,
-                plot_type,
-                bins=bins,
-                sizes=sizes,
-            )
-
-            if plot_data is not None:
-                self.update_plot(
-                    plot_type,
-                    plot_data,
-                    plot_data.columns,
-                    ["pA", ""],
-                    logscales=[False, False],
-                    dataset_label=dataset_label,
-                )
-            else:
-                self.logger.info(
-                    "No usable events in the selected subset for " f"{plot_type}"
-                )
-                self.add_text_to_display.emit(
-                    "No events in the selected subset, so there is " "nothing to plot",
-                    self.__class__.__name__,
-                )
-                return
-        else:
-            self.logger.warning(f"Invalid plot type: {plot_type}")
-            return
+        :param plot_data: the averaged histogram, as bin centers and amplitudes
+        :type plot_data: pd.DataFrame
+        :param plot_type: 'Raw Histogram' or 'Filtered Histogram'
+        :type plot_type: str
+        :param bins: the bin request this histogram was built to
+        :type bins: Any
+        :param sizes: did bins refer to a bin width (True) or a count (False)
+        :type sizes: bool
+        :param dataset_label: the label the histogram is drawn under
+        :type dataset_label: str
+        :param dataset_key: the plotted-datasets key for this subset
+        :type dataset_key: Tuple[Any, ...]
+        :param d: the diameter of the pore in nanometers
+        :type d: float
+        :param L: the length of the pore in nanometers
+        :type L: float
+        :param N: target number of samples to draw for each ensemble
+        :type N: int
+        :return: None
+        :rtype: None
+        """
+        self.update_plot(
+            plot_type,
+            plot_data,
+            plot_data.columns,
+            ["pA", ""],
+            logscales=[False, False],
+            dataset_label=dataset_label,
+        )
 
         self.allowed_plot_type = plot_type
         self.allowed_bins = bins
         self.allowed_sizes = sizes
+        self.plotted_datasets.add(dataset_key)
 
-        self.plotted_datasets.add((loader, exp, channel_id, sql_filter, subset_name))
-
-        if plot_data is None:
-            return
         self._request_ensemble_geometry_fit(plot_data, plot_type, d, L, N)
 
     @log(logger=logger)
@@ -2434,46 +2140,41 @@ class ProteinView(MetaSubsetTabView):
     @log(logger=logger)
     def set_ensemble_geometry_fit(
         self,
-        popt: Optional[npt.NDArray[np.float64]],
-        curve: Optional[npt.NDArray[np.float64]],
+        popt: npt.NDArray[np.float64],
+        curve: npt.NDArray[np.float64],
         plot_data: pd.DataFrame,
         plot_type: str,
-        d: float,
-        L: float,
-        N: int,
+        df_prolate: pd.DataFrame,
+        df_oblate: pd.DataFrame,
     ) -> None:
         """
-        Draw the fitted ensemble, then Monte Carlo sample prolate/oblate V/m from it.
+        Draw the fitted ensemble and the geometries it is consistent with.
 
         The answering half of ``ensemble_fit_requested``. The fitted curve arrives
         already evaluated at the bins it was fitted on, which is what lets the model
-        function itself live on ``ProteinModel`` rather than here.
+        function live on ``ProteinModel``; Step 4's closeout sent the Monte Carlo
+        after it, so the solutions arrive sampled too.
 
-        :param popt: the fit parameters, or None if no double gaussian could be fitted
-        :type popt: Optional[npt.NDArray[np.float64]]
-        :param curve: the fitted curve evaluated at the histogram's bins, or None
-        :type curve: Optional[npt.NDArray[np.float64]]
-        :param plot_data: the aggregated histogram DataFrame that was fitted.
+        An ensemble that sampled nothing still reaches here, and still draws the fit:
+        the Controller reports the bail-out, and the two empty frames simply skip
+        their scatterplots. Refusing to call this at all would have taken the fitted
+        curve off the screen with them.
+
+        :param popt: the fit parameters
+        :type popt: npt.NDArray[np.float64]
+        :param curve: the fitted curve evaluated at the histogram's bins
+        :type curve: npt.NDArray[np.float64]
+        :param plot_data: the aggregated histogram DataFrame that was fitted
         :type plot_data: pd.DataFrame
-        :param plot_type: the plot type label to reuse when plotting the fit.
+        :param plot_type: the plot type label to reuse when plotting the fit
         :type plot_type: str
-        :param d: the diameter of the pore in nanometers
-        :type d: float
-        :param L: the length of the pore in nanometers
-        :type L: float
-        :param N: target number of samples to draw for each of the prolate/oblate ensembles
-        :type N: int
+        :param df_prolate: the prolate solutions, empty if none were sampled
+        :type df_prolate: pd.DataFrame
+        :param df_oblate: the oblate solutions, empty if none were sampled
+        :type df_oblate: pd.DataFrame
         :return: None
         :rtype: None
         """
-        if popt is None or curve is None:
-            self.logger.info("Unable to fit a double gaussian to the histogram")
-            self.add_text_to_display.emit(
-                "Unable to fit a double gaussian to the histogram",
-                self.__class__.__name__,
-            )
-            return
-
         plot_data["Amplitude"] = curve
         self.update_plot(
             plot_type,
@@ -2487,52 +2188,6 @@ class ProteinView(MetaSubsetTabView):
         self.ensemble_fit_params = popt
         self.ensemble_fit_bins = self.allowed_bins
         self.ensemble_fit_sizes = self.allowed_sizes
-
-        amp1, mean1, std1, amp2, mean2, std2 = popt
-
-        if mean1 > mean2:
-            mean_max, std_max = mean1, np.abs(std1)
-            mean_min, std_min = mean2, np.abs(std2)
-        else:
-            mean_max, std_max = mean2, np.abs(std2)
-            mean_min, std_min = mean1, np.abs(std1)
-
-        # --- OPTIMIZED GENERATIVE SAMPLING ---
-        # Call the Monte Carlo generators directly
-        prolate_V, prolate_m = self._generate_vm_ensemble(
-            N, mean_max, std_max, mean_min, std_min, d, L, prolate=True
-        )
-        oblate_V, oblate_m = self._generate_vm_ensemble(
-            N, mean_max, std_max, mean_min, std_min, d, L, prolate=False
-        )
-
-        if len(prolate_V) == 0 and len(oblate_V) == 0:
-            self.logger.warning(
-                "Generative sampling bailed out: The ensemble Gaussian fit represents an unphysical geometry."
-            )
-            self.add_text_to_display.emit(
-                "Generative sampling bailed out: The ensemble Gaussian fit represents an unphysical geometry.",
-                self.__class__.__name__,
-            )
-            return
-        elif len(prolate_V) < N or len(oblate_V) < N:
-            self.logger.info(
-                "Sampling hit bailout limit; returning partial ensemble arrays."
-            )
-
-        prolate_b = (3 * prolate_V / (4 * np.pi * prolate_m)) ** (1 / 3)
-        prolate_a = prolate_b * prolate_m
-
-        oblate_b = (3 * oblate_V / (4 * np.pi * oblate_m)) ** (1 / 3)
-        oblate_a = oblate_b * oblate_m
-
-        # --- Create the Pandas DataFrames ---
-        df_prolate = pd.DataFrame(
-            {"V": prolate_V, "m": prolate_m, "a": prolate_a, "b": prolate_b}
-        )
-        df_oblate = pd.DataFrame(
-            {"V": oblate_V, "m": oblate_m, "a": oblate_a, "b": oblate_b}
-        )
 
         # --- record V/m summaries for Report All reporting ---
         self.ensemble_fit_prolate_summary = (
@@ -2560,269 +2215,6 @@ class ProteinView(MetaSubsetTabView):
                 logscales=[False, False],
                 dataset_label="Oblate Solutions",
             )
-
-    @log(logger=logger)
-    def _compute_theoretical_blockages(
-        self,
-        V: npt.NDArray[np.float64],
-        m: npt.NDArray[np.float64],
-        d: float,
-        L: float,
-    ) -> Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]:
-        """
-        Vectorized forward model: Calculates theoretical max and min blockages
-        for arrays of volume (V) and shape factor (m).
-
-        :param V: array of volumes of spheroids in cubic nanometers
-        :type V: npt.NDArray[np.float64]
-        :param m: array of shape factors of spheroids (major axis / minor axis) of the same length as V. All must be either 0<m<1 or all m>1.
-        :type m: npt.NDArray[np.float64]
-        :param d: the diameter of the pore in nanometers
-        :type d: float
-        :param L: the length of the pore in nanometers
-        :type L: float
-        :return: Tuple of arrays of theoretical max and min blockage values for the given parameters, one per V,m pair
-        :rtype: Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]
-        :raises ValueError: If `m` contains a mix of oblate (0<m<1) and prolate (m>1)
-            form factors, or any negative form factor.
-        """
-        m_sq = m**2
-
-        if all(m <= 1):
-            prolate = False
-        elif all(m >= 1):
-            prolate = True
-        elif any(m < 0):
-            raise ValueError("Cannot have negative form factors")
-        else:
-            raise ValueError(
-                "Cannot mix oblate and prolate form factors in a single call to _compute_theoretical_blockages"
-            )
-
-        try:
-            if not prolate:
-                gamma_parallel = 1 / (
-                    1 - (1 / (1 - m_sq)) * (1 - (m / np.sqrt(1 - m_sq)) * np.arccos(m))
-                )
-            else:
-                gamma_parallel = 1 / (
-                    1
-                    - (1 / (m_sq - 1))
-                    * ((m / np.sqrt(m_sq - 1)) * np.log(m + np.sqrt(m_sq - 1)) - 1)
-                )
-
-            gamma_perpendicular = 1 / (1 - 0.5 / gamma_parallel)
-        except ValueError:  # divide by zero from a m=1 case
-            gamma_perpendicular = 1.5
-            gamma_parallel = 1.5
-
-        b = (3 * V / (4 * np.pi * m)) ** (1 / 3)
-        a = b * m
-        d_ptn = 2 * b
-        l_ptn = 2 * a
-
-        gamma_parallel_prime = gamma_parallel / (
-            1 - 0.71 * ((d_ptn**2 + l_ptn**2) / (d**2 + l_ptn**2)) * (d_ptn / d) ** 2
-        )
-
-        gamma_perpendicular_prime = gamma_perpendicular / (
-            1 - (0.32 + 0.48 * l_ptn / d) * (l_ptn * d_ptn**2 / d**3)
-        )
-
-        volume_factor = (4 * V) / (np.pi * d**2 * (L + 0.8 * d))
-
-        parallel_term = volume_factor * gamma_parallel_prime
-        perpendicular_term = volume_factor * gamma_perpendicular_prime
-
-        # Map parallel/perpendicular to max/min based on your original logic
-        if not prolate:
-            dI_max = parallel_term
-            dI_min = perpendicular_term
-        else:
-            dI_max = perpendicular_term
-            dI_min = parallel_term
-
-        return dI_max, dI_min
-
-    @log(logger=logger)
-    def _generate_vm_ensemble(
-        self,
-        N_target: int,
-        mean_max: float,
-        std_max: float,
-        mean_min: float,
-        std_min: float,
-        d: float,
-        L: float,
-        prolate: bool = True,
-        cutoff_std: float = 4,
-    ) -> Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]:
-        """
-        Uses Monte Carlo rejection sampling with dynamic bounds to find valid (V, m) pairs.
-        Bails out after a maximum number of consecutive failed batches if the experimental
-        data represents an unphysical geometry.
-
-        :param N_target: number of value V,m pairs to generate, if possible
-        :type N_target: int
-        :param mean_max: The mean value of the larger of the two blockage histograms
-        :type mean_max: float
-        :param std_max: The standard deviation value of the larger of the two blockage histograms
-        :type std_max: float
-        :param mean_min: The mean value of the smaller of the two blockage histograms
-        :type mean_min: float
-        :param std_min: The standard deviation value of the smaller of the two blockage histograms
-        :type std_min: float
-        :param d: the length of the pore in nanometers
-        :type d: float
-        :param L: the length of the pore in nanometers
-        :type L: float
-        :param prolate: whether we are looking for prolate (m>1) solutions or oblate (0<m<1) solutions
-        :type prolate: bool
-        :param cutoff_std: the number of standard deviations outside the mean after which to cut off solutions
-        :type cutoff_std: float
-        :return: Tuple of arrays of V,m pairs
-        :rtype: Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]
-        """
-        accepted_V: list[float] = []
-        accepted_m: list[float] = []
-        # Seeded and local: the ensemble is reproducible for a given geometry,
-        # and drawing here no longer perturbs the global NumPy RNG for the rest
-        # of the process. 42 matches the convention already used in PeakFinder.
-        rng = np.random.default_rng(42)
-        x = np.minimum(d, L)
-        # --- Dynamic Bounds Calculation ---
-        K = (np.pi * d**2 * (L + 0.8 * d)) / 4.0  # assumes gamma == 1
-        gamma_min = 1
-
-        highest_blockage = mean_max + cutoff_std * std_max
-        V_max = highest_blockage * K / gamma_min
-
-        V_min = 1  # we cannot see a 1 nm^3 object anyway so this will always be a safe minimum
-
-        if V_min >= V_max:
-            V_max = V_min * 10.0
-
-        batch_size = 50000
-
-        # --- Bailout Logic Variables ---
-        max_consecutive_zeros = 5
-        consecutive_zeros = 0
-        max_batches = 200
-        batches = 0
-
-        while (
-            len(accepted_V) < N_target
-            and consecutive_zeros < max_consecutive_zeros
-            and batches < max_batches
-        ):
-            batches += 1
-            # 1. Propose physically valid uniform samples
-            V_prop_raw = rng.uniform(V_min, V_max, batch_size)
-            ## pick max(a,b) < min(d,L), use a,b equations for a given V sample to calculate m limit in both cases. Prolate case: a>b, oblate: a<b.
-            if prolate:
-                m_upper_bounds_raw = np.sqrt((np.pi * x**3) / (6 * V_prop_raw))
-                valid_mask = m_upper_bounds_raw >= 1
-
-                V_prop = V_prop_raw[valid_mask]
-
-                # Clip the upper bound to a physical maximum (e.g., m=50.0)
-                # to prevent sampling impossible "1D string" geometries
-                m_upper_bounds = np.clip(m_upper_bounds_raw[valid_mask], 1, 50.0)
-
-                if len(V_prop) == 0:
-                    consecutive_zeros += 1
-                    continue
-
-                m_prop = rng.uniform(1, m_upper_bounds)
-
-            else:
-                m_lower_bounds_raw = (6 * V_prop_raw) / (np.pi * x**3)
-                valid_mask = m_lower_bounds_raw <= 1
-
-                V_prop = V_prop_raw[valid_mask]
-
-                # Clip the lower bound to a physical minimum (e.g., m=0.01)
-                # to prevent divide-by-zero errors and impossible "2D sheet" geometries
-                m_lower_bounds = np.clip(m_lower_bounds_raw[valid_mask], 0.02, 1)
-
-                if len(V_prop) == 0:
-                    consecutive_zeros += 1
-                    continue
-
-                m_prop = rng.uniform(m_lower_bounds, 1)
-
-            # 2. Forward Calculation
-
-            dI_max_calc, dI_min_calc = self._compute_theoretical_blockages(
-                V_prop, m_prop, d, L
-            )
-
-            # Clean up unexpected NaNs
-            nan_mask = np.isnan(dI_max_calc) | np.isnan(dI_min_calc)
-            if np.all(nan_mask):
-                consecutive_zeros += 1
-                continue
-
-            valid_math = ~nan_mask
-            V_prop = V_prop[valid_math]
-            m_prop = m_prop[valid_math]
-            dI_max_calc = dI_max_calc[valid_math]
-            dI_min_calc = dI_min_calc[valid_math]
-
-            # 3. Calculate probability
-            # Use safe standard deviations to prevent infinite Z-scores on artificially sharp fits
-            safe_std_max = max(std_max, mean_max * 0.01)
-            safe_std_min = max(std_min, mean_min * 0.01)
-
-            z_sq_max = ((dI_max_calc - mean_max) / safe_std_max) ** 2
-            z_sq_min = ((dI_min_calc - mean_min) / safe_std_min) ** 2
-
-            # Absolute physical constraint: Ignore guesses that are > 4 standard deviations away
-            # This prevents the sampler from accepting the "best of the worst" in terrible batches
-            physical_mask = (z_sq_max < cutoff_std**2) & (z_sq_min < cutoff_std**2)
-
-            if not np.any(physical_mask):
-                consecutive_zeros += 1
-                continue
-
-            # Filter arrays to only physically reasonable points before probability rejection
-            V_prop = V_prop[physical_mask]
-            m_prop = m_prop[physical_mask]
-            z_sq_max = z_sq_max[physical_mask]
-            z_sq_min = z_sq_min[physical_mask]
-
-            likelihood = np.exp(-0.5 * (z_sq_max + z_sq_min))
-            max_likelihood = np.max(likelihood)
-
-            if max_likelihood == 0 or np.isnan(max_likelihood):
-                consecutive_zeros += 1
-                continue
-
-            prob_accept = likelihood / max_likelihood
-
-            # 4. Accept / Reject
-            random_thresh = rng.uniform(0, 1, len(prob_accept))
-            accepted_indices = random_thresh < prob_accept
-
-            new_V = V_prop[accepted_indices]
-            new_m = m_prop[accepted_indices]
-
-            if len(new_V) == 0:
-                consecutive_zeros += 1
-            else:
-                consecutive_zeros = (
-                    0  # Reset counter if we got at least one valid point
-                )
-                accepted_V.extend(new_V)
-                accepted_m.extend(new_m)
-
-        if len(accepted_V) < N_target:
-            self.logger.warning(
-                f"_generate_vm_ensemble stopped with only {len(accepted_V)}/{N_target} "
-                f"accepted samples after {batches} batches (consecutive_zeros={consecutive_zeros})"
-            )
-
-        return np.array(accepted_V[:N_target]), np.array(accepted_m[:N_target])
 
     @log(logger=logger)
     def _handle_other_actions(

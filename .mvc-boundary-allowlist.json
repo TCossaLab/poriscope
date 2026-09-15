@@ -5,8 +5,7 @@
       "numpy"
     ],
     "poriscope/plugins/analysistabs/ProteinView.py": [
-      "numpy",
-      "pandas"
+      "numpy"
     ],
     "poriscope/utils/MetaView.py": [
       "numpy"

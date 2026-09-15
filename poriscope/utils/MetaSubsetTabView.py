@@ -28,9 +28,12 @@ import json
 import logging
 import os
 from abc import abstractmethod
-from typing import Any, Dict, Iterator, List, Optional
+from typing import Any, Dict, Iterator, List, Optional, Sequence
 
+import numpy as np
+import numpy.typing as npt
 import pandas as pd
+from matplotlib.axes import Axes
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QCheckBox, QDialog, QFileDialog, QMessageBox
 
@@ -148,6 +151,15 @@ class MetaSubsetTabView(MetaView):
     #: ``filtered_event_ids`` a statement later, so clearing the answer, emitting and
     #: reading it back leaves every one of them untouched.
     event_id_cache_requested = Signal(str, object, object)
+
+    #: Asks for a scatterplot's columns to be filtered and log-scaled: the raw
+    #: columns, their log flags, and the drawing context handed back unchanged.
+    #: Answered through ``set_scatterplot``.
+    #:
+    #: On the base rather than in each tab because both subset tabs draw the same
+    #: plain scatterplot from the same request. The protein tab's error-bar variant
+    #: keeps its own pair, since only it has one.
+    scatterplot_requested = Signal(object, object, object, object, str)
 
     logger = logging.getLogger(__name__)
 
@@ -861,6 +873,42 @@ class MetaSubsetTabView(MetaView):
         :type generator: Iterator[Dict[str, Any]]
         """
         self.event_data_generator = generator
+
+    @log(logger=logger)
+    def set_scatterplot(
+        self,
+        columns: Sequence[npt.NDArray[np.float64]],
+        ax: Axes,
+        axis_labels: Sequence[str],
+        dataset_label: str,
+    ) -> None:
+        """
+        Draw a scatterplot of two filtered columns.
+
+        The answering half of ``scatterplot_requested``. The NaN and log filtering
+        belongs to the Model: the values it drops never reach the axes, and the ones
+        it keeps are exported with the plot.
+
+        :param columns: the filtered x and y values
+        :type columns: Sequence[npt.NDArray[np.float64]]
+        :param ax: the axis object on which to plot
+        :type ax: Axes
+        :param axis_labels: the x and y axis labels, already formatted
+        :type axis_labels: Sequence[str]
+        :param dataset_label: Label for the dataset.
+        :type dataset_label: str
+        :return: None
+        :rtype: None
+        """
+        xdata, ydata = columns
+        x_label, y_label = axis_labels
+
+        ax.scatter(xdata, ydata, s=3, alpha=0.5, label=dataset_label)
+        ax.set_xlabel(x_label)
+        ax.set_ylabel(y_label)
+
+        self._update_cache((xdata, x_label), (ydata, y_label))
+        ax.legend(loc="best")
 
     @log(logger=logger)
     def _save_filter(self) -> None:

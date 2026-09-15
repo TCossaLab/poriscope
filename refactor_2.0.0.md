@@ -8,9 +8,9 @@ snapshot was the nearest thing that looked like one.
 
 | Gate | Refactor start | Now | Target |
 | --- | --- | --- | --- |
-| Boundary allowlist | 111 | **4** | 0 |
+| Boundary allowlist | 111 | **3** | 0 |
 | - rule 1, View emits | 75 | **0** | 0 |
-| - rule 2, View computation imports | 22 | **4** | 0 |
+| - rule 2, View computation imports | 22 | **3** | 0 |
 | - rules 3, 4 and 5 | 10 / 4 / - | **0 / 0 / 0** | 0 |
 | Refactor-coverage audit | - | **85 of 85 pinned** | 100% |
 | Duplication, removable - the original 6 families | 1,889 | **721** | - |
@@ -234,18 +234,58 @@ sites are converted**, and they sit in Clustering (1), Metadata (5) and Protein 
    `_plot_scatterplot` and `_plot_3d_scatterplot` were **deliberately excluded** from 4c
    Metadata because they freed no import - the logscale move puts them back in scope, which
    is method rule 60 arriving from the other direction. `set_heatmap` is the kind-3 case.
-5. **Protein's 4c remainder, carrying two logscale sites.** 12 methods, 2 points, and the
-   largest real computation left anywhere in the View layer - `_generate_vm_ensemble` (17
-   loads), `set_distribution_fits` (22), `_compute_theoretical_blockages` (7), both
-   `_construct_*_histogram` (22). **Needs a pinning commit first**: `set_distribution_fits`
-   is a named 4c target with **zero test references** in the whole suite, called once from
-   `ProteinController:220`. Rule 43.
-6. **3d closes.** With the last caller converted the logscale helper goes to `MetaModel`,
-   and the published plugin base sheds numpy. **The last rule-2 point, or the floor.**
-   After 4c the only callers left are `ProteinView`'s two (`:924`, `:989`), so branch 5
-   unblocks this one; the source-level equivalence test in
-   `tests/unit/models/test_meta_model_logscale.py` raises by name when the `MetaView` copy
-   goes, and is deleted as part of this branch.
+5. **Protein's 4c remainder, carrying two logscale sites.** The largest real computation
+   left anywhere in the View layer. **Re-measured 2026-09-14 immediately before starting,
+   and three of this entry's claims did not survive** - rule 1.
+
+   - **Worth 1 point, not 2.** `ProteinView`'s computed pandas is 7 loads in 4 methods, all
+     of them targets, so pandas closes. Its numpy is 60 loads in 8 methods, and **two of the
+     eight are the recorded floors** - `_plot_all_points_histogram`'s display normalisation
+     (`:822`) and `_update_event_plot`'s time base (`:1787`), the same two rulings Metadata
+     records. So numpy is a floor here too: **expect allowlist 4 -> 3**. Rule 38, answered
+     before starting.
+   - **The pinning commit is already done.** `set_distribution_fits` had zero test
+     references when this was written; closeout branch 0 closed it as one of the nine
+     `RUNS ONLY` targets, and it now has 11 - every one behavioural, because
+     `test_protein_view`'s `mock_view` is a real `ProteinView` with only its drawing
+     surfaces mocked. Every other target counts the same way: no mocks. Rule 25 - a
+     recorded blocker re-derived before being obeyed.
+   - **16 targets, not 12**, taken from the audit's `MOVED` table rather than from this
+     entry's prose (rule 16). 1,447 lines across them.
+
+   The dependency graph sets the order: `_compute_theoretical_blockages` is
+   `_generate_vm_ensemble`'s callee, and `_generate_vm_ensemble` and `_summarize_vm` are
+   called from **both** distribution setters, so those five move as one commit - the one
+   that takes the last pandas with it.
+
+   **LANDED 2026-09-14**, suite 4,020 passed / 16 skipped, **allowlist 4 -> 3** with
+   pandas closed for `ProteinView` and numpy recorded as its floor, audit 85 of 85.
+   **Manual Windows pass the same day: all clear, no defects** - both distribution
+   modes, the per-event grid, the Peak Scatterplot's error bars, Report All and the
+   fit commit. The first pass of the closeout to return nothing, on the tab carrying
+   the most moved computation.
+   Five commits: the per-event binning, the ensemble average, the Monte Carlo, and the
+   two logscale callers, on top of the re-measurement above. Three things worth
+   carrying:
+
+   - **`_summarize_vm` stays on the View**, decided 2026-09-14. It formats the display
+     strings `_report_ensemble_fit` writes to the panel and nothing outside that method
+     reads them; moving it would put `± nm³` in a Model. Recorded in the audit's table
+     with the reason rather than dropped from it.
+   - **The individual-distribution path binned each event over a running union** of the
+     events before it, so the edges depended on arrival order. Both per-event paths use
+     the same rule now, at Kyle's ruling.
+   - **The plain scatterplot promoted to `MetaSubsetTabView` / `MetaSubsetTabController`**
+     rather than being written twice: Protein's halves came out byte-identical to the
+     ones Metadata gained in 4c, so a second copy would have raised the ratchet rather
+     than lowered it. The promotion moves no number either way, because the bodies left
+     the measured families rather than being deleted from them.
+6. **3d closes. UNBLOCKED 2026-09-14** - branch 5 converted `ProteinView`'s two, and
+   **no tab View calls `MetaView._logscale_and_filter_multiple_columns` any more**. The
+   helper is deleted, the published plugin base sheds numpy, and that is **the last
+   rule-2 point, or the floor**. The source-level equivalence test in
+   `tests/unit/models/test_meta_model_logscale.py` raises by name when the `MetaView`
+   copy goes, and is rewritten against the surviving one as part of this branch.
 7. **4e - much smaller than recorded.** The View layer's only read/write sites are
    `MetaSubsetTabView._load_filter` (`:495-503`) and `_save_filter` (`:875-883`), both JSON
    round-trips; every other hit is `QFileDialog` path selection, which 4e keeps in the View
@@ -259,7 +299,20 @@ sites are converted**, and they sit in Clustering (1), Metadata (5) and Protein 
 9. **The 4a exit-review item.** The protein tab's unresolvable-experiment guard has still
    never run against a real database.
 
-10. **A documentation pass over everything Step 4 changed** - added 2026-09-14 at Kyle's
+10. **Strip every refactor-plan reference out of the docstrings and the published
+    docs** - added 2026-09-14 at Kyle's request, and it is a sweep rather than a
+    judgement call. Docstrings across `poriscope/` cite "Step 4c", "Step 4's
+    closeout", numbered method rules and "Decision B's command path"; the Sphinx
+    pages are generated from them and inherit all of it. **None of it means anything
+    to a later reader** - the plan is a temporary artefact, this file is deleted when
+    2.0.0 ships, and a plugin author has no way to look any of it up. Rewrite each as
+    the reason it is *today* - the invariant, what breaks if you change it - and leave
+    the history here, in the artifact and in `DECISIONS.md`, which are written for
+    that audience. Grep for `Step 4`, `Step 3`, `method rule`, `Decision [A-E]`,
+    `rule \d`. **Nothing new is to be written this way from now on**, so the sweep
+    only has to cover what is already there.
+
+11. **A documentation pass over everything Step 4 changed** - added 2026-09-14 at Kyle's
     request, and it closes the series. Every doc touching behaviour Step 4 moved: the
     autogenerated plugin pages, the hand-written manuals under `docs/source/utils/`, and any
     prose describing where computation lives or how a tab talks to its Model. Correct what

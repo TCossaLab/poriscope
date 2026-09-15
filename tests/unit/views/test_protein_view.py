@@ -52,7 +52,6 @@ Run with:
 import json
 import os
 import tempfile
-import warnings
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -282,330 +281,14 @@ class TestFormatAxisLabel:
 # ===========================================================================
 
 
-class TestComputeTheoreticalBlockages:
-    D, L = 20.0, 30.0
-
-    def test_prolate_output_shape(self, mock_view):
-        V, m = np.array([500.0] * 3), np.array([2.0] * 3)
-        dmax, dmin = mock_view._compute_theoretical_blockages(V, m, self.D, self.L)
-        assert dmax.shape == (3,) and dmin.shape == (3,)
-
-    def test_oblate_output_shape(self, mock_view):
-        V, m = np.array([500.0] * 3), np.array([0.5] * 3)
-        dmax, dmin = mock_view._compute_theoretical_blockages(V, m, self.D, self.L)
-        assert dmax.shape == (3,) and dmin.shape == (3,)
-
-    def test_blockages_positive(self, mock_view):
-        for m_val in [2.0, 0.5]:
-            V, m = np.array([500.0]), np.array([m_val])
-            dmax, dmin = mock_view._compute_theoretical_blockages(V, m, self.D, self.L)
-            assert np.all(dmax > 0) and np.all(dmin > 0)
-
-    def test_max_ge_min(self, mock_view):
-        for m_val in [2.0, 0.5]:
-            V, m = np.array([500.0]), np.array([m_val])
-            dmax, dmin = mock_view._compute_theoretical_blockages(V, m, self.D, self.L)
-            assert np.all(dmax >= dmin)
-
-    def test_monotone_in_volume(self, mock_view):
-        m = np.array([2.0])
-        dmax_s, _ = mock_view._compute_theoretical_blockages(
-            np.array([100.0]), m, self.D, self.L
-        )
-        dmax_l, _ = mock_view._compute_theoretical_blockages(
-            np.array([1000.0]), m, self.D, self.L
-        )
-        assert dmax_l > dmax_s
-
-    def test_mixed_raises(self, mock_view):
-        V, m = np.array([500.0, 500.0]), np.array([0.5, 2.0])
-        with pytest.raises(ValueError, match="Cannot mix"):
-            mock_view._compute_theoretical_blockages(V, m, self.D, self.L)
-
-    def test_negative_m_silent_nan_bug(self, mock_view):
-        # BUG: negative m satisfies all(m<=1) so the ValueError guard is never reached
-        V, m = np.array([500.0]), np.array([-1.0])
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            dmax, dmin = mock_view._compute_theoretical_blockages(V, m, self.D, self.L)
-        assert np.any(np.isnan(dmax)) or np.any(np.isinf(dmax))
-
-    def test_single_element(self, mock_view):
-        V, m = np.array([500.0]), np.array([3.0])
-        dmax, _ = mock_view._compute_theoretical_blockages(V, m, self.D, self.L)
-        assert dmax.shape == (1,)
-
-    def test_linear_scaling_small_objects(self, mock_view):
-        m = np.array([2.0])
-        dmax1, _ = mock_view._compute_theoretical_blockages(
-            np.array([10.0]), m, self.D, self.L
-        )
-        dmax2, _ = mock_view._compute_theoretical_blockages(
-            np.array([20.0]), m, self.D, self.L
-        )
-        assert dmax2[0] / dmax1[0] == pytest.approx(2.0, abs=0.5)
-
-
-# ===========================================================================
-# _generate_vm_ensemble
-# ===========================================================================
-
-
-class TestGenerateVmEnsemble:
-    D, L = 20.0, 30.0
-    MMAX, SMAX, MMIN, SMIN = 0.30, 0.03, 0.10, 0.02
-
-    def test_prolate_count(self, mock_view):
-        V, m = mock_view._generate_vm_ensemble(
-            20, self.MMAX, self.SMAX, self.MMIN, self.SMIN, self.D, self.L, prolate=True
-        )
-        assert len(V) == 20 and len(m) == 20
-
-    def test_oblate_count(self, mock_view):
-        V, m = mock_view._generate_vm_ensemble(
-            20,
-            self.MMAX,
-            self.SMAX,
-            self.MMIN,
-            self.SMIN,
-            self.D,
-            self.L,
-            prolate=False,
-        )
-        assert len(V) == 20 and len(m) == 20
-
-    def test_prolate_m_gt1(self, mock_view):
-        _, m = mock_view._generate_vm_ensemble(
-            20, self.MMAX, self.SMAX, self.MMIN, self.SMIN, self.D, self.L, prolate=True
-        )
-        assert np.all(m >= 1.0)
-
-    def test_oblate_m_lt1(self, mock_view):
-        _, m = mock_view._generate_vm_ensemble(
-            20,
-            self.MMAX,
-            self.SMAX,
-            self.MMIN,
-            self.SMIN,
-            self.D,
-            self.L,
-            prolate=False,
-        )
-        assert np.all(m > 0) and np.all(m <= 1.0)
-
-    def test_volumes_positive(self, mock_view):
-        for p in (True, False):
-            V, _ = mock_view._generate_vm_ensemble(
-                20,
-                self.MMAX,
-                self.SMAX,
-                self.MMIN,
-                self.SMIN,
-                self.D,
-                self.L,
-                prolate=p,
-            )
-            assert np.all(V > 0)
-
-    def test_unphysical_bails_out(self, mock_view):
-        V, m = mock_view._generate_vm_ensemble(50, 5.0, 0.01, 4.0, 0.01, self.D, self.L)
-        assert len(V) < 50
-
-    def test_zero_target(self, mock_view):
-        V, m = mock_view._generate_vm_ensemble(
-            0, self.MMAX, self.SMAX, self.MMIN, self.SMIN, self.D, self.L
-        )
-        assert len(V) == 0 and len(m) == 0
-
-    def test_accepted_within_cutoff(self, mock_view):
-        cutoff = 4
-        V, m = mock_view._generate_vm_ensemble(
-            30,
-            self.MMAX,
-            self.SMAX,
-            self.MMIN,
-            self.SMIN,
-            self.D,
-            self.L,
-            prolate=True,
-            cutoff_std=cutoff,
-        )
-        if len(V) == 0:
-            pytest.skip("no results for this seed")
-        dmax, dmin = mock_view._compute_theoretical_blockages(V, m, self.D, self.L)
-        assert np.all(np.abs(dmax - self.MMAX) / self.SMAX <= cutoff + 1e-6)
-        assert np.all(np.abs(dmin - self.MMIN) / self.SMIN <= cutoff + 1e-6)
-
-
 # ===========================================================================
 # _construct_single_event_histogram
 # ===========================================================================
 
 
-class TestConstructSingleEventHistogram:
-    def test_returns_dataframe(self, mock_view):
-        df = mock_view._construct_single_event_histogram(
-            _make_event(), "Filtered Histogram"
-        )
-        assert isinstance(df, pd.DataFrame)
-        assert list(df.columns) == ["Normalized Current", "Amplitude"]
-
-    def test_default_uses_freedman_diaconis(self, mock_view):
-        """Default binning (no explicit bins arg) now uses Freedman-Diaconis,
-        which is data-dependent — assert it's a sane positive integer, not a
-        fixed count."""
-        df = mock_view._construct_single_event_histogram(
-            _make_event(), "Filtered Histogram"
-        )
-        assert len(df) > 0
-
-    def test_explicit_100_bins_still_works(self, mock_view):
-        """Explicit bin count still overrides FD and behaves as before."""
-        df = mock_view._construct_single_event_histogram(
-            _make_event(), "Filtered Histogram", bins=[100]
-        )
-        assert len(df) == 100
-
-    def test_custom_bin_count(self, mock_view):
-        df = mock_view._construct_single_event_histogram(
-            _make_event(), "Filtered Histogram", bins=[50]
-        )
-        assert len(df) == 50
-
-    def test_custom_bin_size(self, mock_view):
-        df = mock_view._construct_single_event_histogram(
-            _make_event(), "Filtered Histogram", bins=[0.01], sizes=True
-        )
-        assert len(df) > 0
-
-    def test_empty_event_returns_none(self, mock_view):
-        ev = {
-            "id": 1,
-            "event_id": 1,
-            "experiment_id": 1,
-            "channel_id": 0,
-            "raw_data": np.zeros(400),
-            "filtered_data": np.zeros(400),
-            "fit_data": np.zeros(400),
-            "samplerate": 1_000_000,
-            "padding_before": 200,
-            "padding_after": 200,
-        }
-        assert (
-            mock_view._construct_single_event_histogram(ev, "Filtered Histogram")
-            is None
-        )
-
-    def test_updates_hist_min_max(self, mock_view):
-        mock_view._construct_single_event_histogram(
-            _make_event(blockage=0.4), "Filtered Histogram"
-        )
-        assert mock_view.hist_min is not None
-        assert mock_view.hist_max is not None
-        assert mock_view.hist_min < mock_view.hist_max
-
-    def test_raw_vs_filtered(self, mock_view):
-        ev = _make_event()
-        ev["raw_data"] = ev["filtered_data"].copy()
-        assert (
-            mock_view._construct_single_event_histogram(ev, "Raw Histogram") is not None
-        )
-        assert (
-            mock_view._construct_single_event_histogram(ev, "Filtered Histogram")
-            is not None
-        )
-
-    def test_invalid_bins_raises(self, mock_view):
-        with pytest.raises((ValueError, TypeError)):
-            mock_view._construct_single_event_histogram(
-                _make_event(), "Filtered Histogram", bins="bad", sizes=False
-            )
-
-
 # ===========================================================================
 # _construct_all_points_histogram
 # ===========================================================================
-
-
-class TestConstructAllPointsHistogram:
-    def _events(self, n=3):
-        return [_make_event(i, blockage=0.2 + i * 0.05, rng_seed=i) for i in range(n)]
-
-    def test_returns_dataframe(self, mock_view):
-        df = mock_view._construct_all_points_histogram(
-            iter(self._events()), "Filtered Histogram"
-        )
-        assert isinstance(df, pd.DataFrame)
-        assert "Normalized Current" in df.columns
-
-    def test_an_empty_subset_yields_no_histogram(self, mock_view):
-        """
-        Reported from a real run: plotting a distribution over a subset holding no
-        events drew empty axes and said nothing.
-
-        The generator exists - so the caller's ``is None`` guard passes - and simply
-        yields nothing, which used to divide the accumulated histogram by a count of
-        zero and hand back a frame of NaN. ``None`` is what the caller already
-        reports on.
-        """
-        assert (
-            mock_view._construct_all_points_histogram(iter([]), "Filtered Histogram")
-            is None
-        )
-
-    def test_an_empty_subset_does_not_poison_the_next_plot(self, mock_view):
-        """
-        The bail-out is before the bounds are recorded, not after.
-
-        With no event the running bounds are still +/-inf, and letting those reach
-        hist_min/hist_max would make the *next* plot's bin edges nan - a failure one
-        action away from its cause.
-        """
-        mock_view.hist_min = None
-        mock_view.hist_max = None
-
-        mock_view._construct_all_points_histogram(iter([]), "Filtered Histogram")
-
-        assert mock_view.hist_min is None
-        assert mock_view.hist_max is None
-
-    def test_default_100_bins(self, mock_view):
-        df = mock_view._construct_all_points_histogram(
-            iter(self._events()), "Filtered Histogram"
-        )
-        assert len(df) == 100
-
-    def test_custom_bins(self, mock_view):
-        df = mock_view._construct_all_points_histogram(
-            iter(self._events()), "Filtered Histogram", bins=[50]
-        )
-        assert len(df) == 50
-
-    def test_bin_size_mode(self, mock_view):
-        df = mock_view._construct_all_points_histogram(
-            iter(self._events()), "Filtered Histogram", bins=[0.05], sizes=True
-        )
-        assert len(df) > 0
-
-    def test_raw_histogram_type(self, mock_view):
-        df = mock_view._construct_all_points_histogram(
-            iter(self._events()), "Raw Histogram"
-        )
-        assert df is not None
-
-    def test_amplitude_nonnegative(self, mock_view):
-        df = mock_view._construct_all_points_histogram(
-            iter(self._events()), "Filtered Histogram"
-        )
-        assert np.all(df["Amplitude"].values >= 0)
-
-    def test_multiple_events_extend_range(self, mock_view):
-        evs = [
-            _make_event(blockage=0.1, rng_seed=0),
-            _make_event(blockage=0.5, rng_seed=1),
-        ]
-        df = mock_view._construct_all_points_histogram(iter(evs), "Filtered Histogram")
-        assert df["Normalized Current"].max() - df["Normalized Current"].min() > 0
 
 
 # ``TestBuildLoadEventDataArgs`` lived here and is gone with the method: Step 4a moved
@@ -756,15 +439,17 @@ class TestCommitFits:
 
 class TestResetActions:
     def test_clears_hist_state(self, mock_view):
-        mock_view.hist_min = 1.0
-        mock_view.hist_max = 2.0
+        """
+        ``hist_min``/``hist_max`` went with the binning in Step 4's closeout: the
+        two methods that wrote them are on the Model now, which left three clears
+        and no reader at all.
+        """
         mock_view.hist_data = [([1], [2])]
         mock_view.hist_labels = ["x"]
         mock_view._reset_actions()
-        assert mock_view.hist_min is None
-        assert mock_view.hist_max is None
         assert mock_view.hist_data == []
         assert mock_view.hist_labels == []
+        assert not hasattr(mock_view, "hist_min")
 
     def test_clears_bins(self, mock_view):
         mock_view.allowed_bins = [10]
@@ -849,36 +534,67 @@ class TestPlotScatterplot:
         rng = np.random.default_rng(0)
         return pd.DataFrame({"V": rng.random(10), "m": rng.random(10)})
 
-    def test_labels_set(self, real_view):
+    def _emitted(self, real_view, df, logscales, units=("nm^3", "au")):
+        """
+        Drive the request half and capture what it asked for.
+
+        The filtering is the Model's, so the request half only formats the labels
+        and asks; the drawing is ``MetaSubsetTabView.set_scatterplot``.
+
+        :param real_view: the view under test
+        :type real_view: ProteinView
+        :param df: the frame to plot
+        :type df: pd.DataFrame
+        :param logscales: the log flags for the two axes
+        :type logscales: list
+        :param units: the units for the two axes
+        :type units: tuple
+        :return: the emitted arguments
+        :rtype: tuple
+        """
+        captured = []
+        real_view.scatterplot_requested.connect(lambda *args: captured.append(args))
         real_view._plot_scatterplot(
-            real_view.ax_vm, self._df(), ["V", "m"], ["nm^3", "au"], [False, False]
+            real_view.ax_vm, df, ["V", "m"], list(units), logscales
         )
-        assert "V" in real_view.ax_vm.get_xlabel()
-        assert "m" in real_view.ax_vm.get_ylabel()
+        return captured[0]
+
+    def test_labels_set(self, real_view):
+        _columns, _flags, ax, labels, _label = self._emitted(
+            real_view, self._df(), [False, False]
+        )
+
+        assert "V" in labels[0]
+        assert "m" in labels[1]
+        assert ax is real_view.ax_vm
+
+    def test_the_raw_columns_and_their_flags_go_out(self, real_view):
+        """The filter is the Model's, so the columns leave unfiltered."""
+        df = self._df()
+
+        columns, flags, _ax, _labels, _label = self._emitted(
+            real_view, df, [True, False]
+        )
+
+        assert [list(column) for column in columns] == [
+            df["V"].tolist(),
+            df["m"].tolist(),
+        ]
+        assert flags == [True, False]
 
     def test_log_x_prefix(self, real_view):
-        df = pd.DataFrame(
-            {
-                "V": np.abs(np.random.rand(10)) + 0.01,
-                "m": np.abs(np.random.rand(10)) + 0.01,
-            }
+        _columns, _flags, _ax, labels, _label = self._emitted(
+            real_view, self._df(), [True, False], units=("", "")
         )
-        real_view._plot_scatterplot(
-            real_view.ax_vm, df, ["V", "m"], ["", ""], [True, False]
-        )
-        assert "log10" in real_view.ax_vm.get_xlabel()
+
+        assert "log10" in labels[0]
 
     def test_log_y_prefix(self, real_view):
-        df = pd.DataFrame(
-            {
-                "V": np.abs(np.random.rand(10)) + 0.01,
-                "m": np.abs(np.random.rand(10)) + 0.01,
-            }
+        _columns, _flags, _ax, labels, _label = self._emitted(
+            real_view, self._df(), [False, True], units=("", "")
         )
-        real_view._plot_scatterplot(
-            real_view.ax_vm, df, ["V", "m"], ["", ""], [False, True]
-        )
-        assert "log10" in real_view.ax_vm.get_ylabel()
+
+        assert "log10" in labels[1]
 
 
 # ===========================================================================
@@ -915,15 +631,23 @@ class TestPlotXyerrScatterplot:
             err_cols=["xe", "ye"],
         )
 
-    def test_null_err_col(self, mock_view):
-        mock_view._plot_xyerr_scatterplot(
-            mock_view.ax_hist,
-            self._df(),
-            ["x", "y"],
-            ["", ""],
-            [False, False],
-            err_cols=["xe", None],
-        )
+    def test_a_missing_error_column_is_refused(self, mock_view):
+        """
+        Both error columns are required now. The old code accepted a None and drew
+        that axis without bars; nothing ever passed one - the single caller names
+        two real columns - and supporting it through the filter would mean telling
+        the drawing half which of the four arrays it was given. Refusing it is the
+        smaller contract, and the wrong-length case already raised.
+        """
+        with pytest.raises(ValueError, match="two error columns"):
+            mock_view._plot_xyerr_scatterplot(
+                mock_view.ax_hist,
+                self._df(),
+                ["x", "y"],
+                ["", ""],
+                [False, False],
+                err_cols=["xe", None],
+            )
 
 
 # ===========================================================================
@@ -948,9 +672,17 @@ class TestUpdatePlot:
         assert "NC" in real_view.ax_hist.get_xlabel()
 
     def test_scatterplot_routes_to_vm(self, real_view):
+        """
+        The panel choice is still ``update_plot``'s; what reaches the request half
+        is the axes it picked.
+        """
+        captured = []
+        real_view.scatterplot_requested.connect(lambda *args: captured.append(args))
         df = pd.DataFrame({"V": np.random.rand(5), "m": np.random.rand(5)})
+
         real_view.update_plot("Scatterplot", df, ["V", "m"], ["", ""], [False, False])
-        assert "V" in real_view.ax_vm.get_xlabel()
+
+        assert captured[0][2] is real_view.ax_vm
 
     def test_peak_scatterplot_routes_to_hist(self, mock_view):
         df = pd.DataFrame(
@@ -1103,33 +835,43 @@ def _answer_event_histogram_fits(view):
     ``set_event_histogram_fits``; these tests drive both halves, because driving only
     the first asserts against a View that has not drawn anything yet.
 
-    The fits come from a **real ProteinModel** rather than a stub, so their arity and
-    their ``(popt, curve)`` shape are the collaborator's own rather than this test's
-    idea of them.
+    The histograms and the fits both come from a **real ProteinModel** rather than a
+    stub, so their arity and their shapes are the collaborator's own rather than this
+    test's idea of them. Step 4's closeout moved the binning down beside the fitting,
+    so this helper runs both calls the Controller runs.
 
     :param view: the view whose request has just been emitted
     :type view: ProteinView
     :return: None
     :rtype: None
     """
-    args = view.event_histogram_fits_requested.emit.call_args.args
-    histograms, frames, event_data = args
+    event_data, plot_type, bins, sizes = (
+        view.event_histogram_fits_requested.emit.call_args.args
+    )
+    model = ProteinModel()
+    histograms = model.build_event_histograms(event_data, plot_type, bins, sizes)
     view.set_event_histogram_fits(
-        ProteinModel().fit_histograms(histograms), frames, event_data
+        model.fit_histograms(histograms), histograms, event_data
     )
 
 
 class TestUpdateEventHistogram:
-    def test_the_request_carries_one_entry_per_event(self, mock_view):
-        """The three lists stay index-aligned, which the drawing half relies on."""
+    def test_the_request_carries_the_events_and_the_bin_request(self, mock_view):
+        """
+        The binning moved below the widget in Step 4's closeout, so what goes out is
+        the events themselves and how the caller asked for them to be binned.
+        """
         events = [_make_event(i, rng_seed=i) for i in range(1, 4)]
 
-        mock_view._update_event_histogram(events)
+        mock_view._update_event_histogram(events, bins=[40], sizes=False)
 
-        histograms, frames, event_data = (
+        event_data, plot_type, bins, sizes = (
             mock_view.event_histogram_fits_requested.emit.call_args.args
         )
-        assert len(histograms) == len(frames) == len(event_data) == 3
+        assert event_data is events
+        assert plot_type == "Filtered Histogram"
+        assert bins == [40]
+        assert sizes is False
 
     def test_switches_to_event_mode(self, mock_view):
         mock_view._update_event_histogram([_make_event(1)])
@@ -1159,11 +901,14 @@ class TestUpdateEventHistogram:
         empty grid rather than as a missing orange line.
         """
         mock_view._update_event_histogram([_make_event(1)])
-        _, frames, event_data = (
+        event_data, plot_type, bins, sizes = (
             mock_view.event_histogram_fits_requested.emit.call_args.args
         )
+        histograms = ProteinModel().build_event_histograms(
+            event_data, plot_type, bins, sizes
+        )
 
-        mock_view.set_event_histogram_fits([(None, None)], frames, event_data)
+        mock_view.set_event_histogram_fits([(None, None)], histograms, event_data)
 
         assert mock_view._display_mode == "event"
         assert mock_view.fig_event.add_subplot.call_count == 1
@@ -1407,29 +1152,36 @@ class TestPipeline:
     D, L = 20.0, 30.0
 
     def test_single_event_histogram(self, mock_view):
-        ev = _make_event(blockage=0.3)
-        df = mock_view._construct_single_event_histogram(ev, "Filtered Histogram")
-        assert df is not None and len(df) > 0  # FD-derived, not fixed 100
+        """The binning is the Model's since Step 4's closeout; drive it there."""
+        ((bincenters, amplitude),) = ProteinModel().build_event_histograms(
+            [_make_event(blockage=0.3)], "Filtered Histogram", None, False
+        )
+        assert len(bincenters) > 0  # FD-derived, not fixed 100
 
     def test_all_points_histogram_three_events(self, mock_view):
+        """The averaging is the Model's since Step 4's closeout; drive it there."""
         evs = [_make_event(i, blockage=0.2 + i * 0.05, rng_seed=i) for i in range(3)]
-        df = mock_view._construct_all_points_histogram(iter(evs), "Filtered Histogram")
+        df = ProteinModel().build_all_points_histogram(
+            iter(evs), "Filtered Histogram", None, False
+        )
         assert isinstance(df, pd.DataFrame) and len(df) == 100
 
     def test_vm_ensemble_from_histogram_fit(self, mock_view):
-        # Genuinely cross-layer: Step 4c moved the fit to ProteinModel while the
-        # sampling stayed on the View, so this asks the real Model for the fit
-        # rather than stubbing one - the shape of popt is the collaborator's.
+        """
+        The fit and the sampling are both the Model's since Step 4's closeout, so
+        this is no longer cross-layer: it checks that one really does take the
+        other's output, which is the join a stub on either side would hide.
+        """
+        model = ProteinModel()
         x, y = _make_double_gaussian_histogram(mean1=0.1, mean2=0.3)
-        popt = ProteinModel()._fit_and_sanity_check_double_gaussian(x, y)
+        popt = model._fit_and_sanity_check_double_gaussian(x, y)
         if popt is None:
             pytest.skip("fit did not converge")
-        means = sorted([popt[1], popt[4]])
-        stds = [abs(popt[2]), abs(popt[5])]
-        V, m = mock_view._generate_vm_ensemble(
-            20, max(means), stds[1], min(means), stds[0], self.D, self.L
-        )
-        assert len(V) <= 20
+
+        df_prolate, df_oblate = model.sample_vm_solutions(popt, self.D, self.L, 20)
+
+        assert len(df_prolate) <= 20 and len(df_oblate) <= 20
+        assert list(df_prolate.columns) == ["V", "m", "a", "b"]
 
     def test_update_event_plot_end_to_end(self, mock_view):
         mock_view._update_event_plot([_make_event(1), _make_event(2)])
@@ -2542,149 +2294,62 @@ def _blockage_fit(mean_low=0.3, mean_high=0.6, std=0.02):
     return (1.0, mean_low, std, 1.0, mean_high, std)
 
 
-def _histogram_frame():
+def _histogram_pair():
     """
-    A stand-in for one event's histogram frame.
+    A stand-in for one event's histogram.
 
     Only its presence is read by the method under test - a None entry means the
-    histogram could not be built - so the contents are deliberately minimal.
+    histogram could not be built - so the contents are deliberately minimal. It was
+    a one-column DataFrame until Step 4's closeout moved the binning to the Model,
+    which returns the two arrays the drawing half actually uses.
 
-    :return: a one-column frame
-    :rtype: pd.DataFrame
+    :return: a (bin centers, amplitude) pair
+    :rtype: tuple
     """
-    return pd.DataFrame({"counts": [1.0, 2.0, 1.0]})
+    return (np.array([0.1, 0.2, 0.3]), np.array([1.0, 2.0, 1.0]))
 
 
 class TestSetDistributionFits:
     """
-    Every list is index-aligned with ``event_data``, so an event whose histogram
-    could not be built and one whose fit was refused are skipped the same way and
-    neither shifts the others. That is the method's own documented contract and it
-    is what these assert.
+    What is left here is the drawing. The sampling and every question about which
+    events survive it moved to ``ProteinModel.sample_event_geometries`` in Step 4's
+    closeout, and are pinned in ``tests/unit/models/test_protein_model.py``.
     """
 
-    def test_one_row_per_fitted_event(self, mock_view, mocker):
-        mocker.patch.object(mock_view, "update_plot")
+    def _frames(self, rows=1):
+        """
+        The three frames the Model hands back.
 
-        mock_view.set_distribution_fits(
-            fits=[(_blockage_fit(), None), (_blockage_fit(), None)],
-            frames=[_histogram_frame(), _histogram_frame()],
-            event_data=[{"id": 1}, {"id": 2}],
-            d=10.0,
-            L=20.0,
-            N=10,
+        :param rows: how many fitted events to describe
+        :type rows: int
+        :return: the prolate solutions, the oblate solutions, and the summary rows
+        :rtype: tuple
+        """
+        solutions = pd.DataFrame(
+            {"V": [100.0, 200.0], "m": [2.0, 3.0], "a": [4.0, 5.0], "b": [2.0, 2.5]}
         )
+        fit_data = pd.DataFrame(
+            [
+                {
+                    "id": i + 1,
+                    "min_fractional_blockage": 0.3,
+                    "min_fractional_blockage_std": 0.02,
+                    "max_fractional_blockage": 0.6,
+                    "max_fractional_blockage_std": 0.02,
+                }
+                for i in range(rows)
+            ]
+        )
+        return solutions, solutions.copy(), fit_data
 
-        assert len(mock_view.fit_data) == 2
+    def test_the_summary_rows_are_kept_for_the_commit(self, mock_view, mocker):
+        """``_commit_fits`` writes these back to the database."""
+        mocker.patch.object(mock_view, "update_plot")
+        prolate, oblate, fit_data = self._frames(rows=2)
+
+        mock_view.set_distribution_fits(prolate, oblate, fit_data)
+
         assert mock_view.fit_data["id"].tolist() == [1, 2]
-
-    def test_an_event_with_no_histogram_is_skipped(self, mock_view, mocker):
-        """
-        A None frame is an event whose histogram could not be built. It must drop
-        out without taking its neighbour's row with it.
-        """
-        mocker.patch.object(mock_view, "update_plot")
-
-        mock_view.set_distribution_fits(
-            fits=[(_blockage_fit(), None), (_blockage_fit(), None)],
-            frames=[None, _histogram_frame()],
-            event_data=[{"id": 1}, {"id": 2}],
-            d=10.0,
-            L=20.0,
-            N=10,
-        )
-
-        assert mock_view.fit_data["id"].tolist() == [2]
-
-    def test_an_event_whose_fit_was_refused_is_skipped(self, mock_view, mocker):
-        """
-        The same outcome by the other route: the histogram was built but the
-        double-gaussian fit was rejected, so ``popt`` is None.
-        """
-        mocker.patch.object(mock_view, "update_plot")
-
-        mock_view.set_distribution_fits(
-            fits=[(None, None), (_blockage_fit(), None)],
-            frames=[_histogram_frame(), _histogram_frame()],
-            event_data=[{"id": 1}, {"id": 2}],
-            d=10.0,
-            L=20.0,
-            N=10,
-        )
-
-        assert mock_view.fit_data["id"].tolist() == [2]
-
-    def test_a_skipped_event_does_not_shift_the_others(self, mock_view, mocker):
-        """
-        The indices are the alignment, not the position in the surviving list. With
-        the middle event dropped, the third event must still be described by the
-        third fit rather than by the second.
-        """
-        mocker.patch.object(mock_view, "update_plot")
-
-        mock_view.set_distribution_fits(
-            fits=[
-                (_blockage_fit(0.1, 0.2), None),
-                (_blockage_fit(0.3, 0.4), None),
-                (_blockage_fit(0.5, 0.9), None),
-            ],
-            frames=[_histogram_frame(), None, _histogram_frame()],
-            event_data=[{"id": 1}, {"id": 2}, {"id": 3}],
-            d=10.0,
-            L=20.0,
-            N=10,
-        )
-
-        rows = mock_view.fit_data.set_index("id")
-        assert rows.index.tolist() == [1, 3]
-        assert rows.loc[3, "max_fractional_blockage"] == pytest.approx(0.9)
-        assert rows.loc[1, "max_fractional_blockage"] == pytest.approx(0.2)
-
-    def test_the_larger_mean_becomes_the_maximum_blockage(self, mock_view, mocker):
-        """
-        The fit returns its two peaks in no guaranteed order, so the method sorts
-        them. Both orderings are given, and both must come out the same way round -
-        an if/else that always took the first peak would pass one and fail the other.
-        """
-        mocker.patch.object(mock_view, "update_plot")
-
-        mock_view.set_distribution_fits(
-            fits=[
-                ((1.0, 0.25, 0.02, 1.0, 0.75, 0.02), None),
-                ((1.0, 0.75, 0.02, 1.0, 0.25, 0.02), None),
-            ],
-            frames=[_histogram_frame(), _histogram_frame()],
-            event_data=[{"id": 1}, {"id": 2}],
-            d=10.0,
-            L=20.0,
-            N=10,
-        )
-
-        rows = mock_view.fit_data.set_index("id")
-        for event_id in (1, 2):
-            assert rows.loc[event_id, "max_fractional_blockage"] == pytest.approx(0.75)
-            assert rows.loc[event_id, "min_fractional_blockage"] == pytest.approx(0.25)
-
-    def test_the_standard_deviations_are_made_positive(self, mock_view, mocker):
-        """
-        ``curve_fit`` is free to return a negative sigma - the gaussian is even in
-        it - and a negative width would be carried into the sampler and out to the
-        error bars.
-        """
-        mocker.patch.object(mock_view, "update_plot")
-
-        mock_view.set_distribution_fits(
-            fits=[((1.0, 0.3, -0.02, 1.0, 0.6, -0.05), None)],
-            frames=[_histogram_frame()],
-            event_data=[{"id": 1}],
-            d=10.0,
-            L=20.0,
-            N=10,
-        )
-
-        row = mock_view.fit_data.iloc[0]
-        assert row["max_fractional_blockage_std"] == pytest.approx(0.05)
-        assert row["min_fractional_blockage_std"] == pytest.approx(0.02)
 
     def test_the_three_plots_are_requested(self, mock_view, mocker):
         """
@@ -2693,14 +2358,7 @@ class TestSetDistributionFits:
         """
         update_plot = mocker.patch.object(mock_view, "update_plot")
 
-        mock_view.set_distribution_fits(
-            fits=[(_blockage_fit(), None)],
-            frames=[_histogram_frame()],
-            event_data=[{"id": 1}],
-            d=10.0,
-            L=20.0,
-            N=10,
-        )
+        mock_view.set_distribution_fits(*self._frames())
 
         labels = [call.kwargs["dataset_label"] for call in update_plot.call_args_list]
         assert labels == [
@@ -2713,55 +2371,176 @@ class TestSetDistributionFits:
         """The errorbar plot is the only one given ``err_cols``."""
         update_plot = mocker.patch.object(mock_view, "update_plot")
 
-        mock_view.set_distribution_fits(
-            fits=[(_blockage_fit(), None)],
-            frames=[_histogram_frame()],
-            event_data=[{"id": 1}],
-            d=10.0,
-            L=20.0,
-            N=10,
-        )
+        mock_view.set_distribution_fits(*self._frames())
 
-        peak_call = update_plot.call_args_list[-1]
-        assert peak_call.args[0] == "Peak Scatterplot"
-        assert peak_call.kwargs["err_cols"] == [
-            "min_fractional_blockage_std",
-            "max_fractional_blockage_std",
+        with_errors = [
+            call
+            for call in update_plot.call_args_list
+            if call.kwargs.get("err_cols") is not None
         ]
+        assert len(with_errors) == 1
+        assert with_errors[0].args[0] == "Peak Scatterplot"
 
-    def test_an_empty_subset_is_reported_and_nothing_is_plotted(
-        self, mock_view, mocker
-    ):
+    def test_an_empty_solution_set_draws_only_what_there_is(self, mock_view, mocker):
         """
-        An empty subset used to draw empty axes and say nothing at all, which is the
-        defect the guard was added for. Pinned so a later restructure cannot lose it.
+        A fit that sampled nothing still has its peak parameters worth plotting, so
+        the empty scatterplots are skipped rather than the whole figure.
         """
         update_plot = mocker.patch.object(mock_view, "update_plot")
-        received = []
-        mock_view.add_text_to_display.connect(lambda m, s: received.append(m))
+        _prolate, _oblate, fit_data = self._frames()
+        empty = pd.DataFrame(columns=["V", "m", "a", "b"])
 
-        mock_view.set_distribution_fits(
-            fits=[], frames=[], event_data=[], d=10.0, L=20.0, N=10
+        mock_view.set_distribution_fits(empty, empty, fit_data)
+
+        labels = [call.kwargs["dataset_label"] for call in update_plot.call_args_list]
+        assert labels == ["Event Peak Fit Parameters"]
+
+
+# ===========================================================================
+# The ensemble histogram's request and answer halves
+# ===========================================================================
+
+
+class TestEnsembleHistogramRequest:
+    """What ``_update_distribution_ensemble`` asks for now that it builds nothing."""
+
+    def _params(self):
+        """
+        The controls' parameters for one ensemble plot.
+
+        :return: the parameter dict
+        :rtype: dict
+        """
+        return {
+            "db_loader": "ldr",
+            "plot_type": "Filtered Histogram",
+            "pore_diameter": "20.0",
+            "pore_length": "30.0",
+            "n_values": "10",
+            "bins": [40],
+            "sizes": False,
+        }
+
+    def _scoped(self, mock_view):
+        """
+        Put one experiment, one channel and one subset in scope.
+
+        :param mock_view: the view under test
+        :type mock_view: ProteinView
+        :return: None
+        :rtype: None
+        """
+        mock_view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": ["3"]}}
+        mock_view.get_selected_filters = MagicMock(return_value={"sub": "duration < 3"})
+
+    def test_the_request_carries_the_subset_and_the_bin_request(self, mock_view):
+        self._scoped(mock_view)
+
+        mock_view._update_distribution_ensemble(self._params())
+
+        args = mock_view.ensemble_histogram_requested.emit.call_args.args
+        loader, sql_filter, scope, plot_type, bins, sizes = args[:6]
+        assert loader == "ldr"
+        assert sql_filter == "duration < 3"
+        assert scope == {"exp1": ["3"]}
+        assert plot_type == "Filtered Histogram"
+        assert bins == [40]
+        assert sizes is False
+
+    def test_the_request_carries_the_drawing_context_and_the_geometry(self, mock_view):
+        """
+        The label, the plotted-datasets key and the pore geometry depart unchanged
+        and come back through the setter, so nothing is parked on the widget
+        between asking and answering.
+        """
+        self._scoped(mock_view)
+
+        mock_view._update_distribution_ensemble(self._params())
+
+        args = mock_view.ensemble_histogram_requested.emit.call_args.args
+        dataset_label, dataset_key, d, L, N = args[6:]
+        assert "sub" in dataset_label
+        assert dataset_key == ("ldr", "exp1", 3, "duration < 3", "sub")
+        assert (d, L, N) == (20.0, 30.0, 10)
+
+    def test_nothing_is_fetched_into_the_widget(self, mock_view):
+        """
+        The events never reach it, so neither does the generator - this path does
+        not touch the attribute at all now, where it used to clear it, fill it and
+        walk it twice.
+        """
+        self._scoped(mock_view)
+
+        mock_view._update_distribution_ensemble(self._params())
+
+        assert not hasattr(mock_view, "event_data_generator")
+
+
+class TestSetEnsembleHistogram:
+    """The answering half: draw, record, then ask for the geometry."""
+
+    def _frame(self):
+        """
+        A stand-in for the averaged histogram the Model hands back.
+
+        :return: a two-column frame
+        :rtype: pd.DataFrame
+        """
+        return pd.DataFrame(
+            {
+                "Normalized Current": np.linspace(0.0, 1.0, 10),
+                "Amplitude": np.linspace(1.0, 2.0, 10),
+            }
         )
 
-        assert any("nothing to plot" in message for message in received)
-        update_plot.assert_not_called()
-
-    def test_every_event_skipped_still_leaves_an_empty_frame(self, mock_view, mocker):
-        """
-        Distinct from the empty-subset case above: there were events, but none of
-        them produced a fit. ``fit_data`` is set and empty rather than left holding
-        the previous plot's rows.
-        """
+    def test_the_histogram_is_drawn(self, mock_view, mocker):
         mocker.patch.object(mock_view, "update_plot")
 
-        mock_view.set_distribution_fits(
-            fits=[(None, None)],
-            frames=[_histogram_frame()],
-            event_data=[{"id": 1}],
-            d=10.0,
-            L=20.0,
-            N=10,
+        mock_view.set_ensemble_histogram(
+            self._frame(), "Filtered Histogram", [40], False, "lbl", ("k",), 1.0, 2.0, 3
         )
 
-        assert mock_view.fit_data.empty
+        assert mock_view.update_plot.call_args.args[0] == "Filtered Histogram"
+
+    def test_the_bookkeeping_describes_this_plot(self, mock_view, mocker):
+        mocker.patch.object(mock_view, "update_plot")
+
+        mock_view.set_ensemble_histogram(
+            self._frame(), "Filtered Histogram", [40], False, "lbl", ("k",), 1.0, 2.0, 3
+        )
+
+        assert mock_view.allowed_plot_type == "Filtered Histogram"
+        assert mock_view.allowed_bins == [40]
+        assert mock_view.allowed_sizes is False
+        assert ("k",) in mock_view.plotted_datasets
+
+    def test_the_bins_are_recorded_before_the_fit_is_asked_for(self, mock_view, mocker):
+        """
+        ``set_ensemble_geometry_fit`` reads ``allowed_bins`` and ``allowed_sizes``
+        to describe the fit it draws, so they have to describe *this* plot by the
+        time the request goes out. The request half used to set them between the
+        drawing and the fit; moving the drawing into a setter is exactly the change
+        that could have reordered them.
+        """
+        mocker.patch.object(mock_view, "update_plot")
+        seen = {}
+        mock_view._request_ensemble_geometry_fit = lambda *a, **k: seen.update(
+            bins=mock_view.allowed_bins, sizes=mock_view.allowed_sizes
+        )
+
+        mock_view.set_ensemble_histogram(
+            self._frame(), "Filtered Histogram", [40], True, "lbl", ("k",), 1.0, 2.0, 3
+        )
+
+        assert seen == {"bins": [40], "sizes": True}
+
+    def test_the_geometry_reaches_the_fit_request(self, mock_view, mocker):
+        mocker.patch.object(mock_view, "update_plot")
+        frame = self._frame()
+
+        mock_view.set_ensemble_histogram(
+            frame, "Filtered Histogram", [40], False, "lbl", ("k",), 11.0, 22.0, 33
+        )
+
+        args = mock_view.ensemble_fit_requested.emit.call_args.args
+        assert args[3:] == ("Filtered Histogram", 11.0, 22.0, 33)

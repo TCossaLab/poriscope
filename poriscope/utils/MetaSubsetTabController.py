@@ -25,8 +25,11 @@
 # Kyle Briggs
 
 import logging
-from typing import Any, Dict, Generator, List, Optional, override
+from typing import Any, Dict, Generator, List, Optional, Sequence, override
 
+import numpy as np
+import numpy.typing as npt
+from matplotlib.axes import Axes
 from PySide6.QtCore import Slot
 from PySide6.QtWidgets import QMessageBox
 
@@ -167,6 +170,50 @@ class MetaSubsetTabController(MetaController):
         self.view.filter_validation_requested.connect(self.validate_filter)
         self.view.raw_filter_validation_requested.connect(self.validate_raw_filter)
         self.view.event_id_cache_requested.connect(self.load_event_id_cache)
+        self.view.scatterplot_requested.connect(self.filter_scatterplot)
+
+    @log(logger=logger)
+    @Slot(object, object, object, object, str)
+    def filter_scatterplot(
+        self,
+        columns: Sequence[npt.NDArray[np.float64]],
+        log_flags: Sequence[bool],
+        ax: Axes,
+        axis_labels: Sequence[str],
+        dataset_label: str,
+    ) -> None:
+        """
+        Filter and log-scale a scatterplot's columns, and hand them back to draw.
+
+        The View asks, this slot calls the Model, and the answer goes back through
+        a setter. Shared by both subset tabs, whose copies were identical: the
+        drawing context arrives and departs unchanged, so this marshals and does not
+        interpret it.
+
+        :param columns: the raw x and y values
+        :type columns: Sequence[npt.NDArray[np.float64]]
+        :param log_flags: log-scale each column?
+        :type log_flags: Sequence[bool]
+        :param ax: the axis object the View will draw on
+        :type ax: Axes
+        :param axis_labels: the axis labels, already formatted
+        :type axis_labels: Sequence[str]
+        :param dataset_label: string to label the dataset
+        :type dataset_label: str
+        :return: None
+        :rtype: None
+        """
+        try:
+            filtered = self.model.logscale_and_filter_columns(
+                *columns, log_flags=list(log_flags)
+            )
+        except (ValueError, TypeError, IndexError) as e:
+            self.logger.error(f"Unable to filter the scatterplot: {repr(e)}")
+            self.add_text_to_display.emit(
+                f"Unable to filter the scatterplot: {e}", self.__class__.__name__
+            )
+            return
+        self.view.set_scatterplot(filtered, ax, axis_labels, dataset_label)
 
     @log(logger=logger)
     @Slot(str, object, object)
