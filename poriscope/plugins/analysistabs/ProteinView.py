@@ -181,6 +181,12 @@ class ProteinView(MetaSubsetTabView):
         str, str, object, str, object, bool, str, object, float, float, int
     )
 
+    #: The error-bar variant of ``scatterplot_requested``, which this tab alone
+    #: has: the raw columns and their two error columns, the log flags, and the
+    #: drawing context handed back unchanged. Answered through
+    #: ``set_xyerr_scatterplot``.
+    xyerr_scatterplot_requested = Signal(object, object, object, object, str)
+
     #: Asks for one double-gaussian fit per event: the (bins, amplitude) pairs, the
     #: frames they came from, and the events themselves. Answered through
     #: ``set_event_histogram_fits``.
@@ -903,7 +909,10 @@ class ProteinView(MetaSubsetTabView):
         dataset_label: str = "",
     ) -> None:
         """
-        Create a scatterplot of two metadata columns.
+        Ask for a scatterplot's two columns, filtered and log-scaled.
+
+        Answered through ``MetaSubsetTabView.set_scatterplot``, which both subset
+        tabs share.
 
         :param ax: Matplotlib axes object.
         :type ax: Axes
@@ -922,8 +931,7 @@ class ProteinView(MetaSubsetTabView):
         x_units, y_units = units
         logx, logy = logscales
 
-        x = data[x_label].values
-        y = data[y_label].values
+        columns = [data[x_label].values, data[y_label].values]
 
         x_label = format_axis_label(x_label, x_units)
         y_label = format_axis_label(y_label, y_units)
@@ -933,15 +941,9 @@ class ProteinView(MetaSubsetTabView):
         if logy:
             y_label = f"log10({y_label})"
 
-        xdata, ydata = self._logscale_and_filter_multiple_columns(
-            x, y, log_flags=[logx, logy]
+        self.scatterplot_requested.emit(
+            columns, [logx, logy], ax, [x_label, y_label], dataset_label
         )
-        ax.scatter(xdata, ydata, s=3, alpha=0.5, label=dataset_label)
-        ax.set_xlabel(x_label)
-        ax.set_ylabel(y_label)
-
-        self._update_cache((xdata, x_label), (ydata, y_label))
-        ax.legend(loc="best")
 
     @log(logger=logger)
     def _plot_xyerr_scatterplot(
@@ -955,7 +957,13 @@ class ProteinView(MetaSubsetTabView):
         err_cols: Optional[Sequence[str]] = None,
     ) -> None:
         """
-        Create a scatterplot of two metadata columns with error bars.
+        Ask for an error-bar scatterplot's columns, filtered and log-scaled.
+
+        **The error columns travel through the same filter as the values they
+        annotate**, unscaled. They used to be taken straight off the unfiltered
+        frame while the values were filtered, so any row the filter dropped left the
+        two arrays different lengths - latent today only because the one caller
+        passes columns that never contain NaN and never log-scales them.
 
         :param ax: Matplotlib axes object.
         :type ax: Axes
@@ -973,7 +981,7 @@ class ProteinView(MetaSubsetTabView):
         :type err_cols: Optional[Sequence[str]]
         :raises ValueError: If `err_cols` is not a list of exactly two column names.
         """
-        if err_cols is None or len(err_cols) != 2:
+        if err_cols is None or len(err_cols) != 2 or not all(err_cols):
             raise ValueError(
                 "_plot_xyerr_scatterplot() requires exactly two error columns to be specified in err_cols (e.g., [x_err, y_err])"
             )
@@ -983,12 +991,12 @@ class ProteinView(MetaSubsetTabView):
         logx, logy = logscales
         x_err_label, y_err_label = err_cols
 
-        x = data[x_label].values
-        y = data[y_label].values
-
-        # Extract error arrays, allowing for None if one axis doesn't have errors
-        x_err = data[x_err_label].values if x_err_label else None
-        y_err = data[y_err_label].values if y_err_label else None
+        columns = [
+            data[x_label].values,
+            data[y_label].values,
+            data[x_err_label].values,
+            data[y_err_label].values,
+        ]
 
         x_label = format_axis_label(x_label, x_units)
         y_label = format_axis_label(y_label, y_units)
@@ -998,9 +1006,42 @@ class ProteinView(MetaSubsetTabView):
         if logy:
             y_label = f"log10({y_label})"
 
-        xdata, ydata = self._logscale_and_filter_multiple_columns(
-            x, y, log_flags=[logx, logy]
+        # The error columns are masked with the values and never scaled: an error
+        # bar is a width in the value's own units, and log-scaling it would be
+        # meaningless.
+        self.xyerr_scatterplot_requested.emit(
+            columns, [logx, logy, False, False], ax, [x_label, y_label], dataset_label
         )
+
+    @log(logger=logger)
+    def set_xyerr_scatterplot(
+        self,
+        columns: Sequence[npt.NDArray[np.float64]],
+        ax: Axes,
+        axis_labels: Sequence[str],
+        dataset_label: str,
+    ) -> None:
+        """
+        Draw a scatterplot of two filtered columns with their error bars.
+
+        The answering half of ``xyerr_scatterplot_requested``. Separate from
+        ``set_scatterplot`` because only this tab has an error-bar variant. The four
+        arrays arrive filtered together, so the bars still line up with the points
+        after any row is dropped.
+
+        :param columns: the filtered x, y, x error and y error values
+        :type columns: Sequence[npt.NDArray[np.float64]]
+        :param ax: the axis object on which to plot
+        :type ax: Axes
+        :param axis_labels: the x and y axis labels, already formatted
+        :type axis_labels: Sequence[str]
+        :param dataset_label: Label for the dataset.
+        :type dataset_label: str
+        :return: None
+        :rtype: None
+        """
+        xdata, ydata, x_err, y_err = columns
+        x_label, y_label = axis_labels
 
         # Plot the scatter points
         ax.scatter(xdata, ydata, s=4, alpha=0.5, label=dataset_label)

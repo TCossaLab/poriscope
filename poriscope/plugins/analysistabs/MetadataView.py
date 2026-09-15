@@ -168,15 +168,6 @@ class MetadataView(MetaSubsetTabView):
         object, object, object, object, bool, object, str, str, str
     )
 
-    #: Asks for a scatterplot's two columns to be filtered and log-scaled: the raw
-    #: columns, their log flags, and the drawing context handed back unchanged.
-    #: Answered through ``set_scatterplot``.
-    #:
-    #: Step 4's closeout. This plot type was left out of Step 4c because it freed no
-    #: import on its own; the filter's move is what brings it back in, and the
-    #: filtered values are exported with the plot rather than only drawn.
-    scatterplot_requested = Signal(object, object, object, object, str)
-
     #: The same for the three columns of a 3-D scatterplot. Answered through
     #: ``set_3d_scatterplot``, which is separate because the 3-D axes and the z label
     #: are not a special case of the 2-D drawing.
@@ -1095,43 +1086,6 @@ class MetadataView(MetaSubsetTabView):
         self.scatterplot_requested.emit(
             columns, [logx, logy], ax, [x_label, y_label], dataset_label
         )
-
-    @log(logger=logger)
-    def set_scatterplot(
-        self,
-        columns: Sequence[npt.NDArray[np.float64]],
-        ax: Axes,
-        axis_labels: Sequence[str],
-        dataset_label: str,
-    ) -> None:
-        """
-        Draw a scatterplot of two filtered columns.
-
-        The answering half of ``scatterplot_requested``. Step 4's closeout moved the
-        NaN and log filtering to the Model: the values it drops never reach the
-        axes and the ones it keeps are exported with the plot, so they are the
-        Model's to produce.
-
-        :param columns: the filtered x and y values
-        :type columns: Sequence[npt.NDArray[np.float64]]
-        :param ax: the axis object on which to plot
-        :type ax: Axes
-        :param axis_labels: the x and y axis labels, already formatted
-        :type axis_labels: Sequence[str]
-        :param dataset_label: Label for the dataset.
-        :type dataset_label: str
-        :return: None
-        :rtype: None
-        """
-        xdata, ydata = columns
-        x_label, y_label = axis_labels
-
-        ax.scatter(xdata, ydata, s=3, alpha=0.5, label=dataset_label)
-        ax.set_xlabel(x_label)
-        ax.set_ylabel(y_label)
-
-        self._update_cache((xdata, x_label), (ydata, y_label))
-        ax.legend(loc="best")
 
     @log(logger=logger)
     def _plot_3d_scatterplot(

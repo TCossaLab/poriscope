@@ -31,6 +31,7 @@ from typing import Any, Dict, Generator, List, Optional, Sequence, Tuple, overri
 import numpy as np
 import numpy.typing as npt
 import pandas as pd
+from matplotlib.axes import Axes
 from PySide6.QtCore import Slot
 
 from poriscope.plugins.analysistabs.ProteinModel import ProteinModel
@@ -78,6 +79,7 @@ class ProteinController(MetaSubsetTabController):
         self.view.fit_commit_confirmed.connect(self.commit_fits)
         self.view.ensemble_fit_requested.connect(self.fit_ensemble_geometry)
         self.view.ensemble_histogram_requested.connect(self.build_ensemble_histogram)
+        self.view.xyerr_scatterplot_requested.connect(self.filter_xyerr_scatterplot)
         self.view.event_histogram_fits_requested.connect(self.fit_event_histograms)
         self.view.distribution_fits_requested.connect(self.fit_distribution_events)
 
@@ -172,6 +174,50 @@ class ProteinController(MetaSubsetTabController):
         self.view.set_ensemble_geometry_fit(
             popt, curve, plot_data, plot_type, df_prolate, df_oblate
         )
+
+    @log(logger=logger)
+    @Slot(object, object, object, object, str)
+    def filter_xyerr_scatterplot(
+        self,
+        columns: Sequence[npt.NDArray[np.float64]],
+        log_flags: Sequence[bool],
+        ax: Axes,
+        axis_labels: Sequence[str],
+        dataset_label: str,
+    ) -> None:
+        """
+        Filter an error-bar scatterplot's columns, and hand them back to draw.
+
+        Separate from the shared ``MetaSubsetTabController.filter_scatterplot``
+        because only this tab draws error bars. The four arrays go down together so
+        one mask covers them all:
+        a row dropped from the values has to be dropped from their error bars, or
+        the bars no longer describe the points they sit on.
+
+        :param columns: the raw x, y, x error and y error values
+        :type columns: Sequence[npt.NDArray[np.float64]]
+        :param log_flags: log-scale each column? the two error columns never are
+        :type log_flags: Sequence[bool]
+        :param ax: the axis object the View will draw on
+        :type ax: Axes
+        :param axis_labels: the axis labels, already formatted
+        :type axis_labels: Sequence[str]
+        :param dataset_label: string to label the dataset
+        :type dataset_label: str
+        :return: None
+        :rtype: None
+        """
+        try:
+            filtered = self.model.logscale_and_filter_columns(
+                *columns, log_flags=list(log_flags)
+            )
+        except (ValueError, TypeError, IndexError) as e:
+            self.logger.error(f"Unable to filter the scatterplot: {repr(e)}")
+            self.add_text_to_display.emit(
+                f"Unable to filter the scatterplot: {e}", self.__class__.__name__
+            )
+            return
+        self.view.set_xyerr_scatterplot(filtered, ax, axis_labels, dataset_label)
 
     @log(logger=logger)
     @Slot(str, str, object, str, object, bool, str, object, float, float, int)

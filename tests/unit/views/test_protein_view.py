@@ -534,36 +534,67 @@ class TestPlotScatterplot:
         rng = np.random.default_rng(0)
         return pd.DataFrame({"V": rng.random(10), "m": rng.random(10)})
 
-    def test_labels_set(self, real_view):
+    def _emitted(self, real_view, df, logscales, units=("nm^3", "au")):
+        """
+        Drive the request half and capture what it asked for.
+
+        The filtering is the Model's, so the request half only formats the labels
+        and asks; the drawing is ``MetaSubsetTabView.set_scatterplot``.
+
+        :param real_view: the view under test
+        :type real_view: ProteinView
+        :param df: the frame to plot
+        :type df: pd.DataFrame
+        :param logscales: the log flags for the two axes
+        :type logscales: list
+        :param units: the units for the two axes
+        :type units: tuple
+        :return: the emitted arguments
+        :rtype: tuple
+        """
+        captured = []
+        real_view.scatterplot_requested.connect(lambda *args: captured.append(args))
         real_view._plot_scatterplot(
-            real_view.ax_vm, self._df(), ["V", "m"], ["nm^3", "au"], [False, False]
+            real_view.ax_vm, df, ["V", "m"], list(units), logscales
         )
-        assert "V" in real_view.ax_vm.get_xlabel()
-        assert "m" in real_view.ax_vm.get_ylabel()
+        return captured[0]
+
+    def test_labels_set(self, real_view):
+        _columns, _flags, ax, labels, _label = self._emitted(
+            real_view, self._df(), [False, False]
+        )
+
+        assert "V" in labels[0]
+        assert "m" in labels[1]
+        assert ax is real_view.ax_vm
+
+    def test_the_raw_columns_and_their_flags_go_out(self, real_view):
+        """The filter is the Model's, so the columns leave unfiltered."""
+        df = self._df()
+
+        columns, flags, _ax, _labels, _label = self._emitted(
+            real_view, df, [True, False]
+        )
+
+        assert [list(column) for column in columns] == [
+            df["V"].tolist(),
+            df["m"].tolist(),
+        ]
+        assert flags == [True, False]
 
     def test_log_x_prefix(self, real_view):
-        df = pd.DataFrame(
-            {
-                "V": np.abs(np.random.rand(10)) + 0.01,
-                "m": np.abs(np.random.rand(10)) + 0.01,
-            }
+        _columns, _flags, _ax, labels, _label = self._emitted(
+            real_view, self._df(), [True, False], units=("", "")
         )
-        real_view._plot_scatterplot(
-            real_view.ax_vm, df, ["V", "m"], ["", ""], [True, False]
-        )
-        assert "log10" in real_view.ax_vm.get_xlabel()
+
+        assert "log10" in labels[0]
 
     def test_log_y_prefix(self, real_view):
-        df = pd.DataFrame(
-            {
-                "V": np.abs(np.random.rand(10)) + 0.01,
-                "m": np.abs(np.random.rand(10)) + 0.01,
-            }
+        _columns, _flags, _ax, labels, _label = self._emitted(
+            real_view, self._df(), [False, True], units=("", "")
         )
-        real_view._plot_scatterplot(
-            real_view.ax_vm, df, ["V", "m"], ["", ""], [False, True]
-        )
-        assert "log10" in real_view.ax_vm.get_ylabel()
+
+        assert "log10" in labels[1]
 
 
 # ===========================================================================
@@ -600,15 +631,23 @@ class TestPlotXyerrScatterplot:
             err_cols=["xe", "ye"],
         )
 
-    def test_null_err_col(self, mock_view):
-        mock_view._plot_xyerr_scatterplot(
-            mock_view.ax_hist,
-            self._df(),
-            ["x", "y"],
-            ["", ""],
-            [False, False],
-            err_cols=["xe", None],
-        )
+    def test_a_missing_error_column_is_refused(self, mock_view):
+        """
+        Both error columns are required now. The old code accepted a None and drew
+        that axis without bars; nothing ever passed one - the single caller names
+        two real columns - and supporting it through the filter would mean telling
+        the drawing half which of the four arrays it was given. Refusing it is the
+        smaller contract, and the wrong-length case already raised.
+        """
+        with pytest.raises(ValueError, match="two error columns"):
+            mock_view._plot_xyerr_scatterplot(
+                mock_view.ax_hist,
+                self._df(),
+                ["x", "y"],
+                ["", ""],
+                [False, False],
+                err_cols=["xe", None],
+            )
 
 
 # ===========================================================================
@@ -633,9 +672,17 @@ class TestUpdatePlot:
         assert "NC" in real_view.ax_hist.get_xlabel()
 
     def test_scatterplot_routes_to_vm(self, real_view):
+        """
+        The panel choice is still ``update_plot``'s; what reaches the request half
+        is the axes it picked.
+        """
+        captured = []
+        real_view.scatterplot_requested.connect(lambda *args: captured.append(args))
         df = pd.DataFrame({"V": np.random.rand(5), "m": np.random.rand(5)})
+
         real_view.update_plot("Scatterplot", df, ["V", "m"], ["", ""], [False, False])
-        assert "V" in real_view.ax_vm.get_xlabel()
+
+        assert captured[0][2] is real_view.ax_vm
 
     def test_peak_scatterplot_routes_to_hist(self, mock_view):
         df = pd.DataFrame(

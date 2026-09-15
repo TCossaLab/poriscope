@@ -1,5 +1,11 @@
 ## Poriscope 2.0.0: in progress
 
+* **Breaking:** the subset tabs' Scatterplot is filtered and log-scaled by `MetaModel.logscale_and_filter_columns` rather than in the view, and the round trip is shared: `scatterplot_requested` and `set_scatterplot` are on `MetaSubsetTabView` and `filter_scatterplot` on `MetaSubsetTabController`, so `MetadataView` and `MetadataController` no longer carry their own
+
+* **Breaking:** the Protein tab's Peak Scatterplot keeps its own `xyerr_scatterplot_requested` and `set_xyerr_scatterplot`, and `_plot_xyerr_scatterplot` now requires both error columns rather than accepting one
+
+* **Fixed the Protein tab's error bars being able to come adrift from the points they annotate**: the error columns were read from the unfiltered data while the values were filtered, so any row the filter dropped left the two different lengths
+
 * **Breaking:** the Protein tab's Monte Carlo geometry sampling is `ProteinModel.sample_vm_solutions` and `sample_event_geometries` rather than the view's, so `ProteinView._generate_vm_ensemble` and `_compute_theoretical_blockages` are gone, `set_distribution_fits` takes the three frames it draws, and `set_ensemble_geometry_fit` takes the two solution sets instead of the pore geometry
 
 * **Breaking:** the Protein tab's Ensemble distribution histogram is averaged by `ProteinModel.build_all_points_histogram` rather than in the view, so `_update_distribution_ensemble` asks for the subset instead of fetching and walking it, `set_ensemble_histogram` draws what comes back, and `ProteinView._construct_all_points_histogram`, `hist_min` and `hist_max` are gone

@@ -85,7 +85,6 @@ class MetadataController(MetaSubsetTabController):
         self.view.plot_features_requested.connect(self.request_plot_features)
         self.view.csv_subset_export_requested.connect(self.export_csv_subset)
         self.view.heatmap_requested.connect(self.calculate_heatmap)
-        self.view.scatterplot_requested.connect(self.filter_scatterplot)
         self.view.scatterplot_3d_requested.connect(self.filter_3d_scatterplot)
         self.view.density_requested.connect(self.estimate_kernel_densities)
         self.view.histogram_bins_requested.connect(self.calculate_histogram_bins)
@@ -150,49 +149,6 @@ class MetadataController(MetaSubsetTabController):
             )
             return
         self.view.set_heatmap(x, y, z, ax, x_label, y_label, dataset_label)
-
-    @log(logger=logger)
-    @Slot(object, object, object, object, str)
-    def filter_scatterplot(
-        self,
-        columns: Sequence[npt.NDArray[np.float64]],
-        log_flags: Sequence[bool],
-        ax: Axes,
-        axis_labels: Sequence[str],
-        dataset_label: str,
-    ) -> None:
-        """
-        Filter and log-scale a scatterplot's columns, and hand them back to draw.
-
-        Decision B's command path. Step 4's closeout brought this plot type down:
-        Step 4c had left it alone because it freed no import on its own, and the
-        filter's move is what puts it back in scope. The values that survive are
-        exported with the plot, so they are the Model's to produce.
-
-        :param columns: the raw x and y values
-        :type columns: Sequence[npt.NDArray[np.float64]]
-        :param log_flags: log-scale each column?
-        :type log_flags: Sequence[bool]
-        :param ax: the axis object the View will draw on
-        :type ax: Axes
-        :param axis_labels: the axis labels, already formatted
-        :type axis_labels: Sequence[str]
-        :param dataset_label: string to label the dataset
-        :type dataset_label: str
-        :return: None
-        :rtype: None
-        """
-        try:
-            filtered = self.model.logscale_and_filter_columns(
-                *columns, log_flags=list(log_flags)
-            )
-        except (ValueError, TypeError, IndexError) as e:
-            self.logger.error(f"Unable to filter the scatterplot: {repr(e)}")
-            self.add_text_to_display.emit(
-                f"Unable to filter the scatterplot: {e}", self.__class__.__name__
-            )
-            return
-        self.view.set_scatterplot(filtered, ax, axis_labels, dataset_label)
 
     @log(logger=logger)
     @Slot(object, object, object, object, str)
