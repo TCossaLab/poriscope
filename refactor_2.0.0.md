@@ -8,9 +8,9 @@ snapshot was the nearest thing that looked like one.
 
 | Gate | Refactor start | Now | Target |
 | --- | --- | --- | --- |
-| Boundary allowlist | 111 | **4** | 0 |
+| Boundary allowlist | 111 | **3** | 0 |
 | - rule 1, View emits | 75 | **0** | 0 |
-| - rule 2, View computation imports | 22 | **4** | 0 |
+| - rule 2, View computation imports | 22 | **3** | 0 |
 | - rules 3, 4 and 5 | 10 / 4 / - | **0 / 0 / 0** | 0 |
 | Refactor-coverage audit | - | **85 of 85 pinned** | 100% |
 | Duplication, removable - the original 6 families | 1,889 | **721** | - |
@@ -257,12 +257,31 @@ sites are converted**, and they sit in Clustering (1), Metadata (5) and Protein 
    `_generate_vm_ensemble`'s callee, and `_generate_vm_ensemble` and `_summarize_vm` are
    called from **both** distribution setters, so those five move as one commit - the one
    that takes the last pandas with it.
-6. **3d closes.** With the last caller converted the logscale helper goes to `MetaModel`,
-   and the published plugin base sheds numpy. **The last rule-2 point, or the floor.**
-   After 4c the only callers left are `ProteinView`'s two (`:924`, `:989`), so branch 5
-   unblocks this one; the source-level equivalence test in
-   `tests/unit/models/test_meta_model_logscale.py` raises by name when the `MetaView` copy
-   goes, and is deleted as part of this branch.
+
+   **LANDED 2026-09-14**, suite 4,020 passed / 16 skipped, **allowlist 4 -> 3** with
+   pandas closed for `ProteinView` and numpy recorded as its floor, audit 85 of 85.
+   Five commits: the per-event binning, the ensemble average, the Monte Carlo, and the
+   two logscale callers, on top of the re-measurement above. Three things worth
+   carrying:
+
+   - **`_summarize_vm` stays on the View**, decided 2026-09-14. It formats the display
+     strings `_report_ensemble_fit` writes to the panel and nothing outside that method
+     reads them; moving it would put `± nm³` in a Model. Recorded in the audit's table
+     with the reason rather than dropped from it.
+   - **The individual-distribution path binned each event over a running union** of the
+     events before it, so the edges depended on arrival order. Both per-event paths use
+     the same rule now, at Kyle's ruling.
+   - **The plain scatterplot promoted to `MetaSubsetTabView` / `MetaSubsetTabController`**
+     rather than being written twice: Protein's halves came out byte-identical to the
+     ones Metadata gained in 4c, so a second copy would have raised the ratchet rather
+     than lowered it. The promotion moves no number either way, because the bodies left
+     the measured families rather than being deleted from them.
+6. **3d closes. UNBLOCKED 2026-09-14** - branch 5 converted `ProteinView`'s two, and
+   **no tab View calls `MetaView._logscale_and_filter_multiple_columns` any more**. The
+   helper is deleted, the published plugin base sheds numpy, and that is **the last
+   rule-2 point, or the floor**. The source-level equivalence test in
+   `tests/unit/models/test_meta_model_logscale.py` raises by name when the `MetaView`
+   copy goes, and is rewritten against the surviving one as part of this branch.
 7. **4e - much smaller than recorded.** The View layer's only read/write sites are
    `MetaSubsetTabView._load_filter` (`:495-503`) and `_save_filter` (`:875-883`), both JSON
    round-trips; every other hit is `QFileDialog` path selection, which 4e keeps in the View
