@@ -1,5 +1,7 @@
 ## Poriscope 2.0.0: in progress
 
+* **Breaking:** `MetaView._logscale_and_filter_multiple_columns` is removed. Every plot path now asks its controller for the filtering, which `MetaModel.logscale_and_filter_columns` does, so the published view base no longer carries it - or imports numpy at all
+
 * **Breaking:** the subset tabs' Scatterplot is filtered and log-scaled by `MetaModel.logscale_and_filter_columns` rather than in the view, and the round trip is shared: `scatterplot_requested` and `set_scatterplot` are on `MetaSubsetTabView` and `filter_scatterplot` on `MetaSubsetTabController`, so `MetadataView` and `MetadataController` no longer carry their own
 
 * **Breaking:** the Protein tab's Peak Scatterplot keeps its own `xyerr_scatterplot_requested` and `set_xyerr_scatterplot`, and `_plot_xyerr_scatterplot` now requires both error columns rather than accepting one

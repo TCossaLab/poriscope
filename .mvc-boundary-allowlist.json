@@ -6,9 +6,6 @@
     ],
     "poriscope/plugins/analysistabs/ProteinView.py": [
       "numpy"
-    ],
-    "poriscope/utils/MetaView.py": [
-      "numpy"
     ]
   },
   "layering": {},

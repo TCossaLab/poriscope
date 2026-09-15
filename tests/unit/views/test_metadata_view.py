@@ -85,14 +85,6 @@ def view(mocker: MockerFixture, mock_qt_dependencies: None) -> MetadataView:
     # Mock helper methods
     view_instance._update_cache = mocker.Mock()
     view_instance._clear_cache = mocker.Mock()
-    # One array out per array in, which is what the real method guarantees and what
-    # every caller unpacks positionally. It used to return a 1-tuple whatever it was
-    # given; that was invisible while only single-column callers reached it, and
-    # wrong the moment a two-column one did.
-    view_instance._logscale_and_filter_multiple_columns = mocker.Mock(
-        side_effect=lambda *args, **kwargs: tuple(args)
-    )
-
     # Mock methods called by _overlay_plot
     view_instance.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
     view_instance.global_signal = mocker.Mock()
@@ -576,7 +568,6 @@ def test_plot_1d_density_sends_the_raw_column_and_the_log_flag(
 
     view._plot_1d_density(view.axes, data, ["x"], ["units"], [True], bins=[7])
 
-    view._logscale_and_filter_multiple_columns.assert_not_called()
     emitted = view.density_requested.emit.call_args.args
     assert [list(dataset) for dataset in emitted[0]] == [[1.0, 2.0, 5.0, 10.0]]
     assert emitted[1] is True
@@ -1039,7 +1030,6 @@ def test_plot_1d_histogram_sends_the_raw_column_and_the_log_flag(
 
     view._plot_1d_histogram(view.axes, data, ["x"], ["units"], [True])
 
-    view._logscale_and_filter_multiple_columns.assert_not_called()
     emitted = view.histogram_bins_requested.emit.call_args.args
     assert [list(dataset) for dataset in emitted[0]] == [[1.0, 2.0, 5.0, 10.0]]
     assert emitted[1] is True
@@ -1269,7 +1259,6 @@ def test_plot_scatterplot_requests_the_filtering(
 
     view._plot_scatterplot(view.axes, data, ["x", "y"], ["u1", "u2"], [True, False])
 
-    view._logscale_and_filter_multiple_columns.assert_not_called()
     emitted = view.scatterplot_requested.emit.call_args.args
     assert [list(column) for column in emitted[0]] == [[1.0, 2.0], [3.0, 4.0]]
     assert emitted[1] == [True, False]
@@ -1364,7 +1353,6 @@ def test_plot_3d_scatterplot_requests_the_filtering(
         [True, False, True],
     )
 
-    view._logscale_and_filter_multiple_columns.assert_not_called()
     emitted = view.scatterplot_3d_requested.emit.call_args.args
     assert len(emitted[0]) == 3
     assert emitted[1] == [True, False, True]
@@ -1500,9 +1488,6 @@ def test_update_plot_calls_histogram_for_histogram_type(
     view.data_cache = []  # type: ignore[attr-defined]
     view._commit_cache = mocker.Mock()  # type: ignore[method-assign]
 
-    view._logscale_and_filter_multiple_columns = mocker.Mock(  # type: ignore[method-assign]
-        return_value=(np.array([1.0, 2.0, 3.0]),)
-    )
     view._plot_1d_histogram = mocker.Mock()  # type: ignore[method-assign]
 
     view.update_plot("Histogram", data, ["x"], ["u"], [False])
@@ -1565,9 +1550,6 @@ def test_update_plot_calls_scatterplot_for_scatterplot_type(
 
     view.data_cache = []  # type: ignore[attr-defined]
     view._commit_cache = mocker.Mock()  # type: ignore[method-assign]
-    view._logscale_and_filter_multiple_columns = mocker.Mock(  # type: ignore[method-assign]
-        return_value=(np.array([1.0, 2.0]), np.array([3.0, 4.0]))
-    )
     view._plot_scatterplot = mocker.Mock()  # type: ignore[method-assign]
 
     view.update_plot("Scatterplot", data, ["x", "y"], ["u1", "u2"], [False, False])
@@ -1643,9 +1625,6 @@ def test_update_plot_redraws_canvas(view: MetadataView, mocker: MockerFixture) -
 
     view.data_cache = []  # type: ignore[attr-defined]
     view._commit_cache = mocker.Mock()  # type: ignore[method-assign]
-    view._logscale_and_filter_multiple_columns = mocker.Mock(  # type: ignore[method-assign]
-        return_value=(np.array([1.0, 2.0, 3.0]),)
-    )
 
     view.update_plot("Histogram", data, ["x"], ["u"], [False])
 
@@ -4294,7 +4273,6 @@ def test_plot_heatmap_sends_the_raw_columns_and_their_log_flags(
 
     view._plot_heatmap(view.axes, data, ["x", "y"], ["u1", "u2"], [True, True])
 
-    view._logscale_and_filter_multiple_columns.assert_not_called()
     emitted = view.heatmap_requested.emit.call_args.args
     assert list(emitted[0]) == [1.0, 10.0]
     assert emitted[2] == [True, True]

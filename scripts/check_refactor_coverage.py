@@ -98,7 +98,8 @@ TESTS = REPO_ROOT / "tests"
 #: SQL-authoring methods, which the steps describe by property rather than by name.
 MOVED: Tuple[Tuple[str, str, str], ...] = (
     # Step 3d - MetaView -> MetaModel
-    ("poriscope/utils/MetaView.py", "_logscale_and_filter_multiple_columns", "3d"),
+    # The MetaView copy is gone: the last plot path converted, so the helper it
+    # served has one home again and is tracked at it, just below.
     # The Model-side copy, added at the head of the closeout's Clustering branch so
     # that callers can convert at all - no View holds a Model reference. Both copies
     # exist until the last of the eight call sites moves, and an equivalence test

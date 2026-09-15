@@ -1,38 +1,21 @@
 """
-Characterization tests for ``MetaView``'s data methods, ahead of the 2.0.0 refactor.
+Characterization tests for the data methods on the analysis tabs' view bases.
 
-``poriscope/utils/MetaView.py`` has no dedicated test file, and the methods pinned
-here are the ones Step 3d moves from ``MetaView`` to ``MetaModel``. Two of them are
-the reason this file exists at all:
+These files had no dedicated tests, and the methods pinned here are the ones the
+2.0.0 refactor moves down to the model layer - so they are pinned before they move
+rather than after, and the same assertions run against the destination.
 
-- ``_logscale_and_filter_multiple_columns`` is referenced by 38 test functions and
-  **every one replaces it with a Mock**, so its body has no behavioural coverage
-  while sitting on every 1-D and 2-D plot path in ``MetadataView``.
-- ``_logscale_and_filter_dataframe`` **is gone.** It had no references in
-  ``tests/`` at all and one caller, ``ClusteringView.py``. Pinning the pair's
-  differences is what made unifying them a decision rather than an accident: dtype
-  behaviour and the status-panel text turned out identical, and the two real
-  divergences - ``dropna()``'s wider row scope and its tolerance of a text column -
-  were inert at that single call site, which passed exactly ``columns + ["id"]``.
-  Step 3d-pre therefore deleted the frame form and adapted the caller to pass those
-  same columns as arrays. Its nine tests went with it; the surviving behaviour is
-  covered by ``TestLogscaleMultipleColumns`` below and, end to end, by
-  ``tests/integration/flows/test_clustering_flow_no_gui.py``.
+The five event-index range helpers live on ``MetaEventTabView``: their only callers
+are ``EventAnalysisView`` and ``RawDataView``, so sitting on the base every tab
+inherits was leakage. They do have tests in ``test_protein_view.py``'s
+``TestRangeHelpers``, but weak ones - the shift tests assert an ``or``-chain of three
+alternatives, and one asserts ``>= 0`` under a comment claiming a clamp the
+implementation does not have. ``_shift_ranges`` **reflects** a multi-element range
+rather than translating it, which is non-obvious and was effectively unpinned.
 
-**The five range helpers now live on ``MetaEventTabView``, not ``MetaView``.** Step 3e
-moved them down: their only callers are ``EventAnalysisView`` and ``RawDataView``, so
-sitting on the base every tab inherits was leakage, and 3c had just created the right
-home. 3d still has to move them on to ``MetaModel`` from there. The concrete subclass
-below therefore extends ``MetaEventTabView``, which reaches both it and ``MetaView``'s
-own ``_logscale_and_filter_multiple_columns`` through ordinary inheritance - one fixture
-still covers everything this file pins.
-
-The five range helpers are pinned for a different reason. They do have tests, in
-``test_protein_view.py``'s ``TestRangeHelpers``, but weak ones: the shift tests
-assert an ``or``-chain of three alternatives, and one asserts ``>= 0`` under a
-comment claiming a clamp the implementation does not have. ``_shift_ranges``
-**reflects** a multi-element range rather than translating it, which is
-non-obvious and effectively unpinned today.
+The logscale filter was pinned here too, and has moved on: it lives on ``MetaModel``
+now and is covered by ``tests/unit/models/test_meta_model_logscale.py``, which
+carries these assertions and two more.
 
 Values are asserted explicitly rather than through ``pytest-regressions``: these
 return short tuples, lists and strings, and a golden file for a two-element tuple
@@ -41,7 +24,6 @@ is less legible than the literal.
 
 from typing import Dict, List
 
-import numpy as np
 import pytest
 from PySide6.QtWidgets import QBoxLayout
 
@@ -87,173 +69,6 @@ def view() -> _ConcreteView:
     instance = _ConcreteView.__new__(_ConcreteView)
     shadow_signals(instance, _ConcreteView)
     return instance
-
-
-# ===========================================================================
-# _logscale_and_filter_multiple_columns - 38 test references, all Mocks
-# ===========================================================================
-
-
-class TestLogscaleMultipleColumns:
-    """The array form: NaN masking, sign rectification, sequential filtering."""
-
-    def test_no_arrays_returns_an_empty_tuple(self, view: _ConcreteView) -> None:
-        """The no-data guard returns ``()``, not ``None``."""
-        assert view._logscale_and_filter_multiple_columns() == ()
-
-    def test_without_log_flags_only_nans_are_removed(self, view: _ConcreteView) -> None:
-        """No flags means no scaling; the arrays come back filtered but untransformed."""
-        a = np.array([1.0, 2.0, np.nan, 4.0])
-        b = np.array([10.0, 20.0, 30.0, 40.0])
-
-        out_a, out_b = view._logscale_and_filter_multiple_columns(a, b)
-
-        np.testing.assert_array_equal(out_a, [1.0, 2.0, 4.0])
-        np.testing.assert_array_equal(out_b, [10.0, 20.0, 40.0])
-
-    def test_an_object_column_of_nulls_is_filtered_rather_than_raising(
-        self, view: _ConcreteView
-    ) -> None:
-        """
-        A column that is NULL for every row *in the requested scope* comes back from
-        pandas as an object array of ``None`` - there is nothing for it to infer a
-        numeric dtype from - and ``np.isnan`` cannot take that.
-
-        Reported from a real run: a subset filter that selected only rows where a
-        protein fit column was NULL raised
-        ``TypeError: ufunc 'isnan' not supported for the input types``. Coercing
-        first turns those into ``nan``, which is what the mask already exists to drop.
-        """
-        nulls = np.array([None, None, None], dtype=object)
-
-        (out,) = view._logscale_and_filter_multiple_columns(nulls)
-
-        assert len(out) == 0
-
-    def test_an_object_column_mixing_nulls_and_numbers_keeps_the_numbers(
-        self, view: _ConcreteView
-    ) -> None:
-        """
-        The partially-populated case has to survive the coercion intact, or the fix
-        for the empty one would quietly drop real data.
-        """
-        mixed = np.array([1.0, None, 3.0], dtype=object)
-
-        (out,) = view._logscale_and_filter_multiple_columns(mixed)
-
-        np.testing.assert_array_equal(out, [1.0, 3.0])
-
-    def test_a_non_numeric_column_is_reported_rather_than_raising(
-        self, view: _ConcreteView
-    ) -> None:
-        """
-        Genuinely non-numeric is a different thing from empty, and the user can act
-        on it, so it is named. The arity of the return is part of the contract -
-        every caller unpacks it positionally - so the column is masked out rather
-        than the tuple being shortened.
-        """
-        text = np.array([1.0, "oops", 3.0], dtype=object)
-
-        (out,) = view._logscale_and_filter_multiple_columns(text)
-
-        assert len(out) == 0
-        said = [call.args[0] for call in view.add_text_to_display.emit.call_args_list]
-        assert any("not numeric" in message for message in said)
-
-    def test_a_nan_in_one_array_drops_the_row_from_all(
-        self, view: _ConcreteView
-    ) -> None:
-        """The NaN mask is combined across every array, so filtering stays aligned."""
-        a = np.array([1.0, 2.0, 3.0])
-        b = np.array([np.nan, 20.0, 30.0])
-
-        out_a, out_b = view._logscale_and_filter_multiple_columns(a, b)
-
-        np.testing.assert_array_equal(out_a, [2.0, 3.0])
-        np.testing.assert_array_equal(out_b, [20.0, 30.0])
-
-    def test_log10_is_applied_to_the_flagged_column_only(
-        self, view: _ConcreteView
-    ) -> None:
-        """Only flagged columns are transformed; the others are merely row-filtered."""
-        a = np.array([1.0, 10.0, 100.0])
-        b = np.array([1.0, 10.0, 100.0])
-
-        out_a, out_b = view._logscale_and_filter_multiple_columns(
-            a, b, log_flags=[True, False]
-        )
-
-        np.testing.assert_allclose(out_a, [0.0, 1.0, 2.0])
-        np.testing.assert_array_equal(out_b, [1.0, 10.0, 100.0])
-
-    def test_all_negative_data_is_rectified_by_its_average_sign(
-        self, view: _ConcreteView
-    ) -> None:
-        """
-        Negative data is flipped positive before the log, not discarded.
-
-        The sign comes from the array's *average*, so a wholly negative column
-        logs its magnitudes rather than filtering itself away entirely.
-        """
-        a = np.array([-1.0, -10.0, -100.0])
-
-        (out,) = view._logscale_and_filter_multiple_columns(a, log_flags=[True])
-
-        np.testing.assert_allclose(out, [0.0, 1.0, 2.0])
-
-    def test_values_on_the_wrong_side_of_zero_are_dropped_from_every_array(
-        self, view: _ConcreteView
-    ) -> None:
-        """
-        Rectification filters, and the filter applies to all arrays, not just one.
-
-        The average of ``[1, 10, -5]`` is positive, so ``-5`` fails ``rectified > 0``
-        and its row leaves both arrays.
-        """
-        a = np.array([1.0, 10.0, -5.0])
-        b = np.array([7.0, 8.0, 9.0])
-
-        out_a, out_b = view._logscale_and_filter_multiple_columns(
-            a, b, log_flags=[True, False]
-        )
-
-        np.testing.assert_allclose(out_a, [0.0, 1.0])
-        np.testing.assert_array_equal(out_b, [7.0, 8.0])
-
-    def test_a_zero_average_defaults_to_a_positive_sign(
-        self, view: _ConcreteView
-    ) -> None:
-        """``np.sign(0)`` is 0, which would zero the data, so the code forces +1."""
-        a = np.array([-1.0, 1.0])
-
-        (out,) = view._logscale_and_filter_multiple_columns(a, log_flags=[True])
-
-        np.testing.assert_allclose(out, [0.0])
-
-    def test_wrong_length_log_flags_raises(self, view: _ConcreteView) -> None:
-        """Arity is validated rather than silently zipped short."""
-        with pytest.raises(ValueError, match="same length"):
-            view._logscale_and_filter_multiple_columns(
-                np.array([1.0]), np.array([2.0]), log_flags=[True]
-            )
-
-    def test_dropped_points_are_reported_on_the_status_panel(
-        self, view: _ConcreteView
-    ) -> None:
-        """
-        Both filtering stages tell the user how much data they lost.
-
-        A silent drop is the failure mode this reporting exists to prevent.
-        """
-        a = np.array([1.0, np.nan, -5.0, 10.0])
-
-        view._logscale_and_filter_multiple_columns(a, log_flags=[True])
-
-        messages = [
-            call.args[0] for call in view.add_text_to_display.emit.call_args_list
-        ]
-        assert any("contained NaN" in m for m in messages)
-        assert any("could not be logscaled" in m for m in messages)
 
 
 # ===========================================================================

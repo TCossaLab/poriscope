@@ -8,9 +8,9 @@ snapshot was the nearest thing that looked like one.
 
 | Gate | Refactor start | Now | Target |
 | --- | --- | --- | --- |
-| Boundary allowlist | 111 | **3** | 0 |
+| Boundary allowlist | 111 | **2** | 0 |
 | - rule 1, View emits | 75 | **0** | 0 |
-| - rule 2, View computation imports | 22 | **3** | 0 |
+| - rule 2, View computation imports | 22 | **2** | 2 (the floor) |
 | - rules 3, 4 and 5 | 10 / 4 / - | **0 / 0 / 0** | 0 |
 | Refactor-coverage audit | - | **85 of 85 pinned** | 100% |
 | Duplication, removable - the original 6 families | 1,889 | **721** | - |
@@ -280,12 +280,28 @@ sites are converted**, and they sit in Clustering (1), Metadata (5) and Protein 
      ones Metadata gained in 4c, so a second copy would have raised the ratchet rather
      than lowered it. The promotion moves no number either way, because the bodies left
      the measured families rather than being deleted from them.
-6. **3d closes. UNBLOCKED 2026-09-14** - branch 5 converted `ProteinView`'s two, and
-   **no tab View calls `MetaView._logscale_and_filter_multiple_columns` any more**. The
-   helper is deleted, the published plugin base sheds numpy, and that is **the last
-   rule-2 point, or the floor**. The source-level equivalence test in
-   `tests/unit/models/test_meta_model_logscale.py` raises by name when the `MetaView`
-   copy goes, and is rewritten against the surviving one as part of this branch.
+6. **3d closes. LANDED 2026-09-14**, suite 4,008 passed / 16 skipped, **allowlist
+   3 -> 2 and rule 2 is at its floor**: the two entries left are `MetadataView`'s and
+   `ProteinView`'s numpy, both recorded floors - the heatmap extent and colourbar
+   ticks, the display normalisation, and the two event-plot time bases. `MetaView` is
+   off the list entirely and **imports no numpy at all**.
+
+   Three things the deletion had to take with it, and one it nearly lost:
+
+   - The **source-level equivalence test** raised with the message it was written to
+     raise, naming what had happened rather than passing vacuously. Deleted, with the
+     scaffolding that only it used.
+   - **Two of the twelve pins on the `MetaView` copy had no equivalent on the Model's**
+     - the non-numeric column reported rather than raised, and a zero average forced
+     to a positive sign. Ported before anything was deleted; deleting the class first
+     would have dropped them silently.
+   - Five `assert_not_called` lines and four stand-ins in `test_metadata_view.py` were
+     left asserting on a `Mock` of a method that no longer exists. Removed rather than
+     kept: a mock of nothing cannot fail.
+
+   *The entry as it stood, which held in full:* with the last caller converted the
+   helper goes to `MetaModel`, the published plugin base sheds numpy, and that is the
+   last rule-2 point, or the floor.
 7. **4e - much smaller than recorded.** The View layer's only read/write sites are
    `MetaSubsetTabView._load_filter` (`:495-503`) and `_save_filter` (`:875-883`), both JSON
    round-trips; every other hit is `QFileDialog` path selection, which 4e keeps in the View
