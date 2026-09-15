@@ -10,6 +10,75 @@ which ran through August 2026 and is complete. The step numbers only date the de
 
 ---
 
+## 2026-09-15 - The barcode search stays a pruned walk, not an exact DP
+
+**Context.** `_select_barcode_peaks` scores every legal set of `Number of peaks` type-1
+candidates, which is exponential in how many candidates fall inside one `max_distance`
+window.
+
+**Decision.** Keep the depth-first walk with its two exact prunes and the
+`BARCODE_SEARCH_NODE_CAP` bound. An exact `O(N*d^2*k)` DP over `(prev, last, count)` was
+built and discarded.
+
+**Evidence.** The DP agreed with the walk on 400 random events but ran **2-12x slower at
+every size measured**: the cost prune fires almost immediately on a near-ideal barcode,
+while the DP always pays its full state space. Walk cost per event runs ~70 us on a clean
+4-peak barcode, ~500 us at 16 candidates with `Number of peaks` 6, and ~8.5 ms on a
+40-candidate event with the window opened wide.
+
+**Separately, what the objective can and cannot discriminate.** The search is exact
+(verified against brute-force enumeration); whether it prefers the *true* barcode is a
+different question. Recovery of a planted 4-peak barcode over 60 random events per cell:
+100% with no strays at any jitter, 95% with 2-4 strays, 85-90% with 8, and **43% with 16
+strays** at +/-3 us jitter on a 45 us period (3% at +/-12 us). Strays there carry ECDs
+uniform over 0.3-6.0 against a label ECD of 2.0, so some sit essentially on the label
+value; real folds and blips should separate more easily.
+
+**Revisit** if a real dataset is peak-dense enough to hit the node cap routinely, which
+the log names, or if the weights prove unable to separate real strays.
+
+---
+
+## 2026-09-15 - Prominence classification is fitted on log values, accepting a new failure mode
+
+**Context.** The upper normalized-prominence population is right-skewed; a log-normal was
+measured to beat a Gaussian on it by 24% RMS. Fitting a log-normal component directly
+would break the six-element `params` contract shared by the plotting code and all three
+classifiers, so the input is transformed instead (`PROMINENCE_FIT_LOG_SCALE`).
+
+**Decision.** Fit `log10(normalized_prominence)`, and accept that the log fit can fail
+outright where the linear one only degraded.
+
+**Evidence.** Synthetic double-log-normal data, 600 peaks per trial, medians 0.2 and 0.6,
+sigma_log 0.45, 12 trials: the linear fit returned `n_components = 1` in **10 of 12**
+trials and recovered the true classes **61%** of the time, against **1 of 12** and **85%**
+on the log scale. The cost is that the log fit raised "could not fit a double Gaussian"
+in **2 of 12**, where the linear fit never did - an exception classifies nothing at all
+rather than degrading to a coarser rung.
+
+**Revisit** on the first real dataset moved onto this scale; `PROMINENCE_FIT_LOG_SCALE =
+False` restores the linear fit for a side-by-side.
+
+---
+
+## 2026-09-15 - `num_sublevels` stays in the events table
+
+**Context.** Four event fields and one sublevel field became `PRIVATE_EVENT_METADATA` /
+`PRIVATE_SUBLEVEL_METADATA` and are no longer persisted. `num_sublevels` was considered
+alongside them and kept.
+
+**Decision.** Leave it. It is not the plugin's to drop.
+
+**Evidence.** `MetaEventFitter._define_metadata_types` injects it after the plugin's dict
+is built, and it is a hard-coded `NOT NULL` column in `SQLiteDBWriter`'s `CREATE TABLE
+events` alongside `start_time` and `event_id`. Suppressing it plugin-side would leave the
+writer inserting no value into a `NOT NULL` column.
+
+**Revisit** only as part of a wider breaking change that moves both the ABC's injected
+fields and the writer's fixed schema.
+
+---
+
 ## 2026-09-14 - The logscale helper lands on MetaModel before its callers convert
 
 **Context.** `_logscale_and_filter_multiple_columns` is **115 lines** on `MetaView` with

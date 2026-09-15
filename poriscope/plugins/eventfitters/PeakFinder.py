@@ -165,7 +165,17 @@ class PeakFinder(MetaEventFitter):
     #: is the only gate it needs: the core is about 90% of the sample, so
     #: reaching that floor already requires 34 events, and a separate
     #: minimum-event count in front of it could never be the binding test.
-    DIRECTION_FIT_PERCENTILES = (1.0, 99.0)
+    #:
+    #: NOTE (merge fix): this was briefly (1.0, 99.0). Everything around it
+    #: still described (5.0, 95.0) - the paragraph above ("about 90% of the
+    #: sample", "requires 34 events", which only holds for a 90% core against
+    #: MIN_FIT_BINS = 30), the changelog entry ("5th-95th percentile") and
+    #: test_extremes_are_kept_out_of_the_fit, which trims 5 events off each end
+    #: of a 100-event sample and is what turned CI red. The 98% core that
+    #: (1.0, 99.0) gives leaves five events several decades out in the fit
+    #: sample, which is the exact failure this constant exists to prevent, so
+    #: the value is restored rather than the three descriptions rewritten.
+    DIRECTION_FIT_PERCENTILES = (5.0, 95.0)
 
     #: Whether ``_classify_peak_prominences`` fits the base-10 logarithm of
     #: the normalized prominences rather than the values themselves.
@@ -556,6 +566,55 @@ class PeakFinder(MetaEventFitter):
             return None
 
         return data
+
+    # public API, should generally be left alone by subclasses
+    @log(logger=logger)
+    @override
+    def get_metadata_columns(self, channel: int) -> List[str]:
+        """
+        List the event metadata columns, less this plugin's working values.
+
+        NOTE (merge fix): this override is new. ``PRIVATE_EVENT_METADATA`` is
+        stripped from ``get_single_event_metadata`` and from the declared types
+        and units, but the base ``get_metadata_columns`` reads the keys of
+        ``event_metadata`` directly, so it went on naming the four private
+        fields - leaving the three accessors disagreeing about what a column
+        is. That is what the behavioural conformance suite caught: every
+        produced column must carry a declared type and unit, and the keys of
+        ``get_single_event_metadata`` must be exactly the produced columns.
+        Both hold again once the same tuple is stripped here.
+
+        :param channel: analyze only events from this channel
+        :type channel: int
+        :return: a list of column names
+        :rtype: List[str]
+        """
+        return [
+            column
+            for column in super().get_metadata_columns(channel)
+            if column not in self.PRIVATE_EVENT_METADATA
+        ]
+
+    # public API, should generally be left alone by subclasses
+    @log(logger=logger)
+    @override
+    def get_sublevel_columns(self, channel: int) -> List[str]:
+        """
+        List the sublevel metadata columns, less this plugin's working values.
+
+        The sublevel half of ``get_metadata_columns`` above, stripping
+        ``PRIVATE_SUBLEVEL_METADATA`` for the same reason.
+
+        :param channel: analyze only events from this channel
+        :type channel: int
+        :return: a list of column names
+        :rtype: List[str]
+        """
+        return [
+            column
+            for column in super().get_sublevel_columns(channel)
+            if column not in self.PRIVATE_SUBLEVEL_METADATA
+        ]
 
     # public API, should generally be left alone by subclasses
     @log(logger=logger)
@@ -5188,8 +5247,8 @@ class PeakFinder(MetaEventFitter):
             return popt, pcov, residual
 
         candidates = []
-        errors = []
-        for use_offset in (True, False) if self.FIT_CONSTANT_OFFSET else (False,):
+        attempts = (True, False) if self.FIT_CONSTANT_OFFSET else (False,)
+        for use_offset in attempts:
             try:
                 if use_offset:
                     # Seeded at the emptiest decile's median count, which is
@@ -5215,11 +5274,23 @@ class PeakFinder(MetaEventFitter):
                     )
                 else:
                     candidates.append(run(list(p0), lower, upper))
-            except (RuntimeError, ValueError) as e:
-                errors.append(e)
-
-        if not candidates:
-            raise errors[0]
+            except (RuntimeError, ValueError):
+                # NOTE (merge fix, not a behavioural rewrite): this used to
+                # collect each failure in an `errors` list and, after the loop,
+                # `raise errors[0]`. That is a re-raise of a *variable*, and
+                # pydoclint cannot see through it - it read the raised type as
+                # `errors` and failed DOC503 against the documented
+                # RuntimeError/ValueError, which is what turned CI red. Raising
+                # from inside the handler instead lets pydoclint resolve the
+                # types from the `except` clause. The guard keeps the original
+                # rule intact: a failure is fatal only when nothing has
+                # succeeded and no attempt is left, so the seven-parameter fit
+                # failing first can still be rescued by the six-parameter one.
+                # The only change is which of two failures propagates - the
+                # last now rather than the first - and both callers catch
+                # `(RuntimeError, ValueError)` without inspecting it.
+                if not candidates and use_offset == attempts[-1]:
+                    raise
 
         # The seven-parameter fit wins ties, and near-ties. Where there is no
         # background to find the constant converges to ~0 and the two fits are
