@@ -171,6 +171,8 @@ class MetaSubsetTabController(MetaController):
         self.view.raw_filter_validation_requested.connect(self.validate_raw_filter)
         self.view.event_id_cache_requested.connect(self.load_event_id_cache)
         self.view.scatterplot_requested.connect(self.filter_scatterplot)
+        self.view.filters_load_requested.connect(self.load_filters)
+        self.view.filters_save_requested.connect(self.save_filters)
 
     @log(logger=logger)
     @Slot(object, object, object, object, str)
@@ -214,6 +216,60 @@ class MetaSubsetTabController(MetaController):
             )
             return
         self.view.set_scatterplot(filtered, ax, axis_labels, dataset_label)
+
+    @log(logger=logger)
+    @Slot(str, str)
+    def load_filters(self, path: str, loader: str) -> None:
+        """
+        Read a saved filter file and hand its contents to the View.
+
+        A file that cannot be read, or that does not hold a JSON object, is reported
+        here and nothing is handed back - so the tab's existing filters are left
+        exactly as they were rather than half replaced.
+
+        :param path: the file the user chose
+        :type path: str
+        :param loader: the loader the filters will be validated against
+        :type loader: str
+        :return: None
+        :rtype: None
+        """
+        try:
+            new_filters = self.model.load_filters(path)
+        except (OSError, ValueError) as e:
+            message = f"Failed to load filters from {path}: {e}"
+            self.logger.error(message)
+            self.add_text_to_display.emit(message, self.__class__.__name__)
+            return
+
+        self.view.set_loaded_filters(new_filters, loader)
+        self.logger.info(f"Filters loaded from {path}")
+
+    @log(logger=logger)
+    @Slot(str, object)
+    def save_filters(self, path: str, filters: Dict[str, str]) -> None:
+        """
+        Write the tab's filters to the file the user chose.
+
+        A failure used to reach the log only, so a full disk or a read-only folder
+        looked exactly like a successful save.
+
+        :param path: the file the user chose
+        :type path: str
+        :param filters: the filters to write, keyed by name
+        :type filters: Dict[str, str]
+        :return: None
+        :rtype: None
+        """
+        try:
+            self.model.save_filters(path, filters)
+        except OSError as e:
+            message = f"Failed to save filters to {path}: {e}"
+            self.logger.error(message)
+            self.add_text_to_display.emit(message, self.__class__.__name__)
+            return
+
+        self.logger.info(f"Filters saved to {path}")
 
     @log(logger=logger)
     @Slot(str, object, object)

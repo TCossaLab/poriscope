@@ -24,7 +24,6 @@
 # Alejandra Carolina González González
 # Kyle Briggs
 
-import json
 import logging
 import os
 from abc import abstractmethod
@@ -151,6 +150,16 @@ class MetaSubsetTabView(MetaView):
     #: ``filtered_event_ids`` a statement later, so clearing the answer, emitting and
     #: reading it back leaves every one of them untouched.
     event_id_cache_requested = Signal(str, object, object)
+
+    #: Asks for a saved filter file to be read: the path the user chose and the
+    #: loader its filters will be validated against. Answered through
+    #: ``set_loaded_filters``, or not at all if the file could not be read.
+    filters_load_requested = Signal(str, str)
+
+    #: Asks for the current filters to be written to the path the user chose.
+    #: Fire and forget - a failure is reported on the status panel rather than
+    #: answered.
+    filters_save_requested = Signal(str, object)
 
     #: Asks for a scatterplot's columns to be filtered and log-scaled: the raw
     #: columns, their log flags, and the drawing context handed back unchanged.
@@ -490,16 +499,11 @@ class MetaSubsetTabView(MetaView):
     @log(logger=logger)
     def _load_filter(self, parameters: Dict[str, Any]) -> None:
         """
-        Append filters from a JSON file, rejecting the whole file on a name clash.
+        Ask for a saved filter file, having asked the user which one.
 
-        Promoted from both subset tabs in Step 4a. The copies diverged once, and
-        ``ProteinView``'s is taken: a filter whose name ends in ``_raw`` is stored
-        as it is instead of being sent through ``construct_metadata_query``, which
-        builds a WHERE clause and so cannot validate a complete SELECT. Measured
-        consequence of not bypassing it: the query is built anyway, with the raw
-        SELECT spliced in after ``WHERE`` and an empty debug message, so the
-        validation *succeeds* and the filter is committed as
-        ``<name>_raw_assisted`` - renamed, and reclassified as an assisted filter.
+        Picking the path is the widget's - it is a file dialog - and reading it is
+        not, so this half ends at the intent and ``set_loaded_filters`` does the
+        rest.
 
         :param parameters: Dictionary with 'db_loader'.
         :type parameters: Dict[str, Any]
@@ -510,31 +514,35 @@ class MetaSubsetTabView(MetaView):
         if not path:
             return
 
-        try:
-            with open(path, "r") as f:
-                new_filters = json.load(f)
-        except (OSError, json.JSONDecodeError) as e:
-            message = f"Failed to load filters from {path}: {e}"
-            self.logger.error(message)
-            self.add_text_to_display.emit(message, self.__class__.__name__)
-            return
+        self.filters_load_requested.emit(path, parameters.get("db_loader") or "")
 
-        if not isinstance(new_filters, dict):
-            message = (
-                f"Invalid filter file format in {path}: expected a dictionary, "
-                f"got {type(new_filters).__name__}."
-            )
-            self.logger.error(message)
-            self.add_text_to_display.emit(message, self.__class__.__name__)
-            return
+    @log(logger=logger)
+    def set_loaded_filters(self, new_filters: Dict[str, str], loader: str) -> None:
+        """
+        Append filters read from a file, rejecting the whole file on a name clash.
 
+        A filter whose name ends in ``_raw`` is stored as it is instead of being sent
+        through ``construct_metadata_query``, which builds a WHERE clause and so
+        cannot validate a complete SELECT. Measured consequence of not bypassing it:
+        the query is built anyway, with the raw SELECT spliced in after ``WHERE`` and
+        an empty debug message, so the validation *succeeds* and the filter is
+        committed as ``<name>_raw_assisted`` - renamed, and reclassified as an
+        assisted filter.
+
+        :param new_filters: the filters the file held, keyed by name
+        :type new_filters: Dict[str, str]
+        :param loader: the loader to validate against, empty if none is selected
+        :type loader: str
+        :return: None
+        :rtype: None
+        """
         # All or nothing: a partial load would leave the user guessing which half
         # of the file arrived.
         existing_names = set(self.subset_filters.keys())
         duplicate_names = existing_names & set(new_filters.keys())
         if duplicate_names:
             message = (
-                f"Duplicate filter names found when loading from {path}: "
+                "Duplicate filter names found when loading: "
                 f"{', '.join(duplicate_names)}. No filters were loaded."
             )
             self.logger.warning(message)
@@ -542,7 +550,6 @@ class MetaSubsetTabView(MetaView):
             return
 
         combo = self._subset_controls.filter_comboBox
-        loader = parameters.get("db_loader")
 
         if not loader:
             self.logger.warning("No loader found - filters loaded but not validated.")
@@ -560,7 +567,6 @@ class MetaSubsetTabView(MetaView):
                 combo.selectItem(name, select=True)
 
         combo.refreshDisplayText()
-        self.logger.info(f"Filters loaded from {path}")
 
     @log(logger=logger)
     def _reject_non_select_raw_filter(self, filter_text: str) -> bool:
@@ -913,8 +919,14 @@ class MetaSubsetTabView(MetaView):
     @log(logger=logger)
     def _save_filter(self) -> None:
         """
-        Save the current filters to a JSON file.
+        Ask for the current filters to be written, having asked the user where.
 
+        Picking the path is the widget's and writing the file is not, so this half
+        ends at the intent. Nothing comes back: there is nothing to draw, and a
+        failure is reported on the status panel by the half that can see it.
+
+        :return: None
+        :rtype: None
         """
         if not self.subset_filters:
             self.logger.info("There are no filters to save.")
@@ -926,12 +938,7 @@ class MetaSubsetTabView(MetaView):
         if not path:
             return
 
-        try:
-            with open(path, "w") as f:
-                json.dump(self.subset_filters, f, indent=4)
-            self.logger.info(f"Filters saved to {path}")
-        except Exception as e:
-            self.logger.error(f"Failed to save filters: {e}")
+        self.filters_save_requested.emit(path, dict(self.subset_filters))
 
     @log(logger=logger)
     def set_query(self, query: str, table_name: str) -> None:

@@ -49,9 +49,6 @@ Run with:
     pytest tests/unit/views/test_protein_view.py -v
 """
 
-import json
-import os
-import tempfile
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -1033,16 +1030,18 @@ class TestOnRawFilterValidated:
 
 class TestSaveLoadFilter:
     @patch("poriscope.utils.MetaSubsetTabView.QFileDialog.getSaveFileName")
-    def test_save_filter_writes_json(self, mock_dialog, mock_view):
-        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as fp:
-            path = fp.name
-        mock_dialog.return_value = (path, "JSON Files (*.json)")
+    def test_save_filter_asks_for_the_path_and_the_filters(
+        self, mock_dialog, mock_view
+    ):
+        """Writing the file is the model's; choosing where is still the dialog's."""
+        mock_dialog.return_value = ("/tmp/filters.json", "JSON Files (*.json)")
         mock_view.subset_filters = {"f1": "dur>100", "f2": "dur<500"}
+
         mock_view._save_filter()
-        with open(path) as f:
-            data = json.load(f)
-        assert data == {"f1": "dur>100", "f2": "dur<500"}
-        os.unlink(path)
+
+        path, filters = mock_view.filters_save_requested.emit.call_args.args
+        assert path == "/tmp/filters.json"
+        assert filters == {"f1": "dur>100", "f2": "dur<500"}
 
     @patch("poriscope.utils.MetaSubsetTabView.QFileDialog.getSaveFileName")
     def test_save_filter_empty_is_noop(self, mock_dialog, mock_view):
@@ -1050,29 +1049,18 @@ class TestSaveLoadFilter:
         mock_view._save_filter()
         mock_dialog.assert_not_called()
 
-    @patch("poriscope.utils.MetaSubsetTabView.QFileDialog.getOpenFileName")
-    def test_load_filter_adds_filters(self, mock_dialog, mock_view):
-        filters = {"loaded_f": "dur>50"}
-        with tempfile.NamedTemporaryFile(suffix=".json", delete=False, mode="w") as fp:
-            json.dump(filters, fp)
-            path = fp.name
-        mock_dialog.return_value = (path, "JSON Files (*.json)")
-        # No loader → else-branch adds filter directly without validation
-        mock_view._load_filter({"db_loader": None})
-        assert "loaded_f" in mock_view.subset_filters
-        os.unlink(path)
+    def test_loaded_filters_are_added(self, mock_view):
+        """No loader, so the else-branch adds the filter without validating it."""
+        mock_view.set_loaded_filters({"loaded_f": "dur>50"}, "")
 
-    @patch("poriscope.utils.MetaSubsetTabView.QFileDialog.getOpenFileName")
-    def test_load_filter_blocks_duplicates(self, mock_dialog, mock_view):
+        assert "loaded_f" in mock_view.subset_filters
+
+    def test_loaded_filters_block_duplicates(self, mock_view):
         mock_view.subset_filters = {"existing": "dur>0"}
-        filters = {"existing": "dur>999"}
-        with tempfile.NamedTemporaryFile(suffix=".json", delete=False, mode="w") as fp:
-            json.dump(filters, fp)
-            path = fp.name
-        mock_dialog.return_value = (path, "JSON Files (*.json)")
-        mock_view._load_filter({})
+
+        mock_view.set_loaded_filters({"existing": "dur>999"}, "")
+
         assert mock_view.subset_filters["existing"] == "dur>0"
-        os.unlink(path)
 
     @patch("poriscope.utils.MetaSubsetTabView.QFileDialog.getOpenFileName")
     def test_load_filter_no_path_is_noop(self, mock_dialog, mock_view):

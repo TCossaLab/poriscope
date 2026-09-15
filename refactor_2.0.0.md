@@ -28,8 +28,8 @@ records this plan making four times. Its 38 is 30 removable lines from a byte-id
 
 ## Step 4 closeout - the commit series, planned 2026-09-14 at `a1ef5906`
 
-**What is left of Step 4**: 4c's remainder with 3d riding it, 4e, the event-plot promotion,
-and the 4a exit-review item. Allowlist **8**, every entry rule 2. Duplication in the three
+**What is left of Step 4**: the event-plot promotion, the 4a exit-review item, the
+docstring sweep and the closing documentation pass. Allowlist **8**, every entry rule 2. Duplication in the three
 analysis-tab families **31**.
 
 ### The surface, re-measured - and smaller than the 4d handoff recorded
@@ -302,12 +302,31 @@ sites are converted**, and they sit in Clustering (1), Metadata (5) and Protein 
    *The entry as it stood, which held in full:* with the last caller converted the
    helper goes to `MetaModel`, the published plugin base sheds numpy, and that is the
    last rule-2 point, or the floor.
-7. **4e - much smaller than recorded.** The View layer's only read/write sites are
-   `MetaSubsetTabView._load_filter` (`:495-503`) and `_save_filter` (`:875-883`), both JSON
-   round-trips; every other hit is `QFileDialog` path selection, which 4e keeps in the View
-   by design. `MetadataView._export_csv_subset`, the audit's only 4e target, was already
-   converted by 4a commit 5 and wants re-checking rather than moving. **Moves no gate** -
-   say so before starting, method rule 38.
+7. **4e - LANDED 2026-09-14.** **No gate moved**, as predicted: allowlist stays 2,
+   duplication stays 31 in the three analysis-tab families. The two JSON round-trips
+   became `MetaModel.load_filters`/`save_filters`, reached through
+   `filters_load_requested`/`filters_save_requested` and answered by
+   `MetaSubsetTabView.set_loaded_filters`, which holds the duplicate-name refusal, the
+   `_raw` validation bypass and the combobox work. Both `QFileDialog` calls stay in the
+   View, which is what 4e always intended.
+
+   Two things the split changed for the user, both consequences of having somewhere to
+   report from: a filter file that cannot be read, or that does not hold a JSON object,
+   now says so on the status panel and leaves the tab's existing filters untouched
+   instead of raising past the widget; and a save that fails - a full disk, a read-only
+   folder - is reported rather than logged, where before it was indistinguishable from a
+   save that worked.
+
+   **Method rule 52 for the fifth time**: neither converted slot arrived with a test, so
+   the branch added 9 on `MetaModel` and 9 on `MetaSubsetTabController`, each class
+   checked against a deliberate source mutation - five mutations, all five failed the
+   class they were aimed at. `MetadataView._export_csv_subset`, the audit's only 4e
+   target, was re-checked as the entry asked and is still correctly converted.
+
+   *The entry as it stood, which held:* the View layer's only read/write sites are
+   `MetaSubsetTabView._load_filter` and `_save_filter`, both JSON round-trips; every
+   other hit is `QFileDialog` path selection, which 4e keeps in the View by design.
+   **Moves no gate** - say so before starting, method rule 38.
 8. **The promotion review.** `load_event_plot_data` is **108 and 113 lines** now, down from
    122/129 before 4b moved the query construction out. Judge it now that 4b has landed;
    the two `resolve_event_ids` on the Models are the better merge candidate and want a

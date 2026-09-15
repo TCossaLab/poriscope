@@ -758,35 +758,29 @@ class TestLoadFilterWasPromoted:
 
     def test_the_base_owns_the_only_copy(self) -> None:
         """Neither tab may keep its own, or the promotion was partial."""
-        assert "_load_filter" in MetaSubsetTabView.__dict__
-        for view_cls in SUBSET_TABS:
-            assert "_load_filter" not in view_cls.__dict__, view_cls.__name__
+        for name in ("_load_filter", "set_loaded_filters"):
+            assert name in MetaSubsetTabView.__dict__
+            for view_cls in SUBSET_TABS:
+                assert name not in view_cls.__dict__, f"{view_cls.__name__}.{name}"
 
     @pytest.mark.parametrize("view_cls", SUBSET_TABS, ids=lambda c: c.__name__)
     def test_a_raw_filter_is_stored_without_validation(
-        self,
-        qapp: object,
-        view_cls: type,
-        tmp_path: object,
-        monkeypatch: pytest.MonkeyPatch,
+        self, qapp: object, view_cls: type
     ) -> None:
         """
         ProteinView's bypass, which MetadataView lacked.
 
         Saving a raw filter and loading it back has to return the same name, or the
         filter stops being a raw filter - nothing downstream recognises
-        ``*_raw_assisted``.
+        ``*_raw_assisted``. Reading the file is the model's now, so this drives the
+        half that decides what happens to what the file held.
         """
         view = build_subset_tab(view_cls)
-        path = write_filter_file(
-            tmp_path, {"big_events_raw": "SELECT event_id FROM events WHERE dwell > 5"}
-        )
-        monkeypatch.setattr(
-            "poriscope.utils.MetaSubsetTabView.QFileDialog.getOpenFileName",
-            staticmethod(lambda *a, **k: (path, "JSON Files (*.json)")),
-        )
 
-        view._load_filter({"db_loader": "a_loader"})
+        view.set_loaded_filters(
+            {"big_events_raw": "SELECT event_id FROM events WHERE dwell > 5"},
+            "a_loader",
+        )
 
         assert view.subset_filters == {
             "big_events_raw": "SELECT event_id FROM events WHERE dwell > 5"
@@ -795,29 +789,43 @@ class TestLoadFilterWasPromoted:
 
     @pytest.mark.parametrize("view_cls", SUBSET_TABS, ids=lambda c: c.__name__)
     def test_with_no_loader_everything_is_stored_unvalidated(
-        self,
-        qapp: object,
-        view_cls: type,
-        tmp_path: object,
-        monkeypatch: pytest.MonkeyPatch,
+        self, qapp: object, view_cls: type
     ) -> None:
         """Both copies already agreed on this; it is asserted so the merge kept it."""
         view = build_subset_tab(view_cls)
-        path = write_filter_file(
-            tmp_path, {"long_events": "dwell > 5", "raw_one_raw": "SELECT 1"}
-        )
-        monkeypatch.setattr(
-            "poriscope.utils.MetaSubsetTabView.QFileDialog.getOpenFileName",
-            staticmethod(lambda *a, **k: (path, "JSON Files (*.json)")),
-        )
 
-        view._load_filter({"db_loader": None})
+        view.set_loaded_filters(
+            {"long_events": "dwell > 5", "raw_one_raw": "SELECT 1"}, ""
+        )
 
         assert view.subset_filters == {
             "long_events": "dwell > 5",
             "raw_one_raw": "SELECT 1",
         }
         view.global_signal.emit.assert_not_called()
+
+    @pytest.mark.parametrize("view_cls", SUBSET_TABS, ids=lambda c: c.__name__)
+    def test_the_dialog_half_only_asks(
+        self,
+        qapp: object,
+        view_cls: type,
+        tmp_path: object,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """
+        Choosing the file is the widget's job and reading it is not, so the request
+        half touches no filter at all - not even one the file holds.
+        """
+        view = build_subset_tab(view_cls)
+        path = write_filter_file(tmp_path, {"long_events": "dwell > 5"})
+        monkeypatch.setattr(
+            "poriscope.utils.MetaSubsetTabView.QFileDialog.getOpenFileName",
+            staticmethod(lambda *a, **k: (path, "JSON Files (*.json)")),
+        )
+
+        view._load_filter({"db_loader": "a_loader"})
+
+        assert view.subset_filters == {}
 
 
 # ===========================================================================

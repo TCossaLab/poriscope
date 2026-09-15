@@ -94,6 +94,10 @@ def view(mocker: MockerFixture, mock_qt_dependencies: None) -> MetadataView:
     # has been deleted".
     view_instance.filter_validation_requested = mocker.Mock()
     view_instance.raw_filter_validation_requested = mocker.Mock()
+    # The filter file's two intents. Answered by MetaSubsetTabController in the real
+    # app; the tests that drive the answer call set_loaded_filters directly.
+    view_instance.filters_load_requested = mocker.Mock()
+    view_instance.filters_save_requested = mocker.Mock()
     # The two Step 4a subset intents, answered from whatever a test parked as
     # canned_*. Wired here rather than per test because _overlay_plot clears the
     # answers before emitting, so every test that drives it needs the replay.
@@ -2929,8 +2933,6 @@ def test_save_filter_opens_file_dialog(
         "poriscope.utils.MetaSubsetTabView.QFileDialog.getSaveFileName",
         return_value=("/path/to/filters.json", "JSON Files (*.json)"),
     )
-    mocker.patch("builtins.open", mocker.mock_open())
-    mocker.patch("json.dump")
 
     view._save_filter()
 
@@ -2940,54 +2942,54 @@ def test_save_filter_opens_file_dialog(
 def test_save_filter_returns_when_no_path_selected(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify returns when user cancels file dialog."""
+    """Verify nothing is asked for when the user cancels the dialog."""
     view.subset_filters = {"Filter1": "WHERE x > 1"}
     mocker.patch(
         "poriscope.utils.MetaSubsetTabView.QFileDialog.getSaveFileName",
         return_value=("", ""),
     )
-    mock_open = mocker.patch("builtins.open", mocker.mock_open())
 
     view._save_filter()
 
-    mock_open.assert_not_called()
+    view.filters_save_requested.emit.assert_not_called()
 
 
-def test_save_filter_writes_json_to_file(
+def test_save_filter_asks_for_the_path_and_the_filters(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify filters are written to JSON file."""
+    """
+    Choosing the file is the widget's; writing it is not.
+
+    The filters are copied into the request rather than read back off the widget
+    later, so what is written is what was on screen when the user chose the path.
+    """
     view.subset_filters = {"Filter1": "WHERE x > 1", "Filter2": "WHERE y < 10"}
     mocker.patch(
         "poriscope.utils.MetaSubsetTabView.QFileDialog.getSaveFileName",
         return_value=("/path/to/filters.json", "JSON Files (*.json)"),
     )
-    mock_open = mocker.patch("builtins.open", mocker.mock_open())
-    mock_json_dump = mocker.patch("json.dump")
 
     view._save_filter()
 
-    mock_open.assert_called_with("/path/to/filters.json", "w")
-    mock_json_dump.assert_called_once()
+    path, filters = view.filters_save_requested.emit.call_args.args
+    assert path == "/path/to/filters.json"
+    assert filters == {"Filter1": "WHERE x > 1", "Filter2": "WHERE y < 10"}
+    assert filters is not view.subset_filters
 
 
-def test_save_filter_logs_error_on_exception(
+def test_save_filter_asks_for_nothing_when_there_is_nothing_to_save(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify error is logged when save fails."""
-    view.subset_filters = {"Filter1": "WHERE x > 1"}
-    mocker.patch(
-        "poriscope.utils.MetaSubsetTabView.QFileDialog.getSaveFileName",
-        return_value=("/path/to/filters.json", "JSON Files (*.json)"),
+    """No filters means no dialog, not an empty file."""
+    view.subset_filters = {}
+    dialog = mocker.patch(
+        "poriscope.utils.MetaSubsetTabView.QFileDialog.getSaveFileName"
     )
-    mocker.patch("builtins.open", side_effect=OSError("Permission denied"))
 
     view._save_filter()
 
-    # Just verify it doesn't crash
-
-
-# ----------------------------- Load Filter Tests ------------------------------
+    dialog.assert_not_called()
+    view.filters_save_requested.emit.assert_not_called()
 
 
 def test_load_filter_opens_file_dialog(
@@ -2998,12 +3000,8 @@ def test_load_filter_opens_file_dialog(
         "poriscope.utils.MetaSubsetTabView.QFileDialog.getOpenFileName",
         return_value=("/path/to/filters.json", "JSON Files (*.json)"),
     )
-    mocker.patch("json.load", return_value={"Filter1": "WHERE x > 1"})
-    view.metadatacontrols = mocker.Mock()
-    view.metadatacontrols.filter_comboBox = mocker.Mock()
 
-    parameters = {"db_loader": "test_loader"}
-    view._load_filter(parameters)
+    view._load_filter({"db_loader": "test_loader"})
 
     mock_file_dialog.assert_called_once()
 
@@ -3011,143 +3009,85 @@ def test_load_filter_opens_file_dialog(
 def test_load_filter_returns_when_no_path_selected(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify returns when user cancels file dialog."""
+    """Verify nothing is asked for when the user cancels the dialog."""
     mocker.patch(
         "poriscope.utils.MetaSubsetTabView.QFileDialog.getOpenFileName",
         return_value=("", ""),
     )
-    mock_open = mocker.patch("builtins.open", mocker.mock_open())
 
-    parameters = {"db_loader": "test_loader"}
-    view._load_filter(parameters)
+    view._load_filter({"db_loader": "test_loader"})
 
-    mock_open.assert_not_called()
+    view.filters_load_requested.emit.assert_not_called()
 
 
-def test_load_filter_reads_json_from_file(
+def test_load_filter_asks_for_the_path_and_the_loader(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify filters are read from JSON file."""
+    """The loader travels with the request, because the answer is validated against it."""
     mocker.patch(
         "poriscope.utils.MetaSubsetTabView.QFileDialog.getOpenFileName",
         return_value=("/path/to/filters.json", "JSON Files (*.json)"),
     )
-    mock_open = mocker.patch(
-        "builtins.open", mocker.mock_open(read_data='{"Filter1": "WHERE x > 1"}')
-    )
-    mock_json_load = mocker.patch("json.load", return_value={"Filter1": "WHERE x > 1"})
-    view.metadatacontrols = mocker.Mock()
-    view.metadatacontrols.filter_comboBox = mocker.Mock()
 
-    parameters = {"db_loader": "test_loader"}
-    view._load_filter(parameters)
+    view._load_filter({"db_loader": "test_loader"})
 
-    mock_open.assert_called_with("/path/to/filters.json", "r")
-    mock_json_load.assert_called_once()
-
-
-def test_load_filter_raises_for_invalid_format(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
-    """Verify ValueError is raised for non-dict format."""
-    mocker.patch(
-        "poriscope.utils.MetaSubsetTabView.QFileDialog.getOpenFileName",
-        return_value=("/path/to/filters.json", "JSON Files (*.json)"),
-    )
-    mocker.patch("builtins.open", mocker.mock_open(read_data='["not", "a", "dict"]'))
-    mocker.patch("json.load", return_value=["not", "a", "dict"])
-
-    parameters = {"db_loader": "test_loader"}
-    view._load_filter(parameters)
-
-    # Should log error but not crash
-
-
-def test_load_filter_warns_on_duplicate_names(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
-    """Verify warning when duplicate filter names found."""
-    view.subset_filters = {"Filter1": "WHERE x > 1"}
-    mocker.patch(
-        "poriscope.utils.MetaSubsetTabView.QFileDialog.getOpenFileName",
-        return_value=("/path/to/filters.json", "JSON Files (*.json)"),
-    )
-    mocker.patch(
-        "builtins.open", mocker.mock_open(read_data='{"Filter1": "WHERE y < 10"}')
-    )
-    mocker.patch("json.load", return_value={"Filter1": "WHERE y < 10"})
-
-    parameters = {"db_loader": "test_loader"}
-    view._load_filter(parameters)
-
-    # Should log warning and not load
-
-
-def test_load_filter_validates_with_loader_when_provided(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
-    """Verify filters are validated when loader is provided."""
-    mocker.patch(
-        "poriscope.utils.MetaSubsetTabView.QFileDialog.getOpenFileName",
-        return_value=("/path/to/filters.json", "JSON Files (*.json)"),
-    )
-    mocker.patch(
-        "builtins.open", mocker.mock_open(read_data='{"Filter1": "WHERE x > 1"}')
-    )
-    mocker.patch("json.load", return_value={"Filter1": "WHERE x > 1"})
-    view.metadatacontrols = mocker.Mock()
-    view.metadatacontrols.filter_comboBox = mocker.Mock()
-    view.global_signal.emit = mocker.Mock()
-
-    parameters = {"db_loader": "test_loader"}
-    view._load_filter(parameters)
-
-    view.filter_validation_requested.emit.assert_called_once_with(
-        # Step 4d: the name the filter will be stored under travels with the
-        # request, so a validation reply carries everything needed to act on it.
+    assert view.filters_load_requested.emit.call_args.args == (
+        "/path/to/filters.json",
         "test_loader",
-        "WHERE x > 1",
-        "validate_new_filter",
-        "Filter1",
-        None,
     )
 
 
-def test_load_filter_adds_filter_directly_when_no_loader(
+def test_load_filter_carries_an_empty_loader_when_none_is_chosen(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify filter is added directly when no loader provided."""
+    """
+    A missing loader is not a failure - the filters load unvalidated - so it has to
+    survive the round trip as something the answering half can test.
+    """
     mocker.patch(
         "poriscope.utils.MetaSubsetTabView.QFileDialog.getOpenFileName",
         return_value=("/path/to/filters.json", "JSON Files (*.json)"),
     )
-    mocker.patch(
-        "builtins.open", mocker.mock_open(read_data='{"Filter1": "WHERE x > 1"}')
-    )
-    mocker.patch("json.load", return_value={"Filter1": "WHERE x > 1"})
-    view.metadatacontrols = mocker.Mock()
-    view.metadatacontrols.filter_comboBox = mocker.Mock()
 
-    parameters = {}
-    view._load_filter(parameters)
+    view._load_filter({})
 
-    assert "Filter1" in view.subset_filters
+    assert view.filters_load_requested.emit.call_args.args[1] == ""
 
 
-def test_load_filter_logs_error_on_exception(
+def test_set_loaded_filters_warns_on_duplicate_names(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify error is logged when load fails."""
-    mocker.patch(
-        "poriscope.utils.MetaSubsetTabView.QFileDialog.getOpenFileName",
-        return_value=("/path/to/filters.json", "JSON Files (*.json)"),
-    )
-    mocker.patch("builtins.open", side_effect=OSError("File not found"))
+    """All or nothing: a partial load leaves the user guessing which half arrived."""
+    view.subset_filters = {"Filter1": "WHERE x > 1"}
 
-    parameters = {"db_loader": "test_loader"}
-    view._load_filter(parameters)
+    view.set_loaded_filters({"Filter1": "WHERE y < 10"}, "test_loader")
 
-    # Should log error but not crash
+    said = [call.args[0] for call in view.add_text_to_display.emit.call_args_list]
+    assert any("Duplicate filter names" in message for message in said)
+    assert view.subset_filters == {"Filter1": "WHERE x > 1"}
+
+
+def test_set_loaded_filters_validates_with_loader_when_provided(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify filters are validated when a loader is available."""
+    view.subset_filters = {}
+
+    view.set_loaded_filters({"Filter1": "WHERE x > 1"}, "test_loader")
+
+    view.filter_validation_requested.emit.assert_called_once()
+
+
+def test_set_loaded_filters_adds_filter_directly_when_no_loader(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify filters are added directly when no loader is available."""
+    view.subset_filters = {}
+
+    view.set_loaded_filters({"Filter1": "WHERE x > 1"}, "")
+
+    assert view.subset_filters == {"Filter1": "WHERE x > 1"}
+    view.filter_validation_requested.emit.assert_not_called()
 
 
 # ------------------------ Restore Subset Filters (Session Load) Tests --------------------

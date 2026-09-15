@@ -1,5 +1,11 @@
 ## Poriscope 2.0.0: in progress
 
+* **Breaking:** subset filter files are read and written by `MetaModel.load_filters` and `save_filters` rather than in the view, so `MetaSubsetTabView._load_filter` and `_save_filter` only choose the file and `set_loaded_filters` decides what happens to what it held
+
+* **A filter file that cannot be read is now reported on the status panel** and leaves the tab's existing filters untouched, instead of failing with an unhandled error
+
+* **A filter file that cannot be written is now reported on the status panel** - a full disk or a read-only folder used to look exactly like a successful save
+
 * **Breaking:** `MetaView._logscale_and_filter_multiple_columns` is removed. Every plot path now asks its controller for the filtering, which `MetaModel.logscale_and_filter_columns` does, so the published view base no longer carries it - or imports numpy at all
 
 * **Breaking:** the subset tabs' Scatterplot is filtered and log-scaled by `MetaModel.logscale_and_filter_columns` rather than in the view, and the round trip is shared: `scatterplot_requested` and `set_scatterplot` are on `MetaSubsetTabView` and `filter_scatterplot` on `MetaSubsetTabController`, so `MetadataView` and `MetadataController` no longer carry their own
