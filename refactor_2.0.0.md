@@ -1653,13 +1653,18 @@ cheaper after 4a for the reason recorded under 4c below.
   how `1,889 → 31` happened.
 - **A safety net's absence has no signature, so assert the net is armed.** A missing test
   dependency errors at setup rather than failing, which reads as a pass.
+- **A characterization test that fails because the refactor corrected what it pinned is an
+  expected diff, not a regression - if a dated `DECISIONS.md` entry names the correction.**
+  Look for that entry before diagnosing, and rewrite the expectation in the same commit as
+  the change. The practice was already followed case by case; stating it stops the next
+  reader from chasing an intended failure. Rule 74.
 - **A converted slot needs its own test, not just its caller's.** The View tests stub the
   Controller's answer, so they cannot see a wrong call signature or a swallowed failure, and
   no gate covers a method that did not exist before the commit. Rule 52.
 - **Delete a guard the conversion makes unreachable, once you have measured that it is.** A
   Qt slot's exception does not reach the emitter, so a `try/except` around an emit is dead
   code that reads as error handling. Rule 50.
-- Method notes are at **52 rules** in the artifact, grouped by refactor phase; the
+- Method notes are at **74 rules** in the artifact, grouped by refactor phase; the
   artifact is the source material for an end-to-end refactor skill, not only a metrics one.
 
 ### Owed
@@ -1915,7 +1920,19 @@ from `exposed.py` so changing it is breaking.
 | Minimal runnable triad | n/a | ~100 lines | `new_plugin.py` (Step 6) |
 
 Full `pytest` green before every commit, no path arguments and no marker filter.
-`pre-commit run --all-files` is the mypy gate. **Manual Windows pass** driving all five tabs
+`pre-commit run --all-files` is the mypy gate.
+
+**A characterization or golden test that fails because this refactor corrected the
+behaviour it pinned is expected, not a regression** - but only when the commit that
+breaks it carries a dated `DECISIONS.md` entry naming the behaviour it changed. Check for
+that entry before chasing the failure, and rewrite the test's expectation in the *same*
+commit as the change, never in a follow-up: a golden left failing is indistinguishable
+from a defect to whoever reads it next. Absent such an entry, treat the failure as a real
+regression. The goldens themselves were taken after Tier A landed, so they pin a patched
+intermediate state rather than the original defects, which is why this applies to Step 4's
+corrections rather than to the bugs Tier A had already fixed.
+
+**Manual Windows pass** driving all five tabs
 through the walkthrough plus the multiselect popup path — CI is Linux under Xvfb and
 `DECISIONS.md` records that path as structurally unexercisable there.
 
