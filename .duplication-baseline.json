@@ -7,9 +7,9 @@
   },
   "*Model.py": {
     "files": 5,
-    "functions": 57,
-    "identical_bodies": 2,
-    "removable_lines": 38
+    "functions": 53,
+    "identical_bodies": 1,
+    "removable_lines": 8
   },
   "*View.py": {
     "files": 5,

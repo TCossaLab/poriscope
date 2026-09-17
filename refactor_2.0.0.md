@@ -12,23 +12,27 @@ snapshot was the nearest thing that looked like one.
 | - rule 1, View emits | 75 | **0** | 0 |
 | - rule 2, View computation imports | 22 | **2** | 2 (the floor) |
 | - rules 3, 4 and 5 | 10 / 4 / - | **0 / 0 / 0** | 0 |
-| Refactor-coverage audit | - | **84 of 84 pinned** | 100% |
+| Refactor-coverage audit | - | **82 of 82 pinned** | 100% |
 | Duplication, removable - the original 6 families | 1,889 | **721** | - |
-| - `*Model.py`, a 7th family added 2026-09-14 | not measured | **38** | 8 |
+| - `*Model.py`, a 7th family added 2026-09-14 | not measured | **8** | 8 - reached |
 | - the 3 analysis-tab families of the original six | 1,199 | **31** | 31 (floor) |
 | - the 3 Step-5 families, untouched by design | 690 | **690** | Step 5 |
 
 **The duplication rows do not add up to one before/after pair, deliberately.** `*Model.py`
 became a measured family part-way through, so 1,889 never included it and pairing 1,889
 with a seven-family total would compare two different scopes - the mistake method rule 2
-records this plan making four times. Its 38 is 30 removable lines from a byte-identical
+records this plan making four times. Its 38 was 30 removable lines from a byte-identical
 `load_events_by_id` across `MetadataModel` and `ProteinModel`, plus an irreducible 8:
-`MetaModel._init` is abstract, so all five subclasses implement it as `pass`. The
+`MetaModel._init` is abstract, so all five subclasses implement it as `pass`. **The 30
+came out on 2026-09-17**, when `load_events_by_id` and `resolve_event_ids` promoted to a new
+`MetaSubsetTabModel`, so that row is at its target and only the irreducible 8 remain. The
 `*View.py` floor of 31 is `update_plot_features`, decided 2026-09-14.
 
-**The audit is 84 targets, not the 85 the snapshots below record.** `a21b20ec` deleted
-`MetaView._logscale_and_filter_multiple_columns`, which was a target; the set shrank with
-it and nothing came unpinned. Measured at `31437315` and again at `aac92d7e`.
+**The audit is 82 targets, not the 85 the snapshots below record.** It is derived, so it
+falls as the work lands (rule 21): `a21b20ec` deleted
+`MetaView._logscale_and_filter_multiple_columns`, taking it to 84, and the event-plot
+promotion merged four Model targets into two, taking it to 82. Nothing came unpinned at
+either step.
 
 ## Step 4 closeout - the commit series, planned 2026-09-14 at `a1ef5906`
 
@@ -331,10 +335,23 @@ sites are converted**, and they sit in Clustering (1), Metadata (5) and Protein 
    `MetaSubsetTabView._load_filter` and `_save_filter`, both JSON round-trips; every
    other hit is `QFileDialog` path selection, which 4e keeps in the View by design.
    **Moves no gate** - say so before starting, method rule 38.
-8. **The promotion review.** `load_event_plot_data` is **108 and 113 lines** now, down from
-   122/129 before 4b moved the query construction out. Judge it now that 4b has landed;
-   the two `resolve_event_ids` on the Models are the better merge candidate and want a
-   `MetaSubsetTabModel` that does not exist.
+8. **The promotion review - judged 2026-09-17, and it promotes.** The criterion the
+   2026-09-12 `DECISIONS.md` entry set was one or two parameters for the four surviving
+   differences. It needs **one**, `action_label`: the `id, event_id` projection turned out
+   to be read by nothing, Protein's empty-id guard is already recorded as inert on the
+   metadata side, and the messages differ only in wording. Two halves:
+   - **The Model half - LANDED 2026-09-17.** `resolve_event_ids` and `load_events_by_id`
+     move to a new `MetaSubsetTabModel`, which takes `load_filters`/`save_filters` down off
+     `MetaModel` with them. **`*Model.py` duplication 38 -> 8, its recorded target**, and the
+     audit 84 -> 82 as four targets become two. Breaking, and called out as such.
+   - **The Controller and View half - open.** `load_event_plot_data` is 108 and 113 lines
+     and **68 of 72 code lines identical**; it goes to `MetaSubsetTabController` with
+     `event_plot_data_requested` and `set_event_plot_data_generator` (identical code, docstrings
+     differ) going to `MetaSubsetTabView`. Moves no gate - the `*Controller.py` family
+     enumerates the five tab Controllers and not the base, so promoting takes both copies out
+     of the measured set (rules 24 and 36). Two user-visible consequences: the metadata tab's
+     "no data available" wording gains its plot type and the protein tab's gains the event
+     ids, and the metadata tab inherits an empty-request guard that cannot fire.
 9. **The 4a exit-review item.** The protein tab's unresolvable-experiment guard has still
    never run against a real database.
 

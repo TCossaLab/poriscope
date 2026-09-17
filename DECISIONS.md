@@ -10,6 +10,34 @@ which ran through August 2026 and is complete. The step numbers only date the de
 
 ---
 
+## 2026-09-17 - The event-plot Model half promotes, and the projection difference was vestigial
+
+**Context.** The 2026-09-12 entry deferred the event-plot promotion to a named criterion:
+carry the four surviving differences in one or two parameters, or the two chains stay
+separate. The first of the four was `SELECT id, event_id` against `SELECT id`, recorded as
+needed because Protein's caller re-sorts the rows into the order it asked for them in.
+
+**Decision.** Promote. `resolve_event_ids` and `load_events_by_id` move to a new
+`MetaSubsetTabModel`, which also takes `load_filters`/`save_filters` down off `MetaModel`,
+and the projection narrows to `id` for both tabs.
+
+**Evidence.** Nothing reads the `event_id` column: both Controllers use only
+`id_result["id"]`, and the re-sort is in `ProteinView._fetch_event_data:1411`, keyed off the
+`event_id` the loader reports with each event against the requested indices. Narrowing
+Protein's projection and running the full suite failed **7 tests, every one an assertion on
+the query text**; the ordering test passed. So the criterion is met with one parameter,
+`action_label`, not four. `load_events_by_id` was byte-identical, and taking it out
+of the measured family put `*Model.py` duplication at **8, its recorded target** - the five
+`_init` stubs the ABC requires.
+
+**Why a new base rather than `MetaModel`.** The three tabs that read a timeseries have no
+events table to query and no filter file to write. Ruled by Kyle 2026-09-17.
+
+**Revisit** if a third tab becomes database-backed, which would make the base's membership
+a question rather than a pair.
+
+---
+
 ## 2026-09-15 - The barcode search stays a pruned walk, not an exact DP
 
 **Context.** `_select_barcode_peaks` scores every legal set of `Number of peaks` type-1

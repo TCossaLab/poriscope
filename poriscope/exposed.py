@@ -86,6 +86,7 @@ from poriscope.utils.MetaModel import MetaModel
 from poriscope.utils.MetaReader import MetaReader
 from poriscope.utils.MetaSubsetTabController import MetaSubsetTabController
 from poriscope.utils.MetaSubsetTabControls import MetaSubsetTabControls
+from poriscope.utils.MetaSubsetTabModel import MetaSubsetTabModel
 from poriscope.utils.MetaSubsetTabView import MetaSubsetTabView
 from poriscope.utils.MetaView import MetaView
 from poriscope.utils.MetaWriter import MetaWriter
@@ -148,6 +149,7 @@ __all__ = [
     "MetaReader",
     "MetaSubsetTabController",
     "MetaSubsetTabControls",
+    "MetaSubsetTabModel",
     "MetaSubsetTabView",
     "MetaView",
     "MetaWriter",

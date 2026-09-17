@@ -1,5 +1,6 @@
 """
-``MetaModel.load_filters`` and ``save_filters`` - the subset filter file, read and written.
+``MetaSubsetTabModel.load_filters``/``save_filters`` - the subset filter file, read and
+written.
 
 A subset filter is a WHERE clause somebody wrote, and a filter file is a plain JSON
 object of filter name to filter text. The widget that owns the filters picks the path
@@ -12,11 +13,11 @@ from typing import override
 
 import pytest
 
-from poriscope.utils.MetaModel import MetaModel
+from poriscope.utils.MetaSubsetTabModel import MetaSubsetTabModel
 
 
-class _ConcreteModel(MetaModel):
-    """A minimal concrete MetaModel, since the base is abstract."""
+class _ConcreteModel(MetaSubsetTabModel):
+    """A minimal concrete subset-tab Model, since the base is abstract."""
 
     @override
     def _init(self) -> None:
@@ -26,7 +27,7 @@ class _ConcreteModel(MetaModel):
 @pytest.fixture
 def model():
     """
-    A concrete MetaModel to read and write filters with.
+    A concrete subset-tab Model to read and write filters with.
 
     :return: the model under test
     :rtype: _ConcreteModel

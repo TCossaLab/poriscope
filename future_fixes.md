@@ -16,18 +16,6 @@ Read-only investigation and measurement do not.
   `MetaDatabaseLoader` rather than a defect repair - see `future_refactors_and_features.md`
   Part 13. Queued deliberately for after the 2.0.0 refactor.
 
-## `*Model.py` is not a duplication family (2026-09-14)
-
-`measure_duplication.py` measures `*View.py`, `*Controller.py`, `*controls.py`,
-`eventfitters`, `datareaders` and `views/widgets` - **not the five analysis-tab Models**,
-which is where Step 4 has been moving computation. Measured: a `*Model.py` family would
-report **38 removable lines over 2 identical bodies** today, of which 30 are a
-byte-identical `load_events_by_id` pair across `MetadataModel` and `ProteinModel` - a real
-promotion wanting the `MetaSubsetTabModel` that does not exist - and 8 are the five `_init`
-stubs, which are required ABC implementations and so an irreducible floor. Adding the
-family books both; it should land before the closeout's RawData branch, which would
-otherwise create a second identical time-base helper that nothing would notice.
-
 ## The capture-rate plot always reports one row dropped (2026-09-14)
 
 `MetadataController.fit_capture_rate` compares the surviving interval count against the

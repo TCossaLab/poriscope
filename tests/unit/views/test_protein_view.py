@@ -1510,8 +1510,9 @@ class TestFetchEventData:
     def test_the_answer_comes_back_in_the_order_it_was_asked_for(self, mock_view):
         """
         ``load_event_data`` yields in whatever order the database gives, and the
-        navigation cares about the order it requested; the re-sort is why the query
-        selects ``event_id`` alongside ``id``.
+        navigation cares about the order it requested. The re-sort keys off the
+        ``event_id`` the loader reports on each event, against the indices asked
+        for - not off anything the id-resolution query projects.
         """
         mock_view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": ["0"]}}
         mock_view.get_selected_filters = MagicMock(return_value={"Full Dataset": ""})

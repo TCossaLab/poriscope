@@ -30,7 +30,9 @@
 
 * The `PeakFinder` changes above are Nada Kerrouri's, integrated from `feature/peakfinders_1.8.0`
 
-* **Breaking:** subset filter files are read and written by `MetaModel.load_filters` and `save_filters` rather than in the view, so `MetaSubsetTabView._load_filter` and `_save_filter` only choose the file and `set_loaded_filters` decides what happens to what it held
+* **Breaking: the two database-backed tabs' Models now share a `MetaSubsetTabModel` base**, which takes `load_filters` and `save_filters` off `MetaModel` along with the events-table lookups behind an event plot, so a Model that does not back a subset tab no longer inherits them
+
+* **Breaking:** subset filter files are read and written by `MetaSubsetTabModel.load_filters` and `save_filters` rather than in the view, so `MetaSubsetTabView._load_filter` and `_save_filter` only choose the file and `set_loaded_filters` decides what happens to what it held
 
 * **A filter file that cannot be read is now reported on the status panel** and leaves the tab's existing filters untouched, instead of failing with an unhandled error
 

@@ -24,7 +24,6 @@
 # Kyle Briggs
 # Alejandra Carolina González González
 
-import json
 import logging
 from abc import abstractmethod
 from typing import Any, Dict, Generator, List, Mapping, Optional, Sequence, Tuple
@@ -631,44 +630,3 @@ class MetaModel(QObject, metaclass=QObjectABCMeta):
         :rtype: List[npt.NDArray[np.float64]]
         """
         return [np.arange(len(trace)) / samplerate * scale + offset for trace in traces]
-
-    @log(logger=logger)
-    def load_filters(self, path: str) -> Dict[str, str]:
-        """
-        Read a saved set of subset filters back off disk.
-
-        The file is a plain JSON object of filter name to filter text, which is what
-        :meth:`save_filters` writes. Anything else is refused rather than half
-        accepted: a list or a scalar would iterate into something, and the caller
-        would be left holding filters it never asked for.
-
-        :param path: the file to read
-        :type path: str
-        :return: the filters the file holds, keyed by name
-        :rtype: Dict[str, str]
-        :raises ValueError: if the file does not hold a JSON object
-        """
-        with open(path, "r") as handle:
-            filters = json.load(handle)
-
-        if not isinstance(filters, dict):
-            raise ValueError(f"expected a dictionary, got {type(filters).__name__}")
-        return filters
-
-    @log(logger=logger)
-    def save_filters(self, path: str, filters: Mapping[str, str]) -> None:
-        """
-        Write a set of subset filters to disk as JSON.
-
-        Indented, because the file is meant to be readable and hand-editable - a
-        filter is a WHERE clause somebody wrote.
-
-        :param path: the file to write
-        :type path: str
-        :param filters: the filters to write, keyed by name
-        :type filters: Mapping[str, str]
-        :return: None
-        :rtype: None
-        """
-        with open(path, "w") as handle:
-            json.dump(dict(filters), handle, indent=4)

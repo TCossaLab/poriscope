@@ -107,8 +107,26 @@ All three ask for the same two methods: ``_init`` and ``_setup_connections``.
 The Model
 ---------
 
-There is one base, ``MetaModel``, and it asks for ``_init``. Analysis-tab Models are
-where computation and data access belong — see :doc:`metamodel_base`.
+Two bases, and both ask for ``_init``. Analysis-tab Models are where computation and
+data access belong — see :doc:`metamodel_base`.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 26 40 34
+
+   * - Inherit
+     - What it adds
+     - Shipped tabs
+   * - ``MetaModel``
+     - the plugin call, worker management, the logscale filter, plot-data caching
+     - ClusteringModel, RawDataModel, EventAnalysisModel
+   * - ``MetaSubsetTabModel``
+     - the events-table lookups behind an event plot, and the subset filter file's JSON
+     - MetadataModel, ProteinModel
+
+Inherit ``MetaSubsetTabModel`` only if your tab reads its data from a
+``MetaDatabaseLoader``; a tab that reads a timeseries has no events table to query and
+no filter file to write.
 
 The controls panel
 ------------------

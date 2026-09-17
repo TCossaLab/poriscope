@@ -302,10 +302,10 @@ MOVED: Tuple[Tuple[str, str, str], ...] = (
     ),
     # Step 4b, landed 2026-09-13: the query construction moved out of the Controllers
     # and into the Models, which is where Decision A has the plugin call made.
-    ("poriscope/plugins/analysistabs/MetadataModel.py", "resolve_event_ids", "4b"),
-    ("poriscope/plugins/analysistabs/MetadataModel.py", "load_events_by_id", "4b"),
-    ("poriscope/plugins/analysistabs/ProteinModel.py", "resolve_event_ids", "4b"),
-    ("poriscope/plugins/analysistabs/ProteinModel.py", "load_events_by_id", "4b"),
+    # The event-plot promotion merged the four into two on the shared subset base,
+    # so the two per-tab copies are one target each rather than two.
+    ("poriscope/utils/MetaSubsetTabModel.py", "resolve_event_ids", "4b"),
+    ("poriscope/utils/MetaSubsetTabModel.py", "load_events_by_id", "4b"),
     ("poriscope/plugins/analysistabs/ProteinModel.py", "drop_fit_columns", "4b"),
     ("poriscope/plugins/analysistabs/MetadataModel.py", "_log_exp_pdf", "4c"),
     (

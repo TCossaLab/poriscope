@@ -138,7 +138,7 @@ class TestLoadEventPlotData:
         assert controller.model.calls_to("get_experiment_id_by_name") == [("exp1",)]
         assert controller.model.calls_to("query_database_directly") == [
             (
-                "SELECT id, event_id FROM events WHERE event_id IN (4,7) "
+                "SELECT id FROM events WHERE event_id IN (4,7) "
                 "AND experiment_id = 3 AND channel_id = 1",
             )
         ]
@@ -207,7 +207,7 @@ class TestLoadEventPlotData:
         controller.load_event_plot_data("ldr", [4, 7], None, None, None, "events")
 
         assert controller.model.calls_to("query_database_directly") == [
-            ("SELECT id, event_id FROM events WHERE event_id IN (4,7)",)
+            ("SELECT id FROM events WHERE event_id IN (4,7)",)
         ]
 
     def test_an_empty_request_asks_the_loader_nothing(

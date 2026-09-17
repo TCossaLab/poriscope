@@ -20,8 +20,9 @@ So there was nothing to convert and nothing to fix in place. What replaces it is
 refusal at the plot entry points, which is what these tests pin, plus the assertion
 that the dead branch has not come back.
 
-The one thing carried over unchanged is the projection comparison at the bottom: both
-tabs' event-plot chains are live, they differ, and Step 4b has to reconcile them.
+The projection comparison at the bottom used to assert that the two tabs' event-plot
+chains authored *different* queries. They do not any more: the chain is one body on
+``MetaSubsetTabModel``, and the test now pins that.
 """
 
 import inspect
@@ -33,6 +34,7 @@ from poriscope.plugins.analysistabs.MetadataModel import MetadataModel
 from poriscope.plugins.analysistabs.ProteinController import ProteinController
 from poriscope.plugins.analysistabs.ProteinModel import ProteinModel
 from poriscope.plugins.analysistabs.ProteinView import ProteinView
+from poriscope.utils.MetaSubsetTabModel import MetaSubsetTabModel
 from tests.unit.controllers._recording_model import RecordingModel
 from tests.unit.views._qt_mocks import shadow_signals
 
@@ -205,31 +207,30 @@ def test_the_dead_raw_branch_has_not_come_back() -> None:
     assert not hasattr(ProteinController, "_scope_raw_subset_query")
 
 
-def test_the_two_tabs_build_different_projections() -> None:
+def test_the_two_tabs_share_one_projection() -> None:
     """
-    The near-twin event-plot queries in the two tabs are not interchangeable.
+    The near-twin event-plot queries are one body now, and it projects ``id`` alone.
 
-    **Step 4b moved both queries into the Models**, so this reads
-    ``resolve_event_ids`` rather than ``load_event_plot_data``; it used to compare the
-    two Controllers. The protein copy selects ``id, event_id`` because it re-sorts the
-    rows into the order the navigation asked for them in; the metadata copy selects
-    ``id`` alone because it does not.
+    The protein copy used to project ``id, event_id``, recorded in three places as
+    being needed because its caller re-sorts the rows into the order it asked for
+    them in. It is not: ``ProteinView._fetch_event_data`` sorts on the ``event_id``
+    the loader reports with each event, against the indices it requested, so nothing
+    ever read the extra column. Narrowing the projection and running the whole suite
+    failed only assertions on the query text itself.
 
-    That difference is the open question for the promotion to
-    ``MetaSubsetTabController`` (``DECISIONS.md``, 2026-09-09), so it is asserted here
-    rather than left to be rediscovered during the merge. **This test is meant to be
-    rewritten by whichever commit promotes them**, not deleted - which is what Step 4b
-    has just done to it once already.
+    That difference was the open question blocking the promotion, so this test
+    inverts rather than disappearing: what is worth pinning now is that neither tab
+    has grown a copy back.
 
     :return: None
     :rtype: None
     """
-    protein = inspect.getsource(ProteinModel.resolve_event_ids)
-    metadata = inspect.getsource(MetadataModel.resolve_event_ids)
+    shared = inspect.getsource(MetaSubsetTabModel.resolve_event_ids)
 
-    assert "SELECT id, event_id FROM events WHERE" in protein
-    assert "SELECT id FROM events WHERE" in metadata
-    assert "id, event_id" not in metadata
+    assert "SELECT id FROM events WHERE" in shared
+    assert "id, event_id" not in shared
+    assert "resolve_event_ids" not in ProteinModel.__dict__
+    assert "resolve_event_ids" not in MetadataModel.__dict__
 
 
 def test_the_distribution_chain_still_loads_an_assisted_subset(

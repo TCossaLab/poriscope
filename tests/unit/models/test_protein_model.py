@@ -468,23 +468,26 @@ def _authored_query(model, mocker, event_ids, exp_id, channel):
 
 class TestResolveEventIds:
     """
-    The protein copy projects ``id, event_id`` where the metadata copy projects
-    ``id`` alone, because its caller re-sorts the rows into the order it asked for
-    them in and cannot do that from the primary keys. That is one of the real
-    differences the queued promotion review has to preserve, so it is pinned on both
-    sides.
+    Inherited from ``MetaSubsetTabModel`` and projecting ``id`` alone.
+
+    The protein copy used to project the event_id column as well, on the recorded
+    grounds that its caller re-sorts the rows into the order it asked for them in.
+    It does not: ``ProteinView._fetch_event_data`` sorts on the event_id the loader
+    reports with each event, so the extra column was read by nothing. The tests
+    below are the protein-side pin that the shared body still authors the same
+    scoped query.
     """
 
-    def test_projects_id_and_event_id(self, model, mocker):
+    def test_projects_the_primary_key_alone(self, model, mocker):
         query = _authored_query(model, mocker, [7], None, None)
 
-        assert query == "SELECT id, event_id FROM events WHERE event_id IN (7)"
+        assert query == "SELECT id FROM events WHERE event_id IN (7)"
 
     def test_an_experiment_narrows_the_scope(self, model, mocker):
         query = _authored_query(model, mocker, [7, 9], 3, None)
 
         assert query == (
-            "SELECT id, event_id FROM events WHERE event_id IN (7,9) "
+            "SELECT id FROM events WHERE event_id IN (7,9) "
             "AND experiment_id = 3"
         )
 
@@ -492,14 +495,14 @@ class TestResolveEventIds:
         query = _authored_query(model, mocker, [7], None, 2)
 
         assert query == (
-            "SELECT id, event_id FROM events WHERE event_id IN (7) AND channel_id = 2"
+            "SELECT id FROM events WHERE event_id IN (7) AND channel_id = 2"
         )
 
     def test_both_scopes_are_applied_in_order(self, model, mocker):
         query = _authored_query(model, mocker, [7], 3, 2)
 
         assert query == (
-            "SELECT id, event_id FROM events WHERE event_id IN (7) "
+            "SELECT id FROM events WHERE event_id IN (7) "
             "AND experiment_id = 3 AND channel_id = 2"
         )
 
