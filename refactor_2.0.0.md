@@ -860,12 +860,16 @@ Hard blocks:
   read — verified by the allowlist holding at 111 across all four of its commits.
 - `new_plugin.py`'s analysis-tab half is already deferred until this lands; it becomes Step 6.
 - `@register_action` records `func.__name__` and `MetaView.update_actions_from_json` replays
-  via `getattr(self, name)` **on the View**. **5** decorator sites over 4 distinct names
-  (`ClusteringView.py:141`, `MetadataView.py:304`, `:1234`, `ProteinView.py:683`, `:2818`), not
-  the 11 recorded earlier - six of those hits were docstring prose. None is on any move list,
-  but decorated `_update_distribution_ensemble` is the twin of the moving
-  `_update_distribution_individual`, so splitting the pair breaks the symmetry the tests are
-  written against. Moving a decorated method breaks saved `.json` action files.
+  via `getattr(self, name)` **on the View**. **5** decorator sites over **3** distinct names,
+  re-measured 2026-09-17: `_reset_actions` on three Views (`ClusteringView.py:162`,
+  `MetadataView.py:391`, `ProteinView.py:731`), `MetadataView._overlay_plot:1413` and
+  `ProteinView._update_distribution_ensemble:1933`. Not the 4 this file recorded and not the 11
+  before that - six of those hits were docstring prose. Renaming a decorated method breaks
+  saved `.json` action files today, which is why Step 7 replaces the recorded method name with
+  a declared action name; until it does, a conversion that renames one is a breaking change to
+  be taken deliberately rather than by accident. The twin `_update_distribution_individual` is
+  not decorated, so 4c Protein may convert the pair together either way. `DECISIONS.md`,
+  2026-09-17.
 - Any `MetaEventFitter` signature change forces lockstep edits in the three owner-held
   fitters, because `test_plugin_compliance` compares annotations by equality. Check in first.
 
@@ -1945,8 +1949,17 @@ from `exposed.py` so changing it is breaking.
 
 - Breaking-change inventory in `changelog.md`, each called out explicitly, including every
   Decision C contract change.
-- **Action history**: **5** `@register_action` sites over 4 names, replayed by name off the View. Keep them
-  as thin View façades, or ship a name-migration map. Saved `.json` files are user data.
+- **Action history - settled 2026-09-17, and it is a rewrite rather than a migration.**
+  **5** `@register_action` sites over **3** names, all of them private, replayed off the View.
+  Saved `.json` action files carry **no compatibility obligation** - Kyle's ruling, the feature
+  is barely used - so the fix is to record a **declared action name** (`@register_action("overlay_plot")`)
+  instead of `func.__name__`, dispatch replay through the registry those declarations build
+  rather than `getattr`, and keep recorded arguments to small JSON-round-trippable user intent.
+  Method names then move freely, and an unknown action name is reported rather than called.
+  A replayable action must also be a **pure function of its recorded arguments** - today both
+  non-trivial decorated methods read the filter selection off the widget mid-body, so replay
+  applies the *current* selection to a saved request; filed in `future_fixes.md`. Breaking, and
+  called out as such. See `DECISIONS.md`, 2026-09-17.
 - **Session state**: `get_session_state` serializes `self.view.subset_filters`; verify against
   a real 1.x session file after 4d.
 - `CITATION.cff`'s version is a hand-maintained copy of `constants.py`; `release.yml` never

@@ -16,6 +16,18 @@ Read-only investigation and measurement do not.
   `MetaDatabaseLoader` rather than a defect repair - see `future_refactors_and_features.md`
   Part 13. Queued deliberately for after the 2.0.0 refactor.
 
+## Action replay re-reads the filter selection instead of replaying it (2026-09-17)
+
+Both non-trivial `@register_action` methods call `self.get_selected_filters()` inside their
+own bodies - `MetadataView._overlay_plot:1414` and
+`ProteinView._update_distribution_ensemble:1934` - and that reads
+`self._subset_controls.filter_comboBox.getSelectedItems()`, i.e. live widget state. Everything
+else the action needs arrives in its recorded `parameters` dict, so **replaying a saved plot
+applies whichever filters are selected at replay time**, silently, and the plot is not the one
+that was saved. Capture the selection into the recorded payload at record time and pass it in;
+`_reset_actions` already reads nothing. `DECISIONS.md` 2026-09-17 rule 5 is the standing rule
+this violates.
+
 ## Controller-side `call()` is a convention, not a checked invariant (2026-09-17)
 
 `check_mvc_boundary.py`'s rule 5 (`plugin_reaches:530`) bans every route to a data plugin

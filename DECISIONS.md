@@ -10,6 +10,77 @@ which ran through August 2026 and is complete. The step numbers only date the de
 
 ---
 
+## 2026-09-17 - Action replay records a declared action name, not a method name
+
+**Context.** `@register_action` records `func.__name__` with the call's args and kwargs, and
+`MetaView.update_actions_from_json` replays them by `getattr(self, name)(*args, **kwargs)` on
+the **View**. Step 7 left the refactor's obligation as an either/or - thin View facades, or a
+name-migration map - and it had to be settled before the next conversion touches a decorated
+method.
+
+**Decision.** Replay is a record of *what the user did*, so it stays on the View and its
+arguments stay small. What changes is the identifier: a decorated method declares a **stable
+action name**, and replay dispatches through the registry those declarations build rather
+than through `getattr` on whatever the file happens to name. Five rules:
+
+1. **Replay runs on the View.** The thing being replayed is the user's action, not a
+   computation, so the decorated method is the entry point a click reaches. A conversion may
+   move what it computes to the Model; the entry point stays.
+2. **The declared action name is the contract, not the method name.** `@register_action("overlay_plot")`
+   on `_overlay_plot`, so the method may be renamed, split or re-homed freely and the saved
+   files do not care.
+3. **Replay resolves only registered actions.** An unknown name is reported, not called.
+4. **A recorded argument is small, JSON-round-trippable user intent** - a controls panel's
+   `parameters` dict - never data. Arrays and frames are what replay re-derives.
+5. **A replayable action is a pure function of its recorded arguments.** Everything it
+   depends on is captured when the action is recorded and passed in; the body reads **no**
+   widget state. Replay has to reproduce what the user actually did, not press the button
+   again against whatever is in the entry boxes now.
+
+**Backward compatibility is explicitly not a constraint.** Kyle's ruling, 2026-09-17: the
+feature is barely used, so existing `.json` action files may be broken where doing so makes
+the design better. That is what frees rules 2 and 3; protecting those files was the only
+argument for freezing method names, and it was a constraint on every conversion in Step 4 in
+exchange for compatibility nobody is relying on.
+
+**Evidence.** 5 decorator sites over **3** distinct names, re-measured today: `_reset_actions`
+on `ClusteringView:162`, `MetadataView:391` and `ProteinView:731`, plus
+`MetadataView._overlay_plot:1413` and `ProteinView._update_distribution_ensemble:1933` - the
+plan recorded 4, and 11 before that. **All three are private names**, so today's file format is
+coupled to internals, which is exactly what rule 2 undoes. Every recorded argument is already a
+`str` or a `Dict[str, Any]`, so rule 4 is written down rather than imposed.
+
+**Rule 5 is the one with work behind it, and it names a live defect** - filed in
+`future_fixes.md` rather than left here. Both non-trivial decorated methods call
+`self.get_selected_filters()` *inside the body* (`MetadataView._overlay_plot:1414-1755`,
+`ProteinView._update_distribution_ensemble:1934-2038`), and that reads
+`self._subset_controls.filter_comboBox.getSelectedItems()` - live widget state. So replaying a
+saved plot applies **whichever filters are selected now** to a recorded request, silently, and
+the plot that comes back is not the plot that was saved. The fix is to capture the selection
+into the recorded payload at record time, which also makes the decorated method testable
+without a widget and trivially movable by a Step 4 conversion. `_reset_actions` reads nothing
+and already satisfies the rule.
+
+Rule 3 closes a real
+robustness hole rather than a theoretical one: `MetaController.load_actions_from_json` reads a
+user-chosen file with no validation and `update_actions_from_json` does `getattr(self, name, None)`
+and calls it, so any callable attribute on the View is reachable from a shared action file. Not
+a new trust boundary - plugin discovery already executes local `.py` files - but free to close.
+
+**What it settles for 4c Protein.** Only `_update_distribution_ensemble` is decorated, not its
+twin `_update_distribution_individual`, and under rule 2 a rename would no longer matter anyway.
+The pair converts together, and the recorded worry that splitting them breaks replay does not
+arise.
+
+**Not implemented here.** The decorator change, the registry and the replay guard are Step 7
+work; this entry is the decision that stops the next conversion having to take it under
+pressure.
+
+**Revisit** if replay is ever wanted over a Model rather than a View. That would mean recording
+data instead of intent, which is what rule 4 exists to refuse.
+
+---
+
 ## 2026-09-17 - The event-plot Model half promotes, and the projection difference was vestigial
 
 **Context.** The 2026-09-12 entry deferred the event-plot promotion to a named criterion:
