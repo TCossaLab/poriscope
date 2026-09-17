@@ -12,7 +12,7 @@ snapshot was the nearest thing that looked like one.
 | - rule 1, View emits | 75 | **0** | 0 |
 | - rule 2, View computation imports | 22 | **2** | 2 (the floor) |
 | - rules 3, 4 and 5 | 10 / 4 / - | **0 / 0 / 0** | 0 |
-| Refactor-coverage audit | - | **85 of 85 pinned** | 100% |
+| Refactor-coverage audit | - | **84 of 84 pinned** | 100% |
 | Duplication, removable - the original 6 families | 1,889 | **721** | - |
 | - `*Model.py`, a 7th family added 2026-09-14 | not measured | **38** | 8 |
 | - the 3 analysis-tab families of the original six | 1,199 | **31** | 31 (floor) |
@@ -25,6 +25,10 @@ records this plan making four times. Its 38 is 30 removable lines from a byte-id
 `load_events_by_id` across `MetadataModel` and `ProteinModel`, plus an irreducible 8:
 `MetaModel._init` is abstract, so all five subclasses implement it as `pass`. The
 `*View.py` floor of 31 is `update_plot_features`, decided 2026-09-14.
+
+**The audit is 84 targets, not the 85 the snapshots below record.** `a21b20ec` deleted
+`MetaView._logscale_and_filter_multiple_columns`, which was a target; the set shrank with
+it and nothing came unpinned. Measured at `31437315` and again at `aac92d7e`.
 
 ## Step 4 closeout - the commit series, planned 2026-09-14 at `a1ef5906`
 
