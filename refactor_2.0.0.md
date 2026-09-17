@@ -1865,7 +1865,34 @@ correctness issues, then mechanical extractions, then god-methods (coverage firs
   `find_events` reimplementing `reset_channel` inline (three copies of 10 lines — recorded as
   the safest finding in the part); `export_subset_to_csv`'s 4-step pattern ×5 (~65→~15 lines);
   `tuple_builder` defined three times. `MetaController`'s two ~60-line relay methods are
-  **blocked on 4a** — most of that code is deleted rather than extracted.
+  **not extracted but deleted**, by 5e below — 4a emptied the analysis tabs but left three
+  callers standing, so the relay outlived the step that was expected to retire it.
+- **5e retire the signal bus.** 4a took rule 1 to zero and the machinery is still there,
+  because rule 1 counts `global_signal` emits *in analysis-tab Views* and these three sit
+  elsewhere. Measured 2026-09-17, and these are all of them: `MetaModel.generate_report:326`
+  emits `global_signal` for `report_channel_status`, answered into
+  `relay_add_text_to_display`; `MetaView:444` and `:504` emit
+  `data_plugin_controller_signal` for `edit_plugin_settings` and `delete_plugin`. Everything
+  else — `_dispatch_to`, both `MainController.handle_*` methods, both
+  `MetaController._relay_*` methods, and the two `Signal` declarations on all three bases —
+  exists only to serve those three.
+  **The two halves want different fixes.** `generate_report` is an ordinary 4a conversion:
+  the Model calls the plugin through `self.call(...)` and emits its own
+  `add_text_to_display`. The data-plugin pair needs no `call()` at all — both pass `"", ()`
+  as the return function, so neither uses the return-value half, and
+  `DataPluginController` is a true singleton (constructed once at
+  `main_controller.py:69`, never reassigned) with no rename or re-instantiate lifecycle, so
+  Decision A's whole argument for pushing references does not apply to it. A plain
+  `Signal(str, str)` connected to `edit_plugin_settings(metaclass, key)` and
+  `delete_plugin(metaclass, key)` does the same job in less code and is type-checked, which
+  string dispatch can never be.
+  **No urgency, and say why.** All three run through the same swallow-and-log `_dispatch_to`
+  that produced 4a's stale-read bugs, but none of them can reproduce those: the bug needed a
+  failed dispatch to leave a stale value that the next line read back, and here
+  `generate_report`'s answer only reaches a status label while the other two ask for no
+  answer at all. Same class of residual risk, categorically milder — worth doing, cheap, not
+  a live defect. Closing all three is what lets the relay be deleted rather than leaving a
+  second signal built on the same machinery behind.
 - **5c app shell.** `DataPluginController.edit_plugin` (+ `_resolve_plugin_references` and
   `_check_key_available` extractions that shrink it); `MainView`'s 9 menu blocks + 8 handlers
   → table + `functools.partial` (~90→~25 lines); `switch_to_page` duplicating
