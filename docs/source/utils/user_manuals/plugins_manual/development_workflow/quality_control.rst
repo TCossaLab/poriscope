@@ -41,8 +41,10 @@ The following tools are used in Poriscope:
   process spawning; see :ref:`plugin_trust_boundary` below
 - **plugin module-level code check** – rejects code that runs when a plugin is merely
   discovered; see :ref:`plugin_trust_boundary` below
+- **requirements files are UTF-8 with no BOM** – refuses a ``requirements*.txt`` written
+  in UTF-16 or carrying a byte-order mark, which git records as a binary blob
 
-All eight are managed through the **pre-commit** framework.
+All nine are managed through the **pre-commit** framework.
 
 Three further gates are not pre-commit hooks but are enforced just as strictly:
 
@@ -79,13 +81,23 @@ run automatically:
 - ``plugin-module-level`` – blocks import-time code in a data plugin
 - ``settings-schema`` – validates every plugin's declared settings schema
 - ``check-added-large-files`` – blocks files larger than 123 KB
+- ``text-encoding`` – blocks a ``requirements*.txt`` that is not plain UTF-8
 
 ``mypy`` and ``pydoclint`` are both scoped to ``poriscope/`` and do not run against
 ``tests/``. ``ruff-plugin-security`` is scoped to ``poriscope/plugins/``,
-``plugin-module-level`` more narrowly still to the eight data-plugin families, and
+``plugin-module-level`` more narrowly still to the eight data-plugin families,
 ``settings-schema`` to ``poriscope/plugins/**`` — it only needs to run when a
-plugin's settings could have changed. Everything else runs against every tracked
-file.
+plugin's settings could have changed — and ``text-encoding`` to the requirements
+files, which are the ones a shell redirection regenerates. Everything else runs
+against every tracked file.
+
+``text-encoding`` exists because a stock hook does not cover the case. PowerShell's
+``>`` redirection and ``Out-File`` default to UTF-16LE, so ``pip freeze >
+requirements.txt`` at a PowerShell prompt writes a file git treats as binary — which
+is how this repository's ``requirements.txt`` spent its first year unreviewable.
+``pre-commit-hooks``' ``fix-byte-order-marker`` matches the UTF-8 byte-order mark
+only and would pass that file untouched. Pass ``-Encoding utf8`` when regenerating
+either requirements file from PowerShell.
 
 These checks **never modify files**.
 

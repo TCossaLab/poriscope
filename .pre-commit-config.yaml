@@ -96,6 +96,19 @@ repos:
         pass_filenames: false
         files: ^poriscope/plugins/
 
+      # requirements.txt was UTF-16LE with a BOM from the initial commit until
+      # 2026-09-04, because PowerShell's `>` and Out-File default to UTF-16LE -
+      # so `pip freeze > requirements.txt` at a PowerShell prompt reproduces it,
+      # and git treats every revision as a binary blob. pre-commit-hooks'
+      # fix-byte-order-marker does NOT cover this: it matches the UTF-8 BOM only,
+      # and a UTF-16LE file opens with a different two-byte mark entirely.
+      # See DECISIONS.md, 2026-09-17.
+      - id: text-encoding
+        name: requirements files are UTF-8 with no BOM
+        entry: python scripts/check_text_encoding.py
+        language: system
+        files: ^requirements.*\.txt$
+
   # File Size Guard (runs during default commit stage)
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
