@@ -16,6 +16,16 @@ Read-only investigation and measurement do not.
   `MetaDatabaseLoader` rather than a defect repair - see `future_refactors_and_features.md`
   Part 13. Queued deliberately for after the 2.0.0 refactor.
 
+## Controller-side `call()` is a convention, not a checked invariant (2026-09-17)
+
+`check_mvc_boundary.py`'s rule 5 (`plugin_reaches:530`) bans every route to a data plugin
+*except* `call()`, and walks `tab_layer_modules()` as one set without asking which layer a
+module is - so nothing distinguishes a Model making a plugin call from a Controller making
+one. Measured 2026-09-17: **50 `self.model.call(...)` sites across the Controllers, 0 direct
+`self.call(...)`, 6 in the Models** - the narrowness has held on review alone. Consider an
+allowlist of named wiring operations for Controller-side `call()` before the accumulation is
+real; latent today, and the same soft governance as `_get_plugin` staying private.
+
 ## The capture-rate plot always reports one row dropped (2026-09-14)
 
 `MetadataController.fit_capture_rate` compares the surviving interval count against the
