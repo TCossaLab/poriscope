@@ -390,8 +390,6 @@ class ProteinModel(MetaSubsetTabModel):
         )
         return status
 
-
-
     @log(logger=logger)
     def _blockage_fraction(
         self, event: Dict[str, Any], plot_type: str

@@ -487,8 +487,7 @@ class TestResolveEventIds:
         query = _authored_query(model, mocker, [7, 9], 3, None)
 
         assert query == (
-            "SELECT id FROM events WHERE event_id IN (7,9) "
-            "AND experiment_id = 3"
+            "SELECT id FROM events WHERE event_id IN (7,9) " "AND experiment_id = 3"
         )
 
     def test_a_channel_narrows_the_scope(self, model, mocker):

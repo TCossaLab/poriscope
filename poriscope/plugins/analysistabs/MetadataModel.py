@@ -681,8 +681,6 @@ class MetadataModel(MetaSubsetTabModel):
         fit = self._log_exp_pdf(bincenters, rate, amp)
         return bin_edges, bincenters, val, fit, float(rate), float(error)
 
-
-
     @log(logger=logger)
     def _rectify_event_current(
         self,
