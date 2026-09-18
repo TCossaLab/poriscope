@@ -150,8 +150,8 @@ class DataPluginModel(QObject):
         Get every instantiated plugin, keyed by metaclass then by key.
 
         The same registry ``get_instantiated_plugins_list`` reports the *names* of, so
-        the two cannot disagree about what exists. Step 4a needs the instances
-        themselves: an analysis tab calls its plugins directly through
+        the two cannot disagree about what exists. The instances themselves are needed
+        because an analysis tab calls its plugins directly through
         ``MetaModel.call`` rather than over the signal bus, and this is where that map
         comes from. Shallow-copied per level so a receiver cannot mutate the registry.
 

@@ -370,19 +370,18 @@ sites are converted**, and they sit in Clustering (1), Metadata (5) and Protein 
     `rule \d`. **Nothing new is to be written this way from now on**, so the sweep
     only has to cover what is already there.
 
-    **Progress, kept here so a part-done sweep is resumable.** Re-measure with
-    `grep -rcE "Step 4|Step 3|method rule|Decision [A-E]|rule \d+" poriscope/ --include=*.py`
-    and update the count when a file lands; the surface was 181 when the sweep was
-    scoped, 169 after the event-plot promotion deleted some of it, and **27 today**.
-    Done: `MetadataView.py` (26), `ProteinView.py` (16), `MetaSubsetTabView.py` (15),
-    `RawDataView.py` (14), `MetadataController.py` (14) and
-    `MetaSubsetTabController.py` (13), `ClusteringView.py` (12), `ProteinController.py`
-    (8), `RawDataController.py` (7), `MetaModel.py` (6), `ClusteringController.py` (6)
-    and `ClusteringModel.py` (5). Remaining, largest first:
-    `EventAnalysisView` 4, `EventAnalysisController` 4, `MetaEventTabController` 3,
-    `MetaController` 3, `ProteinModel` 3, `MetaView` 2, `MetaEventTabView` 2,
-    `MetadataModel` 2, `main_controller` 2, `add_subset_filter_dialog` 1,
-    `DataPluginModel` 1. One file per commit; docs-only, so no suite run is owed.
+    **Done 2026-09-17.** The surface was 181 when the sweep was scoped, 169 after the
+    event-plot promotion deleted some of it, and **1 now** - a floor, not a miss.
+    `add_subset_filter_dialog.py:58` says "User Guide/MetaData Tab - Step 3", which is a
+    section of the user guide and not this plan; the grep cannot tell them apart.
+    Re-measure with
+    `grep -rnE "Step 4|Step 3|method rule|Decision [A-E]|rule \d+" poriscope/ --include=*.py`.
+    Sixteen files over ten commits, each rewriting the citation as the reason the code is
+    the way it is today. Where a step number was standing in for an invariant, the
+    invariant is now written out - which is most of the value: several sites turned out to
+    be recording a real failure mode (a stale event count deciding which events get
+    plotted, a finder registered with empty time limits forever) that the step reference
+    had been hiding.
 
 11. **A documentation pass over everything Step 4 changed** - added 2026-09-14 at Kyle's
     request, and it closes the series. Every doc touching behaviour Step 4 moved: the

@@ -48,7 +48,7 @@ class MetaEventTabController(MetaController):
     - ``update_available_plugins``, which passes the app-wide plugin registry down to
       both the View and the Model when a plugin is instantiated anywhere.
     - ``_resolve_callable_filter``, which fetches a filter plugin's callable for the
-      paths Step 4a converted, or None where none was asked for or it could not be
+      paths that need one, or None where none was asked for or it could not be
       fetched.
 
     What a subclass owes it:
@@ -86,11 +86,12 @@ class MetaEventTabController(MetaController):
         A filter that cannot be fetched is a warning rather than a failure, because the
         work is still worth doing unfiltered - which is what both Views did.
 
-        Shared rather than copied: Step 4a needs it on RawData's event-plot and
-        event-finding paths and on EventAnalysis's fitting path, and two identical bodies
-        in the ``*Controller.py`` family would have *added* removable lines to the
+        Shared rather than copied: RawData's event-plot and event-finding paths and
+        EventAnalysis's fitting path all need it, and two identical bodies in the
+        ``*Controller.py`` family would *add* removable lines to the
         duplication ratchet. It is stateless and adds no contract, which is what makes it
-        safe on the common base rather than needing an intermediate (method rule 34).
+        safe on the common base: it carries no instance state and adds no abstract
+        hook, so a subclass that never calls it pays nothing.
 
         :param data_filter: the filter plugin's key, or "" for no filtering
         :type data_filter: str

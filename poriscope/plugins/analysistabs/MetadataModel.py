@@ -455,8 +455,8 @@ class MetadataModel(MetaSubsetTabModel):
         """
         Bin every overlaid dataset onto one shared set of edges, and count them.
 
-        The bin decision was already here; Step 4's closeout brought the counting down
-        to join it. Tallying values into bins is aggregation, and the counts are
+        The bin decision and the counting are both here, together. Tallying values into
+        bins is aggregation, and the counts are
         exported with the plot, so the widget should not be doing it - the comment that
         used to say the counting "stays with the drawing" was reasoning from which
         import it needed rather than from whose responsibility it is.
@@ -529,8 +529,8 @@ class MetadataModel(MetaSubsetTabModel):
         """
         Tally how often each category occurs, for every overlaid dataset at once.
 
-        Moved off ``MetadataView`` in Step 4's closeout. Counting occurrences is
-        aggregation rather than drawing, and the tallies are exported with the plot.
+        Counting occurrences is aggregation rather than drawing, and the tallies are
+        exported with the plot, so they are made here rather than in the widget.
         The loop is here rather than a round trip per dataset, for the reason
         :meth:`kernel_densities` records: the bar chart redraws every accumulated
         dataset on each update.
