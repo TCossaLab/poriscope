@@ -84,7 +84,7 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
         ) in kwargs.items():  # set class parameters with kwargs dict for use later
             setattr(self, k, v)
 
-        # Pushed by MainController on every plugin lifecycle event (Step 4a).
+        # Pushed by MainController on every plugin lifecycle event.
         self._plugin_instances: Dict[str, Dict[str, object]] = {}
         self._init()
         self._connect_global_signal()
@@ -159,12 +159,12 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
             df = df.fillna("")
             df.to_csv(file_name, index=False)
 
-    # ---------------------------------------------------------------- Step 4a
-    # Direct access to the data plugins, replacing the return-value signal bus. The
+    # ------------------------------------------------------- the data plugins
+    # The
     # instances arrive from MainController on every plugin lifecycle event and are
     # forwarded straight to the Model, which is where the calls belong; this class
     # keeps a copy so that a Controller-side call is possible where it is genuinely
-    # Controller work. See Decision A in refactor_2.0.0.md.
+    # Controller work.
 
     @log(logger=logger)
     def set_plugin_instances(

@@ -99,8 +99,8 @@ class MetaView(QWidget, WalkthroughMixin, metaclass=QWidgetABCMeta):
         self.available_plugins: Dict[str, List[str]] = {}
         self.progress_bars: Dict[str, Dict[str, Any]] = {}
         # Guards progress_bars, which is per-instance - so this is too. It was a
-        # class attribute until Step 3e, which serialised every tab against every
-        # other for a dict none of them share.
+        # per instance, not a class attribute: one shared lock would serialise every
+        # tab against every other for a dict none of them share.
         self.lock = threading.Lock()
         self._init()
         self._setup_ui()
@@ -249,8 +249,8 @@ class MetaView(QWidget, WalkthroughMixin, metaclass=QWidgetABCMeta):
         """
         Build the tab's controls panel, wire it up, and place it in the layout.
 
-        Concrete since Step 3a-bis. All five tabs carried a copy of this differing only
-        in the widget class, the attribute name it was stored under, and - for the two
+        Concrete rather than abstract. All five tabs carried a copy differing only in
+        the widget class, the attribute name it was stored under, and - for the two
         subset tabs - two extra signal connections. Those three differences are now
         ``_build_controls`` and ``_connect_control_signals``.
 

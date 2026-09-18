@@ -51,21 +51,17 @@ class MetaSubsetTabController(MetaController):
 
     - **Relays into the View.** relay_plot_data, relay_units,
       relay_event_query and the two generator relays hand a Model or plugin result
-      to the View, which is the Model-to-View half of the mediation pattern
-      Decision B keeps.
+      to the View, which is the Model-to-View half of the mediation this layer
+      exists for.
     - **Experiment and column state.** set_experiment_id, set_channel_db_id,
       update_column_names, update_column_units,
       get_experiment_structure_ready and get_experiment_names_for_tree
       forward the loader's description of the database to the View.
     - **Filter validation.** validate_filter and validate_raw_filter answer the
-      View's two validation intents by calling the loader directly, which is what
-      Step 4a replaced a signal-bus round trip with; a failure the bus used to
-      swallow is reported through _refuse_filter.
-      relay_query receives the query the loader built - or
-      the debug message explaining why it could not - and commits, renames or refuses
-      the pending filter accordingly. Promoted in Step 4a: this base's own docstring
-      had recorded it as unshareable because "the two tabs' copies differ", and they
-      differed by one blank line.
+      View's two validation requests by calling the loader directly, so a filter the
+      database refuses is reported through _refuse_filter rather than vanishing.
+      relay_query receives the query the loader built - or the debug message explaining
+      why it could not - and commits, renames or refuses the pending filter accordingly.
     - **Session state.** get_session_state and restore_session_state
       override MetaController's hooks so a tab's subset filters survive a
       save and reload.
@@ -156,8 +152,8 @@ class MetaSubsetTabController(MetaController):
         """
         Wire the four lookups both subset tabs share.
 
-        Step 4a. A subclass with intents of its own overrides this and calls
-        ``super()._setup_connections()`` first, so the shared pair is wired once here
+        A subclass with requests of its own overrides this and calls
+        ``super()._setup_connections()`` first, so the shared ones are wired once here
         rather than repeated in each tab.
 
         :return: None
@@ -402,11 +398,10 @@ class MetaSubsetTabController(MetaController):
         """
         Fetch the ``event_id`` values a subset holds, for the navigation cache.
 
-        Step 4a's last conversion, shared by both subset tabs because
-        ``_rebuild_event_id_cache`` is shared. A failed query leaves the View's answer
-        untouched at ``None``, which is what lets the caller tell "that did not run"
-        from "the subset is empty" - a distinction the bus destroyed by swallowing the
-        failure and leaving the previous call's rows in place.
+        Shared by both subset tabs because ``_rebuild_event_id_cache`` is. A failed
+        query leaves the View's answer at ``None``, which is what lets the caller tell
+        "that did not run" from "the subset is empty" - leaving the previous call's rows
+        in place would make the two indistinguishable and rebuild the cache from them.
 
         :param loader: the database loader plugin's key
         :type loader: str
@@ -442,9 +437,10 @@ class MetaSubsetTabController(MetaController):
         """
         Fetch a loader's column names and hand them to the View.
 
-        Step 4a: the same conversion the reader and loader channel lookups got, against
-        ``MetaDatabaseLoader``. An empty answer is logged rather than pushed, as before -
-        clearing the axis comboboxes would read as "this database has no columns".
+        The same shape as the reader and loader channel look-ups, against
+        ``MetaDatabaseLoader``. An empty answer is logged rather than pushed: clearing the
+        axis comboboxes would read as "this database has no columns" when what happened
+        is that nobody could ask it.
 
         :param loader: the database loader plugin's key
         :type loader: str
@@ -632,11 +628,10 @@ class MetaSubsetTabController(MetaController):
         Validate an assisted subset filter by asking the loader to build a query.
 
         A filter counts as valid if ``construct_metadata_query`` can *build* a query
-        around it; the query itself is thrown away. Step 4a converted the emit that
-        used to do this, and the conversion matters twice over. The bus swallowed
-        every exception, and ``construct_metadata_query`` **raises** for a column it
-        cannot map to a table - so a filter naming a column the database does not
-        have used to vanish with nothing but a log line. It is reported now.
+        around it; the query itself is thrown away. The call is made here rather than
+        from the widget because ``construct_metadata_query`` **raises** for a column it
+        cannot map to a table, and a filter naming a column the database does not have
+        has to reach the user rather than a log line.
 
         The columns are resolved here rather than passed in by the View, and only
         ``events`` columns are asked for. The View used to hand over a hardcoded
@@ -708,12 +703,12 @@ class MetaSubsetTabController(MetaController):
 
         A raw filter is a complete SELECT the loader runs verbatim, so it is checked
         with ``validate_filter_query`` rather than by constructing a query around it.
-        Step 4a converted the emit; as with the assisted path, a failure that the bus
-        swallowed now reaches the user.
+        As on the assisted path, the call is made here so that a failure reaches the
+        user rather than a log line.
 
         ``LIMIT 0`` is appended here rather than by the View. The clause is what makes
         the check cheap - the database parses and plans the filter without returning a
-        row - and choosing it is knowing SQL, which Step 4b takes out of the widget.
+        row - and choosing it is knowing SQL, which a widget has no business doing.
 
         :param loader: the database loader plugin's key
         :type loader: str
@@ -745,10 +740,9 @@ class MetaSubsetTabController(MetaController):
         """
         Report why a filter could not be validated.
 
-        It used to clear the View's pending filter state as well, because a refused
-        name left parked there would have been committed by the next validation that
-        succeeded. Step 4d threads the name through the request instead, so there is
-        nothing parked to go stale and nothing to clear.
+        There is nothing to clear on the way out: the filter's name travels through the
+        request and back rather than being parked on the View, so a refused name cannot
+        be left behind for the next validation that succeeds to commit.
 
         :param message: what to tell the user
         :type message: str
@@ -771,18 +765,12 @@ class MetaSubsetTabController(MetaController):
         r"""
         Relay a query and optional debug message to the view, handling optional filter intents.
 
-        Promoted from both subset tabs in Step 4a. ``MetaSubsetTabController``'s
-        docstring recorded this method as deliberately not shared, because "the two
-        tabs' copies differ" and each reaches into its own View's pending-filter
-        state, with the promotion deferred to Step 4d. Neither half held up: the
-        copies differed **by one blank line**, and both were reaching into the same
-        attributes on ``MetaSubsetTabView`` by then anyway.
-
-        Step 4d finished the job from the other end. There is no pending-filter state
-        left to reach into - ``name``, ``old_name`` and ``filter_text`` arrive as
-        arguments now, carried from the request that asked for the validation - and
-        committing the result goes through ``view.commit_filter`` rather than an
-        assignment into the View's dict.
+        One copy for both subset tabs, and it reaches into no View state:
+        ``name``, ``old_name`` and ``filter_text`` arrive as arguments, carried from the
+        request that asked for the validation, and committing the result goes through
+        ``view.commit_filter`` rather than an assignment into the View's dict. Both
+        matter for the same reason - a value held on the widget between asking and being
+        answered is one the next request can read by mistake.
 
         :param query: SQL query string to display or execute.
         :type query: str

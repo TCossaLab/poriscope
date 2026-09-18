@@ -683,7 +683,7 @@ class MainController(QObject):
         instances = self.data_plugin_controller.get_plugin_instances()
         for val in self.analysis_tabs.values():
             if val:
-                # Step 4a: instances BEFORE names, and the order is load-bearing.
+                # Instances BEFORE names, and the order is load-bearing.
                 # Handing a tab the names populates its comboboxes, and populating a
                 # combobox fires a selection change *synchronously* - which is when the
                 # tab asks the selected loader for its columns. Push the names first and
@@ -831,7 +831,7 @@ class MainController(QObject):
             self.analysis_tabs[subclass].save_tab_action_history.connect(
                 self.save_tab_action_history
             )
-            # Step 4a: instances before names, for the reason given in
+            # Instances before names, for the reason given in
             # update_available_plugins. A tab created after the plugins already exist -
             # which is what restoring a session does - would otherwise get a populated
             # combobox and an empty instance map.

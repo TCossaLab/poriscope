@@ -98,11 +98,11 @@ class MetadataView(MetaSubsetTabView):
     #: units, then hands all three back through ``set_query``, ``update_plot_data``
     #: and ``set_column_units`` - or hands back nothing and reports why.
     #:
-    #: Step 4a replaced three separate ``global_signal`` emits, of which two parked
-    #: their answer on an attribute that was never cleared first: a failed
-    #: ``construct_metadata_query`` left the *previous* subset's query in
-    #: ``self.query``, and a failed ``get_column_units`` appended the previous
-    #: column's units, mislabelling the axis.
+    #: One request rather than three, because the answers are only useful together:
+    #: asking separately meant parking each on an attribute and reading it back, and a
+    #: failure that went unnoticed left the *previous* subset's query or the previous
+    #: column's units in place - a plot drawn and labelled for a subset it did not come
+    #: from.
     metadata_subset_requested = Signal(str, list, str, object)
 
     #: Asks for one event-data subset to be tallied into an all-points histogram: the
@@ -110,9 +110,9 @@ class MetadataView(MetaSubsetTabView):
     #: limits so far, and the label the result is drawn under. Answered through
     #: ``set_all_points_histogram``.
     #:
-    #: Step 4's closeout. The subset used to arrive here as a generator the widget
-    #: walked twice; the events themselves never belonged above the Model, and nothing
-    #: outside the histogram ever read them.
+    #: The events are tallied where they are loaded and only the histogram comes back.
+    #: Nothing outside the histogram reads them, so handing the widget a generator to walk
+    #: would put the whole subset in the View to produce one array.
     all_points_histogram_requested = Signal(
         str, str, object, str, object, bool, object, object, str
     )
@@ -121,9 +121,9 @@ class MetadataView(MetaSubsetTabView):
     #: loader's key, the filter, the scope and the plot type. Answered through
     #: ``set_event_overlay``.
     #:
-    #: Step 4's closeout, and the same reasoning as
-    #: ``all_points_histogram_requested``. The alpha each trace is drawn at stays
-    #: here: it is read by nothing outside the axes it is drawn on.
+    #: Same reasoning as ``all_points_histogram_requested``: the events are reduced where
+    #: they are loaded. The alpha each trace is drawn at stays here, because it is read by
+    #: nothing outside the axes it is drawn on.
     event_overlay_requested = Signal(str, str, object, str)
 
     #: Asks for one column's declared type, which the categorical-histogram guard
@@ -147,9 +147,10 @@ class MetadataView(MetaSubsetTabView):
     #: request, and the drawing context handed back unchanged. Answered through
     #: ``set_heatmap``.
     #:
-    #: Step 4c. The binning uses ``scipy.stats.iqr``, which is why it crosses; the
-    #: imshow, the colourbar and the cache entry all stay here. Step 4's closeout
-    #: sent the NaN and log filtering down with it, so the columns now leave raw.
+    #: The columns leave raw: the NaN mask, the log filter and the binning are one
+    #: calculation and splitting them would compute the surviving row set twice. The
+    #: imshow, the colourbar and the cache entry stay here - they are drawing, and the
+    #: values they use never leave the View.
     heatmap_requested = Signal(
         object, object, object, object, bool, object, str, str, str
     )
@@ -163,9 +164,10 @@ class MetadataView(MetaSubsetTabView):
     #: flag, the bin request, the shared limits so far, and the drawing context
     #: handed back unchanged. Answered through ``set_kernel_densities``.
     #:
-    #: Step 4c. One intent for all the datasets rather than one each, so no answer
-    #: is parked on the widget between them. Step 4's closeout sent the filtering
-    #: and the shared limits down as well, which is why the columns now leave raw.
+    #: One request for every overlaid dataset rather than one each, so no intermediate
+    #: answer is parked on the widget between them. The columns leave raw because the
+    #: filtering and the shared limits are computed from the same surviving rows the
+    #: density is.
     density_requested = Signal(
         object, bool, object, bool, object, object, object, str, str, str
     )
@@ -174,12 +176,10 @@ class MetadataView(MetaSubsetTabView):
     #: and the counts against them: the raw columns, the log flag, the bin request
     #: and the limits so far. Answered through ``set_histogram_bins``.
     #:
-    #: Step 4c sent only the bin *decision* down, on the grounds that it needed
-    #: ``scipy.stats.iqr`` while the counting needed only numpy. Step 4's closeout sent
-    #: the counting after it: which import a step frees is not the same question as
-    #: whose responsibility the work is, and tallying values into bins is aggregation
-    #: whose result is exported with the plot. The filtering and the shared limits
-    #: followed in the same branch as the density's, since the two write both.
+    #: The counts come back with the edges rather than being tallied here: tallying
+    #: values into bins is aggregation, and its result is exported with the plot rather
+    #: than only drawn. The filtering and the shared limits travel with them because this
+    #: and ``density_requested`` write the same accumulated limits and must agree.
     histogram_bins_requested = Signal(
         object, bool, object, bool, object, object, bool, object, str, str, str
     )
@@ -188,19 +188,19 @@ class MetadataView(MetaSubsetTabView):
     #: as they came out of the column, the bin request, and the drawing context.
     #: Answered through ``set_capture_rate``.
     #:
-    #: Step 4c. The bin edges come back with the fit so the histogram is drawn on
-    #: exactly the edges the fit was made against. Step 4's closeout moved the gap
-    #: calculation down too, so this carries the column rather than the log
-    #: inter-event times it used to.
+    #: The bin edges come back with the fit, so the histogram is drawn on exactly the
+    #: edges the fit was made against - computing them twice would let the two disagree.
+    #: This carries the event-time column rather than the log inter-event times, because
+    #: the gaps are derived from it wherever the fit is.
     capture_rate_requested = Signal(object, object, bool, object, str, str, str)
 
     #: Asks for the per-category counts of every overlaid dataset at once, with the
     #: drawing context handed back unchanged. Answered through
     #: ``set_categorical_counts``.
     #:
-    #: Step 4's closeout. Counting occurrences is aggregation and the answer is
-    #: exported with the plot, so it belongs below the widget; one intent for all
-    #: the datasets, like ``density_requested``, so no answer is parked between them.
+    #: Counting occurrences is aggregation and the answer is exported with the plot, so
+    #: it does not belong in the widget. One request for all the datasets, like
+    #: ``density_requested``, so no answer is parked between them.
     categorical_counts_requested = Signal(object, object, object, str, str)
 
     logger = logging.getLogger(__name__)
@@ -243,9 +243,8 @@ class MetadataView(MetaSubsetTabView):
         self.column_units: Optional[List[Optional[str]]] = None
         # Heterogeneous by design: the three 1-D paths - histogram, density and
         # categorical - append the raw column as a 1-D array, and the all-points
-        # path appends an (x, y) tuple. Step 4's closeout took it from four shapes
-        # to these two by giving the density path the histogram's. Flagged for
-        # review: one element type is the fix, and it is not this branch's.
+        # path appends an (x, y) tuple. Two shapes, not one: flagged for review,
+        # since a single element type is the fix and it is a change of its own.
         self.hist_data: List[Any] = []
         self.hist_labels: List[Any] = []
         self.subset_filters = {}
@@ -484,12 +483,11 @@ class MetadataView(MetaSubsetTabView):
         """
         Draw one filled density curve per overlaid dataset.
 
-        The answering half of ``density_requested``. Step 4c moved the estimate to
-        ``MetadataModel`` so that ``scipy`` could leave the View; the curve arrives
-        already evaluated, which also means it is computed once rather than the three
-        times this method used to. Step 4's closeout sent the NaN and log filtering
-        after it, so this is also where the newest dataset joins the overlay - the
-        raw column, since the Model filters every accumulated dataset on each update.
+        The answering half of ``density_requested``. The curve arrives already
+        evaluated, so it is computed once rather than the three times drawing it would
+        otherwise need. The newest dataset joins the overlay here as its **raw** column,
+        because the Model re-filters every accumulated dataset on each update and a
+        pre-filtered one would be filtered twice.
 
         :param values: the newest dataset's raw column values, to accumulate
         :type values: npt.NDArray[np.float64]
@@ -606,9 +604,8 @@ class MetadataView(MetaSubsetTabView):
         """
         Draw the inter-event time histogram and the exponential fitted to it.
 
-        The answering half of ``capture_rate_requested``. Step 4c moved the binning
-        and the fit to ``MetadataModel`` so that ``scipy.optimize`` and
-        ``scipy.stats`` could leave the View.
+        The answering half of ``capture_rate_requested``. The binning and the fit are
+        made together below, so both describe the same intervals.
 
         The histogram is drawn on the **edges the fit was made against**, rather than
         on this widget's own binning of the same request. Handing matplotlib a bin
@@ -741,12 +738,10 @@ class MetadataView(MetaSubsetTabView):
         """
         Draw every overlaid dataset onto one shared set of bin edges.
 
-        The answering half of ``histogram_bins_requested``. Step 4c moved the bin
-        decision to ``MetadataModel``; Step 4's closeout moved the counting after it,
-        then the filtering and the shared limits after that, so this is handed each
-        dataset's tallies rather than the edges to tally against. The bin edges
-        themselves no longer come back - nothing here drew with them once the
-        counting left.
+        The answering half of ``histogram_bins_requested``. This is handed each
+        dataset's tallies rather than the edges to tally against, and the edges
+        themselves do not come back: nothing here draws with them once the counting is
+        done elsewhere, and returning them would invite a second tally against them.
 
         :param values: the newest dataset's raw column values, to accumulate
         :type values: npt.NDArray[np.float64]
@@ -864,9 +859,9 @@ class MetadataView(MetaSubsetTabView):
         """
         Draw one bar series per overlaid dataset.
 
-        The answering half of ``categorical_counts_requested``. Step 4's closeout moved
-        the counting to :meth:`MetadataModel.categorical_counts`: tallying occurrences is
-        aggregation rather than drawing, and the tallies are exported with the plot.
+        The answering half of ``categorical_counts_requested``. The tallies are made by
+        :meth:`MetadataModel.categorical_counts`, because counting occurrences is
+        aggregation rather than drawing and the tallies are exported with the plot.
 
         :param counts: per dataset, its category names and their counts, index-aligned with labels
         :type counts: Sequence[Tuple[Sequence[str], npt.NDArray[np.float64]]]
@@ -962,9 +957,9 @@ class MetadataView(MetaSubsetTabView):
         """
         Draw the binned heatmap, its colourbar and its cache entry.
 
-        The answering half of ``heatmap_requested``. Step 4c moved the binning to
-        ``MetadataModel`` so that ``scipy.stats`` could leave the View; everything
-        here is matplotlib, which stays.
+        The answering half of ``heatmap_requested``. The binning is made by
+        ``MetadataModel``; everything here is matplotlib configuration, which stays
+        because none of it leaves the View.
 
         :param x: bin-center x values
         :type x: npt.NDArray[np.float64]
@@ -1583,9 +1578,9 @@ class MetadataView(MetaSubsetTabView):
                         # All three cleared before asking, not just plot_data: the
                         # Controller sets them only once the whole subset has been
                         # fetched, so a partial failure leaves them empty rather than
-                        # holding the previous subset's query, rows or units. Before
-                        # Step 4a only plot_data was cleared, and the other two were
-                        # read back stale.
+                        # holding the previous subset's query, rows or units. Clear
+                        # all three or none: clearing one and reading three back is how
+                        # a stale value gets drawn under a new label.
                         self.query = ""
                         self.plot_data = None
                         self.column_units = None
@@ -1753,10 +1748,10 @@ class MetadataView(MetaSubsetTabView):
         """
         Draw one subset's all-points histogram, and take the limits it widened.
 
-        The answering half of ``all_points_histogram_requested``. Step 4's closeout
-        moved the tally to :meth:`MetadataModel.build_all_points_histogram`: walking a
-        subset's events and binning every sample of them is aggregation rather than
-        drawing, and the result is exported with the plot.
+        The answering half of ``all_points_histogram_requested``. The tally is made by
+        :meth:`MetadataModel.build_all_points_histogram`, because walking a subset's
+        events and binning every sample of them is aggregation rather than drawing, and
+        the result is exported with the plot.
 
         :param bincenters: the current level at the middle of each bin
         :type bincenters: npt.NDArray[np.float64]
@@ -1821,9 +1816,9 @@ class MetadataView(MetaSubsetTabView):
         """
         Overlay one subset's event traces on a shared normalised time axis.
 
-        The answering half of ``event_overlay_requested``. Step 4's closeout moved the
-        baseline subtraction and the per-event time base to
-        :meth:`MetadataModel.build_event_overlay`; what is left here is the drawing,
+        The answering half of ``event_overlay_requested``. The baseline subtraction and
+        the per-event time base are made by :meth:`MetadataModel.build_event_overlay` -
+        both are exported with the plot; what is left here is the drawing,
         including the alpha each trace is given - a shorter event is drawn more
         opaquely than a longer one so the short ones are not lost under the crowd, and
         that number is read by nothing outside these axes.
@@ -2579,12 +2574,11 @@ class MetadataView(MetaSubsetTabView):
         """
         Ask the Controller for a column's units, for this tab's axis unit labels.
 
-        Moved down from ``MetaSubsetTabView`` in Step 4a, and converted in the same
-        commit. It sat on the shared base but was only ever called from here: the protein
-        tab has no units label, keeps no units cache and labels its axes with hardcoded
-        literals, so it had nothing to do with the answer - and ``ProteinView``'s missing
-        ``update_column_units`` was unreachable rather than merely swallowed. Same shape
-        as the Clustering-only helpers Step 3e moved down.
+        On this tab rather than on ``MetaSubsetTabView``, although both subset tabs
+        inherit that base: the protein tab has no units label, keeps no units cache and
+        labels its axes with hardcoded literals, so it has nothing to do with the answer.
+        Putting it back on the base would give that tab an inherited request nothing
+        answers.
 
         :param loader: Name of the database loader.
         :type loader: str
@@ -2606,11 +2600,11 @@ class MetadataView(MetaSubsetTabView):
         """
         Receive one units string per plotted column, in the columns' own order.
 
-        Step 4a. The units used to arrive one at a time, through ``set_units``, with
-        ``_overlay_plot`` appending ``self.units`` after each round trip - so a
-        lookup that failed appended the previous column's units instead of nothing,
-        and the axis was labelled with the wrong unit. Handed over as a list in one
-        call, the count either matches the columns or the answer is missing entirely.
+        One list in one call, rather than one string per round trip accumulated here.
+        Accumulating them meant a lookup that failed appended the *previous* column's
+        units instead of nothing, and the axis was labelled with the wrong unit; handed
+        over together, the count either matches the columns or the answer is missing
+        entirely.
 
         :param units: one units string per column, None where the loader has none
         :type units: List[Optional[str]]

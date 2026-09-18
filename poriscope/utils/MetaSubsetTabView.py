@@ -96,10 +96,11 @@ class MetaSubsetTabView(MetaView):
     - **The five abstract methods ``MetaView`` declares**, unchanged - this base
       implements none of them.
 
-    ``subset_filters`` stays here rather than moving to a Model, decided in Step 4d:
-    no Model reads it - Step 4b's query construction takes a single filter's text as
-    an argument - while sixteen reads on this side need it inside the same call, the
-    eleven ``get_selected_filters`` on the plot paths among them. See
+    ``subset_filters`` lives here rather than on a Model, and the test is who reads it:
+    no Model does - query construction takes a single filter's *text* as an argument -
+    while sixteen reads on this side need it inside the same call, the eleven
+    ``get_selected_filters`` on the plot paths among them. Moving it would install a
+    field nothing below reads and turn those sixteen into round trips. See
     ``DECISIONS.md``, 2026-09-13, which also records what was rejected.
 
     :ivar logger: the module logger the shared methods below log under
@@ -107,10 +108,9 @@ class MetaSubsetTabView(MetaView):
     :ivar selected_experiment_and_channels_by_loader: per-loader selection tree state
     """
 
-    #: Asks the Controller for a loader's column names. Step 4a replaced a
-    #: ``global_signal`` emit whose answer came back through ``update_column_names``
-    #: several hops later; the answer arrives one hop later now and a loader that
-    #: cannot be read is reported instead of failing silently in the dispatcher.
+    #: Asks the Controller for a loader's column names, answered through
+    #: ``update_column_names``. The Controller calls the loader itself, so a loader that
+    #: cannot be read is reported rather than failing silently on the way back.
     column_names_requested = Signal(str)
 
     #: Asks the Controller for a loader's experiment-and-channel structure. The loader
@@ -120,19 +120,16 @@ class MetaSubsetTabView(MetaView):
 
     #: Asks the Controller to validate an assisted subset filter: the loader's key,
     #: the filter expression, and which intent the answer serves
-    #: (``validate_new_filter`` or ``validate_edited_filter``). Step 4a replaced a
-    #: ``global_signal`` emit whose answer came back through ``relay_query``; the
-    #: Controller now calls the loader directly and invokes ``relay_query`` itself, so
-    #: a filter naming a column the database does not have is *reported* rather than
-    #: swallowed by the dispatcher.
+    #: (``validate_new_filter`` or ``validate_edited_filter``). The Controller calls the
+    #: loader itself and invokes ``relay_query``, so a filter naming a column the
+    #: database does not have is *reported* rather than vanishing with a log line.
     #:
     #: The columns the throwaway validation query selects are resolved by the
     #: Controller, not carried here - see ``MetaSubsetTabController.validate_filter``.
     #:
-    #: Step 4d widened it to carry the filter's name and, on an edit, the name it
-    #: replaces. Those used to be parked on ``_pending_*`` attributes and read back
-    #: off this widget when the answer returned - the pattern Step 4a exists to
-    #: delete, surviving here on the *request* rather than the answer.
+    #: It carries the filter's name and, on an edit, the name it replaces, rather than
+    #: parking them on the widget until the answer returns. Anything held between asking
+    #: and being answered is a value the next request can read by mistake.
     filter_validation_requested = Signal(str, str, str, str, object)
 
     #: The same for a raw filter, which is a complete SELECT the loader checks with
@@ -144,11 +141,9 @@ class MetaSubsetTabView(MetaView):
     #: rebuilt: the loader's key, the filter (``None`` for all rows) and the
     #: experiment/channel scope. The answer arrives through ``set_event_id_rows``.
     #:
-    #: Step 4a's last conversion, and the one the plan had recorded as blocked on
-    #: restructuring ``_rebuild_event_id_cache``'s callers. Re-derived before it was
-    #: worked: all five callers consume only the ``bool`` return and read
-    #: ``filtered_event_ids`` a statement later, so clearing the answer, emitting and
-    #: reading it back leaves every one of them untouched.
+    #: All five callers consume only the ``bool`` return and read ``filtered_event_ids``
+    #: a statement later, which is what lets this be a request at all: clearing the
+    #: answer, asking and reading it back leaves every one of them untouched.
     event_id_cache_requested = Signal(str, object, object)
 
     #: Asks for the full data of specific events, named by their ``event_id`` values:
@@ -212,9 +207,8 @@ class MetaSubsetTabView(MetaView):
     #: Declared here without a value so the contract is visible and mypy can see it,
     #: while reading one before its setter has run stays the AttributeError it is now.
     experiment_id: Optional[int]
-    #: Optional since Step 4a: ``_overlay_plot`` clears it before asking for a
-    #: subset, so that a load which fails is not read back as the previous subset's
-    #: events.
+    #: Optional because ``_overlay_plot`` clears it before asking for a subset, so a
+    #: load that fails is not read back as the previous subset's events.
     event_data_generator: Optional[Iterator[Any]]
     event_query: str
     query: str
@@ -227,8 +221,7 @@ class MetaSubsetTabView(MetaView):
         Connect the two filter signals only a subset tab's controls panel carries.
 
         ``MetaView._set_control_area`` wires the four every panel has; these two are
-        declared on ``MetaSubsetTabControls`` and were the sole difference between the
-        Metadata and Protein copies of that method before Step 3a-bis.
+        declared on ``MetaSubsetTabControls`` and so belong to the subset tabs alone.
 
         :param controls: the panel just built by ``_build_controls``
         :type controls: MetaSubsetTabControls
@@ -384,10 +377,9 @@ class MetaSubsetTabView(MetaView):
         Unlike :meth:`_load_filter`, this does not re-validate the filters against a
         database loader, since they were already valid when the session was saved.
 
-        Promoted from both subset tabs, whose copies were 20 of 21 lines identical
-        and differed only in the name each held its controls panel under -
-        ``_subset_controls`` again. Step 3b, which introduced that accessor and
-        promoted this method's neighbours, missed this one.
+        One copy for both subset tabs, reached through ``_subset_controls`` rather than
+        each tab's own name for its panel - which is the whole of what the two copies
+        used to differ by.
 
         :param filters: Mapping of filter name to filter expression to restore.
         :type filters: Dict[str, str]
@@ -636,10 +628,10 @@ class MetaSubsetTabView(MetaView):
         """
         Open the dialog that adds a subset filter, and validate what it returns.
 
-        Promoted from both subset tabs in Step 4a. The copies diverged twice, in
+        One copy for both subset tabs. They had diverged twice, in
         the same two places as ``show_edit_filter_dialog``: the columns the
-        validation query is built from, which the same step moved to the Controller
-        along with the call itself, and how an invalid raw filter is reported, now
+        validation query is built from, which the Controller now chooses along with
+        making the call, and how an invalid raw filter is reported, which is
         ``_reject_non_select_raw_filter``.
 
         :param parameters: Dictionary with 'db_loader'.
@@ -677,9 +669,9 @@ class MetaSubsetTabView(MetaView):
             if dialog.is_raw:
                 # Raw SQL is validated by validate_filter_query, not by
                 # construct_metadata_query, which builds its own SQL. The filter goes
-                # out as the user wrote it, trailing semicolon aside: Step 4b moved the
-                # "LIMIT 0" that makes the check cheap to the Controller, since knowing
-                # that clause is knowing SQL and this is a widget.
+                # out as the user wrote it, trailing semicolon aside: the "LIMIT 0" that
+                # makes the check cheap is added by the Controller, since knowing that
+                # clause is knowing SQL and this is a widget.
                 if self._reject_non_select_raw_filter(filter_text):
                     return
                 name = f"{name}_raw" if not name.endswith("_raw") else name
@@ -697,7 +689,7 @@ class MetaSubsetTabView(MetaView):
         """
         Open the dialog that edits a subset filter, and validate what it returns.
 
-        Promoted from both subset tabs in Step 4a, and no longer abstract. The
+        One copy for both subset tabs, and not abstract. The
         reason recorded for its being abstract - that each tab rebuilds its own
         filter widgets afterwards - was ``_delete_filter``'s, not this method's:
         neither copy touched a filter widget. They diverged in the same two places
@@ -767,7 +759,7 @@ class MetaSubsetTabView(MetaView):
         filter fail as an unknown column and then report itself as an empty
         subset.
 
-        Promoted from both subset tabs in Step 4a. The copies diverged three ways
+        One copy for both subset tabs. They had diverged three ways
         and each was resolved to ``ProteinView``'s: it also rejects a result with
         no ``event_id`` column, where Metadata indexed straight into it and would
         have raised; its empty-subset message names the scope; and when a filter
@@ -982,7 +974,7 @@ class MetaSubsetTabView(MetaView):
         """
         Set the SQL query and table name used in plotting.
 
-        Step 4a stopped this echoing the query to the status panel. What it received
+        This does not echo the query to the status panel. What it received
         at filter-creation time was the *validation* query, which is not the query
         that pulls the subset - ``MetadataController._echo_applied_query`` shows that
         one instead, when the filter is actually applied.

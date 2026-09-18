@@ -76,10 +76,9 @@ class EventAnalysisController(MetaEventTabController):
         """
         Load the selected events, their raw traces and their fits, ready to plot.
 
-        Step 4a's largest single conversion: eight bus round trips in one 243-line View
-        method become eight calls here, and the assembly that turned their answers into
-        plot arguments comes with them. It is pure data marshalling - no Qt and no
-        matplotlib - so it belongs on this side; ``_update_event_plot`` stays in the View.
+        Eight calls and the assembly that turns their answers into plot arguments, all
+        on this side: it is pure data marshalling - no Qt and no matplotlib - so none of
+        it belongs in the widget. ``_update_event_plot`` stays in the View.
 
         **The alignment this builds is the load-bearing part.** ``event_data`` and
         ``labels`` take one to three entries per event - the data, then optionally the raw
@@ -392,12 +391,12 @@ class EventAnalysisController(MetaEventTabController):
         """
         Ask the fitter which channels it has already fitted, for the View to confirm.
 
-        Step 4a's first half of the fitting launch, and the analogue of
-        ``RawDataController.request_eventfinding_statuses``. The View used to emit this
-        per channel inside its own loop and read the answer back off
-        ``self.eventfitting_status``, which nothing cleared - so a dispatch the bus
-        swallowed left the *previous* channel's fitted-ness in place and the "start over?"
-        prompt was shown, or skipped, for the wrong channel.
+        The first half of the fitting launch, and the analogue of
+        ``RawDataController.request_eventfinding_statuses``: every channel's status is
+        resolved here, in one call. Asking per channel and reading each answer back off
+        the widget is how the "start over?" prompt gets shown, or skipped, for the wrong
+        channel - a look-up that fails leaves the previous channel's fitted-ness in
+        place.
 
         :param eventfitter: the event fitter plugin's key
         :type eventfitter: str
@@ -435,9 +434,8 @@ class EventAnalysisController(MetaEventTabController):
         Fit the approved channels and run the resulting generators.
 
         ``silent`` and ``indices`` are passed explicitly as False and None because the
-        View always did, even though both match their defaults - keeping them makes the
-        move visibly behaviour-preserving rather than relying on the defaults not
-        changing (rule 42).
+        View always did, even though both match their defaults: stating them means this
+        call does not change meaning if a default ever does.
 
         A channel that cannot be launched is reported and skipped, and the ones that did
         register still run, for the same reason as ``write_events``.
@@ -481,9 +479,9 @@ class EventAnalysisController(MetaEventTabController):
         """
         Fetch an event loader's channel list and hand it to the View.
 
-        Step 4a, and the direct analogue of ``RawDataController.request_reader_channels``:
-        the same conversion against ``MetaEventLoader`` rather than ``MetaReader``. A
-        loader that cannot be read leaves the channel combobox alone rather than clearing
+        The direct analogue of ``RawDataController.request_reader_channels``, against
+        ``MetaEventLoader`` rather than ``MetaReader``. A loader that cannot be read
+        leaves the channel combobox alone rather than clearing
         it - an empty combobox reads as "this loader has no channels", which is a
         different and more alarming thing than "this loader could not be read".
 

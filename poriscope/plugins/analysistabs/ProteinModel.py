@@ -338,7 +338,7 @@ class ProteinModel(MetaSubsetTabModel):
         single call keeps every answer off the widget: a per-event round trip would
         work - a same-thread Qt signal is synchronous, measured - but only by parking
         each answer somewhere for the loop body to read back, which is the pattern
-        Step 4a exists to delete. It also means the View does not depend on the
+        would be read back by mistake. It also means the View does not depend on the
         connection staying ``Direct``.
 
         ``None`` stands for an event whose histogram could not be built at all, and
@@ -361,11 +361,10 @@ class ProteinModel(MetaSubsetTabModel):
         """
         Delete an existing set of fit columns so a new one can replace it.
 
-        Owns the SQL, which Step 4b moved out of ``ProteinController`` - the
-        Controller assembled ``ALTER TABLE`` statements and then used the Model as a
-        conduit to the loader, where Decision A has the Model make the call.
-        ``ClusteringModel.drop_cluster_columns`` is the same shape, for the same
-        reason. ``DECISIONS.md`` (2026-08-25) accepts the f-string interpolation
+        Owns the SQL rather than assembling it in the Controller and using the Model as
+        a conduit to the loader: the layer that makes the plugin call is the layer that
+        writes what it sends. ``ClusteringModel.drop_cluster_columns`` is the same
+        shape, for the same reason. ``DECISIONS.md`` (2026-08-25) accepts the f-string interpolation
         itself, because the database is a local file owned by the user running the
         app; this is about *where* the SQL lives.
 

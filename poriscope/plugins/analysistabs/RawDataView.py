@@ -65,15 +65,13 @@ class RawDataView(MetaEventTabView):
     """
 
     #: Asks the Controller for the baseline statistics of the channels about to be
-    #: plotted. Step 4c introduced it: the fitting moved to RawDataModel, and this
-    #: is Decision B's command path to it. The answer arrives as the
-    #: baseline_stats argument of update_plot.
+    #: plotted. The fitting is ``RawDataModel``'s, and the answer arrives as the
+    #: ``baseline_stats`` argument of ``update_plot``.
     baseline_stats_requested = Signal(object, list, list, object)
 
-    #: Asks the Controller for a reader's channel list. Step 4a replaced a
-    #: ``global_signal`` emit whose answer came back seven hops later through
-    #: ``update_channels``; the answer now arrives one hop later, and a reader that
-    #: cannot be read is reported instead of failing silently inside the dispatcher.
+    #: Asks the Controller for a reader's channel list, answered through
+    #: ``update_channels``. The Controller calls the reader itself, so one that cannot be
+    #: read is reported rather than failing silently on the way back.
     reader_channels_requested = Signal(str)
 
     #: Asks the Controller to load a trace and optionally filter it, for plotting.
@@ -210,8 +208,8 @@ class RawDataView(MetaEventTabView):
             )  # Create subplots in a grid
             ax.plot(time, channel_data / 1000, zorder=1)
 
-            # Computed by RawDataModel since Step 4c and handed over by the
-            # Controller. A None entry is a channel whose fit failed, which the
+            # Computed by RawDataModel and handed over by the Controller.
+            # A None entry is a channel whose fit failed, which the
             # Controller has already logged - the trace is still drawn, without a band.
             stats = baseline_stats[i] if baseline_stats is not None else None
             if stats is not None:
@@ -383,11 +381,11 @@ class RawDataView(MetaEventTabView):
         """
         Give each event finder not seen before a default time range for every channel.
 
-        Step 4a: the channel lookup this used to do itself is now ``RawDataController``'s,
-        which resolves every finder up front and hands the answers down. A finder absent
-        from ``channels_by_finder``, or present with no channels, is left unregistered so
-        the next push retries it - the same "register only on success" rule the emit
-        version had, minus the emit-then-read and its clear-before-emit guard.
+        The channel lookup is ``RawDataController``'s: it resolves every finder up front
+        and hands the answers down. A finder absent from ``channels_by_finder``, or
+        present with no channels, is left **unregistered** so the next push retries it.
+        Registering one whose lookup failed would leave it with empty time limits
+        permanently, since nothing asks again for a finder it already knows.
 
         A finder already in ``analysis_time_limits`` keeps the ranges the user set on it;
         only genuinely new finders get defaults.
@@ -572,10 +570,12 @@ class RawDataView(MetaEventTabView):
         """
         Ask the Controller for the selected events, ready to plot.
 
-        Step 4a: this used to run five bus round trips itself - the finder's status and
-        event count, the filter callable, the samplerate, then one load per event - each
-        one an emit whose answer arrived on an attribute the next line read back. All
-        five are the Controller's now, and the plot happens in ``set_event_plot_data``.
+        One request rather than five separate look-ups - the finder's status and event
+        count, the filter callable, the samplerate, then the events themselves. They are
+        only useful together, and asking separately meant parking each answer where the
+        next line read it back: the event count in particular bounds which indices are in
+        range, so a stale one decides which events get plotted. The plot happens in
+        ``set_event_plot_data``.
 
         :param parameters: Dictionary containing eventfinder, filter, channels, and event indices.
         :type parameters: Dict[str, Any]
@@ -760,8 +760,8 @@ class RawDataView(MetaEventTabView):
             return
 
         if writer is not None and channels is not None:
-            # Step 4a: the commit call itself is the Controller's, so this is the whole
-            # of the View's part now.
+            # The commit call itself is the Controller's, so this is the whole of the
+            # View's part.
             self.commit_requested.emit(
                 writer, channels if isinstance(channels, list) else [channels]
             )
@@ -773,12 +773,11 @@ class RawDataView(MetaEventTabView):
         """
         Ask the Controller which of these channels the finder has already completed.
 
-        Step 4a, and the awkward one: this method interleaved a plugin call with a
-        question for the user, asking each channel's status over the bus and then
-        prompting before redoing a finished channel. The prompt has to stay in the View
-        and the call has to leave it, so the launch is two round trips now - statuses
-        out, answers back, then the approved channels out again. The reply arrives as
-        ``set_eventfinding_statuses``.
+        Two round trips rather than one, because the launch interleaves a plugin call
+        with a question for the user: each channel's status is looked up, and only then
+        is the user prompted before redoing a finished channel. The prompt belongs in the
+        View and the look-up does not, so the statuses go out, the answers come back
+        through ``set_eventfinding_statuses``, and the approved channels go out again.
 
         :param eventfinder: Identifier for the event finder plugin.
         :type eventfinder: str
@@ -1005,8 +1004,8 @@ class RawDataView(MetaEventTabView):
 
         # Load data and update plot
         if self._validate_plot_parameters(reader, channels, start, length):
-            # Step 4a: loading and filtering are the Controller's now, so the plot
-            # happens in set_trace_data when it hands the channels back.
+            # Loading and filtering are the Controller's, so the plot happens in
+            # set_trace_data when it hands the channels back.
             self.trace_data_requested.emit(
                 reader, channels, start, length, self._filter_key(parameters), baseline
             )
@@ -1044,10 +1043,10 @@ class RawDataView(MetaEventTabView):
         """
         Plot the trace the Controller loaded, or report that there was none.
 
-        Step 4a: this is the tail of ``_handle_load_data_and_update_plot``, which used to
-        run inline after a bus round trip per channel. ``channels`` is the surviving list
-        - a channel the reader could not supply is dropped by the Controller, so the two
-        stay index-aligned without this method having to prune anything.
+        The tail of ``_handle_load_data_and_update_plot``. ``channels`` is the
+        **surviving** list - a channel the reader could not supply is dropped by the
+        Controller - so it and ``data_list`` stay index-aligned without this method
+        having to prune anything.
 
         :param data_list: one array per surviving channel
         :type data_list: Sequence[npt.NDArray[np.float64]]
@@ -1068,8 +1067,8 @@ class RawDataView(MetaEventTabView):
             )
             return
         if baseline:
-            # The fitting is the Model's since Step 4c, so the plot happens
-            # when the Controller hands the statistics back.
+            # The fitting is the Model's, so the plot happens when the Controller
+            # hands the statistics back.
             # The axes travel with the request rather than being rebuilt on the way
             # back: the Controller resolved the samplerate to make them and does not
             # have it in scope in the answering slot.
@@ -1098,8 +1097,8 @@ class RawDataView(MetaEventTabView):
 
         # Load data and update plot
         if self._validate_plot_parameters(reader, channels, start, length):
-            # Step 4a: as for the trace path, the loading is the Controller's and the
-            # PSD happens in set_trace_for_psd.
+            # As on the trace path, the loading is the Controller's and the PSD
+            # happens in set_trace_for_psd.
             self.psd_data_requested.emit(
                 reader, channels, start, length, self._filter_key(parameters)
             )
@@ -1115,12 +1114,11 @@ class RawDataView(MetaEventTabView):
         """
         Compute and draw the PSD of the trace the Controller loaded.
 
-        Step 4a moved only the *loading* out of this path. The PSD computation below is
-        unchanged and is deliberately left as it was: ``calculate_psd`` is an intent
-        signal to this tab's own Controller rather than a ``global_signal`` bus call, and
-        it is Decision B's template working correctly, so it is not 4a's business. The
-        read-back off ``psd_kept_indices`` and friends is safe for the same reason it
-        always was - the connection is direct, so ``set_psd`` has already run.
+        Only the *loading* happens elsewhere; the PSD computation below asks this tab's
+        own Controller through ``calculate_psd`` and reads the answer back off
+        ``psd_kept_indices`` and friends on the next statement. That read is safe because
+        the connection is direct, so ``set_psd`` has already run by the time it returns -
+        an invariant worth knowing before anyone makes the connection queued.
 
         :param data_list: one array per surviving channel
         :type data_list: Sequence[npt.NDArray[np.float64]]

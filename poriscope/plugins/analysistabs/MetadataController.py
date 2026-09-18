@@ -107,13 +107,14 @@ class MetadataController(MetaSubsetTabController):
         """
         Filter and bin the heatmap's two columns, and hand the result back to draw.
 
-        Decision B's command path, the same shape as
-        ``ClusteringController.cluster``. The drawing context arrives and departs
-        unchanged; this slot marshals and does not interpret it.
+        A request slot, the same shape as ``ClusteringController.cluster``: the View
+        asks, this calls the Model, and the answer goes back through a setter. The
+        drawing context arrives and departs unchanged; this slot marshals and does not
+        interpret it.
 
-        An invalid bin entry raises out of the Model, and is reported here rather
-        than propagating: before Step 4c it escaped the plotting call unhandled,
-        because nothing between here and ``_overlay_plot`` catches it.
+        An invalid bin entry raises out of the Model and is **reported here rather than
+        propagating**, because nothing between here and ``_overlay_plot`` catches it and
+        an exception escaping a Qt slot reaches nobody.
 
         :param xdata: the raw x values
         :type xdata: npt.NDArray[np.float64]
@@ -208,9 +209,8 @@ class MetadataController(MetaSubsetTabController):
         """
         Filter every overlaid dataset, then estimate each one's density.
 
-        Decision B's command path, the same shape as :meth:`calculate_heatmap`. The
-        drawing context arrives and departs unchanged; this slot marshals and does
-        not interpret it.
+        A request slot, the same shape as :meth:`calculate_heatmap`. The drawing context
+        arrives and departs unchanged; this slot marshals and does not interpret it.
 
         The newest dataset is the last of ``datasets`` and has not been accumulated
         by the View yet, so a subset that loses every point to the filter is refused
@@ -295,10 +295,10 @@ class MetadataController(MetaSubsetTabController):
         """
         Filter every overlaid dataset, bin them onto shared edges, and count them.
 
-        Decision B's command path, the same shape as
-        :meth:`estimate_kernel_densities` - deliberately, since the two write the
-        same accumulator and the same pair of shared limits, which is why they
-        converted in one branch rather than one each.
+        A request slot, the same shape as :meth:`estimate_kernel_densities` - and it has
+        to be, because the two write the same accumulator and the same pair of shared
+        limits, so a difference between them would show up as a plot disagreeing with
+        itself.
 
         :param datasets: one raw column array per overlaid dataset, newest last
         :type datasets: Sequence[npt.NDArray[np.float64]]
@@ -384,9 +384,9 @@ class MetadataController(MetaSubsetTabController):
         """
         Tally each overlaid dataset's categories, and hand them back to be drawn.
 
-        Decision B's command path, the same shape as :meth:`estimate_kernel_densities`.
-        The drawing context arrives and departs unchanged; this slot marshals and does
-        not interpret it.
+        A request slot, the same shape as :meth:`estimate_kernel_densities`. The drawing
+        context arrives and departs unchanged; this slot marshals and does not interpret
+        it.
 
         A column of a type the tally cannot sort raises out of the Model and is reported
         here rather than escaping a Qt slot - which is what used to happen, since
@@ -430,14 +430,14 @@ class MetadataController(MetaSubsetTabController):
         """
         Bin and fit the capture rate, and hand the result back to the View to draw.
 
-        Decision B's command path, the same shape as :meth:`calculate_heatmap`. A
-        fit that will not converge raises ``RuntimeError`` out of ``curve_fit``, and
-        is reported rather than allowed to escape a Qt slot.
+        A request slot, the same shape as :meth:`calculate_heatmap`. A fit that will not
+        converge raises ``RuntimeError`` out of ``curve_fit``, and is reported rather
+        than allowed to escape a Qt slot, where it would reach nobody.
 
-        **The inter-event times are computed here rather than in the View**, which is
-        where they were until Step 4's closeout: gaps between consecutive events are the
-        measurement, not the drawing. Both conditions the View used to judge on them move
-        with the computation - too little surviving data is reported instead of raised,
+        **The inter-event times are computed below rather than in the View**: gaps
+        between consecutive events are the measurement, not the drawing. Both conditions
+        that used to be judged on them belong with the computation - too little surviving
+        data is reported instead of raised,
         which reaches the user with the count in it rather than as ``update_plot``'s
         generic "no data available after filtering".
 
@@ -515,14 +515,13 @@ class MetadataController(MetaSubsetTabController):
         """
         Fetch one metadata subset - query, rows and units - and hand it to the View.
 
-        Step 4a replaced three ``global_signal`` emits that ``_overlay_plot`` made in
-        sequence, reading each answer back off an attribute on the next statement.
-        Two of those attributes were never cleared first, so a dispatch that failed
-        was indistinguishable from one that succeeded: ``self.query`` kept the
-        previous subset's query and passed the ``== ""`` guard, and ``self.units``
-        kept the previous column's units and was appended to the list, labelling the
-        axis wrongly. The View clears all three now and this method sets them only
-        once every part has been fetched, so a partial failure is visible as such.
+        All three parts are fetched here and handed over together, because asking for
+        them one at a time made a failure indistinguishable from a success: a query that
+        could not be built left the *previous* subset's query behind and passed the
+        ``== ""`` guard, and a units lookup that failed left the previous column's units
+        to be appended, labelling the axis wrongly. The View clears all three before
+        asking and this method sets them only once every part has been fetched, so a
+        partial failure is visible as one.
 
         This is also where the SQL the user sees comes from: the query echoed to the
         status panel is **the one that runs**, not the smaller one that validated the
@@ -683,10 +682,10 @@ class MetadataController(MetaSubsetTabController):
         """
         Tally one event-data subset into an all-points histogram for the View.
 
-        Decision B's command path. Step 4's closeout moved the tally down: the events
-        themselves were being walked in the widget, twice, and nothing above the Model
-        ever wanted them. The query is set only once the tally succeeded, which is
-        what lets the View tell a fetch that failed from one that returned nothing.
+        A request slot. The events are walked and binned below rather than in the
+        widget: nothing above the Model wants them, and walking them there meant walking
+        them twice. The query is set only once the tally succeeded, which is what lets
+        the View tell a fetch that failed from one that returned nothing.
 
         :param loader: the database loader plugin's key
         :type loader: str
@@ -746,8 +745,7 @@ class MetadataController(MetaSubsetTabController):
         """
         Put one event-data subset on a shared normalised axis for the View to draw.
 
-        Decision B's command path, the same shape as
-        :meth:`build_all_points_histogram`.
+        A request slot, the same shape as :meth:`build_all_points_histogram`.
 
         :param loader: the database loader plugin's key
         :type loader: str
@@ -816,9 +814,10 @@ class MetadataController(MetaSubsetTabController):
         """
         Fetch one column's declared type, for the categorical-histogram guard.
 
-        Step 4a. The View clears the answer before asking, so a lookup that failed
-        leaves it ``None`` and the guard refuses the plot - which is what the bus
-        produced by accident, and is now what it produces on purpose.
+        The View clears the answer before asking, so a lookup that failed leaves it
+        ``None`` and the guard refuses the plot. Refusing on an unknown type is
+        deliberate: the guard exists to keep a categorical column off a numeric axis, and
+        it cannot do that on a type it did not get.
 
         :param loader: the database loader plugin's key
         :type loader: str
@@ -845,10 +844,10 @@ class MetadataController(MetaSubsetTabController):
         """
         Fetch one event's fitted features and hand them to the View.
 
-        Step 4a. Emitted once per event on the plot path, so a failure is logged and
-        the event is plotted without features, as it was before - the View clears the
-        six feature attributes before each request and reads them back after, so an
-        event whose lookup failed gets none rather than the previous event's.
+        Asked once per event on the plot path, so a failure is logged and the event is
+        plotted without features rather than stopping the plot. The View clears the six
+        feature attributes before each request and reads them back after, so an event
+        whose lookup failed gets none rather than the previous event's.
 
         ``update_features``' label-length validation is called here rather than
         inlined, and its ``ValueError`` is caught for the same reason the bus caught
@@ -895,11 +894,9 @@ class MetadataController(MetaSubsetTabController):
         """
         Start writing one filtered subset to CSV in a worker thread.
 
-        Step 4a, and the second emit in this step that was not an emit-then-read: the
-        plugin returns a progress generator and the bus passed it straight into
-        ``set_generator``, with the export's index, the loader key and the metaclass
-        travelling as the bus's ``ret_args``. ``RawDataController.commit_events`` is
-        the same shape.
+        The plugin returns a progress generator rather than a value, so this hands it
+        straight to ``set_generator`` along with the export's index, the loader key and
+        the metaclass. ``RawDataController.commit_events`` is the same shape.
 
         The View's index only advances for an export that was staged, which is what
         ``on_subset_export_started`` says - and *staged* now means "counted, non-empty,
@@ -981,10 +978,9 @@ class MetadataController(MetaSubsetTabController):
         """
         Fetch one column's units and apply them to one axis label.
 
-        Step 4a. The axis travels with the request and back out again, which is what the
-        bus carried in its ``ret_args``. This is Metadata's alone: ``update_units`` moved
-        down from ``MetaSubsetTabView`` in the same commit, because the protein tab has no
-        units label to write to.
+        The axis travels with the request and back out again, so the answer knows which
+        label it belongs to without anything being parked here in between. This is
+        Metadata's alone, because the protein tab has no units label to write to.
 
         :param loader: the database loader plugin's key
         :type loader: str

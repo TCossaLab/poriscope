@@ -55,10 +55,10 @@ class EventAnalysisView(MetaEventTabView):
     Handles event plotting, plugin integration, and user-triggered actions.
     """
 
-    #: Asks the Controller for an event loader's channel list. Step 4a's first intent in
-    #: this tab, and the same conversion RawData's reader lookup got: the answer arrives
-    #: one hop later through ``update_channels`` instead of seven, and a loader that
-    #: cannot be read is reported instead of failing silently inside the dispatcher.
+    #: Asks the Controller for an event loader's channel list, answered through
+    #: ``update_channels``; the same shape as RawData's reader look-up. The Controller
+    #: calls the loader itself, so one that cannot be read is reported rather than
+    #: failing silently on the way back.
     loader_channels_requested = Signal(str)
 
     #: Asks the Controller to write this tab's fitted events through a database writer,
@@ -334,11 +334,12 @@ class EventAnalysisView(MetaEventTabView):
         """
         Ask the Controller for the selected events, their raw traces and their fits.
 
-        Step 4a: this ran eight bus round trips itself - the event count, the filter
+        One request rather than eight separate look-ups - the event count, the filter
         callable, the samplerate, a load per event, an optional unfiltered load, the
-        fitting status, the fit, and its features - assembling the answers into plot
-        arguments as they arrived off attributes the next line read back. All of it is
-        the Controller's now, and the plot happens in ``set_event_plot_data``.
+        fitting status, the fit, and its features. They are assembled into plot arguments
+        by whoever asks for them, because doing it here means reading each answer back
+        off this widget in turn and an alignment that only holds while every one of them
+        succeeded. The plot happens in ``set_event_plot_data``.
 
         :param parameters: Dictionary containing eventfinder, filter, channels, and event indices.
         :type parameters: Dict[str, Any]
@@ -700,7 +701,7 @@ class EventAnalysisView(MetaEventTabView):
             return
 
         if writer is not None and channels is not None:
-            # Step 4a: the write call itself is the Controller's.
+            # The write call itself is the Controller's.
             self.write_requested.emit(
                 writer, channels if isinstance(channels, list) else [channels]
             )
@@ -712,12 +713,12 @@ class EventAnalysisView(MetaEventTabView):
         """
         Ask the Controller which of these channels the fitter has already completed.
 
-        Step 4a, and the same two-phase launch RawData's event finding uses: this method
-        interleaved a plugin call with a question for the user, asking each channel's
-        fitting status over the bus and prompting before redoing a finished channel. The
-        prompt stays here and the call leaves, so the statuses go out, the answers come
-        back, and the approved channels go out again. The reply arrives as
-        ``set_fitting_statuses``.
+        The same two-phase launch RawData's event finding uses, because the launch
+        interleaves a plugin call with a question for the user: each channel's fitting
+        status is looked up, and only then is the user prompted before redoing a finished
+        channel. The prompt belongs here and the look-up does not, so the statuses go
+        out, the answers come back through ``set_fitting_statuses``, and the approved
+        channels go out again.
 
         :param eventfitter: Identifier of the event fitter plugin.
         :type eventfitter: str

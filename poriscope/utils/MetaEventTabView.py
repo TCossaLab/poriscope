@@ -60,8 +60,9 @@ class MetaEventTabView(MetaView):
       applies to raw samples before finding or fitting.
     - **The event-index range helpers.** ``_parse_event_indices``, ``_expand_event_indices``,
       ``_shift_ranges``, ``_merge_ranges`` and ``_format_ranges`` turn the event-index
-      field's text into ranges and back. They lived on ``MetaView`` until Step 3e, where
-      only these two tabs ever called them; they are pure apart from one logger call.
+      field's text into ranges and back. Only these two tabs call them, which is why
+      they are here rather than on ``MetaView``; they are pure apart from one logger
+      call.
 
     What a subclass owes it:
 
@@ -282,7 +283,8 @@ class MetaEventTabView(MetaView):
 
         Shared by the two tabs that launch this kind of work rather than copied into both.
         It is stateless and adds no contract, which is what makes it safe on the common
-        base rather than needing an intermediate (method rule 34).
+        base: it carries no instance state and adds no abstract hook, so a subclass
+        that never calls it pays nothing.
 
         :param operation: what is about to run, named for the prompt, e.g. "Event finding"
         :type operation: str

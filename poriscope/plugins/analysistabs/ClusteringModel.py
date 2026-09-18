@@ -44,15 +44,15 @@ class ClusteringModel(MetaModel):
     """
     Subclass of MetaModel for handling clustering-related data processing.
 
-    Owns the clustering computation itself. Step 4c moved it here out of
+    Owns the clustering computation itself, rather than
     ``ClusteringView``, which had been importing ``hdbscan``,
     ``sklearn.mixture.GaussianMixture`` and ``pandas.api.types.is_float_dtype`` into a
     ``QWidget``; none of those names appears in the View any more.
 
     The View asks for a result by emitting ``cluster_requested``;
     ``ClusteringController`` calls :meth:`cluster` and hands what comes back to
-    ``ClusteringView.set_clustering_result``. That is Decision B's command/result path,
-    and ``RawDataController.calculate_psd`` is the same shape.
+    ``ClusteringView.set_clustering_result``; ``RawDataController.calculate_psd`` is
+    the same shape.
     """
 
     logger = logging.getLogger(__name__)
@@ -72,9 +72,8 @@ class ClusteringModel(MetaModel):
         """
         Filter and log-scale the loaded rows into the frame that gets clustered.
 
-        Moved off ``ClusteringView`` in Step 4's closeout, which is what took pandas out
-        of that file. The View still reads the settings dialog, since the per-column
-        flags are strings the user typed; deciding what the numbers mean is this layer's.
+        The View still reads the settings dialog, since the per-column flags are
+        strings the user typed; deciding what the numbers mean is this layer's.
 
         ``logscale_and_filter_columns`` masks rows across **every** array it is handed
         at once, which is what keeps the columns aligned - so ``"id"`` is passed through
@@ -246,8 +245,8 @@ class ClusteringModel(MetaModel):
         """
         Delete an existing clustering result so a new one can replace it.
 
-        Owns the SQL, which Step 4a moved out of ``ClusteringView`` - a widget was
-        authoring ``ALTER TABLE`` statements. ``DECISIONS.md`` (2026-08-25) accepts the
+        Owns the SQL, rather than ``ClusteringView`` - authoring ``ALTER TABLE``
+        statements is not a widget's job. ``DECISIONS.md`` (2026-08-25) accepts the
         f-string interpolation itself, because the database is a local file owned by
         the user running the app; this is about *where* the SQL lives.
 
@@ -277,7 +276,7 @@ class ClusteringModel(MetaModel):
         Write the cluster labels and confidences into the database.
 
         The two new columns are unitless, which is what the ``[None, None]`` says. It
-        was a local in the View before Step 4a; it belongs with the call it describes.
+        belongs with the call it describes rather than with the widget that asks.
 
         :param loader: the database loader's plugin key
         :type loader: str
