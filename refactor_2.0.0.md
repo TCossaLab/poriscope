@@ -373,10 +373,10 @@ sites are converted**, and they sit in Clustering (1), Metadata (5) and Protein 
     **Progress, kept here so a part-done sweep is resumable.** Re-measure with
     `grep -rcE "Step 4|Step 3|method rule|Decision [A-E]|rule \d+" poriscope/ --include=*.py`
     and update the count when a file lands; the surface was 181 when the sweep was
-    scoped, 169 after the event-plot promotion deleted some of it, and **84 today**.
+    scoped, 169 after the event-plot promotion deleted some of it, and **71 today**.
     Done: `MetadataView.py` (26), `ProteinView.py` (16), `MetaSubsetTabView.py` (15),
-    `RawDataView.py` (14) and `MetadataController.py` (14). Remaining, largest first:
-    `MetaSubsetTabController` 13, `ClusteringView` 12, `ProteinController` 8,
+    `RawDataView.py` (14), `MetadataController.py` (14) and
+    `MetaSubsetTabController.py` (13). Remaining, largest first: `ClusteringView` 12, `ProteinController` 8,
     `RawDataController` 7, `MetaModel` 6, `ClusteringController` 6, `ClusteringModel` 5,
     `EventAnalysisView` 4, `EventAnalysisController` 4, `MetaEventTabController` 3,
     `MetaController` 3, `ProteinModel` 3, `MetaView` 2, `MetaEventTabView` 2,
