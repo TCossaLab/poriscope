@@ -124,18 +124,17 @@ class ProteinView(MetaSubsetTabView):
     #: it is built against. The answers arrive through ``set_event_query`` and
     #: ``set_event_data_generator``.
     #:
-    #: Step 4a. Both distribution modes ran the same four emits - build the query,
-    #: resolve the two scope ids a ``_raw`` filter needed, load the events - so both
-    #: now raise this one intent. The raw half is gone: measurement showed that route
-    #: handed a complete SELECT where a WHERE-clause body was expected and could never
-    #: return an event, so raw filters are refused before a plot is attempted.
+    #: One request serving both distribution modes, because they ask the same thing.
+    #: Raw filters never reach it: a complete ``SELECT`` handed where a WHERE-clause body
+    #: is expected cannot return an event, so they are refused before a plot is
+    #: attempted rather than failing silently here.
     event_distribution_data_requested = Signal(str, str, object)
 
     #: Asks whether the database already holds fit columns, before any are written.
     #: Answered through ``confirm_fit_commit``.
     #:
-    #: Step 4a, two-phase because the plugin call it replaced interleaved with a modal
-    #: question: whether the user is asked at all depends on the answer.
+    #: Two-phase, because whether the user is asked anything at all depends on this
+    #: answer - a single request would have to open the modal from inside the Controller.
     fit_commit_requested = Signal(str)
 
     #: Sends the approved write out: the loader's key, the fitted columns, their units,
@@ -148,10 +147,10 @@ class ProteinView(MetaSubsetTabView):
     #: amplitudes, and the context the drawing half needs back unchanged. Answered
     #: through ``set_ensemble_geometry_fit``.
     #:
-    #: Step 4c. The fit and its sanity checks moved to ``ProteinModel`` so that
-    #: ``scipy.optimize``, ``scipy.signal`` and ``scipy.stats`` leave the View. The
-    #: context travels out and back through the round trip rather than being parked on
-    #: this widget between the halves, which is the pattern Step 4a exists to delete.
+    #: The fit and its sanity checks are made by ``ProteinModel``; only the drawing is
+    #: here. The context travels out and back through the round trip rather than being
+    #: parked on the widget between the halves, so a request that is never answered
+    #: leaves nothing behind for the next one to read.
     ensemble_fit_requested = Signal(object, object, object, str, float, float, int)
 
     #: Asks for one subset's events to be fetched and averaged into a single
@@ -159,9 +158,9 @@ class ProteinView(MetaSubsetTabView):
     #: request, and the drawing context handed back unchanged. Answered through
     #: ``set_ensemble_histogram``.
     #:
-    #: Step 4's closeout. The subset used to arrive here as a generator the widget
-    #: walked twice; the events themselves never belonged above the Model, and
-    #: nothing outside the histogram ever read them.
+    #: The events are averaged where they are loaded and only the histogram comes back.
+    #: Nothing outside the histogram reads them, so handing the widget a generator to
+    #: walk would put the whole subset in the View to produce one array.
     ensemble_histogram_requested = Signal(
         str, str, object, str, object, bool, str, object, float, float, int
     )
@@ -176,25 +175,24 @@ class ProteinView(MetaSubsetTabView):
     #: frames they came from, and the events themselves. Answered through
     #: ``set_event_histogram_fits``.
     #:
-    #: Step 4c. One intent for the whole set rather than one per event: a per-event
-    #: round trip would work, since a same-thread Qt signal is synchronous, but only
-    #: by parking each answer where the loop body could read it back - the pattern
-    #: Step 4a exists to delete. A ``None`` pair marks an event whose histogram could
-    #: not be built, so every list stays index-aligned with the events.
+    #: One request for the whole set rather than one per event. A per-event round trip
+    #: would work - a same-thread Qt signal is synchronous - but only by parking each
+    #: answer where the loop body could read it back. A ``None`` pair marks an event whose
+    #: histogram could not be built, so every list stays index-aligned with the events.
     #:
-    #: Step 4's closeout sent the binning down with the fitting, so this carries the
-    #: events and the bin request rather than histograms built here.
+    #: It carries the events and the bin request rather than histograms built here,
+    #: because the binning and the fitting are made together and must describe the same
+    #: bins.
     event_histogram_fits_requested = Signal(object, str, object, bool)
 
     #: Asks for one fit per event on the individual distribution path, with the pore
     #: geometry the sampling needs. Answered through ``set_distribution_fits``.
     #:
-    #: Step 4c. Separate from ``event_histogram_fits_requested`` because the answers
-    #: are used for different work - that one draws per-event subplots, this one
-    #: Monte Carlo samples V/m from each fit - and one intent answering two unrelated
-    #: consumers would have to be told which it was serving.
-    #:
-    #: Step 4's closeout sent the binning down with the fitting, as above.
+    #: Separate from ``event_histogram_fits_requested`` because the answers are used for
+    #: different work - that one draws per-event subplots, this one Monte Carlo samples
+    #: V/m from each fit - and one request answering two unrelated consumers would have to
+    #: be told which it was serving. It carries the bin request for the same reason as
+    #: that one.
     distribution_fits_requested = Signal(object, str, object, bool, float, float, int)
 
     @property
@@ -462,10 +460,10 @@ class ProteinView(MetaSubsetTabView):
         """
         Ask whether this database already holds fit data, before writing any.
 
-        Phase one of a two-phase commit (Step 4a). The plugin call that used to sit
-        here interleaved with a modal question, so it cannot be one intent: whether
-        the user is asked at all depends on the answer. The Controller looks, then
-        calls :py:meth:`confirm_fit_commit` back.
+        Phase one of a two-phase commit, because the look-up interleaves with a modal
+        question: whether the user is asked anything at all depends on the answer, so it
+        cannot be a single request. The Controller looks, then calls
+        :py:meth:`confirm_fit_commit` back.
 
         :param loader: Name or ID of the database loader plugin.
         :type loader: str
@@ -1642,10 +1640,10 @@ class ProteinView(MetaSubsetTabView):
         """
         Ask for each event's histogram and its fit; the answer draws them.
 
-        Step 4c split the fitting out and Step 4's closeout sent the binning after
-        it: an event's histogram is an aggregate of its samples, and it is exported
-        with the plot, so ``ProteinModel`` builds it. This half ends at the intent
-        and ``set_event_histogram_fits`` does every bit of drawing.
+        ``ProteinModel`` builds the histogram and its fit together: an event's
+        histogram is an aggregate of its samples and it is exported with the plot, and
+        binning it apart from fitting it would let the two describe different bins. This
+        half ends at the request; ``set_event_histogram_fits`` does every bit of drawing.
 
         An event whose histogram cannot be built contributes ``None`` rather than
         being dropped, so the lists stay index-aligned with ``event_data`` and the
@@ -1851,10 +1849,10 @@ class ProteinView(MetaSubsetTabView):
         """
         Plot the geometries every fitted event is consistent with.
 
-        The answering half of ``distribution_fits_requested``. Step 4's closeout
-        moved the sampling to :meth:`ProteinModel.sample_event_geometries`: a Monte
-        Carlo over a forward model is not drawing, and its output is written back to
-        the database as this tab's fit columns.
+        The answering half of ``distribution_fits_requested``. The sampling is done by
+        :meth:`ProteinModel.sample_event_geometries`, because a Monte Carlo over a
+        forward model is not drawing and its output is written back to the database as
+        this tab's fit columns.
 
         :param df_prolate: every fitted event's prolate solutions, pooled
         :type df_prolate: pd.DataFrame
@@ -2023,10 +2021,10 @@ class ProteinView(MetaSubsetTabView):
         """
         Draw the averaged histogram, then ask for the geometry it implies.
 
-        The answering half of ``ensemble_histogram_requested``. Step 4's closeout
-        moved the averaging to :meth:`ProteinModel.build_all_points_histogram`:
-        walking a subset's events and binning every sample of them is aggregation
-        rather than drawing, and the result is exported with the plot.
+        The answering half of ``ensemble_histogram_requested``. The averaging is done by
+        :meth:`ProteinModel.build_all_points_histogram`, because walking a subset's
+        events and binning every sample of them is aggregation rather than drawing, and
+        the result is exported with the plot.
 
         The bookkeeping happens here rather than back in the request half because
         ``set_ensemble_geometry_fit`` reads ``allowed_bins`` and ``allowed_sizes``,
@@ -2080,9 +2078,10 @@ class ProteinView(MetaSubsetTabView):
         (experiment, channel, filter) combination has been plotted, using
         whatever plot_data that produced.
 
-        Step 4c split this from the plotting half. It previously returned ``bool``,
-        but the single caller's ``if not ...: return`` was its own last statement, so
-        the value decided nothing and is not reproduced across the round trip.
+        Separate from the plotting half, and it returns nothing: the single caller's
+        ``if not ...: return`` was its own last statement, so a boolean would decide
+        nothing and reproducing one across the round trip would only invite a caller to
+        branch on it.
 
         :param plot_data: the aggregated histogram DataFrame to fit against.
         :type plot_data: pd.DataFrame
@@ -2122,8 +2121,8 @@ class ProteinView(MetaSubsetTabView):
 
         The answering half of ``ensemble_fit_requested``. The fitted curve arrives
         already evaluated at the bins it was fitted on, which is what lets the model
-        function live on ``ProteinModel``; Step 4's closeout sent the Monte Carlo
-        after it, so the solutions arrive sampled too.
+        function live on ``ProteinModel``. The sampled solutions arrive with it, since
+        they are drawn from that same fit.
 
         An ensemble that sampled nothing still reaches here, and still draws the fit:
         the Controller reports the bail-out, and the two empty frames simply skip
