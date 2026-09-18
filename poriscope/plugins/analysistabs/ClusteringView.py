@@ -71,25 +71,23 @@ class ClusteringView(MetaView):
 
     #: Asks the Controller to cluster an already-loaded frame. Carries the frame, the
     #: columns to leave un-normalized, the method name, and that method's already-parsed
-    #: parameters. Step 4c introduced it: the clustering itself lives on
-    #: ``ClusteringModel`` now, and this is Decision B's command path to it -
-    #: ``RawDataView.calculate_psd`` is the same shape. The answer arrives at
-    #: :meth:`set_clustering_result`.
+    #: parameters. The clustering itself is ``ClusteringModel``'s, and the answer
+    #: arrives at :meth:`set_clustering_result`; ``RawDataView.calculate_psd`` is the
+    #: same shape.
     cluster_requested = Signal(object, list, list, list, str, dict)
 
-    #: Asks the Controller for the column names a database loader offers. Step 4a
-    #: replaced a ``global_signal`` emit whose answer came back seven hops later
-    #: through ``update_column_names``; the answer now arrives one hop later, and a
-    #: failed lookup raises in the Controller's slot instead of being swallowed.
+    #: Asks the Controller for the column names a database loader offers, answered
+    #: through ``update_column_names``. The Controller calls the loader itself, so a
+    #: failed lookup is reported rather than swallowed on the way back.
     column_names_requested = Signal(str)
 
-    #: Asks the Controller for one column's unit string. Same conversion as above.
+    #: Asks the Controller for one column's unit string. Same shape as above.
     column_units_requested = Signal(str, str)
 
-    #: Asks whether the database already holds a clustering result. Step 4a: the answer
-    #: used to be parked on ``self.cluster_column_table`` by a bus callback and read
-    #: back on the next statement; it now arrives at ``on_cluster_column_checked``,
-    #: which is also where the overwrite confirmation lives.
+    #: Asks whether the database already holds a clustering result. The answer arrives
+    #: at ``on_cluster_column_checked``, which is also where the overwrite confirmation
+    #: lives - the question the user is asked depends on the answer, so the two belong
+    #: together rather than either side of a value parked here.
     cluster_column_check_requested = Signal(str)
 
     #: Asks the Controller to commit the current clustering result, dropping an
@@ -97,11 +95,10 @@ class ClusteringView(MetaView):
     #: rather than one because a modal confirmation sits between them.
     cluster_commit_requested = Signal(str, object, str, object)
 
-    #: Asks the Controller to build the metadata query and load the rows for it. Step 4a:
-    #: this replaced the last two ``global_signal`` emits in this tab, whose answers were
-    #: parked on ``self.query`` and ``self.plot_data`` and read back on the next
-    #: statement - the pattern that twice shipped a plot of the *previous* subset's rows.
-    #: The rows arrive at ``on_metadata_loaded``.
+    #: Asks the Controller to build the metadata query and load the rows for it; the
+    #: rows arrive at ``on_metadata_loaded``. One request rather than a query and a load
+    #: asked for separately, because reading each answer back off this widget is what
+    #: twice shipped a plot of the *previous* subset's rows.
     metadata_load_requested = Signal(dict, str)
 
     logger = logging.getLogger(__name__)
@@ -116,9 +113,9 @@ class ClusteringView(MetaView):
         self.cluster_data: Optional[pd.DataFrame] = None
         self.query = ""
         # Set by update_column_names when the loader answers. Initialised here
-        # because the clustering settings dialog reads it: before Step 4a it was
-        # created only by that callback, so a loader whose columns could not be
-        # read left the dialog raising AttributeError instead of opening empty.
+        # because the clustering settings dialog reads it. Created only by that
+        # callback, a loader whose columns could not be read would leave the dialog
+        # raising AttributeError instead of opening empty.
         self.columns: List[str] = []
         # Positional units for the currently plotted columns, set by
         # update_plot and read back by _merge_clusters when it replots.
@@ -274,11 +271,10 @@ class ClusteringView(MetaView):
         """
         Begin committing the clustering result, checking for an existing one first.
 
-        Step 4a split this into three parts. It used to make three bus calls and read
-        each answer back off an attribute on the next statement, with a modal
-        confirmation in the middle - so a dispatch that failed silently left it acting
-        on the *previous* commit's answers. Now it asks, and
-        :meth:`on_cluster_column_checked` continues when the answer arrives.
+        Three parts, because a modal confirmation sits in the middle: this asks, and
+        :meth:`on_cluster_column_checked` continues when the answer arrives. Doing it in
+        one pass would mean reading each answer back off this widget, and a look-up that
+        failed would leave it acting on the *previous* commit's answers.
 
         :param loader: Name or ID of the database loader plugin.
         :type loader: str
@@ -372,11 +368,9 @@ class ClusteringView(MetaView):
         """
         Ask the Controller for the column names the given loader offers.
 
-        The answer arrives at ``update_column_names``. Step 4a replaced the
-        ``global_signal`` emit this used to make: the try/except around it went too,
-        because it guarded against a Qt emit raising rather than against the plugin
-        call failing - the call is the Controller's now, and a failure raises there
-        where it can be reported.
+        The answer arrives at ``update_column_names``. There is no try/except here:
+        emitting a request does not raise, and the call that can fail is the
+        Controller's, which is where a failure can be reported.
 
         :param loader: Identifier for the loader plugin.
         :type loader: str
@@ -390,8 +384,7 @@ class ClusteringView(MetaView):
         """
         Ask the Controller for one column's unit string.
 
-        The answer arrives at ``update_column_units``. Step 4a replaced the
-        ``global_signal`` emit this used to make.
+        The answer arrives at ``update_column_units``.
 
         :param loader: Plugin name or ID.
         :type loader: str
@@ -531,9 +524,9 @@ class ClusteringView(MetaView):
         """
         Validate the settings dialog's config and ask the Controller for the rows.
 
-        Step 4a split this in two. It used to emit ``global_signal`` twice and read each
-        answer back off an attribute on the following statement; the rows now arrive at
-        :meth:`on_metadata_loaded`, which does the filtering and the clustering request.
+        Split in two: the rows arrive at :meth:`on_metadata_loaded`, which does the
+        filtering and the clustering request. Asking for the query and the rows
+        separately would mean reading each answer back off this widget.
 
         What stays here is validation of what the user just selected, which is the
         View's own business: a duplicate column makes for a meaningless plot and is
@@ -568,10 +561,10 @@ class ClusteringView(MetaView):
         parameter now rather than something read back off ``self.plot_data``, so the
         clear-before-emit guard that used to protect that read is gone with the read.
 
-        **The filtering itself moved to** :meth:`ClusteringModel.build_clustering_frame`
-        in Step 4's closeout, and took pandas out of this file with it. What stays here
-        is reading the settings dialog - the per-column flags and the method parameters
-        are strings the user typed, so a bad one is this form's problem to report.
+        **The filtering itself is** :meth:`ClusteringModel.build_clustering_frame`'s.
+        What stays here is reading the settings dialog - the per-column flags and the
+        method parameters are strings the user typed, so a bad one is this form's
+        problem to report.
 
         :param config: Dictionary with selected columns and method configuration.
         :type config: Dict[str, Any]
@@ -653,9 +646,9 @@ class ClusteringView(MetaView):
         """
         Receive the Model's clustering result and plot it.
 
-        The other half of cluster_requested. Everything here used to follow the
-        clustering call inline in _handle_clustering_settings; Step 4c moved the
-        clustering itself to ClusteringModel, so this moved here instead.
+        The other half of cluster_requested: the clustering is ClusteringModel's, so
+        everything that depends on its result is drawn from here rather than inline
+        after the call.
 
         :param data: the normalized frame the Model clustered
         :type data: pd.DataFrame
