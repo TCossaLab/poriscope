@@ -1,7 +1,7 @@
 {
   "*Controller.py": {
     "files": 5,
-    "functions": 88,
+    "functions": 86,
     "identical_bodies": 0,
     "removable_lines": 0
   },
@@ -13,7 +13,7 @@
   },
   "*View.py": {
     "files": 5,
-    "functions": 196,
+    "functions": 194,
     "identical_bodies": 1,
     "removable_lines": 31
   },

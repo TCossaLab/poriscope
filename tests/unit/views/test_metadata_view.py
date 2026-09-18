@@ -1877,6 +1877,7 @@ def _event_plot_data_answer(view: MetadataView) -> Callable[..., None]:
         exp: object,
         channel: object,
         scope: object,
+        action_label: str,
     ) -> None:
         view.plot_events_generator = getattr(view, "canned_plot_events_generator", None)
 
@@ -5385,7 +5386,7 @@ def test_handle_plot_events_requests_the_snapped_ids_in_scope(
     )
 
     view.event_plot_data_requested.emit.assert_called_once_with(
-        "test_loader", [5, 10], "exp1", 1, {"exp1": [1]}
+        "test_loader", [5, 10], "exp1", 1, {"exp1": [1]}, "events"
     )
     view.global_signal.emit.assert_not_called()
 

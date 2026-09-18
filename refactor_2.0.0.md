@@ -344,14 +344,16 @@ sites are converted**, and they sit in Clustering (1), Metadata (5) and Protein 
      move to a new `MetaSubsetTabModel`, which takes `load_filters`/`save_filters` down off
      `MetaModel` with them. **`*Model.py` duplication 38 -> 8, its recorded target**, and the
      audit 84 -> 82 as four targets become two. Breaking, and called out as such.
-   - **The Controller and View half - open.** `load_event_plot_data` is 108 and 113 lines
-     and **68 of 72 code lines identical**; it goes to `MetaSubsetTabController` with
-     `event_plot_data_requested` and `set_event_plot_data_generator` (identical code, docstrings
-     differ) going to `MetaSubsetTabView`. Moves no gate - the `*Controller.py` family
-     enumerates the five tab Controllers and not the base, so promoting takes both copies out
-     of the measured set (rules 24 and 36). Two user-visible consequences: the metadata tab's
-     "no data available" wording gains its plot type and the protein tab's gains the event
-     ids, and the metadata tab inherits an empty-request guard that cannot fire.
+   - **The Controller and View half - LANDED 2026-09-17.** `load_event_plot_data` is one
+     body on `MetaSubsetTabController`, with `event_plot_data_requested` (six arguments now,
+     Metadata emitting `"events"`), `set_event_plot_data_generator` and the
+     `plot_events_generator` annotation on `MetaSubsetTabView`. **Moved no gate, exactly as
+     rule 38 said before starting**: the `*Controller.py` and `*View.py` families enumerate
+     the five tabs and not the bases, so `removable` holds at 0 and 31 while `functions` falls
+     86 and 194 - four bodies became two and only the second number can see it (rules 24 and
+     36). The shared failure message names both the plot type and the ids, so neither tab
+     loses information; the metadata tab inherits Protein's empty-request guard, recorded
+     2026-09-12 as inert there.
 9. **The 4a exit-review item.** The protein tab's unresolvable-experiment guard has still
    never run against a real database.
 

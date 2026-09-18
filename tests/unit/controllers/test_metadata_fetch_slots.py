@@ -547,7 +547,7 @@ class TestLoadEventPlotData:
         """
         controller.model = recording_tab_model(MetadataModel, dict(self.ANSWERS))
 
-        controller.load_event_plot_data("ldr", [5, 10], "exp1", 1, SCOPE)
+        controller.load_event_plot_data("ldr", [5, 10], "exp1", 1, SCOPE, "events")
 
         (resolved,) = controller.model.calls_to("query_database_directly")
         query = resolved[0]
@@ -567,7 +567,7 @@ class TestLoadEventPlotData:
         answers["load_event_data"] = generator
         controller.model = recording_tab_model(MetadataModel, answers)
 
-        controller.load_event_plot_data("ldr", [5], "exp1", 1, SCOPE)
+        controller.load_event_plot_data("ldr", [5], "exp1", 1, SCOPE, "events")
 
         (loaded,) = controller.model.calls_to("load_event_data")
         assert loaded == ("e.id IN (11,12)", SCOPE)
@@ -585,7 +585,7 @@ class TestLoadEventPlotData:
         answers["get_experiment_id_by_name"] = None
         controller.model = recording_tab_model(MetadataModel, answers)
 
-        controller.load_event_plot_data("ldr", [5], "exp1", 1, SCOPE)
+        controller.load_event_plot_data("ldr", [5], "exp1", 1, SCOPE, "events")
 
         assert controller.model.calls_to("query_database_directly") == []
         controller.view.set_event_plot_data_generator.assert_not_called()
@@ -599,7 +599,7 @@ class TestLoadEventPlotData:
         answers["get_experiment_id_by_name"] = RuntimeError("database is locked")
         controller.model = recording_tab_model(MetadataModel, answers)
 
-        controller.load_event_plot_data("ldr", [5], "exp1", 1, SCOPE)
+        controller.load_event_plot_data("ldr", [5], "exp1", 1, SCOPE, "events")
 
         assert controller.model.calls_to("query_database_directly") == []
         assert "database is locked" in panel_text(controller)
@@ -615,7 +615,7 @@ class TestLoadEventPlotData:
         answers["query_database_directly"] = pd.DataFrame()
         controller.model = recording_tab_model(MetadataModel, answers)
 
-        controller.load_event_plot_data("ldr", [5], "exp1", 1, SCOPE)
+        controller.load_event_plot_data("ldr", [5], "exp1", 1, SCOPE, "events")
 
         assert controller.model.calls_to("load_event_data") == []
         assert "No data available" in panel_text(controller)
@@ -632,7 +632,7 @@ class TestLoadEventPlotData:
         answers["query_database_directly"] = pd.DataFrame({"event_id": [5]})
         controller.model = recording_tab_model(MetadataModel, answers)
 
-        controller.load_event_plot_data("ldr", [5], "exp1", 1, SCOPE)
+        controller.load_event_plot_data("ldr", [5], "exp1", 1, SCOPE, "events")
 
         assert controller.model.calls_to("load_event_data") == []
         controller.view.set_event_plot_data_generator.assert_not_called()
@@ -646,7 +646,7 @@ class TestLoadEventPlotData:
         answers["load_event_data"] = RuntimeError("cannot read event blob")
         controller.model = recording_tab_model(MetadataModel, answers)
 
-        controller.load_event_plot_data("ldr", [5], "exp1", 1, SCOPE)
+        controller.load_event_plot_data("ldr", [5], "exp1", 1, SCOPE, "events")
 
         controller.view.set_event_plot_data_generator.assert_not_called()
         assert "cannot read event blob" in panel_text(controller)
@@ -661,7 +661,7 @@ class TestLoadEventPlotData:
         answers["load_event_data"] = None
         controller.model = recording_tab_model(MetadataModel, answers)
 
-        controller.load_event_plot_data("ldr", [5], "exp1", 1, SCOPE)
+        controller.load_event_plot_data("ldr", [5], "exp1", 1, SCOPE, "events")
 
         controller.view.set_event_plot_data_generator.assert_not_called()
         assert "No data available" in panel_text(controller)
@@ -676,7 +676,7 @@ class TestLoadEventPlotData:
         """
         controller.model = recording_tab_model(MetadataModel, dict(self.ANSWERS))
 
-        controller.load_event_plot_data("ldr", [5], None, 1, SCOPE)
+        controller.load_event_plot_data("ldr", [5], None, 1, SCOPE, "events")
 
         assert controller.model.calls_to("get_experiment_id_by_name") == []
         (resolved,) = controller.model.calls_to("query_database_directly")

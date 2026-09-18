@@ -151,6 +151,17 @@ class MetaSubsetTabView(MetaView):
     #: reading it back leaves every one of them untouched.
     event_id_cache_requested = Signal(str, object, object)
 
+    #: Asks for the full data of specific events, named by their ``event_id`` values:
+    #: the loader's key, the ids, the experiment and channel they are scoped to, the
+    #: scope ``load_event_data`` wants, and what the caller is plotting, which only
+    #: appears in the failure messages. Answered through
+    #: ``set_event_plot_data_generator``, or not at all if any part of the chain failed.
+    #:
+    #: The scope is why the request carries an experiment and a channel separately from
+    #: ``experiments_and_channels``: ``event_id`` is unique only within a channel, so
+    #: the ids have to be resolved within one before the rows can be loaded.
+    event_plot_data_requested = Signal(str, list, object, object, object, str)
+
     #: Asks for a saved filter file to be read: the path the user chose and the
     #: loader its filters will be validated against. Answered through
     #: ``set_loaded_filters``, or not at all if the file could not be read.
@@ -177,6 +188,13 @@ class MetaSubsetTabView(MetaView):
     #: ``None`` means the query could not be run, which is ``load_metadata``'s own
     #: contract; an empty frame means it ran and matched nothing.
     event_id_rows: Optional[pd.DataFrame]
+
+    #: Where the Controller leaves the generator over the events an event plot asked
+    #: for, read back on the next statement over the direct connection. Cleared before
+    #: the request and set only once the whole resolve-and-load chain has succeeded, so
+    #: ``None`` means that chain did not finish rather than that the previous plot's
+    #: events are still good. Assigned in each subclass's ``_init``.
+    plot_events_generator: Optional[Iterator[Dict[str, Any]]]
 
     #: Assigned in each subclass's ``_init``, identically in both tabs today. The
     #: annotation moves here with the methods that read it; the assignment stays with
@@ -265,6 +283,25 @@ class MetaSubsetTabView(MetaView):
         :rtype: None
         """
         self.event_id_rows = rows
+
+    @log(logger=logger)
+    def set_event_plot_data_generator(
+        self, generator: Iterator[Dict[str, Any]]
+    ) -> None:
+        """
+        Receive the generator over the events an event plot asked for.
+
+        Called by ``MetaSubsetTabController.load_event_plot_data`` only once the whole
+        resolve-and-load chain has succeeded, so the caller reading it back on the next
+        statement can treat ``None`` as "that chain did not finish" rather than as "the
+        previous plot's events are still good".
+
+        :param generator: a generator over the events the loader returned
+        :type generator: Iterator[Dict[str, Any]]
+        :return: None
+        :rtype: None
+        """
+        self.plot_events_generator = generator
 
     @log(logger=logger)
     def _delete_filter(self, name: str) -> None:

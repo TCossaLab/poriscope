@@ -81,7 +81,6 @@ class MetadataController(MetaSubsetTabController):
             self.build_all_points_histogram
         )
         self.view.event_overlay_requested.connect(self.build_event_overlay)
-        self.view.event_plot_data_requested.connect(self.load_event_plot_data)
         self.view.plot_features_requested.connect(self.request_plot_features)
         self.view.csv_subset_export_requested.connect(self.export_csv_subset)
         self.view.heatmap_requested.connect(self.calculate_heatmap)
@@ -837,116 +836,6 @@ class MetadataController(MetaSubsetTabController):
             return
         self.view.set_column_type(column_type)
 
-    @log(logger=logger)
-    @Slot(str, list, object, object, object)
-    def load_event_plot_data(
-        self,
-        loader: str,
-        event_ids: List[int],
-        exp: Optional[str],
-        channel: Optional[int],
-        experiments_and_channels: Optional[Dict[str, List[Optional[int]]]],
-    ) -> None:
-        """
-        Load the full data of specific events, named by their ``event_id`` values.
-
-        Step 4a replaced a three-emit chain the View ran a statement at a time:
-        resolve the experiment name to an id, query the events table for the primary
-        keys of those event_ids within the experiment and channel, then load exactly
-        those rows. Each answer was parked on an attribute and read back on the next
-        line, and each read was guarded only by having cleared the attribute first.
-
-        The scoping is the reason the middle query exists at all: ``event_id`` is
-        unique only within a channel, so an unscoped match picks up rows from other
-        channels that happen to share one.
-
-        **One behaviour change.** An experiment name that does not resolve now stops
-        the plot and says so. Before, the bus swallowed the failure, the id came back
-        ``None``, and the query ran *unscoped* - which is the same "plots the wrong
-        subset" class of fault Step 4a's earlier commits fixed, silently returning
-        another channel's events under this channel's label.
-
-        :param loader: the database loader plugin's key
-        :type loader: str
-        :param event_ids: the event_id values to plot, already snapped to the cache
-        :type event_ids: List[int]
-        :param exp: the experiment the events belong to, or None to leave it out of scope
-        :type exp: Optional[str]
-        :param channel: the channel the events belong to, or None for all channels
-        :type channel: Optional[int]
-        :param experiments_and_channels: the scope handed on to ``load_event_data``
-        :type experiments_and_channels: Optional[Dict[str, List[Optional[int]]]]
-        :return: None
-        :rtype: None
-        """
-        exp_id = None
-        if exp is not None:
-            try:
-                exp_id = self.model.call(
-                    "MetaDatabaseLoader", loader, "get_experiment_id_by_name", exp
-                )
-            except Exception as e:
-                self.logger.error(f"Failed to resolve experiment {exp}: {e!r}")
-                self.add_text_to_display.emit(
-                    f"Could not look up experiment {exp} in {loader}: {e}",
-                    self.__class__.__name__,
-                )
-                return
-            if exp_id is None:
-                self.add_text_to_display.emit(
-                    f"{loader} has no experiment named {exp}, so these events cannot "
-                    "be scoped to it",
-                    self.__class__.__name__,
-                )
-                return
-
-        try:
-            id_result = self.model.resolve_event_ids(loader, event_ids, exp_id, channel)
-        except Exception as e:
-            self.logger.error(f"Failed to resolve event ids for {event_ids}: {e!r}")
-            self.add_text_to_display.emit(
-                f"Could not look up these events in {loader}: {e}",
-                self.__class__.__name__,
-            )
-            return
-
-        if id_result is None or id_result.empty:
-            self.add_text_to_display.emit(
-                f"No data available for plotting with indices in the specified range {event_ids}",
-                self.__class__.__name__,
-            )
-            return
-        if "id" not in id_result.columns:
-            # A populated result without the column it was asked for means the loader
-            # did not honour its own contract, which is a different problem from an
-            # empty subset and would raise on the read below.
-            self.logger.error(
-                f"{loader} returned rows with no id column for events {event_ids} "
-                f"in experiment {exp} channel {channel}"
-            )
-            return
-
-        db_ids = ",".join(str(i) for i in id_result["id"].tolist())
-        try:
-            generator = self.model.load_events_by_id(
-                loader, db_ids, experiments_and_channels
-            )
-        except Exception as e:
-            self.logger.error(f"Failed to load events {event_ids}: {e!r}")
-            self.add_text_to_display.emit(
-                f"Could not load these events from {loader}: {e}",
-                self.__class__.__name__,
-            )
-            return
-
-        if generator is None:
-            self.add_text_to_display.emit(
-                f"No data available for plotting with indices in the specified range {event_ids}",
-                self.__class__.__name__,
-            )
-            return
-
-        self.view.set_event_plot_data_generator(generator)
 
     @log(logger=logger)
     @Slot(str, int, int, int)

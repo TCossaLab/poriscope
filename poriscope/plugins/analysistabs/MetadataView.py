@@ -31,7 +31,6 @@ import warnings
 from typing import (
     Any,
     Dict,
-    Iterator,
     List,
     Optional,
     Sequence,
@@ -131,19 +130,6 @@ class MetadataView(MetaSubsetTabView):
     #: needs before it will let the plot proceed. The answer arrives through
     #: ``set_column_type``, and stays ``None`` when the lookup failed.
     column_type_requested = Signal(str, str)
-
-    #: Asks for the full data of specific events, named by the ``event_id`` values the
-    #: navigation snapped to: the loader's key, those ids, the experiment name, the
-    #: channel, and the experiment/channel scope ``load_event_data`` wants. The answer
-    #: arrives through ``set_event_plot_data_generator``.
-    #:
-    #: Step 4a replaced a three-emit chain - resolve the experiment name to an id,
-    #: query the events table for the ids matching those ``event_id`` values within
-    #: that scope, then load exactly those rows - each of whose answers was parked on
-    #: an attribute and read back on the next statement. The whole chain belongs to
-    #: whoever can run it end to end and report which part failed, which is not the
-    #: widget.
-    event_plot_data_requested = Signal(str, list, object, object, object)
 
     #: Asks for one event's plot features - the lines, points and labels a fitter left
     #: behind. Emitted once per event on the plot path, and answered through
@@ -251,7 +237,7 @@ class MetadataView(MetaSubsetTabView):
         self.hist_max: Optional[float] = None
         # Set by set_event_plot_data_generator once the whole event-plot chain has
         # succeeded. None means it has not been fetched.
-        self.plot_events_generator: Optional[Iterator[Dict[str, Any]]] = None
+        self.plot_events_generator = None
         # One units string per plotted column, set by set_column_units once the
         # whole subset has been fetched. None means it has not been.
         self.column_units: Optional[List[Optional[str]]] = None
@@ -2196,7 +2182,7 @@ class MetadataView(MetaSubsetTabView):
         # mistaken for the previous plot's events.
         self.plot_events_generator = None
         self.event_plot_data_requested.emit(
-            loader, snapped_event_ids, exp, channel, exp_and_ch
+            loader, snapped_event_ids, exp, channel, exp_and_ch, "events"
         )
         event_generator = self.plot_events_generator
         if event_generator is None:
@@ -2272,21 +2258,6 @@ class MetadataView(MetaSubsetTabView):
                 f"No data available for plotting with indices in the specified range {snapped_event_ids}"
             )
 
-    @log(logger=logger)
-    def set_event_plot_data_generator(
-        self, generator: Iterator[Dict[str, Any]]
-    ) -> None:
-        """
-        Receive the events asked for by ``event_plot_data_requested``.
-
-        Set only once the Controller has resolved the requested event_ids to database
-        ids and loaded exactly those rows, so ``None`` means the request failed and
-        has already been reported.
-
-        :param generator: a generator of event data
-        :type generator: Iterator[Dict[str, Any]]
-        """
-        self.plot_events_generator = generator
 
     @log(logger=logger)
     def update_plot_features(

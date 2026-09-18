@@ -173,6 +173,126 @@ class MetaSubsetTabController(MetaController):
         self.view.scatterplot_requested.connect(self.filter_scatterplot)
         self.view.filters_load_requested.connect(self.load_filters)
         self.view.filters_save_requested.connect(self.save_filters)
+        self.view.event_plot_data_requested.connect(self.load_event_plot_data)
+
+    @log(logger=logger)
+    @Slot(str, list, object, object, object, str)
+    def load_event_plot_data(
+        self,
+        loader: str,
+        event_ids: List[int],
+        exp: Optional[str],
+        channel: Optional[int],
+        experiments_and_channels: Optional[Dict[str, List[Optional[int]]]],
+        action_label: str,
+    ) -> None:
+        """
+        Resolve ``event_id`` values to database ids within scope and load those rows.
+
+        The whole chain runs here because only one place can run it end to end and say
+        which part failed. It was three separate requests once, each answer parked on a
+        View attribute and read back on the next statement; nothing outside the chain
+        ever read the intermediate answers.
+
+        **An experiment that does not resolve stops the plot** rather than widening the
+        query. ``event_id`` is unique only within an experiment and channel, so an
+        unscoped match returns whichever channel's row happens to share the number -
+        which is the "plots the wrong subset" fault, not a harmless one.
+
+        ``action_label`` names what the caller is plotting - events, histograms - and
+        appears only in the messages, which is the whole of what the two tabs' copies
+        of this method used to differ by.
+
+        :param loader: the database loader plugin's key
+        :type loader: str
+        :param event_ids: the ``event_id`` values to plot, already snapped to the cache
+        :type event_ids: List[int]
+        :param exp: the experiment the events belong to, or None to leave it out of scope
+        :type exp: Optional[str]
+        :param channel: the channel the events belong to, or None for all channels
+        :type channel: Optional[int]
+        :param experiments_and_channels: the scope handed on to ``load_event_data``
+        :type experiments_and_channels: Optional[Dict[str, List[Optional[int]]]]
+        :param action_label: what the caller is plotting, for its messages
+        :type action_label: str
+        :return: None
+        :rtype: None
+        """
+        if not event_ids:
+            self.add_text_to_display.emit(
+                f"No events were requested, so there are no {action_label} to plot",
+                self.__class__.__name__,
+            )
+            return
+
+        exp_id = None
+        if exp is not None:
+            try:
+                exp_id = self.model.call(
+                    "MetaDatabaseLoader", loader, "get_experiment_id_by_name", exp
+                )
+            except Exception as e:
+                self.logger.error(f"Failed to resolve experiment {exp}: {e!r}")
+                self.add_text_to_display.emit(
+                    f"Could not look up experiment {exp} in {loader}: {e}",
+                    self.__class__.__name__,
+                )
+                return
+            if exp_id is None:
+                self.add_text_to_display.emit(
+                    f"{loader} has no experiment named {exp}, so these {action_label} "
+                    "cannot be scoped to it",
+                    self.__class__.__name__,
+                )
+                return
+
+        try:
+            id_result = self.model.resolve_event_ids(loader, event_ids, exp_id, channel)
+        except Exception as e:
+            self.logger.error(f"Failed to resolve event ids for {event_ids}: {e!r}")
+            self.add_text_to_display.emit(
+                f"Could not look up these events in {loader}: {e}",
+                self.__class__.__name__,
+            )
+            return
+
+        if id_result is None or id_result.empty:
+            self.add_text_to_display.emit(
+                f"No data available for the requested {action_label}: {event_ids}",
+                self.__class__.__name__,
+            )
+            return
+        if "id" not in id_result.columns:
+            # A populated result without the column it was asked for means the loader
+            # did not honour its own contract, which is a different problem from an
+            # empty subset and would raise on the read below.
+            self.logger.error(
+                f"{loader} returned rows with no id column for events {event_ids} "
+                f"in experiment {exp} channel {channel}"
+            )
+            return
+
+        db_ids = ",".join(str(i) for i in id_result["id"].tolist())
+        try:
+            generator = self.model.load_events_by_id(
+                loader, db_ids, experiments_and_channels
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to load events {event_ids}: {e!r}")
+            self.add_text_to_display.emit(
+                f"Could not load these events from {loader}: {e}",
+                self.__class__.__name__,
+            )
+            return
+
+        if generator is None:
+            self.add_text_to_display.emit(
+                f"No data available for the requested {action_label}: {event_ids}",
+                self.__class__.__name__,
+            )
+            return
+
+        self.view.set_event_plot_data_generator(generator)
 
     @log(logger=logger)
     @Slot(object, object, object, object, str)

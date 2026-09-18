@@ -31,7 +31,6 @@ import warnings
 from typing import (
     Any,
     Dict,
-    Iterator,
     List,
     Optional,
     Sequence,
@@ -120,20 +119,6 @@ class ProteinView(MetaSubsetTabView):
     """
 
     logger = logging.getLogger(__name__)
-
-    #: Asks for the full data of specific events, named by the ``event_id`` values the
-    #: navigation snapped to: the loader's key, those ids, the experiment name, the
-    #: channel, the experiment/channel scope ``load_event_data`` wants, and what the
-    #: caller is plotting so the Controller's messages can name it. The answer arrives
-    #: through ``set_event_plot_data_generator``.
-    #:
-    #: Step 4a replaced a three-emit chain spread over two methods - resolve the
-    #: experiment name to an id, query the events table for the ids matching those
-    #: ``event_id`` values within that scope, then load exactly those rows - each of
-    #: whose answers was parked on an attribute and read back on the next statement.
-    #: The whole chain belongs to whoever can run it end to end and report which part
-    #: failed, which is not the widget.
-    event_plot_data_requested = Signal(str, list, object, object, object, str)
 
     #: Asks for one subset's event data: the loader's key, the filter, and the scope
     #: it is built against. The answers arrive through ``set_event_query`` and
@@ -332,7 +317,7 @@ class ProteinView(MetaSubsetTabView):
         self.current_channel = None
         self.filtered_event_ids = []
         self.subset_filters = {}
-        self.plot_events_generator: Optional[Iterator[Dict[str, Any]]] = None
+        self.plot_events_generator = None
         self.available_experiment_and_channels_by_loader: Dict[
             str, Dict[str, List[str]]
         ] = {}
@@ -1302,21 +1287,6 @@ class ProteinView(MetaSubsetTabView):
         else:
             self._handle_plot_events(new_params)
 
-    @log(logger=logger)
-    def set_event_plot_data_generator(
-        self, generator: Iterator[Dict[str, Any]]
-    ) -> None:
-        """
-        Receive the generator over the events the Controller was asked to load.
-
-        Called only once the whole resolve-and-load chain has succeeded, so the caller
-        reading it back on the next statement can treat ``None`` as "that chain did not
-        finish" rather than as "the previous plot's events are still good".
-
-        :param generator: a generator of event data
-        :type generator: Iterator[Dict[str, Any]]
-        """
-        self.plot_events_generator = generator
 
     @log(logger=logger)
     def _fetch_event_data(
@@ -1327,7 +1297,7 @@ class ProteinView(MetaSubsetTabView):
 
         The scope guards stay here because they are about what the widget is showing;
         resolving ``event_index`` to database ids and loading those rows is one intent
-        answered by ``ProteinController.load_event_plot_data`` (Step 4a). Always
+        answered by ``MetaSubsetTabController.load_event_plot_data``. Always
         fetches fresh rather than caching event blobs in memory — event_id is only
         unique within an experiment/channel scope, and a per-event_id blob cache is an
         easy invariant to accidentally violate later; the targeted DB query is already

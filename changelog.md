@@ -32,6 +32,10 @@
 
 * A `requirements.txt` written in UTF-16 or carrying a byte-order mark is now refused by a pre-commit hook, since that is what PowerShell redirection produces by default and git records such a file as an unreviewable binary blob
 
+* **Breaking: the event plot's resolve-and-load chain is one method on `MetaSubsetTabController`** rather than a copy in each database-backed tab, so a failed event plot now reports the same way on both: one message naming what was being plotted and the event ids, where the metadata tab named only the ids and the protein tab only the plot type
+
+* A metadata event plot asked for with no events selected is now refused with a message instead of running a query that could not match anything
+
 * **Breaking: the two database-backed tabs' Models now share a `MetaSubsetTabModel` base**, which takes `load_filters` and `save_filters` off `MetaModel` along with the events-table lookups behind an event plot, so a Model that does not back a subset tab no longer inherits them
 
 * **Breaking:** subset filter files are read and written by `MetaSubsetTabModel.load_filters` and `save_filters` rather than in the view, so `MetaSubsetTabView._load_filter` and `_save_filter` only choose the file and `set_loaded_filters` decides what happens to what it held

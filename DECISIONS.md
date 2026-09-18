@@ -81,6 +81,32 @@ data instead of intent, which is what rule 4 exists to refuse.
 
 ---
 
+## 2026-09-17 - The promoted event-plot message names both the plot type and the ids
+
+**Context.** Promoting `load_event_plot_data` leaves one body where there were two, and the
+two differed in three messages: Metadata named the event ids ("no data available for plotting
+with indices in the specified range [5, 10]") and Protein named the plot type ("no data
+available for the requested histograms"). One method can only send one.
+
+**Decision.** The shared message carries both - `No data available for the requested
+{action_label}: {event_ids}`. Kyle's ruling, 2026-09-17.
+
+**Evidence.** Neither tab loses information and both gain some: the protein tab never named
+the ids and the metadata tab never named what it was plotting. The existing tests assert only
+the substring `"No data available"`, so the wording change cost no test edits - the nine
+metadata call sites changed because the method gained `action_label`, not because the text did.
+
+**The empty-request guard comes with it.** Protein refused an empty `event_ids` list; Metadata
+had no such branch. `DECISIONS.md` 2026-09-12 recorded that guard as **inert** on the metadata
+side - `snap_idx` wraps to 0 and the caller has already returned on an empty cache - so this
+is a guard that cannot fire rather than a behaviour change, and it is in the changelog as a
+user-visible refusal only because it would be one if the caller ever changed.
+
+**Revisit** if a third subset tab wants a third wording, which would mean the label is carrying
+too much.
+
+---
+
 ## 2026-09-17 - The event-plot Model half promotes, and the projection difference was vestigial
 
 **Context.** The 2026-09-12 entry deferred the event-plot promotion to a named criterion:
