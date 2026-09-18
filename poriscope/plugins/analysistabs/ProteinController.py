@@ -97,10 +97,8 @@ class ProteinController(MetaSubsetTabController):
         """
         Fit the ensemble histogram, and hand the result back to the View to draw.
 
-        Decision B's command path, the same shape as
-        ``ClusteringController.cluster``: the View emits an intent, this slot calls
-        the Model, and the answer goes back through a setter. Step 4c introduced it,
-        when the double-gaussian fitting moved off the widget.
+        A request slot, the same shape as ``ClusteringController.cluster``: the View
+        asks, this calls the Model, and the answer goes back through a setter.
 
         The context arrives and departs unchanged rather than being held here or on
         the View between the halves. A fit that fails its sanity checks is not an
@@ -237,10 +235,9 @@ class ProteinController(MetaSubsetTabController):
         """
         Fetch one event subset and average it into a single histogram to draw.
 
-        Decision B's command path. Step 4's closeout took the aggregation down with
-        the fetch: the widget used to be handed the generator and walk it twice
-        itself, which is what kept whole events - and the DataFrame construction -
-        above the Model.
+        A request slot. The aggregation happens with the fetch rather than in the
+        widget: handing the widget a generator to walk means whole events, and the
+        DataFrame built from them, live above the Model for no one's benefit.
 
         The drawing context arrives and departs unchanged; this slot marshals and
         does not interpret it. Nothing is handed back at all if the subset has no
@@ -313,10 +310,10 @@ class ProteinController(MetaSubsetTabController):
         """
         Bin and fit every event in one call, and hand the results back to draw.
 
-        Decision B's command path. One call rather than one per event keeps each
-        answer off the widget; see ``ProteinModel.fit_histograms``. Step 4's closeout
-        added the binning ahead of the fitting, so the widget is handed the
-        histograms rather than building them.
+        A request slot. One call rather than one per event keeps each answer off the
+        widget; see ``ProteinModel.fit_histograms``. The binning happens ahead of the
+        fitting in the same call, so the two describe the same bins and the widget is
+        handed the histograms rather than building them.
 
         The events pass straight through: this slot marshals, it does not interpret
         them. A failure is reported on the status panel rather than raised, because
@@ -363,7 +360,7 @@ class ProteinController(MetaSubsetTabController):
         """
         Bin and fit every event on the individual distribution path, and hand back.
 
-        Decision B's command path, the same shape as ``fit_event_histograms``. The
+        A request slot, the same shape as ``fit_event_histograms``. The
         events and the pore geometry pass straight through; this slot marshals and
         does not interpret them.
 
@@ -463,8 +460,8 @@ class ProteinController(MetaSubsetTabController):
         ``overwrite_table`` rather than being held on the View between the two halves,
         which is what ``_start_eventfinder``'s filter key does.
 
-        The DROP and DELETE statements are built here rather than in the widget - a
-        free Step 4b win, since they were the last SQL this method authored.
+        The DROP and DELETE statements are built here rather than in the widget, for
+        the same reason as every other piece of SQL: writing it is not a widget's job.
 
         :param loader: the database loader plugin's key
         :type loader: str
@@ -529,9 +526,8 @@ class ProteinController(MetaSubsetTabController):
         """
         Build the query for one subset, load its events, and hand both to the View.
 
-        Step 4a, replacing four emits across three View methods. Both distribution
-        modes - individual and ensemble - run this same chain, so there is one slot
-        rather than one per mode.
+        Both distribution modes - individual and ensemble - run this same chain, so
+        there is one slot rather than one per mode.
 
         **The ``_raw`` branch this replaced could never work**, which is why it is
         gone rather than converted. It handed a complete ``SELECT`` to

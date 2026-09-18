@@ -75,11 +75,11 @@ class RawDataController(MetaEventTabController):
         """
         Ask the finder which channels it has already completed, for the View to confirm.
 
-        Step 4a's first half of the event-finding launch. The View used to emit this per
-        channel inside its own loop and read the answer back off
-        ``self.eventfinding_status``, which nothing cleared - so a dispatch the bus
-        swallowed left the *previous* channel's finished-ness in place and the "start
-        over?" prompt was shown, or skipped, for the wrong channel.
+        The first half of the event-finding launch: every channel's status is resolved
+        here, in one call, and the View prompts on the answers. Asking per channel and
+        reading each answer back off the widget is how the "start over?" prompt gets
+        shown, or skipped, for the wrong channel - a look-up that fails leaves the
+        previous channel's finished-ness in place.
 
         A channel whose status cannot be read is dropped rather than guessed at, and the
         remaining channels still get their prompt. ``data_filter`` is carried through
@@ -172,10 +172,8 @@ class RawDataController(MetaEventTabController):
         """
         Hand each channel's found events to a writer and run the resulting generators.
 
-        Step 4a, and the one emit in this tab that was **not** an emit-then-read: the
-        plugin returns a generator and the bus passed it straight into ``set_generator``
-        as an argument, so there was never an attribute to park it on and no stale value
-        to inherit. This is a relocation rather than a fix.
+        The plugin returns a progress generator rather than a value, so it goes straight
+        to ``set_generator`` and there is nothing to park on the widget in between.
 
         **One deliberate behaviour change.** The View wrapped the whole loop in
         ``except (IndexError, ValueError)`` and skipped ``run_generators`` entirely if it
@@ -295,10 +293,10 @@ class RawDataController(MetaEventTabController):
         """
         Check the finder, bound the indices, resolve the filter, and load each event.
 
-        Step 4a: five bus round trips became five calls. The order the View used is kept
-        exactly - status, then count, then the filter callable, then the samplerate, then
-        one load per event - because each answer gates the next question, and the status
-        and count are asked even when no indices are selected.
+        Five calls in a fixed order - status, then count, then the filter callable, then
+        the samplerate, then one load per event - because each answer gates the next
+        question. The status and count are asked even when no indices are selected, since
+        they decide whether there is anything to select from.
 
         **Four stale reads disappear with the emits.** Every one of those answers used to
         be parked on a View attribute written only on success and never cleared before the
@@ -523,20 +521,16 @@ class RawDataController(MetaEventTabController):
         """
         Read each channel through call(), filter it if asked, and drop what fails.
 
-        **Step 4a closes a live stale-read bug here, not just a layering one.** The View
-        used to emit ``load_data`` per channel and read the answer back off
-        ``self.plot_data``, which is written *only* on success and was never cleared
-        before the emit. Because ``_dispatch_to`` swallows the failure, a channel the
-        reader could not supply left the *previous* channel's array in place, and the
-        caller's ``if self.plot_data is not None`` guard passed - so channel N-1's trace
-        was appended and plotted under channel N's label. That is the same defect the
-        subset Views were given clear-before-emit guards for; this path never had one.
-        ``call()`` raises instead, so a failed channel is dropped and the returned lists
-        stay index-aligned by construction. ``_apply_filter`` had the identical shape and
-        returned the last successfully filtered array rather than its own input.
+        **A failed channel is dropped, and that is load-bearing.** The call raises, so a
+        channel the reader cannot supply never reaches the returned lists and they stay
+        index-aligned with ``channels`` by construction. Loading per channel into a
+        shared attribute and testing it for ``None`` instead is how channel N-1's trace
+        gets plotted under channel N's label: the attribute is written only on success,
+        so a failure leaves the previous channel's array in place and the guard passes.
+        ``_apply_filter`` has the same shape for the same reason.
 
-        The samplerate is fetched once per request rather than once per channel, which is
-        what the old per-channel ``_load_data`` did.
+        The samplerate is fetched once per request rather than once per channel; it
+        cannot differ between channels of one reader.
 
         Each channel's range is trimmed to what that channel holds before it is asked
         for; see :py:meth:`_bounded_length`. Channels of a recording can differ in
@@ -607,10 +601,9 @@ class RawDataController(MetaEventTabController):
         """
         Fetch a reader's channel list and hand it to the View.
 
-        Step 4a: this replaces a ``global_signal`` round trip whose answer arrived seven
-        hops later through a return function named by string. A reader that cannot be
-        read leaves the channel combobox alone rather than clearing it - an empty
-        combobox reads as "this reader has no channels", which is a different and more
+        A reader that cannot be read leaves the channel combobox alone rather than
+        clearing it - an empty combobox reads as "this reader has no channels", which is
+        a different and more
         alarming thing than "this reader could not be read".
 
         :param reader: the reader plugin's key
@@ -639,8 +632,8 @@ class RawDataController(MetaEventTabController):
         """
         Fit each channel's baseline and hand the results back for plotting.
 
-        Decision B's command path, the same shape as calculate_psd below. Step 4c moved
-        the fitting to RawDataModel; the View asks for it here and plots on the answer.
+        A request slot, the same shape as calculate_psd below: the fitting is
+        RawDataModel's, and the View plots on the answer.
 
         A channel whose fit fails contributes None rather than aborting the plot, which
         is what the View did when it computed these itself - a flat or degenerate trace
@@ -725,12 +718,10 @@ class RawDataController(MetaEventTabController):
         """
         Resolve every event finder's channels, then push the registry down as usual.
 
-        Step 4a: ``RawDataView.update_available_plugins`` used to make one bus call per
-        new event finder from inside this very push, reading the answer back off an
-        attribute a callback had set. That is the emit-then-read pattern in its most
-        awkward position - a synchronous round trip nested inside a method the Controller
-        is already running - so the finders are resolved here and handed down as a
-        ready-made map instead.
+        The finders are resolved here and handed down as a ready-made map, rather than
+        each being looked up from inside ``RawDataView.update_available_plugins`` - a
+        round trip nested inside a method the Controller is already running is the
+        hardest place for a failure to be reported from.
 
         **The channels go down before the names, and that ordering is deliberate.**
         Populating a combobox fires a selection change synchronously, which is what made
