@@ -835,7 +835,6 @@ class MetadataController(MetaSubsetTabController):
             return
         self.view.set_column_type(column_type)
 
-
     @log(logger=logger)
     @Slot(str, int, int, int)
     def request_plot_features(

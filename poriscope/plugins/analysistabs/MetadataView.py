@@ -2253,7 +2253,6 @@ class MetadataView(MetaSubsetTabView):
                 f"No data available for plotting with indices in the specified range {snapped_event_ids}"
             )
 
-
     @log(logger=logger)
     def update_plot_features(
         self,

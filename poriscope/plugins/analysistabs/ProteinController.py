@@ -632,7 +632,6 @@ class ProteinController(MetaSubsetTabController):
 
         return query, generator
 
-
     @log(logger=logger)
     def check_column_exists(self, table_name: Optional[str]) -> None:
         """

@@ -1285,7 +1285,6 @@ class ProteinView(MetaSubsetTabView):
         else:
             self._handle_plot_events(new_params)
 
-
     @log(logger=logger)
     def _fetch_event_data(
         self, parameters: Dict[str, Any], action_label: str = "events"
