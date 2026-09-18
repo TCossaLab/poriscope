@@ -77,7 +77,7 @@ class MetaModel(QObject, metaclass=QObjectABCMeta):
         self.workers: Dict[str, Dict[int, Worker]] = (
             {}
         )  # Holds worker objects per key/channel
-        # Pushed by MetaController on every plugin lifecycle event (Step 4a).
+        # Pushed by MetaController on every plugin lifecycle event.
         self._plugin_instances: Dict[str, Dict[str, object]] = {}
         self.thread_running: Dict[str, Dict[int, bool]] = (
             {}
@@ -95,12 +95,14 @@ class MetaModel(QObject, metaclass=QObjectABCMeta):
             setattr(self, k, v)
         self._init()
 
-    # ---------------------------------------------------------------- Step 4a
-    # Direct access to the data plugins, replacing the return-value signal bus.
+    # ------------------------------------------------------- the data plugins
     # Instances are *pushed* here by MetaController on every plugin lifecycle event,
     # so nothing is resolved lazily and nothing can go stale: a rename or a
     # re-instantiation refreshes this map through the same path that refreshes the
-    # combobox names the View sees. See Decision A in refactor_2.0.0.md.
+    # combobox names the View sees. A cache filled on first use would need
+    # invalidating on three events, and two of them are easy to miss - a rename leaves
+    # it pointing at a live instance under a key that no longer exists, and a
+    # re-instantiation leaves it holding a dead object.
 
     @log(logger=logger)
     def set_plugin_instances(
@@ -154,12 +156,12 @@ class MetaModel(QObject, metaclass=QObjectABCMeta):
         signature: ``MetaEventFinder.get_event_data_generator`` has three and
         ``MetaReader.continuous_read`` five. Positionally, setting the last one means
         passing every earlier one too, and a signature that later gains a parameter in
-        the middle shifts every call site silently. Decision C changes some of these
-        signatures deliberately, so naming the argument is the safer habit.
+        the middle shifts every call site silently, so naming the argument is the
+        safer habit.
 
         Returns ``Any``, so mypy cannot catch a renamed plugin method or a misspelled
-        keyword. That is the accepted price of keeping the plugin API string-keyed; see
-        Decision A.
+        keyword. That is the accepted price of keeping the plugin API string-keyed: a
+        plugin author must not have to know about app-shell internals to write one.
 
         :param metaclass: the plugin family, e.g. ``"MetaDatabaseLoader"``
         :type metaclass: str
@@ -476,10 +478,8 @@ class MetaModel(QObject, metaclass=QObjectABCMeta):
         """
         Filters multiple data columns for NaN values and applies logarithmic scaling.
 
-        Public here, unlike the ``MetaView`` copy it was taken from: concrete Models
-        call it, and after Step 4's closeout it is the only copy. ``MetaView`` keeps
-        its own until the last of the eight View call sites converts, which is when
-        that one is deleted - see ``DECISIONS.md`` 2026-09-14.
+        Public, because concrete Models call it, and the only copy - see
+        ``DECISIONS.md`` 2026-09-14 for why it lives here rather than on ``MetaView``.
 
         This function takes an arbitrary number of 1D NumPy arrays as input.
         It first removes any data points (rows) where any of the input arrays

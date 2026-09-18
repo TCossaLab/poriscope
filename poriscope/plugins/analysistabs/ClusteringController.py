@@ -82,16 +82,14 @@ class ClusteringController(MetaController):
         """
         Cluster a frame the View has loaded, and hand the result back to it.
 
-        Decision B's command path, the same shape as
-        ``RawDataController.calculate_psd``: the View emits an intent, this slot calls
-        the Model, and the result goes back through a setter on the View. Step 4c
-        introduced it, when the clustering moved off the widget.
+        A request slot, the same shape as ``RawDataController.calculate_psd``: the
+        View asks, this calls the Model, and the result goes back through a setter.
 
         A failure is reported on the status panel rather than raised, because nothing
         above this slot is a call site that could handle it - Qt invoked it from a
-        signal. That now covers the filtering as well: Step 4's closeout moved it to
-        ``build_clustering_frame``, so a missing column is reported here rather than
-        raised out of the View.
+        signal. That covers the filtering as well, since ``build_clustering_frame``
+        does it, so a missing column is reported here rather than raised out of the
+        View.
 
         :param plot_data: the rows the loader returned, unfiltered
         :type plot_data: pd.DataFrame
@@ -128,11 +126,11 @@ class ClusteringController(MetaController):
         """
         Build the metadata query, load its rows, and hand them to the View.
 
-        Step 4a replaced two ``global_signal`` round trips with this. Both of their
-        answers used to be parked on View attributes and read back on the next
-        statement, which is the pattern that twice shipped a plot of the previous
-        subset's rows: a dispatch that failed left the attribute holding the last
-        successful value, and the ``is None`` guard read that as this subset's answer.
+        One request for the query and its rows, rather than two whose answers are read
+        back off the View a statement later. That pattern twice shipped a plot of the
+        *previous* subset's rows: a look-up that failed left the attribute holding the
+        last successful value, and the ``is None`` guard read it as this subset's
+        answer.
 
         Both failure cases are reported on the status panel rather than raised, because
         Qt invoked this from a signal.
@@ -163,8 +161,8 @@ class ClusteringController(MetaController):
             return
 
         # Cleared as well as set: an empty query means the build was refused, and
-        # leaving the previous one on the View is the stale-read shape Step 4a spent
-        # itself removing.
+        # leaving the previous one on the View would let it be read as this
+        # subset's.
         self.view.set_query(query, table_name)
         if not query:
             # ``construct_metadata_query`` validates the filter it was handed - it
@@ -317,10 +315,8 @@ class ClusteringController(MetaController):
         """
         Fetch the loader's column names and hand them to the View.
 
-        Step 4a: this replaces a ``global_signal`` round trip whose answer arrived
-        seven hops later through a return function named by string. A failed lookup is
-        reported on the status panel here rather than being logged inside
-        ``_dispatch_to`` and leaving the View with the previous loader's columns.
+        A failed lookup is reported on the status panel here rather than leaving the
+        View holding the previous loader's columns.
 
         :param loader: the database loader's plugin key
         :type loader: str
