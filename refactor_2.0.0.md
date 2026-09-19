@@ -2028,6 +2028,20 @@ correctness issues, then mechanical extractions, then god-methods (coverage firs
   answer at all. Same class of residual risk, categorically milder — worth doing, cheap, not
   a live defect. Closing all three is what lets the relay be deleted rather than leaving a
   second signal built on the same machinery behind.
+  **The end state is that none of it is left — Kyle, 2026-09-19.** 5e is not a deprecation:
+  when 2.0.0 ships there is to be **no global-signal machinery in the repository**, and the
+  `data_plugin_controller_signal` cleanup is the same job rather than a separate one, because
+  both ride `_dispatch_to`. What that means concretely, so the step can be checked rather than
+  judged: the `global_signal` and `data_plugin_controller_signal` declarations on `MetaView`,
+  `MetaModel` and `MetaController`; `MetaController._relay_global_signal` and
+  `_relay_data_plugin_controller_signal`; `MainController.handle_global_signal`,
+  `handle_data_plugin_controller_signal` and `_dispatch_to`; and every connection made to
+  them. **The published documentation goes with it**: `docs/source/signals/global_signal/`
+  and the `GlobalSignal` half of `which_one_to_use.rst` describe a mechanism that will not
+  exist, and the two deprecation notes now standing in `global_signal.rst` and
+  `calling_a_plugin.rst` are placeholders for that deletion rather than a permanent state.
+  A grep for `global_signal` over `poriscope/` and `docs/source/` returning nothing outside
+  the changelog is the step's exit check.
 - **5c app shell.** `DataPluginController.edit_plugin` (+ `_resolve_plugin_references` and
   `_check_key_available` extractions that shrink it); `MainView`'s 9 menu blocks + 8 handlers
   → table + `functools.partial` (~90→~25 lines); `switch_to_page` duplicating

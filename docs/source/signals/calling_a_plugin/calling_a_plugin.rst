@@ -17,8 +17,9 @@ method, and returns whatever the method returns. A failure raises where it happe
 
    **Do not use** :ref:`GlobalSignal` **for this in new code.** Since 2.0.0 no analysis
    tab in Poriscope emits on that bus; every one of them calls its plugins directly.
-   The bus is still wired and still documented, because the machinery has not been
-   removed, but a tab written against it today would be the only one.
+   The bus is still wired and still documented only because it has not been deleted
+   yet - 2.0.0 removes it - so a tab written against it today would be the only one,
+   and would stop working when it goes.
 
 Where the call goes
 -------------------

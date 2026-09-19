@@ -38,6 +38,30 @@ assumed.
 
 ---
 
+## 2026-09-19 - The global signal bus is removed in 2.0.0, not deprecated
+
+**Context.** Step 4a took `global_signal` emits in the analysis tabs to zero, and the docs
+gained two notes telling new code to call plugins directly while saying the bus "is still
+wired and still documented, because the machinery has not been removed". Step 5e was written
+as retiring the three remaining emit sites, which leaves the dispatcher, the relays and the
+`Signal` declarations standing.
+
+**Decision, Kyle.** There is to be **no global-signal machinery left when the refactor is
+done**. 5e closes the three survivors *and* deletes the machinery, together with the
+`data_plugin_controller_signal` pair that rides the same dispatcher, and the published pages
+that document the bus.
+
+**Evidence.** A mechanism nothing uses is not free: `_dispatch_to` swallows and logs on four
+conditions, which is the shape that produced 4a's stale-read bugs, and a documented bus
+invites a plugin author to build the only tab that uses it. The two deprecation notes are
+placeholders for the deletion, not an end state.
+
+**Revisit if** something outside the analysis tabs turns out to need string-dispatched
+cross-plugin calls, which nothing does today - the three survivors are two fire-and-forget
+notifications and one `call()` conversion.
+
+---
+
 ## 2026-09-19 - The docs render check runs on pushes to develop, not only on pull requests
 
 **Context.** `docs-check.yml` built the docs with `-W` on pull requests to `main`, `develop`

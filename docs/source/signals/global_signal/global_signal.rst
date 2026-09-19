@@ -7,11 +7,12 @@ This document provides an API-level overview of the ``global_signal`` used for g
 
 .. important::
 
-   **No analysis tab uses this any more.** Since 2.0.0 every tab reaches its data
-   plugins by calling them - see :ref:`CallingAPlugin`, which is where new code
-   should start. The bus is still wired and is documented here because the machinery
-   has not been removed, and because the ``DataPluginController`` signal beside it
-   shares its dispatcher.
+   **No analysis tab uses this any more, and the bus is being removed.** Since 2.0.0
+   every tab reaches its data plugins by calling them - see :ref:`CallingAPlugin`,
+   which is where new code should start. This page documents machinery that is still
+   wired only because it has not been deleted yet: 2.0.0 removes the signal, its
+   relays and its dispatcher, along with the ``DataPluginController`` signal beside it
+   that shares that dispatcher. Do not build anything on it.
 
 It allows views and models to request actions from analysis or data plugins without needing direct access to them. This signal is relayed through the ``MetaController`` and dispatched centrally by the ``MainController``, supporting modular, decoupled function calls.
 
