@@ -1130,14 +1130,28 @@ enough to run on their own while you are working on a parser:
 
 .. _duplication_ratchet:
 
-Analysis-Tab Duplication Ratchet
----------------------------------
+Duplication Ratchet
+--------------------
 
-This one only affects you if you edit the analysis tabs — the five ``*View.py``,
-``*Controller.py`` and ``*Model.py`` files under ``poriscope/plugins/analysistabs/``, or
-the five ``*controls.py`` under its ``utils/``. Those four families carry a large amount
-of byte-identical duplication, and the 2.0.0 refactor is removing it. The ratchet exists
-so that removal is *demonstrated* rather than asserted.
+This one affects you if you edit any file in one of the **eight measured families**: the
+five ``*View.py``, ``*Controller.py`` and ``*Model.py`` files under
+``poriscope/plugins/analysistabs/``, the five ``*controls.py`` under its ``utils/``, and
+the data readers, event fitters, event finders and shared widgets. Those families carry a
+large amount of byte-identical duplication, and the 2.0.0 refactor is removing it. The
+ratchet exists so that removal is *demonstrated* rather than asserted.
+
+``PeakFinder.py``, ``Basic_PeakFinder.py`` and ``NanoTrees.py`` are **deliberately outside**
+the fitters family: their logic is another maintainer's under standing policy, so a ratchet
+over them would fail on their commits for a metric about someone else's refactor. That
+exclusion is asserted by a test, so a later tidy-up cannot quietly add them back.
+
+**A family is widened before the step that would fool it, never after.** ``*Model.py`` and
+``eventfinders`` were both added that way, and the reason is the same in both cases: a gate
+scoped by file path stops measuring the moment a refactor moves code out of that path, and
+it fails *silently*, because the number moves the way you wanted. ``eventfinders`` starts at
+zero removable lines — its two finders share near-copies, which byte-identity cannot see —
+and that is still worth having, because the step that lifts their shared code out must not
+add a duplicate elsewhere while doing it.
 
 ``*Model.py`` joined them in September 2026, part-way through the refactor, which by then
 had been moving computation *into* the Models — which no family covered, so anything

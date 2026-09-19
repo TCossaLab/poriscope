@@ -30,6 +30,8 @@
 
 * The `PeakFinder` changes above are Nada Kerrouri's, integrated from `feature/peakfinders_1.8.0`
 
+* The duplication ratchet now measures the event finders as well, so the step that lifts their shared baseline fit out of two copies cannot add a duplicate elsewhere unnoticed
+
 * **Fixed loading a session file as a filter file creating empty, unusable filters**: every entry in a filter file must now hold filter text, so a JSON object that is not a filter file is refused whole and the tab's own filters are left alone
 
 * **Fixed the Protein tab contradicting its own refusal**: a refused event plot - two channels in scope, an experiment the database no longer holds - was followed by "No data available for event_id N", which named the event rather than the reason; that line now appears only when the fetch really did come back empty
