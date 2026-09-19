@@ -390,6 +390,32 @@ sites are converted**, and they sit in Clustering (1), Metadata (5) and Protein 
     has gone stale rather than only regenerating - `sphinx-build -W` proves references
     resolve, not that sentences are still true.
 
+    **Scoped 2026-09-19, by auditing the docs against the code rather than the plan.**
+    `docs/source/autodoc/` is **gitignored**, so the generated pages commit nothing: that half
+    is a truth check on the docstrings feeding them plus a clean build, and both hold today -
+    `generate_all_autodoc_rst.py` exits 0, `sphinx-build -W --keep-going` succeeds, and a grep
+    for stale layering prose (`the view computes`, `_construct_all_points_histogram`,
+    `hist_min` on a View) finds nothing Step 10 left behind. The commits are the **hand-written**
+    `.rst`, and these ten findings are what they fix:
+
+    | Where | What is wrong |
+    | --- | --- |
+    | `metamodel_base.rst` | Says nothing about `logscale_and_filter_columns`, `time_bases` or `call`, though `choosing_a_base.rst:110` links to it for "Models are where computation and data access belong" |
+    | `metaview_base.rst:17` | Lists `update_plot` as a `MetaView` abstract; it is not on `MetaView` at all, and `notify_plugin_state_changed` is missing. The real set is `_init`, `_reset_actions`, `notify_plugin_state_changed`, `update_available_plugins` |
+    | `metacontroller_base.rst` | Offers `MetaController.stop_workers()`, which does not exist (`handle_kill_worker` does) |
+    | `choosing_a_base.rst:99` | "sixteen relays" was exactly `MetaSubsetTabController`'s method count on 2026-09-06 at `06f31cd3`; Step 4 and the promotion took it to **26**, and `MetaSubsetTabView` 17 -> **32** |
+    | `choosing_a_base.rst:69-77` | The inventory predates the event-plot and scatterplot round trips (`set_event_plot_data_generator`, `set_event_id_rows`, `set_scatterplot`); `MetaEventTabView`'s omits `confirm_unfiltered_run`; the `MetaModel` row omits `time_bases` |
+    | `walkthrough_mixin.rst:13` | Cites "Step 3f of the 2.0.0 refactor" - step 10's ban, surviving because that sweep's grep was scoped `poriscope/ --include=*.py` |
+    | `quality_control.rst:1281` | Says the audit's execution half runs in `ci-internal-pr.yml`; closeout branch 0 put it in `ci-branches.yml` too |
+    | `filtering_and_querying.rst:300` | Documents the duplicate-name refusal (still correct) but not 4e's two new outcomes: an unreadable filter file reported on the status panel with existing filters untouched, and a reported save failure |
+    | `metadata_tab.rst` | Documents no Plot Events surface at all, though the tab has one (`metadatacontrols.py:446-475`), so the promotion's empty-request refusal and shared failure message have nowhere to live |
+    | `protein_tab.rst`, `clustering_tab.rst` | Predate Step 4's behaviour changes: per-event binning over each event's own range, zero-baseline events skipped, an unusable bin width reported, an unknown clustering column reported |
+
+    **Step 6 keeps the `HelloWorld` example and the private-methods autodoc item**; this step
+    does not touch either. Re-measure the plan references with
+    `grep -rnE "Step 4|Step 3|method rule|Decision [A-E]|rule \d+" poriscope/ docs/source --include=*.py --include=*.rst`,
+    excluding `docs/source/autodoc/`.
+
 **Two loose ends the audit carries.** Its `MOVED` table still lists the five
 `MetaEventTabView` range helpers as 3d targets, and 3d no longer exists as a step - 3e moved
 them down already. And the last 31 removable lines in `*View.py` are `update_plot_features`,
@@ -1955,8 +1981,10 @@ from `exposed.py` so changing it is breaking.
   reasoning about them (`pass` under a non-`None` return is mypy `empty-body`; a copied
   `:raises X:` above `pass` is DOC502; the same above `raise NotImplementedError` is DOC503;
   raising with no field is DOC501).
-- Replace the stale `HelloWorld` example (4 of `MetaView`'s 5 abstract methods; imports
-  `from utils.MetaView import MetaView`).
+- Replace the stale `HelloWorld` example. Re-measured 2026-09-19: it implements **three of
+  `MetaView`'s four** abstract methods, misses `notify_plugin_state_changed`, adds an
+  `update_plot` the base has never declared, and imports
+  `from utils.MetaView import MetaView`.
 - Autodoc publishes 478 private methods across 1,119 `automethod` directives — omit privates.
 - Update `quality_control.rst`; regenerate autodoc.
 
