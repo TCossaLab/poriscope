@@ -10,6 +10,34 @@ which ran through August 2026 and is complete. The step numbers only date the de
 
 ---
 
+## 2026-09-19 - A refusal is explained once, by whoever refused it
+
+**Context.** The manual pass over the event-plot promotion found the protein tab
+contradicting itself: `ProteinController: ... has no experiment named x, so these events
+cannot be scoped to it` followed immediately by `ProteinView: No data available for
+event_id 10`, and the same pairing under `Only a single channel can be used`. The second
+line names the event, which is the one thing that was not wrong.
+`ProteinView._fetch_event_data` returned `[]` for a refusal and for an empty result alike,
+so its callers could not tell them apart. The metadata tab never had the second line.
+
+**Decision.** `_fetch_event_data` returns **None** when the request was refused and the
+refusal has been reported, and a list when the fetch actually ran. The callers speak only
+about an empty list. **And the Controller's one log-only branch now reports too**: rows
+returned without the `id` column used to be logged and deliberately not shown, on the
+grounds that a loader-contract fault is not user-actionable - but with the View silent on a
+refusal, that became a plot that fails with nothing said at all.
+
+**Evidence.** Both messages were read off a real run on Windows. The 6 existing
+`_fetch_event_data` tests asserting `== []` are re-pointed to `is None`, and the two tests
+that pinned "logged, not shown" are rewritten with this reason; 8 new tests pin the three
+outcomes at both callers, 5 of which fail against the old code.
+
+**Revisit if** a refusal path is added that does *not* report - then None would be silent
+in both layers, and the rule "whoever refuses, explains" has to be re-checked rather than
+assumed.
+
+---
+
 ## 2026-09-19 - The docs render check runs on pushes to develop, not only on pull requests
 
 **Context.** `docs-check.yml` built the docs with `-W` on pull requests to `main`, `develop`

@@ -1288,7 +1288,7 @@ class ProteinView(MetaSubsetTabView):
     @log(logger=logger)
     def _fetch_event_data(
         self, parameters: Dict[str, Any], action_label: str = "events"
-    ) -> list[dict]:
+    ) -> Optional[list[dict]]:
         """
         Validate the request, ask for exactly the events named, and order the answer.
 
@@ -1301,12 +1301,19 @@ class ProteinView(MetaSubsetTabView):
         O(events requested) rather than O(distance into the dataset), so the extra
         memoization isn't worth the correctness risk.
 
+        **A refusal returns None and an empty fetch returns an empty list**, which is
+        what lets the caller keep quiet about the first and speak about the second.
+        Every refusal here, and every failure in the Controller's half, is reported by
+        whoever refused it; returning ``[]`` for both made the caller add "no data
+        available for event_id N" underneath, naming the event when the real reason was
+        two channels in scope or an experiment the database no longer holds.
+
         :param parameters: Dictionary containing db_loader, filter, channels, and event indices.
         :type parameters: Dict[str, Any]
         :param action_label: Label used in error messages to identify the plot type.
         :type action_label: str
-        :return: List of fetched event dictionaries, in the order requested, or empty list on failure.
-        :rtype: list[dict]
+        :return: the fetched events in the order requested, empty if the fetch found none, or None if the request was refused and reported
+        :rtype: Optional[list[dict]]
         """
         selected_filters = self.get_selected_filters()
         loader_name = parameters["db_loader"]
@@ -1319,14 +1326,14 @@ class ProteinView(MetaSubsetTabView):
                 f"No experiments or channels are in scope, select at least one to plot {action_label}",
                 self.__class__.__name__,
             )
-            return []
+            return None
 
         if selected_filters is not None and len(selected_filters) > 1:
             self.add_text_to_display.emit(
                 "Unable to plot more than one subset at a time, select only one filter to apply",
                 self.__class__.__name__,
             )
-            return []
+            return None
 
         if (
             self.selected_experiment_and_channels_by_loader[loader_name] is None
@@ -1336,14 +1343,14 @@ class ProteinView(MetaSubsetTabView):
                 f"No experiments or channels are in scope, select at least one to plot {action_label}",
                 self.__class__.__name__,
             )
-            return []
+            return None
 
         if len(experiments_and_channels) > 1:
             self.add_text_to_display.emit(
                 f"Only a single experiment can be used for plotting {action_label}",
                 self.__class__.__name__,
             )
-            return []
+            return None
 
         for channels in experiments_and_channels.values():
             if len(channels) > 1:
@@ -1351,7 +1358,7 @@ class ProteinView(MetaSubsetTabView):
                     f"Only a single channel can be used for plotting {action_label}",
                     self.__class__.__name__,
                 )
-                return []
+                return None
 
         if selected_filters is None or selected_filters == {}:
             selected_filters = {"Full Dataset": ""}
@@ -1371,7 +1378,10 @@ class ProteinView(MetaSubsetTabView):
         )
         generator = self.plot_events_generator
         if generator is None:
-            return []
+            # The Controller sets the generator only once the whole chain has
+            # succeeded, and reports which part did not - so this is a refusal that
+            # has already been explained, not an empty result.
+            return None
 
         data_list = list(generator)
 
@@ -1456,6 +1466,11 @@ class ProteinView(MetaSubsetTabView):
 
         data_list = self._fetch_event_data(fetch_params, action_label="events")
 
+        if data_list is None:
+            # Refused, and whoever refused it has already said why. A second line
+            # here would name the event as the problem when the reason was the scope
+            # or the experiment.
+            return
         if data_list:
             use_raw = parameters.get("raw", False)
             self._update_event_plot(data_list, use_raw=use_raw)
@@ -1546,6 +1561,9 @@ class ProteinView(MetaSubsetTabView):
 
         data_list = self._fetch_event_data(fetch_params, action_label="histograms")
 
+        if data_list is None:
+            # Refused and already reported; see _handle_plot_events.
+            return
         if data_list:
             self._update_event_histogram(
                 data_list, bins=bins, sizes=sizes, plot_type=plot_type

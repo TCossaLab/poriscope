@@ -32,6 +32,10 @@
 
 * **Fixed loading a session file as a filter file creating empty, unusable filters**: every entry in a filter file must now hold filter text, so a JSON object that is not a filter file is refused whole and the tab's own filters are left alone
 
+* **Fixed the Protein tab contradicting its own refusal**: a refused event plot - two channels in scope, an experiment the database no longer holds - was followed by "No data available for event_id N", which named the event rather than the reason; that line now appears only when the fetch really did come back empty
+
+* A loader that returns event rows without the id column it was asked for is now reported on the status panel instead of only in the log
+
 * The documentation render check now runs on every push to `develop` as well as on pull requests, since `git flow feature finish` merges locally and opens no pull request for it to see
 
 * A `requirements.txt` written in UTF-16 or carrying a byte-order mark is now refused by a pre-commit hook, since that is what PowerShell redirection produces by default and git records such a file as an unreviewable binary blob

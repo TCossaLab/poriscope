@@ -620,13 +620,17 @@ class TestLoadEventPlotData:
         assert controller.model.calls_to("load_event_data") == []
         assert "No data available" in panel_text(controller)
 
-    def test_rows_without_an_id_column_are_a_logged_fault(
+    def test_rows_without_an_id_column_are_reported(
         self, controller: MetadataController
     ) -> None:
         """
         Distinct from an empty subset: the loader returned rows but not the column it
         was asked for, which would have raised on the read. Taken from the resolution
         ``_rebuild_event_id_cache``'s promotion settled on.
+
+        Reported on the panel as well as logged, since 2026-09-19: the protein tab's
+        View no longer adds a message of its own when the fetch comes back empty, so
+        a log-only branch here is a plot that fails with nothing said at all.
         """
         answers = dict(self.ANSWERS)
         answers["query_database_directly"] = pd.DataFrame({"event_id": [5]})
@@ -637,6 +641,7 @@ class TestLoadEventPlotData:
         assert controller.model.calls_to("load_event_data") == []
         controller.view.set_event_plot_data_generator.assert_not_called()
         assert controller.logger.error.called
+        assert "no id column" in panel_text(controller)
 
     def test_a_failed_load_hands_over_nothing(
         self, controller: MetadataController

@@ -1375,14 +1375,21 @@ class TestHandleParameterChange:
 
 
 class TestFetchEventData:
+    """
+    ``None`` means refused and already reported; ``[]`` means the fetch ran and
+    found nothing. The callers tell the two apart so a refusal does not get a
+    second, contradictory line naming the event - see
+    ``test_protein_event_fetch_messages.py``.
+    """
+
     def _params(self):
         return {"db_loader": "ldr", "event_index": [1]}
 
-    def test_no_experiments_returns_empty(self, mock_view):
+    def test_no_experiments_is_refused(self, mock_view):
         mock_view.selected_experiment_and_channels_by_loader = {}
         mock_view.get_selected_filters = MagicMock(return_value={})
         result = mock_view._fetch_event_data(self._params())
-        assert result == []
+        assert result is None
 
     def test_no_experiments_emits_message(self, mock_view):
         mock_view.selected_experiment_and_channels_by_loader = {}
@@ -1392,11 +1399,11 @@ class TestFetchEventData:
         mock_view._fetch_event_data(self._params())
         assert any("No experiments or channels" in m for m in received)
 
-    def test_multiple_filters_returns_empty(self, mock_view):
+    def test_multiple_filters_is_refused(self, mock_view):
         mock_view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": ["0"]}}
         mock_view.get_selected_filters = MagicMock(return_value={"f1": "a", "f2": "b"})
         result = mock_view._fetch_event_data(self._params())
-        assert result == []
+        assert result is None
 
     def test_multiple_filters_emits_message(self, mock_view):
         mock_view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": ["0"]}}
@@ -1406,19 +1413,19 @@ class TestFetchEventData:
         mock_view._fetch_event_data(self._params())
         assert any("more than one subset" in m for m in received)
 
-    def test_empty_loader_selection_returns_empty(self, mock_view):
+    def test_empty_loader_selection_is_refused(self, mock_view):
         mock_view.selected_experiment_and_channels_by_loader = {"ldr": {}}
         mock_view.get_selected_filters = MagicMock(return_value={})
         result = mock_view._fetch_event_data(self._params())
-        assert result == []
+        assert result is None
 
-    def test_multiple_experiments_returns_empty(self, mock_view):
+    def test_multiple_experiments_is_refused(self, mock_view):
         mock_view.selected_experiment_and_channels_by_loader = {
             "ldr": {"exp1": ["0"], "exp2": ["0"]}
         }
         mock_view.get_selected_filters = MagicMock(return_value={})
         result = mock_view._fetch_event_data(self._params())
-        assert result == []
+        assert result is None
 
     def test_multiple_experiments_emits_message(self, mock_view):
         mock_view.selected_experiment_and_channels_by_loader = {
@@ -1430,13 +1437,13 @@ class TestFetchEventData:
         mock_view._fetch_event_data(self._params())
         assert any("single experiment" in m for m in received)
 
-    def test_multiple_channels_returns_empty(self, mock_view):
+    def test_multiple_channels_is_refused(self, mock_view):
         mock_view.selected_experiment_and_channels_by_loader = {
             "ldr": {"exp1": ["0", "1"]}
         }
         mock_view.get_selected_filters = MagicMock(return_value={})
         result = mock_view._fetch_event_data(self._params())
-        assert result == []
+        assert result is None
 
     def test_multiple_channels_emits_message(self, mock_view):
         mock_view.selected_experiment_and_channels_by_loader = {
@@ -1464,7 +1471,7 @@ class TestFetchEventData:
         mock_view.cached_events = {}
         params = {"db_loader": "ldr", "event_index": []}
         result = mock_view._fetch_event_data(params)
-        assert result == []
+        assert result is None
 
     def test_asks_the_controller_for_exactly_the_events_requested(self, mock_view):
         """
@@ -1505,7 +1512,7 @@ class TestFetchEventData:
         mock_view.plot_events_generator = iter([_make_event(99)])
         mock_view.event_plot_data_requested.connect(lambda *a: None)
 
-        assert mock_view._fetch_event_data(self._params()) == []
+        assert mock_view._fetch_event_data(self._params()) is None
 
     def test_the_answer_comes_back_in_the_order_it_was_asked_for(self, mock_view):
         """

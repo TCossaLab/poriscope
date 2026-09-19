@@ -270,12 +270,18 @@ class TestLoadEventPlotData:
             controller
         )
 
-    def test_rows_without_an_id_column_are_logged_not_shown(
+    def test_rows_without_an_id_column_are_reported(
         self, controller: ProteinController
     ) -> None:
         """
         A loader answering with the wrong projection is a bug in the loader rather
-        than something a user can act on, so it is logged instead of shown.
+        than something a user can act on, which is why this was logged and not shown.
+
+        **Changed 2026-09-19**, see ``DECISIONS.md``: the View used to add "no data
+        available for event_id N" under every empty answer, so the user saw *something*
+        when this fired. It no longer does - a refusal the Controller has explained is
+        silent there - so a log-only branch here is a plot that fails with nothing said
+        at all. Not actionable is not the same as not worth knowing.
 
         :param controller: the controller under test
         :type controller: ProteinController
@@ -292,7 +298,7 @@ class TestLoadEventPlotData:
 
         controller.view.set_event_plot_data_generator.assert_not_called()
         controller.logger.error.assert_called_once()  # type: ignore[attr-defined]
-        assert panel_text(controller) == ""
+        assert "no id column" in panel_text(controller)
 
     def test_a_failed_load_is_reported(self, controller: ProteinController) -> None:
         """

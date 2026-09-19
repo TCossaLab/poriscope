@@ -261,11 +261,18 @@ class MetaSubsetTabController(MetaController):
         if "id" not in id_result.columns:
             # A populated result without the column it was asked for means the loader
             # did not honour its own contract, which is a different problem from an
-            # empty subset and would raise on the read below.
-            self.logger.error(
-                f"{loader} returned rows with no id column for events {event_ids} "
-                f"in experiment {exp} channel {channel}"
+            # empty subset and would raise on the read below. Reported rather than
+            # logged alone: the View stays quiet on a refusal precisely because this
+            # method explains every one of them, so a log-only branch here is a plot
+            # that fails with nothing said.
+            message = (
+                f"{loader} returned rows with no id column for the requested "
+                f"{action_label}: {event_ids}"
             )
+            self.logger.error(
+                f"{message} in experiment {exp} channel {channel}",
+            )
+            self.add_text_to_display.emit(message, self.__class__.__name__)
             return
 
         db_ids = ",".join(str(i) for i in id_result["id"].tolist())
