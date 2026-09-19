@@ -2062,10 +2062,16 @@ Each says what it moves *before* it starts (method rule 38).
   `@abstractmethod` stays. **31,711 duplicated characters.** It *lowers* the ratchet without
   deduplicating a body, which is the divergence shape the gate warns about - say so in the
   commit and in the `--update`.
-- **5a-2 - Chimera shared logic to module-level helpers** in the datareaders package: up to
+- **5a-2 - the Chimera readers' shared logic. OPEN: needs a ruling before it starts.** Up to
   **227 removable** (`_map_data` 43x3, `_get_file_channel_stamps` 15x3, `_set_raw_dtype`
-  11x3, `_set_file_extension` 5x3, the 0101/0501 pairs). Each candidate gets the `self.`
-  grep first (method rule 59); anything instance-touching stays as floor.
+  11x3, `_set_file_extension` 5x3, the 0101/0501 pairs). Under the two standing rulings the
+  options are narrow and none is obviously right: a `ChimeraReader` base is refused (three
+  files), a helper module beside the plugins is refused (5b-1's ruling: shared code goes on
+  the family base), and `MetaReader` is the family base but **the shared code is one
+  vendor's file format**, which three of seven readers want and the published base would
+  then carry for all of them. **Default if no ruling: leave it, recorded as the largest
+  floor in Step 5**, since duplication is explicitly acceptable and a widened published base
+  is not. Each candidate would get the `self.` grep first either way (method rule 59).
 - **5a-4 - collapse the two ABC metaclasses.** One implementation keeping `__call__`,
   dropping the dead `__new__`, exported under **both existing names as aliases** because
   both are in `exposed.py` and a third-party plugin may import either. Verified before
@@ -2079,10 +2085,20 @@ Each says what it moves *before* it starts (method rule 38).
   refuses an empty range and rejects an out-of-bounds fitted mean. The ~60 lines between
   those two ends - the histogram build and Gaussian fit - are the same code twice, and that
   is where the σ bias lives (`ClassicBlockageFinder:316`, `BoundedBlockageFinder:133`:
-  `linspace` spanning edge to edge, +14.7% at 10k samples) with its two neighbours. A
-  module-level `fit_baseline_histogram(data)` in the package; both finders keep their own
-  override, so the abstract prompt survives; the fix is pinned on the helper rather than on
-  two copies.
+  `linspace` spanning edge to edge, +14.7% at 10k samples) with its two neighbours.
+  **The shared fit goes onto `MetaEventFinder` as a concrete protected method** - Kyle,
+  2026-09-19, correcting a proposal to make it a module-level helper: shared code stays in
+  the plugin family, on the base that already exists, rather than in a helper module beside
+  it. `_get_baseline_stats` itself stays abstract, so the prompt survives and each finder
+  still writes its own policy - Classic's data-derived range, Bounded's `Min/Max Baseline`
+  mask and out-of-bounds refusal - around one call. The σ fix is then pinned on the base
+  rather than on two copies.
+
+  *The rule this sets, and where it stops:* the histogram fit is universal to the family -
+  `MetaEventFinder`'s own docstring says it assumes Gaussian baseline noise - so the base is
+  its right home. Code shared by three of seven readers *because they read one vendor's
+  format* is not universal, and 5a-2 has to answer that separately rather than by applying
+  this mechanically.
   **`_find_events_in_chunk` is left alone, and this is the floor's reason.** It is abstract
   on the base with overrides in **Classic and Threshold** (not Bounded, which has none),
   72 and 69 lines differing in 13 - and the 13 are not two constants: Classic's threshold is
