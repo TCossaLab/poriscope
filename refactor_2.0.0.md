@@ -36,15 +36,17 @@ either step.
 
 ## Step 4 closeout - the commit series, planned 2026-09-14 at `a1ef5906`
 
-**What is left of Step 4, as of 2026-09-19**: the 4a exit-review item, which needs a real
-database, **and three manual Windows passes this file's own rule asks for and has no dated
-record of** - closeout branch 2 (Clustering), branch 7 (4e's filter file paths) and branch 8
-(the event-plot promotion on both tabs). Branch 6 deleted `MetaView`'s logscale copy, which
-every filtered plot on every tab goes through; branches 3, 4 and 5 were passed before it
-landed, so whether it wants a pass of its own is a judgement rather than a gap. All the code,
-every gate and the documentation are done: the event-plot promotion, the docstring sweep and
-the closing documentation pass have landed. Allowlist **2**, both entries recorded floors.
-Duplication in the three analysis-tab families **31**, its floor.
+**Step 4 is complete, 2026-09-19.** The three owed manual Windows passes were run that day -
+closeout branch 2 (Clustering), branch 7 (4e) and branch 8 (the promotion) - and **the 4a
+exit-review item was closed with them**, since the same session provoked the unresolvable
+experiment against a real database. Two defects came out of the passes, both fixed with
+tests: a session file loaded as a filter file created bodyless filters, and the protein tab
+contradicted its own refusal. Allowlist **2**, both entries recorded floors. Duplication in
+the three analysis-tab families **31**, its floor.
+
+Branch 6 deleted `MetaView`'s logscale copy, which every filtered plot on every tab goes
+through; branches 3, 4 and 5 were passed before it landed, and branch 2's and branch 8's
+passes exercised filtered plots on three tabs afterwards, so it is covered rather than owed.
 
 *As the series was planned, 2026-09-14:* what was left was the event-plot promotion, the 4a
 exit-review item, the docstring sweep and the closing documentation pass, at allowlist **8**,
@@ -364,8 +366,12 @@ sites are converted**, and they sit in Clustering (1), Metadata (5) and Protein 
      36). The shared failure message names both the plot type and the ids, so neither tab
      loses information; the metadata tab inherits Protein's empty-request guard, recorded
      2026-09-12 as inert there.
-9. **The 4a exit-review item.** The unresolvable-experiment guard has still never run
-   against a real database. **What it guards, re-derived 2026-09-19:**
+9. **The 4a exit-review item - CLOSED 2026-09-19.** Provoked on Windows against a real
+   database by renaming the experiment row out from under a chosen scope, and the guard
+   fired with the message it was written to fire:
+   `SQLiteDBLoader_1 has no experiment named x, so these events cannot be scoped to it`,
+   with nothing plotted. Open since 2026-09-12, and it needed a keyboard rather than a test.
+   **What it guards, re-derived 2026-09-19:**
    `MetaSubsetTabController.load_event_plot_data:227` asks the loader for
    `get_experiment_id_by_name(exp)` before resolving any `event_id`. That returns `None`
    when the `experiments` table holds no row of that name, and raises when the query itself
@@ -475,10 +481,30 @@ plugin API by six attributes to delete 31 lines. See `DECISIONS.md`.
 **Each tab branch ends with a manual Windows pass over that tab's plotting surfaces**, dated
 in the verification section, and the full suite green before every commit.
 
-### The three owed passes, scoped 2026-09-19
+### The three owed passes - run 2026-09-19, two defects found
 
-Branches 2, 7 and 8 have no dated record. Each item names what the branch changed, so a pass
-that finds nothing still says which code was exercised.
+**Branch 2, all clear. Branch 7, one defect. Branch 8, one defect**, both fixed with tests
+the same day and both invisible to every gate:
+
+- **A session file loaded as a filter file created bodyless filters.** `load_filters` checked
+  that the file held a JSON object and not what the object held, and a session file is one.
+  A falsy value validates as a filter with no conditions and commits as `<name>_assisted`
+  with no body; a non-empty non-string raises into a modal. Every value must be a string now.
+- **The protein tab contradicted its own refusal** - `has no experiment named x` from the
+  Controller, then `No data available for event_id 10` from the View, and the same pairing
+  under `Only a single channel can be used`. `_fetch_event_data` returned `[]` for a refusal
+  and for an empty result alike. It returns `None` for a refusal now. See `DECISIONS.md`.
+
+**And the first attempt at the rename check was not testing what it looked like.** Two
+channels were in scope, so the View refused before the request reached the Controller at all:
+the panel read `Only a single channel can be used for plotting events` beside the message
+that looked like the answer. A checklist item that does not state the preconditions the
+guards enforce will silently exercise a guard instead of the thing under test.
+
+*The checklist as it was written, kept because it is what a later pass should re-run:*
+
+Each item names what the branch changed, so a pass that finds nothing still says which code
+was exercised.
 
 - **Branch 2, Clustering.** Cluster with HDBSCAN and with Gaussian Mixtures; a column with
   LOG and with NORM set; a filter that matches rows and one that matches none (expect "No
@@ -614,10 +640,10 @@ Step 4.
 
 ### Owed, carried forward
 
-- **The 4a exit-review item is still open**: an unresolvable experiment on the protein tab
-  cannot be provoked with the available data, so that hard stop has never run against a real
-  database. Reverting the guard fails exactly one Controller test, so it is not unverified -
-  but it is untried where it matters.
+- **The 4a exit-review item closed 2026-09-19**: the unresolvable-experiment hard stop was
+  provoked by renaming the experiment row under a chosen scope, and reported what it was
+  written to report. It could not be provoked with the data as it stood, which is what kept
+  it open - the database had to be changed under the running app.
 - **Making raw SQL subset filters work** is queued as a post-refactor feature,
   `future_refactors_and_features.md` Part 13, which also prices withdrawing them from the UI
   instead. Step 4a's breaking change stands until then.
