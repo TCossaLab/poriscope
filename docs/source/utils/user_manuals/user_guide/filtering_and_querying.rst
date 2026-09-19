@@ -266,8 +266,9 @@ Filters can be saved to a JSON file and reloaded in future sessions.
 - **Save Filter**: Exports all current filters to a ``.json`` file. Both ``_assisted``
   and ``_raw`` filters are included.
 - **Load Filter**: Imports filters from a ``.json`` file. Raw filters are restored
-  directly without re-validation. Assisted filters are re-validated against the database
-  before being added.
+  directly without re-validation. Assisted filters are re-validated against the selected
+  loader's database before being added; if no loader is selected, they are added
+  unvalidated and a warning is written to the log.
 
 The saved JSON format looks like:
 
@@ -281,7 +282,16 @@ The saved JSON format looks like:
 .. note::
 
    If any filter name in the file conflicts with an existing filter, no filters from
-   that file will be loaded.
+   that file will be loaded — the load is all or nothing, so you are never left guessing
+   which half arrived.
+
+.. note::
+
+   A file that cannot be read — missing, unreadable, not valid JSON, or holding anything
+   other than an object of filter names and filter text — is reported on the status
+   panel, and the filters you already have are left exactly as they were. A **save** that
+   fails, on a full disk or a read-only folder, is reported there too; it used to look
+   exactly like a save that worked.
 
 Common Mistakes
 ---------------
