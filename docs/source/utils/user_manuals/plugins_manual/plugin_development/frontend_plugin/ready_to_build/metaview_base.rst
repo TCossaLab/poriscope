@@ -14,8 +14,14 @@ You get a built-in plot canvas, a navigation toolbar, and a dedicated control ar
 
 - ``_init``
 - ``_reset_actions``
-- ``update_plot``
+- ``notify_plugin_state_changed``
 - ``update_available_plugins``
+
+``update_plot`` is **not** one of them and is not on ``MetaView`` at all: each tab
+declares its own, taking whatever its plot types need, and wires it to its own control
+panel. ``notify_plugin_state_changed`` is called whenever any plugin's state changes
+elsewhere in the application — new columns committed to a loader's table, say — and a tab
+with nothing to react to implements it as ``pass``, which is what both event tabs do.
 
 **Building your control area.** ``_set_control_area`` is *not* abstract. It builds the
 control-area layout for you: it calls ``_build_controls()``, connects the four signals
@@ -39,6 +45,15 @@ tab lays out its own control area rather than using a ``MetaControls`` panel, ov
 - Caching logic for efficiency
 - Signal definitions to connect with your controller
 - Helper functions like ``handle_kill_all``, ``_setup_canvas``, and ``_commit_cache``
+
+**What does not belong in a View**
+
+Drawing, axes and canvas lifecycle, widget state and file dialogs are the View's. Turning
+data into other data is not: ``MetaView`` imports no computation library at all, and a tab
+that needs rows filtered, log-scaled, binned or fitted asks its Controller, which asks the
+Model — see :doc:`metamodel_base`. The shared filtering and log scaling every plot uses is
+``MetaModel.logscale_and_filter_columns``, and a plot's time axis comes from
+``MetaModel.time_bases``.
 
 By default, every time you inherit from :ref:`MetaView` you get a ready-to-use display area right out of the box:
 
