@@ -2014,6 +2014,101 @@ walkthrough step lists.
 Absorbs `future_refactors_and_features.md` Parts 5–12. Order: zero-risk deletions and
 correctness issues, then mechanical extractions, then god-methods (coverage first).
 
+### Re-derived 2026-09-19, before starting - and most of the entry did not survive
+
+**Two standing rulings shape the whole step, both Kyle's:**
+
+1. **No new inheritance layers in the data plugins.** `BaseDataPlugin` -> `MetaEventFitter`
+   -> `CUSUM` is long enough until the families resolve themselves into more. Deduplicate
+   with module-level helpers, parameters and deletions; **some remaining duplication is
+   acceptable** and is recorded as a floor with its reason. Revisit for a sub-family that
+   grows **larger than three** members - so no `ChimeraReader` base (3), no CUSUM-family
+   base (2), no finder base (3).
+2. **The abstract no-op hooks stay abstract.** `_init`, `close_resources`, `reset_channel`,
+   `_validate_settings` and `_validate_file_type` are implemented as a docstring plus `pass`
+   in every plugin - **280 lines across the reader and fitter families** - and making them
+   concrete on the existing base would delete all of it. They stay: the hook exists to make
+   the author decide, and a reader that really holds a file handle is the one that must not
+   inherit a silent no-op. Recorded floor, not unfinished work.
+
+**What measurement moved:**
+
+| Entry as written | Measured 2026-09-19 |
+| --- | --- |
+| `CUSUM`/`NoFitter` share 411 identical lines | **193** removable over 10 groups |
+| `ClassicCUSUM` is a 195-line override differing in 2 | 2 methods only; `_locate_sublevel_transitions` 202/205 lines, **6** differing |
+| the two Chimera readers differ in 23 of 390 | 0101 vs 0501 share 14/14 method names, **11 byte-identical**, 10 differing lines in 2 methods; VC100 is the distant one |
+| `_get_baseline_stats`/`_find_events_in_chunk` duplicated across two finders | Both are **abstract on `MetaEventFinder`** with near-copy overrides, and the pairs are different pairs - see 5b-1 |
+| `QObjectABCMeta`/`QWidgetABCMeta` 49 lines differing in 2, dead `__new__` | **Confirmed exactly**, and `__call__` re-verified load-bearing |
+| four `Meta*` bases carry a 3,584-char `get_empty_settings` docstring | **5 groups, 22 copies, 31,711 duplicated characters**, mostly in *plugins*: 7x1,487, 7x1,356, 3x3,424, 3x3,294, 2x1,217 |
+| `BaseDataPlugin.apply_settings` decides "is this a plugin" in a bare `except Exception` | **Already fixed** - `except AttributeError`, with the reasoning in a comment. Item void |
+| `tuple_builder` defined three times | **Zero** definitions left. Item void |
+| `export_subset_to_csv`'s 4-step pattern x5 | **One** definition, on `MetaDatabaseLoader` |
+| `edit_plugin` wants extracting | **195 lines**; `validate_and_instantiate_plugin` is **160** |
+
+**The eventfinders family is measured by no gate at all** - it is in none of the seven
+families `measure_duplication.py` knows about, and 5b works there. That is why 5.0 exists:
+fix the instrument's scope before the step that would fool it (method rule 24).
+
+### The sub-steps, agreed 2026-09-19
+
+Each says what it moves *before* it starts (method rule 38).
+
+- **5.0 - widen the ratchet to `eventfinders`.** Records ~0 removable and 2 near-copies,
+  which is the point: the family that 5b-1 edits is currently invisible to the gate.
+- **5a-3 - one home for the `get_empty_settings` docstring**, and drop the copies of base
+  docstrings from the `pass` stubs. Sphinx inherits a method docstring when the subclass has
+  none (its default; `conf.py` does not override it), so nothing published is lost and every
+  `@abstractmethod` stays. **31,711 duplicated characters.** It *lowers* the ratchet without
+  deduplicating a body, which is the divergence shape the gate warns about - say so in the
+  commit and in the `--update`.
+- **5a-2 - Chimera shared logic to module-level helpers** in the datareaders package: up to
+  **227 removable** (`_map_data` 43x3, `_get_file_channel_stamps` 15x3, `_set_raw_dtype`
+  11x3, `_set_file_extension` 5x3, the 0101/0501 pairs). Each candidate gets the `self.`
+  grep first (method rule 59); anything instance-touching stays as floor.
+- **5a-4 - collapse the two ABC metaclasses.** One implementation keeping `__call__`,
+  dropping the dead `__new__`, exported under **both existing names as aliases** because
+  both are in `exposed.py` and a third-party plugin may import either. Verified before
+  proposing: `type(QObject) is type(QWidget)` (both `Shiboken.ObjectType`), the two are
+  already cross-usable, a collapsed metaclass refuses abstract instantiation in both
+  hierarchies, and **without `__call__` Shiboken instantiates an abstract subclass** - so
+  the guard is the workaround and is kept. Check for `isinstance(x, QWidgetABCMeta)` and
+  re-run compliance before landing.
+- **5b-1 - `_get_baseline_stats`, and the baseline-σ bug fixed once.** Classic and Bounded
+  differ in 24 lines, and the difference is deliberate: Bounded masks to `Min/Max Baseline`,
+  refuses an empty range and rejects an out-of-bounds fitted mean. The ~60 lines between
+  those two ends - the histogram build and Gaussian fit - are the same code twice, and that
+  is where the σ bias lives (`ClassicBlockageFinder:316`, `BoundedBlockageFinder:133`:
+  `linspace` spanning edge to edge, +14.7% at 10k samples) with its two neighbours. A
+  module-level `fit_baseline_histogram(data)` in the package; both finders keep their own
+  override, so the abstract prompt survives; the fix is pinned on the helper rather than on
+  two copies.
+  **`_find_events_in_chunk` is left alone, and this is the floor's reason.** It is abstract
+  on the base with overrides in **Classic and Threshold** (not Bounded, which has none),
+  72 and 69 lines differing in 13 - and the 13 are not two constants: Classic's threshold is
+  in pA over σ with hysteresis 1 and backtracks the **start** into the baseline, Threshold's
+  is already in σ with hysteresis 0 and backtracks the **end**. Which edge is walked back is
+  the thing the method decides, so a helper parameterised on it is more machinery than the
+  duplication costs.
+- **5b-2 - the base internals that survived.** `fit_events` is 277 lines with 17
+  `rejected_events` touch sites -> a private `_reject_event` helper on `MetaEventFitter`;
+  `find_events` inlines **10** assignment lines that `reset_channel` already does -> call it.
+  Private helpers only, so the owner-held fitters are untouched and compliance-by-equality
+  cannot fire.
+- **5d - shared widgets.** The multiselect pair is **53 of `views/widgets`' 62 removable**
+  over 5 groups; range parsing is spread over 4 modules; `dict_dialog_widget.py` is 411
+  lines with **no unit test file**, so tests are its prerequisite rather than part of it. The
+  multiselect work carries `DECISIONS.md` 2026-09-01's manual-Windows requirement.
+- **5c - the app shell.** `edit_plugin` 195 lines, `validate_and_instantiate_plugin` 160,
+  `main_view.py` 1,235, `settings_window.py` 890. No gate sees any of it.
+- **5e - the bus, and every trace of it.** Last, so nothing still needs it. See the entry
+  below and `DECISIONS.md` 2026-09-19.
+
+**Recorded floors for Step 5**, each with its reason above: the 280 lines of abstract no-op
+stubs, `_find_events_in_chunk`'s two overrides, `_populate_event_metadata` (72) and the four
+`_define_*` declarations in the CUSUM/NoFitter pair, and whatever Chimera logic turns out to
+touch `self`.
+
 - **5a data plugins (~1,000 lines).** `CUSUM`/`NoFitter` share 411 identical lines;
   `ClassicCUSUM` is a 195-line override differing in 2 → `CUSUM` + `_normalize_step_size()`;
   the two Chimera readers differ in 23 of 390; `_get_baseline_stats`/`_find_events_in_chunk`
