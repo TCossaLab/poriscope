@@ -50,6 +50,19 @@ Step 2: Choose Plot Type and Configure Axes
    - Use a single number for 1D plots (e.g., ``50``).
    - Use two comma-separated values for 2D plots (e.g., ``50,50`` for a heatmap).
 
+.. note::
+
+   Overlaid 1-D datasets share one set of plot limits, so they can be compared, and those
+   limits describe the **filtered, log-scaled** values that are actually drawn rather than
+   the raw column. A log-scaled Density plot therefore bins differently than it did before
+   2.0.0.
+
+   A plot that cannot be built is reported on the status panel instead of failing: a
+   column that is empty for the selected subset, a capture rate with too few events — which
+   says how few — a heatmap over more than one channel, and an All Points Histogram or
+   Event Overlay whose events cannot be loaded. A Density plot that comes back with nothing
+   to draw leaves the previous plot in place rather than clearing the figure.
+
 3. Choose the **X-axis** and (if applicable) **Y-axis** and **Z-axis** attributes. These correspond to metadata columns in your database such as:
 
    - ``start_time``, ``duration``, ``event_id``
