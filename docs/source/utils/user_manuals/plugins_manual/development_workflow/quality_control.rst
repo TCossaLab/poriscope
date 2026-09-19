@@ -573,7 +573,9 @@ Coverage is measured with ``pytest-cov``, which is declared in the ``[dev]`` ext
 Run it deliberately when you want the number. The plain ``pytest`` invocation is the
 pre-commit gate and stays free of coverage instrumentation. ``ci-internal-pr.yml`` runs
 the coverage variant and prints the line rate as a GitHub notice; nothing fails on a
-drop, so treat it as information rather than a gate.
+drop, so treat it as information rather than a gate. ``ci-branches.yml`` collects
+coverage too, as JSON rather than as a notice, because the refactor-coverage audit below
+needs it on every branch push.
 
 .. _plugin_compliance_testing:
 
@@ -1273,8 +1275,15 @@ covered needs to know whether its body executed, which only coverage data can sa
 plain ``pytest`` run carries none. So the check is split: the structural half — every target
 resolves to a file that defines it, and every deduplicated method is named by some test —
 runs under plain ``pytest`` in ``tests/unit/scripts/test_refactor_coverage_gate.py``, and the
-execution half runs in ``ci-internal-pr.yml``, which already performs a coverage run. Locally,
-the two coverage-dependent tests skip with a message telling you the command above.
+execution half runs wherever CI performs a coverage run: ``ci-branches.yml`` on every branch
+push and ``ci-internal-pr.yml`` on internal pull requests. Locally, the two
+coverage-dependent tests skip with a message telling you the command above.
+
+**Why both, and not just the pull-request one.** Work reaches ``develop`` through
+``git flow feature finish``, which merges locally and opens no pull request — so a gate
+running only on pull requests never saw any of the branches this refactor lands on, and nine
+targets had quietly drifted to ``RUNS ONLY`` before anyone ran it by hand. A gate that runs on
+one path is only as good as that path's resemblance to the one your work takes.
 
 .. note::
 
