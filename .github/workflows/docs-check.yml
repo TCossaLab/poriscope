@@ -1,16 +1,19 @@
 # Docs Render Check
 # -----------------
 # Verifies that the Sphinx documentation still builds cleanly, with warnings treated as
-# errors, on every pull request and on every push to a hotfix branch.
+# errors, on every pull request, on every push to develop, and on every push to a hotfix
+# branch.
 #
-# Why hotfix/* is on the push trigger and no other branch is:
-# every other branch reaches main or develop through a pull request, which this workflow
-# already covers. A hotfix does not - it branches off main and `git flow hotfix finish`
-# merges it back into main locally - so without a push trigger the first docs build a
-# hotfix ever gets is build_and_deploy_docs.yml running against main after the fact,
-# which is exactly the failure this workflow exists to prevent. If a hotfix branch also
-# has a pull request open, both triggers fire and the branch renders twice; that is a few
-# wasted minutes on a rare branch type, not a correctness problem.
+# Why develop and hotfix/* are on the push trigger:
+# neither reaches this workflow through a pull request. A feature branch finishes with
+# `git flow feature finish`, which merges into develop locally and opens no PR, and a
+# hotfix branches off main and is merged back into main locally the same way - so a
+# PR-only trigger never sees the path either one actually takes, and the first docs build
+# they get is build_and_deploy_docs.yml running against main after the fact, which is
+# exactly the failure this workflow exists to prevent. This is the blind spot the
+# refactor-coverage audit was found to have on 2026-09-14 and was fixed the same way; see
+# DECISIONS.md, 2026-09-19. If a branch also has a pull request open, both triggers fire
+# and it renders twice; that is a few wasted minutes, not a correctness problem.
 #
 # Why this exists separately from the docs deploy workflow:
 # build_and_deploy_docs.yml only runs on push to main, i.e. after merge, so a
@@ -38,7 +41,7 @@ on:
     types: [opened, synchronize, reopened]
     branches: [main, develop, 'release/*']
   push:
-    branches: ['hotfix/*']
+    branches: [develop, 'hotfix/*']
   workflow_dispatch:
 
 permissions:

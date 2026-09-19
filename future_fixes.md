@@ -354,10 +354,8 @@ the oversized `setupUi` methods. This review re-confirmed each with fresh counts
   but never that the version matches the tag, so Zenodo can publish under a stale version.
 - **No pip cache in `ci-internal-pr.yml` or `release.yml`**, and `ci-branches.yml:101` runs
   `pre-commit clean`, discarding the hook-env cache every run.
-- **`.pre-commit-config.yaml` housekeeping.** `black` runs only at the manual stage, so
-  formatting is enforced by CI rewriting contributors' commits rather than by failing them;
-  and `scripts/check_plugin_schemas.py` is documented as a gate on the Sphinx QA page but
-  wired into no hook or workflow.
+- **`black` runs only at the manual pre-commit stage**, so formatting is enforced by CI
+  rewriting contributors' commits rather than by failing them.
 - **`scripts/new_plugin.py`'s family table is guarded one-directionally.**
   `tests/unit/scripts/test_new_plugin.py:466-472` asserts each `FAMILIES` entry appears in
   `main_model.py`, not the reverse, so adding a ninth `Meta*` base leaves the generator and

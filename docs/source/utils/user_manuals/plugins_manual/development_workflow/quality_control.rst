@@ -61,7 +61,8 @@ Three further gates are not pre-commit hooks but are enforced just as strictly:
   contributing a data reader, :ref:`reader_fuzz_testing` additionally drives it against
   deliberately malformed files.
 - the **documentation render check** — :ref:`docs_render_check` below — rebuilds the
-  Sphinx documentation on every pull request with warnings treated as errors. pydoclint
+  Sphinx documentation on every pull request, and on every push to ``develop`` or a
+  ``hotfix/*`` branch, with warnings treated as errors. pydoclint
   checks that a docstring *describes the right things*; it does not check that the
   docstring is valid reStructuredText. Those are different failure modes, and only this
   gate catches the second one.
@@ -252,7 +253,10 @@ reStructuredText is well formed. Sphinx catches it, so Sphinx is a gate.
 
 Every pull request targeting ``main``, ``develop`` or a ``release/*`` branch runs the
 **Docs Render Check** workflow, which regenerates the autodoc ``.rst`` files and builds
-the HTML with ``-W`` — warnings are errors. To run exactly what it runs:
+the HTML with ``-W`` — warnings are errors. It also runs on every push to ``develop`` and
+to a ``hotfix/*`` branch, because neither arrives through a pull request: both
+``git flow feature finish`` and ``git flow hotfix finish`` merge locally, so a PR-only
+gate would never see the path most work actually takes. To run exactly what it runs:
 
 .. code-block:: bash
 
@@ -573,7 +577,9 @@ Coverage is measured with ``pytest-cov``, which is declared in the ``[dev]`` ext
 Run it deliberately when you want the number. The plain ``pytest`` invocation is the
 pre-commit gate and stays free of coverage instrumentation. ``ci-internal-pr.yml`` runs
 the coverage variant and prints the line rate as a GitHub notice; nothing fails on a
-drop, so treat it as information rather than a gate.
+drop, so treat it as information rather than a gate. ``ci-branches.yml`` collects
+coverage too, as JSON rather than as a notice, because the refactor-coverage audit below
+needs it on every branch push.
 
 .. _plugin_compliance_testing:
 
@@ -1133,7 +1139,7 @@ the five ``*controls.py`` under its ``utils/``. Those four families carry a larg
 of byte-identical duplication, and the 2.0.0 refactor is removing it. The ratchet exists
 so that removal is *demonstrated* rather than asserted.
 
-``*Model.py`` joined them in September 2026, part-way through the refactor, because Step 4
+``*Model.py`` joined them in September 2026, part-way through the refactor, which by then
 had been moving computation *into* the Models — which no family covered, so anything
 landing there could be duplicated invisibly. One method already had been. A gate scoped by
 file path stops measuring the moment a refactor moves code out of that path, and it fails
@@ -1273,8 +1279,15 @@ covered needs to know whether its body executed, which only coverage data can sa
 plain ``pytest`` run carries none. So the check is split: the structural half — every target
 resolves to a file that defines it, and every deduplicated method is named by some test —
 runs under plain ``pytest`` in ``tests/unit/scripts/test_refactor_coverage_gate.py``, and the
-execution half runs in ``ci-internal-pr.yml``, which already performs a coverage run. Locally,
-the two coverage-dependent tests skip with a message telling you the command above.
+execution half runs wherever CI performs a coverage run: ``ci-branches.yml`` on every branch
+push and ``ci-internal-pr.yml`` on internal pull requests. Locally, the two
+coverage-dependent tests skip with a message telling you the command above.
+
+**Why both, and not just the pull-request one.** Work reaches ``develop`` through
+``git flow feature finish``, which merges locally and opens no pull request — so a gate
+running only on pull requests never saw any of the branches this refactor lands on, and nine
+targets had quietly drifted to ``RUNS ONLY`` before anyone ran it by hand. A gate that runs on
+one path is only as good as that path's resemblance to the one your work takes.
 
 .. note::
 

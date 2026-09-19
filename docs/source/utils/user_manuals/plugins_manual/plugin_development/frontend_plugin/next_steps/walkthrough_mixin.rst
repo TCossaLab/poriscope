@@ -10,13 +10,13 @@ class and implement :py:meth:`~poriscope.views.widgets.walkthrough_mixin.Walkthr
 .. note::
 
    This page is hand-written rather than generated. The autodoc generators scan
-   ``poriscope/utils`` and ``poriscope/plugins`` only, and Step 3f of the 2.0.0
-   refactor moved ``walkthrough_mixin.py`` into ``poriscope/views/widgets/`` to fix a
-   layering inversion - the app shell was importing *up* into a plugin package. The
-   three dialog classes that moved with it (``IntroDialog``, ``Overlay`` and
-   ``StepDialog``) are internal UI machinery a plugin author never instantiates, and
-   deliberately have no page. This one does, because the tutorial tells you to inherit
-   it.
+   ``poriscope/utils`` and ``poriscope/plugins`` only, and this mixin lives in
+   ``poriscope/views/widgets/`` because the app shell must not import *up* into a
+   plugin package - which is what it did while the walkthrough modules sat under
+   ``plugins/analysistabs/utils/``. The three dialog classes beside it
+   (``IntroDialog``, ``Overlay`` and ``StepDialog``) are internal UI machinery a plugin
+   author never instantiates, and deliberately have no page. This one does, because the
+   tutorial tells you to inherit it.
 
 .. autoclass:: poriscope.views.widgets.walkthrough_mixin.WalkthroughMixin
    :members:

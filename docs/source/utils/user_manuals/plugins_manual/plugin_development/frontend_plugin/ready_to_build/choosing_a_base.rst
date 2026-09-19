@@ -71,14 +71,18 @@ setters (``set_query``, ``set_event_query``, ``update_available_columns``,
 ``on_raw_filter_validated``, ``restore_subset_filters``, ``commit_filter``,
 ``get_subset_filters``), the
 filtered-event cache
-(``_rebuild_event_id_cache``), the experiment-selection tree (``show_selection_tree``,
+(``_rebuild_event_id_cache``, ``set_event_id_rows``), the event-plot round trip
+(``event_plot_data_requested``, ``set_event_plot_data_generator``,
+``set_event_data_generator``), the scatterplot round trip (``scatterplot_requested``,
+``set_scatterplot``), the experiment-selection tree (``show_selection_tree``,
 ``request_experiment_structure``) and ``get_save_filename``.
 
 What ``MetaEventTabView`` gives you: the event-index range helpers
 (``_parse_event_indices``, ``_expand_event_indices``, ``_shift_ranges``,
 ``_merge_ranges``, ``_format_ranges``) that turn an event-index field into ranges and
 back for the navigation arrows, plus ``validate_single_channel``,
-``_extract_commit_event_parameters`` and ``set_data_filter_function``.
+``_extract_commit_event_parameters``, ``set_data_filter_function`` and
+``confirm_unfiltered_run``, the modal that asks before a run with no filter selected.
 
 The Controller
 --------------
@@ -96,7 +100,9 @@ The same split, and you normally match it to whichever View you chose.
      - the plugin bus, session state, worker management
      - ClusteringController
    * - ``MetaSubsetTabController``
-     - sixteen relays for experiment, column, unit and query results
+     - the experiment and channel scope, column names and units, filter validation and
+       query results, the event-plot chain, the scatterplot's filtering, the filter
+       file's load and save, and session state
      - MetadataController, ProteinController
    * - ``MetaEventTabController``
      - ``update_available_plugins`` and ``_resolve_callable_filter``
@@ -118,7 +124,8 @@ data access belong — see :doc:`metamodel_base`.
      - What it adds
      - Shipped tabs
    * - ``MetaModel``
-     - the plugin call, worker management, the logscale filter, plot-data caching
+     - the plugin call, worker management, the logscale filter, the plot time base,
+       plot-data caching
      - ClusteringModel, RawDataModel, EventAnalysisModel
    * - ``MetaSubsetTabModel``
      - the events-table lookups behind an event plot, and the subset filter file's JSON
