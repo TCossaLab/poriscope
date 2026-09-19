@@ -36,9 +36,14 @@ either step.
 
 ## Step 4 closeout - the commit series, planned 2026-09-14 at `a1ef5906`
 
-**What is left of Step 4**: the event-plot promotion, the 4a exit-review item, the
-docstring sweep and the closing documentation pass. Allowlist **8**, every entry rule 2. Duplication in the three
-analysis-tab families **31**.
+**What is left of Step 4, as of 2026-09-19**: the 4a exit-review item, which needs a real
+database. Everything else has landed - the event-plot promotion, the docstring sweep and the
+closing documentation pass. Allowlist **2**, both entries recorded floors. Duplication in the
+three analysis-tab families **31**, its floor.
+
+*As the series was planned, 2026-09-14:* what was left was the event-plot promotion, the 4a
+exit-review item, the docstring sweep and the closing documentation pass, at allowlist **8**,
+every entry rule 2.
 
 ### The surface, re-measured - and smaller than the 4d handoff recorded
 
@@ -418,6 +423,19 @@ sites are converted**, and they sit in Clustering (1), Metadata (5) and Protein 
     | `filtering_and_querying.rst:300` | Documents the duplicate-name refusal (still correct) but not 4e's two new outcomes: an unreadable filter file reported on the status panel with existing filters untouched, and a reported save failure |
     | `metadata_tab.rst` | Documents no Plot Events surface at all, though the tab has one (`metadatacontrols.py:446-475`), so the promotion's empty-request refusal and shared failure message have nowhere to live |
     | `protein_tab.rst`, `clustering_tab.rst` | Predate Step 4's behaviour changes: per-event binning over each event's own range, zero-baseline events skipped, an unusable bin width reported, an unknown clustering column reported |
+
+    **Done 2026-09-19**, eight documentation commits plus one CI change, suite 4,114 passed /
+    16 skipped and `sphinx-build -W --keep-going` green at each. All ten findings fixed, and
+    four more found while writing them: `quality_control.rst` cited "Step 4" for why
+    `*Model.py` joined the ratchet, its coverage paragraph named only one of the two workflows
+    that collect coverage, the metadata tab's shared plot limits now describe the filtered,
+    log-scaled values and nothing said so, and `future_fixes.md` still claimed
+    `check_plugin_schemas.py` was wired into no hook when the `settings-schema` hook runs it.
+
+    **And one gate was fixed rather than documented.** `docs-check.yml` built the docs with
+    `-W` on pull requests and `hotfix/*` pushes only, so `git flow feature finish` - which
+    merges into `develop` locally - never triggered it. `develop` is on the push trigger now;
+    see `DECISIONS.md` 2026-09-19. Same blind spot as the coverage audit's, found the same way.
 
     **Step 6 keeps the `HelloWorld` example and the private-methods autodoc item**; this step
     does not touch either. Re-measure the plan references with
