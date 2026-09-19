@@ -148,17 +148,35 @@ class MetaSubsetTabModel(MetaModel):
         accepted: a list or a scalar would iterate into something, and the caller
         would be left holding filters it never asked for.
 
+        **Every value has to be a string, and that check is load-bearing.** A saved
+        session is a JSON object too, so the container check alone let one through,
+        and its entries then split two ways: a value that is falsy - an empty dict,
+        ``null`` - builds a query with no ``WHERE`` clause at all, which validates
+        cleanly and commits as ``<name>_assisted`` with no body, while a non-empty
+        one raises ``TypeError`` out of the query builder and raises a modal. Half
+        the file arrives as filters nobody wrote and half as dialogs, which is
+        exactly the outcome the all-or-nothing rule exists to prevent. An empty
+        *string* stays legal, because the add-filter dialog requires a name and not
+        a body, so a file this application wrote can contain one.
+
         :param path: the file to read
         :type path: str
         :return: the filters the file holds, keyed by name
         :rtype: Dict[str, str]
-        :raises ValueError: if the file does not hold a JSON object
+        :raises ValueError: if the file does not hold a JSON object of filter text
         """
         with open(path, "r") as handle:
             filters = json.load(handle)
 
         if not isinstance(filters, dict):
             raise ValueError(f"expected a dictionary, got {type(filters).__name__}")
+
+        for name, text in filters.items():
+            if not isinstance(text, str):
+                raise ValueError(
+                    f"{name!r} holds a {type(text).__name__} rather than filter text, "
+                    "so this is not a subset filter file"
+                )
         return filters
 
     @log(logger=logger)

@@ -102,6 +102,47 @@ class TestLoadFilters:
         with pytest.raises(ValueError, match="str"):
             model.load_filters(str(path))
 
+    def test_a_session_file_is_refused(self, model, tmp_path):
+        """
+        A saved session is a JSON object too, so the container check alone passed it.
+        Measured before this guard existed: an entry whose value is falsy builds a
+        query with no WHERE clause, validates cleanly and commits as
+        ``<name>_assisted`` with no body, while a non-empty one raises out of the
+        query builder into a modal - half the file as filters nobody wrote, half as
+        dialogs.
+        """
+        path = tmp_path / "filters.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "WaveletFilter_0": {"Wavelet": {"Type": "str", "Value": "db4"}},
+                    "MetadataController": {},
+                }
+            )
+        )
+
+        with pytest.raises(ValueError, match="WaveletFilter_0"):
+            model.load_filters(str(path))
+
+    def test_a_null_filter_body_is_refused(self, model, tmp_path):
+        """The shape that used to commit a filter with a name and nothing in it."""
+        path = tmp_path / "filters.json"
+        path.write_text(json.dumps({"long": "dwell > 5", "empty": None}))
+
+        with pytest.raises(ValueError, match="empty"):
+            model.load_filters(str(path))
+
+    def test_an_empty_filter_body_is_kept(self, model, tmp_path):
+        """
+        The add-filter dialog requires a name and not a body, so a file this
+        application wrote can hold an empty string. Refusing it here would reject
+        the application's own output.
+        """
+        path = tmp_path / "filters.json"
+        path.write_text(json.dumps({"everything": ""}))
+
+        assert model.load_filters(str(path)) == {"everything": ""}
+
     def test_a_file_that_is_not_json_raises(self, model, tmp_path):
         path = tmp_path / "filters.json"
         path.write_text("dwell > 5")

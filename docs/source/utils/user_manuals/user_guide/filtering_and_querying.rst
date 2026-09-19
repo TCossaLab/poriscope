@@ -289,9 +289,11 @@ The saved JSON format looks like:
 
    A file that cannot be read — missing, unreadable, not valid JSON, or holding anything
    other than an object of filter names and filter text — is reported on the status
-   panel, and the filters you already have are left exactly as they were. A **save** that
-   fails, on a full disk or a read-only folder, is reported there too; it used to look
-   exactly like a save that worked.
+   panel, and the filters you already have are left exactly as they were. That includes
+   a **session** file, which is also a JSON object: it is refused whole rather than
+   importing its plugin names as filters. A **save** that fails, on a full disk or a
+   read-only folder, is reported there too; it used to look exactly like a save that
+   worked.
 
 Common Mistakes
 ---------------

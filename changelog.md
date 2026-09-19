@@ -30,6 +30,8 @@
 
 * The `PeakFinder` changes above are Nada Kerrouri's, integrated from `feature/peakfinders_1.8.0`
 
+* **Fixed loading a session file as a filter file creating empty, unusable filters**: every entry in a filter file must now hold filter text, so a JSON object that is not a filter file is refused whole and the tab's own filters are left alone
+
 * The documentation render check now runs on every push to `develop` as well as on pull requests, since `git flow feature finish` merges locally and opens no pull request for it to see
 
 * A `requirements.txt` written in UTF-16 or carrying a byte-order mark is now refused by a pre-commit hook, since that is what PowerShell redirection produces by default and git records such a file as an unreviewable binary blob
