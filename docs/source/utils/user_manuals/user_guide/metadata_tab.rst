@@ -113,3 +113,29 @@ Step 4: Generate and Export
 .. tip::
 
    Use “Export Subset” to isolate and save only the events that meet your filtering criteria. This is ideal for downstream machine learning or further statistical analysis.
+
+Step 5: Inspect Individual Events
+---------------------------------
+
+Beside the plot controls is a **Plot Events** button with an arrow on either side and a
+**RAW** checkbox. It draws the events themselves rather than a summary of them.
+
+1. Use **Scope** to select exactly one experiment and one channel. Events are numbered
+   within a channel, so a wider scope is refused with a message rather than guessed at.
+2. Select at most one subset filter. Raw SQL filters cannot be used here; the events
+   plotted are those of the filtered set.
+3. Enter the **EVENT INDEX** to start from and **# EVENTS TO PLOT**.
+4. Click **Plot Events**. The starting index snaps forward to the next event present in
+   the filtered set, wrapping around to the first, and the field updates to show where
+   it landed.
+5. Use the **◀** and **▶** arrows to step through the filtered set.
+6. Check **RAW** to overlay the unfiltered signal alongside the filtered and fitted
+   traces.
+
+.. note::
+
+   Every refusal is reported on the status panel: more than one experiment or channel in
+   scope, more than one filter selected, a filtered set with no events in it, an
+   experiment the database does not recognise, and a request that asks for no events at
+   all. A plot that cannot be built names what it was plotting and the event ids it was
+   asked for.
