@@ -10,6 +10,25 @@ which ran through August 2026 and is complete. The step numbers only date the de
 
 ---
 
+## 2026-09-19 - The docs render check runs on pushes to develop, not only on pull requests
+
+**Context.** `docs-check.yml` built the docs with `-W` on pull requests to `main`, `develop`
+and `release/*`, plus pushes to `hotfix/*`. Work reaches `develop` through
+`git flow feature finish`, which merges locally and opens no pull request, so the gate never
+ran over the branches this project actually lands on; the first build such a change got was
+`build_and_deploy_docs.yml` against `main`, after the fact.
+
+**Decision.** Add `develop` to the push trigger.
+
+**Evidence.** The refactor-coverage audit had exactly this blind spot and was fixed the same
+way on 2026-09-14, after nine of its targets had drifted to `RUNS ONLY` unseen. A branch that
+also has a pull request open renders twice, which is a few wasted minutes on a rare case.
+
+**Revisit if** feature branches start reaching `develop` through pull requests, which would
+make the push trigger redundant.
+
+---
+
 ## 2026-09-17 - Action replay records a declared action name, not a method name
 
 **Context.** `@register_action` records `func.__name__` with the call's args and kwargs, and

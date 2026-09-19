@@ -30,6 +30,8 @@
 
 * The `PeakFinder` changes above are Nada Kerrouri's, integrated from `feature/peakfinders_1.8.0`
 
+* The documentation render check now runs on every push to `develop` as well as on pull requests, since `git flow feature finish` merges locally and opens no pull request for it to see
+
 * A `requirements.txt` written in UTF-16 or carrying a byte-order mark is now refused by a pre-commit hook, since that is what PowerShell redirection produces by default and git records such a file as an unreviewable binary blob
 
 * **Breaking: the event plot's resolve-and-load chain is one method on `MetaSubsetTabController`** rather than a copy in each database-backed tab, so a failed event plot now reports the same way on both: one message naming what was being plotted and the event ids, where the metadata tab named only the ids and the protein tab only the plot type
