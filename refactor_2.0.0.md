@@ -37,9 +37,14 @@ either step.
 ## Step 4 closeout - the commit series, planned 2026-09-14 at `a1ef5906`
 
 **What is left of Step 4, as of 2026-09-19**: the 4a exit-review item, which needs a real
-database. Everything else has landed - the event-plot promotion, the docstring sweep and the
-closing documentation pass. Allowlist **2**, both entries recorded floors. Duplication in the
-three analysis-tab families **31**, its floor.
+database, **and three manual Windows passes this file's own rule asks for and has no dated
+record of** - closeout branch 2 (Clustering), branch 7 (4e's filter file paths) and branch 8
+(the event-plot promotion on both tabs). Branch 6 deleted `MetaView`'s logscale copy, which
+every filtered plot on every tab goes through; branches 3, 4 and 5 were passed before it
+landed, so whether it wants a pass of its own is a judgement rather than a gap. All the code,
+every gate and the documentation are done: the event-plot promotion, the docstring sweep and
+the closing documentation pass have landed. Allowlist **2**, both entries recorded floors.
+Duplication in the three analysis-tab families **31**, its floor.
 
 *As the series was planned, 2026-09-14:* what was left was the event-plot promotion, the 4a
 exit-review item, the docstring sweep and the closing documentation pass, at allowlist **8**,
@@ -359,8 +364,24 @@ sites are converted**, and they sit in Clustering (1), Metadata (5) and Protein 
      36). The shared failure message names both the plot type and the ids, so neither tab
      loses information; the metadata tab inherits Protein's empty-request guard, recorded
      2026-09-12 as inert there.
-9. **The 4a exit-review item.** The protein tab's unresolvable-experiment guard has still
-   never run against a real database.
+9. **The 4a exit-review item.** The unresolvable-experiment guard has still never run
+   against a real database. **What it guards, re-derived 2026-09-19:**
+   `MetaSubsetTabController.load_event_plot_data:227` asks the loader for
+   `get_experiment_id_by_name(exp)` before resolving any `event_id`. That returns `None`
+   when the `experiments` table holds no row of that name, and raises when the query itself
+   fails; each answer now stops the plot with its own message (`:239` and `:233`). It used
+   to be a bus call that swallowed both, leaving `exp_id` as `None` - and the id query then
+   ran **with no experiment scope at all**. `event_id` is unique only within an experiment
+   and channel, so an unscoped match returns whichever row happens to share the number:
+   another channel's events plotted under this one's label, silently.
+
+   **Why it cannot be provoked with the data to hand**: the name comes from the scope tree,
+   which is built from the same database, so it always resolves. To try it, change the
+   database under the running app - `UPDATE experiments SET name='x' WHERE name='<the
+   selected one>'` in a SQLite browser after the scope is chosen, then Plot Events (expect
+   the "has no experiment named" message), and `ALTER TABLE experiments RENAME TO e_old` for
+   the raising arm (expect the "Could not look up experiment" message). Both must leave the
+   previous plot alone and plot nothing.
 
 10. **Strip every refactor-plan reference out of the docstrings and the published
     docs** - added 2026-09-14 at Kyle's request, and it is a sweep rather than a
@@ -453,6 +474,32 @@ plugin API by six attributes to delete 31 lines. See `DECISIONS.md`.
 
 **Each tab branch ends with a manual Windows pass over that tab's plotting surfaces**, dated
 in the verification section, and the full suite green before every commit.
+
+### The three owed passes, scoped 2026-09-19
+
+Branches 2, 7 and 8 have no dated record. Each item names what the branch changed, so a pass
+that finds nothing still says which code was exercised.
+
+- **Branch 2, Clustering.** Cluster with HDBSCAN and with Gaussian Mixtures; a column with
+  LOG and with NORM set; a filter that matches rows and one that matches none (expect "No
+  data matches the given query"); a filter naming a column the loader does not return
+  (expect the loader's own message, not advice about column selections); merge two labels;
+  commit, and commit again over existing cluster columns to get the overwrite prompt.
+  `ClusteringModel.build_clustering_frame` does the filtering, log-scaling and frame
+  construction now, so every one of these goes through code that was in the View.
+- **Branch 7, 4e.** Save filters to a file; load them back into a tab with none; load a file
+  whose names clash with existing filters (expect all-or-nothing refusal); save and reload a
+  `*_raw` filter and confirm it is still raw and still selectable; load a file that is not
+  JSON, and one holding a JSON list (expect a status-panel message and the tab's filters
+  untouched); save into a read-only folder (expect a status-panel message, not a silent
+  success). Both dialogs stay in the View; the read and write are `MetaSubsetTabModel`'s.
+- **Branch 8, the promotion.** On **both** tabs: plot events from a filtered subset, step
+  with the arrows, and tick RAW. On Metadata, plot with no events selected (expect "No events
+  were requested, so there are no events to plot"). On Protein, do the same for Plot Events
+  and Plot Histogram, whose messages read "events" and "histograms". Force a failure - an id
+  range no event matches - and confirm one message names both the plot type and the ids.
+  Both tabs run `MetaSubsetTabController.load_event_plot_data` now; before, each had its own
+  copy and each named only half of that.
 
 ## Rule 2 relaxed, 2026-09-14 - the remainder re-priced
 
