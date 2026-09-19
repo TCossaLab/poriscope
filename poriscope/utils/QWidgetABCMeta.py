@@ -23,27 +23,19 @@
 # Contributors:
 # Kyle Briggs
 
-import abc
-from typing import Any, Dict, Tuple, Type
+"""
+``QWidgetABCMeta``, the name a widget base uses for the Qt-aware ABC metaclass.
 
-from PySide6.QtWidgets import QWidget
+It is :class:`poriscope.utils.QObjectABCMeta.QObjectABCMeta` under another name, not a
+second class. ``type(QObject)`` and ``type(QWidget)`` are the same object in PySide6
+(``Shiboken.ObjectType``), so the two metaclasses this project carried were built from
+identical ingredients, were already interchangeable, and differed only in an import and a
+class statement. Both names are re-exported from ``poriscope.exposed``, so both are kept.
+"""
 
+from poriscope.utils.QObjectABCMeta import QObjectABCMeta
 
-class QWidgetABCMeta(abc.ABCMeta, type(QWidget)):  # type: ignore[misc]
-    def __new__(
-        mcls,
-        name: str,
-        bases: Tuple[type, ...],
-        ns: Dict[str, Any],
-        **kw: Any,
-    ) -> Type[Any]:
-        cls = super().__new__(mcls, name, bases, ns, **kw)
-        # abc._abc_init(cls)
-        return cls
+#: The same metaclass, under the name a ``QWidget`` subclass reads better with.
+QWidgetABCMeta = QObjectABCMeta
 
-    def __call__(cls, *args: Any, **kw: Any) -> Any:
-        if cls.__abstractmethods__:
-            raise TypeError(
-                f"Can't instantiate abstract class {cls.__name__} without an implementation for abstract methods {set(cls.__abstractmethods__)}"
-            )
-        return super().__call__(*args, **kw)
+__all__ = ["QWidgetABCMeta"]

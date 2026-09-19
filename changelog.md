@@ -30,6 +30,8 @@
 
 * The `PeakFinder` changes above are Nada Kerrouri's, integrated from `feature/peakfinders_1.8.0`
 
+* `QWidgetABCMeta` and `QObjectABCMeta` are one implementation under both names, since PySide6 gives `QObject` and `QWidget` the same metaclass; both imports keep working and abstract Qt classes are refused exactly as before
+
 * The duplication ratchet now measures the event finders as well, so the step that lifts their shared baseline fit out of two copies cannot add a duplicate elsewhere unnoticed
 
 * **Fixed loading a session file as a filter file creating empty, unusable filters**: every entry in a filter file must now hold filter text, so a JSON object that is not a filter file is refused whole and the tab's own filters are left alone

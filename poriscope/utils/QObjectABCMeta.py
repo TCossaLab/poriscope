@@ -23,25 +23,34 @@
 # Contributors:
 # Kyle Briggs
 
+"""
+The metaclass that makes ``@abstractmethod`` work on a Qt class.
+
+PySide6 does not honour abstractness on its own. A naive
+``class Foo(QWidget, abc.ABC)`` cannot even be defined - Python raises a metaclass
+conflict, because Shiboken gives every wrapped Qt type its own metaclass - and a class
+built from a metaclass that merely inherits both still **instantiates while abstract
+methods remain**, measured on PySide6 6.9.0. ``__call__`` below is the workaround: it is
+what actually refuses, and it is the reason this module exists.
+
+**One class serves both QObject and QWidget**, because ``type(QObject)`` and
+``type(QWidget)`` are the same object - ``Shiboken.ObjectType`` - so the two metaclasses
+this project used to carry were built from identical ingredients and were already
+interchangeable. :mod:`poriscope.utils.QWidgetABCMeta` keeps the other name pointing here,
+since both are re-exported from ``poriscope.exposed`` and a plugin may import either.
+"""
+
 import abc
-from typing import Any, Dict, Tuple, Type
+from typing import Any
 
 from PySide6.QtCore import QObject
 
 
 class QObjectABCMeta(abc.ABCMeta, type(QObject)):  # type: ignore[misc]
-    def __new__(
-        mcls,
-        name: str,
-        bases: Tuple[type, ...],
-        ns: Dict[str, Any],
-        **kw: Any,
-    ) -> Type[Any]:
-        cls = super().__new__(mcls, name, bases, ns, **kw)
-        # abc._abc_init(cls)
-        return cls
-
     def __call__(cls, *args: Any, **kw: Any) -> Any:
+        # Load-bearing, and the whole point of the class: ABCMeta computes
+        # __abstractmethods__ correctly here, but Shiboken's instantiation path does
+        # not consult it, so without this an abstract subclass builds happily.
         if cls.__abstractmethods__:
             raise TypeError(
                 f"Can't instantiate abstract class {cls.__name__} without an implementation for abstract methods {set(cls.__abstractmethods__)}"
