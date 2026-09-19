@@ -115,6 +115,20 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 #: cannot be deduplicated without relaxing the ABC, which is a contract change
 #: Decision C does not list. Recorded here so the residue does not read as unfinished
 #: work.
+#:
+#: ``eventfinders`` was added 2026-09-19, ahead of Step 5b for the same reason
+#: ``*Model.py`` went in ahead of Step 4's closeout: it is the family that step edits
+#: and no gate could see it. It starts at **0 removable**, which is the finding rather
+#: than an anticlimax - the two finders' shared code is a pair of *near*-copies
+#: (``_get_baseline_stats`` at 88/85 lines differing in 24, ``_find_events_in_chunk``
+#: at 72/69 differing in 13), and byte-identity cannot see those. What the entry buys
+#: is the other direction: a step that lifts the shared histogram fit out of both
+#: copies must not quietly add a duplicate somewhere else while doing it, and now it
+#: cannot.
+#:
+#: ``ThresholdBlockageFinder`` is in the family although it shares nothing today,
+#: because a family is a set of files that *may* copy from each other, not a set that
+#: currently does.
 FAMILIES: Dict[str, Tuple[str, ...]] = {
     "*View.py": (
         "poriscope/plugins/analysistabs/ClusteringView.py",
@@ -149,6 +163,11 @@ FAMILIES: Dict[str, Tuple[str, ...]] = {
         "poriscope/plugins/eventfitters/CUSUM.py",
         "poriscope/plugins/eventfitters/IntraCUSUM.py",
         "poriscope/plugins/eventfitters/NoFitter.py",
+    ),
+    "eventfinders": (
+        "poriscope/plugins/eventfinders/BoundedBlockageFinder.py",
+        "poriscope/plugins/eventfinders/ClassicBlockageFinder.py",
+        "poriscope/plugins/eventfinders/ThresholdBlockageFinder.py",
     ),
     "datareaders": (
         "poriscope/plugins/datareaders/BinaryReader1X.py",

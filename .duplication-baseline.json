@@ -29,6 +29,12 @@
     "identical_bodies": 15,
     "removable_lines": 435
   },
+  "eventfinders": {
+    "files": 3,
+    "functions": 14,
+    "identical_bodies": 0,
+    "removable_lines": 0
+  },
   "eventfitters": {
     "files": 4,
     "functions": 35,
