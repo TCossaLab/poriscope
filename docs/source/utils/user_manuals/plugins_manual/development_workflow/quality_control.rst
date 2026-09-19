@@ -1133,7 +1133,7 @@ the five ``*controls.py`` under its ``utils/``. Those four families carry a larg
 of byte-identical duplication, and the 2.0.0 refactor is removing it. The ratchet exists
 so that removal is *demonstrated* rather than asserted.
 
-``*Model.py`` joined them in September 2026, part-way through the refactor, because Step 4
+``*Model.py`` joined them in September 2026, part-way through the refactor, which by then
 had been moving computation *into* the Models — which no family covered, so anything
 landing there could be duplicated invisibly. One method already had been. A gate scoped by
 file path stops measuring the moment a refactor moves code out of that path, and it fails

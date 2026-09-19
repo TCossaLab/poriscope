@@ -374,8 +374,16 @@ sites are converted**, and they sit in Clustering (1), Metadata (5) and Protein 
     event-plot promotion deleted some of it, and **1 now** - a floor, not a miss.
     `add_subset_filter_dialog.py:58` says "User Guide/MetaData Tab - Step 3", which is a
     section of the user guide and not this plan; the grep cannot tell them apart.
-    Re-measure with
-    `grep -rnE "Step 4|Step 3|method rule|Decision [A-E]|rule \d+" poriscope/ --include=*.py`.
+
+    **The instrument was narrower than the rule, corrected 2026-09-19.** The sweep's own
+    scope was "the docstrings *and the published docs*", and the grep read
+    `poriscope/ --include=*.py` only - so two plan citations survived in hand-written
+    `.rst`: `walkthrough_mixin.rst:13` ("Step 3f of the 2.0.0 refactor") and
+    `quality_control.rst:1136` ("because Step 4 had been moving computation"). Both are
+    rewritten as the reason they state. Re-measure over both trees with
+    `grep -rnE "Step 4|Step 3|method rule|Decision [A-E]|rule \d+" poriscope/ docs/source --include=*.py --include=*.rst`,
+    ignoring `docs/source/autodoc/`: the floor is the one dialog string above plus the user
+    guide's own `Step N:` headings, which the pattern cannot tell from a plan reference.
     Sixteen files over ten commits, each rewriting the citation as the reason the code is
     the way it is today. Where a step number was standing in for an invariant, the
     invariant is now written out - which is most of the value: several sites turned out to
