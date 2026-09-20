@@ -2258,6 +2258,17 @@ Each says what it moves *before* it starts (method rule 38).
   `IconMenuWidget`/`IconTextMenuWidget`'s `uncheckMenuButton`. Range parsing is spread over 4
   modules; `dict_dialog_widget.py` is 411 lines with **no unit test file**, so tests are its
   prerequisite rather than part of it.
+    - **`DictDialog` tests: LANDED 2026-09-20**, 26 tests, suite 4,141 -> 4,167. Its only
+      coverage was incidental - e2e suites that open it, dismiss it and reach past it into
+      `_result`, which notices the dialog failing to open and nothing else. Pinned: which
+      widget each declared `Type` produces (including that `Options` is ignored for `bool`,
+      and that an unrenderable type raises rather than being dropped), every condition
+      `check_validity` applies before enabling OK, what `get_result` reports for each of the
+      four ways out - OK, Cancel, Delete, and dismissal by Esc or the close button, which run
+      no handler at all - and that `on_ok` leaves the three reserved file keys alone rather
+      than harvesting the picker button's label over the chosen path. **9 deliberate source
+      mutations, each caught by the test aimed at it** (rule 8), so this is a net rather than
+      a count.
     - **Range parsing: measured 2026-09-20, recorded as a floor.** True as a statement of
       location, false as one of duplication. **10 functions across the 4 modules split a
       segment on a hyphen, and the measured byte-identical duplication between them is
