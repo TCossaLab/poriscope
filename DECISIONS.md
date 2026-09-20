@@ -10,35 +10,36 @@ which ran through August 2026 and is complete. The step numbers only date the de
 
 ---
 
-## 2026-09-20 - The off-centre fit window stays: it is what holds the fit on the larger peak
+## 2026-09-20 - The off-centre fit window is left alone, and the question is filed
 
 **Context.** `_fit_baseline_histogram` slices `hist[peak - half_width : peak + half_width]`,
-which keeps `half_width` bins below the peak and `half_width - 1` above it rather than the
-symmetric `2*half_width + 1` the variable name suggests. The σ correction above removed it
-as an off-by-one riding along in the same three lines, on the evidence that it moved σ by
-0.13 percentage points on pure Gaussian noise - inside the run-to-run scatter.
+keeping `half_width` bins below the peak and `half_width - 1` above it. The σ correction
+below removed it as an off-by-one riding in the same three lines, on a measurement over
+unimodal noise where it moves σ by 0.13 percentage points - inside the scatter.
 
-**Decision.** Restored, on Kyle's instruction, with a comment and two tests. The
-asymmetry trims the *high* side of the peak, and that is what keeps the fit on the larger
-of two overlapping baseline populations. The measurement that justified removing it was
-taken over the one input where it cannot matter.
+**Decision.** Restored to the shipped behaviour and **left there**, with a comment and a
+characterization test but *no* justification, because the justification does not survive the
+domain rule. Kyle: the baseline population is the fitted peak farthest from zero, and this
+window trims the high side - the side nearer that peak. Its measured advantage appears only
+when the contaminating population sits *above* the wanted one, which rectified blockage data
+never produces. Both the window's direction and the peak-selection gap beside it are filed
+in `future_fixes.md` rather than worked: **complete the refactor before the feature
+changes it uncovers** (Kyle, 2026-09-20).
 
-**Evidence.** 40 trials per case, a dominant `N(μ, σ)` with a smaller overlapping peak.
-With the minor peak **above** the major one the asymmetry is worth several percent, and
-more as the minor peak grows: at 100k samples, 3σ apart, 35% minor weight, the mean error
-is +3.4 against +6.3 and σ is 26.1 against 27.8; at 10k, 4σ apart, 35%, it is +2.0/22.9
-against +8.2/30.8 on a true σ of 20. **It is not free.** With the minor peak **below**,
-trimming the high side keeps the contaminated side instead, and σ is worse by up to 13% -
-the mean is still slightly better. Neutral on unimodal noise either way, which is what
-made it look like a defect.
+**Evidence.** 40 trials per case. Unimodal: 0.13 percentage points, inside the scatter - the
+measurement that made it look like a defect. Contaminant **above**: the asymmetry is worth
+several percent, up to mean +2.0/σ 22.9 against +8.2/30.8 on a true σ of 20. Contaminant
+**below**, which is the direction that occurs: σ is *worse* by 1-4% in all six configurations
+tested, the mean better by 1-3% of σ. So it is neither the off-by-one it looked like nor the
+protection it was briefly written up as.
 
 **Not to be confused with `half_width` itself.** `half_width = min(top - peak, peak -
-bottom)` is the primary protection against a second population, and no commit in this step
+bottom)` is the primary defence against a second population and no commit in this step
 touched it. `BoundedBlockageFinder` **gained** it in the promotion, having never had it.
 
-**Revisit if** a dataset turns up where the second population is reliably *below* the
-baseline peak, since that is the direction the trim costs something; the fix would be to
-choose the trimmed side from which way the histogram is skewed rather than fixing it high.
+**Revisit when** the filed peak-selection item is worked, since the two are one question:
+if the fit is made to follow the peak farthest from zero, which side the window trims
+follows from that rather than being chosen separately.
 
 ---
 

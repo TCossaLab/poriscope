@@ -1052,14 +1052,15 @@ class MetaEventFinder(BaseDataPlugin):
         # Take the narrower of the two sides both ways, so the window the fit sees is not
         # dragged out by whichever side the events are on.
         #
-        # The slice is deliberately right-exclusive, and this is a feature rather than an
-        # off-by-one: it keeps ``half_width`` bins below the peak and ``half_width - 1``
-        # above it, trimming the high side. On a bimodal baseline with two overlapping
-        # peaks that is what holds the fit on the larger one. It was briefly "corrected"
-        # to a symmetric window on 2026-09-20 on the strength of a measurement over
-        # unimodal noise, where it is worth 0.13 percentage points of sigma - inside the
-        # scatter. Over a second overlapping population it is worth several percent; see
-        # ``TestBimodalBaseline`` and DECISIONS.md 2026-09-20.
+        # The slice is right-exclusive, so the window holds ``half_width`` bins below the
+        # peak and ``half_width - 1`` above it rather than a symmetric
+        # ``2 * half_width + 1``. This is shipped behaviour, left exactly as it was found.
+        # Do not "correct" it to a symmetric window on the strength of a measurement over
+        # unimodal noise, where it is worth 0.13 percentage points of sigma and reads as an
+        # off-by-one: on a bimodal baseline it is worth several percent. Whether the
+        # direction it trims is the right one is an open question, filed in
+        # `future_fixes.md` together with the peak-selection gap beside it, and pinned by
+        # ``TestTheShippedFitWindow`` so it cannot be changed silently either way.
         half_width = min(top_index - max_index, max_index - bottom_index)
         hist = hist[max_index - half_width : max_index + half_width]
         centers = centers[max_index - half_width : max_index + half_width]

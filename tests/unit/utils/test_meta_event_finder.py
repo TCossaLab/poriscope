@@ -1160,79 +1160,57 @@ class TestFitBaselineHistogram:
 
 
 # ---------------------------------------------------------------------------
-# The right-exclusive fit window, which exists for bimodal baselines
+# The shipped fit window, pinned rather than justified
 # ---------------------------------------------------------------------------
-class TestBimodalBaseline:
+class TestTheShippedFitWindow:
     """
-    The fit window is deliberately not centred on the histogram peak.
+    Characterization of the asymmetric fit window, which is unchanged shipped behaviour.
 
     ``_fit_baseline_histogram`` slices ``hist[peak - h : peak + h]``, keeping ``h`` bins
-    below the peak and ``h - 1`` above it. That trims the high side, which is what holds
-    the fit on the larger peak when the baseline carries a second overlapping population.
+    below the histogram peak and ``h - 1`` above it. On unimodal noise that is worth 0.13
+    percentage points of sigma, inside the run-to-run scatter, which is why it reads as an
+    off-by-one; on a bimodal baseline it is worth several percent, which is why it is not
+    safe to remove as one. It was removed on that basis on 2026-09-20 and restored the same
+    day.
 
-    It was removed on 2026-09-20 as an off-by-one and restored the same day, because the
-    measurement that justified removing it was taken over unimodal noise - where the
-    asymmetry is worth 0.13 percentage points of sigma, inside the run-to-run scatter.
-    These tests use the input the asymmetry was written for, and both fail against a
-    symmetric window. The trade is recorded in DECISIONS.md 2026-09-20: trimming the high
-    side costs a little when the minor peak sits *below* the major one instead, measured
-    at up to 13% of sigma.
+    Whether the direction it trims is the right one is **not** settled here, and the test
+    deliberately asserts no rationale: the population the baseline fit should follow is the
+    fitted peak farthest from zero, and this window trims the side nearer that peak.
+    ``future_fixes.md`` carries that question and the peak-selection gap beside it. This
+    test exists so neither can change without someone noticing.
     """
 
     MU = 1000.0
     SIGMA = 25.0
 
-    @classmethod
-    def bimodal(cls, seed=2, n=100_000, separation=3.5, minor_weight=0.35):
+    def bimodal(self):
         """
-        A dominant Gaussian with a smaller, overlapping one above it.
+        A dominant population with a smaller one below it, as a blockage would be.
 
-        :param seed: Seed for the generator, so a failure is reproducible.
-        :type seed: int
-        :param n: Total number of samples.
-        :type n: int
-        :param separation: Distance between the two means, in standard deviations.
-        :type separation: float
-        :param minor_weight: Fraction of the samples belonging to the smaller peak.
-        :type minor_weight: float
-        :return: The sample.
+        :return: 100,000 samples, 35% of them in the lower population 3 sigma down.
         :rtype: numpy.ndarray
         """
-        rng = np.random.default_rng(seed)
-        minor = int(n * minor_weight)
+        rng = np.random.default_rng(9)
+        minor = 35_000
         return np.concatenate(
             [
-                rng.normal(cls.MU, cls.SIGMA, n - minor),
-                rng.normal(cls.MU + separation * cls.SIGMA, cls.SIGMA, minor),
+                rng.normal(self.MU, self.SIGMA, 100_000 - minor),
+                rng.normal(self.MU - 3.0 * self.SIGMA, self.SIGMA, minor),
             ]
         )
 
-    def test_the_fit_stays_on_the_larger_peak(self, finder):
+    def test_the_window_is_the_shipped_asymmetric_one(self, finder):
         """
-        The mean lands on the dominant population, not between the two.
+        Sigma on a fixed bimodal sample is what the asymmetric window produces.
 
-        A symmetric window admits enough of the smaller peak to pull it: measured at
-        +7.2 against the +2.9 asserted here, on this exact sample.
-        """
-        data = self.bimodal()
-        mean, _ = finder._fit_baseline_histogram(
-            data, float(np.min(data)), float(np.max(data))
-        )
-        assert mean == pytest.approx(self.MU, abs=0.2 * self.SIGMA)
-
-    def test_the_smaller_peak_does_not_inflate_sigma(self, finder):
-        """
-        Sigma stays near the dominant population's own.
-
-        It cannot reach it - the two overlap, so some of the smaller peak is inside the
-        window whatever the window does - but a symmetric one reaches 33.8 against the
-        28.0 this allows, on 25.0 of true width.
+        A symmetric window gives 35.06 on this exact sample against the 38.29 asserted
+        here, so this fails if the slice is changed in either direction.
         """
         data = self.bimodal()
         _, std = finder._fit_baseline_histogram(
             data, float(np.min(data)), float(np.max(data))
         )
-        assert std < 1.2 * self.SIGMA
+        assert std == pytest.approx(38.29, rel=0.02)
 
 
 if __name__ == "__main__":

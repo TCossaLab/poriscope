@@ -2179,13 +2179,17 @@ Each says what it moves *before* it starts (method rule 38).
   Three things the probe settled that the write-up did not say. **The mean is not biased**
   (under 0.004σ): the stretch is centred on the first bin and the peak sits near the middle
   of the span, so the two errors cancel there, and only σ moves. **The right-exclusive
-  window is not a defect at all** - it was removed with the σ fix and restored the same day
-  on Kyle's instruction, because the measurement that condemned it was taken over unimodal
-  noise, where it is worth 0.13 percentage points. Over a second overlapping population it
-  is worth several percent and is what holds the fit on the larger peak; see `DECISIONS.md`
-  2026-09-20 and `TestBimodalBaseline`. `half_width = min(...)`, the primary protection
-  against a second population, was never touched - and `BoundedBlockageFinder` gained it,
-  having never had it. **The residual after the fix is the fit, not a defect**: at 10k only ~6 bins survive
+  window is left exactly as shipped, and the question is filed rather than answered.** It
+  was removed with the σ fix as an off-by-one and restored the same day: the measurement
+  that condemned it was taken over unimodal noise, where it is worth 0.13 percentage points,
+  and over a bimodal baseline it is worth several percent. But it trims the *high* side,
+  and Kyle's rule is that the baseline is the fitted peak **farthest from zero** - so its
+  advantage lies in the one direction rectified blockage data never produces, and in the
+  direction that does occur it costs 1-4% of σ. That, and the fact that `np.argmax` selects
+  the *tallest* peak rather than the farthest one, are both in `future_fixes.md`:
+  **complete the refactor before the feature changes it uncovers.** `half_width = min(...)`
+  was never touched, and `BoundedBlockageFinder` gained it, having never had it. See
+  `DECISIONS.md` 2026-09-20 and `TestTheShippedFitWindow`. **The residual after the fix is the fit, not a defect**: at 10k only ~6 bins survive
   the two windowing passes and the log-linearised least squares is biased high at that few
   points; it vanishes as `bins` grows, and it is what `future_fixes.md` now carries in the
   entry's place. The bin-width algebra is rewritten as the `int(n**(1/3)/2)` it already
