@@ -186,6 +186,7 @@ FAMILIES: Dict[str, Tuple[str, ...]] = {
         "poriscope/views/widgets/edit_subset_filter_dialog.py",
         "poriscope/views/widgets/icon_menu_widget.py",
         "poriscope/views/widgets/multiselect.py",
+        "poriscope/views/widgets/multiselect_base.py",
         "poriscope/views/widgets/multiselect_filter.py",
         "poriscope/views/widgets/SelectionTree.py",
         "poriscope/views/widgets/text_menu_widget.py",

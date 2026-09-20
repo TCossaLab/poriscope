@@ -2253,10 +2253,26 @@ Each says what it moves *before* it starts (method rule 38).
   bookkeeping and the helper's docstring adds more than that back. Kyle, 2026-09-20: line
   growth from docstrings is fine where they serve a purpose, and the thing to simplify is the
   code.
-- **5d - shared widgets.** The multiselect pair is **53 of `views/widgets`' 62 removable**
-  over 5 groups; range parsing is spread over 4 modules; `dict_dialog_widget.py` is 411
-  lines with **no unit test file**, so tests are its prerequisite rather than part of it. The
-  multiselect work carries `DECISIONS.md` 2026-09-01's manual-Windows requirement.
+- **5d - shared widgets.** Re-measured 2026-09-20: the multiselect pair is **59 of
+  `views/widgets`' 62 removable over 6 groups**, not 53 over 5; the remaining 3 are
+  `IconMenuWidget`/`IconTextMenuWidget`'s `uncheckMenuButton`. Range parsing is spread over 4
+  modules; `dict_dialog_widget.py` is 411 lines with **no unit test file**, so tests are its
+  prerequisite rather than part of it.
+    - **Multiselect: LANDED 2026-09-20.** `MultiSelectComboBoxBase` holds the six identical
+      methods - the popup geometry, the outside-click teardown, the bulk load and the display
+      refresh - and declares the three widgets they use plus four abstract hooks for what a row
+      is, which is the whole of the difference between the two. `views/widgets` removable
+      **62 -> 3**. No behaviour change: each subclass keeps its own `__init__` verbatim, which
+      is what makes this behaviour-preserving, and **that is also the finding** - the plain box
+      uses a frameless `QWidget` popup on Linux where the filter box always uses a `QDialog`,
+      a platform fix applied to one copy and not the other. Left alone and filed; it is a
+      behaviour change on a path CI cannot exercise.
+    - `multiselect_base.py` was **added to the duplication measurer's file list**, which
+      enumerates `views/widgets` explicitly - otherwise the destination of the promotion would
+      have been invisible to the gate (rule 24).
+    - **Still owed: the manual Windows pass** for the multiselect popup, per `DECISIONS.md`
+      2026-09-01. CI is Linux under Xvfb and that decision records this path as structurally
+      unexercisable there, so it is the only coverage these widgets get.
 - **5c - the app shell.** `edit_plugin` 195 lines, `validate_and_instantiate_plugin` 160,
   `main_view.py` 1,235, `settings_window.py` 890. No gate sees any of it.
 - **5e - the bus, and every trace of it.** Last, so nothing still needs it. See the entry

@@ -30,6 +30,8 @@
 
 * The `PeakFinder` changes above are Nada Kerrouri's, integrated from `feature/peakfinders_1.8.0`
 
+* The two multi-select comboboxes share one implementation of their popup handling, so a fix to one reaches both; the channel picker and the filter picker behave exactly as before
+
 * `MetaEventFinder.find_events` now calls `reset_channel` instead of repeating its ten assignments, so an event finder that overrides `reset_channel` to clear state of its own gets that cleared when a run starts too; no shipped finder overrides it
 
 * **Every plugin's settings documentation now describes that plugin's own parameters** - what each one does, in what units and within what range - instead of repeating the same generic description of the settings-dict structure, which is now linked from the family's base class

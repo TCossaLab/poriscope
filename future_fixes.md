@@ -176,6 +176,13 @@ the oversized `setupUi` methods. This review re-confirmed each with fresh counts
   declares only `MetaReader` and `scripts/new_plugin.py` emits no `Threshold`, so any
   generated eventfinder `KeyError`s inside the base. `:459` also compares it against a mean
   in pA while `ThresholdBlockageFinder:83` declares it in σ.
+- **The two multi-select popups disagree about Linux.** `MultiSelectComboBox.__init__`
+  builds a frameless `QWidget` popup on Linux and a `QDialog` elsewhere;
+  `MultiSelectFilterComboBox.__init__` builds a `QDialog` on every platform, so the filter
+  picker never got the Linux treatment. Both `__init__`s were left untouched by 5d's
+  deduplication precisely because reconciling them changes behaviour on a path CI cannot
+  exercise (`DECISIONS.md` 2026-09-01). Needs a Linux check and a manual Windows pass, not a
+  code reading.
 - **The baseline fit follows the tallest peak, not the one farthest from zero.**
   `MetaEventFinder._fit_baseline_histogram` locates the baseline with `np.argmax(hist)`,
   which is the most-populated bin; the rule is that it should be the fitted peak farthest
