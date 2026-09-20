@@ -1049,13 +1049,20 @@ class MetaEventFinder(BaseDataPlugin):
             (i for i in range(max_index, -1, -1) if hist[i] <= maxval / 5), 0
         )
 
-        # Take the narrower of the two sides both ways, so the window the fit sees is
-        # centred on the peak rather than dragged out by whichever side the events are on.
-        # The slice is right-inclusive, so the window holds 2*half_width+1 bins with the
-        # peak in the middle of it rather than 2*half_width with the peak one bin right.
+        # Take the narrower of the two sides both ways, so the window the fit sees is not
+        # dragged out by whichever side the events are on.
+        #
+        # The slice is deliberately right-exclusive, and this is a feature rather than an
+        # off-by-one: it keeps ``half_width`` bins below the peak and ``half_width - 1``
+        # above it, trimming the high side. On a bimodal baseline with two overlapping
+        # peaks that is what holds the fit on the larger one. It was briefly "corrected"
+        # to a symmetric window on 2026-09-20 on the strength of a measurement over
+        # unimodal noise, where it is worth 0.13 percentage points of sigma - inside the
+        # scatter. Over a second overlapping population it is worth several percent; see
+        # ``TestBimodalBaseline`` and DECISIONS.md 2026-09-20.
         half_width = min(top_index - max_index, max_index - bottom_index)
-        hist = hist[max_index - half_width : max_index + half_width + 1]
-        centers = centers[max_index - half_width : max_index + half_width + 1]
+        hist = hist[max_index - half_width : max_index + half_width]
+        centers = centers[max_index - half_width : max_index + half_width]
 
         max_index = int(np.argmax(hist))
         maxval = hist[max_index]

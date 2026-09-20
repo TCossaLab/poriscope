@@ -2179,9 +2179,13 @@ Each says what it moves *before* it starts (method rule 38).
   Three things the probe settled that the write-up did not say. **The mean is not biased**
   (under 0.004σ): the stretch is centred on the first bin and the peak sits near the middle
   of the span, so the two errors cancel there, and only σ moves. **The right-exclusive
-  window contributes nothing to σ** - it is still a real defect, since the window
-  `half_width` computes is symmetric and the slice drops its last bin, but it is not this
-  bias. **The residual after the fix is the fit, not a defect**: at 10k only ~6 bins survive
+  window is not a defect at all** - it was removed with the σ fix and restored the same day
+  on Kyle's instruction, because the measurement that condemned it was taken over unimodal
+  noise, where it is worth 0.13 percentage points. Over a second overlapping population it
+  is worth several percent and is what holds the fit on the larger peak; see `DECISIONS.md`
+  2026-09-20 and `TestBimodalBaseline`. `half_width = min(...)`, the primary protection
+  against a second population, was never touched - and `BoundedBlockageFinder` gained it,
+  having never had it. **The residual after the fix is the fit, not a defect**: at 10k only ~6 bins survive
   the two windowing passes and the log-linearised least squares is biased high at that few
   points; it vanishes as `bins` grows, and it is what `future_fixes.md` now carries in the
   entry's place. The bin-width algebra is rewritten as the `int(n**(1/3)/2)` it already

@@ -10,6 +10,38 @@ which ran through August 2026 and is complete. The step numbers only date the de
 
 ---
 
+## 2026-09-20 - The off-centre fit window stays: it is what holds the fit on the larger peak
+
+**Context.** `_fit_baseline_histogram` slices `hist[peak - half_width : peak + half_width]`,
+which keeps `half_width` bins below the peak and `half_width - 1` above it rather than the
+symmetric `2*half_width + 1` the variable name suggests. The σ correction above removed it
+as an off-by-one riding along in the same three lines, on the evidence that it moved σ by
+0.13 percentage points on pure Gaussian noise - inside the run-to-run scatter.
+
+**Decision.** Restored, on Kyle's instruction, with a comment and two tests. The
+asymmetry trims the *high* side of the peak, and that is what keeps the fit on the larger
+of two overlapping baseline populations. The measurement that justified removing it was
+taken over the one input where it cannot matter.
+
+**Evidence.** 40 trials per case, a dominant `N(μ, σ)` with a smaller overlapping peak.
+With the minor peak **above** the major one the asymmetry is worth several percent, and
+more as the minor peak grows: at 100k samples, 3σ apart, 35% minor weight, the mean error
+is +3.4 against +6.3 and σ is 26.1 against 27.8; at 10k, 4σ apart, 35%, it is +2.0/22.9
+against +8.2/30.8 on a true σ of 20. **It is not free.** With the minor peak **below**,
+trimming the high side keeps the contaminated side instead, and σ is worse by up to 13% -
+the mean is still slightly better. Neutral on unimodal noise either way, which is what
+made it look like a defect.
+
+**Not to be confused with `half_width` itself.** `half_width = min(top - peak, peak -
+bottom)` is the primary protection against a second population, and no commit in this step
+touched it. `BoundedBlockageFinder` **gained** it in the promotion, having never had it.
+
+**Revisit if** a dataset turns up where the second population is reliably *below* the
+baseline peak, since that is the direction the trim costs something; the fix would be to
+choose the trimmed side from which way the histogram is skewed rather than fixing it high.
+
+---
+
 ## 2026-09-20 - Correcting the baseline sigma, knowing it changes every result
 
 **Context.** `_fit_baseline_histogram` labelled its `bins` histogram bins with
@@ -20,8 +52,8 @@ axis it is given. `bins` is `int(len(data)**(1/3)/2)`, set by sample count alone
 bias tracked `Chunk Length`.
 
 **Decision.** Fix it, on Kyle's ruling, in its own commit on its own branch, separate from
-the promotion that put the code on `MetaEventFinder`. The right-exclusive fit window rides
-along, since it is the same three lines. The bin count is left at what it already computed,
+the promotion that put the code on `MetaEventFinder`. The bin count is left at what it
+already computed,
 rewritten as `int(len(data)**(1/3)/2)` and verified bit-identical over 25,600 (n, span)
 combinations, because retuning it would be a second behaviour change wearing the first
 one's clothes.
@@ -29,9 +61,8 @@ one's clothes.
 **Evidence.** 40 trials of pure Gaussian noise per size: σ was inflated by +13.9% at 10k
 samples, +5.2% at 100k and +2.3% at 1M, and is +2.3%, +0.6% and +0.2% after. The mean was
 never biased (under 0.004σ), because the stretch is centred on the first bin and the peak
-sits near the middle of the span, so the two errors cancel. The right-exclusive window
-contributes nothing to σ on its own. Four golden cases move as expected; on a chunk with a
-second population in it, the fitted mean error falls from +55.9 pA to +0.75 pA. The whole
+sits near the middle of the span, so the two errors cancel. Four golden cases move as
+expected. The whole
 suite is green, and the conformance recipe still finds exactly 5 of 5 planted events with
 `ThresholdBlockageFinder` at 8σ.
 

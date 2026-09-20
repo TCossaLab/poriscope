@@ -1138,12 +1138,14 @@ class TestFitBaselineHistogram:
 
         assert from_contaminated[0] == pytest.approx(from_clean[0], rel=1e-3)
 
-    def test_the_fit_window_is_centred_on_the_peak(self, finder):
+    def test_a_second_population_does_not_widen_the_window(self, finder):
         """
         Events on one side do not drag the window out to that side.
 
-        The symmetrisation is the one place the two finders' copies disagreed before
-        this method existed, so it is pinned rather than left to the finders.
+        ``half_width`` takes the narrower of the two sides both ways, which is the one
+        place the two finders' copies disagreed before this method existed, so it is
+        pinned rather than left to the finders. This is not the same thing as the
+        window being centred on the peak - see ``TestBimodalBaseline``.
         """
         clean = self.noise()
         skewed = np.concatenate([clean, self.noise(n=40_000, mean=930.0, sigma=8.0)])
@@ -1155,6 +1157,82 @@ class TestFitBaselineHistogram:
             skewed, float(np.min(skewed)), float(np.max(skewed))
         )
         assert skewed_std == pytest.approx(clean_std, rel=0.1)
+
+
+# ---------------------------------------------------------------------------
+# The right-exclusive fit window, which exists for bimodal baselines
+# ---------------------------------------------------------------------------
+class TestBimodalBaseline:
+    """
+    The fit window is deliberately not centred on the histogram peak.
+
+    ``_fit_baseline_histogram`` slices ``hist[peak - h : peak + h]``, keeping ``h`` bins
+    below the peak and ``h - 1`` above it. That trims the high side, which is what holds
+    the fit on the larger peak when the baseline carries a second overlapping population.
+
+    It was removed on 2026-09-20 as an off-by-one and restored the same day, because the
+    measurement that justified removing it was taken over unimodal noise - where the
+    asymmetry is worth 0.13 percentage points of sigma, inside the run-to-run scatter.
+    These tests use the input the asymmetry was written for, and both fail against a
+    symmetric window. The trade is recorded in DECISIONS.md 2026-09-20: trimming the high
+    side costs a little when the minor peak sits *below* the major one instead, measured
+    at up to 13% of sigma.
+    """
+
+    MU = 1000.0
+    SIGMA = 25.0
+
+    @classmethod
+    def bimodal(cls, seed=2, n=100_000, separation=3.5, minor_weight=0.35):
+        """
+        A dominant Gaussian with a smaller, overlapping one above it.
+
+        :param seed: Seed for the generator, so a failure is reproducible.
+        :type seed: int
+        :param n: Total number of samples.
+        :type n: int
+        :param separation: Distance between the two means, in standard deviations.
+        :type separation: float
+        :param minor_weight: Fraction of the samples belonging to the smaller peak.
+        :type minor_weight: float
+        :return: The sample.
+        :rtype: numpy.ndarray
+        """
+        rng = np.random.default_rng(seed)
+        minor = int(n * minor_weight)
+        return np.concatenate(
+            [
+                rng.normal(cls.MU, cls.SIGMA, n - minor),
+                rng.normal(cls.MU + separation * cls.SIGMA, cls.SIGMA, minor),
+            ]
+        )
+
+    def test_the_fit_stays_on_the_larger_peak(self, finder):
+        """
+        The mean lands on the dominant population, not between the two.
+
+        A symmetric window admits enough of the smaller peak to pull it: measured at
+        +7.2 against the +2.9 asserted here, on this exact sample.
+        """
+        data = self.bimodal()
+        mean, _ = finder._fit_baseline_histogram(
+            data, float(np.min(data)), float(np.max(data))
+        )
+        assert mean == pytest.approx(self.MU, abs=0.2 * self.SIGMA)
+
+    def test_the_smaller_peak_does_not_inflate_sigma(self, finder):
+        """
+        Sigma stays near the dominant population's own.
+
+        It cannot reach it - the two overlap, so some of the smaller peak is inside the
+        window whatever the window does - but a symmetric one reaches 33.8 against the
+        28.0 this allows, on 25.0 of true width.
+        """
+        data = self.bimodal()
+        _, std = finder._fit_baseline_histogram(
+            data, float(np.min(data)), float(np.max(data))
+        )
+        assert std < 1.2 * self.SIGMA
 
 
 if __name__ == "__main__":
