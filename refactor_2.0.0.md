@@ -2054,14 +2054,27 @@ fix the instrument's scope before the step that would fool it (method rule 24).
 
 Each says what it moves *before* it starts (method rule 38).
 
-- **5.0 - widen the ratchet to `eventfinders`.** Records ~0 removable and 2 near-copies,
-  which is the point: the family that 5b-1 edits is currently invisible to the gate.
-- **5a-3 - one home for the `get_empty_settings` docstring**, and drop the copies of base
-  docstrings from the `pass` stubs. Sphinx inherits a method docstring when the subclass has
-  none (its default; `conf.py` does not override it), so nothing published is lost and every
-  `@abstractmethod` stays. **31,711 duplicated characters.** It *lowers* the ratchet without
-  deduplicating a body, which is the divergence shape the gate warns about - say so in the
-  commit and in the `--update`.
+- **5.0 - widen the ratchet to `eventfinders`. LANDED 2026-09-19** at `484b237d`, suite
+  4,125 passed / 16 skipped. Records **0 removable**, exactly as predicted: the family's
+  shared code is near-copies, which byte-identity cannot see. What it buys is the other
+  direction - 5b-1 cannot add a duplicate elsewhere while lifting the shared fit out. The
+  QA page stopped calling this the *analysis-tab* ratchet, since it has covered the
+  readers, fitters and widgets since the Step 2 exit review.
+- **5a-3 - the `get_empty_settings` docstring. OPEN, and the first plan was wrong.** The
+  proposal was to delete the copies and let Sphinx inherit the base's text. **It cannot be
+  done**: `tests/unit/plugins/test_plugin_compliance.py` requires *every method defined
+  directly in a plugin subclass to carry a docstring*, and reports `missing docstrings` if
+  not. The copies are policy, not oversight - a deliberate gate says a plugin's own methods
+  are documented where they are defined. So the remaining choice is about content, over
+  **22 copies / 31,711 characters**:
+    - **(a) leave it**, recorded as a floor: each published plugin page stays self-contained
+      and the text is correct;
+    - **(b) replace the generic half in the 14 non-owner-held plugins** with a short
+      docstring pointing at the base for the settings-dict structure and naming *that
+      plugin's* parameters - satisfies the gate, shortens the copies, and makes each page
+      say something specific, at the cost of touching 14 files and changing published pages.
+  `PeakFinder`, `Basic_PeakFinder` and `NanoTrees` are excluded either way; their long
+  docstrings are their own, not copies.
 - **5a-2 - the Chimera readers' shared logic. OPEN: needs a ruling before it starts.** Up to
   **227 removable** (`_map_data` 43x3, `_get_file_channel_stamps` 15x3, `_set_raw_dtype`
   11x3, `_set_file_extension` 5x3, the 0101/0501 pairs). Under the two standing rulings the
@@ -2072,10 +2085,13 @@ Each says what it moves *before* it starts (method rule 38).
   then carry for all of them. **Default if no ruling: leave it, recorded as the largest
   floor in Step 5**, since duplication is explicitly acceptable and a widened published base
   is not. Each candidate would get the `self.` grep first either way (method rule 59).
-- **5a-4 - collapse the two ABC metaclasses.** One implementation keeping `__call__`,
+- **5a-4 - collapse the two ABC metaclasses. LANDED 2026-09-19** at `bca87f47`, suite
+  4,135 passed / 16 skipped, all eight hooks green. One implementation keeping `__call__`,
   dropping the dead `__new__`, exported under **both existing names as aliases** because
-  both are in `exposed.py` and a third-party plugin may import either. Verified before
-  proposing: `type(QObject) is type(QWidget)` (both `Shiboken.ObjectType`), the two are
+  both are in `exposed.py` and a third-party plugin may import either. 10 tests cover both
+  names against both hierarchies, and one of them **asserts the PySide6 defect itself**, so
+  a Qt release that starts honouring abstractness announces the guard's obsolescence rather
+  than leaving it to be guessed. Verified before proposing: `type(QObject) is type(QWidget)` (both `Shiboken.ObjectType`), the two are
   already cross-usable, a collapsed metaclass refuses abstract instantiation in both
   hierarchies, and **without `__call__` Shiboken instantiates an abstract subclass** - so
   the guard is the workaround and is kept. Check for `isinstance(x, QWidgetABCMeta)` and
@@ -2093,6 +2109,17 @@ Each says what it moves *before* it starts (method rule 38).
   still writes its own policy - Classic's data-derived range, Bounded's `Min/Max Baseline`
   mask and out-of-bounds refusal - around one call. The σ fix is then pinned on the base
   rather than on two copies.
+
+  **It is two halves, and the second one changes results. OPEN, needs a ruling.** Promoting
+  the fit is behaviour-preserving. *Correcting* it is not: the σ the finders compute is
+  inflated by **+14.7% at 10k samples, +4.8% at 100k, +2.1% at 1M**, so
+  `ThresholdBlockageFinder`'s σ-denominated threshold currently moves with `chunk_length`
+  and the correction changes which events are found on **every** dataset. Ask before
+  landing it: one branch with a dated `DECISIONS.md` entry naming the correction (rule 74),
+  or the promotion first and the correction as its own reviewable change. The two adjacent
+  defects `future_fixes.md` records beside it - the bin-width algebra cancelling to
+  `int(n**(1/3)/2)`, and the right-exclusive window holding `2*half_width` bins instead of
+  `2*half_width+1` - ride with whichever half takes the correction.
 
   *The rule this sets, and where it stops:* the histogram fit is universal to the family -
   `MetaEventFinder`'s own docstring says it assumes Gaussian baseline noise - so the base is
