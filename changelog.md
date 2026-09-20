@@ -30,6 +30,10 @@
 
 * The `PeakFinder` changes above are Nada Kerrouri's, integrated from `feature/peakfinders_1.8.0`
 
+* **Every plugin's settings documentation now describes that plugin's own parameters** - what each one does, in what units and within what range - instead of repeating the same generic description of the settings-dict structure, which is now linked from the family's base class
+
+* **Fixed nine plugins documenting the wrong required parent plugin**: the seven event fitters ask for a `MetaEventLoader` and `SQLiteDBWriter` for a `MetaEventFitter`, not a `MetaReader` as all of them claimed, and `SQLiteEventLoader` requires no parent at all
+
 * **Breaking: the baseline standard deviation every event finder computes was inflated and is now correct**, by +13.9% on 10,000-sample chunks, +5.2% on 100,000 and +2.3% on 1,000,000 - so `ThresholdBlockageFinder`'s sigma-denominated threshold no longer moves with `Chunk Length`, and every finder detects at a slightly lower real threshold than before, finding more events on the same data and settings
 
 * **`BoundedBlockageFinder`'s baseline standard deviation moves by up to 1%**, because the histogram fit it shares with `ClassicBlockageFinder` now lives on `MetaEventFinder` in one copy, and that copy centres the fit window on the histogram peak as Classic always did and Bounded never did

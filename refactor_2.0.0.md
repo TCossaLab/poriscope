@@ -2097,6 +2097,26 @@ Each says what it moves *before* it starts (method rule 38).
   lifted there is no group left out, so **the scope is all 22**, not 14 - `Basic_PeakFinder`
   being one character off the `CUSUM`/`NoFitter`/`NanoTrees` text is itself the argument
   that these are copies wearing an owner's name.
+
+  **LANDED 2026-09-20**, suite 4,140 passed / 16 skipped, all eight hooks green,
+  `sphinx-build -W` green. Each docstring now opens with one sentence, cross-references its
+  family base for the dict structure, names the parent key `super()` supplies, and lists
+  that plugin's own keys with units and ranges - all read off
+  `get_empty_settings(standalone=True)` rather than off the prose. Only the text above the
+  first `:param` line was touched; the block below it is what pydoclint checks and it was
+  already right everywhere. `PeakFinder`'s prose was already in this shape and kept, gaining
+  only the cross-reference.
+
+  **Two things fell out of doing it.** Nine plugins **documented the wrong required parent**
+  - the seven fitters and `SQLiteDBWriter` claimed `MetaReader` where they need
+  `MetaEventLoader` and `MetaEventFitter`, and `SQLiteEventLoader` claimed one while
+  requiring none. And the **duplication ratchet moved for a non-reason**: `datareaders` fell
+  41 removable lines and one identical body, because `ChimeraReader20240101` and
+  `ChimeraReader20240501` had byte-identical `get_empty_settings` *including* the docstring,
+  and now differ only in the docstring. The bodies are unchanged and still identical - the
+  measurer hashes from the `def` token, so prose counts as body. Banked as the gate requires,
+  and recorded here because the number overstates the progress (rule 37's shape, inverted:
+  a heuristic moving the way you wanted is still a question).
 - **5a-2 - the Chimera readers' shared logic. RULED: leave it, Kyle 2026-09-20.** Up to
   **227 removable** (`_map_data` 43x3, `_get_file_channel_stamps` 15x3, `_set_raw_dtype`
   11x3, `_set_file_extension` 5x3, the 0101/0501 pairs). Under the two standing rulings the

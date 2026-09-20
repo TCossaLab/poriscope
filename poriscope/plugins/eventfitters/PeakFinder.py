@@ -339,8 +339,13 @@ class PeakFinder(MetaEventFitter):
 
         Called by poriscope when the plugin is instantiated or reconfigured, to
         build the settings dialog and to sanity-check whatever the user enters;
-        the accepted values are then readable through ``self.settings``. The
-        ``super()`` call supplies the mandatory ``"MetaReader"`` key.
+        the accepted values are then readable through ``self.settings``. See
+        :py:meth:`~poriscope.utils.MetaEventFitter.MetaEventFitter.get_empty_settings`
+        for the structure of the dict and what ``Type``, ``Value``, ``Min``, ``Max``,
+        ``Options`` and ``Units`` mean in it.
+
+        The ``super()`` call supplies the mandatory ``"MetaEventLoader"`` key, which is
+        how this plugin is wired to its data source.
 
         The keys added here, and where each one is consumed:
 
@@ -363,7 +368,7 @@ class PeakFinder(MetaEventFitter):
         - ``Min Carrier Blockage`` - the smallest carrier blockage an event may
           have and still be admitted to the folding fit.
 
-        :param globally_available_plugins: a dict containing all data plugins that exist to date, keyed by metaclass. Must include "MetaReader" as a key, with explicitly set Type MetaReader.
+        :param globally_available_plugins: a dict containing all data plugins that exist to date, keyed by metaclass. Must include "MetaEventLoader" as a key, with explicitly set Type MetaEventLoader.
         :type globally_available_plugins: Optional[Dict[str, List[str]]]
         :param standalone: False if this is called as part of a GUI, True otherwise. Default False
         :type standalone: bool

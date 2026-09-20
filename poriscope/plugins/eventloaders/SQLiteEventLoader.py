@@ -370,48 +370,22 @@ class SQLiteEventLoader(MetaEventLoader):
         standalone: bool = False,
     ) -> Dict[str, Dict[str, Any]]:
         """
-        **Purpose:** Provide a list of settings details to users to assist in instantiating an instance of your :ref:`MetaWriter` subclass.
+        Declare the settings this event loader exposes, on top of the base contract.
 
-        Get a dict populated with keys needed to initialize the filter if they are not set yet.
-        This dict must have the following structure, but Min, Max, and Options can be skipped or explicitly set to None if they are not used.
-        Type is required; Value may be omitted or set to None, both meaning there is no default and the user must supply one. All values provided must be consistent with Type.
+        Called by poriscope when the plugin is instantiated or reconfigured, to build
+        the settings dialog and to sanity-check whatever the user enters; the accepted
+        values are then readable through ``self.settings``. See
+        :py:meth:`~poriscope.utils.MetaEventLoader.MetaEventLoader.get_empty_settings`
+        for the structure of the dict and what ``Type``, ``Value``, ``Min``, ``Max``, ``Options`` and
+        ``Units`` mean in it, and for the reserved keys the GUI builds file pickers
+        from.
 
-        .. code-block:: python
+        The keys this plugin adds:
 
-           settings = {'Parameter 1': {'Type': <int, float, str, bool>,
-                                           'Value': <value> or None,
-                                           'Options': [<option_1>, <option_2>, ... ] or None,
-                                           'Min': <min_value> or None,
-                                           'Max': <max_value> or None
-                                          },
-                          ...
-                          }
+        - ``Input File`` - the SQLite database to read raw event samples from, as
+          written by ``SQLiteEventWriter``.
 
-        Several parameter keywords are reserved: these are
-
-        'Input File'
-        'Output File'
-        'Folder'
-
-        These must have Type str and will cause the GUI to generate widgets to allow selection of these elements when used
-
-        This function must implement returning of a dictionary of settings required to initialize the filter, in the specified format. Values in this dictionary can be accessed downstream through the ``self.settings`` class variable. This structure is a nested dictionary that supplies both values and a variety of information about those values, used by poriscope to perform sanity and consistency checking at instantiation.
-
-        While this function is technically not abstract in :ref:`MetaEventLoader`, which already has an implementation of this function that ensures that settings will have the required ``Input File`` key available to users, in most cases you will need to override it to add any other settings required by your subclass or to specify which files types are allowed. If you need additional settings, which you almost certainly do, you **MUST** call ``super().get_empty_settings(globally_available_plugins, standalone)`` **before** any additional code that you add. For example, your implementation could look like this, to limit it to sqlite files:
-
-        .. code:: python
-
-            settings = super().get_empty_settings(globally_available_plugins, standalone)
-            settings["Input File"]["Options"] = [
-                                    "SQLite3 Files (*.sqlite3)",
-                                    "Database Files (*.db)",
-                                    "SQLite Files (*.sqlite)",
-                                    ]
-            return settings
-
-        which will ensure that your have the ``Input File`` key and limit visible options to sqlite3 files. By default, it will accept any file type as output, hence the specification of the ``Options`` key for the relevant plugin in the example above.
-
-        :param globally_available_plugins: a dict containing all data plugins that exist to date, keyed by metaclass. Must include "MetaReader" as a key, with explicitly set Type MetaReader.
+        :param globally_available_plugins: a dict containing all data plugins that exist to date, keyed by metaclass.
         :type globally_available_plugins: Optional[ Dict[str, List[str]]]
         :param standalone: False if this is called as part of a GUI, True otherwise. Default False
         :type standalone: bool

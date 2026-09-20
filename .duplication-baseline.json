@@ -26,8 +26,8 @@
   "datareaders": {
     "files": 7,
     "functions": 90,
-    "identical_bodies": 15,
-    "removable_lines": 435
+    "identical_bodies": 14,
+    "removable_lines": 394
   },
   "eventfinders": {
     "files": 3,

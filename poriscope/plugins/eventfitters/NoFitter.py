@@ -55,46 +55,27 @@ class NoFitter(MetaEventFitter):
         standalone: bool = False,
     ) -> Dict[str, Dict[str, Any]]:
         """
-        **Purpose:** Provide a list of settings details to users to assist in instantiating an instance of your :ref:`MetaEventFinder` subclass.
+        Declare the settings this event fitter exposes, on top of the base contract.
 
-        Get a dict populated with keys needed to initialize the filter if they are not set yet.
-        This dict must have the following structure, but Min, Max, and Options can be skipped or explicitly set to None if they are not used.
-        Type is required; Value may be omitted or set to None, both meaning there is no default and the user must supply one. All values provided must be consistent with Type.
+        Called by poriscope when the plugin is instantiated or reconfigured, to build
+        the settings dialog and to sanity-check whatever the user enters; the accepted
+        values are then readable through ``self.settings``. See
+        :py:meth:`~poriscope.utils.MetaEventFitter.MetaEventFitter.get_empty_settings`
+        for the structure of the dict and what ``Type``, ``Value``, ``Min``, ``Max``, ``Options`` and
+        ``Units`` mean in it, and for the reserved keys the GUI builds file pickers
+        from.
 
-        Your Eventfinder MUST include at least the "MetaReader" key, which can be ensured by calling super().get_empty_settings(globally_available_plugins, standalone) before adding any additional settings keys
+        The ``super()`` call supplies the mandatory ``"MetaEventLoader"`` key, which is how
+        this plugin is wired to its data source.
 
-        This function must implement returning of a dictionary of settings required to initialize the filter, in the specified format. Values in this dictionary can be accessed downstream through the ``self.settings`` class variable. This structure is a nested dictionary that supplies both values and a variety of information about those values, used by poriscope to perform sanity and consistency checking at instantiation.
+        The keys this plugin adds:
 
-        While this function is technically not abstract in :ref:`MetaEventFinder`, which already has an implementation of this function that ensures that settings will have the required :ref:`MetaReader` key available to users, in most cases you will need to override it to add any other settings required by your subclass. If you need additional settings, which you almost ccertainly do, you **MUST** call ``super().get_empty_settings(globally_available_plugins, standalone)`` **before** any additional code that you add. For example, your implementation could look like this:
+        - None. This fitter deliberately adds no settings: it records each event as a
+          single sublevel so that events can be written to a database without a fit
+          being imposed on them, which is what makes it the baseline case the other
+          fitters are compared against.
 
-        .. code:: python
-
-            settings = super().get_empty_settings(globally_available_plugins, standalone)
-            settings["Threshold"] = {"Type": float,
-                                    "Value": None,
-                                    "Min": 0.0,
-                                    "Units": "pA"
-                                    }
-            settings["Min Duration"] = {"Type": float,
-                                        "Value": 0.0,
-                                        "Min": 0.0,
-                                        "Units": "us"
-                                        }
-            settings["Max Duration"] = {"Type": float,
-                                        "Value": 1000000.0,
-                                        "Min": 0.0,
-                                        "Units": "us"
-                                        }
-            settings["Min Separation"] = {"Type": float,
-                                            "Value": 0.0,
-                                            "Min": 0.0,
-                                            "Units": "us"
-                                        }
-            return settings
-
-        which will ensure that your have the 3 keys specified above, as well as an additional key, ``"MetaReader"``, as required by eventfinders. In the case of categorical settings, you can also supply the "Options" key in the second level dictionaries.
-
-        :param globally_available_plugins: a dict containing all data plugins that exist to date, keyed by metaclass. Must include "MetaReader" as a key, with explicitly set Type MetaReader.
+        :param globally_available_plugins: a dict containing all data plugins that exist to date, keyed by metaclass. Must include "MetaEventLoader" as a key, with explicitly set Type MetaEventLoader.
         :type globally_available_plugins: Optional[ Dict[str, List[str]]]
         :param standalone: False if this is called as part of a GUI, True otherwise. Default False
         :type standalone: bool

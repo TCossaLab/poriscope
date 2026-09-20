@@ -57,21 +57,32 @@ class BoundedBlockageFinder(ClassicBlockageFinder):
         standalone: bool = False,
     ) -> Dict[str, Dict[str, Any]]:
         """
-        Get a dict populated with keys needed to initialize the filter if they are not set yet.
-        This dict must have the following structure, but Min, Max, and Options can be skipped or explicitly set to None if they are not used.
-        Type is required; Value may be omitted or set to None, both meaning there is no default and the user must supply one. All values provided must be consistent with Type.
-        EventFinder objects MUST include a MetaReader object in settings
+        Declare the settings this event finder exposes, on top of the base contract.
 
-        .. code-block:: python
+        Called by poriscope when the plugin is instantiated or reconfigured, to build
+        the settings dialog and to sanity-check whatever the user enters; the accepted
+        values are then readable through ``self.settings``. See
+        :py:meth:`~poriscope.utils.MetaEventFinder.MetaEventFinder.get_empty_settings`
+        for the structure of the dict and what ``Type``, ``Value``, ``Min``, ``Max``, ``Options`` and
+        ``Units`` mean in it, and for the reserved keys the GUI builds file pickers
+        from.
 
-          settings = {'Parameter 1': {'Type': <int, float, str, bool>,
-                                           'Value': <value> or None,
-                                           'Options': [<option_1>, <option_2>, ... ] or None,
-                                           'Min': <min_value> or None,
-                                           'Max': <max_value> or None
-                                          },
-                          ...
-                          }
+        The ``super()`` call supplies the mandatory ``"MetaReader"`` key, which is how
+        this plugin is wired to its data source.
+
+        The keys this plugin adds:
+
+        - ``Threshold`` (pA) - how far below the fitted baseline the signal must fall
+          for an event to start.
+        - ``Min Duration`` / ``Max Duration`` (us) - events outside this range are
+          rejected.
+        - ``Min Separation`` (us) - two events closer together than this are rejected
+          rather than merged.
+        - ``Min Baseline`` / ``Max Baseline`` (pA) - the window the baseline fit is
+          restricted to. Samples outside it never reach the histogram, and a fit whose
+          mean lands outside it is refused rather than reported. This is what separates
+          this finder from ``ClassicBlockageFinder``, which takes its range from the
+          chunk's own extremes.
 
         :param globally_available_plugins: a dict containing all data plugins that exist to date, keyed by metaclass. Must include "MetaReader" as a key, with explicitly set Type MetaReader.
         :type globally_available_plugins: Optional[Dict[str, List[str]]]

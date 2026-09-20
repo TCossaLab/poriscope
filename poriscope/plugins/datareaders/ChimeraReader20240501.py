@@ -352,30 +352,21 @@ class ChimeraReader20240501(MetaReader):
         standalone: bool = False,
     ) -> Dict[str, Dict[str, Any]]:
         """
-        Get a dict populated with keys needed to initialize the filter if they are not set yet.
-        This dict must have the following structure, but Min, Max, and Options can be skipped or explicitly set to None if they are not used.
-        Type is required; Value may be omitted or set to None, both meaning there is no default and the user must supply one. All values provided must be consistent with Type.
+        Declare the settings this reader exposes, on top of the base contract.
 
-        .. code-block:: python
+        Called by poriscope when the plugin is instantiated or reconfigured, to build
+        the settings dialog and to sanity-check whatever the user enters; the accepted
+        values are then readable through ``self.settings``. See
+        :py:meth:`~poriscope.utils.MetaReader.MetaReader.get_empty_settings`
+        for the structure of the dict and what ``Type``, ``Value``, ``Min``, ``Max``, ``Options`` and
+        ``Units`` mean in it, and for the reserved keys the GUI builds file pickers
+        from.
 
-          settings = {'Parameter 1': {'Type': <int, float, str, bool>,
-                                           'Value': <value> or None,
-                                           'Options': [<option_1>, <option_2>, ... ] or None,
-                                           'Min': <min_value> or None,
-                                           'Max': <max_value> or None,
-                                           'Units': <unit str> or None
-                                          },
-                          ...
-                          }
+        The keys this plugin adds:
 
-
-        Several parameter keywords are reserved: these are
-
-        'Input File'
-        'Output File'
-        'Folder'
-
-        These must have Type str and will cause the GUI to generate widgets to allow selection of these elements when used
+        - ``Input File`` - the Chimera ``.log`` file to read. Everything else comes
+          from the matching ``.mat`` settings file in the 2024-05-01 layout, which
+          differs from the 2024-01-01 one in how the per-channel stamps are stored.
 
         :param globally_available_plugins: a dict containing all data plugins that exist to date, keyes by metaclass
         :type globally_available_plugins: Optional[Dict[str, List[str]]]
