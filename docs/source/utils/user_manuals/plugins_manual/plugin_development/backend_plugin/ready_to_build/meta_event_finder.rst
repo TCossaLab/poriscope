@@ -31,6 +31,21 @@ Required Private Methods
 .. automethod:: poriscope.utils.MetaEventFinder.MetaEventFinder._validate_settings
    :no-index:
 
+Helpers You Can Call
+~~~~~~~~~~~~~~~~~~~~
+
+These are implemented for you on the base. ``_get_baseline_stats`` above is abstract
+because each finder decides for itself which part of a chunk counts as baseline, but the
+histogram-and-fit half that follows from assuming Gaussian baseline noise is shared, so
+most implementations are a few lines of policy around one call to
+``_fit_baseline_histogram``.
+
+.. automethod:: poriscope.utils.MetaEventFinder.MetaEventFinder._fit_baseline_histogram
+   :no-index:
+
+.. automethod:: poriscope.utils.MetaEventFinder.MetaEventFinder._gaussian_fit
+   :no-index:
+
 Optional Method Overrides
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 

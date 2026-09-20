@@ -177,13 +177,12 @@ the oversized `setupUi` methods. This review re-confirmed each with fresh counts
   generated eventfinder `KeyError`s inside the base. `:459` also compares it against a mean
   in pA while `ThresholdBlockageFinder:83` declares it in σ.
 - **Baseline σ is biased high, and the bias depends on `chunk_length`.**
-  `ClassicBlockageFinder.py:316` and `BoundedBlockageFinder.py:133` build
-  `np.linspace(bottom, top, len(hist))` across the full edge-to-edge span, stretching the
-  axis by `bins/(bins-1)`. Measured on pure noise: +14.7% at 10k samples, +4.8% at 100k,
-  +2.1% at 1M - so `ThresholdBlockageFinder`'s σ-denominated threshold moves with chunk
-  length. Two adjacent defects: `:309-314`'s bin-width algebra cancels to
-  `int(n**(1/3)/2)` regardless of noise, and `:336-347`'s window is right-exclusive so it
-  holds `2*half_width` bins instead of `2*half_width+1`, leaving the peak off-centre.
+  `MetaEventFinder._fit_baseline_histogram` builds `np.linspace(bottom, top, len(hist))`
+  across the full edge-to-edge span, stretching the axis by `bins/(bins-1)`. Measured on
+  pure noise over 40 trials: +13.9% at 10k samples, +5.2% at 100k, +2.3% at 1M - so
+  `ThresholdBlockageFinder`'s σ-denominated threshold moves with chunk length. One adjacent
+  defect: the window is right-exclusive, so it holds `2*half_width` bins instead of
+  `2*half_width+1`, leaving the peak off-centre; measured contribution to σ is nil.
 - **Session restore corrupts any setting whose value is a type name.**
   `MainModel.replace_class_names_with_classes` converts any string equal to
   `"str"`/`"int"`/`"float"`/`"bool"` into the type object regardless of key - reproduced,
@@ -254,8 +253,7 @@ the oversized `setupUi` methods. This review re-confirmed each with fresh counts
   took 489). `CUSUM.py`/`NoFitter.py` share 411 identical lines;
   `ClassicCUSUM` is a 195-line override differing in 2 lines and wants to be `CUSUM` with a
   `_normalize_step_size()` hook; the two Chimera readers differ in 23 lines of 390;
-  `_get_baseline_stats` and `_find_events_in_chunk` are each duplicated across two finders
-  (which is why the baseline-σ bug above has two copies).
+  `_find_events_in_chunk` is duplicated across two finders.
 - **`format_axis_label` still exists in three places** - a module function in `ProteinView.py`,
   a method in `MetadataView.py` and inlined in `ClusteringView.py`. The behavioural drift is
   gone (2026-09-04); merging the copies is the refactor's Step 3.

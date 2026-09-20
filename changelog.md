@@ -30,6 +30,10 @@
 
 * The `PeakFinder` changes above are Nada Kerrouri's, integrated from `feature/peakfinders_1.8.0`
 
+* **`BoundedBlockageFinder`'s baseline standard deviation moves by up to 1%**, because the histogram fit it shares with `ClassicBlockageFinder` now lives on `MetaEventFinder` in one copy, and that copy centres the fit window on the histogram peak as Classic always did and Bounded never did
+
+* Removed `ClassicBlockageFinder._gaussian`, which had no callers anywhere in the package or the test suite
+
 * **Breaking: `QWidgetABCMeta` is removed - use `QObjectABCMeta`**, which is the same implementation, since PySide6 gives `QObject` and `QWidget` the same metaclass and the two names were never two classes; abstract Qt classes are refused exactly as before
 
 * The duplication ratchet now measures the event finders as well, so the step that lifts their shared baseline fit out of two copies cannot add a duplicate elsewhere unnoticed

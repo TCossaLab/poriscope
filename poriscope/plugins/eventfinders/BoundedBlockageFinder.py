@@ -29,7 +29,6 @@ from typing import Any, Dict, List, Optional, override
 
 import numpy as np
 import numpy.typing as npt
-from fast_histogram import histogram1d
 
 from poriscope.plugins.eventfinders.ClassicBlockageFinder import ClassicBlockageFinder
 from poriscope.utils.DocstringDecorator import inherit_docstrings
@@ -108,6 +107,10 @@ class BoundedBlockageFinder(ClassicBlockageFinder):
         """
         Get the local mean and standard deviation for a chunk of data.
 
+        Unlike :ref:`ClassicBlockageFinder`, the range is the configured ``Min Baseline``
+        to ``Max Baseline`` rather than the chunk's own extremes, so samples outside it
+        never reach the fit, and a fit that lands outside it is refused rather than
+        reported.
 
         :param data: Chunk of timeseries data to compute statistics on.
         :type data: npt.NDArray[np.float64]
@@ -115,80 +118,13 @@ class BoundedBlockageFinder(ClassicBlockageFinder):
         :rtype: tuple[float, float]
         :raises ValueError: if no data is found within the configured baseline range, if a baseline histogram width cannot be estimated, or if the fitted baseline falls outside the configured Min/Max Baseline bounds
         """
-        top = self.settings["Max Baseline"]["Value"]
         bottom = self.settings["Min Baseline"]["Value"]
-        mask = (data > bottom) & (data < top)
-        data = data[mask]
+        top = self.settings["Max Baseline"]["Value"]
+        data = data[(data > bottom) & (data < top)]
         if len(data) == 0:
             raise ValueError("No data found in range")
 
-        width = 2 * (top - bottom) / len(data) ** (1 / 3)
-        if width <= 0:
-            raise ValueError(
-                "Unable to estimate a baseline histogram width for this chunk (no variation in the data)"
-            )
-        bins = int((top - bottom) / width)
-        hist = histogram1d(data, range=[bottom, top], bins=bins)
-        centers = np.linspace(bottom, top, len(hist))
-        max_index = np.argmax(hist)
-
-        maxval = hist[max_index]
-        # top_index: the first index where hist[i] <= maxval/5 starting from max_index
-        try:
-            top_index = next(
-                i for i in range(max_index, len(hist)) if hist[i] <= maxval / 5
-            )
-        except StopIteration:
-            top_index = len(hist) - 1
-
-        # bottom_index: the first index where hist[i] <= maxval/5 going backwards from max_index
-        try:
-            bottom_index = next(
-                i for i in range(max_index, -1, -1) if hist[i] <= maxval / 5
-            )
-        except StopIteration:
-            bottom_index = 0
-
-        top = centers[top_index]
-        bottom = centers[bottom_index]
-
-        hist = hist[bottom_index:top_index]
-        centers = centers[bottom_index:top_index]
-
-        max_index = np.argmax(hist)
-        maxval = hist[max_index]
-
-        # top_index: the first index where hist[i] <= 0.6*maxval starting from max_index
-        try:
-            top_index = next(
-                i for i in range(max_index, len(hist)) if hist[i] <= 0.6 * maxval
-            )
-        except StopIteration:
-            top_index = len(hist) - 1
-
-        # bottom_index: the first index where hist[i] <= 0.6*maxval going backwards from max_index
-        try:
-            bottom_index = next(
-                i for i in range(max_index, -1, -1) if hist[i] <= 0.6 * maxval
-            )
-        except StopIteration:
-            bottom_index = 0
-
-        try:
-            baseline_params = np.array(
-                self._gaussian_fit(
-                    hist,
-                    centers,
-                    centers[max_index],
-                    np.absolute(centers[top_index] - centers[bottom_index]),
-                )
-            )
-        except ValueError:
-            raise
-        mean = baseline_params[1]
-        if (
-            mean < self.settings["Min Baseline"]["Value"]
-            or mean > self.settings["Max Baseline"]["Value"]
-        ):
+        mean, std = self._fit_baseline_histogram(data, bottom, top)
+        if mean < bottom or mean > top:
             raise ValueError("Baseline out of bounds")
-        return baseline_params[1], baseline_params[2]
+        return mean, std

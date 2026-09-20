@@ -2139,16 +2139,52 @@ Each says what it moves *before* it starts (method rule 38).
   mask and out-of-bounds refusal - around one call. The σ fix is then pinned on the base
   rather than on two copies.
 
-  **It is two halves, and the second one changes results. OPEN, needs a ruling.** Promoting
-  the fit is behaviour-preserving. *Correcting* it is not: the σ the finders compute is
-  inflated by **+14.7% at 10k samples, +4.8% at 100k, +2.1% at 1M**, so
-  `ThresholdBlockageFinder`'s σ-denominated threshold currently moves with `chunk_length`
-  and the correction changes which events are found on **every** dataset. Ask before
-  landing it: one branch with a dated `DECISIONS.md` entry naming the correction (rule 74),
-  or the promotion first and the correction as its own reviewable change. The two adjacent
-  defects `future_fixes.md` records beside it - the bin-width algebra cancelling to
-  `int(n**(1/3)/2)`, and the right-exclusive window holding `2*half_width` bins instead of
-  `2*half_width+1` - ride with whichever half takes the correction.
+  **It is two halves, and the second one changes results. RULED: correct it, Kyle
+  2026-09-20**, landed as two commits on two branches so the half that changes results is
+  reviewable alone.
+
+  **Half one - the promotion. LANDED 2026-09-20.** `_fit_baseline_histogram` and
+  `_gaussian_fit` are concrete on `MetaEventFinder`; `ClassicBlockageFinder` drops from 500
+  lines to 310 and `BoundedBlockageFinder` from 194 to 130. Three corrections to what this
+  entry used to claim, each found by reading the code rather than the write-up:
+    - **The two copies are not "the same code twice".** Classic symmetrises the fit window
+      and Bounded does not, so one shared method had to pick one. Classic's wins; see
+      `DECISIONS.md` 2026-09-20. Bounded's σ moves by ≤1%; Classic and Threshold are
+      bit-identical on four golden cases.
+    - **Classic's `mask`/`data = data[mask]` pair was dead** - `data` is never read again,
+      because the fit runs off `hist` and `centers`. Bounded's mask, which runs *before* the
+      histogram, is live. Removed.
+    - **`ClassicBlockageFinder._gaussian` had no callers** anywhere in `poriscope/` or
+      `tests/`. Removed.
+
+  **Half two - the correction.** The σ the finders compute is inflated because
+  `np.linspace(bottom, top, bins)` labels `bins` bin centres with points spaced
+  `(top-bottom)/(bins-1)` apart: the axis handed to the fit is the real one stretched by
+  `bins/(bins-1)`, and a Gaussian fit reports σ in the units of the axis it is given, so σ
+  comes back multiplied by the same factor. `bins` is small and set by sample count alone -
+  the entry's `width`/`bins` algebra cancels to `int(n**(1/3)/2)`, which is 10 bins at 10k
+  samples, 23 at 100k, 49 at 1M - which is why the bias tracks `chunk_length` and why
+  `ThresholdBlockageFinder`'s σ-denominated threshold moves with it.
+
+  Measured against the real method, 40 trials of pure Gaussian noise per size:
+
+  | n | bins | `1/(bins-1)` | measured | centres fixed | + window fixed |
+  |---|---|---|---|---|---|
+  | 10,000 | 10 | 11.1% | **+13.9%** | +2.5% | +2.6% |
+  | 100,000 | 23 | 4.5% | **+5.2%** | +0.6% | +0.7% |
+  | 1,000,000 | 49 | 2.1% | **+2.3%** | +0.2% | +0.2% |
+
+  Three things the probe settled that the write-up did not say. **The mean is not biased**
+  (under 0.004σ): the stretch is centred on the first bin and the peak sits near the middle
+  of the span, so the two errors cancel there, and only σ moves. **The right-exclusive
+  window contributes nothing to σ** - it is still a real defect, since the window
+  `half_width` computes is symmetric and the slice drops its last bin, but it is not this
+  bias. **The residual after the fix is the fit, not a defect**: at 10k only ~6 bins survive
+  the two windowing passes and the log-linearised least squares is biased high at that few
+  points; it vanishes as `bins` grows. The bin-width algebra is rewritten as the
+  `int(n**(1/3)/2)` it already computes - verified bit-identical over 25,600 (n, span)
+  combinations - rather than retuned, which would be a second behaviour change wearing the
+  first one's clothes.
 
   *The rule this sets, and where it stops:* the histogram fit is universal to the family -
   `MetaEventFinder`'s own docstring says it assumes Gaussian baseline noise - so the base is

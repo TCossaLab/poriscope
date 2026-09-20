@@ -10,6 +10,31 @@ which ran through August 2026 and is complete. The step numbers only date the de
 
 ---
 
+## 2026-09-20 - The shared baseline fit takes Classic's window, not Bounded's
+
+**Context.** 5b-1 promotes the histogram-and-fit half of `_get_baseline_stats` onto
+`MetaEventFinder`. The plan recorded the two finders' copies as "the same code twice". They
+are not: `ClassicBlockageFinder` symmetrises the fit window - `half_width = min(top - peak,
+peak - bottom)` applied both ways - and `BoundedBlockageFinder` does not. One shared method
+has to pick one.
+
+**Decision.** Classic's symmetrisation goes on the base, so `BoundedBlockageFinder`
+changes. A window centred on the peak is what fitting a Gaussian to a histogram peak calls
+for; an asymmetric one is dragged out by whichever side the events are on. Rejected:
+parameterising the base method on a flag, which buys a defect the right to keep existing.
+
+**Evidence.** Measured over 30 trials per case against the real `_gaussian_fit`, sigma
+differs by 0.35% on pure noise at 10k samples and is identical to three decimals at 100k,
+with and without planted blockages, because masking to `Min/Max Baseline` already makes the
+histogram roughly symmetric. Four fixed golden cases: `ClassicBlockageFinder` and
+`ThresholdBlockageFinder` are bit-identical before and after the promotion, and Bounded
+moves by +0.99% and -0.23% on the two cases where it moves at all.
+
+**Revisit if** a finder appears whose baseline is genuinely one-sided, where the narrower
+side is the wrong half to keep.
+
+---
+
 ## 2026-09-19 - A refusal is explained once, by whoever refused it
 
 **Context.** The manual pass over the event-plot promotion found the protein tab

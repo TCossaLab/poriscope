@@ -1033,5 +1033,102 @@ class TestRemainingPreconditionBranches:
             bare_finder.get_single_event_data(0, 0)
 
 
+# ---------------------------------------------------------------------------
+# _fit_baseline_histogram - the half of _get_baseline_stats that is shared
+# ---------------------------------------------------------------------------
+class TestFitBaselineHistogram:
+    """
+    The histogram-and-fit half every finder in the family calls.
+
+    ``_get_baseline_stats`` stays abstract, so these drive the base method directly
+    rather than through a subclass's policy. ``ConcreteEventFinder`` above overrides
+    ``_get_baseline_stats`` with a MAD estimator and never calls this, which is what
+    makes the base method reachable here without a shipped finder's settings.
+    """
+
+    @staticmethod
+    def noise(n=200_000, mean=1000.0, sigma=25.0, seed=4):
+        """
+        Pure Gaussian noise with a known mean and standard deviation.
+
+        :param n: Number of samples.
+        :type n: int
+        :param mean: True mean of the distribution.
+        :type mean: float
+        :param sigma: True standard deviation of the distribution.
+        :type sigma: float
+        :param seed: Seed for the generator, so a failure is reproducible.
+        :type seed: int
+        :return: The sample.
+        :rtype: numpy.ndarray
+        """
+        return np.random.default_rng(seed).normal(mean, sigma, n)
+
+    def test_recovers_the_mean(self, finder):
+        """The fitted mean lands on the true one; only sigma carries a known bias."""
+        data = self.noise()
+        mean, _ = finder._fit_baseline_histogram(
+            data, float(np.min(data)), float(np.max(data))
+        )
+        assert mean == pytest.approx(1000.0, abs=0.5)
+
+    def test_returns_a_positive_standard_deviation(self, finder):
+        """Whatever the bias, the second return value is a usable sigma."""
+        data = self.noise()
+        _, std = finder._fit_baseline_histogram(
+            data, float(np.min(data)), float(np.max(data))
+        )
+        assert std > 0
+
+    def test_a_flat_range_is_refused(self, finder):
+        """
+        No width means no histogram, and the caller is told rather than handed a
+        fit of a single bin.
+        """
+        data = np.full(10_000, 7.0)
+        with pytest.raises(ValueError, match="no variation in the data"):
+            finder._fit_baseline_histogram(data, 7.0, 7.0)
+
+    def test_an_inverted_range_is_refused(self, finder):
+        """``top`` below ``bottom`` is the same failure, not an empty histogram."""
+        data = self.noise()
+        with pytest.raises(ValueError, match="no variation in the data"):
+            finder._fit_baseline_histogram(data, 100.0, 50.0)
+
+    def test_only_samples_inside_the_range_reach_the_fit(self, finder):
+        """
+        A population outside the requested range does not move the answer.
+
+        This is what ``BoundedBlockageFinder`` relies on: it hands over a configured
+        window and expects everything else to be ignored.
+        """
+        clean = self.noise()
+        contaminated = np.concatenate([clean, np.full(50_000, 400.0)])
+        narrow = (900.0, 1100.0)
+
+        from_clean = finder._fit_baseline_histogram(clean, *narrow)
+        from_contaminated = finder._fit_baseline_histogram(contaminated, *narrow)
+
+        assert from_contaminated[0] == pytest.approx(from_clean[0], rel=1e-3)
+
+    def test_the_fit_window_is_centred_on_the_peak(self, finder):
+        """
+        Events on one side do not drag the window out to that side.
+
+        The symmetrisation is the one place the two finders' copies disagreed before
+        this method existed, so it is pinned rather than left to the finders.
+        """
+        clean = self.noise()
+        skewed = np.concatenate([clean, self.noise(n=40_000, mean=930.0, sigma=8.0)])
+
+        _, clean_std = finder._fit_baseline_histogram(
+            clean, float(np.min(skewed)), float(np.max(skewed))
+        )
+        _, skewed_std = finder._fit_baseline_histogram(
+            skewed, float(np.min(skewed)), float(np.max(skewed))
+        )
+        assert skewed_std == pytest.approx(clean_std, rel=0.1)
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
