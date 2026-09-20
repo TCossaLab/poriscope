@@ -10,6 +10,29 @@ which ran through August 2026 and is complete. The step numbers only date the de
 
 ---
 
+## 2026-09-20 - Range parsing stays spread out, because it is not one thing copied
+
+**Context.** Step 5d listed "range parsing is spread over 4 modules" as a consolidation
+target, with `poriscope/utils/range_parsing.py` named as the destination.
+
+**Decision.** Leave it. The spread is real and the duplication is not.
+
+**Evidence.** 10 functions across `MetaEventTabView.py`, `float_range_line_edit.py`,
+`integer_range_line_edit.py` and `time_widget.py` split a segment on a hyphen, and
+`measure_duplication.py` reports **zero** byte-identical bodies between them. Reading them
+says why: they implement five different grammars. `FloatRangeValidator` forbids commas and
+requires a hyphen; `RangeValidator` allows commas, forbids dots, rejects a leading `-` and
+accepts bare values; `time_widget._parse_ranges` encodes an omitted end as `0.0`/`None`;
+`_parse_event_indices` is parameterised on a caster; `_expand_event_indices` expands to a
+set of ints. The common core is a six-line tokeniser, and a shared validator base would
+need four flags to cover the grammar differences.
+
+**Revisit if** a fifth caller appears that wants an existing grammar rather than a new one,
+or if one of these grammars is deliberately changed - at that point the tokeniser has a
+second reason to exist and the flags stop being hypothetical.
+
+---
+
 ## 2026-09-20 - The off-centre fit window is left alone, and the question is filed
 
 **Context.** `_fit_baseline_histogram` slices `hist[peak - half_width : peak + half_width]`,

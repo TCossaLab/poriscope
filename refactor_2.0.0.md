@@ -2258,6 +2258,20 @@ Each says what it moves *before* it starts (method rule 38).
   `IconMenuWidget`/`IconTextMenuWidget`'s `uncheckMenuButton`. Range parsing is spread over 4
   modules; `dict_dialog_widget.py` is 411 lines with **no unit test file**, so tests are its
   prerequisite rather than part of it.
+    - **Range parsing: measured 2026-09-20, recorded as a floor.** True as a statement of
+      location, false as one of duplication. **10 functions across the 4 modules split a
+      segment on a hyphen, and the measured byte-identical duplication between them is
+      zero** - because they implement five different grammars, not one copied five times.
+      `FloatRangeValidator` forbids commas outright and requires a hyphen; `RangeValidator`
+      allows commas, forbids dots, rejects a leading `-` and accepts a bare value;
+      `time_widget._parse_ranges` encodes "omitted end means to the end of the signal" as
+      `0.0`/`None`; `MetaEventTabView._parse_event_indices` is parameterised on a caster and
+      accepts bare values; `_expand_event_indices` expands to a set of ints. What they
+      genuinely share is a six-line tokeniser - split on commas, strip, split the first
+      hyphen - and threading that through ten call sites in four modules buys a small
+      reduction at the cost of a new module and an import in each, in code with a history of
+      user-visible bugs from exactly this area (Tier B2's `3.0-`). **Left alone**, on the
+      5a-2 precedent: duplication is acceptable where the alternative is machinery.
     - **Multiselect: LANDED 2026-09-20.** `MultiSelectComboBoxBase` holds the six identical
       methods - the popup geometry, the outside-click teardown, the bulk load and the display
       refresh - and declares the three widgets they use plus four abstract hooks for what a row
