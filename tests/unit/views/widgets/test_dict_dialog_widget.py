@@ -123,7 +123,9 @@ class TestWidgetForEachType(DictDialogTestCase):
         widget = dlg.entrywidgets["Mode"]
         self.assertIsInstance(widget, QComboBox)
         self.assertEqual(widget.currentText(), "b")
-        self.assertEqual([widget.itemText(i) for i in range(widget.count())], ["a", "b", "c"])
+        self.assertEqual(
+            [widget.itemText(i) for i in range(widget.count())], ["a", "b", "c"]
+        )
 
     def test_a_bool_with_options_is_still_a_checkbox(self):
         """``Options`` is ignored for bool, which would otherwise render as a dropdown."""
