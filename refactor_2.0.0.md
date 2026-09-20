@@ -2270,9 +2270,11 @@ Each says what it moves *before* it starts (method rule 38).
     - `multiselect_base.py` was **added to the duplication measurer's file list**, which
       enumerates `views/widgets` explicitly - otherwise the destination of the promotion would
       have been invisible to the gate (rule 24).
-    - **Still owed: the manual Windows pass** for the multiselect popup, per `DECISIONS.md`
-      2026-09-01. CI is Linux under Xvfb and that decision records this path as structurally
-      unexercisable there, so it is the only coverage these widgets get.
+    - **Manual Windows pass run 2026-09-20, clear.** Required by `DECISIONS.md` 2026-09-01:
+      CI is Linux under Xvfb and that decision records the multiselect popup path as
+      structurally unexercisable there, so this is the only coverage these widgets get. Both
+      the channel picker and the filter picker were driven through the real UI against the
+      promoted base, and nothing regressed.
 - **5c - the app shell.** `edit_plugin` 195 lines, `validate_and_instantiate_plugin` 160,
   `main_view.py` 1,235, `settings_window.py` 890. No gate sees any of it.
 - **5e - the bus, and every trace of it.** Last, so nothing still needs it. See the entry
