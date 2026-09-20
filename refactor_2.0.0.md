@@ -2300,8 +2300,103 @@ Each says what it moves *before* it starts (method rule 38).
       structurally unexercisable there, so this is the only coverage these widgets get. Both
       the channel picker and the filter picker were driven through the real UI against the
       promoted base, and nothing regressed.
-- **5c - the app shell.** `edit_plugin` 195 lines, `validate_and_instantiate_plugin` 160,
-  `main_view.py` 1,235, `settings_window.py` 890. No gate sees any of it.
+- **5c - the app shell. REVIEWED 2026-09-20, re-scoped, and planned. Not started.**
+  All four figures confirm exactly - `edit_plugin` 195 lines,
+  `validate_and_instantiate_plugin` 160, `main_view.py` 1,235, `settings_window.py` 890 -
+  which is the first entry in Step 5 whose numbers all survived. The *conclusions* drawn
+  from them did not.
+
+  **"No gate sees any of it" is wrong.** `check_mvc_boundary.py`'s `VIEW_DIRS` includes
+  `poriscope/views`, and its `Controller.py` suffix catches `DataPluginController.py`, so
+  rules 1, 2 and 3 do scan these files. Run today they read **0, 0 and 0** - the shell is
+  clean on every boundary rule. What no gate measures is **complexity**, and that is the
+  thing 5c is actually about.
+
+  **Two of the four named targets are chosen on size, and size is the wrong metric for
+  them.** Over the shell scope (`controllers/`, `models/`, `main_view.py`,
+  `settings_window.py`, `main_app.py`: 9 files, 190 functions), only **7 functions exceed
+  cyclomatic complexity 10**, total complexity **110**:
+
+  | cx | lines | where | coverage |
+  |---|---|---|---|
+  | 20 | 85 | `main_app.py::create_appdata_folders` | **0%** |
+  | 20 | 160 | `DataPluginController.py::validate_and_instantiate_plugin` | 99% |
+  | 20 | 195 | `DataPluginController.py::edit_plugin` | 88% |
+  | 17 | 94 | `main_model.py::populate_available_plugins` | 95% |
+  | 11 | 15 | `main_model.py::replace_class_names_with_classes` | 100% |
+  | 11 | 61 | `main_view.py::switch_to_page` | 81% |
+  | 11 | 16 | `main_controller.py::update_plugin_history` | 100% |
+
+  `settings_window.py` has **zero** functions over complexity 10 despite its 890 lines - its
+  four longest methods are complexity 1 to 4, the long-but-flat Qt widget construction that
+  the 2026-08 audit already reviewed and recorded as no-findings. `main_view.py` has
+  **one**, despite 1,235 lines. Driving their line counts down is chasing a number that does
+  not describe a problem, which is rule 71's error. **They come off the target list**;
+  `switch_to_page` stays on it on its own merits.
+
+  **Three real targets the entry does not name:** `create_appdata_folders` (the artifact's
+  section on Step 5 names it; the plan's 5c line does not), `populate_available_plugins`, and
+  `update_plugin_history`.
+
+  **`create_appdata_folders` is the risk.** Complexity 20 and **0% covered** - 52 statements,
+  none of them executed by any test. Everything else on the list is 81-100%.
+
+  **One target is a filed defect.** `replace_class_names_with_classes` is the session-restore
+  corruption in `future_fixes.md` ("any setting whose value is a type name"). Restructuring it
+  and fixing it are the same edit, so they land together or the work is done twice.
+
+  **The repeated idiom, measured:** `edit_plugin` has 6 returns, of which **5 are
+  report-then-return blocks and all 5 also roll back the parent/dependent links** - log, emit
+  to the status panel, `_restore_parent_dependent_links`, return. `validate_and_instantiate_plugin`
+  has 8 returns, **6 report-then-return, none rolling back**. The file holds 17
+  `add_text_to_display.emit` sites and 5 `_restore_parent_dependent_links` calls. This is
+  5b-2's shape again and it is the clearest single extraction on the list.
+
+  ### The commit series, each on its own feature branch
+
+  Every step states the check that decides whether it worked, and the check is a number that
+  exists before the step starts.
+
+  - **5c.0 - the instrument, before anything it would measure.** `scripts/measure_shell_complexity.py`
+    plus a checked-in baseline and an exact-match ratchet test, mirroring `measure_duplication.py`:
+    per file, the functions over complexity 10 and the sum of their complexity, failing in
+    **both** directions so a win must be banked in the commit that earns it. Scoped to the
+    nine shell files and nothing else - repo-wide there are 124 functions over 80 lines,
+    most of them in owner-held fitters and in the `setupUi` methods the plan says stay, so a
+    repo-wide gate would fail on work that is not ours to gate (rule 18).
+    *Check:* baseline records **7 functions / 110 total / 5 files**; the ratchet is verified
+    to fail on a deliberate complexity rise **and** on an unbanked fall.
+  - **5c.1 - the net, before the knife.** Characterization tests for `edit_plugin`,
+    `validate_and_instantiate_plugin` and `create_appdata_folders`. The first two are
+    well covered by line count but that is not the same as pinned; the third is at zero and
+    must not be split without one.
+    *Check:* `create_appdata_folders` 0% -> covered; every new test class verified against
+    deliberate source mutations (rule 8); **the complexity gate does not move**, which is what
+    says this commit added no restructuring.
+  - **5c.2 - `_report_and_restore` on `DataPluginController`.** The five report-then-rollback
+    blocks in `edit_plugin` become one call each, exactly as `_reject_event` did for
+    `fit_events`, with the control flow left at the call site.
+    *Check:* `edit_plugin` complexity falls; total falls; no behaviour change, so the
+    characterization tests from 5c.1 pass untouched.
+  - **5c.3 - split `edit_plugin`** along the seams the reading found: fetch-and-guard, coerce
+    plugin references to keys, the delete branch, the rename branch with its collision check
+    and dependent-history updates, resolve references back to instances, apply-or-roll-back.
+    *Check:* complexity 20 -> under the gate's threshold; the extracted helpers are named in
+    the refactor-coverage audit's MOVED table so each must stay pinned.
+  - **5c.4 - split `validate_and_instantiate_plugin`.** Same treatment; its six
+    report-then-return blocks want the reporting half of 5c.2's helper without the rollback.
+  - **5c.5 - `create_appdata_folders`,** which the artifact records as repeating the same
+    block per folder.
+  - **5c.6 - `populate_available_plugins`,** and a ruling on the remaining three:
+    `switch_to_page` (11), `update_plugin_history` (11) and
+    `replace_class_names_with_classes` (11, and a filed defect). Either they come down or
+    each is recorded as a floor with its reason - what is not acceptable is leaving the gate
+    above zero with nothing said about why.
+
+  **Exit check for 5c:** the shell complexity gate reads its target, every function that came
+  off the list is either restructured or a recorded floor, and the manual Windows pass covers
+  the plugin add/edit/delete dialogs, since that is what `DataPluginController` drives and no
+  automated test opens them.
 - **5e - the bus, and every trace of it.** Last, so nothing still needs it. See the entry
   below and `DECISIONS.md` 2026-09-19.
 

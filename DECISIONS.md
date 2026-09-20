@@ -10,6 +10,32 @@ which ran through August 2026 and is complete. The step numbers only date the de
 
 ---
 
+## 2026-09-20 - Step 5c is measured in complexity, not in lines
+
+**Context.** Step 5c named four targets by size: `edit_plugin` 195 lines,
+`validate_and_instantiate_plugin` 160, `main_view.py` 1,235, `settings_window.py` 890. All
+four figures re-measured exactly. The step needed a metric before it could have a gate,
+because `check_mvc_boundary` reads 0 on all three of its rules here and no duplication
+family covers these files.
+
+**Decision.** Measure the shell in **cyclomatic complexity over a scoped file list**, not in
+lines, and build the gate before the work (rule 24). `settings_window.py` and `main_view.py`
+come off the target list.
+
+**Evidence.** Over the nine shell files, 190 functions: only **7 exceed complexity 10**,
+totalling 110. `settings_window.py` has **zero** despite 890 lines - its four longest methods
+are complexity 1 to 4, long-but-flat Qt widget construction that the 2026-08 audit already
+recorded as reviewed-with-no-findings. `main_view.py` has one, despite 1,235 lines.
+Repo-wide, 124 functions exceed 80 lines, most in owner-held fitters and in `setupUi`
+methods the plan says stay per-tab, so a length gate would be both the wrong measure and
+scoped onto work that is not ours to gate (rule 18).
+
+**Revisit if** a shell file grows a long-and-flat method that is genuinely hard to read for
+reasons complexity cannot see - at which point the answer is a second metric, not a
+replacement, because a file can be bad in more than one way.
+
+---
+
 ## 2026-09-20 - Range parsing stays spread out, because it is not one thing copied
 
 **Context.** Step 5d listed "range parsing is spread over 4 modules" as a consolidation
