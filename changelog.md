@@ -30,6 +30,8 @@
 
 * The `PeakFinder` changes above are Nada Kerrouri's, integrated from `feature/peakfinders_1.8.0`
 
+* **Breaking: the baseline standard deviation every event finder computes was inflated and is now correct**, by +13.9% on 10,000-sample chunks, +5.2% on 100,000 and +2.3% on 1,000,000 - so `ThresholdBlockageFinder`'s sigma-denominated threshold no longer moves with `Chunk Length`, and every finder detects at a slightly lower real threshold than before, finding more events on the same data and settings
+
 * **`BoundedBlockageFinder`'s baseline standard deviation moves by up to 1%**, because the histogram fit it shares with `ClassicBlockageFinder` now lives on `MetaEventFinder` in one copy, and that copy centres the fit window on the histogram peak as Classic always did and Bounded never did
 
 * Removed `ClassicBlockageFinder._gaussian`, which had no callers anywhere in the package or the test suite

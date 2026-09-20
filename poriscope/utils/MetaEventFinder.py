@@ -1009,6 +1009,10 @@ class MetaEventFinder(BaseDataPlugin):
         keeps events and drift out of the fit, and once more at 60% of the maximum,
         whose width serves as the fit's initial guess for the standard deviation.
 
+        The fit runs against true bin centres, so the standard deviation it returns is in
+        the data's own units. The bin count is set by sample size alone, at
+        ``int(len(data) ** (1/3) / 2)``.
+
         :param data: Chunk of timeseries data to histogram. Only samples inside ``[bottom, top]`` contribute.
         :type data: npt.NDArray[np.float64]
         :param bottom: Lower edge of the histogram range.
@@ -1026,7 +1030,13 @@ class MetaEventFinder(BaseDataPlugin):
 
         bins = int(len(data) ** (1 / 3) / 2)
         hist = histogram1d(data, range=[bottom, top], bins=bins)
-        centers = np.linspace(bottom, top, len(hist))
+        # Bin i spans [bottom + i*width, bottom + (i+1)*width), so its centre sits half a
+        # bin in. Labelling the bins with linspace(bottom, top, bins) instead - which is
+        # what this did until 2026-09-20 - spaces them (top-bottom)/(bins-1) apart, and a
+        # Gaussian fit reports sigma in the units of the axis it is handed, so sigma came
+        # back multiplied by bins/(bins-1).
+        width = (top - bottom) / bins
+        centers = bottom + width * (np.arange(bins) + 0.5)
 
         max_index = int(np.argmax(hist))
         maxval = hist[max_index]
@@ -1041,9 +1051,11 @@ class MetaEventFinder(BaseDataPlugin):
 
         # Take the narrower of the two sides both ways, so the window the fit sees is
         # centred on the peak rather than dragged out by whichever side the events are on.
+        # The slice is right-inclusive, so the window holds 2*half_width+1 bins with the
+        # peak in the middle of it rather than 2*half_width with the peak one bin right.
         half_width = min(top_index - max_index, max_index - bottom_index)
-        hist = hist[max_index - half_width : max_index + half_width]
-        centers = centers[max_index - half_width : max_index + half_width]
+        hist = hist[max_index - half_width : max_index + half_width + 1]
+        centers = centers[max_index - half_width : max_index + half_width + 1]
 
         max_index = int(np.argmax(hist))
         maxval = hist[max_index]

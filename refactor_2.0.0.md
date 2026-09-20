@@ -2157,7 +2157,9 @@ Each says what it moves *before* it starts (method rule 38).
     - **`ClassicBlockageFinder._gaussian` had no callers** anywhere in `poriscope/` or
       `tests/`. Removed.
 
-  **Half two - the correction.** The σ the finders compute is inflated because
+  **Half two - the correction. LANDED 2026-09-20**, suite 4,140 passed / 16 skipped, all
+  eight hooks green; `DECISIONS.md` 2026-09-20. Four new assertions pin it, all four
+  verified failing against the uncorrected code. The σ the finders compute was inflated because
   `np.linspace(bottom, top, bins)` labels `bins` bin centres with points spaced
   `(top-bottom)/(bins-1)` apart: the axis handed to the fit is the real one stretched by
   `bins/(bins-1)`, and a Gaussian fit reports σ in the units of the axis it is given, so σ
@@ -2168,11 +2170,11 @@ Each says what it moves *before* it starts (method rule 38).
 
   Measured against the real method, 40 trials of pure Gaussian noise per size:
 
-  | n | bins | `1/(bins-1)` | measured | centres fixed | + window fixed |
-  |---|---|---|---|---|---|
-  | 10,000 | 10 | 11.1% | **+13.9%** | +2.5% | +2.6% |
-  | 100,000 | 23 | 4.5% | **+5.2%** | +0.6% | +0.7% |
-  | 1,000,000 | 49 | 2.1% | **+2.3%** | +0.2% | +0.2% |
+  | n | bins | `1/(bins-1)` | before | after |
+  |---|---|---|---|---|
+  | 10,000 | 10 | 11.1% | **+13.9%** | +2.3% |
+  | 100,000 | 23 | 4.5% | **+5.2%** | +0.6% |
+  | 1,000,000 | 49 | 2.1% | **+2.3%** | +0.2% |
 
   Three things the probe settled that the write-up did not say. **The mean is not biased**
   (under 0.004σ): the stretch is centred on the first bin and the peak sits near the middle
@@ -2181,10 +2183,14 @@ Each says what it moves *before* it starts (method rule 38).
   `half_width` computes is symmetric and the slice drops its last bin, but it is not this
   bias. **The residual after the fix is the fit, not a defect**: at 10k only ~6 bins survive
   the two windowing passes and the log-linearised least squares is biased high at that few
-  points; it vanishes as `bins` grows. The bin-width algebra is rewritten as the
-  `int(n**(1/3)/2)` it already computes - verified bit-identical over 25,600 (n, span)
-  combinations - rather than retuned, which would be a second behaviour change wearing the
-  first one's clothes.
+  points; it vanishes as `bins` grows, and it is what `future_fixes.md` now carries in the
+  entry's place. The bin-width algebra is rewritten as the `int(n**(1/3)/2)` it already
+  computes - verified bit-identical over 25,600 (n, span) combinations - rather than
+  retuned, which would be a second behaviour change wearing the first one's clothes.
+
+  **What it cost downstream: nothing the suite could see.** The conformance recipe still
+  finds exactly 5 of 5 planted events with `ThresholdBlockageFinder` at 8σ, which is the
+  test most exposed to the change, since its threshold is the one denominated in σ.
 
   *The rule this sets, and where it stops:* the histogram fit is universal to the family -
   `MetaEventFinder`'s own docstring says it assumes Gaussian baseline noise - so the base is

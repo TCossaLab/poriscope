@@ -10,6 +10,41 @@ which ran through August 2026 and is complete. The step numbers only date the de
 
 ---
 
+## 2026-09-20 - Correcting the baseline sigma, knowing it changes every result
+
+**Context.** `_fit_baseline_histogram` labelled its `bins` histogram bins with
+`np.linspace(bottom, top, bins)`, whose points are `(top-bottom)/(bins-1)` apart while the
+bins themselves are `(top-bottom)/bins` wide. The axis handed to the fit was therefore the
+real one stretched by `bins/(bins-1)`, and a Gaussian fit reports σ in the units of the
+axis it is given. `bins` is `int(len(data)**(1/3)/2)`, set by sample count alone, so the
+bias tracked `Chunk Length`.
+
+**Decision.** Fix it, on Kyle's ruling, in its own commit on its own branch, separate from
+the promotion that put the code on `MetaEventFinder`. The right-exclusive fit window rides
+along, since it is the same three lines. The bin count is left at what it already computed,
+rewritten as `int(len(data)**(1/3)/2)` and verified bit-identical over 25,600 (n, span)
+combinations, because retuning it would be a second behaviour change wearing the first
+one's clothes.
+
+**Evidence.** 40 trials of pure Gaussian noise per size: σ was inflated by +13.9% at 10k
+samples, +5.2% at 100k and +2.3% at 1M, and is +2.3%, +0.6% and +0.2% after. The mean was
+never biased (under 0.004σ), because the stretch is centred on the first bin and the peak
+sits near the middle of the span, so the two errors cancel. The right-exclusive window
+contributes nothing to σ on its own. Four golden cases move as expected; on a chunk with a
+second population in it, the fitted mean error falls from +55.9 pA to +0.75 pA. The whole
+suite is green, and the conformance recipe still finds exactly 5 of 5 planted events with
+`ThresholdBlockageFinder` at 8σ.
+
+**What it means for results.** Every finder now detects at a lower real threshold than
+before - the threshold the user actually asked for - so the same settings find more events
+on the same data, most on short chunks. A σ-denominated threshold stops meaning something
+different at each `Chunk Length`.
+
+**Revisit if** the residual few-bin bias matters: `future_fixes.md` carries it, and fixing
+it means more bins, which is another result-changing change and needs the same treatment.
+
+---
+
 ## 2026-09-20 - The shared baseline fit takes Classic's window, not Bounded's
 
 **Context.** 5b-1 promotes the histogram-and-fit half of `_get_baseline_stats` onto

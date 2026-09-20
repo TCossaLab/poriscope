@@ -1072,13 +1072,40 @@ class TestFitBaselineHistogram:
         )
         assert mean == pytest.approx(1000.0, abs=0.5)
 
-    def test_returns_a_positive_standard_deviation(self, finder):
-        """Whatever the bias, the second return value is a usable sigma."""
+    def test_recovers_the_standard_deviation(self, finder):
+        """
+        Sigma comes back in the data's own units.
+
+        The fit is handed true bin centres. Labelling the bins edge to edge with
+        ``linspace`` instead stretches that axis by ``bins/(bins-1)`` and inflates sigma
+        by the same factor, which was +5.2% at this sample size until 2026-09-20.
+        ``ThresholdBlockageFinder`` denominates its threshold in sigma, so the error went
+        straight into which events it found.
+        """
         data = self.noise()
         _, std = finder._fit_baseline_histogram(
             data, float(np.min(data)), float(np.max(data))
         )
-        assert std > 0
+        assert std == pytest.approx(25.0, rel=0.02)
+
+    @pytest.mark.parametrize("n", [50_000, 200_000, 800_000])
+    def test_sigma_does_not_track_chunk_size(self, finder, n):
+        """
+        The same noise gives the same sigma however the chunks are cut.
+
+        The bin count is ``int(len(data)**(1/3)/2)``, so a bias that scales with the bin
+        count moves with ``chunk_length`` - which made a sigma-denominated threshold mean
+        something different on every chunk size. Sigma is the physical property of the
+        recording here, not of how it was sliced.
+
+        The tolerance is tight enough that every size fails against the uncorrected
+        code, which added 5.9%, 3.6% and 2.3% respectively on top of what is left here.
+        """
+        data = self.noise(n=n)
+        _, std = finder._fit_baseline_histogram(
+            data, float(np.min(data)), float(np.max(data))
+        )
+        assert std == pytest.approx(25.0, rel=0.02)
 
     def test_a_flat_range_is_refused(self, finder):
         """

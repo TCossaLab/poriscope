@@ -176,13 +176,11 @@ the oversized `setupUi` methods. This review re-confirmed each with fresh counts
   declares only `MetaReader` and `scripts/new_plugin.py` emits no `Threshold`, so any
   generated eventfinder `KeyError`s inside the base. `:459` also compares it against a mean
   in pA while `ThresholdBlockageFinder:83` declares it in σ.
-- **Baseline σ is biased high, and the bias depends on `chunk_length`.**
-  `MetaEventFinder._fit_baseline_histogram` builds `np.linspace(bottom, top, len(hist))`
-  across the full edge-to-edge span, stretching the axis by `bins/(bins-1)`. Measured on
-  pure noise over 40 trials: +13.9% at 10k samples, +5.2% at 100k, +2.3% at 1M - so
-  `ThresholdBlockageFinder`'s σ-denominated threshold moves with chunk length. One adjacent
-  defect: the window is right-exclusive, so it holds `2*half_width` bins instead of
-  `2*half_width+1`, leaving the peak off-centre; measured contribution to σ is nil.
+- **The baseline histogram is coarse, at `int(len(data)**(1/3)/2)` bins.** That is 10 bins
+  on a 10k-sample chunk, of which ~6 survive the two windowing passes, and the
+  log-linearised fit is biased high at that few points: +2.3% at 10k, falling to +0.2% at
+  1M. Rice's rule would give four times as many bins. Retuning it changes which events are
+  found, so it needs the same treatment the σ correction got, not a quiet edit.
 - **Session restore corrupts any setting whose value is a type name.**
   `MainModel.replace_class_names_with_classes` converts any string equal to
   `"str"`/`"int"`/`"float"`/`"bool"` into the type object regardless of key - reproduced,
