@@ -2232,11 +2232,27 @@ Each says what it moves *before* it starts (method rule 38).
   is already in σ with hysteresis 0 and backtracks the **end**. Which edge is walked back is
   the thing the method decides, so a helper parameterised on it is more machinery than the
   duplication costs.
-- **5b-2 - the base internals that survived.** `fit_events` is 277 lines with 17
-  `rejected_events` touch sites -> a private `_reject_event` helper on `MetaEventFitter`;
-  `find_events` inlines **10** assignment lines that `reset_channel` already does -> call it.
-  Private helpers only, so the owner-held fitters are untouched and compliance-by-equality
-  cannot fire.
+- **5b-2 - the base internals that survived. LANDED 2026-09-20**, suite 4,141 passed / 16
+  skipped, all eight hooks green. Private helpers only, so the owner-held fitters are
+  untouched and compliance-by-equality cannot fire. **Two of the entry's three figures were
+  wrong**, found by re-measuring before starting:
+    - `rejected_events` **does not exist** on `MetaEventFitter`; the attribute is
+      `self.rejected`, and `fit_events` touches it at **8** sites, not 17. All eight now call
+      a `_reject_event` helper that tallies the reason, logs it and drops the two half-built
+      metadata entries. The control flow stays at the call site because it differs - seven
+      decrement and `continue`, the sublevel-count mismatch has to break an inner loop first.
+      `fit_events` 277 -> 262 lines.
+    - `find_events` inlining `reset_channel` was **one** copy, not three: the other two
+      "copies" are `reset_channel`'s own `channel is not None` and `else` arms.
+      `find_events` 146 -> 139 lines.
+    - **`fit_events` does not inline its own `reset_channel` and must not be made to.** The
+      fitter's `reset_channel` *pops* its per-channel keys and calls `gc.collect()`, where
+      `fit_events` assigns them empty; substituting would `KeyError` on the next write. It
+      also leaves `sublevel_starts`, `event_lengths` and `applied_filters` alone.
+  **The file gets longer, and that is the right trade** - the eight sites lose 32 lines of
+  bookkeeping and the helper's docstring adds more than that back. Kyle, 2026-09-20: line
+  growth from docstrings is fine where they serve a purpose, and the thing to simplify is the
+  code.
 - **5d - shared widgets.** The multiselect pair is **53 of `views/widgets`' 62 removable**
   over 5 groups; range parsing is spread over 4 modules; `dict_dialog_widget.py` is 411
   lines with **no unit test file**, so tests are its prerequisite rather than part of it. The

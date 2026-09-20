@@ -457,6 +457,48 @@ class MetaEventFitter(BaseDataPlugin):
         """
         return self.sublevel_metadata_units
 
+    @log(logger=logger)
+    def _reject_event(
+        self,
+        channel: int,
+        index: int,
+        reason: str,
+        message: str,
+        level: int = logging.INFO,
+    ) -> None:
+        """
+        Count one rejected event, say why, and drop the metadata already built for it.
+
+        ``fit_events`` gives up on an event from eight places, and each one owed the same
+        three pieces of bookkeeping: tally the reason, log it, and remove the two
+        half-built metadata entries the event had already accumulated. Missing either pop
+        leaves a partial event in the tables that the writer will later try to commit, so
+        this is one place rather than eight.
+
+        **The control flow stays at the call site**, deliberately, because it differs.
+        Seven of the eight decrement the running event count and ``continue`` the event
+        loop; the sublevel-count mismatch is raised from inside the loop over the
+        metadata columns, so it has to set a flag and ``break`` out of that inner loop
+        before its caller can do the same. Folding that difference in here would mean a
+        helper that sometimes means "skip this event" and sometimes means "stop looking
+        at its columns".
+
+        :param channel: the channel the rejected event belongs to
+        :type channel: int
+        :param index: the event's index within that channel, used to drop its metadata
+        :type index: int
+        :param reason: the key this rejection is tallied under, and what the status panel reports
+        :type reason: str
+        :param message: the log line explaining this particular rejection
+        :type message: str
+        :param level: the level to log ``message`` at, ``logging.INFO`` unless the rejection indicates a fitter fault
+        :type level: int
+        """
+        self.rejected[channel][reason] = self.rejected[channel].get(reason, 0) + 1
+        self.logger.log(level, message)
+        self.event_metadata[channel].pop(index)
+        self.sublevel_metadata[channel].pop(index)
+
     @serialize_channels
     @log(logger=logger)
     def fit_events(
@@ -576,25 +618,21 @@ class MetaEventFitter(BaseDataPlugin):
                 )
 
             except ValueError as e:
-                self.rejected[channel][str(e)] = (
-                    self.rejected[channel].get(str(e), 0) + 1
+                self._reject_event(
+                    channel,
+                    index,
+                    str(e),
+                    f"Event {index} in channel {channel} was rejected from fitting: {e}. No further warnings of this type will be issue for this channel.",
                 )
-                self.logger.info(
-                    f"Event {index} in channel {channel} was rejected from fitting: {e}. No further warnings of this type will be issue for this channel."
-                )
-                self.event_metadata[channel].pop(index)
-                self.sublevel_metadata[channel].pop(index)
                 total_events -= 1
                 continue
             except Exception as e:
-                self.rejected[channel][str(e)] = (
-                    self.rejected[channel].get(str(e), 0) + 1
+                self._reject_event(
+                    channel,
+                    index,
+                    str(e),
+                    f"Unknown error locating sublevels transitions for event {event}: {str(e)}",
                 )
-                self.logger.info(
-                    f"Unknown error locating sublevels transitions for event {event}: {str(e)}"
-                )
-                self.event_metadata[channel].pop(index)
-                self.sublevel_metadata[channel].pop(index)
                 total_events -= 1
                 continue
 
@@ -611,14 +649,12 @@ class MetaEventFitter(BaseDataPlugin):
 
             # if we do not find baseline + event + baseline for a total of three sublevels, it is not a valid event and should be skipped
             if len(sublevel_starts) <= 3:
-                self.logger.info(
-                    f"Event {event_id} in channel {channel} has fewer than three sublevels and is invalid, it will be skipped"
+                self._reject_event(
+                    channel,
+                    index,
+                    "Too Few Levels",
+                    f"Event {event_id} in channel {channel} has fewer than three sublevels and is invalid, it will be skipped",
                 )
-                self.rejected[channel]["Too Few Levels"] = (
-                    self.rejected[channel].get("Too Few Levels", 0) + 1
-                )
-                self.event_metadata[channel].pop(index)
-                self.sublevel_metadata[channel].pop(index)
                 total_events -= 1
                 continue
 
@@ -629,39 +665,34 @@ class MetaEventFitter(BaseDataPlugin):
                     data, samplerate, baseline_mean, baseline_std, sublevel_starts
                 )
             except ValueError as e:
-                self.rejected[channel][str(e)] = (
-                    self.rejected[channel].get(str(e), 0) + 1
+                self._reject_event(
+                    channel,
+                    index,
+                    str(e),
+                    f"Error populating sublevel metadata for event {event}: {str(e)}",
                 )
-                self.logger.info(
-                    f"Error populating sublevel metadata for event {event}: {str(e)}"
-                )
-                self.event_metadata[channel].pop(index)
-                self.sublevel_metadata[channel].pop(index)
                 total_events -= 1
                 continue
             except Exception as e:
-                self.rejected[channel][str(e)] = (
-                    self.rejected[channel].get(str(e), 0) + 1
+                self._reject_event(
+                    channel,
+                    index,
+                    str(e),
+                    f"Unknown error populating sublevel metadata for event {event}: {str(e)}",
                 )
-                self.logger.info(
-                    f"Unknown error populating sublevel metadata for event {event}: {str(e)}"
-                )
-                self.event_metadata[channel].pop(index)
-                self.sublevel_metadata[channel].pop(index)
                 total_events -= 1
                 continue
 
             invalid_sublevel_metadata = False
             for key, val in sublevel_metadata.items():
                 if len(val) != len(sublevel_starts) - 1:
-                    self.rejected[channel]["Level Count Mismatch"] = (
-                        self.rejected[channel].get("Level Count Mismatch", 0) + 1
+                    self._reject_event(
+                        channel,
+                        index,
+                        "Level Count Mismatch",
+                        f"Event {event_id} has in channel {channel} fewer entries for {key} ({len(val)} than sublevels ({len(sublevel_starts)} and is invalid",
+                        level=logging.ERROR,
                     )
-                    self.logger.error(
-                        f"Event {event_id} has in channel {channel} fewer entries for {key} ({len(val)} than sublevels ({len(sublevel_starts)} and is invalid"
-                    )
-                    self.event_metadata[channel].pop(index)
-                    self.sublevel_metadata[channel].pop(index)
                     invalid_sublevel_metadata = True
                     break
                 else:
@@ -695,25 +726,21 @@ class MetaEventFitter(BaseDataPlugin):
                     data, samplerate, baseline_mean, baseline_std, sublevel_metadata
                 )
             except ValueError as e:
-                self.rejected[channel][str(e)] = (
-                    self.rejected[channel].get(str(e), 0) + 1
+                self._reject_event(
+                    channel,
+                    index,
+                    str(e),
+                    f"Error populating sublevel metadata for event {event}: {str(e)}",
                 )
-                self.logger.info(
-                    f"Error populating sublevel metadata for event {event}: {str(e)}"
-                )
-                self.event_metadata[channel].pop(index)
-                self.sublevel_metadata[channel].pop(index)
                 total_events -= 1
                 continue
             except Exception as e:
-                self.rejected[channel][str(e)] = (
-                    self.rejected[channel].get(str(e), 0) + 1
+                self._reject_event(
+                    channel,
+                    index,
+                    str(e),
+                    f"Unknown error populating sublevel metadata for event {event}: {str(e)}",
                 )
-                self.logger.info(
-                    f"Unknown error populating sublevel metadata for event {event}: {str(e)}"
-                )
-                self.event_metadata[channel].pop(index)
-                self.sublevel_metadata[channel].pop(index)
                 total_events -= 1
                 continue
 

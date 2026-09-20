@@ -266,17 +266,10 @@ class MetaEventFinder(BaseDataPlugin):
             f"Starting eventfinding on channel {channel} for {len(ranges)} ranges"
         )
 
-        # Reset state
-        self.event_starts[channel] = []
-        self.event_ends[channel] = []
-        self.padding_before[channel] = []
-        self.padding_after[channel] = []
-        self.baseline_means[channel] = []
-        self.baseline_stds[channel] = []
-        self.eventfinding_finished[channel] = False
-        self.rejected_data[channel] = 0
-        self.accepted_data[channel] = 0
-        self.rejected_events[channel] = {}
+        # Exactly what reset_channel does, and it was written out here a second time.
+        # Calling it means a finder that overrides reset_channel to clear state of its own
+        # gets that cleared too, which is what starting a run on this channel should mean.
+        self.reset_channel(channel)
 
         self.reader.get_samplerate()
         total_found = 0

@@ -30,6 +30,8 @@
 
 * The `PeakFinder` changes above are Nada Kerrouri's, integrated from `feature/peakfinders_1.8.0`
 
+* `MetaEventFinder.find_events` now calls `reset_channel` instead of repeating its ten assignments, so an event finder that overrides `reset_channel` to clear state of its own gets that cleared when a run starts too; no shipped finder overrides it
+
 * **Every plugin's settings documentation now describes that plugin's own parameters** - what each one does, in what units and within what range - instead of repeating the same generic description of the settings-dict structure, which is now linked from the family's base class
 
 * **Fixed nine plugins documenting the wrong required parent plugin**: the seven event fitters ask for a `MetaEventLoader` and `SQLiteDBWriter` for a `MetaEventFitter`, not a `MetaReader` as all of them claimed, and `SQLiteEventLoader` requires no parent at all
