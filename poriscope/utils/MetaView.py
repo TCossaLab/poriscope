@@ -52,11 +52,11 @@ from PySide6.QtWidgets import (
 
 from poriscope.utils.LogDecorator import log
 from poriscope.utils.MetaControls import MetaControls
-from poriscope.utils.QWidgetABCMeta import QWidgetABCMeta
+from poriscope.utils.QObjectABCMeta import QObjectABCMeta
 from poriscope.views.widgets.walkthrough_mixin import WalkthroughMixin
 
 
-class MetaView(QWidget, WalkthroughMixin, metaclass=QWidgetABCMeta):
+class MetaView(QWidget, WalkthroughMixin, metaclass=QObjectABCMeta):
     """
     Abstract base class designed to provide a unified interface for different analysis tabs.
 

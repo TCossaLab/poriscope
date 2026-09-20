@@ -94,7 +94,6 @@ from poriscope.utils.QObjectABCMeta import QObjectABCMeta
 
 # --- Qt Utilities ---
 from poriscope.utils.QtHandler import QtHandler
-from poriscope.utils.QWidgetABCMeta import QWidgetABCMeta
 
 # ----------------------
 # --- Metaclasses ---
@@ -159,7 +158,6 @@ __all__ = [
     "BaseValidator",
     # --- Qt Utilities ---
     "QtHandler",
-    "QWidgetABCMeta",
     "QObjectABCMeta",
     # --- Core Utilities ---
     "Worker",

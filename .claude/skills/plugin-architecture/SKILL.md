@@ -45,9 +45,10 @@ Poriscope is built from two layers that use the *same* MVC pattern recursively:
   importing every `.py` file and keeping only classes matching the module's own
   filename that subclass one of the allowed `Meta*` base classes. A plugin is just a
   Python file dropped in the right subfolder — no registry/manifest to update.
-- Each `Meta*` base uses `QObjectABCMeta`/`QWidgetABCMeta` (ABCMeta combined with the
-  Qt metaclass) so abstract methods are enforced *and* the class stays a valid
-  QObject/QWidget.
+- Each `Meta*` base uses `QObjectABCMeta` (ABCMeta combined with the Qt metaclass) so
+  abstract methods are enforced *and* the class stays a valid QObject/QWidget. One class
+  serves both hierarchies, because PySide6 gives `QObject` and `QWidget` the same
+  metaclass.
 - `BaseDataPlugin.__init__` -> `apply_settings()` drives a fixed lifecycle:
   `_validate_param_types` -> `_validate_param_ranges` -> `_validate_settings` (subclass
   hook) -> `_finalize_initialization` (subclass hook). Settings are dicts of

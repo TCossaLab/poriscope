@@ -2060,42 +2060,71 @@ Each says what it moves *before* it starts (method rule 38).
   direction - 5b-1 cannot add a duplicate elsewhere while lifting the shared fit out. The
   QA page stopped calling this the *analysis-tab* ratchet, since it has covered the
   readers, fitters and widgets since the Step 2 exit review.
-- **5a-3 - the `get_empty_settings` docstring. OPEN, and the first plan was wrong.** The
+- **5a-3 - the `get_empty_settings` docstring. RULED (b), Kyle 2026-09-20, and the first plan was wrong.** The
   proposal was to delete the copies and let Sphinx inherit the base's text. **It cannot be
   done**: `tests/unit/plugins/test_plugin_compliance.py` requires *every method defined
   directly in a plugin subclass to carry a docstring*, and reports `missing docstrings` if
   not. The copies are policy, not oversight - a deliberate gate says a plugin's own methods
-  are documented where they are defined. So the remaining choice is about content, over
-  **22 copies / 31,711 characters**:
+  are documented where they are defined. So the remaining choice is about content.
+
+  **Re-measured 2026-09-20, because the entry's own numbers did not survive it.** The entry
+  said "22 copies / 31,711 characters"; parsing the docstrings with `ast` gives **22
+  definitions carrying 7 distinct texts, 45,828 characters in total**:
+
+  | copies | chars each | plugins |
+  |---|---|---|
+  | 7 | 1,689 | the six readers + `SQLiteDBLoader` |
+  | 7 | 1,518 | `SQLiteEventWriter`, `SQLiteDBWriter`, the three finders, `ClassicCUSUM`, `IntraCUSUM` |
+  | 3 | 3,730 | `CUSUM`, `NoFitter`, `NanoTrees` |
+  | 2 | 1,371 | `BesselFilter`, `WaveletFilter` |
+  | 1 | 3,729 | `Basic_PeakFinder` (one character off the 3,730 group) |
+  | 1 | 2,134 | `PeakFinder` |
+  | 1 | 3,584 | `SQLiteEventLoader` |
+
+  The "14 non-owner-held plugins" the entry named are the two seven-copy groups. The
+  options were:
     - **(a) leave it**, recorded as a floor: each published plugin page stays self-contained
       and the text is correct;
-    - **(b) replace the generic half in the 14 non-owner-held plugins** with a short
-      docstring pointing at the base for the settings-dict structure and naming *that
-      plugin's* parameters - satisfies the gate, shortens the copies, and makes each page
-      say something specific, at the cost of touching 14 files and changing published pages.
-  `PeakFinder`, `Basic_PeakFinder` and `NanoTrees` are excluded either way; their long
-  docstrings are their own, not copies.
-- **5a-2 - the Chimera readers' shared logic. OPEN: needs a ruling before it starts.** Up to
+    - **(b) replace the generic text** with a short docstring pointing at the base for the
+      settings-dict structure and naming *that plugin's* parameters - satisfies the gate,
+      shortens the copies, and makes each page say something specific, at the cost of
+      changed published pages.
+
+  **Kyle chose (b) on 2026-09-20, and put `PeakFinder`, `Basic_PeakFinder` and `NanoTrees`
+  *in* scope** rather than excluding them: the exclusion was proposed because their long
+  docstrings are their own work rather than copies, but the ruling is about what each page
+  should say, and every plugin's page should name its own parameters. With the exclusion
+  lifted there is no group left out, so **the scope is all 22**, not 14 - `Basic_PeakFinder`
+  being one character off the `CUSUM`/`NoFitter`/`NanoTrees` text is itself the argument
+  that these are copies wearing an owner's name.
+- **5a-2 - the Chimera readers' shared logic. RULED: leave it, Kyle 2026-09-20.** Up to
   **227 removable** (`_map_data` 43x3, `_get_file_channel_stamps` 15x3, `_set_raw_dtype`
   11x3, `_set_file_extension` 5x3, the 0101/0501 pairs). Under the two standing rulings the
   options are narrow and none is obviously right: a `ChimeraReader` base is refused (three
   files), a helper module beside the plugins is refused (5b-1's ruling: shared code goes on
   the family base), and `MetaReader` is the family base but **the shared code is one
   vendor's file format**, which three of seven readers want and the published base would
-  then carry for all of them. **Default if no ruling: leave it, recorded as the largest
-  floor in Step 5**, since duplication is explicitly acceptable and a widened published base
-  is not. Each candidate would get the `self.` grep first either way (method rule 59).
+  then carry for all of them. **Kyle took the default on 2026-09-20: leave it, recorded as
+  the largest floor in Step 5**, since duplication is explicitly acceptable and a widened
+  published base is not - **to be revisited if the Chimera reader family grows**, since a
+  fourth or fifth copy changes the arithmetic that made a base not worth it.
 - **5a-4 - collapse the two ABC metaclasses. LANDED 2026-09-19** at `bca87f47`, suite
-  4,135 passed / 16 skipped, all eight hooks green. One implementation keeping `__call__`,
-  dropping the dead `__new__`, exported under **both existing names as aliases** because
-  both are in `exposed.py` and a third-party plugin may import either. 10 tests cover both
-  names against both hierarchies, and one of them **asserts the PySide6 defect itself**, so
-  a Qt release that starts honouring abstractness announces the guard's obsolescence rather
-  than leaving it to be guessed. Verified before proposing: `type(QObject) is type(QWidget)` (both `Shiboken.ObjectType`), the two are
-  already cross-usable, a collapsed metaclass refuses abstract instantiation in both
-  hierarchies, and **without `__call__` Shiboken instantiates an abstract subclass** - so
-  the guard is the workaround and is kept. Check for `isinstance(x, QWidgetABCMeta)` and
-  re-run compliance before landing.
+  4,135 passed / 16 skipped, all eight hooks green. One implementation keeping `__call__`
+  and dropping the dead `__new__`. Verified before proposing:
+  `type(QObject) is type(QWidget)` (both `Shiboken.ObjectType`), the two are already
+  cross-usable, a collapsed metaclass refuses abstract instantiation in both hierarchies,
+  and **without `__call__` Shiboken instantiates an abstract subclass** - so the guard is
+  the workaround and is kept. One test **asserts the PySide6 defect itself**, so a Qt
+  release that starts honouring abstractness announces the guard's obsolescence rather than
+  leaving it to be guessed.
+- **5a-4b - delete the `QWidgetABCMeta` alias. Kyle 2026-09-20.** 5a-4 landed the collapse
+  but kept `QWidgetABCMeta.py` as a one-line alias, on the reasoning that both names are in
+  `exposed.py` and a third-party plugin might import either. **Kyle refused that**: there
+  are no third-party plugins to break, and an alias module is orphaned code. The name is
+  gone from the package, `exposed.py`, the tests and the `plugin-architecture` skill;
+  `MetaView` and `MetaEventTabControls` declare `QObjectABCMeta` directly. Called out as
+  **breaking** in `changelog.md`, replacing 5a-4's own entry rather than adding a second one,
+  since 2.0.0 has not shipped and the intermediate state never existed for a user.
 - **5b-1 - `_get_baseline_stats`, and the baseline-σ bug fixed once.** Classic and Bounded
   differ in 24 lines, and the difference is deliberate: Bounded masks to `Min/Max Baseline`,
   refuses an empty range and rejects an out-of-bounds fitted mean. The ~60 lines between

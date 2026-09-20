@@ -7,8 +7,8 @@ metaclass that merely inherits ``ABCMeta`` and Shiboken's type **instantiates wh
 abstract methods remain**. ``QObjectABCMeta.__call__`` is what refuses, so these tests
 exercise it rather than the inheritance.
 
-``QWidgetABCMeta`` is the same class under a second name - both are re-exported from
-``poriscope.exposed``, so both are kept - and the tests run over both to pin that.
+One class serves both hierarchies, so the tests run it against ``QObject`` and
+``QWidget`` alike.
 """
 
 import abc
@@ -18,31 +18,26 @@ from PySide6.QtCore import QObject
 from PySide6.QtWidgets import QWidget
 
 from poriscope.utils.QObjectABCMeta import QObjectABCMeta
-from poriscope.utils.QWidgetABCMeta import QWidgetABCMeta
 
-METACLASSES = [
-    pytest.param(QObjectABCMeta, id="QObjectABCMeta"),
-    pytest.param(QWidgetABCMeta, id="QWidgetABCMeta"),
-]
 QT_BASES = [pytest.param(QObject, id="QObject"), pytest.param(QWidget, id="QWidget")]
 
 
-def test_the_two_names_are_one_class():
+def test_one_metaclass_serves_both_hierarchies():
     """
     ``type(QObject)`` and ``type(QWidget)`` are both ``Shiboken.ObjectType``, so the two
-    metaclasses this project carried were built from identical ingredients. They are one
-    class now; the second name is kept because ``exposed.py`` publishes it.
+    metaclasses this project carried were built from identical ingredients. That is why
+    one class can serve both, and why the ``QWidgetABCMeta`` name was removed rather
+    than kept as an alias.
     """
-    assert QWidgetABCMeta is QObjectABCMeta
     assert type(QObject) is type(QWidget)
+    assert issubclass(QObjectABCMeta, type(QWidget))
 
 
-@pytest.mark.parametrize("meta", METACLASSES)
 @pytest.mark.parametrize("qt_base", QT_BASES)
-def test_an_abstract_subclass_cannot_be_instantiated(meta, qt_base, qtbot):
-    """Both names, both hierarchies: the refusal is the whole point of the class."""
+def test_an_abstract_subclass_cannot_be_instantiated(qt_base, qtbot):
+    """Both hierarchies: the refusal is the whole point of the class."""
 
-    class Abstract(qt_base, metaclass=meta):
+    class Abstract(qt_base, metaclass=QObjectABCMeta):
         @abc.abstractmethod
         def required(self) -> None: ...
 
@@ -51,12 +46,11 @@ def test_an_abstract_subclass_cannot_be_instantiated(meta, qt_base, qtbot):
         Abstract()
 
 
-@pytest.mark.parametrize("meta", METACLASSES)
 @pytest.mark.parametrize("qt_base", QT_BASES)
-def test_a_concrete_subclass_still_builds(meta, qt_base, qtbot):
+def test_a_concrete_subclass_still_builds(qt_base, qtbot):
     """The guard must refuse the abstract class and nothing else."""
 
-    class Abstract(qt_base, metaclass=meta):
+    class Abstract(qt_base, metaclass=QObjectABCMeta):
         @abc.abstractmethod
         def required(self) -> None: ...
 

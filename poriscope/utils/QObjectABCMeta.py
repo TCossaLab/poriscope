@@ -36,8 +36,8 @@ what actually refuses, and it is the reason this module exists.
 **One class serves both QObject and QWidget**, because ``type(QObject)`` and
 ``type(QWidget)`` are the same object - ``Shiboken.ObjectType`` - so the two metaclasses
 this project used to carry were built from identical ingredients and were already
-interchangeable. :mod:`poriscope.utils.QWidgetABCMeta` keeps the other name pointing here,
-since both are re-exported from ``poriscope.exposed`` and a plugin may import either.
+interchangeable. The ``QWidgetABCMeta`` name they were split under is gone; widget bases
+such as :class:`poriscope.utils.MetaView.MetaView` declare this one.
 """
 
 import abc

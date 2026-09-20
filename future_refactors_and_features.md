@@ -214,7 +214,7 @@ Present in exactly **RawData + EventAnalysis**:
   as required overrides. `WalkthroughMixin` already declares those two as
   `NotImplementedError`-raising abstract-style hooks — it's already designed
   like part of the base contract, it just isn't integrated into `MetaView`'s
-  actual `__init__`/ABC machinery (`QWidgetABCMeta`). This is the cleanest
+  actual `__init__`/ABC machinery (`QObjectABCMeta`). This is the cleanest
   "this should always have been on the base class" finding in the audit:
   `MetaView.__init__` could call `_init_walkthrough()` unconditionally, and
   `get_current_view`/`get_walkthrough_steps` could become real
@@ -737,8 +737,9 @@ existing `@register_action` call sites unchanged and behaviorally identical.
 
 A read-only audit (2026-08) of nine small, low-level, widely-imported utility
 modules — `LogDecorator.py`, `EventWorker.py`, `QObjectABCMeta.py`,
-`QWidgetABCMeta.py`, `BaseLineEdit.py`, `BaseValidator.py`,
-`JsonDefaultSerializer.py`, `QtHandler.py`, `DocstringDecorator.py` — looked
+`QWidgetABCMeta.py` (since merged into the former), `BaseLineEdit.py`,
+`BaseValidator.py`, `JsonDefaultSerializer.py`, `QtHandler.py`,
+`DocstringDecorator.py` — looked
 for code that's more complex than the problem it solves: over-engineered
 decorators/metaclasses, duplicated logic within a file, and control flow
 that's harder to follow than the underlying task requires. It deliberately
@@ -806,21 +807,7 @@ and may drift — re-check the citation before acting on it.
    finder/fitter's generator, so any change here needs real test coverage,
    not just a read-through.
 
-6. **`QObjectABCMeta.py:34` / `QWidgetABCMeta.py:34` — leftover commented-out
-   line.** Both files contain the identical dead comment
-   `# abc._abc_init(cls)` inside `__new__`. Trivial to remove; flagged only
-   for completeness.
-
-7. **`QObjectABCMeta.py` / `QWidgetABCMeta.py` — duplicated `__call__`/
-   `__new__` across two files.** The two metaclasses are identical except
-   for which Qt base (`QObject` vs `QWidget`) they combine with. Real
-   duplication, but these are two of the most foundational, most widely
-   subclassed types in the whole plugin system — any future session
-   considering deduplicating them (e.g. via a shared mixin) should weigh
-   that against the blast radius of touching either file, not just the
-   line count saved.
-
-8. **`BaseLineEdit.py:39-40,94` — `suspend_validation`/`app_closing` are
+6. **`BaseLineEdit.py:39-40,94` — `suspend_validation`/`app_closing` are
    class attributes mutated as de facto process-wide globals**, toggled by
    a `QApplication`-wide event filter that reacts to *any* `QMessageBox`
    shown anywhere in the app (lines 91-97). Not a concurrency bug (Qt event
@@ -1911,10 +1898,10 @@ the chunk-boundary/padding stitching logic in `MetaEventFinder`/
 `MetaEventFitter`; `MetaWriter._rescale_data_to_adc`'s branchy-but-clearly-
 labeled numerical cases; `MetaReader`'s channel/buffer bookkeeping; the bulk
 of Qt widget-construction code that's merely long-but-flat rather than
-actually complex; and the duplicated `QObjectABCMeta`/`QWidgetABCMeta` pair,
-which was explicitly recommended to leave alone given the blast radius of
-touching either of the two most foundational, most widely-inherited types
-in the whole plugin system, for a 9-line saving.
+actually complex. The audit also recommended leaving the duplicated
+`QObjectABCMeta`/`QWidgetABCMeta` pair alone, on blast-radius grounds; that was
+overturned in 2.0.0's Step 5a-4 once it was established that PySide6 gives
+`QObject` and `QWidget` the same metaclass, so the pair was never two things.
 
 ## Value and wisdom
 

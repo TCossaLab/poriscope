@@ -33,12 +33,12 @@ from PySide6.QtWidgets import QComboBox, QListWidgetItem
 
 from poriscope.utils.LogDecorator import log
 from poriscope.utils.MetaControls import MetaControls
-from poriscope.utils.QWidgetABCMeta import QWidgetABCMeta
+from poriscope.utils.QObjectABCMeta import QObjectABCMeta
 from poriscope.views.integer_range_line_edit import IntegerRangeLineEdit
 from poriscope.views.widgets.multiselect import MultiSelectComboBox
 
 
-class MetaEventTabControls(MetaControls, metaclass=QWidgetABCMeta):
+class MetaEventTabControls(MetaControls, metaclass=QObjectABCMeta):
     """
     Shared base for the control panels of the two event-oriented analysis tabs.
 
@@ -49,7 +49,7 @@ class MetaEventTabControls(MetaControls, metaclass=QWidgetABCMeta):
 
     It extends ``MetaControls`` rather than replacing it - the widget factories, the
     icon buttons and the placeholder guard all still come from there. It also declares
-    ``QWidgetABCMeta`` as its metaclass, which is what makes ``@abstractmethod`` below
+    ``QObjectABCMeta`` as its metaclass, which is what makes ``@abstractmethod`` below
     actually fire: ``MetaControls`` is a plain ``QWidget``, so its own metaclass is
     Shiboken's ``ObjectType``, which computes no ``__abstractmethods__`` and would let
     an unimplemented hook through silently. ``MetaView`` uses the same metaclass for

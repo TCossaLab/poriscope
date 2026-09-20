@@ -255,10 +255,7 @@ the oversized `setupUi` methods. This review re-confirmed each with fresh counts
   `ClassicCUSUM` is a 195-line override differing in 2 lines and wants to be `CUSUM` with a
   `_normalize_step_size()` hook; the two Chimera readers differ in 23 lines of 390;
   `_get_baseline_stats` and `_find_events_in_chunk` are each duplicated across two finders
-  (which is why the baseline-σ bug above has two copies); `QObjectABCMeta.py` and
-  `QWidgetABCMeta.py` are 49 lines each differing in 2, and their `__new__` overrides are
-  dead - only `__call__` is load-bearing, and it is genuinely required (verified: without
-  it Shiboken's metaclass lets an abstract QObject subclass instantiate).
+  (which is why the baseline-σ bug above has two copies).
 - **`format_axis_label` still exists in three places** - a module function in `ProteinView.py`,
   a method in `MetadataView.py` and inlined in `ClusteringView.py`. The behavioural drift is
   gone (2026-09-04); merging the copies is the refactor's Step 3.
