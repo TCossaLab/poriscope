@@ -465,6 +465,15 @@ MOVED: Tuple[Tuple[str, str, str], ...] = (
     ("poriscope/main_app.py", "_ensure_folder", "5c.5"),
     ("poriscope/main_app.py", "_write_config", "5c.5"),
     ("poriscope/main_app.py", "_backfill_missing_config", "5c.5"),
+    # Step 5c.6 - plugin discovery. populate_available_plugins walked, imported and
+    # classified in one 94-line method; each of those is now its own. Listed because
+    # discovery is the one path where a silent regression costs the user every plugin
+    # of a family at once, with no error anywhere.
+    ("poriscope/models/main_model.py", "_plugin_files", "5c.6"),
+    ("poriscope/models/main_model.py", "_python_files", "5c.6"),
+    ("poriscope/models/main_model.py", "_classify_plugin_file", "5c.6"),
+    ("poriscope/models/main_model.py", "_load_plugin_class", "5c.6"),
+    ("poriscope/models/main_model.py", "_metaclass_for", "5c.6"),
 )
 
 VIEW_FILES: Tuple[str, ...] = (

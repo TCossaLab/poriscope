@@ -1,5 +1,7 @@
 ## Poriscope 2.0.0: in progress
 
+* Plugin discovery is now built from five named steps rather than one 94-line method - where it looks, which files it considers, how it imports each one and how it decides what family a plugin belongs to; the same plugins are found in the same order
+
 * The first-run bootstrap creates its five folders and writes its configuration through one routine each rather than repeating the block five and three times; the folders, the config repair and every warning are unchanged
 
 * A session naming a plugin class this version no longer ships now says so, instead of reporting the class name back as a bare error - it may have been renamed or removed since the session was saved

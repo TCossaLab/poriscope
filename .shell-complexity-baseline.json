@@ -30,9 +30,9 @@
     "total_complexity": 0
   },
   "poriscope/models/main_model.py": {
-    "functions": 21,
-    "over_threshold": 2,
-    "total_complexity": 30
+    "functions": 26,
+    "over_threshold": 1,
+    "total_complexity": 11
   },
   "poriscope/views/main_view.py": {
     "functions": 75,

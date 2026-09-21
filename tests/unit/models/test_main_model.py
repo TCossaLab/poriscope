@@ -406,3 +406,188 @@ class TestResetAppConfig:
         main_model.reset_app_config()
 
         assert session_file.exists(), "resetting settings must not touch the session"
+
+
+# ------------- 5c.6: plugin discovery's extracted helpers ------------------
+#
+# Each is in the refactor-coverage audit's MOVED table, so each is driven
+# directly as well as through populate_available_plugins.
+
+
+class TestPythonFiles:
+    """Which files in a directory listing are worth importing."""
+
+    def test_keeps_modules_and_drops_the_package_marker(self, main_model):
+        """``__init__.py`` defines the package, never a plugin."""
+        kept = main_model._python_files(
+            "/somewhere", ["Reader.py", "__init__.py", "notes.txt", "Finder.py"]
+        )
+
+        assert kept == ["Reader.py", "Finder.py"]
+
+    def test_an_unreadable_listing_yields_nothing_rather_than_raising(
+        self, main_model, caplog
+    ):
+        """
+        One bad directory must not stop discovery, since the user's folder is walked too.
+
+        The listing is passed as something that raises on iteration, which is the
+        only way this inherited guard can fire.
+        """
+
+        class _Hostile(list):
+            def __iter__(self):
+                raise OSError("listing exploded")
+
+        with caplog.at_level(logging.WARNING):
+            assert main_model._python_files("/bad", _Hostile()) == []
+        assert "Error reading files in /bad" in caplog.text
+
+
+class TestMetaclassFor:
+    """Naming the family a plugin class belongs to."""
+
+    def test_names_the_family_a_class_subclasses(self, main_model):
+        """The mapping is the definition of what counts as a plugin."""
+        real_base = MainModel.ALLOWED_BASE_CLASSES["MetaReader"]
+
+        class MyReader(real_base):
+            pass
+
+        assert main_model._metaclass_for(MyReader) == "MetaReader"
+
+    def test_gives_none_for_a_class_that_is_not_a_plugin(self, main_model):
+        """A file can define a class without defining a plugin."""
+
+        class Unrelated:
+            pass
+
+        assert main_model._metaclass_for(Unrelated) is None
+
+    def test_the_eleven_families_are_the_recognised_set(self, main_model):
+        """
+        Pinned because this mapping *is* the definition of a plugin family.
+
+        Adding one is a deliberate act; losing one silently would make every
+        plugin of that family vanish from the app with no error anywhere.
+        """
+        assert set(MainModel.ALLOWED_BASE_CLASSES) == {
+            "MetaFilter",
+            "MetaReader",
+            "MetaWriter",
+            "MetaEventLoader",
+            "MetaEventFinder",
+            "MetaEventFitter",
+            "MetaDatabaseWriter",
+            "MetaDatabaseLoader",
+            "MetaController",
+            "MetaView",
+            "MetaModel",
+        }
+
+
+class TestLoadPluginClass:
+    """Importing one candidate file, which executes it."""
+
+    def test_returns_what_load_plugin_gives(self, main_model):
+        """The ordinary case."""
+        sentinel = type("Sentinel", (), {})
+        with patch.object(main_model, "load_plugin", return_value=sentinel):
+            assert (
+                main_model._load_plugin_class("Sentinel", Path("/plugins")) is sentinel
+            )
+
+    def test_a_file_that_explodes_on_import_yields_none(self, main_model, caplog):
+        """
+        Discovery executes every file it walks, including the user's, so one bad
+        file must not stop the rest of the plugins loading.
+        """
+        with patch.object(main_model, "load_plugin", side_effect=RuntimeError("boom")):
+            with caplog.at_level(logging.WARNING):
+                assert main_model._load_plugin_class("Bad", Path("/plugins")) is None
+        assert "Failed to load plugin Bad" in caplog.text
+
+
+class TestClassifyPluginFile:
+    """Import a file and decide what, if anything, it contributes."""
+
+    def test_gives_the_family_name_and_class(self, main_model):
+        """The name comes off the filename, not out of the module."""
+        real_base = MainModel.ALLOWED_BASE_CLASSES["MetaReader"]
+
+        class MyReader(real_base):
+            pass
+
+        with patch.object(main_model, "load_plugin", return_value=MyReader):
+            assert main_model._classify_plugin_file(Path("/p"), "MyReader.py") == (
+                "MetaReader",
+                "MyReader",
+                MyReader,
+            )
+
+    def test_a_failed_import_is_not_a_plugin(self, main_model):
+        """``load_plugin`` returning None must not reach ``issubclass``."""
+        with patch.object(main_model, "load_plugin", return_value=None):
+            assert main_model._classify_plugin_file(Path("/p"), "Broken.py") is None
+
+    def test_something_that_is_not_a_class_is_not_a_plugin(self, main_model):
+        """
+        The ``isinstance(..., type)`` guard, which the original spelled out inline.
+
+        A file can define a name that is not a class at all, and ``issubclass``
+        raises on a non-class rather than returning False.
+        """
+        with patch.object(main_model, "load_plugin", return_value="not a class"):
+            assert main_model._classify_plugin_file(Path("/p"), "Odd.py") is None
+
+    def test_a_class_of_no_known_family_is_not_a_plugin(self, main_model):
+        """A plain class in the plugin tree is ignored rather than mis-filed."""
+
+        class Unrelated:
+            pass
+
+        with patch.object(main_model, "load_plugin", return_value=Unrelated):
+            assert main_model._classify_plugin_file(Path("/p"), "Unrelated.py") is None
+
+
+class TestPluginFiles:
+    """Where discovery looks, and in what order."""
+
+    def test_skips_a_directory_that_is_not_there(self, main_model, caplog, tmp_path):
+        """
+        A missing plugin directory is warned about and stepped over, not fatal.
+
+        The user's folder is routinely absent - a fresh install has nothing in it -
+        so this is the common path rather than an edge case. Both directories are
+        pointed at paths that do not exist, since the fixture leaves
+        ``plugin_path`` aimed at the real shipped tree.
+        """
+        main_model.plugin_path = Path(tmp_path, "no-such-shipped-tree")
+        main_model.app_config["User Plugin Folder"] = str(
+            Path(tmp_path, "no-such-user")
+        )
+
+        with caplog.at_level(logging.WARNING):
+            assert list(main_model._plugin_files()) == []
+
+        assert caplog.text.count("not a valid directory") == 2
+
+    def test_walks_the_shipped_tree_before_the_user_folder(self, main_model, tmp_path):
+        """
+        Order is load-bearing: the caller rejects the *second* file of a given
+        name, so walking shipped plugins first is what makes a user file lose a
+        collision rather than win it.
+        """
+        shipped = Path(tmp_path, "shipped")
+        user = Path(tmp_path, "user")
+        for folder in (shipped, user):
+            folder.mkdir()
+            Path(folder, "Clash.py").write_text("", encoding="utf-8")
+
+        main_model.plugin_path = shipped
+        main_model.app_config["User Plugin Folder"] = str(user)
+
+        found = list(main_model._plugin_files())
+
+        assert [str(folder) for folder, _ in found] == [str(shipped), str(user)]
+        assert {name for _, name in found} == {"Clash.py"}
