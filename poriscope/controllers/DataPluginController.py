@@ -76,7 +76,15 @@ class DataPluginController(QObject):
 
     def edit_plugin(self, metaclass: str, key: str, settings: dict) -> None:
         """
-        Edit and apply settings for an existing plugin
+        Edit and apply settings for an existing plugin.
+
+        The shape of the edit is: show the dialog, then take one of three routes -
+        delete, cancel, or apply - where applying may also rename. Every route
+        past the dialog has already unregistered the plugin from its parents, so
+        each one either completes or calls `_report_and_restore` to put them back.
+
+        The helpers return False to mean "give up, the user has been told", which
+        keeps the decision to stop here rather than scattered through them.
 
         :param metaclass: The metaclass of the plugin.
         :type metaclass: str
@@ -84,11 +92,7 @@ class DataPluginController(QObject):
         :type key: str
         :param settings: The plugin's current settings dict, used to populate the edit dialog.
         :type settings: dict
-        :raises RuntimeError: if a registered dependent has no live plugin
-            instance. Caught by the per-dependent handler in this method and
-            reported to the user; it never propagates to the caller.
         """
-
         app_settings = copy.deepcopy(settings)
         instance = self.model.get_plugin_instance(metaclass, key)
         if instance is None:
@@ -97,14 +101,7 @@ class DataPluginController(QObject):
             )
             return
 
-        for settings_key in app_settings:
-            if settings_key in self.model.get_available_metaclasses():
-                app_settings[settings_key]["Type"] = str
-                app_settings[settings_key][
-                    "Options"
-                ] = self.model.get_instantiated_plugins_list()[settings_key]
-
-        history: Dict[str, Any] = {}
+        self._coerce_plugin_references_to_keys(app_settings)
 
         new_settings, new_key, delete_requested = self.view.get_user_settings(
             app_settings,
@@ -121,140 +118,343 @@ class DataPluginController(QObject):
 
         if delete_requested:
             self._unregister_parent_dependent_links(metaclass, key, parents)
-            if not dependents:
-                self.model.unregister_plugin(metaclass, key)
-                self.update_available_plugins.emit(
-                    metaclass, self.model.get_instantiated_plugins_list()[metaclass]
-                )
-                self.update_plugin_history.emit(history, key)
-            else:
-                dependent_keys = [dependent[1] for dependent in dependents]
-                self._report_and_restore(
-                    self.logger.info,
-                    f"Unable to delete {key} since it has dependents {dependent_keys}",
-                    metaclass,
-                    instance.get_key(),
-                    parents,
-                )
-        elif new_settings is None or new_key is None:
+            self._complete_requested_deletion(
+                metaclass, key, instance, parents, dependents
+            )
+            return
+
+        if new_settings is None or new_key is None:
             # cancelled, or dismissed with Esc or the window close button, both
             # of which reach QDialog.reject() without running a button handler
             return
-        else:
-            self._unregister_parent_dependent_links(metaclass, key, parents)
-            old_key = instance.get_key()
-            settings, key = new_settings, new_key
 
-            # Global plugin key collision check
-            if key != old_key:
-                for meta, keys in self.model.get_instantiated_plugins_list().items():
-                    if key in keys:
-                        self._report_and_restore(
-                            self.logger.warning,
-                            f"Cannot rename plugin to '{key}' because it already exists under metaclass '{meta}'.",
-                            metaclass,
-                            instance.get_key(),
-                            parents,
-                            display_message=f"Plugin name '{key}' already exists under metaclass '{meta}'. Please choose a different name.",
-                        )
-                        return
+        self._unregister_parent_dependent_links(metaclass, key, parents)
+        old_key = instance.get_key()
+        settings, key = new_settings, new_key
 
-                for dmetaclass, dkey in dependents:
-                    try:
-                        dinstance = self.model.get_plugin_instance(dmetaclass, dkey)
-                        if dinstance is None:
-                            raise RuntimeError(
-                                f"No plugin instance found for {dmetaclass}:{dkey}"
-                            )
-                        dinstance.unregister_parent(metaclass, old_key)
-                        dinstance.register_parent(metaclass, key)
-                        dhistory: Dict[str, Any] = {}
-                        dhistory["key"] = dinstance.get_key()
-                        dhistory["metaclass"] = dmetaclass
-                        dhistory["subclass"] = dinstance.__class__.__name__
-                        # Update the dependent itself first, then snapshot it into
-                        # history. get_raw_settings() returns a copy, so writing
-                        # through what it hands back would update history while
-                        # leaving the plugin's own Value and Options untouched.
-                        dinstance.update_raw_settings(metaclass, key)
-                        dinstance.replace_raw_settings_option(metaclass, old_key, key)
-                        dhistory["settings"] = dinstance.get_raw_settings()
-                        self.update_plugin_history.emit(dhistory, "")
-                    except Exception as e:
-                        self.logger.error(
-                            f"Unable to update dependent {dkey} of type {dmetaclass} after renaming {old_key} to {key}: {str(e)}"
-                        )
-                        self.add_text_to_display.emit(
-                            f"Unable to update dependent {dkey} of type {dmetaclass} after renaming {old_key} to {key}: {str(e)}",
-                            self.__class__.__name__,
-                        )
-                try:
-                    instance.set_key(key)
-                except Exception as e:
-                    self._report_and_restore(
-                        self.logger.exception,
-                        f"Unable to edit plugin {key} of type {metaclass} : {str(e)}",
-                        metaclass,
-                        instance.get_key(),
-                        parents,
+        if key != old_key:
+            if not self._rename_plugin(
+                metaclass, key, old_key, instance, parents, dependents, settings
+            ):
+                return
+
+        if not self._resolve_plugin_references(
+            app_settings, metaclass, key, instance, parents
+        ):
+            return
+
+        self._apply_edited_settings(
+            app_settings, metaclass, key, instance, parents, settings
+        )
+
+    @log(logger=logger)
+    def _coerce_plugin_references_to_keys(self, app_settings: dict) -> None:
+        """
+        Turn each plugin-typed setting into a name the dialog can offer as a choice.
+
+        A setting whose key is a metaclass holds a live plugin object, which no
+        dialog can render. Retyping it as `str` and listing the instantiated keys
+        as `Options` is what makes it a dropdown; `_resolve_plugin_references`
+        turns the chosen name back into the object afterwards.
+
+        Mutates `app_settings` in place, which is why the caller deep-copies the
+        user's settings before handing them over.
+
+        :param app_settings: The working copy of the plugin's settings.
+        :type app_settings: dict
+        """
+        for settings_key in app_settings:
+            if settings_key in self.model.get_available_metaclasses():
+                app_settings[settings_key]["Type"] = str
+                app_settings[settings_key][
+                    "Options"
+                ] = self.model.get_instantiated_plugins_list()[settings_key]
+
+    @log(logger=logger)
+    def _complete_requested_deletion(
+        self,
+        metaclass: str,
+        key: str,
+        instance: Any,
+        parents: Set[Tuple[str, str]],
+        dependents: Set[Tuple[str, str]],
+    ) -> None:
+        """
+        Delete the plugin the user asked to remove, unless something still depends on it.
+
+        A plugin with dependents cannot go: they would be left pointing at
+        nothing. That is the user's to resolve, so it is reported rather than
+        forced, and the parent links this edit already undid are put back.
+
+        The history entry emitted on success is deliberately empty - the second
+        argument is the key being removed, and an empty dict is what records a
+        deletion rather than an edit.
+
+        :param metaclass: The metaclass of the plugin.
+        :type metaclass: str
+        :param key: The key of the plugin being deleted.
+        :type key: str
+        :param instance: The live plugin instance.
+        :type instance: Any
+        :param parents: The (metaclass, key) pairs of the plugin's parents.
+        :type parents: Set[Tuple[str, str]]
+        :param dependents: The (metaclass, key) pairs that depend on this plugin.
+        :type dependents: Set[Tuple[str, str]]
+        """
+        if not dependents:
+            self.model.unregister_plugin(metaclass, key)
+            self.update_available_plugins.emit(
+                metaclass, self.model.get_instantiated_plugins_list()[metaclass]
+            )
+            self.update_plugin_history.emit({}, key)
+            return
+
+        dependent_keys = [dependent[1] for dependent in dependents]
+        self._report_and_restore(
+            self.logger.info,
+            f"Unable to delete {key} since it has dependents {dependent_keys}",
+            metaclass,
+            instance.get_key(),
+            parents,
+        )
+
+    @log(logger=logger)
+    def _rename_plugin(
+        self,
+        metaclass: str,
+        key: str,
+        old_key: str,
+        instance: Any,
+        parents: Set[Tuple[str, str]],
+        dependents: Set[Tuple[str, str]],
+        settings: dict,
+    ) -> bool:
+        """
+        Give the plugin its new key, refusing a name that is already taken.
+
+        Plugin names are unique across *every* metaclass, not just within one, so
+        the collision check walks the whole instantiated list.
+
+        :param metaclass: The metaclass of the plugin.
+        :type metaclass: str
+        :param key: The new key requested by the user.
+        :type key: str
+        :param old_key: The key the plugin had before this edit.
+        :type old_key: str
+        :param instance: The live plugin instance.
+        :type instance: Any
+        :param parents: The (metaclass, key) pairs of the plugin's parents.
+        :type parents: Set[Tuple[str, str]]
+        :param dependents: The (metaclass, key) pairs that depend on this plugin.
+        :type dependents: Set[Tuple[str, str]]
+        :param settings: The settings to record against the renamed plugin.
+        :type settings: dict
+        :return: True if the rename completed, False if the caller should give up.
+        :rtype: bool
+        """
+        for meta, keys in self.model.get_instantiated_plugins_list().items():
+            if key in keys:
+                self._report_and_restore(
+                    self.logger.warning,
+                    f"Cannot rename plugin to '{key}' because it already exists under metaclass '{meta}'.",
+                    metaclass,
+                    instance.get_key(),
+                    parents,
+                    display_message=f"Plugin name '{key}' already exists under metaclass '{meta}'. Please choose a different name.",
+                )
+                return False
+
+        self._update_dependents_after_rename(metaclass, old_key, key, dependents)
+
+        try:
+            instance.set_key(key)
+        except Exception as e:
+            self._report_and_restore(
+                self.logger.exception,
+                f"Unable to edit plugin {key} of type {metaclass} : {str(e)}",
+                metaclass,
+                instance.get_key(),
+                parents,
+            )
+            return False
+
+        self.model.update_plugin_key(metaclass, key, old_key)
+        self.update_available_plugins.emit(
+            metaclass, self.model.get_instantiated_plugins_list()[metaclass]
+        )
+        self.add_text_to_display.emit(
+            instance.report_channel_status(channel=None, init=True), key
+        )
+        self.update_plugin_history.emit(
+            {
+                "key": key,
+                "metaclass": metaclass,
+                "subclass": instance.__class__.__name__,
+                "settings": settings,
+            },
+            old_key,
+        )
+        return True
+
+    @log(logger=logger)
+    def _update_dependents_after_rename(
+        self,
+        metaclass: str,
+        old_key: str,
+        key: str,
+        dependents: Set[Tuple[str, str]],
+    ) -> None:
+        """
+        Point every dependent at the plugin's new name, reporting any that cannot follow.
+
+        Each dependent is handled on its own, and a failure on one neither stops
+        the rest nor abandons the rename - the plugin is renamed either way, so
+        giving up halfway would leave more dependents stale, not fewer.
+
+        :param metaclass: The metaclass of the renamed plugin.
+        :type metaclass: str
+        :param old_key: The key the plugin had before this edit.
+        :type old_key: str
+        :param key: The plugin's new key.
+        :type key: str
+        :param dependents: The (metaclass, key) pairs that depend on this plugin.
+        :type dependents: Set[Tuple[str, str]]
+        :raises RuntimeError: if a registered dependent has no live plugin
+            instance. Caught by the per-dependent handler below and reported to
+            the user; it never propagates to the caller.
+        """
+        for dmetaclass, dkey in dependents:
+            try:
+                dinstance = self.model.get_plugin_instance(dmetaclass, dkey)
+                if dinstance is None:
+                    raise RuntimeError(
+                        f"No plugin instance found for {dmetaclass}:{dkey}"
                     )
-                    return
-
-                self.model.update_plugin_key(metaclass, key, old_key)
-                self.update_available_plugins.emit(
-                    metaclass, self.model.get_instantiated_plugins_list()[metaclass]
-                )
-
-                self.add_text_to_display.emit(
-                    instance.report_channel_status(channel=None, init=True), key
-                )
-                history["key"] = key
-                history["metaclass"] = metaclass
-                history["subclass"] = instance.__class__.__name__
-                history["settings"] = settings
-                self.update_plugin_history.emit(history, old_key)
-
-            # Resolve plugin string references to actual objects
-            try:
-                for settings_key, val in app_settings.items():
-                    if settings_key in self.model.get_available_metaclasses():
-                        app_settings[settings_key]["Value"] = (
-                            self.model.get_plugin_instance(settings_key, val["Value"])
-                        )
-                        app_settings[settings_key]["Type"] = None
-                        app_settings[settings_key]["Options"] = None
+                dinstance.unregister_parent(metaclass, old_key)
+                dinstance.register_parent(metaclass, key)
+                dhistory: Dict[str, Any] = {}
+                dhistory["key"] = dinstance.get_key()
+                dhistory["metaclass"] = dmetaclass
+                dhistory["subclass"] = dinstance.__class__.__name__
+                # Update the dependent itself first, then snapshot it into
+                # history. get_raw_settings() returns a copy, so writing
+                # through what it hands back would update history while
+                # leaving the plugin's own Value and Options untouched.
+                dinstance.update_raw_settings(metaclass, key)
+                dinstance.replace_raw_settings_option(metaclass, old_key, key)
+                dhistory["settings"] = dinstance.get_raw_settings()
+                self.update_plugin_history.emit(dhistory, "")
             except Exception as e:
-                self._report_and_restore(
-                    self.logger.exception,
-                    f"Unable to resolve plugin references for {key} of type {metaclass} : {str(e)}",
-                    metaclass,
-                    instance.get_key(),
-                    parents,
+                self.logger.error(
+                    f"Unable to update dependent {dkey} of type {dmetaclass} after renaming {old_key} to {key}: {str(e)}"
                 )
-                return
-
-            # apply the settings to the new plugin object
-            try:
-                instance.apply_settings(app_settings)
-            except Exception as e:
-                self._report_and_restore(
-                    self.logger.info,
-                    f"Unable to apply settings to plugin {key} of type {metaclass}.{instance.__class__.__name__}: {str(e)}",
-                    metaclass,
-                    instance.get_key(),
-                    parents,
-                )
-                return
-            else:
-                history["key"] = key
-                history["metaclass"] = metaclass
-                history["subclass"] = instance.__class__.__name__
-                history["settings"] = settings
-                self.update_plugin_history.emit(history, "")
                 self.add_text_to_display.emit(
-                    f"Settings updated successfully for {key}",
+                    f"Unable to update dependent {dkey} of type {dmetaclass} after renaming {old_key} to {key}: {str(e)}",
                     self.__class__.__name__,
                 )
+
+    @log(logger=logger)
+    def _resolve_plugin_references(
+        self,
+        app_settings: dict,
+        metaclass: str,
+        key: str,
+        instance: Any,
+        parents: Set[Tuple[str, str]],
+    ) -> bool:
+        """
+        Turn the plugin names chosen in the dialog back into live plugin objects.
+
+        The inverse of `_coerce_plugin_references_to_keys`: `Type` and `Options`
+        go back to None, because the plugin itself expects an object rather than
+        a rendered choice.
+
+        :param app_settings: The working copy of the plugin's settings.
+        :type app_settings: dict
+        :param metaclass: The metaclass of the plugin.
+        :type metaclass: str
+        :param key: The key of the plugin being edited.
+        :type key: str
+        :param instance: The live plugin instance.
+        :type instance: Any
+        :param parents: The (metaclass, key) pairs of the plugin's parents.
+        :type parents: Set[Tuple[str, str]]
+        :return: True if every reference resolved, False if the caller should give up.
+        :rtype: bool
+        """
+        try:
+            for settings_key, val in app_settings.items():
+                if settings_key in self.model.get_available_metaclasses():
+                    app_settings[settings_key]["Value"] = (
+                        self.model.get_plugin_instance(settings_key, val["Value"])
+                    )
+                    app_settings[settings_key]["Type"] = None
+                    app_settings[settings_key]["Options"] = None
+        except Exception as e:
+            self._report_and_restore(
+                self.logger.exception,
+                f"Unable to resolve plugin references for {key} of type {metaclass} : {str(e)}",
+                metaclass,
+                instance.get_key(),
+                parents,
+            )
+            return False
+        return True
+
+    @log(logger=logger)
+    def _apply_edited_settings(
+        self,
+        app_settings: dict,
+        metaclass: str,
+        key: str,
+        instance: Any,
+        parents: Set[Tuple[str, str]],
+        settings: dict,
+    ) -> None:
+        """
+        Hand the resolved settings to the plugin, which is what makes the edit real.
+
+        The last step, and the only one that touches the plugin's own state, so a
+        failure here is the one that most needs the parent links put back.
+
+        :param app_settings: The settings with plugin references resolved to objects.
+        :type app_settings: dict
+        :param metaclass: The metaclass of the plugin.
+        :type metaclass: str
+        :param key: The key of the plugin being edited.
+        :type key: str
+        :param instance: The live plugin instance.
+        :type instance: Any
+        :param parents: The (metaclass, key) pairs of the plugin's parents.
+        :type parents: Set[Tuple[str, str]]
+        :param settings: The raw settings to record in history, references unresolved.
+        :type settings: dict
+        """
+        try:
+            instance.apply_settings(app_settings)
+        except Exception as e:
+            self._report_and_restore(
+                self.logger.info,
+                f"Unable to apply settings to plugin {key} of type {metaclass}.{instance.__class__.__name__}: {str(e)}",
+                metaclass,
+                instance.get_key(),
+                parents,
+            )
+            return
+
+        self.update_plugin_history.emit(
+            {
+                "key": key,
+                "metaclass": metaclass,
+                "subclass": instance.__class__.__name__,
+                "settings": settings,
+            },
+            "",
+        )
+        self.add_text_to_display.emit(
+            f"Settings updated successfully for {key}",
+            self.__class__.__name__,
+        )
 
     @log(logger=logger)
     def _report_and_restore(

@@ -378,6 +378,35 @@ MOVED: Tuple[Tuple[str, str, str], ...] = (
         "_report_and_restore",
         "5c.2",
     ),
+    # Step 5c.3 - edit_plugin split along its seams, 195 -> 72 lines and complexity
+    # 20 -> 8. Every piece is listed: the method they came from was the only thing
+    # testing them, and it is no longer big enough to reach them all by accident.
+    (
+        "poriscope/controllers/DataPluginController.py",
+        "_coerce_plugin_references_to_keys",
+        "5c.3",
+    ),
+    (
+        "poriscope/controllers/DataPluginController.py",
+        "_complete_requested_deletion",
+        "5c.3",
+    ),
+    ("poriscope/controllers/DataPluginController.py", "_rename_plugin", "5c.3"),
+    (
+        "poriscope/controllers/DataPluginController.py",
+        "_update_dependents_after_rename",
+        "5c.3",
+    ),
+    (
+        "poriscope/controllers/DataPluginController.py",
+        "_resolve_plugin_references",
+        "5c.3",
+    ),
+    (
+        "poriscope/controllers/DataPluginController.py",
+        "_apply_edited_settings",
+        "5c.3",
+    ),
 )
 
 VIEW_FILES: Tuple[str, ...] = (

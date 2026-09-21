@@ -1,5 +1,7 @@
 ## Poriscope 2.0.0: in progress
 
+* Editing a data plugin is now built from six named steps rather than one 195-line method, so a failure part-way reports which step gave up; the dialog, the rename, the delete and every error message behave exactly as before
+
 * The five paths that abandon a plugin edit now share one implementation of reporting the problem and restoring the plugin's parent links, so a future abort cannot silently skip the restore; every message and its severity are unchanged
 
 * The application's first-run bootstrap - the app-data folders, `config.json` and its repair paths - is now covered by tests, having had none; no behaviour changed
