@@ -2461,11 +2461,38 @@ Each says what it moves *before* it starts (method rule 38).
     count is what splitting a method looks like. It now says the file gained functions and
     that the change still has to be banked, since only `_escape_warning` can tell a split
     from code leaving the measured scope. Two tests cover both directions.
-  - **5c.3 - split `edit_plugin`** along the seams the reading found: fetch-and-guard, coerce
-    plugin references to keys, the delete branch, the rename branch with its collision check
-    and dependent-history updates, resolve references back to instances, apply-or-roll-back.
-    *Check:* complexity 20 -> under the gate's threshold; the extracted helpers are named in
-    the refactor-coverage audit's MOVED table so each must stay pinned.
+  - **5c.3 - split `edit_plugin`. LANDED 2026-09-21.** Along the seams the reading found:
+    fetch-and-guard, coerce plugin references to keys, the delete branch, the rename branch
+    with its collision check and dependent-history updates, resolve references back to
+    instances, apply-or-roll-back.
+    *Check, met:* `edit_plugin` **20 -> 8**, off the gate; **181 -> 72 lines**; shell total
+    **121 -> 101** and functions over threshold **8 -> 7**. All six helpers are in the
+    refactor-coverage audit's MOVED table with direct tests, **83 -> 89 of 89 pinned**. The
+    49 existing tests passed **untouched**, the third 5c commit running with no test edited.
+
+    Each helper that can give up returns `bool`, so the decision to stop stays in
+    `edit_plugin` rather than scattering through six methods. Helper complexities are 3, 3,
+    4, 4, 4 and 2.
+
+    **The shared `history` dict is gone.** One mutable dict was threaded through the delete,
+    rename and apply branches; each fully overwrote all four of its keys, so nothing ever
+    crossed between them, and each helper now builds its own. Behaviour identical, one
+    footgun fewer.
+
+    **mypy caught what 4,250 tests could not.** The three helpers taking `dependents` were
+    annotated `List[Tuple[str, str]]`, but `BaseDataPlugin.get_dependents` returns a `Set`.
+    Every test passed a list and both iterate, so the suite was green over a wrong
+    signature; only the static gate saw it. Corrected in the three signatures and their
+    `:type:` lines.
+
+    **Manual Windows pass run 2026-09-21, clear** - required by standing ruling 3, and the
+    only coverage these dialogs get, since no automated test opens them. Covered: add a
+    reader; edit its settings and confirm the value sticks; cancel, and dismiss with Esc;
+    rename to a free name; **rename onto a name already taken, and confirm the plugin still
+    works afterwards**; rename a reader that a finder depends on; delete with no dependents;
+    **delete a reader while a finder depends on it, and confirm the reader still works**.
+    The last two of those are the rollback paths - a broken restore raises nothing and shows
+    up only later, as a plugin whose parent link has silently gone.
   - **5c.4 - split `validate_and_instantiate_plugin`.** Same treatment; its six
     report-then-return blocks want the reporting half of 5c.2's helper without the rollback.
 
