@@ -22,7 +22,7 @@ As soon as you subclass and instantiate a :ref:`MetaController`, the following h
 
 No need to manually handle cross-plugin communication — :ref:`MetaController` takes care of:
 
-- :ref:`GlobalSignal` and :ref:`DataPluginControllerSignal` relays for calling functions across plugin boundaries
+- ``call()`` for reaching a data plugin, and typed signals for asking the application to create, edit or delete one
 - Routing return values back to the appropriate function using ``ret_args``
 - Updating the main display with log messages via ``add_text_to_display``
 

@@ -1,78 +1,69 @@
-Which to use 
+Which to use
 ============
 
-.. note::
+This page used to compare the two signal buses with each other. Both were removed
+in 2.0.0, so the question has changed: it is no longer *which bus*, but **whether
+you are asking a question or announcing something**.
 
-   Both signals on this page are the *bus*, and an analysis tab reaching a data
-   plugin should use neither: call the plugin directly instead, as
-   :ref:`CallingAPlugin` describes. What follows compares the two bus handlers with
-   each other, for the machinery that still runs on them.
+The rule
+--------
 
 .. tabs::
 
-   .. tab:: Similarities
+   .. tab:: Asking a question
 
-      **Method Signature**: Both methods use the same function signature, taking parameters `metaclass`, `subclass_key`, `call_function`, `call_args`, `return_function`, and `ret_args`.
-
-      **Shared implementation**: Beyond resolving their target, both handlers run *the same code* — ``MainController._dispatch_to`` — so their guards, their argument rules, their return-value handling and their log messages are identical by construction and cannot drift apart. The two were previously copies of one another and had already diverged in their error handling.
-
-      **Error Handling**: The shared body checks that `call_function` exists and is callable, then checks that `call_args` will bind to its signature *before* calling it. A call that cannot bind is reported and never attempted; the target is called at most once; a `TypeError` raised inside the target is reported as such, with a traceback, rather than being mistaken for an argument mismatch.
-
-      **Return Function Execution**: Both execute a `return_function` with the result of `call_function` followed by `ret_args`. Whether the result is spread across the callback's parameters or passed as a single argument is decided by the target's declared return type — see the :ref:`GlobalSignal` API overview.
-
-   .. tab:: Differences
-
-      **Target Instance**
-
-      - **Global Signal**: The ``handle_global_signal`` method retrieves an instance of a plugin directly using ``self.data_plugin_controller.get_plugin_instance(metaclass, subclass_key)`` -> It interacts directly with plugin instances managed by ``DataPluginController``.
-      - **Data Plugin Controller Signal**: The ``handle_data_plugin_controller_signal`` method interacts with the ``DataPluginController`` itself, not with a specific plugin instance -> Actions relate to broader management tasks within the ``DataPluginController``.
-
-      **Functional Context**
-
-      - **Global Signal**: General-purpose, cross-plugin use
-        - Designed to facilitate general actions across the system that may involve various plugins and their functionalities -> Invokes specific functionalities of individual plugins.
-
-      - **DP Controller Signal**: Narrow scope, for administrative/config purposes.
-        - Handles tasks that involve the configuration or state management within the ``DataPluginController``, making it more about administrative or configurational control rather than direct plugin functionality.
-
-   .. tab:: Classes
-
-    **Same Implementation:**
-
-        - MetaController
-        - MetaModel
-        - MetaView
-        - MainController: both slots delegate to the same ``_dispatch_to``
-
-    **The only difference is what each slot resolves as the target**, after which they
-    hand off to identical code:
-
-    **handle_global_signal** — resolves a plugin instance:
+      **Call the plugin.** You want a value back — a sample rate, an event count,
+      a status, some data.
 
       .. code-block:: python
 
-         target_label = f"{metaclass}/{subclass_key}"
-         instance = self.data_plugin_controller.get_plugin_instance(metaclass, subclass_key)
-         if instance is None:
-             ...log and return...
-         self._dispatch_to(instance, target_label, call_function, call_args, return_function, ret_args)
+         n = self.model.call("MetaEventFinder", finder_key, "get_num_events_found", channel)
 
-    **handle_data_plugin_controller_signal** — the target *is* the controller:
+      The answer is the return value, on the same line. A failure raises here,
+      where you can see it. See :ref:`CallingAPlugin`.
+
+      ``call()`` is on both ``MetaController`` and ``MetaModel``, so either half
+      of a tab can use it. Which one follows the tab's own layering: commands
+      arrive at the Controller, computation belongs in the Model.
+
+   .. tab:: Announcing something
+
+      **Emit a signal.** Something happened and others may care, but you are not
+      waiting on an answer.
 
       .. code-block:: python
 
-         target_label = "DataPluginController"
-         self._dispatch_to(self.data_plugin_controller, target_label, call_function, call_args, return_function, ret_args)
+         self.add_text_to_display.emit(text, source)
+         self.update_tab_action_history.emit(actions, False)
 
-    Both wrap that in a guard that logs with a traceback and swallows, because the slots
-    are invoked from C++ and an exception must not escape into the Qt caller. In
-    ``handle_global_signal`` the resolution itself is inside the guard: looking up an
-    unregistered ``metaclass`` raises ``KeyError`` rather than returning ``None``.
+      Each is a plain typed Qt signal with a named purpose. Nobody hands you a
+      result, and nothing is read back afterwards.
 
-    ``target_label`` is what you will see naming the target in every log message on that
-    path — a plugin key for one, the literal ``DataPluginController`` for the other.
+   .. tab:: Managing a data plugin
 
-   .. tab:: Summary
+      **Emit one of the three typed plugin signals** — create, edit or delete.
+      These are announcements too; the application acts on them.
 
-      - ``handle_global_signal``: More versatile in its application, dealing with a range of functions across various plugin instances. It’s about leveraging specific functionalities provided by the plugins.
-      - ``handle_data_plugin_controller_signal``: More focused and narrow in scope, dealing strictly with functions that manage or configure the data plugins via the controller.
+      .. code-block:: python
+
+         self.create_plugin.emit(metaclass, subclass)
+         self.edit_plugin.emit(metaclass, key)
+         self.delete_plugin.emit(metaclass, key)
+
+      See :ref:`DataPluginControllerSignal`.
+
+Why the distinction matters
+---------------------------
+
+The removed bus blurred it. It used a *signal* — a fire-and-forget announcement —
+to ask a question, then needed a callback and an attribute to smuggle the answer
+back to the caller's next line. That is what made a failed request
+indistinguishable from a stale answer, and it caused real bugs.
+
+Keeping the two apart is the whole design:
+
+- a question has a return value and raises when it fails
+- an announcement has neither, and nobody waits on it
+
+If you find yourself emitting a signal and then reading something back, you want
+a call.

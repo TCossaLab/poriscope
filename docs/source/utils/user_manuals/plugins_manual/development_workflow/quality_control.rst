@@ -1271,8 +1271,10 @@ are built from, the app shell's own views and controllers, or the shared bases u
 ``poriscope/utils/``. The analysis-tab layer never grew a real Model, so its Views absorbed
 work a Model should do. Five rules describe the boundary the 2.0.0 refactor is putting back:
 
-1. **No View emits on the plugin bus.** A ``global_signal.emit`` inside a widget means a
-   cross-plugin call originates in the View.
+1. **No View emits on the plugin bus, and the bus does not come back.** The
+   ``global_signal`` bus was removed in 2.0.0, so this rule can no longer fire against
+   anything that exists. It is kept as a tripwire: reintroducing that signal in a View is
+   caught here permanently. See :ref:`GlobalSignal` if the name is unfamiliar.
 2. **No View imports a computation library to compute with** — ``numpy``, ``scipy``,
    ``sklearn``, ``hdbscan``, ``pandas``, ``fast_histogram`` or ``sqlite3``. An import used
    *only* to write a type is exempt: a method annotated ``Sequence[npt.NDArray[np.float64]]``

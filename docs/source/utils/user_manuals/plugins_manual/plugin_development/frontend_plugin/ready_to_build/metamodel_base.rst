@@ -30,7 +30,7 @@ You don’t have to manually manage threads or signals. ``MetaModel`` handles:
 
 Built-in signals allow your model to communicate with the view, controller, or even other plugins:
 
-- :ref:`GlobalSignal` and :ref:`DataPluginControllerSignal` for inter-plugin communication
+- ``call()`` for reaching a data plugin and using its answer directly
 - ``update_progressbar`` to visually track long computations
 - ``add_text_to_display`` to send log output or feedback to the interface
 
