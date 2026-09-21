@@ -2011,3 +2011,60 @@ def test_load_session_says_nothing_extra_when_every_entry_restored(
     messages = [c.args[0] for c in mock_main_view.add_text_to_display.call_args_list]
     assert "Loaded session from session.json." in messages, messages
     assert not any("could not be restored" in m for m in messages), messages
+
+
+# ------------- 5c.6: renaming a plugin in the session history -------------
+
+
+class TestRenamedHistory:
+    """Rebuilding the history with one entry renamed, in place."""
+
+    def test_keeps_the_renamed_entry_where_the_old_one_sat(
+        self,
+        mocker: MockerFixture,
+        mock_main_model: MagicMock,
+        mock_main_view: MagicMock,
+    ) -> None:
+        """
+        The reason this rebuilds rather than popping and reinserting.
+
+        A plugin's place in the history is its place in the session file and in
+        everything restored from it, so popping the old key and adding the new
+        one would move the renamed plugin to the end - a rename would silently
+        reorder the user's workspace.
+
+        :param mocker: Pytest-mock fixture.
+        :param mock_main_model: Mocked main model.
+        :param mock_main_view: Mocked main view.
+        """
+        mocker.patch("poriscope.controllers.main_controller.DataPluginController")
+        ctrl = MainController(mock_main_model, mock_main_view)
+        ctrl.plugin_history = {"first": {}, "middle": {}, "last": {}}
+
+        renamed = ctrl._renamed_history("middle", {"key": "renamed", "settings": {}})
+
+        assert list(renamed) == ["first", "renamed", "last"]
+        assert renamed["renamed"] == {"settings": {}}
+
+    def test_leaves_the_history_alone_when_the_key_is_not_there(
+        self,
+        mocker: MockerFixture,
+        mock_main_model: MagicMock,
+        mock_main_view: MagicMock,
+    ) -> None:
+        """
+        A rename away from a key that is gone drops the new entry rather than
+        appending it, which is the pre-existing behaviour and is what stops a
+        stale rename resurrecting a deleted plugin.
+
+        :param mocker: Pytest-mock fixture.
+        :param mock_main_model: Mocked main model.
+        :param mock_main_view: Mocked main view.
+        """
+        mocker.patch("poriscope.controllers.main_controller.DataPluginController")
+        ctrl = MainController(mock_main_model, mock_main_view)
+        ctrl.plugin_history = {"first": {}, "second": {}}
+
+        renamed = ctrl._renamed_history("gone", {"key": "renamed"})
+
+        assert list(renamed) == ["first", "second"]

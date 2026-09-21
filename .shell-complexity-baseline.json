@@ -10,9 +10,9 @@
     "total_complexity": 0
   },
   "poriscope/controllers/main_controller.py": {
-    "functions": 31,
-    "over_threshold": 1,
-    "total_complexity": 11
+    "functions": 32,
+    "over_threshold": 0,
+    "total_complexity": 0
   },
   "poriscope/main_app.py": {
     "functions": 8,
@@ -35,9 +35,9 @@
     "total_complexity": 0
   },
   "poriscope/views/main_view.py": {
-    "functions": 75,
-    "over_threshold": 2,
-    "total_complexity": 23
+    "functions": 78,
+    "over_threshold": 0,
+    "total_complexity": 0
   },
   "poriscope/views/settings_window.py": {
     "functions": 29,

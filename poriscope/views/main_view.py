@@ -27,7 +27,7 @@
 import logging
 import sys
 from datetime import datetime
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple
 
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
@@ -813,39 +813,58 @@ class MainView(QMainWindow, WalkthroughMixin):
         ``close_settings_page()`` first if Settings' page is among them, since
         its widget is a reusable singleton rather than something disposable.
 
-        Reindexing is not optional. ``self.pages`` caches each page's index into
-        the QStackedWidget, and the stack renumbers whatever follows a widget it
-        removes - so without rebuilding the map, every page after the first
-        removal would switch to the wrong widget. Indices are re-derived from the
-        stack itself, matching on the wrapper's objectName, rather than being
-        arithmetic guesses about what shifted.
-
         :param keep: Page names to leave in place.
         :type keep: Sequence[str]
         """
         keep_names = set(keep)
         doomed = {n for n in self.pages if n not in keep_names}
 
-        # Resolve every widget before removing any. removeWidget() renumbers the
-        # stack, so a cached index read after the first removal points at the
-        # wrong widget - which silently removes the wrong page rather than
-        # failing. Matching on the wrapper's objectName avoids indices entirely.
-        pages_to_remove = [
-            page
-            for page in (
-                self.stackedWidget.widget(i) for i in range(self.stackedWidget.count())
-            )
-            if page is not None and page.objectName() in doomed
-        ]
-
-        for page in pages_to_remove:
+        # Every widget is resolved before any is removed. removeWidget()
+        # renumbers the stack, so a cached index read after the first removal
+        # points at the wrong widget - which removes the wrong page silently
+        # rather than failing.
+        for page in self._pages_named(doomed):
             self.stackedWidget.removeWidget(page)
             page.deleteLater()
+
         for page_name in doomed:
             del self.pages[page_name]
             self.logger.debug(f"Removed page '{page_name}'")
 
-        # Re-derive the cached indices from the stack's current order.
+        self._reindex_pages()
+
+    def _pages_named(self, names: Set[str]) -> List[QWidget]:
+        """
+        Find the stacked widgets whose page names are in the given set.
+
+        Matching on the wrapper's ``objectName`` rather than on a cached index,
+        because indices are exactly what stops being trustworthy the moment a
+        widget is removed. Returns a list rather than a generator so the caller
+        holds every widget before it removes any.
+
+        :param names: The page names to find.
+        :type names: Set[str]
+        :return: The matching page wrappers, in stack order.
+        :rtype: List[QWidget]
+        """
+        found = []
+        for index in range(self.stackedWidget.count()):
+            page = self.stackedWidget.widget(index)
+            if page is not None and page.objectName() in names:
+                found.append(page)
+        return found
+
+    def _reindex_pages(self) -> None:
+        """
+        Re-derive every cached page index from the stack's current order.
+
+        Not optional after a removal. ``self.pages`` caches each page's index
+        into the QStackedWidget, and the stack renumbers whatever follows a
+        widget it removes - so without this, every page after the first removal
+        would switch to the wrong widget. The indices are read back off the
+        stack and matched by name, rather than being arithmetic guesses about
+        what shifted.
+        """
         for index in range(self.stackedWidget.count()):
             page = self.stackedWidget.widget(index)
             if page is not None and page.objectName() in self.pages:
@@ -900,28 +919,8 @@ class MainView(QMainWindow, WalkthroughMixin):
                 return
             else:
                 self.logger.info(f"Switching to expected milestone target: {page_name}")
-                # Clean up milestone overlay if it exists
-                try:
-                    if (
-                        hasattr(self._milestone_dialog, "overlay")
-                        and self._milestone_dialog.overlay
-                    ):
-                        self._milestone_dialog.overlay.close()
-                        self._milestone_dialog.overlay.deleteLater()
-                except Exception as e:
-                    self.logger.debug(f"Overlay cleanup error: {e}")
-
-                # Clean up milestone dialog itself
-                try:
-                    self._milestone_dialog.close()
-                    self._milestone_dialog.deleteLater()
-                except Exception as e:
-                    self.logger.debug(f"Milestone dialog cleanup error: {e}")
-
-                self._milestone_dialog = None
-
+                self._dismiss_milestone()
                 self._clear_analysis_proxy()
-
                 self._expected_next_view = None
 
                 # Delay walkthrough until after switch
@@ -937,6 +936,44 @@ class MainView(QMainWindow, WalkthroughMixin):
             self.logger.warning(
                 f"Attempted to switch to non-existent page: {page_name}"
             )
+
+    def _dismiss_milestone(self) -> None:
+        """
+        Tear down the milestone dialog and its overlay, whatever state they are in.
+
+        Both teardowns swallow their exception on purpose. This runs while the
+        user is navigating, and a half-destroyed overlay must not block the page
+        switch they asked for - failing here would leave them stuck on the page
+        the milestone was covering. The failures are logged at DEBUG rather than
+        WARNING because Qt objects being already gone is ordinary during
+        teardown, not a fault worth putting on the status panel.
+
+        Extracted from ``switch_to_page`` in 5c.6: it is the only part of that
+        method that acts rather than decides.
+        """
+        # The caller has already checked this, but the helper is the natural place
+        # to call when a milestone *might* be up, so it answers for itself rather
+        # than trusting its one current caller to keep checking.
+        if self._milestone_dialog is None:
+            return
+
+        try:
+            if (
+                hasattr(self._milestone_dialog, "overlay")
+                and self._milestone_dialog.overlay
+            ):
+                self._milestone_dialog.overlay.close()
+                self._milestone_dialog.overlay.deleteLater()
+        except Exception as e:
+            self.logger.debug(f"Overlay cleanup error: {e}")
+
+        try:
+            self._milestone_dialog.close()
+            self._milestone_dialog.deleteLater()
+        except Exception as e:
+            self.logger.debug(f"Milestone dialog cleanup error: {e}")
+
+        self._milestone_dialog = None
 
     @log(logger=logger)
     def sync_sidebar_highlight(self, page_name: str) -> None:
