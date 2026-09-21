@@ -2697,6 +2697,19 @@ touch `self`.
   answer at all. Same class of residual risk, categorically milder — worth doing, cheap, not
   a live defect. Closing all three is what lets the relay be deleted rather than leaving a
   second signal built on the same machinery behind.
+  **5e.1-5e.3 LANDED 2026-09-21.** The net is three integration tests written against
+  outcomes rather than signals, so they pass unchanged as the mechanism is replaced
+  beneath them - and they did, through both conversions. `generate_report` now calls the
+  plugin through `MetaModel.call` and emits its own `add_text_to_display`; the edit and
+  delete pair became typed signals matching `create_plugin`, which was already wired
+  straight to the `DataPluginController` singleton and made the other two the odd ones out
+  of a family of three.
+  **Manual Windows pass run 2026-09-21, clear:** a worker run to completion put its channel
+  status on the panel, and a plugin was edited and deleted from inside a tab. The failure
+  path was *not* manually tested and could not be - staging a plugin that raises is not a
+  sequence of clicks - so it is covered by two mutation-verified unit tests instead
+  (`tests/unit/models/test_meta_model_generate_report.py`), which is the standing answer
+  when a checklist item has no manual form.
   **The end state is that none of it is left — Kyle, 2026-09-19.** 5e is not a deprecation:
   when 2.0.0 ships there is to be **no global-signal machinery in the repository**, and the
   `data_plugin_controller_signal` cleanup is the same job rather than a separate one, because
