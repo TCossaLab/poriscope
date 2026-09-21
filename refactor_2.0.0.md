@@ -2748,6 +2748,12 @@ touch `self`.
   `understanding_signals` and the QA page's description of the tripwire.
   `sphinx-build -W` is green with no dangling references.
 
+  **Manual Windows pass run 2026-09-21, clear** for the deletion: every analysis tab
+  opened and populated, each ran its main operation to completion and put its channel
+  status on the panel, and plugins were added, edited and deleted from inside a tab. The
+  call sites were unchanged by 5e.4 but the relays beneath them were gone, so this
+  re-covered 5e.2 and 5e.3 over new wiring.
+
   **5e.5 LANDED 2026-09-21.** The `:ref:` labels `GlobalSignal` and
   `DataPluginControllerSignal` were kept alive on the rewritten landing pages, which is
   what let every existing cross-reference keep resolving and keeps the old names
