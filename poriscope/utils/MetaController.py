@@ -60,6 +60,8 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
     )  # name of tab subclass, OrderedDict of actions to take
     save_tab_action_history = Signal(object, str)  # dict of actions, save file name
     create_plugin = Signal(str, str)  # metaclass, subclass
+    edit_plugin = Signal(str, str)  # metaclass, key
+    delete_plugin = Signal(str, str)  # metaclass, key
     logger = logging.getLogger(__name__)
 
     def __init__(
@@ -102,6 +104,8 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
         self.view.export_plot_data.connect(self.export_plot_data)
         self.view.load_actions_from_json.connect(self.load_actions_from_json)
         self.view.create_plugin.connect(self._relay_create_plugin)
+        self.view.edit_plugin.connect(self._relay_edit_plugin)
+        self.view.delete_plugin.connect(self._relay_delete_plugin)
         self._setup_connections()
         self.tab_action_history: OrderedDict[int, dict[str, Any]] = OrderedDict()
 
@@ -128,6 +132,37 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
     @Slot(str, str)
     def _relay_create_plugin(self, metaclass: str, subclass: str) -> None:
         self.create_plugin.emit(metaclass, subclass)
+
+    @log(logger=logger)
+    @Slot(str, str)
+    def _relay_edit_plugin(self, metaclass: str, key: str) -> None:
+        """
+        Pass a tab's request to edit a plugin's settings up to the app shell.
+
+        One of three identically shaped relays - create, edit, delete - which is
+        why this is a plain typed signal rather than the string-dispatched bus
+        that used to carry it. The shell connects the far end straight to
+        `DataPluginController.edit_plugin_settings`, so mypy checks the pair.
+
+        :param metaclass: the plugin family, e.g. "MetaReader"
+        :type metaclass: str
+        :param key: the plugin to edit
+        :type key: str
+        """
+        self.edit_plugin.emit(metaclass, key)
+
+    @log(logger=logger)
+    @Slot(str, str)
+    def _relay_delete_plugin(self, metaclass: str, key: str) -> None:
+        """
+        Pass a tab's request to delete a plugin up to the app shell.
+
+        :param metaclass: the plugin family, e.g. "MetaReader"
+        :type metaclass: str
+        :param key: the plugin to delete
+        :type key: str
+        """
+        self.delete_plugin.emit(metaclass, key)
 
     @log(logger=logger)
     def update_plot_data(self, data: Optional[Any]) -> None:

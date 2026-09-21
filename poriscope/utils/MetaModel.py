@@ -322,17 +322,30 @@ class MetaModel(QObject, metaclass=QObjectABCMeta):
     @log(logger=logger)
     @Slot(int, str)
     def generate_report(self, channel: int, key: str) -> None:
+        """
+        Put one plugin's status for one channel onto the display panel.
+
+        Runs when a worker thread finishes, over a queued connection - so it is a
+        Qt slot, and **must not raise**. `call` reports failure by raising, which
+        is right at an ordinary call site and wrong here, where there is nothing
+        above to catch it. The old bus swallowed and logged instead, several hops
+        away; this keeps the swallow but puts it where the call is.
+
+        :param channel: the channel whose status to report
+        :type channel: int
+        :param key: the plugin to ask
+        :type key: str
+        """
         metaclass = self.reporter_metaclasses[key]
-        report_channel_status_args = (channel,)
-        ret_args = (key,)
-        self.global_signal.emit(
-            metaclass,
-            key,
-            "report_channel_status",
-            report_channel_status_args,
-            "relay_add_text_to_display",
-            ret_args,
-        )
+        try:
+            status = self.call(metaclass, key, "report_channel_status", channel)
+        except Exception as e:
+            self.logger.error(
+                f"Unable to report the status of {metaclass}/{key} "
+                f"channel {channel}: {e}"
+            )
+            return
+        self.add_text_to_display.emit(status, key)
 
     @log(logger=logger)
     def update_available_plugins(self, available_plugins: Dict[str, List[str]]) -> None:

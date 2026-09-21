@@ -85,6 +85,8 @@ class MetaView(QWidget, WalkthroughMixin, metaclass=QObjectABCMeta):
     kill_all_workers = Signal(str)
     cache_plot_data = Signal(list, list)
     create_plugin = Signal(str, str)  # metaclass, subclass
+    edit_plugin = Signal(str, str)  # metaclass, key
+    delete_plugin = Signal(str, str)  # metaclass, key
     logger = logging.getLogger(__name__)
     export_plot_data = Signal()
     run_generators = Signal(str)
@@ -433,17 +435,9 @@ class MetaView(QWidget, WalkthroughMixin, metaclass=QObjectABCMeta):
         :type key: str
         """
         self.logger.info(
-            f"RawDataView: Settings edit request emitted for metaclass: {metaclass}, plugin: {key}"
+            f"Settings edit request emitted for metaclass: {metaclass}, plugin: {key}"
         )
-        # Ensure call_args is prepared with metaclass and plugin_name
-        call_args = (
-            metaclass,
-            key,
-        )  # This is a tuple of the arguments expected by 'edit_plugin_settings'
-        # Emit the signal with correct arguments
-        self.data_plugin_controller_signal.emit(
-            metaclass, key, "edit_plugin_settings", call_args, "", ()
-        )
+        self.edit_plugin.emit(metaclass, key)
 
     @log(logger=logger)
     def handle_add_triggered(self, metaclass: str) -> None:
@@ -495,15 +489,7 @@ class MetaView(QWidget, WalkthroughMixin, metaclass=QObjectABCMeta):
         self.logger.info(
             f"Delete request emitted for metaclass: {metaclass}, plugin: {key}"
         )
-        # Ensure call_args is prepared with metaclass and plugin_name
-        call_args = (
-            metaclass,
-            key,
-        )  # This is a tuple of the arguments expected by 'edit_plugin_settings'
-        # Emit the signal with correct arguments
-        self.data_plugin_controller_signal.emit(
-            metaclass, key, "delete_plugin", call_args, "", ()
-        )
+        self.delete_plugin.emit(metaclass, key)
 
     @log(logger=logger)
     def remove_progress_bar(self, identifier: str) -> None:
