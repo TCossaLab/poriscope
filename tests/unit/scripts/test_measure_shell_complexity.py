@@ -472,6 +472,36 @@ class TestComparison:
         assert len(problems) == 1
         assert "--update" in problems[0]
 
+    def test_a_changed_function_count_is_not_called_a_regression(
+        self, mod: types.ModuleType
+    ) -> None:
+        """
+        Extracting a helper raises the count, and that is the point, not a fault.
+
+        5c.2 tripped this on the gate's first real use: pulling five repeated
+        blocks into one helper took ``DataPluginController`` from 16 functions to
+        17, and the gate called it "complexity was added". The count still has to
+        be banked - only ``_escape_warning`` can tell a split from code leaving
+        the measured scope - but the message must not read as a regression.
+        """
+        problems = mod.compare(
+            {"a.py": self.entry(functions=17)}, {"a.py": self.entry(functions=16)}
+        )
+        assert len(problems) == 1
+        assert "gained functions" in problems[0]
+        assert "--update" in problems[0]
+        assert "complexity was added" not in problems[0]
+
+    def test_a_falling_function_count_says_so_plainly(
+        self, mod: types.ModuleType
+    ) -> None:
+        """Losing a function is reported as what it is, not as a win to celebrate."""
+        problems = mod.compare(
+            {"a.py": self.entry(functions=15)}, {"a.py": self.entry(functions=16)}
+        )
+        assert len(problems) == 1
+        assert "lost functions" in problems[0]
+
     def test_a_new_file_is_reported(self, mod: types.ModuleType) -> None:
         """A measured file absent from the baseline means the baseline is stale."""
         problems = mod.compare({"a.py": self.entry()}, {})

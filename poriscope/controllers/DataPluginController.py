@@ -128,16 +128,13 @@ class DataPluginController(QObject):
                 )
                 self.update_plugin_history.emit(history, key)
             else:
-                self._restore_parent_dependent_links(
-                    metaclass, instance.get_key(), parents
-                )
                 dependent_keys = [dependent[1] for dependent in dependents]
-                self.logger.info(
-                    f"Unable to delete {key} since it has dependents {dependent_keys}"
-                )
-                self.add_text_to_display.emit(
+                self._report_and_restore(
+                    self.logger.info,
                     f"Unable to delete {key} since it has dependents {dependent_keys}",
-                    self.__class__.__name__,
+                    metaclass,
+                    instance.get_key(),
+                    parents,
                 )
         elif new_settings is None or new_key is None:
             # cancelled, or dismissed with Esc or the window close button, both
@@ -152,15 +149,13 @@ class DataPluginController(QObject):
             if key != old_key:
                 for meta, keys in self.model.get_instantiated_plugins_list().items():
                     if key in keys:
-                        self.logger.warning(
-                            f"Cannot rename plugin to '{key}' because it already exists under metaclass '{meta}'."
-                        )
-                        self.add_text_to_display.emit(
-                            f"Plugin name '{key}' already exists under metaclass '{meta}'. Please choose a different name.",
-                            "DataPluginController",
-                        )
-                        self._restore_parent_dependent_links(
-                            metaclass, instance.get_key(), parents
+                        self._report_and_restore(
+                            self.logger.warning,
+                            f"Cannot rename plugin to '{key}' because it already exists under metaclass '{meta}'.",
+                            metaclass,
+                            instance.get_key(),
+                            parents,
+                            display_message=f"Plugin name '{key}' already exists under metaclass '{meta}'. Please choose a different name.",
                         )
                         return
 
@@ -196,15 +191,12 @@ class DataPluginController(QObject):
                 try:
                     instance.set_key(key)
                 except Exception as e:
-                    self.logger.exception(
-                        f"Unable to edit plugin {key} of type {metaclass} : {str(e)}"
-                    )
-                    self.add_text_to_display.emit(
+                    self._report_and_restore(
+                        self.logger.exception,
                         f"Unable to edit plugin {key} of type {metaclass} : {str(e)}",
-                        self.__class__.__name__,
-                    )
-                    self._restore_parent_dependent_links(
-                        metaclass, instance.get_key(), parents
+                        metaclass,
+                        instance.get_key(),
+                        parents,
                     )
                     return
 
@@ -232,15 +224,12 @@ class DataPluginController(QObject):
                         app_settings[settings_key]["Type"] = None
                         app_settings[settings_key]["Options"] = None
             except Exception as e:
-                self.logger.exception(
-                    f"Unable to resolve plugin references for {key} of type {metaclass} : {str(e)}"
-                )
-                self.add_text_to_display.emit(
+                self._report_and_restore(
+                    self.logger.exception,
                     f"Unable to resolve plugin references for {key} of type {metaclass} : {str(e)}",
-                    self.__class__.__name__,
-                )
-                self._restore_parent_dependent_links(
-                    metaclass, instance.get_key(), parents
+                    metaclass,
+                    instance.get_key(),
+                    parents,
                 )
                 return
 
@@ -248,15 +237,12 @@ class DataPluginController(QObject):
             try:
                 instance.apply_settings(app_settings)
             except Exception as e:
-                self.logger.info(
-                    f"Unable to apply settings to plugin {key} of type {metaclass}.{instance.__class__.__name__}: {str(e)}"
-                )
-                self.add_text_to_display.emit(
+                self._report_and_restore(
+                    self.logger.info,
                     f"Unable to apply settings to plugin {key} of type {metaclass}.{instance.__class__.__name__}: {str(e)}",
-                    self.__class__.__name__,
-                )
-                self._restore_parent_dependent_links(
-                    metaclass, instance.get_key(), parents
+                    metaclass,
+                    instance.get_key(),
+                    parents,
                 )
                 return
             else:
@@ -269,6 +255,60 @@ class DataPluginController(QObject):
                     f"Settings updated successfully for {key}",
                     self.__class__.__name__,
                 )
+
+    @log(logger=logger)
+    def _report_and_restore(
+        self,
+        report: Callable[[str], None],
+        message: str,
+        metaclass: str,
+        key: str,
+        parents: Set[Tuple[str, str]],
+        display_message: Optional[str] = None,
+    ) -> None:
+        """
+        Report an abandoned edit and put back the parent links it already undid.
+
+        `edit_plugin` unregisters the plugin from its parents before it starts,
+        so every path that gives up afterwards has to restore them. There were
+        five such paths, each spelling out the same log, emit and restore by
+        hand, and one of them had no test at all - which is precisely how a
+        sixth abort gets added without the restore. Gathering them here is what
+        makes that impossible rather than merely unlikely.
+
+        The severity is passed in as the bound logger method rather than as a
+        level, because it varies and the distinction is meaningful: a rename
+        collision is the user's to correct and warns, a failure inside
+        `set_key` or reference resolution is a genuine fault and wants
+        `logger.exception`'s traceback, and being unable to delete a plugin that
+        still has dependents is routine and merely informs. Passing the method
+        keeps `exception` meaning exactly what it means everywhere else.
+
+        Control flow stays at the call site. This always returns normally, so
+        the caller's own `return` is still what ends the edit - which is why the
+        one caller that must *not* stop, the blocked delete, simply does not
+        write one.
+
+        :param report: the logger method to report through, which carries the severity
+        :type report: Callable[[str], None]
+        :param message: what to write to the log
+        :type message: str
+        :param metaclass: the metaclass of the plugin whose links are restored
+        :type metaclass: str
+        :param key: the key of the plugin whose links are restored
+        :type key: str
+        :param parents: the (metaclass, key) pairs of the plugin's parents
+        :type parents: Set[Tuple[str, str]]
+        :param display_message: what to show on the status panel, when it should
+            differ from the logged message
+        :type display_message: Optional[str]
+        """
+        report(message)
+        self.add_text_to_display.emit(
+            message if display_message is None else display_message,
+            self.__class__.__name__,
+        )
+        self._restore_parent_dependent_links(metaclass, key, parents)
 
     @log(logger=logger)
     def _unregister_parent_dependent_links(

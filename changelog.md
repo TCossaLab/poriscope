@@ -1,5 +1,7 @@
 ## Poriscope 2.0.0: in progress
 
+* The five paths that abandon a plugin edit now share one implementation of reporting the problem and restoring the plugin's parent links, so a future abort cannot silently skip the restore; every message and its severity are unchanged
+
 * The application's first-run bootstrap - the app-data folders, `config.json` and its repair paths - is now covered by tests, having had none; no behaviour changed
 
 * The app shell - the two controllers, the two models, `main_view.py`, `settings_window.py` and `main_app.py` - is now held by a cyclomatic-complexity ratchet (`scripts/measure_shell_complexity.py`), which no other gate measured, so restructuring it can neither add complexity nor leave a reduction unrecorded

@@ -395,6 +395,17 @@ def compare(
                 continue
             if was is None or now is None:
                 problems.append(f"{name}.{key}: baseline {was!r}, measured {now!r}")
+            elif key == "functions":
+                # A changing function count is not itself good or bad: extracting a
+                # helper raises it and that is the point, deleting dead code lowers
+                # it. Only `_escape_warning` below can tell the dangerous case apart,
+                # so say plainly what moved rather than calling it a regression.
+                direction = "gained" if now > was else "lost"
+                problems.append(
+                    f"{name}.{key}: {was} -> {now}, the file {direction} functions - "
+                    f"expected when a method is split or removed; rerun with --update "
+                    f"in the same commit to record it"
+                )
             elif now > was:
                 problems.append(
                     f"{name}.{key}: rose from {was} to {now} - complexity was added"

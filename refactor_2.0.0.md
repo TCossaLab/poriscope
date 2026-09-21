@@ -2431,11 +2431,36 @@ Each says what it moves *before* it starts (method rule 38).
     only matters when the load succeeds and a later statement fails, so a config holding
     valid JSON that is not an object (`[1, 2, 3]`) was added: the backfill then fails
     subscripting a list by name, and only the handler's reassignment recovers.
-  - **5c.2 - `_report_and_restore` on `DataPluginController`.** The five report-then-rollback
-    blocks in `edit_plugin` become one call each, exactly as `_reject_event` did for
-    `fit_events`, with the control flow left at the call site.
-    *Check:* `edit_plugin` complexity falls; total falls; no behaviour change, so the
-    characterization tests from 5c.1 pass untouched.
+  - **5c.2 - `_report_and_restore` on `DataPluginController`. LANDED 2026-09-21.** The five
+    report-then-rollback blocks in `edit_plugin` become one call each, exactly as
+    `_reject_event` did for `fit_events`, with the control flow left at the call site.
+    *Check, partly met:* no behaviour change - all 45 of 5c.1's tests passed **untouched**,
+    including every severity assertion. Refactor-coverage audit 82 -> **83 of 83 pinned**.
+
+    **The complexity half of the stated check was wrong and cannot be met by this step.**
+    `edit_plugin` reads **20 before and 20 after**, and the shell total stays **121**; what
+    moved is length, 195 -> 181 lines, and `DataPluginController` 16 -> 17 functions. The
+    five extracted blocks are straight-line code - no `if`, `for` or `except` among them -
+    so lifting them removes lines, not decision points, and the `except` handlers stay at
+    the call sites because the plan requires the control flow to. Cyclomatic complexity was
+    never going to move here; **5c.3 is where it falls**, since splitting along the seams
+    moves branches out. Rule 82 from the same angle as 5c.0: the step is right, its stated
+    check measured the wrong thing. The step still earns its place - five copies became one
+    definition, so a sixth abort path cannot omit the rollback, which is exactly the hole
+    5c.1 found unpinned.
+
+    **Severity travels as the bound logger method**, not as a level plus `exc_info`, so
+    `logger.exception` keeps its ordinary meaning at the call site and the two error paths
+    keep their traceback. That every existing severity assertion stayed valid untouched is
+    the evidence the behaviour is preserved rather than the tests reshaped. Site 2's emit
+    source was the literal `"DataPluginController"` where the other four used
+    `self.__class__.__name__`; unified, and safe because the class has no subclasses.
+
+    **The gate's own failure message was wrong on first real use** and was fixed here: it
+    reported `functions: rose from 16 to 17 - complexity was added`, but a rising function
+    count is what splitting a method looks like. It now says the file gained functions and
+    that the change still has to be banked, since only `_escape_warning` can tell a split
+    from code leaving the measured scope. Two tests cover both directions.
   - **5c.3 - split `edit_plugin`** along the seams the reading found: fetch-and-guard, coerce
     plugin references to keys, the delete branch, the rename branch with its collision check
     and dependent-history updates, resolve references back to instances, apply-or-roll-back.
@@ -2443,6 +2468,24 @@ Each says what it moves *before* it starts (method rule 38).
     the refactor-coverage audit's MOVED table so each must stay pinned.
   - **5c.4 - split `validate_and_instantiate_plugin`.** Same treatment; its six
     report-then-return blocks want the reporting half of 5c.2's helper without the rollback.
+
+    **Three reporting defects land here too, added 2026-09-21** (Kyle's ruling: fold them
+    into 5c.4 rather than edit this function twice). Found by loading a session written by
+    an older Poriscope, which named three plugin classes this version does not have -
+    `ABF2Reader`, `BinaryWriter`, `BinaryEventLoader`. Ten errors, of which **nine were
+    three root causes cascading** through the dependents whose parents had failed.
+    - `DataPluginModel.get_temp_instance` is a bare `self.available_plugins[mc][sc]()`, so a
+      missing class raises `KeyError` and the handler prints `str(e)` - which for a
+      `KeyError` is just the quoted key. The user sees
+      `...MetaReader.ABF2Reader: 'ABF2Reader'`, which reads as an internal fault rather
+      than "that plugin is not installed, it may have been renamed or removed".
+    - Nothing separates a root failure from its consequences, so the reader cannot tell
+      which three of the ten messages to act on.
+    - `main_controller.py:937` announces `Loaded session from {file}.` unconditionally.
+      `validate_and_instantiate_plugin` reports internally and returns `None`, so the
+      restore loop's `except` never fires and the summary claims success after ten
+      failures. Against the standing rule that a genuine failure must reach the user as
+      one.
   - **5c.5 - `create_appdata_folders`,** which the artifact records as repeating the same
     block per folder.
   - **5c.6 - `populate_available_plugins`,** and a ruling on the remaining four:

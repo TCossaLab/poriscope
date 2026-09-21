@@ -366,6 +366,18 @@ MOVED: Tuple[Tuple[str, str, str], ...] = (
     ("poriscope/utils/MetaModel.py", "time_bases", "4c"),
     # Step 4e - file I/O to the Model, dialog selection left in the View
     ("poriscope/plugins/analysistabs/MetadataView.py", "_export_csv_subset", "4e"),
+    # Step 5c.2 - the five report-then-rollback blocks in edit_plugin became one
+    # helper. It is the first 5c target here, and it earns the entry on the usual
+    # grounds: the restore it performs is the thing an abandoned edit must not skip,
+    # and four of the five call sites are error paths that only a deliberate test
+    # reaches. Listed so it stays *targeted* and not merely executed through
+    # edit_plugin, which is the distinction that let _logscale_and_filter_multiple_columns
+    # look covered while nothing asserted its behaviour.
+    (
+        "poriscope/controllers/DataPluginController.py",
+        "_report_and_restore",
+        "5c.2",
+    ),
 )
 
 VIEW_FILES: Tuple[str, ...] = (

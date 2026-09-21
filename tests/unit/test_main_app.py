@@ -130,7 +130,9 @@ class TestTheFirstRun:
         stub = _run(app_root)
 
         written = json.loads(_config_path(app_root).read_text(encoding="utf-8"))
-        assert written == default_app_config(Path(app_root, "Poriscope", "user_plugins"))
+        assert written == default_app_config(
+            Path(app_root, "Poriscope", "user_plugins")
+        )
         assert stub.app_config == written
 
     def test_log_level_is_readable_by_subscript(self, app_root) -> None:
@@ -349,7 +351,9 @@ class TestAnUnwritableConfig:
         assert Path(app_root, "Poriscope", "logs").is_dir()
         assert str(Path(app_root, "Poriscope").resolve()) in sys.path
         stub.logger.warning.assert_called_once()
-        assert "Unable to write initial config file" in stub.logger.warning.call_args[0][0]
+        assert (
+            "Unable to write initial config file" in stub.logger.warning.call_args[0][0]
+        )
 
     def test_a_failed_backfill_write_still_repairs_memory(
         self, app_root, monkeypatch

@@ -1529,3 +1529,133 @@ def test_validate_and_instantiate_plugin_reports_when_no_key_was_supplied_or_cho
     )
     temp_instance.set_key.assert_not_called()
     mock_model.register_plugin.assert_not_called()
+
+
+# ------------- 5c.2: _report_and_restore ----------------------------------
+#
+# Driven directly, not only through edit_plugin. The refactor-coverage audit
+# names it in its MOVED table, and its criterion is both executed *and* targeted:
+# a method reached only in passing through a caller runs, but nothing asserts
+# what it did.
+
+
+class TestReportAndRestore:
+    """The one helper the five abandoned-edit paths now share."""
+
+    def test_reports_through_the_logger_method_it_is_given(
+        self,
+        mock_model: MagicMock,
+        mock_view: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        """
+        Severity travels as the bound method, so ``exception`` still means ``exception``.
+
+        Passing a level and rebuilding the call would have turned
+        ``logger.exception`` into ``logger.log(ERROR, ..., exc_info=True)`` and
+        lost the plain reading at every call site.
+
+        :param mock_model: Mocked data plugin model.
+        :param mock_view: Mocked data plugin view.
+        :param mocker: Pytest-mock fixture.
+        """
+        ctrl = _make_edit_plugin_controller(mock_model, mock_view, mocker)
+        mock_model.get_plugin_instance.return_value = None
+
+        ctrl._report_and_restore(
+            ctrl.logger.warning, "something to say", "MetaReader", "r1", set()
+        )
+
+        ctrl.logger.warning.assert_called_once_with("something to say")
+        ctrl.logger.info.assert_not_called()
+        ctrl.logger.exception.assert_not_called()
+
+    def test_shows_the_logged_message_on_the_panel_by_default(
+        self,
+        mock_model: MagicMock,
+        mock_view: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        """
+        Four of the five call sites log and display the same text, so that is the default.
+
+        :param mock_model: Mocked data plugin model.
+        :param mock_view: Mocked data plugin view.
+        :param mocker: Pytest-mock fixture.
+        """
+        ctrl = _make_edit_plugin_controller(mock_model, mock_view, mocker)
+        mock_model.get_plugin_instance.return_value = None
+
+        ctrl._report_and_restore(
+            ctrl.logger.info, "the same either way", "MetaReader", "r1", set()
+        )
+
+        ctrl.add_text_to_display.emit.assert_called_once_with(
+            "the same either way", "DataPluginController"
+        )
+
+    def test_shows_a_different_message_on_the_panel_when_given_one(
+        self,
+        mock_model: MagicMock,
+        mock_view: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        """
+        The rename collision is the fifth: the log states the fault, the panel says what to do.
+
+        :param mock_model: Mocked data plugin model.
+        :param mock_view: Mocked data plugin view.
+        :param mocker: Pytest-mock fixture.
+        """
+        ctrl = _make_edit_plugin_controller(mock_model, mock_view, mocker)
+        mock_model.get_plugin_instance.return_value = None
+
+        ctrl._report_and_restore(
+            ctrl.logger.warning,
+            "Cannot rename plugin to 'r2' because it already exists",
+            "MetaReader",
+            "r1",
+            set(),
+            display_message="Please choose a different name.",
+        )
+
+        ctrl.logger.warning.assert_called_once_with(
+            "Cannot rename plugin to 'r2' because it already exists"
+        )
+        ctrl.add_text_to_display.emit.assert_called_once_with(
+            "Please choose a different name.", "DataPluginController"
+        )
+
+    def test_re_registers_the_plugin_on_every_parent(
+        self,
+        mock_model: MagicMock,
+        mock_view: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        """
+        The restore is the whole reason the helper exists, so it is asserted directly.
+
+        ``edit_plugin`` unregisters the plugin from its parents before it starts;
+        an abandoned edit that does not put them back leaves a parent that no
+        longer knows about its child.
+
+        :param mock_model: Mocked data plugin model.
+        :param mock_view: Mocked data plugin view.
+        :param mocker: Pytest-mock fixture.
+        """
+        ctrl = _make_edit_plugin_controller(mock_model, mock_view, mocker)
+        first, second = mocker.Mock(), mocker.Mock()
+        mock_model.get_plugin_instance.side_effect = lambda mc, k: (
+            first if k == "w1" else second
+        )
+
+        ctrl._report_and_restore(
+            ctrl.logger.info,
+            "gave up",
+            "MetaReader",
+            "r1",
+            {("MetaWriter", "w1"), ("MetaLoader", "l1")},
+        )
+
+        first.register_dependent.assert_called_once_with("MetaReader", "r1")
+        second.register_dependent.assert_called_once_with("MetaReader", "r1")

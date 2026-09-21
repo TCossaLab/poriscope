@@ -1,6 +1,6 @@
 {
   "poriscope/controllers/DataPluginController.py": {
-    "functions": 16,
+    "functions": 17,
     "over_threshold": 2,
     "total_complexity": 40
   },
