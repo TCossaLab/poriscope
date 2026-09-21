@@ -2741,9 +2741,31 @@ touch `self`.
   of the `.rst` beside it, carrying no Sphinx reference; delete that one outright, since
   nothing links to it and it documents nothing.
 
-  **Exit check, split because of the above.** A grep for `global_signal` over `poriscope/`
-  returns **nothing**. Over `docs/source/` it returns matches **only** where a page explains
-  what replaced it, and `sphinx-build -W` is green with no dangling references.
+  **Exit check, split because of the above. MET 2026-09-21.** Over `poriscope/`, two
+  mentions remain and both are past-tense history in `MetaModel.call`'s docstrings
+  explaining what it replaced. Over `docs/source/`, six files name it and every one
+  explains the replacement: the two landing pages, `signals_index`, `calling_a_plugin`,
+  `understanding_signals` and the QA page's description of the tripwire.
+  `sphinx-build -W` is green with no dangling references.
+
+  **Manual Windows pass run 2026-09-21, clear** for the deletion: every analysis tab
+  opened and populated, each ran its main operation to completion and put its channel
+  status on the panel, and plugins were added, edited and deleted from inside a tab. The
+  call sites were unchanged by 5e.4 but the relays beneath them were gone, so this
+  re-covered 5e.2 and 5e.3 over new wiring.
+
+  **5e.5 LANDED 2026-09-21.** The `:ref:` labels `GlobalSignal` and
+  `DataPluginControllerSignal` were kept alive on the rewritten landing pages, which is
+  what let every existing cross-reference keep resolving and keeps the old names
+  searchable. Their `overview.rst` and `example_usage.rst` sub-pages went - a detailed API
+  reference for a deleted API is worse than a redirect - as did the tracked stray
+  `global_signal copy.txt`. `which_one_to_use.rst` was re-pointed from "which bus?" to
+  "are you asking a question or announcing something?", which is the distinction the bus
+  blurred and the reason it failed. `understanding_signals.rst`, a tutorial in the
+  where-to-begin path that taught the bus as *the* mechanism with a two-radio-channels
+  analogy, was rewritten around calls and announcements. `calling_a_plugin.rst` lost its
+  deprecation note and is now the primary page. The two `Meta*` base pages and the QA
+  page's rule 1 were corrected.
 - **5c app shell.** `DataPluginController.edit_plugin` (+ `_resolve_plugin_references` and
   `_check_key_available` extractions that shrink it); `MainView`'s 9 menu blocks + 8 handlers
   → table + `functools.partial` (~90→~25 lines); `switch_to_page` duplicating

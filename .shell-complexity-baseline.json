@@ -10,7 +10,7 @@
     "total_complexity": 0
   },
   "poriscope/controllers/main_controller.py": {
-    "functions": 32,
+    "functions": 26,
     "over_threshold": 0,
     "total_complexity": 0
   },

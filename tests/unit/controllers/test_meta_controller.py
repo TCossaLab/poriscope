@@ -4,7 +4,6 @@ Tests for poriscope.utils.MetaController.MetaController.
 Covers:
 - update_plot_data delegation
 - export_plot_data (data present, data absent, no filename given)
-- _connect_global_signal wiring
 - load_actions_from_json (success, file error, class name key present)
 - relay_add_text_to_display delegation
 - handle_kill_worker (valid identifier, invalid format, key missing, channel missing)
@@ -26,7 +25,6 @@ from collections import OrderedDict
 from unittest.mock import MagicMock, mock_open
 
 import pytest
-from PySide6.QtCore import Qt
 from pytest_mock import MockerFixture
 
 from poriscope.utils.MetaController import MetaController
@@ -234,39 +232,6 @@ def test_export_plot_data_does_not_save_when_no_filename(
     controller.export_plot_data()
 
     mock_df.to_csv.assert_not_called()
-
-
-# ------------------- _connect_global_signal --------------------------
-
-
-def test_connect_global_signal_wires_view_and_model_signals(
-    controller: MetaController,
-    mock_view: MagicMock,
-    mock_model: MagicMock,
-) -> None:
-    """
-    Wire global and data_plugin_controller signals from both view and model.
-
-    :param controller: Controller under test.
-    :param mock_view: Mocked meta view.
-    :param mock_model: Mocked meta model.
-    """
-    controller._connect_global_signal()
-
-    mock_view.global_signal.connect.assert_called_once_with(
-        controller._relay_global_signal, type=Qt.ConnectionType.DirectConnection
-    )
-    mock_model.global_signal.connect.assert_called_once_with(
-        controller._relay_global_signal, type=Qt.ConnectionType.DirectConnection
-    )
-    mock_view.data_plugin_controller_signal.connect.assert_called_once_with(
-        controller._relay_data_plugin_controller_signal,
-        type=Qt.ConnectionType.DirectConnection,
-    )
-    mock_model.data_plugin_controller_signal.connect.assert_called_once_with(
-        controller._relay_data_plugin_controller_signal,
-        type=Qt.ConnectionType.DirectConnection,
-    )
 
 
 # ------------------- load_actions_from_json --------------------------
@@ -502,156 +467,7 @@ def test_handle_kill_all_workers_does_nothing_when_subclass_does_not_match(
 # ------------------- _relay_global_signal ----------------------------
 
 
-def test_relay_global_signal_emits_with_valid_return_function(
-    controller: MetaController,
-) -> None:
-    """
-    Resolve the return function by name and emit the global signal.
-
-    :param controller: Controller under test.
-    """
-    controller.ignore = MagicMock()  # type: ignore[method-assign]
-
-    controller._relay_global_signal(
-        "MetaReader", "key1", "my_func", ("arg",), "ignore", ("ret",)
-    )
-
-    controller.global_signal.emit.assert_called_once_with(
-        "MetaReader", "key1", "my_func", ("arg",), controller.ignore, ("ret",)
-    )
-
-
-def test_relay_global_signal_logs_warning_when_return_function_missing(
-    controller: MetaController,
-) -> None:
-    """
-    Log a warning and return early when the return function name is not an attribute.
-
-    :param controller: Controller under test.
-    """
-    controller._relay_global_signal(
-        "MetaReader", "key1", "my_func", (), "nonexistent_fn", ()
-    )
-
-    controller.logger.warning.assert_called()  # type: ignore[attr-defined]
-    controller.global_signal.emit.assert_not_called()
-
-
-def test_relay_global_signal_emits_with_none_return_function(
-    controller: MetaController,
-) -> None:
-    """
-    Emit the global signal with None as the return function when name is empty.
-
-    :param controller: Controller under test.
-    """
-    controller._relay_global_signal("MetaReader", "key1", "my_func", (), "", ())
-
-    controller.global_signal.emit.assert_called_once()
-    _, _, _, _, return_fn, _ = controller.global_signal.emit.call_args[0]
-    assert return_fn is None
-
-
-def test_relay_global_signal_logs_exception_on_emit_failure(
-    controller: MetaController,
-    mocker: MockerFixture,
-) -> None:
-    """
-    Log the failure with a traceback when the global_signal emit raises an exception.
-
-    This used to be reported at warning level as "<callback> is not a callable attribute",
-    naming a callback that had already resolved successfully two lines above and
-    discarding the stack of whatever actually failed inside emit.
-
-    :param controller: Controller under test.
-    :param mocker: Pytest-mock fixture.
-    """
-    controller.global_signal.emit.side_effect = RuntimeError("emit failed")
-    controller.ignore = MagicMock()  # type: ignore[method-assign]
-
-    controller._relay_global_signal("MetaReader", "key1", "my_func", (), "ignore", ())
-
-    controller.logger.exception.assert_called()  # type: ignore[attr-defined]
-
-
 # ----------- _relay_data_plugin_controller_signal --------------------
-
-
-def test_relay_data_plugin_controller_signal_emits_with_valid_return_function(
-    controller: MetaController,
-) -> None:
-    """
-    Resolve the return function by name and emit the data plugin controller signal.
-
-    :param controller: Controller under test.
-    """
-    controller.ignore = MagicMock()  # type: ignore[method-assign]
-
-    controller._relay_data_plugin_controller_signal(
-        "MetaReader", "key1", "my_func", ("arg",), "ignore", ("ret",)
-    )
-
-    controller.data_plugin_controller_signal.emit.assert_called_once_with(
-        "MetaReader", "key1", "my_func", ("arg",), controller.ignore, ("ret",)
-    )
-
-
-def test_relay_data_plugin_controller_signal_logs_warning_when_return_function_missing(
-    controller: MetaController,
-) -> None:
-    """
-    Log a warning and return early when the return function name is not an attribute.
-
-    :param controller: Controller under test.
-    """
-    controller._relay_data_plugin_controller_signal(
-        "MetaReader", "key1", "my_func", (), "nonexistent_fn", ()
-    )
-
-    controller.logger.warning.assert_called()  # type: ignore[attr-defined]
-    controller.data_plugin_controller_signal.emit.assert_not_called()
-
-
-def test_relay_data_plugin_controller_signal_emits_with_none_return_function(
-    controller: MetaController,
-) -> None:
-    """
-    Emit the data plugin controller signal with None when the return function name is empty.
-
-    :param controller: Controller under test.
-    """
-    controller._relay_data_plugin_controller_signal(
-        "MetaReader", "key1", "my_func", (), "", ()
-    )
-
-    controller.data_plugin_controller_signal.emit.assert_called_once()
-    _, _, _, _, return_fn, _ = controller.data_plugin_controller_signal.emit.call_args[
-        0
-    ]
-    assert return_fn is None
-
-
-def test_relay_data_plugin_controller_signal_logs_exception_on_emit_failure(
-    controller: MetaController,
-    mocker: MockerFixture,
-) -> None:
-    """
-    Log the failure with a traceback when the data_plugin_controller_signal emit raises.
-
-    Matches the global_signal relay: both report an emit failure the same way rather than
-    blaming the already-resolved callback.
-
-    :param controller: Controller under test.
-    :param mocker: Pytest-mock fixture.
-    """
-    controller.data_plugin_controller_signal.emit.side_effect = RuntimeError("fail")
-    controller.ignore = MagicMock()  # type: ignore[method-assign]
-
-    controller._relay_data_plugin_controller_signal(
-        "MetaReader", "key1", "my_func", (), "ignore", ()
-    )
-
-    controller.logger.exception.assert_called()  # type: ignore[attr-defined]
 
 
 # ------------------- update_available_plugins ------------------------
@@ -939,14 +755,11 @@ def test_init_kwargs_are_set_as_instance_attributes(
     mock_model.run_generators = mocker.Mock()
     mock_model.update_progressbar = mocker.Mock()
 
-    with mocker.patch.object(
-        _ConcreteController, "_connect_global_signal", return_value=None
-    ):
-        ctrl = _ConcreteController(
-            available_subclasses=None,
-            my_custom_attr="hello",
-            another_attr=42,
-        )
+    ctrl = _ConcreteController(
+        available_subclasses=None,
+        my_custom_attr="hello",
+        another_attr=42,
+    )
 
     assert ctrl.my_custom_attr == "hello"
     assert ctrl.another_attr == 42

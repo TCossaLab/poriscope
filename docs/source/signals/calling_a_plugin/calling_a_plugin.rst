@@ -13,13 +13,10 @@ Controller or its Model:
 That is the whole plugin-facing API a tab gets. It resolves the instance, calls the
 method, and returns whatever the method returns. A failure raises where it happened.
 
-.. important::
+.. note::
 
-   **Do not use** :ref:`GlobalSignal` **for this in new code.** Since 2.0.0 no analysis
-   tab in Poriscope emits on that bus; every one of them calls its plugins directly.
-   The bus is still wired and still documented only because it has not been deleted
-   yet - 2.0.0 removes it - so a tab written against it today would be the only one,
-   and would stop working when it goes.
+   This replaced a signal bus, removed in 2.0.0. If you meet ``global_signal`` in an
+   old branch or an out-of-tree tab, :ref:`GlobalSignal` explains what it did.
 
 Where the call goes
 -------------------

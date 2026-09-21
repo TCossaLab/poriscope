@@ -31,7 +31,7 @@ from collections import OrderedDict
 from copy import deepcopy
 from typing import Any, Dict, Generator, List, Mapping, Optional
 
-from PySide6.QtCore import QObject, Qt, Signal, Slot
+from PySide6.QtCore import QObject, Signal, Slot
 
 from poriscope.utils.LogDecorator import log
 from poriscope.utils.QObjectABCMeta import QObjectABCMeta
@@ -42,17 +42,6 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
     Base controller class that manages exactly one MetaView and MetaModel instance
     """
 
-    global_signal = Signal(
-        str, str, str, tuple, object, tuple
-    )  # metaclass type, subclass key, function to call, args for function to call, return function to call
-    # NOTE: every connection to global_signal/data_plugin_controller_signal must stay
-    # Qt.ConnectionType.DirectConnection (or otherwise guaranteed same-thread). A caller
-    # that passes a return_function_name reads the result back off an attribute the
-    # callback sets, on the very next statement after .emit() - a queued connection
-    # would silently degrade that read to stale/None data with no error and no log line.
-    data_plugin_controller_signal = Signal(
-        str, str, str, tuple, object, tuple
-    )  # metaclass type, subclass key, function to call, args for function to call, function to call with reval, added args for retval
     plugin_state_changed = Signal(str, str, str)  # metaclass, plugin_key, reason
     add_text_to_display = Signal(str, str)
     update_tab_action_history = Signal(
@@ -89,7 +78,6 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
         # Pushed by MainController on every plugin lifecycle event.
         self._plugin_instances: Dict[str, Dict[str, object]] = {}
         self._init()
-        self._connect_global_signal()
         self.view.set_available_subclasses(available_subclasses)
         self.view.plugin_state_changed.connect(self.plugin_state_changed)
         self.view.run_generators.connect(self.model.run_generators)
@@ -283,29 +271,6 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
 
     # private API, should generally be left alone by subclasses
     @log(logger=logger)
-    def _connect_global_signal(self) -> None:
-        """
-        Connect global and data plugin signal relays from the view and model.
-
-        This enables propagation of global signals upward to the main controller.
-        """
-        self.view.global_signal.connect(
-            self._relay_global_signal, type=Qt.ConnectionType.DirectConnection
-        )
-        self.model.global_signal.connect(
-            self._relay_global_signal, type=Qt.ConnectionType.DirectConnection
-        )
-
-        self.view.data_plugin_controller_signal.connect(
-            self._relay_data_plugin_controller_signal,
-            type=Qt.ConnectionType.DirectConnection,
-        )
-        self.model.data_plugin_controller_signal.connect(
-            self._relay_data_plugin_controller_signal,
-            type=Qt.ConnectionType.DirectConnection,
-        )
-
-    @log(logger=logger)
     @Slot(str)
     def load_actions_from_json(self, filename: str) -> None:
         """
@@ -477,142 +442,6 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
                 "Stopping all running operations.", self.__class__.__name__
             )
         self.model.stop_workers(exiting=exiting)
-
-    @Slot(str, str, str, tuple, str, tuple)
-    def _relay_global_signal(
-        self,
-        metaclass: str,
-        subclass_key: str,
-        call_function: str,
-        call_args: tuple,
-        return_function_name: Optional[str],
-        ret_args: tuple,
-    ) -> None:
-        """
-        Push the global signal up to the main_controller, adding the identifier for the requesting plugin. This will result in a call being made with the following signature in main_controller:
-
-        .. code-block:: python
-
-          main_model.plugins['MetaController'][plugin_key].return_function(*plugins[metaclass][subclass_key].call_function(*call_args)+ret_args)
-
-        Validation is handled by main_controller
-
-        :param metaclass: A string matching the metaclass of the target plugin for the signal
-        :type metaclass: str
-        :param subclass_key: A string matching the identifier of a plugin that subclasses metaclass
-        :type subclass_key: str
-        :param call_function: A string matching the signature of a callable in the plugin identified by metaclass and subclass. This function should be a public API member of another subclass that has already been instantiated.
-        :type call_function: str
-        :param call_args: A tuple that will be passed to the callable matching call_function
-        :type call_args: tuple
-        :param return_function_name: A string matching the signature of a callable function defined in this controller with a signature that matched the return type of call_function. This function must exist in this controller.
-        :type return_function_name: Optional[str]
-        :param ret_args: A tuple that will be appended to the return value of the call_function
-        :type ret_args: tuple
-        """
-        self.logger.debug(
-            f"MetaController received signal: {metaclass}, {subclass_key}, {call_function}, {call_args}, {return_function_name}, {ret_args}"
-        )
-        if return_function_name is not None and return_function_name != "":
-            return_function = getattr(self, return_function_name, None)
-            if return_function is None:
-                self.logger.warning(
-                    f"{return_function_name} is not an attribute of {self.__class__.__name__}"
-                )
-                return
-            if not callable(return_function):
-                self.logger.warning(
-                    f"{return_function_name} is not callable on {self.__class__.__name__}"
-                )
-                return
-        else:
-            return_function = None
-
-        try:
-            self.logger.info(
-                "Emitting Global Signal from MetaController to MainController"
-            )
-            self.global_signal.emit(
-                metaclass,
-                subclass_key,
-                call_function,
-                call_args,
-                return_function,
-                ret_args,
-            )
-        except Exception:
-            self.logger.exception(
-                f"Unable to relay global signal for {metaclass}/{subclass_key}.{call_function} "
-                f"from {type(self).__name__} to MainController"
-            )
-
-    @Slot(str, str, str, tuple, str, tuple)
-    def _relay_data_plugin_controller_signal(
-        self,
-        metaclass: str,
-        subclass_key: str,
-        call_function: str,
-        call_args: tuple,
-        return_function_name: Optional[str],
-        ret_args: tuple,
-    ) -> None:
-        """
-        Push the data plugin controller signal up to the main_controller, adding the identifier for the requesting plugin. This will result in a call being made with the following signature in main_controller:
-
-        .. code-block:: python
-
-          main_model.plugins['MetaController'][plugin_key].return_function(*plugins[metaclass][subclass_key].call_function(*call_args))
-
-        Validation is handled by main_controller
-
-        :param metaclass: A string matching the metaclass of the target plugin for the signal
-        :type metaclass: str
-        :param subclass_key: A string matching the identifier of a plugin that subclasses metaclass
-        :type subclass_key: str
-        :param call_function: A string matching the signature of a callable in the data plugin controller. (NOT in the data plugin itself).
-        :type call_function: str
-        :param call_args: A tuple that will be passed to the callable matching call_function
-        :type call_args: tuple
-        :param return_function_name: A string matching the signature of a callable function defined in this controller with a signature that matched the return type of call_function. This function must exist in this controller.
-        :type return_function_name: Optional[str]
-        :param ret_args: A tuple that will be appended to the return value of the call_function
-        :type ret_args: tuple
-        """
-        self.logger.debug(
-            f"MetaController received signal: {metaclass}, {subclass_key}, {call_function}, {call_args}, {return_function_name}, {ret_args}"
-        )
-        if return_function_name is not None and return_function_name != "":
-            return_function = getattr(self, return_function_name, None)
-            if return_function is None:
-                self.logger.warning(
-                    f"{return_function_name} is not an attribute of {self.__class__.__name__}"
-                )
-                return
-            if not callable(return_function):
-                self.logger.warning(
-                    f"{return_function_name} is not callable on {self.__class__.__name__}"
-                )
-                return
-        else:
-            return_function = None
-
-        try:
-            self.logger.info(
-                "Emitting Data Plugin from MetaController to MainController"
-            )
-            self.data_plugin_controller_signal.emit(
-                metaclass,
-                subclass_key,
-                call_function,
-                call_args,
-                return_function,
-                ret_args,
-            )
-        except Exception:
-            self.logger.exception(
-                f"Unable to relay data plugin controller signal for {call_function} "
-                f"from {type(self).__name__} to MainController"
-            )
 
     # public API, should generally be left alone by subclasses
 

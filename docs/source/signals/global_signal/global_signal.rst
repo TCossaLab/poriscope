@@ -1,23 +1,53 @@
 .. _GlobalSignal:
 
-Global Signal
-==============
+Global Signal (removed)
+=======================
 
-This document provides an API-level overview of the ``global_signal`` used for general plugin-to-plugin communication via the ``MainController``.
+``global_signal`` no longer exists. It was removed in 2.0.0, along with its relays
+and the dispatcher behind it.
 
-.. important::
+This page is kept so that a search for the name lands somewhere useful rather than
+nowhere.
 
-   **No analysis tab uses this any more, and the bus is being removed.** Since 2.0.0
-   every tab reaches its data plugins by calling them - see :ref:`CallingAPlugin`,
-   which is where new code should start. This page documents machinery that is still
-   wired only because it has not been deleted yet: 2.0.0 removes the signal, its
-   relays and its dispatcher, along with the ``DataPluginController`` signal beside it
-   that shares that dispatcher. Do not build anything on it.
+What it was
+-----------
 
-It allows views and models to request actions from analysis or data plugins without needing direct access to them. This signal is relayed through the ``MetaController`` and dispatched centrally by the ``MainController``, supporting modular, decoupled function calls.
+A tab that needed something from a data plugin — a sample rate, an event count, a
+status — emitted ``global_signal`` naming the plugin, the method, its arguments,
+and the name of a *callback* to hand the answer to. The signal travelled from the
+View or Model up through ``MetaController`` to ``MainController``, which resolved
+the plugin and called the method, then called the named callback, which set an
+attribute on the View. The caller read that attribute on its next statement.
 
-.. toctree::
-   :maxdepth: 1
+What to use instead
+-------------------
 
-   overview
-   example_usage
+**Call the plugin.** See :ref:`CallingAPlugin`:
+
+.. code-block:: python
+
+   samplerate = self.model.call("MetaReader", reader_key, "get_samplerate")
+
+The answer is the return value. There is no callback and no attribute to read
+back.
+
+Why it went
+-----------
+
+The round trip was seven hops, and the dispatcher logged-and-returned on four
+separate conditions. A dispatch that failed therefore left the previous call's
+value sitting on the attribute, and the caller read *that* — with no error, and
+no log line the caller could see. It caused two real bugs: a metadata plot showing
+the previous subset's rows, and a query running against the previous experiment's
+id.
+
+``call()`` raises where the failure happens, so a failed call stops the thing it
+should stop.
+
+If you are porting code
+-----------------------
+
+An emit with a callback becomes a call whose return value you use directly. An
+emit *without* a callback — one that only asked for something to be done — becomes
+either a direct call or, for creating, editing and deleting data plugins, one of
+the typed signals described in :ref:`DataPluginControllerSignal`.

@@ -44,7 +44,6 @@ def controller(qt_app):
     emitted calls without a live event bus.
     """
     c = ProteinController()
-    c.global_signal = MagicMock()
     return c
 
 

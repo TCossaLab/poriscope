@@ -785,7 +785,6 @@ class TestLoadFilterWasPromoted:
         assert view.subset_filters == {
             "big_events_raw": "SELECT event_id FROM events WHERE dwell > 5"
         }
-        view.global_signal.emit.assert_not_called()
 
     @pytest.mark.parametrize("view_cls", SUBSET_TABS, ids=lambda c: c.__name__)
     def test_with_no_loader_everything_is_stored_unvalidated(
@@ -802,7 +801,6 @@ class TestLoadFilterWasPromoted:
             "long_events": "dwell > 5",
             "raw_one_raw": "SELECT 1",
         }
-        view.global_signal.emit.assert_not_called()
 
     @pytest.mark.parametrize("view_cls", SUBSET_TABS, ids=lambda c: c.__name__)
     def test_the_dialog_half_only_asks(

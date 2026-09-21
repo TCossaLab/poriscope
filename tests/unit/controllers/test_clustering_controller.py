@@ -64,8 +64,6 @@ def controller(mock_view: MagicMock, mocker: MockerFixture) -> ClusteringControl
     ctrl.logger = mocker.Mock()  # type: ignore[attr-defined]
     ctrl.add_text_to_display = mocker.Mock()
     ctrl.add_text_to_display.emit = mocker.Mock()
-    ctrl.global_signal = mocker.Mock()
-    ctrl.global_signal.emit = mocker.Mock()
     ctrl.update_available_plugins = mocker.Mock()
     ctrl.update_available_plugins.emit = mocker.Mock()
     return ctrl

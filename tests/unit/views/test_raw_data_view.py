@@ -88,7 +88,6 @@ def view(mocker, mock_logging):
     v.logger = mocker.Mock()
     v.figure = mocker.Mock()
     v.canvas = mocker.Mock()
-    v.global_signal = mocker.Mock()
     v.add_text_to_display = mocker.Mock()
     # Step 4a's intent signals. Mocked by hand like the rest here: this fixture builds
     # the view with __new__, so a class-level Signal has no C++ object behind it and
@@ -441,7 +440,6 @@ def test_handle_load_data_makes_no_plugin_call_of_its_own(view, mocker):
     view._extract_plot_parameters = mocker.Mock(return_value=("R", [0, 1], 0.0, 1.0))
     view._validate_plot_parameters = mocker.Mock(return_value=True)
     view._handle_load_data_and_update_plot({"channel": ["0"]})
-    view.global_signal.emit.assert_not_called()
 
 
 def test_set_trace_data_reports_when_nothing_loaded(view, mocker):
@@ -496,7 +494,6 @@ def test_handle_load_data_psd_emits_a_typed_intent(view, mocker):
     view._validate_plot_parameters = mocker.Mock(return_value=True)
     view._handle_load_data_and_update_psd({"channel": ["0"], "filter": "No Filter"})
     view.psd_data_requested.emit.assert_called_once_with("R", [0], 1.0, 9.0, "")
-    view.global_signal.emit.assert_not_called()
 
 
 def test_set_trace_for_psd_reports_when_nothing_loaded(view, mocker):
@@ -659,7 +656,6 @@ def test_update_available_plugins_makes_no_plugin_call_of_its_own(view, mocker):
         {"MetaReader": ["R1"], "MetaEventFinder": ["EF1", "EF2"]}
     )
 
-    view.global_signal.emit.assert_not_called()
     assert view.analysis_time_limits == {}
 
 
@@ -730,7 +726,6 @@ def test_handle_timer_no_eventfinder_does_nothing(view, mocker):
     # TimeWidget should not be instantiated
     # If TimeWidget was patched, confirm it was never called
     # (easiest check: global_signal never touched)
-    view.global_signal.emit.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

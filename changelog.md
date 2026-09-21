@@ -1,5 +1,7 @@
 ## Poriscope 2.0.0: in progress
 
+* **Breaking: the global signal bus is gone.** `global_signal` and `data_plugin_controller_signal` are removed from `MetaView`, `MetaModel` and `MetaController`, along with the relays and dispatcher behind them - an analysis tab outside this repository that emits either will stop working, and should call its plugin through `self.call(...)` on the Model or use the typed create/edit/delete signals instead
+
 * **Fixed error dialogs opening behind the main window**, where a modal dialog nobody can see holds the input grab and the application looks frozen - most visibly at startup, when a duplicate plugin name reported an error before the window had finished painting
 
 * Returning the window to its launch state, switching pages and recording a plugin rename are each built from named steps now rather than one long method; renaming a plugin keeps its place in the session rather than moving it to the end, which was always the intent but was not written down anywhere
