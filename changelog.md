@@ -1,5 +1,7 @@
 ## Poriscope 2.0.0: in progress
 
+* Fixed the metadata CSV-export end-to-end test failing intermittently: it waited for the exported-file count to settle, which happens before the last files are written, and then size-checked whichever one set iteration surfaced
+
 * **Corrected what filter types 4 and 5 mean; no behaviour change**: they name which arm of the construct the bound star sits on - 5 the long, higher-ECD arm and 4 the short one - and say nothing about the order it threaded, which is what the report's old `star translocates first` / `last` wording claimed and got wrong for every backward event
 
 * The normalized peak prominence report now gives each standard deviation as a single pA span rather than a multiplicative factor and a range, and chains its three unit systems with `~` rather than `=`, since rounding makes them not literally equal

@@ -111,28 +111,44 @@ def _fake_get_item_exact_then_substring(*wants):
 def _wait_for_stable_export(
     qtbot, get_files_fn, stable_polls=3, poll_ms=200, timeout_ms=QT_WAIT_TIMEOUT_MS
 ):
-    """Wait for the exported-file COUNT to stabilize (unchanged across
-    stable_polls consecutive checks), not just "any file appears" - export
-    writes ~29 files asynchronously (one per event + table dumps), and
-    waiting for only the first one leaves the generator still writing the
-    rest in the background."""
+    """Wait for the export to finish *writing*, not merely to finish creating files.
+
+    Export writes dozens of files asynchronously - one per event plus the table
+    dumps - so waiting for "any file appears" leaves the generator still running.
+
+    Waiting for the file *count* to settle is not enough either, which is what this
+    helper used to do. A file exists at zero bytes from the moment it is opened, so
+    the count reaches its final value while the last writes are still in flight. The
+    caller then size-checked one file picked arbitrarily out of a set, and failed
+    whenever iteration order happened to land on one that had not been flushed yet.
+
+    So the state that has to settle is (how many files, how many bytes in total), and
+    no file may still be empty when it does. A file whose ``stat`` fails is counted as
+    zero bytes, since on Windows a file being created can briefly be unstattable.
+    """
     deadline = time.monotonic() + timeout_ms / 1000
-    last_count = -1
+    last_state = None
     stable_count = 0
     while time.monotonic() < deadline:
         current = get_files_fn()
-        n = len(current)
-        if n > 0 and n == last_count:
+        sizes = []
+        for path in current:
+            try:
+                sizes.append(path.stat().st_size)
+            except OSError:
+                sizes.append(0)
+        state = (len(current), sum(sizes))
+        if current and all(size > 0 for size in sizes) and state == last_state:
             stable_count += 1
             if stable_count >= stable_polls:
                 return current
         else:
             stable_count = 0
-        last_count = n
+        last_state = state
         qtbot.wait(poll_ms)
     raise TimeoutError(
         f"Export never stabilized within {timeout_ms}ms "
-        f"(last count={last_count}, stable_count={stable_count})"
+        f"(last state={last_state}, stable_count={stable_count})"
     )
 
 
@@ -371,8 +387,13 @@ def test_metadata_csv_export(
     assert (
         len(new_csv_files) > 0
     ), "Expected at least one new CSV file after accepting export"
-    sample_csv = next(iter(new_csv_files))
-    assert sample_csv.stat().st_size > 0, f"Expected {sample_csv} to be non-empty"
+    empty = sorted(path.name for path in new_csv_files if path.stat().st_size == 0)
+    assert (
+        not empty
+    ), f"Exported CSVs were still empty after the export settled: {empty}"
+    # Sorted rather than an arbitrary element of the set, so a failure names the same
+    # file on every run instead of whichever one hash order happened to surface.
+    sample_csv = sorted(new_csv_files)[0]
     with open(sample_csv) as f:
         header = f.readline().strip()
     print(f"[DEBUG] CSV header (from {sample_csv.name}): {header!r}")
@@ -422,3 +443,76 @@ def test_metadata_csv_export(
     for w in QtWidgets.QApplication.topLevelWidgets():
         if isinstance(w, QtWidgets.QDialog):
             w.close()
+
+
+# ------------- The wait helper itself -------------------------------------
+#
+# These drive `_wait_for_stable_export` directly, with a stub in place of qtbot
+# and a fake file source, so they need no Qt application and run in milliseconds.
+# The helper only ever calls `qtbot.wait`, which is what makes that substitution
+# safe.
+
+
+class _NullWaiter:
+    """Stands in for ``qtbot``: the helper only uses ``wait``, and here it is a no-op."""
+
+    def wait(self, _ms):
+        """
+        Do nothing, so the helper's poll loop runs at full speed.
+
+        :param _ms: the poll interval the helper asks for, ignored
+        :type _ms: int
+        :return: None
+        :rtype: None
+        """
+        return None
+
+
+def test_wait_for_stable_export_waits_for_a_file_to_be_written(tmp_path):
+    """
+    A file that exists but is still empty does not count as a finished export.
+
+    This is the regression: the helper used to settle as soon as the file *count*
+    stopped changing, and a file exists at zero bytes from the moment it is opened.
+    It therefore returned while the last writes were in flight, and the caller's
+    size check failed whenever set iteration happened to sample an unflushed file.
+    Under the old count-only rule this test returns at the third poll, before the
+    write at the fourth, and the final assertion fails.
+    """
+    path = tmp_path / "late.csv"
+    path.write_bytes(b"")
+
+    polls = {"n": 0}
+
+    def _get_files():
+        polls["n"] += 1
+        if polls["n"] == 4:
+            path.write_bytes(b"header\n")
+        return {path}
+
+    result = _wait_for_stable_export(
+        _NullWaiter(), _get_files, stable_polls=2, poll_ms=0
+    )
+
+    assert result == {path}
+    assert path.stat().st_size > 0, "helper returned while the file was still empty"
+
+
+def test_wait_for_stable_export_times_out_if_a_file_stays_empty(tmp_path):
+    """
+    An export that creates a file and never writes it is a failure, not a pass.
+
+    Without this the fix above could be satisfied by a helper that simply waits
+    longer, rather than one that actually tests what it returns.
+    """
+    path = tmp_path / "never.csv"
+    path.write_bytes(b"")
+
+    with pytest.raises(TimeoutError):
+        _wait_for_stable_export(
+            _NullWaiter(),
+            lambda: {path},
+            stable_polls=2,
+            poll_ms=0,
+            timeout_ms=50,
+        )
