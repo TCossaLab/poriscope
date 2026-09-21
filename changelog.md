@@ -1,5 +1,7 @@
 ## Poriscope 2.0.0: in progress
 
+* **Fixed error dialogs opening behind the main window**, where a modal dialog nobody can see holds the input grab and the application looks frozen - most visibly at startup, when a duplicate plugin name reported an error before the window had finished painting
+
 * Returning the window to its launch state, switching pages and recording a plugin rename are each built from named steps now rather than one long method; renaming a plugin keeps its place in the session rather than moving it to the end, which was always the intent but was not written down anywhere
 
 * **Fixed session restore corrupting any setting whose value happens to read `str`, `int`, `float` or `bool`** - it was turned into the type itself regardless of which setting it belonged to, so a plugin configured with `Event Type: float` came back broken; only the `Type` field is restored as a type now
