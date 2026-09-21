@@ -1,5 +1,7 @@
 ## Poriscope 2.0.0: in progress
 
+* The app shell - the two controllers, the two models, `main_view.py`, `settings_window.py` and `main_app.py` - is now held by a cyclomatic-complexity ratchet (`scripts/measure_shell_complexity.py`), which no other gate measured, so restructuring it can neither add complexity nor leave a reduction unrecorded
+
 * Fixed the metadata CSV-export end-to-end test failing intermittently: it waited for the exported-file count to settle, which happens before the last files are written, and then size-checked whichever one set iteration surfaced
 
 * **Corrected what filter types 4 and 5 mean; no behaviour change**: they name which arm of the construct the bound star sits on - 5 the long, higher-ECD arm and 4 the short one - and say nothing about the order it threaded, which is what the report's old `star translocates first` / `last` wording claimed and got wrong for every backward event

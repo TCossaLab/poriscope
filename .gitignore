@@ -164,11 +164,12 @@ cython_debug/
 #.idea/
 *.json
 
-# ...except the two 2.0.0 refactor baselines, which have to be checked in or their
+# ...except the three 2.0.0 refactor baselines, which have to be checked in or their
 # gates have nothing to hold. Named exactly, so saved action histories, session
 # state and plugin config - all .json user data - stay ignored.
 !.duplication-baseline.json
 !.mvc-boundary-allowlist.json
+!.shell-complexity-baseline.json
 
 # Test fixtures are not user data. A saved action history and a saved session are
 # both .json in the wild, and pinning how they replay needs a real file checked in

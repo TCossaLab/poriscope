@@ -1191,6 +1191,76 @@ rerun with ``--update`` and commit the new baseline alongside it.
    If you are fixing a bug in one of these methods, the fix almost certainly belongs in
    every copy.
 
+.. _shell_complexity_ratchet:
+
+App-Shell Complexity Ratchet
+-----------------------------
+
+This one affects you if you edit the **app shell**: the two controllers and two models
+under ``poriscope/controllers/`` and ``poriscope/models/``, ``main_view.py``,
+``settings_window.py``, and ``main_app.py``. Nine files in all, listed explicitly in the
+script.
+
+These files are covered by nothing else. The MVC boundary rules scan them and read zero
+on all three, and no duplication family includes them, so before this gate existed the
+shell could be restructured in either direction unobserved.
+
+**The shell is measured in complexity, not in lines**, and that was a deliberate choice.
+``settings_window.py`` has *zero* functions over the threshold despite 890 lines, and
+``main_view.py`` has two despite 1,235 — the length is flat Qt widget construction that a
+2026-08 audit reviewed with no findings. Driving those line counts down would chase a
+number that does not describe a problem. The scope is nine files rather than the whole
+repository for the same reason the fitters are excluded from the duplication ratchet:
+repo-wide, most long functions live in owner-held plugins and in ``setupUi`` methods the
+refactor deliberately keeps per-tab.
+
+``scripts/measure_shell_complexity.py`` reports, per file, how many functions were
+scanned, how many exceed cyclomatic complexity 10, and the summed complexity of those
+that do. ``.shell-complexity-baseline.json`` records those counts, and
+``tests/unit/scripts/test_shell_complexity_ratchet.py`` fails if the measurement
+disagrees.
+
+.. code-block:: bash
+
+   python scripts/measure_shell_complexity.py             # the table
+   python scripts/measure_shell_complexity.py --verbose   # every function over 10, heaviest first
+   python scripts/measure_shell_complexity.py --check     # compare against the baseline
+
+**The check is exact in both directions**, exactly as the duplication ratchet is: a rise
+is added complexity, and a fall fails too so that the win is banked in the commit that
+earned it. If your change legitimately reduced complexity, rerun with ``--update`` and
+commit the new baseline alongside it.
+
+The counting rule is written out in full in the script's module docstring, because with a
+measurement like this the definition *is* the number. The short version: a function starts
+at 1 and gains a point per ``if``/``elif``, loop, ``except`` handler, inline conditional,
+``case``, comprehension generator and comprehension filter, and one per short-circuit in a
+boolean operator — so ``a and b and c`` adds two. Three things deliberately do **not**
+count: ``with``, ``assert``, and ``return``/``break``/``continue``.
+
+.. note::
+
+   ``with`` not counting is the one worth knowing. Scoring it as a branch would mark a
+   function down for using a context manager, which runs against this project's own rule
+   that database resources are closed explicitly. It also mattered in practice: counting
+   ``with`` inflated ``create_appdata_folders`` from 17 to 20 on its four ``with`` blocks
+   alone, and held ``remove_pages_except`` at exactly 10, hiding it *under* the threshold
+   rather than judging it.
+
+.. warning::
+
+   Read the failure message before running ``--update``. A genuine split leaves every
+   extracted helper in the same file, so the file's function count *rises* while its
+   complexity falls. Complexity and function count falling together is the other shape — a
+   method moved out into a module the file list does not name, which reads as progress
+   here while the code is unchanged. The check calls that out when it sees it.
+
+   For the same reason the script refuses to pass if ``poriscope/controllers/`` or
+   ``poriscope/models/`` contains any ``.py`` file the list does not name. Add a new module
+   there and the gate fails until you list it. ``poriscope/views/`` cannot be swept that
+   way, since it holds modules that are deliberately out of scope, so an extraction into a
+   new file there has to be added to ``SHELL_FILES`` by hand.
+
 .. _mvc_boundary:
 
 Analysis-Tab MVC Boundary

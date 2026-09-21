@@ -22,13 +22,25 @@ family covers these files.
 lines, and build the gate before the work (rule 24). `settings_window.py` and `main_view.py`
 come off the target list.
 
-**Evidence.** Over the nine shell files, 190 functions: only **7 exceed complexity 10**,
-totalling 110. `settings_window.py` has **zero** despite 890 lines - its four longest methods
+**Evidence.** Over the nine shell files, 189 functions: **8 exceed complexity 10**,
+totalling 121. `settings_window.py` has **zero** despite 890 lines - its four longest methods
 are complexity 1 to 4, long-but-flat Qt widget construction that the 2026-08 audit already
-recorded as reviewed-with-no-findings. `main_view.py` has one, despite 1,235 lines.
+recorded as reviewed-with-no-findings. `main_view.py` has two, despite 1,235 lines.
 Repo-wide, 124 functions exceed 80 lines, most in owner-held fitters and in `setupUi`
 methods the plan says stay per-tab, so a length gate would be both the wrong measure and
 scoped onto work that is not ours to gate (rule 18).
+
+**Corrected 2026-09-21, when 5c.0 built the instrument.** This entry first read 190
+functions, 7 over, totalling 110, from an ad-hoc script that was never committed - the same
+failure `measure_duplication.py` exists to prevent. The rule was reverse-engineered and
+reproduced exactly, then rejected: it counted `with` as a branch, counted a `BoolOp` once
+regardless of its operands, and counted a comprehension once regardless of its generators.
+Counting `with` marks a function down for using a context manager, against this repo's own
+explicit-cleanup rule; it inflated `create_appdata_folders` 17 -> 20 on four `with` blocks
+and held `main_view.py::remove_pages_except` at exactly 10, hiding it under the threshold.
+`scripts/measure_shell_complexity.py` uses textbook McCabe instead, which is why the figures
+moved and why `remove_pages_except` (cx 12) is now a target. The 190/189 difference is the
+old script counting nested functions both inside their parent and again separately.
 
 **Revisit if** a shell file grows a long-and-flat method that is genuinely hard to read for
 reasons complexity cannot see - at which point the answer is a second metric, not a

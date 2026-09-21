@@ -2016,7 +2016,7 @@ correctness issues, then mechanical extractions, then god-methods (coverage firs
 
 ### Re-derived 2026-09-19, before starting - and most of the entry did not survive
 
-**Two standing rulings shape the whole step, both Kyle's:**
+**Three standing rulings shape the whole step, all Kyle's:**
 
 1. **No new inheritance layers in the data plugins.** `BaseDataPlugin` -> `MetaEventFitter`
    -> `CUSUM` is long enough until the families resolve themselves into more. Deduplicate
@@ -2030,6 +2030,15 @@ correctness issues, then mechanical extractions, then god-methods (coverage firs
    concrete on the existing base would delete all of it. They stay: the hook exists to make
    the author decide, and a reader that really holds a file handle is the one that must not
    inherit a silent no-op. Recorded floor, not unfinished work.
+3. **Every commit that moves application code gets a manual pass, and the map comes first.**
+   Kyle, 2026-09-21: before a branch starts, say where in the running application a
+   regression would show if that branch's change went wrong, and pause at commit boundaries
+   so it can be checked by hand. CI is Linux under Xvfb and `DECISIONS.md` (2026-09-01)
+   records the Qt dialog and popup paths as structurally unexercisable there, so a green
+   suite is not sufficient evidence for this step. The trigger is application code *moving* -
+   an instrument-only commit (a measurement script, its baseline and its tests) changes no
+   behaviour and is exempt, which is worth stating so the attention lands on the commits
+   that need it.
 
 **What measurement moved:**
 
@@ -2300,7 +2309,7 @@ Each says what it moves *before* it starts (method rule 38).
       structurally unexercisable there, so this is the only coverage these widgets get. Both
       the channel picker and the filter picker were driven through the real UI against the
       promoted base, and nothing regressed.
-- **5c - the app shell. REVIEWED 2026-09-20, re-scoped, and planned. Not started.**
+- **5c - the app shell. REVIEWED 2026-09-20, re-scoped and planned; 5c.0 LANDED 2026-09-21.**
   All four figures confirm exactly - `edit_plugin` 195 lines,
   `validate_and_instantiate_plugin` 160, `main_view.py` 1,235, `settings_window.py` 890 -
   which is the first entry in Step 5 whose numbers all survived. The *conclusions* drawn
@@ -2314,31 +2323,37 @@ Each says what it moves *before* it starts (method rule 38).
 
   **Two of the four named targets are chosen on size, and size is the wrong metric for
   them.** Over the shell scope (`controllers/`, `models/`, `main_view.py`,
-  `settings_window.py`, `main_app.py`: 9 files, 190 functions), only **7 functions exceed
-  cyclomatic complexity 10**, total complexity **110**:
+  `settings_window.py`, `main_app.py`: 9 files, 189 functions), **8 functions exceed
+  cyclomatic complexity 10**, total complexity **121**:
 
   | cx | lines | where | coverage |
   |---|---|---|---|
-  | 20 | 85 | `main_app.py::create_appdata_folders` | **0%** |
-  | 20 | 160 | `DataPluginController.py::validate_and_instantiate_plugin` | 99% |
   | 20 | 195 | `DataPluginController.py::edit_plugin` | 88% |
-  | 17 | 94 | `main_model.py::populate_available_plugins` | 95% |
-  | 11 | 15 | `main_model.py::replace_class_names_with_classes` | 100% |
+  | 20 | 160 | `DataPluginController.py::validate_and_instantiate_plugin` | 99% |
+  | 19 | 94 | `main_model.py::populate_available_plugins` | 95% |
+  | 17 | 85 | `main_app.py::create_appdata_folders` | **0%** |
+  | 12 | 46 | `main_view.py::remove_pages_except` | 100% |
+  | 11 | 21 | `main_model.py::replace_class_names_with_classes` | 100% |
   | 11 | 61 | `main_view.py::switch_to_page` | 81% |
-  | 11 | 16 | `main_controller.py::update_plugin_history` | 100% |
+  | 11 | 19 | `main_controller.py::update_plugin_history` | 100% |
+
+  Re-measured 2026-09-21 by `scripts/measure_shell_complexity.py`; every coverage figure
+  reproduced exactly. `lines` is the `def`-to-end span throughout - the first table gave
+  two of them as *statement* counts instead, which is where its 15 and 16 came from.
 
   `settings_window.py` has **zero** functions over complexity 10 despite its 890 lines - its
   four longest methods are complexity 1 to 4, the long-but-flat Qt widget construction that
   the 2026-08 audit already reviewed and recorded as no-findings. `main_view.py` has
-  **one**, despite 1,235 lines. Driving their line counts down is chasing a number that does
+  **two**, despite 1,235 lines. Driving their line counts down is chasing a number that does
   not describe a problem, which is rule 71's error. **They come off the target list**;
-  `switch_to_page` stays on it on its own merits.
+  `switch_to_page` and `remove_pages_except` stay on it on their own merits.
 
-  **Three real targets the entry does not name:** `create_appdata_folders` (the artifact's
-  section on Step 5 names it; the plan's 5c line does not), `populate_available_plugins`, and
-  `update_plugin_history`.
+  **Four real targets the entry does not name:** `create_appdata_folders` (the artifact's
+  section on Step 5 names it; the plan's 5c line does not), `populate_available_plugins`,
+  `update_plugin_history`, and `remove_pages_except`, which the first measurement's rule hid
+  at exactly 10 - see the 5c.0 note below.
 
-  **`create_appdata_folders` is the risk.** Complexity 20 and **0% covered** - 52 statements,
+  **`create_appdata_folders` is the risk.** Complexity 17 and **0% covered** - 52 statements,
   none of them executed by any test. Everything else on the list is 81-100%.
 
   **One target is a filed defect.** `replace_class_names_with_classes` is the session-restore
@@ -2357,15 +2372,40 @@ Each says what it moves *before* it starts (method rule 38).
   Every step states the check that decides whether it worked, and the check is a number that
   exists before the step starts.
 
-  - **5c.0 - the instrument, before anything it would measure.** `scripts/measure_shell_complexity.py`
-    plus a checked-in baseline and an exact-match ratchet test, mirroring `measure_duplication.py`:
-    per file, the functions over complexity 10 and the sum of their complexity, failing in
-    **both** directions so a win must be banked in the commit that earns it. Scoped to the
-    nine shell files and nothing else - repo-wide there are 124 functions over 80 lines,
-    most of them in owner-held fitters and in the `setupUi` methods the plan says stay, so a
-    repo-wide gate would fail on work that is not ours to gate (rule 18).
-    *Check:* baseline records **7 functions / 110 total / 5 files**; the ratchet is verified
-    to fail on a deliberate complexity rise **and** on an unbanked fall.
+  - **5c.0 - the instrument, before anything it would measure. LANDED 2026-09-21.**
+    `scripts/measure_shell_complexity.py` plus `.shell-complexity-baseline.json` and an
+    exact-match ratchet test, mirroring `measure_duplication.py`: per file, the functions
+    over complexity 10 and the sum of their complexity, failing in **both** directions so a
+    win must be banked in the commit that earns it. Scoped to the nine shell files and
+    nothing else - repo-wide there are 124 functions over 80 lines, most of them in
+    owner-held fitters and in the `setupUi` methods the plan says stay, so a repo-wide gate
+    would fail on work that is not ours to gate (rule 18).
+    *Check, met:* the ratchet was verified to fail on a deliberate complexity rise **and**
+    on an unbanked fall, and to refuse an unlisted module dropped into a scoped package.
+
+    **The recorded target was 7 / 110 and the instrument reads 8 / 121, which is the
+    finding.** The 2026-09-20 figures came from an ad-hoc script that was never committed -
+    precisely what `measure_duplication.py` exists to prevent, repeated one step later. Its
+    rule was reverse-engineered and reproduced exactly, then rejected on its merits: it
+    scored `with` as a branch, a `BoolOp` once regardless of its operands, and a
+    comprehension once regardless of its generators. Counting `with` marks a function down
+    for using a context manager, against this repo's explicit-cleanup rule; it inflated
+    `create_appdata_folders` 17 -> 20 and held `remove_pages_except` at exactly 10, under
+    the threshold rather than judged. Textbook McCabe replaces it, so
+    `populate_available_plugins` reads 19 rather than 17 and `remove_pages_except` (cx 12,
+    46 lines) joins the target list. The 190 -> 189 function count is the old script
+    counting a nested function both inside its parent and again on its own. Method rule 82
+    again, from the other side: a step can be wrong while every number it quotes is exact,
+    and a number with no committed instrument behind it is not yet a measurement.
+
+    Two guards go beyond the plan's line, both aimed at the same escape. The file list is
+    explicit, so `poriscope/controllers/` and `poriscope/models/` are swept for any `.py`
+    the list does not name and the gate refuses until it is added - otherwise splitting a
+    god-method into a new module in the same package would carry its complexity out of
+    sight and read as a win. And a fall in complexity that comes with a *fall* in the file's
+    function count is called out, since a real split leaves its pieces in the file and
+    raises that count. `poriscope/views/` cannot be swept, holding out-of-scope modules
+    beside `main_view.py`, so an extraction into a new file there must be listed by hand.
   - **5c.1 - the net, before the knife.** Characterization tests for `edit_plugin`,
     `validate_and_instantiate_plugin` and `create_appdata_folders`. The first two are
     well covered by line count but that is not the same as pinned; the third is at zero and
@@ -2387,8 +2427,8 @@ Each says what it moves *before* it starts (method rule 38).
     report-then-return blocks want the reporting half of 5c.2's helper without the rollback.
   - **5c.5 - `create_appdata_folders`,** which the artifact records as repeating the same
     block per folder.
-  - **5c.6 - `populate_available_plugins`,** and a ruling on the remaining three:
-    `switch_to_page` (11), `update_plugin_history` (11) and
+  - **5c.6 - `populate_available_plugins`,** and a ruling on the remaining four:
+    `remove_pages_except` (12), `switch_to_page` (11), `update_plugin_history` (11) and
     `replace_class_names_with_classes` (11, and a filed defect). Either they come down or
     each is recorded as a floor with its reason - what is not acceptable is leaving the gate
     above zero with nothing said about why.
@@ -2400,13 +2440,14 @@ Each says what it moves *before* it starts (method rule 38).
 - **5e - the bus, and every trace of it.** Last, so nothing still needs it. See the entry
   below and `DECISIONS.md` 2026-09-19.
 
-**Where Step 5 stands, 2026-09-20.** 5a, 5b and 5d are closed; 5c is reviewed, re-scoped
-and planned but not started; 5e is last by design. Gates re-measured the same day:
-duplication **629** removable repo-wide over 8 families (`datareaders` 394 and
-`eventfitters` 193 are recorded floors, `views/widgets` 3, `eventfinders` 0, the three
-analysis-tab families 31, `*Model.py` 8); boundary allowlist **2**, at its floor;
-refactor-coverage audit **82 of 82 pinned**; repo coverage **88%**, up from the 83%
-baseline. Suite **4,167 passed / 16 skipped**, all eight hooks and `sphinx-build -W` green.
+**Where Step 5 stands, 2026-09-21.** 5a, 5b and 5d are closed; 5c.0 has landed and
+5c.1-5c.6 are planned but not started; 5e is last by design. Gates: duplication **629**
+removable repo-wide over 8 families (`datareaders` 394 and `eventfitters` 193 are recorded
+floors, `views/widgets` 3, `eventfinders` 0, the three analysis-tab families 31,
+`*Model.py` 8); boundary allowlist **2**, at its floor; refactor-coverage audit **82 of 82
+pinned**; shell complexity **8 functions over 10, totalling 121** across 9 files, newly
+gated; repo coverage **88%**, up from the 83% baseline. Suite **4,209 passed / 16
+skipped**, all eight hooks and `sphinx-build -W` green.
 
 **Recorded floors for Step 5**, each with its reason above: the 280 lines of abstract no-op
 stubs, `_find_events_in_chunk`'s two overrides, `_populate_event_metadata` (72) and the four

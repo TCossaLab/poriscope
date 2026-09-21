@@ -1,0 +1,47 @@
+{
+  "poriscope/controllers/DataPluginController.py": {
+    "functions": 16,
+    "over_threshold": 2,
+    "total_complexity": 40
+  },
+  "poriscope/controllers/__init__.py": {
+    "functions": 0,
+    "over_threshold": 0,
+    "total_complexity": 0
+  },
+  "poriscope/controllers/main_controller.py": {
+    "functions": 31,
+    "over_threshold": 1,
+    "total_complexity": 11
+  },
+  "poriscope/main_app.py": {
+    "functions": 5,
+    "over_threshold": 1,
+    "total_complexity": 17
+  },
+  "poriscope/models/DataPluginModel.py": {
+    "functions": 12,
+    "over_threshold": 0,
+    "total_complexity": 0
+  },
+  "poriscope/models/__init__.py": {
+    "functions": 0,
+    "over_threshold": 0,
+    "total_complexity": 0
+  },
+  "poriscope/models/main_model.py": {
+    "functions": 21,
+    "over_threshold": 2,
+    "total_complexity": 30
+  },
+  "poriscope/views/main_view.py": {
+    "functions": 75,
+    "over_threshold": 2,
+    "total_complexity": 23
+  },
+  "poriscope/views/settings_window.py": {
+    "functions": 29,
+    "over_threshold": 0,
+    "total_complexity": 0
+  }
+}
