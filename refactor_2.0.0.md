@@ -2709,8 +2709,28 @@ touch `self`.
   and the `GlobalSignal` half of `which_one_to_use.rst` describe a mechanism that will not
   exist, and the two deprecation notes now standing in `global_signal.rst` and
   `calling_a_plugin.rst` are placeholders for that deletion rather than a permanent state.
-  A grep for `global_signal` over `poriscope/` and `docs/source/` returning nothing outside
-  the changelog is the step's exit check.
+  **The documentation is replaced, not deleted - Kyle, 2026-09-21.** The plan previously said
+  to delete `docs/source/signals/global_signal/` and the `GlobalSignal` half of
+  `which_one_to_use.rst`. That is wrong: a reader arriving from a search result, a bookmark
+  or a memory of the feature needs to land on a page saying what to do *instead*. Each page's
+  job was never "describe `global_signal`" but "explain how a tab reaches another tab's
+  plugin", and that question still has an answer. Rewrite each to answer it with the new
+  approach, and **name the old mechanism** so the page is still findable by someone searching
+  for it.
+
+  **The docs surface is wider than this entry recorded.** Ten tracked files under
+  `docs/source/signals/`, of which seven mention `global_signal`: the four under
+  `global_signal/`, `signals_index.rst`, `which_one_to_use.rst`, `calling_a_plugin.rst`, plus
+  `data_plugin_controller_signal/overview.rst` for the signal that goes with it.
+  `autodoc/metaclasses/metacontroller.rst` is generated and follows the source.
+  `quality_control.rst` mentions it in passing. Note also
+  **`docs/source/signals/global_signal/global_signal copy.txt` is a tracked stray** - a backup
+  of the `.rst` beside it, carrying no Sphinx reference; delete that one outright, since
+  nothing links to it and it documents nothing.
+
+  **Exit check, split because of the above.** A grep for `global_signal` over `poriscope/`
+  returns **nothing**. Over `docs/source/` it returns matches **only** where a page explains
+  what replaced it, and `sphinx-build -W` is green with no dangling references.
 - **5c app shell.** `DataPluginController.edit_plugin` (+ `_resolve_plugin_references` and
   `_check_key_available` extractions that shrink it); `MainView`'s 9 menu blocks + 8 handlers
   → table + `functools.partial` (~90→~25 lines); `switch_to_page` duplicating
