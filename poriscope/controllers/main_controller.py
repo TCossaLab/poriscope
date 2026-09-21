@@ -852,6 +852,16 @@ class MainController(QObject):
             self.analysis_tabs[subclass].create_plugin.connect(
                 self.data_plugin_controller.validate_and_instantiate_plugin
             )
+            # Straight to the singleton, as create_plugin already was. There is no
+            # return value to carry back - the old bus passed "", () as its return
+            # function for both of these - and DataPluginController is constructed
+            # once and never reassigned, so there is nothing for a relay to resolve.
+            self.analysis_tabs[subclass].edit_plugin.connect(
+                self.data_plugin_controller.edit_plugin_settings
+            )
+            self.analysis_tabs[subclass].delete_plugin.connect(
+                self.data_plugin_controller.delete_plugin
+            )
             self.analysis_tabs[subclass].data_plugin_controller_signal.connect(
                 self.handle_data_plugin_controller_signal,
                 type=Qt.ConnectionType.DirectConnection,

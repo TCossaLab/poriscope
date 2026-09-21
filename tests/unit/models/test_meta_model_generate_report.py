@@ -82,7 +82,9 @@ def test_the_status_is_emitted_against_the_plugin_key(model):
     plugin = _Plugin()
     model.set_plugin_instances({"MetaReader": {"reader": plugin}})
     emitted = []
-    model.add_text_to_display.connect(lambda text, source: emitted.append((text, source)))
+    model.add_text_to_display.connect(
+        lambda text, source: emitted.append((text, source))
+    )
 
     model.generate_report(2, "reader")
 
@@ -100,7 +102,9 @@ def test_a_plugin_that_raises_is_reported_and_nothing_is_emitted(model, caplog):
     plugin = _Plugin(blow_up=True)
     model.set_plugin_instances({"MetaReader": {"reader": plugin}})
     emitted = []
-    model.add_text_to_display.connect(lambda text, source: emitted.append((text, source)))
+    model.add_text_to_display.connect(
+        lambda text, source: emitted.append((text, source))
+    )
 
     with caplog.at_level(logging.ERROR):
         model.generate_report(2, "reader")
@@ -117,7 +121,9 @@ def test_an_unregistered_plugin_is_reported_rather_than_raised(model, caplog):
     """
     model.set_plugin_instances({})
     emitted = []
-    model.add_text_to_display.connect(lambda text, source: emitted.append((text, source)))
+    model.add_text_to_display.connect(
+        lambda text, source: emitted.append((text, source))
+    )
 
     with caplog.at_level(logging.ERROR):
         model.generate_report(0, "reader")
