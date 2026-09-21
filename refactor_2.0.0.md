@@ -2542,7 +2542,15 @@ Each says what it moves *before* it starts (method rule 38).
     summary reported the test as surviving; the anchor string occurred twice in the file, so
     the splice duplicated a region rather than cutting one and the code was never changed.
     Check that a mutation actually mutated before concluding anything about the test.
-  - **5c.5 - `create_appdata_folders`,** which the artifact records as repeating the same
+
+    **Manual Windows pass run 2026-09-21, clear.** Covered the plugin add path through its
+    five new helpers - history pre-fill, the incrementing offered name, a duplicate name
+    refused, a finder resolving its reader parent - and 5c.3's edit, rename, rename-onto-
+    taken and delete-with-dependent again, since 5c.2's helper moved beneath them. Then
+    both session cases: a freshly saved session restoring whole, with the summary reading
+    plainly and appending nothing; and the original stale `seession.json` from the bug
+    report, which now names the missing plugin class in words and closes with the count of
+    what did not restore.  - **5c.5 - `create_appdata_folders`,** which the artifact records as repeating the same
     block per folder.
   - **5c.6 - `populate_available_plugins`,** and a ruling on the remaining four:
     `remove_pages_except` (12), `switch_to_page` (11), `update_plugin_history` (11) and
