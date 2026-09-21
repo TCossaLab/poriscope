@@ -139,9 +139,13 @@ def test_a_channel_status_request_reaches_the_display(triad, monkeypatch):
     """
     seen = display_calls(triad, monkeypatch)
     reader = _StubReader()
-    triad.controller.data_plugin_controller.model.plugins.setdefault("MetaReader", {})[
-        READER
-    ] = reader
+    # Registered through the triad rather than pushed into a registry by hand.
+    # There are two of them: the bus resolves against DataPluginModel.plugins,
+    # while MetaModel.call resolves against the tab's own _plugin_instances,
+    # which MainController fills only when a registration is announced. Reaching
+    # into one of them directly would pin this test to whichever mechanism is
+    # current, which is exactly what it exists not to do.
+    triad.register(reader, "MetaReader", READER)
     triad.tab_controller.model.reporter_metaclasses[READER] = "MetaReader"
 
     triad.tab_controller.model.generate_report(3, READER)
