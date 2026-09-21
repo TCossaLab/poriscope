@@ -2400,6 +2400,14 @@ Each says what it moves *before* it starts (method rule 38).
 - **5e - the bus, and every trace of it.** Last, so nothing still needs it. See the entry
   below and `DECISIONS.md` 2026-09-19.
 
+**Where Step 5 stands, 2026-09-20.** 5a, 5b and 5d are closed; 5c is reviewed, re-scoped
+and planned but not started; 5e is last by design. Gates re-measured the same day:
+duplication **629** removable repo-wide over 8 families (`datareaders` 394 and
+`eventfitters` 193 are recorded floors, `views/widgets` 3, `eventfinders` 0, the three
+analysis-tab families 31, `*Model.py` 8); boundary allowlist **2**, at its floor;
+refactor-coverage audit **82 of 82 pinned**; repo coverage **88%**, up from the 83%
+baseline. Suite **4,167 passed / 16 skipped**, all eight hooks and `sphinx-build -W` green.
+
 **Recorded floors for Step 5**, each with its reason above: the 280 lines of abstract no-op
 stubs, `_find_events_in_chunk`'s two overrides, `_populate_event_metadata` (72) and the four
 `_define_*` declarations in the CUSUM/NoFitter pair, and whatever Chimera logic turns out to
