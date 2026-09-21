@@ -39,6 +39,7 @@ from tests.e2e._helpers import (
     QT_SHORT_PAUSE_MS,
     QT_WAIT_TIMEOUT_MS,
     READER_NAME,
+    ask_plugin,
     channels_have_loaded,
     count_plot_lines,
     ensure_name_filled,
@@ -346,15 +347,15 @@ def events_found(qtbot, eventfinder_added, auto_dismiss_message_boxes):
     raw_view, controls, ds, reader_key, finder_key = eventfinder_added
 
     def num_events_found() -> int:
-        raw_view.global_signal.emit(
+        return ask_plugin(
+            raw_view,
+            "RawDataController",
             "MetaEventFinder",
             finder_key,
             "get_num_events_found",
-            (ds.channel,),
-            "set_num_events_allowed",
-            (),
+            ds.channel,
+            default=0,
         )
-        return getattr(raw_view, "num_events_allowed", 0)
 
     QTest.mouseClick(controls.timer_pushButton, Qt.LeftButton)
     QTest.mouseClick(controls.find_events_pushButton, Qt.LeftButton)
@@ -399,15 +400,15 @@ def test_eventfinder_finds_exact_planted_count(qtbot, events_found):
     raw_view, controls, ds, reader_key, finder_key = events_found
 
     def num_events_found() -> int:
-        raw_view.global_signal.emit(
+        return ask_plugin(
+            raw_view,
+            "RawDataController",
             "MetaEventFinder",
             finder_key,
             "get_num_events_found",
-            (ds.channel,),
-            "set_num_events_allowed",
-            (),
+            ds.channel,
+            default=0,
         )
-        return raw_view.num_events_allowed
 
     qtbot.waitUntil(
         lambda: num_events_found() == ds.num_events, timeout=QT_WAIT_TIMEOUT_MS

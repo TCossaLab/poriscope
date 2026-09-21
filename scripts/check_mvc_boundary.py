@@ -37,9 +37,13 @@ rather than a pass/fail gate: every entry is a known violation, recorded so that
 
 The five rules:
 
-1. **No View emits on the plugin bus.** A ``global_signal.emit`` in a widget means a
-   cross-plugin call originates in the View. Step 4a turns these into
-   ``self.call(...)`` on the Model.
+1. **No View emits on the plugin bus, and the bus does not come back.** Step 4a turned
+   every ``global_signal.emit`` into ``self.call(...)`` on the Model, and 5e deleted the
+   signal itself - so this rule can no longer fire against anything that exists. It is
+   kept deliberately, as a tripwire: a ``global_signal`` reintroduced anywhere in a View
+   is caught here permanently, where the step's own exit check was a grep run once. A
+   reader who does not recognise the name should read that as the point rather than as
+   documentation of a current mechanism.
 2. **No View imports a computation library** - numpy, scipy, sklearn, hdbscan,
    pandas, ``fast_histogram`` or sqlite3 - **to compute with**. An import used only
    to write a type is exempt: a View annotated ``Sequence[npt.NDArray[np.float64]]``
@@ -793,7 +797,7 @@ def report(results: Dict[str, Dict[str, object]], verbose: bool) -> None:
     imports: Dict[str, List[str]] = allowlist["imports"]  # type: ignore[assignment]
     privates: Dict[str, int] = allowlist["private_access"]  # type: ignore[assignment]
 
-    print("1. global_signal.emit in a View")
+    print("1. global_signal.emit in a View (removed in 5e; this guards its return)")
     for name, count in emits.items():
         print(f"     {count:>3}  {name}")
     print(f"     {sum(emits.values()):>3}  total")

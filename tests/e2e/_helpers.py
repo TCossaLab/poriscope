@@ -460,3 +460,42 @@ def json_file_ready(path: Path) -> bool:
     except (OSError, json.JSONDecodeError):
         return False
     return True
+
+
+def ask_plugin(view, tab_subclass, metaclass, key, method, *args, default=None):
+    """
+    Ask a data plugin a question, the way the application asks one.
+
+    These polls used to emit ``global_signal`` and read the answer back off an
+    attribute the callback had set on the View. 5e deleted that bus, and the
+    replacement is the same one production uses: ``MetaModel.call``.
+
+    Returns ``default`` when the call cannot be made. That is not laziness - most
+    callers here are ``waitUntil`` predicates, where "the plugin is not ready to
+    answer yet" is an ordinary intermediate state rather than a failure. The old
+    bus produced the same effect by swallowing and leaving the attribute unset.
+
+    :param view: a tab View carrying ``_test_keepalive``
+    :type view: Any
+    :param tab_subclass: the tab controller's name, e.g. "RawDataController"
+    :type tab_subclass: str
+    :param metaclass: the plugin family, e.g. "MetaEventFinder"
+    :type metaclass: str
+    :param key: the plugin instance's key
+    :type key: str
+    :param method: the method to call on it
+    :type method: str
+    :param \\*args: positional arguments for that method
+    :type \\*args: Any
+    :param default: what to return if the call could not be made
+    :type default: Any
+    :return: whatever the plugin returned, or ``default``
+    :rtype: Any
+    """
+    _model, _view, controller = view._test_keepalive
+    try:
+        return controller.analysis_tabs[tab_subclass].model.call(
+            metaclass, key, method, *args
+        )
+    except Exception:
+        return default
