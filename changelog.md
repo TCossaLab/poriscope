@@ -1,5 +1,7 @@
 ## Poriscope 2.0.0: in progress
 
+* **Fixed error dialogs opening behind the main window**, where a modal dialog nobody can see holds the input grab and the application looks frozen - most visibly at startup, when a duplicate plugin name reported an error before the window had finished painting
+
 * The first-run bootstrap creates its five folders and writes its configuration through one routine each rather than repeating the block five and three times; the folders, the config repair and every warning are unchanged
 
 * A session naming a plugin class this version no longer ships now says so, instead of reporting the class name back as a bare error - it may have been renamed or removed since the session was saved
