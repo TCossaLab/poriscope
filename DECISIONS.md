@@ -10,6 +10,37 @@ which ran through August 2026 and is complete. The step numbers only date the de
 
 ---
 
+## 2026-09-21 - Error dialogs get a parent; the startup ordering is left alone
+
+**Context.** Kyle put a plugin in the user folder whose name collided with a shipped one.
+The collision was detected and reported exactly as intended - `MainModel` logs it at ERROR
+so the user renames it rather than the app tolerating it - but the application then hung.
+
+**Cause.** `QtHandler` raises a modal dialog on ERROR. Discovery runs inside
+`App.__init__`, so the record is emitted before `main_view.show()`; the connection is
+`Qt.QueuedConnection`, so the dialog opens as one of the first events after `app.exec()`,
+over a main window that has not painted. It was parented to `None`, so Windows was free to
+stack it behind that window. An invisible modal dialog still holds the input grab, and is
+indistinguishable from a freeze.
+
+**Decision.** Parent the dialog to `QApplication.activeWindow()` and raise it (Kyle,
+2026-09-21). **The ordering is deliberately not addressed**: an ERROR logged before any
+window exists still produces a dialog with no parent to stack above. Holding startup
+records until the window is shown was considered and set aside as a larger change to
+`QtHandler` than the symptom warrants.
+
+**Evidence.** The dialog code had *no tests at all* - nothing asserted where a dialog went,
+so nothing could have caught this. `tests/unit/utils/test_qt_handler.py` now covers it, and
+both new assertions were verified to fail against the parentless version. **Manual Windows
+pass run 2026-09-21, clear:** the collision was reinstated and the app relaunched; the
+dialog now arrives in front of the main window.
+
+**Revisit if** a startup error is reported as a hang again. The answer then is to queue
+records until the main window is shown, reusing the queue `QtHandler` already keeps for
+records arriving while a dialog is open.
+
+---
+
 ## 2026-09-21 - Startup cost is imports, and the cold-start penalty is not ours
 
 **Context.** Kyle reported launches that are "slow sometimes, but not consistently - repeated
