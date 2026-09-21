@@ -2591,16 +2591,55 @@ Each says what it moves *before* it starts (method rule 38).
     renamed away and the app launched cold, relaunched, a non-default Log Level survived a
     restart, a config with `Log Level` deleted was repaired and rewritten, and a user plugin
     was still discovered - which is the `sys.path` half.
-  - **5c.6 - `populate_available_plugins`,** and a ruling on the remaining four:
-    `remove_pages_except` (12), `switch_to_page` (11), `update_plugin_history` (11) and
-    `replace_class_names_with_classes` (11, and a filed defect). Either they come down or
-    each is recorded as a floor with its reason - what is not acceptable is leaving the gate
-    above zero with nothing said about why.
+  - **5c.6 - `populate_available_plugins`, and the ruling on the remaining four.
+    LANDED 2026-09-21** in three commits.
+    *Check, met and then some:* **all four came down; no floor was recorded, and the shell
+    gate reads 0 functions over 10, totalling 0.** Audit 106 -> **112 of 112 pinned**.
 
-  **Exit check for 5c:** the shell complexity gate reads its target, every function that came
-  off the list is either restructured or a recorded floor, and the manual Windows pass covers
-  the plugin add/edit/delete dialogs, since that is what `DataPluginController` drives and no
-  automated test opens them.
+    - `populate_available_plugins` **19 -> 6**, 94 -> 46 lines, five helpers.
+      `ALLOWED_BASE_CLASSES` is a class attribute now rather than rebuilt per call.
+      Verified by running real discovery: the same 39 plugins across the same 11 families.
+    - `replace_class_names_with_classes` **11 -> 4**, and the filed corruption fixed with
+      it, as the entry predicted - restructuring and fixing were the same edit. Conversion
+      is gated on the key through `_TYPE_VALUED_KEYS`; the save side still converts under
+      any key so no existing save breaks, but warns, because the load side will not convert
+      those back. Both walkers' list branches deleted as unreachable.
+    - `update_plugin_history` **11 -> 6**. A dead `if history:` inside a branch that had
+      already established it; `_renamed_history` naming the order-preserving rebuild, which
+      nothing had explained; and the docstring it never had.
+    - `remove_pages_except` **12 -> 4**, via `_pages_named` and `_reindex_pages`. It walked
+      the stack twice in two different ways. Both helpers name a concept the comments were
+      already having to spell out.
+    - `switch_to_page` **11 -> 7**, teardown only. `_dismiss_milestone` takes the two
+      try/excepts; the gating stays where a reader looks for it. **Deliberately not
+      restructured further:** the milestone branch mixes a gating decision with side
+      effects, and making that honest is a behaviour-shaped change wanting its own
+      walkthrough manual pass, not a complexity commit. Extracting the teardown pinned two
+      swallowed-exception paths that were four of `switch_to_page`'s six uncovered
+      statements, taking it 81% -> 90% and the helper to 100%.
+
+    **Manual Windows pass run 2026-09-21, clear.** Discovery populated every family and
+    rejected a deliberately colliding user plugin; sidebar navigation and reset-to-launch
+    behaved; a renamed plugin came back in its original position; and a real
+    `BinaryReader2X` config with `Test: {"Type": "str", "Value": "float"}` restored
+    correctly - the same file having failed on the branch without the fix with
+    `Test must have type <class 'str'>`, which is the corruption caught by a plugin's own
+    validator rather than by a synthetic dict. The milestone teardown was driven through a
+    live walkthrough: overlay and dialog both cleared and the next page's walkthrough
+    started, which is the `QTimer.singleShot` hand-off working.
+
+    **The pass also surfaced a pre-existing defect, filed not fixed** (Kyle's call): a
+    milestone blocks the page switch but not the tab creation, the walkthrough that tab
+    starts, or the sidebar highlight, because every caller of `switch_to_page` does its
+    work before calling it. The gating is byte-identical to `develop` - verified by AST
+    diff - so this is not from the extraction. See `future_fixes.md`.
+
+  **Exit check for 5c: met.** The shell complexity gate reads **0 functions over 10,
+  totalling 0**, from 8 / 121 at the start of the step. Every function that came off the
+  list was restructured; **no floor was recorded**. The refactor-coverage audit went 82 ->
+  **112 of 112 pinned**. Manual Windows passes were run and reported clear at 5c.3 (the
+  plugin dialogs), 5c.4 (those again plus session restore, including the stale session from
+  the bug report) and 5c.5 (first-run startup), with one outstanding for 5c.6.
 - **5e - the bus, and every trace of it.** Last, so nothing still needs it. See the entry
   below and `DECISIONS.md` 2026-09-19.
 

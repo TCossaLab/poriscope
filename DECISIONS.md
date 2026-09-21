@@ -10,6 +10,27 @@ which ran through August 2026 and is complete. The step numbers only date the de
 
 ---
 
+## 2026-09-21 - Startup cost is imports, and the cold-start penalty is not ours
+
+**Context.** Kyle reported launches that are "slow sometimes, but not consistently - repeated
+starts are usually fast". The intuitive suspect was `populate_available_plugins`, which walks
+the plugin tree and *executes* every `.py` file it finds.
+
+**Decision.** Leave it. Measure warm, not cold, when judging Poriscope's own I/O cost.
+
+**Evidence.** `populate_available_plugins` is **0.07s** - not a factor, and the intuitive
+suspect is the wrong one. Importing `poriscope.main_app` is **2.97s warm against 8.65s
+cold**; within the warm 3s, `scipy.optimize` 0.86s, `matplotlib.pyplot` 0.67s and `pandas`
+0.66s dominate. The ~5.7s difference is first-touch file I/O on this checkout, which sits on
+a OneDrive-synced path - a development-machine artifact that users do not have (Kyle,
+2026-09-21). The obvious remedy for the warm 3s, deferring heavy imports into the functions
+that need them, is barred by the module-level import rule in any case.
+
+**Revisit if** the warm 3s becomes a complaint in its own right, at which point the answer is
+a splash screen during import rather than lazy imports.
+
+---
+
 ## 2026-09-21 - A splice anchored on neighbours can delete what sits between them
 
 **Context.** 5c.5 replaced `create_appdata_folders` by anchoring on its own `def` line and

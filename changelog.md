@@ -2,6 +2,12 @@
 
 * **Fixed error dialogs opening behind the main window**, where a modal dialog nobody can see holds the input grab and the application looks frozen - most visibly at startup, when a duplicate plugin name reported an error before the window had finished painting
 
+* Returning the window to its launch state, switching pages and recording a plugin rename are each built from named steps now rather than one long method; renaming a plugin keeps its place in the session rather than moving it to the end, which was always the intent but was not written down anywhere
+
+* **Fixed session restore corrupting any setting whose value happens to read `str`, `int`, `float` or `bool`** - it was turned into the type itself regardless of which setting it belonged to, so a plugin configured with `Event Type: float` came back broken; only the `Type` field is restored as a type now
+
+* Plugin discovery is now built from five named steps rather than one 94-line method - where it looks, which files it considers, how it imports each one and how it decides what family a plugin belongs to; the same plugins are found in the same order
+
 * The first-run bootstrap creates its five folders and writes its configuration through one routine each rather than repeating the block five and three times; the folders, the config repair and every warning are unchanged
 
 * A session naming a plugin class this version no longer ships now says so, instead of reporting the class name back as a bare error - it may have been renamed or removed since the session was saved
