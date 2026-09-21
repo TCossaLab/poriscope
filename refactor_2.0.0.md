@@ -2493,8 +2493,21 @@ Each says what it moves *before* it starts (method rule 38).
     **delete a reader while a finder depends on it, and confirm the reader still works**.
     The last two of those are the rollback paths - a broken restore raises nothing and shows
     up only later, as a plugin whose parent link has silently gone.
-  - **5c.4 - split `validate_and_instantiate_plugin`.** Same treatment; its six
-    report-then-return blocks want the reporting half of 5c.2's helper without the rollback.
+  - **5c.4 - split `validate_and_instantiate_plugin`. LANDED 2026-09-21**, split and
+    reporting fixes in two commits on one branch. Same treatment; its six report-then-return blocks
+    wanted the reporting half of 5c.2's helper without the rollback.
+    *Check, met:* **20 -> 7**, **160 -> 73 lines**, and `DataPluginController` now has
+    **nothing** over the threshold. Shell total **101 -> 81**, functions over threshold
+    **7 -> 6**. Audit 89 -> **98 of 98 pinned**; the 62 existing tests passed **untouched**,
+    the fourth 5c commit running with no test edited.
+
+    **Two dedups the plan did not predict.** `_report` is the reporting half that creating
+    and editing share - `_report_and_restore` is now literally `_report` plus the undo,
+    because only editing has links to undo; creating is building something with no parents
+    yet. And `_swap_plugin_names_for_instances` is the plugin-reference resolution loop,
+    which was written out twice, identical in both but for the message and the rollback. It
+    now raises rather than reporting, which is exactly what lets the two callers keep their
+    different wording.
 
     **Three reporting defects land here too, added 2026-09-21** (Kyle's ruling: fold them
     into 5c.4 rather than edit this function twice). Found by loading a session written by
@@ -2513,7 +2526,31 @@ Each says what it moves *before* it starts (method rule 38).
       restore loop's `except` never fires and the summary claims success after ten
       failures. Against the standing rule that a genuine failure must reach the user as
       one.
-  - **5c.5 - `create_appdata_folders`,** which the artifact records as repeating the same
+
+    **All three fixed 2026-09-21.** `get_temp_instance` raises its own `KeyError` with a
+    sentence in it; the lookup is inside the `try` and the *construction* deliberately
+    outside, so a `KeyError` from a plugin's own `__init__` is not relabelled as a missing
+    class - which is its own test. `validate_and_instantiate_plugin` returns `bool`, a
+    widening the two signal connections and the dialog path ignore; the docstring is
+    explicit that `False` also covers a cancelled dialog, so only a caller where no dialog
+    can appear may read it as failure, and session restore is that caller. The summary then
+    appends "N of M entries could not be restored (keys); see the messages above", which
+    answers the cascade complaint without new machinery - readable root causes plus a count
+    of what is missing. All three mutation-verified.
+
+    **A botched mutation reads exactly like a weak test.** The first attempt at mutating the
+    summary reported the test as surviving; the anchor string occurred twice in the file, so
+    the splice duplicated a region rather than cutting one and the code was never changed.
+    Check that a mutation actually mutated before concluding anything about the test.
+
+    **Manual Windows pass run 2026-09-21, clear.** Covered the plugin add path through its
+    five new helpers - history pre-fill, the incrementing offered name, a duplicate name
+    refused, a finder resolving its reader parent - and 5c.3's edit, rename, rename-onto-
+    taken and delete-with-dependent again, since 5c.2's helper moved beneath them. Then
+    both session cases: a freshly saved session restoring whole, with the summary reading
+    plainly and appending nothing; and the original stale `seession.json` from the bug
+    report, which now names the missing plugin class in words and closes with the count of
+    what did not restore.  - **5c.5 - `create_appdata_folders`,** which the artifact records as repeating the same
     block per folder.
   - **5c.6 - `populate_available_plugins`,** and a ruling on the remaining four:
     `remove_pages_except` (12), `switch_to_page` (11), `update_plugin_history` (11) and

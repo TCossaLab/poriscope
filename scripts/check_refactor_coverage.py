@@ -407,6 +407,56 @@ MOVED: Tuple[Tuple[str, str, str], ...] = (
         "_apply_edited_settings",
         "5c.3",
     ),
+    # Step 5c.4 - validate_and_instantiate_plugin split the same way, 160 -> 73
+    # lines and complexity 20 -> 7, leaving DataPluginController with nothing over
+    # the threshold. `_report` is the reporting half 5c.2's helper and this split
+    # share, and `_swap_plugin_names_for_instances` is the resolution loop that
+    # editing and creating had a copy of each.
+    (
+        "poriscope/controllers/DataPluginController.py",
+        "_report",
+        "5c.4",
+    ),
+    (
+        "poriscope/controllers/DataPluginController.py",
+        "_swap_plugin_names_for_instances",
+        "5c.4",
+    ),
+    (
+        "poriscope/controllers/DataPluginController.py",
+        "_make_temp_instance",
+        "5c.4",
+    ),
+    (
+        "poriscope/controllers/DataPluginController.py",
+        "_prepare_new_plugin_settings",
+        "5c.4",
+    ),
+    (
+        "poriscope/controllers/DataPluginController.py",
+        "_settings_from_new_plugin_dialog",
+        "5c.4",
+    ),
+    (
+        "poriscope/controllers/DataPluginController.py",
+        "_key_is_unused",
+        "5c.4",
+    ),
+    (
+        "poriscope/controllers/DataPluginController.py",
+        "_resolve_new_plugin_references",
+        "5c.4",
+    ),
+    (
+        "poriscope/controllers/DataPluginController.py",
+        "_apply_new_plugin_settings",
+        "5c.4",
+    ),
+    (
+        "poriscope/controllers/DataPluginController.py",
+        "_register_new_plugin",
+        "5c.4",
+    ),
 )
 
 VIEW_FILES: Tuple[str, ...] = (

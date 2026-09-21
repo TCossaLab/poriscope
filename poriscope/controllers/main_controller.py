@@ -889,6 +889,11 @@ class MainController(QObject):
         self.reset_session()
         self.plugin_history = plugin_history
         self.main_model.save_session(self.plugin_history)
+
+        # Counted before the loop, which emits update_plugin_history and so can
+        # change the dict it is iterating a copy of.
+        entries = len(self.plugin_history)
+        unrestored: List[str] = []
         for key, plugin in list(self.plugin_history.items()):
             metaclass = plugin["metaclass"]
             subclass = plugin["subclass"]
@@ -902,6 +907,7 @@ class MainController(QObject):
                     self.logger.error(
                         f"Unable to restore Analysis Tab {key} of type {subclass} due to {str(e)}"
                     )
+                    unrestored.append(key)
                     continue
                 tab = self.analysis_tabs.get(subclass)
                 if tab is not None:
@@ -909,16 +915,21 @@ class MainController(QObject):
             else:
                 settings = plugin.get("settings")
                 try:
-                    self.data_plugin_controller.validate_and_instantiate_plugin(
+                    # No dialog can appear here - restore supplies both settings
+                    # and key - so False means a reported failure, never a
+                    # cancellation.
+                    if not self.data_plugin_controller.validate_and_instantiate_plugin(
                         metaclass=metaclass,
                         subclass=subclass,
                         settings=settings,
                         key=key,
-                    )
+                    ):
+                        unrestored.append(key)
                 except Exception as e:
                     self.logger.error(
                         f"Unable to restore plugin {key} of type {metaclass}/{subclass} due to {str(e)}"
                     )
+                    unrestored.append(key)
 
         # Write the restored workspace back out before announcing it. Restoring a
         # tab is two steps - instantiate_analysis_tab, then restore_session_state -
@@ -937,6 +948,16 @@ class MainController(QObject):
             message = f"Loaded session from {file_name}."
         else:
             message = "Restored last saved session."
+        if unrestored:
+            # Each failure has already been reported individually, but those
+            # messages scroll and several of them are usually consequences of one
+            # or two root causes - a parent that never instantiated takes its
+            # dependents down with it. Without this the panel signed off with an
+            # unqualified success line under ten error messages.
+            message += (
+                f" {len(unrestored)} of {entries} entries could not be restored "
+                f"({', '.join(unrestored)}); see the messages above."
+            )
         self.main_view.add_text_to_display(message, "MainController")
 
     @log(logger=logger)

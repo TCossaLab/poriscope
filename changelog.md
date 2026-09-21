@@ -1,5 +1,11 @@
 ## Poriscope 2.0.0: in progress
 
+* A session naming a plugin class this version no longer ships now says so, instead of reporting the class name back as a bare error - it may have been renamed or removed since the session was saved
+
+* Loading a session now says how many of its entries could not be restored and names them, rather than reporting success regardless
+
+* Creating a data plugin is now built from five named steps rather than one 160-line method, and shares its reporting and its plugin-reference resolution with the edit path instead of keeping a second copy of each; every message is unchanged
+
 * Editing a data plugin is now built from six named steps rather than one 195-line method, so a failure part-way reports which step gave up; the dialog, the rename, the delete and every error message behave exactly as before
 
 * The five paths that abandon a plugin edit now share one implementation of reporting the problem and restoring the plugin's parent links, so a future abort cannot silently skip the restore; every message and its severity are unchanged

@@ -137,3 +137,53 @@ def test_get_plugin_instance(plugin_model, dummy_plugin):
     plugin_model.register_plugin(dummy_plugin, "MetaExample", "abc")
     instance = plugin_model.get_plugin_instance("MetaExample", "abc")
     assert instance == dummy_plugin
+
+
+# ------------- 5c.4: what a missing plugin class reports -------------------
+
+
+def test_get_temp_instance_names_a_missing_subclass(plugin_model):
+    """
+    A plugin class this version does not ship says so, rather than repr-ing its own name.
+
+    ``str(KeyError("x"))`` is ``"'x'"``, so the bare subscript surfaced a stale
+    session as ``...MetaReader.ABF2Reader: 'ABF2Reader'`` - which reads as an
+    internal fault rather than as the diagnosis it is.
+    """
+    with pytest.raises(KeyError) as excinfo:
+        plugin_model.get_temp_instance("MetaExample", "GoneReader")
+
+    message = str(excinfo.value)
+    assert "no plugin class named 'GoneReader' is installed" in message
+    assert "MetaExample" in message
+    assert "renamed or removed" in message
+
+
+def test_get_temp_instance_names_a_missing_metaclass(plugin_model):
+    """The other half of the lookup fails the same way."""
+    with pytest.raises(KeyError) as excinfo:
+        plugin_model.get_temp_instance("MetaGone", "ExamplePlugin")
+
+    assert "MetaGone" in str(excinfo.value)
+
+
+def test_get_temp_instance_does_not_relabel_a_keyerror_from_the_plugin():
+    """
+    A plugin whose own constructor raises ``KeyError`` is not called a missing class.
+
+    This is why the lookup sits inside the ``try`` and the construction does not.
+    Widening the ``try`` would turn any ``KeyError`` from plugin code into a
+    confident and wrong claim that the plugin is not installed.
+    """
+
+    def explode():
+        raise KeyError("a key the plugin itself wanted")
+
+    model = DataPluginModel({"MetaExample": {"ExamplePlugin": explode}})
+
+    with pytest.raises(KeyError) as excinfo:
+        model.get_temp_instance("MetaExample", "ExamplePlugin")
+
+    message = str(excinfo.value)
+    assert "a key the plugin itself wanted" in message
+    assert "is installed under" not in message

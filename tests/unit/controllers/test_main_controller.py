@@ -1939,3 +1939,75 @@ class TestRefreshAvailablePlugins:
         controller.update_user_plugin_location("/some/new/folder")
 
         assert order == ["config", "scan"]
+
+
+# ------------- 5c.4: the session-restore summary ---------------------------
+
+
+def test_load_session_reports_entries_that_could_not_be_restored(
+    mocker: MockerFixture,
+    mock_main_model: MagicMock,
+    mock_main_view: MagicMock,
+) -> None:
+    """
+    A partial restore says so, instead of signing off with an unqualified success line.
+
+    Loading a session written by an older Poriscope produced ten error messages
+    and then "Loaded session from ...", because validate_and_instantiate_plugin
+    reported internally and returned None, so the loop's own except never fired
+    and nothing counted the failures.
+
+    :param mocker: Pytest-mock fixture.
+    :param mock_main_model: Mocked main model.
+    :param mock_main_view: Mocked main view.
+    """
+    dpc_cls = mocker.patch("poriscope.controllers.main_controller.DataPluginController")
+    dpc_cls.return_value.validate_and_instantiate_plugin.return_value = False
+
+    ctrl = MainController(mock_main_model, mock_main_view)
+    mock_main_model.load_session.return_value = {
+        "reader_key": {
+            "metaclass": "MetaReader",
+            "subclass": "ABF2Reader",
+            "settings": {"a": 1},
+        }
+    }
+    mock_main_model.get_available_plugins.return_value = {}
+
+    ctrl.load_session("session.json")
+
+    messages = [c.args[0] for c in mock_main_view.add_text_to_display.call_args_list]
+    assert any("1 of 1 entries could not be restored" in m for m in messages), messages
+    assert any("reader_key" in m for m in messages), messages
+
+
+def test_load_session_says_nothing_extra_when_every_entry_restored(
+    mocker: MockerFixture,
+    mock_main_model: MagicMock,
+    mock_main_view: MagicMock,
+) -> None:
+    """
+    The ordinary case keeps its plain message, so the warning stays meaningful.
+
+    :param mocker: Pytest-mock fixture.
+    :param mock_main_model: Mocked main model.
+    :param mock_main_view: Mocked main view.
+    """
+    dpc_cls = mocker.patch("poriscope.controllers.main_controller.DataPluginController")
+    dpc_cls.return_value.validate_and_instantiate_plugin.return_value = True
+
+    ctrl = MainController(mock_main_model, mock_main_view)
+    mock_main_model.load_session.return_value = {
+        "reader_key": {
+            "metaclass": "MetaReader",
+            "subclass": "MyReader",
+            "settings": {"a": 1},
+        }
+    }
+    mock_main_model.get_available_plugins.return_value = {}
+
+    ctrl.load_session("session.json")
+
+    messages = [c.args[0] for c in mock_main_view.add_text_to_display.call_args_list]
+    assert "Loaded session from session.json." in messages, messages
+    assert not any("could not be restored" in m for m in messages), messages
