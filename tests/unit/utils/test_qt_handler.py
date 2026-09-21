@@ -32,8 +32,13 @@ def make_record(level: int, message: str = "something happened") -> logging.LogR
     :rtype: logging.LogRecord
     """
     return logging.LogRecord(
-        name="test", level=level, pathname=__file__, lineno=1, msg=message,
-        args=(), exc_info=None,
+        name="test",
+        level=level,
+        pathname=__file__,
+        lineno=1,
+        msg=message,
+        args=(),
+        exc_info=None,
     )
 
 
