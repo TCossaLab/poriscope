@@ -2493,8 +2493,21 @@ Each says what it moves *before* it starts (method rule 38).
     **delete a reader while a finder depends on it, and confirm the reader still works**.
     The last two of those are the rollback paths - a broken restore raises nothing and shows
     up only later, as a plugin whose parent link has silently gone.
-  - **5c.4 - split `validate_and_instantiate_plugin`.** Same treatment; its six
-    report-then-return blocks want the reporting half of 5c.2's helper without the rollback.
+  - **5c.4 - split `validate_and_instantiate_plugin`. SPLIT LANDED 2026-09-21**, reporting
+    fixes to follow on the same branch. Same treatment; its six report-then-return blocks
+    wanted the reporting half of 5c.2's helper without the rollback.
+    *Check, met:* **20 -> 7**, **160 -> 73 lines**, and `DataPluginController` now has
+    **nothing** over the threshold. Shell total **101 -> 81**, functions over threshold
+    **7 -> 6**. Audit 89 -> **98 of 98 pinned**; the 62 existing tests passed **untouched**,
+    the fourth 5c commit running with no test edited.
+
+    **Two dedups the plan did not predict.** `_report` is the reporting half that creating
+    and editing share - `_report_and_restore` is now literally `_report` plus the undo,
+    because only editing has links to undo; creating is building something with no parents
+    yet. And `_swap_plugin_names_for_instances` is the plugin-reference resolution loop,
+    which was written out twice, identical in both but for the message and the rollback. It
+    now raises rather than reporting, which is exactly what lets the two callers keep their
+    different wording.
 
     **Three reporting defects land here too, added 2026-09-21** (Kyle's ruling: fold them
     into 5c.4 rather than edit this function twice). Found by loading a session written by

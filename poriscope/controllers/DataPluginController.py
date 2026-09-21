@@ -383,13 +383,7 @@ class DataPluginController(QObject):
         :rtype: bool
         """
         try:
-            for settings_key, val in app_settings.items():
-                if settings_key in self.model.get_available_metaclasses():
-                    app_settings[settings_key]["Value"] = (
-                        self.model.get_plugin_instance(settings_key, val["Value"])
-                    )
-                    app_settings[settings_key]["Type"] = None
-                    app_settings[settings_key]["Options"] = None
+            self._swap_plugin_names_for_instances(app_settings)
         except Exception as e:
             self._report_and_restore(
                 self.logger.exception,
@@ -400,6 +394,31 @@ class DataPluginController(QObject):
             )
             return False
         return True
+
+    @log(logger=logger)
+    def _swap_plugin_names_for_instances(self, app_settings: dict) -> None:
+        """
+        Replace every plugin name in a settings dict with the live plugin it names.
+
+        The inverse of `_coerce_plugin_references_to_keys`: `Type` and `Options`
+        go back to None, because the plugin itself expects an object rather than
+        a rendered choice.
+
+        Editing a plugin and creating one both do exactly this, and differ only
+        in what they say when it fails and whether they have parent links to put
+        back - so the loop lives here once and each caller wraps it in its own
+        handler. Raising rather than reporting is what lets them differ.
+
+        :param app_settings: The settings dict to resolve in place.
+        :type app_settings: dict
+        """
+        for settings_key, val in app_settings.items():
+            if settings_key in self.model.get_available_metaclasses():
+                app_settings[settings_key]["Value"] = self.model.get_plugin_instance(
+                    settings_key, val["Value"]
+                )
+                app_settings[settings_key]["Type"] = None
+                app_settings[settings_key]["Options"] = None
 
     @log(logger=logger)
     def _apply_edited_settings(
@@ -503,12 +522,38 @@ class DataPluginController(QObject):
             differ from the logged message
         :type display_message: Optional[str]
         """
+        self._report(report, message, display_message)
+        self._restore_parent_dependent_links(metaclass, key, parents)
+
+    @log(logger=logger)
+    def _report(
+        self,
+        report: Callable[[str], None],
+        message: str,
+        display_message: Optional[str] = None,
+    ) -> None:
+        """
+        Say the same thing to the log and to the status panel.
+
+        Creating a plugin and editing one fail in the same shapes, but only
+        editing has links to undo: `edit_plugin` unregisters from the parents
+        before it starts, while `validate_and_instantiate_plugin` is building
+        something that has none yet. So this is the half they share, and
+        `_report_and_restore` is this plus the undo.
+
+        :param report: The logger method to report through, which carries the severity.
+        :type report: Callable[[str], None]
+        :param message: What to write to the log.
+        :type message: str
+        :param display_message: What to show on the status panel, when it should
+            differ from the logged message.
+        :type display_message: Optional[str]
+        """
         report(message)
         self.add_text_to_display.emit(
             message if display_message is None else display_message,
             self.__class__.__name__,
         )
-        self._restore_parent_dependent_links(metaclass, key, parents)
 
     @log(logger=logger)
     def _unregister_parent_dependent_links(
@@ -724,6 +769,18 @@ class DataPluginController(QObject):
         """
         Validate and instantiate a plugin based on the given metaclass and subclass.
 
+        Five steps, each of which can give up: build a bare instance of the
+        requested class, settle its settings and key, resolve the plugin names
+        those settings hold into live plugins, apply them, and register the
+        result. Only the last of those makes the plugin visible to the rest of
+        the app, so giving up before it leaves nothing behind to clean away -
+        which is why these steps report and stop where `edit_plugin`'s have to
+        report and restore.
+
+        Called both from the plugin dialog and from session restore; the restore
+        path supplies `settings` and `key` up front, which is what skips the
+        dialog.
+
         :param metaclass: The metaclass of the plugin.
         :type metaclass: str
         :param subclass: The subclass of the plugin.
@@ -732,134 +789,32 @@ class DataPluginController(QObject):
         :type settings: Optional[Dict[str, Any]]
         :param key: Optional key to set for the new plugin instance.
         :type key: Optional[str]
-        :raises ValueError: if no key was supplied by the caller and none was
-            chosen in the settings dialog. Caught by this method's own handler
-            and reported to the user; it never propagates to the caller.
         """
-        history: Dict[str, Any] = {}
-        temp_instance = None
-
-        # instantiate a temporary instance of the requested data plugin type
-        try:
-            temp_instance = self.model.get_temp_instance(metaclass, subclass)
-        except Exception as e:
-            self.logger.error(
-                f"Unable to create a temporary instance of plugin of type {metaclass}.{subclass}: {str(e)}"
-            )
-            self.add_text_to_display.emit(
-                f"Unable to create a temporary instance of plugin of type {metaclass}.{subclass}: {str(e)}",
-                self.__class__.__name__,
-            )
+        temp_instance = self._make_temp_instance(metaclass, subclass)
+        if temp_instance is None:
             return
 
-        # get the settings dict required from the user if it is not provided already, pre-populating from history where possible
-        try:
-            if key is not None:
-                temp_instance.set_key(key)
-            if settings is None:
-                settings = temp_instance.get_empty_settings(
-                    self.model.get_instantiated_plugins_list()
-                )
-                historical_settings = self._history_lookup(metaclass, subclass)
-                if historical_settings:
-                    for setting_key, val in historical_settings.items():
-                        settings[setting_key]["Value"] = val.get("Value")
-                if (
-                    "Folder" in settings.keys()
-                    and settings["Folder"].get("Value") is None
-                ):
-                    settings["Folder"][
-                        "Value"
-                    ] = (
-                        self.data_server
-                    )  # default to the data server in the absence of better things
-
-                new_settings, new_key, _ = self.view.get_user_settings(
-                    settings,
-                    f"{subclass}_{len(self.model.get_instantiated_plugins_list()[metaclass])}",
-                    self.data_server,
-                )
-                if new_settings is None or new_key is None:
-                    return
-                settings, key = new_settings, new_key
-
-            # Enforce global uniqueness of plugin name across all metaclasses
-            for (
-                meta,
-                existing_keys,
-            ) in self.model.get_instantiated_plugins_list().items():
-                if key in existing_keys:
-                    self.logger.warning(
-                        f"Plugin name '{key}' already exists under metaclass '{meta}'. Please use a unique name."
-                    )
-                    self.add_text_to_display.emit(
-                        f"Plugin name '{key}' already exists under metaclass '{meta}'. Please choose a different name.",
-                        self.__class__.__name__,
-                    )
-                    return
-
-            if key is None:
-                raise ValueError("No plugin key was provided or chosen")
-            temp_instance.set_key(key)
-
-        except Exception as e:
-            self.logger.exception(
-                f"Unable to instantiate plugin {key} of type {metaclass}.{subclass}: {str(e)}"
-            )
-            self.add_text_to_display.emit(
-                f"Unable to instantiate plugin {key} of type {metaclass}.{subclass}: {str(e)}",
-                self.__class__.__name__,
-            )
+        prepared = self._prepare_new_plugin_settings(
+            metaclass, subclass, temp_instance, settings, key
+        )
+        if prepared is None:
             return
-
+        settings, key = prepared
         if not settings:
             return
 
-        # Replace plugin references in settings with actual instances
         app_settings = copy.deepcopy(settings)
-
-        try:
-            for settings_key, val in app_settings.items():
-                if settings_key in self.model.get_available_metaclasses():
-                    app_settings[settings_key]["Value"] = (
-                        self.model.get_plugin_instance(settings_key, val["Value"])
-                    )
-                    app_settings[settings_key]["Type"] = None
-                    app_settings[settings_key]["Options"] = None
-        except Exception as e:
-            self.logger.exception(
-                f"Unable to instantiate plugin {key} of type {metaclass}.{subclass} due to inability to fetch other plugins: {str(e)}"
-            )
-            self.add_text_to_display.emit(
-                f"Unable to instantiate plugin {key} of type {metaclass}.{subclass} due to inability to fetch other plugins: {str(e)}",
-                self.__class__.__name__,
-            )
+        if not self._resolve_new_plugin_references(
+            app_settings, metaclass, subclass, key
+        ):
             return
 
-        # apply the settings to the new plugin object
-        try:
-            temp_instance.apply_settings(app_settings)
-        except Exception as e:
-            self.logger.error(
-                f"Unable to apply settings to plugin {key} of type {metaclass}.{subclass}: {str(e)}"
-            )
-            self.add_text_to_display.emit(
-                f"Unable to apply settings to plugin {key} of type {metaclass}.{subclass}: {str(e)}",
-                self.__class__.__name__,
-            )
+        if not self._apply_new_plugin_settings(
+            temp_instance, app_settings, metaclass, subclass, key
+        ):
             return
 
-        # register the completed plugin for use by the rest of the app
-        try:
-            self.model.register_plugin(temp_instance, metaclass, key)
-        except Exception as e:
-            self.logger.error(
-                f"Unable to register new plugin instance {key} of type {metaclass}.{subclass}: {str(e)}"
-            )
-            self.add_text_to_display.emit(
-                f"Unable to register new plugin instance {key} of type {metaclass}.{subclass}: {str(e)}",
-                self.__class__.__name__,
-            )
+        if not self._register_new_plugin(temp_instance, metaclass, subclass, key):
             return
 
         self.update_available_plugins.emit(
@@ -868,12 +823,262 @@ class DataPluginController(QObject):
         self.add_text_to_display.emit(
             temp_instance.report_channel_status(channel=None, init=True), key
         )
+        self.update_plugin_history.emit(
+            {
+                "key": key,
+                "metaclass": metaclass,
+                "subclass": subclass,
+                "settings": settings,
+            },
+            "",
+        )
 
-        history["key"] = key
-        history["metaclass"] = metaclass
-        history["subclass"] = subclass
-        history["settings"] = settings
-        self.update_plugin_history.emit(history, "")
+    @log(logger=logger)
+    def _make_temp_instance(self, metaclass: str, subclass: str) -> Optional[Any]:
+        """
+        Build a bare instance of the requested plugin class.
+
+        The first thing that can fail, and the one a stale session trips: a
+        session naming a plugin class this version no longer ships gets here and
+        no further.
+
+        :param metaclass: The metaclass of the plugin.
+        :type metaclass: str
+        :param subclass: The subclass of the plugin.
+        :type subclass: str
+        :return: The new instance, or None if it could not be created.
+        :rtype: Optional[Any]
+        """
+        try:
+            return self.model.get_temp_instance(metaclass, subclass)
+        except Exception as e:
+            self._report(
+                self.logger.error,
+                f"Unable to create a temporary instance of plugin of type {metaclass}.{subclass}: {str(e)}",
+            )
+            return None
+
+    @log(logger=logger)
+    def _prepare_new_plugin_settings(
+        self,
+        metaclass: str,
+        subclass: str,
+        temp_instance: Any,
+        settings: Optional[Dict[str, Any]],
+        key: Optional[str],
+    ) -> Optional[Tuple[Dict[str, Any], str]]:
+        """
+        Settle what the plugin's settings and name are going to be.
+
+        Settings arrive either from the caller - session restore does this - or
+        from the dialog. Either way the name has to be free across every
+        metaclass before the plugin can take it.
+
+        :param metaclass: The metaclass of the plugin.
+        :type metaclass: str
+        :param subclass: The subclass of the plugin.
+        :type subclass: str
+        :param temp_instance: The bare plugin instance being set up.
+        :type temp_instance: Any
+        :param settings: Settings supplied by the caller, or None to ask the user.
+        :type settings: Optional[Dict[str, Any]]
+        :param key: Key supplied by the caller, or None to ask the user.
+        :type key: Optional[str]
+        :return: The settled (settings, key), or None if the caller should give up.
+        :rtype: Optional[Tuple[Dict[str, Any], str]]
+        :raises ValueError: if no key was supplied by the caller and none was
+            chosen in the settings dialog. Caught by this method's own handler
+            and reported to the user; it never propagates to the caller.
+        """
+        try:
+            if key is not None:
+                temp_instance.set_key(key)
+
+            if settings is None:
+                settings, key = self._settings_from_new_plugin_dialog(
+                    metaclass, subclass, temp_instance
+                )
+                if settings is None or key is None:
+                    return None
+
+            if not self._key_is_unused(key):
+                return None
+
+            if key is None:
+                raise ValueError("No plugin key was provided or chosen")
+            temp_instance.set_key(key)
+        except Exception as e:
+            self._report(
+                self.logger.exception,
+                f"Unable to instantiate plugin {key} of type {metaclass}.{subclass}: {str(e)}",
+            )
+            return None
+
+        return settings, key
+
+    @log(logger=logger)
+    def _settings_from_new_plugin_dialog(
+        self, metaclass: str, subclass: str, temp_instance: Any
+    ) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+        """
+        Ask the user for settings, pre-filled from history where there is any.
+
+        The offered name counts the existing plugins of this metaclass, so a
+        second reader is offered `MyReader_1` rather than a clashing
+        `MyReader_0`.
+
+        :param metaclass: The metaclass of the plugin.
+        :type metaclass: str
+        :param subclass: The subclass of the plugin.
+        :type subclass: str
+        :param temp_instance: The bare plugin instance, asked for its empty settings.
+        :type temp_instance: Any
+        :return: The settings and key the user chose, either None if cancelled.
+        :rtype: Tuple[Optional[Dict[str, Any]], Optional[str]]
+        """
+        settings = temp_instance.get_empty_settings(
+            self.model.get_instantiated_plugins_list()
+        )
+
+        historical_settings = self._history_lookup(metaclass, subclass)
+        if historical_settings:
+            for setting_key, val in historical_settings.items():
+                settings[setting_key]["Value"] = val.get("Value")
+
+        if "Folder" in settings.keys() and settings["Folder"].get("Value") is None:
+            # default to the data server in the absence of better things
+            settings["Folder"]["Value"] = self.data_server
+
+        new_settings, new_key, _ = self.view.get_user_settings(
+            settings,
+            f"{subclass}_{len(self.model.get_instantiated_plugins_list()[metaclass])}",
+            self.data_server,
+        )
+        return new_settings, new_key
+
+    @log(logger=logger)
+    def _key_is_unused(self, key: Optional[str]) -> bool:
+        """
+        Check that no plugin anywhere already answers to this name.
+
+        Names are unique across *every* metaclass rather than within one, so a
+        reader cannot take a name a writer already holds.
+
+        :param key: The proposed plugin name.
+        :type key: Optional[str]
+        :return: True if the name is free, False if it is taken and was reported.
+        :rtype: bool
+        """
+        for meta, existing_keys in self.model.get_instantiated_plugins_list().items():
+            if key in existing_keys:
+                self._report(
+                    self.logger.warning,
+                    f"Plugin name '{key}' already exists under metaclass '{meta}'. Please use a unique name.",
+                    display_message=f"Plugin name '{key}' already exists under metaclass '{meta}'. Please choose a different name.",
+                )
+                return False
+        return True
+
+    @log(logger=logger)
+    def _resolve_new_plugin_references(
+        self, app_settings: dict, metaclass: str, subclass: str, key: str
+    ) -> bool:
+        """
+        Turn the plugin names in the settings into the live plugins they name.
+
+        Shares its loop with `_resolve_plugin_references`, the editing side;
+        what differs is the message and that nothing needs restoring here.
+
+        :param app_settings: The working copy of the plugin's settings.
+        :type app_settings: dict
+        :param metaclass: The metaclass of the plugin.
+        :type metaclass: str
+        :param subclass: The subclass of the plugin.
+        :type subclass: str
+        :param key: The plugin's name.
+        :type key: str
+        :return: True if every reference resolved, False if the caller should give up.
+        :rtype: bool
+        """
+        try:
+            self._swap_plugin_names_for_instances(app_settings)
+        except Exception as e:
+            self._report(
+                self.logger.exception,
+                f"Unable to instantiate plugin {key} of type {metaclass}.{subclass} due to inability to fetch other plugins: {str(e)}",
+            )
+            return False
+        return True
+
+    @log(logger=logger)
+    def _apply_new_plugin_settings(
+        self,
+        temp_instance: Any,
+        app_settings: dict,
+        metaclass: str,
+        subclass: str,
+        key: str,
+    ) -> bool:
+        """
+        Hand the resolved settings to the new plugin.
+
+        This is where a plugin rejects settings it cannot work with - a missing
+        file, a parent of the wrong type - so it is the step that fails most
+        often in practice.
+
+        :param temp_instance: The plugin being set up.
+        :type temp_instance: Any
+        :param app_settings: The settings with plugin references resolved to objects.
+        :type app_settings: dict
+        :param metaclass: The metaclass of the plugin.
+        :type metaclass: str
+        :param subclass: The subclass of the plugin.
+        :type subclass: str
+        :param key: The plugin's name.
+        :type key: str
+        :return: True if the settings were accepted, False if the caller should give up.
+        :rtype: bool
+        """
+        try:
+            temp_instance.apply_settings(app_settings)
+        except Exception as e:
+            self._report(
+                self.logger.error,
+                f"Unable to apply settings to plugin {key} of type {metaclass}.{subclass}: {str(e)}",
+            )
+            return False
+        return True
+
+    @log(logger=logger)
+    def _register_new_plugin(
+        self, temp_instance: Any, metaclass: str, subclass: str, key: str
+    ) -> bool:
+        """
+        Hand the finished plugin to the model, which is what makes it exist.
+
+        The last step that can fail, and the first that the rest of the
+        application can see - before this the plugin is private to this method.
+
+        :param temp_instance: The finished plugin.
+        :type temp_instance: Any
+        :param metaclass: The metaclass of the plugin.
+        :type metaclass: str
+        :param subclass: The subclass of the plugin.
+        :type subclass: str
+        :param key: The plugin's name.
+        :type key: str
+        :return: True if it was registered, False if the caller should give up.
+        :rtype: bool
+        """
+        try:
+            self.model.register_plugin(temp_instance, metaclass, key)
+        except Exception as e:
+            self._report(
+                self.logger.error,
+                f"Unable to register new plugin instance {key} of type {metaclass}.{subclass}: {str(e)}",
+            )
+            return False
+        return True
 
     @log(logger=logger)
     def update_data_server_location(self, data_server: str) -> None:
