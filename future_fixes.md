@@ -16,6 +16,26 @@ Read-only investigation and measurement do not.
   `MetaDatabaseLoader` rather than a defect repair - see `future_refactors_and_features.md`
   Part 13. Queued deliberately for after the 2.0.0 refactor.
 
+## A milestone blocks the page switch but not what caused it (2026-09-21)
+
+Found during 5c.6's manual pass; **pre-existing**, and the gating is byte-identical to
+what it was. `MainView.switch_to_page:913` refuses to change page while
+`_milestone_dialog` is up and the target is not `_expected_next_view` - but every caller
+does its work *before* calling it, so the refusal comes too late to prevent anything:
+
+- `on_raw_data_view_click:616` and its EventAnalysis and Metadata twins call
+  `on_load_analysis_tab_button_click` first, which emits `instantiate_analysis_tab` - the
+  tab is created and starts its own walkthrough - then `sync_sidebar_highlight`, and only
+  then `switch_to_page`.
+- `handle_menu_click:697` highlights before switching.
+- `on_load_analysis_tab_button_click:727` highlights as well, so the highlight moves twice.
+
+Observed: during a milestone, clicking any sidebar button opens that tab and starts its
+tutorial, and every menu stays live under the dimming overlay. The gate is in the wrong
+layer - it guards the last step of an action whose earlier steps have already run. Fixing
+it means asking "is this navigation allowed?" before the handler acts, not inside the
+final call.
+
 ## Action replay re-reads the filter selection instead of replaying it (2026-09-17)
 
 Both non-trivial `@register_action` methods call `self.get_selected_filters()` inside their

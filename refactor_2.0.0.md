@@ -2618,6 +2618,22 @@ Each says what it moves *before* it starts (method rule 38).
       swallowed-exception paths that were four of `switch_to_page`'s six uncovered
       statements, taking it 81% -> 90% and the helper to 100%.
 
+    **Manual Windows pass run 2026-09-21, clear.** Discovery populated every family and
+    rejected a deliberately colliding user plugin; sidebar navigation and reset-to-launch
+    behaved; a renamed plugin came back in its original position; and a real
+    `BinaryReader2X` config with `Test: {"Type": "str", "Value": "float"}` restored
+    correctly - the same file having failed on the branch without the fix with
+    `Test must have type <class 'str'>`, which is the corruption caught by a plugin's own
+    validator rather than by a synthetic dict. The milestone teardown was driven through a
+    live walkthrough: overlay and dialog both cleared and the next page's walkthrough
+    started, which is the `QTimer.singleShot` hand-off working.
+
+    **The pass also surfaced a pre-existing defect, filed not fixed** (Kyle's call): a
+    milestone blocks the page switch but not the tab creation, the walkthrough that tab
+    starts, or the sidebar highlight, because every caller of `switch_to_page` does its
+    work before calling it. The gating is byte-identical to `develop` - verified by AST
+    diff - so this is not from the extraction. See `future_fixes.md`.
+
   **Exit check for 5c: met.** The shell complexity gate reads **0 functions over 10,
   totalling 0**, from 8 / 121 at the start of the step. Every function that came off the
   list was restructured; **no floor was recorded**. The refactor-coverage audit went 82 ->
