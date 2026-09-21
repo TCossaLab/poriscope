@@ -2484,6 +2484,15 @@ Each says what it moves *before* it starts (method rule 38).
     Every test passed a list and both iterate, so the suite was green over a wrong
     signature; only the static gate saw it. Corrected in the three signatures and their
     `:type:` lines.
+
+    **Manual Windows pass run 2026-09-21, clear** - required by standing ruling 3, and the
+    only coverage these dialogs get, since no automated test opens them. Covered: add a
+    reader; edit its settings and confirm the value sticks; cancel, and dismiss with Esc;
+    rename to a free name; **rename onto a name already taken, and confirm the plugin still
+    works afterwards**; rename a reader that a finder depends on; delete with no dependents;
+    **delete a reader while a finder depends on it, and confirm the reader still works**.
+    The last two of those are the rollback paths - a broken restore raises nothing and shows
+    up only later, as a plugin whose parent link has silently gone.
   - **5c.4 - split `validate_and_instantiate_plugin`.** Same treatment; its six
     report-then-return blocks want the reporting half of 5c.2's helper without the rollback.
 
