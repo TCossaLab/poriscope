@@ -10,10 +10,14 @@ It was at **0% coverage** - 52 statements, none of them executed by any test -
 while being complexity 17 and the thing that runs before anything else in the
 application. Step 5c.5 splits it, so it is pinned first (5c.1).
 
-These call the method **unbound**, against a stub carrying only a logger. It
-touches nothing on ``self`` that it does not itself assign, so this exercises the
-real code without constructing a ``QApplication`` - which would collide with the
-one pytest-qt manages.
+These drive a stub that **borrows the real methods off ``App``**, so the code
+under test is the shipped code, but no ``QApplication`` is constructed - one would
+collide with the one pytest-qt manages. The stub needs nothing of its own but a
+logger, because the method assigns every other attribute it uses.
+
+Borrowing rather than subclassing is what keeps 5c.5's helpers honest: each is
+listed below by name, so a helper added to ``create_appdata_folders`` without
+being brought across fails loudly here instead of being quietly mocked away.
 
 Two globals are involved and both are restored by fixture rather than left to
 chance: ``user_data_dir`` is redirected into ``tmp_path`` so the developer's real
@@ -21,6 +25,7 @@ chance: ``user_data_dir`` is redirected into ``tmp_path`` so the developer's rea
 copy, since the method appends to it.
 """
 
+import ast
 import builtins
 import json
 import logging
@@ -33,19 +38,27 @@ import pytest
 from poriscope.main_app import App
 from poriscope.utils.app_config import default_app_config
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
 
 class _StubApp:
     """
-    A stand-in for ``App`` carrying only what ``create_appdata_folders`` reads.
+    A stand-in for ``App`` carrying the real bootstrap methods and a mock logger.
 
-    The method assigns every other attribute it uses, so nothing else is needed.
-    Using a stub rather than a real ``App`` keeps ``QApplication`` out of these
-    tests entirely.
+    The methods are taken off ``App`` unbound and rebound here, so these tests
+    run the shipped implementations rather than copies of them, while leaving
+    ``QApplication.__init__`` out of it entirely.
     """
+
+    create_appdata_folders = App.create_appdata_folders
+    initialize_components = App.initialize_components
+    _ensure_folder = App._ensure_folder
+    _write_config = App._write_config
+    _backfill_missing_config = App._backfill_missing_config
 
     def __init__(self) -> None:
         """
-        Give the stub the mock logger the method reports failures through.
+        Give the stub the mock logger the methods report failures through.
 
         :return: None
         :rtype: None
@@ -81,7 +94,7 @@ def _run(app_root):
     :rtype: _StubApp
     """
     stub = _StubApp()
-    App.create_appdata_folders(stub)
+    stub.create_appdata_folders()
     return stub
 
 
@@ -401,3 +414,278 @@ class TestAnUnwritableConfig:
             "Unable to persist regenerated default config file" in m for m in messages
         )
         assert _config_path(app_root).read_text(encoding="utf-8") == "{not json at all"
+
+
+# ------------- 5c.5: the extracted helpers --------------------------------
+#
+# Each is in the refactor-coverage audit's MOVED table, so each is driven
+# directly as well as through create_appdata_folders.
+
+
+class TestEnsureFolder:
+    """Create a folder if it is not there, and hand back its path."""
+
+    def test_creates_a_missing_folder_and_returns_it(self, tmp_path) -> None:
+        """Returning the path is what lets the caller name and create in one line."""
+        target = Path(tmp_path, "made", "deeply")
+
+        returned = _StubApp()._ensure_folder(target)
+
+        assert returned == target
+        assert target.is_dir()
+
+    def test_leaves_an_existing_folder_and_its_contents_alone(self, tmp_path) -> None:
+        """Second and later launches take this path for every folder."""
+        target = Path(tmp_path, "already")
+        target.mkdir()
+        marker = Path(target, "keep.txt")
+        marker.write_text("kept", encoding="utf-8")
+
+        assert _StubApp()._ensure_folder(target) == target
+        assert marker.read_text(encoding="utf-8") == "kept"
+
+    def test_does_not_raise_when_a_file_occupies_the_path(self, tmp_path) -> None:
+        """
+        The reason the existence check is kept rather than left to ``exist_ok``.
+
+        ``mkdir(exist_ok=True)`` still raises when the path is a *file*, and
+        startup - before the logger has a handler and before any window exists -
+        is the wrong place to start raising.
+        """
+        occupied = Path(tmp_path, "notadir")
+        occupied.write_text("in the way", encoding="utf-8")
+
+        assert _StubApp()._ensure_folder(occupied) == occupied
+        assert occupied.is_file()
+
+
+class TestWriteConfig:
+    """One write, three callers, three verbs."""
+
+    def test_writes_the_configuration(self, tmp_path) -> None:
+        """The ordinary case, which is also the first-run case."""
+        path = Path(tmp_path, "config.json")
+
+        _StubApp()._write_config(path, {"Log Level": 30}, "write initial")
+
+        assert json.loads(path.read_text(encoding="utf-8")) == {"Log Level": 30}
+
+    @pytest.mark.parametrize(
+        "attempt, expected",
+        [
+            ("write initial", "Unable to write initial config file"),
+            ("persist updated", "Unable to persist updated config file"),
+            (
+                "persist regenerated default",
+                "Unable to persist regenerated default config file",
+            ),
+        ],
+    )
+    def test_the_verb_reads_into_the_warning(
+        self, tmp_path, monkeypatch, attempt, expected
+    ) -> None:
+        """
+        The three call sites differed only here, so the three messages are pinned.
+
+        These are what a user sees when the config directory is not writable, and
+        folding them into one method is exactly the edit that could have changed
+        them without anything noticing.
+
+        :param attempt: The verb phrase the caller passes.
+        :param expected: The warning that verb must produce.
+        """
+        path = Path(tmp_path, "config.json")
+        _block_writes_to(monkeypatch, path)
+        stub = _StubApp()
+
+        stub._write_config(path, {}, attempt)
+
+        stub.logger.warning.assert_called_once()
+        assert expected in stub.logger.warning.call_args[0][0]
+
+    def test_a_failed_write_does_not_raise(self, tmp_path, monkeypatch) -> None:
+        """
+        None of the three callers may raise: there is nothing yet to report to.
+
+        :param tmp_path: pytest's per-test temporary directory
+        :param monkeypatch: pytest's monkeypatch fixture
+        """
+        path = Path(tmp_path, "config.json")
+        _block_writes_to(monkeypatch, path)
+
+        _StubApp()._write_config(path, {}, "write initial")
+
+        assert not path.exists()
+
+
+class TestBackfillMissingConfig:
+    """Restore whatever the stored configuration is missing."""
+
+    def test_does_nothing_when_every_default_is_present(self, tmp_path) -> None:
+        """The common case, and it must not rewrite the file or warn."""
+        path = Path(tmp_path, "config.json")
+        stub = _StubApp()
+        stub.user_plugin_path = Path(tmp_path, "user_plugins")
+        stub.app_config = default_app_config(stub.user_plugin_path)
+
+        stub._backfill_missing_config(path)
+
+        stub.logger.warning.assert_not_called()
+        assert not path.exists()
+
+    def test_restores_every_missing_default_and_names_them(self, tmp_path) -> None:
+        """Every default, not just the one added most recently."""
+        path = Path(tmp_path, "config.json")
+        stub = _StubApp()
+        stub.user_plugin_path = Path(tmp_path, "user_plugins")
+        stub.app_config = {"Parent Folder": "D:/kept"}
+
+        stub._backfill_missing_config(path)
+
+        assert stub.app_config["Parent Folder"] == "D:/kept"
+        assert stub.app_config["Log Level"] == logging.WARNING
+        assert "User Plugin Folder" in stub.app_config
+        warned = stub.logger.warning.call_args[0][0]
+        assert "Log Level" in warned and "restored to default" in warned
+        assert json.loads(path.read_text(encoding="utf-8")) == stub.app_config
+
+    def test_lets_a_wrongly_shaped_config_fail(self, tmp_path) -> None:
+        """
+        Valid JSON that is not an object raises here, and the caller treats that
+        as a corrupt config - the same outcome as unparseable text, and the right
+        one. Being defensive here would swallow it and leave a list in app_config.
+        """
+        stub = _StubApp()
+        stub.user_plugin_path = Path(tmp_path, "user_plugins")
+        stub.app_config = [1, 2, 3]
+
+        with pytest.raises(TypeError):
+            stub._backfill_missing_config(Path(tmp_path, "config.json"))
+
+
+# ------------- The guard that was missing --------------------------------
+
+
+class TestAppIsWhole:
+    """
+    Every method ``App`` calls on itself exists.
+
+    This is here because 5c.5 deleted ``initialize_components`` - a splice
+    anchored on the method before it and the method after it took out the one in
+    between - and **the entire suite stayed green**. 4,287 tests passed over an
+    application that could not start, because nothing constructs ``App``:
+    ``App`` is a ``QApplication`` subclass and only one of those may exist in a
+    process, so the tests above deliberately borrow its methods onto a stub
+    instead.
+
+    That stub is what made the deletion invisible. It borrows the methods it
+    names, so a method nothing borrows can vanish without a single failure. This
+    reads the class itself instead, which is the one check that does not depend
+    on anything being instantiated or borrowed.
+
+    It is a shallow guard - it proves the methods exist, not that they work - but
+    the failure it catches is total, and it is the failure that actually
+    happened.
+    """
+
+    @staticmethod
+    def _app_class() -> ast.ClassDef:
+        """
+        Parse ``main_app.py`` and return the ``App`` class node.
+
+        :return: the ``App`` class definition
+        :rtype: ast.ClassDef
+        """
+        source = Path(App.__module__.replace(".", "/") + ".py")
+        tree = ast.parse(
+            Path(REPO_ROOT, source).read_text(encoding="utf-8"), filename=str(source)
+        )
+        return next(
+            node
+            for node in tree.body
+            if isinstance(node, ast.ClassDef) and node.name == "App"
+        )
+
+    def test_every_self_call_resolves_to_a_defined_method(self) -> None:
+        """A method the class calls on itself but does not define cannot ever run."""
+        cls = self._app_class()
+        defined = {n.name for n in cls.body if isinstance(n, ast.FunctionDef)}
+        called = {
+            n.func.attr
+            for n in ast.walk(cls)
+            if isinstance(n, ast.Call)
+            and isinstance(n.func, ast.Attribute)
+            and isinstance(n.func.value, ast.Name)
+            and n.func.value.id == "self"
+        }
+
+        missing = sorted(called - defined)
+        assert not missing, (
+            f"App calls {missing} on itself but does not define them. "
+            f"A refactor that moves or replaces a block of this class can drop a "
+            f"method whole, and no other test constructs App to notice."
+        )
+
+    def test_the_startup_sequence_is_present(self) -> None:
+        """
+        The three steps ``__init__`` runs, named explicitly.
+
+        Deliberately a literal list rather than derived from ``__init__``: the
+        point is to fail if one of these disappears, and a check that reads the
+        same source it is checking would disappear with it.
+        """
+        cls = self._app_class()
+        defined = {n.name for n in cls.body if isinstance(n, ast.FunctionDef)}
+
+        for required in (
+            "create_appdata_folders",
+            "configure_logger",
+            "initialize_components",
+        ):
+            assert required in defined, f"App.{required} is gone; the app cannot start"
+
+
+class TestInitializeComponents:
+    """
+    The step that builds the app-shell triad.
+
+    Borrowing the real method and patching the three classes by their names *in
+    this module* is what makes this catch both halves of the 5c.5 near-miss: the
+    borrow fails if the method is gone, and ``mocker.patch`` fails if the import
+    it needs has been removed from ``main_app``.
+
+    That second half is not hypothetical. When the splice deleted
+    ``initialize_components``, its three imports became unused and ``ruff --fix``
+    removed them - so the tree was self-consistent, every gate passed, and the
+    application could not start. The auto-fixer tidied away the evidence.
+    """
+
+    def test_builds_the_model_view_and_controller(self, mocker) -> None:
+        """
+        Model first, then view from the model's plugins, then controller over both.
+
+        The order is the wiring: ``MainView`` needs the available plugins the
+        model discovers, and ``MainController`` needs both.
+
+        :param mocker: pytest-mock fixture
+        :type mocker: pytest_mock.MockerFixture
+        """
+        model_cls = mocker.patch("poriscope.main_app.MainModel")
+        view_cls = mocker.patch("poriscope.main_app.MainView")
+        controller_cls = mocker.patch("poriscope.main_app.MainController")
+
+        stub = _StubApp()
+        stub.app_config = {"Log Level": logging.WARNING}
+
+        stub.initialize_components()
+
+        model_cls.assert_called_once_with(stub.app_config)
+        view_cls.assert_called_once_with(
+            model_cls.return_value.get_available_plugins.return_value
+        )
+        controller_cls.assert_called_once_with(
+            model_cls.return_value, view_cls.return_value
+        )
+        assert stub.main_model is model_cls.return_value
+        assert stub.main_view is view_cls.return_value
+        assert stub.main_controller is controller_cls.return_value

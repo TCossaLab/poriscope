@@ -55,24 +55,26 @@ class App(QApplication):
         self.main_view.show()
 
     def create_appdata_folders(self) -> None:
+        """
+        Create the application's data folders and settle its configuration.
+
+        The first thing `__init__` does, before the logger has a handler and
+        before any window exists - so nothing here may raise. A folder that
+        cannot be made or a configuration that cannot be written is warned about
+        and worked around, because there is nothing yet that could report a
+        failure to the user and no way to carry on without these paths.
+
+        The five attributes it sets are read immediately afterwards by
+        `configure_logger` and `initialize_components`.
+        """
         local = Path(user_data_dir())
-        self.app_folder = Path(local, "Poriscope")
-        if not self.app_folder.exists():
-            self.app_folder.mkdir(parents=True, exist_ok=True)
-
-        self.log_path = Path(self.app_folder, "logs")
-        if not self.log_path.exists():
-            self.log_path.mkdir(parents=True, exist_ok=True)
-
-        self.session_path = Path(self.app_folder, "session")
-        if not self.session_path.exists():
-            self.session_path.mkdir(parents=True, exist_ok=True)
-
-        self.user_plugin_path = Path(self.app_folder, "user_plugins")
-        if not self.user_plugin_path.exists():
-            self.user_plugin_path.mkdir(parents=True, exist_ok=True)
-
-        self.config_path = Path(self.app_folder, "config")
+        self.app_folder = self._ensure_folder(Path(local, "Poriscope"))
+        self.log_path = self._ensure_folder(Path(self.app_folder, "logs"))
+        self.session_path = self._ensure_folder(Path(self.app_folder, "session"))
+        self.user_plugin_path = self._ensure_folder(
+            Path(self.app_folder, "user_plugins")
+        )
+        self.config_path = self._ensure_folder(Path(self.app_folder, "config"))
         config_file_path = Path(self.config_path, "config.json")
 
         # default_app_config() is the single definition of these defaults,
@@ -82,63 +84,106 @@ class App(QApplication):
         # cannot have mutated.
         self.app_config: Dict[str, Any] = default_app_config(self.user_plugin_path)
 
-        if not self.config_path.exists():
-            self.config_path.mkdir(parents=True, exist_ok=True)
         if not config_file_path.is_file():
-            try:
-                with open(config_file_path, "w") as f:
-                    json.dump(self.app_config, f, default=serialize_object, indent=4)
-            except Exception as e:
-                self.logger.warning(
-                    f"Unable to write initial config file {config_file_path}: {e}"
-                )
+            self._write_config(config_file_path, self.app_config, "write initial")
 
         if config_file_path.is_file():
             try:
                 with open(config_file_path, "r") as f:
                     self.app_config = json.load(f)
-                # Backfill every default, not just the key added most recently.
-                # A config written by an older version, or hand-edited, can be
-                # missing any of them, and "Log Level" is read by subscript in
-                # __init__ before configure_logger has installed a handler - so
-                # a missing key there is a KeyError that nothing can record.
-                defaults = default_app_config(self.user_plugin_path)
-                missing = [key for key in defaults if key not in self.app_config]
-                if missing:
-                    for key in missing:
-                        self.app_config[key] = defaults[key]
-                    self.logger.warning(
-                        f"Config file {config_file_path} was missing "
-                        f"{', '.join(missing)}; restored to default"
-                    )
-                    try:
-                        with open(config_file_path, "w") as f:
-                            json.dump(
-                                self.app_config, f, default=serialize_object, indent=4
-                            )
-                    except Exception as e:
-                        self.logger.warning(
-                            f"Unable to persist updated config file {config_file_path}: {e}"
-                        )
+                self._backfill_missing_config(config_file_path)
             except Exception as e:
                 self.logger.warning(
                     f"Unable to load config file {config_file_path}, regenerating defaults: {e}"
                 )
                 self.app_config = default_app_config(self.user_plugin_path)
-                try:
-                    with open(config_file_path, "w") as f:
-                        json.dump(
-                            self.app_config, f, default=serialize_object, indent=4
-                        )
-                except Exception as e:
-                    self.logger.warning(
-                        f"Unable to persist regenerated default config file {config_file_path}: {e}"
-                    )
+                self._write_config(
+                    config_file_path, self.app_config, "persist regenerated default"
+                )
 
+        # Plugin discovery imports `user_plugins` as a package, so what has to be
+        # importable is the directory containing it, not the folder itself.
         plugin_path = Path(self.user_plugin_path).resolve()
         parent_path = plugin_path.parent
         if str(parent_path) not in sys.path:
             sys.path.append(str(parent_path))
+
+    def _ensure_folder(self, path: Path) -> Path:
+        """
+        Create a folder if it is not already there, and hand back its path.
+
+        Returning the path is what lets each of the five be named and created on
+        one line, since the caller keeps every one of them as an attribute.
+
+        The existence check is kept rather than relying on `exist_ok`: the two
+        differ when something that is *not* a directory already occupies the
+        path, where `mkdir` raises and this does not. Startup is the wrong place
+        to start raising.
+
+        :param path: The folder to create.
+        :type path: Path
+        :return: The same path, now known to exist.
+        :rtype: Path
+        """
+        if not path.exists():
+            path.mkdir(parents=True, exist_ok=True)
+        return path
+
+    def _write_config(self, path: Path, config: Dict[str, Any], attempt: str) -> None:
+        """
+        Write the configuration out, warning rather than failing if it cannot be.
+
+        Called at three points - the first write, a repaired config and a
+        regenerated one - which differed only in the verb in their warning, so
+        that verb is the parameter.
+
+        None of the three may raise. This runs before the logger has a handler
+        and before the window exists, so an unwritable config directory has to
+        leave a working application whose settings simply will not persist.
+
+        :param path: Where the configuration is written.
+        :type path: Path
+        :param config: The configuration to write.
+        :type config: Dict[str, Any]
+        :param attempt: What this write was for, read straight into the warning.
+        :type attempt: str
+        """
+        try:
+            with open(path, "w") as f:
+                json.dump(config, f, default=serialize_object, indent=4)
+        except Exception as e:
+            self.logger.warning(f"Unable to {attempt} config file {path}: {e}")
+
+    def _backfill_missing_config(self, config_file_path: Path) -> None:
+        """
+        Restore any default the stored configuration is missing, and persist it.
+
+        Every default, not just the one added most recently: a config written by
+        an older version, or hand-edited, can be missing any of them. `Log Level`
+        is read by subscript in `__init__` before `configure_logger` has
+        installed a handler, so a missing key there is a `KeyError` that nothing
+        can record.
+
+        Deliberately not defensive about the shape of what was loaded. A config
+        file holding valid JSON that is not an object reaches here and fails on
+        the assignment below, which the caller catches and treats as a corrupt
+        config - the same outcome as unparseable text, and the right one.
+
+        :param config_file_path: Where the configuration is stored.
+        :type config_file_path: Path
+        """
+        defaults = default_app_config(self.user_plugin_path)
+        missing = [key for key in defaults if key not in self.app_config]
+        if not missing:
+            return
+
+        for key in missing:
+            self.app_config[key] = defaults[key]
+        self.logger.warning(
+            f"Config file {config_file_path} was missing "
+            f"{', '.join(missing)}; restored to default"
+        )
+        self._write_config(config_file_path, self.app_config, "persist updated")
 
     def initialize_components(self) -> None:
         self.main_model = MainModel(self.app_config)

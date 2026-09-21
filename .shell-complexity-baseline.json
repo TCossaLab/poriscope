@@ -15,9 +15,9 @@
     "total_complexity": 11
   },
   "poriscope/main_app.py": {
-    "functions": 5,
-    "over_threshold": 1,
-    "total_complexity": 17
+    "functions": 8,
+    "over_threshold": 0,
+    "total_complexity": 0
   },
   "poriscope/models/DataPluginModel.py": {
     "functions": 12,

@@ -457,6 +457,14 @@ MOVED: Tuple[Tuple[str, str, str], ...] = (
         "_register_new_plugin",
         "5c.4",
     ),
+    # Step 5c.5 - create_appdata_folders, which repeated the same folder block five
+    # times and the same write-with-warning three times. It was the 0%-covered
+    # function on the 5c list until 5c.1 pinned it, so its pieces are listed here to
+    # keep them pinned individually now that the caller is no longer the only route
+    # to them.
+    ("poriscope/main_app.py", "_ensure_folder", "5c.5"),
+    ("poriscope/main_app.py", "_write_config", "5c.5"),
+    ("poriscope/main_app.py", "_backfill_missing_config", "5c.5"),
 )
 
 VIEW_FILES: Tuple[str, ...] = (

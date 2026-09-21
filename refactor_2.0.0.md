@@ -2550,8 +2550,47 @@ Each says what it moves *before* it starts (method rule 38).
     both session cases: a freshly saved session restoring whole, with the summary reading
     plainly and appending nothing; and the original stale `seession.json` from the bug
     report, which now names the missing plugin class in words and closes with the count of
-    what did not restore.  - **5c.5 - `create_appdata_folders`,** which the artifact records as repeating the same
-    block per folder.
+    what did not restore.  - **5c.5 - `create_appdata_folders`. LANDED 2026-09-21.** The artifact recorded it as
+    repeating the same block per folder; it also repeated the write-with-warning three
+    times.
+    *Check, met:* **17 -> 5**, **85 -> 55 lines**, and `main_app.py` now has **nothing**
+    over the threshold. Shell total **81 -> 64**, functions over threshold **6 -> 5**.
+    Audit 98 -> **101 of 101 pinned**.
+
+    **The three config writes differed only in one verb** - "write initial", "persist
+    updated", "persist regenerated default" - so that verb is now the parameter. The three
+    exact messages are pinned by a parametrised test, because folding them together is
+    precisely the edit that could have changed user-facing text with nothing noticing.
+
+    **The `if not path.exists()` guard before `mkdir(parents=True, exist_ok=True)` stays**,
+    though removing it would have shaved four more points. It is not redundant:
+    `exist_ok=True` still raises when a *file* occupies the path, while the guard silently
+    skips. Startup runs before the logger has a handler and before any window exists, so it
+    is the wrong place to start raising. A test asserts it.
+
+    **5c.1's test approach needed correcting, not the code.** Those tests called
+    `create_appdata_folders` unbound against a stub carrying only a logger; the first
+    `self._ensure_folder(...)` broke all 16. The stub now **borrows the real methods off
+    `App`**, so it still runs shipped code with no `QApplication`, and each borrowed method
+    is named - a future helper not brought across fails loudly rather than being quietly
+    mocked away.
+
+    **The first commit of this step shipped an application that could not start**, and
+    every automated gate passed over it. The splice was anchored on `create_appdata_folders`
+    and on the next method it expected, `configure_logger`; `initialize_components` sat
+    between them and was deleted whole. `ruff --fix` then removed the three imports that had
+    become unused, leaving a self-consistent tree. The suite could not see it because
+    nothing constructs `App`, the complexity ratchet could not because the function count
+    *rose* (three helpers in, one method out) which reads as a normal split, and the
+    refactor-coverage audit could not because `initialize_components` is not a MOVED target.
+    **The manual pass found it** - standing ruling 3 on its second outing. Fixed in the
+    commit after, with two guards and a `DECISIONS.md` entry; see 2026-09-21 there for the
+    rule that follows from it.
+
+    **Manual Windows pass run 2026-09-21, clear** after the fix: `%LOCALAPPDATA%\Poriscope`
+    renamed away and the app launched cold, relaunched, a non-default Log Level survived a
+    restart, a config with `Log Level` deleted was repaired and rewritten, and a user plugin
+    was still discovered - which is the `sys.path` half.
   - **5c.6 - `populate_available_plugins`,** and a ruling on the remaining four:
     `remove_pages_except` (12), `switch_to_page` (11), `update_plugin_history` (11) and
     `replace_class_names_with_classes` (11, and a filed defect). Either they come down or
