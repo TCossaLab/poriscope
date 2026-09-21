@@ -2430,3 +2430,97 @@ class TestNewPluginSteps:
         assert "Unable to register new plugin instance r1" in (
             ctrl.logger.error.call_args[0][0]
         )
+
+
+# ------------- 5c.4: validate_and_instantiate_plugin's return value --------
+#
+# Session restore needs to know whether each entry landed. It used to return
+# None either way, so the restore loop counted nothing and the summary announced
+# success over a screenful of errors.
+
+
+class TestValidateAndInstantiateReturnValue:
+    """True only when the plugin actually reached the model."""
+
+    def test_returns_true_when_the_plugin_is_registered(
+        self,
+        controller: DataPluginController,
+        mock_model: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        """
+        :param controller: Controller under test.
+        :param mock_model: Mocked data plugin model.
+        :param mocker: Pytest-mock fixture.
+        """
+        plugin = _make_plugin(mocker)
+        mock_model.get_temp_instance.return_value = plugin
+        mock_model.get_available_metaclasses.return_value = []
+        mock_model.get_instantiated_plugins_list.return_value = {"MetaReader": {}}
+
+        assert (
+            controller.validate_and_instantiate_plugin(
+                metaclass="MetaReader",
+                subclass="MyReader",
+                settings={"param": {"Value": 1}},
+                key="r1",
+            )
+            is True
+        )
+
+    def test_returns_false_when_the_plugin_class_is_missing(
+        self,
+        controller: DataPluginController,
+        mock_model: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        """
+        The stale-session case, which is the one that made this return value necessary.
+
+        :param controller: Controller under test.
+        :param mock_model: Mocked data plugin model.
+        :param mocker: Pytest-mock fixture.
+        """
+        mock_model.get_temp_instance.side_effect = KeyError("not installed")
+
+        assert (
+            controller.validate_and_instantiate_plugin(
+                metaclass="MetaReader",
+                subclass="ABF2Reader",
+                settings={"param": {"Value": 1}},
+                key="r1",
+            )
+            is False
+        )
+
+    def test_returns_false_when_applying_the_settings_fails(
+        self,
+        controller: DataPluginController,
+        mock_model: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        """
+        The cascade case: a plugin whose parent never instantiated fails here.
+
+        :param controller: Controller under test.
+        :param mock_model: Mocked data plugin model.
+        :param mocker: Pytest-mock fixture.
+        """
+        plugin = _make_plugin(mocker)
+        plugin.apply_settings.side_effect = ValueError(
+            "MetaReader key must have as value an object that inherits from MetaReader"
+        )
+        mock_model.get_temp_instance.return_value = plugin
+        mock_model.get_available_metaclasses.return_value = []
+        mock_model.get_instantiated_plugins_list.return_value = {"MetaEventFinder": {}}
+
+        assert (
+            controller.validate_and_instantiate_plugin(
+                metaclass="MetaEventFinder",
+                subclass="ClassicBlockageFinder",
+                settings={"param": {"Value": 1}},
+                key="f1",
+            )
+            is False
+        )
+        mock_model.register_plugin.assert_not_called()

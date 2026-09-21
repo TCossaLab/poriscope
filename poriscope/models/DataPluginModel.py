@@ -122,8 +122,25 @@ class DataPluginModel(QObject):
         :return: The temporary plugin instance.
         :rtype: BaseDataPlugin
         :raises KeyError: If metaclass or subclass is not a recognized/available plugin type.
-        """  # noqa: DOC502 (KeyError is raised implicitly by the dict lookups below, not via an explicit `raise`)
-        return self.available_plugins[metaclass][subclass]()
+        """
+        # Raised explicitly rather than left to the subscript, because the caller
+        # reports str(e) and str(KeyError("x")) is just "'x'" - so a session naming
+        # a plugin this version no longer ships used to surface as
+        # "...MetaReader.ABF2Reader: 'ABF2Reader'", which reads as an internal
+        # fault rather than as the stale-session diagnosis it is.
+        #
+        # The lookup is inside the try and the construction is not, so a KeyError
+        # raised by the plugin's own __init__ still propagates untouched rather
+        # than being relabelled as a missing class.
+        try:
+            plugin_class = self.available_plugins[metaclass][subclass]
+        except KeyError:
+            raise KeyError(
+                f"no plugin class named '{subclass}' is installed under "
+                f"'{metaclass}'; it may have been renamed or removed since this "
+                f"session was saved"
+            ) from None
+        return plugin_class()
 
     @log(logger=logger)
     def set_available_plugins(

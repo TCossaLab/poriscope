@@ -765,7 +765,7 @@ class DataPluginController(QObject):
         subclass: str,
         settings: Optional[Dict[str, Any]] = None,
         key: Optional[str] = None,
-    ) -> None:
+    ) -> bool:
         """
         Validate and instantiate a plugin based on the given metaclass and subclass.
 
@@ -789,33 +789,38 @@ class DataPluginController(QObject):
         :type settings: Optional[Dict[str, Any]]
         :param key: Optional key to set for the new plugin instance.
         :type key: Optional[str]
+        :return: True if the plugin was registered. False covers everything else,
+            including the user cancelling the dialog, so a caller that wants to
+            count real failures should only call this where no dialog can appear -
+            which is what session restore does.
+        :rtype: bool
         """
         temp_instance = self._make_temp_instance(metaclass, subclass)
         if temp_instance is None:
-            return
+            return False
 
         prepared = self._prepare_new_plugin_settings(
             metaclass, subclass, temp_instance, settings, key
         )
         if prepared is None:
-            return
+            return False
         settings, key = prepared
         if not settings:
-            return
+            return False
 
         app_settings = copy.deepcopy(settings)
         if not self._resolve_new_plugin_references(
             app_settings, metaclass, subclass, key
         ):
-            return
+            return False
 
         if not self._apply_new_plugin_settings(
             temp_instance, app_settings, metaclass, subclass, key
         ):
-            return
+            return False
 
         if not self._register_new_plugin(temp_instance, metaclass, subclass, key):
-            return
+            return False
 
         self.update_available_plugins.emit(
             metaclass, self.model.get_instantiated_plugins_list()[metaclass]
@@ -832,6 +837,7 @@ class DataPluginController(QObject):
             },
             "",
         )
+        return True
 
     @log(logger=logger)
     def _make_temp_instance(self, metaclass: str, subclass: str) -> Optional[Any]:

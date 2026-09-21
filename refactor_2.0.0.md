@@ -2493,8 +2493,8 @@ Each says what it moves *before* it starts (method rule 38).
     **delete a reader while a finder depends on it, and confirm the reader still works**.
     The last two of those are the rollback paths - a broken restore raises nothing and shows
     up only later, as a plugin whose parent link has silently gone.
-  - **5c.4 - split `validate_and_instantiate_plugin`. SPLIT LANDED 2026-09-21**, reporting
-    fixes to follow on the same branch. Same treatment; its six report-then-return blocks
+  - **5c.4 - split `validate_and_instantiate_plugin`. LANDED 2026-09-21**, split and
+    reporting fixes in two commits on one branch. Same treatment; its six report-then-return blocks
     wanted the reporting half of 5c.2's helper without the rollback.
     *Check, met:* **20 -> 7**, **160 -> 73 lines**, and `DataPluginController` now has
     **nothing** over the threshold. Shell total **101 -> 81**, functions over threshold
@@ -2526,6 +2526,22 @@ Each says what it moves *before* it starts (method rule 38).
       restore loop's `except` never fires and the summary claims success after ten
       failures. Against the standing rule that a genuine failure must reach the user as
       one.
+
+    **All three fixed 2026-09-21.** `get_temp_instance` raises its own `KeyError` with a
+    sentence in it; the lookup is inside the `try` and the *construction* deliberately
+    outside, so a `KeyError` from a plugin's own `__init__` is not relabelled as a missing
+    class - which is its own test. `validate_and_instantiate_plugin` returns `bool`, a
+    widening the two signal connections and the dialog path ignore; the docstring is
+    explicit that `False` also covers a cancelled dialog, so only a caller where no dialog
+    can appear may read it as failure, and session restore is that caller. The summary then
+    appends "N of M entries could not be restored (keys); see the messages above", which
+    answers the cascade complaint without new machinery - readable root causes plus a count
+    of what is missing. All three mutation-verified.
+
+    **A botched mutation reads exactly like a weak test.** The first attempt at mutating the
+    summary reported the test as surviving; the anchor string occurred twice in the file, so
+    the splice duplicated a region rather than cutting one and the code was never changed.
+    Check that a mutation actually mutated before concluding anything about the test.
   - **5c.5 - `create_appdata_folders`,** which the artifact records as repeating the same
     block per folder.
   - **5c.6 - `populate_available_plugins`,** and a ruling on the remaining four:
