@@ -915,7 +915,6 @@ def test_load_session_restores_tabs_and_plugins(
 
     tab_instance = mocker.Mock()
     tab_instance.view = mocker.Mock()
-    tab_instance.global_signal = mocker.Mock(connect=mocker.Mock())
     tab_instance.create_plugin = mocker.Mock(connect=mocker.Mock())
     tab_instance.data_plugin_controller_signal = mocker.Mock(connect=mocker.Mock())
     tab_instance.add_text_to_display = mocker.Mock(connect=mocker.Mock())
@@ -967,7 +966,6 @@ def test_load_session_restores_subset_filters_for_newly_created_tab(
 
     tab_instance = mocker.Mock()
     tab_instance.view = mocker.Mock()
-    tab_instance.global_signal = mocker.Mock(connect=mocker.Mock())
     tab_instance.create_plugin = mocker.Mock(connect=mocker.Mock())
     tab_instance.data_plugin_controller_signal = mocker.Mock(connect=mocker.Mock())
     tab_instance.add_text_to_display = mocker.Mock(connect=mocker.Mock())

@@ -1466,7 +1466,6 @@ class TestFetchEventData:
         mock_view.current_sql_filter = None
         mock_view.current_experiment = None
         mock_view.current_channel = None
-        mock_view.global_signal = MagicMock()
         mock_view.plot_events_generator_updated = False
         mock_view.cached_events = {}
         params = {"db_loader": "ldr", "event_index": []}
@@ -1714,23 +1713,19 @@ class TestShowAddFilterDialog:
 
     def test_cancelled_dialog_does_not_emit_signal(self, mock_view):
         mock_view._walkthrough_active = False
-        mock_view.global_signal = MagicMock()
         with patch(
             "poriscope.utils.MetaSubsetTabView.AddSubsetFilterDialog",
             return_value=self._mock_dialog(None, accepted=False),
         ):
             mock_view._show_add_filter_dialog({"db_loader": "ldr"})
-        mock_view.global_signal.emit.assert_not_called()
 
     def test_no_loader_logs_error_and_returns(self, mock_view):
         mock_view._walkthrough_active = False
-        mock_view.global_signal = MagicMock()
         with patch(
             "poriscope.utils.MetaSubsetTabView.AddSubsetFilterDialog",
             return_value=self._mock_dialog(None, accepted=True),
         ):
             mock_view._show_add_filter_dialog({"db_loader": None})
-        mock_view.global_signal.emit.assert_not_called()
 
     def test_assisted_filter_asks_the_controller_to_validate(self, mock_view):
         """
@@ -1740,7 +1735,6 @@ class TestShowAddFilterDialog:
         against, so what this tab does is state the intent.
         """
         mock_view._walkthrough_active = False
-        mock_view.global_signal = MagicMock()
         mock_view.filter_validation_requested = MagicMock()
         with patch(
             "poriscope.utils.MetaSubsetTabView.AddSubsetFilterDialog",
@@ -1756,7 +1750,6 @@ class TestShowAddFilterDialog:
             "f1",
             None,
         )
-        mock_view.global_signal.emit.assert_not_called()
 
     def test_raw_filter_requires_select_statement(self, mock_view, monkeypatch):
         """
@@ -1767,7 +1760,6 @@ class TestShowAddFilterDialog:
         because the dialog has just closed and a status line is easy to miss then.
         """
         mock_view._walkthrough_active = False
-        mock_view.global_signal = MagicMock()
         warned = MagicMock()
         monkeypatch.setattr(QMessageBox, "warning", staticmethod(warned))
         with patch(
@@ -1779,11 +1771,9 @@ class TestShowAddFilterDialog:
             mock_view._show_add_filter_dialog({"db_loader": "ldr"})
         warned.assert_called_once()
         assert "SELECT statements" in warned.call_args[0][2]
-        mock_view.global_signal.emit.assert_not_called()
 
     def test_raw_filter_with_select_validates(self, mock_view):
         mock_view._walkthrough_active = False
-        mock_view.global_signal = MagicMock()
         mock_view.raw_filter_validation_requested = MagicMock()
         with patch(
             "poriscope.utils.MetaSubsetTabView.AddSubsetFilterDialog",
@@ -1806,7 +1796,6 @@ class TestShowAddFilterDialog:
             "f1_raw",
             None,
         )
-        mock_view.global_signal.emit.assert_not_called()
 
 
 # ===========================================================================
@@ -1832,23 +1821,19 @@ class TestShowEditFilterDialog:
 
     def test_cancelled_dialog_no_emit(self, mock_view):
         mock_view.subset_filters = {"f1": "dur>1"}
-        mock_view.global_signal = MagicMock()
         with patch(
             "poriscope.utils.MetaSubsetTabView.EditSubsetFilterDialog",
             return_value=self._mock_dialog(accepted=False),
         ):
             mock_view.show_edit_filter_dialog("f1", "ldr")
-        mock_view.global_signal.emit.assert_not_called()
 
     def test_no_loader_logs_error(self, mock_view):
         mock_view.subset_filters = {"f1": "dur>1"}
-        mock_view.global_signal = MagicMock()
         with patch(
             "poriscope.utils.MetaSubsetTabView.EditSubsetFilterDialog",
             return_value=self._mock_dialog(accepted=True),
         ):
             mock_view.show_edit_filter_dialog("f1", None)
-        mock_view.global_signal.emit.assert_not_called()
 
     def test_assisted_edit_asks_the_controller_to_validate(self, mock_view):
         """
@@ -1859,7 +1844,6 @@ class TestShowEditFilterDialog:
         instead of adding a second entry.
         """
         mock_view.subset_filters = {"f1": "dur>1"}
-        mock_view.global_signal = MagicMock()
         mock_view.filter_validation_requested = MagicMock()
         dialog = self._mock_dialog(accepted=True, is_raw=False)
         with patch(
@@ -1876,12 +1860,10 @@ class TestShowEditFilterDialog:
             dialog.new_name,
             "f1",
         )
-        mock_view.global_signal.emit.assert_not_called()
 
     def test_raw_edit_requires_select(self, mock_view, monkeypatch):
         """Modal rather than status panel, for the reason above."""
         mock_view.subset_filters = {"f1": "dur>1"}
-        mock_view.global_signal = MagicMock()
         warned = MagicMock()
         monkeypatch.setattr(QMessageBox, "warning", staticmethod(warned))
         with patch(
@@ -1896,7 +1878,6 @@ class TestShowEditFilterDialog:
 
     def test_raw_edit_with_select_validates(self, mock_view):
         mock_view.subset_filters = {"f1": "dur>1"}
-        mock_view.global_signal = MagicMock()
         mock_view.raw_filter_validation_requested = MagicMock()
         with patch(
             "poriscope.utils.MetaSubsetTabView.EditSubsetFilterDialog",
@@ -1916,7 +1897,6 @@ class TestShowEditFilterDialog:
             "f1_raw",
             "f1",
         )
-        mock_view.global_signal.emit.assert_not_called()
 
 
 # ===========================================================================

@@ -467,8 +467,8 @@ def ask_plugin(view, tab_subclass, metaclass, key, method, *args, default=None):
     Ask a data plugin a question, the way the application asks one.
 
     These polls used to emit ``global_signal`` and read the answer back off an
-    attribute the callback had set on the View. 5e deleted that bus, and the
-    replacement is the same one production uses: ``MetaModel.call``.
+    attribute the callback had set on the View. That bus has been removed, and
+    the replacement is the same one production uses: ``MetaModel.call``.
 
     Returns ``default`` when the call cannot be made. That is not laziness - most
     callers here are ``waitUntil`` predicates, where "the plugin is not ready to

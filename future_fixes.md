@@ -36,6 +36,19 @@ layer - it guards the last step of an action whose earlier steps have already ru
 it means asking "is this navigation allowed?" before the handler acts, not inside the
 final call.
 
+## Shipped code cites refactor plan step numbers (2026-09-21)
+
+`refactor_2.0.0.md` is deleted when 2.0.0 ships, so every `Step 4a`, `5c.6` or `5e.3` in a
+docstring, comment or test points at a document that will not exist. Counted across
+`poriscope/`, `tests/` and `scripts/`: **~330 citations**, led by `Step 4a` (101), `Step 4`
+(58), `Step 4c` (42), and the 5c/5e series from this session (~80). Kyle, 2026-09-21: worth
+doing, not now.
+
+Not a regex job - each needs rewriting to explain the mechanism instead. "Step 4a turns
+these into `self.call(...)`" becomes "these became `self.call(...)` on the Model". Naming
+the *old mechanism* is wanted, since that is what makes a docstring findable; naming the
+plan step is what breaks. Docstring-only, so no tests and no changelog entry.
+
 ## Action replay re-reads the filter selection instead of replaying it (2026-09-17)
 
 Both non-trivial `@register_action` methods call `self.get_selected_filters()` inside their

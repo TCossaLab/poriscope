@@ -1,5 +1,5 @@
 """
-The direct plugin-call path introduced by Step 4a of the 2.0.0 refactor.
+The direct plugin-call path that replaced the global signal bus.
 
 Decision A replaces the return-value signal bus with ``call`` on ``MetaController`` and
 ``MetaModel``, with live plugin instances **pushed** down the notification path that

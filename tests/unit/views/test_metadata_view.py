@@ -87,7 +87,6 @@ def view(mocker: MockerFixture, mock_qt_dependencies: None) -> MetadataView:
     view_instance._clear_cache = mocker.Mock()
     # Mock methods called by _overlay_plot
     view_instance.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
-    view_instance.global_signal = mocker.Mock()
     # The two Step 4a validation intents. Stood in for the same reason global_signal
     # is: this fixture builds the view with __new__ and a patched MetaView.__init__,
     # so no QObject exists behind it and emitting a real Signal raises "Signal source
@@ -1656,7 +1655,6 @@ def test_overlay_plot_sets_plot_initialized_true(
 
     view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
     view.selected_experiment_and_channels_by_loader = {}
-    view.global_signal.emit = mocker.Mock()
     view.canned_query = "SELECT * FROM events"
     view.canned_plot_data = pd.DataFrame({"duration": [1.0, 2.0, 3.0]})
     view.canned_units = "ms"
@@ -1684,7 +1682,6 @@ def test_overlay_plot_defaults_to_full_dataset_when_no_filters(
 
     view.get_selected_filters = mocker.Mock(return_value={})
     view.selected_experiment_and_channels_by_loader = {}
-    view.global_signal.emit = mocker.Mock()
     view.canned_query = "SELECT * FROM events"
     view.canned_plot_data = pd.DataFrame({"duration": [1.0, 2.0, 3.0]})
     view.canned_units = "ms"
@@ -1712,7 +1709,6 @@ def test_overlay_plot_defaults_experiments_and_channels_when_none(
 
     view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
     view.selected_experiment_and_channels_by_loader = {"test_loader": None}
-    view.global_signal.emit = mocker.Mock()
     view.canned_query = "SELECT * FROM events"
     view.canned_plot_data = pd.DataFrame({"duration": [1.0, 2.0, 3.0]})
     view.canned_units = "ms"
@@ -2058,7 +2054,6 @@ def test_overlay_plot_resets_when_columns_change(
 
     view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
     view.selected_experiment_and_channels_by_loader = {}
-    view.global_signal.emit = mocker.Mock()
     view.canned_query = "SELECT * FROM events"
     view.canned_plot_data = pd.DataFrame({"new_column": [1.0, 2.0, 3.0]})
     view.canned_units = "ms"
@@ -2090,7 +2085,6 @@ def test_overlay_plot_resets_when_logscales_change(
 
     view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
     view.selected_experiment_and_channels_by_loader = {}
-    view.global_signal.emit = mocker.Mock()
     view.canned_query = "SELECT * FROM events"
     view.canned_plot_data = pd.DataFrame({"duration": [1.0, 2.0, 3.0]})
     view.canned_units = "ms"
@@ -2122,7 +2116,6 @@ def test_overlay_plot_resets_when_plot_type_changes(
 
     view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
     view.selected_experiment_and_channels_by_loader = {}
-    view.global_signal.emit = mocker.Mock()
     view.canned_query = "SELECT * FROM events"
     view.canned_plot_data = pd.DataFrame({"duration": [1.0, 2.0, 3.0]})
     view.canned_units = "ms"
@@ -2155,7 +2148,6 @@ def test_overlay_plot_resets_when_bins_change_for_bin_sensitive_plot(
 
     view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
     view.selected_experiment_and_channels_by_loader = {}
-    view.global_signal.emit = mocker.Mock()
     view.canned_query = "SELECT * FROM events"
     view.canned_plot_data = pd.DataFrame({"duration": [1.0, 2.0, 3.0]})
     view.canned_units = "ms"
@@ -2189,7 +2181,6 @@ def test_overlay_plot_resets_when_sizes_change_for_bin_sensitive_plot(
 
     view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
     view.selected_experiment_and_channels_by_loader = {}
-    view.global_signal.emit = mocker.Mock()
     view.canned_query = "SELECT * FROM events"
     view.canned_plot_data = pd.DataFrame({"duration": [1.0, 2.0, 3.0]})
     view.canned_units = "ms"
@@ -2251,7 +2242,6 @@ def test_overlay_plot_skips_already_plotted_datasets(
 
     view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
     view.selected_experiment_and_channels_by_loader = {}
-    view.global_signal = mocker.Mock()
     view.update_plot = mocker.Mock()
 
     result = view._overlay_plot(parameters)
@@ -2281,7 +2271,6 @@ def test_overlay_plot_returns_false_when_query_empty(
 
     view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
     view.selected_experiment_and_channels_by_loader = {}
-    view.global_signal.emit = mocker.Mock()
     view.canned_query = ""
 
     result = view._overlay_plot(parameters)
@@ -2306,7 +2295,6 @@ def test_overlay_plot_skips_subset_when_no_plot_data(
 
     view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
     view.selected_experiment_and_channels_by_loader = {}
-    view.global_signal.emit = mocker.Mock()
     view.canned_query = "SELECT * FROM events"
     view.canned_plot_data = None
 
@@ -2364,7 +2352,6 @@ def test_overlay_plot_returns_false_when_columns_missing_from_dataframe(
 
     view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
     view.selected_experiment_and_channels_by_loader = {}
-    view.global_signal.emit = mocker.Mock()
     view.canned_query = "SELECT * FROM events"
     view.canned_plot_data = pd.DataFrame({"duration": [1.0, 2.0, 3.0]})
     view.canned_units = "ms"
@@ -3877,7 +3864,6 @@ def test_export_csv_subset_emits_signal_on_success(
         {"exp1": [1]},
         0,
     )
-    view.global_signal.emit.assert_not_called()
     view.run_generators.emit.assert_not_called()
 
 
@@ -4267,7 +4253,6 @@ def test_show_add_filter_dialog_validates_filter_on_accept(
         "NewFilter",
         None,
     )
-    view.global_signal.emit.assert_not_called()
 
 
 def test_show_add_filter_dialog_returns_when_no_loader(
@@ -4284,11 +4269,8 @@ def test_show_add_filter_dialog_returns_when_no_loader(
     mock_dialog.filter_text = "WHERE x > 1"
     mock_dialog.is_raw = False  # Ensure assisted path
     mock_dialog_class.return_value = mock_dialog
-    view.global_signal = mocker.Mock()
 
     view._show_add_filter_dialog({"db_loader": ""})
-
-    view.global_signal.emit.assert_not_called()
 
 
 # ----------------------------- Show Filter Info Dialog Tests ------------------------------
@@ -4997,7 +4979,6 @@ class TestOverlayPlotCategoricalHistogram:
         view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
         view.selected_experiment_and_channels_by_loader = {}
         plot_data = pd.DataFrame({"category": ["A", "B", "A"]})
-        view.global_signal = mocker.Mock()
         view.canned_plot_data = plot_data
         view.canned_query = "SELECT * FROM events"
         view.canned_units = ""
@@ -5015,7 +4996,6 @@ class TestOverlayPlotCategoricalHistogram:
         view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
         view.selected_experiment_and_channels_by_loader = {}
         plot_data = pd.DataFrame({"category": ["A", "B", "C"]})
-        view.global_signal = mocker.Mock()
         view.canned_plot_data = plot_data
         view.canned_query = "SELECT * FROM events"
         view.canned_units = ""
@@ -5033,7 +5013,6 @@ class TestOverlayPlotCategoricalHistogram:
         view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
         view.selected_experiment_and_channels_by_loader = {}
         plot_data = pd.DataFrame({"category": ["A", "B", "C"]})
-        view.global_signal = mocker.Mock()
         view.canned_plot_data = plot_data
         view.canned_query = "SELECT * FROM events"
         view.canned_units = ""
@@ -5388,7 +5367,6 @@ def test_handle_plot_events_requests_the_snapped_ids_in_scope(
     view.event_plot_data_requested.emit.assert_called_once_with(
         "test_loader", [5, 10], "exp1", 1, {"exp1": [1]}, "events"
     )
-    view.global_signal.emit.assert_not_called()
 
 
 def test_handle_plot_events_leaves_the_reporting_to_the_controller(
