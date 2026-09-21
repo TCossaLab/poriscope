@@ -34,9 +34,12 @@ from typing import Any, Dict, List
 from platformdirs import user_data_dir
 from PySide6.QtWidgets import QApplication
 
+from poriscope.controllers.main_controller import MainController
+from poriscope.models.main_model import MainModel
 from poriscope.utils.app_config import default_app_config
 from poriscope.utils.JsonDefaultSerializer import serialize_object
 from poriscope.utils.QtHandler import QtHandler
+from poriscope.views.main_view import MainView
 
 
 class App(QApplication):
@@ -181,6 +184,11 @@ class App(QApplication):
             f"{', '.join(missing)}; restored to default"
         )
         self._write_config(config_file_path, self.app_config, "persist updated")
+
+    def initialize_components(self) -> None:
+        self.main_model = MainModel(self.app_config)
+        self.main_view = MainView(self.main_model.get_available_plugins())
+        self.main_controller = MainController(self.main_model, self.main_view)
 
     def configure_logger(self, loglevel: int) -> None:
 

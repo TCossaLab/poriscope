@@ -25,6 +25,7 @@ chance: ``user_data_dir`` is redirected into ``tmp_path`` so the developer's rea
 copy, since the method appends to it.
 """
 
+import ast
 import builtins
 import json
 import logging
@@ -37,6 +38,8 @@ import pytest
 from poriscope.main_app import App
 from poriscope.utils.app_config import default_app_config
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
 
 class _StubApp:
     """
@@ -48,6 +51,7 @@ class _StubApp:
     """
 
     create_appdata_folders = App.create_appdata_folders
+    initialize_components = App.initialize_components
     _ensure_folder = App._ensure_folder
     _write_config = App._write_config
     _backfill_missing_config = App._backfill_missing_config
@@ -557,3 +561,131 @@ class TestBackfillMissingConfig:
 
         with pytest.raises(TypeError):
             stub._backfill_missing_config(Path(tmp_path, "config.json"))
+
+
+# ------------- The guard that was missing --------------------------------
+
+
+class TestAppIsWhole:
+    """
+    Every method ``App`` calls on itself exists.
+
+    This is here because 5c.5 deleted ``initialize_components`` - a splice
+    anchored on the method before it and the method after it took out the one in
+    between - and **the entire suite stayed green**. 4,287 tests passed over an
+    application that could not start, because nothing constructs ``App``:
+    ``App`` is a ``QApplication`` subclass and only one of those may exist in a
+    process, so the tests above deliberately borrow its methods onto a stub
+    instead.
+
+    That stub is what made the deletion invisible. It borrows the methods it
+    names, so a method nothing borrows can vanish without a single failure. This
+    reads the class itself instead, which is the one check that does not depend
+    on anything being instantiated or borrowed.
+
+    It is a shallow guard - it proves the methods exist, not that they work - but
+    the failure it catches is total, and it is the failure that actually
+    happened.
+    """
+
+    @staticmethod
+    def _app_class() -> ast.ClassDef:
+        """
+        Parse ``main_app.py`` and return the ``App`` class node.
+
+        :return: the ``App`` class definition
+        :rtype: ast.ClassDef
+        """
+        source = Path(App.__module__.replace(".", "/") + ".py")
+        tree = ast.parse(
+            Path(REPO_ROOT, source).read_text(encoding="utf-8"), filename=str(source)
+        )
+        return next(
+            node
+            for node in tree.body
+            if isinstance(node, ast.ClassDef) and node.name == "App"
+        )
+
+    def test_every_self_call_resolves_to_a_defined_method(self) -> None:
+        """A method the class calls on itself but does not define cannot ever run."""
+        cls = self._app_class()
+        defined = {n.name for n in cls.body if isinstance(n, ast.FunctionDef)}
+        called = {
+            n.func.attr
+            for n in ast.walk(cls)
+            if isinstance(n, ast.Call)
+            and isinstance(n.func, ast.Attribute)
+            and isinstance(n.func.value, ast.Name)
+            and n.func.value.id == "self"
+        }
+
+        missing = sorted(called - defined)
+        assert not missing, (
+            f"App calls {missing} on itself but does not define them. "
+            f"A refactor that moves or replaces a block of this class can drop a "
+            f"method whole, and no other test constructs App to notice."
+        )
+
+    def test_the_startup_sequence_is_present(self) -> None:
+        """
+        The three steps ``__init__`` runs, named explicitly.
+
+        Deliberately a literal list rather than derived from ``__init__``: the
+        point is to fail if one of these disappears, and a check that reads the
+        same source it is checking would disappear with it.
+        """
+        cls = self._app_class()
+        defined = {n.name for n in cls.body if isinstance(n, ast.FunctionDef)}
+
+        for required in (
+            "create_appdata_folders",
+            "configure_logger",
+            "initialize_components",
+        ):
+            assert required in defined, f"App.{required} is gone; the app cannot start"
+
+
+class TestInitializeComponents:
+    """
+    The step that builds the app-shell triad.
+
+    Borrowing the real method and patching the three classes by their names *in
+    this module* is what makes this catch both halves of the 5c.5 near-miss: the
+    borrow fails if the method is gone, and ``mocker.patch`` fails if the import
+    it needs has been removed from ``main_app``.
+
+    That second half is not hypothetical. When the splice deleted
+    ``initialize_components``, its three imports became unused and ``ruff --fix``
+    removed them - so the tree was self-consistent, every gate passed, and the
+    application could not start. The auto-fixer tidied away the evidence.
+    """
+
+    def test_builds_the_model_view_and_controller(self, mocker) -> None:
+        """
+        Model first, then view from the model's plugins, then controller over both.
+
+        The order is the wiring: ``MainView`` needs the available plugins the
+        model discovers, and ``MainController`` needs both.
+
+        :param mocker: pytest-mock fixture
+        :type mocker: pytest_mock.MockerFixture
+        """
+        model_cls = mocker.patch("poriscope.main_app.MainModel")
+        view_cls = mocker.patch("poriscope.main_app.MainView")
+        controller_cls = mocker.patch("poriscope.main_app.MainController")
+
+        stub = _StubApp()
+        stub.app_config = {"Log Level": logging.WARNING}
+
+        stub.initialize_components()
+
+        model_cls.assert_called_once_with(stub.app_config)
+        view_cls.assert_called_once_with(
+            model_cls.return_value.get_available_plugins.return_value
+        )
+        controller_cls.assert_called_once_with(
+            model_cls.return_value, view_cls.return_value
+        )
+        assert stub.main_model is model_cls.return_value
+        assert stub.main_view is view_cls.return_value
+        assert stub.main_controller is controller_cls.return_value

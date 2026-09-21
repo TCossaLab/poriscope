@@ -10,6 +10,48 @@ which ran through August 2026 and is complete. The step numbers only date the de
 
 ---
 
+## 2026-09-21 - A splice anchored on neighbours can delete what sits between them
+
+**Context.** 5c.5 replaced `create_appdata_folders` by anchoring on its own `def` line and
+on the `def` of the next method it expected, `configure_logger`. `initialize_components`
+sat between them and was deleted whole. The application could not start, and **the entire
+4,287-test suite stayed green**.
+
+**Why nothing caught it.** Two failures compounded.
+
+1. *Nothing constructs `App`.* It subclasses `QApplication`, only one of which may exist
+   per process, so `tests/unit/test_main_app.py` deliberately borrows its methods onto a
+   stub. A stub borrows the methods it names, so a method nothing borrows can vanish
+   without a single failure.
+2. *The auto-fixer erased the evidence.* With `initialize_components` gone, its three
+   imports became unused and `ruff --fix` in the manual hook removed them. The tree was
+   then self-consistent - every one of the eight gates passed - and the damage was
+   invisible to static analysis. Restoring the method alone reproduced a second failure,
+   `NameError: MainModel`, because the imports were gone too.
+
+Only the manual pass found it, which is the case for standing ruling 3 stated in one
+sentence.
+
+**Decision.** Keep splice-by-anchor, but **verify the method list before and after** -
+`git show develop:<file> | grep "def "` against the same on the working tree - whenever a
+replacement spans more than one method. And keep two guards in
+`tests/unit/test_main_app.py`: a `TestAppIsWhole` AST check that every method `App` calls
+on itself is defined, and `TestInitializeComponents`, which borrows the real method and
+patches the three classes *by their names in `main_app`* - so the borrow fails if the
+method goes and the patch fails if the import does.
+
+**Evidence.** Both guards were verified against the real mutations. Deleting
+`initialize_components` now stops collection outright; deleting the `MainModel` import
+fails the test, and `ruff` flags it independently. So the import half was always
+detectable - the undetected step was the method deletion, and `ruff --fix` reconciling
+around it is what hid that.
+
+**Revisit if** a way is found to construct `App` under test. A real smoke test would
+subsume both guards; until then they are shallow by necessity, proving the methods exist
+rather than that they work.
+
+---
+
 ## 2026-09-20 - Step 5c is measured in complexity, not in lines
 
 **Context.** Step 5c named four targets by size: `edit_plugin` 195 lines,

@@ -2574,6 +2574,23 @@ Each says what it moves *before* it starts (method rule 38).
     `App`**, so it still runs shipped code with no `QApplication`, and each borrowed method
     is named - a future helper not brought across fails loudly rather than being quietly
     mocked away.
+
+    **The first commit of this step shipped an application that could not start**, and
+    every automated gate passed over it. The splice was anchored on `create_appdata_folders`
+    and on the next method it expected, `configure_logger`; `initialize_components` sat
+    between them and was deleted whole. `ruff --fix` then removed the three imports that had
+    become unused, leaving a self-consistent tree. The suite could not see it because
+    nothing constructs `App`, the complexity ratchet could not because the function count
+    *rose* (three helpers in, one method out) which reads as a normal split, and the
+    refactor-coverage audit could not because `initialize_components` is not a MOVED target.
+    **The manual pass found it** - standing ruling 3 on its second outing. Fixed in the
+    commit after, with two guards and a `DECISIONS.md` entry; see 2026-09-21 there for the
+    rule that follows from it.
+
+    **Manual Windows pass run 2026-09-21, clear** after the fix: `%LOCALAPPDATA%\Poriscope`
+    renamed away and the app launched cold, relaunched, a non-default Log Level survived a
+    restart, a config with `Log Level` deleted was repaired and rewritten, and a user plugin
+    was still discovered - which is the `sys.path` half.
   - **5c.6 - `populate_available_plugins`,** and a ruling on the remaining four:
     `remove_pages_except` (12), `switch_to_page` (11), `update_plugin_history` (11) and
     `replace_class_names_with_classes` (11, and a filed defect). Either they come down or
