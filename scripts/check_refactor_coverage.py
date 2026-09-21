@@ -465,6 +465,29 @@ MOVED: Tuple[Tuple[str, str, str], ...] = (
     ("poriscope/main_app.py", "_ensure_folder", "5c.5"),
     ("poriscope/main_app.py", "_write_config", "5c.5"),
     ("poriscope/main_app.py", "_backfill_missing_config", "5c.5"),
+    # Step 5c.6 - plugin discovery. populate_available_plugins walked, imported and
+    # classified in one 94-line method; each of those is now its own. Listed because
+    # discovery is the one path where a silent regression costs the user every plugin
+    # of a family at once, with no error anywhere.
+    ("poriscope/models/main_model.py", "_plugin_files", "5c.6"),
+    ("poriscope/models/main_model.py", "_python_files", "5c.6"),
+    ("poriscope/models/main_model.py", "_classify_plugin_file", "5c.6"),
+    ("poriscope/models/main_model.py", "_load_plugin_class", "5c.6"),
+    ("poriscope/models/main_model.py", "_metaclass_for", "5c.6"),
+    # The session type round trip, restructured and fixed together in 5c.6. Listed
+    # because the corruption it carried was silent: a setting whose value read
+    # "float" came back as the type, and only a user noticing a broken plugin would
+    # ever have shown it.
+    ("poriscope/models/main_model.py", "replace_classes_with_class_names", "5c.6"),
+    ("poriscope/models/main_model.py", "replace_class_names_with_classes", "5c.6"),
+    # 5c.6's ruling on the last three over the gate. All three came down rather
+    # than being recorded as floors, so the shell gate reads zero. _dismiss_milestone
+    # carries the two swallowed-exception paths that were among switch_to_page's six
+    # uncovered statements - untested until they were given a name.
+    ("poriscope/controllers/main_controller.py", "_renamed_history", "5c.6"),
+    ("poriscope/views/main_view.py", "_pages_named", "5c.6"),
+    ("poriscope/views/main_view.py", "_reindex_pages", "5c.6"),
+    ("poriscope/views/main_view.py", "_dismiss_milestone", "5c.6"),
 )
 
 VIEW_FILES: Tuple[str, ...] = (

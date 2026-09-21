@@ -698,22 +698,59 @@ class MainController(QObject):
     def update_plugin_history(
         self, history: Optional[Dict[str, Any]], delete_key: Optional[str]
     ) -> None:
+        """
+        Record a plugin being added, removed or renamed, then persist the session.
+
+        The two arguments form a small truth table. `history` alone adds or
+        replaces an entry; `delete_key` alone removes one; both together are a
+        rename, where the entry named by `delete_key` becomes the one `history`
+        describes. Neither is not an error - it still re-syncs and saves, which
+        is how a change to a tab's own state reaches the session file without any
+        plugin having changed.
+
+        :param history: The plugin's saved state, or None when only deleting.
+        :type history: Optional[Dict[str, Any]]
+        :param delete_key: The key being removed, or renamed away from, or None.
+        :type delete_key: Optional[str]
+        """
         if history and not delete_key:
-            if history:
-                self.plugin_history[history.pop("key")] = history
+            self.plugin_history[history.pop("key")] = history
         elif not history and delete_key:
             self.plugin_history.pop(delete_key, None)
         elif history and delete_key:
-            new_history = {}
-            for key, val in self.plugin_history.items():
-                if key == delete_key:
-                    new_history[history.pop("key")] = history
-                else:
-                    new_history[key] = val
-            self.plugin_history = new_history
+            self.plugin_history = self._renamed_history(delete_key, history)
+
         self._sync_tab_session_state_into_history()
         if not self._suppress_session_save:
             self.main_model.save_session(self.plugin_history)
+
+    @log(logger=logger)
+    def _renamed_history(
+        self, delete_key: str, history: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Rebuild the plugin history with one entry renamed, keeping its position.
+
+        Rebuilt rather than popped and reinserted, because a plugin's place in
+        the history is its place in the session file and in everything restored
+        from it. Popping the old key and adding the new one would move the
+        renamed plugin to the end, so a rename would silently reorder the user's
+        workspace.
+
+        :param delete_key: The key being renamed away from.
+        :type delete_key: str
+        :param history: The renamed plugin's state, carrying its new key.
+        :type history: Dict[str, Any]
+        :return: A new history with the entry replaced where the old one sat.
+        :rtype: Dict[str, Any]
+        """
+        renamed: Dict[str, Any] = {}
+        for key, val in self.plugin_history.items():
+            if key == delete_key:
+                renamed[history.pop("key")] = history
+            else:
+                renamed[key] = val
+        return renamed
 
     @log(logger=logger)
     def _sync_tab_session_state_into_history(self) -> None:

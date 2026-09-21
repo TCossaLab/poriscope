@@ -16,6 +16,26 @@ Read-only investigation and measurement do not.
   `MetaDatabaseLoader` rather than a defect repair - see `future_refactors_and_features.md`
   Part 13. Queued deliberately for after the 2.0.0 refactor.
 
+## A milestone blocks the page switch but not what caused it (2026-09-21)
+
+Found during 5c.6's manual pass; **pre-existing**, and the gating is byte-identical to
+what it was. `MainView.switch_to_page:913` refuses to change page while
+`_milestone_dialog` is up and the target is not `_expected_next_view` - but every caller
+does its work *before* calling it, so the refusal comes too late to prevent anything:
+
+- `on_raw_data_view_click:616` and its EventAnalysis and Metadata twins call
+  `on_load_analysis_tab_button_click` first, which emits `instantiate_analysis_tab` - the
+  tab is created and starts its own walkthrough - then `sync_sidebar_highlight`, and only
+  then `switch_to_page`.
+- `handle_menu_click:697` highlights before switching.
+- `on_load_analysis_tab_button_click:727` highlights as well, so the highlight moves twice.
+
+Observed: during a milestone, clicking any sidebar button opens that tab and starts its
+tutorial, and every menu stays live under the dimming overlay. The gate is in the wrong
+layer - it guards the last step of an action whose earlier steps have already run. Fixing
+it means asking "is this navigation allowed?" before the handler acts, not inside the
+final call.
+
 ## Action replay re-reads the filter selection instead of replaying it (2026-09-17)
 
 Both non-trivial `@register_action` methods call `self.get_selected_filters()` inside their
@@ -189,13 +209,12 @@ the oversized `setupUi` methods. This review re-confirmed each with fresh counts
   log-linearised fit is biased high at that few points: +2.3% at 10k, falling to +0.2% at
   1M. Rice's rule would give four times as many bins. Retuning it changes which events are
   found, so it needs the same treatment the σ correction got, not a quiet edit.
-- **Session restore corrupts any setting whose value is a type name.**
-  `MainModel.replace_class_names_with_classes` converts any string equal to
-  `"str"`/`"int"`/`"float"`/`"bool"` into the type object regardless of key - reproduced,
-  `Value: "float"` returns as `<class 'float'>`. Both walkers' list branches are unreachable
-  as called (a list nested in a dict is never visited), and the two session writes omit the
-  `default=serialize_object` the config write at `:530` uses. Writes are non-atomic, so a
-  crash mid-write truncates the file `_suppress_session_save` exists to protect.
+- **The two session writes are non-atomic and omit `default=serialize_object`.** The
+  config write uses it; `save_session` and `save_tab_actions` do not, so a value neither
+  can serialise raises `TypeError` mid-write. The write is not atomic either, so that
+  crash truncates the very file `_suppress_session_save` exists to protect. Write to a
+  temporary file and replace. (The key-agnostic type restoration and the unreachable list
+  branches in the same two walkers were fixed in 5c.6, 2026-09-21.)
 - **No schema version, and the compatibility check has a dead branch.** No
   `PRAGMA user_version` anywhere. `SQLiteDBLoader._finalize_initialization:1042-1047` guards
   `extra_tables` against `"event_counts"`, already in `expected_tables` (`:1012`) and so
