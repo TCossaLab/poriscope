@@ -1346,3 +1346,186 @@ class TestDeleteAllPlugins:
         _wire_store(controller, store)
 
         assert controller.delete_all_plugins() == []
+
+
+# ------------- 5c.1 characterization net ----------------------------------
+#
+# Step 5c.2 replaces edit_plugin's five report-then-rollback blocks with one
+# helper, and 5c.3 splits the method along its seams. These pin the three paths
+# that no test reached, so a restructuring that changes one of them fails here
+# rather than in the app. The rollback block below is the one that matters most:
+# it is one of the five 5c.2 will extract, and it had no test at all.
+
+
+def test_edit_plugin_warns_and_returns_when_the_instance_is_missing(
+    mock_model: MagicMock,
+    mock_view: MagicMock,
+    mocker: MockerFixture,
+) -> None:
+    """
+    An unknown key is reported and nothing else happens - no dialog is opened.
+
+    This is edit_plugin's first guard, and 5c.3 lifts it into a fetch-and-guard
+    helper. The assertion that ``get_user_settings`` is never called is what
+    makes the test fail if the guard is dropped rather than moved.
+
+    :param mock_model: Mocked data plugin model.
+    :param mock_view: Mocked data plugin view.
+    :param mocker: Pytest-mock fixture.
+    """
+    ctrl = _make_edit_plugin_controller(mock_model, mock_view, mocker)
+    mock_model.get_plugin_instance.return_value = None
+
+    ctrl.edit_plugin("MetaReader", "gone", {})
+
+    ctrl.logger.warning.assert_called_once()
+    message = ctrl.logger.warning.call_args[0][0]
+    assert "gone" in message and "MetaReader" in message
+    mock_view.get_user_settings.assert_not_called()
+
+
+def test_edit_plugin_reports_a_dependent_with_no_instance_and_keeps_going(
+    mock_model: MagicMock,
+    mock_view: MagicMock,
+    mocker: MockerFixture,
+) -> None:
+    """
+    A registered dependent with no live instance is reported, and the rename still completes.
+
+    This is the ``RuntimeError`` the docstring documents as never reaching the
+    caller. The handler is per-dependent and deliberately does *not* roll back,
+    so the rename must still finish - asserting ``set_key`` ran is what
+    distinguishes "reported and continued" from "reported and aborted".
+
+    5c.3 moves this loop into a rename helper, and the guard is easy to lose on
+    the way because the line after it fails anyway, just less legibly.
+
+    :param mock_model: Mocked data plugin model.
+    :param mock_view: Mocked data plugin view.
+    :param mocker: Pytest-mock fixture.
+    """
+    ctrl = _make_edit_plugin_controller(mock_model, mock_view, mocker)
+    instance = mocker.Mock()
+    instance.get_key.return_value = "r1"
+    instance.get_parents.return_value = set()
+    instance.get_dependents.return_value = [("MetaFitter", "d1")]
+    instance.report_channel_status.return_value = "ok"
+
+    # The dependent resolves to nothing, which is what raises inside the loop.
+    mock_model.get_plugin_instance.side_effect = lambda mc, k: (
+        instance if mc == "MetaReader" else None
+    )
+    mock_model.get_available_metaclasses.return_value = []
+    mock_model.get_instantiated_plugins_list.return_value = {"MetaReader": ["r1"]}
+    mock_view.get_user_settings.return_value = ({}, "r2", False)
+
+    ctrl.edit_plugin("MetaReader", "r1", {})
+
+    ctrl.logger.error.assert_called_once()
+    reported = ctrl.logger.error.call_args[0][0]
+    assert "d1" in reported and "MetaFitter" in reported
+    # The guard's own message, not merely "something went wrong with d1". Without
+    # the explicit raise the very next line dereferences None and the same handler
+    # reports an AttributeError that still names the dependent, so asserting the
+    # text is what makes this test see the guard rather than its absence.
+    assert "No plugin instance found for MetaFitter:d1" in reported
+    assert any(
+        "d1" in call.args[0] for call in ctrl.add_text_to_display.emit.call_args_list
+    )
+    instance.set_key.assert_called_once_with("r2")
+
+
+def test_edit_plugin_rolls_back_parent_links_when_reference_resolution_fails(
+    mock_model: MagicMock,
+    mock_view: MagicMock,
+    mocker: MockerFixture,
+) -> None:
+    """
+    A failure resolving plugin references reports, restores the parent links and returns.
+
+    edit_plugin unregisters the plugin from its parents up front and re-registers
+    them on every abort. This is one of the five report-then-rollback blocks
+    5c.2 folds into a single helper, and the only one no test reached - so the
+    restore was free to disappear in that edit unnoticed.
+
+    ``apply_settings`` must not run: that is what says the method returned rather
+    than carrying on with half-resolved settings.
+
+    :param mock_model: Mocked data plugin model.
+    :param mock_view: Mocked data plugin view.
+    :param mocker: Pytest-mock fixture.
+    """
+    ctrl = _make_edit_plugin_controller(mock_model, mock_view, mocker)
+    instance = mocker.Mock()
+    instance.get_key.return_value = "r1"
+    instance.get_parents.return_value = {("MetaWriter", "w1")}
+    instance.get_dependents.return_value = []
+    parent = mocker.Mock()
+
+    def _get_plugin_instance(metaclass, key):
+        if metaclass == "MetaReader":
+            return instance
+        if metaclass == "MetaWriter":
+            return parent
+        raise RuntimeError("reference lookup exploded")
+
+    mock_model.get_plugin_instance.side_effect = _get_plugin_instance
+    mock_model.get_available_metaclasses.return_value = ["MetaLoader"]
+    mock_model.get_instantiated_plugins_list.return_value = {
+        "MetaReader": ["r1"],
+        "MetaLoader": ["loader1"],
+    }
+    settings = {"MetaLoader": {"Value": "loader1", "Type": str, "Options": ["loader1"]}}
+    # Same key back from the dialog, so the rename branch is skipped and the
+    # failure lands in the reference-resolution block specifically.
+    mock_view.get_user_settings.return_value = (settings, "r1", False)
+
+    ctrl.edit_plugin("MetaReader", "r1", settings)
+
+    ctrl.logger.exception.assert_called_once()
+    assert (
+        "Unable to resolve plugin references" in ctrl.logger.exception.call_args[0][0]
+    )
+    assert any(
+        "Unable to resolve plugin references" in call.args[0]
+        for call in ctrl.add_text_to_display.emit.call_args_list
+    )
+    parent.register_dependent.assert_called_once_with("MetaReader", "r1")
+    instance.apply_settings.assert_not_called()
+
+
+def test_validate_and_instantiate_plugin_reports_when_no_key_was_supplied_or_chosen(
+    controller: DataPluginController,
+    mock_model: MagicMock,
+    mocker: MockerFixture,
+) -> None:
+    """
+    Settings supplied with no key is reported, not allowed through as a keyless plugin.
+
+    Reached by handing in settings - which skips the dialog that would otherwise
+    choose a key - while leaving ``key`` at None. The raise is the method's own,
+    caught by its own handler, and 5c.4 moves that handler into the shared
+    reporting helper.
+
+    :param controller: Controller under test.
+    :param mock_model: Mocked data plugin model.
+    :param mocker: Pytest-mock fixture.
+    """
+    temp_instance = mocker.Mock()
+    mock_model.get_temp_instance.return_value = temp_instance
+    mock_model.get_instantiated_plugins_list.return_value = {"MetaReader": []}
+
+    controller.validate_and_instantiate_plugin(
+        metaclass="MetaReader",
+        subclass="MyReader",
+        settings={"param": {"Value": 1}},
+        key=None,
+    )
+
+    controller.logger.exception.assert_called_once()
+    assert (
+        "No plugin key was provided or chosen"
+        in controller.logger.exception.call_args[0][0]
+    )
+    temp_instance.set_key.assert_not_called()
+    mock_model.register_plugin.assert_not_called()

@@ -2406,13 +2406,31 @@ Each says what it moves *before* it starts (method rule 38).
     function count is called out, since a real split leaves its pieces in the file and
     raises that count. `poriscope/views/` cannot be swept, holding out-of-scope modules
     beside `main_view.py`, so an extraction into a new file there must be listed by hand.
-  - **5c.1 - the net, before the knife.** Characterization tests for `edit_plugin`,
-    `validate_and_instantiate_plugin` and `create_appdata_folders`. The first two are
-    well covered by line count but that is not the same as pinned; the third is at zero and
-    must not be split without one.
-    *Check:* `create_appdata_folders` 0% -> covered; every new test class verified against
-    deliberate source mutations (rule 8); **the complexity gate does not move**, which is what
-    says this commit added no restructuring.
+  - **5c.1 - the net, before the knife. LANDED 2026-09-21.** Characterization tests for
+    `edit_plugin`, `validate_and_instantiate_plugin` and `create_appdata_folders`.
+    *Check, met:* `create_appdata_folders` **0% -> 100%** (52 of 52 statements),
+    `edit_plugin` **88% -> 100%**, `validate_and_instantiate_plugin` **99% -> 100%**; the
+    complexity gate reads 8 / 121 unchanged, which is what says this commit restructured
+    nothing.
+
+    **"Well covered by line count is not the same as pinned" was right, and the gap was
+    exactly where it hurt.** Of `edit_plugin`'s 11 uncovered statements, five were the
+    report-then-rollback block for a failed plugin-reference resolution - **one of the five
+    5c.2 folds into `_report_and_restore`, and the only one no test reached**, so the
+    restore was free to vanish in that edit unnoticed. The other gaps were the
+    missing-instance guard and the `RuntimeError` for a dependent with no live instance;
+    `validate_and_instantiate_plugin`'s single gap was its own "no key supplied or chosen"
+    raise. Four tests, plus 16 for `create_appdata_folders`.
+
+    **Two mutants survived the first pass and both were worth the trouble** (rule 8 earning
+    its keep). Deleting the dependent `RuntimeError` left the test green, because the next
+    line dereferences `None` and the same handler reports an `AttributeError` naming the
+    same dependent - the test now asserts the guard's own message. And deleting the
+    regeneration assignment in the corrupt-config handler left the test green, because when
+    `json.load` itself raises, the assignment made *before* the `try` is still standing. It
+    only matters when the load succeeds and a later statement fails, so a config holding
+    valid JSON that is not an object (`[1, 2, 3]`) was added: the backfill then fails
+    subscripting a list by name, and only the handler's reassignment recovers.
   - **5c.2 - `_report_and_restore` on `DataPluginController`.** The five report-then-rollback
     blocks in `edit_plugin` become one call each, exactly as `_reject_event` did for
     `fit_events`, with the control flow left at the call site.
