@@ -2029,3 +2029,63 @@ released version, so nothing depends on them working; removing the option is les
 work than making it correct and leaves no half-feature on screen. Worth pricing
 against the above rather than assuming the feature is wanted — the deciding
 question is whether anyone has a filter they can only express as raw SQL.
+
+---
+
+# Part 15: How `MetaEventFinder` Picks the Baseline Peak
+
+Moved out of `future_fixes.md` 2026-09-21, out of scope for the 2.0.0 refactor
+(Kyle): these are not defects with an obvious fix but open questions about what
+the algorithm *should* do, and they need a dedicated piece of work with its own
+synthetic-data evidence. They are one item, not two - the second follows from
+the first and answering either alone would be guesswork.
+
+Both live in `MetaEventFinder._fit_baseline_histogram`, the shared baseline fit
+5b-1 promoted onto the base class. Every sigma-denominated detection threshold
+in every event finder is computed from what this returns, so a wrong answer here
+moves which events are found on every dataset.
+
+## The peak it follows is the wrong one
+
+The baseline is located with `np.argmax(hist)` - the most-populated bin. The rule
+should be the fitted peak **farthest from zero**, since blockages move rectified
+current toward zero (Kyle, 2026-09-20).
+
+Measured on a synthetic two-population chunk, baseline 1000 and a second at 850:
+correct up to **49%** of samples in the lower population, then it reports **852**
+as the baseline at 55% and above. So the failure is not gradual - past roughly
+half-occupancy it locks onto the blockage population and every threshold derived
+from it is computed against the wrong level. High-duty-cycle data is exactly
+where this bites.
+
+**What it needs before it can be worked:** a stated selection rule. Candidates
+are a prominence floor, a minimum fraction of the tallest bin, and a minimum
+separation between peaks. Picking one is the decision; the code change is small
+once it is made.
+
+## Which side the fit window trims follows from that
+
+The same method slices `hist[peak - half_width : peak + half_width]`, keeping one
+more bin below the peak than above.
+
+Its measured advantage is **entirely** in the case where the contaminating
+population sits *above* the baseline - which the item above says never happens,
+since blockages move toward zero. With the contaminant below, sigma is worse by
+**1-4%** across six configurations at 40 trials each.
+
+Removing the asymmetry is not the fix either: it is worth several percent on a
+bimodal baseline and only **0.13 percentage points** on unimodal noise. That is
+how it came to be deleted and then restored on 2026-09-20. The asymmetry is
+correct for *some* window, and which window is right depends on which peak the
+fit is following - so this cannot be settled until the peak-selection rule is.
+
+## Adjacent, and probably the same piece of work
+
+`future_fixes.md` still carries the bin-count entry for this same method: the
+histogram uses `int(len(data)**(1/3)/2)` bins, which is 10 on a 10k-sample chunk,
+of which about 6 survive the two windowing passes, and the log-linearised fit is
+biased high at that few points (+2.3% at 10k, falling to +0.2% at 1M). Rice's
+rule would give four times as many. It was left in `future_fixes.md` because it
+was not named in the deferral, but it is the same function and the same kind of
+retuning, and whoever picks this up should price all three together.
+

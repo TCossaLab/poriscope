@@ -183,24 +183,8 @@ the oversized `setupUi` methods. This review re-confirmed each with fresh counts
   deduplication precisely because reconciling them changes behaviour on a path CI cannot
   exercise (`DECISIONS.md` 2026-09-01). Needs a Linux check and a manual Windows pass, not a
   code reading.
-- **The baseline fit follows the tallest peak, not the one farthest from zero.**
-  `MetaEventFinder._fit_baseline_histogram` locates the baseline with `np.argmax(hist)`,
-  which is the most-populated bin; the rule is that it should be the fitted peak farthest
-  from zero, since blockages move rectified current toward zero (Kyle, 2026-09-20).
-  Measured on a synthetic two-population chunk, baseline 1000 and a second at 850: correct
-  up to 49% of samples in the lower population, then it reports **852** as the baseline at
-  55% and above, and every σ-denominated threshold is computed from that. Needs a stated
-  selection rule (prominence floor, minimum fraction of the tallest bin, minimum
-  separation) before it can be worked.
-- **The fit window trims the side nearer the wanted peak.** The same method slices
-  `hist[peak - half_width : peak + half_width]`, keeping one more bin below the peak than
-  above. Its measured advantage is entirely in the case where the contaminating population
-  sits *above* the baseline, which the entry above says never happens; with the contaminant
-  below, σ is worse by 1-4% across six configurations (40 trials each). Removing it is not
-  the fix either - it is worth several percent on a bimodal baseline and only 0.13
-  percentage points on unimodal noise, which is how it came to be deleted and restored on
-  2026-09-20. Answer it together with the peak-selection item, not separately.
-- **The baseline histogram is coarse, at `int(len(data)**(1/3)/2)` bins.** That is 10 bins
+- **The baseline histogram is coarse, at `int(len(data)**(1/3)/2)` bins.** (Same method as
+  Part 15 of `future_refactors_and_features.md`; likely belongs in that piece of work.) That is 10 bins
   on a 10k-sample chunk, of which ~6 survive the two windowing passes, and the
   log-linearised fit is biased high at that few points: +2.3% at 10k, falling to +0.2% at
   1M. Rice's rule would give four times as many bins. Retuning it changes which events are
