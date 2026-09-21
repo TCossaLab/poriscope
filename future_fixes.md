@@ -189,13 +189,12 @@ the oversized `setupUi` methods. This review re-confirmed each with fresh counts
   log-linearised fit is biased high at that few points: +2.3% at 10k, falling to +0.2% at
   1M. Rice's rule would give four times as many bins. Retuning it changes which events are
   found, so it needs the same treatment the σ correction got, not a quiet edit.
-- **Session restore corrupts any setting whose value is a type name.**
-  `MainModel.replace_class_names_with_classes` converts any string equal to
-  `"str"`/`"int"`/`"float"`/`"bool"` into the type object regardless of key - reproduced,
-  `Value: "float"` returns as `<class 'float'>`. Both walkers' list branches are unreachable
-  as called (a list nested in a dict is never visited), and the two session writes omit the
-  `default=serialize_object` the config write at `:530` uses. Writes are non-atomic, so a
-  crash mid-write truncates the file `_suppress_session_save` exists to protect.
+- **The two session writes are non-atomic and omit `default=serialize_object`.** The
+  config write uses it; `save_session` and `save_tab_actions` do not, so a value neither
+  can serialise raises `TypeError` mid-write. The write is not atomic either, so that
+  crash truncates the very file `_suppress_session_save` exists to protect. Write to a
+  temporary file and replace. (The key-agnostic type restoration and the unreachable list
+  branches in the same two walkers were fixed in 5c.6, 2026-09-21.)
 - **No schema version, and the compatibility check has a dead branch.** No
   `PRAGMA user_version` anywhere. `SQLiteDBLoader._finalize_initialization:1042-1047` guards
   `extra_tables` against `"event_counts"`, already in `expected_tables` (`:1012`) and so

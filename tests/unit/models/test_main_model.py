@@ -179,39 +179,43 @@ def test_load_session_nonexistent(main_model):
 
 
 def test_replace_classes_with_class_names_all_paths(main_model):
+    """
+    Every type in a settings tree becomes its name, however deeply nested.
+
+    Rewritten for 5c.6. This used to hand the walker a list directly to reach its
+    list branch; that branch was unreachable from every real caller and is now
+    gone. A settings tree is dicts inside dicts, which is what this walks.
+    """
+
     class DummyA:
         pass
 
     class DummyB:
         pass
 
-    data = {"a": DummyA, "b": {"nested": DummyB}, "c": [DummyA, {"deep": DummyB}]}
+    data = {"Threshold": {"Type": DummyA}, "Group": {"Inner": {"Type": DummyB}}}
 
     main_model.replace_classes_with_class_names(data)
-    main_model.replace_classes_with_class_names(
-        data["c"]
-    )  # Ensure list is also processed
 
-    assert data["a"] == "DummyA"
-    assert data["b"]["nested"] == "DummyB"
-    assert data["c"][0] == "DummyA"
-    assert data["c"][1]["deep"] == "DummyB"
+    assert data["Threshold"]["Type"] == "DummyA"
+    assert data["Group"]["Inner"]["Type"] == "DummyB"
 
 
 def test_replace_class_names_with_classes_all_paths(main_model):
-    data = {"a": "int", "b": {"nested": "float"}, "c": ["str", {"deep": "bool"}]}
+    """
+    Type names become types again, however deeply nested, under the keys that hold types.
 
+    Rewritten for 5c.6 on both counts: the conversion is gated on the key now, so
+    the names sit under ``Type`` rather than arbitrary keys, and the list branch
+    this used to exercise is gone.
+    """
+    data = {"Threshold": {"Type": "int"}, "Group": {"Inner": {"Type": "float"}}}
     class_dict = {"int": int, "float": float, "str": str, "bool": bool}
 
     main_model.replace_class_names_with_classes(data, class_dict)
-    main_model.replace_class_names_with_classes(
-        data["c"], class_dict
-    )  # Ensure list is processed
 
-    assert data["a"] is int
-    assert data["b"]["nested"] is float
-    assert data["c"][0] is str
-    assert data["c"][1]["deep"] is bool
+    assert data["Threshold"]["Type"] is int
+    assert data["Group"]["Inner"]["Type"] is float
 
 
 def test_update_app_config(main_model):
@@ -591,3 +595,83 @@ class TestPluginFiles:
 
         assert [str(folder) for folder, _ in found] == [str(shipped), str(user)]
         assert {name for _, name in found} == {"Clash.py"}
+
+
+# ------------- 5c.6: the session-restore type round trip ------------------
+#
+# Plugin settings carry a real type under "Type". JSON cannot hold one, so it is
+# written as its name on save and turned back into the type on load. The bug was
+# that the load side converted *any* string matching a type name, whatever key it
+# sat under.
+
+
+class TestTypeRoundTrip:
+    """Saving and restoring the one key that legitimately holds a type."""
+
+    def test_a_type_survives_the_round_trip(self, main_model):
+        """The feature these two walkers exist for."""
+        settings = {"Threshold": {"Type": float, "Value": 3.0}}
+
+        main_model.replace_classes_with_class_names(settings)
+        assert settings["Threshold"]["Type"] == "float"
+
+        main_model.replace_class_names_with_classes(settings)
+        assert settings["Threshold"]["Type"] is float
+
+    def test_a_value_that_reads_like_a_type_name_is_left_alone(self, main_model):
+        """
+        The corruption: a setting whose value is the string "float" came back as
+        ``<class 'float'>``, because the walker matched on the string and ignored
+        which key it sat under. Reproduced before the fix.
+        """
+        restored = {"Event Type": {"Type": str, "Value": "float"}}
+
+        main_model.replace_class_names_with_classes(restored)
+
+        assert restored["Event Type"]["Value"] == "float"
+        assert isinstance(restored["Event Type"]["Value"], str)
+
+    def test_every_type_name_is_safe_as_a_value(self, main_model):
+        """All four names the map knows, since any of them could be a real setting."""
+        restored = {
+            "P": {"Value": "str"},
+            "Q": {"Value": "int"},
+            "R": {"Value": "bool"},
+        }
+
+        main_model.replace_class_names_with_classes(restored)
+
+        assert [v["Value"] for v in restored.values()] == ["str", "int", "bool"]
+
+    def test_an_unknown_type_name_is_left_as_written(self, main_model):
+        """A Type the map does not know stays a string rather than vanishing."""
+        restored = {"Odd": {"Type": "SomeClass"}}
+
+        main_model.replace_class_names_with_classes(restored)
+
+        assert restored["Odd"]["Type"] == "SomeClass"
+
+    def test_nested_settings_are_still_walked(self, main_model):
+        """Plugin history nests settings two deep, so the recursion is load-bearing."""
+        history = {"reader_0": {"settings": {"Threshold": {"Type": "int"}}}}
+
+        main_model.replace_class_names_with_classes(history)
+
+        assert history["reader_0"]["settings"]["Threshold"]["Type"] is int
+
+    def test_saving_a_type_under_an_unexpected_key_is_reported(
+        self, main_model, caplog
+    ):
+        """
+        The save side still converts any type, so no existing save can break - but
+        it says so, because the load side will not convert that key back. Without
+        the warning the asymmetry would be silent and the setting would come back
+        as a string.
+        """
+        settings = {"Surprise": {"Codec": bool}}
+
+        with caplog.at_level(logging.WARNING):
+            main_model.replace_classes_with_class_names(settings)
+
+        assert settings["Surprise"]["Codec"] == "bool"
+        assert "Codec" in caplog.text

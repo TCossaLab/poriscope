@@ -35,6 +35,7 @@ from pathlib import Path
 from typing import (
     Any,
     Dict,
+    FrozenSet,
     Iterator,
     List,
     Mapping,
@@ -97,6 +98,12 @@ class MainModel(QObject):
         "MetaView": MetaView,
         "MetaModel": MetaModel,
     }
+
+    #: Settings keys whose value is a real type rather than data. Session JSON
+    #: cannot hold a type, so it is written as its name and restored from that -
+    #: but only here. Matching on the string alone is what turned a setting whose
+    #: value happened to read "float" into `<class 'float'>`.
+    _TYPE_VALUED_KEYS: FrozenSet[str] = frozenset({"Type"})
 
     def __init__(self, app_config: Dict[str, Any]) -> None:
         """
@@ -554,18 +561,40 @@ class MainModel(QObject):
 
     @log(logger=logger)
     def replace_classes_with_class_names(self, d: Any) -> None:
-        if isinstance(d, dict):
-            for key, value in d.items():
-                if isinstance(value, dict):
-                    self.replace_classes_with_class_names(value)
-                elif isinstance(value, type):
-                    d[key] = value.__name__
-        elif isinstance(d, list):
-            for i in range(len(d)):
-                if isinstance(d[i], dict):
-                    self.replace_classes_with_class_names(d[i])
-                elif isinstance(d[i], type):
-                    d[i] = d[i].__name__
+        """
+        Replace every type in a settings tree with its name, so it can be written as JSON.
+
+        A plugin setting carries a real type under `Type` - `float`, `str` and so
+        on - and JSON cannot hold one, so it is written as its name and turned
+        back by `replace_class_names_with_classes` on load.
+
+        This converts a type under *any* key, not only the expected ones, so that
+        no save can fail on a value `json.dump` cannot serialise. It warns about
+        the unexpected ones, because the load side will not convert those back:
+        the asymmetry is deliberate, and the warning is what stops it being
+        silent.
+
+        Only dict values are walked. A list nested in a dict is not visited - the
+        branch that once claimed to do so was unreachable from every caller, and
+        nothing needs it: `Options` holds plugin names, not types.
+
+        :param d: The settings tree, edited in place.
+        :type d: Any
+        """
+        if not isinstance(d, dict):
+            return
+
+        for key, value in d.items():
+            if isinstance(value, dict):
+                self.replace_classes_with_class_names(value)
+            elif isinstance(value, type):
+                if key not in self._TYPE_VALUED_KEYS:
+                    self.logger.warning(
+                        f"Saving the type {value.__name__} under the key '{key}', "
+                        f"which is not restored as a type on load - it will come "
+                        f"back as the string '{value.__name__}'."
+                    )
+                d[key] = value.__name__
 
     @log(logger=logger)
     def replace_class_names_with_classes(
@@ -573,22 +602,33 @@ class MainModel(QObject):
         d: Any,
         class_dict: Mapping[str, Any] = _JSON_CLASS_NAMES,
     ) -> None:
-        if isinstance(d, dict):
-            for key, value in d.items():
-                if isinstance(value, dict):
-                    self.replace_class_names_with_classes(value, class_dict)
-                elif isinstance(value, str):
-                    # Check if the value is a class name in the provided class_dict
-                    if value in class_dict:
-                        d[key] = class_dict[value]
-        elif isinstance(d, list):
-            for i in range(len(d)):
-                if isinstance(d[i], dict):
-                    self.replace_class_names_with_classes(d[i], class_dict)
-                elif isinstance(d[i], str):
-                    # Check if the value is a class name in the provided class_dict
-                    if d[i] in class_dict:
-                        d[i] = class_dict[d[i]]
+        """
+        Turn the type names written into session JSON back into real types.
+
+        **Only under the keys that actually hold a type.** Matching on the string
+        alone converted any setting whose *value* happened to read `"float"` into
+        `<class 'float'>`, so a plugin configured with `Event Type: "float"` came
+        back corrupted. The key is what distinguishes a serialised type from a
+        string that looks like one, because the save side only ever writes a type
+        name in place of a type.
+
+        A name the map does not know is left exactly as written.
+
+        Only dict values are walked, matching the save side.
+
+        :param d: The settings tree, edited in place.
+        :type d: Any
+        :param class_dict: The names to restore, and the types to restore them to.
+        :type class_dict: Mapping[str, Any]
+        """
+        if not isinstance(d, dict):
+            return
+
+        for key, value in d.items():
+            if isinstance(value, dict):
+                self.replace_class_names_with_classes(value, class_dict)
+            elif key in self._TYPE_VALUED_KEYS and isinstance(value, str):
+                d[key] = class_dict.get(value, value)
 
     @log(logger=logger)
     def reset_app_config(self) -> Dict[str, Any]:

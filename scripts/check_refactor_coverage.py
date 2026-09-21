@@ -474,6 +474,12 @@ MOVED: Tuple[Tuple[str, str, str], ...] = (
     ("poriscope/models/main_model.py", "_classify_plugin_file", "5c.6"),
     ("poriscope/models/main_model.py", "_load_plugin_class", "5c.6"),
     ("poriscope/models/main_model.py", "_metaclass_for", "5c.6"),
+    # The session type round trip, restructured and fixed together in 5c.6. Listed
+    # because the corruption it carried was silent: a setting whose value read
+    # "float" came back as the type, and only a user noticing a broken plugin would
+    # ever have shown it.
+    ("poriscope/models/main_model.py", "replace_classes_with_class_names", "5c.6"),
+    ("poriscope/models/main_model.py", "replace_class_names_with_classes", "5c.6"),
 )
 
 VIEW_FILES: Tuple[str, ...] = (

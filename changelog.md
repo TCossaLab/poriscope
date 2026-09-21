@@ -1,5 +1,7 @@
 ## Poriscope 2.0.0: in progress
 
+* **Fixed session restore corrupting any setting whose value happens to read `str`, `int`, `float` or `bool`** - it was turned into the type itself regardless of which setting it belonged to, so a plugin configured with `Event Type: float` came back broken; only the `Type` field is restored as a type now
+
 * Plugin discovery is now built from five named steps rather than one 94-line method - where it looks, which files it considers, how it imports each one and how it decides what family a plugin belongs to; the same plugins are found in the same order
 
 * The first-run bootstrap creates its five folders and writes its configuration through one routine each rather than repeating the block five and three times; the folders, the config repair and every warning are unchanged
