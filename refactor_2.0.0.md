@@ -12,7 +12,9 @@ snapshot was the nearest thing that looked like one.
 | - rule 1, View emits | 75 | **0** | 0 |
 | - rule 2, View computation imports | 22 | **2** | 2 (the floor) |
 | - rules 3, 4 and 5 | 10 / 4 / - | **0 / 0 / 0** | 0 |
-| Refactor-coverage audit | - | **82 of 82 pinned** | 100% |
+| Refactor-coverage audit | - | **112 of 112 pinned** | 100% |
+| Shell complexity, functions over cx 10 | 8 / 121 | **0 / 0** | 0 - reached, no floor |
+| Signal-bus machinery in `poriscope/` | dispatcher + 2 signals + 4 relays | **0** | 0 - reached |
 | Duplication, removable - the original 6 families | 1,889 | **721** | - |
 | - `*Model.py`, a 7th family added 2026-09-14 | not measured | **8** | 8 - reached |
 | - the 3 analysis-tab families of the original six | 1,199 | **31** | 31 (floor) |
@@ -28,11 +30,12 @@ came out on 2026-09-17**, when `load_events_by_id` and `resolve_event_ids` promo
 `MetaSubsetTabModel`, so that row is at its target and only the irreducible 8 remain. The
 `*View.py` floor of 31 is `update_plot_features`, decided 2026-09-14.
 
-**The audit is 82 targets, not the 85 the snapshots below record.** It is derived, so it
-falls as the work lands (rule 21): `a21b20ec` deleted
+**The audit is 112 targets, not the 85 the snapshots below record.** It is derived, so it
+moves as the work lands (rule 21): `a21b20ec` deleted
 `MetaView._logscale_and_filter_multiple_columns`, taking it to 84, and the event-plot
-promotion merged four Model targets into two, taking it to 82. Nothing came unpinned at
-either step.
+promotion merged four Model targets into two, taking it to 82. Step 5c then took it
+**82 -> 112**, in the other direction, because a split adds helpers and each one joins the
+`MOVED` table in the commit that creates it. Nothing came unpinned at any step.
 
 ## Step 4 closeout - the commit series, planned 2026-09-14 at `a1ef5906`
 
@@ -2309,7 +2312,7 @@ Each says what it moves *before* it starts (method rule 38).
       structurally unexercisable there, so this is the only coverage these widgets get. Both
       the channel picker and the filter picker were driven through the real UI against the
       promoted base, and nothing regressed.
-- **5c - the app shell. REVIEWED 2026-09-20, re-scoped and planned; 5c.0 LANDED 2026-09-21.**
+- **5c - the app shell. CLOSED 2026-09-21**, over seven branches, 5c.0 through 5c.6.
   All four figures confirm exactly - `edit_plugin` 195 lines,
   `validate_and_instantiate_plugin` 160, `main_view.py` 1,235, `settings_window.py` 890 -
   which is the first entry in Step 5 whose numbers all survived. The *conclusions* drawn
@@ -2639,18 +2642,27 @@ Each says what it moves *before* it starts (method rule 38).
   list was restructured; **no floor was recorded**. The refactor-coverage audit went 82 ->
   **112 of 112 pinned**. Manual Windows passes were run and reported clear at 5c.3 (the
   plugin dialogs), 5c.4 (those again plus session restore, including the stale session from
-  the bug report) and 5c.5 (first-run startup), with one outstanding for 5c.6.
-- **5e - the bus, and every trace of it.** Last, so nothing still needs it. See the entry
-  below and `DECISIONS.md` 2026-09-19.
+  the bug report), 5c.5 (first-run startup) and 5c.6 (plugin discovery and the walkthrough),
+  all clear.
+- **5e - the bus, and every trace of it. CLOSED 2026-09-21**, over five sub-steps. Last by
+  design, so nothing still needed it. See the entry below and `DECISIONS.md` 2026-09-19.
 
-**Where Step 5 stands, 2026-09-21.** 5a, 5b and 5d are closed; 5c.0 has landed and
-5c.1-5c.6 are planned but not started; 5e is last by design. Gates: duplication **629**
-removable repo-wide over 8 families (`datareaders` 394 and `eventfitters` 193 are recorded
-floors, `views/widgets` 3, `eventfinders` 0, the three analysis-tab families 31,
-`*Model.py` 8); boundary allowlist **2**, at its floor; refactor-coverage audit **82 of 82
-pinned**; shell complexity **8 functions over 10, totalling 121** across 9 files, newly
-gated; repo coverage **88%**, up from the 83% baseline. Suite **4,209 passed / 16
-skipped**, all eight hooks and `sphinx-build -W` green.
+**Step 5 is closed, 2026-09-21.** All five sub-steps are in: 5a, 5b and 5d on 2026-09-20,
+then 5c over seven branches and 5e over five. Gates: duplication **629** removable repo-wide
+over 8 families (`datareaders` 394 and `eventfitters` 193 are recorded floors,
+`views/widgets` 3, `eventfinders` 0, the three analysis-tab families 31, `*Model.py` 8);
+boundary allowlist **2**, at its floor; refactor-coverage audit **112 of 112 pinned**; shell
+complexity **0 functions over 10, totalling 0**, from 8 / 121 at the start of the step and
+with no floor recorded; the signal bus gone, 452 net lines out of the app shell; repo
+coverage **88%**, up from the 83% baseline. Suite **4,312 passed / 16 skipped**, all eight hooks and
+`sphinx-build -W` green. **Steps 6 and 7 are all that remain.**
+
+**A standing rule came out of this step, and it is Kyle's:** every sub-step that moves
+application code pauses for a manual Windows pass before the next one starts, and the
+branch says up front where a regression would show. Nine ran across 5c and 5e. One of them
+is the only instrument that caught 5c.5, where 4,287 tests, eight pre-commit hooks, the
+complexity ratchet and the coverage audit were all green over an application that could not
+start - method rule 85.
 
 **Recorded floors for Step 5**, each with its reason above: the 280 lines of abstract no-op
 stubs, `_find_events_in_chunk`'s two overrides, `_populate_event_metadata` (72) and the four
