@@ -21,7 +21,7 @@ import importlib.util
 import sys
 import types
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 import pytest
 
@@ -34,6 +34,18 @@ SCRIPT = Path(REPO_ROOT, "scripts", "new_plugin.py")
 # "User Plugins" is what proves that holds for a folder no import could ever name.
 TAB_FOLDER = "User Plugins"
 TAB_NAME = "Acceptance"
+
+
+def _suffixes(script: types.ModuleType) -> List[str]:
+    """
+    List the suffixes of every file a generated tab is made of.
+
+    :param script: the generator module
+    :type script: types.ModuleType
+    :return: the three triad suffixes followed by the controls panel's
+    :rtype: List[str]
+    """
+    return [role.suffix for role in script.TRIAD] + [script.CONTROLS]
 
 
 @pytest.fixture(scope="module")
@@ -81,16 +93,16 @@ def generated_tab(
     assert script.main(argv) == 0
 
     monkeypatch.syspath_prepend(str(folder))
-    for role in script.TRIAD:
-        sys.modules.pop(f"{TAB_NAME}{role.suffix}", None)
+    for suffix in _suffixes(script):
+        sys.modules.pop(f"{TAB_NAME}{suffix}", None)
     importlib.invalidate_caches()
 
     loaded: Dict[str, type] = {}
-    for role in script.TRIAD:
-        module = importlib.import_module(f"{TAB_NAME}{role.suffix}")
-        loaded[role.suffix] = getattr(module, f"{TAB_NAME}{role.suffix}")
-    for role in script.TRIAD:
-        monkeypatch.delitem(sys.modules, f"{TAB_NAME}{role.suffix}", raising=False)
+    for suffix in _suffixes(script):
+        module = importlib.import_module(f"{TAB_NAME}{suffix}")
+        loaded[suffix] = getattr(module, f"{TAB_NAME}{suffix}")
+    for suffix in _suffixes(script):
+        monkeypatch.delitem(sys.modules, f"{TAB_NAME}{suffix}", raising=False)
     return loaded
 
 
@@ -149,3 +161,40 @@ class TestAGeneratedTabRuns:
         """The base calls this whenever a tab's action history is replayed or cleared."""
         tab = generated_tab["Controller"]()
         tab.view._reset_actions()
+
+    def test_the_control_area_holds_the_generated_panel(self, qapp, generated_tab):
+        """
+        The tab opens with a populated control area rather than an empty strip, which is
+        what ``_build_controls`` being generated buys. Until it was, a fresh tab showed a
+        plot canvas over a blank space and nothing said which method filled it.
+        """
+        tab = generated_tab["Controller"]()
+        panel = getattr(tab.view, f"{TAB_NAME.lower()}controls")
+        assert isinstance(panel, generated_tab["Controls"])
+        assert panel.parent() is not None
+
+    def test_pressing_the_generated_button_reaches_handle_parameter_change(
+        self, qapp, generated_tab, monkeypatch
+    ):
+        """
+        The whole path, end to end: the panel's button emits ``actionTriggered``,
+        ``MetaView._set_control_area`` has connected that to ``handle_parameter_change``,
+        and the View's own override is what runs. Every link is generated except the
+        connection, and that one is the base's.
+
+        Patched on the class rather than the instance because the connection is made
+        during construction, so a later attribute swap would not be the bound method Qt
+        is holding.
+        """
+        seen = []
+        monkeypatch.setattr(
+            generated_tab["View"],
+            "handle_parameter_change",
+            lambda self, submodel, action, args: seen.append((submodel, action)),
+        )
+
+        tab = generated_tab["Controller"]()
+        panel = getattr(tab.view, f"{TAB_NAME.lower()}controls")
+        getattr(panel, f"{TAB_NAME.lower()}_button").click()
+
+        assert seen == [(f"{TAB_NAME}Controls", "do_something")]

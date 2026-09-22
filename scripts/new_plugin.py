@@ -226,6 +226,93 @@ TRIAD: Tuple[TabRole, ...] = (
 )
 
 
+#: The suffix of the fourth file a generated tab gets. It is not a ``TabRole``
+#: because it is not derived from a base the way the triad is: ``MetaControls`` is a
+#: plain ``QWidget`` with no abstract methods, and the four methods a panel is
+#: expected to have - ``setupUi``, ``connect_signals``, ``validate_inputs`` and
+#: ``collect_parameters`` - live only in that class's docstring. They cannot be made
+#: abstract either, because ``MetaView._build_controls`` instantiates
+#: ``MetaControls()`` directly for its default empty panel. So this one file is an
+#: authored template rather than copied signatures.
+CONTROLS = "Controls"
+
+# The controls panel's body, written out because MetaControls declares none of it. Each
+# entry is one section of the generated file, already indented into the class body.
+
+PLACEHOLDER_SECTION = """    #: What a combobox of this tab's shows while it has nothing real to offer yet. The
+    #: base's placeholder guard reads it to keep a plugin's edit and delete buttons
+    #: disabled until a real selection is made, so leaving it empty makes every entry
+    #: look like a real one.
+    placeholder_texts: Tuple[str, ...] = ()"""
+
+INIT_SECTION = '''    def __init__(self, parent: Optional[QWidget] = None) -> None:
+        """
+        Build the panel, wire it up, and settle the state of its widgets.
+
+        :param parent: Widget that owns this panel.
+        :type parent: Optional[QWidget]
+        """
+        super().__init__(parent)
+        self.setupUi()
+        self.connect_signals()
+        self.validate_inputs()'''
+
+SETUP_UI_SECTION = '''    def setupUi(self) -> None:
+        """
+        Lay out this panel's widgets.
+
+        The base builds the plain ones for you with the font and sizing already applied:
+        ``createLabel``, ``create_comboBox`` and ``createButton``, plus
+        ``create_info_button``, ``create_add_button`` and ``create_delete_button`` for the
+        pencil, plus and trash buttons that sit beside a plugin combobox.
+        """
+        # TODO: replace this button with the controls your tab needs
+        layout = QVBoxLayout(self)
+        self.{button} = self.createButton(self, "DO SOMETHING")
+        layout.addWidget(self.{button})'''
+
+CONNECT_SECTION = '''    def connect_signals(self) -> None:
+        """
+        Connect this panel's widgets to the handlers that turn them into requests.
+        """
+        self.{button}.clicked.connect(self._on_action_requested)'''
+
+ACTION_SECTION = '''    def _on_action_requested(self) -> None:
+        """
+        Turn a button press into a request for the tab's Controller.
+
+        ``actionTriggered`` is the signal that carries work out of this panel.
+        ``MetaView._set_control_area`` connects it to the View's
+        ``handle_parameter_change``, so the action name given here is the string that
+        method has to recognise.
+        """
+        self.actionTriggered.emit(
+            self.__class__.__name__, "do_something", (self.collect_parameters(),)
+        )'''
+
+VALIDATE_SECTION = '''    def validate_inputs(self) -> None:
+        """
+        Enable or disable this panel's widgets for the state it is now in.
+
+        Called once at the end of construction and again whenever a selection changes, so
+        a control the tab cannot honour yet is never offered.
+        """
+        # TODO: enable and disable your controls to match what is selected'''
+
+COLLECT_SECTION = '''    def collect_parameters(self) -> Dict[str, Any]:
+        """
+        Read this panel's widgets into the arguments a request needs.
+
+        Read here and sent with the signal rather than read by the Controller afterwards,
+        because a request has to carry what was on screen when it was made.
+
+        :return: The values the requested action needs.
+        :rtype: Dict[str, Any]
+        """
+        # TODO: read your controls into the dict your Controller expects
+        return {}'''
+
+
 # Methods a plugin may usefully override that are abstract in no family. The first three
 # have concrete implementations on BaseDataPlugin or the family base; get_plot_features
 # exists only on MetaEventFitter. Every override in the six plugins that ship today as
@@ -843,7 +930,94 @@ def render_controller_init(name: str) -> Stub:
     )
 
 
-def sibling_imports(name: str, folder: Path) -> List[ImportSpec]:
+def render_build_controls(name: str) -> Stub:
+    """
+    Render the View's ``_build_controls``, returning the tab's own controls panel.
+
+    Not abstract, so nothing would stub it - and that is exactly why it is written here.
+    The base's default returns an empty ``MetaControls``, which is legal, constructs fine,
+    and leaves the tab showing a plot canvas above an empty strip with no hint that a
+    method exists to fill it. Generating the override with a panel behind it is what makes
+    a fresh tab a thing you change rather than a thing you decode.
+
+    The signature is copied from the base like any other, so the return annotation stays
+    ``MetaControls``; returning the subclass satisfies it and needs no annotation surgery.
+
+    :param name: the tab's name, without a role suffix
+    :type name: str
+    :return: the rendered stub
+    :rtype: Stub
+    """
+    defining_cls, lines, node = parse_method(tab_base(TRIAD[2]), "_build_controls")
+    sig_lines, doc_lines = split_signature_and_docstring(lines, node)
+    attribute = f"{name.lower()}{CONTROLS.lower()}"
+    body = [
+        f"    self.{attribute} = {name}{CONTROLS}()",
+        f"    return self.{attribute}",
+    ]
+    doc = build_docstring(doc_lines, "_build_controls", False, "    ")
+    parts = ["@log(logger=logger)", "@override", *sig_lines, *doc, *body]
+    return Stub(
+        textwrap.indent("\n".join(parts), "    "),
+        annotation_names(node),
+        defining_cls.__module__,
+    )
+
+
+def render_controls_file(name: str, author: str) -> str:
+    """
+    Render the tab's controls panel: the one generated file that is not derived.
+
+    ``MetaControls`` declares none of what it asks a subclass for, so there is nothing to
+    copy and this is written out in full. It builds one button that emits
+    ``actionTriggered``, which is the signal ``MetaView._set_control_area`` connects to
+    ``handle_parameter_change`` - so a freshly generated tab exercises the whole path from
+    a click to the View's handler before anyone has edited a line of it.
+
+    :param name: the tab's name, without a role suffix
+    :type name: str
+    :param author: the name to record on the Contributors line
+    :type author: str
+    :return: the complete file text
+    :rtype: str
+    """
+    button = f"{name.lower()}_button"
+    specs = [
+        ImportSpec("logging", None, None),
+        ImportSpec("typing", "Any", None),
+        ImportSpec("typing", "Dict", None),
+        ImportSpec("typing", "Optional", None),
+        ImportSpec("typing", "Tuple", None),
+        ImportSpec("PySide6.QtWidgets", "QVBoxLayout", None),
+        ImportSpec("PySide6.QtWidgets", "QWidget", None),
+        ImportSpec("poriscope.utils.DocstringDecorator", "inherit_docstrings", None),
+        ImportSpec("poriscope.utils.MetaControls", "MetaControls", None),
+    ]
+    sections = [
+        PLACEHOLDER_SECTION,
+        INIT_SECTION,
+        SETUP_UI_SECTION.format(button=button),
+        CONNECT_SECTION.format(button=button),
+        ACTION_SECTION,
+        VALIDATE_SECTION,
+        COLLECT_SECTION,
+    ]
+    return render_file(
+        f"{name}{CONTROLS}",
+        "MetaControls",
+        [
+            f"TODO: describe the controls the {name} tab needs.",
+            "",
+            "Built and placed by ``MetaView._set_control_area``, which also connects the",
+            "four signals every controls panel carries.",
+        ],
+        render_imports(specs),
+        sections,
+        author,
+    )
+
+
+def sibling_imports(name: str, folder: Path, wanted: Sequence[str]) -> List[ImportSpec]:
     """
     Work out how the Controller should import its own View and Model.
 
@@ -858,18 +1032,19 @@ def sibling_imports(name: str, folder: Path) -> List[ImportSpec]:
 
     :param name: the tab's name, without a role suffix
     :type name: str
-    :param folder: the folder the triad is being written into
+    :param folder: the folder the tab is being written into
     :type folder: Path
-    :return: the imports the Controller needs for its two siblings
+    :param wanted: the suffixes of the sibling files being imported
+    :type wanted: Sequence[str]
+    :return: the imports to emit
     :rtype: List[ImportSpec]
     """
     shipped = Path(REPO_ROOT, "poriscope", "plugins", TAB_FOLDER)
     in_repo = folder.resolve() == shipped.resolve()
     prefix = f"poriscope.plugins.{TAB_FOLDER}." if in_repo else ""
     return [
-        ImportSpec(f"{prefix}{name}{role.suffix}", f"{name}{role.suffix}", None)
-        for role in TRIAD
-        if role.suffix != TRIAD[0].suffix
+        ImportSpec(f"{prefix}{name}{suffix}", f"{name}{suffix}", None)
+        for suffix in wanted
     ]
 
 
@@ -1122,9 +1297,16 @@ def render_tab_file(role: TabRole, name: str, folder: Path, author: str) -> str:
         )
         for method in methods
     ]
+    is_view = role.suffix == TRIAD[2].suffix
+    if is_view:
+        stubs.append(render_build_controls(name))
+        methods = [*methods, "_build_controls"]
+
     specs = required_imports(base_cls, stubs)
     if is_controller:
-        specs += sibling_imports(name, folder)
+        specs += sibling_imports(name, folder, [TRIAD[1].suffix, TRIAD[2].suffix])
+    if is_view:
+        specs += sibling_imports(name, folder, [CONTROLS])
 
     sections: List[str] = []
     for label, chosen in (
@@ -1376,6 +1558,16 @@ def target_folder(base_cls: type, is_variant: bool, args: argparse.Namespace) ->
     return Path(REPO_ROOT, "poriscope", "plugins", FAMILIES[family].folder)
 
 
+def tab_suffixes() -> List[str]:
+    """
+    List the suffixes every file of a generated tab is named with.
+
+    :return: the three triad suffixes followed by the controls panel's
+    :rtype: List[str]
+    """
+    return [role.suffix for role in TRIAD] + [CONTROLS]
+
+
 def tab_folder(args: argparse.Namespace) -> Path:
     """
     Work out where an analysis tab's three files should be written.
@@ -1412,16 +1604,16 @@ def build_tab(
     :rtype: List[Path]
     """
     name = args.name
-    for role in TRIAD:
-        if name.endswith(role.suffix):
-            stem = name[: -len(role.suffix)]
+    for suffix in tab_suffixes():
+        if name.endswith(suffix):
+            stem = name[: -len(suffix)]
             raise GenerationError(
-                f"give the tab's name without the {role.suffix} suffix - {name!r} would "
-                f"generate {name}{role.suffix}.py. You probably want {stem!r}."
+                f"give the tab's name without the {suffix} suffix - {name!r} would "
+                f"generate {name}{suffix}.py. You probably want {stem!r}."
             )
 
     taken = set(plugins) | shipped_tab_names()
-    clashes = sorted(f"{name}{r.suffix}" for r in TRIAD if f"{name}{r.suffix}" in taken)
+    clashes = sorted(f"{name}{s}" for s in tab_suffixes() if f"{name}{s}" in taken)
     if clashes:
         raise GenerationError(
             f"{', '.join(clashes)} already exists. Plugin names have to be unique across "
@@ -1429,7 +1621,7 @@ def build_tab(
         )
 
     folder = tab_folder(args)
-    paths = [Path(folder, f"{name}{role.suffix}.py") for role in TRIAD]
+    paths = [Path(folder, f"{name}{s}.py") for s in tab_suffixes()]
     clobbered = [path for path in paths if path.exists()]
     if clobbered:
         raise GenerationError(
@@ -1438,6 +1630,7 @@ def build_tab(
         )
 
     rendered = [render_tab_file(role, name, folder, args.author) for role in TRIAD]
+    rendered.append(render_controls_file(name, args.author))
     folder.mkdir(parents=True, exist_ok=True)
     for path, body in zip(paths, rendered):
         path.write_text(body, encoding="utf-8")
@@ -1447,10 +1640,13 @@ def build_tab(
     for path in paths:
         print(f"  {path.name}")
     print("\nNext:")
-    print(f"  1. Fill in the methods marked TODO in {name}View.py and {name}Model.py.")
-    print(f"  2. Connect them to each other in {name}Controller._setup_connections.")
-    print("  3. Restart Poriscope. The tab appears in the Analysis menu by its")
-    print(f"       Controller name, {name}Controller.")
+    print("  1. Restart Poriscope. The tab appears in the Analysis menu under")
+    print(f"       {name}Controller, with one button in its control area. Pressing")
+    print(f"       it reaches {name}View.handle_parameter_change.")
+    print(f"  2. Replace that button in {name}Controls.setupUi with the controls")
+    print("       your tab needs, and read them in collect_parameters.")
+    print(f"  3. Fill in the methods marked TODO in {name}View.py and {name}Model.py.")
+    print(f"  4. Connect them to each other in {name}Controller._setup_connections.")
     return paths
 
 

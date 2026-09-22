@@ -10,6 +10,39 @@ which ran through August 2026 and is complete. The step numbers only date the de
 
 ---
 
+## 2026-09-22 - The tab scaffold generates the controls panel, and authors it
+
+**Context.** A generated tab opened with a plot canvas over an empty strip. That is what
+`MetaView._build_controls` returning a bare `MetaControls()` gives you - legal, constructs
+fine, and silent about which method would fill it. Kyle hit it on the first real run and
+asked for the panel to be generated too.
+
+**Decision.** Generate a fourth file, `<Name>Controls.py`, and an override of
+`_build_controls` returning it. The panel carries one button that emits `actionTriggered`,
+so a fresh tab exercises the full path from a click to the View's
+`handle_parameter_change`. It goes beside the triad rather than in
+`plugins/analysistabs/utils/` where the shipped five live: that keeps in-repo and
+user-folder generation identical, and keeps the generator out of a directory `CODEOWNERS`
+assigns solely to another developer.
+
+**This one file is authored, not derived.** Every other generated line is copied verbatim
+out of a base class, which is what makes signatures match the compliance suite. There is
+nothing to copy here: `MetaControls` is a plain `QWidget`, and `setupUi`,
+`connect_signals`, `validate_inputs`, `collect_parameters` and `placeholder_texts` exist
+only as prose in its class docstring. They cannot be made abstract either, because
+`MetaView._build_controls` instantiates `MetaControls()` directly for its default.
+
+**Evidence.** Nothing calls those four from outside a controls panel - each is called by
+the panel's own `__init__` or its own handlers - so the convention is real but unenforced,
+and a generated panel that omitted one would fail silently and later.
+`tests/unit/views/test_generated_analysis_tab.py` clicks the generated button and asserts
+it arrives at `handle_parameter_change`.
+
+**Revisit if** `MetaControls` ever declares its own contract, at which point most of this
+template becomes derivable like the rest.
+
+---
+
 ## 2026-09-22 - The tab scaffold writes two bodies rather than stubbing them
 
 **Context.** Step 6 added an analysis-tab half to `scripts/new_plugin.py`. Stubbing every

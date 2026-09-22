@@ -52,7 +52,12 @@ VARIANTS = [
 # the folder itself on ``sys.path``, which works whatever the folder is called - so the
 # tests generate into a folder that would break any scheme naming it.
 TAB_FOLDER = "User Plugins"
+#: The three MVC files, whose every line is derived from a base class.
 ROLES = ("Controller", "Model", "View")
+#: The fourth file, which is an authored template rather than a derived one - see
+#: ``new_plugin.CONTROLS``. Kept separate because the assertions that compare a
+#: generated method against the base it came from do not apply to it.
+CONTROLS = "Controls"
 
 
 def load_script() -> types.ModuleType:
@@ -157,7 +162,7 @@ def generate_tab(script: types.ModuleType, name: str, out: Path) -> Dict[str, Pa
     folder = Path(out, TAB_FOLDER)
     argv = [script.TAB, name, "--output-dir", str(folder), "--author", "Test Author"]
     assert script.main(argv) == 0
-    paths = {role: Path(folder, f"{name}{role}.py") for role in ROLES}
+    paths = {role: Path(folder, f"{name}{role}.py") for role in (*ROLES, CONTROLS)}
     for role, path in paths.items():
         assert path.is_file(), f"{name}{role}.py was not written"
     return paths
@@ -435,10 +440,11 @@ class TestVariants:
 class TestGeneratedAnalysisTabs:
     """The triad must clear the same gates a single-file plugin does, in all three files."""
 
-    def test_three_files_are_written(self, script, tmp_path):
+    def test_all_four_files_are_written(self, script, tmp_path):
         paths = generate_tab(script, "Written", tmp_path)
         assert sorted(p.name for p in paths.values()) == [
             "WrittenController.py",
+            "WrittenControls.py",
             "WrittenModel.py",
             "WrittenView.py",
         ]
@@ -460,7 +466,7 @@ class TestGeneratedAnalysisTabs:
 
     def test_no_pass_body_sits_under_a_non_none_return(self, script, tmp_path):
         """Stands in for mypy's empty-body rule, which the pass/raise split satisfies."""
-        for path in generate_tab(script, "Bodies", tmp_path).values():
+        for path in generate_tab(script, "Bodies", tmp_path).values():  # noqa: B007
             tree = ast.parse(path.read_text(encoding="utf-8"))
             klass = next(n for n in tree.body if isinstance(n, ast.ClassDef))
             for node in klass.body:
@@ -541,7 +547,7 @@ class TestGeneratedAnalysisTabs:
         folder = Path(tmp_path, "User Plugins")
         assert script.main([script.TAB, "Spaced", "--output-dir", str(folder)]) == 0
         written = sorted(folder.glob("*.py"))
-        assert len(written) == 3
+        assert len(written) == 4
         for path in written:
             ast.parse(path.read_text(encoding="utf-8"))
 
@@ -556,13 +562,62 @@ class TestGeneratedAnalysisTabs:
         assert "from BareView import BareView" in text
 
     def test_a_tab_inside_the_repository_imports_through_the_package(self, script):
-        """In the repository the triad is part of ``poriscope`` and imports as such."""
+        """In the repository a tab's files are part of ``poriscope`` and import as such."""
         folder = Path(REPO_ROOT, "poriscope", "plugins", script.TAB_FOLDER)
-        specs = script.sibling_imports("Demo", folder)
+        specs = script.sibling_imports("Demo", folder, ["Model", "View"])
         assert {spec.module for spec in specs} == {
             "poriscope.plugins.analysistabs.DemoModel",
             "poriscope.plugins.analysistabs.DemoView",
         }
+
+    def test_the_view_builds_the_generated_controls_panel(self, script, tmp_path):
+        """
+        ``_build_controls`` is not abstract, so nothing would stub it - and the base's
+        default returns an empty panel, which is what left a generated tab showing a bare
+        strip with no hint that a method existed to fill it. It is generated now.
+        """
+        text = generate_tab(script, "Panelled", tmp_path)["View"].read_text(
+            encoding="utf-8"
+        )
+        assert "def _build_controls(self) -> MetaControls:" in text
+        assert "self.panelledcontrols = PanelledControls()" in text
+        assert "return self.panelledcontrols" in text
+
+    def test_the_controls_panel_emits_the_signal_the_view_listens_for(
+        self, script, tmp_path
+    ):
+        """
+        ``actionTriggered`` is what ``_set_control_area`` connects to
+        ``handle_parameter_change``, so a panel that emits anything else is wired to
+        nothing. The generated button is the proof the two ends meet.
+        """
+        text = generate_tab(script, "Wired", tmp_path)[CONTROLS].read_text(
+            encoding="utf-8"
+        )
+        assert "self.wired_button = self.createButton(self, " in text
+        assert "self.wired_button.clicked.connect(self._on_action_requested)" in text
+        assert "self.actionTriggered.emit(" in text
+
+    def test_the_controls_panel_provides_what_the_base_asks_of_it(
+        self, script, tmp_path
+    ):
+        """
+        ``MetaControls`` is a plain ``QWidget`` and declares none of this, so nothing
+        would fail if the generated panel left it out - the tab would simply misbehave
+        later. Its own docstring is the whole specification, so it is asserted here.
+        """
+        text = generate_tab(script, "Owed", tmp_path)[CONTROLS].read_text(
+            encoding="utf-8"
+        )
+        assert "logger = logging.getLogger(__name__)" in text
+        assert "placeholder_texts: Tuple[str, ...] = ()" in text
+        for method in (
+            "setupUi",
+            "connect_signals",
+            "validate_inputs",
+            "collect_parameters",
+        ):
+            assert f"def {method}(self)" in text, method
 
     def test_the_other_stubs_do_not_delegate(self, script, tmp_path):
         """A base whose body is only ``pass`` has nothing to delegate to."""

@@ -216,8 +216,12 @@ class MetaView(QWidget, WalkthroughMixin, metaclass=QObjectABCMeta):
 
         Concrete rather than abstract, returning an empty panel, so that a tab which
         lays out its own control area can override ``_set_control_area`` instead and
-        never implement this. Making it abstract would leave such a tab uninstantiable
-        - including the ``HelloWorldView`` the plugin tutorial is built around.
+        never implement this. Making it abstract would leave such a tab uninstantiable.
+
+        Being concrete is also why ``scripts/new_plugin.py`` writes an override rather
+        than leaving it to be discovered: the default is legal and constructs fine, so a
+        tab that does not override it simply shows an empty strip under its plot with
+        nothing to say which method fills it.
 
         :return: the tab's controls panel
         :rtype: MetaControls
