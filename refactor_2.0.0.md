@@ -3094,6 +3094,14 @@ data plugin sits on.
 
 ## Step 8 — exit review
 
+**2.0.0 is not cut when Step 8 finishes.** Kyle's decision, 2026-09-22: everything is made
+ready, then it sits on `develop` for beta testing and burn-in with real users before the
+release branch is started. So Step 8's job is to leave the repository in a state where
+cutting the release is a mechanical act - not to cut it. Expect defects to come back from
+burn-in and to land on `develop` after Step 8 has "finished"; that is the point of the
+exercise rather than a failure of it, and the changelog regroup below is the one part worth
+re-running at the end rather than once.
+
 The last step before the release is cut. Added 2026-09-22 at Kyle's direction, because a
 refactor this size ends with a gap between what the plan said and what the repository
 actually contains, and nothing else in the plan looks for it.
@@ -3111,6 +3119,17 @@ actually contains, and nothing else in the plan looks for it.
   moved to a base, a mechanism whose replacement is described on the wrong page, a
   `:ref:` pointing at something that has been renamed. The autodoc half regenerates and is
   self-checking; the hand-written half is not.
+
+  **Named item: `ChimeraReader20240101` announces its own deprecation.** The changelog
+  notice reaches whoever reads the changelog; the user who opens the file every day does
+  not. Have the plugin say so in the text the sidebar shows, by overriding
+  `report_channel_status` to delegate to `MetaReader`'s and append one line.
+
+  **Append it once, not once per channel.** The base's `channel is None` branch loops every
+  channel and concatenates, so appending inside the per-channel arm repeats the notice for
+  each one. Attach it to the aggregate call, and only when `init` is True - the non-init
+  path returns `""` today, and a deprecation line is startup information rather than
+  something to repeat on every status refresh.
 
   **Named item: comment the database schema's two channel columns.** The `events`,
   `sublevels` and `data` tables each carry both `channel_db_id` and `channel_id`, and
