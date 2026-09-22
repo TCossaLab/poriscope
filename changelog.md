@@ -2,6 +2,8 @@
 
 * **Breaking: `MetaView.handle_parameter_change` is now abstract** - `_set_control_area` has always connected the controls panel to it while the View is being constructed, so a tab that did not define it raised `AttributeError` out of `__init__`; a tab that lays out its own control area can implement it as `pass`
 
+* **The HelloWorld tutorial is now generated rather than transcribed** - its four files are written by `scripts/new_plugin.py` and included into the page from the real files, so the example cannot drift from what the tool produces; it teaches a control panel reaching a handler rather than a label in a box, and the stale second copy of it that no page ever rendered is gone
+
 * **Fixed a plugin in a relocated user plugin folder never being made importable** - the folder put on the import path at startup was the default one a fresh install creates, not the one the configuration points at and the app actually scans
 
 * **Fixed an analysis tab in the user plugin folder being unable to import its own View and Model** - only the folder's parent was on the import path, so it worked only when the folder happened to be named like a Python identifier, and a folder named `User Plugins` could not be imported at all
