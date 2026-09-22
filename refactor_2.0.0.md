@@ -2921,11 +2921,29 @@ page.
 Published directives **1,109 -> 852**: 593 public, 251 contract privates, 8 constructors.
 257 internal helpers dropped. `sphinx-build -W` green.
 
-### Still owed in Step 6
+### 6d - the four stub-body probes, re-run 2026-09-22
 
-- Re-run the four stub-body probes rather than reasoning about them (`pass` under a
-  non-`None` return is mypy `empty-body`; a copied `:raises X:` above `pass` is DOC502; the
-  same above `raise NotImplementedError` is DOC503; raising with no field is DOC501).
+Re-run rather than reasoned about, as the step required, against the installed `mypy` and
+`pydoclint`. **All four reproduce**, so the generator's pass-versus-raise split is still
+answering the constraints it was built for:
+
+| Probe | Recorded | Observed |
+| --- | --- | --- |
+| `pass` under a non-`None` return | mypy `empty-body` | `error: Missing return statement [empty-body]` |
+| copied `:raises X:` above `pass` | DOC502 | DOC502 |
+| copied `:raises X:` above `raise NotImplementedError` | DOC503 | DOC503 |
+| raising with no `:raises:` field | DOC501 | DOC501 **and DOC503** |
+
+One correction: the last case emits **two** codes, not one - DOC501 for the missing section
+and DOC503 for the empty documented set against a raised `NotImplementedError`. So the
+`:raises NotImplementedError:` field the generator re-inserts closes both, which makes it
+load-bearing twice over rather than once.
+
+## Step 6 is closed
+
+All five deliverables have landed: the analysis-tab generator (6a), the regenerated
+HelloWorld example (6b), the autodoc contract rule (6c), the probes re-run (6d), and
+`quality_control.rst` updated across 6a and 6c. **Only Step 7 remains.**
 - Replace the stale `HelloWorld` example. Re-measured 2026-09-19: it implements **three of
   `MetaView`'s four** abstract methods, misses `notify_plugin_state_changed`, adds an
   `update_plot` the base has never declared, and imports
