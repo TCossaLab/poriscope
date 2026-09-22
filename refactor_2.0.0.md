@@ -3058,10 +3058,25 @@ are checkable.
   The suite passed first time, which is meaningful rather than suspicious: two integration
   flows drive `writer.write_events()` through the real generator, so the call site and the
   overrider were exercised together.
-- **7e — `CITATION.cff` against the tag.** `CITATION.cff` and `constants.py` both read
-  `1.9.0` today, so nothing is broken right now — but `release.yml` validates only the CFF
-  *schema*, never that its version matches the tag being released, so Zenodo can publish
-  under a stale version and fail silently. Add the check to the workflow.
+- **7e — `CITATION.cff` against the tag. LANDED 2026-09-22.**
+  `scripts/check_version_consistency.py` compares `CITATION.cff`, `constants.py` and, on a
+  tag push, the tag. It also compares the two **release dates**, which are hand-maintained
+  in exactly the same way and carry the same consequence.
+
+  Both files are read as text rather than imported or YAML-parsed, so the check runs on a
+  fresh checkout with bare Python. That is what lets it sit in the `validate-citation` job,
+  gating *before* the build job starts, and what lets a developer run it while preparing a
+  release branch without a working environment.
+
+  It reports every disagreement at once rather than the first: a release that has drifted
+  has usually drifted in more than one place, and one-at-a-time turns a single fix into
+  several CI rounds. The failure message names Zenodo as the consequence, because the
+  reason is what makes the gate worth stopping for - the release would otherwise succeed,
+  the DOI would resolve, and only the metadata would be wrong.
+
+  Nothing was broken when it landed: both files read `1.9.0`. Eight tests cover it,
+  including one asserting the *checked-in* files agree - a test that only ever read a
+  temporary fixture would pass happily while the repository it guards had drifted.
 
 Each commit runs the full suite green, as everywhere else. **7c and 7d each need a manual
 Windows pass** over a read and a write respectively, because both change a contract every
