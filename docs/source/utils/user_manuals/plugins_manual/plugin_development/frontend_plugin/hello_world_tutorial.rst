@@ -122,9 +122,25 @@ What You'll See
    **HelloWorld in the Analysis Menu** — once the plugin is loaded, it appears as a
    selectable tab in the analysis menu.
 
-Open it and you get a plot canvas with the controls panel beneath it. Press **DO SOMETHING**
-and a line appears on the status panel naming the action and the (empty) parameters that
-came with it.
+Open it and you get this:
+
+.. figure:: /_static/images/HelloWorldShowing.png
+   :alt: The generated HelloWorld tab, showing an empty plot canvas above a single button
+   :width: 1000px
+   :align: center
+
+   **The generated tab, before you have edited anything** — an empty plot canvas with its
+   navigation toolbar, and the controls panel beneath holding the one generated button.
+
+.. note::
+
+   The Analysis menu lists the **Controller** name, ``HelloWorldController``, because that
+   is the class Poriscope instantiates. The tab's own header reads ``HelloWorldView``,
+   because the header is the name of the widget the Controller built. Same tab, two names,
+   and it is worth knowing which is which before you go looking for one of them.
+
+Now press **DO SOMETHING**. A line appears on the status panel naming the action and the
+(empty) parameters that came with it.
 
 That message is the point of the whole example. It means the panel was built, the base
 connected it, the signal carried, your View's handler ran, and the message it emitted was
