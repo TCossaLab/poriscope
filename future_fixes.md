@@ -823,21 +823,15 @@ included, and no fitter is exempt; see `changelog.md`. Still open:
   `ChimeraReaderVC100` attempts to degrade gracefully when its sidecar file is missing
   today - both raise cleanly instead.
 
-## 3. Contribution scaffold: the stale worked examples
+## 3. Contribution scaffold: simpleCalc is still transcribed
 
-The generator itself is done, data plugins and analysis tabs alike. What is left is the
-documentation it makes wrong:
-
-- **The `HelloWorld` example is stale, and exists twice.** The tutorial at
-  `frontend_plugin/hello_world_tutorial.rst` inlines its own code; the three `.py` files
-  under `docs/source/_static/images/examples/analysis_tabs/` are a second, divergent copy
-  that no `.rst` includes. Between them: `from utils.MetaView import MetaView` and
-  `from plugins.analysistabs.X import X` (both wrong package roots), unused `scipy`/`numpy`/
-  `pandas`/`csv` imports, `_reset_actions` missing its `axis_type` parameter, no
-  `notify_plugin_state_changed`, and a mis-indented `def update_plot():` with no `self` that
-  `MetaView` has never declared. Regenerate it from the generator so the two cannot drift.
-- **`simpleCalc` has the same wrong import roots**, in both
-  `simpleCalc/simpleCalc_code.rst` and `simpleCalc/from_helloworld_to_full_mvc.rst`.
+HelloWorld is generated now and included from the real files, so it cannot drift.
+**`simpleCalc` is still hand-written inline in `simpleCalc/simpleCalc_code.rst`** - its
+import roots and its missing abstract methods were corrected 2026-09-22, but the code has no
+executable counterpart and nothing checks it. It wants the same treatment: a real set of
+files under `docs/source/_static/examples/`, `literalinclude`d, so `ruff` and `black` see
+them. Bigger than HelloWorld because it is a worked example with real widgets, not a scaffold
+the generator can emit.
 
 ## 4. The plugin trust boundary — largely settled
 
