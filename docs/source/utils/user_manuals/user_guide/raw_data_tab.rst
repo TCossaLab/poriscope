@@ -18,7 +18,7 @@ Step 1: Loading Your Data
 
    - ``ABF2Reader`` (for `.abf` files)
    - ``BinaryReader1X`` and ``SingleBinaryDecoder`` (for `.bin`-like formats)
-   - ``ChimeraReader20240101``, ``ChimeraReader20240501``, ``ChimeraReaderVC100`` (for Chimera system `.log` files or variations)
+   - ``ChimeraReader20240101``, ``ChimeraReader20240501``, ``ChimeraReaderVC100`` (for Chimera system `.log` files or variations; ``ChimeraReader20240101`` is deprecated and will be removed in a future release)
 
 .. note::
 

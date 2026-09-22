@@ -89,6 +89,35 @@ class ChimeraReader20240101(MetaReader):
         """
         pass
 
+    @log(logger=logger)
+    @override
+    def report_channel_status(
+        self, channel: Optional[int] = None, init: bool = False
+    ) -> str:
+        """
+        Report what :ref:`MetaReader` reports, plus this reader's deprecation notice.
+
+        The notice goes in the text shown when the reader is created, because that is
+        where someone who opens a 2024-01 file every day will see it - the changelog
+        only reaches people who read changelogs. It is added in the per-channel arm,
+        so the all-channels report carries one notice per channel, and only when
+        ``init`` is True, so it is not repeated on every later status refresh.
+
+        :param channel: channel ID
+        :type channel: Optional[int]
+        :param init: is the function being called as part of plugin initialization? Default False
+        :type init: bool
+        :return: the status of the channel as a string
+        :rtype: str
+        """
+        report = super().report_channel_status(channel, init)
+        if channel is not None and init:
+            report += (
+                f"\nCh{channel}: ChimeraReader20240101 is deprecated and will be "
+                f"removed in a future release; use ChimeraReader20240501 for new data"
+            )
+        return report
+
     @override
     def _validate_file_type(self, filename: os.PathLike) -> None:
         """

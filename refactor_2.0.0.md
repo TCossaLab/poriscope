@@ -3193,6 +3193,12 @@ actually contains, and nothing else in the plan looks for it.
   and a deprecation line is startup information rather than something to repeat on every
   status refresh.
 
+  **Done 2026-09-22**, test-first: four tests in
+  `tests/unit/plugins/datareaders/test_chimera_deprecation_notice.py`, two red before the
+  override. `datareaders` rose 96 -> 97 functions with removable unchanged at 681, which the
+  ratchet's divergence heuristic reports as added duplication (rule 37); re-baselined. Manual
+  pass stacked for the end of Step 8.
+
   **Named item: comment the database schema's two channel columns.** The `events`,
   `sublevels` and `data` tables each carry both `channel_db_id` and `channel_id`, and
   nothing in the schema or the docs says which is which. `channel_db_id` is the
