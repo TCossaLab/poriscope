@@ -20,7 +20,7 @@ snapshot was the nearest thing that looked like one.
 | - `eventfinders`, an 8th family added 2026-09-19 | not measured | **0** | 0 |
 | - the 3 analysis-tab families of the original six | 1,199 | **31** | 31 (floor) |
 | - the other 3 of the original six: datareaders, eventfitters, `views/widgets` | 690 (435 / 193 / 62) | **642** (446 / 193 / 3) | - |
-| Decision C ABC breaks outstanding | 5 | **1** (`close_resources` dispatch) | 0 - `"Kind"` amended out |
+| Decision C ABC breaks outstanding | 5 | **0** | 0 - reached; `"Kind"` amended out, `close_resources` deferred out of 2.0.0 |
 
 **The duplication rows do not add up to one before/after pair, deliberately.** `*Model.py`
 became a measured family part-way through, so 1,889 never included it and pairing 1,889
@@ -3243,15 +3243,13 @@ held. What did not:
     forward as a behaviour question.
     **Manual pass 2026-09-22, all clear** (Kyle): both finders' dialogs show `Threshold` once, in
     pA and σ, and event finding on a known file matches its earlier counts and data times.
-  - **`close_resources` takes a required `channel: int`** (Kyle, 2026-09-22), with every
-    caller looping over the channels itself - the pattern `get_channel_length` already
-    follows - instead of the `_close_one_channel` hook `DECISIONS.md` named. The plan for
-    that branch must settle `reset_channel`'s identical `Optional` signature and the plugins
-    that have no channels (loaders, writers, filters) before any code is written.
+  - **`close_resources` - deferred out of 2.0.0** (Kyle, 2026-09-22), after planning widened
+    it to every `Optional` channel parameter meaning "all channels". The design as scoped is in
+    `future_fixes.md`; nothing was implemented.
 - **Decision D is amended, not met.** Four Tier B items did not ship in 2.0.0 and stay queued
   in `future_fixes.md`: `INSERT OR IGNORE`, `PRAGMA user_version` with the dead
   `extra_tables` branch, and `test_plugin_compliance`'s import-order exposure. The fourth,
-  `Optional[int]` dispatch, is the `close_resources` branch above.
+  `Optional[int]` dispatch, is deferred with `close_resources` above.
 - **Manual passes: all run 2026-09-22, all clear** (Kyle) - 7c's reads, 7d's writes, and
   Verification's full sweep over the finished refactor. None is owed.
 - **Leftovers the refactor claimed but never ruled on** are filed forward in

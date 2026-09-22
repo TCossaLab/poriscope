@@ -203,15 +203,23 @@ the oversized `setupUi` methods. This review re-confirmed each with fresh counts
   for `MetaWriter` or `MetaDatabaseWriter`, so the component owning the whole database
   schema is unverified. Test authoring is another developer's remit - a coverage gap, not
   work to pick up here.
-- **`Optional[int] = None` channel dispatch is documented 21 times and implemented almost
-  nowhere.** `close_resources` is `@abstractmethod` in all six bases, none implements the
-  dispatch, and 18 of 21 shipped plugins ignore the argument.
-  `MetaEventFitter.reset_channel:336-340` self-documents the failure, then `:354` writes
-  `self.eventfitting_status[None] = False` into a `Dict[int, bool]` behind a
-  `type: ignore[index]` guarded by an `except KeyError` that cannot fire. It clears 4 of 7
-  per-channel dicts, so `sublevel_starts`, `event_lengths` and `applied_filters` survive an
-  abort holding stale data. **Taken in Step 8** (Kyle, 2026-09-22): `close_resources` takes a
-  required `channel: int` and callers loop over channels, as `get_channel_length` does.
+- **`channel: Optional[int] = None` meaning "every channel" - deferred out of 2.0.0** (Kyle,
+  2026-09-22). `MetaEventFitter.reset_channel:336-356` ignores `None` and writes
+  `eventfitting_status[None]` behind four `type: ignore`s; `close_resources` is `pass` in 19 of
+  21 plugins and the two SQLite writers ignore the argument. Scope, as designed 2026-09-22:
+  - `close_resources`, `reset_channel`, `report_channel_status` take a required `channel: int`
+    on the six channelled families, every `if channel is None` arm deleted; callers loop, as
+    for `get_channel_length`. `MetaFilter` and `MetaDatabaseLoader` take no channel at all.
+  - `MetaWriter`/`MetaDatabaseWriter` gain `get_channels()` from their finder/fitter;
+    `BaseDataPlugin` stops declaring the three, since the signatures differ by family.
+  - Whole-plugin callers - `DataPluginModel.unregister_plugin`/`handle_exit`,
+    `DataPluginController:286`/`:829`, `PeakFinder:4786` - loop `get_channels()` or call bare
+    by declared base. `BaseDataPlugin.__enter__`/`__exit__` have no users; delete.
+  - `MetaDatabaseWriter._initialize_database`/`_write_experiment_metadata` go
+    `Optional[int]` -> `int`; always called with a channel.
+  - All 21 overrides change verbatim, including the three owner-held fitters (signature and
+    docstring only). Breaking. Not in scope: `get_event_counts_by_experiment_and_channel`
+    (SQL aggregate, no loop), `MetaModel.stop_workers` (app layer).
 - **`ThresholdBlockageFinder`'s σ threshold is compared against a pA mean in the base loop.**
   `MetaEventFinder.find_events:453` skips a chunk when `mean < Threshold`, which is right for
   `ClassicBlockageFinder`'s pA threshold; at 8σ it skips only chunks with a baseline under 8 pA.

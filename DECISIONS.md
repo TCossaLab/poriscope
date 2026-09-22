@@ -28,7 +28,15 @@ ever needed". Decision D is amended: `INSERT OR IGNORE`, `PRAGMA user_version` w
 `:453` reads `Threshold`; `_close_one_channel` exists nowhere; `MetaEventFitter.reset_channel`
 still ignores `None`. 7a's surface diff missed both because neither changes a signature.
 
-**Revisit if** a later audit finds either break taken but not called out in `changelog.md`.
+**Amended again the same day: `close_resources` is deferred out of 2.0.0** (Kyle - "we don't
+need it in the refactor"). Planning widened it to every `Optional` channel parameter meaning
+"all channels" across `close_resources`, `reset_channel` and `report_channel_status`, 21 plugins
+and the whole-plugin callers - a contract redesign rather than a release fix. The scoped design
+is in `future_fixes.md`. Decision C closes at 3 of 5 taken (`raw_data`, `_write_data`,
+`Threshold`), `"Kind"` dropped, `close_resources` deferred.
+
+**Revisit if** a later audit finds a taken break not called out in `changelog.md`, or when the
+deferred channel work is picked up - it breaks every plugin, so it wants a major version.
 
 ---
 
