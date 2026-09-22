@@ -3058,10 +3058,25 @@ are checkable.
   The suite passed first time, which is meaningful rather than suspicious: two integration
   flows drive `writer.write_events()` through the real generator, so the call site and the
   overrider were exercised together.
-- **7e — `CITATION.cff` against the tag.** `CITATION.cff` and `constants.py` both read
-  `1.9.0` today, so nothing is broken right now — but `release.yml` validates only the CFF
-  *schema*, never that its version matches the tag being released, so Zenodo can publish
-  under a stale version and fail silently. Add the check to the workflow.
+- **7e — `CITATION.cff` against the tag. LANDED 2026-09-22.**
+  `scripts/check_version_consistency.py` compares `CITATION.cff`, `constants.py` and, on a
+  tag push, the tag. It also compares the two **release dates**, which are hand-maintained
+  in exactly the same way and carry the same consequence.
+
+  Both files are read as text rather than imported or YAML-parsed, so the check runs on a
+  fresh checkout with bare Python. That is what lets it sit in the `validate-citation` job,
+  gating *before* the build job starts, and what lets a developer run it while preparing a
+  release branch without a working environment.
+
+  It reports every disagreement at once rather than the first: a release that has drifted
+  has usually drifted in more than one place, and one-at-a-time turns a single fix into
+  several CI rounds. The failure message names Zenodo as the consequence, because the
+  reason is what makes the gate worth stopping for - the release would otherwise succeed,
+  the DOI would resolve, and only the metadata would be wrong.
+
+  Nothing was broken when it landed: both files read `1.9.0`. Eight tests cover it,
+  including one asserting the *checked-in* files agree - a test that only ever read a
+  temporary fixture would pass happily while the repository it guards had drifted.
 
 Each commit runs the full suite green, as everywhere else. **7c and 7d each need a manual
 Windows pass** over a read and a write respectively, because both change a contract every
@@ -3078,6 +3093,14 @@ data plugin sits on.
   what changed is when, not what.
 
 ## Step 8 — exit review
+
+**2.0.0 is not cut when Step 8 finishes.** Kyle's decision, 2026-09-22: everything is made
+ready, then it sits on `develop` for beta testing and burn-in with real users before the
+release branch is started. So Step 8's job is to leave the repository in a state where
+cutting the release is a mechanical act - not to cut it. Expect defects to come back from
+burn-in and to land on `develop` after Step 8 has "finished"; that is the point of the
+exercise rather than a failure of it, and the changelog regroup below is the one part worth
+re-running at the end rather than once.
 
 The last step before the release is cut. Added 2026-09-22 at Kyle's direction, because a
 refactor this size ends with a gap between what the plan said and what the repository
@@ -3096,6 +3119,17 @@ actually contains, and nothing else in the plan looks for it.
   moved to a base, a mechanism whose replacement is described on the wrong page, a
   `:ref:` pointing at something that has been renamed. The autodoc half regenerates and is
   self-checking; the hand-written half is not.
+
+  **Named item: `ChimeraReader20240101` announces its own deprecation.** The changelog
+  notice reaches whoever reads the changelog; the user who opens the file every day does
+  not. Have the plugin say so in the text the sidebar shows, by overriding
+  `report_channel_status` to delegate to `MetaReader`'s and append one line.
+
+  **Append it once, not once per channel.** The base's `channel is None` branch loops every
+  channel and concatenates, so appending inside the per-channel arm repeats the notice for
+  each one. Attach it to the aggregate call, and only when `init` is True - the non-init
+  path returns `""` today, and a deprecation line is startup information rather than
+  something to repeat on every status refresh.
 
   **Named item: comment the database schema's two channel columns.** The `events`,
   `sublevels` and `data` tables each carry both `channel_db_id` and `channel_id`, and

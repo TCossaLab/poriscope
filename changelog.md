@@ -1,5 +1,9 @@
 ## Poriscope 2.0.0: in progress
 
+* **Deprecation notice: `ChimeraReader20240101` will be removed in a future release.** It reads the 2024-01 Chimera format, whose JSON header is embedded in the `.log` file; `ChimeraReader20240501`, which reads the companion `.json` of the 2024-05 format, is unaffected. Nothing changes yet - existing data still opens - but move new work onto a supported reader
+
+* **A release whose `CITATION.cff` version disagrees with `constants.py` or with the tag now fails before anything is published** - the workflow validated only that the file parsed, and Zenodo builds its record from it, so a stale version there published under the old number and reported no error
+
 * **Breaking: a writer plugin's `_write_data` takes the event dict instead of thirteen positional parameters** - ten of the thirteen were keys of that dict, and two of those (`scale` and `offset`) were never read by the writer that receives them
 
 * **Breaking: `MetaReader.load_data` no longer takes a `raw_data` flag** - it always returns rescaled pA, and the new `load_raw_data` returns unscaled ADC codes with the scale and offset alongside; `continuous_read` splits the same way into `continuous_read` and `continuous_read_raw`
