@@ -17,6 +17,12 @@ change these contracts on purpose:
   ``_set_control_area`` instead and stay instantiable. So the set below is one
   smaller and nothing joined it. No break, but a contract change Decision C does
   not list.
+* **6a** made ``MetaView.handle_parameter_change`` abstract (landed 2026-09-22),
+  which widens the set by one. ``_set_control_area`` connects the controls panel's
+  ``actionTriggered`` signal to it during construction, so a tab that did not define
+  it raised ``AttributeError`` out of ``__init__``; the requirement existed and was
+  simply not declared. All five shipped tabs already satisfied it. A break, and
+  called out as one in ``changelog.md``.
 * **3c** proposes deleting ``_factors`` overrides in RawData and EventAnalysis.
   That one is safe - ``_factors`` is concrete on the base - but the same bullet
   wrongly named ``notify_plugin_state_changed``, which is abstract, and acting on
@@ -45,6 +51,7 @@ CONTRACTS = {
     MetaView: {
         "_init",
         "_reset_actions",
+        "handle_parameter_change",
         "notify_plugin_state_changed",
         "update_available_plugins",
     },

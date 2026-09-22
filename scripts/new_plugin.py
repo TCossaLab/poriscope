@@ -30,11 +30,13 @@ Generate a compliant starting point for a new Poriscope plugin.
     python scripts/new_plugin.py --list                     # show both menus
     python scripts/new_plugin.py MetaEventFinder MyFinder   # new plugin from a base class
     python scripts/new_plugin.py ClassicBlockageFinder MyVariant --override _filter_events
+    python scripts/new_plugin.py AnalysisTab MyTab          # new analysis tab, three files
 
-BASE is either one of the eight ``Meta*`` data plugin base classes, in which case every
-abstract method it declares is stubbed out, or the name of a plugin that already ships,
-in which case the new plugin inherits everything and stubs out only what ``--override``
-names.
+BASE is one of three things. One of the eight ``Meta*`` data plugin base classes, in which
+case every abstract method it declares is stubbed out; the name of a plugin that already
+ships, in which case the new plugin inherits everything and stubs out only what
+``--override`` names; or the keyword ``AnalysisTab``, in which case a Controller, Model and
+View triad is written rather than a single file.
 
 Method signatures and docstrings are copied verbatim out of the base class, because
 ``tests/unit/plugins/test_plugin_compliance.py`` compares signatures for exact equality
@@ -122,10 +124,10 @@ class Family(NamedTuple):
 # names are not guessable from the base class ("datawriters" for MetaWriter but
 # "dbwriters" for MetaDatabaseWriter, and "db_loaders" with an underscore).
 #
-# The analysis tab families (MetaController/MetaModel/MetaView) are deliberately absent:
-# they are a three-file triad rather than a single file, and are queued separately in
-# future_fixes.md. A test asserts these keys are a subset of the canonical base class
-# list in MainModel.populate_available_plugins, so the two cannot drift apart silently.
+# The analysis tab bases (MetaController/MetaModel/MetaView) are not in this table because
+# a tab is a three-file triad rather than a single file; they have their own table, TRIAD,
+# below. A test asserts these keys are a subset of the canonical base class list in
+# MainModel.populate_available_plugins, so the two cannot drift apart silently.
 FAMILIES: Dict[str, Family] = {
     "MetaReader": Family(
         "poriscope.utils.MetaReader",
@@ -168,6 +170,61 @@ FAMILIES: Dict[str, Family] = {
         "query event metadata back out of a database",
     ),
 }
+
+#: The BASE keyword that asks for an analysis tab. A tab has three base classes, so it
+#: cannot be selected by naming one of them the way a data plugin family is.
+TAB = "AnalysisTab"
+
+#: The folder under ``poriscope/plugins/`` that analysis tabs live in.
+TAB_FOLDER = "analysistabs"
+
+
+class TabRole(NamedTuple):
+    """
+    One of the three files an analysis tab is made of.
+
+    :param base: the ``Meta*`` class this file subclasses
+    :type base: str
+    :param module: the module that base class is defined in
+    :type module: str
+    :param suffix: what this file's class name ends in, after the tab's own name
+    :type suffix: str
+    :param summary: one line describing what this third of the tab is responsible for
+    :type summary: str
+    """
+
+    base: str
+    module: str
+    suffix: str
+    summary: str
+
+
+# Controller first because it is the file to open first: it is the only one of the three
+# the app instantiates directly, and it names the other two. The suffix column is written
+# out rather than derived by stripping "Meta" off the base name - the app finds a plugin by
+# its class name and nothing else, so these suffixes are the naming convention itself
+# rather than a coincidence of how the bases happen to be spelled.
+TRIAD: Tuple[TabRole, ...] = (
+    TabRole(
+        "MetaController",
+        "poriscope.utils.MetaController",
+        "Controller",
+        "owns the tab's logic and connects its View to its Model",
+    ),
+    TabRole(
+        "MetaModel",
+        "poriscope.utils.MetaModel",
+        "Model",
+        "holds the tab's data and does its computation",
+    ),
+    TabRole(
+        "MetaView",
+        "poriscope.utils.MetaView",
+        "View",
+        "lays out the tab's widgets and draws its plots",
+    ),
+)
+
 
 # Methods a plugin may usefully override that are abstract in no family. The first three
 # have concrete implementations on BaseDataPlugin or the family base; get_plot_features
@@ -270,6 +327,19 @@ def family_base(family: str) -> type:
     """
     module = importlib.import_module(FAMILIES[family].module)
     return getattr(module, family)
+
+
+def tab_base(role: TabRole) -> type:
+    """
+    Get one triad role's base class, importing its module if that has not happened yet.
+
+    :param role: the role to resolve
+    :type role: TabRole
+    :return: the base class
+    :rtype: type
+    """
+    module = importlib.import_module(role.module)
+    return getattr(module, role.base)
 
 
 def family_of(plugin_cls: type) -> str:
@@ -376,6 +446,32 @@ def returns_none(node: ast.FunctionDef) -> bool:
     if node.returns is None:
         return True
     return isinstance(node.returns, ast.Constant) and node.returns.value is None
+
+
+def has_real_body(node: ast.FunctionDef) -> bool:
+    """
+    Say whether a base method does anything beyond carrying a docstring.
+
+    ``MetaView.update_available_plugins`` is the only abstract method on any of the eleven
+    base classes whose body is real code - it records ``available_plugins`` on the View -
+    so an override that does not delegate silently drops that record, and nothing checks
+    for it. The condition is measured off the base rather than written as a list of method
+    names, so a base that grows a body later is delegated to without anyone remembering.
+
+    :param node: the parsed function node
+    :type node: ast.FunctionDef
+    :return: True if the body is more than a docstring and ``pass``
+    :rtype: bool
+    """
+    body = list(node.body)
+    if (
+        body
+        and isinstance(body[0], ast.Expr)
+        and isinstance(body[0].value, ast.Constant)
+        and isinstance(body[0].value.value, str)
+    ):
+        body = body[1:]
+    return not all(isinstance(statement, ast.Pass) for statement in body)
 
 
 def normalise_docstring(doc_lines: List[str], indent: str) -> List[str]:
@@ -620,6 +716,9 @@ def render_stub(cls: type, name: str, delegate: bool) -> Stub:
     """
     Render one method stub, copying its signature and docstring out of the base class.
 
+    A stub also delegates when the base method carries a real body, whether or not this is
+    a variant - see ``has_real_body``.
+
     :param cls: the class the new plugin will inherit from
     :type cls: type
     :param name: the method to stub
@@ -634,9 +733,14 @@ def render_stub(cls: type, name: str, delegate: bool) -> Stub:
     is_none = returns_none(node)
 
     todo = f"    # TODO: {'narrow' if delegate else 'implement'} {name}"
-    if delegate:
+    if delegate or has_real_body(node):
         call = super_call(node)
-        body = [todo, f"    {call}" if is_none else f"    return {call}"]
+        line = f"    {call}" if is_none else f"    return {call}"
+        # A variant narrows what the base already does, so its TODO comes first and the
+        # delegation is the fallback under it. A first implementation of a base that does
+        # real work has to let that work happen before adding its own, so there the call
+        # comes first and the TODO marks where the rest goes.
+        body = [line, todo] if is_none and not delegate else [todo, line]
         stub_raises = False
     elif is_none:
         body = [todo, "    pass"]
@@ -705,6 +809,66 @@ def render_settings_stub(cls: type) -> Stub:
         annotation_names(node),
         defining_cls.__module__,
     )
+
+
+def render_controller_init(name: str) -> Stub:
+    """
+    Render the Controller's ``_init``, which has to build the tab's View and Model.
+
+    Written out rather than left as a TODO for the same reason ``get_empty_settings`` is:
+    ``MetaController.__init__`` calls ``_init()`` and then immediately reaches for
+    ``self.view`` and ``self.model`` to connect them to each other, so an ``_init`` that
+    leaves either unset raises ``AttributeError`` before the tab is ever shown. The
+    generator knows both class names, so it writes the two lines instead of describing
+    them.
+
+    :param name: the tab's name, without a role suffix
+    :type name: str
+    :return: the rendered stub
+    :rtype: Stub
+    """
+    role_classes = {role.suffix: f"{name}{role.suffix}" for role in TRIAD}
+    defining_cls, lines, node = parse_method(tab_base(TRIAD[0]), "_init")
+    sig_lines, doc_lines = split_signature_and_docstring(lines, node)
+    body = [
+        f"    self.view = {role_classes['View']}()",
+        f"    self.model = {role_classes['Model']}()",
+    ]
+    doc = build_docstring(doc_lines, "_init", False, "    ")
+    parts = ["@log(logger=logger)", "@override", *sig_lines, *doc, *body]
+    return Stub(
+        textwrap.indent("\n".join(parts), "    "),
+        annotation_names(node),
+        defining_cls.__module__,
+    )
+
+
+def sibling_imports(name: str, folder: Path) -> List[ImportSpec]:
+    """
+    Work out how the Controller should import its own View and Model.
+
+    A tab inside this repository is imported as part of the ``poriscope`` package, the way
+    the five shipped tabs are. A tab anywhere else is not: the app loads each plugin file
+    by path and puts the *parent* of the user plugin folder on ``sys.path``, so the only
+    import that resolves is one naming the folder the triad sits in.
+
+    :param name: the tab's name, without a role suffix
+    :type name: str
+    :param folder: the folder the triad is being written into
+    :type folder: Path
+    :return: the imports the Controller needs for its two siblings
+    :rtype: List[ImportSpec]
+    """
+    shipped = Path(REPO_ROOT, "poriscope", "plugins", TAB_FOLDER)
+    if folder.resolve() == shipped.resolve():
+        package = f"poriscope.plugins.{TAB_FOLDER}"
+    else:
+        package = folder.resolve().name
+    return [
+        ImportSpec(f"{package}.{name}{role.suffix}", f"{name}{role.suffix}", None)
+        for role in TRIAD
+        if role.suffix != TRIAD[0].suffix
+    ]
 
 
 def collect_module_imports(module_name: str) -> Dict[str, ImportSpec]:
@@ -864,6 +1028,49 @@ def render_plugin(
         sections.append(f"    # private API, {verb} subclasses\n{head}")
         sections += rest
 
+    return render_file(
+        name,
+        base_cls.__name__,
+        [
+            f"TODO: describe what {name} does, and how it differs from",
+            f"{base_cls.__name__}.",
+        ],
+        imports,
+        sections,
+        author,
+    )
+
+
+def render_file(
+    class_name: str,
+    base_name: str,
+    summary: Sequence[str],
+    imports: str,
+    sections: Sequence[str],
+    author: str,
+) -> str:
+    """
+    Assemble one generated file: licence header, imports, class, and method sections.
+
+    Shared by the single-file plugin path and by each third of an analysis tab triad, so
+    that the header, the two class decorators and the section ordering cannot drift apart
+    between them.
+
+    :param class_name: the class the file defines, which is also its filename stem
+    :type class_name: str
+    :param base_name: the name of the class it inherits from
+    :type base_name: str
+    :param summary: the class docstring's lines, without the quotes or the indent
+    :type summary: Sequence[str]
+    :param imports: the rendered import block
+    :type imports: str
+    :param sections: the rendered method sections, in the order they should appear
+    :type sections: Sequence[str]
+    :param author: the name to record on the Contributors line
+    :type author: str
+    :return: the complete file text
+    :rtype: str
+    """
     return "\n".join(
         [
             LICENSE_HEADER + f"# {author}",
@@ -872,10 +1079,9 @@ def render_plugin(
             "",
             "",
             "@inherit_docstrings",
-            f"class {name}({base_cls.__name__}):",
+            f"class {class_name}({base_name}):",
             '    """',
-            f"    TODO: describe what {name} does, and how it differs from",
-            f"    {base_cls.__name__}.",
+            *[f"    {line}" if line else "" for line in summary],
             '    """',
             "",
             "    logger = logging.getLogger(__name__)",
@@ -883,6 +1089,63 @@ def render_plugin(
             "\n\n".join(sections),
             "",
         ]
+    )
+
+
+def render_tab_file(role: TabRole, name: str, folder: Path, author: str) -> str:
+    """
+    Render one third of an analysis tab triad.
+
+    :param role: which of the three files to render
+    :type role: TabRole
+    :param name: the tab's name, without a role suffix
+    :type name: str
+    :param folder: the folder the triad is being written into, which is what decides how
+        the Controller imports its two siblings
+    :type folder: Path
+    :param author: the name to record on the Contributors line
+    :type author: str
+    :return: the complete file text
+    :rtype: str
+    """
+    base_cls = tab_base(role)
+    is_controller = role.suffix == TRIAD[0].suffix
+    methods = sorted(base_cls.__abstractmethods__)
+
+    stubs = [
+        (
+            render_controller_init(name)
+            if is_controller and method == "_init"
+            else render_stub(base_cls, method, False)
+        )
+        for method in methods
+    ]
+    specs = required_imports(base_cls, stubs)
+    if is_controller:
+        specs += sibling_imports(name, folder)
+
+    sections: List[str] = []
+    for label, chosen in (
+        ("public", [s for s, m in zip(stubs, methods) if not m.startswith("_")]),
+        ("private", [s for s, m in zip(stubs, methods) if m.startswith("_")]),
+    ):
+        if not chosen:
+            continue
+        head, *rest = [s.text for s in chosen]
+        sections.append(f"    # {label} API, must be implemented by subclasses\n{head}")
+        sections += rest
+
+    return render_file(
+        f"{name}{role.suffix}",
+        base_cls.__name__,
+        [
+            f"TODO: describe what the {name} tab does.",
+            "",
+            f"This is its {role.suffix}, which {role.summary}.",
+        ],
+        render_imports(specs),
+        sections,
+        author,
     )
 
 
@@ -898,6 +1161,23 @@ def overridable_methods(plugin_cls: type) -> List[str]:
     abstract = set(family_base(family_of(plugin_cls)).__abstractmethods__)
     hooks = {hook for hook in OPTIONAL_HOOKS if hasattr(plugin_cls, hook)}
     return sorted((abstract | hooks) - {SETTINGS})
+
+
+def shipped_tab_names() -> Set[str]:
+    """
+    List the class names the analysis tabs that already ship use.
+
+    Tabs are not ``BaseDataPlugin`` subclasses, so ``discover_plugin_classes`` never sees
+    them - but the app keys every plugin by class name across all eleven families at once,
+    so a tab whose generated name collides with a shipped one is dropped at startup with
+    only a log line to say so. Reading the folder is enough to find them: the app locates a
+    class by its filename and nothing else, so the two strings are the same.
+
+    :return: the class names, which are also the filename stems
+    :rtype: Set[str]
+    """
+    folder = Path(REPO_ROOT, "poriscope", "plugins", TAB_FOLDER)
+    return {path.stem for path in folder.glob("*.py") if path.stem != "__init__"}
 
 
 def git_author() -> str:
@@ -953,6 +1233,12 @@ def print_menus(plugins: Dict[str, Type[BaseDataPlugin]]) -> None:
         folder = f"{FAMILIES[family].folder}/"
         print(f"  {family:<19}{count:>3}  {folder:<16}{FAMILIES[family].summary}")
 
+    tab_methods = sum(len(tab_base(role).__abstractmethods__) for role in TRIAD)
+    print(
+        f"\n  {TAB:<19}{tab_methods:>3}  {TAB_FOLDER + '/':<16}a whole analysis tab, as"
+    )
+    print(f"  {'':<19}{'':>3}  {'':<16}a Controller, Model and View")
+
     print("\nVariant - subclass a plugin that already ships, and change part of it.\n")
     for name in sorted(plugins):
         count = len(overridable_methods(plugins[name]))
@@ -972,6 +1258,18 @@ def print_detail(base: str, plugins: Dict[str, Type[BaseDataPlugin]]) -> None:
     :return: None
     :rtype: None
     """
+    if base == TAB:
+        print(f"{TAB}: a Poriscope analysis tab, written as three files.")
+        print(f"Tabs live in poriscope/plugins/{TAB_FOLDER}/.")
+        print("'python scripts/new_plugin.py AnalysisTab MyTab' writes:\n")
+        for role in TRIAD:
+            methods = sorted(tab_base(role).__abstractmethods__)
+            print(f"  MyTab{role.suffix}.py  ({role.base}) - {role.summary}")
+            for method in methods:
+                print(f"      {method}")
+        print("\n  The Controller's _init is written for you; the rest are yours.")
+        return
+
     base_cls, is_variant = resolve_base(base, plugins)
     if is_variant:
         methods = overridable_methods(base_cls)
@@ -1076,7 +1374,87 @@ def target_folder(base_cls: type, is_variant: bool, args: argparse.Namespace) ->
     return Path(REPO_ROOT, "poriscope", "plugins", FAMILIES[family].folder)
 
 
-def build(args: argparse.Namespace, plugins: Dict[str, Type[BaseDataPlugin]]) -> Path:
+def tab_folder(args: argparse.Namespace) -> Path:
+    """
+    Work out where an analysis tab's three files should be written.
+
+    :param args: the parsed command line
+    :type args: argparse.Namespace
+    :return: the folder to write into
+    :rtype: Path
+    """
+    if args.output_dir:
+        return Path(args.output_dir)
+    if args.user:
+        return user_plugin_folder()
+    return Path(REPO_ROOT, "poriscope", "plugins", TAB_FOLDER)
+
+
+def build_tab(
+    args: argparse.Namespace, plugins: Dict[str, Type[BaseDataPlugin]]
+) -> List[Path]:
+    """
+    Validate an analysis tab request, render all three files, and write them.
+
+    Every name and every path is checked before anything is written, because a triad that
+    is two thirds written is worse than one that was refused: the app would load the two
+    files it found and report the third as a missing class.
+
+    :param args: the parsed command line
+    :type args: argparse.Namespace
+    :param plugins: the plugins that already ship, keyed by class name
+    :type plugins: Dict[str, Type[BaseDataPlugin]]
+    :raises GenerationError: if the name carries a role suffix, if any of the three class
+        names is already taken, or if any of the three files already exists
+    :return: the paths that were written
+    :rtype: List[Path]
+    """
+    name = args.name
+    for role in TRIAD:
+        if name.endswith(role.suffix):
+            stem = name[: -len(role.suffix)]
+            raise GenerationError(
+                f"give the tab's name without the {role.suffix} suffix - {name!r} would "
+                f"generate {name}{role.suffix}.py. You probably want {stem!r}."
+            )
+
+    taken = set(plugins) | shipped_tab_names()
+    clashes = sorted(f"{name}{r.suffix}" for r in TRIAD if f"{name}{r.suffix}" in taken)
+    if clashes:
+        raise GenerationError(
+            f"{', '.join(clashes)} already exists. Plugin names have to be unique across "
+            f"every family, analysis tabs included, so pick another name for the tab."
+        )
+
+    folder = tab_folder(args)
+    paths = [Path(folder, f"{name}{role.suffix}.py") for role in TRIAD]
+    clobbered = [path for path in paths if path.exists()]
+    if clobbered:
+        raise GenerationError(
+            f"{', '.join(p.name for p in clobbered)} already exists in {folder}; "
+            f"delete it or pick another name"
+        )
+
+    rendered = [render_tab_file(role, name, folder, args.author) for role in TRIAD]
+    folder.mkdir(parents=True, exist_ok=True)
+    for path, body in zip(paths, rendered):
+        path.write_text(body, encoding="utf-8")
+
+    lines = sum(len(body.splitlines()) for body in rendered)
+    print(f"\nCreated {len(paths)} files in {folder}  ({lines} lines)")
+    for path in paths:
+        print(f"  {path.name}")
+    print("\nNext:")
+    print(f"  1. Fill in the methods marked TODO in {name}View.py and {name}Model.py.")
+    print(f"  2. Connect them to each other in {name}Controller._setup_connections.")
+    print("  3. Restart Poriscope. The tab appears in the Analysis menu by its")
+    print(f"       Controller name, {name}Controller.")
+    return paths
+
+
+def build(
+    args: argparse.Namespace, plugins: Dict[str, Type[BaseDataPlugin]]
+) -> List[Path]:
     """
     Validate the request, render the plugin, and write it to disk.
 
@@ -1085,13 +1463,16 @@ def build(args: argparse.Namespace, plugins: Dict[str, Type[BaseDataPlugin]]) ->
     :param plugins: the plugins that already ship, keyed by class name
     :type plugins: Dict[str, Type[BaseDataPlugin]]
     :raises GenerationError: if the name is unusable, already taken, or already a file
-    :return: the path that was written
-    :rtype: Path
+    :return: the paths that were written
+    :rtype: List[Path]
     """
-    base_cls, is_variant = resolve_base(args.base, plugins)
-
     if not args.name.isidentifier() or keyword.iskeyword(args.name):
         raise GenerationError(f"{args.name!r} is not a usable Python class name")
+    if args.base == TAB:
+        return build_tab(args, plugins)
+
+    base_cls, is_variant = resolve_base(args.base, plugins)
+
     if args.name in plugins:
         raise GenerationError(
             f"a plugin named {args.name} already exists, at "
@@ -1127,7 +1508,7 @@ def build(args: argparse.Namespace, plugins: Dict[str, Type[BaseDataPlugin]]) ->
     print("  3. pytest tests/unit/plugins/test_plugin_compliance.py")
     print("  4. pytest -m conformance   # drives it against synthetic data; most")
     print("       plugins need a recipe added first - the failure names which dict")
-    return path
+    return [path]
 
 
 def interactive(
@@ -1146,16 +1527,24 @@ def interactive(
     """
     fresh = "Write a new plugin from scratch (subclass a Poriscope base class)"
     variant = "Vary a plugin that already ships (subclass it and change part of it)"
-    if ask("What are you building?", [fresh, variant]) == fresh:
+    tab = "Write a new analysis tab (a Controller, Model and View together)"
+    answer = ask("What are you building?", [fresh, variant, tab])
+    if answer == fresh:
         args.base = ask("Which family?", sorted(FAMILIES))
-    else:
+    elif answer == variant:
         args.base = ask("Which plugin do you want to vary?", sorted(plugins))
         print("\nWhich methods do you want to override? Blank overrides none.")
         for method in overridable_methods(plugins[args.base]):
             print(f"  {method}")
         args.override = ask_text("Names, space separated:").split()
+    else:
+        args.base = TAB
 
-    args.name = ask_text("\nName for your plugin (also its filename):")
+    if args.base == TAB:
+        suffixes = ", ".join(role.suffix for role in TRIAD)
+        args.name = ask_text(f"\nName for your tab ({suffixes} are appended):")
+    else:
+        args.name = ask_text("\nName for your plugin (also its filename):")
     if not args.name:
         raise GenerationError("a name is required")
 
@@ -1180,7 +1569,9 @@ def main(argv: List[str]) -> int:
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     parser.add_argument(
-        "base", nargs="?", help="a Meta* base class or a shipped plugin"
+        "base",
+        nargs="?",
+        help=f"a Meta* base class, a shipped plugin, or {TAB}",
     )
     parser.add_argument("name", nargs="?", help="the new plugin's class name")
     parser.add_argument(

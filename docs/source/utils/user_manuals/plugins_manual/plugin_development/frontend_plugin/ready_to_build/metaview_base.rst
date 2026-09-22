@@ -14,6 +14,7 @@ You get a built-in plot canvas, a navigation toolbar, and a dedicated control ar
 
 - ``_init``
 - ``_reset_actions``
+- ``handle_parameter_change``
 - ``notify_plugin_state_changed``
 - ``update_available_plugins``
 
@@ -26,8 +27,15 @@ with nothing to react to implements it as ``pass``, which is what both event tab
 **Building your control area.** ``_set_control_area`` is *not* abstract. It builds the
 control-area layout for you: it calls ``_build_controls()``, connects the four signals
 every controls panel carries — ``actionTriggered``, ``add_processed``,
-``edit_processed`` and ``delete_processed`` — and places the widget. So the usual thing
-to write is ``_build_controls``, returning your ``MetaControls`` subclass:
+``edit_processed`` and ``delete_processed`` — and places the widget. Three of those four
+land on handlers ``MetaView`` already implements; ``actionTriggered`` lands on
+``handle_parameter_change``, which is why that one is abstract and you have to write it.
+The connection is made while the View is still being constructed, so a tab that omits it
+would fail inside ``__init__`` rather than when a button is first pressed — declaring it
+abstract is what turns that into a refusal to define the class, naming the method.
+
+So the usual thing to write is ``_build_controls``, returning your ``MetaControls``
+subclass:
 
 .. code-block:: python
 
@@ -37,7 +45,9 @@ to write is ``_build_controls``, returning your ``MetaControls`` subclass:
 
 ``_build_controls`` is not abstract either; the default returns an empty panel. If your
 tab lays out its own control area rather than using a ``MetaControls`` panel, override
-``_set_control_area`` directly and ignore ``_build_controls`` entirely.
+``_set_control_area`` directly and ignore ``_build_controls`` entirely — in that case
+nothing connects to ``handle_parameter_change``, and implementing it as ``pass`` is
+correct.
 
 **Reusable features:**
 

@@ -19,6 +19,7 @@ real console script and is run for real when it is installed.
 """
 
 import ast
+import importlib
 import importlib.util
 import inspect
 import re
@@ -43,6 +44,14 @@ VARIANTS = [
     ("ClassicBlockageFinder", ["_find_events_in_chunk", "report_channel_status"]),
     ("SQLiteDBLoader", ["get_plot_features"]),
 ]
+
+# The generated triad is written into a folder and its siblings are imported through that
+# folder's name, because that is the only import path the app makes work for a tab outside
+# the repository: ``main_app`` puts the *parent* of the user plugin folder on ``sys.path``,
+# not the folder itself. Generating into a folder with a fixed, importable name and putting
+# its parent on ``sys.path`` is therefore what the app does, reproduced.
+TAB_FOLDER = "user_plugins"
+ROLES = ("Controller", "Model", "View")
 
 
 def load_script() -> types.ModuleType:
@@ -129,6 +138,57 @@ def load_generated(path: Path, name: str) -> type:
     finally:
         sys.modules.pop(name, None)
     return getattr(module, name)
+
+
+def generate_tab(script: types.ModuleType, name: str, out: Path) -> Dict[str, Path]:
+    """
+    Run the generator for an analysis tab and return the three files it wrote.
+
+    :param script: the generator module
+    :type script: types.ModuleType
+    :param name: the tab's name, without a role suffix
+    :type name: str
+    :param out: the folder to generate the tab's folder into
+    :type out: Path
+    :return: the written paths, keyed by role
+    :rtype: Dict[str, Path]
+    """
+    folder = Path(out, TAB_FOLDER)
+    argv = [script.TAB, name, "--output-dir", str(folder), "--author", "Test Author"]
+    assert script.main(argv) == 0
+    paths = {role: Path(folder, f"{name}{role}.py") for role in ROLES}
+    for role, path in paths.items():
+        assert path.is_file(), f"{name}{role}.py was not written"
+    return paths
+
+
+def load_triad(out: Path, name: str, monkeypatch: Any) -> Dict[str, type]:
+    """
+    Import a generated triad the way the running app imports a user tab.
+
+    The Controller imports its own View and Model, so it cannot be loaded by file path
+    the way a single-file plugin can - the sibling import has to resolve. Prepending the
+    folder's *parent* to ``sys.path`` is exactly what ``main_app`` does for the user
+    plugin folder, so this reproduces the app's own import path rather than inventing one.
+
+    :param out: the folder the tab's folder was generated into
+    :type out: Path
+    :param name: the tab's name, without a role suffix
+    :type name: str
+    :param monkeypatch: pytest's monkeypatch fixture, used to undo the path change
+    :type monkeypatch: Any
+    :return: the three generated classes, keyed by role
+    :rtype: Dict[str, type]
+    """
+    monkeypatch.syspath_prepend(str(out))
+    for stale in [m for m in sys.modules if m.split(".")[0] == TAB_FOLDER]:
+        sys.modules.pop(stale, None)
+    importlib.invalidate_caches()
+    loaded: Dict[str, type] = {}
+    for role in ROLES:
+        module = importlib.import_module(f"{TAB_FOLDER}.{name}{role}")
+        loaded[role] = getattr(module, f"{name}{role}")
+    return loaded
 
 
 def own_methods(cls: type) -> Dict[str, Any]:
@@ -371,6 +431,205 @@ class TestVariants:
         assert not Path(tmp_path, "Bad.py").exists()
 
 
+class TestGeneratedAnalysisTabs:
+    """The triad must clear the same gates a single-file plugin does, in all three files."""
+
+    def test_three_files_are_written(self, script, tmp_path):
+        paths = generate_tab(script, "Written", tmp_path)
+        assert sorted(p.name for p in paths.values()) == [
+            "WrittenController.py",
+            "WrittenModel.py",
+            "WrittenView.py",
+        ]
+
+    def test_every_class_is_concrete(self, script, tmp_path, monkeypatch):
+        """A leftover abstract method is the one failure the whole tool exists to prevent."""
+        generate_tab(script, "Concrete", tmp_path)
+        for role, cls in load_triad(tmp_path, "Concrete", monkeypatch).items():
+            assert not inspect.isabstract(cls), role
+            assert cls.__abstractmethods__ == frozenset(), role
+
+    def test_every_annotation_resolves(self, script, tmp_path, monkeypatch):
+        """Stands in for ruff F821, the same way it does for the data plugin families."""
+        generate_tab(script, "Resolving", tmp_path)
+        for cls in load_triad(tmp_path, "Resolving", monkeypatch).values():
+            module = sys.modules.get(cls.__module__)
+            for func in own_methods(cls).values():
+                get_type_hints(func, vars(module) if module else None)
+
+    def test_no_pass_body_sits_under_a_non_none_return(self, script, tmp_path):
+        """Stands in for mypy's empty-body rule, which the pass/raise split satisfies."""
+        for path in generate_tab(script, "Bodies", tmp_path).values():
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            klass = next(n for n in tree.body if isinstance(n, ast.ClassDef))
+            for node in klass.body:
+                if not isinstance(node, ast.FunctionDef):
+                    continue
+                body = [
+                    s
+                    for s in node.body
+                    if not (
+                        isinstance(s, ast.Expr) and isinstance(s.value, ast.Constant)
+                    )
+                ]
+                pass_only = len(body) == 1 and isinstance(body[0], ast.Pass)
+                none_return = node.returns is None or (
+                    isinstance(node.returns, ast.Constant)
+                    and node.returns.value is None
+                )
+                assert not (pass_only and not none_return), f"{path.stem}.{node.name}"
+
+    def test_no_import_is_unused(self, script, tmp_path):
+        """Stands in for ruff F401. The two sibling imports are the new risk here."""
+        for path in generate_tab(script, "Imports", tmp_path).values():
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            unused = imported_names(tree) - referenced_names(tree)
+            assert not unused, f"{path.stem} imports but never uses {sorted(unused)}"
+
+    def test_signatures_match_the_base_exactly(self, script, tmp_path, monkeypatch):
+        """``_reset_actions`` carries a default the compliance suite compares by value."""
+        generate_tab(script, "Signatures", tmp_path)
+        for role, cls in load_triad(tmp_path, "Signatures", monkeypatch).items():
+            base_cls = cls.__mro__[1]
+            for method_name, func in own_methods(cls).items():
+                _, original = script.resolve_definition(base_cls, method_name)
+                assert stripped_signature(func) == stripped_signature(
+                    original
+                ), f"{role}.{method_name} does not match {base_cls.__name__}"
+
+    def test_every_method_has_a_docstring(self, script, tmp_path, monkeypatch):
+        generate_tab(script, "Documented", tmp_path)
+        for role, cls in load_triad(tmp_path, "Documented", monkeypatch).items():
+            assert cls.__doc__ and cls.__doc__.strip(), role
+            for method_name, func in own_methods(cls).items():
+                doc = inspect.getdoc(func)
+                assert doc and doc.strip(), f"{role}.{method_name} has no docstring"
+
+    def test_the_controller_builds_its_view_and_model(self, script, tmp_path):
+        """
+        ``MetaController.__init__`` wires ``self.view`` and ``self.model`` the moment
+        ``_init`` returns, so a stubbed-out ``_init`` raises ``AttributeError`` before the
+        tab is ever shown. The generator writes that body rather than leaving it a TODO.
+        """
+        text = generate_tab(script, "Wired", tmp_path)["Controller"].read_text(
+            encoding="utf-8"
+        )
+        assert "self.view = WiredView()" in text
+        assert "self.model = WiredModel()" in text
+
+    def test_update_available_plugins_calls_super(self, script, tmp_path):
+        """
+        The only abstract method on any of the eleven bases that carries a real body.
+        ``MetaView.update_available_plugins`` sets ``self.available_plugins``; an override
+        that forgets to delegate leaves the tab with no record of what exists elsewhere.
+        """
+        text = generate_tab(script, "Delegating", tmp_path)["View"].read_text(
+            encoding="utf-8"
+        )
+        assert "super().update_available_plugins(available_plugins)" in text
+
+    def test_the_other_stubs_do_not_delegate(self, script, tmp_path):
+        """A base whose body is only ``pass`` has nothing to delegate to."""
+        text = generate_tab(script, "Plain", tmp_path)["Controller"].read_text(
+            encoding="utf-8"
+        )
+        assert "super()._setup_connections()" not in text
+
+    @pytest.mark.skipif(
+        shutil.which("pydoclint") is None, reason="pydoclint is not on PATH"
+    )
+    def test_pydoclint_is_clean(self, script, tmp_path):
+        """Run the real docstring/signature gate over all three generated files."""
+        generate_tab(script, "Linted", tmp_path)
+        result = subprocess.run(
+            ["pydoclint", str(Path(tmp_path, TAB_FOLDER))],
+            capture_output=True,
+            text=True,
+            cwd=REPO_ROOT,
+            check=False,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+
+
+class TestAnalysisTabRefusals:
+    """A triad multiplies the ways a name can be taken, so each one is refused by name."""
+
+    def test_a_name_an_existing_tab_already_has_is_refused(self, script, tmp_path):
+        assert script.main([script.TAB, "RawData", "--output-dir", str(tmp_path)]) == 1
+        assert list(tmp_path.glob("*.py")) == []
+
+    def test_a_name_carrying_a_role_suffix_is_refused(self, script, tmp_path, capsys):
+        """``MyTabView`` would generate ``MyTabViewView.py``; say so rather than do it."""
+        argv = [script.TAB, "MyTabView", "--output-dir", str(tmp_path)]
+        assert script.main(argv) == 1
+        assert "without the" in capsys.readouterr().err
+        assert list(tmp_path.glob("*.py")) == []
+
+    def test_a_generated_name_a_data_plugin_already_has_is_refused(
+        self, script, tmp_path, monkeypatch
+    ):
+        """
+        The check is on the three names the generator would write, not on the tab name
+        itself - a tab called ``BesselFilter`` collides with nothing, because the files
+        are ``BesselFilterController`` and friends. What must be refused is a *generated*
+        name a data plugin already holds, which is why the two sets are checked as a
+        union. No shipped plugin is named for a role today, so one is stood in for here.
+        """
+        monkeypatch.setattr(
+            script, "discover_plugin_classes", lambda: {"ClashController": object}
+        )
+        argv = [script.TAB, "Clash", "--output-dir", str(tmp_path)]
+        assert script.main(argv) == 1
+        assert list(tmp_path.glob("*.py")) == []
+
+    def test_a_tab_named_for_a_data_plugin_is_allowed(self, script, tmp_path):
+        """The mirror of the above: no generated name is taken, so nothing is refused."""
+        argv = [
+            script.TAB,
+            "BesselFilter",
+            "--output-dir",
+            str(Path(tmp_path, TAB_FOLDER)),
+        ]
+        assert script.main(argv) == 0
+
+    def test_no_file_is_written_when_one_of_the_three_already_exists(
+        self, script, tmp_path
+    ):
+        """All three are checked before any is written, so a half-triad cannot happen."""
+        folder = Path(tmp_path, TAB_FOLDER)
+        folder.mkdir()
+        Path(folder, "HalfView.py").write_text("# already here\n", encoding="utf-8")
+        assert script.main([script.TAB, "Half", "--output-dir", str(folder)]) == 1
+        assert sorted(p.name for p in folder.glob("*.py")) == ["HalfView.py"]
+
+
+class TestTriadTable:
+    """The triad table duplicates part of the app's own list; it must not drift."""
+
+    def test_every_role_is_in_the_apps_allowed_base_classes(self, script):
+        source = Path(REPO_ROOT, "poriscope", "models", "main_model.py").read_text(
+            encoding="utf-8"
+        )
+        for role in script.TRIAD:
+            assert re.search(rf'"{role.base}":\s*{role.base},', source), role.base
+
+    def test_the_triad_folder_exists(self, script):
+        folder = Path(REPO_ROOT, "poriscope", "plugins", script.TAB_FOLDER)
+        assert folder.is_dir()
+
+    def test_every_role_base_is_abstract(self, script):
+        for role in script.TRIAD:
+            assert inspect.isabstract(script.tab_base(role)), role.base
+
+    def test_the_role_suffixes_match_the_shipped_tabs(self, script):
+        """Every shipped tab is a ``<Name><Role>.py`` triad; the generator's names match."""
+        folder = Path(REPO_ROOT, "poriscope", "plugins", script.TAB_FOLDER)
+        stems = {p.stem for p in folder.glob("*.py")} - {"__init__"}
+        suffixes = {role.suffix for role in script.TRIAD}
+        for stem in stems:
+            assert any(stem.endswith(s) for s in suffixes), stem
+
+
 class TestRefusals:
     """Every refusal happens before anything is written."""
 
@@ -445,6 +704,14 @@ class TestInteractive:
         cls = load_generated(Path(tmp_path, "AskedVariant.py"), "AskedVariant")
         assert cls.__mro__[1] is shipped["BesselFilter"]
         assert set(own_methods(cls)) == {"_apply_filter", "get_empty_settings"}
+
+    def test_it_asks_its_way_to_an_analysis_tab(self, script, tmp_path, monkeypatch):
+        """The third top-level choice; the first two must keep their numbers."""
+        self._answers(monkeypatch, ["3", "AskedTab"])
+        folder = Path(tmp_path, TAB_FOLDER)
+        assert script.main(["--output-dir", str(folder)]) == 0
+        classes = load_triad(tmp_path, "AskedTab", monkeypatch)
+        assert classes["Controller"].__mro__[1] is script.tab_base(script.TRIAD[0])
 
     def test_nothing_to_read_is_reported_rather_than_hung(
         self, script, tmp_path, monkeypatch, capsys

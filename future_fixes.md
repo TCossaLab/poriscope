@@ -389,11 +389,12 @@ the oversized `setupUi` methods. This review re-confirmed each with fresh counts
   `pre-commit clean`, discarding the hook-env cache every run.
 - **`black` runs only at the manual pre-commit stage**, so formatting is enforced by CI
   rewriting contributors' commits rather than by failing them.
-- **`scripts/new_plugin.py`'s family table is guarded one-directionally.**
-  `tests/unit/scripts/test_new_plugin.py:466-472` asserts each `FAMILIES` entry appears in
-  `main_model.py`, not the reverse, so adding a ninth `Meta*` base leaves the generator and
-  `--list` silently blind with no test failing. That guard is also a regex over another
-  file's source text, so reformatting `main_model.py`'s dict breaks it spuriously.
+- **`scripts/new_plugin.py`'s two base-class tables are guarded one-directionally.**
+  `tests/unit/scripts/test_new_plugin.py` asserts each `FAMILIES` and each `TRIAD` entry
+  appears in `main_model.py`, not the reverse, so adding a twelfth `Meta*` base leaves the
+  generator and `--list` silently blind with no test failing. Both guards are also regexes
+  over another file's source text, so reformatting `main_model.py`'s dict breaks them
+  spuriously.
 - **`test_mapping_audit.csv` is stale and nothing executable reads it.** Its
   `LooseMatchFound` column still names files renamed by the very commit that added it
   (`43d556d`). Referenced only from the `test_event_worker.py` note below. Regenerate or drop.
@@ -565,8 +566,7 @@ Two standing constraints reshape the queue:
    is **not** outstanding work - advisory-only was chosen deliberately.
 
 Then the rest of the Moderate audit tier, the `hist_data` refactor, and the parked
-histogram cut-off. **Block 3's analysis-tab half is deferred** until the planned frontend
-refactoring lands, to avoid generating triads against a layout about to change.
+histogram cut-off.
 
 ## Still queued
 
@@ -775,10 +775,9 @@ owning developer.
 
 Designed as a set: a pipeline that lets a community-contributed plugin be verified as safe
 and correct to merge with a bounded amount of human review. Blocks 2, 6, 7 and 8, and block 3
-for data plugins, are done and their sections are gone (block 8's "no custom lint rules"
-call is recorded in `DECISIONS.md`, 2026-09-01). What is left is **5** (free-standing),
-**4**, block 3's analysis-tab half, and **1**, which is a pytest suite and so the test
-developer's.
+are done and their sections are gone (block 8's "no custom lint rules" call is recorded in
+`DECISIONS.md`, 2026-09-01). What is left is **5** (free-standing), **4**, and **1**, which
+is a pytest suite and so the test developer's.
 
 ## 1. Behavioural conformance suite — remaining gaps
 
@@ -824,28 +823,21 @@ included, and no fitter is exempt; see `changelog.md`. Still open:
   `ChimeraReaderVC100` attempts to degrade gracefully when its sidecar file is missing
   today - both raise cleanly instead.
 
-## 3. Contribution scaffold: the analysis-tab half
+## 3. Contribution scaffold: the stale worked examples
 
-`scripts/new_plugin.py` generates data plugins for all eight families. The analysis-tab half
-is **deferred until the planned frontend refactoring has landed**, so triads are not generated
-against a layout about to change. `FAMILIES` is shaped so the three can be added without
-rework.
+The generator itself is done, data plugins and analysis tabs alike. What is left is the
+documentation it makes wrong:
 
-A triad is 8 abstract methods across three files (`MetaController` 2, `MetaModel` 1,
-`MetaView` 5) plus the class-name-equals-filename rule and `_init` assigning
-`self.view`/`self.model`; nothing else needs registering, which is why a ~100-line triad is a
-valid runnable tab.
-
-Two things to know first:
-
-- **The `HelloWorld` example under `docs/source/_static/images/examples/` is stale** and would
-  not instantiate: it implements 4 of `MetaView`'s 5 abstract methods (missing
-  `notify_plugin_state_changed`) and imports `from utils.MetaView import MetaView`. A
-  generator should replace it.
-- **The generator's stub-body policy was measured, not chosen.** Re-run the four probes rather
-  than reasoning about them: `pass` under a non-`None` return is mypy `empty-body`; a copied
-  `:raises X:` above a `pass` body is DOC502; the same field above `raise NotImplementedError`
-  is DOC503; raising with no field is DOC501.
+- **The `HelloWorld` example is stale, and exists twice.** The tutorial at
+  `frontend_plugin/hello_world_tutorial.rst` inlines its own code; the three `.py` files
+  under `docs/source/_static/images/examples/analysis_tabs/` are a second, divergent copy
+  that no `.rst` includes. Between them: `from utils.MetaView import MetaView` and
+  `from plugins.analysistabs.X import X` (both wrong package roots), unused `scipy`/`numpy`/
+  `pandas`/`csv` imports, `_reset_actions` missing its `axis_type` parameter, no
+  `notify_plugin_state_changed`, and a mis-indented `def update_plot():` with no `self` that
+  `MetaView` has never declared. Regenerate it from the generator so the two cannot drift.
+- **`simpleCalc` has the same wrong import roots**, in both
+  `simpleCalc/simpleCalc_code.rst` and `simpleCalc/from_helloworld_to_full_mvc.rst`.
 
 ## 4. The plugin trust boundary — largely settled
 
