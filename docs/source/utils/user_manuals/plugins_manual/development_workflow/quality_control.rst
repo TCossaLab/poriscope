@@ -276,6 +276,20 @@ rendering problem the moment you merge rather than when you open a pull request.
 
 .. note::
 
+   **Not every method is published, and the rule is not simply "public ones".** A method
+   with a leading underscore is omitted as an internal helper *unless* its name is one
+   some ``Meta*`` base declares ``@abstractmethod``, in which case it is the contract a
+   subclass author has to satisfy and it stays. That keeps ``MetaFilter._apply_filter``
+   on the base's page and a plugin's own implementation of it on the plugin's page, while
+   dropping the helpers around them. ``__init__`` is published too: its signature appears
+   on the class line, but the ``:param:`` fields explaining each argument live only in
+   its docstring.
+
+   So if a method you documented does not appear on the site, check whether it is private
+   and not part of any declared contract. That is the rule working, not a build problem.
+
+.. note::
+
    **The build imports the real package, PySide6 included.** ``autodoc`` does not mock
    Qt - ``docs/source/conf.py`` explains at length why mocking it is not an option here -
    so ``sphinx-build`` needs an environment in which ``import poriscope`` works fully. On

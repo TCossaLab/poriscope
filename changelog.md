@@ -2,6 +2,8 @@
 
 * **Breaking: `MetaView.handle_parameter_change` is now abstract** - `_set_control_area` has always connected the controls panel to it while the View is being constructed, so a tab that did not define it raised `AttributeError` out of `__init__`; a tab that lays out its own control area can implement it as `pass`
 
+* **The generated API documentation no longer publishes internal helper methods** - 257 private methods that were never anyone's contract are gone from the site, while every `Meta*` abstract method, every plugin's implementation of one, and every documented constructor stay; the published method count falls from 1,109 to 852
+
 * **The HelloWorld tutorial is now generated rather than transcribed** - its four files are written by `scripts/new_plugin.py` and included into the page from the real files, so the example cannot drift from what the tool produces; it teaches a control panel reaching a handler rather than a label in a box, and the stale second copy of it that no page ever rendered is gone
 
 * **Fixed a plugin in a relocated user plugin folder never being made importable** - the folder put on the import path at startup was the default one a fresh install creates, not the one the configuration points at and the app actually scans

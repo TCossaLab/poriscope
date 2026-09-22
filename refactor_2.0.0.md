@@ -2882,6 +2882,45 @@ plugin folder, which found the two import defects above. Round 3: the regenerate
 with its canvas and its button, and the button reaches its handler. **Every defect on this
 branch was found by running the thing; none by a gate.**
 
+### 6b - HelloWorld is generated, landed 2026-09-22
+
+Kyle's instruction was to build the replacement example *with* the generator, as a test of
+the process. That is what found everything above: the empty control area and both import
+defects surfaced on the first and second attempts to use it for real work.
+
+The tutorial's code is now `literalinclude`d from the four files the generator writes into
+`docs/source/_static/examples/analysis_tabs/`, so it cannot drift from the tool, and `ruff`
+and `black` check it like any other source. **What it teaches changed too** - Kyle's ruling
+was that the example should be educational rather than a faithful reproduction of the old
+one. The old HelloWorld put a label in a box by overriding `_set_control_area`, which is the
+escape hatch rather than the route real tabs take; that override is precisely what hid the
+`handle_parameter_change` defect from the tutorial for as long as it existed.
+
+Also deleted **six orphaned example `.py` files** - a second, divergent copy of both
+HelloWorld and simpleCalc, dating from the initial commit, referenced by no page and
+rendered by nothing. And simpleCalc, as documented, implemented **3 of `MetaView`'s 5**
+abstract methods, so `SimpleCalcView` could not have been instantiated; its import roots and
+the two missing methods are corrected. simpleCalc is still transcribed rather than
+generated, which is in `future_fixes.md`.
+
+### 6c - autodoc publishes contract, not internals, landed 2026-09-22
+
+**The step's own bullet said "omit privates", and doing that literally would have been a
+regression.** 259 of the 516 published private methods are the plugin author's contract:
+`MetaFilter._apply_filter`, `MetaReader._map_data`, `MetaEventFitter._locate_sublevel_transitions`
+and every shipped plugin's implementation of them. On these bases a leading underscore marks
+a subclass author's obligation, not an implementation detail.
+
+So the rule, agreed with Kyle 2026-09-22: **a private method is published only when its name
+is one some `Meta*` base declares `@abstractmethod`**, plus `__init__`, whose signature shows
+on the class line but whose `:param:` fields are published nowhere else. Matching on the
+*name* rather than the decorator is what keeps both ends - the base declares it abstract and
+a concrete plugin's override does not, but that override is the substance of the plugin's
+page.
+
+Published directives **1,109 -> 852**: 593 public, 251 contract privates, 8 constructors.
+257 internal helpers dropped. `sphinx-build -W` green.
+
 ### Still owed in Step 6
 
 - Re-run the four stub-body probes rather than reasoning about them (`pass` under a

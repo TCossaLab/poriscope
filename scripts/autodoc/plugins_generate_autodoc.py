@@ -26,7 +26,7 @@
 import ast
 import shutil
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Set
 
 SCRIPT_DIR = (
     Path(__file__).resolve().parent
@@ -38,6 +38,9 @@ FOLDER_ORIGIN = PROJECT_ROOT / "poriscope" / "plugins"
 
 # Where generated .rst documentation should be written
 OUTPUT_DIR = PROJECT_ROOT / "docs" / "source" / "autodoc" / "plugins"
+
+#: Where the Meta* base classes live; read to find the published private contract.
+UTILS_DIR = PROJECT_ROOT / "poriscope" / "utils"
 
 # Optional: generate .rst files for a single category like "filters"
 ONLY_CATEGORY = (
@@ -58,6 +61,7 @@ PRUNE_ROOT = OUTPUT_DIR if ONLY_CATEGORY is None else OUTPUT_DIR / ONLY_CATEGORY
 shutil.rmtree(PRUNE_ROOT, ignore_errors=True)
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
+
 # Base package used for internal references
 BASE_PACKAGE = "poriscope.plugins"
 
@@ -76,8 +80,65 @@ EXTERNAL_BASES = {
 }
 
 
+def abstract_private_names() -> Set[str]:
+    """
+    Collect every private method name that some base class declares abstract.
+
+    A leading underscore means "internal" almost everywhere, but not on the ``Meta*``
+    bases: there it marks the methods a *subclass author* has to write, which is the
+    published contract rather than an implementation detail. ``_apply_filter``,
+    ``_map_data`` and ``_locate_sublevel_transitions`` are the plugin author's whole job.
+
+    So the rule is by name rather than by decorator. The base declares
+    ``@abstractmethod`` and a concrete plugin's override does not, but the override is
+    the substance of that plugin's page - dropping it would gut exactly the page someone
+    reads to learn how a shipped plugin works. Matching on the name keeps both ends.
+
+    ``__init__`` is included for the same reason: it is public API however it is
+    spelled, and its parameter documentation is published nowhere else.
+
+    :return: the private method names that count as published contract
+    :rtype: Set[str]
+    """
+    names: Set[str] = set()
+    for source in UTILS_DIR.glob("*.py"):
+        tree = ast.parse(source.read_text(encoding="utf-8"))
+        for class_node in [n for n in tree.body if isinstance(n, ast.ClassDef)]:
+            for item in class_node.body:
+                if not isinstance(item, ast.FunctionDef):
+                    continue
+                if not item.name.startswith("_"):
+                    continue
+                if any(
+                    isinstance(decorator, ast.Name) and decorator.id == "abstractmethod"
+                    for decorator in item.decorator_list
+                ):
+                    names.add(item.name)
+    # The constructor is public API however it is spelled. Its signature already
+    # appears on the class line, but the ``:param:`` fields documenting what each
+    # argument means live in its docstring and are published nowhere else.
+    names.add("__init__")
+    return names
+
+
 def classify_method(method_node):
     return "private" if method_node.name.startswith("_") else "public"
+
+
+def is_published(method_node, contract):
+    """Report whether a method belongs in the published docs.
+
+    Public methods always do. A private one does only when its name is a declared
+    abstract contract, because a plugin's override of ``_find_events_in_chunk`` is what
+    that plugin *is*, while its ``_scale_helper`` is nobody else's business.
+    """
+    if not method_node.name.startswith("_"):
+        return True
+    return method_node.name in contract
+
+
+#: Computed once: the private method names that count as published contract.
+CONTRACT_NAMES = abstract_private_names()
 
 
 def is_property_accessor(method_node):
@@ -237,7 +298,7 @@ def write_class_rst(category_dir, class_node, import_path, class_name, exclusion
                 # the attribute once.
                 if item.name not in properties:
                     properties.append(item.name)
-            else:
+            elif is_published(item, CONTRACT_NAMES):
                 visibility = classify_method(item)
                 methods[visibility].append(item.name)
 
