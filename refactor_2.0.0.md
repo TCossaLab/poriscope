@@ -3031,8 +3031,10 @@ are checkable.
   the pair is deliberately *not* given a shared base - that would make the surviving reader
   inherit from the one being removed. `future_fixes.md` carries it.
 
-  Manual pass owed: a read on both Chimera formats and on a binary reader, since every data
-  plugin sits on this contract.
+  **Manual pass still owed** and not a blocker for the merge: a read on both Chimera formats
+  and on a binary reader, plus an event find-and-commit for the  path. Every
+  data plugin sits on this contract, and the conformance suite covers all seven readers, but
+  nothing automated opens a real instrument file.
 - **7d — `_write_data`'s 13 parameters.** Collapse the parameter list. One overrider, no
   call-site fan-out. Breaking.
 - **7e — `CITATION.cff` against the tag.** `CITATION.cff` and `constants.py` both read
@@ -3073,6 +3075,26 @@ actually contains, and nothing else in the plan looks for it.
   moved to a base, a mechanism whose replacement is described on the wrong page, a
   `:ref:` pointing at something that has been renamed. The autodoc half regenerates and is
   self-checking; the hand-written half is not.
+
+  **Named item: comment the database schema's two channel columns.** The `events`,
+  `sublevels` and `data` tables each carry both `channel_db_id` and `channel_id`, and
+  nothing in the schema or the docs says which is which. `channel_db_id` is the
+  `AUTOINCREMENT` row id of the `(experiment_id, channel_id)` pair in `channels`;
+  `channel_id` is the physical channel the data came from. Writing a dataset into an
+  existing database under a *new* experiment name therefore creates a new `channels` row
+  and a new `channel_db_id` while `channel_id` stays put - which was reported on
+  2026-09-22 as the writer "relabelling" the channel, and as duplicate event ids appearing
+  in an existing database.
+
+  **Neither was a defect.** `UNIQUE (experiment_id, channel_id, event_id)` already enforces
+  the intended rule, `event_id` is the fitter's loop index and so restarts at 0 per run, and
+  `MetaEventFitter.py:561` sets the metadata `channel_id` from the same `channel` that drives
+  the channels lookup, so the two columns cannot disagree. A duplicate write is rejected by
+  `INSERT OR IGNORE` and surfaces as `Cannot Overwrite Existing Event` in the rejection
+  report rather than being dropped silently. What failed was the naming, so the fix is a
+  comment in `_initialize_database`'s `CREATE TABLE` block and a line in the database
+  documentation - **not** a rename, which would be a schema migration breaking every
+  database already written.
 - **Orphans and dead code.** All the moving leaves residue, and this refactor has already
   produced three examples of it — `MetaView._logscale_and_filter_multiple_columns` deleted
   outright, the 394 dead lines behind `get_global_walkthrough_steps`, and six orphaned
