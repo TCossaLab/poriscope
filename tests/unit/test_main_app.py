@@ -166,15 +166,52 @@ class TestPluginDiscoveryPath:
 
     def test_adds_the_user_plugin_folders_parent(self, app_root) -> None:
         """
-        The *parent* goes on the path, not the plugin folder itself.
+        The parent goes on the path, so the folder can be imported as a package.
 
-        Discovery imports ``user_plugins`` as a package, so the importable
-        location is the directory containing it.
+        This only works when the folder is named like an identifier, which is why
+        the folder itself goes on too - see the test below.
         """
         _run(app_root)
 
         expected = str(Path(app_root, "Poriscope").resolve())
         assert expected in sys.path
+
+    def test_adds_the_user_plugin_folder_itself(self, app_root) -> None:
+        """
+        The folder itself is what makes a multi-file plugin work.
+
+        An analysis tab is three files and its Controller imports the other two. The
+        parent alone cannot carry that: it requires an import naming the folder, and a
+        folder called "User Plugins" - as a real installation had it - cannot be named
+        in any import statement at all, so the generated Controller was a SyntaxError.
+        With the folder on the path the siblings import by their own file names, which
+        are always identifiers because each equals the class it defines.
+        """
+        _run(app_root)
+
+        expected = str(Path(app_root, "Poriscope", "user_plugins").resolve())
+        assert expected in sys.path
+
+    def test_adds_the_configured_folder_rather_than_the_default(self, app_root) -> None:
+        """
+        The folder made importable has to be the folder that is scanned.
+
+        ``user_plugin_path`` is only where a fresh install puts its folder. The config
+        may point somewhere else entirely, and ``MainModel`` walks the configured value,
+        so putting the default on the path while scanning the configured one leaves a
+        relocated folder off the path altogether - and with it, every multi-file plugin
+        in that folder, since importing its own parts is how a triad is assembled.
+        """
+        _run(app_root)
+        elsewhere = Path(app_root, "data", "Mock Server", "User Plugins")
+        elsewhere.mkdir(parents=True)
+        stored = json.loads(_config_path(app_root).read_text(encoding="utf-8"))
+        stored["User Plugin Folder"] = str(elsewhere)
+        _config_path(app_root).write_text(json.dumps(stored), encoding="utf-8")
+
+        _run(app_root)
+
+        assert str(elsewhere.resolve()) in sys.path
 
     def test_does_not_add_a_duplicate_on_a_second_run(self, app_root) -> None:
         """

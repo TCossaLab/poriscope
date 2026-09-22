@@ -101,11 +101,13 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
     @abstractmethod
     def _init(self) -> None:
         """
-        Perform additional initialization specific to the algorithm being implemented.
-        Must be implemented by subclasses.
+        Build this tab's View and Model, and do any other setup the tab needs.
 
-        This function is called at the end of the class constructor to perform additional initialization specific to the algorithm being implemented.
-        kwargs provided to the base class constructor are available as class attributes.
+        Assigning both ``self.view`` and ``self.model`` is required rather than
+        conventional: the constructor calls this and then immediately connects the two to
+        each other, so leaving either unset raises ``AttributeError`` before the tab
+        exists. kwargs given to the base constructor are available as attributes by the
+        time this runs.
         """
         pass
 

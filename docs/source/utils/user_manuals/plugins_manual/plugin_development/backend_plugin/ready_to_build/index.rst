@@ -93,9 +93,8 @@ you can confirm the plumbing works before writing any of the algorithm.
    is already taken; without it, the first sign of a clash is an error dialog at app
    startup telling you your file was ignored.
 
-The generator covers data plugins only. Analysis tab plugins are a
-Controller/Model/View triad rather than a single file — see
-:ref:`build_frontend_plugin` for those.
+The generator also writes analysis tabs, which are a Controller/Model/View triad rather
+than a single file — pass ``AnalysisTab`` as the base. See :ref:`new_tab_script`.
 
 .. important::
 

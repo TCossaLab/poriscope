@@ -1429,10 +1429,19 @@ Pre-Pull-Request Compliance Checklist
 
 .. tip::
 
-   If you are *starting* a data plugin rather than finishing one, generate it with
-   ``python scripts/new_plugin.py`` — see :ref:`new_plugin_script`. Getting a signature
-   or a docstring field wrong by hand is by far the most common reason a first plugin PR
-   comes back, and the generator copies both verbatim out of the base class.
+   If you are *starting* a plugin rather than finishing one, generate it with
+   ``python scripts/new_plugin.py`` — see :ref:`new_plugin_script` for a data plugin and
+   :ref:`new_tab_script` for an analysis tab. Getting a signature or a docstring field
+   wrong by hand is by far the most common reason a first plugin PR comes back, and the
+   generator copies both verbatim out of the base class.
+
+   **A generated analysis tab passes all three steps as generated**, because a tab has no
+   settings schema and no conformance recipe: the triad is ``black``/``ruff`` clean,
+   satisfies ``mypy`` and ``pydoclint``, and its three classes are concrete, so
+   ``tests/unit/plugins`` is green over it before you write anything. It also runs —
+   ``tests/unit/views/test_generated_analysis_tab.py`` constructs one and drives the
+   methods the shell calls on a newly opened tab, which is the gate that keeps the
+   scaffold honest as the ``Meta*`` bases change.
 
    **What a freshly generated skeleton does and does not pass**, measured against one
    generated plugin in each of the eight families: steps 1 and 2 pass cleanly — it is

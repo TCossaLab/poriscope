@@ -10,6 +10,149 @@ which ran through August 2026 and is complete. The step numbers only date the de
 
 ---
 
+## 2026-09-22 - The tab scaffold generates the controls panel, and authors it
+
+**Context.** A generated tab opened with a plot canvas over an empty strip. That is what
+`MetaView._build_controls` returning a bare `MetaControls()` gives you - legal, constructs
+fine, and silent about which method would fill it. Kyle hit it on the first real run and
+asked for the panel to be generated too.
+
+**Decision.** Generate a fourth file, `<Name>Controls.py`, and an override of
+`_build_controls` returning it. The panel carries one button that emits `actionTriggered`,
+so a fresh tab exercises the full path from a click to the View's
+`handle_parameter_change`. It goes beside the triad rather than in
+`plugins/analysistabs/utils/` where the shipped five live: that keeps in-repo and
+user-folder generation identical, and keeps the generator out of a directory `CODEOWNERS`
+assigns solely to another developer.
+
+**This one file is authored, not derived.** Every other generated line is copied verbatim
+out of a base class, which is what makes signatures match the compliance suite. There is
+nothing to copy here: `MetaControls` is a plain `QWidget`, and `setupUi`,
+`connect_signals`, `validate_inputs`, `collect_parameters` and `placeholder_texts` exist
+only as prose in its class docstring. They cannot be made abstract either, because
+`MetaView._build_controls` instantiates `MetaControls()` directly for its default.
+
+**The handler is written out too, for the same reason.** A `pass` stub left the generated
+button pressing silently into nothing, which looks identical to a broken tab.
+`handle_parameter_change` now carries the dispatch shape every shipped tab uses and answers
+the panel's one action by reporting on the status panel, so the scaffold evidences itself.
+
+**Evidence.** Nothing calls those four from outside a controls panel - each is called by
+the panel's own `__init__` or its own handlers - so the convention is real but unenforced,
+and a generated panel that omitted one would fail silently and later.
+`tests/unit/views/test_generated_analysis_tab.py` clicks the generated button and asserts
+the message reaches the status panel with nothing patched.
+
+**Revisit if** `MetaControls` ever declares its own contract, at which point most of this
+template becomes derivable like the rest.
+
+---
+
+## 2026-09-22 - The tab scaffold writes two bodies rather than stubbing them
+
+**Context.** Step 6 added an analysis-tab half to `scripts/new_plugin.py`. Stubbing every
+abstract method, the way the eight data families are handled, produces a triad that is
+legal and does not run.
+
+**Decision.** Two bodies are written out. `MetaController._init` builds `MyTabView()` and
+`MyTabModel()`, because the constructor connects the two the moment `_init` returns.
+`MetaView.update_available_plugins` calls `super()` first, because the base body is what
+records the plugins on the View. The second is applied by a rule, `has_real_body`, rather
+than by naming the method: any abstract method whose base body is more than a docstring and
+`pass` gets a `super()` call. This is the same reasoning `render_settings_stub` already
+encodes for `get_empty_settings`.
+
+**Evidence.** A probe over all eleven `Meta*` bases found `update_available_plugins` is the
+*only* abstract method anywhere with a real body, so the rule changes nothing for the eight
+data families - their tests stayed green unmodified.
+
+**Revisit if** a base grows an abstract method whose body must *not* be delegated to. The
+rule would then need an opt-out rather than a new special case.
+
+---
+
+## 2026-09-22 - The generated triad is 74 lines of code, not ~100 lines of file
+
+**Context.** The Step 6 plan set "a generated ~100-line triad is a valid runnable tab" as
+the acceptance test. The triad measures 279 lines.
+
+**Decision.** The target is met and the plan's figure is kept as written; it names code, not
+file length. Measured on a generated triad: 279 total = 75 licence header (25 lines, three
+times) + 109 docstring lines copied verbatim out of the bases + 21 blank + **74 code**.
+
+**Evidence.** Neither of the two large terms is compressible. The licence header is repeated
+because each of the three is a separate file, and the docstrings are copied verbatim because
+`test_plugin_compliance` compares signatures and generic annotations by equality - the
+copying is the mechanism, not a convenience.
+
+**Revisit if** the triad's *code* grows past ~100 lines, which would mean the bases had
+started demanding more of a minimal tab.
+
+---
+
+## 2026-09-22 - The scaffold's acceptance test lives under tests/unit/views
+
+**Context.** Everything else asserted about `new_plugin.py` is static and lives in
+`tests/unit/scripts`. The test that constructs a generated triad cannot be.
+
+**Decision.** `tests/unit/views/test_generated_analysis_tab.py`. Building a `MetaView`
+creates a Matplotlib `FigureCanvas` parented to a Qt widget, and the offscreen Qt platform,
+the `Agg` backend, the dialog guard and the widget teardown that prevent the documented
+PySide/Matplotlib segfaults are all set up by `tests/unit/views/conftest.py` and nowhere
+else.
+
+**Evidence.** `QT_QPA_PLATFORM` is set at conftest *import* time in exactly three
+directories, none of them `tests/unit/scripts`. A Qt test there would depend on another
+directory's conftest having been collected first, which is the cross-directory Qt coupling
+that has segfaulted this suite before.
+
+**Revisit if** the Qt setup is ever hoisted to `tests/conftest.py`, at which point the test
+could sit beside the generator's own.
+
+---
+
+## 2026-09-22 - The user plugin folder goes on sys.path, not just its parent
+
+**Context.** A tab's Controller imports its own View and Model. The five shipped tabs use
+`poriscope.plugins.analysistabs.X`, which only resolves inside the package. For a tab in the
+user plugin folder, `main_app` and `main_controller` put only the folder's *parent* on
+`sys.path`, on the assumption - written into `main_app`'s own comment - that the folder is
+importable as a package named `user_plugins`.
+
+**Cause.** That assumption does not hold. The folder is user-configured and one real
+installation calls it `User Plugins`, which no import statement can spell. The generator's
+first output was therefore `from User Plugins.DemoModel import DemoModel`, a `SyntaxError`.
+The loader cannot bridge it either: `spec_from_file_location(stem, path)` never registers
+the module in `sys.modules`, so a sibling import has nothing to resolve against. **No
+out-of-tree analysis tab could import its own parts, generated or hand-written.**
+
+**And a second cause behind the first.** `main_app` put `self.user_plugin_path` on the
+path - the *default* folder a fresh install creates - while `MainModel` scans
+`get_app_config("User Plugin Folder")`, the configured one. For anyone who has moved their
+plugin folder the two are different directories, so the folder being made importable was not
+the folder being scanned. That mismatch predates the analysis-tab work and made the first
+fix look like it had not worked at all.
+
+**Decision.** Append the folder itself alongside its parent, and resolve it from the config
+rather than from the default (Kyle, 2026-09-22). The generator emits a bare-stem import
+outside the repository; a stem is always an identifier because it equals the class it
+defines, so this holds for any folder name. Appended rather than inserted, so no plugin file
+can shadow a stdlib or site-packages module.
+
+**Evidence.** Both halves were found by the manual pass, on the first and second real uses of
+the generator - every test had used a folder called `user_plugins`, which is an identifier,
+and no test had ever pointed the config anywhere but the default. Both generator test modules
+now generate into `User Plugins`, and `tests/unit/test_main_app.py` now moves the configured
+folder away from the default. The app loads each file by path separately, so the View class
+the menus register and the one the Controller instantiates are distinct module objects; that
+is inert, because `MainController` only ever instantiates the Controller and reads
+`tab.view` off it.
+
+**Revisit if** plugin files ever stop being named for the class they define, which is what
+makes a bare-stem import safe.
+
+---
+
 ## 2026-09-21 - Error dialogs get a parent; the startup ordering is left alone
 
 **Context.** Kyle put a plugin in the user folder whose name collided with a shipped one.

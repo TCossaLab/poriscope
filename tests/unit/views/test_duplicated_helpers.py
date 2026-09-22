@@ -429,12 +429,15 @@ SUBSET_TABS = (MetadataView, ProteinView)
 #: What ``MetaSubsetTabView`` still asks a subclass for. Asserted whole rather than
 #: membership-by-membership, because the base's abstract set is published contract:
 #: a promotion that quietly drops one, or a new one added without a changelog note,
-#: should fail here. Step 4a took it from seven to five.
+#: should fail here. Step 4a took it from seven to five; Step 6a put it back to six by
+#: declaring ``handle_parameter_change``, a requirement ``MetaView._set_control_area``
+#: had always imposed without stating.
 ABSTRACT_MEMBERS = frozenset(
     {
         "_init",
         "_reset_actions",
         "_subset_controls",
+        "handle_parameter_change",
         "notify_plugin_state_changed",
         "update_available_plugins",
     }
@@ -869,11 +872,12 @@ class TestThePanelNameMethodsWerePromoted:
 
     def test_delete_filter_is_no_longer_abstract(self) -> None:
         """
-        The base asks a subclass for five things now, not six.
+        ``_delete_filter`` is one fewer thing the base asks a subclass for.
 
-        ``_delete_filter``'s abstractness was documented as each tab rebuilding its
-        own filter widgets. That reduced entirely to the panel name, so the reason
-        went away with it.
+        Its abstractness was documented as each tab rebuilding its own filter
+        widgets. That reduced entirely to the panel name, so the reason went away
+        with it. The whole set is asserted alongside, so a later addition or removal
+        shows up here rather than passing unnoticed.
         """
         assert "_delete_filter" not in MetaSubsetTabView.__abstractmethods__
         assert MetaSubsetTabView.__abstractmethods__ == ABSTRACT_MEMBERS

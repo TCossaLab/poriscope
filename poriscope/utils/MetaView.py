@@ -216,8 +216,12 @@ class MetaView(QWidget, WalkthroughMixin, metaclass=QObjectABCMeta):
 
         Concrete rather than abstract, returning an empty panel, so that a tab which
         lays out its own control area can override ``_set_control_area`` instead and
-        never implement this. Making it abstract would leave such a tab uninstantiable
-        - including the ``HelloWorldView`` the plugin tutorial is built around.
+        never implement this. Making it abstract would leave such a tab uninstantiable.
+
+        Being concrete is also why ``scripts/new_plugin.py`` writes an override rather
+        than leaving it to be discovered: the default is legal and constructs fine, so a
+        tab that does not override it simply shows an empty strip under its plot with
+        nothing to say which method fills it.
 
         :return: the tab's controls panel
         :rtype: MetaControls
@@ -522,6 +526,35 @@ class MetaView(QWidget, WalkthroughMixin, metaclass=QObjectABCMeta):
         )  # Emits a signal to stop all processes
 
     # public API, must be implemented by sublcasses
+    @abstractmethod
+    def handle_parameter_change(
+        self, submodel_name: str, action_name: str, args: tuple
+    ) -> None:
+        """
+        React to an action the tab's controls panel has emitted.
+
+        Abstract because ``_set_control_area`` connects the panel's ``actionTriggered``
+        signal straight to it while the View is still being constructed, so a tab that
+        does not provide it raises ``AttributeError`` out of ``__init__`` before it can
+        ever be shown. Declaring it here is what turns that into a refusal to define the
+        class at all, which is the only form of the failure that names the cause. The
+        three sibling handlers ``_set_control_area`` connects beside it -
+        ``handle_edit_triggered``, ``handle_add_triggered`` and ``handle_delete_triggered``
+        - are concrete on this class and need no implementation.
+
+        A tab that lays out its own control area by overriding ``_set_control_area``
+        never has this connected, and may implement it as a no-op.
+
+        :param submodel_name: Name of the controls submodel the action came from.
+        :type submodel_name: str
+        :param action_name: Identifier of the action to perform.
+        :type action_name: str
+        :param args: The action's arguments, as the controls panel packed them.
+        :type args: tuple
+        :return: None
+        :rtype: None
+        """
+
     @abstractmethod
     def update_available_plugins(self, available_plugins: Dict[str, List[str]]) -> None:
         """

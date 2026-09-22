@@ -1,5 +1,13 @@
 ## Poriscope 2.0.0: in progress
 
+* **Breaking: `MetaView.handle_parameter_change` is now abstract** - `_set_control_area` has always connected the controls panel to it while the View is being constructed, so a tab that did not define it raised `AttributeError` out of `__init__`; a tab that lays out its own control area can implement it as `pass`
+
+* **Fixed a plugin in a relocated user plugin folder never being made importable** - the folder put on the import path at startup was the default one a fresh install creates, not the one the configuration points at and the app actually scans
+
+* **Fixed an analysis tab in the user plugin folder being unable to import its own View and Model** - only the folder's parent was on the import path, so it worked only when the folder happened to be named like a Python identifier, and a folder named `User Plugins` could not be imported at all
+
+* **`scripts/new_plugin.py` now generates analysis tabs too** - `python scripts/new_plugin.py AnalysisTab MyTab` writes the Controller, Model, View and controls panel, and the result opens in the Analysis menu as a tab whose button already reports its own press on the status panel before a single stub is filled in
+
 * **Breaking: the global signal bus is gone.** `global_signal` and `data_plugin_controller_signal` are removed from `MetaView`, `MetaModel` and `MetaController`, along with the relays and dispatcher behind them - an analysis tab outside this repository that emits either will stop working, and should call its plugin through `self.call(...)` on the Model or use the typed create/edit/delete signals instead
 
 * **Fixed error dialogs opening behind the main window**, where a modal dialog nobody can see holds the input grab and the application looks frozen - most visibly at startup, when a duplicate plugin name reported an error before the window had finished painting

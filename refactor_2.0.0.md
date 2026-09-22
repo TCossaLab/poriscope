@@ -15,10 +15,11 @@ snapshot was the nearest thing that looked like one.
 | Refactor-coverage audit | - | **112 of 112 pinned** | 100% |
 | Shell complexity, functions over cx 10 | 8 / 121 | **0 / 0** | 0 - reached, no floor |
 | Signal-bus machinery in `poriscope/` | dispatcher + 2 signals + 4 relays | **0** | 0 - reached |
-| Duplication, removable - the original 6 families | 1,889 | **721** | - |
+| Duplication, removable - all 8 measured families | 1,889 (6 families) | **629** | - |
 | - `*Model.py`, a 7th family added 2026-09-14 | not measured | **8** | 8 - reached |
+| - `views/widgets`, an 8th family added 2026-09-19 | not measured | **3** | - |
 | - the 3 analysis-tab families of the original six | 1,199 | **31** | 31 (floor) |
-| - the 3 Step-5 families, untouched by design | 690 | **690** | Step 5 |
+| - the 3 plugin families of the original six | 690 | **587** | - |
 
 **The duplication rows do not add up to one before/after pair, deliberately.** `*Model.py`
 became a measured family part-way through, so 1,889 never included it and pairing 1,889
@@ -29,6 +30,15 @@ records this plan making four times. Its 38 was 30 removable lines from a byte-i
 came out on 2026-09-17**, when `load_events_by_id` and `resolve_event_ids` promoted to a new
 `MetaSubsetTabModel`, so that row is at its target and only the irreducible 8 remain. The
 `*View.py` floor of 31 is `update_plot_features`, decided 2026-09-14.
+
+**The plugin-family row moved after all, and the table said otherwise until 2026-09-22.**
+It read "the 3 Step-5 families, untouched by design | 690 | 690" long after both halves had
+stopped being true: `0350cf4a` (5b-1) promoted the shared baseline fit onto
+`MetaEventFinder` and took `eventfinders` 103 -> 0, and `855de62f` (5d) added
+`views/widgets` as an eighth measured family. Re-measured 2026-09-22: eventfitters 193 +
+datareaders 394 + eventfinders 0 = 587, and the eight-family total is **629**, which is what
+`.duplication-baseline.json` has held all along - the ratchet was green throughout and only
+this table drifted. Rule 21 again: a derived figure has to be re-derived, not carried.
 
 **The audit is 112 targets, not the 85 the snapshots below record.** It is derived, so it
 moves as the work lands (rule 21): `a21b20ec` deleted
@@ -2799,11 +2809,84 @@ from `exposed.py` so changing it is breaking.
 
 ## Step 6 — scaffold and docs
 
-- `scripts/new_plugin.py`'s analysis-tab half. **Generating a working ~100-line triad against
-  the new structure is the acceptance test.** Re-run the four stub-body probes rather than
-  reasoning about them (`pass` under a non-`None` return is mypy `empty-body`; a copied
-  `:raises X:` above `pass` is DOC502; the same above `raise NotImplementedError` is DOC503;
-  raising with no field is DOC501).
+### 6a — the analysis-tab half, landed 2026-09-22
+
+`python scripts/new_plugin.py AnalysisTab MyTab` writes the triad **and its controls
+panel** - four files. It reuses the existing stub, import and file renderers rather than
+duplicating them: `render_file` was extracted so the single-file and tab paths cannot drift
+in header, decorator or ordering, and
+`render_stub` gained one general rule, `has_real_body`, in place of a special case.
+
+**The acceptance test found a defect the whole exercise existed to find.**
+`MetaView._set_control_area` - concrete base code, reached from `MetaView.__init__` -
+connects the controls panel to `self.handle_parameter_change`, which `MetaView` never
+declared. Its three sibling handlers are concrete on the base; that one existed only on the
+five shipped tabs. So a tab implementing exactly the four abstract methods raised
+`AttributeError` during construction, and `QWidgetABCMeta` could not catch it because
+nothing declared the requirement. It is abstract now (breaking; all five shipped tabs
+already had it with an identical signature). A probe over all eleven `Meta*` bases confirmed
+it was the only *method* any of them called without declaring - every other undeclared
+`self.*` reference is an instance attribute set during construction.
+
+**Every static gate was green over the broken contract**, which is method rule 85 recurring
+in a new place: 4,312 tests, the compliance suite, the boundary gate and the complexity
+ratchet all pass over a `Meta*` base whose own constructor cannot complete for a
+minimally-conforming subclass. What caught it was constructing one. That is why
+`tests/unit/views/test_generated_analysis_tab.py` exists and why it belongs in the suite
+rather than in a manual pass: it is the only gate that runs a tab rather than reading one.
+
+**And the manual pass found two more, in two rounds, which no test could have.** The first
+generated triad dropped into the real user plugin folder would not parse: that folder is
+called `User Plugins`, and the Controller's sibling import named it. Behind that was a wider
+gap - only the folder's *parent* was ever put on `sys.path`, so **no** out-of-tree analysis
+tab could import its own parts, hand-written or generated. The folder itself goes on the path
+now and the generated import is a bare file stem.
+
+The second round showed that fix apparently doing nothing, because of a defect older than any
+of this work: `main_app` put `self.user_plugin_path` on the path - the *default* folder a
+fresh install creates - while `MainModel` scans the *configured* folder. Move your plugin
+folder and the app makes one directory importable while scanning another. It reads the config
+now.
+
+Every test had used a folder called `user_plugins`, which is an identifier, and no test had
+ever moved the configured folder off the default, so the suite was structurally blind to both.
+The generator test modules generate into `User Plugins` now and `test_main_app.py` relocates
+the configured folder. **Three defects on this branch, every one found by running the thing
+rather than by testing it** - which is the same lesson as rule 85, arriving twice more.
+
+**The fourth file came out of the manual pass too.** A generated tab opened with a plot
+canvas over an empty strip, because `MetaView._build_controls` is concrete and its default
+returns a bare `MetaControls()` - legal, constructs fine, silent about which method would
+fill it. Kyle's call was to generate the panel rather than document it. `<Name>Controls.py`
+now carries one button that emits `actionTriggered`, which the base connects to the View's
+`handle_parameter_change`, so a fresh tab travels the whole click path before it is edited.
+It is **the one generated file that is authored rather than derived**: `MetaControls` is a
+plain `QWidget` and everything it asks of a subclass lives only in its class docstring. See
+`DECISIONS.md`.
+
+**And the press still did nothing visible**, which Kyle reported in turn - correct for a
+`pass` stub, and useless as a demonstration. `handle_parameter_change` is now generated with
+the `parameters = args[0]` then branch-on-`action_name` shape every shipped tab uses, one
+branch answering the panel's one action by reporting on the status panel, and an `else` that
+names an unhandled action. The press acknowledges itself now, which is what makes the
+scaffold self-evidencing rather than merely silent.
+
+Measured at four files: 434 lines = 100 licence + 175 docstrings + 35 blank + **124 code**.
+The triad alone was 279 = 75 + 109 + 21 + **74 code**. See `DECISIONS.md` for that breakdown, for the three written-out bodies, for
+where the acceptance test lives, and for how an out-of-tree tab imports its siblings.
+
+**Step 6a manual pass: run 2026-09-22, all clear** - in three rounds, each one finding
+something. Round 1: the five shipped tabs' control actions, clear, which is the blast radius
+of `handle_parameter_change` becoming abstract. Round 2: a generated tab in the real user
+plugin folder, which found the two import defects above. Round 3: the regenerated tab opens
+with its canvas and its button, and the button reaches its handler. **Every defect on this
+branch was found by running the thing; none by a gate.**
+
+### Still owed in Step 6
+
+- Re-run the four stub-body probes rather than reasoning about them (`pass` under a
+  non-`None` return is mypy `empty-body`; a copied `:raises X:` above `pass` is DOC502; the
+  same above `raise NotImplementedError` is DOC503; raising with no field is DOC501).
 - Replace the stale `HelloWorld` example. Re-measured 2026-09-19: it implements **three of
   `MetaView`'s four** abstract methods, misses `notify_plugin_state_changed`, adds an
   `update_plot` the base has never declared, and imports

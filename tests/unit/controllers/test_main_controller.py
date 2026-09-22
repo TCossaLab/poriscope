@@ -579,6 +579,35 @@ def test_update_user_plugin_location_adds_parent_to_syspath(
     )
 
 
+def test_update_user_plugin_location_adds_the_folder_itself_to_syspath(
+    controller: MainController,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """
+    The folder goes on sys.path too, so a multi-file plugin can import its own parts.
+
+    Pointing the app at a folder whose name is not a Python identifier - "User Plugins",
+    as a real installation had it - leaves the parent entry useless, because no import
+    can name the folder. The folder itself works whatever it is called.
+
+    :param controller: Controller under test.
+    :param monkeypatch: Pytest monkeypatch fixture.
+    :param tmp_path: Temporary directory fixture.
+    """
+    plugins_dir = tmp_path / "User Plugins"
+    plugins_dir.mkdir()
+
+    monkeypatch.setattr(sys, "path", list(sys.path))
+    folder = str(plugins_dir.resolve())
+    if folder in sys.path:
+        sys.path.remove(folder)
+
+    controller.update_user_plugin_location(str(plugins_dir))
+
+    assert folder in sys.path
+
+
 def test_update_user_plugin_location_does_not_duplicate_syspath(
     controller: MainController,
     monkeypatch: pytest.MonkeyPatch,
