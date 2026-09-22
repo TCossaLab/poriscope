@@ -32,11 +32,12 @@ That writes four files: ``MyTabController.py``, ``MyTabModel.py``, ``MyTabView.p
 ``MyTabControls.py``. The result **starts as a working tab**: restart Poriscope and
 ``MyTabController`` appears in the Analysis menu, opening a tab with a plot canvas above a
 control panel holding one button. Pressing it travels the whole path a real control takes
-— the panel emits ``actionTriggered``, the base has connected that to your View's
-``handle_parameter_change``, and your override runs. Filling in the stubs is then a matter
-of changing a tab that works rather than getting one to work.
+and **acknowledges itself on the status panel**: the panel emits ``actionTriggered``, the
+base has connected that to your View's ``handle_parameter_change``, your override
+dispatches on the action name, and the message it emits is relayed to the shell. Filling in
+the stubs is then a matter of changing a tab that works rather than getting one to work.
 
-Three of the generated bodies are written for you rather than left as a ``# TODO``, because
+Four of the generated bodies are written for you rather than left as a ``# TODO``, because
 in each case the base's own code depends on them and a stub would fail at runtime, or not
 fail at all:
 
@@ -49,6 +50,10 @@ fail at all:
   would not otherwise be stubbed at all — and its default returns an *empty* panel, which
   is legal and leaves a new tab showing a blank strip with nothing to say which method
   fills it.
+- ``MyTabView.handle_parameter_change`` carries the ``parameters = args[0]`` then
+  branch-on-``action_name`` shape every shipped tab uses, with one branch answering the one
+  action the generated panel emits, and an ``else`` that names an action nothing handles.
+  Renaming the action at one end and not the other is the mistake this shape invites.
 
 ``MyTabControls`` is the one generated file that is not copied out of a base class.
 ``MetaControls`` is a plain ``QWidget`` that declares none of what it asks a subclass for —

@@ -32,11 +32,16 @@ nothing to copy here: `MetaControls` is a plain `QWidget`, and `setupUi`,
 only as prose in its class docstring. They cannot be made abstract either, because
 `MetaView._build_controls` instantiates `MetaControls()` directly for its default.
 
+**The handler is written out too, for the same reason.** A `pass` stub left the generated
+button pressing silently into nothing, which looks identical to a broken tab.
+`handle_parameter_change` now carries the dispatch shape every shipped tab uses and answers
+the panel's one action by reporting on the status panel, so the scaffold evidences itself.
+
 **Evidence.** Nothing calls those four from outside a controls panel - each is called by
 the panel's own `__init__` or its own handlers - so the convention is real but unenforced,
 and a generated panel that omitted one would fail silently and later.
 `tests/unit/views/test_generated_analysis_tab.py` clicks the generated button and asserts
-it arrives at `handle_parameter_change`.
+the message reaches the status panel with nothing patched.
 
 **Revisit if** `MetaControls` ever declares its own contract, at which point most of this
 template becomes derivable like the rest.

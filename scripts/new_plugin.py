@@ -236,6 +236,11 @@ TRIAD: Tuple[TabRole, ...] = (
 #: authored template rather than copied signatures.
 CONTROLS = "Controls"
 
+#: The action the generated controls panel emits and the generated handler answers.
+#: Named once because the two ends have to agree on the exact string, which is the
+#: mistake this dispatch shape most invites.
+DEMO_ACTION = "do_something"
+
 # The controls panel's body, written out because MetaControls declares none of it. Each
 # entry is one section of the generated file, already indented into the class body.
 
@@ -287,7 +292,7 @@ ACTION_SECTION = '''    def _on_action_requested(self) -> None:
         method has to recognise.
         """
         self.actionTriggered.emit(
-            self.__class__.__name__, "do_something", (self.collect_parameters(),)
+            self.__class__.__name__, "{action}", (self.collect_parameters(),)
         )'''
 
 VALIDATE_SECTION = '''    def validate_inputs(self) -> None:
@@ -964,6 +969,53 @@ def render_build_controls(name: str) -> Stub:
     )
 
 
+def render_handle_parameter_change(name: str) -> Stub:
+    """
+    Render the View's ``handle_parameter_change`` with a working dispatch in it.
+
+    Every shipped tab writes this the same way - read ``args[0]`` into ``parameters``,
+    then branch on ``action_name`` - so the generated body is that shape with one branch
+    in it, matching the one action the generated controls panel emits. A ``pass`` stub
+    would leave the scaffold's own button pressing silently into nothing, which is
+    exactly what it looked like on the first run.
+
+    The branch reports on the status panel rather than doing anything, because there is
+    nothing a generated tab could usefully do - but seeing the message is what tells the
+    author the panel, the base's connection and this method are all wired together
+    before they change any of it. The ``else`` names an action nothing handles, which is
+    the mistake this dispatch shape invites.
+
+    :param name: the tab's name, without a role suffix
+    :type name: str
+    :return: the rendered stub
+    :rtype: Stub
+    """
+    defining_cls, lines, node = parse_method(
+        tab_base(TRIAD[2]), "handle_parameter_change"
+    )
+    sig_lines, doc_lines = split_signature_and_docstring(lines, node)
+    body = [
+        "    parameters = args[0]",
+        "    # TODO: one branch per action name your controls panel emits",
+        f'    if action_name == "{DEMO_ACTION}":',
+        "        self.add_text_to_display.emit(",
+        f'            f"{name} received {{action_name}} carrying {{parameters}}",',
+        "            self.__class__.__name__,",
+        "        )",
+        "    else:",
+        "        self.logger.warning(",
+        f'            f"{name}View has no handler for the action {{action_name!r}}"',
+        "        )",
+    ]
+    doc = build_docstring(doc_lines, "handle_parameter_change", False, "    ")
+    parts = ["@log(logger=logger)", "@override", *sig_lines, *doc, *body]
+    return Stub(
+        textwrap.indent("\n".join(parts), "    "),
+        annotation_names(node),
+        defining_cls.__module__,
+    )
+
+
 def render_controls_file(name: str, author: str) -> str:
     """
     Render the tab's controls panel: the one generated file that is not derived.
@@ -998,7 +1050,7 @@ def render_controls_file(name: str, author: str) -> str:
         INIT_SECTION,
         SETUP_UI_SECTION.format(button=button),
         CONNECT_SECTION.format(button=button),
-        ACTION_SECTION,
+        ACTION_SECTION.format(action=DEMO_ACTION),
         VALIDATE_SECTION,
         COLLECT_SECTION,
     ]
@@ -1289,15 +1341,17 @@ def render_tab_file(role: TabRole, name: str, folder: Path, author: str) -> str:
     is_controller = role.suffix == TRIAD[0].suffix
     methods = sorted(base_cls.__abstractmethods__)
 
+    is_view = role.suffix == TRIAD[2].suffix
+    authored = {}
+    if is_controller:
+        authored["_init"] = render_controller_init(name)
+    if is_view:
+        authored["handle_parameter_change"] = render_handle_parameter_change(name)
+
     stubs = [
-        (
-            render_controller_init(name)
-            if is_controller and method == "_init"
-            else render_stub(base_cls, method, False)
-        )
+        authored.get(method) or render_stub(base_cls, method, False)
         for method in methods
     ]
-    is_view = role.suffix == TRIAD[2].suffix
     if is_view:
         stubs.append(render_build_controls(name))
         methods = [*methods, "_build_controls"]
@@ -1642,7 +1696,8 @@ def build_tab(
     print("\nNext:")
     print("  1. Restart Poriscope. The tab appears in the Analysis menu under")
     print(f"       {name}Controller, with one button in its control area. Pressing")
-    print(f"       it reaches {name}View.handle_parameter_change.")
+    print(f"       it reaches {name}View.handle_parameter_change, which says so on")
+    print("       the status panel - that message is the scaffold proving itself.")
     print(f"  2. Replace that button in {name}Controls.setupUi with the controls")
     print("       your tab needs, and read them in collect_parameters.")
     print(f"  3. Fill in the methods marked TODO in {name}View.py and {name}Model.py.")
@@ -1796,9 +1851,17 @@ def main(argv: List[str]) -> int:
     args = parser.parse_args(argv)
 
     # Discovery imports every plugin file and several log at import time; that output is
-    # noise here, the same way it is in check_plugin_schemas.py.
+    # noise here, the same way it is in check_plugin_schemas.py. Restored immediately
+    # afterwards because `logging.disable` is process-global and this function is not
+    # only a program entry point - the tests import this module and call `main` dozens
+    # of times, and a disable left in place would silently swallow every WARNING and
+    # below raised by whatever ran next.
+    previous_disable = logging.root.manager.disable
     logging.disable(logging.WARNING)
-    plugins = discover_plugin_classes()
+    try:
+        plugins = discover_plugin_classes()
+    finally:
+        logging.disable(previous_disable)
     if args.author is None:
         args.author = git_author()
 

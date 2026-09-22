@@ -2811,9 +2811,10 @@ from `exposed.py` so changing it is breaking.
 
 ### 6a — the analysis-tab half, landed 2026-09-22
 
-`python scripts/new_plugin.py AnalysisTab MyTab` writes the triad. It reuses the existing
-stub, import and file renderers rather than duplicating them: `render_file` was extracted so
-the single-file and triad paths cannot drift in header, decorator or ordering, and
+`python scripts/new_plugin.py AnalysisTab MyTab` writes the triad **and its controls
+panel** - four files. It reuses the existing stub, import and file renderers rather than
+duplicating them: `render_file` was extracted so the single-file and tab paths cannot drift
+in header, decorator or ordering, and
 `render_stub` gained one general rule, `has_real_body`, in place of a special case.
 
 **The acceptance test found a defect the whole exercise existed to find.**
@@ -2853,9 +2854,33 @@ The generator test modules generate into `User Plugins` now and `test_main_app.p
 the configured folder. **Three defects on this branch, every one found by running the thing
 rather than by testing it** - which is the same lesson as rule 85, arriving twice more.
 
-Measured: 279 lines = 75 licence + 109 verbatim base docstrings + 21 blank + **74 code**.
-See `DECISIONS.md` for that breakdown, for the two written-out bodies, for where the
-acceptance test lives, and for how an out-of-tree triad imports its siblings.
+**The fourth file came out of the manual pass too.** A generated tab opened with a plot
+canvas over an empty strip, because `MetaView._build_controls` is concrete and its default
+returns a bare `MetaControls()` - legal, constructs fine, silent about which method would
+fill it. Kyle's call was to generate the panel rather than document it. `<Name>Controls.py`
+now carries one button that emits `actionTriggered`, which the base connects to the View's
+`handle_parameter_change`, so a fresh tab travels the whole click path before it is edited.
+It is **the one generated file that is authored rather than derived**: `MetaControls` is a
+plain `QWidget` and everything it asks of a subclass lives only in its class docstring. See
+`DECISIONS.md`.
+
+**And the press still did nothing visible**, which Kyle reported in turn - correct for a
+`pass` stub, and useless as a demonstration. `handle_parameter_change` is now generated with
+the `parameters = args[0]` then branch-on-`action_name` shape every shipped tab uses, one
+branch answering the panel's one action by reporting on the status panel, and an `else` that
+names an unhandled action. The press acknowledges itself now, which is what makes the
+scaffold self-evidencing rather than merely silent.
+
+Measured at four files: 434 lines = 100 licence + 175 docstrings + 35 blank + **124 code**.
+The triad alone was 279 = 75 + 109 + 21 + **74 code**. See `DECISIONS.md` for that breakdown, for the three written-out bodies, for
+where the acceptance test lives, and for how an out-of-tree tab imports its siblings.
+
+**Step 6a manual pass: run 2026-09-22, all clear** - in three rounds, each one finding
+something. Round 1: the five shipped tabs' control actions, clear, which is the blast radius
+of `handle_parameter_change` becoming abstract. Round 2: a generated tab in the real user
+plugin folder, which found the two import defects above. Round 3: the regenerated tab opens
+with its canvas and its button, and the button reaches its handler. **Every defect on this
+branch was found by running the thing; none by a gate.**
 
 ### Still owed in Step 6
 

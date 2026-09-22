@@ -173,6 +173,42 @@ class TestAGeneratedTabRuns:
         assert isinstance(panel, generated_tab["Controls"])
         assert panel.parent() is not None
 
+    def test_pressing_the_generated_button_reports_on_the_status_panel(
+        self, qapp, generated_tab
+    ):
+        """
+        The whole scaffold, unmodified, from a click to something the user can see.
+
+        Nothing is patched here: the generated panel emits, the base connects, the
+        generated handler dispatches on the action name and emits
+        ``add_text_to_display``, which ``MetaController`` relays to the shell's status
+        panel. A generated tab that does nothing visible when its own button is pressed
+        is indistinguishable from one that is broken, which is how this started.
+        """
+        seen = []
+        tab = generated_tab["Controller"]()
+        tab.view.add_text_to_display.connect(
+            lambda text, source: seen.append((text, source))
+        )
+        panel = getattr(tab.view, f"{TAB_NAME.lower()}controls")
+        getattr(panel, f"{TAB_NAME.lower()}_button").click()
+
+        assert len(seen) == 1
+        message, source = seen[0]
+        assert "do_something" in message
+        assert source == f"{TAB_NAME}View"
+
+    def test_an_action_nothing_handles_is_reported_rather_than_ignored(
+        self, qapp, generated_tab, caplog
+    ):
+        """
+        The dispatch shape every tab uses invites exactly one mistake: renaming the
+        action in the panel and not in the handler. The generated ``else`` names it.
+        """
+        tab = generated_tab["Controller"]()
+        tab.view.handle_parameter_change("Whatever", "no_such_action", ({},))
+        assert "no_such_action" in caplog.text
+
     def test_pressing_the_generated_button_reaches_handle_parameter_change(
         self, qapp, generated_tab, monkeypatch
     ):
