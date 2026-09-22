@@ -3001,6 +3001,11 @@ are checkable.
   Saved from the current build rather than from a 1.x tag, which is sound because **the
   session format did not change in 2.0.0** - what changed is how restore reads it. The
   feature itself shipped in 1.7.0 (`3c0cb022`), so the shape is genuinely the 1.x one.
+
+  **Manual pass: run 2026-09-22, clear.** The saved session was loaded back in the running
+  app and `test_filter_assisted` reappears in the Metadata filter dropdown. Worth doing by
+  hand rather than trusting the test, because the test mocks the controls panel - the combo
+  box is asserted there, not seen.
 - **7c — `MetaReader.load_data`'s `raw_data` arm.** Split the boolean arm into two methods
   so the return type stops depending on an argument's value. 6 readers and 8 call sites.
   Breaking; the conformance suite covers every reader, so run it per reader rather than once
