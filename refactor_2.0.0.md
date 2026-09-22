@@ -2834,15 +2834,24 @@ minimally-conforming subclass. What caught it was constructing one. That is why
 `tests/unit/views/test_generated_analysis_tab.py` exists and why it belongs in the suite
 rather than in a manual pass: it is the only gate that runs a tab rather than reading one.
 
-**And the manual pass found a second one, which no test could have.** The first generated
-triad dropped into the real user plugin folder would not parse: that folder is called `User
-Plugins`, and the Controller's sibling import named it. Behind it was a wider gap - only the
-folder's *parent* was ever put on `sys.path`, so **no** out-of-tree analysis tab could import
-its own parts, hand-written or generated. The folder itself goes on the path now and the
-generated import is a bare file stem. Every test had used a folder called `user_plugins`,
-which is an identifier, so the suite was structurally blind to it; both generator test
-modules generate into `User Plugins` now. Two defects, both found by running the thing rather
-than testing it.
+**And the manual pass found two more, in two rounds, which no test could have.** The first
+generated triad dropped into the real user plugin folder would not parse: that folder is
+called `User Plugins`, and the Controller's sibling import named it. Behind that was a wider
+gap - only the folder's *parent* was ever put on `sys.path`, so **no** out-of-tree analysis
+tab could import its own parts, hand-written or generated. The folder itself goes on the path
+now and the generated import is a bare file stem.
+
+The second round showed that fix apparently doing nothing, because of a defect older than any
+of this work: `main_app` put `self.user_plugin_path` on the path - the *default* folder a
+fresh install creates - while `MainModel` scans the *configured* folder. Move your plugin
+folder and the app makes one directory importable while scanning another. It reads the config
+now.
+
+Every test had used a folder called `user_plugins`, which is an identifier, and no test had
+ever moved the configured folder off the default, so the suite was structurally blind to both.
+The generator test modules generate into `User Plugins` now and `test_main_app.py` relocates
+the configured folder. **Three defects on this branch, every one found by running the thing
+rather than by testing it** - which is the same lesson as rule 85, arriving twice more.
 
 Measured: 279 lines = 75 licence + 109 verbatim base docstrings + 21 blank + **74 code**.
 See `DECISIONS.md` for that breakdown, for the two written-out bodies, for where the

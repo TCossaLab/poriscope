@@ -192,6 +192,27 @@ class TestPluginDiscoveryPath:
         expected = str(Path(app_root, "Poriscope", "user_plugins").resolve())
         assert expected in sys.path
 
+    def test_adds_the_configured_folder_rather_than_the_default(self, app_root) -> None:
+        """
+        The folder made importable has to be the folder that is scanned.
+
+        ``user_plugin_path`` is only where a fresh install puts its folder. The config
+        may point somewhere else entirely, and ``MainModel`` walks the configured value,
+        so putting the default on the path while scanning the configured one leaves a
+        relocated folder off the path altogether - and with it, every multi-file plugin
+        in that folder, since importing its own parts is how a triad is assembled.
+        """
+        _run(app_root)
+        elsewhere = Path(app_root, "data", "Mock Server", "User Plugins")
+        elsewhere.mkdir(parents=True)
+        stored = json.loads(_config_path(app_root).read_text(encoding="utf-8"))
+        stored["User Plugin Folder"] = str(elsewhere)
+        _config_path(app_root).write_text(json.dumps(stored), encoding="utf-8")
+
+        _run(app_root)
+
+        assert str(elsewhere.resolve()) in sys.path
+
     def test_does_not_add_a_duplicate_on_a_second_run(self, app_root) -> None:
         """
         Running twice leaves one entry, which is what the membership check is for.

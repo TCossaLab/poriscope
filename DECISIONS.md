@@ -88,17 +88,27 @@ The loader cannot bridge it either: `spec_from_file_location(stem, path)` never 
 the module in `sys.modules`, so a sibling import has nothing to resolve against. **No
 out-of-tree analysis tab could import its own parts, generated or hand-written.**
 
-**Decision.** Append the folder itself alongside its parent (Kyle, 2026-09-22), and have the
-generator emit a bare-stem import outside the repository. A stem is always an identifier
-because it equals the class it defines, so this holds for any folder name. Appended rather
-than inserted, so no plugin file can shadow a stdlib or site-packages module.
+**And a second cause behind the first.** `main_app` put `self.user_plugin_path` on the
+path - the *default* folder a fresh install creates - while `MainModel` scans
+`get_app_config("User Plugin Folder")`, the configured one. For anyone who has moved their
+plugin folder the two are different directories, so the folder being made importable was not
+the folder being scanned. That mismatch predates the analysis-tab work and made the first
+fix look like it had not worked at all.
 
-**Evidence.** Found by the manual pass on the first real use of the generator - every test
-had used a folder called `user_plugins`, which is an identifier, so the whole suite was blind
-to it. Both generator test modules now generate into `User Plugins` instead. The app loads
-each file by path separately, so the View class the menus register and the one the Controller
-instantiates are distinct module objects; that is inert, because `MainController` only ever
-instantiates the Controller and reads `tab.view` off it.
+**Decision.** Append the folder itself alongside its parent, and resolve it from the config
+rather than from the default (Kyle, 2026-09-22). The generator emits a bare-stem import
+outside the repository; a stem is always an identifier because it equals the class it
+defines, so this holds for any folder name. Appended rather than inserted, so no plugin file
+can shadow a stdlib or site-packages module.
+
+**Evidence.** Both halves were found by the manual pass, on the first and second real uses of
+the generator - every test had used a folder called `user_plugins`, which is an identifier,
+and no test had ever pointed the config anywhere but the default. Both generator test modules
+now generate into `User Plugins`, and `tests/unit/test_main_app.py` now moves the configured
+folder away from the default. The app loads each file by path separately, so the View class
+the menus register and the one the Controller instantiates are distinct module objects; that
+is inert, because `MainController` only ever instantiates the Controller and reads
+`tab.view` off it.
 
 **Revisit if** plugin files ever stop being named for the class they define, which is what
 makes a bare-stem import safe.

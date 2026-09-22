@@ -2,6 +2,8 @@
 
 * **Breaking: `MetaView.handle_parameter_change` is now abstract** - `_set_control_area` has always connected the controls panel to it while the View is being constructed, so a tab that did not define it raised `AttributeError` out of `__init__`; a tab that lays out its own control area can implement it as `pass`
 
+* **Fixed a plugin in a relocated user plugin folder never being made importable** - the folder put on the import path at startup was the default one a fresh install creates, not the one the configuration points at and the app actually scans
+
 * **Fixed an analysis tab in the user plugin folder being unable to import its own View and Model** - only the folder's parent was on the import path, so it worked only when the folder happened to be named like a Python identifier, and a folder named `User Plugins` could not be imported at all
 
 * **`scripts/new_plugin.py` now generates analysis tabs too** - `python scripts/new_plugin.py AnalysisTab MyTab` writes the Controller, Model and View, and the result opens as a working empty tab in the Analysis menu before a single stub is filled in
