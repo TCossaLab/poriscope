@@ -543,6 +543,14 @@ class SQLiteDBWriter(MetaDatabaseWriter):
             """
             CREATE INDEX IF NOT EXISTS idx_experiment_name ON experiments(name);
             """,
+            # Two channel columns, and they are not the same thing. channel_id is the
+            # physical channel the data came from. channel_db_id, in events, sublevels
+            # and data, is channels.id - the AUTOINCREMENT row of one (experiment_id,
+            # channel_id) pair. Writing a dataset under a new experiment name adds a
+            # channels row, so channel_db_id moves while channel_id stays put; that is
+            # not a relabelling. UNIQUE (experiment_id, channel_id, event_id) on events
+            # is the rule against duplicates, and event_id restarts at 0 per fitting
+            # run. Renaming either column would be a schema migration.
             """
             CREATE TABLE IF NOT EXISTS channels (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,

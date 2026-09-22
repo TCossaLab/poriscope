@@ -80,6 +80,9 @@ class SQLiteEventWriter(MetaWriter):
         :raises Exception: if an unexpected error occurs during initialization
         """
         table_creation_queries = [
+            # channel_id is the physical channel the events came from; channel_db_id in
+            # events is channels.id, this file's row for that channel. They are
+            # different columns, and renaming either would be a schema migration.
             """
             CREATE TABLE IF NOT EXISTS channels (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,

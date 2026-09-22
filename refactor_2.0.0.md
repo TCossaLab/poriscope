@@ -3212,6 +3212,10 @@ actually contains, and nothing else in the plan looks for it.
   comment in `_initialize_database`'s `CREATE TABLE` block and a line in the database
   documentation - **not** a rename, which would be a schema migration breaking every
   database already written.
+
+  **Done 2026-09-22:** the comment sits above both writers' `CREATE TABLE` blocks
+  (`SQLiteDBWriter`, `SQLiteEventWriter`), and `filtering_and_querying.rst`'s Available Columns
+  gains the four identifier columns, with `channel_id` named as the one to filter on.
 - **Orphans and dead code.** All the moving leaves residue, and this refactor has already
   produced three examples of it — `MetaView._logscale_and_filter_multiple_columns` deleted
   outright, the 394 dead lines behind `get_global_walkthrough_steps`, and six orphaned

@@ -318,6 +318,16 @@ Available Columns
 The columns available for filtering depend on the loaded database.
 Columns present in the YouTube tutorial database are listed below as a reference (see :ref:`running_software`).
 
+**Identifier columns, in every table that carries them:**
+
+- ``experiment_id`` — which experiment the row belongs to
+- ``channel_id`` — the physical channel the data came from; filter on this one
+- ``channel_db_id`` — the database's own row number for one experiment's channel, not a
+  channel number. Writing data under a new experiment name gives the same physical channel
+  a new ``channel_db_id``, so it differing between experiments is expected
+- ``event_id`` — the event's number within its channel, counted from 0 on each fitting
+  run, so it repeats across experiments and channels; ``e.id`` is unique
+
 **events table:**
 
 - ``duration`` — event duration in µs
