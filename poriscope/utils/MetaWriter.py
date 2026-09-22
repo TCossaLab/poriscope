@@ -253,52 +253,53 @@ class MetaWriter(BaseDataPlugin):
     @abstractmethod
     def _write_data(
         self,
-        data: npt.NDArray[np.number],
+        event: Dict[str, Any],
         channel: int,
         index: int,
-        scale: Optional[float] = None,
-        offset: Optional[float] = None,
-        start_sample: Optional[int] = 0,
-        padding_before: Optional[int] = 0,
-        padding_after: Optional[int] = None,
-        baseline_mean: Optional[float] = None,
-        baseline_std: Optional[float] = None,
         raw_data: bool = False,
         abort: Optional[bool] = False,
         last_call: Optional[bool] = False,
     ) -> bool:
         """
-        **Purpose**: Append a single event data and metadata to the database of event data.
+        **Purpose**: Append a single event's data and metadata to the output file.
 
-        Given a series of metadata about the event to be written, write it to the database file (append to an existing databse in the case of atomic operations). Return True if that operation succeeds. If the write operation fails, Raise an exception for handling in the caller. Note that raising on a write failure will not cause a crash - poriscope will continue trying to write subsequent events and store the string associated with the raised error as reason for that write failure for downstream reporting.
+        Given one event, write it to the active file for ``channel`` (appending to an
+        existing file in the case of atomic operations) and return True if that
+        succeeds. If the write fails, raise: raising does not crash poriscope, which
+        carries on to the next event and files the exception's text as that event's
+        rejection reason for downstream reporting.
 
-        :param data: 1D numpy array of data to write to the active file in the specified channel.
-        :type data: npt.NDArray[np.number]
-        :param channel: Int indicating the channel from which it was acquired.
+        ``event`` is the dict :meth:`MetaEventFinder.get_single_event_data` produces, and
+        is passed through whole rather than exploded into arguments - this took thirteen
+        positional parameters until 2.0.0, of which ten were its keys. Its keys are:
+
+        - ``data`` - the event's samples, as a 1D numpy array.
+        - ``start_sample`` - index of the first sample *of the event itself*, not of the
+          padding before it, relative to the start of the channel.
+        - ``padding_before`` / ``padding_after`` - samples of context included on each
+          side. ``data`` therefore spans
+          ``start_sample - padding_before`` to ``start_sample + len(event) + padding_after``.
+        - ``baseline_mean`` / ``baseline_std`` - the local baseline the event sits on.
+        - ``scale`` / ``offset`` - the factors that convert ``data`` to pA, present only
+          when ``raw_data`` is True; both are None otherwise.
+
+        Treat a missing key as a programming error and raise, rather than substituting a
+        default: a silently defaulted padding writes an event whose samples do not line
+        up with its own metadata.
+
+        :param event: One event, as ``get_single_event_data`` builds it.
+        :type event: Dict[str, Any]
+        :param channel: The channel the event belongs to.
         :type channel: int
-        :param index: event index
+        :param index: The event's index within that channel.
         :type index: int
-        :param scale: Float indicating scaling between provided data type and encoded form for storage, default None.
-        :type scale: Optional[float]
-        :param offset: Float indicating offset between provided data type and encoded form for storage, default None.
-        :type offset: Optional[float]
-        :param start_sample: Integer index of the starting point of the provided array relative to the start of the experimental run, default 0.
-        :type start_sample: Optional[int]
-        :param padding_before: the length of the padding before the actual event start
-        :type padding_before: Optional[int]
-        :param padding_after: the length of the padding after the actual event end
-        :type padding_after: Optional[int]
-        :param baseline_mean: The local baseline, if available
-        :type baseline_mean: Optional[float]
-        :param baseline_std: the local standard deviation, if available
-        :type baseline_std: Optional[float]
-        :param raw_data: True means to simply write data as-is to file, False indicates to first rescale it. Default False.
+        :param raw_data: True when ``data`` holds unscaled ADC codes rather than pA.
         :type raw_data: bool
-        :param abort: True if an abort request was issued in the caller, perform cleanup as needed, default False.
+        :param abort: True to discard the channel's uncommitted batch and stop.
         :type abort: Optional[bool]
-        :param last_call: If True, flush the remaining batch, default False.
+        :param last_call: True when this is the final event of the channel.
         :type last_call: Optional[bool]
-        :return: success of the write operation.
+        :return: True if the event was written.
         :rtype: bool
         """
         pass
@@ -424,35 +425,18 @@ class MetaWriter(BaseDataPlugin):
                 channel, data_filter=None, rectify=False, raw_data=raw_data
             )
 
-            scale = None
-            offset = None
             index = 0
             abort = False
             try:
                 for event, last_call in lookahead_generator(event_generator):
                     try:
-                        event_data = event["data"]
-                        start_sample = event["start_sample"]
-                        padding_before = event["padding_before"]
-                        padding_after = event["padding_after"]
-                        scale = event["scale"]
-                        offset = event["offset"]
-                        baseline_mean = event["baseline_mean"]
-                        baseline_std = event["baseline_std"]
                         abort_opt = yield index / num_events
                         abort = bool(abort_opt)
                         try:
                             success = self._write_data(
-                                event_data,
+                                event,
                                 channel,
                                 index,
-                                scale,
-                                offset,
-                                start_sample,
-                                padding_before,
-                                padding_after,
-                                baseline_mean,
-                                baseline_std,
                                 raw_data,
                                 abort=abort,
                                 last_call=last_call,

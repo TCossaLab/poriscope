@@ -3032,11 +3032,32 @@ are checkable.
   inherit from the one being removed. `future_fixes.md` carries it.
 
   **Manual pass still owed** and not a blocker for the merge: a read on both Chimera formats
-  and on a binary reader, plus an event find-and-commit for the  path. Every
+  and on a binary reader, plus an event find-and-commit for the `load_raw_data` path. Every
   data plugin sits on this contract, and the conformance suite covers all seven readers, but
   nothing automated opens a real instrument file.
-- **7d — `_write_data`'s 13 parameters.** Collapse the parameter list. One overrider, no
-  call-site fan-out. Breaking.
+- **7d — `_write_data`'s 13 parameters. LANDED 2026-09-22.** Now six:
+  `(event, channel, index, raw_data, abort, last_call)`. **Ten of the thirteen were keys of
+  one dict** - the call site read `event["data"]`, `event["start_sample"]` and eight more
+  into locals purely to pass them positionally, so the event is passed through whole
+  instead.
+
+  Kept as a plain `Dict[str, Any]` rather than promoted to a dataclass, because the
+  plugin-facing API stays string-keyed: a writer author should not have to learn an
+  app-shell type to implement one method. The keys are documented on the abstract method,
+  which is where an author meets them, with the warning that a missing key is a
+  programming error to raise on rather than default - a silently defaulted padding writes
+  an event whose samples do not line up with its own metadata.
+
+  **Two of the thirteen were dead.** `scale` and `offset` were passed to
+  `SQLiteEventWriter._write_data` and never read: the only thing that would have consumed
+  them, `_rescale_data_to_adc`, is defined on *both* `MetaWriter` and `SQLiteEventWriter`
+  and called from neither. Filed for Step 8's dead-code sweep rather than deleted here,
+  since it is plausibly an author-facing helper and removing it would break an
+  out-of-tree writer that does call it.
+
+  The suite passed first time, which is meaningful rather than suspicious: two integration
+  flows drive `writer.write_events()` through the real generator, so the call site and the
+  overrider were exercised together.
 - **7e — `CITATION.cff` against the tag.** `CITATION.cff` and `constants.py` both read
   `1.9.0` today, so nothing is broken right now — but `release.yml` validates only the CFF
   *schema*, never that its version matches the tag being released, so Zenodo can publish

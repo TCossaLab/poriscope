@@ -471,50 +471,32 @@ class SQLiteEventWriter(MetaWriter):
     @override
     def _write_data(
         self,
-        data: npt.NDArray[np.number],
+        event: Dict[str, Any],
         channel: int,
         index: int,
-        scale: Optional[float] = None,
-        offset: Optional[float] = None,
-        start_sample: Optional[int] = 0,
-        padding_before: Optional[int] = 0,
-        padding_after: Optional[int] = None,
-        baseline_mean: Optional[float] = None,
-        baseline_std: Optional[float] = None,
         raw_data: bool = False,
         abort: Optional[bool] = False,
         last_call: Optional[bool] = False,
     ) -> bool:
         """
-        Append data and metadata to the active file handle.
+        Append one event's samples and metadata to the active database file.
 
-        :param data: 1D numpy array of data to write to the active file in the specified channel.
-        :type data: npt.NDArray[np.number]
+        The event's keys are the contract, and are documented on
+        ``MetaWriter._write_data``. This writer stores whatever ``data`` already is, so
+        it reads neither ``scale`` nor ``offset``.
+
+        :param event: One event, as ``get_single_event_data`` builds it.
+        :type event: Dict[str, Any]
         :param channel: Int indicating the channel from which it was acquired.
         :type channel: int
         :param index: event index
         :type index: int
-        :param scale: Float indicating scaling between provided data type and encoded form for storage, default None.
-        :type scale: Optional[float]
-        :param offset: Float indicating offset between provided data type and encoded form for storage, default None.
-        :type offset: Optional[float]
-        :param start_sample: Integer index of the starting point of the provided array relative to the start of the experimental run, default 0.
-        :type start_sample: Optional[int]
-        :param padding_before: the length of the padding before the actual event start
-        :type padding_before: Optional[int]
-        :param padding_after: the length of the padding after the actual event end
-        :type padding_after: Optional[int]
-        :param baseline_mean: The local baseline, if available
-        :type baseline_mean: Optional[float]
-        :param baseline_std: the local standard deviation, if available
-        :type baseline_std: Optional[float]
-        :param raw_data: True means to simply write data as-is to file, False indicates to first rescale it. Default False.
+        :param raw_data: True when the samples are unscaled ADC codes rather than pA.
         :type raw_data: bool
-        :param abort: If True, roll back and close the active connection without writing, default False.
+        :param abort: True to discard the channel's uncommitted batch and stop.
         :type abort: Optional[bool]
-        :param last_call: If True, close the shared connection after this write, default False.
+        :param last_call: True when this is the final event of the channel.
         :type last_call: Optional[bool]
-
         :return: success of the write operation.
         :rtype: bool
         :raises ValueError: if a database connection cannot be opened, or if start_sample, padding_before, or padding_after is None
@@ -534,6 +516,18 @@ class SQLiteEventWriter(MetaWriter):
                 self.conn.close()
                 self.conn = None
             return False
+
+        # Unpacked here rather than taken as thirteen parameters; the keys are the
+        # contract, documented on MetaWriter._write_data.
+        data = event["data"]
+        # scale and offset are deliberately not read: this writer stores whatever
+        # `data` already is. They were parameters 4 and 5 of the old thirteen and were
+        # ignored there too - see `_rescale_data_to_adc`, which nothing calls.
+        start_sample = event["start_sample"]
+        padding_before = event["padding_before"]
+        padding_after = event["padding_after"]
+        baseline_mean = event["baseline_mean"]
+        baseline_std = event["baseline_std"]
 
         if start_sample is None or padding_before is None or padding_after is None:
             raise ValueError(

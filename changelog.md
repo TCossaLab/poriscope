@@ -1,5 +1,7 @@
 ## Poriscope 2.0.0: in progress
 
+* **Breaking: a writer plugin's `_write_data` takes the event dict instead of thirteen positional parameters** - ten of the thirteen were keys of that dict, and two of those (`scale` and `offset`) were never read by the writer that receives them
+
 * **Breaking: `MetaReader.load_data` no longer takes a `raw_data` flag** - it always returns rescaled pA, and the new `load_raw_data` returns unscaled ADC codes with the scale and offset alongside; `continuous_read` splits the same way into `continuous_read` and `continuous_read_raw`
 
 * **Breaking: a reader plugin now implements `_convert_data` and `_convert_raw_data` rather than one `_convert_data` taking a `raw_data` flag** - each returns one type instead of a type that depended on the flag's value, and `_scale_data` loses its own now-unused `raw_data` argument

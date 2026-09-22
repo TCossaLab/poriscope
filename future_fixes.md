@@ -597,6 +597,18 @@ saved plot applies *whichever filters are selected now* and the plot that comes 
 the plot that was saved. Recording the selection alongside the rest of the intent is the
 obvious fix and needs the registry design above to carry it.
 
+## `_rescale_data_to_adc` is defined twice and called nowhere
+
+`MetaWriter._rescale_data_to_adc` and `SQLiteEventWriter._rescale_data_to_adc` both exist;
+nothing in `poriscope/` or `tests/` calls either. Surfaced by 7d, which found that `scale`
+and `offset` - two of `_write_data`'s old thirteen parameters - were passed to the writer and
+never read, because this is the method that would have read them.
+
+Not deleted with 7d because it is plausibly an author-facing helper, the writer-side
+counterpart to `_scale_data`, and removing it would break an out-of-tree writer that does
+call it. Decide in Step 8's dead-code sweep: either document it as a helper and leave it, or
+remove both copies as a breaking change.
+
 ## The metadata export flow is still intermittently flaky
 
 `tests/integration/flows/test_metadata_export_flow_no_gui.py::test_a_channel_exports_its_own_events_and_sublevels`
