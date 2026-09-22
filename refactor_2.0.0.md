@@ -3247,9 +3247,9 @@ held. What did not:
   in `future_fixes.md`: `INSERT OR IGNORE`, `PRAGMA user_version` with the dead
   `extra_tables` branch, and `test_plugin_compliance`'s import-order exposure. The fourth,
   `Optional[int]` dispatch, is the `close_resources` branch above.
-- **Manual passes owed:** 7d's (a write), and the full five-tab walkthrough plus multiselect
-  sweep that Verification asks for, not recorded at full scope since 3f. 7c's ran all clear
-  on 2026-09-22.
+- **Manual passes:** 7c's ran all clear on 2026-09-22, and so did the walkthrough on all
+  five tabs (Kyle). **Still owed:** 7d's write, and the multiselect popup half of
+  Verification's full sweep, unless the walkthrough pass covered it.
 - **Leftovers the refactor claimed but never ruled on** are filed forward in
   `future_fixes.md` (Kyle, 2026-09-22): the `WalkthroughStep` dataclass, the Protein
   GUI-thread fix (now unblocked), the three `format_axis_label` copies, the Part 10-12 widget
@@ -3361,3 +3361,7 @@ clearing, the Clustering and Protein second-commit overwrite dialogs, the walkth
 tab from Help > Tutorial, both nested dialog walkthroughs, and clean shutdown with a worker
 running. **It is the last pass recorded at full scope**; every later one covered a sub-step's
 surface, so a full sweep over the finished refactor is owed before the cut (Step 8).
+
+**Exit walkthrough pass: run 2026-09-22, all clear** (Kyle) - the walkthrough on all five tabs
+over the finished refactor, the first at that scope since 3f. The multiselect popup half of the
+full sweep is not recorded as part of it.
