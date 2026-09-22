@@ -18,15 +18,15 @@ Let’s start with the **View**, because if you’re anything like me — a visu
 Start From a Generated Triad
 ----------------------------
 
-You do not have to write the three files by hand. ``scripts/new_plugin.py`` writes all
-three, already carrying every abstract method each base declares, with signatures and
+You do not have to write the triad by hand. ``scripts/new_plugin.py`` writes all
+three files and the tab's controls panel, already carrying every abstract method each base declares, with signatures and
 docstrings copied verbatim out of those bases:
 
 .. code-block:: bash
 
    python scripts/new_plugin.py AnalysisTab MyTab           # into this repository
    python scripts/new_plugin.py AnalysisTab MyTab --user    # into your user plugin folder
-   python scripts/new_plugin.py --list AnalysisTab          # what the three files will hold
+   python scripts/new_plugin.py --list AnalysisTab          # what the triad's files will hold
 
 That writes four files: ``MyTabController.py``, ``MyTabModel.py``, ``MyTabView.py`` and
 ``MyTabControls.py``. The result **starts as a working tab**: restart Poriscope and

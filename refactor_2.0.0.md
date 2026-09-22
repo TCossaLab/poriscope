@@ -15,11 +15,12 @@ snapshot was the nearest thing that looked like one.
 | Refactor-coverage audit | - | **112 of 112 pinned** | 100% |
 | Shell complexity, functions over cx 10 | 8 / 121 | **0 / 0** | 0 - reached, no floor |
 | Signal-bus machinery in `poriscope/` | dispatcher + 2 signals + 4 relays | **0** | 0 - reached |
-| Duplication, removable - all 8 measured families | 1,889 (6 families) | **629** | - |
+| Duplication, removable - all 8 measured families | 1,889 (6 families) | **681** | - |
 | - `*Model.py`, a 7th family added 2026-09-14 | not measured | **8** | 8 - reached |
-| - `views/widgets`, an 8th family added 2026-09-19 | not measured | **3** | - |
+| - `eventfinders`, an 8th family added 2026-09-19 | not measured | **0** | 0 |
 | - the 3 analysis-tab families of the original six | 1,199 | **31** | 31 (floor) |
-| - the 3 plugin families of the original six | 690 | **587** | - |
+| - the other 3 of the original six: datareaders, eventfitters, `views/widgets` | 690 (435 / 193 / 62) | **642** (446 / 193 / 3) | - |
+| Decision C ABC breaks outstanding | 5 | **2** (`Threshold`, `close_resources` dispatch) | 0 - `"Kind"` amended out |
 
 **The duplication rows do not add up to one before/after pair, deliberately.** `*Model.py`
 became a measured family part-way through, so 1,889 never included it and pairing 1,889
@@ -32,13 +33,17 @@ came out on 2026-09-17**, when `load_events_by_id` and `resolve_event_ids` promo
 `*View.py` floor of 31 is `update_plot_features`, decided 2026-09-14.
 
 **The plugin-family row moved after all, and the table said otherwise until 2026-09-22.**
-It read "the 3 Step-5 families, untouched by design | 690 | 690" long after both halves had
-stopped being true: `0350cf4a` (5b-1) promoted the shared baseline fit onto
-`MetaEventFinder` and took `eventfinders` 103 -> 0, and `855de62f` (5d) added
-`views/widgets` as an eighth measured family. Re-measured 2026-09-22: eventfitters 193 +
-datareaders 394 + eventfinders 0 = 587, and the eight-family total is **629**, which is what
-`.duplication-baseline.json` has held all along - the ratchet was green throughout and only
-this table drifted. Rule 21 again: a derived figure has to be re-derived, not carried.
+It read "the 3 Step-5 families, untouched by design | 690 | 690" long after that had stopped
+being true. **Corrected again in the Step 8 audit, from the baseline file's own history**:
+the first fix mislabelled the families. The original six are the three tab families plus
+datareaders, eventfitters and `views/widgets` - all three added in `8fe18359` (2026-09-06)
+at 435 / 193 / 62. The eighth is `eventfinders`, added by `484b237d` (2026-09-19) at **0**,
+so 5b-1 never "took it 103 -> 0": byte-identity cannot see its near-copies, which is the
+point that commit makes. `855de62f` (5d) added a file to `views/widgets`, not a family.
+Then 7c split one of the byte-identical Chimera methods in two and took datareaders
+394 -> 446, so the total is **681**, as `.duplication-baseline.json` holds - recorded, not
+absorbed; see `DECISIONS.md` and method rule 94. Rule 21 again: a derived figure has to be
+re-derived, not carried.
 
 **The audit is 112 targets, not the 85 the snapshots below record.** It is derived, so it
 moves as the work lands (rule 21): `a21b20ec` deleted
@@ -413,7 +418,9 @@ sites are converted**, and they sit in Clustering (1), Metadata (5) and Protein 
     the history here, in the artifact and in `DECISIONS.md`, which are written for
     that audience. Grep for `Step 4`, `Step 3`, `method rule`, `Decision [A-E]`,
     `rule \d`. **Nothing new is to be written this way from now on**, so the sweep
-    only has to cover what is already there.
+    only has to cover what is already there. *(Step 8 audit: three survived the grep -
+    a citation wrapped across two lines, a bare `4a`, and a `5c.6` written after the ban.
+    All rewritten; the re-measure below now also needs a pattern for bare labels like `4a` and `5c.6`.)*
 
     **Done 2026-09-17.** The surface was 181 when the sweep was scoped, 169 after the
     event-plot promotion deleted some of it, and **1 now** - a floor, not a miss.
@@ -477,7 +484,8 @@ sites are converted**, and they sit in Clustering (1), Metadata (5) and Protein 
     merges into `develop` locally - never triggered it. `develop` is on the push trigger now;
     see `DECISIONS.md` 2026-09-19. Same blind spot as the coverage audit's, found the same way.
 
-    **Step 6 keeps the `HelloWorld` example and the private-methods autodoc item**; this step
+    **Step 6 keeps the `HelloWorld` example and the private-methods autodoc item** (both
+    landed, 6b and 6c); this step
     does not touch either. Re-measure the plan references with
     `grep -rnE "Step 4|Step 3|method rule|Decision [A-E]|rule \d+" poriscope/ docs/source --include=*.py --include=*.rst`,
     excluding `docs/source/autodoc/`.
@@ -492,7 +500,7 @@ attributes. Method rule 34 says that wants an intermediate and there is none. **
 plugin API by six attributes to delete 31 lines. See `DECISIONS.md`.
 
 **Each tab branch ends with a manual Windows pass over that tab's plotting surfaces**, dated
-in the verification section, and the full suite green before every commit.
+inline in the series below, and the full suite green before every commit.
 
 ### The three owed passes - run 2026-09-19, two defects found
 
@@ -707,7 +715,8 @@ manual pass's own fixes.
 **Manual pass, Windows, 2026-09-12.** Nine checks across the three tabs; eight passed or
 were fixed and re-passed. One could not be run:
 
-- **Open, for the exit review: an unresolvable experiment on the protein tab (#5).** The
+- **Open, for the exit review - closed 2026-09-19, see the closeout's branch 7: an
+  unresolvable experiment on the protein tab (#5).** The
   available data cannot provoke a failed experiment lookup, so the new hard stop has never
   run against a real database. Reverting the guard fails exactly one Controller test, so it
   is not unverified - but it is untried where it matters.
@@ -916,7 +925,8 @@ had never been able to return a row.
 # Poriscope 2.0.0 Refactor Plan
 
 Approved 2026-09-03. **Step 0 and the whole of Step 1 (Tiers A, B2 and C) landed
-2026-09-04** and are pushed; Step 2 onwards is open. 1.9.0 is ready and uncut.
+2026-09-04** and are pushed; `v1.9.0` is tagged. **Steps 2-7 are closed; Step 8 is the exit
+review**, and 2.0.0 is held for burn-in on `develop` when it finishes.
 
 **Every measurement below is re-baselined on `develop` at `062ef6f`, 2026-09-04.** Step 1
 landed after the original `fc4fdf7` baseline (46 files, +416/-779 under `poriscope/`), so a
@@ -958,7 +968,8 @@ fails on a drop.
 
 Reasoning is in `DECISIONS.md` (2026-09-03, two entries).
 
-- **A.** The return-value signal bus becomes `get_plugin`/`call` on `MetaController` and
+- **A.** The return-value signal bus becomes `get_plugin`/`call` (`_get_plugin`, private,
+  since `DECISIONS.md` 2026-09-07) on `MetaController` and
   `MetaModel`, with instances **pushed** down the existing notification path.
   Fire-and-forget signals (`plugin_state_changed`, `add_text_to_display`,
   `update_progressbar`, `create_plugin`) are unchanged.
@@ -968,7 +979,10 @@ Reasoning is in `DECISIONS.md` (2026-09-03, two entries).
 - **C.** 2.0.0 takes the queued ABC breaks: the `"Kind"` schema key, splitting
   `MetaReader.load_data`'s `raw_data` arm, `close_resources` channel dispatch,
   `_write_data`'s 13 parameters, `MetaEventFinder`'s undeclared `Threshold`.
-- **D.** 1.9.0 ships Tier A + B2 + C only. Tier B ships inside 2.0.0.
+- **D.** 1.9.0 ships Tier A + B2 + C only. Tier B ships inside 2.0.0. **Amended in Step 8**
+  (Kyle, 2026-09-22): four Tier B items did not ship and stay queued in `future_fixes.md`.
+- **C, amended in Step 8:** `"Kind"` is dropped as never needed; `Threshold` and the
+  `close_resources` channel change are taken in Step 8.
 - **E.** Moved tests are re-pointed, test owner reviews. **Needs her agreement before Step 2
   starts** - see "The ask to Carolina" below, which scopes it and corrects the earlier
   "1,085 view tests" figure to 324. Re-pointing is *mostly* mechanical, not entirely: 175 of
@@ -990,7 +1004,7 @@ Decision A ──→ Step 4a ──→ Protein threading fix, and Step 5b's rela
 Step 3a — independent of the test gate, but gated on directory ownership.
 ```
 
-Hard blocks:
+Hard blocks - **all resolved; kept as the pre-execution record**:
 
 - Step 2 blocks Steps 3–5 absolutely.
 - **Ownership, not just tests.** `.github/CODEOWNERS` assigns `tests/` and
@@ -1041,8 +1055,8 @@ five Step 2 deliverables are ours - the characterization goldens over View metho
 goldens, the `ast` boundary test, the duplication ratchet and the five no-GUI tab flows - as is
 re-pointing her existing unit and e2e suites in Steps 3d and 4a-4e. Do not offer test work back
 and do not treat a test-shaped deliverable as a reason to stop. This is a standing exception to
-the "test-writing is hers" rule **for this plan only**; compliance-gate blocks 1 and 7 in
-`future_fixes.md` remain hers.
+the "test-writing is hers" rule **for this plan only**; compliance-gate blocks 1, 4 and 5 in
+`future_fixes.md` remain hers (block 7 has landed).
 
 Decision E had been recorded as a one-line ask about tests and stalled for a day because nobody
 could state it precisely. It is one conversation with one person, in four parts, and three of
@@ -1283,6 +1297,10 @@ branch; session-restore type-name corruption; `Optional[int]` channel dispatch;
 
 ### Deferred into the refactor — do not fix twice
 
+**Step 8 audit:** only `_setup_canvas`'s `num_channels` was taken. The rest are queued in
+`future_fixes.md` as forward work, and the trivial deletions (`_factors`, the dead Figure)
+go into Step 8's orphan sweep.
+
 Duplication (~1,900 lines); `_setup_canvas`'s dead `num_channels`; `_factors` duplicated into
 two subclasses that inherit it; `main_view.py:110-111`'s dead Figure; `hist_data`'s three
 shapes; `MainView`'s navigation state as QLabel text; the five oversized `setupUi`; the
@@ -1446,7 +1464,8 @@ reorder joins, reassign aliases or change the projection and every one would sti
   inline, 120 lines into a 244-line orchestrator — until Step 4a moved that whole chain to
   `MetadataController.load_event_plot_data`, where `test_metadata_fetch_slots` drives it
   directly. The projection difference against its Protein twin (`id` vs `id, event_id`) is
-  still asserted, because Step 4b has to reconcile them.
+  still asserted, because Step 4b has to reconcile them. *(Reconciled: `MetaSubsetTabModel.resolve_event_ids`
+  projects only `id`, asserted in `test_raw_subset_scoping.py`.)*
 - **Two findings from verifying the goldens are actually sensitive.** The alias map at
   `MetaDatabaseLoader.py:1021-1029` feeds the projection and the WHERE qualification while the
   JOIN's `ON` clause hardcodes `s.`, so renaming an alias emits invalid SQL — latent today,
@@ -1661,7 +1680,7 @@ The 13 dead `sys.path` shims in the e2e modules (placed *after* the import they 
 `c99249ea`; `ProteinView`'s naive `WHERE` substring test; and `ClusteringView`'s GMM branch
 (`:660-670`), which has no extracted method to pin and gets one in Step 4c.
 
-## Next up — state as of 2026-09-08
+## Next up — state as of 2026-09-08 - COMPLETE, historical
 
 **Steps 0–3 complete.** Step 4 in progress on `feature/step-4a-plugin-call`, **17 commits,
 not yet merged to `develop`**. Every row below re-measured 2026-09-08 on the
@@ -1700,7 +1719,7 @@ and the first one that arose *after* the rule was written: **when a gate's scope
 widened, every recorded before/after pair using the old scope becomes wrong in the same
 commit.**
 
-### Resume here
+### Resume here - COMPLETE, historical
 
 **Finish 4a, tab by tab.** The conversion pattern is established and proven four times:
 the View emits a **typed intent**, the Controller's slot calls the plugin through
@@ -1841,12 +1860,12 @@ cheaper after 4a for the reason recorded under 4c below.
 - **Delete a guard the conversion makes unreachable, once you have measured that it is.** A
   Qt slot's exception does not reach the emitter, so a `try/except` around an emit is dead
   code that reads as error handling. Rule 50.
-- Method notes are at **74 rules** in the artifact, grouped by refactor phase; the
+- Method notes were at **74 rules** in the artifact here (96 by Step 8), grouped by refactor phase; the
   artifact is the source material for an end-to-end refactor skill, not only a metrics one.
 
 ### Owed
 
-- **Metadata's last six emits are unchecked on Windows** — the event-plot chain, the CSV
+- **Metadata's last six emits are unchecked on Windows** *(covered since, by the 2026-09-12, 2026-09-13 and 2026-09-19 passes)* — the event-plot chain, the CSV
   export and the categorical-histogram guard. Everything earlier is cleared, the five paused
   subset-tab commits on 2026-09-09.
 - **`WalkthroughStep` as a frozen dataclass** — 90 tuple literals across 7 files, moves no
@@ -1974,6 +1993,9 @@ line*. That is why 3d is blocked and why every 4b/4c move is a restructure of it
 everything after the computation has to move into the `set_*` handler — rather than a
 relocation. **Budget for the caller rewrite, not the method move.**
 
+
+*The 4a-4e bullets below are the pre-execution plan, superseded by the Step 4 closeout series
+at the top of this file; several targets they name no longer exist.*
 
 - **4a** The **75** emits become `self.call(...)` in the Model. Highest value in the refactor.
   Note the cost on the test side: `global_signal` appears in 142 test functions and **46 assert
@@ -2231,7 +2253,7 @@ Each says what it moves *before* it starts (method rule 38).
   and Kyle's rule is that the baseline is the fitted peak **farthest from zero** - so its
   advantage lies in the one direction rectified blockage data never produces, and in the
   direction that does occur it costs 1-4% of σ. That, and the fact that `np.argmax` selects
-  the *tallest* peak rather than the farthest one, are both in `future_fixes.md`:
+  the *tallest* peak rather than the farthest one, are both in `future_refactors_and_features.md` Part 15, moved there by `63657a6c`:
   **complete the refactor before the feature changes it uncovers.** `half_width = min(...)`
   was never touched, and `BoundedBlockageFinder` gained it, having never had it. See
   `DECISIONS.md` 2026-09-20 and `TestTheShippedFitWindow`. **The residual after the fix is the fit, not a defect**: at 10k only ~6 bins survive
@@ -2358,8 +2380,9 @@ Each says what it moves *before* it starts (method rule 38).
   two of them as *statement* counts instead, which is where its 15 and 16 came from.
 
   `settings_window.py` has **zero** functions over complexity 10 despite its 890 lines - its
-  four longest methods are complexity 1 to 4, the long-but-flat Qt widget construction that
-  the 2026-08 audit already reviewed and recorded as no-findings. `main_view.py` has
+  four longest methods are complexity 1 to 4, the long-but-flat Qt widget construction. *(Corrected in Step 8: the 2026-08 audit
+  did record findings here - `future_refactors_and_features.md` Part 10 #4-#6 - but on
+  duplication, not complexity, so the conclusion stands.)* `main_view.py` has
   **two**, despite 1,235 lines. Driving their line counts down is chasing a number that does
   not describe a problem, which is rule 71's error. **They come off the target list**;
   `switch_to_page` and `remove_pages_except` stay on it on their own merits.
@@ -2672,7 +2695,7 @@ coverage **88%**, up from the 83% baseline. Suite **4,312 passed / 16 skipped**,
 
 **A standing rule came out of this step, and it is Kyle's:** every sub-step that moves
 application code pauses for a manual Windows pass before the next one starts, and the
-branch says up front where a regression would show. Nine ran across 5c and 5e. One of them
+branch says up front where a regression would show. Seven are recorded across 5c and 5e. One of them
 is the only instrument that caught 5c.5, where 4,287 tests, eight pre-commit hooks, the
 complexity ratchet and the coverage audit were all green over an application that could not
 start - method rule 85.
@@ -2680,7 +2703,10 @@ start - method rule 85.
 **Recorded floors for Step 5**, each with its reason above: the 280 lines of abstract no-op
 stubs, `_find_events_in_chunk`'s two overrides, `_populate_event_metadata` (72) and the four
 `_define_*` declarations in the CUSUM/NoFitter pair, and whatever Chimera logic turns out to
-touch `self`.
+touch `self`. *(Step 8 audit: the CUSUM/NoFitter/ClassicCUSUM floor has **no** reason above -
+no sub-step ever ruled on it; it is filed forward. The Chimera floor is 5a-2's, now resolved by
+`ChimeraReader20240101`'s deprecation instead. The bullets below are the as-written plan,
+superseded by the sub-steps above and kept as the record.)*
 
 - **5a data plugins (~1,000 lines).** `CUSUM`/`NoFitter` share 411 identical lines;
   `ClassicCUSUM` is a 195-line override differing in 2 → `CUSUM` + `_normalize_step_size()`;
@@ -2891,7 +2917,7 @@ Kyle's instruction was to build the replacement example *with* the generator, as
 the process. That is what found everything above: the empty control area and both import
 defects surfaced on the first and second attempts to use it for real work.
 
-The tutorial's code is now `literalinclude`d from the four files the generator writes into
+The tutorial's code is now `literalinclude`d from three of the four files the generator writes into
 `docs/source/_static/examples/analysis_tabs/`, so it cannot drift from the tool, and `ruff`
 and `black` check it like any other source. **What it teaches changed too** - Kyle's ruling
 was that the example should be educational rather than a faithful reproduction of the old
@@ -2970,6 +2996,14 @@ action-history rewrite is out of this step entirely.
 | `MetaReader.load_data`'s `raw_data` arm | **Not landed** — 6 readers, 8 `raw_data=` call sites |
 | `_write_data`'s 13 parameters | **Not landed** — still 13, 1 overrider (`SQLiteEventWriter`) |
 
+**Two of the three "landed" rows are wrong, found in the Step 8 audit.** The `Threshold` at
+`MetaEventFinder.py:1208` is inside `get_empty_settings`'s docstring example; the real body
+declares only `MetaReader`, while the base loop reads `self.settings["Threshold"]` at `:453`.
+The `Optional[int] = None` signature was already on every base at `v1.9.0` - the item was
+the *dispatch*, and `MetaEventFitter.reset_channel` still ignores `None`. `"Kind"` was never
+built and is amended out of Decision C (Kyle, 2026-09-22). 7a's surface diff could not see
+either miss, because neither changes a signature. Both are taken in Step 8.
+
 Both outstanding items are taken in this step (Kyle, 2026-09-22). Decision C named 2.0.0 as
 the window for them and deferring means the next chance is 3.0.0; `_write_data` has a single
 overrider, and `load_data`'s six readers are all covered by the conformance suite, so both
@@ -3008,7 +3042,7 @@ are checkable.
   supplied a saved session; it is checked in as `tests/unit/views/saved_state/session_1x.json`
   with its four absolute paths scrubbed and nothing else changed. Three tabs, seven data
   plugins across six families, a renamed plugin key (`testrename` -> `ChimeraReader20240501`)
-  and a populated subset filter. Five tests in `test_saved_state_replay.py` pin it: the
+  and a populated subset filter. Six tests in `test_saved_state_replay.py` pin it: the
   fixture is the shape the app writes; **every class it names still exists in this version**,
   which is the actual 1.x compatibility question and now fails if the refactor renames one;
   the renamed key is carried by key *and* class, with a dependent setting proving why;
@@ -3051,10 +3085,10 @@ are checkable.
   the pair is deliberately *not* given a shared base - that would make the surviving reader
   inherit from the one being removed. `future_fixes.md` carries it.
 
-  **Manual pass still owed** and not a blocker for the merge: a read on both Chimera formats
-  and on a binary reader, plus an event find-and-commit for the `load_raw_data` path. Every
-  data plugin sits on this contract, and the conformance suite covers all seven readers, but
-  nothing automated opens a real instrument file.
+  **Manual pass: run 2026-09-22, all clear** (Kyle) - a read on both Chimera formats and on a
+  binary reader, plus an event find-and-commit for the `load_raw_data` path. Every data plugin
+  sits on this contract, and the conformance suite covers all seven readers, but nothing
+  automated opens a real instrument file.
 - **7d — `_write_data`'s 13 parameters. LANDED 2026-09-22.** Now six:
   `(event, channel, index, raw_data, abort, last_call)`. **Ten of the thirteen were keys of
   one dict** - the call site read `event["data"]`, `event["start_sample"]` and eight more
@@ -3106,7 +3140,9 @@ data plugin sits on.
 
 All five commits have landed: the inventory audit (7a), the session-state verification (7b),
 the reader split (7c), the writer parameter collapse (7d) and the version gate (7e). The
-release itself is deliberately **not** cut here - see Step 8.
+release itself is deliberately **not** cut here - see Step 8. **Two things are carried out
+of it, not closed:** the 7d manual Windows pass (7c's ran clear 2026-09-22), and the two Decision C items the
+table above wrongly credited.
 
 ### Out of this step
 
@@ -3133,7 +3169,7 @@ refactor this size ends with a gap between what the plan said and what the repos
 actually contains, and nothing else in the plan looks for it.
 
 - **Plan against reality.** Walk the whole of this document — every step, every sub-step,
-  every gate row — against what landed. The plan has been re-verified six times during
+  every gate row — against what landed. The plan has been re-verified repeatedly during
   execution and moved claims every time (see the re-verification tables); this is the same
   exercise run once more, at the end, over the parts nobody has re-read since they were
   written. Anything still outstanding is either done, deleted, or moved to `future_fixes.md`
@@ -3184,7 +3220,7 @@ actually contains, and nothing else in the plan looks for it.
   that no longer exist, and `_static` assets nothing references. Coverage and the duplication
   ratchet both help and neither is sufficient — dead code can be covered by a dead test.
 - **Then rewrite `changelog.md`'s 2.0.0 section into thematic sub-headers.** It is a flat
-  list of roughly a hundred entries in the order they landed, which is the order they were
+  list of 202 entries, 41 of them breaking, in the order they landed, which is the order they were
   written and no help at all to someone trying to find whether anything they rely on changed.
   Group it so a reader can go to what they care about — the shape to aim at is breaking
   changes first and unmissable, then user-facing behaviour, then the analysis tabs, the data
@@ -3192,16 +3228,59 @@ actually contains, and nothing else in the plan looks for it.
   still, and no entry loses its "breaking" marking in the move.** This is the last edit
   before the version bump.
 
+### Part 1, plan against reality - done 2026-09-22
+
+Six read-only audits: five over slices of this file and one over the artifact, with every
+finding that carried weight re-checked by hand. Around 200 claims about the current tree
+held. What did not:
+
+- **Decision C was 2 of 5, not 5 of 5.** See the Step 7 correction above. Taken in Step 8,
+  one branch each, in this order:
+  - **`Threshold`** - declare it in `MetaEventFinder.get_empty_settings` so a generated
+    finder no longer `KeyError`s inside the base loop.
+  - **`close_resources` takes a required `channel: int`** (Kyle, 2026-09-22), with every
+    caller looping over the channels itself - the pattern `get_channel_length` already
+    follows - instead of the `_close_one_channel` hook `DECISIONS.md` named. The plan for
+    that branch must settle `reset_channel`'s identical `Optional` signature and the plugins
+    that have no channels (loaders, writers, filters) before any code is written.
+- **Decision D is amended, not met.** Four Tier B items did not ship in 2.0.0 and stay queued
+  in `future_fixes.md`: `INSERT OR IGNORE`, `PRAGMA user_version` with the dead
+  `extra_tables` branch, and `test_plugin_compliance`'s import-order exposure. The fourth,
+  `Optional[int]` dispatch, is the `close_resources` branch above.
+- **Manual passes owed:** 7d's (a write), and the full five-tab walkthrough plus multiselect
+  sweep that Verification asks for, not recorded at full scope since 3f. 7c's ran all clear
+  on 2026-09-22.
+- **Leftovers the refactor claimed but never ruled on** are filed forward in
+  `future_fixes.md` (Kyle, 2026-09-22): the `WalkthroughStep` dataclass, the Protein
+  GUI-thread fix (now unblocked), the three `format_axis_label` copies, the Part 10-12 widget
+  duplications, the Controller-built `LIMIT 0`, and the CUSUM/ClassicCUSUM floor's missing
+  reason. The trivial deletions among them go into Part 3.
+- **Input for Part 3, not yet checked for dynamic dispatch by hand:** about fifteen
+  `relay_*`/`set_*` Controller sinks with no production caller, kept alive by tests
+  (`MetaSubsetTabController.relay_event_query`/`relay_plot_data`/`relay_units`/
+  `get_experiment_structure_ready`, `ClusteringController`'s three relays, the
+  `set_event_filter`/`relay_event*ing_status` pairs, `ProteinController.check_column_exists`/
+  `alter_database_status`), plus `MetaView._set_display_area_base`,
+  `MetadataView._get_event_id`/`_get_n_events`, the identical `_factors` overrides in
+  `RawDataView` and `EventAnalysisView`, `main_view.py:111`'s unreferenced `Figure`, and
+  `_dismiss_milestone`, which re-implements `clear_milestone_dialog`.
+- **Closed on inspection:** `new_plugin.py --user` lands in the *configured* folder -
+  `user_plugin_folder()` reads the same `config.json` key and falls back to the same default
+  as `main_app.py`. It has no test.
+- **Text drift fixed in this file:** the live table, the Step 7 table, the Verification
+  outcomes, the restored post-3f pass record, and the stale "next" and "owed" pointers,
+  each marked historical in place.
+
 ## Verification
 
-| Metric | Baseline | Target | Instrument |
-| --- | --- | --- | --- |
-| MVC boundary allowlist | **107** (75 emits, 22 imports, 10 privates) | 0 | `ast` test (Step 2 branch 3) |
-| Duplicated lines removed | 0 of **1,889** repo-wide, 6 families (re-derived, baselined) | ≥ 2,500 | `scripts/measure_duplication.py` + ratchet |
-| Golden net armed | unasserted | asserted | `tests/test_safety_net_is_armed.py` |
-| Analysis-tab coverage | unmeasured | ratchet up | `pytest-cov` (Step 0) |
-| Numerical output | unpinned | unchanged | golden files (2A) |
-| Minimal runnable triad | n/a | ~100 lines | `new_plugin.py` (Step 6) |
+| Metric | Baseline | Target | Instrument | Outcome, Step 8 audit 2026-09-22 |
+| --- | --- | --- | --- | --- |
+| MVC boundary allowlist | **107** (75 emits, 22 imports, 10 privates); 111 with rule 4 | 0 | `ast` test (Step 2 branch 3) | **2**, the recorded rule-2 floor |
+| Duplicated lines removed | 0 of **1,889** repo-wide, 6 families (re-derived, baselined) | ≥ 2,500 | `scripts/measure_duplication.py` + ratchet | **1,219** over the same six families (1,889 -> 670). Not met, and not measurable: 2,500 counted near-copies byte-identity cannot see |
+| Golden net armed | unasserted | asserted | `tests/test_safety_net_is_armed.py` | Met |
+| Analysis-tab coverage | unmeasured | ratchet up | `pytest-cov` (Step 0) | 83% -> 88% repo-wide, but **no ratchet exists**; line coverage was ruled the wrong instrument (Step 2) and the gate is queued in `future_fixes.md` |
+| Numerical output | unpinned | unchanged | golden files (Step 2 branches 4 and 6) | Met - goldens green, and changed only with a dated `DECISIONS.md` entry |
+| Minimal runnable triad | n/a | ~100 lines | `new_plugin.py` (Step 6) | Met - 74 lines of code in the triad; the generated tab is four files, 124 (`DECISIONS.md` 2026-09-22) |
 
 Full `pytest` green before every commit, no path arguments and no marker filter.
 `pre-commit run --all-files` is the mypy gate.
@@ -3272,3 +3351,13 @@ branch that had rewritten all five controls widgets — so the promoted widget f
 `create_info_button`/`create_add_button`/`create_delete_button` wiring and the placeholder
 guard were all exercised through the real UI. Nothing regressed. The next one is owed after
 3f.
+
+**Post-3f manual pass: run 2026-09-06, all clear** - restored in the Step 8 audit; it was
+recorded in `06f31cd3` and lost when a later handoff commit rewrote this section. Run against
+`5c4ea613`, covering all five tabs' controls, both channel multiselects, the event-index field
+and navigation arrows on the four tabs that have them, subset filter add/edit/delete/save/load
+on Metadata and Protein, the selection tree, CSV export, progress bars appearing *and*
+clearing, the Clustering and Protein second-commit overwrite dialogs, the walkthrough on every
+tab from Help > Tutorial, both nested dialog walkthroughs, and clean shutdown with a worker
+running. **It is the last pass recorded at full scope**; every later one covered a sub-step's
+surface, so a full sweep over the finished refactor is owed before the cut (Step 8).

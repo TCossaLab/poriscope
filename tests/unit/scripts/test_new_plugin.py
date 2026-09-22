@@ -148,7 +148,7 @@ def load_generated(path: Path, name: str) -> type:
 
 def generate_tab(script: types.ModuleType, name: str, out: Path) -> Dict[str, Path]:
     """
-    Run the generator for an analysis tab and return the three files it wrote.
+    Run the generator for an analysis tab and return the four files it wrote.
 
     :param script: the generator module
     :type script: types.ModuleType

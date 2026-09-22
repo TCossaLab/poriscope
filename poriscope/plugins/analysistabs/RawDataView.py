@@ -91,9 +91,10 @@ class RawDataView(MetaEventTabView):
     event_plot_requested = Signal(str, int, list, str)
 
     #: Asks the Controller to commit this tab's found events through a writer, one
-    #: channel at a time. Unlike the other 4a intents this one expects no answer: the
-    #: plugin hands back a generator, which the Controller registers with the Model and
-    #: runs. There was never an attribute to park it on, so there is no stale read here.
+    #: channel at a time. Unlike the other request signals this one expects no answer:
+    #: the plugin hands back a generator, which the Controller registers with the Model
+    #: and runs. There was never an attribute to park it on, so there is no stale read
+    #: here.
     commit_requested = Signal(str, list)
 
     #: Asks the Controller which of these channels the finder has already completed.

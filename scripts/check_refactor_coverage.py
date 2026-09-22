@@ -101,9 +101,8 @@ MOVED: Tuple[Tuple[str, str, str], ...] = (
     # The MetaView copy is gone: the last plot path converted, so the helper it
     # served has one home again and is tracked at it, just below.
     # The Model-side copy, added at the head of the closeout's Clustering branch so
-    # that callers can convert at all - no View holds a Model reference. Both copies
-    # exist until the last of the eight call sites moves, and an equivalence test
-    # guards them against drifting apart in the meantime. DECISIONS.md 2026-09-14.
+    # that callers can convert at all - no View holds a Model reference. It is the
+    # only copy now; DECISIONS.md 2026-09-14.
     ("poriscope/utils/MetaModel.py", "logscale_and_filter_columns", "3d"),
     # The filtering Clustering's caller carried across with it, which is what took
     # pandas out of ClusteringView.
@@ -119,7 +118,8 @@ MOVED: Tuple[Tuple[str, str, str], ...] = (
     # no longer exists is a hole in the net, not a pass.
     # The five range helpers moved down to MetaEventTabView in Step 3e rather than to
     # MetaModel: their only callers are the two event tabs, and moving them down needs
-    # no call-site change. 3d proper still has to move them to the Model, from here.
+    # no call-site change. They stay there - 3d was closed without moving them further,
+    # so the tag records the step that named them, not work still owed.
     ("poriscope/utils/MetaEventTabView.py", "_parse_event_indices", "3d"),
     ("poriscope/utils/MetaEventTabView.py", "_shift_ranges", "3d"),
     ("poriscope/utils/MetaEventTabView.py", "_merge_ranges", "3d"),
@@ -265,7 +265,8 @@ MOVED: Tuple[Tuple[str, str, str], ...] = (
     ("poriscope/plugins/analysistabs/MetadataView.py", "set_heatmap", "4c"),
     # Landed 2026-09-13: the 2-D binning moved to MetadataModel, tracked at its
     # destination now. The log-scaling that used to precede it inside this method
-    # stays on MetaView, so `_plot_heatmap` still carries that 3d call site.
+    # happens in the Model too, so the data arrives scaled and `_plot_heatmap` only
+    # labels and draws.
     ("poriscope/plugins/analysistabs/MetadataModel.py", "calculate_heatmap", "4c"),
     ("poriscope/plugins/analysistabs/MetadataView.py", "set_kernel_densities", "4c"),
     # Landed 2026-09-13: the kernel density estimate moved to MetadataModel, taking

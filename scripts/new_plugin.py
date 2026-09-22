@@ -30,13 +30,13 @@ Generate a compliant starting point for a new Poriscope plugin.
     python scripts/new_plugin.py --list                     # show both menus
     python scripts/new_plugin.py MetaEventFinder MyFinder   # new plugin from a base class
     python scripts/new_plugin.py ClassicBlockageFinder MyVariant --override _filter_events
-    python scripts/new_plugin.py AnalysisTab MyTab          # new analysis tab, three files
+    python scripts/new_plugin.py AnalysisTab MyTab          # new analysis tab, four files
 
 BASE is one of three things. One of the eight ``Meta*`` data plugin base classes, in which
 case every abstract method it declares is stubbed out; the name of a plugin that already
 ships, in which case the new plugin inherits everything and stubs out only what
 ``--override`` names; or the keyword ``AnalysisTab``, in which case a Controller, Model and
-View triad is written rather than a single file.
+View triad and the tab's controls panel are written rather than a single file.
 
 Method signatures and docstrings are copied verbatim out of the base class, because
 ``tests/unit/plugins/test_plugin_compliance.py`` compares signatures for exact equality
@@ -1497,7 +1497,7 @@ def print_detail(base: str, plugins: Dict[str, Type[BaseDataPlugin]]) -> None:
     :rtype: None
     """
     if base == TAB:
-        print(f"{TAB}: a Poriscope analysis tab, written as three files.")
+        print(f"{TAB}: a Poriscope analysis tab - a triad plus its controls panel.")
         print(f"Tabs live in poriscope/plugins/{TAB_FOLDER}/.")
         print("'python scripts/new_plugin.py AnalysisTab MyTab' writes:\n")
         for role in TRIAD:
@@ -1624,7 +1624,7 @@ def tab_suffixes() -> List[str]:
 
 def tab_folder(args: argparse.Namespace) -> Path:
     """
-    Work out where an analysis tab's three files should be written.
+    Work out where an analysis tab's four files should be written.
 
     :param args: the parsed command line
     :type args: argparse.Namespace
@@ -1642,7 +1642,7 @@ def build_tab(
     args: argparse.Namespace, plugins: Dict[str, Type[BaseDataPlugin]]
 ) -> List[Path]:
     """
-    Validate an analysis tab request, render all three files, and write them.
+    Validate an analysis tab request, render all four files, and write them.
 
     Every name and every path is checked before anything is written, because a triad that
     is two thirds written is worse than one that was refused: the app would load the two
@@ -1652,8 +1652,8 @@ def build_tab(
     :type args: argparse.Namespace
     :param plugins: the plugins that already ship, keyed by class name
     :type plugins: Dict[str, Type[BaseDataPlugin]]
-    :raises GenerationError: if the name carries a role suffix, if any of the three class
-        names is already taken, or if any of the three files already exists
+    :raises GenerationError: if the name carries a role suffix, if any of the four class
+        names is already taken, or if any of the four files already exists
     :return: the paths that were written
     :rtype: List[Path]
     """

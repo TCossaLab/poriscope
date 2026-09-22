@@ -10,6 +10,28 @@ which ran through August 2026 and is complete. The step numbers only date the de
 
 ---
 
+## 2026-09-22 - Decisions C and D amended at the exit review
+
+**Context.** The Step 8 audit found Decision C 2 of 5, not 5 of 5: Step 7's table credited
+`Threshold` from a docstring example and `close_resources` dispatch from a signature that
+already existed at `v1.9.0`. Decision D said Tier B ships in 2.0.0, and four items did not.
+
+**Decision** (Kyle, 2026-09-22). `Threshold` and `close_resources` are taken before the cut.
+`close_resources` takes a required `channel: int` and every caller loops over channels, as
+`get_channel_length` does - **not** the `_close_one_channel` hook recorded under Decision C.
+`"Kind"` is dropped: it was never built, and the entry below calls it "the better fix, if
+ever needed". Decision D is amended: `INSERT OR IGNORE`, `PRAGMA user_version` with the dead
+`extra_tables` branch, and `test_plugin_compliance`'s import-order exposure stay queued in
+`future_fixes.md`.
+
+**Evidence.** `MetaEventFinder.get_empty_settings`'s body declares only `MetaReader` while
+`:453` reads `Threshold`; `_close_one_channel` exists nowhere; `MetaEventFitter.reset_channel`
+still ignores `None`. 7a's surface diff missed both because neither changes a signature.
+
+**Revisit if** a later audit finds either break taken but not called out in `changelog.md`.
+
+---
+
 ## 2026-09-22 - Splitting the reader's raw arm costs 52 duplicated lines, and that is accepted
 
 **Context.** Decision C queued `MetaReader.load_data`'s `raw_data` arm for 2.0.0: the flag
@@ -288,8 +310,9 @@ come off the target list.
 
 **Evidence.** Over the nine shell files, 189 functions: **8 exceed complexity 10**,
 totalling 121. `settings_window.py` has **zero** despite 890 lines - its four longest methods
-are complexity 1 to 4, long-but-flat Qt widget construction that the 2026-08 audit already
-recorded as reviewed-with-no-findings. `main_view.py` has two, despite 1,235 lines.
+are complexity 1 to 4, long-but-flat Qt widget construction. (Corrected 2026-09-22: the
+2026-08 audit did record findings here - `future_refactors_and_features.md` Part 10 #4-#6 -
+but on duplication, not complexity.) `main_view.py` has two, despite 1,235 lines.
 Repo-wide, 124 functions exceed 80 lines, most in owner-held fitters and in `setupUi`
 methods the plan says stay per-tab, so a length gate would be both the wrong measure and
 scoped onto work that is not ours to gate (rule 18).
