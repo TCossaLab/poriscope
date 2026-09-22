@@ -983,7 +983,7 @@ branch per piece, finished into `develop` before the next starts.
 
 ```
 Step 0 (measurement) ──┐
-                       ├──→ Step 2 (tests, GATE) ──┬──→ Step 3 ──→ Step 6 ──→ Step 7
+                       ├──→ Step 2 (tests, GATE) ──┬──→ Step 3 ──→ Step 6 ──→ Step 7 ──→ Step 8
 Step 1 (1.9.0)      ───┘                           ├──→ Step 4
                                                    └──→ Step 5 (parallel)
 Decision A ──→ Step 4a ──→ Protein threading fix, and Step 5b's relay extraction
@@ -1018,9 +1018,11 @@ Hard blocks:
   `MetadataView.py:391`, `ProteinView.py:731`), `MetadataView._overlay_plot:1413` and
   `ProteinView._update_distribution_ensemble:1933`. Not the 4 this file recorded and not the 11
   before that - six of those hits were docstring prose. Renaming a decorated method breaks
-  saved `.json` action files today, which is why Step 7 replaces the recorded method name with
-  a declared action name; until it does, a conversion that renames one is a breaking change to
-  be taken deliberately rather than by accident. The twin `_update_distribution_individual` is
+  saved `.json` action files today. Replacing the recorded method name with a declared action
+  name was Step 7's job until 2026-09-22, when it was deferred to its own design step and moved
+  to `future_fixes.md` - so this constraint now holds **through 2.0.0 and beyond**, and a
+  conversion that renames a decorated method is a breaking change to be taken deliberately
+  rather than by accident. The twin `_update_distribution_individual` is
   not decorated, so 4c Protein may convert the pair together either way. `DECISIONS.md`,
   2026-09-17.
 - Any `MetaEventFitter` signature change forces lockstep edits in the three owner-held
@@ -1557,8 +1559,9 @@ unconditionally, which is asserted so the asymmetry is not rediscovered.
    `main_controller.py` and watching the gate name it.
 4. **Nothing replays a saved `.json` action file or session.** There is **no checked-in
    `.json` fixture anywhere in `tests/`**, and `update_actions_from_json` is asserted only on a
-   *mock* view. Step 7 records that saved action files are user data and that moving a decorated
-   method breaks replay; the same applies to `get_session_state`, which 4d changes.
+   *mock* view. The plan records that saved action files are user data and that moving a
+   decorated method breaks replay - in `future_fixes.md` since 2026-09-22, having been Step 7's
+   until then; the same applies to `get_session_state`, which 4d changes.
    **CLOSED** by `tests/unit/views/test_saved_state_replay.py` against a checked-in fixture
    (which needed a `.gitignore` negation, since `*.json` is blanket-ignored). It pins the risk
    as current behaviour: **an action whose method has moved is silently skipped** — no error,
@@ -2939,37 +2942,112 @@ and DOC503 for the empty documented set against a raised `NotImplementedError`. 
 `:raises NotImplementedError:` field the generator re-inserts closes both, which makes it
 load-bearing twice over rather than once.
 
-## Step 6 is closed
+### Step 6 is closed
 
 All five deliverables have landed: the analysis-tab generator (6a), the regenerated
 HelloWorld example (6b), the autodoc contract rule (6c), the probes re-run (6d), and
-`quality_control.rst` updated across 6a and 6c. **Only Step 7 remains.**
-- Replace the stale `HelloWorld` example. Re-measured 2026-09-19: it implements **three of
-  `MetaView`'s four** abstract methods, misses `notify_plugin_state_changed`, adds an
-  `update_plot` the base has never declared, and imports
-  `from utils.MetaView import MetaView`.
-- Autodoc publishes 478 private methods across 1,119 `automethod` directives — omit privates.
-- Update `quality_control.rst`; regenerate autodoc.
+`quality_control.rst` updated across 6a and 6c. **Steps 7 and 8 remain.**
+
+The step's original bullets are deleted rather than kept alongside, because every figure in
+them was superseded by the work: the HelloWorld survey was taken before
+`handle_parameter_change` became abstract, and the autodoc bullet's "478 private methods
+across 1,119 directives, omit privates" is wrong in all three of its numbers and in its
+instruction. 6a-6d above are what happened.
 
 ## Step 7 — release mechanics
 
-- Breaking-change inventory in `changelog.md`, each called out explicitly, including every
-  Decision C contract change.
-- **Action history - settled 2026-09-17, and it is a rewrite rather than a migration.**
-  **5** `@register_action` sites over **3** names, all of them private, replayed off the View.
-  Saved `.json` action files carry **no compatibility obligation** - Kyle's ruling, the feature
-  is barely used - so the fix is to record a **declared action name** (`@register_action("overlay_plot")`)
-  instead of `func.__name__`, dispatch replay through the registry those declarations build
-  rather than `getattr`, and keep recorded arguments to small JSON-round-trippable user intent.
-  Method names then move freely, and an unknown action name is reported rather than called.
-  A replayable action must also be a **pure function of its recorded arguments** - today both
-  non-trivial decorated methods read the filter selection off the widget mid-body, so replay
-  applies the *current* selection to a saved request; filed in `future_fixes.md`. Breaking, and
-  called out as such. See `DECISIONS.md`, 2026-09-17.
-- **Session state**: `get_session_state` serializes `self.view.subset_filters`; verify against
-  a real 1.x session file after 4d.
-- `CITATION.cff`'s version is a hand-maintained copy of `constants.py`; `release.yml` never
-  checks it against the tag.
+**Mapped into commits 2026-09-22, against a re-measure rather than the entry as written.**
+Two of its four bullets had moved: the Decision C list is mostly already landed, and the
+action-history rewrite is out of this step entirely.
+
+### What Decision C still owes, re-measured 2026-09-22
+
+| Decision C item | State |
+| --- | --- |
+| The `"Kind"` schema key | Absent from `poriscope/` — landed, or never existed as described |
+| `close_resources` channel dispatch | **Landed** — `channel: Optional[int] = None` on every base |
+| `MetaEventFinder`'s undeclared `Threshold` | **Landed** — declared at `MetaEventFinder.py:1203` |
+| `MetaReader.load_data`'s `raw_data` arm | **Not landed** — 6 readers, 8 `raw_data=` call sites |
+| `_write_data`'s 13 parameters | **Not landed** — still 13, 1 overrider (`SQLiteEventWriter`) |
+
+Both outstanding items are taken in this step (Kyle, 2026-09-22). Decision C named 2.0.0 as
+the window for them and deferring means the next chance is 3.0.0; `_write_data` has a single
+overrider, and `load_data`'s six readers are all covered by the conformance suite, so both
+are checkable.
+
+### The commit series
+
+- **7a — the breaking-change inventory.** `changelog.md`'s in-progress section already
+  carries **37** entries calling themselves breaking. This commit audits that list rather
+  than writing it from scratch: every `Meta*` ABC change since 1.9.0 is checked against the
+  section, anything narrowing or removing a base-class member that is not already called out
+  is added, and each entry is confirmed to say what an out-of-tree plugin author has to do.
+  `MetaView.handle_parameter_change` and the signal-bus deletion are the two that matter
+  most. No code changes.
+- **7b — session state against a real 1.x file.** `MetaSubsetTabController.get_session_state`
+  now serializes `self.view.get_subset_filters()` through an accessor rather than reaching
+  into `self.view.subset_filters`, which 4d fixed — so this is verification, not a change.
+  Load a genuine 1.x session file and confirm the filters come back; if the stored shape
+  changed, either restore compatibility or call it out as breaking. Kyle supplies the file.
+- **7c — `MetaReader.load_data`'s `raw_data` arm.** Split the boolean arm into two methods
+  so the return type stops depending on an argument's value. 6 readers and 8 call sites.
+  Breaking; the conformance suite covers every reader, so run it per reader rather than once
+  at the end.
+- **7d — `_write_data`'s 13 parameters.** Collapse the parameter list. One overrider, no
+  call-site fan-out. Breaking.
+- **7e — `CITATION.cff` against the tag.** `CITATION.cff` and `constants.py` both read
+  `1.9.0` today, so nothing is broken right now — but `release.yml` validates only the CFF
+  *schema*, never that its version matches the tag being released, so Zenodo can publish
+  under a stale version and fail silently. Add the check to the workflow.
+
+Each commit runs the full suite green, as everywhere else. **7c and 7d each need a manual
+Windows pass** over a read and a write respectively, because both change a contract every
+data plugin sits on.
+
+### Out of this step
+
+- **The action-history rewrite is deferred** — Kyle, 2026-09-22: it deserves its own feature
+  design step rather than being squeezed into release mechanics. The reasoning that was
+  recorded here (declared action names instead of `func.__name__`, dispatch through a
+  registry, recorded arguments kept to small JSON-round-trippable user intent, and the
+  purity defect where both non-trivial decorated methods read the filter selection off the
+  widget mid-body) moves to `future_fixes.md` intact. `DECISIONS.md` 2026-09-17 still holds;
+  what changed is when, not what.
+
+## Step 8 — exit review
+
+The last step before the release is cut. Added 2026-09-22 at Kyle's direction, because a
+refactor this size ends with a gap between what the plan said and what the repository
+actually contains, and nothing else in the plan looks for it.
+
+- **Plan against reality.** Walk the whole of this document — every step, every sub-step,
+  every gate row — against what landed. The plan has been re-verified six times during
+  execution and moved claims every time (see the re-verification tables); this is the same
+  exercise run once more, at the end, over the parts nobody has re-read since they were
+  written. Anything still outstanding is either done, deleted, or moved to `future_fixes.md`
+  as a forward-facing item.
+- **Code against docs, for everything that moved.** Every promotion, split and deletion in
+  Steps 3–6 changed where something lives; each one had docs updated at the time, but
+  individually rather than as a set. Check the hand-written pages under
+  `docs/source/utils/user_manuals/` against the current tree: a documented method that
+  moved to a base, a mechanism whose replacement is described on the wrong page, a
+  `:ref:` pointing at something that has been renamed. The autodoc half regenerates and is
+  self-checking; the hand-written half is not.
+- **Orphans and dead code.** All the moving leaves residue, and this refactor has already
+  produced three examples of it — `MetaView._logscale_and_filter_multiple_columns` deleted
+  outright, the 394 dead lines behind `get_global_walkthrough_steps`, and six orphaned
+  example `.py` files no page had ever rendered. Sweep for: methods no longer called after a
+  promotion, attributes nothing reads, imports nothing uses, test doubles for collaborators
+  that no longer exist, and `_static` assets nothing references. Coverage and the duplication
+  ratchet both help and neither is sufficient — dead code can be covered by a dead test.
+- **Then rewrite `changelog.md`'s 2.0.0 section into thematic sub-headers.** It is a flat
+  list of roughly a hundred entries in the order they landed, which is the order they were
+  written and no help at all to someone trying to find whether anything they rely on changed.
+  Group it so a reader can go to what they care about — the shape to aim at is breaking
+  changes first and unmissable, then user-facing behaviour, then the analysis tabs, the data
+  plugins, the application shell, and developer-facing tooling last. **One line per change
+  still, and no entry loses its "breaking" marking in the move.** This is the last edit
+  before the version bump.
 
 ## Verification
 

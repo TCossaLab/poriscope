@@ -568,6 +568,35 @@ Two standing constraints reshape the queue:
 Then the rest of the Moderate audit tier, the `hist_data` refactor, and the parked
 histogram cut-off.
 
+## Action history: record a declared action name, not a method name
+
+**Deferred out of Step 7 on 2026-09-22** as its own feature design step rather than release
+mechanics. `DECISIONS.md` 2026-09-17 settled *what* to do; what moved is *when*.
+
+**5** `@register_action` sites over **3** names, all private, replayed off the View:
+`_reset_actions` on `ClusteringView`, `MetadataView` and `ProteinView`, plus
+`MetadataView._overlay_plot` and `ProteinView._update_distribution_ensemble`. Replay is
+`getattr(self, name)` on the View via `MetaView.update_actions_from_json`, so renaming a
+decorated method breaks saved `.json` files today.
+
+Saved action files carry **no compatibility obligation** (Kyle's ruling - the feature is
+barely used), so the design is free:
+
+- `@register_action("overlay_plot")` records a declared name instead of `func.__name__`.
+- Replay dispatches through the registry those declarations build, not `getattr`, so an
+  unknown action name is reported rather than called.
+- Recorded arguments stay small and JSON-round-trippable - user intent, not bulk data.
+
+Breaking, and to be called out as such whenever it lands.
+
+**It also has to fix a live defect, which is the reason it is a design step and not an
+edit.** A replayable action must be a pure function of its recorded arguments, and both
+non-trivial decorated methods call `get_selected_filters()` inside their own bodies, reading
+the combobox. Everything else they need arrives in the recorded `parameters`, so replaying a
+saved plot applies *whichever filters are selected now* and the plot that comes back is not
+the plot that was saved. Recording the selection alongside the rest of the intent is the
+obvious fix and needs the registry design above to carry it.
+
 ## Still queued
 
 - **The metadata query's table aliases are only half parameterised.**
