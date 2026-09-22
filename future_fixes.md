@@ -597,6 +597,40 @@ saved plot applies *whichever filters are selected now* and the plot that comes 
 the plot that was saved. Recording the selection alongside the rest of the intent is the
 obvious fix and needs the registry design above to carry it.
 
+## The metadata export flow is still intermittently flaky
+
+`tests/integration/flows/test_metadata_export_flow_no_gui.py::test_a_channel_exports_its_own_events_and_sublevels`
+failed once on 2026-09-22 with `pandas.errors.EmptyDataError: No columns to parse from file`,
+then passed three times in isolation and again in a full re-run. It reads an exported CSV
+before the writer has put a header in it.
+
+**The changelog entry claiming this was fixed is about the same test and the same cause** -
+it waited for the exported-file count to settle, which happens before the last files are
+written. That fix narrowed the window rather than closing it: the count settling still does
+not mean the contents are there. A fix has to wait on the *file* being complete, not on how
+many of them exist.
+
+Unrelated to the reader work it surfaced during - the test references neither `MetaReader`
+nor `load_data`, and reads a synthetic database.
+
+## The two Chimera readers are near-identical, and the deprecation resolves it
+
+`ChimeraReader20240101` and `ChimeraReader20240501` differ in **27 lines of ~396**. The only
+real difference is `_get_configs`: 2024-01 parses a JSON header embedded in the `.log` file,
+2024-05 reads a companion `.json` of the same stem. Everything else - `_map_data`,
+`_get_file_pattern`, `_get_file_time_stamps`, `_get_file_channel_stamps`, `_set_raw_dtype`,
+`_convert_data`, `_convert_raw_data` - is byte-identical, and the pair is the largest single
+contributor to the `datareaders` duplication figure (446 after 7c).
+
+**Do not give them a shared base.** `ChimeraReader20240101` is slated for deprecation in a
+future cycle (Kyle, 2026-09-22), so making the surviving reader subclass it - the
+`LegacyElementsReader(TCossaLabABFReader)` pattern this family already uses - would mean
+unpicking the inheritance before anything could be deleted. Deprecating 20240101 removes the
+duplication for free, and should take `datareaders` to roughly 100.
+
+If it has to move sooner, the direction is the other way round: `ChimeraReader20240501`
+absorbs what it needs and stands alone, leaving 20240101 a clean deletion.
+
 ## Still queued
 
 - **The metadata query's table aliases are only half parameterised.**

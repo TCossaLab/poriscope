@@ -48,13 +48,19 @@ class FakeReader(MetaReader):
     def get_channel_length(self, channel):
         return len(self.data[channel])
 
-    def load_data(self, start_sec, length_sec, channel, raw_data=False):
+    def _chunk(self, start_sec, length_sec, channel):
         start_idx = int(round(start_sec * self.samplerate))
         n = int(round(length_sec * self.samplerate))
-        chunk = self.data[channel][start_idx : start_idx + n]
-        if raw_data:
-            return chunk, 1.0, 0.0
-        return chunk
+        return self.data[channel][start_idx : start_idx + n]
+
+    def load_data(self, start_sec, length_sec, channel):
+        return self._chunk(start_sec, length_sec, channel)
+
+    def load_raw_data(self, start_sec, length_sec, channel):
+        # Two methods rather than one flagged method, because that is what MetaReader
+        # offers since 2.0.0 - a double that kept the flag would let the finder call a
+        # signature the real reader no longer has.
+        return self._chunk(start_sec, length_sec, channel), 1.0, 0.0
 
     def get_base_experiment_name(self):
         return self.experiment_name

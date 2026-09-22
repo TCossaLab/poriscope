@@ -802,13 +802,18 @@ class MetaEventFinder(BaseDataPlugin):
                     + self.padding_before[channel][index]
                     + self.padding_after[channel][index]
                 ) / self.reader.get_samplerate()
-                data = self.reader.load_data(start, length, channel, raw_data)
+                # Filtering and rectifying are scaled-data operations, so they belong
+                # inside the scaled arm rather than behind a `not raw_data` on each.
                 if raw_data:
-                    data, scale, offset = data
-                if data_filter and not raw_data:
-                    data = data_filter(data)
-                if rectify and not raw_data:
-                    data *= np.sign(data[0])
+                    data, scale, offset = self.reader.load_raw_data(
+                        start, length, channel
+                    )
+                else:
+                    data = self.reader.load_data(start, length, channel)
+                    if data_filter:
+                        data = data_filter(data)
+                    if rectify:
+                        data *= np.sign(data[0])
 
                 event = {
                     "data": data,

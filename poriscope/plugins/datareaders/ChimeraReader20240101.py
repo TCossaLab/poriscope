@@ -30,7 +30,7 @@ import os
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union, override
+from typing import Any, Dict, List, Optional, Tuple, override
 
 import numpy as np
 import numpy.typing as npt
@@ -231,22 +231,17 @@ class ChimeraReader20240101(MetaReader):
     @log(logger=logger)
     @override
     def _convert_data(
-        self, data: npt.NDArray[np.int16], config: dict, raw_data: bool = False
-    ) -> Union[Tuple[np.ndarray, float, float], np.ndarray]:
+        self, data: npt.NDArray[np.int16], config: dict
+    ) -> npt.NDArray[np.float64]:
         """
-        Scale or otherwise transform and return requested data.
-        Applies the tia_gain/i_offset/filter_gain scale and offset recovered from this file's embedded header to convert raw ADC codes to pA.
-        if raw_data is true, return also scale and offset
+        Convert raw data from disk into rescaled current, in pA.
 
         :param data: Data to convert.
         :type data: npt.NDArray[np.int16]
         :param config: Configuration dictionary for data conversion.
         :type config: dict
-        :param raw_data: Decide whether to rescale data or return raw adc codes
-        :type raw_data: bool
-
-        :return: Converted data, and scale and offset if and only if raw_data is True
-        :rtype: Union[Tuple[np.ndarray, float, float], np.ndarray]
+        :return: The data, rescaled to pA.
+        :rtype: npt.NDArray[np.float64]
         """
         tia_gain = config["tia_gain"]
         i_offset = config["i_offset"]
@@ -257,18 +252,39 @@ class ChimeraReader20240101(MetaReader):
             conv_unit * ((2 * 2 * 2.048 / 2**16) / filter_gain) / tia_gain
         )  # adc conversion factor
         offset = -i_offset * conv_unit
-        conv_data = self._scale_data(
+        return self._scale_data(
             data,
             scale=scale,
             offset=offset,
             dtype=np.float64,
             copy=False,
-            raw_data=raw_data,
         )
-        if raw_data:
-            return conv_data, scale, offset
-        else:
-            return conv_data
+
+    @log(logger=logger)
+    @override
+    def _convert_raw_data(
+        self, data: npt.NDArray[np.int16], config: dict
+    ) -> Tuple[npt.NDArray[Any], float, float]:
+        """
+        Report the raw ADC codes, with the scale and offset that would convert them.
+
+        :param data: Data to report unscaled.
+        :type data: npt.NDArray[np.int16]
+        :param config: Configuration dictionary the scale and offset are derived from.
+        :type config: dict
+        :return: The unscaled data, its scale factor, and its offset.
+        :rtype: Tuple[npt.NDArray[Any], float, float]
+        """
+        tia_gain = config["tia_gain"]
+        i_offset = config["i_offset"]
+        filter_gain = config["filter_gain"]
+        # rescale adc data to current (A) to (pA)
+        conv_unit = 1e12  # pA/A
+        scale = (
+            conv_unit * ((2 * 2 * 2.048 / 2**16) / filter_gain) / tia_gain
+        )  # adc conversion factor
+        offset = -i_offset * conv_unit
+        return data, scale, offset
 
     @log(logger=logger)
     @override

@@ -183,7 +183,11 @@ def test_load_data_rejects_an_out_of_bounds_request(opened) -> None:
 @pytest.mark.conformance
 def test_raw_data_path_is_self_consistent(opened) -> None:
     """
-    ``get_raw_dtype()`` is usable, and the raw-data path returns matching shape.
+    ``get_raw_dtype()`` is usable, and ``load_raw_data`` returns a matching shape.
+
+    Split from ``load_data`` in 2.0.0: the two used to be one method whose return type
+    depended on a ``raw_data`` flag's value, so this test could not say which shape it
+    expected without repeating the flag.
 
     See the module docstring for why this stops short of a
     reconstruct-via-scale-and-offset check: that formula is not valid for
@@ -201,9 +205,7 @@ def test_raw_data_path_is_self_consistent(opened) -> None:
     assert np.dtype(raw_dtype) is not None  # raises TypeError if unusable
 
     non_raw = reader.load_data(0.0, dataset.duration_s, channel)
-    raw, scale, offset = reader.load_data(
-        0.0, dataset.duration_s, channel, raw_data=True
-    )
+    raw, scale, offset = reader.load_raw_data(0.0, dataset.duration_s, channel)
 
     assert (
         raw.size == non_raw.size

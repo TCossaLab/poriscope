@@ -3006,10 +3006,35 @@ are checkable.
   app and `test_filter_assisted` reappears in the Metadata filter dropdown. Worth doing by
   hand rather than trusting the test, because the test mocks the controls panel - the combo
   box is asserted there, not seen.
-- **7c — `MetaReader.load_data`'s `raw_data` arm.** Split the boolean arm into two methods
-  so the return type stops depending on an argument's value. 6 readers and 8 call sites.
-  Breaking; the conformance suite covers every reader, so run it per reader rather than once
-  at the end.
+- **7c — `MetaReader.load_data`'s `raw_data` arm. LANDED 2026-09-22.** Split into
+  `load_data`/`load_raw_data`, `continuous_read`/`continuous_read_raw`, and the abstract
+  `_convert_data`/`_convert_raw_data`, so no return type depends on an argument's value any
+  more. The `cast()` the old shape forced in the base is gone, and `_scale_data` lost its own
+  `raw_data` argument, which no reader had a use for once the split landed.
+
+  **"8 call sites" was wrong, and by a lot.** The figure counted every `raw_data` string in
+  the tree, most of which are `event["raw_data"]` - a dict key in event data with nothing to
+  do with the reader flag. There are **3** real `load_data` calls, 2 of which passed the flag,
+  and `continuous_read` had **none at all**: its only two mentions anywhere are prose in
+  docstrings. It was split rather than deleted because data plugins are documented as usable
+  standalone, so an out-of-tree script may call it.
+
+  Nine tests failed, every one of them the contract change surfacing where it should: seven
+  conformance cases, the event finder's raw path, and the duplication ratchet. The finder's
+  fake reader stubbed the *old* flagged signature, so it was given both methods - a double
+  that keeps a signature the real collaborator no longer has is a test that passes over an app
+  that cannot run.
+
+  **The ratchet went up, 629 -> 681, and that is recorded rather than absorbed.** See
+  `DECISIONS.md`: splitting one duplicated method into two doubles it, and the two Chimera
+  readers were already byte-identical. `ChimeraReader20240101` is slated for deprecation, so
+  the pair is deliberately *not* given a shared base - that would make the surviving reader
+  inherit from the one being removed. `future_fixes.md` carries it.
+
+  **Manual pass still owed** and not a blocker for the merge: a read on both Chimera formats
+  and on a binary reader, plus an event find-and-commit for the  path. Every
+  data plugin sits on this contract, and the conformance suite covers all seven readers, but
+  nothing automated opens a real instrument file.
 - **7d — `_write_data`'s 13 parameters.** Collapse the parameter list. One overrider, no
   call-site fan-out. Breaking.
 - **7e — `CITATION.cff` against the tag.** `CITATION.cff` and `constants.py` both read
@@ -3050,6 +3075,26 @@ actually contains, and nothing else in the plan looks for it.
   moved to a base, a mechanism whose replacement is described on the wrong page, a
   `:ref:` pointing at something that has been renamed. The autodoc half regenerates and is
   self-checking; the hand-written half is not.
+
+  **Named item: comment the database schema's two channel columns.** The `events`,
+  `sublevels` and `data` tables each carry both `channel_db_id` and `channel_id`, and
+  nothing in the schema or the docs says which is which. `channel_db_id` is the
+  `AUTOINCREMENT` row id of the `(experiment_id, channel_id)` pair in `channels`;
+  `channel_id` is the physical channel the data came from. Writing a dataset into an
+  existing database under a *new* experiment name therefore creates a new `channels` row
+  and a new `channel_db_id` while `channel_id` stays put - which was reported on
+  2026-09-22 as the writer "relabelling" the channel, and as duplicate event ids appearing
+  in an existing database.
+
+  **Neither was a defect.** `UNIQUE (experiment_id, channel_id, event_id)` already enforces
+  the intended rule, `event_id` is the fitter's loop index and so restarts at 0 per run, and
+  `MetaEventFitter.py:561` sets the metadata `channel_id` from the same `channel` that drives
+  the channels lookup, so the two columns cannot disagree. A duplicate write is rejected by
+  `INSERT OR IGNORE` and surfaces as `Cannot Overwrite Existing Event` in the rejection
+  report rather than being dropped silently. What failed was the naming, so the fix is a
+  comment in `_initialize_database`'s `CREATE TABLE` block and a line in the database
+  documentation - **not** a rename, which would be a schema migration breaking every
+  database already written.
 - **Orphans and dead code.** All the moving leaves residue, and this refactor has already
   produced three examples of it — `MetaView._logscale_and_filter_multiple_columns` deleted
   outright, the 394 dead lines behind `get_global_walkthrough_steps`, and six orphaned

@@ -282,16 +282,18 @@ class TestARealSavedSession:
         available = set(discover_plugin_classes())
         tabs = {
             path.stem
-            for path in Path(
-                REPO_ROOT, "poriscope", "plugins", "analysistabs"
-            ).glob("*.py")
+            for path in Path(REPO_ROOT, "poriscope", "plugins", "analysistabs").glob(
+                "*.py"
+            )
         }
         missing = []
         for key, entry in session.items():
             subclass = entry["subclass"]
             if subclass not in available and subclass not in tabs:
                 missing.append(f"{key} -> {subclass}")
-        assert not missing, f"a saved session names classes this version lost: {missing}"
+        assert (
+            not missing
+        ), f"a saved session names classes this version lost: {missing}"
 
     def test_a_renamed_plugin_key_is_carried_by_key_not_by_class(
         self, session: Dict[str, Any]
