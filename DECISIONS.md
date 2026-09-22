@@ -10,6 +10,33 @@ which ran through August 2026 and is complete. The step numbers only date the de
 
 ---
 
+## 2026-09-22 - Splitting the reader's raw arm costs 52 duplicated lines, and that is accepted
+
+**Context.** Decision C queued `MetaReader.load_data`'s `raw_data` arm for 2.0.0: the flag
+made the return type depend on an argument's *value*, which no annotation describes and
+which forced a `cast()` in the base - the exact construct `CLAUDE.md` forbids. 7c split it
+into `load_data`/`load_raw_data`, `continuous_read`/`continuous_read_raw` and
+`_convert_data`/`_convert_raw_data`.
+
+**The cost.** The duplication ratchet went **629 -> 681**, `datareaders` **394 -> 446**.
+Splitting one duplicated method into two duplicated methods doubles what was already there:
+`ChimeraReader20240101._convert_data` and `ChimeraReader20240501._convert_data` were already
+byte-identical, so now their `_convert_raw_data` pair is too.
+
+**Decision.** Re-baseline and record it (Kyle, 2026-09-22), rather than deduplicate inside a
+release-mechanics step or abandon the split. The ratchet's job is to stop duplication growing
+*unnoticed*; this movement is measured, explained and dated.
+
+**Evidence.** The two Chimera readers differ in **27 lines of ~396**, and the only real
+difference is `_get_configs` - 2024-01 parses a JSON header embedded in the `.log` file,
+2024-05 reads a companion `.json`. So the 446 is not this split's doing; the split merely
+made an existing near-duplicate more expensive. Filed in `future_fixes.md`.
+
+**Revisit if** the Chimera pair is deduplicated, which should take `datareaders` to roughly
+100 and the total below where it started.
+
+---
+
 ## 2026-09-22 - The tab scaffold generates the controls panel, and authors it
 
 **Context.** A generated tab opened with a plot canvas over an empty strip. That is what

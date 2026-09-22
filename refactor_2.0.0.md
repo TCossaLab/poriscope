@@ -3006,10 +3006,33 @@ are checkable.
   app and `test_filter_assisted` reappears in the Metadata filter dropdown. Worth doing by
   hand rather than trusting the test, because the test mocks the controls panel - the combo
   box is asserted there, not seen.
-- **7c — `MetaReader.load_data`'s `raw_data` arm.** Split the boolean arm into two methods
-  so the return type stops depending on an argument's value. 6 readers and 8 call sites.
-  Breaking; the conformance suite covers every reader, so run it per reader rather than once
-  at the end.
+- **7c — `MetaReader.load_data`'s `raw_data` arm. LANDED 2026-09-22.** Split into
+  `load_data`/`load_raw_data`, `continuous_read`/`continuous_read_raw`, and the abstract
+  `_convert_data`/`_convert_raw_data`, so no return type depends on an argument's value any
+  more. The `cast()` the old shape forced in the base is gone, and `_scale_data` lost its own
+  `raw_data` argument, which no reader had a use for once the split landed.
+
+  **"8 call sites" was wrong, and by a lot.** The figure counted every `raw_data` string in
+  the tree, most of which are `event["raw_data"]` - a dict key in event data with nothing to
+  do with the reader flag. There are **3** real `load_data` calls, 2 of which passed the flag,
+  and `continuous_read` had **none at all**: its only two mentions anywhere are prose in
+  docstrings. It was split rather than deleted because data plugins are documented as usable
+  standalone, so an out-of-tree script may call it.
+
+  Nine tests failed, every one of them the contract change surfacing where it should: seven
+  conformance cases, the event finder's raw path, and the duplication ratchet. The finder's
+  fake reader stubbed the *old* flagged signature, so it was given both methods - a double
+  that keeps a signature the real collaborator no longer has is a test that passes over an app
+  that cannot run.
+
+  **The ratchet went up, 629 -> 681, and that is recorded rather than absorbed.** See
+  `DECISIONS.md`: splitting one duplicated method into two doubles it, and the two Chimera
+  readers were already byte-identical. `ChimeraReader20240101` is slated for deprecation, so
+  the pair is deliberately *not* given a shared base - that would make the surviving reader
+  inherit from the one being removed. `future_fixes.md` carries it.
+
+  Manual pass owed: a read on both Chimera formats and on a binary reader, since every data
+  plugin sits on this contract.
 - **7d — `_write_data`'s 13 parameters.** Collapse the parameter list. One overrider, no
   call-site fan-out. Breaking.
 - **7e — `CITATION.cff` against the tag.** `CITATION.cff` and `constants.py` both read

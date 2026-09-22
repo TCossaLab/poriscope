@@ -1,5 +1,9 @@
 ## Poriscope 2.0.0: in progress
 
+* **Breaking: `MetaReader.load_data` no longer takes a `raw_data` flag** - it always returns rescaled pA, and the new `load_raw_data` returns unscaled ADC codes with the scale and offset alongside; `continuous_read` splits the same way into `continuous_read` and `continuous_read_raw`
+
+* **Breaking: a reader plugin now implements `_convert_data` and `_convert_raw_data` rather than one `_convert_data` taking a `raw_data` flag** - each returns one type instead of a type that depended on the flag's value, and `_scale_data` loses its own now-unused `raw_data` argument
+
 * **Breaking: `MetaView.handle_parameter_change` is now abstract** - `_set_control_area` has always connected the controls panel to it while the View is being constructed, so a tab that did not define it raised `AttributeError` out of `__init__`; a tab that lays out its own control area can implement it as `pass`
 
 * **The generated API documentation no longer publishes internal helper methods** - 257 private methods that were never anyone's contract are gone from the site, while every `Meta*` abstract method, every plugin's implementation of one, and every documented constructor stay; the published method count falls from 1,109 to 852
@@ -38,7 +42,7 @@
 
 * The app shell - the two controllers, the two models, `main_view.py`, `settings_window.py` and `main_app.py` - is now held by a cyclomatic-complexity ratchet (`scripts/measure_shell_complexity.py`), which no other gate measured, so restructuring it can neither add complexity nor leave a reduction unrecorded
 
-* Fixed the metadata CSV-export end-to-end test failing intermittently: it waited for the exported-file count to settle, which happens before the last files are written, and then size-checked whichever one set iteration surfaced
+* Made the metadata CSV-export end-to-end test less prone to failing intermittently: it waited for the exported-file count to settle, which happens before the last files are written, and then size-checked whichever one set iteration surfaced - the window is narrower but not closed, and a recurrence on 2026-09-22 is recorded in `future_fixes.md`
 
 * **Corrected what filter types 4 and 5 mean; no behaviour change**: they name which arm of the construct the bound star sits on - 5 the long, higher-ECD arm and 4 the short one - and say nothing about the order it threaded, which is what the report's old `star translocates first` / `last` wording claimed and got wrong for every backward event
 
