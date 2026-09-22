@@ -45,12 +45,13 @@ VARIANTS = [
     ("SQLiteDBLoader", ["get_plot_features"]),
 ]
 
-# The generated triad is written into a folder and its siblings are imported through that
-# folder's name, because that is the only import path the app makes work for a tab outside
-# the repository: ``main_app`` puts the *parent* of the user plugin folder on ``sys.path``,
-# not the folder itself. Generating into a folder with a fixed, importable name and putting
-# its parent on ``sys.path`` is therefore what the app does, reproduced.
-TAB_FOLDER = "user_plugins"
+# Deliberately not an identifier. The real user plugin folder in the installation that
+# found this bug is called "User Plugins", and the first generated triad dropped into it
+# failed to import with ``from User Plugins.DemoModel import DemoModel``. Outside the
+# repository the Controller imports its siblings by their bare file names and the app puts
+# the folder itself on ``sys.path``, which works whatever the folder is called - so the
+# tests generate into a folder that would break any scheme naming it.
+TAB_FOLDER = "User Plugins"
 ROLES = ("Controller", "Model", "View")
 
 
@@ -167,9 +168,9 @@ def load_triad(out: Path, name: str, monkeypatch: Any) -> Dict[str, type]:
     Import a generated triad the way the running app imports a user tab.
 
     The Controller imports its own View and Model, so it cannot be loaded by file path
-    the way a single-file plugin can - the sibling import has to resolve. Prepending the
-    folder's *parent* to ``sys.path`` is exactly what ``main_app`` does for the user
-    plugin folder, so this reproduces the app's own import path rather than inventing one.
+    the way a single-file plugin can - the sibling import has to resolve. Putting the
+    folder itself on ``sys.path`` is exactly what ``main_app`` does for the user plugin
+    folder, so this reproduces the app's own import path rather than inventing one.
 
     :param out: the folder the tab's folder was generated into
     :type out: Path
@@ -180,13 +181,13 @@ def load_triad(out: Path, name: str, monkeypatch: Any) -> Dict[str, type]:
     :return: the three generated classes, keyed by role
     :rtype: Dict[str, type]
     """
-    monkeypatch.syspath_prepend(str(out))
-    for stale in [m for m in sys.modules if m.split(".")[0] == TAB_FOLDER]:
-        sys.modules.pop(stale, None)
+    monkeypatch.syspath_prepend(str(Path(out, TAB_FOLDER)))
+    for role in ROLES:
+        sys.modules.pop(f"{name}{role}", None)
     importlib.invalidate_caches()
     loaded: Dict[str, type] = {}
     for role in ROLES:
-        module = importlib.import_module(f"{TAB_FOLDER}.{name}{role}")
+        module = importlib.import_module(f"{name}{role}")
         loaded[role] = getattr(module, f"{name}{role}")
     return loaded
 
@@ -527,6 +528,41 @@ class TestGeneratedAnalysisTabs:
             encoding="utf-8"
         )
         assert "super().update_available_plugins(available_plugins)" in text
+
+    def test_a_folder_name_that_is_not_an_identifier_still_generates(
+        self, script, tmp_path
+    ):
+        """
+        The regression. A real installation's folder is called "User Plugins", and the
+        first triad generated into it would not even parse - the Controller carried
+        ``from User Plugins.DemoModel import DemoModel``. Nothing the generator writes
+        may name the folder, because the folder need not be nameable.
+        """
+        folder = Path(tmp_path, "User Plugins")
+        assert script.main([script.TAB, "Spaced", "--output-dir", str(folder)]) == 0
+        written = sorted(folder.glob("*.py"))
+        assert len(written) == 3
+        for path in written:
+            ast.parse(path.read_text(encoding="utf-8"))
+
+    def test_the_sibling_imports_are_bare_file_names_outside_the_repo(
+        self, script, tmp_path
+    ):
+        """Each stem equals the class it defines, so it is always an identifier."""
+        text = generate_tab(script, "Bare", tmp_path)["Controller"].read_text(
+            encoding="utf-8"
+        )
+        assert "from BareModel import BareModel" in text
+        assert "from BareView import BareView" in text
+
+    def test_a_tab_inside_the_repository_imports_through_the_package(self, script):
+        """In the repository the triad is part of ``poriscope`` and imports as such."""
+        folder = Path(REPO_ROOT, "poriscope", "plugins", script.TAB_FOLDER)
+        specs = script.sibling_imports("Demo", folder)
+        assert {spec.module for spec in specs} == {
+            "poriscope.plugins.analysistabs.DemoModel",
+            "poriscope.plugins.analysistabs.DemoView",
+        }
 
     def test_the_other_stubs_do_not_delegate(self, script, tmp_path):
         """A base whose body is only ``pass`` has nothing to delegate to."""

@@ -73,23 +73,35 @@ could sit beside the generator's own.
 
 ---
 
-## 2026-09-22 - A generated tab outside the repo imports its siblings by folder name
+## 2026-09-22 - The user plugin folder goes on sys.path, not just its parent
 
 **Context.** A tab's Controller imports its own View and Model. The five shipped tabs use
-`poriscope.plugins.analysistabs.X`, which only resolves for a tab inside the package.
+`poriscope.plugins.analysistabs.X`, which only resolves inside the package. For a tab in the
+user plugin folder, `main_app` and `main_controller` put only the folder's *parent* on
+`sys.path`, on the assumption - written into `main_app`'s own comment - that the folder is
+importable as a package named `user_plugins`.
 
-**Decision.** The generator emits the absolute `poriscope.` import when writing into
-`poriscope/plugins/analysistabs/`, and `from <folder>.X import X` anywhere else.
+**Cause.** That assumption does not hold. The folder is user-configured and one real
+installation calls it `User Plugins`, which no import statement can spell. The generator's
+first output was therefore `from User Plugins.DemoModel import DemoModel`, a `SyntaxError`.
+The loader cannot bridge it either: `spec_from_file_location(stem, path)` never registers
+the module in `sys.modules`, so a sibling import has nothing to resolve against. **No
+out-of-tree analysis tab could import its own parts, generated or hand-written.**
 
-**Evidence.** `main_app` puts the *parent* of the user plugin folder on `sys.path` - its
-own comment says discovery imports that folder as a package - so naming the folder is the
-only import that resolves there. The app loads each file by path separately, which means the
-View class the menus register and the one the Controller instantiates are distinct module
-objects; that is inert, because `MainController` only ever instantiates the Controller and
-reads `tab.view` off it.
+**Decision.** Append the folder itself alongside its parent (Kyle, 2026-09-22), and have the
+generator emit a bare-stem import outside the repository. A stem is always an identifier
+because it equals the class it defines, so this holds for any folder name. Appended rather
+than inserted, so no plugin file can shadow a stdlib or site-packages module.
 
-**Revisit if** the user plugin folder stops being importable as a package, which would break
-every out-of-tree triad at once.
+**Evidence.** Found by the manual pass on the first real use of the generator - every test
+had used a folder called `user_plugins`, which is an identifier, so the whole suite was blind
+to it. Both generator test modules now generate into `User Plugins` instead. The app loads
+each file by path separately, so the View class the menus register and the one the Controller
+instantiates are distinct module objects; that is inert, because `MainController` only ever
+instantiates the Controller and reads `tab.view` off it.
+
+**Revisit if** plugin files ever stop being named for the class they define, which is what
+makes a bare-stem import safe.
 
 ---
 

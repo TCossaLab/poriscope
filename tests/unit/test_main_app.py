@@ -166,14 +166,30 @@ class TestPluginDiscoveryPath:
 
     def test_adds_the_user_plugin_folders_parent(self, app_root) -> None:
         """
-        The *parent* goes on the path, not the plugin folder itself.
+        The parent goes on the path, so the folder can be imported as a package.
 
-        Discovery imports ``user_plugins`` as a package, so the importable
-        location is the directory containing it.
+        This only works when the folder is named like an identifier, which is why
+        the folder itself goes on too - see the test below.
         """
         _run(app_root)
 
         expected = str(Path(app_root, "Poriscope").resolve())
+        assert expected in sys.path
+
+    def test_adds_the_user_plugin_folder_itself(self, app_root) -> None:
+        """
+        The folder itself is what makes a multi-file plugin work.
+
+        An analysis tab is three files and its Controller imports the other two. The
+        parent alone cannot carry that: it requires an import naming the folder, and a
+        folder called "User Plugins" - as a real installation had it - cannot be named
+        in any import statement at all, so the generated Controller was a SyntaxError.
+        With the folder on the path the siblings import by their own file names, which
+        are always identifiers because each equals the class it defines.
+        """
+        _run(app_root)
+
+        expected = str(Path(app_root, "Poriscope", "user_plugins").resolve())
         assert expected in sys.path
 
     def test_does_not_add_a_duplicate_on_a_second_run(self, app_root) -> None:

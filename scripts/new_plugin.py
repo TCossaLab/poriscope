@@ -848,9 +848,13 @@ def sibling_imports(name: str, folder: Path) -> List[ImportSpec]:
     Work out how the Controller should import its own View and Model.
 
     A tab inside this repository is imported as part of the ``poriscope`` package, the way
-    the five shipped tabs are. A tab anywhere else is not: the app loads each plugin file
-    by path and puts the *parent* of the user plugin folder on ``sys.path``, so the only
-    import that resolves is one naming the folder the triad sits in.
+    the five shipped tabs are. A tab anywhere else is imported by its bare file name,
+    because the app puts the user plugin folder itself on ``sys.path``.
+
+    **Nothing written here may name the folder.** A folder name is not required to be a
+    Python identifier and in practice is not one - a real installation's is "User
+    Plugins" - so an import naming it is a ``SyntaxError`` before it is anything else.
+    The file stems are safe because each equals the class it defines.
 
     :param name: the tab's name, without a role suffix
     :type name: str
@@ -860,12 +864,10 @@ def sibling_imports(name: str, folder: Path) -> List[ImportSpec]:
     :rtype: List[ImportSpec]
     """
     shipped = Path(REPO_ROOT, "poriscope", "plugins", TAB_FOLDER)
-    if folder.resolve() == shipped.resolve():
-        package = f"poriscope.plugins.{TAB_FOLDER}"
-    else:
-        package = folder.resolve().name
+    in_repo = folder.resolve() == shipped.resolve()
+    prefix = f"poriscope.plugins.{TAB_FOLDER}." if in_repo else ""
     return [
-        ImportSpec(f"{package}.{name}{role.suffix}", f"{name}{role.suffix}", None)
+        ImportSpec(f"{prefix}{name}{role.suffix}", f"{name}{role.suffix}", None)
         for role in TRIAD
         if role.suffix != TRIAD[0].suffix
     ]

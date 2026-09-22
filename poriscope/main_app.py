@@ -101,12 +101,22 @@ class App(QApplication):
                     config_file_path, self.app_config, "persist regenerated default"
                 )
 
-        # Plugin discovery imports `user_plugins` as a package, so what has to be
-        # importable is the directory containing it, not the folder itself.
+        # Both the folder and its parent, because the two carry different cases and
+        # neither covers the other. The parent lets discovery import the folder as a
+        # package, which is how a plugin laid out as a subpackage resolves. The folder
+        # itself is what lets a multi-file plugin import its own parts: an analysis tab
+        # is three files and its Controller imports the other two, and naming the folder
+        # in that import only works when the folder is named like an identifier - one
+        # real installation calls it "User Plugins", which no import statement can
+        # spell. With the folder on the path the siblings import by their own file
+        # names, which are always identifiers because each equals the class it defines.
+        #
+        # Appended rather than inserted, so a plugin file can never shadow a stdlib or
+        # site-packages module of the same name.
         plugin_path = Path(self.user_plugin_path).resolve()
-        parent_path = plugin_path.parent
-        if str(parent_path) not in sys.path:
-            sys.path.append(str(parent_path))
+        for importable in (plugin_path.parent, plugin_path):
+            if str(importable) not in sys.path:
+                sys.path.append(str(importable))
 
     def _ensure_folder(self, path: Path) -> Path:
         """

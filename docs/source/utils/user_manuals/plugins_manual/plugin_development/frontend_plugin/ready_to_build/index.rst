@@ -54,6 +54,15 @@ instantiates directly, and it names the other two.
    without a role suffix — ``MyTab``, not ``MyTabView`` — and the generator appends
    ``Controller``, ``Model`` and ``View`` itself.
 
+.. note::
+
+   A tab generated into your user plugin folder imports its View and Model by their bare
+   file names — ``from MyTabView import MyTabView`` — because Poriscope puts that folder
+   on the import path for you. A tab generated into this repository imports them through
+   ``poriscope.plugins.analysistabs`` instead, the way the five shipped tabs do. Either
+   way the rule that a file is named exactly for the class it defines is what makes the
+   import work, so rename all three together or not at all.
+
 .. tip::
 
    Frontend plugin families go through the same compliance gate as data plugins:

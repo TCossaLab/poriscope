@@ -28,12 +28,11 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[3]
 SCRIPT = Path(REPO_ROOT, "scripts", "new_plugin.py")
 
-# The generator writes the Controller's sibling imports against the name of the folder it
-# is generating into, because that is the only import the app makes resolve for a tab
-# outside the repository: ``main_app`` puts the *parent* of the user plugin folder on
-# ``sys.path``. Generating into a fixed, importable folder name and adding its parent to
-# ``sys.path`` is therefore the app's own import path, reproduced.
-TAB_FOLDER = "user_plugins"
+# Deliberately not an identifier, and named after the folder in the installation that found
+# the bug. Outside the repository the generated Controller imports its siblings by their
+# bare file names and the app puts the plugin folder itself on ``sys.path``; generating into
+# "User Plugins" is what proves that holds for a folder no import could ever name.
+TAB_FOLDER = "User Plugins"
 TAB_NAME = "Acceptance"
 
 
@@ -68,21 +67,30 @@ def generated_tab(
     :return: the three generated classes, keyed by role suffix
     :rtype: Dict[str, type]
     """
+    # The folder itself goes on sys.path, never its parent, because its name is not an
+    # identifier - which is the point of choosing that name here.
     folder = Path(tmp_path, TAB_FOLDER)
-    argv = [script.TAB, TAB_NAME, "--output-dir", str(folder), "--author", "Test Author"]
+    argv = [
+        script.TAB,
+        TAB_NAME,
+        "--output-dir",
+        str(folder),
+        "--author",
+        "Test Author",
+    ]
     assert script.main(argv) == 0
 
-    monkeypatch.syspath_prepend(str(tmp_path))
-    for stale in [m for m in sys.modules if m.split(".")[0] == TAB_FOLDER]:
-        sys.modules.pop(stale, None)
+    monkeypatch.syspath_prepend(str(folder))
+    for role in script.TRIAD:
+        sys.modules.pop(f"{TAB_NAME}{role.suffix}", None)
     importlib.invalidate_caches()
 
     loaded: Dict[str, type] = {}
     for role in script.TRIAD:
-        module = importlib.import_module(f"{TAB_FOLDER}.{TAB_NAME}{role.suffix}")
+        module = importlib.import_module(f"{TAB_NAME}{role.suffix}")
         loaded[role.suffix] = getattr(module, f"{TAB_NAME}{role.suffix}")
-    for stale in [m for m in sys.modules if m.split(".")[0] == TAB_FOLDER]:
-        monkeypatch.delitem(sys.modules, stale, raising=False)
+    for role in script.TRIAD:
+        monkeypatch.delitem(sys.modules, f"{TAB_NAME}{role.suffix}", raising=False)
     return loaded
 
 
@@ -99,7 +107,9 @@ class TestAGeneratedTabRuns:
         assert isinstance(tab.view, generated_tab["View"])
         assert isinstance(tab.model, generated_tab["Model"])
 
-    def test_the_view_is_a_widget_the_shell_can_add_as_a_page(self, qapp, generated_tab):
+    def test_the_view_is_a_widget_the_shell_can_add_as_a_page(
+        self, qapp, generated_tab
+    ):
         """``MainController`` hands ``tab.view`` straight to ``MainView.add_page``."""
         from PySide6.QtWidgets import QWidget
 
@@ -115,7 +125,9 @@ class TestAGeneratedTabRuns:
         tab = generated_tab["Controller"](subclasses)
         assert tab.view.available_subclasses == subclasses
 
-    def test_update_available_plugins_records_what_it_is_told(self, qapp, generated_tab):
+    def test_update_available_plugins_records_what_it_is_told(
+        self, qapp, generated_tab
+    ):
         """
         ``MainController`` calls this on every tab whenever any plugin is instantiated.
         The generated override delegates, so the record the base keeps survives - which is
@@ -129,7 +141,9 @@ class TestAGeneratedTabRuns:
     def test_notify_plugin_state_changed_is_safe_to_call(self, qapp, generated_tab):
         """Called on every tab for a change in any other; a new tab must tolerate it."""
         tab = generated_tab["Controller"]()
-        tab.view.notify_plugin_state_changed("MetaDatabaseLoader", "SQLite_0", "columns")
+        tab.view.notify_plugin_state_changed(
+            "MetaDatabaseLoader", "SQLite_0", "columns"
+        )
 
     def test_reset_actions_is_safe_to_call(self, qapp, generated_tab):
         """The base calls this whenever a tab's action history is replayed or cleared."""

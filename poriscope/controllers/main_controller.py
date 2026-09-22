@@ -191,10 +191,12 @@ class MainController(QObject):
     @Slot(str)
     def update_user_plugin_location(self, user_plugin_loc: str) -> None:
         self.main_model.update_app_config("User Plugin Folder", user_plugin_loc)
+        # The folder as well as its parent - see the same loop in `main_app`, which
+        # runs at startup where this runs when the folder is changed.
         plugin_path = Path(user_plugin_loc).resolve()
-        parent_path = plugin_path.parent
-        if str(parent_path) not in sys.path:
-            sys.path.append(str(parent_path))
+        for importable in (plugin_path.parent, plugin_path):
+            if str(importable) not in sys.path:
+                sys.path.append(str(importable))
         self.refresh_available_plugins()
 
     @log(logger=logger)
