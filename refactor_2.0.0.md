@@ -2977,13 +2977,33 @@ are checkable.
 
 ### The commit series
 
-- **7a — the breaking-change inventory.** `changelog.md`'s in-progress section already
-  carries **37** entries calling themselves breaking. This commit audits that list rather
-  than writing it from scratch: every `Meta*` ABC change since 1.9.0 is checked against the
-  section, anything narrowing or removing a base-class member that is not already called out
-  is added, and each entry is confirmed to say what an out-of-tree plugin author has to do.
-  `MetaView.handle_parameter_change` and the signal-bus deletion are the two that matter
-  most. No code changes.
+- **7a — the breaking-change inventory. LANDED 2026-09-22, and it found one gap.** Audited
+  against a measured surface diff rather than by reading: every class in
+  `poriscope/utils/Meta*.py` and `BaseDataPlugin.py` was parsed at `v1.9.0` and at HEAD and
+  the two method tables compared, giving **23 changes** - 12 removals, 4 new abstract
+  methods, 7 signature or abstractness changes.
+
+  **Two of the four new abstracts break nothing**, because `MetaEventTabControls` and
+  `MetaSubsetTabView` are themselves new in 2.0.0: nobody could have subclassed them, so
+  requiring a method of their subclasses costs nobody anything. Worth stating, because a
+  naive inventory would have listed them and made the release look more hostile than it is.
+
+  **Of the genuine breaks, exactly one was not called out.** The five event-index range
+  helpers - `_parse_event_indices`, `_expand_event_indices`, `_merge_ranges`, `_shift_ranges`
+  and `_format_ranges` - moved from `MetaView` down to `MetaEventTabView`. The changelog
+  described the move accurately but as an ordinary change, and narrowing a `Meta*` ABC is
+  breaking by this repository's own rule. Now marked, and it says which tabs are affected
+  and which are not.
+
+  Everything else held: the bus removal, `handle_parameter_change`,
+  `check_column_exists`/`set_column_exists`, `_setup_canvas`'s dropped argument,
+  `_logscale_and_filter_multiple_columns`, `_subset_controls`, and 7c's and 7d's own
+  contract changes were all already called out, and each says what an out-of-tree author has
+  to do. The section carries **41** breaking entries.
+
+  The diff script is not committed. It answers one question once, and a committed version
+  would be a gate nobody agreed to - the ratchets in this plan exist where drift is
+  continuous, and an ABC surface is compared per release rather than per commit.
 - **7b — session state against a real 1.x file. LANDED 2026-09-22, nothing broken.** Kyle
   supplied a saved session; it is checked in as `tests/unit/views/saved_state/session_1x.json`
   with its four absolute paths scrubbed and nothing else changed. Three tabs, seven data
@@ -3082,6 +3102,12 @@ Each commit runs the full suite green, as everywhere else. **7c and 7d each need
 Windows pass** over a read and a write respectively, because both change a contract every
 data plugin sits on.
 
+### Step 7 is closed
+
+All five commits have landed: the inventory audit (7a), the session-state verification (7b),
+the reader split (7c), the writer parameter collapse (7d) and the version gate (7e). The
+release itself is deliberately **not** cut here - see Step 8.
+
 ### Out of this step
 
 - **The action-history rewrite is deferred** — Kyle, 2026-09-22: it deserves its own feature
@@ -3125,11 +3151,11 @@ actually contains, and nothing else in the plan looks for it.
   not. Have the plugin say so in the text the sidebar shows, by overriding
   `report_channel_status` to delegate to `MetaReader`'s and append one line.
 
-  **Append it once, not once per channel.** The base's `channel is None` branch loops every
-  channel and concatenates, so appending inside the per-channel arm repeats the notice for
-  each one. Attach it to the aggregate call, and only when `init` is True - the non-init
-  path returns `""` today, and a deprecation line is startup information rather than
-  something to repeat on every status refresh.
+  **Per-channel repetition is fine** (Kyle, 2026-09-22), so append it in the per-channel arm
+  and let the base's `channel is None` branch concatenate one notice per channel. Gate it on
+  `init` being True, matching what that arm already does - the non-init path returns `""`,
+  and a deprecation line is startup information rather than something to repeat on every
+  status refresh.
 
   **Named item: comment the database schema's two channel columns.** The `events`,
   `sublevels` and `data` tables each carry both `channel_db_id` and `channel_id`, and

@@ -372,7 +372,7 @@
 
 * **Breaking:** `MetaView._setup_canvas` no longer takes a `num_channels` argument, which it never read
 
-* The event-index range helpers now live on the shared base for the Raw Data and Event Analysis tabs rather than on the base every tab inherits
+* **Breaking:** the event-index range helpers - `_parse_event_indices`, `_expand_event_indices`, `_merge_ranges`, `_shift_ranges` and `_format_ranges` - have moved from `MetaView` to `MetaEventTabView`, so a tab that subclasses `MetaView` directly no longer inherits them; a tab that subclasses `MetaEventTabView` is unaffected
 
 * Progress-bar updates in one analysis tab no longer wait on a lock held by another tab
 
