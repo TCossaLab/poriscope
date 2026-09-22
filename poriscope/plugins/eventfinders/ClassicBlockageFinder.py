@@ -94,9 +94,11 @@ class ClassicBlockageFinder(MetaEventFinder):
         from.
 
         The ``super()`` call supplies the mandatory ``"MetaReader"`` key, which is how
-        this plugin is wired to its data source.
+        this plugin is wired to its data source, and ``"Threshold"``, which the base
+        declares without a unit because the base loop reads it; this plugin sets
+        the unit.
 
-        The keys this plugin adds:
+        The keys this plugin adds or configures:
 
         - ``Threshold`` (pA) - how far below the fitted baseline the signal must fall
           for an event to start, in absolute current.
@@ -113,12 +115,7 @@ class ClassicBlockageFinder(MetaEventFinder):
         :rtype: Dict[str, Dict[str, Any]]
         """
         settings = super().get_empty_settings(globally_available_plugins, standalone)
-        settings["Threshold"] = {
-            "Type": float,
-            "Value": None,
-            "Min": 0.0,
-            "Units": "pA",
-        }
+        settings["Threshold"]["Units"] = "pA"
         settings["Min Duration"] = {
             "Type": float,
             "Value": 0.0,

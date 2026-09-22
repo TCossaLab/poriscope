@@ -20,7 +20,7 @@ snapshot was the nearest thing that looked like one.
 | - `eventfinders`, an 8th family added 2026-09-19 | not measured | **0** | 0 |
 | - the 3 analysis-tab families of the original six | 1,199 | **31** | 31 (floor) |
 | - the other 3 of the original six: datareaders, eventfitters, `views/widgets` | 690 (435 / 193 / 62) | **642** (446 / 193 / 3) | - |
-| Decision C ABC breaks outstanding | 5 | **2** (`Threshold`, `close_resources` dispatch) | 0 - `"Kind"` amended out |
+| Decision C ABC breaks outstanding | 5 | **1** (`close_resources` dispatch) | 0 - `"Kind"` amended out |
 
 **The duplication rows do not add up to one before/after pair, deliberately.** `*Model.py`
 became a measured family part-way through, so 1,889 never included it and pairing 1,889
@@ -3236,8 +3236,13 @@ held. What did not:
 
 - **Decision C was 2 of 5, not 5 of 5.** See the Step 7 correction above. Taken in Step 8,
   one branch each, in this order:
-  - **`Threshold`** - declare it in `MetaEventFinder.get_empty_settings` so a generated
-    finder no longer `KeyError`s inside the base loop.
+  - **`Threshold` - LANDED 2026-09-22.** Declared in `MetaEventFinder.get_empty_settings`
+    with `"Units": None` (Kyle), so a generated finder no longer `KeyError`s inside the base
+    loop; `ClassicBlockageFinder` sets pA on the inherited entry and `ThresholdBlockageFinder`
+    keeps σ. Shipped behaviour unchanged. The σ-against-pA comparison in the base loop is filed
+    forward as a behaviour question.
+    **Manual pass 2026-09-22, all clear** (Kyle): both finders' dialogs show `Threshold` once, in
+    pA and σ, and event finding on a known file matches its earlier counts and data times.
   - **`close_resources` takes a required `channel: int`** (Kyle, 2026-09-22), with every
     caller looping over the channels itself - the pattern `get_channel_length` already
     follows - instead of the `_close_one_channel` hook `DECISIONS.md` named. The plan for

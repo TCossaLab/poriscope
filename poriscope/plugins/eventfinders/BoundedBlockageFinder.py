@@ -68,9 +68,11 @@ class BoundedBlockageFinder(ClassicBlockageFinder):
         from.
 
         The ``super()`` call supplies the mandatory ``"MetaReader"`` key, which is how
-        this plugin is wired to its data source.
+        this plugin is wired to its data source, and ``"Threshold"``, which the base
+        declares without a unit because the base loop reads it; this plugin sets
+        the unit.
 
-        The keys this plugin adds:
+        The keys this plugin adds or configures:
 
         - ``Threshold`` (pA) - how far below the fitted baseline the signal must fall
           for an event to start.

@@ -212,12 +212,10 @@ the oversized `setupUi` methods. This review re-confirmed each with fresh counts
   per-channel dicts, so `sublevel_starts`, `event_lengths` and `applied_filters` survive an
   abort holding stale data. **Taken in Step 8** (Kyle, 2026-09-22): `close_resources` takes a
   required `channel: int` and callers loop over channels, as `get_channel_length` does.
-- **`MetaEventFinder`'s base loop reads a setting no schema declares.** Taken in Step 8.
-  `:453` reads `self.settings["Threshold"]["Value"]` from base-class code, but the
-  `get_empty_settings` body (`:1240-1256`; the `:1208` hit is its docstring example)
-  declares only `MetaReader` and `scripts/new_plugin.py` emits no `Threshold`, so any
-  generated eventfinder `KeyError`s inside the base. `:453` also compares it against a mean
-  in pA while `ThresholdBlockageFinder:83` declares it in σ.
+- **`ThresholdBlockageFinder`'s σ threshold is compared against a pA mean in the base loop.**
+  `MetaEventFinder.find_events:453` skips a chunk when `mean < Threshold`, which is right for
+  `ClassicBlockageFinder`'s pA threshold; at 8σ it skips only chunks with a baseline under 8 pA.
+  A behaviour question, not a contract one - the key is declared on the base since 2.0.0.
 - **The two multi-select popups disagree about Linux.** `MultiSelectComboBox.__init__`
   builds a frameless `QWidget` popup on Linux and a `QDialog` elsewhere;
   `MultiSelectFilterComboBox.__init__` builds a `QDialog` on every platform, so the filter

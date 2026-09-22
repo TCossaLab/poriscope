@@ -6,6 +6,11 @@ from unittest.mock import patch
 import numpy as np
 import pytest
 
+from poriscope.plugins.eventfinders.BoundedBlockageFinder import BoundedBlockageFinder
+from poriscope.plugins.eventfinders.ClassicBlockageFinder import ClassicBlockageFinder
+from poriscope.plugins.eventfinders.ThresholdBlockageFinder import (
+    ThresholdBlockageFinder,
+)
 from poriscope.utils.MetaEventFinder import MetaEventFinder
 from poriscope.utils.MetaReader import MetaReader
 
@@ -294,6 +299,53 @@ class TestInitAndSettings:
         )
         assert settings["MetaReader"]["Value"] == ""
         assert settings["MetaReader"]["Options"] is None
+
+    def test_get_empty_settings_declares_threshold(self, finder):
+        # find_events reads Threshold in the base loop, so the base has to declare
+        # it; the unit is each subclass's to set, since the shipped finders
+        # disagree on it.
+        settings = finder.get_empty_settings(standalone=True)
+        assert settings["Threshold"] == {
+            "Type": float,
+            "Value": None,
+            "Min": 0.0,
+            "Units": None,
+        }
+
+    def test_finder_built_from_the_base_schema_finds_events(self, reader):
+        # A finder that adds nothing to the base's settings - what new_plugin.py
+        # generates - must be able to run the base loop once its values are filled.
+        settings = ConcreteEventFinder.get_empty_settings(
+            ConcreteEventFinder.__new__(ConcreteEventFinder), standalone=True
+        )
+        settings["MetaReader"] = {"Type": None, "Value": reader, "Options": None}
+        settings["Threshold"]["Value"] = 20.0
+        f = build_finder(settings)
+        progress = list(f.find_events(0, [(0, 0)], chunk_length=10.0))
+        assert progress[-1] == 1.0
+        assert f.num_events_found[0] == 2
+
+
+class TestShippedFinderThresholdUnits:
+    """Each shipped finder sets the unit of the Threshold the base declares."""
+
+    def test_classic_blockage_finder_threshold_is_in_pA(self):
+        settings = ClassicBlockageFinder.get_empty_settings(
+            ClassicBlockageFinder.__new__(ClassicBlockageFinder), standalone=True
+        )
+        assert settings["Threshold"]["Units"] == "pA"
+
+    def test_bounded_blockage_finder_threshold_is_in_pA(self):
+        settings = BoundedBlockageFinder.get_empty_settings(
+            BoundedBlockageFinder.__new__(BoundedBlockageFinder), standalone=True
+        )
+        assert settings["Threshold"]["Units"] == "pA"
+
+    def test_threshold_blockage_finder_threshold_is_in_sigma(self):
+        settings = ThresholdBlockageFinder.get_empty_settings(
+            ThresholdBlockageFinder.__new__(ThresholdBlockageFinder), standalone=True
+        )
+        assert settings["Threshold"]["Units"] == "σ"
 
 
 # ---------------------------------------------------------------------------

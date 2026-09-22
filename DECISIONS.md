@@ -16,7 +16,7 @@ which ran through August 2026 and is complete. The step numbers only date the de
 `Threshold` from a docstring example and `close_resources` dispatch from a signature that
 already existed at `v1.9.0`. Decision D said Tier B ships in 2.0.0, and four items did not.
 
-**Decision** (Kyle, 2026-09-22). `Threshold` and `close_resources` are taken before the cut.
+**Decision** (Kyle, 2026-09-22). `Threshold` and `close_resources` are taken before the cut. `Threshold` is declared on the base with `"Units": None`, each subclass setting its own unit, since the shipped finders disagree on it (pA against σ).
 `close_resources` takes a required `channel: int` and every caller loops over channels, as
 `get_channel_length` does - **not** the `_close_one_channel` hook recorded under Decision C.
 `"Kind"` is dropped: it was never built, and the entry below calls it "the better fix, if

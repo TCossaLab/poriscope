@@ -1196,7 +1196,9 @@ class MetaEventFinder(BaseDataPlugin):
         This dict must have the following structure, but Min, Max, and Options can be skipped or explicitly set to None if they are not used.
         Type is required; Value may be omitted or set to None, both meaning there is no default and the user must supply one. All values provided must be consistent with Type.
 
-        Your Eventfinder MUST include at least the "MetaReader" key, which can be ensured by calling ``settings = super().get_empty_settings(globally_available_plugins, standalone)`` before adding any additional settings keys
+        Your Eventfinder MUST include at least the "MetaReader" and "Threshold" keys, which can be ensured by calling ``settings = super().get_empty_settings(globally_available_plugins, standalone)`` before adding any additional settings keys.
+
+        "Threshold" is declared here because :meth:`find_events` reads it: a chunk whose baseline mean is smaller than the threshold is skipped as unusable before your ``_find_events_in_chunk`` sees it. Its ``"Units"`` is left ``None``, because what the threshold means is yours to define - set it to the unit your implementation interprets it in, as the example below does.
 
         This function must implement returning of a dictionary of settings required to initialize the filter, in the specified format. Values in this dictionary can be accessed downstream through the ``self.settings`` class variable. This structure is a nested dictionary that supplies both values and a variety of information about those values, used by poriscope to perform sanity and consistency checking at instantiation.
 
@@ -1205,11 +1207,7 @@ class MetaEventFinder(BaseDataPlugin):
         .. code:: python
 
             settings = super().get_empty_settings(globally_available_plugins, standalone)
-            settings["Threshold"] = {"Type": float,
-                                    "Value": None,
-                                    "Min": 0.0,
-                                    "Units": "pA"
-                                    }
+            settings["Threshold"]["Units"] = "pA"
             settings["Min Duration"] = {"Type": float,
                                         "Value": 0.0,
                                         "Min": 0.0,
@@ -1227,7 +1225,7 @@ class MetaEventFinder(BaseDataPlugin):
                                         }
             return settings
 
-        which will ensure that your have the 3 keys specified above, as well as an additional key, ``"MetaReader"``, as required by eventfinders. In the case of categorical settings, you can also supply the "Options" key in the second level dictionaries.
+        which will ensure that you have the 3 keys specified above, as well as ``"MetaReader"`` and ``"Threshold"``, as required by eventfinders. In the case of categorical settings, you can also supply the "Options" key in the second level dictionaries.
 
         :param globally_available_plugins: a dict containing all data plugins that exist to date, keyed by metaclass. Must include "MetaReader" as a key, with explicitly set Type MetaReader.
         :type globally_available_plugins: Optional[ Dict[str, List[str]]]
@@ -1252,7 +1250,13 @@ class MetaEventFinder(BaseDataPlugin):
                 "Type": str,
                 "Value": reader_options[0] if reader_options is not None else "",
                 "Options": reader_options,
-            }
+            },
+            "Threshold": {
+                "Type": float,
+                "Value": None,
+                "Min": 0.0,
+                "Units": None,
+            },
         }
         return settings
 
