@@ -273,9 +273,8 @@ class ClusteringController(MetaController):
         Write the clustering result, dropping any existing one first.
 
         Second of the commit path's two round trips. **A failed drop stops the
-        commit**, which is what the View's ``operation_success`` check did before Step
-        4a - writing the new columns on top of a half-deleted old result would leave
-        the database in a state the user has to repair by hand.
+        commit** - writing the new columns on top of a half-deleted old result would
+        leave the database in a state the user has to repair by hand.
 
         :param loader: the database loader's plugin key
         :type loader: str

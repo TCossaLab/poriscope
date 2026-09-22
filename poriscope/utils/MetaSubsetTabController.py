@@ -54,7 +54,7 @@ class MetaSubsetTabController(MetaController):
       to the View, which is the Model-to-View half of the mediation this layer
       exists for.
     - **Experiment and column state.** set_experiment_id, set_channel_db_id,
-      update_column_names, update_column_units,
+      update_column_names,
       get_experiment_structure_ready and get_experiment_names_for_tree
       forward the loader's description of the database to the View.
     - **Filter validation.** validate_filter and validate_raw_filter answer the

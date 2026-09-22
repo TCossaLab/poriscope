@@ -1151,8 +1151,9 @@ This one affects you if you edit any file in one of the **eight measured familie
 five ``*View.py``, ``*Controller.py`` and ``*Model.py`` files under
 ``poriscope/plugins/analysistabs/``, the five ``*controls.py`` under its ``utils/``, and
 the data readers, event fitters, event finders and shared widgets. Those families carry a
-large amount of byte-identical duplication, and the 2.0.0 refactor is removing it. The
-ratchet exists so that removal is *demonstrated* rather than asserted.
+large amount of byte-identical duplication, and the 2.0.0 refactor removed most of it. The
+ratchet exists so that removal is *demonstrated* rather than asserted, and so it cannot
+grow back unnoticed.
 
 ``PeakFinder.py``, ``Basic_PeakFinder.py`` and ``NanoTrees.py`` are **deliberately outside**
 the fitters family: their logic is another maintainer's under standing policy, so a ratchet
@@ -1221,8 +1222,8 @@ shell could be restructured in either direction unobserved.
 
 **The shell is measured in complexity, not in lines**, and that was a deliberate choice.
 ``settings_window.py`` has *zero* functions over the threshold despite 890 lines, and
-``main_view.py`` has two despite 1,235 — the length is flat Qt widget construction that a
-2026-08 audit reviewed with no findings. Driving those line counts down would chase a
+``main_view.py`` has two despite 1,235 — the length is flat Qt widget construction, with no
+branching to untangle. Driving those line counts down would chase a
 number that does not describe a problem. The scope is nine files rather than the whole
 repository for the same reason the fitters are excluded from the duplication ratchet:
 repo-wide, most long functions live in owner-held plugins and in ``setupUi`` methods the
@@ -1283,7 +1284,7 @@ Analysis-Tab MVC Boundary
 Like the ratchet above, this one affects you if you edit the analysis tabs, the widgets they
 are built from, the app shell's own views and controllers, or the shared bases under
 ``poriscope/utils/``. The analysis-tab layer never grew a real Model, so its Views absorbed
-work a Model should do. Five rules describe the boundary the 2.0.0 refactor is putting back:
+work a Model should do. Five rules describe the boundary the 2.0.0 refactor put back:
 
 1. **No View emits on the plugin bus, and the bus does not come back.** The
    ``global_signal`` bus was removed in 2.0.0, so this rule can no longer fire against
@@ -1358,7 +1359,7 @@ Refactor-Coverage Audit
 ------------------------
 
 The third of the analysis-tab gates, and like the other two it only affects you if you edit
-those files while the 2.0.0 refactor is in progress. The rule it holds is that **every method
+those files before the 2.0.0 refactor's plan is retired at release. The rule it holds is that **every method
 the refactor moves or deduplicates must be pinned by a test that names it** — the target list
 is derived from the refactor's own move and deduplication lists rather than from a judgement
 about which methods look under-tested.

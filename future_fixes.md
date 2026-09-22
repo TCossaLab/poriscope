@@ -16,6 +16,16 @@ Read-only investigation and measurement do not.
   `MetaDatabaseLoader` rather than a defect repair - see `future_refactors_and_features.md`
   Part 13. Queued deliberately for after the 2.0.0 refactor.
 
+## Left open by the 2.0.0 refactor (Step 8 audit, 2026-09-22)
+
+- **`WalkthroughStep` is a positional 4-tuple** (`walkthrough_mixin.py:40`), built as ~90
+  literals across nine files. A frozen dataclass names the fields; moves no gate.
+- **`MetaSubsetTabController.validate_raw_filter:736` still builds `f"{query} LIMIT 0"`** in
+  the Controller. It stayed because no `MetaSubsetTabModel` existed; one has since
+  2026-09-17.
+- **`MainView._dismiss_milestone:940` re-implements `clear_milestone_dialog:1141`** instead
+  of calling it. Step 8's orphan sweep.
+
 ## A milestone blocks the page switch but not what caused it (2026-09-21)
 
 Found during 5c.6's manual pass; **pre-existing**, and the gating is byte-identical to
@@ -82,7 +92,7 @@ nothing the user sees; a test pins it as current behaviour. The fix is to compar
 
 ## `MetadataModel.kernel_density` uses a deprecated SciPy namespace (2026-09-14)
 
-`MetadataModel.py:296` calls `stats.kde.gaussian_kde`, which warns
+`MetadataModel.py:297` calls `stats.kde.gaussian_kde`, which warns
 "the `scipy.stats.kde` namespace is deprecated and will be removed in SciPy 2.0.0" on
 every density plot. The fix is one line - import `gaussian_kde` from `scipy.stats` - and
 the only reason it is queued rather than done is that it belongs with a test run that
@@ -148,23 +158,21 @@ across five, four of them `def _init(self): pass`) while the Views are 11,557 li
 75 of the 77 `global_signal.emit` sites - re-measured at `062ef6f`. Decisions A-E are recorded
 in `DECISIONS.md`.
 
-- **1.9.0 is Tier A + B2 + C of the plan's Step 1** - the defects in code the refactor moves,
-  the zero-risk deletions, and the CI/tooling tier. Everything else in the High/Moderate tiers
-  below ships inside 2.0.0.
-- **Do not fix duplication findings here.** The ~1,900 removable lines, the three
-  `format_axis_label` copies, `_factors`, `_setup_canvas`'s dead `num_channels`, `hist_data`'s
-  three shapes and the five oversized `setupUi` are the refactor itself, not work to do ahead
-  of it.
-- **Blocked on the plan's Step 2** (characterization tests, which do not exist): every
-  structural change in Steps 3-5.
+- **Steps 0-7 are closed; Step 8 is the exit review.** Decision D is amended: the Tier B
+  items still below did not ship in 2.0.0 and are ordinary queued work. The duplication items
+  the plan once claimed (`format_axis_label`, `hist_data`, `setupUi`) were not taken and are
+  queued here too.
 - **The person-blocker is cleared.** The four-part ask in `refactor_2.0.0.md` was sent
   2026-09-04 and **agreed the same day** - green light to proceed. Decision E is satisfied, so
   Step 2 is unblocked and so are Steps 3a/3f in `analysistabs/utils/`. **The whole plan is ours,
   tests included** - all five Step 2 deliverables plus re-pointing the existing suites. A standing
-  exception to "test-writing is hers" for this plan only; blocks 1 and 7 below remain hers. The
+  exception to "test-writing is hers" for this plan only; blocks 1, 4 and 5 below remain hers. The
   fitter owner still must be consulted before any `MetaEventFitter` signature change, which moves
   all three owner-held fitters in lockstep.
-- `future_refactors_and_features.md` Parts 5-12 are absorbed as the plan's Step 5.
+- `future_refactors_and_features.md` Parts 10-12 were not all absorbed by Step 5: the
+  `MainView` menu table, `SettingsWindow`'s row blocks and log-level dicts, the multiselect
+  select-all branch, `dict_dialog_widget.on_ok`'s type dispatch and
+  `clustering_settings_widget`'s row builders are still open there.
 
 ## Review findings (2026-09-03)
 
@@ -202,12 +210,13 @@ the oversized `setupUi` methods. This review re-confirmed each with fresh counts
   `self.eventfitting_status[None] = False` into a `Dict[int, bool]` behind a
   `type: ignore[index]` guarded by an `except KeyError` that cannot fire. It clears 4 of 7
   per-channel dicts, so `sublevel_starts`, `event_lengths` and `applied_filters` survive an
-  abort holding stale data. One template method on `BaseDataPlugin` plus a
-  `_close_one_channel(channel: int)` hook fixes all of it and removes four `type: ignore`s.
-- **`MetaEventFinder`'s base loop reads a setting no schema declares.** `:459` reads
-  `self.settings["Threshold"]["Value"]` from base-class code, but `get_empty_settings:1056`
+  abort holding stale data. **Taken in Step 8** (Kyle, 2026-09-22): `close_resources` takes a
+  required `channel: int` and callers loop over channels, as `get_channel_length` does.
+- **`MetaEventFinder`'s base loop reads a setting no schema declares.** Taken in Step 8.
+  `:453` reads `self.settings["Threshold"]["Value"]` from base-class code, but the
+  `get_empty_settings` body (`:1240-1256`; the `:1208` hit is its docstring example)
   declares only `MetaReader` and `scripts/new_plugin.py` emits no `Threshold`, so any
-  generated eventfinder `KeyError`s inside the base. `:459` also compares it against a mean
+  generated eventfinder `KeyError`s inside the base. `:453` also compares it against a mean
   in pA while `ThresholdBlockageFinder:83` declares it in σ.
 - **The two multi-select popups disagree about Linux.** `MultiSelectComboBox.__init__`
   builds a frameless `QWidget` popup on Linux and a `QDialog` elsewhere;
@@ -243,12 +252,12 @@ the oversized `setupUi` methods. This review re-confirmed each with fresh counts
   `MetaDatabaseLoader.load_metadata` is declared `-> pd.DataFrame` but returns `None` at
   `:1106` and `:1111`; the mypy hook runs without pandas, so this is invisible to the gate.
 - **The Protein tab blocks the GUI thread with no progress and no cancel.** `ProteinView.py`
-  contains no `update_progressbar`/`progress`/`kill_`/`abort`/`cancel` across 4,058 lines,
-  while `_update_distribution_individual:2462` runs a rejection sampler bounded at
+  contains no `update_progressbar`/`progress`/`kill_`/`abort`/`cancel` across 2,395 lines,
+  while `_update_distribution_individual:1760` runs a rejection sampler bounded at
   200 x 50,000 twice per event plus up to two `curve_fit` calls, over an unbounded event
   count. No `processEvents()` anywhere in the repo. The threaded path exists but is reached
-  from 5 view sites, all writes. **Blocked on** converting the emit-then-read sites in the
-  2026-08-25 tier to real callbacks.
+  from 5 view sites, all writes. **Unblocked** since the bus was retired; the computation
+  still runs on the GUI thread.
 
 ### Moderate
 
@@ -278,23 +287,19 @@ the oversized `setupUi` methods. This review re-confirmed each with fresh counts
   literal list. Also `_validate_param_types` is strictly nominal: `Type: float` rejects an
   integer `5` while `Type: int` accepts `True`. **See `DECISIONS.md`** - the
   `"Validate Options"` flag is rejected and the `"Kind"` key is the recorded better fix.
-- **`MetaReader.load_data`'s return annotation is false, with a `cast()` over it.**
-  `:137-139` declares `-> npt.NDArray[np.float64]` but `:244-248` returns a 3-tuple when
-  `raw_data=True`, with `cast(np.ndarray, data)` at `:245`. Per `DECISIONS.md` the remedy is
-  splitting `raw_data` into a second method, not widening the union.
 - **Chunk boundaries can duplicate a sample through a float round-trip.**
   `MetaReader.py:389-394` converts an integer sample index to seconds and `:160-161`
   truncates it back; measured, `int((i/sr)*sr) != i` for 7.7% of the first 2M indices at
   100 kHz, and when it slips low `i += len(data)` compounds it. Pass sample counts, or
   `round()`.
-- **Duplication, measured at 1,400 removable lines** (was 1,889; Step 3a's `MetaControls`
-  took 489). `CUSUM.py`/`NoFitter.py` share 411 identical lines;
-  `ClassicCUSUM` is a 195-line override differing in 2 lines and wants to be `CUSUM` with a
-  `_normalize_step_size()` hook; the two Chimera readers differ in 23 lines of 390;
-  `_find_events_in_chunk` is duplicated across two finders.
+- **The CUSUM family's duplication was never ruled on.** `eventfitters` is 193 removable
+  (`measure_duplication.py --verbose`): `_populate_event_metadata` (72) and four `_define_*`
+  (88) shared by `CUSUM`/`NoFitter`, plus 33 of no-op stubs. `ClassicCUSUM.py:94`'s
+  `_locate_sublevel_transitions` is a 202/205-line near-copy of `CUSUM.py:178`, 6 lines
+  differing. Step 5 booked it as a floor with no recorded reason: rule on it or take it.
 - **`format_axis_label` still exists in three places** - a module function in `ProteinView.py`,
   a method in `MetadataView.py` and inlined in `ClusteringView.py`. The behavioural drift is
-  gone (2026-09-04); merging the copies is the refactor's Step 3.
+  gone (2026-09-04); the refactor did not merge them, and no ruling says it should not.
 - **`MainView`'s navigation state is a QLabel's rendered text.** `get_current_view:1079`
   returns `self.page_title_label.text()`, keyed into `self.pages` at `:1052` to decide
   whether to launch a walkthrough; the label starts as `"Home"`, in neither, so the app logs
@@ -307,8 +312,8 @@ the oversized `setupUi` methods. This review re-confirmed each with fresh counts
   assigned only in `_reset_actions:158/160` and read unguarded at `:739`/`:762`, though it is
   latent: both reads are immediately preceded by a `_reset_actions()` call, and `update_plot`
   carries no `@register_action` so replay cannot reach it out of order. Fixing it properly
-  means an `Optional[Axes]` declared in `_init` plus handling at both reads, which belongs
-  with the canvas-lifecycle work in Step 3, not ahead of it. **`ProteinView.ax_hist`/`ax_vm`
+  means an `Optional[Axes]` declared in `_init` plus handling at both reads (now
+  `_reset_actions:176/178`, reads `:747`/`:770`). **`ProteinView.ax_hist`/`ax_vm`
   are not instances of this** - both are properties over axes built eagerly by
   `_set_custom_display_area`, which is on the construction path.
 - **`MetaFilter.force_serial_channel_operations` is unenforceable.**
@@ -316,12 +321,10 @@ the oversized `setupUi` methods. This review re-confirmed each with fresh counts
   inside another plugin's generator, and `@serialize_channels` is restricted to generator
   functions. Either delete the declaration for this family or route `filter_data` through
   the guard.
-- **Half-finished multi-channel plotting left dead code in the base.**
-  `MetaView._setup_canvas:221` never uses its `num_channels` parameter though its docstring
-  promises subplots per channel; `MetaView._factors:139` is duplicated verbatim into
-  `RawDataView.py:109` and `EventAnalysisView.py:122`, shadowing the base the other two tabs
-  inherit; and `main_view.py:110-111` allocates a `Figure` + `FigureCanvas` never referenced
-  again.
+- **Half-finished multi-channel plotting left dead code.** `MetaView._factors` is
+  duplicated into `RawDataView.py:135` and `EventAnalysisView.py:119`, and
+  `main_view.py:111-112` allocates a `Figure` + `FigureCanvas` never referenced again. Step 8's
+  orphan sweep.
 - **`SQLiteEventLoader` opens one connection per event** (`:127`, from
   `MetaEventLoader.get_event_generator:320` per index); `construct_metadata_query` opens ten
   connections for a single call, measured. No connection reuse and no `PRAGMA journal_mode`
@@ -339,11 +342,9 @@ the oversized `setupUi` methods. This review re-confirmed each with fresh counts
   `eventfitting_status = True`. Also `:601` checks `isinstance(..., Iterable)` then `:605`
   calls `len()` - a generator passes and dies on the call - and `fit_events(indices=[])`
   marks the channel fully fitted while the docstring at `:481` says it fits everything.
-- **`_write_data` takes 13 parameters** (`MetaWriter.py:255-270`) where the caller
-  (`:438-452`) unpacks one dict. Related: `get_single_event_data` really returns `None`
-  (`MetaEventFinder.py:835`) and its only caller subscripts it unchecked
-  (`MetaWriter.py:427`), producing a swallowed rejection reading
-  `'NoneType' object is not subscriptable`. It should raise.
+- **`get_single_event_data` returns `None` on a bad index** (`MetaEventFinder.py:834`) and
+  yields it into the writer (`:731`), which then fails on it as a swallowed rejection. It
+  should raise.
 - **Silent scientific fallbacks with no metadata flag, in `CUSUM.py`.** For a sublevel
   shorter than `rise_time`: `sublevel_current` becomes a single sample from the next level's
   onset instead of a median (`:446`), `sublevel_stdev` becomes `baseline_std` (`:474`), and
@@ -403,23 +404,10 @@ the oversized `setupUi` methods. This review re-confirmed each with fresh counts
 
 Findings the plan's own steps already claim are recorded in `refactor_2.0.0.md`, not here.
 
-- **Step 4a leaves dead callback sinks behind it; sweep them once a tab reaches zero
-  emits.** In `EventAnalysisView` the seven attributes `update_plot_features` and
-  `set_num_events_allowed` assign are now written and never read, and with no emits left
-  in the View nothing reaches those methods or their Controller relays
-  (`update_features`, `set_num_events_allowed`) either. The plan's 4a bullet predicts
-  ~30 such `relay_*`/`set_*` sinks across the tabs. Check for callers in `tests/` and
-  the other tabs before deleting any, and do it per tab as each hits zero.
-- **`MetaSubsetTabView.update_units` is Metadata-only behaviour on a shared base.**
-  Re-diagnosed 2026-09-08; the earlier entry here said "protein-tab unit labels silently
-  never update", which implied Protein has unit labels it should be updating. It has none:
-  `proteincontrols` contains no units label, `ProteinView` keeps no units cache, and its
-  axis labels use hardcoded unit literals. `update_units` is called from
-  `MetadataView:1878` and nowhere else, so `ProteinView`'s missing `update_column_units`
-  is **unreachable rather than swallowed**. The fix is to move `update_units` down to
-  `MetadataView` and make `MetaSubsetTabController.update_column_units` a Metadata-only
-  relay — the same shape as the Clustering-only `check_column_exists`/`set_column_exists`
-  that Step 3e moved down. Folded into Step 4a's first subset-tab commit.
+- **Dead callback sinks left by the bus's retirement** - about fifteen `relay_*`/`set_*`
+  Controller methods with no production caller, listed in `refactor_2.0.0.md` Step 8 Part 1,
+  plus `EventAnalysisView`'s `update_plot_features`/`set_num_events_allowed`. Step 8's
+  orphan sweep; check for dynamic dispatch before deleting.
 - **`MetaDatabaseLoader.export_subset_to_csv:605` assumes one `data` row per event id.**
   `data["filename"] = filenames` raises a length mismatch if the `data` table holds rows for
   only some of the selected events. An empty `data` table is now rejected explicitly; a
@@ -455,12 +443,6 @@ Findings the plan's own steps already claim are recorded in `refactor_2.0.0.md`,
 
 ### Docs
 
-- **Autodoc publishes 478 private methods.** `plugins_generate_autodoc.py` emits 1,119
-  `automethod` directives across 78 pages, 43% single-underscore privates, so
-  `peakfinder.rst` publishes 45 members (32 private) inlining 1,528 lines of internal
-  rationale onto one public API page. The generator should omit a private-methods section.
-  Precedent for moving that prose exists - `fit_fallbacks.md` holds the narrative that was
-  "too large to carry in docstrings", and `PeakFinder`'s class docstring points at it.
 - **One stale doc claim.** `future_refactors_and_features.md:283` still asks someone to
   confirm whether `PluginManagerPopup.py` is dead code; it was deleted in `d0dbc53`.
 - **Four `Meta*` bases carry a byte-identical 3,584-character `get_empty_settings`
@@ -660,26 +642,15 @@ absorbs what it needs and stands alone, leaving 20240101 a clean deletion.
   `ProteinView.py:4037` and `MetadataView.py:3645`; `ClusteringView.py:731-742`'s inline
   builder is unaffected because it never receives a label with a parenthetical. Behaviour is
   pinned in `tests/unit/views/test_duplicated_helpers.py`, so a fix must update those tests.
-- **`pytest.ini` sets no `pythonpath`, so `tests.*` imports resolve only by luck.**
-  `pytest tests/unit/views/test_event_analysis_view.py` alone fails with
-  `ModuleNotFoundError: No module named 'tests'`; it works only when `tests/e2e/conftest.py`
-  is collected first. Step 2 branch 1 adds `pythonpath = .`. **The 13 dead `sys.path` shims
-  in the e2e test modules are then deletable** - each is placed *after* the import it exists
-  to enable, so none of them ever did anything.
+- **17 e2e test modules carry dead `sys.path` shims.** `pytest.ini` sets `pythonpath = .`,
+  and each shim sits *after* the import it exists to enable, so none ever did anything.
 - **Two view test modules mock the view's `logger`**, which `tests/unit/views/_qt_mocks.py`'s
   module docstring explicitly warns against: `test_raw_data_view.py:73` and
   `test_metadata_view.py:97`. Every `caplog` assertion in those two files is blind. They also
-  hand-mock `global_signal` instead of using `shadow_signals`.
+  (Now `test_raw_data_view.py:88` and `test_metadata_view.py:152`.)
 - **`tests/conftest.py:8-15` describes a `tests/unit/models/conftest.py` deleted in
   `c99249ea`.** The `main_model` fixture now lives at `tests/unit/models/test_main_model.py:25`
   and relies wholly on the autouse `sandbox_user_data_dir`.
-- **`ProteinView._build_load_event_data_args:1957-1967` appends a scope clause to arbitrary
-  user SQL on a naive `"WHERE" in scoped_query.upper()` test**, so a `WHERE` inside a subquery
-  or a string literal mis-fires. This is exactly what `MetaDatabaseLoader._split_on_opaque_spans`
-  exists to handle, and this path does not use it. `MetadataView` has no equivalent. Step 2
-  branch 5 pins the current behaviour; the fix is separate.
-- **`test_raw_data_view.py:28`'s module docstring lists `_get_baseline_stats` as covered and
-  no such test exists.** Corrected by Step 2 branch 4, which also adds the missing test.
 - **Three `scripts/autodoc/` lint sites are ours to fix, and are the only part of the
   declined-rules sweep that is.** Two `S110` in `metaclasses_generate_autodoc.py` and
   `plugins_generate_autodoc.py`, one `S112` in the latter. Fixing them would not enable

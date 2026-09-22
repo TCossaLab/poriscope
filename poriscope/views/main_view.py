@@ -948,7 +948,7 @@ class MainView(QMainWindow, WalkthroughMixin):
         WARNING because Qt objects being already gone is ordinary during
         teardown, not a fault worth putting on the status panel.
 
-        Extracted from ``switch_to_page`` in 5c.6: it is the only part of that
+        Kept apart from ``switch_to_page`` because it is the only part of that
         method that acts rather than decides.
         """
         # The caller has already checked this, but the helper is the natural place
