@@ -1,24 +1,28 @@
 """
 Replaying a saved action history and a saved session - both user data.
 
-Step 7 records that saved ``.json`` action files are user data and that moving a
-decorated method breaks replay. Nothing tested that. The Step 2 exit review found
-there was **no checked-in ``.json`` fixture anywhere in ``tests/``**, and that
+Saved action files and saved sessions are both user data, and moving a decorated
+method breaks replay. Nothing tested that. The Step 2 exit review found there was
+**no checked-in ``.json`` fixture anywhere in ``tests/``**, and that
 ``update_actions_from_json`` was only ever asserted against a *mock* view - so the
 replay mechanism itself had no coverage, only its call site.
 
-The fixture in ``saved_state/`` is a real file of the shape the app writes, read
-from disk rather than synthesised by the test that consumes it. It deliberately
-contains an entry naming a method that no longer exists, because that is exactly
-what a 1.x history becomes once Steps 3 and 4 move things.
+Both fixtures in ``saved_state/`` are real files of the shape the app writes, read
+from disk rather than synthesised by the tests that consume them.
+``metadata_action_history.json`` deliberately contains an entry naming a method that
+no longer exists, because that is exactly what a 1.x history becomes once Steps 3
+and 4 move things. ``session_1x.json`` is a whole saved session - three tabs, seven
+data plugins, a renamed plugin key and a populated subset filter - with its file
+paths scrubbed and nothing else changed.
 
 **The finding this pins is uncomfortable and is recorded, not fixed:** a saved
 action whose method has moved is *silently skipped*. ``update_actions_from_json``
 does ``getattr(self, name, None)`` and calls it only if truthy, so a user reloading
 a history after the refactor gets a partial replay with no error, no log line and no
-indication that anything was dropped. Step 7's "keep them as thin View façades, or
-ship a name-migration map" is what addresses it; this test makes sure the decision
-is taken rather than discovered.
+indication that anything was dropped. Recording a declared action name instead of
+``func.__name__`` is what addresses it; that was Step 7's until 2026-09-22, when it
+was deferred to its own design step and moved to ``future_fixes.md``. This test
+makes sure the decision is taken rather than discovered.
 """
 
 import json
@@ -28,13 +32,29 @@ from typing import Any, Dict
 
 import pytest
 
+from poriscope.models.main_model import MainModel
 from poriscope.plugins.analysistabs.MetadataController import MetadataController
 from poriscope.plugins.analysistabs.MetadataView import MetadataView
+from poriscope.utils.MetaSubsetTabView import MetaSubsetTabView
+from poriscope.utils.plugin_schemas import discover_plugin_classes
 from tests.unit.views._qt_mocks import shadow_signals
 
 pytestmark = pytest.mark.characterization
 
+REPO_ROOT = Path(__file__).resolve().parents[3]
 SAVED = Path(__file__).parent / "saved_state" / "metadata_action_history.json"
+SESSION = Path(__file__).parent / "saved_state" / "session_1x.json"
+
+
+@pytest.fixture
+def session() -> Dict[str, Any]:
+    """
+    Provide a real saved session, read from disk.
+
+    :return: the session file's contents
+    :rtype: Dict[str, Any]
+    """
+    return json.loads(SESSION.read_text(encoding="utf-8"))
 
 
 @pytest.fixture
@@ -222,3 +242,134 @@ class TestSessionStateRoundTrip:
         live["added_later"] = "amp < 2"
 
         assert state["subset_filters"] == {"mine": "duration > 5"}
+
+
+class TestARealSavedSession:
+    """
+    A whole session file the application actually wrote, loaded the way it loads one.
+
+    The round-trip tests above build their state in memory from one tab. This one starts
+    from a file a user saved - three analysis tabs and seven data plugins across six
+    families, including a renamed plugin key and settings whose ``Type`` was written as a
+    string because JSON cannot hold a type. Paths in it are scrubbed; nothing else is.
+
+    What it pins is 1.x compatibility, which is the question Step 7 asks: a session saved
+    before the refactor names classes by string, and if the refactor renamed or removed
+    one, the entry is dropped on load. ``load_session`` reports how many entries it could
+    not restore, so a silent loss is not the risk - an *unnoticed* one is.
+    """
+
+    def test_the_fixture_is_the_shape_the_app_writes(self, session: Dict[str, Any]):
+        """
+        Read from disk rather than synthesised, so it cannot drift into a shape the app
+        never produces. Every entry is keyed by plugin key and carries the two fields
+        ``load_session`` reads before anything else.
+        """
+        assert session, "the fixture is empty"
+        for key, entry in session.items():
+            assert "metaclass" in entry, key
+            assert "subclass" in entry, key
+
+    def test_every_class_it_names_still_exists(self, session: Dict[str, Any]):
+        """
+        The actual 1.x compatibility question.
+
+        ``load_session`` instantiates by class name, so a class this version renamed or
+        removed is an entry the user silently loses. Asserting it here means the refactor
+        cannot rename one without a test saying so - and the fixture covers six plugin
+        families plus three tabs, which is most of the surface a real session touches.
+        """
+        available = set(discover_plugin_classes())
+        tabs = {
+            path.stem
+            for path in Path(
+                REPO_ROOT, "poriscope", "plugins", "analysistabs"
+            ).glob("*.py")
+        }
+        missing = []
+        for key, entry in session.items():
+            subclass = entry["subclass"]
+            if subclass not in available and subclass not in tabs:
+                missing.append(f"{key} -> {subclass}")
+        assert not missing, f"a saved session names classes this version lost: {missing}"
+
+    def test_a_renamed_plugin_key_is_carried_by_key_not_by_class(
+        self, session: Dict[str, Any]
+    ):
+        """
+        The fixture holds a reader the user renamed to ``testrename``.
+
+        Keys are user-chosen and classes are not, which is why the entry carries both.
+        Restoring by key alone would lose the class; by class alone would lose the name
+        the user gave it and every dependent setting that refers to it.
+        """
+        assert session["testrename"]["subclass"] == "ChimeraReader20240501"
+        dependents = [
+            key
+            for key, entry in session.items()
+            for setting in entry.get("settings", {}).values()
+            if setting.get("Value") == "testrename"
+        ]
+        assert dependents, "nothing in the fixture depends on the renamed reader"
+
+    def test_loading_it_restores_types_without_touching_values(self, tmp_path: Path):
+        """
+        The defect 2.0.0 fixed, exercised against a real file rather than a synthetic one.
+
+        Session JSON cannot hold a type, so ``Type`` is written as a name and restored
+        from it. Restoring on the string alone turned any setting whose *value* happened
+        to read ``"float"`` into the type itself - a plugin configured with
+        ``Event Type: float`` came back broken. Only the ``Type`` key is restored now.
+        """
+        model = MainModel.__new__(MainModel)
+        loaded = json.loads(SESSION.read_text(encoding="utf-8"))
+        model.replace_class_names_with_classes(loaded)
+
+        checked = 0
+        for entry in loaded.values():
+            for name, setting in entry.get("settings", {}).items():
+                declared = setting.get("Type")
+                if declared is not None:
+                    assert isinstance(declared, type), f"{name} Type is {declared!r}"
+                    checked += 1
+                value = setting.get("Value")
+                assert not isinstance(value, type), f"{name} Value became a type"
+        assert checked, "the fixture declares no types, so this asserts nothing"
+
+    def test_the_subset_tab_entry_carries_its_filters(self, session: Dict[str, Any]):
+        """
+        ``MetaSubsetTabController.get_session_state`` writes this key, and 4d changed how
+        it is read - through ``view.get_subset_filters()`` rather than by reaching into
+        ``view.subset_filters``. The key has to survive that, and a real file is what says
+        whether it did.
+        """
+        metadata = session["MetadataController"]
+        assert metadata["subset_filters"] == {"test_filter_assisted": "duration < 300"}
+
+    def test_a_saved_filter_is_restored_onto_the_view(
+        self, session: Dict[str, Any], mocker
+    ):
+        """
+        The real restore body, against the value a real saved session carries.
+
+        ``restore_subset_filters`` is bound onto the mock rather than stubbed, so what
+        runs is the promoted implementation on ``MetaSubsetTabView`` - the one copy both
+        subset tabs share since 4d. A stub would answer with whatever it was told; this
+        answers with what the method does, which is the whole question for a file written
+        before the promotion.
+        """
+        controller = MetadataController.__new__(MetadataController)  # type: ignore[type-abstract]
+        controller.view = mocker.Mock()
+        controller.view.subset_filters = {}
+        controller.view.restore_subset_filters = MethodType(
+            MetaSubsetTabView.restore_subset_filters, controller.view
+        )
+
+        controller.restore_session_state(session["MetadataController"])
+
+        assert controller.view.subset_filters == {
+            "test_filter_assisted": "duration < 300"
+        }
+        combo = controller.view._subset_controls.filter_comboBox
+        combo.addItem.assert_called_once_with("test_filter_assisted")
+        combo.selectItem.assert_called_once_with("test_filter_assisted", select=True)

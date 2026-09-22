@@ -2984,11 +2984,28 @@ are checkable.
   is added, and each entry is confirmed to say what an out-of-tree plugin author has to do.
   `MetaView.handle_parameter_change` and the signal-bus deletion are the two that matter
   most. No code changes.
-- **7b — session state against a real 1.x file.** `MetaSubsetTabController.get_session_state`
-  now serializes `self.view.get_subset_filters()` through an accessor rather than reaching
-  into `self.view.subset_filters`, which 4d fixed — so this is verification, not a change.
-  Load a genuine 1.x session file and confirm the filters come back; if the stored shape
-  changed, either restore compatibility or call it out as breaking. Kyle supplies the file.
+- **7b — session state against a real 1.x file. LANDED 2026-09-22, nothing broken.** Kyle
+  supplied a saved session; it is checked in as `tests/unit/views/saved_state/session_1x.json`
+  with its four absolute paths scrubbed and nothing else changed. Three tabs, seven data
+  plugins across six families, a renamed plugin key (`testrename` -> `ChimeraReader20240501`)
+  and a populated subset filter. Five tests in `test_saved_state_replay.py` pin it: the
+  fixture is the shape the app writes; **every class it names still exists in this version**,
+  which is the actual 1.x compatibility question and now fails if the refactor renames one;
+  the renamed key is carried by key *and* class, with a dependent setting proving why;
+  `Type` strings restore to types while `Value` strings do not, which is the 2.0.0 restore
+  defect exercised against a real file rather than a synthetic one; and the saved filter
+  restores onto the view through the promoted `MetaSubsetTabView.restore_subset_filters`,
+  bound rather than stubbed so what runs is the real body. The stored shape did not change,
+  so nothing here is breaking.
+
+  Saved from the current build rather than from a 1.x tag, which is sound because **the
+  session format did not change in 2.0.0** - what changed is how restore reads it. The
+  feature itself shipped in 1.7.0 (`3c0cb022`), so the shape is genuinely the 1.x one.
+
+  **Manual pass: run 2026-09-22, clear.** The saved session was loaded back in the running
+  app and `test_filter_assisted` reappears in the Metadata filter dropdown. Worth doing by
+  hand rather than trusting the test, because the test mocks the controls panel - the combo
+  box is asserted there, not seen.
 - **7c — `MetaReader.load_data`'s `raw_data` arm.** Split the boolean arm into two methods
   so the return type stops depending on an argument's value. 6 readers and 8 call sites.
   Breaking; the conformance suite covers every reader, so run it per reader rather than once

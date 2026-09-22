@@ -1,0 +1,203 @@
+{
+  "RawDataController": {
+    "metaclass": "MetaController",
+    "subclass": "RawDataController"
+  },
+  "BesselFilter_0": {
+    "metaclass": "MetaFilter",
+    "settings": {
+      "Cutoff": {
+        "Min": 0,
+        "Type": "float",
+        "Units": "Hz",
+        "Value": 500000.0
+      },
+      "Poles": {
+        "Options": [
+          2,
+          4,
+          6,
+          8,
+          10
+        ],
+        "Type": "int",
+        "Value": 8
+      },
+      "Samplerate": {
+        "Min": 0,
+        "Type": "float",
+        "Units": "Hz",
+        "Value": 5000000.0
+      }
+    },
+    "subclass": "BesselFilter"
+  },
+  "testrename": {
+    "metaclass": "MetaReader",
+    "settings": {
+      "Input File": {
+        "Options": [
+          "Chimera Logfiles (*.log)"
+        ],
+        "Type": "str",
+        "Value": "C:/poriscope-test-data/2kbp_n200mV_HS1_20240604_122657.log"
+      }
+    },
+    "subclass": "ChimeraReader20240501"
+  },
+  "ClassicBlockageFinder_0": {
+    "metaclass": "MetaEventFinder",
+    "settings": {
+      "Max Duration": {
+        "Min": 0.0,
+        "Type": "float",
+        "Units": "us",
+        "Value": 10000.0
+      },
+      "MetaReader": {
+        "Options": null,
+        "Type": null,
+        "Value": "testrename"
+      },
+      "Min Duration": {
+        "Min": 0.0,
+        "Type": "float",
+        "Units": "us",
+        "Value": 10.0
+      },
+      "Min Separation": {
+        "Min": 0.0,
+        "Type": "float",
+        "Units": "us",
+        "Value": 0.0
+      },
+      "Threshold": {
+        "Min": 0.0,
+        "Type": "float",
+        "Units": "pA",
+        "Value": 750.0
+      }
+    },
+    "subclass": "ClassicBlockageFinder"
+  },
+  "EventAnalysisController": {
+    "metaclass": "MetaController",
+    "subclass": "EventAnalysisController"
+  },
+  "SQLiteEventLoader_0": {
+    "metaclass": "MetaEventLoader",
+    "settings": {
+      "Input File": {
+        "Options": [
+          "SQLite3 Files (*.sqlite3)",
+          "Database Files (*.db)",
+          "SQLite Files (*.sqlite)"
+        ],
+        "Type": "str",
+        "Value": "C:/poriscope-test-data/edit_plugin_events.sqlite3"
+      }
+    },
+    "subclass": "SQLiteEventLoader"
+  },
+  "CUSUM_0": {
+    "metaclass": "MetaEventFitter",
+    "settings": {
+      "Max Sublevels": {
+        "Min": 0,
+        "Type": "int",
+        "Value": 10
+      },
+      "MetaEventLoader": {
+        "Options": [
+          "SQLiteEventLoader_0"
+        ],
+        "Type": "str",
+        "Value": "SQLiteEventLoader_0"
+      },
+      "Rise Time": {
+        "Min": 0.0,
+        "Type": "float",
+        "Units": "us",
+        "Value": 10.0
+      },
+      "Sensitivity": {
+        "Max": 5.0,
+        "Min": 1.0,
+        "Type": "float",
+        "Value": 1.0
+      },
+      "Step Size": {
+        "Min": 0.0,
+        "Type": "float",
+        "Units": "pA",
+        "Value": 500.0
+      }
+    },
+    "subclass": "CUSUM"
+  },
+  "SQLiteDBWriter_0": {
+    "metaclass": "MetaDatabaseWriter",
+    "settings": {
+      "Conductivity": {
+        "Min": 0,
+        "Type": "float",
+        "Units": "S/m",
+        "Value": 10.0
+      },
+      "Experiment Name": {
+        "Type": "str",
+        "Value": "edit_plugin"
+      },
+      "Membrane Thickness": {
+        "Min": 0,
+        "Type": "float",
+        "Units": "nm",
+        "Value": 10.0
+      },
+      "MetaEventFitter": {
+        "Options": [
+          "CUSUM_0"
+        ],
+        "Type": "str",
+        "Value": "CUSUM_0"
+      },
+      "Output File": {
+        "Options": [
+          "SQLite3 Files (*.sqlite3)",
+          "Database Files (*.db)",
+          "SQLite Files (*.sqlite)"
+        ],
+        "Type": "str",
+        "Value": "C:/poriscope-test-data/edit_plugin_fits.sqlite3"
+      },
+      "Voltage": {
+        "Type": "float",
+        "Units": "mV",
+        "Value": 10.0
+      }
+    },
+    "subclass": "SQLiteDBWriter"
+  },
+  "MetadataController": {
+    "metaclass": "MetaController",
+    "subclass": "MetadataController",
+    "subset_filters": {
+      "test_filter_assisted": "duration < 300"
+    }
+  },
+  "SQLiteDBLoader_0": {
+    "metaclass": "MetaDatabaseLoader",
+    "settings": {
+      "Input File": {
+        "Options": [
+          "SQLite3 Files (*.sqlite3)",
+          "Database Files (*.db)",
+          "SQLite Files (*.sqlite)"
+        ],
+        "Type": "str",
+        "Value": "C:/poriscope-test-data/edit_plugin_fits.sqlite3"
+      }
+    },
+    "subclass": "SQLiteDBLoader"
+  }
+}
