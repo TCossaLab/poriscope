@@ -3141,7 +3141,7 @@ data plugin sits on.
 All five commits have landed: the inventory audit (7a), the session-state verification (7b),
 the reader split (7c), the writer parameter collapse (7d) and the version gate (7e). The
 release itself is deliberately **not** cut here - see Step 8. **Two things are carried out
-of it, not closed:** the 7d manual Windows pass (7c's ran clear 2026-09-22), and the two Decision C items the
+of it, not closed:** the 7c and 7d manual Windows passes (both since run clear, 2026-09-22), and the two Decision C items the
 table above wrongly credited.
 
 ### Out of this step
@@ -3247,9 +3247,8 @@ held. What did not:
   in `future_fixes.md`: `INSERT OR IGNORE`, `PRAGMA user_version` with the dead
   `extra_tables` branch, and `test_plugin_compliance`'s import-order exposure. The fourth,
   `Optional[int]` dispatch, is the `close_resources` branch above.
-- **Manual passes:** 7c's ran all clear on 2026-09-22, and so did the walkthrough on all
-  five tabs (Kyle). **Still owed:** 7d's write, and the multiselect popup half of
-  Verification's full sweep, unless the walkthrough pass covered it.
+- **Manual passes: all run 2026-09-22, all clear** (Kyle) - 7c's reads, 7d's writes, and
+  Verification's full sweep over the finished refactor. None is owed.
 - **Leftovers the refactor claimed but never ruled on** are filed forward in
   `future_fixes.md` (Kyle, 2026-09-22): the `WalkthroughStep` dataclass, the Protein
   GUI-thread fix (now unblocked), the three `format_axis_label` copies, the Part 10-12 widget
@@ -3363,5 +3362,10 @@ running. **It is the last pass recorded at full scope**; every later one covered
 surface, so a full sweep over the finished refactor is owed before the cut (Step 8).
 
 **Exit walkthrough pass: run 2026-09-22, all clear** (Kyle) - the walkthrough on all five tabs
-over the finished refactor, the first at that scope since 3f. The multiselect popup half of the
-full sweep is not recorded as part of it.
+over the finished refactor, the first at that scope since 3f, including the column and filter
+multiselect popups on Metadata and Protein.
+
+**7d manual pass: run 2026-09-22, all clear** (Kyle) - a single-channel commit through
+`SQLiteEventWriter` read back on the Event Analysis tab with events aligned inside their padding,
+a two-channel commit into one file, an aborted commit leaving nothing behind and re-running
+cleanly, and a repeat commit into the same file writing nothing rather than duplicating.
