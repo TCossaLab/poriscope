@@ -3,8 +3,8 @@ Characterization tests for ``notify_plugin_state_changed`` across all five tabs.
 
 The refactor-coverage audit reported this method as ``RUNS ONLY`` in every View:
 its body executes under the e2e suites, but no test named it, so nothing asserted
-which notifications it acts on and which it ignores. It is a five-way duplicate
-that Step 3 merges, so the behaviour has to be pinned before the copies are
+which notifications it acts on and which it ignores. It was a five-way duplicate
+slated for merging, so the behaviour had to be pinned before the copies were
 touched.
 
 Three of the five share one implementation - refresh this tab's column list, but
@@ -14,9 +14,9 @@ loosened any of the three conditions would make every tab refetch its columns on
 every unrelated plugin event, which is invisible in a test that only checks the
 happy path.
 
-**A correction to the plan.** ``refactor_2.0.0.md`` Step 3c says RawData and
-EventAnalysis "re-override ``_factors`` and ``notify_plugin_state_changed``,
-shadowing base versions they could inherit - delete". That is true of ``_factors``,
+**Not a redundant override.** It is tempting to read RawData's and
+EventAnalysis's overrides of ``_factors`` and ``notify_plugin_state_changed`` as
+shadowing base versions they could inherit. That is true of ``_factors``,
 which is concrete on ``MetaView``, and **false of this method**, which is
 ``@abstractmethod`` there. Their ``pass`` bodies are required by the ABC, not
 redundant, and deleting them would make both classes uninstantiable. That is
@@ -139,7 +139,7 @@ class TestTabsThatRefreshTheirColumns:
         """
         The comparison uses the combobox's current text, not a cached value.
 
-        Pinned because Step 4d moves tab state to the Model, and a cached copy
+        Pinned because tab state lives on the Model, and a cached copy
         would go stale exactly when the user switches loaders.
         """
         view = build(cls, controls_attr, selected="loader-b")
@@ -187,10 +187,10 @@ class TestTabsThatDeliberatelyDoNothing:
 
 class TestTheHookIsRequiredByTheBase:
     """
-    Guards a claim in the plan that is wrong, so it cannot be acted on by mistake.
+    Guards a tempting but wrong cleanup, so it cannot be acted on by mistake.
 
-    Step 3c lists ``notify_plugin_state_changed`` alongside ``_factors`` as an
-    override that shadows an inheritable base version. ``_factors`` is concrete on
+    ``notify_plugin_state_changed`` looks like ``_factors``: an override that shadows
+    an inheritable base version. ``_factors`` is concrete on
     ``MetaView``; this one is abstract, and its own docstring says it "must be
     implemented by subclasses, even if the correct" response is to do nothing.
     """
@@ -200,7 +200,7 @@ class TestTheHookIsRequiredByTheBase:
         assert "notify_plugin_state_changed" in MetaView.__abstractmethods__
 
     def test_factors_by_contrast_is_concrete_on_the_base(self) -> None:
-        """The half of the Step 3c claim that does hold."""
+        """The half of the claim that does hold."""
         assert "_factors" not in MetaView.__abstractmethods__
         assert "_factors" in MetaView.__dict__
 

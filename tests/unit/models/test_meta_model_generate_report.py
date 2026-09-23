@@ -1,7 +1,7 @@
 """
 ``MetaModel.generate_report`` - asking a plugin for its channel status.
 
-Step 5e.2 moved this off the global signal bus. It now calls the plugin through
+This moved off the global signal bus. It now calls the plugin through
 ``MetaModel.call`` and emits its own ``add_text_to_display``, which
 ``MetaController`` already relays onward.
 

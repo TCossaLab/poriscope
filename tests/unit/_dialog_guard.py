@@ -6,7 +6,7 @@ starts its own nested event loop and waits for a click that will never come, and
 the static helpers (``QMessageBox.question`` and friends) open their own loop
 without going through ``exec()`` at all, so patching only ``exec`` leaves a gap.
 
-This lived in ``tests/unit/views/conftest.py`` until Step 4a promoted
+This lived in ``tests/unit/views/conftest.py`` until 2.0.0 promoted
 ``on_raw_filter_validated`` to ``MetaSubsetTabView`` with Metadata's modal in it.
 ``tests/unit/controllers/test_protein_controller.py`` drives that method through
 the Controller's forwarder against a real View, and immediately hung - the

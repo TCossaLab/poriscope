@@ -87,7 +87,7 @@ def view(mocker: MockerFixture, mock_qt_dependencies: None) -> MetadataView:
     view_instance._clear_cache = mocker.Mock()
     # Mock methods called by _overlay_plot
     view_instance.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
-    # The two Step 4a validation intents. Stood in for the same reason global_signal
+    # The two filter-validation intents. Stood in for the same reason global_signal
     # is: this fixture builds the view with __new__ and a patched MetaView.__init__,
     # so no QObject exists behind it and emitting a real Signal raises "Signal source
     # has been deleted".
@@ -97,7 +97,7 @@ def view(mocker: MockerFixture, mock_qt_dependencies: None) -> MetadataView:
     # app; the tests that drive the answer call set_loaded_filters directly.
     view_instance.filters_load_requested = mocker.Mock()
     view_instance.filters_save_requested = mocker.Mock()
-    # The two Step 4a subset intents, answered from whatever a test parked as
+    # The two subset intents, answered from whatever a test parked as
     # canned_*. Wired here rather than per test because _overlay_plot clears the
     # answers before emitting, so every test that drives it needs the replay.
     view_instance.metadata_subset_requested = mocker.Mock()
@@ -112,7 +112,7 @@ def view(mocker: MockerFixture, mock_qt_dependencies: None) -> MetadataView:
     view_instance.event_overlay_requested.emit.side_effect = _event_intent_answers(
         view_instance
     )
-    # The four Step 4a intents that replaced the last of this tab's bus emits. The two
+    # The four intents that replaced the last of this tab's bus emits. The two
     # whose answer is read back on the next statement replay a canned_* value; the two
     # that are fire-and-forget - the per-event feature lookup and the CSV export, which
     # runs in a worker - are bare Mocks, so a test that wants features parks them
@@ -274,8 +274,8 @@ def test_set_control_area_creates_metadata_controls(
     """
     Verify MetadataControls instance is created.
 
-    Still patched in the tab module: Step 3a-bis moved the wiring and layout up to
-    ``MetaView``, but ``_build_controls`` - which constructs the widget and stores it
+    Still patched in the tab module: the wiring and layout live on ``MetaView``,
+    but ``_build_controls`` - which constructs the widget and stores it
     under this tab's own name - stayed here, which is the whole point of that hook.
     """
     mock_layout: MagicMock = mocker.Mock()
@@ -308,8 +308,8 @@ def test_set_control_area_adds_controls_to_layout(
     """
     Verify controls are added to layout.
 
-    Since Step 3a-bis the layout is built by ``MetaView._set_control_area``, which the
-    tab inherits, so the ``QHBoxLayout`` to patch is the base module's.
+    The layout is built by ``MetaView._set_control_area``, which the tab inherits,
+    so the ``QHBoxLayout`` to patch is the base module's.
     """
     mock_layout: MagicMock = mocker.Mock()
     mocker.patch("poriscope.utils.MetaView.QHBoxLayout")
@@ -533,10 +533,10 @@ def _answer_density(view, densities, hist_min=0.0, hist_max=1.0):
     """
     Answer ``density_requested`` the way MetadataController does.
 
-    Step 4c split ``_plot_1d_density`` at the estimate and Step 4's closeout moved
-    the filter, the shared limits and the accumulation after it: the View emits the
-    raw columns and ``set_kernel_densities`` does every bit of drawing and all of
-    the bookkeeping. What the Controller decides in between is asserted in
+    The estimate, the filter, the shared limits and the accumulation are all
+    below ``_plot_1d_density``: the View emits the raw columns and
+    ``set_kernel_densities`` does every bit of drawing and all of the bookkeeping.
+    What the Controller decides in between is asserted in
     ``tests/unit/controllers/test_metadata_controller.py``.
 
     :param view: the view whose request has just been emitted
@@ -561,7 +561,7 @@ def test_plot_1d_density_sends_the_raw_column_and_the_log_flag(
     view: MetadataView,
 ) -> None:
     """
-    The filter moved down in Step 4's closeout, so the column leaves unfiltered.
+    The filter is applied below the View, so the column leaves unfiltered.
 
     The newest dataset travels at the end of the accumulated ones rather than being
     appended first, which is what lets the Controller refuse a subset that filters
@@ -665,7 +665,7 @@ def test_metaview_runs_each_initializer_exactly_once() -> None:
     """
     ``MetaView.__init__`` is the only constructor, and it calls each hook once.
 
-    Step 3g deleted ``MetadataView.__init__``, which was byte-identical in all five
+    ``MetadataView.__init__`` was deleted; it was byte-identical in all five
     tabs. It called ``self._init()`` after ``super().__init__(...)`` - and
     ``MetaView.__init__`` already calls ``_init()`` itself, so **every tab ran it
     twice**, once before ``_setup_ui()`` and once after. That was measured to be a
@@ -730,8 +730,8 @@ def _answer_categorical_counts(view):
     """
     Answer ``categorical_counts_requested`` the way MetadataController does.
 
-    Step 4's closeout moved the tallying to ``MetadataModel.categorical_counts``, so
-    the View no longer decides what the categories are. The real Model is used here
+    The tallying is ``MetadataModel.categorical_counts``, so the View no longer
+    decides what the categories are. The real Model is used here
     rather than a canned answer, so these tests still exercise the counting they were
     written to cover; what the counting *produces* for nulls, NaNs and numeric
     ordering is asserted directly in ``tests/unit/models/test_metadata_model.py``.
@@ -754,8 +754,8 @@ def _answer_capture_rate(view, numbins=4):
     """
     Answer ``capture_rate_requested`` the way MetadataController does.
 
-    Step 4c moved the binning and the exponential fit to ``MetadataModel``, so the
-    View no longer decides either. These tests supplied a stubbed ``curve_fit``
+    The binning and the exponential fit are ``MetadataModel``'s, so the View
+    decides neither. These tests supplied a stubbed ``curve_fit``
     before; they supply the finished fit here instead, and what the fit actually
     produces is asserted in ``tests/unit/models/test_metadata_model.py``.
 
@@ -791,7 +791,7 @@ def test_plot_capture_rate_sends_the_column_as_it_stands(view: MetadataView) -> 
     """
     The request carries the event times, not the inter-event times.
 
-    Step 4's closeout moved the gap calculation to the Model, and with it the two
+    The gap calculation is the Model's, and with it the two
     conditions that were judged on its result - too little surviving data, and how
     much the log filter dropped. Both are pinned in
     ``tests/unit/controllers/test_metadata_controller.py`` now; a View that still
@@ -948,12 +948,11 @@ def _answer_histogram_bins(view, numbins=8):
     """
     Answer ``histogram_bins_requested`` the way MetadataController does.
 
-    Step 4c split ``_plot_1d_histogram`` at the bin decision, Step 4's closeout moved
-    the counting down after it, and then the filter, the shared limits and the
-    accumulation as well: the View emits every overlaid dataset raw and
-    ``set_histogram_bins`` is handed the tallies. The real Model is used here so
-    these tests still exercise the counting they were written over; what the bin
-    decision returns for a given request is asserted directly in
+    The bin decision, the counting, the filter, the shared limits and the
+    accumulation are all below ``_plot_1d_histogram``: the View emits every
+    overlaid dataset raw and ``set_histogram_bins`` is handed the tallies. The real
+    Model is used here so these tests still exercise the counting they were written
+    over; what the bin decision returns for a given request is asserted directly in
     ``tests/unit/models/test_metadata_model.py``.
 
     :param view: the view whose request has just been emitted
@@ -1117,7 +1116,7 @@ def _answer_heatmap(view, x_bins, y_bins, z_grid):
     """
     Answer ``heatmap_requested`` the way MetadataController does.
 
-    Step 4c split ``_plot_heatmap`` at the binning: it emits the filtered columns
+    ``_plot_heatmap`` stops at the binning: it emits the filtered columns
     and ``set_heatmap`` does every bit of drawing. The binning result is supplied
     here rather than computed, which is what the mocked ``_calculate_heatmap``
     used to do for these tests.
@@ -1787,8 +1786,8 @@ def _subset_answers(view: MetadataView) -> Callable[..., None]:
     whatever the test parked as ``canned_*``.
 
     ``canned_units`` is a single value, expanded to one per column, because that is
-    what the three separate ``get_column_units`` round trips produced before Step 4a
-    collapsed them into one list.
+    what the three separate ``get_column_units`` round trips produced before they
+    were collapsed into one list.
 
     :param view: the view whose answers to set
     :type view: MetadataView
@@ -1809,7 +1808,7 @@ def _event_intent_answers(view: MetadataView) -> Callable[..., None]:
     """
     The same, for either of the two event-data intents.
 
-    Step 4's closeout took the generator off the widget: the Controller now answers
+    The generator is not kept on the widget: the Controller answers
     both intents by drawing through a setter, and sets the query only once the whole
     fetch *and* the reduction succeeded. So the one thing a test parks is
     ``canned_event_query``, which is what says the round trip got that far.
@@ -2677,8 +2676,8 @@ def test_overlay_plot_returns_true_on_success(
 
 # ----------------------------- set_all_points_histogram Tests ------------------------------
 #
-# The tally itself moved to MetadataModel.build_all_points_histogram in Step 4's
-# closeout and is pinned in tests/unit/models/test_metadata_model.py. What is left
+# The tally itself is MetadataModel.build_all_points_histogram, pinned in
+# tests/unit/models/test_metadata_model.py. What is left
 # here is the drawing half, and the shared limits the answer carries back.
 
 
@@ -3830,7 +3829,7 @@ def test_export_csv_subset_emits_signal_on_success(
 ) -> None:
     """Verify the export intent carries the whole request, and starts no worker here.
 
-    ``run_generators`` was emitted from this method before Step 4a. Staging the
+    ``run_generators`` used to be emitted from this method. Staging the
     generator and starting it are the Controller's now, which is the only place that
     knows whether the export was set up at all.
     """
@@ -3957,7 +3956,7 @@ def test_set_event_query_does_not_echo_to_the_status_panel(
 def test_update_available_columns_emits_a_typed_intent(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Step 4a: an intent naming the loader, not a bus call describing the dispatch."""
+    """An intent naming the loader, not a bus call describing the dispatch."""
     view.column_names_requested = mocker.Mock()
 
     view.update_available_columns("test_loader")
@@ -4142,7 +4141,7 @@ def test_plot_heatmap_sends_the_raw_columns_and_their_log_flags(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """
-    The filter went down with the binning in Step 4's closeout.
+    The filter is applied below the View, along with the binning.
 
     What the View sends is the column as it came out of the dataframe, plus the
     flags saying which axes are log-scaled - so the values that survive the filter
@@ -4196,7 +4195,7 @@ def test_show_add_filter_dialog_validates_filter_on_accept(
     mock_dialog_class.return_value = mock_dialog
     view._show_add_filter_dialog({"db_loader": "test_loader"})
 
-    # Step 4a: the Controller makes the construct_metadata_query call now, and picks
+    # The Controller makes the construct_metadata_query call, and picks
     # the columns to validate against, so the View's half is the intent alone.
     view.filter_validation_requested.emit.assert_called_once_with(
         "test_loader",
@@ -4306,7 +4305,7 @@ def test_show_edit_filter_dialog_validates_on_accept(
     view.show_edit_filter_dialog("Filter1", "test_loader")
 
     view.filter_validation_requested.emit.assert_called_once_with(
-        # Step 4d: an edit carries the new name and the one it replaces, which is
+        # An edit carries the new name and the one it replaces, which is
         # what used to be parked on the widget as _pending_old_filter_name.
         "test_loader",
         "WHERE x > 10",
@@ -4757,7 +4756,7 @@ def test_update_plot_no_longer_dispatches_the_all_points_histogram(
     """
     Verify the four event-data types are refused by the metadata dispatch.
 
-    Step 4's closeout took their data off the widget, so they no longer arrive as a
+    Their data is not kept on the widget, so they no longer arrive as a
     dataframe and ``set_all_points_histogram`` draws them instead. Leaving the
     branch here would have left a path nothing can reach with a frame to give it.
     """

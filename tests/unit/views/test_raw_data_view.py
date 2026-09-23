@@ -17,8 +17,8 @@ Coverage targets:
 - _extract_plot_event_parameters
 - _validate_plot_parameters
 - _filter_key (every "no filter" spelling)
-- _handle_load_data_and_update_plot / set_trace_data (Step 4a intent + result)
-- _handle_load_data_and_update_psd / set_trace_for_psd (Step 4a intent + result)
+- _handle_load_data_and_update_plot / set_trace_data (intent + result)
+- _handle_load_data_and_update_psd / set_trace_for_psd (intent + result)
 - _handle_other_actions (with reader, without reader)
 - handle_parameter_change dispatch (load_data_and_update_plot, some_other_action)
 - _factors
@@ -86,7 +86,7 @@ def view(mocker, mock_logging):
     v.figure = mocker.Mock()
     v.canvas = mocker.Mock()
     v.add_text_to_display = mocker.Mock()
-    # Step 4a's intent signals. Mocked by hand like the rest here: this fixture builds
+    # The View's intent signals. Mocked by hand like the rest here: this fixture builds
     # the view with __new__, so a class-level Signal has no C++ object behind it and
     # emitting one would raise "Signal source has been deleted".
     v.reader_channels_requested = mocker.Mock()
@@ -352,7 +352,7 @@ def test_filter_key_collapses_every_no_filter_spelling(view, parameters):
 
 
 # ---------------------------------------------------------------------------
-# _handle_load_data_and_update_plot / set_trace_data  (Step 4a)
+# _handle_load_data_and_update_plot / set_trace_data
 # ---------------------------------------------------------------------------
 
 
@@ -373,7 +373,7 @@ def test_handle_load_data_invalid_params_requests_nothing(view, mocker):
 
 def test_handle_load_data_emits_a_typed_intent(view, mocker):
     """
-    Step 4a: the orchestrator asks, and stops. Loading is the Controller's.
+    The orchestrator asks, and stops. Loading is the Controller's.
     """
     view._extract_plot_parameters = mocker.Mock(return_value=("R", [0, 1], 2.0, 100.0))
     view._validate_plot_parameters = mocker.Mock(return_value=True)
@@ -391,7 +391,7 @@ def test_handle_load_data_passes_the_baseline_flag_through(view, mocker):
 
 
 def test_handle_load_data_makes_no_plugin_call_of_its_own(view, mocker):
-    """Step 4a: the bus round trip per channel is gone from this path entirely."""
+    """No bus round trip per channel: loading is the Controller's."""
     view._extract_plot_parameters = mocker.Mock(return_value=("R", [0, 1], 0.0, 1.0))
     view._validate_plot_parameters = mocker.Mock(return_value=True)
     view._handle_load_data_and_update_plot({"channel": ["0"]})
@@ -440,7 +440,7 @@ def test_the_baseline_request_carries_the_axes_it_was_given(view, mocker):
 
 
 # ---------------------------------------------------------------------------
-# _handle_load_data_and_update_psd / set_trace_for_psd  (Step 4a)
+# _handle_load_data_and_update_psd / set_trace_for_psd
 # ---------------------------------------------------------------------------
 
 
@@ -461,7 +461,7 @@ def test_set_trace_for_psd_reports_when_nothing_loaded(view, mocker):
 
 def test_set_trace_for_psd_computes_and_draws(view, mocker):
     """
-    The PSD computation path itself is unchanged by 4a and still reads back off the
+    The PSD computation path itself still reads back off the
     attributes set_psd parks, which is safe because that connection is direct.
     """
     data = [np.array([1.0, 2.0])]
@@ -483,7 +483,7 @@ def test_set_trace_for_psd_computes_and_draws(view, mocker):
 
 def test_handle_other_actions_with_reader_requests_its_channels(view):
     """
-    Step 4a: an intent naming the reader, not a bus call describing the dispatch.
+    An intent naming the reader, not a bus call describing the dispatch.
 
     The View no longer names the plugin method or the return function - which is the
     point, since it was naming both by string across seven hops.
@@ -598,7 +598,7 @@ def test_update_available_plugins_exception_is_caught(view, mocker):
 
 def test_update_available_plugins_makes_no_plugin_call_of_its_own(view, mocker):
     """
-    Step 4a: populating the comboboxes reaches no plugin, and registers no finder.
+    Populating the comboboxes reaches no plugin, and registers no finder.
 
     This method used to emit ``global_signal`` once per unregistered finder and read the
     answer back off ``self.timer_channels`` - an emit-then-read nested inside a push the
@@ -649,7 +649,7 @@ def test_handle_find_events_none_params_aborts(view, mocker):
 
 
 def test_handle_commit_events_emits_a_typed_intent(view, mocker):
-    """Step 4a: the commit call itself is the Controller's."""
+    """The commit call itself is the Controller's."""
     view._extract_commit_event_parameters = mocker.Mock(return_value=("W1", [0]))
     view._handle_commit_events({"writer": "W1", "channel": ["0"]})
     view.commit_requested.emit.assert_called_once_with("W1", [0])
@@ -849,6 +849,6 @@ def test_a_selected_filter_is_not_second_guessed(view, mocker):
     view._start_eventfinder.assert_called_once()
 
 
-# _start_writer is gone: Step 4a moved the commit call to
+# _start_writer is gone: the commit call lives in
 # RawDataController.commit_events, which registers the generator with the Model itself.
 # Its per-channel and bare-channel behaviour is asserted there and just above.

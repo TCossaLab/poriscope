@@ -1,7 +1,7 @@
 """
 ``MetaModel.time_bases`` - the plot time axis, on the Model side.
 
-Step 4's closeout moved this off the Views. The axis is a property of the samples and
+This moved off the Views. The axis is a property of the samples and
 the rate they were taken at, both of which the Model owns, and it is *data* rather than
 styling: it is the x-coordinate of every point drawn, it goes into ``_update_cache``, and
 the user exports it to CSV. Axis limits, which never leave the View, stayed there - see

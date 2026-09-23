@@ -235,7 +235,7 @@ def test_event_fitting_flow_clicks(
     )
 
     # The samplerate used to be fetched onto the view here and read back off
-    # ``plot_samplerate``. Step 4 moved the time axis to EventAnalysisModel, which
+    # ``plot_samplerate``. The time axis now lives on EventAnalysisModel, which
     # builds it from the samples and the rate together, so the view holds neither -
     # the resolution and its fallback are pinned in test_event_analysis_controller.
 

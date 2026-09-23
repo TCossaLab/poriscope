@@ -2,8 +2,8 @@
 Tests for ``scripts/measure_shell_complexity.py``, the app-shell complexity measure.
 
 These drive the measure against small synthetic module texts rather than the real
-shell files, so they pin the counting *rule* and do not move every time Step 5c
-splits a method. The exceptions are the guards at the end: the file list is
+shell files, so they pin the counting *rule* and do not move every time a shell
+method is split. The exceptions are the guards at the end: the file list is
 deliberately explicit, so a renamed or newly added module must fail loudly rather
 than silently shrink the measurement.
 
@@ -279,7 +279,7 @@ class TestConstructsThatDeliberatelyDoNotCount:
         A ``return`` is a path already counted by whatever decided to reach it.
 
         Counting returns as well would double-count every guard clause, which is
-        exactly the shape 5c.2 is about to extract.
+        exactly the shape a helper extraction pulls out.
         """
         assert (
             cx_of(
@@ -478,7 +478,7 @@ class TestComparison:
         """
         Extracting a helper raises the count, and that is the point, not a fault.
 
-        5c.2 tripped this on the gate's first real use: pulling five repeated
+        The gate's first real use tripped this: pulling five repeated
         blocks into one helper took ``DataPluginController`` from 16 functions to
         17, and the gate called it "complexity was added". The count still has to
         be banked - only ``_escape_warning`` can tell a split from code leaving
@@ -583,7 +583,7 @@ class TestTheScopeGuards:
         """
         Nothing may sit in ``controllers/`` or ``models/`` without being measured.
 
-        This is the escape hatch that matters for Step 5c: splitting a god-method
+        This is the escape hatch that matters most: splitting a god-method
         into a new module in the same package would otherwise take its complexity
         out of the gate's sight and read as a win.
         """
@@ -603,8 +603,8 @@ class TestTheScopeGuards:
         """
         Nine files, as ``DECISIONS.md`` records for the 2026-09-20 scoping decision.
 
-        Pinned because the figure is quoted in the decision, the plan and the QA
-        page; a change to the scope has to be a deliberate edit that updates them.
+        Pinned because the figure is quoted in the decision and the QA page; a
+        change to the scope has to be a deliberate edit that updates them.
         """
         assert len(mod.SHELL_FILES) == 9
         assert len(set(mod.SHELL_FILES)) == 9
@@ -616,7 +616,7 @@ class TestTheScopeGuards:
         The gate is the shell, not the repository.
 
         Repo-wide there are 124 functions over 80 lines, most in owner-held fitters
-        and in the ``setupUi`` methods the plan keeps per-tab, so a repo-wide gate
+        and in the per-tab ``setupUi`` methods, so a repo-wide gate
         would fail on commits that are not ours to gate.
         """
         for name in mod.SHELL_FILES:

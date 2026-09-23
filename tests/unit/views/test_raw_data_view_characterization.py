@@ -1,23 +1,11 @@
 """
-Characterization tests for ``RawDataView``'s baseline and Gaussian-fit numerics.
+Characterization tests for the parts of ``RawDataView`` that talk to its Controller.
 
-These three methods had **no test anywhere in the repository**, despite
-``test_raw_data_view.py``'s module docstring listing ``_get_baseline_stats`` in its
-coverage roster - that line is stale, and correcting it is part of this change. The
-``_get_baseline_stats`` tests that do exist are for ``MetaEventFinder``'s method of
-the same name, which is a different implementation.
-
-``_gaussian_fit`` is the most numerically intricate method in the five analysis-tab
-Views: a contiguous threshold mask, standardisation, a 3x3 weighted-log moment
-matrix, ``np.linalg.inv``, then de-standardisation. Its own source comments call
-that last step "THE CRITICAL MATH FIX". Step 4c moves all of this to the Model, and
-until now nothing would have noticed if the numbers changed on the way.
-
-The parameter sweep is pinned with ``pytest-regressions``' ``num_regression``,
-which is where that dependency earns its place: a dozen fits x three recovered
-parameters is a real array golden, and any drift in the linear algebra shows up as
-a diff. The guards and the round-trip properties are asserted explicitly, because a
-golden file for a three-element tuple is less legible than the literal.
+Three areas: the View half of the event-finding launch (``TestStartEventfinder``),
+the PSD axis-limit arithmetic in ``update_psd`` (``TestUpdatePsd``), and the View
+half of the event-plotting path (``TestHandlePlotEvents``). The baseline and
+Gaussian-fit numerics these tests once covered live on ``RawDataModel`` and are
+pinned in ``tests/unit/models/test_raw_data_model.py``.
 """
 
 from unittest.mock import MagicMock
@@ -78,7 +66,7 @@ def gaussian_curve(
 
 class TestStartEventfinder:
     """
-    The View half of the event-finding launch after Step 4a: ask, prompt, ask again.
+    The View half of the event-finding launch: ask, prompt, ask again.
 
     This class pinned all three bus round trips before the conversion - the filter
     callable, the per-channel status, and the per-channel ``find_events``. The plugin
@@ -90,8 +78,7 @@ class TestStartEventfinder:
     One test is gone rather than moved. ``test_the_filter_is_cleared_before_it_is_fetched``
     pinned the clear-before-emit mitigation, and that mitigation existed only because the
     bus could fail silently and leave the previous run's callable in place. ``call()``
-    raises, so there is nothing left to clear and nothing left to pin - which is the whole
-    point of the step.
+    raises, so there is nothing left to clear and nothing left to pin.
 
     What stays is what the View still owns: coercing the channel argument, prompting
     before redoing a finished channel, and turning stored time limits into ranges.
@@ -295,7 +282,7 @@ class TestStartEventfinder:
 
 class TestUpdatePsd:
     """
-    The PSD axis-limit arithmetic, a Step 4c target the exit review found unpinned.
+    The PSD axis-limit arithmetic, which no test used to pin.
 
     ``update_psd`` executed under the raw-data e2e flow but no test named it, so
     nothing asserted the limits it computes. They are not cosmetic: the x limit is
@@ -373,8 +360,8 @@ class TestUpdatePsd:
         """
         Otherwise a second PSD run would stack axes on top of the first.
 
-        Pinned because Step 4c moves the computation out but must leave the canvas
-        lifecycle behind, and a clear that moved with it would leak axes.
+        Pinned because the PSD is computed outside the View but the canvas lifecycle
+        stays here, and a clear that moved with the computation would leak axes.
         """
         frequency = np.logspace(0, 5, 100)
         psd = [np.full(100, 1e-3)]
@@ -389,7 +376,7 @@ class TestUpdatePsd:
 
 class TestHandlePlotEvents:
     """
-    The View half of the event-plotting path after Step 4a: ask, then draw.
+    The View half of the event-plotting path: ask, then draw.
 
     This class pinned all five bus round trips before the conversion - the finder's
     status and event count, the filter callable, the samplerate, and one load per event.
@@ -525,7 +512,7 @@ class TestHandlePlotEvents:
         the View draws whatever pair it is handed without pruning anything.
         """
         data = [np.full(4, 1.0), np.full(4, 3.0)]
-        # Built by MetaModel.time_bases since Step 4's closeout and passed straight
+        # Built by MetaModel.time_bases and passed straight
         # through, index-aligned with the traces like the indices are.
         times = [np.arange(4.0), np.arange(4.0)]
 

@@ -188,10 +188,10 @@ class TestForbiddenImports:
 
     def test_fast_histogram_is_in_the_rule(self, mod: types.ModuleType) -> None:
         """
-        Without it, Step 4c could finish with the rule still reporting success.
+        Without it, histogramming could drift back into a View unreported.
 
-        ``RawDataView`` imports ``fast_histogram`` and Step 4c moves it, so leaving
-        it out would let that completion go unregistered.
+        ``RawDataView`` used to import ``fast_histogram``; the baseline statistics now
+        live on ``RawDataModel``, and this keeps them there.
         """
         assert "fast_histogram" in mod.FORBIDDEN_IMPORTS
 
@@ -515,9 +515,9 @@ class TestLayerMembership:
         """
         The whole point of widening the scan.
 
-        ``MetaController`` is where Step 3b would promote ``relay_query``, which holds
+        ``MetaController`` is where ``relay_query`` would be promoted, which held
         **all ten** of rule 3's violations; ``MetaView`` and ``MetaControls`` are
-        Step 3's View-side destinations. Under the hardcoded lists a promotion to any
+        the View-side destinations. Under the hardcoded lists a promotion to any
         of them zeroed the rule without fixing anything.
         """
         assert "poriscope/utils/MetaView.py" in self._names(mod.view_modules())
@@ -580,12 +580,11 @@ class TestLayerMembership:
 
 class TestPluginImports:
     """
-    The layering rule, added by the Step 2 exit review.
+    The layering rule: the app shell must not import *up* from a plugin package.
 
-    Step 3f's whole point was that the app shell imported *up* from
-    ``plugins/analysistabs/utils/walkthrough*``. Without this rule nothing observed
-    that inversion, so 3f could have been done, half-done or undone with every gate
-    green. 3f landed 2026-09-06 and the rule now reads zero; these use a module that
+    The shell used to import ``plugins/analysistabs/utils/walkthrough*``, and nothing
+    observed that inversion, so moving those modules could have been done, half-done
+    or undone with every gate green. The rule now reads zero; these use a module that
     still exists, since the walkthrough modules have moved into the shell.
     """
 
@@ -658,7 +657,7 @@ class TestPluginReach:
     ``call()`` is the whole plugin-facing API a tab gets, and this counts the ways
     around it.
 
-    Added by Step 4a, reading **zero** from the start - so unlike rules 1 to 3 it is a
+    It read **zero** from the start - so unlike rules 1 to 3 it is a
     ratchet rather than a backlog. Python cannot enforce this at runtime without
     inspecting the call stack on every plugin call, which would cost more than it is
     worth and would reject the worker-thread path; failing on the commit is earlier and

@@ -2,10 +2,11 @@
 """
 Characterization tests for ``EventAnalysisView``'s half of the event-plotting path.
 
-Before Step 4a this module pinned the whole of ``_handle_plot_events`` - 243 lines and
-all eight of the tab's ``global_signal`` emits - because no test named it. The
-conversion moved the calls and the assembly to ``EventAnalysisController``, and those
-invariants moved with them to ``tests/unit/controllers/test_event_analysis_controller.py``.
+This module used to pin the whole of ``_handle_plot_events`` - 243 lines and all
+eight of the tab's ``global_signal`` emits - because no test named it. The
+conversion to typed intents moved the calls and the assembly to
+``EventAnalysisController``, and those invariants moved with them to
+``tests/unit/controllers/test_event_analysis_controller.py``.
 
 **Eighteen of the twenty-four failed on conversion and five of the six survivors were
 vacuous**, which is the ratio worth recording: they asserted ``view.calls == []`` or
@@ -184,7 +185,7 @@ def test_set_event_plot_data_forwards_every_argument(view):
     once a fit is drawn - one to three traces per event against one placeholder each.
     """
     data = [np.full(4, 1.0), np.full(4, 7.0)]
-    # Built by MetaModel.time_bases since Step 4 and passed straight
+    # Built by MetaModel.time_bases and passed straight
     # through, so this method must not try to derive or re-align it either.
     time_bases = [np.arange(4.0), np.arange(4.0)]
     labels = ["Event 0 Data", "Event 0 Fit"]

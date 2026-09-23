@@ -1451,7 +1451,7 @@ class TestRefreshAvailablePlugins:
         assert order == ["config", "scan"]
 
 
-# ------------- 5c.4: the session-restore summary ---------------------------
+# ------------- the session-restore summary --------------------------------
 
 
 def test_load_session_reports_entries_that_could_not_be_restored(
@@ -1523,7 +1523,7 @@ def test_load_session_says_nothing_extra_when_every_entry_restored(
     assert not any("could not be restored" in m for m in messages), messages
 
 
-# ------------- 5c.6: renaming a plugin in the session history -------------
+# ------------- renaming a plugin in the session history -------------------
 
 
 class TestRenamedHistory:

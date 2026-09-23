@@ -1,11 +1,11 @@
 """
 The direct plugin-call path that replaced the global signal bus.
 
-Decision A replaces the return-value signal bus with ``call`` on ``MetaController`` and
+The return-value signal bus is replaced by ``call`` on ``MetaController`` and
 ``MetaModel``, with live plugin instances **pushed** down the notification path that
-already refreshes the plugin *names* a View shows in its comboboxes. The plan named
-``get_plugin`` as public alongside it; it is ``_get_plugin`` instead, so that ``call()``
-is the only public door - see point 3 below.
+already refreshes the plugin *names* a View shows in its comboboxes. The lookup
+behind it is ``_get_plugin``, private, so that ``call()`` is the only public door -
+see point 3 below.
 
 What the bus did, and why this exists, in the words of the thing it replaces: a caller
 emitted ``global_signal`` with the name of a return function, and read the answer back

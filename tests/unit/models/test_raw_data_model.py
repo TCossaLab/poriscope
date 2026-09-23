@@ -1,21 +1,20 @@
 """
 Characterization tests for RawDataModel's baseline and Gaussian-fit computation.
 
-Step 4c moved ``get_baseline_stats`` and ``gaussian_fit`` off ``RawDataView`` onto this
+``get_baseline_stats`` and ``gaussian_fit`` moved off ``RawDataView`` onto this
 model - they were ``_get_baseline_stats`` and ``_gaussian_fit``, and the leading
 underscore went because ``RawDataController`` calls them now. These tests came from
 ``tests/unit/views/test_raw_data_view_characterization.py`` with their assertions
 unchanged; only the receiver moved, from ``view`` to ``model``.
 
-They are the Step 2 characterization suite for the method whose own source comment calls
-it "THE CRITICAL MATH FIX" and which the Step 2 audit found had **no** behavioural
-coverage at all. That is why they were written before the move and why they are worth
-following it carefully.
+They characterize the method whose own source comment calls it "THE CRITICAL MATH
+FIX" and which had **no** behavioural coverage at all before them. That is why they
+were written before the move and why they are worth following it carefully.
 
 A fifth class, ``TestGaussian``, did not come across. ``RawDataView._gaussian`` was a
 Gaussian model function with **zero callers anywhere in poriscope/** - ``gaussian_fit``
-fits a parabola to ``log(histogram)`` rather than calling a model function - so Step 4c
-deleted it instead of moving it, and its four tests went with it.
+fits a parabola to ``log(histogram)`` rather than calling a model function - so it was
+deleted instead of moving it, and its four tests went with it.
 ``ClassicBlockageFinder`` keeps its own separate copy, which is unaffected.
 
 No Qt: these used to need a ``RawDataView`` built by ``__new__`` with its signals
@@ -159,9 +158,9 @@ class TestGaussianFitGolden:
         """
         Fit a family of clean Gaussians and record every recovered parameter.
 
-        This is the regression net for Step 4c: the method moves to the Model, and
-        if the standardisation, the moment matrix or the de-standardisation
-        changes, the recovered numbers move and this diffs.
+        This is the regression net for the fit itself: if the standardisation, the
+        moment matrix or the de-standardisation changes, the recovered numbers move
+        and this diffs.
 
         It is deliberately *not* the net for the windowing threshold. Verified by
         perturbing it: changing ``exp(-4.5)`` to ``exp(-3.5)`` leaves every number
@@ -302,7 +301,7 @@ class TestGetBaselineStats:
         ``mean_guess`` and ``stdev_guess``, and the fit undoes its own
         standardisation exactly, so the guesses barely reach the answer.
         Perturbing that constant to ``0.55`` moves nothing here. Worth knowing
-        before Step 4c moves this code - half of the second pass is close to dead
+        before changing this code - half of the second pass is close to dead
         weight.
         """
         recorded: Dict[str, list] = {"amplitude": [], "mean": [], "stdev": []}

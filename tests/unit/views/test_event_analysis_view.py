@@ -62,7 +62,7 @@ def _time_bases(traces):
     """
     The time axes MetaModel.time_bases would build for these traces.
 
-    Step 4 moved that derivation off the View - it is a property of the samples and
+    That derivation is not the View's - it is a property of the samples and
     the rate they were taken at - so the traces now arrive already paired with it.
     A 1 MHz rate is used throughout; no test here asserts on the values, only that
     the arity and the per-trace lengths line up.
@@ -462,7 +462,7 @@ class TestHandleParameterChange:
 
 class TestHandleOtherActions:
     """
-    Step 4a: a typed intent naming the loader, not a bus call describing the dispatch.
+    A typed intent naming the loader, not a bus call describing the dispatch.
 
     Both tests target ``loader_channels_requested``. The second one used to assert that
     ``global_signal`` did not fire, which is trivially true of a method that no longer
@@ -591,7 +591,7 @@ class TestHandleFitEvents:
 
 
 class TestHandleCommitEvents:
-    """Step 4a: the write call is the Controller's, so this emits and stops."""
+    """The write call is the Controller's, so this emits and stops."""
 
     def test_bad_params_returns_gracefully(self, mock_view):
         mock_view.write_requested = MagicMock()
@@ -647,7 +647,7 @@ class TestHandleCommitEvents:
 
 class TestStartEventfitter:
     """
-    The View half of the fitting launch after Step 4a: ask, prompt, ask again.
+    The View half of the fitting launch: ask, prompt, ask again.
 
     All three bus round trips - the filter callable, the per-channel status, and the
     per-channel ``fit_events`` - are the Controller's now, and asserted in

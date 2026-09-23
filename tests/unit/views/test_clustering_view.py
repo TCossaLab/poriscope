@@ -262,9 +262,9 @@ class TestColumnsBeforeAnyLoaderAnswers:
     It used to be created only by ``update_column_names``, so a loader whose columns
     could not be read left ``_handle_clustering_settings`` raising
     ``AttributeError: 'ClusteringView' object has no attribute 'columns'`` - a modal
-    traceback instead of a settings dialog with an empty column list. Step 4a surfaced
-    it by making a failed column fetch stop early instead of leaving stale values, but
-    the fragility predated that.
+    traceback instead of a settings dialog with an empty column list. A failed column
+    fetch now stops early instead of leaving stale values, which is what surfaced it,
+    but the fragility predated that.
     """
 
     def test_columns_exists_on_a_fresh_view(self, view) -> None:
@@ -290,8 +290,8 @@ class TestLoadMetadataRequest:
     """
     The first half: validate what the user selected, then ask for the rows.
 
-    Step 4a took the two ``global_signal`` emits out of this method, so it no longer
-    needs a bus stand-in at all - it asks, and the rows come back as an argument. The
+    This method makes no ``global_signal`` emits, so it needs no bus stand-in at
+    all - it asks, and the rows come back as an argument. The
     tests got simpler because the design did.
     """
 
@@ -352,7 +352,7 @@ class TestOnMetadataLoaded:
     The rows are a parameter, so none of this reads ``self.plot_data`` - and the
     clear-before-emit guard that used to protect that read went with the read.
 
-    **The filtering itself is no longer here.** Step 4's closeout moved it to
+    **The filtering itself is no longer here.** It is
     ``ClusteringModel.build_clustering_frame``, so the request now carries the
     unfiltered rows plus the spec, and this class pins the parsing and the spec.
     """
@@ -481,7 +481,7 @@ class TestOnMetadataLoaded:
 
 class TestSetClusteringResult:
     """
-    The other half of ``cluster_requested``, introduced by Step 4c.
+    The other half of ``cluster_requested``.
 
     ``_handle_clustering_settings`` used to do all of this inline after the clustering
     call returned; it now happens when the Controller hands the answer back.

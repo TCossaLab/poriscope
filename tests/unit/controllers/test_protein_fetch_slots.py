@@ -24,16 +24,15 @@
 # Kyle Briggs
 
 """
-``ProteinController``'s Step 4a fetch slots: what they call, and what they report.
+``ProteinController``'s fetch slots: what they call, and what they report.
 
 **Why this file exists.** ``test_protein_view``'s tests for these conversions stub the
 answer - they connect to the intent and set the generator the way the Controller does -
 so not one of them can see what the Controller actually asks the loader, or what it does
-when the loader says no. That is how the metadata tab's two commit-4 slots shipped
+when the loader says no. That is how the metadata tab's first two fetch slots shipped
 untested, and the same trap applies here.
 
-Kept out of ``test_protein_controller`` because that module covers the relay methods
-this step is deleting.
+Kept out of ``test_protein_controller`` because that module covers the relay methods.
 """
 
 import pandas as pd
@@ -106,7 +105,7 @@ def ids_frame() -> pd.DataFrame:
 
 class TestLoadEventPlotData:
     """
-    Three emits over two View methods became one intent (Step 4a).
+    Three emits over two View methods became one intent.
 
     Answers are written from each loader method's real signature on
     ``MetaDatabaseLoader`` rather than from the calling code:
@@ -450,8 +449,8 @@ class TestCommitFits:
         :param controller: the controller under test
         :type controller: ProteinController
         """
-        # A real ProteinModel with only its plugin boundary recorded: Step 4b moved
-        # the query construction there, and stubbing the Model method would hide it.
+        # A real ProteinModel with only its plugin boundary recorded: the query
+        # construction lives there, and stubbing the Model method would hide it.
         controller.model = recording_tab_model(
             ProteinModel, {"alter_database": True, "add_columns_to_table": True}
         )

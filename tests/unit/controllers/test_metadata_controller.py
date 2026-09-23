@@ -41,7 +41,7 @@ def mock_view(mocker: MockerFixture) -> MagicMock:
     # The filter store, plus the two methods the controller reaches it through.
     # These carry the real bodies rather than bare Mocks: what relay_query decides
     # is the suffixed name and which entry it replaces, and a Mock would accept any
-    # of that silently. Step 4d took the controller's direct writes to the dict out
+    # of that silently. The controller no longer writes to the dict directly
     # (DECISIONS.md, 2026-09-13); the dict itself stays on the view.
     view.subset_filters = {}  # type: ignore[misc]
 
@@ -148,7 +148,7 @@ def test_request_column_units_asks_the_loader_and_applies_the_axis(
     mock_view: MagicMock,
 ) -> None:
     """
-    Step 4a: the base's ``update_column_units`` relay became this slot.
+    The base's ``update_column_units`` relay became this slot.
 
     The relay existed only as a bus return function; nothing names it now. The axis
     travels with the request and back out again, which is what the bus carried in its
@@ -408,8 +408,8 @@ def test_relay_query_new_filter_stored_in_subset_filters(
     :param controller: Controller under test.
     :param mock_view: Mocked metadata view.
     """
-    # Step 4d: the name and text arrive as arguments rather than being read back off
-    # the view, which is the Controller-reads-View-private access this step removes.
+    # The name and text arrive as arguments rather than being read back off the
+    # view, so the Controller never reads View-private state.
     controller.relay_query(
         "SELECT 1",
         "",
@@ -772,7 +772,7 @@ def test_request_experiment_structure_does_not_alias_the_available_structure(
     assert available["exp1"] == ["1", "2"]
 
 
-# --------------------- fit_capture_rate, Step 4 closeout ---------------------
+# ----------------------------- fit_capture_rate ------------------------------
 #
 # The inter-event times moved here from MetadataView, and both conditions that were
 # judged on them came with the computation: too little surviving data, and how much
@@ -781,7 +781,7 @@ def test_request_experiment_structure_does_not_alias_the_available_structure(
 
 
 class TestFitCaptureRate:
-    """Decision B's command path, with two guards on the Model's answer."""
+    """The command path, with two guards on the Model's answer."""
 
     @pytest.fixture(autouse=True)
     def _stub_status_panel(self, controller, mocker) -> None:
@@ -937,11 +937,11 @@ class TestFitCaptureRate:
         )
 
 
-# ------------------- count_categories, Step 4 closeout -----------------------
+# ----------------------------- count_categories ------------------------------
 
 
 class TestCountCategories:
-    """Decision B's command path: datasets in, tallies back through a setter."""
+    """The command path: datasets in, tallies back through a setter."""
 
     @pytest.fixture(autouse=True)
     def _stub_status_panel(self, controller, mocker) -> None:
@@ -1006,10 +1006,10 @@ class TestCountCategories:
         mock_view.set_categorical_counts.assert_not_called()
 
 
-# ---------------- calculate_histogram_bins, Step 4 closeout ------------------
+# ------------------------- calculate_histogram_bins --------------------------
 #
-# The slot had no test naming it before the closeout - rule 52 again, its callers
-# being covered is what made the gap invisible. It carries the counting now as well
+# The slot once had no test naming it - its callers being covered is what made the
+# gap invisible. It carries the counting now as well
 # as the bin decision, so what it forwards and what it hands back are both pinned.
 
 
@@ -1031,7 +1031,7 @@ class _StatusPanelMixin:
 
 
 class TestCalculateHistogramBins(_StatusPanelMixin):
-    """Decision B's command path: raw datasets in, tallies back through a setter."""
+    """The command path: raw datasets in, tallies back through a setter."""
 
     @staticmethod
     def _run(controller, datasets, norm=False, logx=False, ax=None):
@@ -1311,7 +1311,7 @@ class TestEstimateKernelDensities(_StatusPanelMixin):
         mock_view.set_kernel_densities.assert_not_called()
 
 
-# ---------------- the filter's move, Step 4 closeout -------------------------
+# ---------------------------- the filter's move ------------------------------
 #
 # `_logscale_and_filter_multiple_columns` used to run in the View, immediately
 # before each plot's request went out. These three slots take the raw columns and
@@ -1377,7 +1377,8 @@ class TestFilterScatterplot(_StatusPanelMixin):
     def test_the_filtered_columns_reach_the_view(self, controller, mock_view) -> None:
         """
         Against the real Model rather than a stub of it, because what this slot
-        forwards is exactly the thing a stub cannot get wrong: rule 42.
+        forwards is exactly the thing a stub cannot get wrong - it would pin whatever
+        contract it was written against.
         """
         controller.model = MetadataModel()
         ax = MagicMock()

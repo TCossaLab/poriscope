@@ -2,7 +2,7 @@
 Characterization tests for the bins-vs-sizes validator swap in the controls widgets.
 
 ``_on_sizes_checkbox_toggled`` is a two-way duplicate between ``metadatacontrols``
-and ``proteincontrols`` that Step 3b merges. The refactor-coverage audit reported it
+and ``proteincontrols``, slated for merging. The refactor-coverage audit reported it
 as ``RUNS ONLY``: its body executes when a controls widget is constructed - the
 constructor calls it once to set the initial state - but no test named it, so
 nothing asserted what it actually does.
@@ -22,7 +22,7 @@ from poriscope.plugins.analysistabs.utils.proteincontrols import ProteinControls
 
 pytestmark = pytest.mark.characterization
 
-#: Both carriers of the duplicated method. Step 3b merges them.
+#: Both carriers of the duplicated method.
 CONTROLS = (MetadataControls, ProteinControls)
 
 
@@ -110,7 +110,7 @@ class TestSizesCheckboxToggled:
 
 def test_both_copies_are_byte_identical() -> None:
     """
-    The two implementations agree today, which is what makes 3b's merge safe.
+    The two implementations agree today, which is what makes merging them safe.
 
     Compared as source rather than by behaviour, because the parametrized tests
     above already cover behaviour and this catches a divergence that keeps the

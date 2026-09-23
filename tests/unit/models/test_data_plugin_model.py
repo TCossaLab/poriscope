@@ -139,7 +139,7 @@ def test_get_plugin_instance(plugin_model, dummy_plugin):
     assert instance == dummy_plugin
 
 
-# ------------- 5c.4: what a missing plugin class reports -------------------
+# ------------- what a missing plugin class reports ------------------------
 
 
 def test_get_temp_instance_names_a_missing_subclass(plugin_model):

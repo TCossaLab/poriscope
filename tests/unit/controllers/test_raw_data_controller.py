@@ -6,12 +6,12 @@ Covers:
 - _setup_connections wires calculate_psd signal
 - calculate_psd computes PSD via model and updates view
 - update_available_plugins logs debug and delegates to model and view
-- _load_and_filter reads each channel through call(), dropping what fails (4a)
+- _load_and_filter reads each channel through call(), dropping what fails
 - load_trace_data / load_psd_data hand the result to the matching view setter
-- load_event_plot_data makes the five event-plot calls the View used to make (4a)
-- commit_events registers each channel's generator with the model and runs them (4a)
-- request_eventfinding_statuses / start_eventfinding: the launch, in two halves (4a)
-- update_available_plugins resolves eventfinder channels before pushing names (4a)
+- load_event_plot_data makes the five event-plot calls the View used to make
+- commit_events registers each channel's generator with the model and runs them
+- request_eventfinding_statuses / start_eventfinding: the launch, in two halves
+- update_available_plugins resolves eventfinder channels before pushing names
 - _resolve_eventfinder_channels queries every finder and omits one that raises
 """
 
@@ -57,18 +57,18 @@ def controller(mock_view: MagicMock, mocker: MockerFixture) -> RawDataController
     ctrl.model = mocker.Mock()
     ctrl.logger = mocker.Mock()  # type: ignore[attr-defined]
     # Real MetaController signal, needed by any slot that reports a failure to the
-    # status panel. Added when Step 4a gave this controller its first such slot.
+    # status panel.
     ctrl.add_text_to_display = mocker.Mock()
     ctrl.add_text_to_display.emit = mocker.Mock()
     return ctrl
 
 
-# ----------------------- request_reader_channels (Step 4a) -----------
+# ----------------------- request_reader_channels ---------------------
 
 
 class TestRequestReaderChannels:
     """
-    The Step 4a replacement for a ``global_signal`` round trip.
+    Replaces a ``global_signal`` round trip with a direct call to the reader.
 
     The View asked a reader for its channel list over the bus and the answer came back
     seven hops later through a return function named by string. It is one call now, and
@@ -233,7 +233,7 @@ def test_update_available_plugins_logs_debug(
     controller.logger.debug.assert_called_once()  # type: ignore[attr-defined]
 
 
-# ------------- launching event finding (Step 4a) ---------------------
+# ------------- launching event finding -------------------------------
 
 
 class TestEventfindingLaunch:
@@ -320,8 +320,7 @@ class TestEventfindingLaunch:
         ``find_events(channel, ranges, chunk_length=1.0, data_filter=None)``.
 
         ``chunk_length`` is passed explicitly because the View always did, even though it
-        matches the default - written from the signature rather than the old call site
-        (rule 42).
+        matches the default - written from the signature rather than the old call site.
 
         :param controller: Controller under test.
         :param mocker: Pytest-mock fixture.
@@ -440,7 +439,7 @@ class TestEventfindingLaunch:
         controller.model.run_generators.assert_called_once_with("finder")
 
 
-# ------------------- committing events (Step 4a) ---------------------
+# ------------------- committing events -------------------------------
 
 
 class TestCommitEvents:
@@ -528,7 +527,7 @@ class TestCommitEvents:
         controller.model.set_generator.assert_not_called()
 
 
-# ------------- trace loading and filtering (Step 4a) -----------------
+# ------------- trace loading and filtering ---------------------------
 
 # _load_and_filter now asks each channel for its length before reading it, so the
 # range can be trimmed to what the channel holds (MetaReader.load_data raises on an
@@ -572,7 +571,7 @@ def test_load_and_filter_drops_a_channel_the_reader_cannot_supply(
     mock_view: MagicMock,
 ) -> None:
     """
-    **The stale-read bug this step closes.** The View used to emit ``load_data`` per
+    **The stale-read bug this closes.** The View used to emit ``load_data`` per
     channel and read the answer off ``self.plot_data``, which is written only on success
     and never cleared before the emit. Because the dispatcher swallowed the failure, the
     caller's ``is not None`` guard passed and the *previous* channel's array was appended
@@ -813,7 +812,7 @@ def test_load_psd_data_hands_the_result_back_for_the_psd(
     mock_view.set_trace_for_psd.assert_called_once_with(["d0"], [0])
 
 
-# --------------- event plotting (Step 4a) ----------------------------
+# --------------- event plotting --------------------------------------
 
 
 class TestLoadEventPlotData:
@@ -1098,7 +1097,7 @@ class TestLoadEventPlotData:
 
         The trailing ``False`` is **rectify**, not ``raw_data``. The emit's argument
         tuple said only ``False`` and the method has two boolean parameters, so this is
-        written from the signature rather than from the call site (rule 42).
+        written from the signature rather than from the call site.
         """
         self.answers(controller, get_single_event_data=[{"data": "a"}, {"data": "b"}])
 
@@ -1146,7 +1145,7 @@ class TestLoadEventPlotData:
         self, controller: RawDataController, mock_view: MagicMock
     ) -> None:
         """
-        **New behaviour, and the stale read this step exists to close.** A swallowed
+        **New behaviour, and the stale read this closes.** A swallowed
         failure left the previous event's samples on ``plot_data``, and the caller's
         ``is not None`` guard passed - so the previous event was plotted a second time
         under this event's index.
@@ -1178,7 +1177,7 @@ class TestLoadEventPlotData:
         assert (event_data, kept) == ([], [])
 
 
-# ---------------- eventfinder channel resolution (4a) ----------------
+# ---------------- eventfinder channel resolution ---------------------
 
 
 def test_update_available_plugins_registers_channels_before_pushing_names(
@@ -1282,7 +1281,7 @@ class TestBoundedLength:
     ) -> None:
         """
         Trimming silently would be the same "you are looking at something other than
-        what you asked for" fault this step exists to remove, so the message is part
+        what you asked for" fault the direct call removes, so the message is part
         of the behaviour rather than an extra.
 
         :param controller: Controller under test.

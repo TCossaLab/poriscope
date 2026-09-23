@@ -1,7 +1,7 @@
 """
 Unit-test suite for ClusteringModel.
 
-Step 4c moved the clustering computation off ``ClusteringView`` and onto this model:
+The clustering computation moved off ``ClusteringView`` and onto this model:
 ``normalize_column_data`` and ``cluster_hdbscan`` came across verbatim (they were
 ``_normalize_column_data`` and ``_update_clusters_hdbscan``), and the Gaussian-mixture
 branch of the View's ``_load_metadata_and_cluster`` became ``cluster_gaussian_mixture``
@@ -85,7 +85,7 @@ class TestConstruction:
         assert model is not None
 
     def test_is_instance_of_meta_model(self, model: ClusteringModel) -> None:
-        """The base contract is unchanged by Step 4c."""
+        """The base contract still holds."""
         assert isinstance(model, MetaModel)
 
 
@@ -207,7 +207,7 @@ class TestClusterHDBSCAN:
 
 class TestClusterGaussianMixture:
     """
-    The mixture branch, which had no direct coverage before Step 4c.
+    The mixture branch, which had no direct coverage while it lived on the View.
 
     It was fifteen lines inline in a 136-line View method, reachable only by
     constructing the widget and answering two bus emits.
@@ -326,7 +326,7 @@ class TestCluster:
 
 
 # ===========================================================================
-# build_clustering_frame - the filtering Step 4's closeout moved off the View
+# build_clustering_frame - the filtering moved off the View
 # ===========================================================================
 
 

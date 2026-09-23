@@ -1,10 +1,10 @@
 """
 Metadata tab, end to end and headless: load, filter, export, check the CSV.
 
-The plan's shape for these flows is load → filter → plot → export, **asserting on
-exported CSV content rather than widget state**, so that the flow survives Steps
-3-5 by construction: none of it names an internal method, so moving those methods
-between View, Controller and Model cannot break it.
+The shape of these flows is load → filter → plot → export, **asserting on
+exported CSV content rather than widget state**, so that the flow survives
+refactoring by construction: none of it names an internal method, so moving those
+methods between View, Controller and Model cannot break it.
 
 What is real here: the ``MainModel``/``MainView``/``MainController`` shell, the
 ``MetadataController``/``MetadataView`` triad created through the same call the
@@ -215,7 +215,7 @@ def test_a_channel_exports_its_own_events_and_sublevels(
 
     The synthetic database puts 25 events on channel 0, each fitted to three
     sublevels, and the export writes one CSV per table. Asserting on the files
-    rather than on widget state is what makes this survive Steps 3-5.
+    rather than on widget state is what makes this survive refactoring.
     """
     out = tmp_path / "export_one"
     out.mkdir()
@@ -275,7 +275,7 @@ def test_the_exported_events_carry_the_expected_columns(
     """
     A reader of the CSV needs the identity columns to join the tables back up.
 
-    Pinned because Step 4b moves the query that produces them, and a projection
+    Pinned because the query that produces them moved off the View, and a projection
     that lost one of these would still export a plausible-looking file.
     """
     out = tmp_path / "export_columns"

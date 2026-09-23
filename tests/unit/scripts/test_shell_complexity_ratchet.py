@@ -1,7 +1,7 @@
 """
 The shell complexity ratchet: the nine app-shell files must match their baseline exactly.
 
-Step 5c restructures the app shell, and until now nothing measured it.
+The app shell was restructured in 2.0.0, and before this nothing measured it.
 ``check_mvc_boundary.py`` reads 0 on all three of its rules over these files and no
 duplication family covers them, so the only instrument pointed at the shell is this
 one. ``.shell-complexity-baseline.json`` records the counts and this test holds them.

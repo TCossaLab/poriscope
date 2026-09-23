@@ -3,7 +3,7 @@ conftest.py for tests/unit/controllers
 
 These tests drive real Controller/View pairs, so a View method that opens a modal
 stalls the test rather than failing it. That went from theoretical to actual when
-Step 4a promoted ``on_raw_filter_validated`` to ``MetaSubsetTabView`` carrying
+``on_raw_filter_validated`` was promoted to ``MetaSubsetTabView`` carrying
 Metadata's ``QMessageBox.warning``: ``test_protein_controller``'s
 ``test_invalid_forwards_to_view`` drives it through the Controller's forwarder and
 hung on the real dialog, because this directory had no guard while

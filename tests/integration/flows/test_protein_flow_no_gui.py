@@ -1,17 +1,17 @@
 """
 Protein tab, end to end and headless: load, select, plot, export, check the CSV.
 
-This one takes the plan's literal shape - load, filter, plot, export, assert on
+This one takes the canonical flow shape - load, filter, plot, export, assert on
 exported CSV content - because the protein tab has a generic
 ``export_plot_data`` action that writes whatever is currently cached for the plot.
 That makes it the cleanest available assertion on this tab: the numbers a user
 would see on the axes, written to a file, rather than any widget state.
 
 The route is entirely through ``handle_parameter_change`` action names, so nothing
-here names an internal method and Steps 3-5 can move the computation to the Model
-without touching it. The only bypass beyond the tab's creation and the plugin
-settings dialog is ``get_save_filename``, the file picker, which is replaced with
-a fixed path so the export either side of it is real.
+here names an internal method and the computation can move between View,
+Controller and Model without touching it. The only bypass beyond the tab's creation
+and the plugin settings dialog is ``get_save_filename``, the file picker, which is
+replaced with a fixed path so the export either side of it is real.
 """
 
 from pathlib import Path
@@ -114,8 +114,8 @@ def test_the_loader_structure_reaches_the_tab(protein_tab: Triad) -> None:
     The experiment tree the selection dialog would show is populated for real.
 
     Note the channels arrive as strings: the domain model holds them as ints and
-    the view layer stringifies them for display. Pinned because Step 4d moves this
-    state to the Model, where the conversion has to survive.
+    the view layer stringifies them for display. Pinned because this state moved
+    to the Model, where the conversion has to survive.
     """
     structure = protein_tab.tab_view.available_experiment_and_channels_by_loader
 
@@ -129,8 +129,8 @@ def test_plotting_then_exporting_writes_the_plotted_numbers(
     """
     The end of the pipeline: what is on the axes, written to a file.
 
-    Asserting on the CSV rather than on the axes is what makes this survive Steps
-    3-5, since none of the methods that produced the numbers are named here.
+    Asserting on the CSV rather than on the axes is what makes this survive
+    refactoring, since none of the methods that produced the numbers are named here.
     """
     plot_events(protein_tab, {"exp_a": ["0"]}, "1")
 
@@ -148,8 +148,8 @@ def test_exporting_without_plotting_writes_nothing(
     An export with an empty cache is a no-op, not a crash or an empty file.
 
     ``MetaController.export_plot_data`` returns early when the model has no cached
-    data, so the file picker is never even reached - pinned because Step 4a moves
-    that method's data access and an eager write would leave the user with a file
+    data, so the file picker is never even reached - pinned because that method's
+    data access moved to the Model, and an eager write would leave the user with a file
     full of nothing.
     """
     destination = tmp_path / "nothing.csv"

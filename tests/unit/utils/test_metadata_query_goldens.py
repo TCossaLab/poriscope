@@ -8,7 +8,7 @@ containment, or a non-emptiness check. A refactor could reorder the JOIN chain,
 reassign the aliases, drop or add a projected column, or reformat the WHERE
 assembly, and all 110 would still pass.
 
-That matters because Step 4b moves the Views' hand-built SQL into this method. The
+That matters because the Views' hand-built SQL moved into this method. The
 natural way to do it is to widen ``construct_metadata_query`` until it covers those
 cases too, and the risk in doing so is not that it breaks - it is that it quietly
 starts emitting slightly different SQL for the cases it already served.
@@ -30,13 +30,13 @@ fail this test.
 The stub loader is reused from ``test_meta_database_loader.py`` so the schema these
 goldens are generated against stays in one place.
 
-**One thing these goldens surfaced, worth knowing before Step 4b.** Verifying that
+**One thing these goldens surfaced.** Verifying that
 they are actually sensitive - by renaming the ``sublevels`` alias from ``s`` and
 watching the diff - showed the builder emitting
 ``JOIN sublevels sl ON e.id = s.event_db_id``. The alias map at
 ``MetaDatabaseLoader.py:1021-1029`` feeds the projection and the WHERE qualification,
 but the ``ON`` clause hardcodes ``s.``, so the two are not consistently derived.
-Latent today, because nothing changes the aliases; live the moment Step 4b does.
+Latent today, because nothing changes the aliases; live the moment anything does.
 """
 
 from typing import Dict, List, Optional

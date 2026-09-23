@@ -81,8 +81,8 @@ class TestRelayQuery:
         assert controller.view.table_name == "events"
 
     def test_new_filter_added_with_assisted_suffix(self, controller):
-        # Step 4d: the name and text arrive as arguments. They used to be read back
-        # off the View, which is the private access this step removes.
+        # The name and text arrive as arguments rather than being read back off
+        # the View, so the Controller never reads View-private state.
         controller.relay_query(
             "SELECT dur FROM events WHERE dur > 100",
             "",
@@ -269,9 +269,8 @@ class TestSessionState:
 # fit_event_histograms / fit_distribution_events - the binning's destination
 # ===========================================================================
 #
-# Neither slot had a test of its own before Step 4's closeout, which is method
-# rule 52 for the fourth time: their callers were covered, and that is exactly
-# what made the gap invisible. They do real work now - bin, then fit, then hand
+# Neither slot once had a test of its own: their callers were covered, and that
+# is exactly what made the gap invisible. They do real work now - bin, then fit, then hand
 # back - so a wrong call shape or a swallowed failure would have satisfied the
 # whole suite.
 

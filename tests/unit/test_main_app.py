@@ -8,14 +8,14 @@ subfolders under the platform's user data directory, writes or repairs
 
 It was at **0% coverage** - 52 statements, none of them executed by any test -
 while being complexity 17 and the thing that runs before anything else in the
-application. Step 5c.5 splits it, so it is pinned first (5c.1).
+application. It was pinned before being split into helpers.
 
 These drive a stub that **borrows the real methods off ``App``**, so the code
 under test is the shipped code, but no ``QApplication`` is constructed - one would
 collide with the one pytest-qt manages. The stub needs nothing of its own but a
 logger, because the method assigns every other attribute it uses.
 
-Borrowing rather than subclassing is what keeps 5c.5's helpers honest: each is
+Borrowing rather than subclassing is what keeps the split's helpers honest: each is
 listed below by name, so a helper added to ``create_appdata_folders`` without
 being brought across fails loudly here instead of being quietly mocked away.
 
@@ -453,7 +453,7 @@ class TestAnUnwritableConfig:
         assert _config_path(app_root).read_text(encoding="utf-8") == "{not json at all"
 
 
-# ------------- 5c.5: the extracted helpers --------------------------------
+# ------------- the extracted helpers --------------------------------------
 #
 # Each is in the refactor-coverage audit's MOVED table, so each is driven
 # directly as well as through create_appdata_folders.
@@ -607,10 +607,10 @@ class TestAppIsWhole:
     """
     Every method ``App`` calls on itself exists.
 
-    This is here because 5c.5 deleted ``initialize_components`` - a splice
-    anchored on the method before it and the method after it took out the one in
-    between - and **the entire suite stayed green**. 4,287 tests passed over an
-    application that could not start, because nothing constructs ``App``:
+    This is here because splitting the setup once deleted ``initialize_components``
+    - a splice anchored on the method before it and the method after it took out
+    the one in between - and **the entire suite stayed green**. 4,287 tests passed
+    over an application that could not start, because nothing constructs ``App``:
     ``App`` is a ``QApplication`` subclass and only one of those may exist in a
     process, so the tests above deliberately borrow its methods onto a stub
     instead.
@@ -687,7 +687,7 @@ class TestInitializeComponents:
     The step that builds the app-shell triad.
 
     Borrowing the real method and patching the three classes by their names *in
-    this module* is what makes this catch both halves of the 5c.5 near-miss: the
+    this module* is what makes this catch both halves of that near-miss: the
     borrow fails if the method is gone, and ``mocker.patch`` fails if the import
     it needs has been removed from ``main_app``.
 

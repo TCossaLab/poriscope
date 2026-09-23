@@ -1,8 +1,8 @@
 """
 Unit-test suite for ProteinModel.
 
-ProteinModel was a minimal MetaModel subclass with a no-op _init(). **Step 4c
-gave it the protein tab's double-gaussian fitting**, moved off ProteinView so
+ProteinModel was a minimal MetaModel subclass with a no-op _init(). **It now
+holds the protein tab's double-gaussian fitting**, moved off ProteinView so
 that scipy.optimize, scipy.signal and scipy.stats leave the View layer.
 
 The construction tests below predate that and still hold. The fitting tests
@@ -32,7 +32,7 @@ def _make_double_gaussian_histogram(
     Build a clean two-peak histogram.
 
     Moved verbatim from ``tests/unit/views/test_protein_view.py`` with the methods it
-    exercises, so the pins below are the same inputs they were before Step 4c.
+    exercises, so the pins below are the same inputs they were on the View.
 
     :return: the bin centers and the amplitudes
     :rtype: tuple
@@ -94,7 +94,7 @@ class TestInit:
 
 
 # ===========================================================================
-# Double-gaussian fitting - moved off ProteinView by Step 4c
+# Double-gaussian fitting - moved off ProteinView
 # ===========================================================================
 
 
@@ -137,7 +137,7 @@ class TestDoubleGaussian:
 
         np.testing.assert_allclose(at_mean, [1.5])
 
-    # --- pins moved from test_protein_view.py by Step 4c, receiver re-pointed ---
+    # --- pins moved from test_protein_view.py, receiver re-pointed ---
 
     def test_peak_at_mean1(self, model):
         r = model._double_gaussian(np.array([0.2]), 1.0, 0.2, 0.05, 0.8, 0.6, 0.05)
@@ -197,7 +197,7 @@ class TestFitDoubleGaussian:
         assert popt is None
         assert pcov is None
 
-    # --- pins moved from test_protein_view.py by Step 4c, receiver re-pointed ---
+    # --- pins moved from test_protein_view.py, receiver re-pointed ---
     # The ``qt_app`` fixture and its ``processEvents()`` calls went with the move:
     # a Model builds no widget, so there is no event loop to pump.
 
@@ -261,7 +261,7 @@ class TestFitAndSanityCheckDoubleGaussian:
         assert raw is not None
         assert checked is None
 
-    # --- pins moved from test_protein_view.py by Step 4c, receiver re-pointed ---
+    # --- pins moved from test_protein_view.py, receiver re-pointed ---
 
     def test_clean_signal_passes(self, model):
         x, y = _make_double_gaussian_histogram()
@@ -359,13 +359,12 @@ class TestFitHistograms:
 
 
 # ===========================================================================
-# The SQL Step 4b moved down - drop_fit_columns, resolve_event_ids,
+# The SQL moved off the View - drop_fit_columns, resolve_event_ids,
 # load_events_by_id
 # ===========================================================================
 #
-# All three are destinations of a Step 4b move and none had a test naming it, so
-# the refactor-coverage audit read RUNS ONLY for all three: their bodies ran under
-# the e2e suite and nothing asserted what they authored. These assert on the exact
+# None of the three had a test naming it: their bodies ran under the e2e suite
+# and nothing asserted what they authored. These assert on the exact
 # statements handed to the loader, and the stubbed ``call`` answers from the
 # declared return types on ``MetaDatabaseLoader`` - bool for alter_database,
 # Optional[pd.DataFrame] for query_database_directly, a generator for
@@ -572,7 +571,7 @@ def _make_event(
     Synthetic event dict matching what ``load_event_data`` yields.
 
     Moved from ``tests/unit/views/test_protein_view.py`` with the binning it feeds,
-    so the pins below are the same inputs they were before Step 4's closeout.
+    so the pins below are the same inputs they were on the View.
 
     :param event_id: the event's id
     :type event_id: int
@@ -901,13 +900,13 @@ class TestBuildAllPointsHistogram:
 
 
 # ===========================================================================
-# The Monte Carlo forward model, moved off ProteinView in Step 4's closeout
+# The Monte Carlo forward model, moved off ProteinView
 # ===========================================================================
 #
 # Both classes came from ``tests/unit/views/test_protein_view.py`` with the
 # methods, receiver renamed and nothing else: they are the pins that predate the
 # move, so their passing against the Model is the evidence the computation is
-# unchanged (method rule 39).
+# unchanged.
 
 
 class TestComputeTheoreticalBlockages:

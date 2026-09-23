@@ -225,8 +225,8 @@ def test_protein_individual_ensemble_flow(
         raising=True,
     )
 
-    # See module docstring's SPEED note. Step 4's closeout moved the sampler onto
-    # ProteinModel with the rest of the geometry, so this patches the one copy that
+    # See module docstring's SPEED note. The sampler lives on ProteinModel with the
+    # rest of the geometry (it moved off the View), so this patches the one copy that
     # now exists; `raising=True` is again what turned the View's stale target into a
     # named failure rather than a patch that silently stopped covering anything.
     monkeypatch.setattr(
@@ -236,8 +236,8 @@ def test_protein_individual_ensemble_flow(
         raising=True,
     )
 
-    # See module docstring's FIT DETERMINISM note. Step 4c moved the fit off
-    # ProteinView onto ProteinModel, so this patches the one copy that now exists;
+    # See module docstring's FIT DETERMINISM note. The fit moved off ProteinView
+    # onto ProteinModel, so this patches the one copy that now exists;
     # `raising=True` is what turned the View's stale target into a named failure
     # rather than a patch that silently stopped covering anything.
     monkeypatch.setattr(

@@ -1,9 +1,9 @@
 """
 Unit-test suite for MetadataModel.
 
-MetadataModel was a minimal MetaModel subclass with a no-op ``_init()``. **Step 4c
-is giving it the metadata tab's binning and fitting**, moved off MetadataView so
-that ``scipy``, ``scipy.optimize`` and ``scipy.stats`` leave the View layer.
+MetadataModel was a minimal MetaModel subclass with a no-op ``_init()``. **It now
+holds the metadata tab's binning and fitting**, moved off MetadataView so that
+``scipy``, ``scipy.optimize`` and ``scipy.stats`` leave the View layer.
 
 The two bin-count rules are pinned here before any caller moves onto them, because
 ``MetadataView`` held **four** copies of the Freedman-Diaconis calculation in one
@@ -140,7 +140,7 @@ class TestAutoBins2d:
 
 
 # ===========================================================================
-# calculate_heatmap - pins moved from test_metadata_view.py by Step 4c
+# calculate_heatmap - pins moved from test_metadata_view.py with the method
 # ===========================================================================
 
 
@@ -198,7 +198,7 @@ class TestCalculateHeatmap:
         Verify IQR-based bin calculation when bins=None.
 
         The patch target moved with the method - it names the module that
-        *imported* ``iqr``, which is now the Model's (method rule 45).
+        *imported* ``iqr``, which is now the Model's.
         """
         xdata = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
         ydata = np.array([10.0, 20.0, 30.0, 40.0, 50.0])
@@ -235,7 +235,7 @@ class TestResolve1dBins:
     asserted ``assert view.hist_data`` - that the dataset had been appended, which
     is true whatever bin count came out. The branches had coverage and the numbers
     had none. Moving the logic somewhere it can return a value is what makes them
-    assertable, so they are rewritten here rather than re-pointed (rule 43).
+    assertable, so they are rewritten here rather than re-pointed.
     """
 
     def test_an_explicit_count_is_used_as_given(self, model):
@@ -300,7 +300,7 @@ class TestResolve1dBins:
 
 
 # ===========================================================================
-# fit_capture_rate - pins moved from test_metadata_view.py by Step 4c
+# fit_capture_rate - pins moved from test_metadata_view.py with the method
 # ===========================================================================
 
 
@@ -310,7 +310,7 @@ class TestFitCaptureRate:
 
     The two bin-fallback tests came with the rule they exercise: they patched
     ``MetadataView.iqr``, and ``mock.patch`` names the module that imported the
-    symbol, so the target moved too (method rule 45). Both now assert the bin count
+    symbol, so the target moved too. Both now assert the bin count
     the fallback produces, which the View-side versions could not - there the count
     was only visible as a keyword handed to ``ax.hist``.
     """
@@ -384,7 +384,7 @@ class TestFitCaptureRate:
 
 
 # ===========================================================================
-# kernel_densities - the per-dataset loop 4c moved off the View
+# kernel_densities - the per-dataset loop moved off the View
 # ===========================================================================
 
 
@@ -558,13 +558,13 @@ class TestLogExpPdf:
 
 
 # ===========================================================================
-# resolve_event_ids / load_events_by_id - the SQL Step 4b moved down
+# resolve_event_ids / load_events_by_id - the SQL moved down from the Views
 # ===========================================================================
 #
 # These assert on the **exact query text** handed to the loader, not on substring
 # containment. All 110 tests in test_meta_database_loader.py used containment, so a
-# refactor could reorder a clause and every one would still pass; Step 2 branch 6
-# fixed that for the builder and these extend it to the two methods 4b created.
+# refactor could reorder a clause and every one would still pass; the builder's
+# goldens fixed that for the builder and these extend it to these two methods.
 #
 # The stubbed ``call`` answers from MetaDatabaseLoader's declared return types -
 # ``Optional[pd.DataFrame]`` for query_database_directly, a generator for
@@ -576,7 +576,7 @@ class TestResolveEventIds:
     The scope is why this query exists: ``event_id`` is unique only within an
     experiment and channel, so an unscoped match returns whichever channel's row
     happens to share the number. Three unscoped-query faults of exactly this family
-    were found during Step 4a, which is why every combination is pinned here.
+    have been found, which is why every combination is pinned here.
     """
 
     def _query(self, model, mocker, event_ids, exp_id, channel):
@@ -708,8 +708,8 @@ class TestLoadEventsById:
 class TestIntereventLogTimes:
     """
     Capture is Poisson, so the fit is about the gap between consecutive events
-    rather than the times themselves. Moved off ``MetadataView`` in Step 4's
-    closeout: the gaps are the measurement, not the drawing.
+    rather than the times themselves. Moved off ``MetadataView`` because the gaps
+    are the measurement, not the drawing.
     """
 
     def test_it_returns_the_log_of_the_gaps(self, model):
@@ -760,7 +760,7 @@ class TestIntereventLogTimes:
 
 
 # ===========================================================================
-# categorical_counts - the tallying Step 4's closeout moved off the View
+# categorical_counts - the tallying moved off the View
 # ===========================================================================
 
 
@@ -882,9 +882,9 @@ class TestOverlaidHistograms:
     """
     Shared edges from all the data at once, then one count array per dataset.
 
-    Step 4c sent the bin decision down because it needed ``scipy.stats.iqr``; the
-    counting followed in Step 4's closeout, on the grounds that which import a step
-    frees is a different question from whose responsibility the work is.
+    The bin decision moved down because it needed ``scipy.stats.iqr``; the counting
+    followed, on the grounds that which import a move frees is a different question
+    from whose responsibility the work is.
     """
 
     def test_one_count_array_per_dataset(self, model):
@@ -975,7 +975,7 @@ class TestOverlaidHistograms:
 
 class TestRectifyEventCurrent:
     """
-    Three byte-identical copies in ``MetadataView`` before Step 4's closeout.
+    Previously three byte-identical copies in ``MetadataView``.
 
     The sign factor is the part worth pinning: without it a negative-baseline
     recording's blockages come out negative and cannot share a histogram with a
@@ -1038,8 +1038,7 @@ def _event(**overrides):
 
 class TestBuildAllPointsHistogram:
     """
-    Moved off ``MetadataView`` in Step 4's closeout, where it walked the generator
-    inside the widget.
+    Moved off ``MetadataView``, where it walked the generator inside the widget.
     """
 
     def test_it_returns_one_count_per_bin_center(self, model):

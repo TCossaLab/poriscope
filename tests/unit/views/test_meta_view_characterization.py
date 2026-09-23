@@ -37,8 +37,8 @@ class _ConcreteView(MetaEventTabView):
     """
     A minimal concrete view, so the bases' own methods can be exercised.
 
-    It extends ``MetaEventTabView`` rather than ``MetaView`` because Step 3e moved the
-    range helpers down to it. Only three abstract hooks need satisfying here:
+    It extends ``MetaEventTabView`` rather than ``MetaView`` because the range
+    helpers live there. Only three abstract hooks need satisfying here:
     ``MetaEventTabView`` already implements ``_reset_actions`` and
     ``notify_plugin_state_changed`` concretely for both event tabs.
     """

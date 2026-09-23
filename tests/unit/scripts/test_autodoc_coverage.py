@@ -1,29 +1,27 @@
 """
-What the autodoc generators cover, and what Step 3f would move outside it.
+What the autodoc generators cover, and what they deliberately leave out.
 
-Nothing in ``tests/`` mentioned ``automethod`` before the Step 2 exit review, so the
-published API documentation had no gate at all. Two refactor steps change it, and
-measuring rather than assuming corrected the plan on both.
+Nothing in ``tests/`` mentioned ``automethod`` before this file, so the published API
+documentation had no gate at all.
 
-**Step 3a's risk was smaller than recorded, and it has now landed.** The plan said
-the generators "skip classes with no docstring - none of the five has one - so ~50
-``automethod`` lines would vanish". The five controls classes genuinely have no
-class docstring and were documented anyway; the *plugins* generator writes a
-docstring when there is one and documents the class either way. The gate that
+**A class with no docstring can still be documented.** The five controls classes
+genuinely have no class docstring and are documented anyway; the *plugins* generator
+writes a docstring when there is one and documents the class either way. The gate that
 actually bites is the other generator's: ``metaclasses_generate_autodoc.py`` scans
 ``poriscope/utils/`` as a directory, so ``MetaControls.py`` needed no registration
 step - but it ``continue``s past a class with no docstring and emits no page at
-all. So the promoted methods moved to a new page rather than disappearing, and
+all. So the methods promoted to ``MetaControls`` are documented on its page, and
 what holds that is ``MetaControls``' own class docstring. Both halves are asserted
 below: that the page exists, and that the promoted directives are on it and on no
 per-tab page.
 
-**Step 3f landed 2026-09-06, and the outcome was decided rather than discovered.** The
-generators scan exactly two roots, ``poriscope/utils`` and ``poriscope/plugins``.
-**``poriscope/views/`` is scanned by neither.** 3f moved ``walkthrough.py`` and
-``walkthrough_mixin.py`` from ``plugins/analysistabs/utils/`` into ``views/widgets/`` to
-fix a layering inversion, taking them out of a documented tree and into an undocumented
-one, which deleted the four pages those modules owned - 26 ``automethod`` directives.
+**The walkthrough modules are outside both generators by decision.** The generators
+scan exactly two roots, ``poriscope/utils`` and ``poriscope/plugins``.
+**``poriscope/views/`` is scanned by neither.** ``walkthrough.py`` and
+``walkthrough_mixin.py`` live in ``views/widgets/`` rather than
+``plugins/analysistabs/utils/`` because the app shell must not import up from a plugin
+package, so the four pages those modules would own - 26 ``automethod`` directives - are
+not generated.
 
 Three of the four were let go deliberately: ``IntroDialog``, ``Overlay`` and
 ``StepDialog`` are internal UI machinery named in no prose documentation anywhere, and a
@@ -53,11 +51,11 @@ AUTODOC = REPO_ROOT / "docs" / "source" / "autodoc"
 #: The roots the two generators scan, read from their own module constants below.
 EXPECTED_ROOTS = {"poriscope/utils", "poriscope/plugins"}
 
-#: Dotted path Step 3a's promoted methods are documented under, now that they live
-#: on the shared base rather than on five copies.
+#: Dotted path the promoted controls methods are documented under, now that they
+#: live on the shared base rather than on five copies.
 BASE_CLASS_PATH = "poriscope.utils.MetaControls.MetaControls"
 
-#: The three dialog classes whose pages Step 3f deliberately gave up.
+#: The three dialog classes whose pages were deliberately given up.
 WALKTHROUGH_DIALOG_CLASSES = {"introdialog", "overlay", "stepdialog"}
 
 #: The hand-written replacement for ``WalkthroughMixin``'s generated page, and the
@@ -115,15 +113,15 @@ def test_the_generators_scan_exactly_two_roots() -> None:
     """
     Recorded so that adding or losing a root is a deliberate edit.
 
-    Step 3f needs a third root, or a different destination, if the walkthrough
-    modules are to keep their pages.
+    The walkthrough modules would need a third root, or a different destination, to
+    get generated pages.
     """
     assert generator_roots() == EXPECTED_ROOTS
 
 
 def test_the_app_shell_is_covered_by_no_generator() -> None:
     """
-    ``poriscope/views/`` is documented by nothing, which is the Step 3f problem.
+    ``poriscope/views/`` is documented by nothing.
 
     Not a defect in itself - the shell is not public API the way plugins are - but
     it is the reason moving a documented module there deletes its pages.
@@ -133,7 +131,7 @@ def test_the_app_shell_is_covered_by_no_generator() -> None:
 
 def test_the_walkthrough_modules_live_in_the_app_shell() -> None:
     """
-    Step 3f moved them into ``poriscope/views/widgets/``, which no generator scans.
+    They live in ``poriscope/views/widgets/``, which no generator scans.
 
     Asserted from the destination rather than the origin so that moving them back -
     which would restore the layering inversion rule 4 of the MVC boundary exists to
@@ -143,8 +141,8 @@ def test_the_walkthrough_modules_live_in_the_app_shell() -> None:
         moved = REPO_ROOT / "poriscope" / "views" / "widgets" / name
         origin = REPO_ROOT / "poriscope" / "plugins" / "analysistabs" / "utils" / name
 
-        assert moved.is_file(), f"{name} is not in views/widgets/; see Step 3f"
-        assert not origin.is_file(), f"{name} is back under plugins/; see Step 3f"
+        assert moved.is_file(), f"{name} is not in views/widgets/"
+        assert not origin.is_file(), f"{name} is back under plugins/"
 
 
 # ===========================================================================
@@ -155,7 +153,7 @@ def test_the_walkthrough_modules_live_in_the_app_shell() -> None:
 @needs_autodoc
 def test_the_three_dialog_classes_have_no_generated_page() -> None:
     """
-    Given up deliberately by Step 3f, so their absence must not read as a regression.
+    Given up deliberately, so their absence must not read as a regression.
 
     If one reappears, either a generator grew a third root or the modules moved back -
     both worth knowing about.
@@ -169,12 +167,12 @@ def test_the_three_dialog_classes_have_no_generated_page() -> None:
 
 def test_the_mixin_keeps_a_hand_written_page_with_a_real_label() -> None:
     """
-    The one page 3f replaced rather than dropped.
+    The one walkthrough page replaced by hand rather than dropped.
 
     ``adding_walkthrough.rst`` tells plugin authors to inherit ``WalkthroughMixin``, and
     linked to it through two **backslash-escaped** pseudo-references that Sphinx rendered
     as literal text - and whose labels existed nowhere in ``docs/``, so they could never
-    have resolved even unescaped. 3f wrote the label and repaired both links.
+    have resolved even unescaped. The page now carries the label and both links resolve.
     """
     page = REPO_ROOT / HANDWRITTEN_MIXIN_PAGE
     assert page.is_file(), f"{HANDWRITTEN_MIXIN_PAGE} is missing"
@@ -188,9 +186,9 @@ def test_the_mixin_keeps_a_hand_written_page_with_a_real_label() -> None:
     assert r"\:ref:" not in tutorial, "an escaped pseudo-link is back"
 
 
-#: Every base Step 3 creates to hold promoted analysis-tab code. Each is listed here
-#: as it lands, because losing one's page is invisible to everything else.
-STEP_3_BASES = (
+#: Every base that holds promoted analysis-tab code. Each is listed here, because
+#: losing one's page is invisible to everything else.
+ANALYSIS_TAB_BASES = (
     "metacontrols",
     "metaeventtabcontroller",
     "metaeventtabcontrols",
@@ -202,16 +200,16 @@ STEP_3_BASES = (
 
 
 @needs_autodoc
-@pytest.mark.parametrize("module", STEP_3_BASES)
-def test_every_step_3_base_has_a_page_at_all(module: str) -> None:
+@pytest.mark.parametrize("module", ANALYSIS_TAB_BASES)
+def test_every_analysis_tab_base_has_a_page_at_all(module: str) -> None:
     """
     The one thing nothing else in this file would notice.
 
     ``metaclasses_generate_autodoc.py`` skips any class in ``poriscope/utils/``
     with no docstring - a bare ``continue``, printed to stdout and nowhere else.
-    So a Step 3 base that lost its class docstring would publish **no page**,
+    So an analysis-tab base that lost its class docstring would publish **no page**,
     silently, with ``sphinx-build -W`` green and every other test here passing,
-    taking every directive that step promoted with it. Pages are keyed off the
+    taking every directive promoted to it with it. Pages are keyed off the
     *module* name lowercased, not the class name.
 
     :param module: the lowercased module name whose page must exist
@@ -226,7 +224,7 @@ def test_every_step_3_base_has_a_page_at_all(module: str) -> None:
 @needs_autodoc
 def test_the_controls_classes_are_documented_despite_having_no_docstring() -> None:
     """
-    The plan's stated reason for Step 3a's autodoc risk, checked and found wrong.
+    A missing class docstring does not cost a plugin-tree class its page.
 
     All five classes lack a docstring and all five are documented anyway. Asserted
     so the corrected understanding is held rather than drifting back.
@@ -250,12 +248,12 @@ def test_the_controls_classes_are_documented_despite_having_no_docstring() -> No
 
 
 @needs_autodoc
-def test_the_methods_step_3a_promoted_are_documented_on_metacontrols() -> None:
+def test_the_promoted_controls_methods_are_documented_on_metacontrols() -> None:
     """
-    The directives 3a moved, now on ``MetaControls``' page rather than on five.
+    The promoted directives, on ``MetaControls``' page rather than on five.
 
-    Before 3a this asserted the same three names appeared **five times** across the
-    per-tab pages, one per class. They now appear once each, on the base's page, and
+    The same three names used to appear **five times** across the per-tab pages,
+    one per class. They now appear once each, on the base's page, and
     on none of the five - which is the whole point of the promotion. The failure
     this still guards against is unchanged: if they appear on neither, roughly sixty
     directives have silently left the published documentation, and both a

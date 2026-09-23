@@ -1,7 +1,7 @@
 """
 A tab must be able to call every plugin it is showing, and be able to before it shows it.
 
-Step 4a made a tab call its plugins directly through ``MetaModel.call``, which reads a
+A tab calls its plugins directly through ``MetaModel.call``, which reads a
 map of live instances pushed down from ``MainController``. The *names* a tab shows in its
 comboboxes are pushed separately, and this file holds the two invariants that keeps
 honest:

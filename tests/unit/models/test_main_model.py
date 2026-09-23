@@ -147,7 +147,7 @@ def test_replace_classes_with_class_names_all_paths(main_model):
     """
     Every type in a settings tree becomes its name, however deeply nested.
 
-    Rewritten for 5c.6. This used to hand the walker a list directly to reach its
+    This used to hand the walker a list directly to reach its
     list branch; that branch was unreachable from every real caller and is now
     gone. A settings tree is dicts inside dicts, which is what this walks.
     """
@@ -170,7 +170,7 @@ def test_replace_class_names_with_classes_all_paths(main_model):
     """
     Type names become types again, however deeply nested, under the keys that hold types.
 
-    Rewritten for 5c.6 on both counts: the conversion is gated on the key now, so
+    Rewritten on both counts: the conversion is gated on the key now, so
     the names sit under ``Type`` rather than arbitrary keys, and the list branch
     this used to exercise is gone.
     """
@@ -344,7 +344,7 @@ class TestResetAppConfig:
         assert session_file.exists(), "resetting settings must not touch the session"
 
 
-# ------------- 5c.6: plugin discovery's extracted helpers ------------------
+# ------------- plugin discovery's extracted helpers -----------------------
 #
 # Each is in the refactor-coverage audit's MOVED table, so each is driven
 # directly as well as through populate_available_plugins.
@@ -529,7 +529,7 @@ class TestPluginFiles:
         assert {name for _, name in found} == {"Clash.py"}
 
 
-# ------------- 5c.6: the session-restore type round trip ------------------
+# ------------- the session-restore type round trip -----------------------
 #
 # Plugin settings carry a real type under "Type". JSON cannot hold one, so it is
 # written as its name on save and turned back into the type on load. The bug was

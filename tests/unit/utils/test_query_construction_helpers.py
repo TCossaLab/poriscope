@@ -7,8 +7,8 @@ cases are reachable only by constructing a whole query that happens to hit them 
 and several of those edge cases exist precisely because a 2026-09-03 bug let
 condition qualification rewrite text inside SQL string literals.
 
-Step 4b moves the Views' hand-built SQL into the builder these helpers serve, so
-they are about to take input shapes they have never seen. Each is tested here on
+The Views' hand-built SQL moved into the builder these helpers serve, so they
+take input shapes they never saw before. Each is tested here on
 its own terms.
 
 The one that matters most is ``_split_on_opaque_spans``, whose docstring states an

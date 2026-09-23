@@ -3,8 +3,8 @@ Characterization tests for ``ProteinView._summarize_vm``.
 
 The method had **zero references anywhere in tests/**. It is pure - a DataFrame in,
 formatted strings out - with three branches that each render differently, and it is
-what the protein tab shows the user after a Monte Carlo shape fit. Step 4c moves
-the computation it summarises, so its output is pinned first.
+what the protein tab shows the user after a Monte Carlo shape fit. Its output was
+pinned before the computation it summarises moved to ProteinModel.
 
 Values are asserted as literal strings rather than through ``pytest-regressions``:
 the whole point of this method is the exact text a user reads, and a golden file
@@ -77,7 +77,7 @@ class TestEnsembleGeometryFit:
     """
     The two halves of the chain: ask for the fit, then sample and plot from it.
 
-    **Step 4c split this.** ``_fit_and_plot_ensemble_geometry`` used to fit inline
+    **This used to be one method.** ``_fit_and_plot_ensemble_geometry`` fitted inline
     and return a ``bool``; the fit now lives on ``ProteinModel`` and the pair is
     ``_request_ensemble_geometry_fit`` and ``set_ensemble_geometry_fit``. The
     ``bool`` is gone with it, because the single caller's ``if not ...: return`` was
@@ -119,8 +119,8 @@ class TestEnsembleGeometryFit:
 
         Pinned because the context travelling through the round trip is what keeps
         it off the widget between the halves; parking it here instead would still
-        draw the right plot and would reintroduce exactly the pattern Step 4a
-        deleted.
+        draw the right plot and would reintroduce state parked on the widget between
+        a request and its answer.
         """
         view._request_ensemble_geometry_fit(plot_data, "Histogram", 10.0, 12.0, 50)
 
@@ -137,8 +137,8 @@ class TestEnsembleGeometryFit:
         """
         The success path, pinned by the attributes it leaves behind.
 
-        ``_report_ensemble_fit`` reads every one of these, and Step 4c moved the
-        fit while Step 4's closeout moved the sampling, so a wiring regression here
+        ``_report_ensemble_fit`` reads every one of these, and both the fit and the
+        sampling happen on the Model, so a wiring regression here
         would surface as an empty or stale report rather than as an exception.
         """
         view.allowed_bins = 75
@@ -326,8 +326,8 @@ class TestSummarizeVmManySamples:
         assert rows[2] == f"b = 1.0 {PLUSMINUS} 0.0 nm"
 
 
-# ``TestResolveEventDbIds`` lived here and is gone: Step 4a moved the whole
-# resolve-and-load chain into ``ProteinController.load_event_plot_data``, so there is
+# ``TestResolveEventDbIds`` lived here and is gone: the whole resolve-and-load
+# chain is in ``ProteinController.load_event_plot_data``, so there is
 # no View method left for it to name. Its coverage is
 # ``tests/unit/controllers/test_protein_fetch_slots.py::TestLoadEventPlotData``,
 # written against the loader signatures rather than against the bus. One expectation
@@ -339,7 +339,7 @@ class TestSummarizeVmManySamples:
 
 class TestReportEnsembleFit:
     """
-    The Report All readout, a Step 4c target the exit review found unpinned.
+    The Report All readout, which had no test pinning it.
 
     It executed under the protein e2e flow but nothing named it, so nothing
     asserted what the user is actually shown. Ensemble mode has no per-event id to

@@ -1,7 +1,7 @@
 """
 ``ProteinView``'s event fetch says one thing about a failure, never two.
 
-Found in the Step 4 closeout's manual Windows pass over the event-plot promotion.
+Found in a manual Windows pass over the event-plot promotion.
 The tab reported a refusal and then contradicted it::
 
     ProteinController: SQLiteDBLoader_1 has no experiment named x, so these events

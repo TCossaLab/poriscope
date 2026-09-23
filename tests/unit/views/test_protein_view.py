@@ -360,9 +360,9 @@ class TestCommitFits:
 class TestResetActions:
     def test_clears_hist_state(self, mock_view):
         """
-        ``hist_min``/``hist_max`` went with the binning in Step 4's closeout: the
-        two methods that wrote them are on the Model now, which left three clears
-        and no reader at all.
+        ``hist_min``/``hist_max`` went with the binning to the Model: the two
+        methods that wrote them live there now, which left three clears and no
+        reader at all.
         """
         mock_view.hist_data = [([1], [2])]
         mock_view.hist_labels = ["x"]
@@ -633,8 +633,8 @@ class TestFactors:
     """
     ``MetaView._factors``, the subplot-grid helper.
 
-    This class held sixteen more tests, for the five event-index range helpers. Step 3e
-    moved those helpers off ``MetaView`` and onto ``MetaEventTabView``, whose only
+    This class held sixteen more tests, for the five event-index range helpers. Those
+    helpers live on ``MetaEventTabView`` rather than ``MetaView``, and its only
     subclasses are the two event tabs - the protein tab never had a claim on them, and
     reaching a base method through an unrelated tab is what let that go unnoticed.
     ``tests/unit/views/test_meta_view_characterization.py`` pins all five properly, with
@@ -746,14 +746,14 @@ def _answer_event_histogram_fits(view):
     """
     Run the round trip ProteinController runs, and hand the answer back to the View.
 
-    Step 4c split ``_update_event_histogram`` into a request and
-    ``set_event_histogram_fits``; these tests drive both halves, because driving only
+    ``_update_event_histogram`` is only the request; ``set_event_histogram_fits``
+    draws the answer. These tests drive both halves, because driving only
     the first asserts against a View that has not drawn anything yet.
 
     The histograms and the fits both come from a **real ProteinModel** rather than a
     stub, so their arity and their shapes are the collaborator's own rather than this
-    test's idea of them. Step 4's closeout moved the binning down beside the fitting,
-    so this helper runs both calls the Controller runs.
+    test's idea of them. The binning sits on the Model beside the fitting, so this
+    helper runs both calls the Controller runs.
 
     :param view: the view whose request has just been emitted
     :type view: ProteinView
@@ -773,8 +773,8 @@ def _answer_event_histogram_fits(view):
 class TestUpdateEventHistogram:
     def test_the_request_carries_the_events_and_the_bin_request(self, mock_view):
         """
-        The binning moved below the widget in Step 4's closeout, so what goes out is
-        the events themselves and how the caller asked for them to be binned.
+        The binning is done below the widget, so what goes out is the events
+        themselves and how the caller asked for them to be binned.
         """
         events = [_make_event(i, rng_seed=i) for i in range(1, 4)]
 
@@ -893,9 +893,9 @@ class TestFilterManagement:
 
 
 class TestOnRawFilterValidated:
-    # Step 4d: the filter's name, the name it replaces and its text travel through
-    # the call now. They used to be parked on the widget by a _setup helper and read
-    # back off it here, which is the pattern the step deletes.
+    # The filter's name, the name it replaces and its text travel through the call.
+    # They used to be parked on the widget by a _setup helper and read back off it
+    # here, which is state-on-the-widget the View should not be carrying.
     def _answer(self, mock_view, valid=True, error_msg="", old_name=None):
         mock_view.on_raw_filter_validated(
             valid, error_msg, "newfilter", old_name, "SELECT * FROM events"
@@ -905,8 +905,8 @@ class TestOnRawFilterValidated:
         """
         Renamed from test_invalid_emits_message: it is a modal now, not a message.
 
-        Step 4a promoted on_raw_filter_validated to MetaSubsetTabView taking
-        Metadata's QMessageBox over this tab's status-panel line, so that a rejected
+        on_raw_filter_validated lives on MetaSubsetTabView and uses Metadata's
+        QMessageBox rather than this tab's old status-panel line, so that a rejected
         raw filter reads the same on both tabs.
         """
         warned = MagicMock()
@@ -1014,8 +1014,8 @@ class TestMiscMethods:
     def test_update_available_columns_no_error(self, mock_view):
         mock_view.update_available_columns("my_loader")
 
-    # update_units is gone from this tab: Step 4a moved it down to MetadataView, which
-    # was its only caller. The protein tab has no units label, keeps no units cache and
+    # update_units is gone from this tab: it lives on MetadataView, which was its only
+    # caller. The protein tab has no units label, keeps no units cache and
     # labels its axes with hardcoded literals, so there was nothing here for the answer
     # to reach - which is also why ProteinView's missing update_column_units was
     # unreachable rather than merely swallowed.
@@ -1058,14 +1058,14 @@ class TestPipeline:
     D, L = 20.0, 30.0
 
     def test_single_event_histogram(self, mock_view):
-        """The binning is the Model's since Step 4's closeout; drive it there."""
+        """The binning is the Model's; drive it there."""
         ((bincenters, amplitude),) = ProteinModel().build_event_histograms(
             [_make_event(blockage=0.3)], "Filtered Histogram", None, False
         )
         assert len(bincenters) > 0  # FD-derived, not fixed 100
 
     def test_all_points_histogram_three_events(self, mock_view):
-        """The averaging is the Model's since Step 4's closeout; drive it there."""
+        """The averaging is the Model's; drive it there."""
         evs = [_make_event(i, blockage=0.2 + i * 0.05, rng_seed=i) for i in range(3)]
         df = ProteinModel().build_all_points_histogram(
             iter(evs), "Filtered Histogram", None, False
@@ -1074,9 +1074,9 @@ class TestPipeline:
 
     def test_vm_ensemble_from_histogram_fit(self, mock_view):
         """
-        The fit and the sampling are both the Model's since Step 4's closeout, so
-        this is no longer cross-layer: it checks that one really does take the
-        other's output, which is the join a stub on either side would hide.
+        The fit and the sampling are both the Model's, so this is not cross-layer:
+        it checks that one really does take the other's output, which is the join
+        a stub on either side would hide.
         """
         model = ProteinModel()
         x, y = _make_double_gaussian_histogram(mean1=0.1, mean2=0.3)
@@ -1388,7 +1388,7 @@ class TestFetchEventData:
 
     def test_asks_the_controller_for_exactly_the_events_requested(self, mock_view):
         """
-        Step 4a: the resolve-and-load chain is one intent answered by
+        The resolve-and-load chain is one intent answered by
         ``ProteinController.load_event_plot_data``, so the stub stands in for the
         Controller by setting the generator the way it does - a stub that does nothing
         where the real collaborator sets the answer would make every assertion below
@@ -1643,7 +1643,7 @@ class TestShowAddFilterDialog:
 
     def test_assisted_filter_asks_the_controller_to_validate(self, mock_view):
         """
-        Renamed: Step 4a replaced the construct_metadata_query emit with an intent.
+        Renamed: an intent replaced the construct_metadata_query emit.
 
         The Controller makes that call now, and chooses the columns to validate
         against, so what this tab does is state the intent.
@@ -1656,7 +1656,7 @@ class TestShowAddFilterDialog:
         ):
             mock_view._show_add_filter_dialog({"db_loader": "ldr"})
         mock_view.filter_validation_requested.emit.assert_called_once_with(
-            # Step 4d: the filter's name and the name it replaces (None, for a new
+            # The filter's name and the name it replaces (None, for a new
             # one) ride along with the intent instead of being parked on the widget.
             "ldr",
             "dur>1",
@@ -1667,7 +1667,7 @@ class TestShowAddFilterDialog:
 
     def test_raw_filter_requires_select_statement(self, mock_view, monkeypatch):
         """
-        Reported in a modal since Step 4a promoted this method.
+        Reported in a modal since this method moved to MetaSubsetTabView.
 
         This tab used to put the rejection on the status panel and the metadata tab
         put it in a QMessageBox; the promoted copy uses the modal, by decision,
@@ -1701,8 +1701,8 @@ class TestShowAddFilterDialog:
         ):
             mock_view._show_add_filter_dialog({"db_loader": "ldr"})
         mock_view.raw_filter_validation_requested.emit.assert_called_once_with(
-            # Step 4b: the View sends the filter as written; the Controller adds
-            # the LIMIT 0 that makes the check cheap. Step 4d: the name it will be
+            # The View sends the filter as written; the Controller adds the
+            # LIMIT 0 that makes the check cheap. The name it will be
             # stored under - already _raw-suffixed - and the name it replaces
             # travel with it.
             "ldr",
@@ -1751,7 +1751,7 @@ class TestShowEditFilterDialog:
 
     def test_assisted_edit_asks_the_controller_to_validate(self, mock_view):
         """
-        Renamed: Step 4a replaced the construct_metadata_query emit with an intent.
+        Renamed: an intent replaced the construct_metadata_query emit.
 
         The edited filter carries validate_edited_filter rather than
         validate_new_filter, which is what tells relay_query to replace the old name
@@ -1766,7 +1766,7 @@ class TestShowEditFilterDialog:
         ):
             mock_view.show_edit_filter_dialog("f1", "ldr")
         mock_view.filter_validation_requested.emit.assert_called_once_with(
-            # Step 4d: an edit carries both names, so the Controller knows which
+            # An edit carries both names, so the Controller knows which
             # entry to replace without reading anything off the widget.
             "ldr",
             dialog.new_filter,
@@ -1804,8 +1804,8 @@ class TestShowEditFilterDialog:
         ):
             mock_view.show_edit_filter_dialog("f1", "ldr")
         mock_view.raw_filter_validation_requested.emit.assert_called_once_with(
-            # Step 4b: the View sends the filter as written; the Controller adds
-            # the LIMIT 0 that makes the check cheap. Step 4d: both names ride along.
+            # The View sends the filter as written; the Controller adds the
+            # LIMIT 0 that makes the check cheap. Both names ride along.
             "ldr",
             "SELECT * FROM events",
             "f1_raw",
@@ -1894,7 +1894,7 @@ class TestUpdateDistributionIndividual:
         """
         The empty case reaches the same guard as the too-many case.
 
-        Before Step 4c the guard read ``> 1`` and a ``for channel in channels:`` over
+        The guard used to read ``> 1`` and a ``for channel in channels:`` over
         an empty list simply never ran, so the tab drew nothing and said nothing.
         """
         mock_view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": []}}
@@ -1987,7 +1987,7 @@ class TestUpdateDistributionEnsemble:
         """
         The empty case reaches the same guard as the too-many case.
 
-        Before Step 4c the guard read ``> 1`` and a ``for channel in channels:`` over
+        The guard used to read ``> 1`` and a ``for channel in channels:`` over
         an empty list simply never ran, so the tab drew nothing and said nothing.
         """
         mock_view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": []}}
@@ -2021,7 +2021,7 @@ def _fit_frame() -> pd.DataFrame:
 
 class TestCommitFitsExtended:
     """
-    Step 4a made the commit two-phase, so the View asks and the Controller looks.
+    The commit is two-phase: the View asks and the Controller looks.
 
     What is left to pin on this side is that the question goes out and that the
     answer decides whether the user is asked - the plugin call itself is
@@ -2154,13 +2154,10 @@ class TestModeScopedProperties:
 # set_distribution_fits - the answering half of distribution_fits_requested
 # ===========================================================================
 #
-# Added 2026-09-14 because this method had **no test reference anywhere in the
-# suite**, while being a named Step 4c target: the refactor-coverage audit read
-# RUNS ONLY for it, its body executing under the e2e suite with nothing asserting
-# what it produced. It is 157 lines and the largest single piece of computation
-# still sitting on a View, so branch 5 of the Step 4 closeout moves it - and these
-# are the pins that predate that move, which is what makes their passing against
-# the Model afterwards evidence that the computation is unchanged.
+# These were written when this method had **no test reference anywhere in the
+# suite** - its body ran under the e2e suite with nothing asserting what it
+# produced - and before its computation moved to the Model, which is what makes
+# their passing against the Model afterwards evidence the computation is unchanged.
 #
 # The ensembles are real, not stubbed: N is kept small so the Monte Carlo stays
 # fast, and every assertion is about index alignment, skipping and the shape of
@@ -2190,8 +2187,8 @@ def _histogram_pair():
 
     Only its presence is read by the method under test - a None entry means the
     histogram could not be built - so the contents are deliberately minimal. It was
-    a one-column DataFrame until Step 4's closeout moved the binning to the Model,
-    which returns the two arrays the drawing half actually uses.
+    a one-column DataFrame until the binning moved to the Model, which returns the
+    two arrays the drawing half actually uses.
 
     :return: a (bin centers, amplitude) pair
     :rtype: tuple
@@ -2202,8 +2199,8 @@ def _histogram_pair():
 class TestSetDistributionFits:
     """
     What is left here is the drawing. The sampling and every question about which
-    events survive it moved to ``ProteinModel.sample_event_geometries`` in Step 4's
-    closeout, and are pinned in ``tests/unit/models/test_protein_model.py``.
+    events survive it live in ``ProteinModel.sample_event_geometries``, and are
+    pinned in ``tests/unit/models/test_protein_model.py``.
     """
 
     def _frames(self, rows=1):

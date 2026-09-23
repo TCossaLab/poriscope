@@ -4,7 +4,7 @@ Both platform branches of ``MultiSelectComboBox``'s popup container.
 CI runs on Linux under Xvfb, so it only ever builds the ``QWidget`` container.
 The ``QDialog`` one is what actually ships to users, and ``DECISIONS.md``
 2026-09-01 records this path as structurally unexercisable on Linux - which is why
-the 2.0.0 plan schedules a manual Windows pass after every structural step.
+structural changes are followed by a manual Windows pass.
 
 It does not have to be unexercisable. The branch reads ``sys.platform`` at
 construction time, so patching it builds either container on either host. That does
@@ -12,7 +12,7 @@ not replace the manual pass - only a human can see whether a popup dismisses
 properly or leaves a ghost window behind - but it does mean a *structural* change to
 the Windows branch fails in CI rather than waiting for someone to run the app.
 
-Added by the Step 2 exit review, which found that ``test_multiselect.py`` and
+Added after a coverage review found that ``test_multiselect.py`` and
 ``test_multiselect_filter.py`` exist but neither patches the platform.
 
 **Only this widget has the branch.** ``multiselect_filter.py`` builds a ``QDialog``
@@ -105,7 +105,7 @@ def test_the_container_is_parentless_on_both_platforms(as_platform) -> None:
 
     Recorded here rather than fixed: a parentless top-level widget outliving the
     app is exactly what was once observed, and changing the ownership is a
-    behaviour change that belongs in Step 5d, not in a test.
+    behaviour change that belongs with a merge of the two widgets, not in a test.
     """
     assert as_platform.containerWidget.parent() is None
 
@@ -115,7 +115,7 @@ def test_the_filter_widget_has_no_platform_branch() -> None:
     ``multiselect_filter.py`` builds a ``QDialog`` unconditionally.
 
     The two widgets are ~90% duplicates and are usually described together, so the
-    asymmetry is asserted rather than assumed - Step 5d merges them, and a merge
+    asymmetry is asserted rather than assumed - a merge
     that gave the filter widget a platform branch it never had would change
     behaviour on Linux.
     """

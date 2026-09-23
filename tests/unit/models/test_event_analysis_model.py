@@ -1,10 +1,9 @@
 """
 Unit-test suite for EventAnalysisModel.
 
-``EventAnalysisModel`` was the last ``def _init(self): pass`` Model in the repository
-- the shape section 01 of the refactor plan opens on. Step 4's first closeout branch
-gave it its first real method, ``event_time_bases``. The closeout's RawData branch then
-found the second caller and promoted it to ``MetaModel.time_bases``, generalised with a
+``EventAnalysisModel`` was the last ``def _init(self): pass`` Model in the repository.
+Its first real method was ``event_time_bases``; a second caller in RawData then
+promoted it to ``MetaModel.time_bases``, generalised with a
 scale and an offset, since four of the five tabs plot event traces the same way - so the
 behaviour is pinned in ``test_meta_model_time_bases.py`` and what remains here is this
 subclass's own construction.

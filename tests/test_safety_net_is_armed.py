@@ -1,9 +1,10 @@
 """
 That the characterization golden net is actually running, not merely present.
 
-Step 2 pinned the numeric surface Step 4 moves - ``RawDataModel.gaussian_fit`` and
-``get_baseline_stats``, whose own source comment calls the first "THE CRITICAL MATH
-FIX" and which the Step 2 coverage audit found had *no* behavioural coverage, plus
+Goldens pin the numeric surface that moved into the Models -
+``RawDataModel.gaussian_fit`` and ``get_baseline_stats``, whose own source comment
+calls the first "THE CRITICAL MATH FIX" and which a coverage audit found had *no*
+behavioural coverage, plus
 the exact-text SQL goldens. All of it runs through ``pytest-regressions``.
 
 **The gap this closes, found 2026-09-08.** ``pytest-regressions`` is declared
@@ -51,7 +52,7 @@ INSTALL_HINT = (
     "The characterization golden net is NOT running. Install the dev extras with "
     '`pip install -e ".[dev]"` (or `pip install pytest-regressions==2.11.0`). '
     'Until then every golden errors at setup with "fixture not found" rather than '
-    "failing, so the numeric and SQL surface Step 4 moves is unpinned while the "
+    "failing, so the numeric and SQL surface is unpinned while the "
     "suite still reports a pass."
 )
 

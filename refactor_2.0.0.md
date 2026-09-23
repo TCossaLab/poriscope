@@ -3317,7 +3317,9 @@ assert (`_commit_clusters` emits its check; `_handle_timer` opens no `TimeWidget
 duplicate `test_proceeds_with_fit_data` went. **Zero** created patch attributes, **zero** dead
 string patch targets. **Kept:** the four never-used factory fixtures in `tests/e2e/raw_data` and
 `event_analysis` conftests and `multichannel_chimera.py` behind them - Carogg28's scaffolding,
-not refactor residue. **Not swept:** 276 plan-step citations ("Step 4a") across 55 test files.
+not refactor residue. The 276 plan-step citations ("Step 4a", "5e.3", "Decision B", "method rule 52") across 55
+test files were rewritten as mechanism on `feature/remove-plan-step-citations`, 2026-09-23;
+`check_refactor_coverage`'s own tests keep its step keys, which are that script's data.
 
 ## Verification
 

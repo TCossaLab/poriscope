@@ -2,7 +2,7 @@
 Replaying a saved action history and a saved session - both user data.
 
 Saved action files and saved sessions are both user data, and moving a decorated
-method breaks replay. Nothing tested that. The Step 2 exit review found there was
+method breaks replay. Nothing tested that. A coverage review found there was
 **no checked-in ``.json`` fixture anywhere in ``tests/``**, and that
 ``update_actions_from_json`` was only ever asserted against a *mock* view - so the
 replay mechanism itself had no coverage, only its call site.
@@ -10,8 +10,8 @@ replay mechanism itself had no coverage, only its call site.
 Both fixtures in ``saved_state/`` are real files of the shape the app writes, read
 from disk rather than synthesised by the tests that consume them.
 ``metadata_action_history.json`` deliberately contains an entry naming a method that
-no longer exists, because that is exactly what a 1.x history becomes once Steps 3
-and 4 move things. ``session_1x.json`` is a whole saved session - three tabs, seven
+no longer exists, because that is exactly what a 1.x history becomes once a
+decorated method moves. ``session_1x.json`` is a whole saved session - three tabs, seven
 data plugins, a renamed plugin key and a populated subset filter - with its file
 paths scrubbed and nothing else changed.
 
@@ -20,9 +20,8 @@ action whose method has moved is *silently skipped*. ``update_actions_from_json`
 does ``getattr(self, name, None)`` and calls it only if truthy, so a user reloading
 a history after the refactor gets a partial replay with no error, no log line and no
 indication that anything was dropped. Recording a declared action name instead of
-``func.__name__`` is what addresses it; that was Step 7's until 2026-09-22, when it
-was deferred to its own design step and moved to ``future_fixes.md``. This test
-makes sure the decision is taken rather than discovered.
+``func.__name__`` is what addresses it; that is queued in ``future_fixes.md``. This
+test makes sure the decision is taken rather than discovered.
 """
 
 import json
@@ -119,10 +118,10 @@ class TestReplayingASavedActionHistory:
         self, view: MetadataView, history: Dict[str, Dict[str, Any]], mocker
     ) -> None:
         """
-        **The Step 7 risk, pinned as current behaviour.**
+        **The replay risk, pinned as current behaviour.**
 
         The third entry names a method the View does not have, which is what every
-        saved history becomes once Steps 3 and 4 move a decorated method. Replay
+        saved history becomes once a decorated method moves. Replay
         neither raises nor logs - it just does less than the user asked for. If
         this test ever starts failing because the replay reports the miss, that is
         an improvement and the test should be updated to match.
@@ -183,7 +182,7 @@ class TestSessionStateRoundTrip:
         between sessions while an in-memory test passed.
 
         The view's ``get_subset_filters`` is the real one bound onto the mock, not a
-        stub: Step 4d routed the controller through it instead of reading the dict
+        stub: the controller goes through it instead of reading the dict
         directly, and a stub would answer with whatever it was told rather than with
         what the method does.
         """
@@ -226,8 +225,8 @@ class TestSessionStateRoundTrip:
         ``get_session_state`` copies, so a later edit cannot rewrite saved history.
 
         Without the copy the session entry would alias the view's live dict and
-        change under the saver's feet before it reached disk. Step 4d moved the copy
-        itself into ``MetaSubsetTabView.get_subset_filters``, which is why the real
+        change under the saver's feet before it reached disk. The copy itself lives
+        in ``MetaSubsetTabView.get_subset_filters``, which is why the real
         method is bound onto the mock here rather than stubbed.
         """
         controller = MetadataController.__new__(MetadataController)  # type: ignore[type-abstract]
@@ -253,7 +252,7 @@ class TestARealSavedSession:
     families, including a renamed plugin key and settings whose ``Type`` was written as a
     string because JSON cannot hold a type. Paths in it are scrubbed; nothing else is.
 
-    What it pins is 1.x compatibility, which is the question Step 7 asks: a session saved
+    What it pins is 1.x compatibility: a session saved
     before the refactor names classes by string, and if the refactor renamed or removed
     one, the entry is dropped on load. ``load_session`` reports how many entries it could
     not restore, so a silent loss is not the risk - an *unnoticed* one is.
@@ -340,10 +339,10 @@ class TestARealSavedSession:
 
     def test_the_subset_tab_entry_carries_its_filters(self, session: Dict[str, Any]):
         """
-        ``MetaSubsetTabController.get_session_state`` writes this key, and 4d changed how
-        it is read - through ``view.get_subset_filters()`` rather than by reaching into
-        ``view.subset_filters``. The key has to survive that, and a real file is what says
-        whether it did.
+        ``MetaSubsetTabController.get_session_state`` writes this key, and 2.0.0
+        changed how it is read - through ``view.get_subset_filters()`` rather than by
+        reaching into ``view.subset_filters``. The key has to survive that, and a real
+        file is what says whether it did.
         """
         metadata = session["MetadataController"]
         assert metadata["subset_filters"] == {"test_filter_assisted": "duration < 300"}
@@ -356,7 +355,7 @@ class TestARealSavedSession:
 
         ``restore_subset_filters`` is bound onto the mock rather than stubbed, so what
         runs is the promoted implementation on ``MetaSubsetTabView`` - the one copy both
-        subset tabs share since 4d. A stub would answer with whatever it was told; this
+        subset tabs share. A stub would answer with whatever it was told; this
         answers with what the method does, which is the whole question for a file written
         before the promotion.
         """

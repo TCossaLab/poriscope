@@ -1124,7 +1124,7 @@ def test_add_text_to_display_keeps_repeated_messages_distinguishable(main_view):
     assert len(lines) == 2
 
 
-# ------------- 5c.6: the helpers behind page removal and milestones -------
+# ------------- the helpers behind page removal and milestones ------------
 #
 # Each is in the refactor-coverage audit's MOVED table.
 

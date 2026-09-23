@@ -1,7 +1,7 @@
 """
 The three things the global signal bus is still used for, pinned by their outcome.
 
-Step 5e removes the bus. These are the net for that removal, and they are written
+These were the net for removing the bus, and they are written
 deliberately against **what the application does**, not against which signal
 carries it:
 
@@ -10,14 +10,14 @@ carries it:
 - a tab's delete request reaches ``DataPluginController.delete_plugin``
 
 Every one of those sentences stays true after the bus is gone, so these tests
-must pass **unchanged** through 5e.2 (which moves ``generate_report`` onto
-``self.call``), 5e.3 (which replaces ``data_plugin_controller_signal`` with a
-typed ``Signal(str, str)``) and 5e.4 (which deletes the machinery). Passing them
-with the bus deleted is the evidence that the removal preserved behaviour.
+passed **unchanged** while ``generate_report`` moved onto ``self.call``, the
+string-dispatched ``data_plugin_controller_signal`` became typed
+``Signal(str, str)`` signals, and the machinery was deleted. Passing them with the
+bus deleted is the evidence that the removal preserved behaviour.
 
 Unit tests of the three call sites were considered and rejected for this job:
-they would assert which signal fired with what payload, 5e.3 changes both, and a
-test rewritten alongside the code it guards proves nothing about the change.
+they would assert which signal fired with what payload, the removal changed both,
+and a test rewritten alongside the code it guards proves nothing about the change.
 
 ``handle_edit_triggered`` and ``handle_delete_triggered`` sit at 25% line
 coverage and no test named either before this file.
@@ -134,8 +134,8 @@ def test_a_channel_status_request_reaches_the_display(triad, monkeypatch):
     """
     The report a tab asks a plugin for ends up on the main window's display panel.
 
-    This is the whole of what ``MetaModel.generate_report`` achieves. 5e.2 moves
-    it off the bus and onto ``self.call``, and the sentence above stays true.
+    This is the whole of what ``MetaModel.generate_report`` achieves. It moved off
+    the bus and onto ``self.call``, and the sentence above stayed true.
     """
     seen = display_calls(triad, monkeypatch)
     reader = _StubReader()
@@ -160,8 +160,8 @@ def test_an_edit_request_reaches_the_data_plugin_controller(triad, monkeypatch):
     """
     A tab's edit request arrives at ``DataPluginController.edit_plugin_settings``.
 
-    5e.3 replaces the string-dispatched signal behind this with a typed
-    ``Signal(str, str)`` connected to the same method, so the assertion is
+    The string-dispatched signal behind this was replaced with a typed
+    ``Signal(str, str)`` connected to the same method, so the assertion was
     unaffected.
     """
     called: List[Tuple] = []
@@ -180,7 +180,7 @@ def test_a_delete_request_reaches_the_data_plugin_controller(triad, monkeypatch)
     """
     A tab's delete request arrives at ``DataPluginController.delete_plugin``.
 
-    The other half of 5e.3, and the same reasoning.
+    The other half of the typed-signal replacement, and the same reasoning.
     """
     called: List[Tuple] = []
     monkeypatch.setattr(

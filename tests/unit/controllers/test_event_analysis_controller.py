@@ -48,13 +48,13 @@ def controller(mock_view: MagicMock, mocker: MockerFixture) -> EventAnalysisCont
     ctrl.model = mocker.Mock()
     ctrl.logger = mocker.Mock()  # type: ignore[attr-defined]
     # Real MetaController signal, needed by any slot that reports a failure to the
-    # status panel. Added when Step 4a gave this controller its first such slots.
+    # status panel.
     ctrl.add_text_to_display = mocker.Mock()
     ctrl.add_text_to_display.emit = mocker.Mock()
     return ctrl
 
 
-# ----------------------- Step 4a -------------------------------------
+# ----------------------- direct plugin calls -------------------------
 
 
 class TestLoadEventPlot:
@@ -129,7 +129,7 @@ class TestLoadEventPlot:
         """
         The arguments handed to the View's setter, with the time bases left out.
 
-        Step 4 inserted ``time_bases`` as the second argument, since the time axis is
+        ``time_bases`` is the second argument, since the time axis is
         a property of the samples rather than of the drawing and the Model now builds
         it. Dropping it here keeps every index below meaning what it did; it is pinned
         on its own in ``test_the_time_bases_are_built_by_the_model``.
@@ -760,7 +760,7 @@ class TestFittingLaunch:
 
         ``silent`` and ``indices`` are passed explicitly because the View always did,
         even though both match their defaults - written from the signature rather than
-        the old call site (rule 42).
+        the old call site.
 
         :param controller: Controller under test.
         :param mocker: Pytest-mock fixture.
@@ -872,7 +872,7 @@ class TestFittingLaunch:
 
 class TestRequestLoaderChannels:
     """
-    The Step 4a replacement for a ``global_signal`` round trip, against MetaEventLoader.
+    Replaces a ``global_signal`` round trip to MetaEventLoader with a direct call.
 
     The direct analogue of ``RawDataController.request_reader_channels``: the View asked a
     loader for its channel list over the bus and the answer came back seven hops later

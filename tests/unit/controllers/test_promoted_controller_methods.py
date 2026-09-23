@@ -1,8 +1,8 @@
 """
-``MetaSubsetTabController``'s shared surface, as Step 4a leaves it.
+``MetaSubsetTabController``'s shared surface.
 
 Two things live here: ownership assertions for the methods promoted onto the base, and
-the behaviour of the two validation methods that step added when it converted the
+the behaviour of the two validation methods added when converting the
 View's ``global_signal`` round trips into direct ``call()`` invocations.
 
 The behavioural coverage already exists and did not move: ``test_metadata_controller``
@@ -30,8 +30,8 @@ pytestmark = pytest.mark.characterization
 
 SUBSET_CONTROLLERS = (MetadataController, ProteinController)
 
-#: Promoted in Step 4a. ``relay_query`` was recorded on the base itself as deliberately
-#: unshareable, because "the two tabs' copies differ" and each reached into its own
+#: Promoted onto the base. ``relay_query`` was once recorded on the base itself as
+#: deliberately unshareable, because "the two tabs' copies differ" and each reached into its own
 #: View's pending-filter state. The copies differed by a single blank line, and the
 #: pending state had already been declared on ``MetaSubsetTabView``, so neither half of
 #: the recorded reason held.
@@ -89,7 +89,7 @@ def test_the_base_no_longer_calls_relay_query_unshareable() -> None:
 
 
 # ===========================================================================
-# validate_filter / validate_raw_filter - Step 4a's converted round trips
+# validate_filter / validate_raw_filter - converted bus round trips
 # ===========================================================================
 
 
@@ -226,7 +226,7 @@ class TestValidateFilter:
         ``construct_metadata_query`` **raises** ``ValueError`` for a column it cannot
         map to a table. Under the bus, ``_dispatch_to`` swallowed it, so the filter
         vanished with nothing but a log line. Both halves are asserted: the user is
-        told, and nothing is committed. **Step 4d deleted the pending state**, so the
+        told, and nothing is committed. **The pending state no longer exists**, so the
         second half of this test went with it: the name now travels through the
         request, so a refused filter leaves nothing parked to go stale.
         """
@@ -300,7 +300,7 @@ class TestValidateRawFilter:
         controller.validate_raw_filter("ldr", "SELECT 1", "f1", None)
 
         assert controller.model.calls[0][2] == "validate_filter_query"
-        # Step 4b appends the clause here rather than in the View: knowing that
+        # The clause is appended here rather than in the View: knowing that
         # LIMIT 0 is what makes the check cheap is knowing SQL.
         assert controller.model.calls[0][3] == ("SELECT 1 LIMIT 0",)
         controller.view.on_raw_filter_validated.assert_called_once_with(
@@ -344,7 +344,7 @@ class TestValidateRawFilter:
 
 
 # ===========================================================================
-# load_event_id_cache - Step 4a's last conversion, shared by both subset tabs
+# load_event_id_cache - a converted bus round trip, shared by both subset tabs
 # ===========================================================================
 
 

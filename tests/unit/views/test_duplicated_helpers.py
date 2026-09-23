@@ -1,10 +1,10 @@
 """
-Equivalence tests for the helpers Step 3 is about to merge into a shared base.
+Equivalence tests for analysis-tab helpers that were, or could be, merged into a base.
 
 The duplication ratchet counts byte-identical bodies; it cannot say whether two
 copies *behave* the same, and it says nothing at all about a third copy that was
 inlined instead of written as a method. That is what this file is for. Each group
-below is merged by Step 3 or Step 4, and the merge should be a decision someone
+below is a merge into a shared base, and the merge should be a decision someone
 makes about known behaviour rather than a silent change.
 
 Eight groups:
@@ -13,8 +13,8 @@ Eight groups:
   in ``RawDataView`` and ``EventAnalysisView`` that shadowed the base. The overrides
   are gone, so what is checked now is the one implementation every tab inherits.
 - ``createButton`` used to exist five times, four of them byte-identical, and
-  the divergence was pinned so Step 3a had to decide it. **3a promoted the
-  majority version to** ``MetaControls``, so what is checked now is that exactly
+  the divergence was pinned so the merge had to decide it. **The majority version
+  was promoted to** ``MetaControls``, so what is checked now is that exactly
   one copy survives and that it behaves as the majority version did.
 - ``format_axis_label`` exists three times, and **the third one differs**.
   ``ProteinView.py:4037`` is a module-level function, ``MetadataView.py:3645`` is
@@ -24,16 +24,16 @@ Eight groups:
   two specific behaviours the inline copy lacks are pinned as named tests so that
   merging all three is an explicit decision.
 - ``get_selected_filters`` existed twice, in ``MetadataView`` and ``ProteinView``,
-  differing only in the name each tab held its controls panel under. **Step 4a
-  promoted it to** ``MetaSubsetTabView``, which reaches the panel through
+  differing only in the name each tab held its controls panel under. **It was
+  promoted to** ``MetaSubsetTabView``, which reaches the panel through
   ``_subset_controls`` - a one-line property each tab implements over the name it
   already holds its panel under, so there is still only one copy of the panel. Every unit test that touches this method
   mocks it, so its real body had no unit coverage at all before the promotion -
-  which is exactly the shape rule 43 warns about, and why it is pinned here.
+  a mocked-everywhere body is untested, which is why it is pinned here.
 - ``_rebuild_event_id_cache`` existed twice and **the copies diverged three ways**.
   ``ProteinView``'s also rejected a result with no ``event_id`` column, named the
   scope in its empty-subset message, and labelled an unnamed active filter with the
-  filter expression instead of the word "Filter". **Step 4a promoted Protein's, by
+  filter expression instead of the word "Filter". **Protein's was promoted, by
   decision, on all three** - and reordered its first two checks, so that a result
   with no rows is an empty subset whether or not the loader returned columns with
   it. ``MetadataView`` had six tests for its copy and ``ProteinView`` had none, so
@@ -41,21 +41,21 @@ Eight groups:
 - ``_show_add_filter_dialog`` and ``show_edit_filter_dialog`` existed twice, only 14
   diff lines apart, and carried **both** of the pair's real divergences: the columns
   the throwaway validation query is built from, and whether an invalid raw filter is
-  reported in a modal or on the status panel. **Step 4a promoted both to**
+  reported in a modal or on the status panel. **Both were promoted to**
   ``MetaSubsetTabView``, taking Metadata's modal by the user's choice and Protein's
   columns handling, each behind a named helper. The per-tab tests cover the modal, and
-  the column selection is no longer here at all: Step 4a's conversion moved it to
+  the column selection is no longer here at all: it moved to
   ``MetaSubsetTabController.validate_filter``, which asks the loader for its *events*
   columns instead of guessing three, so ``_validation_columns`` and the tests that
   pinned its fallback are gone.
 - ``_load_filter`` existed twice and diverged once: only ``ProteinView`` let a filter
-  whose name ends in ``_raw`` skip validation. **Step 4a promoted Protein's**, which
+  whose name ends in ``_raw`` skip validation. **Protein's was promoted**, which
   fixes the metadata tab rather than merging it - see the group below for the measured
   consequence of not bypassing.
 - **Five more methods collapsed once ``_subset_controls`` existed**:
   ``replace_filter_item``, ``update_filter_name``, ``_delete_filter``,
   ``on_raw_filter_validated`` and the answer-parking setter (``relay_query_result``
-  then, ``set_event_id_rows`` since Step 4a's last conversion). Four of them differed
+  then, ``set_event_id_rows`` now). Four of them differed
   *only* in the name each tab held its controls panel under, and that setter
   differed only in its docstring; ``on_raw_filter_validated`` carried the modal-vs-
   status-panel divergence a second time and was settled the same way. ``_delete_filter``
@@ -230,7 +230,7 @@ class TestFormatAxisLabelDivergenceFromClusteringView:
     The two behaviours ``ClusteringView``'s inlined copy does not share.
 
     Named individually rather than folded into the table above, because these are
-    precisely the decisions Step 3 has to make when the three are merged. The
+    precisely the decisions to make if the three are merged. The
     inline builder at ``ClusteringView.py:731-742`` composes its label from the
     column name and appends the unit under ``unit is not None and unit != "" and
     unit != " "`` - a three-way literal check rather than ``.strip()`` - and it
@@ -290,7 +290,7 @@ class TestFormatAxisLabelStripsFromTheFirstParenthesis:
     That is a live defect for any column whose name contains parentheses: a column
     called ``Rate (per pore)`` plotted with unit ``Hz`` is labelled ``Rate (Hz)``,
     silently losing ``per pore``. It is queued in ``future_fixes.md`` rather than
-    fixed here - this file's job is to record what the code does today so Step 3's
+    fixed here - this file's job is to record what the code does today so a
     merge of the three copies is not blamed for it later.
     """
 
@@ -317,7 +317,7 @@ class TestFormatAxisLabelStripsFromTheFirstParenthesis:
 
 
 # ===========================================================================
-# createButton - promoted to MetaControls by Step 3a
+# createButton - promoted to MetaControls
 # ===========================================================================
 
 
@@ -334,10 +334,10 @@ class TestCreateButtonWasPromoted:
     """
     ``createButton`` used to be identical in four of five controls files, with
     ``eventAnalysisControls`` omitting the ``setStyleSheet("")`` the other four
-    ended with. That divergence was pinned here so Step 3a had to decide it rather
-    than merge it silently.
+    ended with. That divergence was pinned here so the promotion had to decide it
+    rather than merge it silently.
 
-    **3a decided it: the majority version was promoted, reset included.** So the
+    **It was decided: the majority version was promoted, reset included.** So the
     source-text assertions this class used to carry are gone - there is one copy
     now, and what is worth checking is that there is exactly one, and that it
     behaves the way the majority version did.
@@ -389,7 +389,7 @@ class TestCreateButtonWasPromoted:
 
 
 # ===========================================================================
-# get_selected_filters - two copies, promoted by Step 4a
+# get_selected_filters - two copies, promoted to MetaSubsetTabView
 # ===========================================================================
 
 
@@ -398,9 +398,8 @@ SUBSET_TABS = (MetadataView, ProteinView)
 #: What ``MetaSubsetTabView`` still asks a subclass for. Asserted whole rather than
 #: membership-by-membership, because the base's abstract set is published contract:
 #: a promotion that quietly drops one, or a new one added without a changelog note,
-#: should fail here. Step 4a took it from seven to five; Step 6a put it back to six by
-#: declaring ``handle_parameter_change``, a requirement ``MetaView._set_control_area``
-#: had always imposed without stating.
+#: should fail here. ``handle_parameter_change`` is declared because
+#: ``MetaView._set_control_area`` had always required it without stating so.
 ABSTRACT_MEMBERS = frozenset(
     {
         "_init",
@@ -510,7 +509,7 @@ class TestGetSelectedFiltersWasPromoted:
 
 
 # ===========================================================================
-# _rebuild_event_id_cache - two copies, three divergences, promoted by Step 4a
+# _rebuild_event_id_cache - two copies, three divergences, promoted to the base
 # ===========================================================================
 
 
@@ -522,8 +521,7 @@ def answer_query_with(view: object, frame: object) -> None:
     a query that did not run cannot be read as this call's answer, so a test cannot
     simply assign the attribute up front.
 
-    Step 4a converted the bus round-trip this used to stub into the
-    ``event_id_cache_requested`` intent, answered by
+    The request is the ``event_id_cache_requested`` intent, answered by
     ``MetaSubsetTabController.load_event_id_cache``. The stub stands in for that
     Controller and sets what it sets - a stub that did nothing would make every
     assertion below vacuous.
@@ -644,7 +642,7 @@ class TestRebuildEventIdCacheWasPromoted:
         self, qapp: object, view_cls: type
     ) -> None:
         """
-        The four navigation values, whose annotations moved to the base in 2a.
+        The four navigation values, whose annotations are declared on the base.
 
         The scope is what the plot handlers compare against to decide whether the
         cache still applies, so a rebuild that populated the ids but forgot the
@@ -661,7 +659,7 @@ class TestRebuildEventIdCacheWasPromoted:
 
 
 # ===========================================================================
-# the two filter dialogs - two copies each, promoted by Step 4a
+# the two filter dialogs - two copies each, promoted to the base
 # ===========================================================================
 
 
@@ -799,7 +797,7 @@ class TestLoadFilterWasPromoted:
 
 
 # ===========================================================================
-# the six methods _subset_controls unlocked - five in Step 4a, one in 4d
+# the six methods _subset_controls unlocked
 # ===========================================================================
 
 
@@ -823,11 +821,10 @@ class TestThePanelNameMethodsWerePromoted:
     which the filter dialogs had already settled.
 
     ``restore_subset_filters`` is the late one: 20 of its 21 lines were identical
-    and the odd one out was the panel name, but Step 4a did not sweep it up and it
-    was only spotted while measuring Step 4d.
+    and the odd one out was the panel name, but it was missed by the first sweep.
 
     That answer-parking method was ``relay_query_result``, filled over the signal
-    bus. Step 4a's last conversion replaced it with ``set_event_id_rows``, filled by
+    bus. ``set_event_id_rows`` replaced it, filled by
     ``MetaSubsetTabController.load_event_id_cache``; it is still a promoted method
     with one copy on the base, which is what this class checks.
     """
@@ -883,8 +880,8 @@ class TestThePanelNameMethodsWerePromoted:
 
         ``_rebuild_event_id_cache`` sets it to None before asking, precisely so that a
         query that did not run cannot be read back as this call's answer, so a version
-        that ignored a None would reintroduce the stale read this whole step exists to
-        remove.
+        that ignored a None would reintroduce the stale read the clear exists to
+        prevent.
         """
         view = build_subset_tab(view_cls)
         frame = pd.DataFrame({"event_id": [1, 2]})
@@ -900,9 +897,9 @@ class TestThePanelNameMethodsWerePromoted:
         The annotation moved with the method that writes it.
 
         Only ``MetadataView`` declared it before; ``ProteinView`` assigned it at first
-        use. Step 4a's last conversion renamed it to ``event_id_rows`` and gave it a
-        single writer, so the ``getattr(..., None)`` guards that used to surround every
-        read are gone and the declaration is what keeps the type stated once.
+        use. It is now ``event_id_rows`` with a single writer, so the
+        ``getattr(..., None)`` guards that used to surround every read are gone and the
+        declaration is what keeps the type stated once.
         """
         assert "event_id_rows" in MetaSubsetTabView.__annotations__
         for view_cls in SUBSET_TABS:

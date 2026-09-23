@@ -8,14 +8,14 @@ Covers:
 - load_metadata_for_clustering, which replaced relay_query and the two bus calls
   behind it: it builds the query, loads the rows, and reports either failure on the
   status panel rather than leaving the View to read a stale attribute
-- check_cluster_column / commit_clusters, the Step 4a commit path: two round trips
+- check_cluster_column / commit_clusters, the commit path: two round trips
   with the overwrite confirmation in the View between them, and a failed drop that
   stops the commit rather than writing on top of a half-deleted result
 - update_column_names (names provided with info log, empty list with warning log)
 - update_column_units (units provided with info log, empty dict skips view)
-- cluster, the Decision B command path: the Model builds the clustering frame from
+- cluster, the command path: the Model builds the clustering frame from
   the rows and the spec the View sent, then clusters it
-- request_column_names / request_column_units, the Step 4a replacements for two
+- request_column_names / request_column_units, the replacements for two
   ``global_signal`` round trips: they call the plugin through ``self.model.call`` and
   report a failure instead of leaving the View with the previous loader's answer
 """
@@ -135,7 +135,7 @@ def test_display_write_status_emits_failure_message(
     )
 
 
-# -------------------- load_metadata_for_clustering (Step 4a) ----------
+# -------------------- load_metadata_for_clustering ------------------
 
 
 class TestLoadMetadataForClustering:
@@ -277,8 +277,8 @@ class TestLoadMetadataForClustering:
         self, controller, mock_view
     ) -> None:
         """
-        Left unset, the View would keep the previous run's query - the stale-read
-        shape Step 4a spent itself removing.
+        Left unset, the View would keep the previous run's query - the stale read
+        that replacing the bus round trips removed.
         """
         controller.model.call.return_value = ("", "nope", "events")
 
@@ -344,7 +344,7 @@ class TestLoadMetadataForClustering:
         assert any("clustering parameters" in m for m in messages)
 
 
-# -------------------- the commit path (Step 4a) -----------------------
+# -------------------- the commit path ---------------------------------
 
 
 class TestCheckClusterColumn:
@@ -383,7 +383,7 @@ class TestCheckClusterColumn:
         """
         The View is not called, so no confirmation dialog appears.
 
-        Before Step 4a this failure was swallowed inside ``_dispatch_to`` and the View
+        Under the bus this failure was swallowed inside ``_dispatch_to`` and the View
         read a stale ``cluster_column_table``, so it could ask about overwriting a
         result that was not there - or fail to ask about one that was.
         """
@@ -458,12 +458,12 @@ class TestCommitClusters:
         controller.view.on_clusters_committed.assert_called_once_with("L", False)
 
 
-# -------------------- request_column_names (Step 4a) ------------------
+# -------------------- request_column_names ----------------------------
 
 
 class TestRequestColumnNames:
     """
-    The Step 4a replacement for a ``global_signal`` round trip.
+    Replaces a ``global_signal`` round trip with a direct call to the plugin.
 
     What it replaces mattered: the bus resolved the return function by string seven
     hops away, and ``_dispatch_to`` logged and returned on four separate conditions -
@@ -486,7 +486,7 @@ class TestRequestColumnNames:
     def test_it_hands_the_result_to_the_view(
         self, controller: ClusteringController
     ) -> None:
-        """The result path, which Decision B routes through the Controller."""
+        """The result path, which is routed through the Controller."""
         controller.model.call.return_value = ["duration", "current"]
 
         controller.request_column_names("SQLiteDBLoader_0")
@@ -525,7 +525,7 @@ class TestRequestColumnNames:
         controller.request_column_names("SQLiteDBLoader_0")
 
 
-# -------------------- request_column_units (Step 4a) ------------------
+# -------------------- request_column_units ----------------------------
 
 
 class TestRequestColumnUnits:
@@ -669,19 +669,19 @@ def test_update_column_units_skips_view_when_units_empty(
 
 # --------------------------- cluster ---------------------------------
 #
-# The slot had no test at all before Step 4's closeout, which is method rule 52's
-# shape for a third time: its callers were covered, so the gap was invisible. It now
+# The slot once had no test at all: its callers were covered, so the gap was
+# invisible. It now
 # makes two Model calls in sequence - build the frame, then cluster it - so the order
 # and the failure handling are both pinned.
 
 
 class TestCluster:
-    """Decision B's command path: intent in, two Model calls, result out through a setter."""
+    """The command path: intent in, two Model calls, result out through a setter."""
 
     @staticmethod
     def _request():
         """
-        The arguments ``cluster_requested`` carries since the closeout.
+        The arguments ``cluster_requested`` carries.
 
         :return: rows, frame columns, log flags, excluded columns, method, params
         :rtype: tuple

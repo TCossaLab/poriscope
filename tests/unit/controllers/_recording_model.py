@@ -24,9 +24,9 @@
 # Kyle Briggs
 
 """
-A stand-in Model for the Step 4a Controller slots, shared by two test modules.
+A stand-in Model for the Controller's plugin-calling slots, shared by two test modules.
 
-Step 4a replaces the signal bus with ``self.model.call(metaclass, key, method, *args)``,
+Those slots call plugins through ``self.model.call(metaclass, key, method, *args)``,
 so a Controller test needs a Model that answers that one method with a canned value and
 records what it was asked. ``mocker.Mock()`` cannot do the second half legibly once a
 slot makes several calls in sequence, and cannot make one of them raise without making
@@ -97,7 +97,7 @@ def recording_tab_model(model_class, answers: dict):
     """
     A real tab Model whose plugin calls are recorded instead of made.
 
-    Step 4b moved query construction out of the Controllers and into the Models, so
+    Query construction lives in the Models rather than the Controllers, so
     a Controller test that wants to assert on the SQL can no longer see it: the
     Controller now calls a Model method and the text is built a layer further down.
     Stubbing that Model method would hide the very thing the test exists to check.

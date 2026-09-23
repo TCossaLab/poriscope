@@ -24,7 +24,7 @@
 # Kyle Briggs
 
 """
-``MetadataController``'s Step 4a fetch slots: what they call, and what they report.
+``MetadataController``'s fetch slots: what they call, and what they report.
 
 These are the methods that answer the metadata tab's intents by calling the loader
 directly - the two subset loaders, the two single-value lookups, the event-plot chain
@@ -39,9 +39,9 @@ loader says no. ``load_metadata_subset`` and ``load_event_subset`` landed with n
 that could: a wrong call signature or a swallowed failure would have satisfied the
 whole suite. They are covered here alongside the four slots added with them.
 
-Kept out of ``test_metadata_controller`` because that module covers the relay methods
-this step is deleting, and out of ``test_promoted_controller_methods`` because none of
-these is shared with the protein tab - ``ProteinView`` never builds a metadata query.
+Kept out of ``test_metadata_controller`` because that module covers the relay methods,
+and out of ``test_promoted_controller_methods`` because none of these is shared with
+the protein tab - ``ProteinView`` never builds a metadata query.
 """
 
 import numpy as np
@@ -104,7 +104,7 @@ def panel_text(controller: MetadataController) -> str:
 
 class TestLoadMetadataSubset:
     """
-    Landed in Step 4a's ``_overlay_plot`` commit with no Controller-side test.
+    Landed alongside ``_overlay_plot``'s conversion with no Controller-side test.
     """
 
     ANSWERS = {
@@ -226,7 +226,7 @@ class TestBuildAllPointsHistogram:
     """
     The event-data fetch, and the tally it now feeds.
 
-    Step 4's closeout replaced ``load_event_subset``: the generator used to be handed
+    This replaced ``load_event_subset``: the generator used to be handed
     to the View, which walked it twice inside the widget. The Controller keeps it and
     passes it to the Model, so what has to be pinned here is that the query and the
     counts arrive together and that every way the round trip can fail leaves the query
@@ -347,7 +347,7 @@ class TestBuildAllPointsHistogram:
     ) -> None:
         """
         The View clears the query before asking, so not setting it is what refuses
-        the plot: before Step 4a a failed load replotted the previous subset.
+        the plot: under the bus a failed load replotted the previous subset.
         """
         controller.model = RecordingModel(
             {

@@ -1301,13 +1301,12 @@ class TestDeleteAllPlugins:
         assert controller.delete_all_plugins() == []
 
 
-# ------------- 5c.1 characterization net ----------------------------------
+# ------------- edit_plugin characterization net ---------------------------
 #
-# Step 5c.2 replaces edit_plugin's five report-then-rollback blocks with one
-# helper, and 5c.3 splits the method along its seams. These pin the three paths
-# that no test reached, so a restructuring that changes one of them fails here
-# rather than in the app. The rollback block below is the one that matters most:
-# it is one of the five 5c.2 will extract, and it had no test at all.
+# edit_plugin's five report-then-rollback blocks share one helper, and the method
+# is split along its seams. These pin the three paths no other test reached, so a
+# restructuring that changes one of them fails here rather than in the app. The
+# rollback block below matters most: it is one of the five, and it had no test.
 
 
 def test_edit_plugin_warns_and_returns_when_the_instance_is_missing(
@@ -1318,8 +1317,8 @@ def test_edit_plugin_warns_and_returns_when_the_instance_is_missing(
     """
     An unknown key is reported and nothing else happens - no dialog is opened.
 
-    This is edit_plugin's first guard, and 5c.3 lifts it into a fetch-and-guard
-    helper. The assertion that ``get_user_settings`` is never called is what
+    This is edit_plugin's first guard, and lives in a fetch-and-guard helper.
+    The assertion that ``get_user_settings`` is never called is what
     makes the test fail if the guard is dropped rather than moved.
 
     :param mock_model: Mocked data plugin model.
@@ -1350,8 +1349,8 @@ def test_edit_plugin_reports_a_dependent_with_no_instance_and_keeps_going(
     so the rename must still finish - asserting ``set_key`` ran is what
     distinguishes "reported and continued" from "reported and aborted".
 
-    5c.3 moves this loop into a rename helper, and the guard is easy to lose on
-    the way because the line after it fails anyway, just less legibly.
+    This loop lives in a rename helper, and the guard is easy to lose in a
+    restructuring because the line after it fails anyway, just less legibly.
 
     :param mock_model: Mocked data plugin model.
     :param mock_view: Mocked data plugin view.
@@ -1398,8 +1397,8 @@ def test_edit_plugin_rolls_back_parent_links_when_reference_resolution_fails(
 
     edit_plugin unregisters the plugin from its parents up front and re-registers
     them on every abort. This is one of the five report-then-rollback blocks
-    5c.2 folds into a single helper, and the only one no test reached - so the
-    restore was free to disappear in that edit unnoticed.
+    that share a single helper, and the only one no other test reaches - so the
+    restore could disappear unnoticed.
 
     ``apply_settings`` must not run: that is what says the method returned rather
     than carrying on with half-resolved settings.
@@ -1457,8 +1456,7 @@ def test_validate_and_instantiate_plugin_reports_when_no_key_was_supplied_or_cho
 
     Reached by handing in settings - which skips the dialog that would otherwise
     choose a key - while leaving ``key`` at None. The raise is the method's own,
-    caught by its own handler, and 5c.4 moves that handler into the shared
-    reporting helper.
+    caught by its own handler, which is the shared reporting helper.
 
     :param controller: Controller under test.
     :param mock_model: Mocked data plugin model.
@@ -1484,7 +1482,7 @@ def test_validate_and_instantiate_plugin_reports_when_no_key_was_supplied_or_cho
     mock_model.register_plugin.assert_not_called()
 
 
-# ------------- 5c.2: _report_and_restore ----------------------------------
+# ------------- _report_and_restore ----------------------------------------
 #
 # Driven directly, not only through edit_plugin. The refactor-coverage audit
 # names it in its MOVED table, and its criterion is both executed *and* targeted:
@@ -1625,7 +1623,7 @@ def _raise(exc: Exception) -> None:
     raise exc
 
 
-# ------------- 5c.3: edit_plugin's extracted helpers -----------------------
+# ------------- edit_plugin's extracted helpers ----------------------------
 #
 # Each of these is named in the refactor-coverage audit's MOVED table, whose
 # criterion is executed *and* targeted. edit_plugin's own tests already run them
@@ -1991,10 +1989,10 @@ class TestApplyEditedSettings:
         parent.register_dependent.assert_called_once_with("MetaReader", "r1")
 
 
-# ------------- 5c.4: validate_and_instantiate_plugin's helpers -------------
+# ------------- validate_and_instantiate_plugin's helpers ------------------
 #
-# As with 5c.3, each is in the refactor-coverage audit's MOVED table and so has
-# to be targeted directly rather than merely run through its caller.
+# As with edit_plugin's helpers, each is in the refactor-coverage audit's MOVED table
+# and so has to be targeted directly rather than merely run through its caller.
 
 
 class TestReport:
@@ -2385,7 +2383,7 @@ class TestNewPluginSteps:
         )
 
 
-# ------------- 5c.4: validate_and_instantiate_plugin's return value --------
+# ------------- validate_and_instantiate_plugin's return value -------------
 #
 # Session restore needs to know whether each entry landed. It used to return
 # None either way, so the restore loop counted nothing and the summary announced
