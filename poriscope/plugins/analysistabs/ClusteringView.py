@@ -178,8 +178,6 @@ class ClusteringView(MetaView):
             self.axes = self.figure.add_subplot(1, 1, 1, projection="3d")
         self.figure.set_layout_engine("constrained")
         self.canvas.draw()
-        self.allowed_cols = None
-        self.allowed_logs = None
         self.allowed_plot_type = None
 
     @log(logger=logger)

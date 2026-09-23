@@ -2,7 +2,7 @@
 Tests for poriscope.controllers.DataPluginController.
 
 Covers:
-- __init__ wires view, model, data_server, plugin_manager
+- __init__ wires view, model and data_server
 - edit_plugin_settings (plugin found with settings, plugin found no get_raw_settings, plugin not found)
 - delete_plugin (no dependents success, has dependents blocked, instance not found)
 - handle_exit delegates to model
@@ -73,7 +73,6 @@ def controller(
     ctrl.model = mock_model
     ctrl.logger = mocker.Mock()  # type: ignore[attr-defined]
     ctrl.data_server = "/tmp/data"
-    ctrl.plugin_manager = None
     ctrl._history_lookup = mocker.Mock(return_value=None)
 
     for sig in [
@@ -121,7 +120,6 @@ def test_init_sets_view_model_and_data_server(mocker: MockerFixture) -> None:
         )
 
     assert ctrl.data_server == "/data"
-    assert ctrl.plugin_manager is None
     assert ctrl._history_lookup is history_lookup
     mock_view_cls.assert_called_once()
     mock_model_cls.assert_called_once_with({"MetaReader": {}})
@@ -748,7 +746,6 @@ def _make_edit_plugin_controller(
     ctrl.model = mock_model
     ctrl.logger = mocker.Mock()  # type: ignore[attr-defined]
     ctrl.data_server = "/tmp/data"
-    ctrl.plugin_manager = None
     ctrl._history_lookup = mocker.Mock(return_value=None)
     for sig in [
         "update_available_plugins",

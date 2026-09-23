@@ -898,15 +898,3 @@ class TestResetActions:
     def test_3d_no_error(self, view):
         with patch.object(view.canvas, "draw"):
             view._reset_actions(axis_type="3d")
-
-    def test_clears_allowed_cols(self, view):
-        view.allowed_cols = ["a"]
-        with patch.object(view.canvas, "draw"):
-            view._reset_actions()
-        assert view.allowed_cols is None
-
-    def test_clears_allowed_logs(self, view):
-        view.allowed_logs = [True]
-        with patch.object(view.canvas, "draw"):
-            view._reset_actions()
-        assert view.allowed_logs is None

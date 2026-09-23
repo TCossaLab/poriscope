@@ -395,7 +395,6 @@ class ProteinView(MetaSubsetTabView):
         event_outer.setSpacing(0)
         self.fig_event = Figure()
         self.canvas_event = FigureCanvas(self.fig_event)
-        self.event_outer_ax = None
         event_outer.addWidget(self.canvas_event, stretch=1)
         self.event_toolbar = NavigationToolbar(self.canvas_event, self)
         event_outer.addWidget(self.event_toolbar)
@@ -676,7 +675,6 @@ class ProteinView(MetaSubsetTabView):
             warnings.simplefilter("ignore", UserWarning)
             self.fig_event.clear()
 
-        self.event_outer_ax = None
         self.fig_event.set_layout_engine("constrained")
         self._clear_cache()
 

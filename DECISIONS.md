@@ -10,6 +10,23 @@ which ran through August 2026 and is complete. The step numbers only date the de
 
 ---
 
+## 2026-09-22 - Two uncalled methods kept through the orphan sweep
+
+**Context.** The Step 8 sweep deleted about 70 methods with no production caller. Two more
+matched the same test and were kept.
+
+**Decision** (Kyle, 2026-09-22). `BaseDataPlugin.__enter__`/`__exit__` stay: they exist so a
+script can use any data plugin as a context manager, and that still works - the sweep saw them
+as dead only because nothing in the app or tests used them. They now have a test
+(`test_base_data_plugin_context_manager.py`), checked against a mutation. `MetaWriter._rescale_data_to_adc`
+stays too: a documented writer hook, kept as author-facing API although nothing calls it.
+
+**Revisit if** `_rescale_data_to_adc` is still uncalled when the writer contract is next
+changed - a hook the base never invokes teaches authors to override something that does
+nothing.
+
+---
+
 ## 2026-09-22 - Decisions C and D amended at the exit review
 
 **Context.** The Step 8 audit found Decision C 2 of 5, not 5 of 5: Step 7's table credited

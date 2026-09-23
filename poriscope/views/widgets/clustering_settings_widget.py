@@ -26,7 +26,7 @@
 import logging
 import os
 import sys
-from typing import Any, Dict, List, Mapping, Optional, Set
+from typing import Any, Dict, List, Mapping, Optional
 
 from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QDoubleValidator, QFont, QIcon, QIntValidator
@@ -85,9 +85,7 @@ class ClusteringSettingsDialog(QDialog, WalkthroughMixin):
             else self.get_default_config()
         )
 
-        self.selected_columns: Set[str] = set()
         self.column_item_widgets: Dict[str, Dict[str, Any]] = {}
-        self.scroll_row: int = 0
 
         self.icon_path = os.path.join(
             os.path.dirname(__file__), "..", "..", "configs", "icons"

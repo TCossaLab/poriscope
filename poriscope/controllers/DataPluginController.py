@@ -56,7 +56,6 @@ class DataPluginController(QObject):
         self.view = DataPluginView()
         self.model = DataPluginModel(available_plugin_classes)
         self.data_server = data_server
-        self.plugin_manager = None
         self._history_lookup = history_lookup
 
     @log(logger=logger)

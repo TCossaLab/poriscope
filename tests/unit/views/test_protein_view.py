@@ -140,7 +140,6 @@ def mock_view():
 
     v.fig_event = MagicMock()
     v.canvas_event = MagicMock()
-    v.event_outer_ax = None
     v.display_stack = MagicMock()
     v.mode_stack = MagicMock()
     v.individual_dist_page = MagicMock()
@@ -451,11 +450,6 @@ class TestClearFigureState:
         # Just verify _clear_figure_state runs without error
         # (cache internals belong to MetaView and vary by implementation)
         mock_view._clear_figure_state()
-
-    def test_resets_event_outer_ax(self, mock_view):
-        mock_view.event_outer_ax = object()
-        mock_view._clear_figure_state()
-        assert mock_view.event_outer_ax is None
 
     def test_heatmap_colorbar_reset(self, mock_view):
         mock_view._heatmap_colorbar = object()
@@ -1182,9 +1176,6 @@ class TestSetCustomDisplayArea:
 
     def test_display_stack_starts_on_distribution_page(self, real_view):
         assert real_view.display_stack.currentIndex() == 0
-
-    def test_event_outer_ax_initially_none(self, real_view):
-        assert real_view.event_outer_ax is None
 
 
 class TestSetControlArea:
