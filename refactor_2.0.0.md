@@ -3348,6 +3348,63 @@ MetadataView and ProteinView" was near-copies - byte-identity finds 239.
 Suite time grew with the suite: 2,950 -> 4,215 tests, 409 -> 517 s locally outside OneDrive
 (per test 0.139 -> 0.123 s), CI's test step 135 -> ~250 s. No per-test regression; left as is.
 
+### Post-refactor cleanup procedure - reusable
+
+The process the cleanup above followed, stated so it can be run on the next refactor. It
+starts once the last structural change has landed and burn-in has begun. One feature branch
+per step, a full green suite before every commit, and nothing deleted on a hunch - every
+removal comes from an instrument, and a finding the instrument cannot settle goes to the
+user.
+
+1. **Plan against reality.** Re-check every claim the plan makes about the current tree:
+   each "done" against the commit that did it, each figure against a re-measurement. Credit
+   nothing from a docstring example or a signature that already existed before the
+   refactor. Split the plan across read-only agents by section; re-check by hand every
+   finding that carries weight.
+2. **Code against docs.** Audit the hand-written documentation (the autodoc half
+   regenerates itself) for mechanisms that moved, pages describing a replaced design, and
+   dead cross-references. Rewrite a page for a removed mechanism to explain its replacement
+   rather than deleting it.
+3. **Dead production code.** Methods with no production caller, write-only attributes,
+   unused imports. Check each for dynamic dispatch (`getattr`, signal names, registries)
+   before deleting. A test that exists only to call a dead method goes with it; a test that
+   is the only coverage of *live* behaviour is re-pointed at the live path instead.
+4. **Dead test code.** Mocks accept any attribute, so a deletion leaves residue nothing
+   flags. Instruments, in order of yield:
+   - names present in the pre-refactor source (`git grep <baseline-tag> -- src`) and absent
+     now, still referenced in `tests/`;
+   - a full run recording every `patch(create=True)` / `setattr(raising=False)` that
+     created an attribute that did not exist;
+   - string patch targets whose name the target module no longer uses;
+   - module-level test defs and fixtures referenced nowhere outside their own body;
+   - comment banners with no code beneath them, and docstring "Covers:" rosters naming
+     methods that are gone;
+   - tests whose only assertion is "does not raise" against code that no longer does
+     anything - make them assert what the code now emits, or delete a duplicate.
+   Leave scaffolding another developer added and never used; it is not refactor residue.
+5. **Orphaned assets.** Every file under the docs' static directory checked by basename
+   against the whole repo.
+6. **Plan citations out of prose.** Grep code, tests and scripts for step numbers,
+   decision letters and method-rule numbers; rewrite each as the mechanism it stood for.
+   Fan out across agents on disjoint file sets, then prove with an AST diff (docstrings
+   blanked) that only prose changed. Keep a tool's own data keys if the tool is itself
+   plan-bound.
+7. **Retire refactor-only tooling.** Sort every gate the refactor built into "guards the
+   refactor" (its target list is the plan's - delete it, its tests, its CI steps and any
+   CI cost it alone justified) and "guards the result" (keep, and strip its plan citations).
+8. **Suite-time check.** Record per-test setup/call/teardown durations; compare against the
+   pre-refactor commit in a worktree outside any synced folder; re-run outliers alone on
+   both commits before calling anything a regression. Growth that is new coverage stays.
+9. **Exit review.** Re-measure every baseline metric at both ends with one committed
+   instrument; report before/after, targets met or missed or ruled the wrong instrument,
+   starting figures that do not reproduce, and what was deferred.
+10. **Changelog regroup, last.** Group the release section by theme with breaking changes
+    first; map entries by script and verify every entry appears once and every breaking
+    entry sits under Breaking. Re-run it after burn-in adds entries, before the version bump.
+11. **Record it.** Update the plan and its artifact with what each step found, keep the
+    running docs (`future_fixes.md`, `DECISIONS.md`, contributor docs, CLAUDE.md) in sync,
+    and delete the plan when the release ships.
+
 ### Post-refactor cleanup - 2026-09-23
 
 What was done after the last structural change landed, in order, and the lesson each one
