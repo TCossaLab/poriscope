@@ -69,7 +69,7 @@ Step 2: Choose Plot Type and Configure Axes
    - ``baseline_current``, ``max_blockage``, ``sublevel_stdev``
    - ``voltage``, ``conductivity``, and many more
 
-4. *(Optional)* Enable the **Log Scale** checkbox to apply logarithmic scaling to the selected axis.
+4. *(Optional)* Tick the **Log** checkbox beside an axis to apply logarithmic scaling to it.
 
 .. note::
 
@@ -85,30 +85,26 @@ Step 3: Apply Filters
 
 You may apply filters to visualize only a subset of events or sublevels.
 
-#. In the **Filter** box, enter a simple condition to narrow down the results using a simplified SQL-like format. 
+#. Click the **➕** next to **FILTER** to open the **Create Subset Filter** dialog. Give the
+   subset a name, choose **Assisted SQL** or **Raw SQL**, and enter the filter. In Assisted
+   SQL you write only the condition:
 
-    Examples:
+   - ``duration > 200``
+   - ``max_blockage < 600 and num_sublevels >= 3``
+   - ``voltage = -200 or sublevel_stdev > 5``
 
+   Comparison operators are ``=`` ``!=`` ``>`` ``>=`` ``<`` ``<=``, joined with ``and`` and
+   ``or``.
 
-    - ``duration > 200``
-    - ``max_blockage < 600 and num_sublevels >= 3``
-    - ``voltage = -200 or sublevel_stdev > 5``
-
-   You can use the following operators: ``=``, ``!=``, ``>``, ``<``, ``>=``, ``<=``
-
-   **Note:** No need to write full SQL — just simple expressions like ``field = value``.
-
-
-Supported operators:
-
-- Comparison: ``=`` ``!=`` ``>`` ``>=`` ``<`` ``<=``
-- Logical: ``and`` ``or``
-- Join: 
-
+#. Select one or more filters in the **FILTER** dropdown to plot them. The icons beside it
+   edit and delete a filter, and **Save Filter** / **Load Filter** write and read them as a
+   file.
 
 .. warning::
 
-   Invalid expressions or typos in field names may result in no data being displayed.
+   A filter naming a column that does not exist is refused with a message on the status
+   panel. Raw SQL filters can be saved and loaded but cannot be selected for a plot. See
+   :ref:`filtering-and-querying` for the full syntax.
 
 Step 4: Generate and Export
 ---------------------------
@@ -117,11 +113,12 @@ Step 4: Generate and Export
 
 2. You can then:
 
-   - **Save Plot**: Export the current figure to disk (`.png`, `.svg`, etc.).
+   - **Save Plot Configuration**: Save the sequence of plots you have made as a JSON file.
    - **Undo**: Revert to the previous state.
-   - **Load**: Restore a previously saved plot configuration.
+   - **Load Plot Configuration**: Replay a previously saved sequence of plots.
    - **Reset**: Return to default settings.
-   - **Export Subset**: Save the currently filtered data to a new file for external analysis.
+   - **Export Subset - CSV**: Save the currently filtered data to CSV for external analysis.
+   - **Export Plot Data**: Save the data behind the current plot.
 
 .. tip::
 

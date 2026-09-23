@@ -41,21 +41,21 @@ The View
      - Shipped tabs
    * - ``MetaEventTabView``
      - finds or fits events in a raw signal from a reader
-     - ``_init``, ``update_available_plugins``
+     - ``_init``, ``handle_parameter_change``, ``update_available_plugins``
      - RawDataView, EventAnalysisView
    * - ``MetaView``
      - is neither of the other two
-     - ``_init``, ``_reset_actions``, ``notify_plugin_state_changed``, ``update_available_plugins``
+     - ``_init``, ``_reset_actions``, ``handle_parameter_change``, ``notify_plugin_state_changed``, ``update_available_plugins``
      - ClusteringView
    * - ``MetaSubsetTabView``
      - queries a results database with user-defined subset filters
-     - the four above, plus the ``_subset_controls`` property
+     - the five above, plus the ``_subset_controls`` property
      - MetadataView, ProteinView
 
 Note the ordering: **an intermediate does not always ask less of you than the base.**
-``MetaEventTabView`` asks for *two* methods rather than four, because it implements
+``MetaEventTabView`` asks for *three* methods rather than five, because it implements
 ``_reset_actions`` and ``notify_plugin_state_changed`` on your behalf — the two event
-tabs agree on both. ``MetaSubsetTabView`` asks for *five*: the four ``MetaView`` wants,
+tabs agree on both. ``MetaSubsetTabView`` asks for *six*: the five ``MetaView`` wants,
 plus a one-line ``_subset_controls`` property returning your controls panel under a name
 its shared methods can use. Subset filtering is a contract of its own, but it is one this
 base now implements entirely - it manages the filters, the dialogs that edit them and the
@@ -97,7 +97,7 @@ The same split, and you normally match it to whichever View you chose.
      - What it adds
      - Shipped tabs
    * - ``MetaController``
-     - the plugin bus, session state, worker management
+     - ``call()`` for data plugins, the typed plugin signals, session state, worker management
      - ClusteringController
    * - ``MetaSubsetTabController``
      - the experiment and channel scope, column names and units, filter validation and
@@ -108,7 +108,10 @@ The same split, and you normally match it to whichever View you chose.
      - ``update_available_plugins`` and ``_resolve_callable_filter``
      - RawDataController, EventAnalysisController
 
-All three ask for the same two methods: ``_init`` and ``_setup_connections``.
+``MetaController`` and ``MetaEventTabController`` ask for ``_init`` and
+``_setup_connections``. ``MetaSubsetTabController`` asks only for ``_init``: it implements
+``_setup_connections`` itself, so an override must call ``super()._setup_connections()``
+first or the shared lookups are never wired.
 
 The Model
 ---------
@@ -138,7 +141,7 @@ no filter file to write.
 The controls panel
 ------------------
 
-Your tab's control panel — the row of comboboxes and buttons above the plot — is a
+Your tab's control panel — the row of comboboxes and buttons below the plot — is a
 separate widget, and it has the same three-way choice.
 
 .. list-table::
@@ -187,7 +190,7 @@ filter signals only ``MetaSubsetTabControls`` declares.
 
 If your tab lays out its own control area and uses no ``MetaControls`` panel at all,
 override ``_set_control_area`` instead and ignore ``_build_controls``. That is what the
-Hello World tutorial does.
+SimpleCalc example does.
 
 If you only want part of one
 ----------------------------

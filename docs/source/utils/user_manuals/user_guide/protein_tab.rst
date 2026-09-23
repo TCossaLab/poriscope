@@ -80,7 +80,7 @@ Step 8: Apply Filters
 
 You can restrict the events included in a fit to a named subset:
 
-1. Click the **➕** filter button to define a new filter, either against the full database or the currently selected experiments/channels.
+1. Click the **➕** filter button to define a new filter. Raw SQL filters can be saved and loaded but cannot be selected for a plot.
 2. Use the filter dropdown to choose which saved subset(s) are active for the current plot.
 3. Click the info/edit button next to the dropdown to view or modify the currently selected subset.
 4. Click the delete button to remove selected subsets (individual ones can also be removed directly from the dropdown).

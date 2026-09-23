@@ -42,7 +42,7 @@ from a plugin:
 
 .. code-block:: python
 
-   rows = self.call("MetaDatabaseLoader", loader_name, "load_metadata", query)
+   rows = self.call("MetaDatabaseLoader", loader_name, "load_metadata", columns)
 
 **Failures raise at the call site** rather than being logged somewhere else, so a
 ``try``/``except`` around the call is a working guard and the Controller can report what

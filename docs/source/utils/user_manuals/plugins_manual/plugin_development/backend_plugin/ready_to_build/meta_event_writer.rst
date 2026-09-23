@@ -37,6 +37,12 @@ Required Private Methods
 .. automethod:: poriscope.utils.MetaWriter.MetaWriter._validate_settings
    :no-index:
 
+.. automethod:: poriscope.utils.MetaWriter.MetaWriter._init
+   :no-index:
+
+.. automethod:: poriscope.utils.MetaWriter.MetaWriter._finalize_initialization
+   :no-index:
+
 Optional Method Overrides
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 

@@ -8,7 +8,7 @@ The MainView includes persistent interface elements such as navigation bars and 
    :width: 1000px
    :align: center
 
-   **MainView Layout** — Displays the persistent interface elements, including the top menu, side menu, and display a
+   **MainView Layout** — Displays the persistent interface elements, including the top menu, side menu, and display area.
 
 Think of it as a digital stack of paper — each time a plugin is instantiated, its interface is added to the top of the stack.
 

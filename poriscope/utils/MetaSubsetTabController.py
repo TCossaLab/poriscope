@@ -150,7 +150,7 @@ class MetaSubsetTabController(MetaController):
     @override
     def _setup_connections(self) -> None:
         """
-        Wire the four lookups both subset tabs share.
+        Wire the nine requests both subset tabs share.
 
         A subclass with requests of its own overrides this and calls
         ``super()._setup_connections()`` first, so the shared ones are wired once here

@@ -94,6 +94,12 @@ Required Private Methods
 .. automethod:: poriscope.utils.MetaReader.MetaReader._validate_settings
    :no-index:
 
+.. automethod:: poriscope.utils.MetaReader.MetaReader._convert_raw_data
+   :no-index:
+
+.. automethod:: poriscope.utils.MetaReader.MetaReader._validate_file_type
+   :no-index:
+
 Optional Method Overrides
 ~~~~~~~~~~~~~~~~~~~~~~~~~
 

@@ -40,7 +40,7 @@ class MetaSubsetTabControls(MetaControls):
     """
     Shared base for the control panels of the two subset-filtering analysis tabs.
 
-    ``MetadataControls`` and ``ProteinControls`` build the same row of widgets above
+    ``MetadataControls`` and ``ProteinControls`` build the same row of widgets below
     their tab's plot: a database-loader combobox, a multi-select filter combobox with
     its edit, add and delete buttons, and a bins field that switches between integer
     and float validation. The two were written by copy-paste and carried ten methods

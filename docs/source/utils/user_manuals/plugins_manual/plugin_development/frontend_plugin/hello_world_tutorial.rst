@@ -22,8 +22,10 @@ can delete it afterwards by deleting four files. Restart Poriscope and
 
    Every code block on this page is included directly from the files the generator writes,
    which live at ``docs/source/_static/examples/analysis_tabs/``. They are the real output,
-   checked by the same ``black`` and ``ruff`` runs as the rest of the repository — not a
-   transcription that can drift away from what the tool actually produces.
+   checked by the same ``black`` and ``ruff`` runs as the rest of the repository. Nothing
+   regenerates them automatically, so when the generator changes, rewrite them with
+   ``python scripts/new_plugin.py AnalysisTab HelloWorld --output-dir
+   docs/source/_static/examples/analysis_tabs --author "Poriscope contributors"``.
 
 What You Get
 ------------

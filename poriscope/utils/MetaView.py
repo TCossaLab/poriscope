@@ -536,8 +536,8 @@ class MetaView(QWidget, WalkthroughMixin, metaclass=QObjectABCMeta):
         Abstract because ``_set_control_area`` connects the panel's ``actionTriggered``
         signal straight to it while the View is still being constructed, so a tab that
         does not provide it raises ``AttributeError`` out of ``__init__`` before it can
-        ever be shown. Declaring it here is what turns that into a refusal to define the
-        class at all, which is the only form of the failure that names the cause. The
+        ever be shown. Declaring it here is what turns that into a refusal to instantiate
+        the class at all, which is the only form of the failure that names the cause. The
         three sibling handlers ``_set_control_area`` connects beside it -
         ``handle_edit_triggered``, ``handle_add_triggered`` and ``handle_delete_triggered``
         - are concrete on this class and need no implementation.

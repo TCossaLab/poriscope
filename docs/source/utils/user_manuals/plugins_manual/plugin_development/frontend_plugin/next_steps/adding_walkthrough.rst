@@ -10,7 +10,9 @@ Overview
 
 To enable walkthrough support in your plugin, you'll:
 
-1. Inherit from `WalkthroughMixin` in your custom `View` or `Dialog` class.
+1. For an analysis-tab `View`, nothing to inherit: `MetaView` already inherits
+   `WalkthroughMixin` and initialises it. A `Dialog` or other widget inherits it
+   directly.
 2. Implement two key methods:
 
    * `get_current_view()`
@@ -19,13 +21,15 @@ To enable walkthrough support in your plugin, you'll:
 Step-by-Step Instructions
 --------------------------
 
-1. **Inherit from WalkthroughMixin**
+1. **Inherit from WalkthroughMixin - dialogs only**
 
-   In your custom view or dialog, inherit from `WalkthroughMixin`:
+   An analysis-tab View already has it through `MetaView`, which also calls
+   `_init_walkthrough()` in its constructor, so skip to step 2. A dialog or other
+   widget inherits it and initialises it itself:
 
 .. code-block:: python
 
-    class MyCustomView(QWidget, WalkthroughMixin):
+    class MyDialog(QDialog, WalkthroughMixin):
         def __init__(self, ...):
             super().__init__(...)
             self._init_walkthrough()

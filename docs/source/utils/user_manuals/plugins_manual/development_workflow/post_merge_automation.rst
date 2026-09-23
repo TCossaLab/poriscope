@@ -223,7 +223,7 @@ from the repository root:
 
 .. code-block:: bash
 
-   python .git/hooks/post-merge
+   python scripts/hooks/post-merge.py
 
 This runs the same sequence of tasks as the automatic post-merge hook and
 is the recommended approach when using GitHub Desktop or when multiple

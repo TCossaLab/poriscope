@@ -38,7 +38,7 @@ You may be loading the **wrong type** of ``.db`` file for that tab. Both databas
 
 - **Raw Event database** — created in **Raw Data View** via :guilabel:`Commit Events`.  
   Contains **unfitted** events. Load this **in Event Analysis View** for fitting.
-- **Fitted Event database** — created in **Event Analysis View** via :guilabel:`Commit`.  
+- **Fitted Event database** — created in **Event Analysis View** via :guilabel:`Commit Events`.  
   Contains **fitted events and metadata**. Load this **in Metadata View** or **Clustering View**.
 
 **In short:**

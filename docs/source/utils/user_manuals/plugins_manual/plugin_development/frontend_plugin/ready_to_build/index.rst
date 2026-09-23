@@ -57,9 +57,9 @@ fail at all:
 
 ``MyTabControls`` is the one generated file that is not copied out of a base class.
 ``MetaControls`` is a plain ``QWidget`` that declares none of what it asks a subclass for —
-``setupUi``, ``connect_signals``, ``validate_inputs``, ``collect_parameters`` and
-``placeholder_texts`` live only in its class docstring — so the generator writes them out
-in full. Replace the button in ``setupUi`` with the controls your tab needs, and read them
+``setupUi``, ``connect_signals``, ``validate_inputs`` and ``collect_parameters`` live only
+in its class docstring, and ``placeholder_texts`` defaults to empty — so the generator
+writes them out in full. Replace the button in ``setupUi`` with the controls your tab needs, and read them
 in ``collect_parameters``.
 
 Everything else is a stub marked ``# TODO`` carrying the contract it has to satisfy. The
@@ -69,9 +69,9 @@ instantiates directly, and it names the other two thirds of the triad.
 .. warning::
 
    Class names must be unique across **every** plugin family, analysis tabs included, so
-   all three generated names are checked before anything is written. Give the tab's name
+   all four generated names are checked before anything is written. Give the tab's name
    without a role suffix — ``MyTab``, not ``MyTabView`` — and the generator appends
-   ``Controller``, ``Model`` and ``View`` itself.
+   ``Controller``, ``Model``, ``View`` and ``Controls`` itself.
 
 .. note::
 
@@ -80,7 +80,7 @@ instantiates directly, and it names the other two thirds of the triad.
    on the import path for you. A tab generated into this repository imports them through
    ``poriscope.plugins.analysistabs`` instead, the way the five shipped tabs do. Either
    way the rule that a file is named exactly for the class it defines is what makes the
-   import work, so rename all three together or not at all.
+   import work, so rename all four together or not at all.
 
 .. tip::
 

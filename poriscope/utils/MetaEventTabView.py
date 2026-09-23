@@ -68,8 +68,9 @@ class MetaEventTabView(MetaView):
 
     - **Its own** ``logger = logging.getLogger(__name__)``, so records made by the
       methods it defines itself stay attributed to its own module.
-    - **``MetaView``'s remaining abstract methods** - ``_init``, ``_set_control_area``
-      and ``update_available_plugins`` - which this base does not implement.
+    - **``MetaView``'s remaining abstract methods** - ``_init``,
+      ``handle_parameter_change`` and ``update_available_plugins`` - which this base does
+      not implement.
 
     :ivar logger: the module logger the shared methods below log under
     :ivar data_filter: the callable applied to raw samples, or None for no filtering
@@ -184,7 +185,7 @@ class MetaEventTabView(MetaView):
     @override
     def _reset_actions(self, axis_type: str = "2d") -> None:
         """
-        Clears the figure and reinitializes axes. This will also add a flag to the tab action history if @register_action is being used to keep track of actions. Only actions applied after the most recent call to this function will be recreated if the related file is loaded.
+        Does nothing: the two event tabs draw their own figures and keep no action history to reset, so neither needs a reset hook. Implemented here so that neither has to declare an empty one.
 
         :param axis_type: Either '2d' or '3d' to determine plot projection.
         :type axis_type: str

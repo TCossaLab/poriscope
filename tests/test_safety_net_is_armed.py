@@ -8,9 +8,9 @@ the exact-text SQL goldens. All of it runs through ``pytest-regressions``.
 
 **The gap this closes, found 2026-09-08.** ``pytest-regressions`` is declared
 correctly in *both* dependency sources - ``pyproject.toml [dev]`` and
-``requirements-dev.txt``, both required because ``ci-branches.yml`` and
-``ci-fork-pr.yml`` install only from the latter while ``release.yml`` installs only
-the former. It was nonetheless absent from one working environment, and the failure
+``requirements-dev.txt``, both required because every test workflow installs the
+former and ``ci-branches.yml`` and ``ci-fork-pr.yml`` fall back to the latter if that
+install fails. It was nonetheless absent from one working environment, and the failure
 mode is the problem: every golden errored at **setup** with ``fixture
 'num_regression' not found``, which renders as four errors beside 3,400 passes. That
 reads as an environment nit rather than as *the entire numeric golden net not

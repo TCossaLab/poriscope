@@ -261,7 +261,7 @@ gate would never see the path most work actually takes. To run exactly what it r
 .. code-block:: bash
 
    python scripts/generate_all_autodoc_rst.py
-   sphinx-build -W --keep-going -b html docs/source docs/build
+   sphinx-build -W --keep-going -b html -d docs/.doctrees docs/source docs/build
 
 ``--keep-going`` reports every warning in one pass instead of stopping at the first, so
 you can fix them all in a single edit. The ``post-merge`` git hook uses the same flags
@@ -350,7 +350,7 @@ After running:
    *project-wide*, and this is settled rather than pending. Each of ``B905``, ``B904``,
    ``B007``, ``S110``, ``S112`` and ``S101`` was run once as an audit and its findings in
    maintained code fixed. What keeps each one from becoming a gate differs by rule.
-   ``S101`` would flag every ``assert`` in the test suite, where 2,243 of its 2,250 sites
+   ``S101`` would flag every ``assert`` in the test suite, where 3,743 of its 3,750 sites
    are, so suppressing it there would suppress essentially all of it. ``B905`` needs a
    per-site ``strict=`` judgement, and at least one call cannot be proven equal-length in
    advance. The handful of sites left for ``B904``, ``B007``, ``S110`` and ``S112`` are
@@ -386,8 +386,9 @@ a pull request from outside it is worth a check, so two hooks police it:
    A second Ruff pass over ``poriscope/plugins/``, selecting only rules a
    nanopore-analysis plugin has no legitimate reason to trip: ``exec`` and ``eval``
    (``S102``, ``S307``), unsafe deserialization (``S301`` pickle, ``S302`` marshal,
-   ``S506`` yaml), process spawning (``S601``--``S607``, ``S609``), and network or
-   temp-file risks (``S310`` urlopen, ``S306`` mktemp).
+   ``S506`` yaml), process spawning (``S601``--``S607``, ``S609``), network or
+   temp-file risks (``S310`` urlopen, ``S306`` mktemp), and ``S612`` (insecure
+   ``logging.config.listen``).
 
 ``plugin-module-level``
    Rejects any module-level statement in a data plugin that runs code. The rule is that
@@ -576,10 +577,10 @@ worth knowing about before you add tests:
 
    If you add a dev dependency, it must go in **both** ``pyproject.toml``'s ``[dev]`` extra
    and ``requirements-dev.txt``. They are byte-for-byte mirrors of each other and nothing
-   enforces that, but different CI workflows read different ones: ``ci-branches.yml`` and
-   ``ci-fork-pr.yml`` install only from ``requirements-dev.txt``, while ``release.yml``
-   installs only ``.[dev]``. Adding it to one file alone breaks half of CI. Pin it exactly
-   with ``==``, as every other entry in both files is.
+   enforces that. Every test workflow installs ``.[dev]``; ``ci-branches.yml`` and
+   ``ci-fork-pr.yml`` fall back to ``requirements-dev.txt`` only if that editable install
+   fails, so a file missing the entry breaks CI exactly when the fallback is needed. Pin it
+   exactly with ``==``, as every other entry in both files is.
 
 Coverage is measured with ``pytest-cov``, which is declared in the ``[dev]`` extra but is
 **not** wired into ``addopts``:
@@ -1164,16 +1165,12 @@ exclusion is asserted by a test, so a later tidy-up cannot quietly add them back
 ``eventfinders`` were both added that way, and the reason is the same in both cases: a gate
 scoped by file path stops measuring the moment a refactor moves code out of that path, and
 it fails *silently*, because the number moves the way you wanted. ``eventfinders`` starts at
-zero removable lines — its two finders share near-copies, which byte-identity cannot see —
-and that is still worth having, because the step that lifts their shared code out must not
-add a duplicate elsewhere while doing it.
+zero removable lines — its three finders share near-copies, which byte-identity cannot see —
+and that is still worth having, because it stops anyone adding a duplicate there unnoticed.
 
 ``*Model.py`` joined them in September 2026, part-way through the refactor, which by then
 had been moving computation *into* the Models — which no family covered, so anything
-landing there could be duplicated invisibly. One method already had been. A gate scoped by
-file path stops measuring the moment a refactor moves code out of that path, and it fails
-silently, because the number moves the way you wanted: widen the scope before the step
-that would fool it, not after.
+landing there could be duplicated invisibly. One method already had been.
 
 ``scripts/measure_duplication.py`` counts, per family, how many function bodies are
 byte-identical across more than one file and how many lines would be deleted by promoting
@@ -1187,7 +1184,10 @@ one copy to a shared base. ``.duplication-baseline.json`` records those counts, 
    python scripts/measure_duplication.py --check     # compare against the baseline
 
 **The check is exact, not "no worse than".** A rise means duplication was added. A fall is
-a win — and it fails too, so the win is recorded in the same commit that earned it. Under
+a win — and it fails too, so the win is recorded in the same commit that earned it. The
+baseline also records each family's file and function counts, so adding or removing *any*
+method in a measured file fails the check as well, reported as duplication added or removed
+even when the removable count has not moved; rerun ``--update`` in the same commit. Under
 a "no worse than" rule the baseline would quietly overstate the duplication still present
 and the slack would accumulate unnoticed. If your change legitimately removed duplication,
 rerun with ``--update`` and commit the new baseline alongside it.
@@ -1213,17 +1213,17 @@ App-Shell Complexity Ratchet
 
 This one affects you if you edit the **app shell**: the two controllers and two models
 under ``poriscope/controllers/`` and ``poriscope/models/``, ``main_view.py``,
-``settings_window.py``, and ``main_app.py``. Nine files in all, listed explicitly in the
-script.
+``settings_window.py``, and ``main_app.py``, plus the two packages' ``__init__.py``. Nine
+files in all, listed explicitly in the script.
 
 These files are covered by nothing else. The MVC boundary rules scan them and read zero
-on all three, and no duplication family includes them, so before this gate existed the
+on all five, and no duplication family includes them, so before this gate existed the
 shell could be restructured in either direction unobserved.
 
 **The shell is measured in complexity, not in lines**, and that was a deliberate choice.
-``settings_window.py`` has *zero* functions over the threshold despite 890 lines, and
-``main_view.py`` has two despite 1,235 — the length is flat Qt widget construction, with no
-branching to untangle. Driving those line counts down would chase a
+When the gate was introduced ``settings_window.py`` had *zero* functions over the threshold
+despite 890 lines, and ``main_view.py`` two despite 1,235 — the length is flat Qt widget
+construction, with no branching to untangle. Every shell file reads zero now. Driving those line counts down would chase a
 number that does not describe a problem. The scope is nine files rather than the whole
 repository for the same reason the fitters are excluded from the duplication ratchet:
 repo-wide, most long functions live in owner-held plugins and in ``setupUi`` methods the
@@ -1244,7 +1244,8 @@ disagrees.
 **The check is exact in both directions**, exactly as the duplication ratchet is: a rise
 is added complexity, and a fall fails too so that the win is banked in the commit that
 earned it. If your change legitimately reduced complexity, rerun with ``--update`` and
-commit the new baseline alongside it.
+commit the new baseline alongside it. The baseline also records each file's function count,
+so adding or removing any function in these files fails until you rerun ``--update``.
 
 The counting rule is written out in full in the script's module docstring, because with a
 measurement like this the definition *is* the number. The short version: a function starts
@@ -1330,8 +1331,9 @@ script. If you must name it something else, add its directory to ``VIEW_DIRS`` o
    python scripts/check_mvc_boundary.py --verbose   # name every import and private attribute
    python scripts/check_mvc_boundary.py --check     # compare against the allowlist
 
-This is a **progress metric**, not a pass/fail gate. Every entry on the allowlist is a known
-violation that the refactor will remove; the allowlist reaching zero is that work finishing.
+This is a **progress metric**, not a pass/fail gate. Two entries remain by decision —
+``numpy`` in ``MetadataView`` and ``ProteinView``, recorded as floors in 2.0.0 — and any
+other entry is a regression.
 What it prevents is a *new* violation slipping in unnoticed beside the known ones. As with
 the duplication ratchet, the comparison is exact in both directions — if your change removes
 a violation, rerun with ``--update`` and commit the new allowlist alongside it.
@@ -1369,7 +1371,8 @@ about which methods look under-tested.
    pytest --cov=poriscope --cov-report=json:coverage.json
    python scripts/check_refactor_coverage.py --coverage coverage.json
 
-It reports one of four verdicts per target. ``UNTESTED`` means the body never ran, which is
+It reports one of five verdicts per target. ``MISSING FILE`` and ``NOT FOUND`` mean the
+target's file or method no longer resolves. ``UNTESTED`` means the body never ran, which is
 what catches a method that every test replaces with a ``Mock``. ``RUNS ONLY`` means the body
 ran but no test names it — it is exercised in passing, usually by a click-driven end-to-end
 flow, with nothing checking what it produced. ``PINNED`` means both signals are present.
@@ -1426,8 +1429,9 @@ looks like an environment nit rather than like the entire numerical golden net n
       pip install -e ".[dev]"
 
    ``pytest-regressions`` is pinned in **both** ``pyproject.toml`` and
-   ``requirements-dev.txt``, because different CI workflows install from different files.
-   Adding it to only one is the mistake this test is positioned to catch early.
+   ``requirements-dev.txt``: CI installs ``.[dev]`` and falls back to
+   ``requirements-dev.txt`` if that fails. Adding it to only one is the mistake this test is
+   positioned to catch early.
 
 .. _pre_pr_checklist:
 
@@ -1490,8 +1494,7 @@ then stage the changes.
 
    pre-commit run --all-files
 
-This runs ``ruff`` (strict), ``mypy``, ``pydoclint``, ``settings-schema``, and
-``check-added-large-files``.
+This runs the eight validation hooks listed in Pre-commit Hooks above.
 Nothing here is auto-fixed for you — if ``mypy`` or ``pydoclint`` report a problem,
 you need to edit the code or docstring yourself. See :ref:`docstring_consistency`
 above if a pydoclint failure doesn't make sense, and :ref:`type_checking_policy` for

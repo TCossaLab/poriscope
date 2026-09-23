@@ -13,7 +13,7 @@ Session Options Overview
 ------------------------
 
 - **Restore Session**  
-  Automatically reloads the last active session when you launch the application.
+  Reloads the most recently autosaved session.
 
 - **Load Session**  
   Opens a previously saved session JSON file and restores its state.
@@ -79,5 +79,5 @@ Help Menu
    :alt: Help Menu
    :align: center
 
-The *Help* menu includes a link to the tutorial. Note that the help system is **not yet implemented**.
+The *Help* menu has **Help**, which opens the Help Centre - links to the tutorial series, the documentation, issue reporting, the paper and how to cite Poriscope - and **Tutorial**, which opens the guided walkthrough.
 

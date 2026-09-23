@@ -42,7 +42,7 @@ from poriscope.configs.utils import get_icon
 
 class MetaControls(QWidget):
     """
-    Shared base for the control panels that sit above each analysis tab's plot.
+    Shared base for the control panels that sit below each analysis tab's plot.
 
     Every analysis tab owns a controls widget - ``ClusteringControls``,
     ``EventAnalysisControls``, ``MetadataControls``, ``ProteinControls`` and

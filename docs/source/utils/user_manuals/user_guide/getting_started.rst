@@ -66,10 +66,9 @@ From **any terminal**::
 
    poriscope
 
-Or from the local repo directly::
+Or through Python directly::
 
-   cd app
-   python main_app.py
+   python -m poriscope.main_app
 
 If the command is not found, make sure your Python environment's ``Scripts/``
 (Windows) or ``bin/`` (Linux/macOS) folder is added to your system ``PATH``.
@@ -81,7 +80,7 @@ If the command is not found, make sure your Python environment's ``Scripts/``
    - If you **don’t install** Poriscope (skip ``python -m pip install -e .`` or the GitHub install),
      it won’t be importable and you can’t launch it.
    - If Python is **not on PATH**, only the convenience command ``poriscope`` will fail.
-     You can still run ``python -m poriscope`` and import Poriscope in your scripts,
+     You can still run ``python -m poriscope.main_app`` and import Poriscope in your scripts,
      as long as it’s installed in the **same Python interpreter** you use.
 
 .. tip::

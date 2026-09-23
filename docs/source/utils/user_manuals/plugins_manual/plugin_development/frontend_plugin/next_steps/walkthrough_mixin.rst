@@ -3,8 +3,9 @@
 WalkthroughMixin
 ================
 
-The mixin behind a tab's guided walkthrough. Inherit it alongside your view's base
-class and implement :py:meth:`~poriscope.views.widgets.walkthrough_mixin.WalkthroughMixin.get_walkthrough_steps`;
+The mixin behind a tab's guided walkthrough. ``MetaView`` already inherits it, so a
+tab View only implements ``get_current_view`` and the method below; inherit it directly
+only for a dialog or other non-tab widget. Implement :py:meth:`~poriscope.views.widgets.walkthrough_mixin.WalkthroughMixin.get_walkthrough_steps`;
 :doc:`adding_walkthrough` is the tutorial.
 
 .. note::

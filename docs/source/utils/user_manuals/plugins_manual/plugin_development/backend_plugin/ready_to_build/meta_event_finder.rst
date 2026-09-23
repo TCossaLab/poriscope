@@ -31,6 +31,9 @@ Required Private Methods
 .. automethod:: poriscope.utils.MetaEventFinder.MetaEventFinder._validate_settings
    :no-index:
 
+.. automethod:: poriscope.utils.MetaEventFinder.MetaEventFinder._init
+   :no-index:
+
 Helpers You Can Call
 ~~~~~~~~~~~~~~~~~~~~
 

@@ -3,7 +3,7 @@
 Scripting with Poriscope
 ========================
 
-While poriscope provides an :ref:`easily extensible<build_frontend_plugin>` graphical interface that makes it easy to analyze data, you do not need to use the graphical interface at all in order to get the full benefit of poriscope. The GUI is great for exploring data and working with experiments with up to ~10 channels, but in cases where you eed to do batch analysis on a large number of experiments or are working with a large number of channels, it is likely more efficient to write custom workflow scripts, and only engage with the GUI for :ref:`postprocessing and visualizing<metadata-tab>` of the fits. In such cases, all of the :ref:`backend data plugins<plugins_index>` (except for analysis tabs) can be used as standalone python objects in custom analysis pipelines.
+While poriscope provides an :ref:`easily extensible<build_frontend_plugin>` graphical interface that makes it easy to analyze data, you do not need to use the graphical interface at all in order to get the full benefit of poriscope. The GUI is great for exploring data and working with experiments with up to ~10 channels, but in cases where you need to do batch analysis on a large number of experiments or are working with a large number of channels, it is likely more efficient to write custom workflow scripts, and only engage with the GUI for :ref:`postprocessing and visualizing<metadata-tab>` of the fits. In such cases, all of the :ref:`backend data plugins<plugins_index>` (except for analysis tabs) can be used as standalone python objects in custom analysis pipelines.
 
 In this tutorial, we walk you through writing a custom script that reproduces the full poriscope analysis workflow, from reading raw data to loading a database of fitted event metadata.
 
@@ -19,7 +19,7 @@ First, we need to import all the plugins we are going use. For this example we'l
 .. code:: python
 
     from poriscope import (
-                            ABF2Reader,             #inherits from MetaReader
+                            TCossaLabABFReader,     #inherits from MetaReader
                             BesselFilter,           #inherits from MetaFilter
                             ClassicBlockageFinder,  #inherits from MetaEventFinder
                             SQLiteEventWriter,      #inherits from MetaWriter
@@ -29,8 +29,6 @@ First, we need to import all the plugins we are going use. For this example we'l
                             SQLiteDBLoader          #inherits from MetaDatabaseLoader
                           )
     import logging
-    logging.basicConfig(level=None)
-
     logging.basicConfig(level=None)
     formatter = logging.Formatter(
             "%(asctime)s: %(levelname)s: %(threadName)s(%(thread)d): %(name)s: %(message)s"
@@ -106,9 +104,9 @@ We will print out the settings for the first plugin to illustrate how it is done
 
 .. code:: python
 
-    raw_data = ABF2Reader()
+    raw_data = TCossaLabABFReader()
 
-    data_settings = raw_data.get_empty_settings(standalone=True) #stadnalone=True tells our plugin  that it is not part of a GUI
+    data_settings = raw_data.get_empty_settings(standalone=True) #standalone=True tells our plugin  that it is not part of a GUI
 
     #print the settings dict:
     for key, value in data_settings.items():
@@ -165,7 +163,7 @@ Next, we must create an eventfinder object that is associated to our data reader
     event_finder_settings["Min Separation"]["Value"] = 10.0
     event_finder.apply_settings(event_finder_settings)
 
-This eventfinder is now locked to our current reader and will only pull data from that reader. If you need ot analyze multiple raw datasets, you would need an additional eventfinder object for each one. Note that we have not locked the filter object to either the reader or the eventfinder. Filters are intended to be mixed and  matched as needed and are not specific to any one dataset.
+This eventfinder is now locked to our current reader and will only pull data from that reader. If you need to analyze multiple raw datasets, you would need an additional eventfinder object for each one. Note that we have not locked the filter object to either the reader or the eventfinder. Filters are intended to be mixed and  matched as needed and are not specific to any one dataset.
 
 We now have everything we need to find events in our dataset. To actually find events, we must
 
@@ -191,7 +189,7 @@ We now have everything we need to find events in our dataset. To actually find e
         )
         while True:
             try:
-                print(next(eventfinder_generator)) #the value returned here is a fraction 0-1 showing progress over the data in the given channel. Each call to next() advances the eventfiunder 1 second through the data.
+                print(next(eventfinder_generator)) #the value returned here is a fraction 0-1 showing progress over the data in the given channel. Each call to next() advances the eventfinder 1 second through the data.
             except StopIteration:
                 # once we run out of data to process, generators raise StopIteration, so you can catch that and move on to the next channel
                 break
@@ -349,13 +347,11 @@ Having written our metadata, we now need to interact with it. For this final tas
 
     metadata_loader = SQLiteDBLoader()
     metadata_loader_settings = metadata_loader.get_empty_settings(standalone=True)
-    metadata_loader_settings["Input File"][
-        "Value"
-    ] = "C:/Users/kbriggs/OneDrive - University of Ottawa/Documents/data/Mock Server/Script Demo/script_demo_event_metadata.sqlite3"
+    metadata_loader_settings["Input File"]["Value"] = "<<your output path>>/<<your database name>>.sqlite3"
     metadata_loader.apply_settings(metadata_loader_settings)
     print(metadata_loader.report_channel_status(init=True))
 
-From here, we have at our disposal the full :ref:`MetaDatabaseLoader` API with which to interact with the database. You can also use :mod:`sqlite3` or the `DB Browser for SQLite <https://sqlitebrowser.org/>`_ to interact more directly with the database if you prefer. Poriscope is quite flexible with respect to operations performed on this database, and will allow creation of new columns within existing tables as long as the relationships between the various tables are respected. You can find a full database schema in the :ref:`MetaDatabaseWriter` source code.
+From here, we have at our disposal the full :ref:`MetaDatabaseLoader` API with which to interact with the database. You can also use :mod:`sqlite3` or the `DB Browser for SQLite <https://sqlitebrowser.org/>`_ to interact more directly with the database if you prefer. Poriscope is quite flexible with respect to operations performed on this database, and will allow creation of new columns within existing tables as long as the relationships between the various tables are respected. The tables themselves are created in ``_initialize_database`` in the :ref:`SQLiteDBWriter` source code.
 
 .. note::
 

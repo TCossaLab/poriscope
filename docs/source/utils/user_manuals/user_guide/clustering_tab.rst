@@ -65,11 +65,13 @@ Step 2: Configure Clustering Settings
      - **NORM**: Normalize using median absolute deviation.
      - **PLOT**: Include in the clustering visualization.
 
-   - **➕ Add Column**: Once the column and options are selected, **click the ➕ button** to add it to the configuration.
+   - **Add Column**: The dialog starts with two column rows, and every row is used.
+     **Add Column** adds another, up to 8.
 
-     .. warning::
+     .. note::
 
-        If you do not click the **➕ button**, your selected column will **not be included** in the clustering operation.
+        **Apply** stays disabled until every row has a column and 2 or 3 of them are
+        ticked **PLOT**.
 
 
    - Click **Apply** to launch the clustering process, or **Cancel** to discard changes.

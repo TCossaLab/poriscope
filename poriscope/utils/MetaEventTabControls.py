@@ -43,7 +43,7 @@ class MetaEventTabControls(MetaControls, metaclass=QObjectABCMeta):
     Shared base for the control panels of the two event-oriented analysis tabs.
 
     ``RawDataControls`` and ``EventAnalysisControls`` build the same three widgets
-    above their tab's plot: a multi-select channel combobox, a filter combobox, and an
+    below their tab's plot: a multi-select channel combobox, a filter combobox, and an
     event-index field. The two carried three methods verbatim between them; this base
     holds that shared half so there is one copy to fix.
 

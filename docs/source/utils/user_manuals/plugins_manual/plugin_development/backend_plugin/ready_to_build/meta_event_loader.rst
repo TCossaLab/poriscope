@@ -28,6 +28,9 @@ Required Public API Methods
 .. automethod:: poriscope.utils.MetaEventLoader.MetaEventLoader.get_channels
    :no-index:
 
+.. automethod:: poriscope.utils.MetaEventLoader.MetaEventLoader.get_valid_indices
+   :no-index:
+
 Required Private Methods
 ~~~~~~~~~~~~~~~~~~~~~~~~
 

@@ -111,21 +111,21 @@ When you need a *process-wide* lock instead
 process — most often a native library that is not re-entrant — a per-instance lock is not
 enough, and you must declare your own class-level lock.
 
-``WaveletFilter`` is the worked example. Its C library is loaded per instance but
-``LoadLibrary`` hands back a shared module handle, so two instances filtering at once would
-corrupt each other:
+No shipped plugin needs one today - ``WaveletFilter`` used to hold one around its C
+library, and it was removed once the library was shown to be safe for the entry point it
+calls. The shape, if you do need it:
 
 .. code-block:: python
 
-   class WaveletFilter(MetaFilter):
+   class MyFilter(MetaFilter):
        logger = logging.getLogger(__name__)
-       # Process-wide, deliberately: the wavelet C library is not reentrant and every
+       # Process-wide, deliberately: the native library is not reentrant and every
        # instance shares one module handle.
-       _dll_lock = threading.Lock()
+       _native_lock = threading.Lock()
 
        def _apply_filter(self, data):
-           with self._dll_lock:
-               self.fun(data, len(data), wavelet)
+           with self._native_lock:
+               return self._call_native(data)
 
 .. caution::
 
@@ -141,8 +141,8 @@ Filters are a special case
 dispatched through the channel-management system: they are handed out as plain callables by
 ``MetaFilter.get_callable_filter`` and invoked inline inside *other* plugins' generators — on
 several worker threads at once, and on the GUI thread for plotting. If your filter is not
-thread-safe, guard the unsafe resource directly, as ``WaveletFilter`` does. Declaring
-``True`` will do nothing.
+thread-safe, guard the unsafe resource directly with your own lock inside
+``_apply_filter``, as above. Declaring ``True`` will do nothing.
 
 This applies to scripts too
 ---------------------------

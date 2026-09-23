@@ -19,7 +19,7 @@ SimpleCalc lets users:
 
 - Input two numeric values
 - Select an operation: addition (+) or subtraction (-)
-- Click **Add** to compute and display the result
+- Click **Add Calculation** to compute and display the result
 - View up to five results displayed
 - Click **Plot** to visualize all results
 - Click **Reset** to clear results and reset the interface
@@ -76,7 +76,7 @@ Because the controller holds both of these, it can access their methods.
       - A line edit (for the first value)
       - A combo box (for selecting + or -)
       - Another line edit (for the second value)
-      - A button labeled “Add calculation”
+      - A button labeled “Add Calculation”
       - A row underneath to show results
       - Two more buttons at the bottom: **Plot** and **Reset**
 
@@ -134,7 +134,6 @@ That was super simple — Why Do I Even Need Base Classes?
 Well… ask yourself this:
 
 - Did you ever tell the application where to put your canvas?
-- Did you explicitly lay out your control panel?
 - Did you even create the canvas yourself — do you even know what a canvas is?
 
 Exactly. You didn’t — and you didn’t have to.

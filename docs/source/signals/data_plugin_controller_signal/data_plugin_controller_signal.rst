@@ -22,7 +22,7 @@ What to use instead
 -------------------
 
 **Three typed signals**, one per action, each carrying the metaclass and the
-plugin's key:
+plugin's key (the subclass, for ``create_plugin``):
 
 .. code-block:: python
 
@@ -42,9 +42,11 @@ Nothing here ever needed an answer. All three actions were emitted with an empty
 return function, so the whole return-value half of the bus was dead weight on
 this path.
 
-Qt checks a typed signal's signature when the connection is made, so a mismatch
-fails at startup rather than silently at emit time — which is what a
-string-named method could never offer.
+The shell connects each signal to a named ``DataPluginController`` method
+(``main_controller.py``), so a renamed or removed method fails with
+``AttributeError`` when the tab is opened, instead of a string lookup failing
+silently at emit time. Qt does not check the argument count when connecting,
+so a slot with the wrong arity still surfaces only at emit.
 
 And ``DataPluginController`` is a singleton, built once and never replaced, so
 there was nothing for a dispatcher to resolve in the first place.
