@@ -1,8 +1,7 @@
 """
 Characterization tests for ``notify_plugin_state_changed`` across all five tabs.
 
-The refactor-coverage audit reported this method as ``RUNS ONLY`` in every View:
-its body executes under the e2e suites, but no test named it, so nothing asserted
+In every View this method's body executes under the e2e suites, but no test named it, so nothing asserted
 which notifications it acts on and which it ignores. It was a five-way duplicate
 slated for merging, so the behaviour had to be pinned before the copies were
 touched.

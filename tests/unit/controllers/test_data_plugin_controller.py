@@ -1484,10 +1484,8 @@ def test_validate_and_instantiate_plugin_reports_when_no_key_was_supplied_or_cho
 
 # ------------- _report_and_restore ----------------------------------------
 #
-# Driven directly, not only through edit_plugin. The refactor-coverage audit
-# names it in its MOVED table, and its criterion is both executed *and* targeted:
-# a method reached only in passing through a caller runs, but nothing asserts
-# what it did.
+# Driven directly, not only through edit_plugin: a method reached only in passing
+# through a caller runs, but nothing asserts what it did.
 
 
 class TestReportAndRestore:
@@ -1625,9 +1623,8 @@ def _raise(exc: Exception) -> None:
 
 # ------------- edit_plugin's extracted helpers ----------------------------
 #
-# Each of these is named in the refactor-coverage audit's MOVED table, whose
-# criterion is executed *and* targeted. edit_plugin's own tests already run them
-# all; these are what assert their behaviour directly, so a later change to one
+# edit_plugin's own tests already run all of these; these tests are what assert
+# their behaviour directly, so a later change to one
 # fails at the helper rather than somewhere downstream of a 72-line caller.
 
 
@@ -1991,8 +1988,8 @@ class TestApplyEditedSettings:
 
 # ------------- validate_and_instantiate_plugin's helpers ------------------
 #
-# As with edit_plugin's helpers, each is in the refactor-coverage audit's MOVED table
-# and so has to be targeted directly rather than merely run through its caller.
+# As with edit_plugin's helpers, each is targeted directly rather than merely run
+# through its caller.
 
 
 class TestReport:

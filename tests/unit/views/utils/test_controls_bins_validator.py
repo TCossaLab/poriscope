@@ -2,8 +2,7 @@
 Characterization tests for the bins-vs-sizes validator swap in the controls widgets.
 
 ``_on_sizes_checkbox_toggled`` is a two-way duplicate between ``metadatacontrols``
-and ``proteincontrols``, slated for merging. The refactor-coverage audit reported it
-as ``RUNS ONLY``: its body executes when a controls widget is constructed - the
+and ``proteincontrols``, slated for merging. Its body executes when a controls widget is constructed - the
 constructor calls it once to set the initial state - but no test named it, so
 nothing asserted what it actually does.
 

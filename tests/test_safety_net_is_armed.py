@@ -17,12 +17,10 @@ mode is the problem: every golden errored at **setup** with ``fixture
 reads as an environment nit rather than as *the entire numeric golden net not
 running*, and a scoped or filtered run would not have shown it at all.
 
-The three structural gates cannot see this. The duplication ratchet checks that
-copies vanished, the boundary allowlist that nothing crossed a layer, and the
-refactor-coverage audit that every moved method is named by a test *and* executed -
-but the audit reads a coverage JSON, so an uncollected test is indistinguishable from
-one that never existed. A net's **absence has no signature**, which is the same shape
-as the refactor's first escaped regression one level up. Hence a test whose failure
+The structural gates cannot see this. The duplication ratchet checks that copies
+vanished and the boundary allowlist that nothing crossed a layer; neither knows
+whether a golden test ran. A net's **absence has no signature**: an uncollected
+test is indistinguishable from one that never existed. Hence a test whose failure
 names the cause outright.
 
 **The registration name was measured, not guessed, and guessing would have been wrong

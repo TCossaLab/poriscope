@@ -375,8 +375,6 @@ the oversized `setupUi` methods. This review re-confirmed each with fresh counts
 - **`ci-internal-pr.yml:108-116` pushes from a detached HEAD.** `git add -A && git commit
   && git push` on a `pull_request` event, where `actions/checkout` leaves no branch to push -
   guarded by `if ! git diff --quiet`, so it only fires when the manual hooks change a file.
-  There is still **no coverage gate**: the step now runs (`pytest-cov` landed 2026-09-04) and
-  prints `::notice::Line Coverage`, but nothing fails on a drop. Baseline 83%.
 - **No Windows CI job.** Every matrix is single-entry and none runs `windows-latest`, so
   Linux takes the opposite branch from the shipped platform at 6 of 11
   platform-conditional sites - including `WaveletFilter.py:192`'s `os.add_dll_directory`, in
@@ -419,15 +417,6 @@ Findings the plan's own steps already claim are recorded in `refactor_2.0.0.md`,
   inside a generator is an ordinary `StopIteration` and so is indistinguishable from
   exhaustion. Same conflation the `None`-sentinel split fixed for `_load_metadata`
   (2026-09-04), but a generator needs its own contract.
-- **Five methods on the 2.0.0 move list have zero test coverage**, so moving them is unobservable
-  by the current suite: `MetaView._logscale_and_filter_dataframe:789`,
-  `RawDataView._gaussian:556`, `RawDataView._gaussian_fit:574`, `ProteinView._summarize_vm:497`
-  and `RawDataView._get_baseline_stats:467` (the two hits for that name belong to the
-  `MetaEventFinder` copy). Closing this is the Step 2 gate's job, not separate work.
-- **The destination layer for Steps 3d and 4a-4e is unverified.** `MetaModel` is 363 lines over
-  12 methods with no dedicated test file, and `tests/unit/models/` covers the tab Models only
-  through `test_protein_model.py` (64 lines, 8 tests). A coverage gap, and test authoring is the
-  test developer's remit.
 
 ### CUSUM follow-ons (the variance-reset fix landed 2026-09-03)
 

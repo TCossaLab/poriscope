@@ -10,9 +10,7 @@
 # hotfix branches off main and is merged back into main locally the same way - so a
 # PR-only trigger never sees the path either one actually takes, and the first docs build
 # they get is build_and_deploy_docs.yml running against main after the fact, which is
-# exactly the failure this workflow exists to prevent. This is the blind spot the
-# refactor-coverage audit was found to have on 2026-09-14 and was fixed the same way; see
-# DECISIONS.md, 2026-09-19. If a branch also has a pull request open, both triggers fire
+# exactly the failure this workflow exists to prevent; see DECISIONS.md, 2026-09-19. If a branch also has a pull request open, both triggers fire
 # and it renders twice; that is a few wasted minutes, not a correctness problem.
 #
 # Why this exists separately from the docs deploy workflow:

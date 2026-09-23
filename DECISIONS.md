@@ -10,6 +10,25 @@ which ran through August 2026 and is complete. The step numbers only date the de
 
 ---
 
+## 2026-09-23 - The refactor-coverage audit is retired, and CI stops collecting coverage
+
+**Context.** `scripts/check_refactor_coverage.py` held every method the 2.0.0 refactor moved
+or deduplicated to "named by a test and executed". Its target list was the refactor's own, so
+it had nothing to check once the moves were done, and its execution half was the only reason
+`ci-branches.yml` ran `--cov` (added 2026-09-14).
+
+**Decision.** Delete the script, its two test files and both CI steps, and drop `--cov` from
+`ci-branches.yml` and `ci-internal-pr.yml` along with the coverage-XML upload and notice (Kyle).
+`pytest-cov` stays in `[dev]` for a local `pytest --cov=poriscope`.
+
+**Evidence.** CI's test step went 184 s -> 275 s across the commit that added `--cov`. Nothing
+failed on a coverage drop, so the notice was information nothing acted on.
+
+**Revisit if** another large refactor moves code: rebuild the audit from that refactor's own
+move list, which is the part of it that generalises.
+
+---
+
 ## 2026-09-22 - Two uncalled methods kept through the orphan sweep
 
 **Context.** The Step 8 sweep deleted about 70 methods with no production caller. Two more
@@ -1905,6 +1924,8 @@ a real reset (an explicit rule, or `setAttribute`), not an empty string.
 ---
 
 ## 2026-09-05 - The refactor-coverage gate is split, not made conditional
+
+**Superseded 2026-09-23:** the audit is retired; see that entry.
 
 **Context.** Step 2's other two gates - the duplication ratchet and the MVC boundary
 allowlist - are pure AST measurements and run under a plain `pytest`. The refactor-coverage

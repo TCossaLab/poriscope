@@ -395,7 +395,7 @@ class TestKernelDensities:
     The density plot redraws every accumulated dataset on each update, so the loop
     lives here rather than round-tripping per dataset and parking each answer on the
     widget. These tests exist because the method had **no test naming it** - its body
-    ran under the e2e suite and the refactor-coverage audit read ``RUNS ONLY``.
+    ran under the e2e suite with nothing asserting what it returned.
     """
 
     def test_returns_one_pair_per_dataset(self, model):

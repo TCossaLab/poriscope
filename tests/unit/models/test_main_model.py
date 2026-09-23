@@ -346,8 +346,7 @@ class TestResetAppConfig:
 
 # ------------- plugin discovery's extracted helpers -----------------------
 #
-# Each is in the refactor-coverage audit's MOVED table, so each is driven
-# directly as well as through populate_available_plugins.
+# Each is driven directly as well as through populate_available_plugins.
 
 
 class TestPythonFiles:

@@ -589,12 +589,9 @@ Coverage is measured with ``pytest-cov``, which is declared in the ``[dev]`` ext
 
    pytest --cov=poriscope --cov-report=term-missing
 
-Run it deliberately when you want the number. The plain ``pytest`` invocation is the
-pre-commit gate and stays free of coverage instrumentation. ``ci-internal-pr.yml`` runs
-the coverage variant and prints the line rate as a GitHub notice; nothing fails on a
-drop, so treat it as information rather than a gate. ``ci-branches.yml`` collects
-coverage too, as JSON rather than as a notice, because the refactor-coverage audit below
-needs it on every branch push.
+Run it deliberately when you want the number. No CI workflow collects coverage: the plain
+``pytest`` invocation is the gate everywhere, and coverage instrumentation would slow every
+run for a figure nothing acts on.
 
 .. _plugin_compliance_testing:
 
@@ -1354,57 +1351,6 @@ a violation, rerun with ``--update`` and commit the new allowlist alongside it.
    annotations syntactically: a module-level type alias such as ``Frame = pd.DataFrame`` is
    an ordinary assignment and counts, while a string annotation is invisible and does not.
    Neither exists in the View layer today, and both are pinned by tests.
-
-.. _refactor_coverage_audit:
-
-Refactor-Coverage Audit
-------------------------
-
-The third of the analysis-tab gates, and like the other two it only affects you if you edit
-those files before the 2.0.0 refactor's plan is retired at release. The rule it holds is that **every method
-the refactor moves or deduplicates must be pinned by a test that names it** — the target list
-is derived from the refactor's own move and deduplication lists rather than from a judgement
-about which methods look under-tested.
-
-.. code-block:: bash
-
-   pytest --cov=poriscope --cov-report=json:coverage.json
-   python scripts/check_refactor_coverage.py --coverage coverage.json
-
-It reports one of five verdicts per target. ``MISSING FILE`` and ``NOT FOUND`` mean the
-target's file or method no longer resolves. ``UNTESTED`` means the body never ran, which is
-what catches a method that every test replaces with a ``Mock``. ``RUNS ONLY`` means the body
-ran but no test names it — it is exercised in passing, usually by a click-driven end-to-end
-flow, with nothing checking what it produced. ``PINNED`` means both signals are present.
-Anything that is not ``PINNED`` exits non-zero.
-
-**Why it is shaped differently from the other two gates.** Deciding whether a method is
-covered needs to know whether its body executed, which only coverage data can say, and a
-plain ``pytest`` run carries none. So the check is split: the structural half — every target
-resolves to a file that defines it, and every deduplicated method is named by some test —
-runs under plain ``pytest`` in ``tests/unit/scripts/test_refactor_coverage_gate.py``, and the
-execution half runs wherever CI performs a coverage run: ``ci-branches.yml`` on every branch
-push and ``ci-internal-pr.yml`` on internal pull requests. Locally, the two
-coverage-dependent tests skip with a message telling you the command above.
-
-**Why both, and not just the pull-request one.** Work reaches ``develop`` through
-``git flow feature finish``, which merges locally and opens no pull request — so a gate
-running only on pull requests never saw any of the branches this refactor lands on, and nine
-targets had quietly drifted to ``RUNS ONLY`` before anyone ran it by hand. A gate that runs on
-one path is only as good as that path's resemblance to the one your work takes.
-
-.. note::
-
-   ``PINNED`` is deliberately the weak verdict. The "a test names it" signal is syntactic, so
-   a call on a ``MagicMock`` reads the same as a call on a real instance. Read the ``patch``
-   column beside it: many substitutions and few direct calls is the shape that hid
-   ``MetaView._logscale_and_filter_multiple_columns``, which had 38 references in the suite
-   and was replaced by a ``Mock`` in every one of them.
-
-   Line-coverage percentages are deliberately not used anywhere in this check. The five
-   analysis-tab Views were at 87–91% before a single characterization test existed, because
-   those lines already executed under the end-to-end suite with nothing asserting the values
-   they produced. "Executed" and "pinned" are different properties.
 
 .. _golden_net_armed:
 

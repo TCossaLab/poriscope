@@ -455,8 +455,7 @@ class TestAnUnwritableConfig:
 
 # ------------- the extracted helpers --------------------------------------
 #
-# Each is in the refactor-coverage audit's MOVED table, so each is driven
-# directly as well as through create_appdata_folders.
+# Each is driven directly as well as through create_appdata_folders.
 
 
 class TestEnsureFolder:

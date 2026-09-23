@@ -390,6 +390,8 @@
 
 ### Developer Tooling:
 
+* CI no longer collects test coverage, which slowed every run for a figure nothing acted on; run `pytest --cov=poriscope` locally when you want the number
+
 * **`scripts/new_plugin.py` now generates analysis tabs too** - `python scripts/new_plugin.py AnalysisTab MyTab` writes the Controller, Model, View and controls panel, and the result opens in the Analysis menu as a tab whose button already reports its own press on the status panel before a single stub is filled in
 
 * **A release whose `CITATION.cff` version disagrees with `constants.py` or with the tag now fails before anything is published** - the workflow validated only that the file parsed, and Zenodo builds its record from it, so a stale version there published under the old number and reported no error
@@ -400,13 +402,9 @@
 
 * The analysis-tab MVC boundary is now checked by `scripts/check_mvc_boundary.py` against a recorded allowlist of 113 known violations across the analysis tabs, the widgets they are built from, the app shell and the shared bases, so no new one can be added while the 2.0.0 refactor removes the existing ones
 
-* Every method the 2.0.0 refactor will move or deduplicate is now checked for test coverage by `scripts/check_refactor_coverage.py`, so a method cannot be restructured while nothing pins its behaviour
-
 * Each of the five analysis tabs now has a headless end-to-end test that drives the real tab and asserts on the file or database rows it produces, so a refactor of the tab layer cannot silently change what the app writes
 
 * The analysis-tab MVC boundary check no longer counts an import a view uses only to write a type, since that is not computation; `python scripts/check_mvc_boundary.py --verbose` names the imports it exempted
-
-* The refactor-coverage audit now runs on every branch push, not only on internal pull requests, so a method the refactor moves cannot lose its test coverage unnoticed
 
 * The golden files that pin the app's numerical output are now checked to be running at all, so a missing test dependency can no longer leave those numbers unpinned while the test suite still reports a pass
 
