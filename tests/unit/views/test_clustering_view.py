@@ -143,16 +143,6 @@ class TestSetQuery:
 # ===========================================================================
 
 
-class TestSetUnits:
-    def test_stores_units(self, view):
-        view.set_units({"duration": "ms", "current": "pA"})
-        assert view.units == {"duration": "ms", "current": "pA"}
-
-    def test_list_units(self, view):
-        view.set_units(["ms", "pA"])
-        assert view.units == ["ms", "pA"]
-
-
 # ===========================================================================
 # update_column_names
 # ===========================================================================
@@ -908,15 +898,3 @@ class TestResetActions:
     def test_3d_no_error(self, view):
         with patch.object(view.canvas, "draw"):
             view._reset_actions(axis_type="3d")
-
-    def test_clears_allowed_cols(self, view):
-        view.allowed_cols = ["a"]
-        with patch.object(view.canvas, "draw"):
-            view._reset_actions()
-        assert view.allowed_cols is None
-
-    def test_clears_allowed_logs(self, view):
-        view.allowed_logs = [True]
-        with patch.object(view.canvas, "draw"):
-            view._reset_actions()
-        assert view.allowed_logs is None

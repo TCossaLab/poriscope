@@ -621,8 +621,8 @@ class MetadataController(MetaSubsetTabController):
         try:
             # Two values, because construct_event_data_query is declared
             # -> Tuple[str, str] and reports a filter it cannot build as
-            # ("", debug). The bus splatted that pair across
-            # relay_event_query(query, debug); call() hands it over whole, and a
+            # ("", debug). The bus used to splat that pair across two arguments;
+            # call() hands it over whole, and a
             # 2-tuple is always truthy - so binding it to one name made the guard
             # below unable to fire and put the pair itself on the status panel.
             query, debug = self.model.call(

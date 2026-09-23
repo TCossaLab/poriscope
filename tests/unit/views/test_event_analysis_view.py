@@ -143,11 +143,6 @@ class TestFactors:
 
 
 class TestUpdatePlotData:
-    def test_dict_input_stores_data_field(self, mock_view):
-        arr = np.array([1, 2, 3])
-        mock_view.update_plot_data({"data": arr})
-        np.testing.assert_array_equal(mock_view.plot_data, arr)
-
     def test_array_input_stored_directly(self, mock_view):
         arr = np.array([4, 5, 6])
         mock_view.update_plot_data(arr)
@@ -167,48 +162,9 @@ class TestUpdatePlotData:
 # ===========================================================================
 
 
-class TestUpdatePlotFeatures:
-    def test_all_params_stored(self, mock_view):
-        mock_view.update_plot_features(
-            vertical=[1.0, 2.0],
-            horizontal=[3.0],
-            points=[(0.5, 1.5)],
-            vlabels=["v1", "v2"],
-            hlabels=["h1"],
-            plabels=["p1"],
-        )
-        assert mock_view.vertical == [1.0, 2.0]
-        assert mock_view.horizontal == [3.0]
-        assert mock_view.points == [(0.5, 1.5)]
-        assert mock_view.vlabels == ["v1", "v2"]
-        assert mock_view.hlabels == ["h1"]
-        assert mock_view.plabels == ["p1"]
-
-    def test_none_defaults(self, mock_view):
-        mock_view.update_plot_features()
-        assert mock_view.vertical is None
-        assert mock_view.horizontal is None
-        assert mock_view.points is None
-
-    def test_partial_params(self, mock_view):
-        mock_view.update_plot_features(vertical=[5.0])
-        assert mock_view.vertical == [5.0]
-        assert mock_view.horizontal is None
-
-
 # ===========================================================================
 # set_eventfitting_status
 # ===========================================================================
-
-
-class TestSetEventfittingStatus:
-    def test_true(self, mock_view):
-        mock_view.set_eventfitting_status(True)
-        assert mock_view.eventfitting_status is True
-
-    def test_false(self, mock_view):
-        mock_view.set_eventfitting_status(False)
-        assert mock_view.eventfitting_status is False
 
 
 # ===========================================================================
@@ -216,32 +172,9 @@ class TestSetEventfittingStatus:
 # ===========================================================================
 
 
-class TestSetNumEventsAllowed:
-    def test_sets_value(self, mock_view):
-        mock_view.set_num_events_allowed(500)
-        assert mock_view.num_events_allowed == 500
-
-    def test_zero(self, mock_view):
-        mock_view.set_num_events_allowed(0)
-        assert mock_view.num_events_allowed == 0
-
-
 # ===========================================================================
 # set_data_filter_function
 # ===========================================================================
-
-
-class TestSetDataFilterFunction:
-    def test_stores_callable(self, mock_view):
-        def my_filter(x):
-            return x * 2
-
-        mock_view.set_data_filter_function(my_filter)
-        assert mock_view.data_filter is my_filter
-
-    def test_stores_none(self, mock_view):
-        mock_view.set_data_filter_function(None)
-        assert mock_view.data_filter is None
 
 
 # ===========================================================================
@@ -1313,11 +1246,6 @@ class TestFactorsExtended:
 
 
 class TestUpdatePlotDataExtended:
-    def test_dict_with_extra_keys_uses_data_key(self, mock_view):
-        arr = np.array([7.0, 8.0])
-        mock_view.update_plot_data({"data": arr, "extra": "ignored"})
-        np.testing.assert_array_equal(mock_view.plot_data, arr)
-
     def test_empty_array(self, mock_view):
         arr = np.array([])
         mock_view.update_plot_data(arr)
@@ -1332,30 +1260,6 @@ class TestUpdatePlotDataExtended:
 # ===========================================================================
 # update_plot_features — extended
 # ===========================================================================
-
-
-class TestUpdatePlotFeaturesExtended:
-    def test_overwrites_previous_values(self, mock_view):
-        mock_view.update_plot_features(vertical=[1.0])
-        mock_view.update_plot_features(vertical=[2.0])
-        assert mock_view.vertical == [2.0]
-
-    def test_all_none_by_default(self, mock_view):
-        mock_view.update_plot_features()
-        for attr in (
-            "vertical",
-            "horizontal",
-            "points",
-            "vlabels",
-            "hlabels",
-            "plabels",
-        ):
-            assert getattr(mock_view, attr) is None
-
-    def test_points_stored_correctly(self, mock_view):
-        pts = [(0.1, 0.2), (0.3, 0.4)]
-        mock_view.update_plot_features(points=pts)
-        assert mock_view.points == pts
 
 
 # ===========================================================================
@@ -1381,32 +1285,9 @@ class TestValidateSingleChannelExtended:
 # ===========================================================================
 
 
-class TestSetNumEventsAllowedExtended:
-    def test_large_number(self, mock_view):
-        mock_view.set_num_events_allowed(1_000_000)
-        assert mock_view.num_events_allowed == 1_000_000
-
-    def test_overwrite(self, mock_view):
-        mock_view.set_num_events_allowed(10)
-        mock_view.set_num_events_allowed(20)
-        assert mock_view.num_events_allowed == 20
-
-
 # ===========================================================================
 # set_data_filter_function — extended
 # ===========================================================================
-
-
-class TestSetDataFilterFunctionExtended:
-    def test_lambda_stored(self, mock_view):
-        fn = lambda x: x + 1  # noqa: E731
-        mock_view.set_data_filter_function(fn)
-        assert mock_view.data_filter is fn
-
-    def test_overwrite_with_none(self, mock_view):
-        mock_view.set_data_filter_function(lambda x: x)
-        mock_view.set_data_filter_function(None)
-        assert mock_view.data_filter is None
 
 
 # ===========================================================================

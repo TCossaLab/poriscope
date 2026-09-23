@@ -13,13 +13,13 @@ Covers:
 - update_column_names (names provided, empty list)
 - update_column_units delegation
 - get_experiment_names_for_tree delegation
-- get_experiment_structure_ready (conversion, copy behaviour, multi-experiment)
+- request_experiment_structure (conversion, copy behaviour, multi-experiment)
 - relay_query debug path, happy path, validate_new_filter, validate_edited_filter
 """
 
 from __future__ import annotations
 
-from typing import Dict, Iterator, List
+from typing import Dict, List
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -61,7 +61,7 @@ def mock_view(mocker: MockerFixture) -> MagicMock:
     view.commit_filter = commit_filter  # type: ignore[misc]
     view.get_subset_filters = lambda: dict(view.subset_filters)  # type: ignore[misc]
 
-    # Dicts populated by get_experiment_structure_ready
+    # Dicts populated by request_experiment_structure
     view.available_experiment_and_channels_by_loader = {}  # type: ignore[misc]
     view.selected_experiment_and_channels_by_loader = {}  # type: ignore[misc]
 
@@ -134,197 +134,22 @@ def test_setup_connections_runs_without_error(mocker: MockerFixture) -> None:
 # -------------------- set_exported_event_count -----------------------
 
 
-def test_set_exported_event_count_passes_count_to_view(
-    controller: MetadataController,
-    mock_view: MagicMock,
-) -> None:
-    """
-    Delegate a positive exported event count to the view.
-
-    :param controller: Controller under test.
-    :param mock_view: Mocked metadata view.
-    """
-    controller.set_exported_event_count(42)
-    mock_view.set_exported_event_count.assert_called_once_with(42)
-
-
-def test_set_exported_event_count_passes_zero_to_view(
-    controller: MetadataController,
-    mock_view: MagicMock,
-) -> None:
-    """
-    Delegate a zero exported event count to the view.
-
-    :param controller: Controller under test.
-    :param mock_view: Mocked metadata view.
-    """
-    controller.set_exported_event_count(0)
-    mock_view.set_exported_event_count.assert_called_once_with(0)
-
-
 # ----------------------- relay_event_query ---------------------------
-
-
-def test_relay_event_query_sets_query_when_query_provided(
-    controller: MetadataController,
-    mock_view: MagicMock,
-) -> None:
-    """
-    Forward a non-empty event query to the view.
-
-    :param controller: Controller under test.
-    :param mock_view: Mocked metadata view.
-    """
-    controller.relay_event_query("SELECT * FROM events", "")
-    mock_view.set_event_query.assert_called_once_with("SELECT * FROM events")
-
-
-def test_relay_event_query_calls_set_event_query_even_when_empty(
-    controller: MetadataController,
-    mock_view: MagicMock,
-    mocker: MockerFixture,
-) -> None:
-    """
-    Call set_event_query unconditionally even when the query is empty.
-
-    The debug-message emit branch fires separately; set_event_query is
-    still always invoked.
-
-    :param controller: Controller under test.
-    :param mock_view: Mocked metadata view.
-    :param mocker: Pytest-mock fixture.
-    """
-    controller.add_text_to_display = mocker.Mock()  # type: ignore[assignment,method-assign]
-    controller.add_text_to_display.emit = mocker.Mock()  # type: ignore[attr-defined,method-assign]
-    controller.relay_event_query("", "debug message")
-    mock_view.set_event_query.assert_called_once_with("")
 
 
 # ------------------ relay_event_data_generator -----------------------
 
 
-def test_relay_event_data_generator_passes_generator_to_view(
-    controller: MetadataController,
-    mock_view: MagicMock,
-) -> None:
-    """
-    Forward an event data generator to the view for overlay use.
-
-    :param controller: Controller under test.
-    :param mock_view: Mocked metadata view.
-    """
-    gen: Iterator[Dict[str, int]] = iter([{"id": 1}, {"id": 2}])
-    controller.relay_event_data_generator(gen)
-    mock_view.set_event_data_generator.assert_called_once_with(gen)
-
-
 # ---------------- relay_event_plot_data_generator --------------------
-
-
-def test_relay_event_plot_data_generator_passes_generator_to_view(
-    controller: MetadataController,
-    mock_view: MagicMock,
-) -> None:
-    """
-    Forward an event plot data generator to the view for plotting.
-
-    :param controller: Controller under test.
-    :param mock_view: Mocked metadata view.
-    """
-    gen: Iterator[float] = iter([1.0, 2.0, 3.0])
-    controller.relay_event_plot_data_generator(gen)
-    mock_view.set_event_plot_data_generator.assert_called_once_with(gen)
 
 
 # ------------------------ relay_plot_data ----------------------------
 
 
-def test_relay_plot_data_passes_data_to_view(
-    controller: MetadataController,
-    mock_view: MagicMock,
-) -> None:
-    """
-    Forward structured plot data to the view.
-
-    :param controller: Controller under test.
-    :param mock_view: Mocked metadata view.
-    """
-    data: Dict[str, List[float]] = {"x": [0.1, 0.2], "y": [1.0, 2.0]}
-    controller.relay_plot_data(data)
-    mock_view.set_plot_data.assert_called_once_with(data)
-
-
 # ------------------------- relay_units -------------------------------
 
 
-def test_relay_units_passes_units_dict_to_view(
-    controller: MetadataController,
-    mock_view: MagicMock,
-) -> None:
-    """
-    Forward a column-to-unit mapping to the view.
-
-    :param controller: Controller under test.
-    :param mock_view: Mocked metadata view.
-    """
-    units: Dict[str, str] = {"current": "pA", "time": "s"}
-    controller.relay_units(units)
-    mock_view.set_units.assert_called_once_with(units)
-
-
 # ---------------------- update_column_names --------------------------
-
-
-def test_update_column_names_updates_view_when_names_provided(
-    controller: MetadataController,
-    mock_view: MagicMock,
-) -> None:
-    """
-    Forward a non-empty list of column names to the view.
-
-    :param controller: Controller under test.
-    :param mock_view: Mocked metadata view.
-    """
-    controller.update_column_names(["col_a", "col_b"])
-    mock_view.update_column_names.assert_called_once_with(["col_a", "col_b"])
-
-
-def test_update_column_names_logs_info_when_names_provided(
-    controller: MetadataController,
-) -> None:
-    """
-    Log an info message after successfully updating the view with column names.
-
-    :param controller: Controller under test.
-    """
-    controller.update_column_names(["col_a", "col_b"])
-    controller.logger.info.assert_called_once()  # type: ignore[attr-defined]
-
-
-def test_update_column_names_skips_view_when_list_is_empty(
-    controller: MetadataController,
-    mock_view: MagicMock,
-) -> None:
-    """
-    Do not call update_column_names on the view when the list is empty.
-
-    :param controller: Controller under test.
-    :param mock_view: Mocked metadata view.
-    """
-    controller.update_column_names([])
-    mock_view.update_column_names.assert_not_called()
-
-
-def test_update_column_names_logs_warning_when_list_is_empty(
-    controller: MetadataController,
-) -> None:
-    """
-    Log a warning message when no column names are received.
-
-    :param controller: Controller under test.
-    """
-    controller.update_column_names([])
-    controller.logger.warning.assert_called_once()  # type: ignore[attr-defined]
 
 
 # ---------------------- update_column_units --------------------------
@@ -408,40 +233,10 @@ def test_request_column_units_does_not_raise_out_of_the_slot(
 # ------------------ get_experiment_names_for_tree --------------------
 
 
-def test_get_experiment_names_for_tree_forwards_to_view(
-    controller: MetadataController,
-    mock_view: MagicMock,
-) -> None:
-    """
-    Forward experiment names and loader name to the view tree display.
-
-    :param controller: Controller under test.
-    :param mock_view: Mocked metadata view.
-    """
-    controller.get_experiment_names_for_tree(["exp_A", "exp_B"], "loader_1")
-    mock_view.get_experiment_names_for_tree.assert_called_once_with(
-        ["exp_A", "exp_B"], "loader_1"
-    )
+# ----------------- request_experiment_structure --------------------
 
 
-def test_get_experiment_names_for_tree_forwards_empty_list(
-    controller: MetadataController,
-    mock_view: MagicMock,
-) -> None:
-    """
-    Forward an empty experiment list to the view tree display.
-
-    :param controller: Controller under test.
-    :param mock_view: Mocked metadata view.
-    """
-    controller.get_experiment_names_for_tree([], "loader_1")
-    mock_view.get_experiment_names_for_tree.assert_called_once_with([], "loader_1")
-
-
-# ----------------- get_experiment_structure_ready --------------------
-
-
-def test_get_experiment_structure_ready_converts_channel_ids_to_strings(
+def test_request_experiment_structure_converts_channel_ids_to_strings(
     controller: MetadataController,
     mock_view: MagicMock,
 ) -> None:
@@ -451,14 +246,15 @@ def test_get_experiment_structure_ready_converts_channel_ids_to_strings(
     :param controller: Controller under test.
     :param mock_view: Mocked metadata view.
     """
-    controller.get_experiment_structure_ready({"exp1": [1, 2, 3]}, "ldr")
+    controller.model.call.return_value = {"exp1": [1, 2, 3]}
+    controller.request_experiment_structure("ldr")
     result: Dict[str, List[str]] = (
         mock_view.available_experiment_and_channels_by_loader["ldr"]
     )
     assert result == {"exp1": ["1", "2", "3"]}
 
 
-def test_get_experiment_structure_ready_logs_debug_with_loader_name(
+def test_request_experiment_structure_logs_debug_with_loader_name(
     controller: MetadataController,
 ) -> None:
     """
@@ -466,13 +262,14 @@ def test_get_experiment_structure_ready_logs_debug_with_loader_name(
 
     :param controller: Controller under test.
     """
-    controller.get_experiment_structure_ready({"exp1": [1]}, "my_loader")
+    controller.model.call.return_value = {"exp1": [1]}
+    controller.request_experiment_structure("my_loader")
     controller.logger.debug.assert_called_once()  # type: ignore[attr-defined]
     debug_msg: str = controller.logger.debug.call_args[0][0]  # type: ignore[attr-defined,index]
     assert "my_loader" in debug_msg
 
 
-def test_get_experiment_structure_ready_stores_under_correct_loader_key(
+def test_request_experiment_structure_stores_under_correct_loader_key(
     controller: MetadataController,
     mock_view: MagicMock,
 ) -> None:
@@ -482,11 +279,12 @@ def test_get_experiment_structure_ready_stores_under_correct_loader_key(
     :param controller: Controller under test.
     :param mock_view: Mocked metadata view.
     """
-    controller.get_experiment_structure_ready({"exp1": [0]}, "my_loader")
+    controller.model.call.return_value = {"exp1": [0]}
+    controller.request_experiment_structure("my_loader")
     assert "my_loader" in mock_view.available_experiment_and_channels_by_loader
 
 
-def test_get_experiment_structure_ready_selected_equals_available(
+def test_request_experiment_structure_selected_equals_available(
     controller: MetadataController,
     mock_view: MagicMock,
 ) -> None:
@@ -496,7 +294,8 @@ def test_get_experiment_structure_ready_selected_equals_available(
     :param controller: Controller under test.
     :param mock_view: Mocked metadata view.
     """
-    controller.get_experiment_structure_ready({"exp1": [7]}, "ldr")
+    controller.model.call.return_value = {"exp1": [7]}
+    controller.request_experiment_structure("ldr")
     avail: Dict[str, List[str]] = mock_view.available_experiment_and_channels_by_loader[
         "ldr"
     ]
@@ -506,7 +305,7 @@ def test_get_experiment_structure_ready_selected_equals_available(
     assert avail == sel
 
 
-def test_get_experiment_structure_ready_selection_is_independent_of_available(
+def test_request_experiment_structure_selection_is_independent_of_available(
     controller: MetadataController,
     mock_view: MagicMock,
 ) -> None:
@@ -526,7 +325,8 @@ def test_get_experiment_structure_ready_selection_is_independent_of_available(
     mock_view.available_experiment_and_channels_by_loader = {}
     mock_view.selected_experiment_and_channels_by_loader = {}
 
-    controller.get_experiment_structure_ready({"exp1": [5]}, "ldr")
+    controller.model.call.return_value = {"exp1": [5]}
+    controller.request_experiment_structure("ldr")
     avail: Dict[str, List[str]] = mock_view.available_experiment_and_channels_by_loader[
         "ldr"
     ]
@@ -537,7 +337,7 @@ def test_get_experiment_structure_ready_selection_is_independent_of_available(
     assert "MUTATED" not in sel["exp1"]
 
 
-def test_get_experiment_structure_ready_handles_empty_structure(
+def test_request_experiment_structure_handles_empty_structure(
     controller: MetadataController,
     mock_view: MagicMock,
 ) -> None:
@@ -547,11 +347,12 @@ def test_get_experiment_structure_ready_handles_empty_structure(
     :param controller: Controller under test.
     :param mock_view: Mocked metadata view.
     """
-    controller.get_experiment_structure_ready({}, "ldr")
+    controller.model.call.return_value = {}
+    controller.request_experiment_structure("ldr")
     assert mock_view.available_experiment_and_channels_by_loader["ldr"] == {}
 
 
-def test_get_experiment_structure_ready_converts_multiple_experiments(
+def test_request_experiment_structure_converts_multiple_experiments(
     controller: MetadataController,
     mock_view: MagicMock,
 ) -> None:
@@ -562,7 +363,8 @@ def test_get_experiment_structure_ready_converts_multiple_experiments(
     :param mock_view: Mocked metadata view.
     """
     structure: Dict[str, List[int]] = {"exp1": [1], "exp2": [10, 20]}
-    controller.get_experiment_structure_ready(structure, "ldr")
+    controller.model.call.return_value = structure
+    controller.request_experiment_structure("ldr")
     result: Dict[str, List[str]] = (
         mock_view.available_experiment_and_channels_by_loader["ldr"]
     )
@@ -915,7 +717,7 @@ def test_restore_session_state_is_noop_without_subset_filters(
     mock_view.update_filter_name.assert_not_called()
 
 
-def test_get_experiment_structure_ready_keeps_an_existing_channel_selection(
+def test_request_experiment_structure_keeps_an_existing_channel_selection(
     controller: MetadataController,
     mock_view: MagicMock,
 ) -> None:
@@ -932,14 +734,15 @@ def test_get_experiment_structure_ready_keeps_an_existing_channel_selection(
     mock_view.available_experiment_and_channels_by_loader = {}
     mock_view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": ["2"]}}
 
-    controller.get_experiment_structure_ready({"exp1": [1, 2, 3]}, "ldr")
+    controller.model.call.return_value = {"exp1": [1, 2, 3]}
+    controller.request_experiment_structure("ldr")
 
     assert mock_view.selected_experiment_and_channels_by_loader["ldr"] == {
         "exp1": ["2"]
     }
 
 
-def test_get_experiment_structure_ready_selects_everything_when_nothing_is_chosen(
+def test_request_experiment_structure_selects_everything_when_nothing_is_chosen(
     controller: MetadataController,
     mock_view: MagicMock,
 ) -> None:
@@ -947,14 +750,15 @@ def test_get_experiment_structure_ready_selects_everything_when_nothing_is_chose
     mock_view.available_experiment_and_channels_by_loader = {}
     mock_view.selected_experiment_and_channels_by_loader = {}
 
-    controller.get_experiment_structure_ready({"exp1": [1, 2]}, "ldr")
+    controller.model.call.return_value = {"exp1": [1, 2]}
+    controller.request_experiment_structure("ldr")
 
     assert mock_view.selected_experiment_and_channels_by_loader["ldr"] == {
         "exp1": ["1", "2"]
     }
 
 
-def test_get_experiment_structure_ready_drops_channels_that_no_longer_exist(
+def test_request_experiment_structure_drops_channels_that_no_longer_exist(
     controller: MetadataController,
     mock_view: MagicMock,
 ) -> None:
@@ -969,14 +773,15 @@ def test_get_experiment_structure_ready_drops_channels_that_no_longer_exist(
         "ldr": {"exp1": ["2", "9"], "gone": ["1"]}
     }
 
-    controller.get_experiment_structure_ready({"exp1": [1, 2, 3]}, "ldr")
+    controller.model.call.return_value = {"exp1": [1, 2, 3]}
+    controller.request_experiment_structure("ldr")
 
     assert mock_view.selected_experiment_and_channels_by_loader["ldr"] == {
         "exp1": ["2"]
     }
 
 
-def test_get_experiment_structure_ready_does_not_alias_the_available_structure(
+def test_request_experiment_structure_does_not_alias_the_available_structure(
     controller: MetadataController,
     mock_view: MagicMock,
 ) -> None:
@@ -989,7 +794,8 @@ def test_get_experiment_structure_ready_does_not_alias_the_available_structure(
     mock_view.available_experiment_and_channels_by_loader = {}
     mock_view.selected_experiment_and_channels_by_loader = {}
 
-    controller.get_experiment_structure_ready({"exp1": [1, 2]}, "ldr")
+    controller.model.call.return_value = {"exp1": [1, 2]}
+    controller.request_experiment_structure("ldr")
 
     selected = mock_view.selected_experiment_and_channels_by_loader["ldr"]
     available = mock_view.available_experiment_and_channels_by_loader["ldr"]

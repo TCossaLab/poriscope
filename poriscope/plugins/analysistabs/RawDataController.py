@@ -25,7 +25,7 @@
 # Kyle Briggs
 
 import logging
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, override
+from typing import Any, Dict, List, Optional, Sequence, Tuple, override
 
 from PySide6.QtCore import Slot
 
@@ -681,37 +681,6 @@ class RawDataController(MetaEventTabController):
         self.view.set_psd(Pxx_list, rms_list, frequency, kept_indices)
 
     @log(logger=logger)
-    def set_event_filter(self, data_filter: Callable) -> None:
-        """
-        Set the data filter function used for processing events.
-
-        :param data_filter: A callable used to filter or preprocess the data.
-        :type data_filter: Callable
-        """
-        self.view.set_data_filter_function(data_filter)
-
-    @log(logger=logger)
-    def update_plot_data(self, data: Any) -> None:
-        """
-        Relay processed data to the view for plotting.
-
-        :param data: Structured plot data.
-        :type data: Any
-        """
-        self.view.update_plot_data(data)
-
-    @log(logger=logger)
-    @Slot(list)
-    def update_channels(self, num_channels: List[int]) -> None:
-        """
-        Update the view with the current number of channels available or selected.
-
-        :param num_channels: List of channel identifiers.
-        :type num_channels: List[int]
-        """
-        self.view.update_channels(num_channels)
-
-    @log(logger=logger)
     @override
     @Slot(dict)
     def update_available_plugins(self, available_plugins: dict) -> None:
@@ -773,33 +742,3 @@ class RawDataController(MetaEventTabController):
                     f"Could not get channels for {finder}, not registering it yet: {repr(e)}"
                 )
         return resolved
-
-    @log(logger=logger)
-    def set_num_events_allowed(self, num_events: int) -> None:
-        """
-        Set the maximum number of events allowed to be processed or visualized.
-
-        :param num_events: Maximum number of events.
-        :type num_events: int
-        """
-        self.view.set_num_events_allowed(num_events)
-
-    @log(logger=logger)
-    def set_eventfinding_status(self, status: bool) -> None:
-        """
-        Set the current status of the event finding process in the view.
-
-        :param status: Boolean indicating if event finding was successful.
-        :type status: bool
-        """
-        self.view.set_eventfinding_status(status)
-
-    @log(logger=logger)
-    def relay_eventfinding_status(self, status: bool) -> None:
-        """
-        Relay the event finding status to the view for UI updates.
-
-        :param status: Boolean indicating the result of the event finding operation.
-        :type status: bool
-        """
-        self.view.set_eventfinding_status(status)

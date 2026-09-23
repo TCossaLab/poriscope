@@ -108,41 +108,6 @@ def test_populate_available_plugins(main_model):
         assert "MetaFilter" in available_plugins_list
 
 
-def test_get_plugin_data_existing(main_model, tmp_path, monkeypatch):
-    # Ensure MainModel looks under temp user_data_dir
-    monkeypatch.setattr(
-        "poriscope.models.main_model.user_data_dir",
-        lambda *a, **k: str(tmp_path),
-        raising=False,
-    )
-
-    plugin_key = "MetaReader"
-    mock_data = {plugin_key: {"Value": "SomeData"}}
-
-    # Create the exact directory tree MainModel expects:
-    # <user_data_dir>/Poriscope/session/plugin_history.json
-    session_dir = tmp_path / "Poriscope" / "session"
-    session_dir.mkdir(parents=True, exist_ok=True)
-
-    plugin_history = session_dir / "plugin_history.json"
-    plugin_history.write_text(json.dumps(mock_data))
-
-    got = main_model.get_plugin_data(plugin_key)
-    assert got == {"Value": "SomeData"}
-
-
-def test_get_plugin_data_nonexistent(main_model):
-    """
-    Test the fetching of plugin data when the session file does not exist.
-    """
-    plugin_key = "MetaReader"
-
-    with patch("builtins.open", MagicMock(side_effect=FileNotFoundError)):
-        plugin_data = main_model.get_plugin_data(plugin_key)
-
-    assert plugin_data == {}
-
-
 def test_save_session(main_model):
     """
     Test saving the session to a JSON file.
@@ -263,15 +228,6 @@ def test_save_tab_actions(main_model):
     mock_open.assert_called_once()
 
 
-def test_get_plugin_existing(main_model):
-    class Dummy:
-        pass
-
-    main_model.available_plugin_classes = {"MetaReader": {"MyReader": Dummy}}
-    result = main_model.get_plugin("MetaReader", "MyReader")
-    assert result == Dummy
-
-
 def test_get_available_plugins(main_model):
     main_model.available_plugins_list = {"MetaReader": ["MockReader"]}
 
@@ -282,30 +238,6 @@ def test_get_plugin_classes(main_model):
     main_model.available_plugin_classes = {"MetaReader": {"MyReader": object}}
 
     assert main_model.get_plugin_classes("MetaReader") == {"MyReader": object}
-
-
-def test_get_plugin_success(main_model):
-    class Dummy:
-        pass
-
-    main_model.available_plugin_classes = {"MetaReader": {"MyReader": Dummy}}
-    assert main_model.get_plugin("MetaReader", "MyReader") == Dummy
-
-
-def test_get_plugin_failure(main_model, caplog):
-    with caplog.at_level(logging.ERROR):
-        main_model.available_plugin_classes = {}
-        result = main_model.get_plugin("MetaReader", "DoesNotExist")
-        assert result is None
-        assert "unable to load class MetaReader DoesNotExist" in caplog.text
-
-
-def test_get_plugin_data_file_missing(main_model, caplog):
-    plugin_key = "MetaReader"
-    with patch("pathlib.Path.exists", return_value=False):
-        result = main_model.get_plugin_data(plugin_key)
-        assert result == {}
-        assert "Plugin data file does not exist" in caplog.text
 
 
 def test_get_data_server_location(main_model):

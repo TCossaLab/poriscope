@@ -843,11 +843,7 @@ class MetaSubsetTabView(MetaView):
 
         Promoted from both subset tabs, whose copies differed only in the name each
         held its controls panel under, and otherwise verbatim - including reaching
-        past the panel to its combobox, which ``MetaSubsetTabControls`` already
-        wraps as ``get_selected_filter_names``. Delegating to that wrapper instead
-        would be an improvement but not this commit's; it would also change what
-        the existing tab tests have to mock, which is exactly the noise a promotion
-        should not carry.
+        past the panel to its combobox.
 
         :return: selected filter names mapped to their SQL WHERE clauses
         :rtype: dict
@@ -888,16 +884,6 @@ class MetaSubsetTabView(MetaView):
             "CSV Files (*.csv);;All Files (*)",
         )
         return file_name
-
-    @log(logger=logger)
-    def set_experiment_id(self, experiment_id: Optional[int]) -> None:
-        """
-        A global signal callback that provides an experiment id for a given filter.
-
-        :param experiment_id: the integer id of the experiment in a MetaEventLoader object
-        :type experiment_id: Optional[int]
-        """
-        self.experiment_id = experiment_id
 
     @log(logger=logger)
     def set_event_data_generator(self, generator: Iterator[Dict[str, Any]]) -> None:
@@ -996,16 +982,6 @@ class MetaSubsetTabView(MetaView):
         :type query: str
         """
         self.event_query = query
-
-    @log(logger=logger)
-    def set_units(self, units: Any) -> None:
-        """
-        Set the units returned from the database for use in axis labels.
-
-        :param units: List or string representing units.
-        :type units: Any
-        """
-        self.units = units
 
     @log(logger=logger)
     def update_available_columns(self, loader: str) -> None:

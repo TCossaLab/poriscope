@@ -56,7 +56,6 @@ class DataPluginController(QObject):
         self.view = DataPluginView()
         self.model = DataPluginModel(available_plugin_classes)
         self.data_server = data_server
-        self.plugin_manager = None
         self._history_lookup = history_lookup
 
     @log(logger=logger)
@@ -1092,24 +1091,3 @@ class DataPluginController(QObject):
         Update the cached data server location used to pre-populate a new plugin's Folder setting.
         """
         self.data_server = data_server
-
-    @log(logger=logger)
-    def get_instantiated_plugins_list(self) -> Dict[str, List[str]]:
-        """
-        Get a dict keyed by metaclass with a list of all keys for plugins that have been instantiated
-
-        :return: A dict keyed by metaclass with a list of all keys for plugins that have been instantiated
-        :rtype: Dict[str, List[str]]
-        """
-        return self.model.get_instantiated_plugins_list()
-
-    @log(logger=logger)
-    def get_available_metaclasses(self) -> List[str]:
-        """
-        Get a list of available metaclasses
-
-
-        :return: Get a list of available metaclasses
-        :rtype: List[str]
-        """
-        return self.model.get_available_metaclasses()

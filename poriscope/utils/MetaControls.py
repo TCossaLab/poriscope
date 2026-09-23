@@ -24,7 +24,7 @@
 # Alejandra Carolina González González
 # Kyle Briggs
 
-from typing import Any, Dict, Optional, Sequence
+from typing import Optional, Sequence
 
 from PySide6.QtCore import QCoreApplication, QSize, Signal
 from PySide6.QtGui import QFont
@@ -103,7 +103,6 @@ class MetaControls(QWidget):
         :type parent: Optional[QWidget]
         """
         super().__init__(parent)
-        self.active_popups: Dict[QComboBox, Any] = {}
 
     def is_placeholder_item(self, comboBox: QComboBox) -> bool:
         """
@@ -290,16 +289,6 @@ class MetaControls(QWidget):
         """
         key = comboBox.currentText()
         self.delete_processed.emit(metaclass, key)
-
-    def clear_popup_reference(self, comboBox: QComboBox) -> None:
-        """
-        Forget a combobox's popup once it has closed.
-
-        :param comboBox: Combobox whose popup has been dismissed.
-        :type comboBox: QComboBox
-        """
-        if comboBox in self.active_popups:
-            self.active_popups.pop(comboBox)
 
     def create_comboBox(self, parent: QWidget) -> QComboBox:
         """

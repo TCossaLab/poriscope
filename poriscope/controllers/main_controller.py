@@ -25,7 +25,6 @@
 # Alejandra Carolina González González
 
 import copy
-import inspect
 import logging
 import sys
 from pathlib import Path
@@ -404,28 +403,6 @@ class MainController(QObject):
             if val.get("subclass") == subclass and val.get("metaclass") == metaclass:
                 return val.get("settings")
         return None
-
-    @log(logger=logger)
-    def _return_annotation(self, func: Callable) -> Any:
-        """
-        Resolve a callable's declared return type, preferring evaluated annotations over their string spellings and reporting inspect.Signature.empty if it has none that can be read.
-
-        :param func: The callable to introspect.
-        :type func: Callable
-        :return: The resolved return annotation, or inspect.Signature.empty if it cannot be determined.
-        :rtype: Any
-        """
-        try:
-            return inspect.signature(func, eval_str=True).return_annotation
-        except (TypeError, ValueError, NameError, AttributeError) as e:
-            self.logger.debug(
-                f"Could not evaluate the annotations of {getattr(func, '__name__', func)}, "
-                f"falling back to their unevaluated form: {repr(e)}"
-            )
-        try:
-            return inspect.signature(func).return_annotation
-        except (TypeError, ValueError):
-            return inspect.Signature.empty
 
     @log(logger=logger)
     @Slot(str, list)

@@ -324,33 +324,6 @@ class TestRefreshDisplayText(unittest.TestCase):
 # ===========================================================================
 
 
-class TestClearSelectionList(unittest.TestCase):
-
-    def setUp(self):
-        self.c = make_combo()
-        self.c.addItems(["i", "j", "k"])
-        check_all_boxes(self.c, True)
-
-    def tearDown(self):
-        dispose(self.c)
-
-    def test_clears_list_widget(self):
-        self.c.clear_selection_list()
-        self.assertEqual(self.c.listWidget.count(), 0)
-
-    def test_clears_line_edit(self):
-        self.c.clear_selection_list()
-        self.assertEqual(self.c.lineEdit().text(), "")
-
-    def test_resets_select_all_button_text(self):
-        """clear_selection_list unconditionally resets the button text.
-        isChecked() is not asserted: setChecked(False) fires selectAllToggle
-        before listWidget.clear() completes, which can leave the button
-        checked=True when all items were selected on entry."""
-        self.c.clear_selection_list()
-        self.assertEqual(self.c.selectAllButton.text(), "Select All")
-
-
 # ===========================================================================
 # edit_filter / delete_filter callbacks
 # ===========================================================================

@@ -15,10 +15,10 @@ snapshot was the nearest thing that looked like one.
 | Refactor-coverage audit | - | **112 of 112 pinned** | 100% |
 | Shell complexity, functions over cx 10 | 8 / 121 | **0 / 0** | 0 - reached, no floor |
 | Signal-bus machinery in `poriscope/` | dispatcher + 2 signals + 4 relays | **0** | 0 - reached |
-| Duplication, removable - all 8 measured families | 1,889 (6 families) | **681** | - |
+| Duplication, removable - all 8 measured families | 1,889 (6 families) | **650** | - |
 | - `*Model.py`, a 7th family added 2026-09-14 | not measured | **8** | 8 - reached |
 | - `eventfinders`, an 8th family added 2026-09-19 | not measured | **0** | 0 |
-| - the 3 analysis-tab families of the original six | 1,199 | **31** | 31 (floor) |
+| - the 3 analysis-tab families of the original six | 1,199 | **0** | 0 - reached; the 31 floor's other half was dead code |
 | - the other 3 of the original six: datareaders, eventfitters, `views/widgets` | 690 (435 / 193 / 62) | **642** (446 / 193 / 3) | - |
 | Decision C ABC breaks outstanding | 5 | **0** | 0 - reached; `"Kind"` amended out, `close_resources` deferred out of 2.0.0 |
 
@@ -3282,6 +3282,26 @@ held. What did not:
 - **Text drift fixed in this file:** the live table, the Step 7 table, the Verification
   outcomes, the restored post-3f pass record, and the stale "next" and "owed" pointers,
   each marked historical in place.
+
+### Part 2, code against docs - done 2026-09-22
+
+Four read-only audits of the hand-written pages (plugin manual, frontend and signals, user
+guide, workflow and architecture), every finding re-checked before editing; `1e507fae`. Two
+code fixes fell out: `standalone=True` now declares a parent plugin key as its base class so
+the scripting guide works as written (`c0941f83`), and `ChimeraReader20240101` announces its
+deprecation (`29e6dbc1`). The two named items landed first (`626cb971`).
+
+### Part 3, orphans and dead code - production code done 2026-09-22
+
+Four commits on `feature/step-8-3-dead-code`: the bus's relay sinks (`541f5253`, 47 methods),
+dead shell/view/widget methods (`aa3ebef2`, 24), write-only attributes plus a context-manager
+test (`79a14aa2`), and the `_dismiss_milestone` swap (`099c09ed`). Duplication 681 -> 650: the
+`*View.py` 31-line floor turned out to be half dead code. Kept by decision:
+`BaseDataPlugin.__enter__`/`__exit__` (context-manager support, now tested) and
+`_rescale_data_to_adc` (documented hook). **Not done:** the tests/assets half of the sweep -
+unused test doubles and fixtures, patch targets naming things that no longer exist, unreferenced
+`_static` assets, and the 17 dead e2e `sys.path` shims. Its agent stopped at a usage limit
+before reporting.
 
 ## Verification
 

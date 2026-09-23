@@ -133,27 +133,6 @@ class RawDataView(MetaEventTabView):
         return self.rawdatacontrols
 
     @log(logger=logger)
-    def _factors(self, n: int) -> Tuple[int, int]:
-        """
-        Determine the factor pair (rows, cols) closest to a square layout.
-
-        :param n: Total number of plots.
-        :type n: int
-        :return: (rows, columns) representing subplot grid dimensions.
-        :rtype: Tuple[int, int]
-        """
-        diff = n
-        min_diff_pair = (1, n)
-        while diff > 2:
-            factor_pairs = [
-                (i, n // i) for i in range(1, int(n**0.5) + 1) if n % i == 0
-            ]
-            min_diff_pair = min(factor_pairs, key=lambda pair: abs(pair[0] - pair[1]))
-            diff = min_diff_pair[1] - min_diff_pair[0]
-            n += 1
-        return min_diff_pair
-
-    @log(logger=logger)
     def get_save_filename(self) -> str:
         """
         Open a dialog to save a CSV file.
@@ -347,22 +326,6 @@ class RawDataView(MetaEventTabView):
         self.figure.set_layout_engine("constrained")
         self.canvas.draw()
         self._commit_cache()
-
-    @log(logger=logger)
-    def update_plot_data(self, data: Optional[Any] = None) -> None:
-        """
-        Update the stored plot data for future use.
-
-        :param data: Data dictionary or raw array to store.
-        :type data: Optional[Any]
-        """
-        self.logger.debug(f"Received data for plotting: {data}")
-        if not isinstance(data, dict):
-            self.plot_data = data
-        else:
-            self.plot_data = data[
-                "data"
-            ]  # event data now returns a dict - this should be refactored to handle this explicitly
 
     @log(logger=logger)
     def update_plot_samplerate(self, samplerate: float) -> None:
@@ -629,26 +592,6 @@ class RawDataView(MetaEventTabView):
             )
             return
         self._update_event_plot(event_data, time_bases, event_indices)
-
-    @log(logger=logger)
-    def set_num_events_allowed(self, num_events: int) -> None:
-        """
-        Set the number of events available for display.
-
-        :param num_events: Maximum valid event index + 1.
-        :type num_events: int
-        """
-        self.num_events_allowed = num_events
-
-    @log(logger=logger)
-    def set_eventfinding_status(self, status: bool) -> None:
-        """
-        Set the current event finding status.
-
-        :param status: Whether event finding is complete.
-        :type status: bool
-        """
-        self.eventfinding_status = status
 
     @log(logger=logger)
     def _update_event_plot(

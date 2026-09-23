@@ -116,28 +116,6 @@ class EventAnalysisView(MetaEventTabView):
         return self.eventAnalysisControls
 
     @log(logger=logger)
-    def _factors(self, n: int) -> Tuple[int, int]:
-        """
-        Compute a pair of factors of n that are closest to each other.
-        Useful for determining subplot grid dimensions.
-
-        :param n: Integer to factor.
-        :type n: int
-        :return: Tuple of two integers whose product is close to n and have minimal difference.
-        :rtype: Tuple[int, int]
-        """
-        diff = n
-        min_diff_pair = (1, n)
-        while diff > 2:
-            factor_pairs = [
-                (i, n // i) for i in range(1, int(n**0.5) + 1) if n % i == 0
-            ]
-            min_diff_pair = min(factor_pairs, key=lambda pair: abs(pair[0] - pair[1]))
-            diff = min_diff_pair[1] - min_diff_pair[0]
-            n += 1
-        return min_diff_pair
-
-    @log(logger=logger)
     def get_save_filename(self) -> str:
         """
         Open a file dialog to let the user select a filename for saving a CSV file.
@@ -152,54 +130,6 @@ class EventAnalysisView(MetaEventTabView):
             "CSV Files (*.csv);;All Files (*)",
         )
         return file_name
-
-    @log(logger=logger)
-    def update_plot_data(self, data: Optional[Any] = None) -> None:
-        """
-        Update internal storage of plot data.
-        Can be used by signal handlers receiving data.
-
-        :param data: The data to be stored, can be a dict or array.
-        :type data: Optional[Any]
-        """
-        self.logger.debug(f"Received data for plotting: {data}")
-        if isinstance(data, dict):
-            self.plot_data = data["data"]
-        else:
-            self.plot_data = data
-
-    @log(logger=logger)
-    def update_plot_features(
-        self,
-        vertical: Optional[List[float]] = None,
-        horizontal: Optional[List[float]] = None,
-        points: Optional[List[Tuple[float, float]]] = None,
-        vlabels: Optional[List[str]] = None,
-        hlabels: Optional[List[str]] = None,
-        plabels: Optional[List[str]] = None,
-    ) -> None:
-        """
-        Update feature overlays for the plot, such as vertical/horizontal lines and labeled points.
-
-        :param vertical: List of vertical line positions.
-        :type vertical: Optional[List[float]]
-        :param horizontal: List of horizontal line positions.
-        :type horizontal: Optional[List[float]]
-        :param points: List of (x, y) point coordinates.
-        :type points: Optional[List[Tuple[float, float]]]
-        :param vlabels: Labels for vertical lines.
-        :type vlabels: Optional[List[str]]
-        :param hlabels: Labels for horizontal lines.
-        :type hlabels: Optional[List[str]]
-        :param plabels: Labels for points.
-        :type plabels: Optional[List[str]]
-        """
-        self.vertical = vertical
-        self.horizontal = horizontal
-        self.points = points
-        self.vlabels = vlabels
-        self.hlabels = hlabels
-        self.plabels = plabels
 
     @log(logger=logger)
     @override
@@ -432,26 +362,6 @@ class EventAnalysisView(MetaEventTabView):
             plabels,
             use_raw=use_raw,
         )
-
-    @log(logger=logger)
-    def set_eventfitting_status(self, status: bool) -> None:
-        """
-        Set the internal event fitting status.
-
-        :param status: Boolean indicating fitting completion status.
-        :type status: bool
-        """
-        self.eventfitting_status = status
-
-    @log(logger=logger)
-    def set_num_events_allowed(self, num_events: int) -> None:
-        """
-        Set the maximum number of events allowed to be plotted.
-
-        :param num_events: Number of events allowed.
-        :type num_events: int
-        """
-        self.num_events_allowed = num_events
 
     @log(logger=logger)
     def _update_event_plot(

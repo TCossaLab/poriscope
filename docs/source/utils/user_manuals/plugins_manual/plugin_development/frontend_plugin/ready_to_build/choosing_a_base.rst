@@ -81,8 +81,7 @@ What ``MetaEventTabView`` gives you: the event-index range helpers
 (``_parse_event_indices``, ``_expand_event_indices``, ``_shift_ranges``,
 ``_merge_ranges``, ``_format_ranges``) that turn an event-index field into ranges and
 back for the navigation arrows, plus ``validate_single_channel``,
-``_extract_commit_event_parameters``, ``set_data_filter_function`` and
-``confirm_unfiltered_run``, the modal that asks before a run with no filter selected.
+``_extract_commit_event_parameters`` and ``confirm_unfiltered_run``, the modal that asks before a run with no filter selected.
 
 The Controller
 --------------

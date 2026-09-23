@@ -178,8 +178,6 @@ class ClusteringView(MetaView):
             self.axes = self.figure.add_subplot(1, 1, 1, projection="3d")
         self.figure.set_layout_engine("constrained")
         self.canvas.draw()
-        self.allowed_cols = None
-        self.allowed_logs = None
         self.allowed_plot_type = None
 
     @log(logger=logger)
@@ -352,16 +350,6 @@ class ClusteringView(MetaView):
         """
         self.query = query
         self.table_name = table_name
-
-    @log(logger=logger)
-    def set_units(self, units: Dict[str, Optional[str]]) -> None:
-        """
-        Sets the column units for current clustering configuration.
-
-        :param units: Mapping of column name to unit label.
-        :type units: Dict[str, Optional[str]]
-        """
-        self.units = units
 
     @log(logger=logger)
     def update_available_columns(self, loader: str) -> None:

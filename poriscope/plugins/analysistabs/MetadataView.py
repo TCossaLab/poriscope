@@ -2046,28 +2046,6 @@ class MetadataView(MetaSubsetTabView):
         self._handle_plot_events(new_params)
 
     @log(logger=logger)
-    def _get_event_id(self) -> Optional[int]:  # Since params expanded
-        """
-        Get the current event_id from the event_id input field.
-
-        :return: Integer event_id, or None if the field is empty.
-        :rtype: Optional[int]
-        """
-        text = self.metadatacontrols.event_id_lineEdit.text().strip()
-        return int(text) if text else None
-
-    @log(logger=logger)
-    def _get_n_events(self) -> int:
-        """
-        Get the number of events to plot from the n_events input field.
-
-        :return: Number of events, defaulting to 1 if the field is empty.
-        :rtype: int
-        """
-        text = self.metadatacontrols.n_events_lineEdit.text().strip()
-        return int(text) if text else 1
-
-    @log(logger=logger)
     def _handle_plot_events(self, parameters: Dict[str, Any]) -> None:
         """
         Handle loading and plotting of selected events based on provided parameters.
@@ -2559,16 +2537,6 @@ class MetadataView(MetaSubsetTabView):
         self.subset_export_count += 1
 
     @log(logger=logger)
-    def set_exported_event_count(self, written: int) -> None:
-        """
-        A global signal callback that provides the number of events written in a call to export events to csv format.
-
-        :param written: number of events successfully written
-        :type written: int
-        """
-        self.exported_event_count = written
-
-    @log(logger=logger)
     def update_units(self, loader: str, column: str, axis: str) -> None:
         """
         Ask the Controller for a column's units, for this tab's axis unit labels.
@@ -2662,16 +2630,6 @@ class MetadataView(MetaSubsetTabView):
 
         for name in selected_items:
             self._delete_filter(name)
-
-    @log(logger=logger)
-    def set_channel_db_id(self, channel_db_id: Optional[int]) -> None:
-        """
-        a global signal callback that provides the channel_db_id for raw query scoping
-
-        :param channel_db_id: Database id of the scoped channel, or None if unresolved.
-        :type channel_db_id: Optional[int]
-        """
-        self.channel_db_id = channel_db_id
 
     @log(logger=logger)
     def get_walkthrough_steps(self) -> List[WalkthroughStep]:

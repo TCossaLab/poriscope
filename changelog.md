@@ -1,5 +1,15 @@
 ## Poriscope 2.0.0: in progress
 
+* **Fixed a walkthrough milestone being torn down twice** when you switch to the page it points at - closing the dialog re-entered the teardown before it had let go of the dialog
+
+* **Breaking: `MetaControls.clear_popup_reference` and `MetaSubsetTabControls.get_selected_filter_names` are removed**, and `MetaView._set_display_area_base` with them - nothing called any of them, and `clear_popup_reference` tended a popup registry nothing ever filled
+
+* **Breaking: `MetaController.update_plot_data` and `MetaController.set_generator` are removed** - nothing called either since the signal bus went; a tab hands a generator to `self.model.set_generator` directly, as every shipped tab does
+
+* **Breaking: `MetaSubsetTabController` loses eleven relay methods nothing called since the signal bus went** - `relay_event_query`, `relay_event_data_generator`, `relay_event_plot_data_generator`, `relay_plot_data`, `relay_units`, `update_column_names`, `get_experiment_names_for_tree`, `get_experiment_structure_ready`, `set_experiment_id`, `set_channel_db_id` and `set_exported_event_count`; the live paths are `request_column_names` and `request_experiment_structure`
+
+* **Breaking: `MetaSubsetTabView.set_experiment_id` and `MetaSubsetTabView.set_units` are removed**, along with `MetaEventTabView.set_data_filter_function` - each stored a value nothing read
+
 * **Fixed the scripting guide's pipeline failing with `MetaReader must have type <class 'str'>`** - a plugin built for a script (`get_empty_settings(standalone=True)`) now accepts its parent plugin object directly, as the guide shows, instead of needing the settings entry's type cleared by hand first
 
 * **Breaking: `MetaEventFinder.get_empty_settings` now declares `Threshold`**, with no unit, because the base event-finding loop reads it - an event finder built directly on `MetaEventFinder` used to fail with a `KeyError` on its first chunk; a subclass sets the unit (`ClassicBlockageFinder` pA, `ThresholdBlockageFinder` σ), and one that redeclared the whole entry still works

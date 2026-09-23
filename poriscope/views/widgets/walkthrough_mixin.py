@@ -185,17 +185,6 @@ class WalkthroughMixin:
 
         wait_for_view()
 
-    def _advance_walkthrough_index(self) -> None:
-        """
-        Increments the walkthrough index and moves to the next step, if available.
-        """
-        self._walkthrough_index += 1
-        if self._walkthrough_index < len(self._global_walkthrough_steps):
-            self._run_next_walkthrough_step()
-        else:
-            self._walkthrough_active = False
-            self.logger.info("Walkthrough finished.")
-
     def _handle_walkthrough_done(
         self, steps_completed: int, *, is_pseudo: bool = False
     ) -> None:
@@ -366,22 +355,3 @@ class WalkthroughMixin:
         raise NotImplementedError(
             "get_walkthrough_steps must be implemented in the subclass"
         )
-
-    def _force_close_walkthrough_dialog(self) -> None:
-        """
-        Forcefully closes the walkthrough dialog and emits a termination signal.
-        """
-        if hasattr(self, "walkthrough_dialog") and self.walkthrough_dialog:
-            try:
-                self.walkthrough_dialog.done(0)
-                self.walkthrough_dialog.deleteLater()
-                self.logger.info("Walkthrough dialog force-closed.")
-                self.walkthrough_finished.emit(
-                    self.get_current_view(), False
-                )  # ← this line is new
-            except Exception as e:
-                self.logger.warning(f"Failed to force-close walkthrough dialog: {e}")
-            finally:
-                self.walkthrough_dialog = None
-                self._walkthrough_active = False
-                self._walkthrough_token += 1

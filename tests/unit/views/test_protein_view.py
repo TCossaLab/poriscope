@@ -140,7 +140,6 @@ def mock_view():
 
     v.fig_event = MagicMock()
     v.canvas_event = MagicMock()
-    v.event_outer_ax = None
     v.display_stack = MagicMock()
     v.mode_stack = MagicMock()
     v.individual_dist_page = MagicMock()
@@ -307,21 +306,9 @@ class TestFormatAxisLabel:
 
 
 class TestStateSetters:
-    def test_set_alter_database_status_true(self, mock_view):
-        mock_view.set_alter_database_status(True)
-        assert mock_view.operation_success is True
-
-    def test_set_alter_database_status_false(self, mock_view):
-        mock_view.set_alter_database_status(False)
-        assert mock_view.operation_success is False
-
     def test_update_column_names(self, mock_view):
         mock_view.update_column_names(["a", "b", "c"])
         assert mock_view.available_columns == ["a", "b", "c"]
-
-    def test_set_channel_db_id(self, mock_view):
-        mock_view.set_channel_db_id(42)
-        assert mock_view.channel_db_id == 42
 
     def test_set_event_data_generator(self, mock_view):
         g = iter([1, 2, 3])
@@ -332,14 +319,6 @@ class TestStateSetters:
         g = iter([])
         mock_view.set_event_plot_data_generator(g)
         assert mock_view.plot_events_generator is g
-
-    def test_set_experiment_id(self, mock_view):
-        mock_view.set_experiment_id(99)
-        assert mock_view.experiment_id == 99
-
-    def test_set_units(self, mock_view):
-        mock_view.set_units("nm")
-        assert mock_view.units == "nm"
 
     def test_get_current_view(self, mock_view):
         assert mock_view.get_current_view() == "ProteinView"
@@ -471,11 +450,6 @@ class TestClearFigureState:
         # Just verify _clear_figure_state runs without error
         # (cache internals belong to MetaView and vary by implementation)
         mock_view._clear_figure_state()
-
-    def test_resets_event_outer_ax(self, mock_view):
-        mock_view.event_outer_ax = object()
-        mock_view._clear_figure_state()
-        assert mock_view.event_outer_ax is None
 
     def test_heatmap_colorbar_reset(self, mock_view):
         mock_view._heatmap_colorbar = object()
@@ -1202,9 +1176,6 @@ class TestSetCustomDisplayArea:
 
     def test_display_stack_starts_on_distribution_page(self, real_view):
         assert real_view.display_stack.currentIndex() == 0
-
-    def test_event_outer_ax_initially_none(self, real_view):
-        assert real_view.event_outer_ax is None
 
 
 class TestSetControlArea:
