@@ -135,16 +135,17 @@ def export(
     # signal reports done too early. A first attempt here waited for "any CSV with
     # rows in this folder", which a second export into the same folder satisfied
     # instantly from the first export's files - so it asserted against files the
-    # run under test had not written. Waiting on the sublevels table specifically
-    # also means waiting past the events table, which is written first.
+    # run under test had not written. The export writes events, then sublevels, then
+    # data, so all three are waited on: waiting on sublevels alone let a test read the
+    # data table before it existed.
     def subset_is_written() -> bool:
         """
-        Report whether this subset's events and sublevels tables are readable.
+        Report whether this subset's events, sublevels and data tables are readable.
 
-        :return: True once both parse with rows in them
+        :return: True once all three parse with rows in them
         :rtype: bool
         """
-        for table in ("events", "sublevels"):
+        for table in ("events", "sublevels", "data"):
             path = folder / f"{name}_{table}.csv"
             if not path.exists():
                 return False

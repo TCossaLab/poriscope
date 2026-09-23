@@ -390,6 +390,8 @@
 
 ### Developer Tooling:
 
+* Fixed the headless metadata-export flow test failing intermittently: it waited for the events and sublevels tables but asserted on the data table, which the export writes after them
+
 * CI no longer collects test coverage, which slowed every run for a figure nothing acted on; run `pytest --cov=poriscope` locally when you want the number
 
 * **`scripts/new_plugin.py` now generates analysis tabs too** - `python scripts/new_plugin.py AnalysisTab MyTab` writes the Controller, Model, View and controls panel, and the result opens in the Analysis menu as a tab whose button already reports its own press on the status panel before a single stub is filled in

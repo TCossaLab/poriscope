@@ -28,10 +28,10 @@ Measure byte-identical methods across the five-file analysis-tab families.
 
     python scripts/measure_duplication.py [--verbose] [--update] [--check]
 
-The 2.0.0 refactor's headline claim is that promoting a method to a shared base
-deletes its copies. Nothing measured that: the Step 0 figures came from a one-off
-script that was never committed, so the baseline they quote cannot be re-derived.
-This is that script, committed, so the number is reproducible and can be ratcheted.
+Promoting a method to a shared base should delete its copies, and a copy that grows
+back should be noticed. This counts byte-identical duplication per family so the
+number is reproducible and can be ratcheted; the 2.0.0 refactor's figures were first
+taken with a one-off script that was never committed and could not be re-derived.
 
 **The rule, stated exactly, because the definition is the number.**
 
@@ -86,14 +86,14 @@ from typing import Dict, List, Tuple
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
-#: The families the refactor deduplicates, enumerated rather than globbed and
+#: The measured families, enumerated rather than globbed and
 #: given as repository-relative paths. Case matters in the analysis-tab controls
 #: family: ``eventAnalysisControls.py`` is camelCase and does not match
 #: ``*controls.py``, so a glob would silently drop 742 lines, 17% of it.
 #:
-#: The three analysis-tab families are Step 3's; the rest are Steps 5a and 5d, and
-#: were added by the Step 2 exit review, which found 772 removable lines sitting
-#: outside the ratchet in exactly the families those steps work on.
+#: The analysis-tab families came first; the data readers, event fitters and shared
+#: widgets were added after a review found 772 removable lines sitting outside the
+#: ratchet in exactly the families then being deduplicated.
 #:
 #: ``PeakFinder.py``, ``Basic_PeakFinder.py`` and ``NanoTrees.py`` are deliberately
 #: absent from the fitters family. Their logic is another developer's under standing
@@ -101,25 +101,22 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 #: that is not ours to gate. Their duplication is therefore unmeasured by design, not
 #: by oversight.
 #:
-#: ``*Model.py`` was added 2026-09-14, during Step 4's closeout and deliberately
-#: *before* the branch that would have fooled the ratchet without it. Step 4 has
-#: spent itself moving computation into the analysis-tab Models, which were measured
-#: by nothing - so every method it landed there could be duplicated invisibly, and one
-#: already was: ``load_events_by_id`` is byte-identical between ``MetadataModel`` and
-#: ``ProteinModel``, 30 removable lines that no gate had seen. Method rule 24: check
-#: which instruments can still see the code a step is about to move, and widen the
-#: scope before that step rather than after it.
+#: ``*Model.py`` was added 2026-09-14, while computation was being moved into the
+#: analysis-tab Models, which nothing measured - so every method landed there could be
+#: duplicated invisibly, and one already was: ``load_events_by_id`` was byte-identical
+#: between ``MetadataModel`` and ``ProteinModel``, 30 removable lines no gate had seen.
+#: Check which instruments can still see the code about to move, and widen the scope
+#: before the move rather than after it.
 #:
 #: The family carries an irreducible floor of **8 lines**: ``MetaModel._init`` is
 #: abstract, so all five subclasses must define it and all five are ``pass``. Those
-#: cannot be deduplicated without relaxing the ABC, which is a contract change
-#: Decision C does not list. Recorded here so the residue does not read as unfinished
+#: cannot be deduplicated without relaxing the ABC, a contract change nobody has
+#: taken on. Recorded here so the residue does not read as unfinished
 #: work.
 #:
-#: ``eventfinders`` was added 2026-09-19, ahead of Step 5b for the same reason
-#: ``*Model.py`` went in ahead of Step 4's closeout: it is the family that step edits
-#: and no gate could see it. It starts at **0 removable**, which is the finding rather
-#: than an anticlimax - the two finders' shared code is a pair of *near*-copies
+#: ``eventfinders`` was added 2026-09-19 for the same reason, ahead of work on the
+#: event finders that no gate could otherwise see. It starts at **0 removable**,
+#: which is the finding rather than an anticlimax - the two finders' shared code is a pair of *near*-copies
 #: (``_get_baseline_stats`` at 88/85 lines differing in 24, ``_find_events_in_chunk``
 #: at 72/69 differing in 13), and byte-identity cannot see those. What the entry buys
 #: is the other direction: a step that lifts the shared histogram fit out of both
