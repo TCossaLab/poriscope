@@ -41,8 +41,8 @@ at 435 / 193 / 62. The eighth is `eventfinders`, added by `484b237d` (2026-09-19
 so 5b-1 never "took it 103 -> 0": byte-identity cannot see its near-copies, which is the
 point that commit makes. `855de62f` (5d) added a file to `views/widgets`, not a family.
 Then 7c split one of the byte-identical Chimera methods in two and took datareaders
-394 -> 446, so the total is **681**, as `.duplication-baseline.json` holds - recorded, not
-absorbed; see `DECISIONS.md` and method rule 94. Rule 21 again: a derived figure has to be
+394 -> 446, so the total was **681** (650 after Step 8 Part 3), as `.duplication-baseline.json`
+holds - recorded, not absorbed; see `DECISIONS.md` and method rule 94. Rule 21 again: a derived figure has to be
 re-derived, not carried.
 
 **The audit is 112 targets, not the 85 the snapshots below record.** It is derived, so it
@@ -3321,12 +3321,39 @@ not refactor residue. The 276 plan-step citations ("Step 4a", "5e.3", "Decision 
 test files were rewritten as mechanism on `feature/remove-plan-step-citations`, 2026-09-23;
 `check_refactor_coverage`'s own tests keep its step keys, which are that script's data.
 
+### Exit review, before and after - 2026-09-23
+
+Measured at `062ef6f` and HEAD with one instrument each (`v1.9.0` is identical to `062ef6f`).
+A restructure, not a shrink: tab-layer code lines 13,237 -> 12,916 (-2.4%); physical lines
+grew, all of it docstrings.
+
+| Metric | Start | Now |
+| --- | --- | --- |
+| Five tab Views, lines / defs | 11,557 / 259 | 8,211 / 177 |
+| Five tab Models, lines / defs | 298 / 7 | 2,608 / 53 |
+| Five Controls, lines / defs | 4,381 / 145 | 3,276 / 57 |
+| `self.view` vs `self.model` in tab Controllers | 114 vs 8 | 93 vs 90 |
+| `global_signal` in `poriscope/` | 105 refs, 75 of 77 emits in Views | 0 |
+| Scientific imports in Views | 4 Views | 0 |
+| MVC boundary allowlist | 107 | 2 |
+| Duplication, removable, original six families | 1,889 | 642 |
+| Shell functions over complexity 10 | 8 | 0 |
+| Test functions | 2,781 | 3,788 (4,199 collected) |
+
+Starting figures that do not reproduce as recorded: the allowlist's split (today's checker
+reads 75/18/10/4, since rule 2 dropped type-only imports on 2026-09-14); `114 vs 8` holds
+only as a bare `self.view` match (107 vs 3 with the dot); the "~600 duplicated lines between
+MetadataView and ProteinView" was near-copies - byte-identity finds 239.
+
+Suite time grew with the suite: 2,950 -> 4,215 tests, 409 -> 517 s locally outside OneDrive
+(per test 0.139 -> 0.123 s), CI's test step 135 -> ~250 s. No per-test regression; left as is.
+
 ## Verification
 
 | Metric | Baseline | Target | Instrument | Outcome, Step 8 audit 2026-09-22 |
 | --- | --- | --- | --- | --- |
 | MVC boundary allowlist | **107** (75 emits, 22 imports, 10 privates); 111 with rule 4 | 0 | `ast` test (Step 2 branch 3) | **2**, the recorded rule-2 floor |
-| Duplicated lines removed | 0 of **1,889** repo-wide, 6 families (re-derived, baselined) | ≥ 2,500 | `scripts/measure_duplication.py` + ratchet | **1,219** over the same six families (1,889 -> 670). Not met, and not measurable: 2,500 counted near-copies byte-identity cannot see |
+| Duplicated lines removed | 0 of **1,889** repo-wide, 6 families (re-derived, baselined) | ≥ 2,500 | `scripts/measure_duplication.py` + ratchet | **1,247** over the same six families (1,889 -> 642, re-measured 2026-09-23 after Part 3). Not met, and not measurable: 2,500 counted near-copies byte-identity cannot see |
 | Golden net armed | unasserted | asserted | `tests/test_safety_net_is_armed.py` | Met |
 | Analysis-tab coverage | unmeasured | ratchet up | `pytest-cov` (Step 0) | 83% -> 88% repo-wide, but **no ratchet exists**; line coverage was ruled the wrong instrument (Step 2) and the gate is queued in `future_fixes.md` |
 | Numerical output | unpinned | unchanged | golden files (Step 2 branches 4 and 6) | Met - goldens green, and changed only with a dated `DECISIONS.md` entry |
