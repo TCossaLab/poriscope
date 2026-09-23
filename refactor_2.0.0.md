@@ -3283,6 +3283,26 @@ held. What did not:
   outcomes, the restored post-3f pass record, and the stale "next" and "owed" pointers,
   each marked historical in place.
 
+### Part 2, code against docs - done 2026-09-22
+
+Four read-only audits of the hand-written pages (plugin manual, frontend and signals, user
+guide, workflow and architecture), every finding re-checked before editing; `1e507fae`. Two
+code fixes fell out: `standalone=True` now declares a parent plugin key as its base class so
+the scripting guide works as written (`c0941f83`), and `ChimeraReader20240101` announces its
+deprecation (`29e6dbc1`). The two named items landed first (`626cb971`).
+
+### Part 3, orphans and dead code - production code done 2026-09-22
+
+Four commits on `feature/step-8-3-dead-code`: the bus's relay sinks (`541f5253`, 47 methods),
+dead shell/view/widget methods (`aa3ebef2`, 24), write-only attributes plus a context-manager
+test (`79a14aa2`), and the `_dismiss_milestone` swap (`099c09ed`). Duplication 681 -> 650: the
+`*View.py` 31-line floor turned out to be half dead code. Kept by decision:
+`BaseDataPlugin.__enter__`/`__exit__` (context-manager support, now tested) and
+`_rescale_data_to_adc` (documented hook). **Not done:** the tests/assets half of the sweep -
+unused test doubles and fixtures, patch targets naming things that no longer exist, unreferenced
+`_static` assets, and the 17 dead e2e `sys.path` shims. Its agent stopped at a usage limit
+before reporting.
+
 ## Verification
 
 | Metric | Baseline | Target | Instrument | Outcome, Step 8 audit 2026-09-22 |
