@@ -85,8 +85,9 @@ Three rules apply regardless:
 ## Testing conventions
 
 - **Run the whole suite before every commit: plain `pytest`, no path arguments and no
-  marker filter.** A full run is ~2.5 minutes, so there is no reason to select a subset,
-  and choosing one is itself the error-prone step — a scoped run that skipped
+  marker filter.** A full run takes ~4 minutes on CI and ~10 on the OneDrive-synced dev
+  checkout (run it in the background, redirected to a file); that is still no reason to
+  select a subset, because choosing one is itself the error-prone step — a scoped run that skipped
   `tests/unit/controllers/` once let a broken commit reach CI. Iterating on a single
   failing test while debugging is fine; the gate is a full green run immediately before
   the commit. Documentation-only changes (docstrings, comments, markdown) need no run.
