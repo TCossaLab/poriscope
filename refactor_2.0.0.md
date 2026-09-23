@@ -3348,6 +3348,52 @@ MetadataView and ProteinView" was near-copies - byte-identity finds 239.
 Suite time grew with the suite: 2,950 -> 4,215 tests, 409 -> 517 s locally outside OneDrive
 (per test 0.139 -> 0.123 s), CI's test step 135 -> ~250 s. No per-test regression; left as is.
 
+### Post-refactor cleanup - 2026-09-23
+
+What was done after the last structural change landed, in order, and the lesson each one
+carries for the next refactor. One branch each; full suite green before every commit.
+
+1. **Test residue sweep** (`7204a0a5`). Mocks accept any attribute, so dead setup survives a
+   deletion silently. Instruments that found it: identifiers present in the pre-refactor
+   `poriscope/` (`git grep v1.9.0`) and absent now, still named in `tests/` (~60); a full run
+   recording every `patch(create=True)` / `monkeypatch.setattr(raising=False)` that created
+   an attribute (zero); string patch targets checked against their module's uses (zero); an
+   AST scan for unused test-module defs and fixtures; empty section banners and "Covers:"
+   roster lines naming deleted methods (70 banners). Two tests asserted nothing ("should not
+   raise") and now assert the emitted request. **Lesson:** a deletion's residue is found by
+   diffing the name sets of before and after, not by reading.
+2. **Unreferenced doc assets** - basename grep over `_static`; two images, one orphaned when
+   the bus pages were rewritten, one never referenced.
+3. **Changelog regroup** (`6ce48ac2`). 210 entries, 46 breaking, mapped by line number to
+   Breaking (results that change / data plugin API / analysis-tab API), User-Facing
+   Behaviour by tab, Data Plugins, Analysis Tabs, Application Shell, Documentation,
+   Developer Tooling. Checked mechanically: every entry exactly once, every breaking entry
+   under Breaking, older sections byte-identical. **Lesson:** do it last, and verify the
+   mapping by script rather than by reading 200 lines.
+4. **Plan citations out of prose** (`1850eb4f` tests, `12973668` ratchet scripts). ~330 "Step 4a" / "5e.3" / "Decision B" /
+   "method rule 52" references across 55 test files and three ratchet scripts, rewritten as
+   mechanism. Four subagents on disjoint file sets; an AST diff with docstrings stripped
+   proved only prose changed. **Lesson:** citing the plan in code is borrowing against a
+   file that will be deleted; write the mechanism the first time.
+5. **Suite-time investigation.** 2,950 -> 4,215 tests, 409 -> 517 s locally (per test
+   0.139 -> 0.123 s); growth is new coverage, left alone. Method: per-phase durations from a
+   recorder plugin, baseline commit in a worktree outside OneDrive, and suspicious files
+   re-run in isolation on both commits (the e2e doubling was run noise). CI's test step
+   135 -> ~250 s, of which ~90 s was `--cov`, added only to feed the audit below.
+6. **Exit review** - both ends re-measured with one instrument; see the section above.
+   Three starting figures did not reproduce as recorded. **Lesson:** a baseline is only a
+   baseline if the instrument that took it is committed.
+7. **Refactor-only tooling retired** (`10fd0aa4`). `check_refactor_coverage.py`, its two
+   test files, both CI steps and `--cov` in CI. Kept as standing gates: the MVC boundary
+   allowlist, the duplication ratchet, the shell-complexity ratchet, the golden-net check
+   and the characterization tests. **Lesson:** separate at build time the tools that guard
+   the refactor (delete at exit) from the tools that guard its result (keep).
+8. **A flake found by the gate is fixed, not re-run** (`a35e7bc8`). The metadata-export flow
+   waited for two of the three tables it asserted on; it failed once in a full run and
+   passed alone, and the fix was to wait for the table the export writes last.
+9. **CLAUDE.md's suite time corrected** (`69d4bc96`): ~4 min on CI, ~10 on the OneDrive
+   checkout, run in the background.
+
 ## Verification
 
 | Metric | Baseline | Target | Instrument | Outcome, Step 8 audit 2026-09-22 |
