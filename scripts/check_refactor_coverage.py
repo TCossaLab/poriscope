@@ -479,13 +479,12 @@ MOVED: Tuple[Tuple[str, str, str], ...] = (
     ("poriscope/models/main_model.py", "replace_classes_with_class_names", "5c.6"),
     ("poriscope/models/main_model.py", "replace_class_names_with_classes", "5c.6"),
     # 5c.6's ruling on the last three over the gate. All three came down rather
-    # than being recorded as floors, so the shell gate reads zero. _dismiss_milestone
-    # carries the two swallowed-exception paths that were among switch_to_page's six
-    # uncovered statements - untested until they were given a name.
+    # than being recorded as floors, so the shell gate reads zero. switch_to_page's
+    # milestone teardown was split out here too and later folded into the existing
+    # clear_milestone_dialog, which is pinned by its own tests.
     ("poriscope/controllers/main_controller.py", "_renamed_history", "5c.6"),
     ("poriscope/views/main_view.py", "_pages_named", "5c.6"),
     ("poriscope/views/main_view.py", "_reindex_pages", "5c.6"),
-    ("poriscope/views/main_view.py", "_dismiss_milestone", "5c.6"),
 )
 
 VIEW_FILES: Tuple[str, ...] = (

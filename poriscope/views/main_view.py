@@ -914,7 +914,7 @@ class MainView(QMainWindow, WalkthroughMixin):
                 return
             else:
                 self.logger.info(f"Switching to expected milestone target: {page_name}")
-                self._dismiss_milestone()
+                self.clear_milestone_dialog()
                 self._clear_analysis_proxy()
                 self._expected_next_view = None
 
@@ -931,44 +931,6 @@ class MainView(QMainWindow, WalkthroughMixin):
             self.logger.warning(
                 f"Attempted to switch to non-existent page: {page_name}"
             )
-
-    def _dismiss_milestone(self) -> None:
-        """
-        Tear down the milestone dialog and its overlay, whatever state they are in.
-
-        Both teardowns swallow their exception on purpose. This runs while the
-        user is navigating, and a half-destroyed overlay must not block the page
-        switch they asked for - failing here would leave them stuck on the page
-        the milestone was covering. The failures are logged at DEBUG rather than
-        WARNING because Qt objects being already gone is ordinary during
-        teardown, not a fault worth putting on the status panel.
-
-        Kept apart from ``switch_to_page`` because it is the only part of that
-        method that acts rather than decides.
-        """
-        # The caller has already checked this, but the helper is the natural place
-        # to call when a milestone *might* be up, so it answers for itself rather
-        # than trusting its one current caller to keep checking.
-        if self._milestone_dialog is None:
-            return
-
-        try:
-            if (
-                hasattr(self._milestone_dialog, "overlay")
-                and self._milestone_dialog.overlay
-            ):
-                self._milestone_dialog.overlay.close()
-                self._milestone_dialog.overlay.deleteLater()
-        except Exception as e:
-            self.logger.debug(f"Overlay cleanup error: {e}")
-
-        try:
-            self._milestone_dialog.close()
-            self._milestone_dialog.deleteLater()
-        except Exception as e:
-            self.logger.debug(f"Milestone dialog cleanup error: {e}")
-
-        self._milestone_dialog = None
 
     @log(logger=logger)
     def sync_sidebar_highlight(self, page_name: str) -> None:

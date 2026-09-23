@@ -138,6 +138,28 @@ def test_switch_to_page_cleans_milestone(main_view, mocker, qtbot):
     assert main_view._milestone_dialog is None
 
 
+def test_switching_to_the_milestone_target_tears_down_once_when_close_re_enters(
+    main_view,
+):
+    """
+    Closing the milestone dialog fires its ``finished`` signal, which reaches
+    ``cancel_walkthrough`` and so ``clear_milestone_dialog`` again, while the first
+    teardown is still running. The reference is cleared before ``close()`` so that
+    re-entry finds nothing to do rather than closing a second time.
+    """
+    main_view.add_page("TargetPage", QWidget())
+    dialog_mock = MagicMock()
+    dialog_mock.close.side_effect = lambda: main_view.clear_milestone_dialog()
+    main_view._milestone_dialog = dialog_mock
+    main_view._expected_next_view = "TargetPage"
+
+    main_view.switch_to_page("TargetPage")
+
+    dialog_mock.close.assert_called_once()
+    dialog_mock.deleteLater.assert_called_once()
+    assert main_view._milestone_dialog is None
+
+
 def test_switch_to_page_cleans_analysis_proxy(main_view):
     """
     Test that switching to the expected next page clears the analysis proxy widget.
@@ -1104,9 +1126,7 @@ def test_add_text_to_display_keeps_repeated_messages_distinguishable(main_view):
 
 # ------------- 5c.6: the helpers behind page removal and milestones -------
 #
-# Each is in the refactor-coverage audit's MOVED table. _dismiss_milestone's two
-# swallowed-exception paths were among the six statements switch_to_page left
-# uncovered, so they are pinned here for the first time.
+# Each is in the refactor-coverage audit's MOVED table.
 
 
 class TestPagesNamed:
@@ -1163,84 +1183,3 @@ class TestReindexPages:
         main_view._reindex_pages()
 
         assert "Stray" not in main_view.pages
-
-
-class TestDismissMilestone:
-    """
-    Tearing down the milestone overlay and dialog.
-
-    Both teardowns swallow their exception on purpose: this runs while the user
-    is navigating, and a half-destroyed overlay must not block the page switch
-    they asked for. Those two handlers were uncovered until 5c.6.
-    """
-
-    def test_closes_the_overlay_and_the_dialog(self, main_view):
-        """The ordinary path, and it must clear the dialog reference."""
-        dialog = MagicMock()
-        main_view._milestone_dialog = dialog
-
-        main_view._dismiss_milestone()
-
-        dialog.overlay.close.assert_called_once()
-        dialog.overlay.deleteLater.assert_called_once()
-        dialog.close.assert_called_once()
-        dialog.deleteLater.assert_called_once()
-        assert main_view._milestone_dialog is None
-
-    def test_a_dialog_with_no_overlay_is_fine(self, main_view):
-        """Not every milestone dialog has one."""
-        dialog = MagicMock()
-        del dialog.overlay
-        main_view._milestone_dialog = dialog
-
-        main_view._dismiss_milestone()
-
-        dialog.close.assert_called_once()
-        assert main_view._milestone_dialog is None
-
-    def test_an_overlay_that_fails_to_close_does_not_stop_the_dialog(
-        self, main_view, caplog
-    ):
-        """
-        A half-destroyed overlay must not leave the user stuck on the page the
-        milestone was covering, so the dialog is still torn down after it.
-        """
-        dialog = MagicMock()
-        dialog.overlay.close.side_effect = RuntimeError("already deleted")
-        main_view._milestone_dialog = dialog
-
-        with caplog.at_level(logging.DEBUG):
-            main_view._dismiss_milestone()
-
-        assert "Overlay cleanup error" in caplog.text
-        dialog.close.assert_called_once()
-        assert main_view._milestone_dialog is None
-
-    def test_a_dialog_that_fails_to_close_is_still_let_go(self, main_view, caplog):
-        """
-        Logged at DEBUG, not WARNING: a Qt object already gone is ordinary during
-        teardown, not a fault worth putting on the status panel.
-        """
-        dialog = MagicMock()
-        dialog.close.side_effect = RuntimeError("already deleted")
-        main_view._milestone_dialog = dialog
-
-        with caplog.at_level(logging.DEBUG):
-            main_view._dismiss_milestone()
-
-        assert "Milestone dialog cleanup error" in caplog.text
-        assert main_view._milestone_dialog is None
-
-
-def test_dismiss_milestone_is_safe_when_no_milestone_is_up(main_view):
-    """
-    The helper answers for itself rather than trusting its caller to have checked.
-
-    Its one current caller does check, but a method that tears something down is
-    the natural thing to call when that something *might* be there.
-    """
-    main_view._milestone_dialog = None
-
-    main_view._dismiss_milestone()
-
-    assert main_view._milestone_dialog is None

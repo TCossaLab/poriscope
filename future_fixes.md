@@ -23,8 +23,6 @@ Read-only investigation and measurement do not.
 - **`MetaSubsetTabController.validate_raw_filter:736` still builds `f"{query} LIMIT 0"`** in
   the Controller. It stayed because no `MetaSubsetTabModel` existed; one has since
   2026-09-17.
-- **`MainView._dismiss_milestone:940` re-implements `clear_milestone_dialog:1141`** instead
-  of calling it. Step 8's orphan sweep.
 
 ## A milestone blocks the page switch but not what caused it (2026-09-21)
 

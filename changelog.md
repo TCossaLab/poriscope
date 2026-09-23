@@ -1,5 +1,7 @@
 ## Poriscope 2.0.0: in progress
 
+* **Fixed a walkthrough milestone being torn down twice** when you switch to the page it points at - closing the dialog re-entered the teardown before it had let go of the dialog
+
 * **Breaking: `MetaControls.clear_popup_reference` and `MetaSubsetTabControls.get_selected_filter_names` are removed**, and `MetaView._set_display_area_base` with them - nothing called any of them, and `clear_popup_reference` tended a popup registry nothing ever filled
 
 * **Breaking: `MetaController.update_plot_data` and `MetaController.set_generator` are removed** - nothing called either since the signal bus went; a tab hands a generator to `self.model.set_generator` directly, as every shipped tab does
