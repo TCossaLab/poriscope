@@ -5,14 +5,6 @@ Covers:
 - _init creates view and model
 - _setup_connections runs without error (empty)
 - update_available_plugins logs debug and delegates to model and view
-- set_event_filter delegates to view
-- set_eventfitting_status delegates to view (True and False)
-- update_plot_data delegates to view (data present, data absent)
-- update_features (all features with matching labels, no labels, mismatched vlabels,
-  mismatched hlabels, mismatched plabels, all None)
-- update_channels delegates to view
-- set_num_events_allowed delegates to view
-- relay_eventfitting_status delegates to view (True and False)
 """
 
 from __future__ import annotations
@@ -1087,24 +1079,3 @@ def test_update_available_plugins_logs_debug(
     """
     controller.update_available_plugins({"MetaReader": ["R1"]})
     controller.logger.debug.assert_called_once()  # type: ignore[attr-defined]
-
-
-# ----------------------- set_event_filter ----------------------------
-
-
-# ------------------ set_eventfitting_status --------------------------
-
-
-# ----------------------- update_plot_data ----------------------------
-
-
-# ----------------------- update_features ----------------------------
-
-
-# ----------------------- update_channels ----------------------------
-
-
-# ------------------- set_num_events_allowed --------------------------
-
-
-# ---------------- relay_eventfitting_status --------------------------

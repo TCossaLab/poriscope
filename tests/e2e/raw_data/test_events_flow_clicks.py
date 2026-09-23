@@ -23,8 +23,6 @@ number of database rows -- rather than merely that something happened.
 """
 
 import sqlite3
-import sys
-from pathlib import Path
 
 import pytest
 from PySide6 import QtWidgets
@@ -51,11 +49,6 @@ from tests.e2e._helpers import (
     sqlite_has_tables,
     sqlite_row_count,
 )
-
-REPO_ROOT = Path(__file__).resolve().parents[2]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
-
 
 # ==========================================================================
 # Workflow stages

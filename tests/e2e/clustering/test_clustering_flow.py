@@ -36,8 +36,6 @@ commit time.
 
 import os
 import sqlite3
-import sys
-from pathlib import Path
 
 import pytest
 from PySide6 import QtCore, QtWidgets
@@ -56,10 +54,6 @@ from tests.e2e._helpers import (
     open_menu_hybrid,
     schedule_dialog_autofill,
 )
-
-REPO_ROOT = Path(__file__).resolve().parents[3]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
 LOADER_SUBCLASS_NAME = os.getenv("E2E_DBLOADER_NAME", "SQLiteDBLoader")
 

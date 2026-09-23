@@ -2,37 +2,31 @@
 Tests for poriscope.controllers.main_controller.MainController.
 
 Covers:
-- instantiate_analysis_tab (new tab, existing tab, instantiation error)
-- handle_global_signal dispatch (success, instance None, missing member,
-  non-callable member, unbindable call args, body TypeError not retried, func
-  raises, None result reaching the callback, tuple return splatted by annotation,
-  callback other exception)
-- update_plugin_history CRUD (add, delete, rename, save_session called)
+- instantiate_analysis_tab (new tab, existing tab, sidebar highlight, instantiation error)
+- update_plugin_history CRUD (add, delete, rename, save_session called, tab state synced)
 - update_tab_action_history stores and saves
 - setup_connections signal wiring
-- handle_about_to_quit stops workers and calls handle_exit
+- handle_about_to_quit flushes session state, stops workers and calls handle_exit
 - send_curent_data_server delegates to model and view
 - send_curent_user_plugin_location delegates to model and view
 - update_data_server_location delegates to model and data_plugin_controller
-- update_user_plugin_location adds parent to sys.path and saves config
+- update_user_plugin_location adds the folder and its parent to sys.path, once
 - get_plugin_instance retrieves instance and invokes callback
 - _lookup_historical_settings (found in current, found in previous, not found)
-- handle_data_plugin_controller_signal (success with callback, func missing raises,
-  non-callable raises, callback exception logged with traceback) - it shares
-  _dispatch_to with handle_global_signal, so the cases above cover both paths
 - update_available_plugins caches and pushes to tabs
-- save_session (with file, without file, empty history)
+- save_session (with file, without file, tab state synced first)
 - save_tab_action_history delegates to model
-- load_session (success restore tabs and plugins, None history, tab error,
-  plugin ValueError already-exists, plugin other error)
+- load_session (restore tabs, plugins and subset filters, reset first, None history,
+  tab error, plugin ValueError, plugin other error, report of unrestored entries)
 - send_analysis_tabs (tabs present, tabs empty)
+- reset_session, refresh_available_plugins and _renamed_history
 """
 
 from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Dict, List
 from unittest.mock import MagicMock
 
 import pytest
@@ -54,95 +48,6 @@ def _fake_signal(mocker: MockerFixture) -> MagicMock:
     sig.connect = mocker.Mock()
     sig.emit = mocker.Mock()
     return sig
-
-
-class _BodyTypeErrorPlugin:
-    """
-    Plugin double whose dispatched method binds cleanly but raises ``TypeError`` from its body.
-    """
-
-    def __init__(self) -> None:
-        self.calls: List[Tuple[Any, ...]] = []
-
-    def fn(self, channel: int) -> None:
-        """
-        Record the call, then raise from the body rather than at the call boundary.
-
-        :param channel: Arbitrary single argument.
-        """
-        self.calls.append((channel,))
-        raise TypeError("raised from the body, not the call boundary")
-
-
-class _NoneReturningPlugin:
-    """
-    Plugin double whose dispatched method takes one argument and returns ``None``.
-    """
-
-    def __init__(self) -> None:
-        self.calls: List[Tuple[Any, ...]] = []
-
-    def fn(self, channel: int) -> None:
-        """
-        Record the call and return nothing, as an ``Optional``-returning plugin method does on a miss.
-
-        :param channel: Arbitrary single argument.
-        """
-        self.calls.append((channel,))
-
-
-class _TupleReturningPlugin:
-    """
-    Plugin double whose dispatched method declares a ``Tuple`` return, as ``validate_filter_query`` does.
-    """
-
-    def __init__(self) -> None:
-        self.calls: List[Tuple[Any, ...]] = []
-
-    def fn(self, channel: int) -> Tuple[str, str]:
-        """
-        Record the call and return a pair for the dispatcher to splat.
-
-        :param channel: Arbitrary single argument.
-        :return: A pair of values.
-        """
-        self.calls.append((channel,))
-        return ("first", "second")
-
-
-class _Callback:
-    """
-    Callback double with exactly one required parameter.
-    """
-
-    def __init__(self) -> None:
-        self.calls: List[Tuple[Any, ...]] = []
-
-    def __call__(self, value: Any) -> None:
-        """
-        Record the single argument it was called with.
-
-        :param value: The value passed by the dispatcher.
-        """
-        self.calls.append((value,))
-
-
-class _TwoArgCallback:
-    """
-    Callback double with two required parameters, mirroring ``update_column_units(units, axis)``.
-    """
-
-    def __init__(self) -> None:
-        self.calls: List[Tuple[Any, ...]] = []
-
-    def __call__(self, value: Any, axis: Any) -> None:
-        """
-        Record both arguments it was called with.
-
-        :param value: The result of the dispatched call.
-        :param axis: The trailing ``ret_args`` entry.
-        """
-        self.calls.append((value, axis))
 
 
 # --------------------------- fixtures ---------------------------
@@ -945,7 +850,6 @@ def test_load_session_restores_tabs_and_plugins(
     tab_instance = mocker.Mock()
     tab_instance.view = mocker.Mock()
     tab_instance.create_plugin = mocker.Mock(connect=mocker.Mock())
-    tab_instance.data_plugin_controller_signal = mocker.Mock(connect=mocker.Mock())
     tab_instance.add_text_to_display = mocker.Mock(connect=mocker.Mock())
     tab_instance.update_tab_action_history = mocker.Mock(connect=mocker.Mock())
     tab_instance.save_tab_action_history = mocker.Mock(connect=mocker.Mock())
@@ -996,7 +900,6 @@ def test_load_session_restores_subset_filters_for_newly_created_tab(
     tab_instance = mocker.Mock()
     tab_instance.view = mocker.Mock()
     tab_instance.create_plugin = mocker.Mock(connect=mocker.Mock())
-    tab_instance.data_plugin_controller_signal = mocker.Mock(connect=mocker.Mock())
     tab_instance.add_text_to_display = mocker.Mock(connect=mocker.Mock())
     tab_instance.update_tab_action_history = mocker.Mock(connect=mocker.Mock())
     tab_instance.save_tab_action_history = mocker.Mock(connect=mocker.Mock())
@@ -1057,9 +960,7 @@ def test_load_session_persists_restored_tab_state_before_returning(
     tab_instance = mocker.Mock()
     tab_instance.view = mocker.Mock()
     for signal in (
-        "global_signal",
         "create_plugin",
-        "data_plugin_controller_signal",
         "plugin_state_changed",
         "add_text_to_display",
         "update_tab_action_history",

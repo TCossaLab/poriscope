@@ -3,16 +3,8 @@ Tests for poriscope.plugins.analysistabs.MetadataController.
 
 Covers:
 - _init creates view and model
-- _setup_connections wires signals
-- set_exported_event_count delegation
-- relay_event_query (query present, query empty with debug)
-- relay_event_data_generator delegation
-- relay_event_plot_data_generator delegation
-- relay_plot_data delegation
-- relay_units delegation
-- update_column_names (names provided, empty list)
-- update_column_units delegation
-- get_experiment_names_for_tree delegation
+- _setup_connections runs without error
+- request_column_units asks the loader and applies the answer to the named axis
 - request_experiment_structure (conversion, copy behaviour, multi-experiment)
 - relay_query debug path, happy path, validate_new_filter, validate_edited_filter
 """
@@ -131,28 +123,7 @@ def test_setup_connections_runs_without_error(mocker: MockerFixture) -> None:
     ctrl._setup_connections()  # should not raise
 
 
-# -------------------- set_exported_event_count -----------------------
-
-
-# ----------------------- relay_event_query ---------------------------
-
-
-# ------------------ relay_event_data_generator -----------------------
-
-
-# ---------------- relay_event_plot_data_generator --------------------
-
-
-# ------------------------ relay_plot_data ----------------------------
-
-
-# ------------------------- relay_units -------------------------------
-
-
-# ---------------------- update_column_names --------------------------
-
-
-# ---------------------- update_column_units --------------------------
+# ---------------------- request_column_units -------------------------
 
 
 def test_request_column_units_applies_the_y_axis_too(
@@ -228,9 +199,6 @@ def test_request_column_units_does_not_raise_out_of_the_slot(
     controller.model.call.side_effect = RuntimeError("boom")
 
     controller.request_column_units("ldr", "duration", "x_axis")
-
-
-# ------------------ get_experiment_names_for_tree --------------------
 
 
 # ----------------- request_experiment_structure --------------------

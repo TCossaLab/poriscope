@@ -2,15 +2,11 @@
 Tests for poriscope.utils.MetaController.MetaController.
 
 Covers:
-- update_plot_data delegation
 - export_plot_data (data present, data absent, no filename given)
 - load_actions_from_json (success, file error, class name key present)
 - relay_add_text_to_display delegation
 - handle_kill_worker (valid identifier, invalid format, key missing, channel missing)
-- set_generator delegation
 - handle_kill_all_workers (matching subclass, non-matching subclass)
-- _relay_global_signal (valid return function, missing return function, empty return function, emit exception)
-- _relay_data_plugin_controller_signal (valid return function, missing return function, empty return function, emit exception)
 - update_available_plugins delegation
 - save_tab_actions emits signal
 - update_tab_actions (add history, undo normal, undo empty, undo skips reset_actions)
@@ -52,8 +48,6 @@ def mock_view(mocker: MockerFixture) -> MagicMock:
         "export_plot_data",
         "load_actions_from_json",
         "create_plugin",
-        "global_signal",
-        "data_plugin_controller_signal",
     ]:
         attr = mocker.Mock()
         attr.connect = mocker.Mock()
@@ -73,8 +67,6 @@ def mock_model(mocker: MockerFixture) -> MagicMock:
     for signal in [
         "update_progressbar",
         "add_text_to_display",
-        "global_signal",
-        "data_plugin_controller_signal",
     ]:
         attr = mocker.Mock()
         attr.connect = mocker.Mock()
@@ -117,8 +109,6 @@ def controller(
 
     # Mock Qt signals on the instance
     for sig in [
-        "global_signal",
-        "data_plugin_controller_signal",
         "add_text_to_display",
         "update_tab_action_history",
         "save_tab_action_history",
@@ -144,9 +134,6 @@ def test_relay_create_plugin_emits_create_plugin_signal(
     """
     controller._relay_create_plugin("MetaReader", "MyReader")
     controller.create_plugin.emit.assert_called_once_with("MetaReader", "MyReader")
-
-
-# ----------------------- update_plot_data ----------------------------
 
 
 # ----------------------- export_plot_data ----------------------------
@@ -386,9 +373,6 @@ def test_handle_kill_worker_reports_to_panel_when_channel_missing(
     mock_model.stop_workers.assert_not_called()
 
 
-# ----------------------- set_generator ------------------------------
-
-
 # ------------------- handle_kill_all_workers -------------------------
 
 
@@ -432,12 +416,6 @@ def test_handle_kill_all_workers_does_nothing_when_subclass_does_not_match(
     """
     controller.handle_kill_all_workers("SomeOtherController")
     mock_model.stop_workers.assert_not_called()
-
-
-# ------------------- _relay_global_signal ----------------------------
-
-
-# ----------- _relay_data_plugin_controller_signal --------------------
 
 
 # ------------------- update_available_plugins ------------------------
@@ -716,12 +694,8 @@ def test_init_kwargs_are_set_as_instance_attributes(
     mock_view.export_plot_data.connect = mocker.Mock()
     mock_view.load_actions_from_json.connect = mocker.Mock()
     mock_view.create_plugin.connect = mocker.Mock()
-    mock_view.global_signal.connect = mocker.Mock()
-    mock_view.data_plugin_controller_signal.connect = mocker.Mock()
     mock_model.update_progressbar.connect = mocker.Mock()
     mock_model.add_text_to_display.connect = mocker.Mock()
-    mock_model.global_signal.connect = mocker.Mock()
-    mock_model.data_plugin_controller_signal.connect = mocker.Mock()
     mock_model.run_generators = mocker.Mock()
     mock_model.update_progressbar = mocker.Mock()
 

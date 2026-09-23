@@ -27,8 +27,6 @@ one this test isolates. Plot Events alone is sufficient to observe the
 channel-count gating in isolation.
 """
 
-import sys
-from pathlib import Path
 
 import pytest
 from PySide6 import QtWidgets
@@ -46,11 +44,6 @@ from tests.e2e._helpers import (
     open_menu_hybrid,
     schedule_dialog_autofill,
 )
-
-REPO_ROOT = Path(__file__).resolve().parents[3]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
-
 
 # ------------- helpers specific to this tab's channel combo ---------------
 # Same shape as the other event_analysis files' local helpers: this tab's

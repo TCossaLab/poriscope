@@ -5,14 +5,12 @@ Poriscope resolves its config, session and log directories through
 writes into the developer's actual ``%LOCALAPPDATA%/Poriscope`` profile and can
 overwrite their real saved session and tab-action history.
 
-Every place that currently does so already redirects that call for itself -
-``tests/e2e/conftest.py``'s autouse ``sandbox_appdata`` covers the whole e2e
-tree, and ``tests/unit/models/conftest.py``'s ``main_model`` fixture covers the
-model tests. This fixture makes the redirection an inherited default rather
-than a convention each area has to remember, so a test added anywhere else
-cannot reach real user state. Both existing fixtures still run after this one
-and deliberately override it with their own roots, because their assertions
-depend on the specific layout they build.
+This autouse fixture makes the redirection an inherited default rather than a
+convention each area has to remember, so a test added anywhere cannot reach real
+user state. ``tests/e2e/conftest.py``'s autouse ``sandbox_appdata`` runs after it
+and deliberately overrides it with its own root, because the e2e assertions depend
+on the specific layout it builds. The ``main_model`` fixture in
+``tests/unit/models/test_main_model.py`` relies on this one alone.
 """
 
 import sys
@@ -32,13 +30,11 @@ import pytest
 # root, and the bare ``pytest`` command (unlike ``python -m pytest``) does not add
 # the current directory either. The editable install only exposes ``poriscope``.
 #
-# tests/e2e/conftest.py and tests/integration/conftest.py each carry their own copy
-# of this shim. Those run only for their own subtrees, which left the import working
-# in a full run purely because ``tests/e2e`` is collected before ``tests/unit`` and
-# its conftest had already patched sys.path - so ``pytest tests/unit/views`` failed
-# standalone with ModuleNotFoundError while the full suite passed. Doing it here
-# instead makes it independent of collection order. The other two copies are now
-# redundant but harmless; both guard on the path not already being present.
+# This lives here, in the root conftest, because pytest imports it before any
+# subtree's conftest or test module, so the import works whatever paths a run
+# selects. It used to be copied into tests/e2e/conftest.py and
+# tests/integration/conftest.py, which left ``pytest tests/unit/views`` failing
+# standalone while the full suite passed.
 _TESTS_DIR = Path(__file__).resolve().parent
 for _candidate in [_TESTS_DIR, *_TESTS_DIR.parents]:
     if (_candidate / "poriscope").exists():

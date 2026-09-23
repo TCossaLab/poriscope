@@ -6,9 +6,6 @@ Covers:
 - _setup_connections wires calculate_psd signal
 - calculate_psd computes PSD via model and updates view
 - update_available_plugins logs debug and delegates to model and view
-- set_event_filter delegates to view
-- update_plot_data delegates to view
-- update_channels delegates to view
 - _load_and_filter reads each channel through call(), dropping what fails (4a)
 - load_trace_data / load_psd_data hand the result to the matching view setter
 - load_event_plot_data makes the five event-plot calls the View used to make (4a)
@@ -16,9 +13,6 @@ Covers:
 - request_eventfinding_statuses / start_eventfinding: the launch, in two halves (4a)
 - update_available_plugins resolves eventfinder channels before pushing names (4a)
 - _resolve_eventfinder_channels queries every finder and omits one that raises
-- set_num_events_allowed delegates to view
-- set_eventfinding_status delegates to view
-- relay_eventfinding_status delegates to view
 """
 
 from __future__ import annotations
@@ -237,15 +231,6 @@ def test_update_available_plugins_logs_debug(
     """
     controller.update_available_plugins({"MetaReader": ["R1"]})
     controller.logger.debug.assert_called_once()  # type: ignore[attr-defined]
-
-
-# ----------------------- set_event_filter ----------------------------
-
-
-# ----------------------- update_plot_data ----------------------------
-
-
-# ----------------------- update_channels ----------------------------
 
 
 # ------------- launching event finding (Step 4a) ---------------------
@@ -1262,15 +1247,6 @@ def test_resolve_eventfinder_channels_omits_a_finder_that_cannot_answer(
     assert resolved == {"EF1": [0], "EF3": [2]}
     assert "EF2" not in resolved
     controller.logger.error.assert_called_once()  # type: ignore[attr-defined]
-
-
-# ------------------- set_num_events_allowed --------------------------
-
-
-# ------------------ set_eventfinding_status --------------------------
-
-
-# ---------------- relay_eventfinding_status --------------------------
 
 
 # ------------- trimming a request to the channel's length -----------------

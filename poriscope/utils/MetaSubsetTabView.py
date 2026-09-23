@@ -976,7 +976,7 @@ class MetaSubsetTabView(MetaView):
     @log(logger=logger)
     def set_event_query(self, query: str) -> None:
         """
-        A global signal callback that provides a valid SQL query for fetching event data.
+        Store the SQL query used to fetch event data for this tab's subset.
 
         :param query: SQL query string for fetching event data.
         :type query: str

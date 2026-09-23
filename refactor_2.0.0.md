@@ -3291,17 +3291,28 @@ code fixes fell out: `standalone=True` now declares a parent plugin key as its b
 the scripting guide works as written (`c0941f83`), and `ChimeraReader20240101` announces its
 deprecation (`29e6dbc1`). The two named items landed first (`626cb971`).
 
-### Part 3, orphans and dead code - production code done 2026-09-22
+### Part 3, orphans and dead code - done 2026-09-23
 
 Four commits on `feature/step-8-3-dead-code`: the bus's relay sinks (`541f5253`, 47 methods),
 dead shell/view/widget methods (`aa3ebef2`, 24), write-only attributes plus a context-manager
 test (`79a14aa2`), and the `_dismiss_milestone` swap (`099c09ed`). Duplication 681 -> 650: the
 `*View.py` 31-line floor turned out to be half dead code. Kept by decision:
 `BaseDataPlugin.__enter__`/`__exit__` (context-manager support, now tested) and
-`_rescale_data_to_adc` (documented hook). **Not done:** the tests/assets half of the sweep -
-unused test doubles and fixtures, patch targets naming things that no longer exist, unreferenced
-`_static` assets, and the 17 dead e2e `sys.path` shims. Its agent stopped at a usage limit
-before reporting.
+`_rescale_data_to_adc` (documented hook).
+
+**Tests/assets half, 2026-09-23**, on `feature/step-8-3-tests-assets`. Instruments: identifiers in
+`tests/` present in `v1.9.0`'s `poriscope/` and absent now; a full run recording every
+`patch(create=True)` and `monkeypatch.setattr(raising=False)` that created an attribute; string
+patch targets checked against their module's uses. Found and removed: five unused dispatch
+doubles and a bus stand-in, mock `global_signal`/`data_plugin_controller_signal` attributes, 70
+empty section banners with their tombstone prose, "Covers:" roster lines for deleted methods,
+eight stale attributes and mocks set on views, 16 e2e shims (the 17th was the e2e conftest's) plus
+the e2e and integration conftest copies, and two unreferenced images. Two vacuous tests now
+assert (`_commit_clusters` emits its check; `_handle_timer` opens no `TimeWidget`); the
+duplicate `test_proceeds_with_fit_data` went. **Zero** created patch attributes, **zero** dead
+string patch targets. **Kept:** the four never-used factory fixtures in `tests/e2e/raw_data` and
+`event_analysis` conftests and `multichannel_chimera.py` behind them - Carogg28's scaffolding,
+not refactor residue. **Not swept:** 276 plan-step citations ("Step 4a") across 55 test files.
 
 ## Verification
 

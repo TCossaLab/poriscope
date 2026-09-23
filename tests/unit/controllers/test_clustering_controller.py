@@ -11,9 +11,6 @@ Covers:
 - check_cluster_column / commit_clusters, the Step 4a commit path: two round trips
   with the overwrite confirmation in the View between them, and a failed drop that
   stops the commit rather than writing on top of a half-deleted result
-- relay_event_data_generator delegation
-- relay_plot_data delegation
-- relay_units delegation
 - update_column_names (names provided with info log, empty list with warning log)
 - update_column_units (units provided with info log, empty dict skips view)
 - cluster, the Decision B command path: the Model builds the clustering frame from
@@ -136,15 +133,6 @@ def test_display_write_status_emits_failure_message(
     controller.add_text_to_display.emit.assert_called_once_with(
         "Failed to write clustering data", "ClusteringController"
     )
-
-
-# --------------- relay_event_data_generator --------------------------
-
-
-# ----------------------- relay_plot_data -----------------------------
-
-
-# ------------------------- relay_units -------------------------------
 
 
 # -------------------- load_metadata_for_clustering (Step 4a) ----------

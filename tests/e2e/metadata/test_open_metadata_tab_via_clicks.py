@@ -12,8 +12,6 @@ Uses no test data and adds no plugins.
 """
 
 import os
-import sys
-from pathlib import Path
 
 import pytest
 
@@ -24,9 +22,6 @@ from tests.e2e._helpers import QT_WAIT_TIMEOUT_MS, open_menu_hybrid
 
 # tests/e2e/metadata/this_file.py -> parents[3] == repo root (same depth
 # as tests/e2e/event_analysis/ and tests/e2e/raw_data/).
-REPO_ROOT = Path(__file__).resolve().parents[3]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
 E2E_TIMEOUT = int(os.getenv("E2E_TIMEOUT", "60"))
 

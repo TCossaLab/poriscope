@@ -325,10 +325,6 @@ the oversized `setupUi` methods. This review re-confirmed each with fresh counts
   inside another plugin's generator, and `@serialize_channels` is restricted to generator
   functions. Either delete the declaration for this family or route `filter_data` through
   the guard.
-- **Half-finished multi-channel plotting left dead code.** `MetaView._factors` is
-  duplicated into `RawDataView.py:135` and `EventAnalysisView.py:119`, and
-  `main_view.py:111-112` allocates a `Figure` + `FigureCanvas` never referenced again. Step 8's
-  orphan sweep.
 - **`SQLiteEventLoader` opens one connection per event** (`:127`, from
   `MetaEventLoader.get_event_generator:320` per index); `construct_metadata_query` opens ten
   connections for a single call, measured. No connection reuse and no `PRAGMA journal_mode`
@@ -646,15 +642,10 @@ absorbs what it needs and stands alone, leaving 20240101 a clean deletion.
   `ProteinView.py:4037` and `MetadataView.py:3645`; `ClusteringView.py:731-742`'s inline
   builder is unaffected because it never receives a label with a parenthetical. Behaviour is
   pinned in `tests/unit/views/test_duplicated_helpers.py`, so a fix must update those tests.
-- **17 e2e test modules carry dead `sys.path` shims.** `pytest.ini` sets `pythonpath = .`,
-  and each shim sits *after* the import it exists to enable, so none ever did anything.
 - **Two view test modules mock the view's `logger`**, which `tests/unit/views/_qt_mocks.py`'s
   module docstring explicitly warns against: `test_raw_data_view.py:73` and
   `test_metadata_view.py:97`. Every `caplog` assertion in those two files is blind. They also
   (Now `test_raw_data_view.py:88` and `test_metadata_view.py:152`.)
-- **`tests/conftest.py:8-15` describes a `tests/unit/models/conftest.py` deleted in
-  `c99249ea`.** The `main_model` fixture now lives at `tests/unit/models/test_main_model.py:25`
-  and relies wholly on the autouse `sandbox_user_data_dir`.
 - **Three `scripts/autodoc/` lint sites are ours to fix, and are the only part of the
   declined-rules sweep that is.** Two `S110` in `metaclasses_generate_autodoc.py` and
   `plugins_generate_autodoc.py`, one `S112` in the latter. Fixing them would not enable

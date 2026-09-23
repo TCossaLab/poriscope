@@ -43,11 +43,6 @@ def ec(qt_app):
 # ===========================================================================
 
 
-def _select_channel(ec, channel_text):
-    """Add and select a channel in the MultiSelectComboBox."""
-    ec.update_channels([channel_text])
-
-
 def _collect_actions(ec):
     received = []
     ec.actionTriggered.connect(lambda m, a, p: received.append((m, a)))
@@ -222,11 +217,6 @@ class TestPlaceholderAndToggle:
         btn = ec.createButton(ec, "t")
         ec.toggle_info_button(btn, cb)
         assert not btn.isEnabled()
-
-
-# ===========================================================================
-# clear_popup_reference
-# ===========================================================================
 
 
 # ===========================================================================

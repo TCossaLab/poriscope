@@ -14,9 +14,6 @@ recording's sample rate and duration are known and can be asserted against
 exactly.
 """
 
-import sys
-from pathlib import Path
-
 import pytest
 from PySide6.QtCore import Qt
 from PySide6.QtTest import QTest
@@ -36,10 +33,6 @@ from tests.e2e._helpers import (
     schedule_dialog_autofill,
     select_any_channel,
 )
-
-REPO_ROOT = Path(__file__).resolve().parents[2]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
 
 def _round(val: float, ndigits=6) -> float:

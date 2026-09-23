@@ -3,15 +3,15 @@ Full unit-test suite for EventAnalysisView.
 
 Strategy
 --------
-EventAnalysisView inherits from MetaView (Qt widget) and uses global_signal
-to communicate with the plugin bus.  Tests are split into three groups:
+EventAnalysisView inherits from MetaView (Qt widget) and sends its requests to
+EventAnalysisController as signals.  Tests are split into three groups:
 
-1. Pure-logic methods — tested standalone with no Qt or bus needed.
+1. Pure-logic methods — tested standalone with no Qt needed.
 2. View-fixture methods — tested through a real EventAnalysisView instance
    (same pattern as test_protein_view.py).
-3. Bus-dependent methods — covered at the boundary: we verify that
-   handle_parameter_change routes correctly to the right sub-handler,
-   patching the sub-handlers so the bus is never actually called.
+3. Methods that hand work to the Controller — covered at the boundary: we verify
+   that handle_parameter_change routes correctly to the right sub-handler,
+   patching the sub-handlers so no request is actually sent.
 
 Run with:
     pytest test_event_analysis_view.py -v
@@ -155,26 +155,6 @@ class TestUpdatePlotData:
     def test_list_input(self, mock_view):
         mock_view.update_plot_data([1, 2, 3])
         assert mock_view.plot_data == [1, 2, 3]
-
-
-# ===========================================================================
-# update_plot_features
-# ===========================================================================
-
-
-# ===========================================================================
-# set_eventfitting_status
-# ===========================================================================
-
-
-# ===========================================================================
-# set_num_events_allowed
-# ===========================================================================
-
-
-# ===========================================================================
-# set_data_filter_function
-# ===========================================================================
 
 
 # ===========================================================================
@@ -661,18 +641,6 @@ class TestHandleCommitEvents:
 
 
 # ===========================================================================
-# _start_writer
-# ===========================================================================
-
-
-# _start_writer is gone: Step 4a moved the write call to
-# EventAnalysisController.write_events, which registers each generator with the Model and
-# runs them itself. Its per-channel behaviour, the bare-channel coercion and the
-# failure path are asserted in tests/unit/controllers/test_event_analysis_controller.py
-# and in TestHandleCommitEvents above.
-
-
-# ===========================================================================
 # _start_eventfitter
 # ===========================================================================
 
@@ -854,19 +822,6 @@ class TestShiftRangeAndUpdatePlot:
         original_indices = list(original["event_index"])
         mock_view._shift_range_and_update_plot(original, direction="right")
         assert original["event_index"] == original_indices
-
-
-# ===========================================================================
-# _handle_plot_events
-# ===========================================================================
-
-
-# TestHandlePlotEvents' cases moved with the calls. Every one of them stubbed
-# global_signal and pre-set num_events_allowed, eventfitting_status, data_filter and
-# plot_data - all of which are the Controller's locals now, asserted in
-# tests/unit/controllers/test_event_analysis_controller.py::TestLoadEventPlot. What the
-# View still owns is covered in test_event_analysis_view_characterization.py: the
-# parameter guards, the typed intent, and set_event_plot_data.
 
 
 # ===========================================================================
@@ -1258,11 +1213,6 @@ class TestUpdatePlotDataExtended:
 
 
 # ===========================================================================
-# update_plot_features — extended
-# ===========================================================================
-
-
-# ===========================================================================
 # validate_single_channel — extended
 # ===========================================================================
 
@@ -1278,16 +1228,6 @@ class TestValidateSingleChannelExtended:
     def test_error_message_mentions_multiple(self, mock_view):
         with pytest.raises(ValueError, match="multiple"):
             mock_view.validate_single_channel([0, 1])
-
-
-# ===========================================================================
-# set_num_events_allowed — extended
-# ===========================================================================
-
-
-# ===========================================================================
-# set_data_filter_function — extended
-# ===========================================================================
 
 
 # ===========================================================================
@@ -1447,33 +1387,6 @@ class TestHandleCommitEventsExtended:
 
 
 # ===========================================================================
-# _start_writer — extended
-# ===========================================================================
-
-
-# _start_writer's extended cases moved with it, to
-# tests/unit/controllers/test_event_analysis_controller.py. The old
-# test_value_error_prevents_run_generators pinned the abort-the-whole-batch behaviour that
-# the conversion deliberately changed: a channel the writer cannot accept is now reported
-# and skipped while the rest still run, because that except clause could never catch a
-# plugin failure through the bus anyway.
-
-
-# ===========================================================================
-# _start_eventfitter — extended
-# ===========================================================================
-
-
-# TestStartEventfitterExtended's cases moved with the calls, to
-# tests/unit/controllers/test_event_analysis_controller.py. Two of its three would have
-# gone on passing for the wrong reason rather than failing:
-# test_no_filter_does_not_emit_get_callable_filter and
-# test_index_error_logged_not_raised both asserted that something was *not* called,
-# which is trivially true of a View that no longer makes the call at all. The third,
-# test_multiple_channels_emits_fit_per_channel, is asserted on the Controller.
-
-
-# ===========================================================================
 # handle_parameter_change — extended routing
 # ===========================================================================
 
@@ -1511,21 +1424,6 @@ class TestHandleParameterChangeExtended:
             )
         mock.assert_called_once()
         assert mock.call_args[1]["direction"] == "right"
-
-
-# ===========================================================================
-# _handle_plot_events — extended
-# ===========================================================================
-
-
-# TestHandlePlotEventsExtended' cases moved with the calls, for the same reason. Its
-# truncation and samplerate assertions are on the Controller now, where the count and
-# the samplerate are held.
-
-
-# ===========================================================================
-# _update_event_plot — extended
-# ===========================================================================
 
 
 # ===========================================================================

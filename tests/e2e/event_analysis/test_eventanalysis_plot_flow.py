@@ -30,8 +30,6 @@ Assertions:
 """
 
 import os
-import sys
-from pathlib import Path
 
 import pytest
 from PySide6 import QtWidgets
@@ -52,9 +50,6 @@ from tests.e2e._helpers import (
 )
 
 # tests/e2e/event_analysis/this_file.py -> parents[3] == repo root
-REPO_ROOT = Path(__file__).resolve().parents[3]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
 # ---- Env knobs, specific to this suite (not shared with raw_data) --------
 LOADER_NAME = os.getenv("E2E_EVENTLOADER_NAME", "SQLiteEventLoader")

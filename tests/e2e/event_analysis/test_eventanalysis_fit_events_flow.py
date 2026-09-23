@@ -55,8 +55,6 @@ guessed at here.
 
 import os
 import sqlite3
-import sys
-from pathlib import Path
 
 import pytest
 from PySide6 import QtWidgets
@@ -75,10 +73,6 @@ from tests.e2e._helpers import (
     open_menu_hybrid,
     schedule_dialog_autofill,
 )
-
-REPO_ROOT = Path(__file__).resolve().parents[3]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
 # ---- Env knobs, specific to this suite ------------------------------------
 LOADER_NAME = os.getenv("E2E_EVENTLOADER_NAME", "SQLiteEventLoader")

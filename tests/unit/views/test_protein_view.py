@@ -3,11 +3,6 @@ Full unit-test suite for ProteinView.
 
 Covers the ProteinView analysis tab end-to-end, including:
   - format_axis_label (module-level helper)
-  - Gaussian fitting: _double_gaussian, _fit_double_gaussian,
-    _fit_and_sanity_check_double_gaussian
-  - Physical model: _compute_theoretical_blockages, _generate_vm_ensemble
-  - Histogram construction: _construct_single_event_histogram,
-    _construct_all_points_histogram
   - Plotting: _plot_all_points_histogram, _plot_scatterplot,
     _plot_xyerr_scatterplot, update_plot
   - Event/histogram navigation and caching: _fetch_event_data,
@@ -29,7 +24,7 @@ Uses:
     fully wired.
   - Real imports from the poriscope package rather than a mocked ProteinView,
     so tests exercise actual widget and signal behaviour.
-  - unittest.mock (MagicMock, patch) to stub out global_signal emissions,
+  - unittest.mock (MagicMock, patch) to stub out the tab's request signals,
     file dialogs, and modal dialogs (AddSubsetFilterDialog,
     EditSubsetFilterDialog, SelectionTree) so tests remain non-blocking and
     independent of a live plugin bus or database backend.
@@ -41,9 +36,9 @@ Notes:
     fallback fit's degenerate single-peak behaviour) rather than asserting
     an ideal/fixed outcome. Treat failures in these tests as a prompt to
     re-evaluate intent, not just to "fix" them blindly.
-  - Tests involving global_signal generally leave it unconnected (no live
-    plugin bus), so any code path depending on a slot's return value should
-    be set up manually on the mock_view fixture before calling into it.
+  - Nothing answers the view's request signals in these tests, so any code path
+    that depends on the Controller's answer should either connect a stand-in that
+    calls the matching setter, or set the result on the mock_view fixture first.
 
 Run with:
     pytest tests/unit/views/test_protein_view.py -v
@@ -273,34 +268,6 @@ class TestFormatAxisLabel:
 
 
 # ===========================================================================
-# _compute_theoretical_blockages
-# ===========================================================================
-
-
-# ===========================================================================
-# _construct_single_event_histogram
-# ===========================================================================
-
-
-# ===========================================================================
-# _construct_all_points_histogram
-# ===========================================================================
-
-
-# ``TestBuildLoadEventDataArgs`` lived here and is gone with the method: Step 4a moved
-# the raw-subset scoping into ``ProteinController._scope_raw_subset_query``. Its
-# coverage is ``tests/unit/controllers/test_raw_subset_scoping.py``, which was
-# ``test_view_authored_sql.py`` before the same move.
-#
-# ``test_raw_scope_requires_live_bus`` is not carried over. It asserted that the scope
-# clause is *not* appended, on the grounds that "global_signal.emit() has no connected
-# slots in tests so experiment_id stays None" - so it passed by describing the test
-# harness rather than the code, and would have gone on passing whatever the scoping
-# did. The behaviour it stood in front of is now two tests that drive a lookup
-# answering None and assert the plot stops.
-
-
-# ===========================================================================
 # State setters
 # ===========================================================================
 
@@ -383,29 +350,6 @@ class TestCommitFits:
         mock_view.fit_data = None
         with pytest.raises(AttributeError, match="fit data has not been set"):
             mock_view._commit_fits("loader1")
-
-    def test_proceeds_with_fit_data(self, mock_view):
-        # column_table is None so the overwrite dialog is never shown;
-        # global_signal is emitted with no connected handler, which is fine.
-        mock_view.fit_data = pd.DataFrame(
-            {
-                "id": [1],
-                "prolate_volume": [100.0],
-                "prolate_shape_factor": [2.0],
-                "prolate_major_axis": [10.0],
-                "prolate_minor_axis": [5.0],
-                "oblate_volume": [80.0],
-                "oblate_shape_factor": [0.5],
-                "oblate_major_axis": [4.0],
-                "oblate_minor_axis": [8.0],
-                "min_fractional_blockage": [0.1],
-                "min_fractional_blockage_std": [0.01],
-                "max_fractional_blockage": [0.3],
-                "max_fractional_blockage_std": [0.02],
-            }
-        )
-        mock_view.column_table = None
-        mock_view._commit_fits("loader1")  # should not raise
 
 
 # ===========================================================================
@@ -1427,17 +1371,16 @@ class TestFetchEventData:
         assert any("single channel" in m for m in received)
 
     def test_empty_filters_default_to_full_dataset(self, mock_view):
-        """When no filters selected, defaults to {'Full Dataset': ''}. The generator
-        never actually gets populated in this test (global_signal is mocked), so
-        we request only event_index values that are already in cached_events to
-        avoid the code trying to pull from a None generator."""
+        """When no filters selected, defaults to {'Full Dataset': ''}. Nothing answers
+        the event-plot request in this test, so the generator is never populated;
+        requesting no event indices keeps the code from pulling from a None generator.
+        """
         mock_view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": ["0"]}}
         mock_view.get_selected_filters = MagicMock(return_value={})
         mock_view.plot_events_generator = None
         mock_view.current_sql_filter = None
         mock_view.current_experiment = None
         mock_view.current_channel = None
-        mock_view.plot_events_generator_updated = False
         mock_view.cached_events = {}
         params = {"db_loader": "ldr", "event_index": []}
         result = mock_view._fetch_event_data(params)

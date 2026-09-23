@@ -4,7 +4,7 @@ Unit-test suite for ProteinController.
 Uses:
   - A session-scoped QApplication fixture
   - A per-test ProteinController() fixture (real view/model, as built by _init)
-  - global_signal and view.add_text_to_display mocked/observed per-test where relevant
+  - view.add_text_to_display mocked/observed per-test where relevant
 
 Run with:
     pytest test_protein_controller.py -v
@@ -40,8 +40,7 @@ def controller(qt_app):
     """
     Real ProteinController, built via the real _init() (so self.view is a real
     ProteinView and self.model is a real ProteinModel, exactly as in the running
-    application). global_signal is replaced with a MagicMock so we can assert on
-    emitted calls without a live event bus.
+    application).
     """
     c = ProteinController()
     return c
@@ -58,11 +57,6 @@ class TestInit:
 
     def test_creates_real_model(self, controller):
         assert isinstance(controller.model, ProteinModel)
-
-
-# ===========================================================================
-# alter_database_status
-# ===========================================================================
 
 
 # ===========================================================================
@@ -248,57 +242,6 @@ class TestRelayQuery:
         )
         # old filter should remain untouched since new_name is None
         assert controller.view.subset_filters.get("old") == "dur > 1"
-
-
-# ===========================================================================
-# relay_event_query
-# ===========================================================================
-
-
-# ===========================================================================
-# relay_event_data_generator / relay_event_plot_data_generator
-# ===========================================================================
-
-
-# ===========================================================================
-# relay_units
-# ===========================================================================
-
-
-# ===========================================================================
-# update_column_names
-# ===========================================================================
-
-
-# ===========================================================================
-# request_experiment_structure
-# ===========================================================================
-
-
-# ===========================================================================
-# set_experiment_id / set_channel_db_id
-# ===========================================================================
-
-
-# ===========================================================================
-# on_raw_filter_validated
-# ===========================================================================
-
-
-# ``TestOnRawFilterValidated`` lived here and is gone with the method it called.
-# ``MetaSubsetTabController.on_raw_filter_validated`` was a two-argument passthrough
-# left behind by Step 4a, which replaced the bus round-trip it served with the
-# ``raw_filter_validation_requested`` intent; nothing connected to it or called it
-# afterwards. ``validate_raw_filter`` answers the View directly, and the View's half
-# is covered in ``test_protein_view`` and ``test_duplicated_helpers``.
-
-
-# ``TestRelayQueryResult`` lived here and is gone with the method: Step 4a's last
-# conversion replaced the ``relay_query_result`` bus round-trip with the
-# ``event_id_cache_requested`` intent, answered by
-# ``MetaSubsetTabController.load_event_id_cache`` and parked by ``set_event_id_rows``.
-# The promoted-method side is covered in ``test_duplicated_helpers``, and the
-# Controller slot in ``test_subset_tab_controller``.
 
 
 # ===========================================================================

@@ -10,8 +10,6 @@ Coverage targets:
 - update_plot_samplerate
 - update_channels
 - register_eventfinder_channels
-- set_num_events_allowed
-- set_eventfinding_status
 - validate_single_channel
 - _extract_plot_parameters
 - _extract_event_parameters
@@ -30,7 +28,6 @@ Coverage targets:
 - _handle_find_events (valid params, missing params)
 - _handle_commit_events (valid, extraction failure)
 - _handle_timer (no-op when finder == 'No Eventfinder')
-- set_data_filter_function
 - set_psd
 - _get_event_index_text
 
@@ -111,8 +108,6 @@ def view(mocker, mock_logging):
     v.plot_data = None
     v.plot_samplerate = 1
     v.analysis_time_limits = {}
-    v.eventfinding_status = False
-    v.num_events_allowed = 0
     v.available_plugins = {}
 
     # --- Cache helpers (no-ops) ---
@@ -198,16 +193,6 @@ def test_update_channels_delegates_to_controls(view):
 def test_update_channels_logs_info(view):
     view.update_channels([0])
     view.logger.info.assert_called()
-
-
-# ---------------------------------------------------------------------------
-# set_num_events_allowed / set_eventfinding_status
-# ---------------------------------------------------------------------------
-
-
-# ---------------------------------------------------------------------------
-# set_data_filter_function
-# ---------------------------------------------------------------------------
 
 
 # ---------------------------------------------------------------------------
@@ -691,11 +676,9 @@ def test_handle_commit_events_extraction_failure(view, mocker):
 
 def test_handle_timer_no_eventfinder_does_nothing(view, mocker):
     """When finder == 'No Eventfinder', no dialog should open."""
-    mocker.patch("poriscope.plugins.analysistabs.RawDataView.TimeWidget")
+    time_widget = mocker.patch("poriscope.plugins.analysistabs.RawDataView.TimeWidget")
     view._handle_timer({"eventfinder": "No Eventfinder"})
-    # TimeWidget should not be instantiated
-    # If TimeWidget was patched, confirm it was never called
-    # (easiest check: global_signal never touched)
+    time_widget.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

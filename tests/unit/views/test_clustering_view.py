@@ -10,15 +10,11 @@ View-fixture methods (setup, handle_parameter_change routing, update_plot,
 update_available_plugins) are tested through a real ClusteringView instance
 using the same pattern as test_protein_view.py.
 
-Step 4a converted this tab's bus calls to ``call()``, so ``set_cluster_column_exists``
-and ``set_alter_database_status`` no longer exist - they were parking spots for answers
-that arrived from a bus callback, and the answers are return values now. Their tests went
-with them; the commit path they served is covered in
+The commit path's Controller half is covered in
 ``tests/unit/controllers/test_clustering_controller.py``.
 
-The remaining bus-dependent methods (_load_metadata_and_request_clustering,
-_handle_clustering_settings) are covered at the boundary
-via patching.
+The methods that hand work to the Controller (_load_metadata_and_request_clustering,
+_handle_clustering_settings) are covered at the boundary via patching.
 
 Run with:
     pytest test_clustering_view.py -v
@@ -64,27 +60,6 @@ def view(qt_app):
 # ===========================================================================
 # Helpers
 # ===========================================================================
-
-
-def _answer_load_metadata(view, plot_data):
-    """
-    Connect a stand-in for the signal bus that answers a load_metadata call.
-
-    _load_metadata_and_cluster clears plot_data before emitting and reads it
-    back on the next statement, so that a dispatch which never returns cannot
-    be mistaken for a successful one. A test therefore has to answer the emit
-    the way main_controller._dispatch_to does - by calling the named return
-    function - rather than pre-assigning the attribute and relying on the emit
-    being a no-op.
-    """
-
-    def _dispatch(metaclass, key, call_function, call_args, return_function, ret_args):
-        if call_function == "load_metadata":
-            view.update_plot_data(plot_data)
-
-    view.global_signal.connect(_dispatch)
-    # Held so the connection outlives this call for the rest of the test.
-    view._test_bus = _dispatch
 
 
 def _make_df(*cols):
@@ -136,11 +111,6 @@ class TestSetQuery:
     def test_empty_query(self, view):
         view.set_query("", "events")
         assert view.query == ""
-
-
-# ===========================================================================
-# set_units
-# ===========================================================================
 
 
 # ===========================================================================
@@ -879,10 +849,12 @@ class TestCommitClusters:
                 "cluster_confidence": [1.0, 0.9],
             }
         )
-        view.table_name = "events"
-        view.cluster_column_table = None  # no existing columns → skip overwrite dialog
-        # global_signal.emit is a Qt signal with no connected slots — no crash expected
+        asked = []
+        view.cluster_column_check_requested.connect(asked.append)
+
         view._commit_clusters("loader1")
+
+        assert asked == ["loader1"]
 
 
 # ===========================================================================

@@ -11,8 +11,6 @@ Covers:
   creation error, key collision, apply_settings error, register_plugin error,
   empty settings early return, plugin reference resolution error)
 - update_data_server_location updates data_server attribute
-- get_instantiated_plugins_list delegates to model
-- get_available_metaclasses delegates to model
 """
 
 from __future__ import annotations
@@ -554,12 +552,6 @@ def test_update_data_server_location_updates_attribute(
     """
     controller.update_data_server_location("/new/data/path")
     assert controller.data_server == "/new/data/path"
-
-
-# ---------------- get_instantiated_plugins_list ----------------------
-
-
-# ------------------- get_available_metaclasses -----------------------
 
 
 # ----------- validate_and_instantiate_plugin (settings=None path) ----

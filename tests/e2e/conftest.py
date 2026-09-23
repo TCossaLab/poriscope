@@ -1,35 +1,19 @@
 from __future__ import annotations
 
 import os
-import sys
-from pathlib import Path
 from typing import Any, Dict, List
 
 import pytest
 from PySide6.QtWidgets import QApplication
 
-# Headless Qt for CI/offscreen
-os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-
-# Ensure repo root importable for `import poriscope...` and
-# `import tests...`. MUST run before the tests.synthetic_data import below
-# -- conftest.py files are imported by pytest before any sys.path setup
-# that individual test modules perform themselves, and unlike
-# `python -m pytest`, the bare `pytest` command does not add the current
-# directory to sys.path automatically. Without this running first, `from
-# tests.synthetic_data... import ...` fails with ModuleNotFoundError:
-# "No module named 'tests'" the moment pytest tries to load this file.
-_TESTS_DIR = Path(__file__).resolve().parent
-for cand in [_TESTS_DIR, *_TESTS_DIR.parents]:
-    if (cand / "poriscope").exists():
-        if str(cand) not in sys.path:
-            sys.path.insert(0, str(cand))
-        break
-
-from tests.synthetic_data.synthetic_metadata_db import (  # noqa: E402
+# tests/conftest.py puts the repo root on sys.path, which this import needs.
+from tests.synthetic_data.synthetic_metadata_db import (
     SyntheticMetadataDatabase,
     generate_metadata_database,
 )
+
+# Headless Qt for CI/offscreen
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 
 def pytest_configure(config):

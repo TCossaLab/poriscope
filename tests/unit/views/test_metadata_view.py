@@ -1568,13 +1568,6 @@ def test_update_plot_calls_heatmap_for_heatmap_type(
 
     view.data_cache = []  # type: ignore[attr-defined]
     view._commit_cache = mocker.Mock()  # type: ignore[method-assign]
-    view._calculate_heatmap = mocker.Mock(  # type: ignore[method-assign]
-        return_value=(
-            np.array([1.0, 2.0]),
-            np.array([3.0, 4.0]),
-            np.array([[1.0, 2.0], [3.0, 4.0]]),
-        )
-    )
     view._plot_heatmap = mocker.Mock()  # type: ignore[method-assign]
 
     view.update_plot("Heatmap", data, ["x", "y"], ["u1", "u2"], [False, False])
@@ -3930,23 +3923,10 @@ def test_set_query_sets_query_and_table_name(
     assert view.table_name == "events"
 
 
-def test_set_query_returns_early_when_query_empty(
+def test_set_query_does_not_echo_to_the_status_panel(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify early return when query is empty."""
-    view._show_sql_in_display = True
-
-    view.set_query("", "events")
-
-    view.add_text_to_display.emit.assert_not_called()
-
-
-def test_set_query_does_not_emit_when_show_flag_false(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
-    """Verify SQL is not emitted when show flag is False."""
-    view._show_sql_in_display = False
-
+    """The validation query is not the one that pulls the subset, so it is not shown."""
     view.set_query("SELECT * FROM events", "events")
 
     view.add_text_to_display.emit.assert_not_called()
@@ -3962,18 +3942,13 @@ def test_set_event_query_sets_query(view: MetadataView, mocker: MockerFixture) -
     assert view.event_query == "SELECT * FROM events WHERE id > 100"
 
 
-def test_set_event_query_returns_early_when_empty(
+def test_set_event_query_does_not_echo_to_the_status_panel(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify early return when query is empty."""
-    view._show_event_sql_in_display = True
-
-    view.set_event_query("")
+    """Storing the event query shows nothing on the status panel."""
+    view.set_event_query("SELECT * FROM events WHERE id > 100")
 
     view.add_text_to_display.emit.assert_not_called()
-
-
-# ----------------------------- Set Units Tests ------------------------------
 
 
 # ----------------------------- Update Available Columns Tests ------------------------------
@@ -5358,9 +5333,6 @@ def test_handle_plot_events_leaves_the_reporting_to_the_controller(
     assert view.plot_events_generator is None
     view._update_event_plot.assert_not_called()
     view.add_text_to_display.emit.assert_not_called()
-
-
-# ----------------------------- Categorical nulls / plot-type reset -------------------
 
 
 # ----------------------------- _overlay_plot scope guards ------------------------------

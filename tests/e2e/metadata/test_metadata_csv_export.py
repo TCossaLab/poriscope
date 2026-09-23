@@ -33,9 +33,7 @@ Run with:
 """
 
 import os
-import sys
 import time
-from pathlib import Path
 
 import pytest
 from PySide6 import QtCore, QtWidgets
@@ -46,10 +44,6 @@ from poriscope.controllers.main_controller import MainController
 from poriscope.models.main_model import MainModel
 from poriscope.views.main_view import MainView
 from tests.e2e._helpers import open_menu_hybrid
-
-REPO_ROOT = Path(__file__).resolve().parents[3]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
 LOADER_SUBCLASS_NAME = os.getenv("E2E_DBLOADER_NAME", "SQLiteDBLoader")
 

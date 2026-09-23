@@ -2,40 +2,27 @@ from __future__ import annotations
 
 import logging
 import os
-import sys
-from pathlib import Path
 from typing import Dict
 
 import pytest
+
+# tests/conftest.py puts the repo root on sys.path, which these imports need.
+from tests.synthetic_data.synthetic_chimera import (
+    ChimeraRecordingConfig,
+    generate_chimera_dataset,
+)
+from tests.synthetic_data.synthetic_events_db import (
+    generate_events_database,
+)
+from tests.synthetic_data.synthetic_metadata_db import (
+    generate_metadata_database,
+)
 
 # Headless Qt for anything that might import Qt
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 # Keep test logs quieter by default; change to INFO for debugging
 logging.basicConfig(level=logging.WARNING)
-
-# Ensure the repo root is importable for `from tests.synthetic_data...`. conftest
-# files are imported before any sys.path setup a test module does for itself, and
-# the bare `pytest` command (unlike `python -m pytest`) does not add the current
-# directory. Without this, the import below fails with ModuleNotFoundError. Same
-# shim as tests/e2e/conftest.py, for the same reason.
-_TESTS_DIR = Path(__file__).resolve().parent
-for _cand in [_TESTS_DIR, *_TESTS_DIR.parents]:
-    if (_cand / "poriscope").exists():
-        if str(_cand) not in sys.path:
-            sys.path.insert(0, str(_cand))
-        break
-
-from tests.synthetic_data.synthetic_chimera import (  # noqa: E402
-    ChimeraRecordingConfig,
-    generate_chimera_dataset,
-)
-from tests.synthetic_data.synthetic_events_db import (  # noqa: E402
-    generate_events_database,
-)
-from tests.synthetic_data.synthetic_metadata_db import (  # noqa: E402
-    generate_metadata_database,
-)
 
 # Signal parameters shared with the e2e fixtures (tests/e2e/raw_data/conftest.py),
 # so a plugin behaves the same way across both suites.

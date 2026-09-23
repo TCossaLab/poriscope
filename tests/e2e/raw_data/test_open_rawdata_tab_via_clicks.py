@@ -13,8 +13,6 @@ Uses no test data and adds no plugins.
 """
 
 import os
-import sys
-from pathlib import Path
 
 import pytest
 
@@ -22,10 +20,6 @@ from poriscope.controllers.main_controller import MainController
 from poriscope.models.main_model import MainModel
 from poriscope.views.main_view import MainView
 from tests.e2e._helpers import QT_WAIT_TIMEOUT_MS, open_menu_hybrid
-
-REPO_ROOT = Path(__file__).resolve().parents[2]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
 E2E_TIMEOUT = int(os.getenv("E2E_TIMEOUT", "60"))
 
