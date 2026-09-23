@@ -28,22 +28,19 @@ Check the analysis-tab MVC boundary, against a shrinking allowlist.
 
     python scripts/check_mvc_boundary.py [--verbose] [--update] [--check]
 
-The analysis-tab layer never grew a real Model, so the Views absorbed the work a
-Model should do. Five rules describe the boundary the 2.0.0 refactor is putting
-back, and the allowlist counts how far it still is from holding. **That count going
-to zero is Steps 3-5 finishing**, which is why it is the refactor's headline metric
-rather than a pass/fail gate: every entry is a known violation, recorded so that a
-*new* one cannot slip in beside it.
+Five rules describe the boundary between the analysis tabs' Views, Controllers and
+Models, which the 2.0.0 refactor put back after the Views had absorbed the Models'
+work. The allowlist counts the violations that remain - two, a recorded floor - and
+every entry is a known one, recorded so that a *new* one cannot slip in beside it.
 
 The five rules:
 
-1. **No View emits on the plugin bus, and the bus does not come back.** Step 4a turned
-   every ``global_signal.emit`` into ``self.call(...)`` on the Model, and 5e deleted the
-   signal itself - so this rule can no longer fire against anything that exists. It is
-   kept deliberately, as a tripwire: a ``global_signal`` reintroduced anywhere in a View
-   is caught here permanently, where the step's own exit check was a grep run once. A
-   reader who does not recognise the name should read that as the point rather than as
-   documentation of a current mechanism.
+1. **No View emits on the plugin bus, and the bus does not come back.** Every
+   ``global_signal.emit`` became ``self.call(...)`` on the Model and the signal itself
+   was deleted in 2.0.0 - so this rule can no longer fire against anything that exists.
+   It is kept deliberately, as a tripwire: a ``global_signal`` reintroduced anywhere in
+   a View is caught here permanently. A reader who does not recognise the name should
+   read that as the point rather than as documentation of a current mechanism.
 2. **No View imports a computation library** - numpy, scipy, sklearn, hdbscan,
    pandas, ``fast_histogram`` or sqlite3 - **to compute with**. An import used only
    to write a type is exempt: a View annotated ``Sequence[npt.NDArray[np.float64]]``
@@ -52,22 +49,21 @@ The five rules:
    is named for computation, so it measures computation; the exempted imports are
    named under ``--verbose`` rather than left invisible. Relaxed 2026-09-14, which
    took the total from 14 to 8 - see ``DECISIONS.md``. ``fast_histogram`` is in the
-   list because ``RawDataView`` imports it and Step 4c moves it; without it, 4c could
-   finish with the rule still reporting success. ``sqlite3`` contributes **zero**
+   list because the baseline statistics that use it belong in ``RawDataModel``, not the
+   View. ``sqlite3`` contributes **zero**
    today - the Views build SQL as f-strings and hand it to the loader rather than
    importing a driver - and stays in as a ratchet against that changing.
 3. **No Controller reads a View private.** ``self.view._x`` is the Controller
-   reaching past the View's interface into its internals; Step 4d moves that state
-   to the Model.
+   reaching past the View's interface into its internals; such state belongs on the
+   Model, or behind a View method the Controller calls.
 4. **No app-shell module imports from a plugin package.** ``poriscope/views/``
    importing ``poriscope.plugins.analysistabs.utils.walkthrough`` was a layering
-   inversion: the shell depending on a plugin. Step 3f fixed it by moving those two
-   modules into ``views/widgets/``, and without this rule nothing would have observed
-   that the step had finished. Added by the Step 2 exit review; **reads zero since
-   2026-09-06**, and stays in as a ratchet against a new inversion appearing.
+   inversion: the shell depending on a plugin, fixed by moving those two modules into
+   ``views/widgets/``. **Reads zero since 2026-09-06**, and stays in as a ratchet
+   against a new inversion appearing.
 5. **No analysis-tab module reaches a data plugin except through ``call()``.**
    ``MetaController.call`` and ``MetaModel.call`` are the whole plugin-facing API a tab
-   gets (Step 4a, Decision A); a tab that resolves an instance for itself, or imports a
+   gets; a tab that resolves an instance for itself, or imports a
    concrete plugin class, has gone around it. Added 2026-09-07 and **reads zero**, so
    it is a ratchet from the start rather than a backlog. Python cannot enforce this at
    runtime without inspecting the call stack on every plugin call, which would cost
@@ -112,22 +108,22 @@ pairs" could not be reproduced because it was never written down precisely enoug
   the sanctioned mechanism ``call()`` reads, pushed in by ``MainController``.
 
 **Which files each rule reads.** Rules 1-3 originally scanned ten hardcoded filenames
-under ``poriscope/plugins/analysistabs/``, which made them blind to their own refactor:
-a method promoted to a base in ``poriscope/utils/`` left the measurement without being
-fixed, and Step 3b's first promotion carries 100% of rule 3's violations. So layer
+under ``poriscope/plugins/analysistabs/``, which made them blind to a refactor: a
+method promoted to a base in ``poriscope/utils/`` left the measurement without being
+fixed, and the first such promotion carried 100% of rule 3's violations. So layer
 membership is now *derived* over the whole of ``poriscope/``, by two tests - a
 directory whose contents are all one layer, or a filename suffix that names the role
 wherever the module lives. The suffix test is the part that matters: a base promoted
 into ``poriscope/utils/`` is measured the moment it is named ``MetaEventTabView.py``.
 Widening it moved the View layer from 5 modules to 33 and the Controller layer from 5
 to 8, and added exactly two entries - ``MetaView``'s ``numpy`` and ``numpy.typing``,
-a real rule-2 violation the narrow scan could not see, which clears when Step 3d moves
+a real rule-2 violation the narrow scan could not see, since cleared by moving
 ``_logscale_and_filter_multiple_columns`` to ``MetaModel``.
 
 **Rule 4 is deliberately *not* widened to ``poriscope/utils/``.** Those are shared
 bases rather than app shell, and ``poriscope/utils/plugin_schemas.py`` imports
 ``poriscope.plugins`` on purpose, to walk the plugin package for schemas. Booking it
-would put an entry on the allowlist that the refactor has no intention of removing,
+would put an entry on the allowlist that nobody has any intention of removing,
 which is the one thing that would make the total meaningless.
 
 Exits 1 under ``--check`` if the counts disagree with
@@ -168,7 +164,8 @@ CONTROLLER_DIRS: Tuple[str, ...] = ("poriscope/controllers",)
 CONTROLLER_SUFFIXES: Tuple[str, ...] = ("Controller.py",)
 
 #: Top-level packages a View has no business importing. ``sqlite3`` is zero today
-#: and kept as a ratchet; ``fast_histogram`` is here because Step 4c moves it.
+#: and kept as a ratchet; ``fast_histogram`` computes the Raw Data baseline, which
+#: is a Model's job.
 FORBIDDEN_IMPORTS: Set[str] = {
     "fast_histogram",
     "hdbscan",
@@ -691,7 +688,7 @@ def to_allowlist(results: Dict[str, Dict[str, object]]) -> Dict[str, Dict[str, o
 
 def total(allowlist: Dict[str, Dict[str, object]]) -> int:
     """
-    Total the allowlist: the single number the refactor drives to zero.
+    Total the allowlist: the single number the boundary is measured by.
 
     :param allowlist: an allowlist-shaped mapping
     :type allowlist: Dict[str, Dict[str, object]]
@@ -797,7 +794,7 @@ def report(results: Dict[str, Dict[str, object]], verbose: bool) -> None:
     imports: Dict[str, List[str]] = allowlist["imports"]  # type: ignore[assignment]
     privates: Dict[str, int] = allowlist["private_access"]  # type: ignore[assignment]
 
-    print("1. global_signal.emit in a View (removed in 5e; this guards its return)")
+    print("1. global_signal.emit in a View (bus removed in 2.0.0; guards its return)")
     for name, count in emits.items():
         print(f"     {count:>3}  {name}")
     print(f"     {sum(emits.values()):>3}  total")

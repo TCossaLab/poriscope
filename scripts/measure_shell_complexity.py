@@ -28,10 +28,10 @@ Measure cyclomatic complexity across the nine app-shell files.
 
     python scripts/measure_shell_complexity.py [--verbose] [--update] [--check]
 
-Step 5c restructures the app shell, and nothing measured it. ``check_mvc_boundary.py``
-reads 0 on all three of its rules over these files, and no duplication family covers
-them, so the shell could be restructured in either direction unobserved. This is the
-instrument, built before the work it would measure (method rule 24).
+Nothing else measures the app shell. ``check_mvc_boundary.py`` reads 0 on all three
+of its rules over these files, and no duplication family covers them, so the shell
+could be restructured in either direction unobserved. This is the instrument, built
+before the 2.0.0 restructuring it measured, and kept as a ratchet.
 
 **The shell is measured in complexity, not in lines.** ``DECISIONS.md`` 2026-09-20
 records why: ``settings_window.py`` has *zero* functions over the threshold despite
@@ -68,7 +68,7 @@ A function starts at 1 and gains a point for each of:
   choice.
 - ``return``, ``break`` and ``continue`` are excluded. The path that reaches one was
   already counted by whatever decided to take it, and counting both would double-count
-  every guard clause - which is exactly the shape Step 5c extracts.
+  every guard clause - which is exactly the shape an extraction produces.
 
 **What counts as a function.** Module-level functions and methods of module-level
 classes. A function nested inside another is scored *within* its parent and not
@@ -84,16 +84,15 @@ per-function detail is left out of the baseline on purpose: useful to read under
 ``--verbose``, useless to diff, and it would churn on every rename.
 
 **The scope is nine files, not the repository.** Repo-wide, 124 functions exceed 80
-lines, most of them in owner-held fitters and in the ``setupUi`` methods the plan keeps
-per-tab, so a repo-wide gate would fail on commits that are not ours to gate (rule 18).
-The list is explicit rather than globbed, and two guards keep it honest: every named
-file must exist, and ``poriscope/controllers/`` and ``poriscope/models/`` must contain
-nothing that is not named. That second guard is the one Step 5c needs - splitting a
-god-method into a new module in the same package would otherwise take its complexity
-out of sight and read as a win. It cannot cover ``poriscope/views/``, which holds
-unscoped modules alongside ``main_view.py`` and ``settings_window.py``; an extraction
-into a *new* file there would escape the gate, and must be added to ``SHELL_FILES`` by
-hand.
+lines, most of them in owner-held fitters and in the ``setupUi`` methods that stay
+per-tab, so a repo-wide gate would fail on commits that are not ours to gate. The list
+is explicit rather than globbed, and two guards keep it honest: every named file must
+exist, and ``poriscope/controllers/`` and ``poriscope/models/`` must contain nothing
+that is not named. That second guard is the one a restructuring needs - splitting a
+god-method into a new module in the same package would otherwise take its complexity out
+of sight and read as a win. It cannot cover ``poriscope/views/``, which holds unscoped
+modules alongside ``main_view.py`` and ``settings_window.py``; an extraction into a
+*new* file there would escape the gate, and must be added to ``SHELL_FILES`` by hand.
 
 Exits 1 under ``--check`` if the measurement disagrees with
 ``.shell-complexity-baseline.json``, in **either** direction. Going up is a regression.
