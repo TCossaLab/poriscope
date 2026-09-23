@@ -23,7 +23,6 @@ Covers:
 
 from __future__ import annotations
 
-from typing import Any, Callable
 from unittest.mock import MagicMock
 
 import pytest
@@ -243,57 +242,10 @@ def test_update_available_plugins_logs_debug(
 # ----------------------- set_event_filter ----------------------------
 
 
-def test_set_event_filter_delegates_to_view(
-    controller: RawDataController,
-    mock_view: MagicMock,
-    mocker: MockerFixture,
-) -> None:
-    """
-    Forward the data filter callable to the view.
-
-    :param controller: Controller under test.
-    :param mock_view: Mocked raw data view.
-    :param mocker: Pytest-mock fixture.
-    """
-    data_filter: Callable[..., Any] = mocker.Mock()
-    controller.set_event_filter(data_filter)
-    mock_view.set_data_filter_function.assert_called_once_with(data_filter)
-
-
 # ----------------------- update_plot_data ----------------------------
 
 
-def test_update_plot_data_delegates_to_view(
-    controller: RawDataController,
-    mock_view: MagicMock,
-) -> None:
-    """
-    Forward new plot data to the view.
-
-    :param controller: Controller under test.
-    :param mock_view: Mocked raw data view.
-    """
-    data: dict[str, list[int]] = {"x": [1, 2], "y": [3, 4]}
-    controller.update_plot_data(data)
-    mock_view.update_plot_data.assert_called_once_with(data)
-
-
 # ----------------------- update_channels ----------------------------
-
-
-def test_update_channels_delegates_to_view(
-    controller: RawDataController,
-    mock_view: MagicMock,
-) -> None:
-    """
-    Forward the channel information dict to the view.
-
-    :param controller: Controller under test.
-    :param mock_view: Mocked raw data view.
-    """
-    channels: dict[str, int] = {"num_channels": 4}
-    controller.update_channels(channels)
-    mock_view.update_channels.assert_called_once_with(channels)
 
 
 # ------------- launching event finding (Step 4a) ---------------------
@@ -1315,80 +1267,10 @@ def test_resolve_eventfinder_channels_omits_a_finder_that_cannot_answer(
 # ------------------- set_num_events_allowed --------------------------
 
 
-def test_set_num_events_allowed_delegates_to_view(
-    controller: RawDataController,
-    mock_view: MagicMock,
-) -> None:
-    """
-    Forward the maximum event count to the view.
-
-    :param controller: Controller under test.
-    :param mock_view: Mocked raw data view.
-    """
-    controller.set_num_events_allowed(500)
-    mock_view.set_num_events_allowed.assert_called_once_with(500)
-
-
 # ------------------ set_eventfinding_status --------------------------
 
 
-def test_set_eventfinding_status_delegates_to_view(
-    controller: RawDataController,
-    mock_view: MagicMock,
-) -> None:
-    """
-    Forward the event finding status to the view.
-
-    :param controller: Controller under test.
-    :param mock_view: Mocked raw data view.
-    """
-    controller.set_eventfinding_status(True)
-    mock_view.set_eventfinding_status.assert_called_once_with(True)
-
-
-def test_set_eventfinding_status_delegates_false_to_view(
-    controller: RawDataController,
-    mock_view: MagicMock,
-) -> None:
-    """
-    Forward a False event finding status to the view.
-
-    :param controller: Controller under test.
-    :param mock_view: Mocked raw data view.
-    """
-    controller.set_eventfinding_status(False)
-    mock_view.set_eventfinding_status.assert_called_once_with(False)
-
-
 # ---------------- relay_eventfinding_status --------------------------
-
-
-def test_relay_eventfinding_status_delegates_to_view(
-    controller: RawDataController,
-    mock_view: MagicMock,
-) -> None:
-    """
-    Relay a True event finding status to the view.
-
-    :param controller: Controller under test.
-    :param mock_view: Mocked raw data view.
-    """
-    controller.relay_eventfinding_status(True)
-    mock_view.set_eventfinding_status.assert_called_once_with(True)
-
-
-def test_relay_eventfinding_status_delegates_false_to_view(
-    controller: RawDataController,
-    mock_view: MagicMock,
-) -> None:
-    """
-    Relay a False event finding status to the view.
-
-    :param controller: Controller under test.
-    :param mock_view: Mocked raw data view.
-    """
-    controller.relay_eventfinding_status(False)
-    mock_view.set_eventfinding_status.assert_called_once_with(False)
 
 
 # ------------- trimming a request to the channel's length -----------------

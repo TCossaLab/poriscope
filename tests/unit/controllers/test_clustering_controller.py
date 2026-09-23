@@ -141,55 +141,10 @@ def test_display_write_status_emits_failure_message(
 # --------------- relay_event_data_generator --------------------------
 
 
-def test_relay_event_data_generator_delegates_to_view(
-    controller: ClusteringController,
-    mock_view: MagicMock,
-) -> None:
-    """
-    Forward an event data generator to the view.
-
-    :param controller: Controller under test.
-    :param mock_view: Mocked clustering view.
-    """
-    gen = iter([{"id": 1}, {"id": 2}])
-    controller.relay_event_data_generator(gen)
-    mock_view.set_event_data_generator.assert_called_once_with(gen)
-
-
 # ----------------------- relay_plot_data -----------------------------
 
 
-def test_relay_plot_data_delegates_to_view(
-    controller: ClusteringController,
-    mock_view: MagicMock,
-) -> None:
-    """
-    Forward structured plot data to the view.
-
-    :param controller: Controller under test.
-    :param mock_view: Mocked clustering view.
-    """
-    data = {"x": [1.0, 2.0], "y": [3.0, 4.0]}
-    controller.relay_plot_data(data)
-    mock_view.set_plot_data.assert_called_once_with(data)
-
-
 # ------------------------- relay_units -------------------------------
-
-
-def test_relay_units_delegates_to_view(
-    controller: ClusteringController,
-    mock_view: MagicMock,
-) -> None:
-    """
-    Forward a column-to-unit mapping to the view.
-
-    :param controller: Controller under test.
-    :param mock_view: Mocked clustering view.
-    """
-    units = {"current": "pA", "time": "s"}
-    controller.relay_units(units)
-    mock_view.set_units.assert_called_once_with(units)
 
 
 # -------------------- load_metadata_for_clustering (Step 4a) ----------

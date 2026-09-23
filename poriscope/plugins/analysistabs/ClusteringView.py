@@ -354,16 +354,6 @@ class ClusteringView(MetaView):
         self.table_name = table_name
 
     @log(logger=logger)
-    def set_units(self, units: Dict[str, Optional[str]]) -> None:
-        """
-        Sets the column units for current clustering configuration.
-
-        :param units: Mapping of column name to unit label.
-        :type units: Dict[str, Optional[str]]
-        """
-        self.units = units
-
-    @log(logger=logger)
     def update_available_columns(self, loader: str) -> None:
         """
         Ask the Controller for the column names the given loader offers.

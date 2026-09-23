@@ -26,7 +26,7 @@
 
 
 import logging
-from typing import Any, Dict, Generator, List, Optional, override
+from typing import Any, Dict, List, Optional, override
 
 import pandas as pd
 
@@ -206,36 +206,6 @@ class ClusteringController(MetaController):
             self.add_text_to_display.emit(
                 f"Unable to cluster data: {e}", self.__class__.__name__
             )
-
-    @log(logger=logger)
-    def relay_event_data_generator(self, generator: Generator) -> None:
-        """
-        Send an event data generator object to the view for processing.
-
-        :param generator: Generator yielding event data entries.
-        :type generator: Generator
-        """
-        self.view.set_event_data_generator(generator)
-
-    @log(logger=logger)
-    def relay_plot_data(self, data: Any) -> None:
-        """
-        Relay processed clustering data to the view for plotting.
-
-        :param data: Data structure containing plot information.
-        :type data: Any
-        """
-        self.view.set_plot_data(data)
-
-    @log(logger=logger)
-    def relay_units(self, units: Dict[str, Optional[str]]) -> None:
-        """
-        Provide units associated with each column to the view.
-
-        :param units: Dictionary mapping column names to units.
-        :type units: Dict[str, Optional[str]]
-        """
-        self.view.set_units(units)
 
     @log(logger=logger)
     def check_cluster_column(self, loader: str) -> None:

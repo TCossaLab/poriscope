@@ -143,16 +143,6 @@ class TestSetQuery:
 # ===========================================================================
 
 
-class TestSetUnits:
-    def test_stores_units(self, view):
-        view.set_units({"duration": "ms", "current": "pA"})
-        assert view.units == {"duration": "ms", "current": "pA"}
-
-    def test_list_units(self, view):
-        view.set_units(["ms", "pA"])
-        assert view.units == ["ms", "pA"]
-
-
 # ===========================================================================
 # update_column_names
 # ===========================================================================

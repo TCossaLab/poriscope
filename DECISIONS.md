@@ -914,6 +914,11 @@ to delete 31 lines.
 **Revisit if** a third tab grows plot-feature overlays, which would make the behaviour
 genuinely common rather than shared by two tabs that happen to plot.
 
+**Overtaken 2026-09-22, and the floor is 0.** The Step 8 orphan sweep found
+`EventAnalysisView`'s copy unreachable - its only caller was a Controller relay nothing called
+since the bus went - and deleting it took the family to 0 removable without any promotion.
+The duplicate was never shared behaviour; one half of it was dead.
+
 ---
 
 ## 2026-09-14 - Boundary rule 2 counts computation, not annotations

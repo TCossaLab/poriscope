@@ -3917,15 +3917,6 @@ def test_export_csv_subset_does_not_increment_counter_on_cancel(
     # ----------------------------- Set Exported Event Count Tests ------------------------------
 
 
-def test_set_exported_event_count_sets_value(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
-    """Verify exported event count is set correctly."""
-    view.set_exported_event_count(42)
-
-    assert view.exported_event_count == 42
-
-
 # ----------------------------- Set Query Tests ------------------------------
 
 
@@ -3983,20 +3974,6 @@ def test_set_event_query_returns_early_when_empty(
 
 
 # ----------------------------- Set Units Tests ------------------------------
-
-
-def test_set_units_sets_value(view: MetadataView, mocker: MockerFixture) -> None:
-    """Verify units are set correctly."""
-    view.set_units("ms")
-
-    assert view.units == "ms"
-
-
-def test_set_units_accepts_list(view: MetadataView, mocker: MockerFixture) -> None:
-    """Verify units can be set as a list."""
-    view.set_units(["ms", "pA"])
-
-    assert view.units == ["ms", "pA"]
 
 
 # ----------------------------- Update Available Columns Tests ------------------------------
@@ -4699,19 +4676,6 @@ class TestSimpleSetters:
     def test_set_column_type_none(self, view: MetadataView) -> None:
         view.set_column_type(None)
         assert view.column_type is None
-
-    def test_set_experiment_id(self, view: MetadataView) -> None:
-        view.set_experiment_id(42)
-        assert view.experiment_id == 42
-
-    def test_set_experiment_id_none(self, view: MetadataView) -> None:
-        view.set_experiment_id(None)
-        assert view.experiment_id is None
-
-    def test_set_channel_db_id(self, view: MetadataView) -> None:
-        view.set_channel_db_id(7)
-        assert view.channel_db_id == 7
-
 
 # ===========================================================================
 # _plot_categorical_histogram

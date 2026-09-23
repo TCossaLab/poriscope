@@ -149,21 +149,6 @@ def test_relay_create_plugin_emits_create_plugin_signal(
 # ----------------------- update_plot_data ----------------------------
 
 
-def test_update_plot_data_delegates_to_view(
-    controller: MetaController,
-    mock_view: MagicMock,
-) -> None:
-    """
-    Forward new plot data to the view.
-
-    :param controller: Controller under test.
-    :param mock_view: Mocked meta view.
-    """
-    data = {"x": [1, 2], "y": [3, 4]}
-    controller.update_plot_data(data)
-    mock_view.update_plot_data.assert_called_once_with(data)
-
-
 # ----------------------- export_plot_data ----------------------------
 
 
@@ -402,21 +387,6 @@ def test_handle_kill_worker_reports_to_panel_when_channel_missing(
 
 
 # ----------------------- set_generator ------------------------------
-
-
-def test_set_generator_delegates_to_model(
-    controller: MetaController,
-    mock_model: MagicMock,
-) -> None:
-    """
-    Forward the generator and its metadata to the model.
-
-    :param controller: Controller under test.
-    :param mock_model: Mocked meta model.
-    """
-    gen = iter([1, 2, 3])
-    controller.set_generator(gen, 0, "key1", "MetaReader")
-    mock_model.set_generator.assert_called_once_with(gen, 0, "key1", "MetaReader")
 
 
 # ------------------- handle_kill_all_workers -------------------------

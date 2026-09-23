@@ -25,7 +25,7 @@
 # Kyle Briggs
 
 import logging
-from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple, override
+from typing import Any, Dict, List, Optional, Sequence, Set, Tuple, override
 
 from PySide6.QtWidgets import QMessageBox
 
@@ -56,8 +56,6 @@ class MetaEventTabView(MetaView):
     - **Commit-time helpers.** ``_extract_commit_event_parameters`` and
       ``validate_single_channel`` read the controls panel's channel selection and
       reject anything that is not exactly one channel.
-    - **The data filter.** ``set_data_filter_function`` records the callable the tab
-      applies to raw samples before finding or fitting.
     - **The event-index range helpers.** ``_parse_event_indices``, ``_expand_event_indices``,
       ``_shift_ranges``, ``_merge_ranges`` and ``_format_ranges`` turn the event-index
       field's text into ranges and back. Only these two tabs call them, which is why
@@ -73,13 +71,9 @@ class MetaEventTabView(MetaView):
       not implement.
 
     :ivar logger: the module logger the shared methods below log under
-    :ivar data_filter: the callable applied to raw samples, or None for no filtering
     """
 
     logger = logging.getLogger(__name__)
-
-    #: Assigned by ``set_data_filter_function`` and by each tab's own plot paths.
-    data_filter: Optional[Callable]
 
     @log(logger=logger)
     def _parse_event_indices(
@@ -307,13 +301,3 @@ class MetaEventTabView(MetaView):
             self.logger.info(f"{operation} cancelled: no filter selected")
             return False
         return True
-
-    @log(logger=logger)
-    def set_data_filter_function(self, data_filter: Callable) -> None:
-        """
-        Set the callcable function to filter data
-
-        :param data_filter: a callable function
-        :type data_filter: Callable
-        """
-        self.data_filter = data_filter

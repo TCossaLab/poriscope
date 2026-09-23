@@ -29,7 +29,7 @@ import logging
 from abc import abstractmethod
 from collections import OrderedDict
 from copy import deepcopy
-from typing import Any, Dict, Generator, List, Mapping, Optional
+from typing import Any, Dict, List, Mapping, Optional
 
 from PySide6.QtCore import QObject, Signal, Slot
 
@@ -153,16 +153,6 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
         :type key: str
         """
         self.delete_plugin.emit(metaclass, key)
-
-    @log(logger=logger)
-    def update_plot_data(self, data: Optional[Any]) -> None:
-        """
-        Update the view with new plot data.
-
-        :param data: Optional data to be plotted (e.g., event traces or fitted results).
-        :type data: Optional[Any]
-        """
-        self.view.update_plot_data(data)
 
     # public API, must be implemented by sublcasses
 
@@ -393,28 +383,6 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
                 f"Nothing to stop for {key} - it is not running.",
                 self.__class__.__name__,
             )
-
-    @log(logger=logger)
-    def set_generator(
-        self,
-        generator: Generator[float, Optional[bool], None],
-        channel: int,
-        key: str,
-        metaclass: str,
-    ) -> None:
-        """
-        Assign a generator to the model for asynchronous event processing.
-
-        :param generator: Generator object for producing event data.
-        :type generator: Generator[float, Optional[bool], None]
-        :param channel: Target channel number.
-        :type channel: int
-        :param key: Identifier key for the data stream.
-        :type key: str
-        :param metaclass: Metaclass name associated with the generator.
-        :type metaclass: str
-        """
-        self.model.set_generator(generator, channel, key, metaclass)
 
     @log(logger=logger)
     @Slot(str)

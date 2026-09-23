@@ -631,23 +631,3 @@ class ProteinController(MetaSubsetTabController):
             return None
 
         return query, generator
-
-    @log(logger=logger)
-    def check_column_exists(self, table_name: Optional[str]) -> None:
-        """
-        Notify the view to check if a fit-data column exists in the given table.
-
-        :param table_name: Name of the table containing the queried column, or None if the loader could not resolve one.
-        :type table_name: Optional[str]
-        """
-        self.view.set_column_exists(table_name)
-
-    @log(logger=logger)
-    def alter_database_status(self, status: bool) -> None:
-        """
-        Inform the view whether database alteration was successful.
-
-        :param status: Result of the database alteration operation.
-        :type status: bool
-        """
-        self.view.set_alter_database_status(status)

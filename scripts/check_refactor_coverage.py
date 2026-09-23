@@ -127,12 +127,9 @@ MOVED: Tuple[Tuple[str, str, str], ...] = (
     ("poriscope/utils/MetaEventTabView.py", "_expand_event_indices", "3d"),
     # Step 3e - tab-specific leakage out of the bases. Landed 2026-09-06; the entries
     # now name where each landed, so the net still covers them.
-    ("poriscope/plugins/analysistabs/ProteinView.py", "set_column_exists", "3e"),
-    (
-        "poriscope/plugins/analysistabs/ProteinController.py",
-        "check_column_exists",
-        "3e",
-    ),
+    # ProteinView.set_column_exists and ProteinController.check_column_exists were
+    # targets here until they were deleted as dead code: nothing had called them
+    # since the bus that did was retired.
     # Step 4c - scientific computation out of the widgets. The Clustering pilot landed
     # 2026-09-07: these two moved to ClusteringModel and lost their leading underscore,
     # since the Controller calls them now, and the Gaussian-mixture branch of

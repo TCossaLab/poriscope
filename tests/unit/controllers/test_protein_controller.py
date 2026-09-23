@@ -65,16 +65,6 @@ class TestInit:
 # ===========================================================================
 
 
-class TestAlterDatabaseStatus:
-    def test_forwards_true_to_view(self, controller):
-        controller.alter_database_status(True)
-        assert controller.view.operation_success is True
-
-    def test_forwards_false_to_view(self, controller):
-        controller.alter_database_status(False)
-        assert controller.view.operation_success is False
-
-
 # ===========================================================================
 # relay_query — the big dispatch method
 # ===========================================================================
@@ -265,39 +255,9 @@ class TestRelayQuery:
 # ===========================================================================
 
 
-class TestRelayEventQuery:
-    def test_valid_query_sets_view_event_query(self, controller):
-        controller.relay_event_query("SELECT * FROM events", "")
-        assert controller.view.event_query == "SELECT * FROM events"
-
-    def test_debug_no_query_emits_debug_message(self, controller):
-        controller.add_text_to_display = MagicMock()
-        controller.relay_event_query("", "no events matched")
-        controller.add_text_to_display.emit.assert_called_once_with(
-            "no events matched", controller.__class__.__name__
-        )
-
-    def test_valid_query_no_debug_message_emitted(self, controller):
-        controller.add_text_to_display = MagicMock()
-        controller.relay_event_query("SELECT * FROM events", "")
-        controller.add_text_to_display.emit.assert_not_called()
-
-
 # ===========================================================================
 # relay_event_data_generator / relay_event_plot_data_generator
 # ===========================================================================
-
-
-class TestRelayGenerators:
-    def test_relay_event_data_generator_sets_view_generator(self, controller):
-        g = iter([1, 2, 3])
-        controller.relay_event_data_generator(g)
-        assert controller.view.event_data_generator is g
-
-    def test_relay_event_plot_data_generator_sets_view_generator(self, controller):
-        g = iter([])
-        controller.relay_event_plot_data_generator(g)
-        assert controller.view.plot_events_generator is g
 
 
 # ===========================================================================
@@ -305,89 +265,19 @@ class TestRelayGenerators:
 # ===========================================================================
 
 
-class TestRelayUnits:
-    def test_forwards_units_to_view(self, controller):
-        controller.relay_units("nm")
-        assert controller.view.units == "nm"
-
-
 # ===========================================================================
 # update_column_names
 # ===========================================================================
 
 
-class TestUpdateColumnNames:
-    def test_nonempty_list_updates_view(self, controller):
-        controller.update_column_names(["a", "b", "c"])
-        assert controller.view.available_columns == ["a", "b", "c"]
-
-    def test_empty_list_does_not_update_view(self, controller):
-        controller.view.available_columns = ["existing"]
-        controller.update_column_names([])
-        assert controller.view.available_columns == ["existing"]
-
-    def test_none_does_not_update_view(self, controller):
-        controller.view.available_columns = ["existing"]
-        controller.update_column_names(None)
-        assert controller.view.available_columns == ["existing"]
-
-
 # ===========================================================================
-# get_experiment_structure_ready
+# request_experiment_structure
 # ===========================================================================
-
-
-class TestGetExperimentStructureReady:
-    def test_stringifies_channels_in_available_structure(self, controller):
-        controller.get_experiment_structure_ready({"exp1": [0, 1, 2]}, "ldr1")
-        assert controller.view.available_experiment_and_channels_by_loader["ldr1"] == {
-            "exp1": ["0", "1", "2"]
-        }
-
-    def test_populates_selected_as_copy_of_available(self, controller):
-        controller.get_experiment_structure_ready({"exp1": [0]}, "ldr1")
-        available = controller.view.available_experiment_and_channels_by_loader["ldr1"]
-        selected = controller.view.selected_experiment_and_channels_by_loader["ldr1"]
-        assert available == selected
-        assert available is not selected  # must be a copy, not the same dict
-
-    def test_multiple_experiments(self, controller):
-        controller.get_experiment_structure_ready({"exp1": [0, 1], "exp2": [0]}, "ldr1")
-        result = controller.view.available_experiment_and_channels_by_loader["ldr1"]
-        assert result == {"exp1": ["0", "1"], "exp2": ["0"]}
-
-    def test_empty_structure(self, controller):
-        controller.get_experiment_structure_ready({}, "ldr1")
-        assert controller.view.available_experiment_and_channels_by_loader["ldr1"] == {}
-
-    def test_multiple_loaders_independent(self, controller):
-        controller.get_experiment_structure_ready({"exp1": [0]}, "ldrA")
-        controller.get_experiment_structure_ready({"exp2": [1]}, "ldrB")
-        assert "ldrA" in controller.view.available_experiment_and_channels_by_loader
-        assert "ldrB" in controller.view.available_experiment_and_channels_by_loader
-        assert (
-            controller.view.available_experiment_and_channels_by_loader["ldrA"]
-            != controller.view.available_experiment_and_channels_by_loader["ldrB"]
-        )
 
 
 # ===========================================================================
 # set_experiment_id / set_channel_db_id
 # ===========================================================================
-
-
-class TestSetExperimentAndChannelIds:
-    def test_set_experiment_id_forwards_to_view(self, controller):
-        controller.set_experiment_id(42)
-        assert controller.view.experiment_id == 42
-
-    def test_set_experiment_id_none_forwards_none(self, controller):
-        controller.set_experiment_id(None)
-        assert controller.view.experiment_id is None
-
-    def test_set_channel_db_id_forwards_to_view(self, controller):
-        controller.set_channel_db_id(7)
-        assert controller.view.channel_db_id == 7
 
 
 # ===========================================================================

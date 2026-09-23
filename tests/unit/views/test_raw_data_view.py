@@ -113,7 +113,6 @@ def view(mocker, mock_logging):
     v.analysis_time_limits = {}
     v.eventfinding_status = False
     v.num_events_allowed = 0
-    v.data_filter = None
     v.available_plugins = {}
 
     # --- Cache helpers (no-ops) ---
@@ -142,12 +141,6 @@ def test_plugin_is_metaview_subclass():
 def test_update_plot_data_stores_array(view):
     data = np.array([1, 2, 3])
     view.update_plot_data(data)
-    np.testing.assert_array_equal(view.plot_data, data)
-
-
-def test_update_plot_data_extracts_data_key_from_dict(view):
-    data = np.array([4, 5, 6])
-    view.update_plot_data({"data": data})
     np.testing.assert_array_equal(view.plot_data, data)
 
 
@@ -212,32 +205,9 @@ def test_update_channels_logs_info(view):
 # ---------------------------------------------------------------------------
 
 
-def test_set_num_events_allowed(view):
-    view.set_num_events_allowed(42)
-    assert view.num_events_allowed == 42
-
-
-def test_set_eventfinding_status_true(view):
-    view.set_eventfinding_status(True)
-    assert view.eventfinding_status is True
-
-
-def test_set_eventfinding_status_false(view):
-    view.set_eventfinding_status(False)
-    assert view.eventfinding_status is False
-
-
 # ---------------------------------------------------------------------------
 # set_data_filter_function
 # ---------------------------------------------------------------------------
-
-
-def test_set_data_filter_function(view):
-    def passthrough(x):
-        return x
-
-    view.set_data_filter_function(passthrough)
-    assert view.data_filter is passthrough
 
 
 # ---------------------------------------------------------------------------

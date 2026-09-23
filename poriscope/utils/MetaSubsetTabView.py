@@ -890,16 +890,6 @@ class MetaSubsetTabView(MetaView):
         return file_name
 
     @log(logger=logger)
-    def set_experiment_id(self, experiment_id: Optional[int]) -> None:
-        """
-        A global signal callback that provides an experiment id for a given filter.
-
-        :param experiment_id: the integer id of the experiment in a MetaEventLoader object
-        :type experiment_id: Optional[int]
-        """
-        self.experiment_id = experiment_id
-
-    @log(logger=logger)
     def set_event_data_generator(self, generator: Iterator[Dict[str, Any]]) -> None:
         """
         Set the event data generator for event-based plots.
@@ -996,16 +986,6 @@ class MetaSubsetTabView(MetaView):
         :type query: str
         """
         self.event_query = query
-
-    @log(logger=logger)
-    def set_units(self, units: Any) -> None:
-        """
-        Set the units returned from the database for use in axis labels.
-
-        :param units: List or string representing units.
-        :type units: Any
-        """
-        self.units = units
 
     @log(logger=logger)
     def update_available_columns(self, loader: str) -> None:

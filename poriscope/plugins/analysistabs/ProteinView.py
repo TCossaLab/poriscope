@@ -613,26 +613,6 @@ class ProteinView(MetaSubsetTabView):
 
         self.add_text_to_display.emit("<br>".join(lines), self.__class__.__name__)
 
-    @log(logger=logger)
-    def set_column_exists(self, exists_in_table: Optional[str]) -> None:
-        """
-        Record which table already holds committed fit-data columns.
-
-        :param exists_in_table: Name of table where columns exist or None.
-        :type exists_in_table: Optional[str]
-        """
-        self.column_table = exists_in_table
-
-    @log(logger=logger)
-    def set_alter_database_status(self, status: bool) -> None:
-        """
-        Sets the success status of a database operation.
-
-        :param status: True if successful, False otherwise.
-        :type status: bool
-        """
-        self.operation_success = status
-
     @property
     def _subset_controls(self) -> MetaSubsetTabControls:
         """
@@ -671,16 +651,6 @@ class ProteinView(MetaSubsetTabView):
         :type column_names: List[str]
         """
         self.available_columns = column_names
-
-    @log(logger=logger)
-    def set_channel_db_id(self, channel_db_id: Optional[int]) -> None:
-        """
-        A global signal callback that provides the channel_db_id for raw query scoping.
-
-        :param channel_db_id: Database id of the scoped channel, or None if unresolved.
-        :type channel_db_id: Optional[int]
-        """
-        self.channel_db_id = channel_db_id
 
     @log(logger=logger)
     def _clear_figure_state(
