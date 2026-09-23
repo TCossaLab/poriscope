@@ -561,43 +561,7 @@ def test_update_data_server_location_updates_attribute(
 # ---------------- get_instantiated_plugins_list ----------------------
 
 
-def test_get_instantiated_plugins_list_delegates_to_model(
-    controller: DataPluginController,
-    mock_model: MagicMock,
-) -> None:
-    """
-    Return the instantiated plugins list from the model.
-
-    :param controller: Controller under test.
-    :param mock_model: Mocked data plugin model.
-    """
-    mock_model.get_instantiated_plugins_list.return_value = {"MetaReader": ["r1"]}
-
-    result = controller.get_instantiated_plugins_list()
-
-    assert result == {"MetaReader": ["r1"]}
-    mock_model.get_instantiated_plugins_list.assert_called_once()
-
-
 # ------------------- get_available_metaclasses -----------------------
-
-
-def test_get_available_metaclasses_delegates_to_model(
-    controller: DataPluginController,
-    mock_model: MagicMock,
-) -> None:
-    """
-    Return the available metaclasses list from the model.
-
-    :param controller: Controller under test.
-    :param mock_model: Mocked data plugin model.
-    """
-    mock_model.get_available_metaclasses.return_value = ["MetaReader", "MetaWriter"]
-
-    result = controller.get_available_metaclasses()
-
-    assert result == ["MetaReader", "MetaWriter"]
-    mock_model.get_available_metaclasses.assert_called_once()
 
 
 # ----------- validate_and_instantiate_plugin (settings=None path) ----

@@ -452,16 +452,6 @@ class ClusteringSettingsDialog(QDialog, WalkthroughMixin):
         self._place_add_row_at_bottom()
         self._check_apply_enabled()
 
-    def _move_add_row_down(self) -> None:
-        # Remove current add row widgets
-        for col in range(5):
-            item = self.scroll_layout.itemAtPosition(self.add_row_index - 1, col)
-            if item and item.widget():
-                item.widget().setParent(None)
-
-        # Reinsert at new index
-        self._place_add_row_at_bottom()
-
     def remove_column_item(self, key: str) -> None:
         if key in self.column_item_widgets:
             row_index = self.column_item_widgets[key]["row"]

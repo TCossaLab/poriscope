@@ -1,6 +1,6 @@
 {
   "poriscope/controllers/DataPluginController.py": {
-    "functions": 32,
+    "functions": 30,
     "over_threshold": 0,
     "total_complexity": 0
   },
@@ -10,7 +10,7 @@
     "total_complexity": 0
   },
   "poriscope/controllers/main_controller.py": {
-    "functions": 26,
+    "functions": 25,
     "over_threshold": 0,
     "total_complexity": 0
   },
@@ -30,17 +30,17 @@
     "total_complexity": 0
   },
   "poriscope/models/main_model.py": {
-    "functions": 26,
+    "functions": 24,
     "over_threshold": 0,
     "total_complexity": 0
   },
   "poriscope/views/main_view.py": {
-    "functions": 78,
+    "functions": 77,
     "over_threshold": 0,
     "total_complexity": 0
   },
   "poriscope/views/settings_window.py": {
-    "functions": 29,
+    "functions": 26,
     "over_threshold": 0,
     "total_complexity": 0
   }

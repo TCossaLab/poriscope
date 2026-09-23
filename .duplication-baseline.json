@@ -13,13 +13,13 @@
   },
   "*View.py": {
     "files": 5,
-    "functions": 181,
+    "functions": 177,
     "identical_bodies": 0,
     "removable_lines": 0
   },
   "*controls.py": {
     "files": 5,
-    "functions": 57,
+    "functions": 55,
     "identical_bodies": 0,
     "removable_lines": 0
   },
@@ -43,7 +43,7 @@
   },
   "views/widgets": {
     "files": 12,
-    "functions": 123,
+    "functions": 120,
     "identical_bodies": 1,
     "removable_lines": 3
   }

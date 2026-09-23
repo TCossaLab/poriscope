@@ -1,5 +1,7 @@
 ## Poriscope 2.0.0: in progress
 
+* **Breaking: `MetaControls.clear_popup_reference` and `MetaSubsetTabControls.get_selected_filter_names` are removed**, and `MetaView._set_display_area_base` with them - nothing called any of them, and `clear_popup_reference` tended a popup registry nothing ever filled
+
 * **Breaking: `MetaController.update_plot_data` and `MetaController.set_generator` are removed** - nothing called either since the signal bus went; a tab hands a generator to `self.model.set_generator` directly, as every shipped tab does
 
 * **Breaking: `MetaSubsetTabController` loses eleven relay methods nothing called since the signal bus went** - `relay_event_query`, `relay_event_data_generator`, `relay_event_plot_data_generator`, `relay_plot_data`, `relay_units`, `update_column_names`, `get_experiment_names_for_tree`, `get_experiment_structure_ready`, `set_experiment_id`, `set_channel_db_id` and `set_exported_event_count`; the live paths are `request_column_names` and `request_experiment_structure`

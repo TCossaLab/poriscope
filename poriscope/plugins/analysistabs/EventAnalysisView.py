@@ -116,28 +116,6 @@ class EventAnalysisView(MetaEventTabView):
         return self.eventAnalysisControls
 
     @log(logger=logger)
-    def _factors(self, n: int) -> Tuple[int, int]:
-        """
-        Compute a pair of factors of n that are closest to each other.
-        Useful for determining subplot grid dimensions.
-
-        :param n: Integer to factor.
-        :type n: int
-        :return: Tuple of two integers whose product is close to n and have minimal difference.
-        :rtype: Tuple[int, int]
-        """
-        diff = n
-        min_diff_pair = (1, n)
-        while diff > 2:
-            factor_pairs = [
-                (i, n // i) for i in range(1, int(n**0.5) + 1) if n % i == 0
-            ]
-            min_diff_pair = min(factor_pairs, key=lambda pair: abs(pair[0] - pair[1]))
-            diff = min_diff_pair[1] - min_diff_pair[0]
-            n += 1
-        return min_diff_pair
-
-    @log(logger=logger)
     def get_save_filename(self) -> str:
         """
         Open a file dialog to let the user select a filename for saving a CSV file.

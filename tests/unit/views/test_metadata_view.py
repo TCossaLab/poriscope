@@ -4677,6 +4677,7 @@ class TestSimpleSetters:
         view.set_column_type(None)
         assert view.column_type is None
 
+
 # ===========================================================================
 # _plot_categorical_histogram
 # ===========================================================================

@@ -109,9 +109,6 @@ class TestInstantiation:
         assert hasattr(ec, "raw_checkbox")
         assert not ec.raw_checkbox.isChecked()
 
-    def test_active_popups_empty(self, ec):
-        assert ec.active_popups == {}
-
 
 # ===========================================================================
 # Widget factories
@@ -230,18 +227,6 @@ class TestPlaceholderAndToggle:
 # ===========================================================================
 # clear_popup_reference
 # ===========================================================================
-
-
-class TestClearPopupReference:
-    def test_removes_existing(self, ec):
-        cb = ec.create_comboBox(ec)
-        ec.active_popups[cb] = object()
-        ec.clear_popup_reference(cb)
-        assert cb not in ec.active_popups
-
-    def test_missing_key_no_error(self, ec):
-        cb = ec.create_comboBox(ec)
-        ec.clear_popup_reference(cb)  # should not raise
 
 
 # ===========================================================================

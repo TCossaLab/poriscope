@@ -1108,4 +1108,3 @@ def test_update_available_plugins_logs_debug(
 
 
 # ---------------- relay_eventfitting_status --------------------------
-

@@ -307,12 +307,3 @@ class MultiSelectFilterComboBox(MultiSelectComboBoxBase):
             QTimer.singleShot(0, self.showPopup)  # Reopen after edit
 
         QTimer.singleShot(0, open_dialog_then_reopen)
-
-    def clear_selection_list(self) -> None:
-        """
-        Clear all filter items and reset the text display.
-        """
-        self.listWidget.clear()
-        self._line_edit.clear()
-        self.selectAllButton.setChecked(False)
-        self.selectAllButton.setText("Select All")

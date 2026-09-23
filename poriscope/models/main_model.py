@@ -419,40 +419,6 @@ class MainModel(QObject):
         return self.available_plugin_classes[metaclass]
 
     @log(logger=logger)
-    def get_plugin(self, metaclass: str, subclass: str) -> Optional[type]:
-        try:
-            return self.available_plugin_classes[metaclass][subclass]
-        except KeyError:
-            self.logger.error(f"unable to load class {metaclass} {subclass}")
-            return None
-
-    @log(logger=logger)
-    def get_plugin_data(self, plugin_key: str) -> Dict[str, Any]:
-        """
-        Fetches plugin data from the local application data JSON file.
-
-        Args:
-            plugin_key (str): The key representing the plugin to retrieve data for.
-
-        Returns:
-            dict: Plugin data if available, otherwise returns an empty dictionary.
-        """
-        file_path = Path(user_data_dir(), "Poriscope", "session", "plugin_history.json")
-        if not file_path.exists():
-            self.logger.error(f"Plugin data file does not exist: {file_path}")
-            return {}
-
-        try:
-            with open(file_path, "r") as file:
-                data = json.load(file)
-                plugin_data = data.get(plugin_key, {})
-                self.replace_class_names_with_classes(plugin_data)
-                return plugin_data
-        except Exception as e:
-            self.logger.error(f"Failed to load plugin data for {plugin_key}: {e}")
-            return {}
-
-    @log(logger=logger)
     def save_session(
         self,
         plugin_history: Dict[str, Any],

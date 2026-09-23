@@ -843,11 +843,7 @@ class MetaSubsetTabView(MetaView):
 
         Promoted from both subset tabs, whose copies differed only in the name each
         held its controls panel under, and otherwise verbatim - including reaching
-        past the panel to its combobox, which ``MetaSubsetTabControls`` already
-        wraps as ``get_selected_filter_names``. Delegating to that wrapper instead
-        would be an improvement but not this commit's; it would also change what
-        the existing tab tests have to mock, which is exactly the noise a promotion
-        should not carry.
+        past the panel to its combobox.
 
         :return: selected filter names mapped to their SQL WHERE clauses
         :rtype: dict

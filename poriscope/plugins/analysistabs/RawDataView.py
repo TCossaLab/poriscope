@@ -133,27 +133,6 @@ class RawDataView(MetaEventTabView):
         return self.rawdatacontrols
 
     @log(logger=logger)
-    def _factors(self, n: int) -> Tuple[int, int]:
-        """
-        Determine the factor pair (rows, cols) closest to a square layout.
-
-        :param n: Total number of plots.
-        :type n: int
-        :return: (rows, columns) representing subplot grid dimensions.
-        :rtype: Tuple[int, int]
-        """
-        diff = n
-        min_diff_pair = (1, n)
-        while diff > 2:
-            factor_pairs = [
-                (i, n // i) for i in range(1, int(n**0.5) + 1) if n % i == 0
-            ]
-            min_diff_pair = min(factor_pairs, key=lambda pair: abs(pair[0] - pair[1]))
-            diff = min_diff_pair[1] - min_diff_pair[0]
-            n += 1
-        return min_diff_pair
-
-    @log(logger=logger)
     def get_save_filename(self) -> str:
         """
         Open a dialog to save a CSV file.

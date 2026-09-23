@@ -337,10 +337,6 @@ class IconMenuWidget(QWidget):
 
     # Slot methods to update button states
     @log(logger=logger)
-    def setMenuChecked(self, checked: bool) -> None:
-        self.menu_button.setChecked(checked)
-
-    @log(logger=logger)
     def setRawDataChecked(self, checked: bool) -> None:
         self.raw_data_icon_button.setChecked(checked)
 

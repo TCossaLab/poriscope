@@ -2046,28 +2046,6 @@ class MetadataView(MetaSubsetTabView):
         self._handle_plot_events(new_params)
 
     @log(logger=logger)
-    def _get_event_id(self) -> Optional[int]:  # Since params expanded
-        """
-        Get the current event_id from the event_id input field.
-
-        :return: Integer event_id, or None if the field is empty.
-        :rtype: Optional[int]
-        """
-        text = self.metadatacontrols.event_id_lineEdit.text().strip()
-        return int(text) if text else None
-
-    @log(logger=logger)
-    def _get_n_events(self) -> int:
-        """
-        Get the number of events to plot from the n_events input field.
-
-        :return: Number of events, defaulting to 1 if the field is empty.
-        :rtype: int
-        """
-        text = self.metadatacontrols.n_events_lineEdit.text().strip()
-        return int(text) if text else 1
-
-    @log(logger=logger)
     def _handle_plot_events(self, parameters: Dict[str, Any]) -> None:
         """
         Handle loading and plotting of selected events based on provided parameters.

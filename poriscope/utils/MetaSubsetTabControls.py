@@ -25,7 +25,7 @@
 # Kyle Briggs
 
 import logging
-from typing import Any, List, Sequence
+from typing import Any, Sequence
 
 from PySide6.QtCore import QSize, Signal
 from PySide6.QtGui import QRegularExpressionValidator
@@ -52,9 +52,8 @@ class MetaSubsetTabControls(MetaControls):
 
     What a subclass inherits, on top of everything ``MetaControls`` gives it:
 
-    - **The filter combobox.** ``update_filters`` and ``get_selected_filter_names``
-      read and repopulate it, and ``delete_filter_by_name`` and
-      ``show_filter_info_dialog_single`` turn a click on one of its rows into a
+    - **The filter combobox.** ``update_filters`` repopulates it, and
+      ``delete_filter_by_name`` and ``show_filter_info_dialog_single`` turn a click on one of its rows into a
       signal.
     - **The three filter buttons.** ``create_filter_info_button``,
       ``create_add_filter_button`` and ``create_filter_delete_button`` build the
@@ -149,9 +148,6 @@ class MetaSubsetTabControls(MetaControls):
 
     def retranslateUi(self) -> None:
         pass
-
-    def get_selected_filter_names(self) -> List[str]:
-        return self.filter_comboBox.getSelectedItems()
 
     def update_loaders(self, loaders: list[str]) -> None:
         self.logger.info(f"Updating loaders: {loaders}")

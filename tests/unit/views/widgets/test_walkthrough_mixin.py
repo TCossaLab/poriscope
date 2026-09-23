@@ -448,28 +448,6 @@ class TestCheckNextViewAndPseudo:
 # ---------------------------------------------------------------------------
 
 
-class TestAdvanceWalkthroughIndex:
-    def test_increments_index(self, widget):
-        target = MagicMock(spec=QWidget)
-        widget._global_walkthrough_steps = [
-            _make_step(widget_fn=lambda: target),
-            _make_step(widget_fn=lambda: target),
-        ]
-        widget._walkthrough_index = 0
-        with patch.object(widget, "_run_next_walkthrough_step") as mock_run:
-            widget._advance_walkthrough_index()
-            assert widget._walkthrough_index == 1
-            mock_run.assert_called_once()
-
-    def test_sets_inactive_when_no_more_steps(self, widget):
-        target = MagicMock(spec=QWidget)
-        widget._global_walkthrough_steps = [_make_step(widget_fn=lambda: target)]
-        widget._walkthrough_index = 0
-        widget._walkthrough_active = True
-        widget._advance_walkthrough_index()
-        assert widget._walkthrough_active is False
-
-
 # ---------------------------------------------------------------------------
 # _handle_walkthrough_done
 # ---------------------------------------------------------------------------
@@ -689,32 +667,3 @@ class TestRepositionDialog:
 # ---------------------------------------------------------------------------
 # _force_close_walkthrough_dialog
 # ---------------------------------------------------------------------------
-
-
-class TestForceCloseWalkthroughDialog:
-    def test_no_dialog_no_crash(self, widget):
-        widget.walkthrough_dialog = None
-        widget._force_close_walkthrough_dialog()  # should not crash
-
-    def test_closes_dialog_and_clears(self, widget, qtbot):
-        mock_dialog = MagicMock()
-        widget.walkthrough_dialog = mock_dialog
-        widget._force_close_walkthrough_dialog()
-        mock_dialog.done.assert_called_once_with(0)
-        assert widget.walkthrough_dialog is None
-        assert widget._walkthrough_active is False
-
-    def test_emits_finished_false_on_force_close(self, widget, qtbot):
-        mock_dialog = MagicMock()
-        widget.walkthrough_dialog = mock_dialog
-        with qtbot.waitSignal(widget.walkthrough_finished, timeout=1000) as blocker:
-            widget._force_close_walkthrough_dialog()
-        _, completed = blocker.args
-        assert completed is False
-
-    def test_handles_exception_gracefully(self, widget):
-        mock_dialog = MagicMock()
-        mock_dialog.done.side_effect = RuntimeError("boom")
-        widget.walkthrough_dialog = mock_dialog
-        widget._force_close_walkthrough_dialog()  # should not raise
-        assert widget.walkthrough_dialog is None

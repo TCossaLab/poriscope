@@ -690,11 +690,6 @@ def test_get_milestone_step_returns_none_if_invalid(main_view):
     assert main_view.get_milestone_step("InvalidView") is None
 
 
-def test_on_view_switched_sets_current_view(main_view):
-    main_view.on_view_switched("RawDataView")
-    assert main_view._current_view == "RawDataView"
-
-
 class DummyWalkthroughWidget(QWidget, WalkthroughMixin):
     walkthrough_finished = Signal()
 

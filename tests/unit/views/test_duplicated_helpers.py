@@ -9,10 +9,9 @@ makes about known behaviour rather than a silent change.
 
 Eight groups:
 
-- ``_factors`` exists three times - ``MetaView.py:139`` plus byte-identical
-  overrides in ``RawDataView.py:109`` and ``EventAnalysisView.py:121`` that shadow
-  the base they could simply inherit. Step 3c deletes the two overrides. Nothing
-  today asserts the three agree; each is tested separately in its own module.
+- ``_factors`` used to exist three times - ``MetaView`` plus byte-identical overrides
+  in ``RawDataView`` and ``EventAnalysisView`` that shadowed the base. The overrides
+  are gone, so what is checked now is the one implementation every tab inherits.
 - ``createButton`` used to exist five times, four of them byte-identical, and
   the divergence was pinned so Step 3a had to decide it. **3a promoted the
   majority version to** ``MetaControls``, so what is checked now is that exactly
@@ -73,10 +72,8 @@ import pytest
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QBoxLayout
 
-from poriscope.plugins.analysistabs.EventAnalysisView import EventAnalysisView
 from poriscope.plugins.analysistabs.MetadataView import MetadataView
 from poriscope.plugins.analysistabs.ProteinView import ProteinView, format_axis_label
-from poriscope.plugins.analysistabs.RawDataView import RawDataView
 from poriscope.plugins.analysistabs.utils.clusteringcontrols import ClusteringControls
 from poriscope.plugins.analysistabs.utils.eventAnalysisControls import (
     EventAnalysisControls,
@@ -130,45 +127,17 @@ def build(cls: type) -> object:
 @pytest.fixture
 def factors_copies() -> dict:
     """
-    One instance per class carrying a ``_factors`` implementation.
+    An instance carrying the one ``_factors`` implementation, the base's.
 
-    :return: the three carriers, keyed by class name
+    :return: the carrier, keyed by class name
     :rtype: dict
     """
-    return {
-        "MetaView": build(_BaseOnlyView),
-        "RawDataView": build(RawDataView),
-        "EventAnalysisView": build(EventAnalysisView),
-    }
+    return {"MetaView": build(_BaseOnlyView)}
 
 
 # ===========================================================================
-# _factors - three copies, two of them shadowing the base
+# _factors - one implementation, inherited by every tab
 # ===========================================================================
-
-
-class TestFactorsAgree:
-    """The three copies must return the same grid for the same input."""
-
-    @pytest.mark.parametrize("n", list(range(1, 41)))
-    def test_all_three_copies_agree(self, factors_copies: dict, n: int) -> None:
-        """
-        Swept rather than spot-checked, because the loop grows ``n`` until it can
-        factor it nearly squarely, and a divergence could hide at any one value.
-        """
-        results = {name: view._factors(n) for name, view in factors_copies.items()}
-        assert len(set(results.values())) == 1, results
-
-    def test_the_overrides_are_not_merely_inherited(self) -> None:
-        """
-        The two subclasses genuinely redefine it rather than inheriting it.
-
-        If this ever fails, Step 3c's deletion has already happened and the
-        agreement tests above become trivially true - which is the point at which
-        this test should be removed rather than repaired.
-        """
-        assert "_factors" in RawDataView.__dict__
-        assert "_factors" in EventAnalysisView.__dict__
 
 
 class TestFactorsBehaviour:

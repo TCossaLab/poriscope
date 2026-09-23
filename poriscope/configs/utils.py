@@ -125,16 +125,6 @@ def _fade_pixmap(pixmap: QPixmap, opacity: float) -> QPixmap:
     return faded
 
 
-def clear_icon_cache() -> None:
-    """
-    Clear the cached icons.
-
-    Call this if icons need to be forcibly re-rendered outside of a normal
-    theme change (e.g. icon files were replaced on disk at runtime).
-    """
-    _icon_cache.clear()
-
-
 def get_icon(name: str, color: str | None = None) -> QIcon:
     """
     Load an icon by filename from the icons directory, tinted for the

@@ -341,15 +341,6 @@ class ClusteringControls(MetaControls):
         else:
             self.db_loader_comboBox.setCurrentIndex(0)
 
-    def update_labels(self) -> None:
-        """
-        Update both X and Y label combo boxes.
-
-        This method should be implemented to populate the combo boxes
-        with available cluster labels, possibly from an external source or updated state.
-        """
-        pass
-
     def update_clusters(self, clusters: Sequence[Any]) -> None:
         """
         Update the X and Y label combo boxes with the provided cluster labels.
@@ -363,8 +354,3 @@ class ClusteringControls(MetaControls):
         self.label_x_comboBox.addItems(cluster_names)
         self.label_y_comboBox.clear()
         self.label_y_comboBox.addItems(cluster_names)
-
-    def get_current_loader(self) -> Optional[str]:
-        """Return the currently selected DB loader key, or None if unset."""
-        text = self.db_loader_comboBox.currentText()
-        return text if text and text != "No Event Database" else None

@@ -29,8 +29,6 @@ import sys
 from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple
 
-import matplotlib.pyplot as plt
-from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from PySide6.QtCore import QRect, QSize, Qt, QTimer, Signal, Slot
 from PySide6.QtGui import QAction, QCloseEvent, QResizeEvent, QTextCursor
 from PySide6.QtWidgets import (
@@ -108,10 +106,7 @@ class MainView(QMainWindow, WalkthroughMixin):
         self._expected_next_view: Optional[str] = None
         self._plugins_menu_anchor: Optional[QWidget] = None
         self.setup_ui()
-        self.figure = plt.Figure()
-        self.canvas = FigureCanvas(self.figure)
         self.toggle_in_progress = False
-        self.child_windows: List[QWidget] = []
         self.help_window: Optional[HelpCentre] = None
         self.settings_window: Optional[SettingsWindow] = None
         self._analysis_proxy: Optional[QWidget] = None
@@ -1103,7 +1098,6 @@ class MainView(QMainWindow, WalkthroughMixin):
                 if not self._walkthrough_active:
                     self.logger.info(f"Launching walkthrough for {current_view}.")
                     self._walkthrough_active = True
-                    self._walkthrough_origin = current_view
                     view_widget.walkthrough_finished.connect(
                         self._reset_walkthrough_flag
                     )
@@ -1134,9 +1128,6 @@ class MainView(QMainWindow, WalkthroughMixin):
 
         if completed_successfully:
             self.show_milestone_step(view_name)
-
-    def on_view_switched(self, view_name: str) -> None:
-        self._current_view = view_name
 
     def clear_milestone_dialog(self) -> None:
         """Safely clear the milestone dialog and its overlay."""

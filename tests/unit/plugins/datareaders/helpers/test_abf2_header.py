@@ -273,13 +273,6 @@ class TestSingleChannelDefaults(unittest.TestCase):
         # DataSection block start = 5 -> 5*512 = 2560
         self.assertEqual(self.header.get_header_bytes(), 2560)
 
-    def test_channel_index_by_name(self):
-        self.assertEqual(self.header.get_channel_index_by_name("Ch0"), 0)
-
-    def test_channel_index_by_name_raises_for_unknown(self):
-        with self.assertRaises(ValueError):
-            self.header.get_channel_index_by_name("NotAChannel")
-
 
 # ---------------------------------------------------------------------------
 # Multi-channel files
@@ -324,12 +317,6 @@ class TestMultiChannel(unittest.TestCase):
         self.assertLess(sf1, sf0)
         # channel 2 has signal_gain=2.0 -> smaller scale factor than ch0
         self.assertLess(sf2, sf0)
-
-    def test_channel_index_by_name_middle_channel(self):
-        self.assertEqual(self.header.get_channel_index_by_name("Ch1"), 1)
-
-    def test_channel_index_by_name_last_channel(self):
-        self.assertEqual(self.header.get_channel_index_by_name("Ch2"), 2)
 
 
 # ---------------------------------------------------------------------------

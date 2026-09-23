@@ -606,23 +606,6 @@ class MetaView(QWidget, WalkthroughMixin, metaclass=QObjectABCMeta):
     # private API, should generally be left alone by subclasses
 
     @log(logger=logger)
-    def _set_display_area_base(self, layout: QLayout) -> None:
-        """
-        Create and set up the display area for the plot canvas.
-
-        :param layout: The main layout to which the display area will be added.
-        :type layout: QLayout
-        """
-        self.dataDisplayArea = QWidget(self)
-        self.dataDisplayArea.setStyleSheet(
-            "background-color: rgb(255, 255, 255); border-radius: 25px; border: 1px solid;"
-        )
-
-        self.dataDisplayAreaLayout = QHBoxLayout(self.dataDisplayArea)
-        layout.addWidget(self.dataDisplayArea, stretch=2)
-        self._set_custom_display_area(layout)
-
-    @log(logger=logger)
     def _setup_ui(self) -> None:
         """
         Set up the user interface with a main layout containing a display area for
