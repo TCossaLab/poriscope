@@ -1247,7 +1247,9 @@ class MetaEventFinder(BaseDataPlugin):
 
         settings: Dict[str, Dict[str, Any]] = {
             "MetaReader": {
-                "Type": str,
+                # A script holds the parent object and has no controller to resolve a
+                # name, so standalone declares the class it must be an instance of.
+                "Type": MetaReader if standalone else str,
                 "Value": reader_options[0] if reader_options is not None else "",
                 "Options": reader_options,
             },

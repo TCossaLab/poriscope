@@ -481,7 +481,9 @@ class MetaDatabaseWriter(BaseDataPlugin):
 
         settings: Dict[str, Dict[str, Any]] = {
             "MetaEventFitter": {
-                "Type": str,
+                # A script holds the parent object and has no controller to resolve a
+                # name, so standalone declares the class it must be an instance of.
+                "Type": MetaEventFitter if standalone else str,
                 "Value": (
                     eventfitter_options[0] if eventfitter_options is not None else ""
                 ),

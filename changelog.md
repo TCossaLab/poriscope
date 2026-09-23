@@ -1,5 +1,7 @@
 ## Poriscope 2.0.0: in progress
 
+* **Fixed the scripting guide's pipeline failing with `MetaReader must have type <class 'str'>`** - a plugin built for a script (`get_empty_settings(standalone=True)`) now accepts its parent plugin object directly, as the guide shows, instead of needing the settings entry's type cleared by hand first
+
 * **Breaking: `MetaEventFinder.get_empty_settings` now declares `Threshold`**, with no unit, because the base event-finding loop reads it - an event finder built directly on `MetaEventFinder` used to fail with a `KeyError` on its first chunk; a subclass sets the unit (`ClassicBlockageFinder` pA, `ThresholdBlockageFinder` σ), and one that redeclared the whole entry still works
 
 * **Deprecation notice: `ChimeraReader20240101` will be removed in a future release.** It reads the 2024-01 Chimera format, whose JSON header is embedded in the `.log` file; `ChimeraReader20240501`, which reads the companion `.json` of the 2024-05 format, is unaffected. Nothing changes yet - existing data still opens, and the reader now says so in the sidebar when it opens a file - but move new work onto a supported reader
