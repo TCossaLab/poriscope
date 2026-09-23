@@ -1,24 +1,26 @@
 ## Poriscope 2.0.0: in progress
 
-* Removed test residue left by the signal bus's removal - unused test doubles, mock signals and section headers for deleted methods, the redundant `sys.path` shims in the e2e modules and subtree conftests - and two documentation images nothing referenced
+### Breaking Changes:
 
-* **Fixed a walkthrough milestone being torn down twice** when you switch to the page it points at - closing the dialog re-entered the teardown before it had let go of the dialog
+#### Results that change:
 
-* **Breaking: `MetaControls.clear_popup_reference` and `MetaSubsetTabControls.get_selected_filter_names` are removed**, and `MetaView._set_display_area_base` with them - nothing called any of them, and `clear_popup_reference` tended a popup registry nothing ever filled
+* **Breaking: `PeakFinder`'s shipped defaults are now a working barcode configuration** - `Event Type` `Barcode`, `Number of peaks` 4, filter thresholds -5 and +5, `Peak to Peak Distance Ratio` 30% - so results change for anyone who accepted the old defaults; a saved configuration keeps what it stored, so only new plugin instances see them
 
-* **Breaking: `MetaController.update_plot_data` and `MetaController.set_generator` are removed** - nothing called either since the signal bus went; a tab hands a generator to `self.model.set_generator` directly, as every shipped tab does
+* **Breaking: the barcode is now the best-*matched* set of type-1 peaks rather than the most prominent consecutive run**, scored on how alike its consecutive spacings and its peaks' ECDs are; a winning set may skip an off-pattern peak, which keeps its type 1 and so does not appear in the event's `sequence`
 
-* **Breaking: `MetaSubsetTabController` loses eleven relay methods nothing called since the signal bus went** - `relay_event_query`, `relay_event_data_generator`, `relay_event_plot_data_generator`, `relay_plot_data`, `relay_units`, `update_column_names`, `get_experiment_names_for_tree`, `get_experiment_structure_ready`, `set_experiment_id`, `set_channel_db_id` and `set_exported_event_count`; the live paths are `request_column_names` and `request_experiment_structure`
+* **Breaking: `filter_peaks` typed carrier-seated peaks as baseline peaks in the barcode branch.** The baseline band is now a fixed 3 sigma rather than sized from `Higher Filter Threshold`, and type 1 is tested ahead of type 0, so which peaks come out 0, 1 and -1 - and therefore which events get a sequence - changes on any dataset whose `Higher Filter Threshold` is not 3
 
-* **Breaking: `MetaSubsetTabView.set_experiment_id` and `MetaSubsetTabView.set_units` are removed**, along with `MetaEventTabView.set_data_filter_function` - each stored a value nothing read
+* **Breaking: the baseline standard deviation every event finder computes was inflated and is now correct**, by +13.9% on 10,000-sample chunks, +5.2% on 100,000 and +2.3% on 1,000,000 - so `ThresholdBlockageFinder`'s sigma-denominated threshold no longer moves with `Chunk Length`, and every finder detects at a slightly lower real threshold than before, finding more events on the same data and settings
 
-* **Fixed the scripting guide's pipeline failing with `MetaReader must have type <class 'str'>`** - a plugin built for a script (`get_empty_settings(standalone=True)`) now accepts its parent plugin object directly, as the guide shows, instead of needing the settings entry's type cleared by hand first
+* **Breaking:** the Protein tab's Individual Distribution plot now bins each event over its own range, as the Event Histogram plot already did - the range used to accumulate across the events of a plot, so the bins an event was drawn on depended on how many events preceded it
+
+* **Breaking:** the Metadata tab's shared plot limits now describe the filtered, log-scaled values rather than the raw column, so a log-scaled density plot bins differently than before - the limits exist to make overlaid datasets comparable on what is actually drawn
+
+* **Breaking: raw SQL subset filters can no longer be selected for a plot**, on either tab, and say so when chosen. They never worked - the filter was passed where a WHERE clause was expected, so the database rejected the query and the plot came back empty without a word. Creating, saving and loading them is unchanged
+
+#### Data plugin API:
 
 * **Breaking: `MetaEventFinder.get_empty_settings` now declares `Threshold`**, with no unit, because the base event-finding loop reads it - an event finder built directly on `MetaEventFinder` used to fail with a `KeyError` on its first chunk; a subclass sets the unit (`ClassicBlockageFinder` pA, `ThresholdBlockageFinder` σ), and one that redeclared the whole entry still works
-
-* **Deprecation notice: `ChimeraReader20240101` will be removed in a future release.** It reads the 2024-01 Chimera format, whose JSON header is embedded in the `.log` file; `ChimeraReader20240501`, which reads the companion `.json` of the 2024-05 format, is unaffected. Nothing changes yet - existing data still opens, and the reader now says so in the sidebar when it opens a file - but move new work onto a supported reader
-
-* **A release whose `CITATION.cff` version disagrees with `constants.py` or with the tag now fails before anything is published** - the workflow validated only that the file parsed, and Zenodo builds its record from it, so a stale version there published under the old number and reported no error
 
 * **Breaking: a writer plugin's `_write_data` takes the event dict instead of thirteen positional parameters** - ten of the thirteen were keys of that dict, and two of those (`scale` and `offset`) were never read by the writer that receives them
 
@@ -26,33 +28,345 @@
 
 * **Breaking: a reader plugin now implements `_convert_data` and `_convert_raw_data` rather than one `_convert_data` taking a `raw_data` flag** - each returns one type instead of a type that depended on the flag's value, and `_scale_data` loses its own now-unused `raw_data` argument
 
+* **Breaking:** `MetaReader.load_data()` now raises `ValueError` on an out-of-bounds request instead of silently returning fewer samples than asked for
+
+* Every plugin's `get_empty_settings()` is now checked against its own declared contract; 21 violations fixed (15 missing `Value` keys, 11 `int`-vs-`float` defaults). **Breaking for programmatic callers:** an unfilled required parameter now raises `TypeError` instead of `KeyError`
+
+#### Analysis-tab API:
+
+* **Breaking: the global signal bus is gone.** `global_signal` and `data_plugin_controller_signal` are removed from `MetaView`, `MetaModel` and `MetaController`, along with the relays and dispatcher behind them - an analysis tab outside this repository that emits either will stop working, and should call its plugin through `self.call(...)` on the Model or use the typed create/edit/delete signals instead
+
 * **Breaking: `MetaView.handle_parameter_change` is now abstract** - `_set_control_area` has always connected the controls panel to it while the View is being constructed, so a tab that did not define it raised `AttributeError` out of `__init__`; a tab that lays out its own control area can implement it as `pass`
 
-* **The generated API documentation no longer publishes internal helper methods** - 257 private methods that were never anyone's contract are gone from the site, while every `Meta*` abstract method, every plugin's implementation of one, and every documented constructor stay; the published method count falls from 1,109 to 852
+* **Breaking: `QWidgetABCMeta` is removed - use `QObjectABCMeta`**, which is the same implementation, since PySide6 gives `QObject` and `QWidget` the same metaclass and the two names were never two classes; abstract Qt classes are refused exactly as before
 
-* **The HelloWorld tutorial is now generated rather than transcribed** - its four files are written by `scripts/new_plugin.py` and included into the page from the real files, so the example cannot drift from what the tool produces; it teaches a control panel reaching a handler rather than a label in a box, and the stale second copy of it that no page ever rendered is gone
+* **Breaking:** the walkthrough widgets have moved from `poriscope.plugins.analysistabs.utils` to `poriscope.views.widgets`; a plugin that imports `WalkthroughMixin` or `WalkthroughStep` needs its import path updated
+
+* **Breaking:** the event-index range helpers - `_parse_event_indices`, `_expand_event_indices`, `_merge_ranges`, `_shift_ranges` and `_format_ranges` - have moved from `MetaView` to `MetaEventTabView`, so a tab that subclasses `MetaView` directly no longer inherits them; a tab that subclasses `MetaEventTabView` is unaffected
+
+* **Breaking: the two database-backed tabs' Models now share a `MetaSubsetTabModel` base**, which takes `load_filters` and `save_filters` off `MetaModel` along with the events-table lookups behind an event plot, so a Model that does not back a subset tab no longer inherits them
+
+* **Breaking:** subset filter files are read and written by `MetaSubsetTabModel.load_filters` and `save_filters` rather than in the view, so `MetaSubsetTabView._load_filter` and `_save_filter` only choose the file and `set_loaded_filters` decides what happens to what it held
+
+* **Breaking:** `MetaView._logscale_and_filter_multiple_columns` is removed. Every plot path now asks its controller for the filtering, which `MetaModel.logscale_and_filter_columns` does, so the published view base no longer carries it - or imports numpy at all
+
+* **Breaking:** the subset tabs' Scatterplot is filtered and log-scaled by `MetaModel.logscale_and_filter_columns` rather than in the view, and the round trip is shared: `scatterplot_requested` and `set_scatterplot` are on `MetaSubsetTabView` and `filter_scatterplot` on `MetaSubsetTabController`, so `MetadataView` and `MetadataController` no longer carry their own
+
+* **Breaking:** the Protein tab's Peak Scatterplot keeps its own `xyerr_scatterplot_requested` and `set_xyerr_scatterplot`, and `_plot_xyerr_scatterplot` now requires both error columns rather than accepting one
+
+* **Breaking:** the Protein tab's Monte Carlo geometry sampling is `ProteinModel.sample_vm_solutions` and `sample_event_geometries` rather than the view's, so `ProteinView._generate_vm_ensemble` and `_compute_theoretical_blockages` are gone, `set_distribution_fits` takes the three frames it draws, and `set_ensemble_geometry_fit` takes the two solution sets instead of the pore geometry
+
+* **Breaking:** the Protein tab's Ensemble distribution histogram is averaged by `ProteinModel.build_all_points_histogram` rather than in the view, so `_update_distribution_ensemble` asks for the subset instead of fetching and walking it, `set_ensemble_histogram` draws what comes back, and `ProteinView._construct_all_points_histogram`, `hist_min` and `hist_max` are gone
+
+* **Breaking:** the Protein tab's per-event histograms are binned by `ProteinModel.build_event_histograms` rather than in the view, so `event_histogram_fits_requested` and `distribution_fits_requested` carry the events and the bin request, `set_event_histogram_fits` and `set_distribution_fits` take the histograms as arrays rather than dataframes, and `ProteinView._construct_single_event_histogram` is gone
+
+* **Breaking:** the Metadata tab's Kernel Density Plot and Histogram are filtered, log-scaled and given their shared plot limits by `MetadataModel` rather than in the view, so `density_requested` and `histogram_bins_requested` carry the raw columns and their log flag, and `set_kernel_densities` and `set_histogram_bins` take the newest dataset and the widened limits and accumulate it themselves
+
+* **Breaking:** the Metadata tab's Heatmap, Scatterplot and 3D Scatterplot are filtered and log-scaled by `MetaModel.logscale_and_filter_columns` rather than in the view, so `MetadataView.heatmap_requested` carries the raw columns and their log flags, and `_plot_scatterplot` and `_plot_3d_scatterplot` now request the filtering and draw the answer through `set_scatterplot` and `set_3d_scatterplot`
+
+* **Breaking:** the Metadata tab's All Points Histogram and Event Overlay are built by `MetadataModel.build_all_points_histogram` and `build_event_overlay`, so `MetadataView._construct_all_points_histogram`, `_construct_event_overlay` and `MetadataController.load_event_subset` are gone, and `MetadataView.update_plot` no longer draws the all-points histogram types
+
+* **Breaking:** the Raw Data tab's plot time axes are built by `MetaModel.time_bases` rather than in the view, so `RawDataView.update_plot`, `set_trace_data`, `set_event_plot_data` and `_update_event_plot` take the axis alongside the samples and `baseline_stats_requested` carries it
+
+* **Breaking:** `EventAnalysisModel.event_time_bases` is now `MetaModel.time_bases`, taking a scale and an offset so one derivation serves both an event plot in microseconds and a trace plot in seconds from the start of the recording
+
+* **Breaking:** the Clustering tab's filtering and log-scaling moved to `ClusteringModel.build_clustering_frame`, so `ClusteringView.cluster_requested` and `ClusteringController.cluster` now carry the unfiltered rows and the column spec rather than a prepared frame
+
+* **Breaking:** the Event Analysis plot's time axis is built by `EventAnalysisModel.event_time_bases` rather than in the view, so `EventAnalysisView.update_plot_samplerate` and `plot_samplerate` are gone and `set_event_plot_data` takes the axis as its second argument
+
+* **Breaking: the event plot's resolve-and-load chain is one method on `MetaSubsetTabController`** rather than a copy in each database-backed tab, so a failed event plot now reports the same way on both: one message naming what was being plotted and the event ids, where the metadata tab named only the ids and the protein tab only the plot type
+
+* **Breaking:** a subset filter being validated now travels with the request instead of being parked on the view: `filter_validation_requested` and `raw_filter_validation_requested` carry the filter's name and the name it replaces, `MetaSubsetTabController.relay_query` and `validate_raw_filter` take them as arguments, and `MetaSubsetTabView.clear_pending_filter_state` and `MetaSubsetTabController.on_raw_filter_validated` are gone
+
+* **Breaking:** `get_selected_filters` has moved from `MetadataView` and `ProteinView` to `MetaSubsetTabView`, which now requires subclasses to implement a `_subset_controls` property returning their controls panel
+
+* **Breaking:** `update_units` has moved from `MetaSubsetTabView` to `MetadataView` and `update_column_units` is no longer on `MetaSubsetTabController`; only the metadata tab displays column units, so a plugin subclassing the shared subset-tab base no longer inherits either
+
+* **Breaking:** `MetaSubsetTabView.event_id_rows` and `set_event_id_rows` are typed `Optional[pandas.DataFrame]` rather than `Optional[Any]`, which is what they have always held
+
+* **Breaking:** `MetaEventTabController.update_plot_samplerate` is removed - it relayed a sampling rate to the view, but both event tabs called the view directly and nothing ever called the relay
+
+* **Breaking:** `check_column_exists` and `set_column_exists` are no longer on `MetaController` and `MetaView`; they were used only by the protein tab and now live on `ProteinController` and `ProteinView`
+
+* **Breaking:** `MetaView._setup_canvas` no longer takes a `num_channels` argument, which it never read
+
+* **Breaking:** removed `set_table_by_column` from the Metadata and Protein tab views and `relay_table_by_column` from their controllers - nothing in the app called them, and the table list they appended to was never created, so the call would have raised; deciding which tables a query needs to join is done by the database loader itself
+
+* **Breaking: `MetaSubsetTabView.set_experiment_id` and `MetaSubsetTabView.set_units` are removed**, along with `MetaEventTabView.set_data_filter_function` - each stored a value nothing read
+
+* **Breaking: `MetaSubsetTabController` loses eleven relay methods nothing called since the signal bus went** - `relay_event_query`, `relay_event_data_generator`, `relay_event_plot_data_generator`, `relay_plot_data`, `relay_units`, `update_column_names`, `get_experiment_names_for_tree`, `get_experiment_structure_ready`, `set_experiment_id`, `set_channel_db_id` and `set_exported_event_count`; the live paths are `request_column_names` and `request_experiment_structure`
+
+* **Breaking: `MetaController.update_plot_data` and `MetaController.set_generator` are removed** - nothing called either since the signal bus went; a tab hands a generator to `self.model.set_generator` directly, as every shipped tab does
+
+* **Breaking: `MetaControls.clear_popup_reference` and `MetaSubsetTabControls.get_selected_filter_names` are removed**, and `MetaView._set_display_area_base` with them - nothing called any of them, and `clear_popup_reference` tended a popup registry nothing ever filled
+
+### User-Facing Behaviour:
+
+#### General:
+
+* **Fixed error dialogs opening behind the main window**, where a modal dialog nobody can see holds the input grab and the application looks frozen - most visibly at startup, when a duplicate plugin name reported an error before the window had finished painting
+
+* **Status panel messages are now timestamped**, so the same message arriving twice is visibly two messages rather than looking like the panel never changed
+
+* **Fixed a walkthrough milestone being torn down twice** when you switch to the page it points at - closing the dialog re-entered the teardown before it had let go of the dialog
+
+* **Fixed each analysis tab initialising itself twice on startup**: every tab ran its state setup once before its widgets were built and again afterwards
+
+* **Fixed a tab being unable to use a plugin it was showing in its dropdown**, reported when restoring a saved session: the tab was given the list of plugins before it was given access to them, and filling the dropdown immediately asks the selected plugin for its columns
+
+* **Fixed session restore corrupting any setting whose value happens to read `str`, `int`, `float` or `bool`** - it was turned into the type itself regardless of which setting it belonged to, so a plugin configured with `Event Type: float` came back broken; only the `Type` field is restored as a type now
+
+* A session naming a plugin class this version no longer ships now says so, instead of reporting the class name back as a bare error - it may have been renamed or removed since the session was saved
+
+* Loading a session now says how many of its entries could not be restored and names them, rather than reporting success regardless
+
+* Progress-bar updates in one analysis tab no longer wait on a lock held by another tab
+
+#### Raw Data and Event Analysis:
+
+* **Finding or fitting events with no filter selected now asks for confirmation first**: on a noisy trace an unfiltered run can register almost every sample as an event, which takes a very long time and is hard to tell apart from the application hanging; cancelling works, but only takes effect at the end of the current chunk, so it can be slow to respond
+
+* **The "No Filter" option no longer disappears from the Raw Data and Event Analysis filter dropdowns once a filter exists**: choosing not to filter is a valid selection, so it stays available, and it is now also what a dropdown falls back to when the filter it was showing is deleted (a newly created filter is no longer selected for you)
+
+* Fixed the Raw Data and Event Analysis tabs failing with an unhandled error, rather than reporting it, when an action arrived with no channel selection
+
+#### Raw Data:
+
+* **Fixed the Raw Data tab's event plots showing the wrong events**: if the tab could not read an event finder's state, it silently reused the previous channel's answers — including the event count that decides which event indices are in range — and an event that failed to load was replaced by the previous one under the wrong index
+
+* **Fixed the Raw Data tab plotting one channel's trace under another channel's label**, and the same fault when a filter failed: a channel the reader could not supply silently reused whichever channel was loaded before it, on both the trace and the noise-spectrum plots
+
+* **Fixed the Raw Data tab asking about the wrong channel before re-running event finding**: if it could not read whether a channel was already finished, it reused the previous channel's answer, so the "start over?" prompt could appear for a channel that was not finished or be skipped for one that was
+
+* **Fixed the Raw Data tab drawing nothing when the requested time range ran past the end of the file**: it now plots what the channel holds and says on the status panel that it trimmed the range, and says so too when the range starts past the end
+
+* Event finding now reports a channel it cannot read or start and continues with the others, and says on the status panel when a channel has no time range set instead of failing silently
+
+* Committing the Raw Data tab's found events now reports a channel the writer cannot accept and commits the rest, instead of abandoning the whole commit
+
+* The Raw Data tab now says which event indices were out of range and how many events the channel actually holds, instead of reporting "No data available for plotting"
+
+* Stepping the Raw Data tab's event index below 0 now says so on the status panel, instead of declining silently and only logging to the console
+
+* The Raw Data tab now asks each event finder for its channels through a direct call from its controller rather than through the signal bus, so a finder that cannot answer is reported rather than silently leaving its time ranges unset
+
+#### Event Analysis:
+
+* **Fixed the Event Analysis tab asking about the wrong channel before re-fitting**: if it could not read whether a channel was already fitted, it reused the previous channel's answer, so the "start over?" prompt could appear for a channel that was not fitted or be skipped for one that was
+
+* The Event Analysis tab now says which event indices were out of range and how many events the channel actually holds, instead of reporting "No data available for plotting"
+
+* An event the Event Analysis tab cannot load, or whose fit features cannot be read, no longer abandons the whole plot: the remaining events are still drawn
+
+* Event fitting now reports a channel it cannot read or start and continues with the others, instead of abandoning the whole batch
+
+* Writing the Event Analysis tab's fitted events now reports a channel the database writer cannot accept and writes the rest, instead of abandoning the whole write; and a loader whose channels cannot be read is reported rather than leaving the channel list silently unchanged
+
+#### Metadata and Protein:
+
+* **Fixed the Metadata and Protein tabs silently widening the experiment and channel scope back to everything**: re-reading the database structure - which happens whenever the loader changes or the selection tree is opened - overwrote the scope you had chosen, so plots quietly used more data than was asked for and heatmaps refused with "Only a single channel can be used"
+
+* **Fixed restoring a session losing the last-restored tab's subset filters**: the session was written back while that tab's filter list was still empty, so the filters survived one restore and were gone from the next - in practice the Metadata tab kept its filters and the Protein tab did not
+
+* **A subset filter naming a column the database does not have is now reported instead of silently disappearing**: the Metadata and Protein tabs discarded such a filter with nothing but a line in the log, so it looked as though nothing had happened
+
+* **The SQL shown on the status panel is now the query that actually pulls the subset**, rather than the smaller one built to validate the filter, and it is shown when the filter is applied rather than when it is created - repeated only when it changes
+
+* **Fixed loading a session file as a filter file creating empty, unusable filters**: every entry in a filter file must now hold filter text, so a JSON object that is not a filter file is refused whole and the tab's own filters are left alone
+
+* **A filter file that cannot be read is now reported on the status panel** and leaves the tab's existing filters untouched, instead of failing with an unhandled error
+
+* **A filter file that cannot be written is now reported on the status panel** - a full disk or a read-only folder used to look exactly like a successful save
+
+* The Metadata and Protein tabs now report a database whose columns or experiment list cannot be read, instead of leaving the pickers silently unchanged
+
+* A loader that returns event rows without the id column it was asked for is now reported on the status panel instead of only in the log
+
+* Validating a subset filter no longer queries across all three metadata tables regardless of what the filter references, which was joining `sublevels` and `experiments` even for a filter over `events` alone
+
+#### Metadata:
+
+* **Fixed the Metadata tab plotting the wrong subset's data when a database call failed**: the query, the column units and the event generator were each reused from the previous subset, so a failure mid-plot drew the previous subset under this one's label, or labelled the axes with another column's units
+
+* **Fixed the Metadata tab plotting another channel's events when the experiment could not be looked up**: the events to plot were resolved without their experiment and channel scope, so an event number that exists in more than one channel could return the wrong channel's data
+
+* **Fixed the Metadata tab not reporting an event-data filter the database refuses, and never showing the SQL for an event plot**: the refusal was invisible and the plot went ahead, because the query builder returns the query and the reason together and only the pair was being checked
+
+* **Fixed the Metadata tab drawing an Event Overlay on top of the previous plot** instead of replacing it: switching to a Raw or Filtered Event Overlay from any other plot type left whatever was already on the axes, so two unrelated pictures were superimposed
+
+* **Fixed the Metadata tab's 1D Density plot accepting a bin width and ignoring it.** The shared plot limits were being read off the dataframe rather than the data, so they came out as column names and the width could not be divided into them
+
+* **Fixed exporting the plot data of a categorical histogram failing with an error.** It had never worked: the export coerced every cached series to a number, which category names are not. Numeric exports are unchanged
+
+* **The Metadata tab's Capture Rate plot now honours an explicit bin width**, which was accepted and then ignored, failing with an unhandled error
+
+* **Fixed the Metadata tab renaming a raw SQL filter when it was loaded from a file**: the filter came back as `<name>_raw_assisted` and was treated as an assisted filter from then on, rather than as the raw filter that was saved
+
+* **Categorical Histograms are now ordered by count**, tallest bar on the left; when more than one subset is overlaid the order comes from their combined totals, so every subset shares one axis
+
+* **Categorical histograms now show missing values as an explicit "null" category** instead of failing on a column that contains any
+
+* **A 1D Density plot on a subset with no usable values now leaves the previous plot in place**, rather than clearing the axes and drawing nothing
+
+* **The 1D Density plot now says when a column is empty for the selected subset** instead of failing with an unhandled error, matching what the 1D Histogram already did
+
+* The Metadata tab now reports an All Points Histogram or Event Overlay it cannot build on the status panel, instead of failing with an unhandled error
+
+* **A capture-rate plot with too few events now says how few**, instead of reporting the generic "no data available after filtering"
+
+* Fixed the Metadata tab failing with an error when an All Points Histogram is plotted after a different plot type
+
+* The Metadata tab now reports a heatmap or capture-rate plot it cannot compute on the status panel, instead of failing with an unhandled error
+
+* A subset the Metadata tab cannot query, load or read the units of is now reported instead of failing silently
+
+* A metadata event plot asked for with no events selected is now refused with a message instead of running a query that could not match anything
+
+* A subset export to CSV that matches no events, or that the database refuses, is now reported before the export starts instead of running the progress bar to the end in silence, and no longer uses up the next export's name
+
+* Fixed the Metadata tab failing with an unhandled error, rather than reporting it, when the database returned rows with no `event_id` column while rebuilding its filtered-event cache
+
+* The Metadata tab now says the current scope when no events match a filter, and labels a subset with the filter expression when no filter name is selected instead of the word "Filter" - both matching the Protein tab
+
+#### Protein:
+
+* **Fixed the Protein tab reading the whole database when a raw SQL subset could not be scoped**: an experiment or channel it could not place was dropped from the query without a word, so a filter meant for one channel returned every channel's events; it now stops and says so
+
+* **Fixed the Protein tab plotting another channel's events when the experiment could not be looked up**: the events to plot were resolved without their experiment scope, so an event number that exists in more than one channel could return the wrong channel's data; it now stops and says so
+
+* **Fixed the Protein tab offering to overwrite fit data based on a stale answer**: if it could not read whether the database already held fit columns it reused the previous answer, so the "overwrite?" prompt could appear for a database with nothing to overwrite, or be skipped for one that had; it now reports the failure and commits nothing
+
+* **Fixed the Protein tab showing one query on the status panel while running another**: for a raw SQL subset it displayed the query built from the filter and then loaded through a differently scoped one; it now shows the query that runs
+
+* **Fixed the Protein tab's error bars being able to come adrift from the points they annotate**: the error columns were read from the unfiltered data while the values were filtered, so any row the filter dropped left the two different lengths
+
+* **Fixed the Protein tab contradicting its own refusal**: a refused event plot - two channels in scope, an experiment the database no longer holds - was followed by "No data available for event_id N", which named the event rather than the reason; that line now appears only when the fetch really did come back empty
+
+* **Fixed the Protein tab drawing empty axes in silence** when the selected subset holds no events; both distribution modes now say so
+
+* **Fixed plotting a column that is empty for the selected subset failing with an error** instead of saying there is nothing to plot - most easily hit by histogramming a protein fit column over a subset that was never fitted
+
+* **The Protein tab now says on the status panel why a distribution plot was refused** - more than one experiment or channel selected, or an experiment with no channel - instead of writing only to the log and drawing nothing
+
+* **An event whose baseline is zero is now skipped** on the Protein tab's per-event histograms, as it already was on the all-points histogram, rather than being drawn as an empty subplot and exported as a column of blanks
+
+* **The Protein tab now reports a bin width or count it cannot use** on the status panel, instead of writing one log line per event and drawing a grid of empty subplots
+
+* **An event with no samples between its paddings no longer fails the Protein tab's Ensemble distribution plot** with an unhandled error - it is skipped, with a note in the log, as a zero-baseline event already was
+
+* The Protein tab now also reports a raw SQL filter the database itself rejects in a dialog rather than on the status panel, so both ways a raw filter can be refused read the same on both tabs
+
+* The Protein tab now reports a raw SQL filter that is not a complete SELECT statement in a dialog rather than on the status panel, matching the Metadata tab - the filter dialog has just closed at that point, so a status line was easy to miss
+
+* Committing protein fits now reports a database that refuses the write instead of announcing new columns to the other tabs regardless
+
+* The Protein tab now builds and loads its distribution subsets through a direct call from its controller rather than through the signal bus, so a filter the database refuses is reported instead of silently plotting nothing
+
+* Fixed the Protein tab's ensemble distribution failing with an unhandled error, rather than stopping quietly, when no subset produced any data to fit
+
+* The Protein tab now asks its database loader for event plot data through a direct call from its controller rather than through the signal bus, so a lookup that fails is reported instead of silently widening the query
+
+#### Clustering:
+
+* **The Clustering tab now says what is actually wrong with a rejected SQL filter** instead of also telling you to check your column selections, which was the wrong advice for an unknown column, a syntax error or a complete `SELECT` pasted into the filter box
+
+* **Fixed the clustering settings dialog failing with an error instead of opening** when the column list could not be read from the database
+
+* A clustering request naming a column the loader did not return is now reported on the status panel instead of failing with an unhandled error
+
+### Data Plugins:
+
+* **Deprecation notice: `ChimeraReader20240101` will be removed in a future release.** It reads the 2024-01 Chimera format, whose JSON header is embedded in the `.log` file; `ChimeraReader20240501`, which reads the companion `.json` of the 2024-05 format, is unaffected. Nothing changes yet - existing data still opens, and the reader now says so in the sidebar when it opens a file - but move new work onto a supported reader
+
+* **Fixed the scripting guide's pipeline failing with `MetaReader must have type <class 'str'>`** - a plugin built for a script (`get_empty_settings(standalone=True)`) now accepts its parent plugin object directly, as the guide shows, instead of needing the settings entry's type cleared by hand first
+
+* **A bound-star candidate that is the widest peak in its own event is no longer promoted to type 4 or 5** - a star is a sharp spike, and the depth floor alone admitted carrier bodies and broad folds; events the rule leaves starless are counted separately in the report rather than folded in with the genuinely starless
+
+* **The double-Gaussian fit now fits a flat constant as a seventh free parameter**, so a uniform background is modelled rather than absorbed by widening the two components; the six-parameter fit is run alongside it and kept where the constant made the residual worse, and the first six positions of `params` are unchanged
+
+* **Normalized peak classification is now fitted on a base-10 log scale**, which is the shape the upper population actually has; the plot axis, the threshold annotation and the report read in log units, with the equivalent ratio and - where a reference level is available - the equivalent current in pA alongside
+
+* **Barcode selection now scores peak width as well as spacing, and no longer prefers on ECD by default**: spacing and width are both set by how fast the construct threaded, so a barcode's labels stay alike in both even when they thread at different depths, which a depth-weighted term does not
+
+* **The bound-star peak now carries its end in its own `filtered` label**, 5 for the long end and 4 for the short, so the starred peak can be pointed at downstream rather than only named on the event; expect the Type -1 count to fall by exactly one peak per starred event
+
+* **A type-1 peak whose base was pinned to an end of the trimmed event is now rejected to -1**: peak detection stops at the array edge, so that base holds whatever the event was doing at its own edge rather than a real minimum, and neither it nor the prominence measured from it describes the peak
+
+* **Peak prominence classification now splits on `normalized_prominence` rather than raw `prominence`**, so the threshold is comparable across events whose carrier level drifts through a run; a peak whose event never got an unfolded level is skipped rather than classified on raw prominence
+
+* **Corrected what filter types 4 and 5 mean; no behaviour change**: they name which arm of the construct the bound star sits on - 5 the long, higher-ECD arm and 4 the short one - and say nothing about the order it threaded, which is what the report's old `star translocates first` / `last` wording claimed and got wrong for every backward event
+
+* The normalized peak prominence report now gives each standard deviation as a single pA span rather than a multiplicative factor and a range, and chains its three unit systems with `~` rather than `=`, since rounding makes them not literally equal
+
+* **Five metadata fields are no longer written to the database**: `unfolded_level`, `folded_level`, `bound_star` and `translocation_confidence` from the events table and `base_at_edge` from the sublevels table. They are still computed and every internal reader is unchanged, but a database written from now on replays without the unfolded-level reference line and its sigma bands, the bound-star annotation and the translocation confidence
+
+* `PeakFinder.get_metadata_columns` and `get_sublevel_columns` no longer name the five fields it keeps for itself, so the columns it reports, the types and units it declares and the keys `get_single_event_metadata` hands out all agree again
+
+* The `PeakFinder` changes in this release are Nada Kerrouri's, integrated from `feature/peakfinders_1.8.0`
+
+* Fixed: `Basic_PeakFinder` crashed on a zero-width sublevel in `sublevel_max_deviation`; now returns `0.0` for that case, and is covered by the behavioural conformance suite
+
+* **`BoundedBlockageFinder`'s baseline standard deviation moves by up to 1%**, because the histogram fit it shares with `ClassicBlockageFinder` now lives on `MetaEventFinder` in one copy, and that copy centres the fit window on the histogram peak as Classic always did and Bounded never did
+
+* `MetaEventFinder.find_events` now calls `reset_channel` instead of repeating its ten assignments, so an event finder that overrides `reset_channel` to clear state of its own gets that cleared when a run starts too; no shipped finder overrides it
+
+* Removed `ClassicBlockageFinder._gaussian`, which had no callers anywhere in the package or the test suite
+
+* Fixed `construct_event_data_query` not documenting that it raises for an unknown experiment name, and collapsed three identical copies of its SQL id-list helper onto one
+
+### Analysis Tabs:
+
+* Analysis tabs can now call a data plugin directly through `call()` on their model or controller, so a failed plugin call raises where it happened instead of being logged several hops away and leaving the caller with the previous call's answer
+
+* `MetaView._set_control_area` is no longer abstract: it now builds the control area for you from a new `_build_controls` hook and connects the four signals every controls panel carries, so a new tab writes three lines instead of twenty-five; a tab that lays out its own control area can still override it
+
+* Analysis tabs no longer need to inherit `WalkthroughMixin` themselves; it comes with the base class, and a tab written against `MetaView` gets the walkthrough for free
+
+* The five analysis-tab control panels now share a common `MetaControls` base instead of each carrying its own copy of the same widget factories and signals, so a fix to one reaches all five
+
+* The Raw Data and Event Analysis control panels now share a common `MetaEventTabControls` base instead of each carrying its own copy of the channel, filter and event-index handling, so a fix to one reaches both
+
+* The Raw Data and Event Analysis tabs now share a common `MetaEventTabView` base instead of each carrying its own copy of the channel validation, commit-parameter and data-filter handling, so a fix to one reaches both
+
+* The Raw Data and Event Analysis tabs now share a common `MetaEventTabController` base instead of each carrying its own copy of the plugin-registry and sample-rate relays, so a fix to one reaches both
+
+* The Metadata and Protein control panels now share a common `MetaSubsetTabControls` base instead of each carrying its own copy of the same filter combobox, filter buttons and loader handling, so a fix to one reaches both
+
+* The Metadata and Protein tabs now share a common `MetaSubsetTabView` base instead of each carrying its own copy of the same fifteen query, column, filter and experiment-selection methods, so a fix to one reaches both
+
+* The Metadata and Protein tabs now share a common `MetaSubsetTabController` base instead of each carrying its own copy of the same seventeen relay and state methods, so a fix to one reaches both
+
+* `relay_query` is now provided by `MetaSubsetTabController` instead of being implemented separately by each subset tab
+
+* `_delete_filter` is now provided by `MetaSubsetTabView` instead of being abstract, so a subset-tab plugin no longer has to implement it
+
+* `show_edit_filter_dialog` is now provided by `MetaSubsetTabView` instead of being abstract, so a subset-tab plugin no longer has to implement it
+
+* The subset tabs' controllers no longer write into the view's filter list directly; `MetaSubsetTabView` gained `commit_filter` and `get_subset_filters` for them to go through
+
+* `restore_subset_filters` has moved from `MetadataView` and `ProteinView` to `MetaSubsetTabView`; the two copies were identical apart from the name each held its controls panel under
+
+* The two log-scaling routines behind the plots are now one, so a correction to how data is filtered or log-scaled applies everywhere it is used rather than to one of the two copies
+
+* The two multi-select comboboxes share one implementation of their popup handling, so a fix to one reaches both; the channel picker and the filter picker behave exactly as before
+
+* The clustering computation now lives in the clustering tab's model rather than in its plot widget, so the tab no longer carries the clustering libraries itself
+
+* The baseline statistics behind the Raw Data tab's green baseline band are now computed in that tab's model rather than in its plot widget
+
+* Removed an unused Gaussian function from the Raw Data view; the baseline fit never called it
+
+### Application Shell:
 
 * **Fixed a plugin in a relocated user plugin folder never being made importable** - the folder put on the import path at startup was the default one a fresh install creates, not the one the configuration points at and the app actually scans
 
 * **Fixed an analysis tab in the user plugin folder being unable to import its own View and Model** - only the folder's parent was on the import path, so it worked only when the folder happened to be named like a Python identifier, and a folder named `User Plugins` could not be imported at all
 
-* **`scripts/new_plugin.py` now generates analysis tabs too** - `python scripts/new_plugin.py AnalysisTab MyTab` writes the Controller, Model, View and controls panel, and the result opens in the Analysis menu as a tab whose button already reports its own press on the status panel before a single stub is filled in
-
-* **Breaking: the global signal bus is gone.** `global_signal` and `data_plugin_controller_signal` are removed from `MetaView`, `MetaModel` and `MetaController`, along with the relays and dispatcher behind them - an analysis tab outside this repository that emits either will stop working, and should call its plugin through `self.call(...)` on the Model or use the typed create/edit/delete signals instead
-
-* **Fixed error dialogs opening behind the main window**, where a modal dialog nobody can see holds the input grab and the application looks frozen - most visibly at startup, when a duplicate plugin name reported an error before the window had finished painting
-
 * Returning the window to its launch state, switching pages and recording a plugin rename are each built from named steps now rather than one long method; renaming a plugin keeps its place in the session rather than moving it to the end, which was always the intent but was not written down anywhere
-
-* **Fixed session restore corrupting any setting whose value happens to read `str`, `int`, `float` or `bool`** - it was turned into the type itself regardless of which setting it belonged to, so a plugin configured with `Event Type: float` came back broken; only the `Type` field is restored as a type now
 
 * Plugin discovery is now built from five named steps rather than one 94-line method - where it looks, which files it considers, how it imports each one and how it decides what family a plugin belongs to; the same plugins are found in the same order
 
 * The first-run bootstrap creates its five folders and writes its configuration through one routine each rather than repeating the block five and three times; the folders, the config repair and every warning are unchanged
-
-* A session naming a plugin class this version no longer ships now says so, instead of reporting the class name back as a bare error - it may have been renamed or removed since the session was saved
-
-* Loading a session now says how many of its entries could not be restored and names them, rather than reporting success regardless
 
 * Creating a data plugin is now built from five named steps rather than one 160-line method, and shares its reporting and its plugin-reference resolution with the edit path instead of keeping a second copy of each; every message is unchanged
 
@@ -62,277 +376,55 @@
 
 * The application's first-run bootstrap - the app-data folders, `config.json` and its repair paths - is now covered by tests, having had none; no behaviour changed
 
-* The app shell - the two controllers, the two models, `main_view.py`, `settings_window.py` and `main_app.py` - is now held by a cyclomatic-complexity ratchet (`scripts/measure_shell_complexity.py`), which no other gate measured, so restructuring it can neither add complexity nor leave a reduction unrecorded
+### Documentation:
 
-* Made the metadata CSV-export end-to-end test less prone to failing intermittently: it waited for the exported-file count to settle, which happens before the last files are written, and then size-checked whichever one set iteration surfaced - the window is narrower but not closed, and a recurrence on 2026-09-22 is recorded in `future_fixes.md`
+* **The generated API documentation no longer publishes internal helper methods** - 257 private methods that were never anyone's contract are gone from the site, while every `Meta*` abstract method, every plugin's implementation of one, and every documented constructor stay; the published method count falls from 1,109 to 852
 
-* **Corrected what filter types 4 and 5 mean; no behaviour change**: they name which arm of the construct the bound star sits on - 5 the long, higher-ECD arm and 4 the short one - and say nothing about the order it threaded, which is what the report's old `star translocates first` / `last` wording claimed and got wrong for every backward event
-
-* The normalized peak prominence report now gives each standard deviation as a single pA span rather than a multiplicative factor and a range, and chains its three unit systems with `~` rather than `=`, since rounding makes them not literally equal
-
-* **A bound-star candidate that is the widest peak in its own event is no longer promoted to type 4 or 5** - a star is a sharp spike, and the depth floor alone admitted carrier bodies and broad folds; events the rule leaves starless are counted separately in the report rather than folded in with the genuinely starless
-
-* **The double-Gaussian fit now fits a flat constant as a seventh free parameter**, so a uniform background is modelled rather than absorbed by widening the two components; the six-parameter fit is run alongside it and kept where the constant made the residual worse, and the first six positions of `params` are unchanged
-
-* **Normalized peak classification is now fitted on a base-10 log scale**, which is the shape the upper population actually has; the plot axis, the threshold annotation and the report read in log units, with the equivalent ratio and - where a reference level is available - the equivalent current in pA alongside
-
-* **Breaking: `PeakFinder`'s shipped defaults are now a working barcode configuration** - `Event Type` `Barcode`, `Number of peaks` 4, filter thresholds -5 and +5, `Peak to Peak Distance Ratio` 30% - so results change for anyone who accepted the old defaults; a saved configuration keeps what it stored, so only new plugin instances see them
-
-* **Five metadata fields are no longer written to the database**: `unfolded_level`, `folded_level`, `bound_star` and `translocation_confidence` from the events table and `base_at_edge` from the sublevels table. They are still computed and every internal reader is unchanged, but a database written from now on replays without the unfolded-level reference line and its sigma bands, the bound-star annotation and the translocation confidence
-
-* `PeakFinder.get_metadata_columns` and `get_sublevel_columns` no longer name the five fields it keeps for itself, so the columns it reports, the types and units it declares and the keys `get_single_event_metadata` hands out all agree again
-
-* **Barcode selection now scores peak width as well as spacing, and no longer prefers on ECD by default**: spacing and width are both set by how fast the construct threaded, so a barcode's labels stay alike in both even when they thread at different depths, which a depth-weighted term does not
-
-* **Breaking: the barcode is now the best-*matched* set of type-1 peaks rather than the most prominent consecutive run**, scored on how alike its consecutive spacings and its peaks' ECDs are; a winning set may skip an off-pattern peak, which keeps its type 1 and so does not appear in the event's `sequence`
-
-* **The bound-star peak now carries its end in its own `filtered` label**, 5 for the long end and 4 for the short, so the starred peak can be pointed at downstream rather than only named on the event; expect the Type -1 count to fall by exactly one peak per starred event
-
-* **Breaking: `filter_peaks` typed carrier-seated peaks as baseline peaks in the barcode branch.** The baseline band is now a fixed 3 sigma rather than sized from `Higher Filter Threshold`, and type 1 is tested ahead of type 0, so which peaks come out 0, 1 and -1 - and therefore which events get a sequence - changes on any dataset whose `Higher Filter Threshold` is not 3
-
-* **A type-1 peak whose base was pinned to an end of the trimmed event is now rejected to -1**: peak detection stops at the array edge, so that base holds whatever the event was doing at its own edge rather than a real minimum, and neither it nor the prominence measured from it describes the peak
-
-* **Peak prominence classification now splits on `normalized_prominence` rather than raw `prominence`**, so the threshold is comparable across events whose carrier level drifts through a run; a peak whose event never got an unfolded level is skipped rather than classified on raw prominence
-
-* The `PeakFinder` changes above are Nada Kerrouri's, integrated from `feature/peakfinders_1.8.0`
-
-* The two multi-select comboboxes share one implementation of their popup handling, so a fix to one reaches both; the channel picker and the filter picker behave exactly as before
-
-* `MetaEventFinder.find_events` now calls `reset_channel` instead of repeating its ten assignments, so an event finder that overrides `reset_channel` to clear state of its own gets that cleared when a run starts too; no shipped finder overrides it
+* **The HelloWorld tutorial is now generated rather than transcribed** - its four files are written by `scripts/new_plugin.py` and included into the page from the real files, so the example cannot drift from what the tool produces; it teaches a control panel reaching a handler rather than a label in a box, and the stale second copy of it that no page ever rendered is gone
 
 * **Every plugin's settings documentation now describes that plugin's own parameters** - what each one does, in what units and within what range - instead of repeating the same generic description of the settings-dict structure, which is now linked from the family's base class
 
 * **Fixed nine plugins documenting the wrong required parent plugin**: the seven event fitters ask for a `MetaEventLoader` and `SQLiteDBWriter` for a `MetaEventFitter`, not a `MetaReader` as all of them claimed, and `SQLiteEventLoader` requires no parent at all
 
-* **Breaking: the baseline standard deviation every event finder computes was inflated and is now correct**, by +13.9% on 10,000-sample chunks, +5.2% on 100,000 and +2.3% on 1,000,000 - so `ThresholdBlockageFinder`'s sigma-denominated threshold no longer moves with `Chunk Length`, and every finder detects at a slightly lower real threshold than before, finding more events on the same data and settings
+* Fixed two links in the "Adding a walkthrough" tutorial that had never resolved, and gave `WalkthroughMixin` an API reference page for them to point at
 
-* **`BoundedBlockageFinder`'s baseline standard deviation moves by up to 1%**, because the histogram fit it shares with `ClassicBlockageFinder` now lives on `MetaEventFinder` in one copy, and that copy centres the fit window on the histogram peak as Classic always did and Bounded never did
+### Developer Tooling:
 
-* Removed `ClassicBlockageFinder._gaussian`, which had no callers anywhere in the package or the test suite
+* **`scripts/new_plugin.py` now generates analysis tabs too** - `python scripts/new_plugin.py AnalysisTab MyTab` writes the Controller, Model, View and controls panel, and the result opens in the Analysis menu as a tab whose button already reports its own press on the status panel before a single stub is filled in
 
-* **Breaking: `QWidgetABCMeta` is removed - use `QObjectABCMeta`**, which is the same implementation, since PySide6 gives `QObject` and `QWidget` the same metaclass and the two names were never two classes; abstract Qt classes are refused exactly as before
+* **A release whose `CITATION.cff` version disagrees with `constants.py` or with the tag now fails before anything is published** - the workflow validated only that the file parsed, and Zenodo builds its record from it, so a stale version there published under the old number and reported no error
 
-* The duplication ratchet now measures the event finders as well, so the step that lifts their shared baseline fit out of two copies cannot add a duplicate elsewhere unnoticed
+* The app shell - the two controllers, the two models, `main_view.py`, `settings_window.py` and `main_app.py` - is now held by a cyclomatic-complexity ratchet (`scripts/measure_shell_complexity.py`), which no other gate measured, so restructuring it can neither add complexity nor leave a reduction unrecorded
 
-* **Fixed loading a session file as a filter file creating empty, unusable filters**: every entry in a filter file must now hold filter text, so a JSON object that is not a filter file is refused whole and the tab's own filters are left alone
+* Duplication across the five analysis-tab View, Controller and controls files is now measured by `scripts/measure_duplication.py` and held against a checked-in baseline, so a refactor that promotes a shared method has to show that it deleted the copies
 
-* **Fixed the Protein tab contradicting its own refusal**: a refused event plot - two channels in scope, an experiment the database no longer holds - was followed by "No data available for event_id N", which named the event rather than the reason; that line now appears only when the fetch really did come back empty
+* The analysis-tab MVC boundary is now checked by `scripts/check_mvc_boundary.py` against a recorded allowlist of 113 known violations across the analysis tabs, the widgets they are built from, the app shell and the shared bases, so no new one can be added while the 2.0.0 refactor removes the existing ones
 
-* A loader that returns event rows without the id column it was asked for is now reported on the status panel instead of only in the log
+* Every method the 2.0.0 refactor will move or deduplicate is now checked for test coverage by `scripts/check_refactor_coverage.py`, so a method cannot be restructured while nothing pins its behaviour
+
+* Each of the five analysis tabs now has a headless end-to-end test that drives the real tab and asserts on the file or database rows it produces, so a refactor of the tab layer cannot silently change what the app writes
+
+* The analysis-tab MVC boundary check no longer counts an import a view uses only to write a type, since that is not computation; `python scripts/check_mvc_boundary.py --verbose` names the imports it exempted
+
+* The refactor-coverage audit now runs on every branch push, not only on internal pull requests, so a method the refactor moves cannot lose its test coverage unnoticed
+
+* The golden files that pin the app's numerical output are now checked to be running at all, so a missing test dependency can no longer leave those numbers unpinned while the test suite still reports a pass
 
 * The documentation render check now runs on every push to `develop` as well as on pull requests, since `git flow feature finish` merges locally and opens no pull request for it to see
 
 * A `requirements.txt` written in UTF-16 or carrying a byte-order mark is now refused by a pre-commit hook, since that is what PowerShell redirection produces by default and git records such a file as an unreviewable binary blob
 
-* **Breaking: the event plot's resolve-and-load chain is one method on `MetaSubsetTabController`** rather than a copy in each database-backed tab, so a failed event plot now reports the same way on both: one message naming what was being plotted and the event ids, where the metadata tab named only the ids and the protein tab only the plot type
+* The duplication ratchet now measures the event finders as well, so the step that lifts their shared baseline fit out of two copies cannot add a duplicate elsewhere unnoticed
 
-* A metadata event plot asked for with no events selected is now refused with a message instead of running a query that could not match anything
+* The settings-schema check is extracted for reuse outside pytest (`poriscope/utils/settings_schema.py::validate_settings_schema`) and gated in pre-commit
 
-* **Breaking: the two database-backed tabs' Models now share a `MetaSubsetTabModel` base**, which takes `load_filters` and `save_filters` off `MetaModel` along with the events-table lookups behind an event plot, so a Model that does not back a subset tab no longer inherits them
+* `MetaReader` conformance lands: all 24 data plugins across all 8 `Meta*` families now run against real synthetic data
 
-* **Breaking:** subset filter files are read and written by `MetaSubsetTabModel.load_filters` and `save_filters` rather than in the view, so `MetaSubsetTabView._load_filter` and `_save_filter` only choose the file and `set_loaded_filters` decides what happens to what it held
+* Behavioural conformance extended to six more plugin families (filters, event finders/loaders, db loaders, writers): 22 of 24 data plugins now run against real data
 
-* **A filter file that cannot be read is now reported on the status panel** and leaves the tab's existing filters untouched, instead of failing with an unhandled error
-
-* **A filter file that cannot be written is now reported on the status panel** - a full disk or a read-only folder used to look exactly like a successful save
-
-* **Breaking:** `MetaView._logscale_and_filter_multiple_columns` is removed. Every plot path now asks its controller for the filtering, which `MetaModel.logscale_and_filter_columns` does, so the published view base no longer carries it - or imports numpy at all
-
-* **Breaking:** the subset tabs' Scatterplot is filtered and log-scaled by `MetaModel.logscale_and_filter_columns` rather than in the view, and the round trip is shared: `scatterplot_requested` and `set_scatterplot` are on `MetaSubsetTabView` and `filter_scatterplot` on `MetaSubsetTabController`, so `MetadataView` and `MetadataController` no longer carry their own
-
-* **Breaking:** the Protein tab's Peak Scatterplot keeps its own `xyerr_scatterplot_requested` and `set_xyerr_scatterplot`, and `_plot_xyerr_scatterplot` now requires both error columns rather than accepting one
-
-* **Fixed the Protein tab's error bars being able to come adrift from the points they annotate**: the error columns were read from the unfiltered data while the values were filtered, so any row the filter dropped left the two different lengths
-
-* **Breaking:** the Protein tab's Monte Carlo geometry sampling is `ProteinModel.sample_vm_solutions` and `sample_event_geometries` rather than the view's, so `ProteinView._generate_vm_ensemble` and `_compute_theoretical_blockages` are gone, `set_distribution_fits` takes the three frames it draws, and `set_ensemble_geometry_fit` takes the two solution sets instead of the pore geometry
-
-* **Breaking:** the Protein tab's Ensemble distribution histogram is averaged by `ProteinModel.build_all_points_histogram` rather than in the view, so `_update_distribution_ensemble` asks for the subset instead of fetching and walking it, `set_ensemble_histogram` draws what comes back, and `ProteinView._construct_all_points_histogram`, `hist_min` and `hist_max` are gone
-
-* **An event with no samples between its paddings no longer fails the Protein tab's Ensemble distribution plot** with an unhandled error - it is skipped, with a note in the log, as a zero-baseline event already was
-
-* **Breaking:** the Protein tab's per-event histograms are binned by `ProteinModel.build_event_histograms` rather than in the view, so `event_histogram_fits_requested` and `distribution_fits_requested` carry the events and the bin request, `set_event_histogram_fits` and `set_distribution_fits` take the histograms as arrays rather than dataframes, and `ProteinView._construct_single_event_histogram` is gone
-
-* **Breaking:** the Protein tab's Individual Distribution plot now bins each event over its own range, as the Event Histogram plot already did - the range used to accumulate across the events of a plot, so the bins an event was drawn on depended on how many events preceded it
-
-* **An event whose baseline is zero is now skipped** on the Protein tab's per-event histograms, as it already was on the all-points histogram, rather than being drawn as an empty subplot and exported as a column of blanks
-
-* **The Protein tab now reports a bin width or count it cannot use** on the status panel, instead of writing one log line per event and drawing a grid of empty subplots
-
-* **Fixed the Metadata tab drawing an Event Overlay on top of the previous plot** instead of replacing it: switching to a Raw or Filtered Event Overlay from any other plot type left whatever was already on the axes, so two unrelated pictures were superimposed
-
-* **Breaking:** the Metadata tab's Kernel Density Plot and Histogram are filtered, log-scaled and given their shared plot limits by `MetadataModel` rather than in the view, so `density_requested` and `histogram_bins_requested` carry the raw columns and their log flag, and `set_kernel_densities` and `set_histogram_bins` take the newest dataset and the widened limits and accumulate it themselves
-
-* **A 1D Density plot on a subset with no usable values now leaves the previous plot in place**, rather than clearing the axes and drawing nothing
-
-* **Breaking:** the Metadata tab's Heatmap, Scatterplot and 3D Scatterplot are filtered and log-scaled by `MetaModel.logscale_and_filter_columns` rather than in the view, so `MetadataView.heatmap_requested` carries the raw columns and their log flags, and `_plot_scatterplot` and `_plot_3d_scatterplot` now request the filtering and draw the answer through `set_scatterplot` and `set_3d_scatterplot`
-
-* **Categorical Histograms are now ordered by count**, tallest bar on the left; when more than one subset is overlaid the order comes from their combined totals, so every subset shares one axis
-
-* **Breaking:** the Metadata tab's All Points Histogram and Event Overlay are built by `MetadataModel.build_all_points_histogram` and `build_event_overlay`, so `MetadataView._construct_all_points_histogram`, `_construct_event_overlay` and `MetadataController.load_event_subset` are gone, and `MetadataView.update_plot` no longer draws the all-points histogram types
-
-* The Metadata tab now reports an All Points Histogram or Event Overlay it cannot build on the status panel, instead of failing with an unhandled error
-
-* **Fixed the Metadata tab's 1D Density plot accepting a bin width and ignoring it.** The shared plot limits were being read off the dataframe rather than the data, so they came out as column names and the width could not be divided into them
-
-* **The 1D Density plot now says when a column is empty for the selected subset** instead of failing with an unhandled error, matching what the 1D Histogram already did
-
-* **Breaking:** the Metadata tab's shared plot limits now describe the filtered, log-scaled values rather than the raw column, so a log-scaled density plot bins differently than before - the limits exist to make overlaid datasets comparable on what is actually drawn
-
-* **Fixed exporting the plot data of a categorical histogram failing with an error.** It had never worked: the export coerced every cached series to a number, which category names are not. Numeric exports are unchanged
-
-* **A capture-rate plot with too few events now says how few**, instead of reporting the generic "no data available after filtering"
-
-* **Breaking:** the Raw Data tab's plot time axes are built by `MetaModel.time_bases` rather than in the view, so `RawDataView.update_plot`, `set_trace_data`, `set_event_plot_data` and `_update_event_plot` take the axis alongside the samples and `baseline_stats_requested` carries it
-
-* **Breaking:** `EventAnalysisModel.event_time_bases` is now `MetaModel.time_bases`, taking a scale and an offset so one derivation serves both an event plot in microseconds and a trace plot in seconds from the start of the recording
-
-* **The Clustering tab now says what is actually wrong with a rejected SQL filter** instead of also telling you to check your column selections, which was the wrong advice for an unknown column, a syntax error or a complete `SELECT` pasted into the filter box
-
-* **Breaking:** the Clustering tab's filtering and log-scaling moved to `ClusteringModel.build_clustering_frame`, so `ClusteringView.cluster_requested` and `ClusteringController.cluster` now carry the unfiltered rows and the column spec rather than a prepared frame
-
-* A clustering request naming a column the loader did not return is now reported on the status panel instead of failing with an unhandled error
-
-* **Breaking:** the Event Analysis plot's time axis is built by `EventAnalysisModel.event_time_bases` rather than in the view, so `EventAnalysisView.update_plot_samplerate` and `plot_samplerate` are gone and `set_event_plot_data` takes the axis as its second argument
-
-* **Breaking:** `MetaEventTabController.update_plot_samplerate` is removed - it relayed a sampling rate to the view, but both event tabs called the view directly and nothing ever called the relay
-
-* The refactor-coverage audit now runs on every branch push, not only on internal pull requests, so a method the refactor moves cannot lose its test coverage unnoticed
-
-* The analysis-tab MVC boundary check no longer counts an import a view uses only to write a type, since that is not computation; `python scripts/check_mvc_boundary.py --verbose` names the imports it exempted
-
-* **Breaking:** `MetaSubsetTabView.event_id_rows` and `set_event_id_rows` are typed `Optional[pandas.DataFrame]` rather than `Optional[Any]`, which is what they have always held
-
-* The subset tabs' controllers no longer write into the view's filter list directly; `MetaSubsetTabView` gained `commit_filter` and `get_subset_filters` for them to go through
-
-* `restore_subset_filters` has moved from `MetadataView` and `ProteinView` to `MetaSubsetTabView`; the two copies were identical apart from the name each held its controls panel under
-
-* **Fixed restoring a session losing the last-restored tab's subset filters**: the session was written back while that tab's filter list was still empty, so the filters survived one restore and were gone from the next - in practice the Metadata tab kept its filters and the Protein tab did not
-
-* **Breaking:** a subset filter being validated now travels with the request instead of being parked on the view: `filter_validation_requested` and `raw_filter_validation_requested` carry the filter's name and the name it replaces, `MetaSubsetTabController.relay_query` and `validate_raw_filter` take them as arguments, and `MetaSubsetTabView.clear_pending_filter_state` and `MetaSubsetTabController.on_raw_filter_validated` are gone
-
-* **Status panel messages are now timestamped**, so the same message arriving twice is visibly two messages rather than looking like the panel never changed
-
-* **Fixed the Metadata and Protein tabs silently widening the experiment and channel scope back to everything**: re-reading the database structure - which happens whenever the loader changes or the selection tree is opened - overwrote the scope you had chosen, so plots quietly used more data than was asked for and heatmaps refused with "Only a single channel can be used"
-
-* **The Metadata tab's Capture Rate plot now honours an explicit bin width**, which was accepted and then ignored, failing with an unhandled error
-
-* Fixed the Metadata tab failing with an error when an All Points Histogram is plotted after a different plot type
-
-* **Categorical histograms now show missing values as an explicit "null" category** instead of failing on a column that contains any
-
-* The Metadata tab now reports a heatmap or capture-rate plot it cannot compute on the status panel, instead of failing with an unhandled error
-
-* **The Protein tab now says on the status panel why a distribution plot was refused** - more than one experiment or channel selected, or an experiment with no channel - instead of writing only to the log and drawing nothing
-
-* **Finding or fitting events with no filter selected now asks for confirmation first**: on a noisy trace an unfiltered run can register almost every sample as an event, which takes a very long time and is hard to tell apart from the application hanging; cancelling works, but only takes effect at the end of the current chunk, so it can be slow to respond
-
-* **Fixed the Raw Data tab asking about the wrong channel before re-running event finding**: if it could not read whether a channel was already finished, it reused the previous channel's answer, so the "start over?" prompt could appear for a channel that was not finished or be skipped for one that was
-
-* Event finding now reports a channel it cannot read or start and continues with the others, and says on the status panel when a channel has no time range set instead of failing silently
-
-* Fixed the Raw Data and Event Analysis tabs failing with an unhandled error, rather than reporting it, when an action arrived with no channel selection
-
-* The Metadata and Protein tabs now report a database whose columns or experiment list cannot be read, instead of leaving the pickers silently unchanged
-
-* **Fixed the Metadata tab renaming a raw SQL filter when it was loaded from a file**: the filter came back as `<name>_raw_assisted` and was treated as an assisted filter from then on, rather than as the raw filter that was saved
-
-* The Protein tab now also reports a raw SQL filter the database itself rejects in a dialog rather than on the status panel, so both ways a raw filter can be refused read the same on both tabs
-
-* **The SQL shown on the status panel is now the query that actually pulls the subset**, rather than the smaller one built to validate the filter, and it is shown when the filter is applied rather than when it is created - repeated only when it changes
-
-* **Fixed the Metadata tab plotting the wrong subset's data when a database call failed**: the query, the column units and the event generator were each reused from the previous subset, so a failure mid-plot drew the previous subset under this one's label, or labelled the axes with another column's units
-
-* A subset the Metadata tab cannot query, load or read the units of is now reported instead of failing silently
-
-* **Fixed the Metadata tab plotting another channel's events when the experiment could not be looked up**: the events to plot were resolved without their experiment and channel scope, so an event number that exists in more than one channel could return the wrong channel's data
-
-* Fixed the headless flow tests aborting the interpreter instead of finishing: the harness closed a tab without stopping its worker threads, so Qt destroyed a thread that was still running
-
-* **Fixed plotting a column that is empty for the selected subset failing with an error** instead of saying there is nothing to plot - most easily hit by histogramming a protein fit column over a subset that was never fitted
-
-* **Fixed the Protein tab drawing empty axes in silence** when the selected subset holds no events; both distribution modes now say so
-
-* **Breaking: raw SQL subset filters can no longer be selected for a plot**, on either tab, and say so when chosen. They never worked - the filter was passed where a WHERE clause was expected, so the database rejected the query and the plot came back empty without a word. Creating, saving and loading them is unchanged
-
-* **Fixed the Protein tab offering to overwrite fit data based on a stale answer**: if it could not read whether the database already held fit columns it reused the previous answer, so the "overwrite?" prompt could appear for a database with nothing to overwrite, or be skipped for one that had; it now reports the failure and commits nothing
-
-* Committing protein fits now reports a database that refuses the write instead of announcing new columns to the other tabs regardless
-
-* **Fixed the Protein tab showing one query on the status panel while running another**: for a raw SQL subset it displayed the query built from the filter and then loaded through a differently scoped one; it now shows the query that runs
-
-* **Fixed the Protein tab reading the whole database when a raw SQL subset could not be scoped**: an experiment or channel it could not place was dropped from the query without a word, so a filter meant for one channel returned every channel's events; it now stops and says so
-
-* The Protein tab now builds and loads its distribution subsets through a direct call from its controller rather than through the signal bus, so a filter the database refuses is reported instead of silently plotting nothing
-
-* Fixed the Protein tab's ensemble distribution failing with an unhandled error, rather than stopping quietly, when no subset produced any data to fit
-
-* **Fixed the Metadata tab not reporting an event-data filter the database refuses, and never showing the SQL for an event plot**: the refusal was invisible and the plot went ahead, because the query builder returns the query and the reason together and only the pair was being checked
-
-* **Fixed the Protein tab plotting another channel's events when the experiment could not be looked up**: the events to plot were resolved without their experiment scope, so an event number that exists in more than one channel could return the wrong channel's data; it now stops and says so
-
-* The Protein tab now asks its database loader for event plot data through a direct call from its controller rather than through the signal bus, so a lookup that fails is reported instead of silently widening the query
-
-* **Fixed the Raw Data tab drawing nothing when the requested time range ran past the end of the file**: it now plots what the channel holds and says on the status panel that it trimmed the range, and says so too when the range starts past the end
-
-* Fixed `construct_event_data_query` not documenting that it raises for an unknown experiment name, and collapsed three identical copies of its SQL id-list helper onto one
-
-* A subset export to CSV that matches no events, or that the database refuses, is now reported before the export starts instead of running the progress bar to the end in silence, and no longer uses up the next export's name
-
-* **A subset filter naming a column the database does not have is now reported instead of silently disappearing**: the Metadata and Protein tabs discarded such a filter with nothing but a line in the log, so it looked as though nothing had happened
-
-* Validating a subset filter no longer queries across all three metadata tables regardless of what the filter references, which was joining `sublevels` and `experiments` even for a filter over `events` alone
-
-* `relay_query` is now provided by `MetaSubsetTabController` instead of being implemented separately by each subset tab
-
-* `_delete_filter` is now provided by `MetaSubsetTabView` instead of being abstract, so a subset-tab plugin no longer has to implement it
-
-* The Protein tab now reports a raw SQL filter that is not a complete SELECT statement in a dialog rather than on the status panel, matching the Metadata tab - the filter dialog has just closed at that point, so a status line was easy to miss
-
-* `show_edit_filter_dialog` is now provided by `MetaSubsetTabView` instead of being abstract, so a subset-tab plugin no longer has to implement it
-
-* Fixed the Metadata tab failing with an unhandled error, rather than reporting it, when the database returned rows with no `event_id` column while rebuilding its filtered-event cache
-
-* The Metadata tab now says the current scope when no events match a filter, and labels a subset with the filter expression when no filter name is selected instead of the word "Filter" - both matching the Protein tab
-
-* **Breaking:** `get_selected_filters` has moved from `MetadataView` and `ProteinView` to `MetaSubsetTabView`, which now requires subclasses to implement a `_subset_controls` property returning their controls panel
-
-* **Breaking:** `update_units` has moved from `MetaSubsetTabView` to `MetadataView` and `update_column_units` is no longer on `MetaSubsetTabController`; only the metadata tab displays column units, so a plugin subclassing the shared subset-tab base no longer inherits either
-
-* The Event Analysis tab now says which event indices were out of range and how many events the channel actually holds, instead of reporting "No data available for plotting"
-
-* An event the Event Analysis tab cannot load, or whose fit features cannot be read, no longer abandons the whole plot: the remaining events are still drawn
-
-* **Fixed the Event Analysis tab asking about the wrong channel before re-fitting**: if it could not read whether a channel was already fitted, it reused the previous channel's answer, so the "start over?" prompt could appear for a channel that was not fitted or be skipped for one that was
-
-* Event fitting now reports a channel it cannot read or start and continues with the others, instead of abandoning the whole batch
-
-* Writing the Event Analysis tab's fitted events now reports a channel the database writer cannot accept and writes the rest, instead of abandoning the whole write; and a loader whose channels cannot be read is reported rather than leaving the channel list silently unchanged
-
-* Committing the Raw Data tab's found events now reports a channel the writer cannot accept and commits the rest, instead of abandoning the whole commit
-
-* The Raw Data tab now says which event indices were out of range and how many events the channel actually holds, instead of reporting "No data available for plotting"
-
-* Stepping the Raw Data tab's event index below 0 now says so on the status panel, instead of declining silently and only logging to the console
-
-* **The "No Filter" option no longer disappears from the Raw Data and Event Analysis filter dropdowns once a filter exists**: choosing not to filter is a valid selection, so it stays available, and it is now also what a dropdown falls back to when the filter it was showing is deleted (a newly created filter is no longer selected for you)
-
-* **Fixed the Raw Data tab's event plots showing the wrong events**: if the tab could not read an event finder's state, it silently reused the previous channel's answers — including the event count that decides which event indices are in range — and an event that failed to load was replaced by the previous one under the wrong index
-
-* **Fixed the Raw Data tab plotting one channel's trace under another channel's label**, and the same fault when a filter failed: a channel the reader could not supply silently reused whichever channel was loaded before it, on both the trace and the noise-spectrum plots
-
-* The Raw Data tab now asks each event finder for its channels through a direct call from its controller rather than through the signal bus, so a finder that cannot answer is reported rather than silently leaving its time ranges unset
-
-* The golden files that pin the app's numerical output are now checked to be running at all, so a missing test dependency can no longer leave those numbers unpinned while the test suite still reports a pass
-
-* **Fixed a tab being unable to use a plugin it was showing in its dropdown**, reported when restoring a saved session: the tab was given the list of plugins before it was given access to them, and filling the dropdown immediately asks the selected plugin for its columns
-
-* **Fixed the clustering settings dialog failing with an error instead of opening** when the column list could not be read from the database
-
-* Analysis tabs can now call a data plugin directly through `call()` on their model or controller, so a failed plugin call raises where it happened instead of being logged several hops away and leaving the caller with the previous call's answer
+* Event fitters gain behavioural conformance tests (new `conformance` marker), driven against real data rather than mocked loaders
 
 * The behavioural conformance suite's resource-leak check is extended to readers and loaders, not just writers
-
-* Fixed the pydoclint gate failing on `PeakFinder._curve_fit_bounded`: a failed double-Gaussian fit is now re-raised from inside its own `except` clause rather than stashed and raised after the loop, which the checker could not read as `RuntimeError`/`ValueError`
 
 * The behavioural conformance suite's readers, database loaders and event loaders now fail with a clear message (matching writers) if a new plugin declares a required parameter with no recipe entry, instead of an unrelated validation error
 
@@ -352,73 +444,17 @@
 
 * New fuzz testing for every data reader against malformed input (truncated files, corrupted headers, missing sidecars) - none crash or hang uncaught
 
-* **Breaking:** `MetaReader.load_data()` now raises `ValueError` on an out-of-bounds request instead of silently returning fewer samples than asked for
+* Fixed the pydoclint gate failing on `PeakFinder._curve_fit_bounded`: a failed double-Gaussian fit is now re-raised from inside its own `except` clause rather than stashed and raised after the loop, which the checker could not read as `RuntimeError`/`ValueError`
 
-* Fixed: `Basic_PeakFinder` crashed on a zero-width sublevel in `sublevel_max_deviation`; now returns `0.0` for that case, and is covered by the behavioural conformance suite
+* Fixed the headless flow tests aborting the interpreter instead of finishing: the harness closed a tab without stopping its worker threads, so Qt destroyed a thread that was still running
 
-* The settings-schema check is extracted for reuse outside pytest (`poriscope/utils/settings_schema.py::validate_settings_schema`) and gated in pre-commit
-
-* `MetaReader` conformance lands: all 24 data plugins across all 8 `Meta*` families now run against real synthetic data
-
-* Behavioural conformance extended to six more plugin families (filters, event finders/loaders, db loaders, writers): 22 of 24 data plugins now run against real data
-
-* Event fitters gain behavioural conformance tests (new `conformance` marker), driven against real data rather than mocked loaders
+* Made the metadata CSV-export end-to-end test less prone to failing intermittently: it waited for the exported-file count to settle, which happens before the last files are written, and then size-checked whichever one set iteration surfaced - the window is narrower but not closed, and a recurrence on 2026-09-22 is recorded in `future_fixes.md`
 
 * Fixed: `pytest tests/unit/views` failed when run on its own; the missing `sys.path` shim now lives in the root `tests/conftest.py`
 
-* Every plugin's `get_empty_settings()` is now checked against its own declared contract; 21 violations fixed (15 missing `Value` keys, 11 `int`-vs-`float` defaults). **Breaking for programmatic callers:** an unfilled required parameter now raises `TypeError` instead of `KeyError`
-
-* The baseline statistics behind the Raw Data tab's green baseline band are now computed in that tab's model rather than in its plot widget
-
-* Removed an unused Gaussian function from the Raw Data view; the baseline fit never called it
-
-* The clustering computation now lives in the clustering tab's model rather than in its plot widget, so the tab no longer carries the clustering libraries itself
-
-* `MetaView._set_control_area` is no longer abstract: it now builds the control area for you from a new `_build_controls` hook and connects the four signals every controls panel carries, so a new tab writes three lines instead of twenty-five; a tab that lays out its own control area can still override it
-
-* **Fixed each analysis tab initialising itself twice on startup**: every tab ran its state setup once before its widgets were built and again afterwards
-
-* Analysis tabs no longer need to inherit `WalkthroughMixin` themselves; it comes with the base class, and a tab written against `MetaView` gets the walkthrough for free
-
-* **Breaking:** the walkthrough widgets have moved from `poriscope.plugins.analysistabs.utils` to `poriscope.views.widgets`; a plugin that imports `WalkthroughMixin` or `WalkthroughStep` needs its import path updated
-
-* Fixed two links in the "Adding a walkthrough" tutorial that had never resolved, and gave `WalkthroughMixin` an API reference page for them to point at
-
-* **Breaking:** `check_column_exists` and `set_column_exists` are no longer on `MetaController` and `MetaView`; they were used only by the protein tab and now live on `ProteinController` and `ProteinView`
-
-* **Breaking:** `MetaView._setup_canvas` no longer takes a `num_channels` argument, which it never read
-
-* **Breaking:** the event-index range helpers - `_parse_event_indices`, `_expand_event_indices`, `_merge_ranges`, `_shift_ranges` and `_format_ranges` - have moved from `MetaView` to `MetaEventTabView`, so a tab that subclasses `MetaView` directly no longer inherits them; a tab that subclasses `MetaEventTabView` is unaffected
-
-* Progress-bar updates in one analysis tab no longer wait on a lock held by another tab
-
-* The Raw Data and Event Analysis control panels now share a common `MetaEventTabControls` base instead of each carrying its own copy of the channel, filter and event-index handling, so a fix to one reaches both
-
-* The Raw Data and Event Analysis tabs now share a common `MetaEventTabView` base instead of each carrying its own copy of the channel validation, commit-parameter and data-filter handling, so a fix to one reaches both
-
-* The Raw Data and Event Analysis tabs now share a common `MetaEventTabController` base instead of each carrying its own copy of the plugin-registry and sample-rate relays, so a fix to one reaches both
-
-* **Breaking:** removed `set_table_by_column` from the Metadata and Protein tab views and `relay_table_by_column` from their controllers - nothing in the app called them, and the table list they appended to was never created, so the call would have raised; deciding which tables a query needs to join is done by the database loader itself
-
-* The Metadata and Protein control panels now share a common `MetaSubsetTabControls` base instead of each carrying its own copy of the same filter combobox, filter buttons and loader handling, so a fix to one reaches both
-
-* The Metadata and Protein tabs now share a common `MetaSubsetTabView` base instead of each carrying its own copy of the same fifteen query, column, filter and experiment-selection methods, so a fix to one reaches both
-
-* The Metadata and Protein tabs now share a common `MetaSubsetTabController` base instead of each carrying its own copy of the same seventeen relay and state methods, so a fix to one reaches both
-
-* The two log-scaling routines behind the plots are now one, so a correction to how data is filtered or log-scaled applies everywhere it is used rather than to one of the two copies
-
-* The five analysis-tab control panels now share a common `MetaControls` base instead of each carrying its own copy of the same widget factories and signals, so a fix to one reaches all five
-
-* Each of the five analysis tabs now has a headless end-to-end test that drives the real tab and asserts on the file or database rows it produces, so a refactor of the tab layer cannot silently change what the app writes
-
-* Every method the 2.0.0 refactor will move or deduplicate is now checked for test coverage by `scripts/check_refactor_coverage.py`, so a method cannot be restructured while nothing pins its behaviour
-
-* The analysis-tab MVC boundary is now checked by `scripts/check_mvc_boundary.py` against a recorded allowlist of 113 known violations across the analysis tabs, the widgets they are built from, the app shell and the shared bases, so no new one can be added while the 2.0.0 refactor removes the existing ones
-
-* Duplication across the five analysis-tab View, Controller and controls files is now measured by `scripts/measure_duplication.py` and held against a checked-in baseline, so a refactor that promotes a shared method has to show that it deleted the copies
-
 * Running a single test file on its own now works: shared test helpers imported as `tests.<module>` resolved only when a higher-level conftest happened to be collected first, so `pytest <one file>` failed with `No module named 'tests'` while the same file passed in a full run
+
+* Removed test residue left by the signal bus's removal - unused test doubles, mock signals and section headers for deleted methods, the redundant `sys.path` shims in the e2e modules and subtree conftests - and two documentation images nothing referenced
 
 ## Poriscope 1.9.0: 2026-09-04
 

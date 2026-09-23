@@ -3238,6 +3238,11 @@ actually contains, and nothing else in the plan looks for it.
   still, and no entry loses its "breaking" marking in the move.** This is the last edit
   before the version bump.
 
+  **First pass done 2026-09-23**: 210 entries, 46 breaking, under Breaking (results that
+  change, data plugin API, analysis-tab API), User-Facing Behaviour (by tab), Data Plugins,
+  Analysis Tabs, Application Shell, Documentation and Developer Tooling. Only edit: the
+  PeakFinder attribution line no longer says "above". Re-sort what burn-in adds before the bump.
+
 ### Part 1, plan against reality - done 2026-09-22
 
 Six read-only audits: five over slices of this file and one over the artifact, with every
