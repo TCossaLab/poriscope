@@ -10,6 +10,26 @@ which ran through August 2026 and is complete. The step numbers only date the de
 
 ---
 
+## 2026-09-25 - Numeric fields use the C locale, and a comma disables OK
+
+**Context.** Float fields validated with the system locale and parsed with `float()`, so a
+comma-decimal system refused '.', and every locale let a group separator through to a
+`float()` that raised.
+
+**Decision** (Kyle, 2026-09-25). Give each numeric validator `QLocale.c()`, per validator
+rather than app-wide (tests see it; plugin authors' own widgets are left alone), and treat
+a comma as invalid rather than converting it - `1,000.5` would silently become 1.0005.
+Integer fields accept a prefix that more digits can bring into range.
+
+**Evidence.** Under fr_CA a pre-filled `1.0` disabled OK and `0.5` saved as 5.0; under
+en_CA `1,000` raised at OK; `-5` saved as +5 in PeakFinder's thresholds. All pinned by
+widget tests. `TimeRangeValidator` and the bins fields already use ',' as a list separator.
+
+**Revisit if** users ask to type in their own locale's notation - that is parsing with the
+locale end to end, not a validator change.
+
+---
+
 ## 2026-09-25 - Reader file sets are globbed on each format's own grammar
 
 **Context.** Five readers globbed `<base>*<ext>`, so `exp1` also picked up `exp10`: the other

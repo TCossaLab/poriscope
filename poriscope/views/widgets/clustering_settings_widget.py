@@ -28,8 +28,8 @@ import os
 import sys
 from typing import Any, Dict, List, Mapping, Optional
 
-from PySide6.QtCore import QSize, Qt
-from PySide6.QtGui import QDoubleValidator, QFont, QIcon, QIntValidator
+from PySide6.QtCore import QLocale, QSize, Qt
+from PySide6.QtGui import QDoubleValidator, QFont, QIcon, QIntValidator, QValidator
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -281,10 +281,16 @@ class ClusteringSettingsDialog(QDialog, WalkthroughMixin):
             line_edit = QLineEdit()
 
             # Set validators based on type
+            # The C locale on both, so the decimal point is always '.' whatever the
+            # system locale: the text is read back with int() and float().
             if input_type == "int":
-                line_edit.setValidator(QIntValidator())
+                validator: QValidator = QIntValidator()
+                validator.setLocale(QLocale.c())
+                line_edit.setValidator(validator)
             elif input_type == "float":
-                line_edit.setValidator(QDoubleValidator())
+                validator = QDoubleValidator()
+                validator.setLocale(QLocale.c())
+                line_edit.setValidator(validator)
 
             key = f"{method_name}_{field.replace(' ', '_')}_input"
             line_edit.setObjectName(key)

@@ -93,14 +93,6 @@ Fix ahead of the registry below: pop without replaying on refusal, replay only f
 
 ### Numeric input and widgets
 
-- **Float fields break under a comma-decimal locale** in every plugin-settings dialog:
-  `NumericLineEdit` uses a locale-following `QDoubleValidator` (`numeric_validation.py:57`) but
-  parses with `float()` (`:77`, `dict_dialog_widget.py:376-389`), and the app sets no `QLocale`.
-  Under fr_CA a pre-filled `1.0` disables OK, `0.5` is saved as **5.0**, and `1,5` raises.
-  Same in `clustering_settings_widget.py:285-287`.
-- **`CustomIntValidator` returns `Invalid` for in-range prefixes**
-  (`numeric_validation.py:103-108`): with Min=10 you cannot type 15, and `-` never, so
-  PeakFinder's two `Min: -10` fields (`PeakFinder.py:389-400`) cannot be re-entered once cleared.
 - **Finishing the tutorial inside a dialog, then closing it, raises `AttributeError`**:
   the `finished` lambdas at `ClusteringView.py:485-488` and `MetaSubsetTabView.py:648-651` call
   `dialog.walkthrough_dialog.force_close()` after `walkthrough_mixin.py:209` set it to `None`.

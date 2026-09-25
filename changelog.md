@@ -106,6 +106,10 @@
 
 #### General:
 
+* **Fixed decimal fields in plugin-settings and clustering dialogs on comma-decimal systems** (French, for instance): a pre-filled value no longer disables OK and a typed `0.5` is no longer saved as 5.0; the decimal point is always '.', and a comma disables OK instead of raising when OK is pressed
+
+* **Fixed integer fields with a minimum refusing values typed digit by digit** - `15` can now be typed where the minimum is 10, and a negative value such as PeakFinder's filter thresholds keeps its sign instead of being saved as positive
+
 * **Fixed error dialogs opening behind the main window**, where a modal dialog nobody can see holds the input grab and the application looks frozen - most visibly at startup, when a duplicate plugin name reported an error before the window had finished painting
 
 * **Status panel messages are now timestamped**, so the same message arriving twice is visibly two messages rather than looking like the panel never changed

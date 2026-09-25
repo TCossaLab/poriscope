@@ -15,6 +15,8 @@ import sys
 import unittest
 from unittest.mock import patch
 
+from PySide6.QtCore import QLocale
+from PySide6.QtTest import QTest
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -412,6 +414,120 @@ class TestConstructionOptions(DictDialogTestCase):
         )
         dlg = self.build(settings, source_plugins=["MetaReader"])
         self.assertTrue(dlg.entrywidgets["MetaReader"].isEnabled())
+
+
+class NumericInputTests(DictDialogTestCase):
+    """
+    What a user can type into a numeric field, whatever the system locale.
+
+    Float fields used a validator that followed the system locale while their text was
+    read with ``float()``, so under a comma-decimal locale a pre-filled ``1.0`` disabled
+    OK and a typed ``0.5`` lost its point and was saved as 5.0; under any locale a group
+    separator (``1,000``) passed the validator and raised at OK. Integer fields refused
+    any keystroke that was not yet in range, so ``15`` could not be typed with a minimum
+    of 10, and ``-5`` became ``5``.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self._saved_locale = QLocale()
+
+    def tearDown(self):
+        QLocale.setDefault(self._saved_locale)
+        super().tearDown()
+
+    def type_into(self, dlg, key, text):
+        """
+        Clear a field and type into it one keystroke at a time, as a user would.
+
+        :param dlg: the dialog
+        :type dlg: DictDialog
+        :param key: the setting whose field to type into
+        :type key: str
+        :param text: the keystrokes
+        :type text: str
+        :return: what the field shows afterwards
+        :rtype: str
+        """
+        field = dlg.entrywidgets[key]
+        field.clear()
+        QTest.keyClicks(field, text)
+        dlg.check_validity()
+        return field.text()
+
+    def test_a_prefilled_float_is_valid_under_a_comma_decimal_locale(self):
+        QLocale.setDefault(QLocale(QLocale.French, QLocale.Canada))
+        dlg = self.build(
+            params(
+                Size={
+                    "Type": float,
+                    "Value": 1.0,
+                    "Min": 1.0,
+                    "Max": 5.0,
+                    "Units": None,
+                }
+            )
+        )
+        dlg.check_validity()
+        self.assertTrue(dlg.ok_button.isEnabled())
+
+    def test_a_typed_decimal_point_is_kept_under_a_comma_decimal_locale(self):
+        QLocale.setDefault(QLocale(QLocale.French, QLocale.Canada))
+        dlg = self.build(
+            params(
+                Size={
+                    "Type": float,
+                    "Value": 1.0,
+                    "Min": 0.0,
+                    "Max": 5.0,
+                    "Units": None,
+                }
+            )
+        )
+        self.assertEqual(self.type_into(dlg, "Size", "0.5"), "0.5")
+        dlg.on_ok()
+        result, _ = dlg.get_result()
+        self.assertEqual(result["Size"]["Value"], 0.5)
+
+    def test_a_comma_disables_ok_instead_of_raising(self):
+        dlg = self.build(
+            params(Size={"Type": float, "Value": 1.0, "Min": 0.0, "Units": None})
+        )
+        dlg.entrywidgets["Size"].setText("1,000")
+        dlg.check_validity()
+        self.assertFalse(dlg.ok_button.isEnabled())
+
+    def test_an_int_below_its_minimum_can_be_typed_digit_by_digit(self):
+        dlg = self.build(
+            params(
+                Count={"Type": int, "Value": 20, "Min": 10, "Max": 100, "Units": None}
+            )
+        )
+        self.assertEqual(self.type_into(dlg, "Count", "15"), "15")
+        self.assertTrue(dlg.ok_button.isEnabled())
+
+    def test_a_negative_int_keeps_its_sign(self):
+        dlg = self.build(
+            params(
+                Count={"Type": int, "Value": 0, "Min": -10, "Max": 10, "Units": None}
+            )
+        )
+        self.assertEqual(self.type_into(dlg, "Count", "-5"), "-5")
+        dlg.on_ok()
+        result, _ = dlg.get_result()
+        self.assertEqual(result["Count"]["Value"], -5)
+
+    def test_a_sign_is_refused_where_the_minimum_is_not_negative(self):
+        dlg = self.build(
+            params(Count={"Type": int, "Value": 5, "Min": 0, "Max": 10, "Units": None})
+        )
+        self.assertEqual(self.type_into(dlg, "Count", "-"), "")
+
+    def test_digits_past_the_maximum_are_still_refused(self):
+        dlg = self.build(
+            params(Count={"Type": int, "Value": 5, "Min": 0, "Max": 10, "Units": None})
+        )
+        self.assertEqual(self.type_into(dlg, "Count", "500"), "5")
 
 
 if __name__ == "__main__":

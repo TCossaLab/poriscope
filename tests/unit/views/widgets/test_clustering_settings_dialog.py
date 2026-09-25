@@ -12,6 +12,9 @@ Run with:
 from unittest.mock import patch
 
 import pytest
+from PySide6.QtCore import QLocale
+from PySide6.QtGui import QDoubleValidator
+from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QCheckBox, QLineEdit
 
 from poriscope.views.widgets.clustering_settings_widget import (
@@ -650,3 +653,30 @@ class TestEdgeCases:
         dlg.add_column_item()
         key = list(dlg.column_item_widgets.keys())[0]
         dlg.remove_column_item(key)  # calls _refresh_add_button_position internally
+
+
+def test_a_float_parameter_keeps_its_decimal_point_under_a_comma_locale(qt_app):
+    """
+    DBSCAN's Eps reads ``0.5`` as typed, not ``05``, on a comma-decimal system.
+
+    The validator followed the system locale, which refused the '.' keystroke.
+    """
+    saved = QLocale()
+    QLocale.setDefault(QLocale(QLocale.French, QLocale.Canada))
+    try:
+        dlg = _make_dialog()
+        dlg.update_method_parameters("DBSCAN")
+        field = next(
+            dlg.param_layout.itemAt(i).widget()
+            for i in range(dlg.param_layout.count())
+            if isinstance(dlg.param_layout.itemAt(i).widget(), QLineEdit)
+            and isinstance(
+                dlg.param_layout.itemAt(i).widget().validator(), QDoubleValidator
+            )
+        )
+        field.clear()
+        QTest.keyClicks(field, "0.5")
+        assert field.text() == "0.5"
+        dlg.close()
+    finally:
+        QLocale.setDefault(saved)
