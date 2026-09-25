@@ -212,6 +212,14 @@ above declines the refit. Keeping the joint fit is the better answer there, but 
 
 ## Reading a fit's provenance
 
+Every classification plot shows its threshold, in the legend and in the summary box, with a few
+words naming the rule that produced it (`threshold_basis` in each classifier's results, also
+printed in the report): `_describe_fit_threshold` turns the two fields below into
+"Gaussian crossing" (`params_method` `constrained`), "valley between populations",
+"first valley above floor", "first point above floor" or "midpoint of means"; the fallbacks
+name theirs directly ("1.5 x unfolded", "unfolded + 3 sigma", "class 0 + 3 sigma",
+"ECD ratio = 1").
+
 | Field | Value | What it tells you |
 |---|---|---|
 | `threshold_method` | `spline_valley` | Read off a real valley between two fitted modes. The good case |
@@ -232,22 +240,24 @@ identical, and the asymmetry is deliberate.
 flowchart LR
     F["fit_threshold returns<br/>n_components = 1"] -->|folding| A["folded / unfolded<br/>SINGLE-GAUSSIAN FALLBACK<br/>assumed unfolded"]
     F -->|prominence| B["peak prominence<br/>SINGLE-GAUSSIAN FALLBACK<br/>assumed class 0"]
-    F -->|direction| C["translocation direction<br/>DECLINES"]
+    F -->|direction| C["translocation direction<br/>RATIO VS 1<br/>longer arm first"]
 ```
 
-Direction is the odd one out. "Forward" is a claim about a second population that was not
-found. Folding and prominence instead describe the one population with a single Gaussian,
-**assume** which class it is, and cut at an explicit, arbitrary threshold — see
-[the single-population fallback](#the-single-population-fallback) below.
+Folding and prominence describe the one population with a single Gaussian, **assume** which
+class it is, and cut at an explicit, arbitrary threshold — see
+[the single-population fallback](#the-single-population-fallback) below. Direction needs no
+fit to fall back on: each event's own pre/post ECD ratio is compared with 1, since the longer
+arm marks the beginning of the event.
 
 | Condition | Folded / unfolded | Peak prominence | Translocation direction |
 |---|---|---|---|
 | No usable input | never reached — the caller checks first | returns early: no peaks with filter 1, 2 or 3 | `skipped`, reason `"no data"` |
+| Fewer than `DIRECTION_MIN_FIT_EVENTS` (30) events | — | — | **no fit**: ratio vs 1 (log ratio 0), `pre > post` forward, `pre < post` backward, a tie gets no direction; `translocation_confidence` None |
 | `fit_threshold` raises | `error: "double-Gaussian fit failed"` | logs an error and returns; no peak classified | `skipped`, reason `"fit failure"` |
 | Missing threshold or centres | `error: "fit insufficient results"` | raises `RuntimeError` (see below) | raises `RuntimeError` (see below) |
 | Fewer than two centres | `error: "Could not find two distinct distributions"` | proceeds — centres are not required to split | `skipped`, reason `"insufficient centers"` |
-| `n_components = 1` | **single-Gaussian fallback**: assumed unfolded, folded level assumed at 2·μ, folded at or above `max(1.5·μ, μ + 3σ)` | **single-Gaussian fallback**: assumed class 0, class 1 at or above `μ + 3σ` in the fitted variable | `skipped`, reason `"only one population detected"` |
-| `n_components = 1` and the single fit fails | **still classifies**: the pool's median and 1.4826·MAD stand in for μ and σ — this path never declines | proceeds on `fit_threshold`'s own above-floor threshold, with two-component confidences, and warns | as above |
+| `n_components = 1` | **single-Gaussian fallback**: assumed unfolded, folded level assumed at 2·μ, folded at or above `max(1.5·μ, μ + 3σ)` | **single-Gaussian fallback**: assumed class 0, class 1 at or above `μ + 3σ` in the fitted variable | **ratio vs 1**, as in the row above — the fitted threshold is ignored |
+| `n_components = 1` and the single fit fails | **still classifies**: the pool's median and 1.4826·MAD stand in for μ and σ — this path never declines | proceeds on `fit_threshold`'s own above-floor threshold, with two-component confidences, and warns | n/a — no single fit |
 
 Each folded/unfolded decline also calls `_collect_peak_statistics` before returning, so the
 peak-filtering section of the report is still populated.
@@ -260,7 +270,8 @@ peak-filtering section of the report is still populated.
   under `no_height_reference`. That is reported ahead of the widest-peak rule, which needs no
   fitted level of its own — so a folding decline still shows up as "no floor" rather than
   being masked as a width rejection.
-- A **direction** decline means no event gets a `translocation_direction`. Sequences are not
+- A **direction** decline — now only when the fit raises or returns fewer than two centres;
+  too few events or one population use ratio vs 1 — means no event gets a `translocation_direction`. Sequences are not
   reversed into the molecule's frame, and `bound_star` stays `None` for every event.
 - A **prominence** decline means peaks keep `classified = nan`, so sequence strings come out
   empty and every downstream count keyed on sequence goes to zero.
@@ -295,8 +306,12 @@ single Gaussian wearing two sets of parameters. So `_classify_folded_unfolded` a
 `fit_threshold` built (`"hist"`), and classify against it. Only this path — an outright
 double-fit failure still declines, since a failed fit is not evidence of one population.
 
-`_fit_single_gaussian` is a bounded three-parameter `curve_fit` on the box `_curve_fit_bounded`
-uses per component, seeded at the tallest bin with the count-weighted σ. No flat constant. Only
+`_fit_single_gaussian` is a bounded `curve_fit` on the box `_curve_fit_bounded` uses per
+component, seeded at the tallest bin with the count-weighted σ. While `FIT_CONSTANT_OFFSET`
+holds it also fits a flat background, bounded and seeded as in stage 2, and — the same rule as
+stage 2 — drops it only if it made the residual worse by more than rounding; it returns
+`(amp, mean, std, offset)` with `offset` 0.0 where none was kept. The background stops a
+pedestal of sparse outliers from widening σ, and with it every `μ + kσ` cut. Only
 convergence failures reject (exception, or non-finite parameters/covariance), plus a histogram
 that is empty or under 3 bins. It has no fallback of its own; each caller decides what stands
 in for it (table below).
@@ -324,7 +339,8 @@ gets a direction — only what the fit is estimated from.
 
 | | Condition | Result |
 |---|---|---|
-| degrades | The percentile core comes out below `MIN_FIT_BINS` | No trim; the whole array is fitted. A degenerate distribution piled on one value does this, and trimming there swaps one bad fit for another. This is the only gate the trim needs — the core is ~90% of the sample, so reaching the floor already requires 34 events |
+| degrades | Fewer than `DIRECTION_MIN_FIT_EVENTS` events | No fit and no trim: each event's ratio is compared with 1 (see the table above) |
+| degrades | The percentile core comes out below `MIN_FIT_BINS` | No trim; the whole array is fitted. A degenerate distribution piled on one value does this, and trimming there swaps one bad fit for another. The core is ~90% of the sample, so this only fires between 30 and 33 events, or on a degenerate distribution |
 
 This exists because stage 1's bin *range* is not outlier-robust while its bin *width* is. A
 single event two decades out roughly halves the number of bins the two populations span, and
@@ -358,7 +374,7 @@ their own comments.
 | Constant | Value | Governs |
 |---|---|---|
 | `MIN_FIT_BINS` | 30 | Stage 1 bin floor; also the minimum size of the direction fit's percentile core |
-| `FIT_CONSTANT_OFFSET` | True | Whether stage 2 fits a flat constant as a seventh free parameter. Bounded like an amplitude, kept only if it improves the residual, and excluded from every threshold and confidence calculation |
+| `FIT_CONSTANT_OFFSET` | True | Whether stage 2 fits a flat constant as a seventh free parameter, and `_fit_single_gaussian` a fourth. Bounded like an amplitude, kept only if it improves the residual, and excluded from every threshold and confidence calculation |
 | `SEED_SEPARATION_FWHM` | 1.0 | Peak separation for stage-2 seeding, and the centres-not-separated test in stage 3 |
 | `VALLEY_SEPARATION_SIGMA` | 0.5 | How far the valley must sit from each mean, in that component's own σ, in stage 5 |
 | `SPLINE_MAX_MINIMA` | 1 | The λ ladder's acceptance criterion — *at most* this many, so zero is fine |
@@ -368,6 +384,7 @@ their own comments.
 | `SPLINE_LAMBDA_MARGIN_STEPS` | 0 | Extra smoothing past the first acceptable rung. Kept at zero deliberately — two steps of "safety margin" moved the higher component's mode bias by an order of magnitude and made a fifth of fits fail outright. The constant exists so the finding is not rediscovered |
 | `SPLINE_FIT_DOMAIN_COVERAGE` | 0.995 | Fraction of counts the populated-core trim must retain |
 | `DIRECTION_FIT_PERCENTILES` | (5.0, 95.0) | The core the direction fit is estimated from — never what gets classified |
+| `DIRECTION_MIN_FIT_EVENTS` | 30 | Fewest barcoded events the direction fit is attempted on; below it, ratio vs 1 |
 | `FOLDING_SINGLE_POPULATION_RATIO` | 1.5 | Ratio term of the single-population folded cut, `× μ` |
 | `FOLDING_SINGLE_POPULATION_SIGMA` | 3.0 | σ term of the single-population folded cut, `μ + k·σ` |
 | `PROMINENCE_SINGLE_POPULATION_SIGMA` | 3.0 | Single-population class-1 cut, `μ + k·σ` in the fitted variable |

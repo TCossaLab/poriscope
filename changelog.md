@@ -16,6 +16,14 @@
 
 * **Breaking:** the Metadata tab's shared plot limits now describe the filtered, log-scaled values rather than the raw column, so a log-scaled density plot bins differently than before - the limits exist to make overlaid datasets comparable on what is actually drawn
 
+* **Breaking: `PeakFinder`'s single-Gaussian fallback fit now includes a flat background**, so sparse outliers no longer widen the fitted population and push its `mu + 3 sigma` threshold out
+
+* Every `PeakFinder` classification plot now shows its threshold and the rule that produced it, in the legend and the summary box, and the report names the rule beside each threshold
+
+* The classification report's single-population and direction-fallback warnings now say only which method was used and why
+
+* **Breaking: `PeakFinder`'s translocation direction now compares each event's pre/post ECD ratio with 1 when there are fewer than 30 barcoded events or the fit finds one population** - the longer arm marks the beginning of the event, so pre > post is forward; such events carry no direction confidence, and a tie gets no direction
+
 * **Breaking: `PeakFinder` now classifies a single population instead of declining** - when folding finds one population it assumes that population is unfolded and the folded level exactly twice as deep, calls folded at or above `max(1.5 x mu, mu + 3 sigma)` from a single-Gaussian fit (or the median and MAD if that fit fails), and so always gives every event carrier levels for peak filtering; a single prominence population is assumed to be class 0, with class 1 at or above `mu + 3 sigma` in log10 and no confidence; both thresholds are written out in the report and on the plots
 
 * **Breaking: raw SQL subset filters can no longer be selected for a plot**, on either tab, and say so when chosen. They never worked - the filter was passed where a WHERE clause was expected, so the database rejected the query and the plot came back empty without a word. Creating, saving and loading them is unchanged
