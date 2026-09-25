@@ -1095,9 +1095,9 @@ class TestLoadEventPlotData:
         """
         ``get_single_event_data(channel, index, data_filter=None, rectify=False, ...)``.
 
-        The trailing ``False`` is **rectify**, not ``raw_data``. The emit's argument
-        tuple said only ``False`` and the method has two boolean parameters, so this is
-        written from the signature rather than from the call site.
+        The trailing ``False`` is **rectify**. The emit's argument tuple said only
+        ``False``, so this is written from the signature rather than from the call
+        site.
         """
         self.answers(controller, get_single_event_data=[{"data": "a"}, {"data": "b"}])
 
