@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 import pytest
+from PySide6.QtWidgets import QMessageBox
 
 from poriscope.plugins.datareaders.ChimeraReader20240501 import ChimeraReader20240501
 from poriscope.plugins.datawriters.SQLiteEventWriter import SQLiteEventWriter
@@ -257,3 +258,125 @@ def test_the_committed_events_are_attributed_to_the_right_channel(
         connection.close()
 
     assert channels == {channel}
+
+
+def find_events_between(
+    triad: Triad, qtbot: Any, channel: int, start: float, end: float
+) -> int:
+    """
+    Re-run the tab's event finder over part of the recording, answering Yes to restart.
+
+    :param triad: the tab under test
+    :type triad: Triad
+    :param qtbot: pytest-qt's fixture, used to wait on the worker
+    :type qtbot: Any
+    :param channel: the channel to search
+    :type channel: int
+    :param start: start of the range, in seconds
+    :type start: float
+    :param end: end of the range, in seconds
+    :type end: float
+    :return: how many events the finder now holds for the channel
+    :rtype: int
+    """
+    view = triad.tab_view
+    view.analysis_time_limits[FINDER] = {channel: {"start": start, "end": end}}
+    view.handle_parameter_change(
+        "rawdatacontrols",
+        "find_events",
+        (
+            {
+                "eventfinder": FINDER,
+                "filter": "No Filter",
+                "channel": [str(channel)],
+            },
+        ),
+    )
+    qtbot.waitUntil(
+        lambda: not triad.tab_controller.model.workers.get(FINDER),
+        timeout=120_000,
+    )
+    return int(
+        triad.tab_controller.model.call(
+            "MetaEventFinder", FINDER, "get_num_events_found", channel
+        )
+    )
+
+
+def event_starts(path: Path) -> List[int]:
+    """
+    List every stored event start, closing the connection after.
+
+    :param path: the events database
+    :type path: Path
+    :return: the ``absolute_start`` of each stored event, in order
+    :rtype: List[int]
+    """
+    connection = sqlite3.connect(str(path))
+    try:
+        rows = connection.execute(
+            "SELECT absolute_start FROM events ORDER BY absolute_start"
+        ).fetchall()
+    finally:
+        connection.close()
+    return [row[0] for row in rows]
+
+
+@pytest.mark.timeout(300)
+def test_recommitting_a_channel_replaces_its_events_once_confirmed(
+    raw_data_tab: Triad, qtbot, mocker
+) -> None:
+    """
+    A second commit into a held channel asks, and Yes replaces the old events.
+
+    It used to keep them: ``INSERT OR IGNORE`` on the channel and on each event id
+    left the first run in the file, so re-finding a subset and committing again
+    reported "Wrote 0/N" and changed nothing - or, when the new run found more,
+    kept the old events and added the rest.
+    """
+    channel = raw_data_tab.channel
+    question = mocker.patch(
+        "poriscope.plugins.analysistabs.RawDataView.QMessageBox.question",
+        return_value=QMessageBox.Yes,
+    )
+    find_events(raw_data_tab, qtbot, [channel])
+    commit_events(raw_data_tab, qtbot, [channel], raw_data_tab.expected_events)
+    first = event_starts(raw_data_tab.out_db)
+
+    kept = find_events_between(raw_data_tab, qtbot, channel, 0.0, 1.0)
+    assert 0 < kept < raw_data_tab.expected_events, "the subset search is not a subset"
+    commit_events(raw_data_tab, qtbot, [channel], kept)
+
+    assert event_starts(raw_data_tab.out_db) == first[:kept]
+    assert any(
+        "already holds events" in call.args[2] for call in question.call_args_list
+    ), "the commit did not ask before replacing"
+
+
+@pytest.mark.timeout(300)
+def test_declining_the_recommit_leaves_the_file_as_it_was(
+    raw_data_tab: Triad, qtbot, mocker
+) -> None:
+    """No keeps the channel's events and commits nothing."""
+    channel = raw_data_tab.channel
+    find_events(raw_data_tab, qtbot, [channel])
+    commit_events(raw_data_tab, qtbot, [channel], raw_data_tab.expected_events)
+    # The rows landing is not the first commit's worker finishing; wait for that too,
+    # so the check below sees only what the declined commit staged.
+    workers = raw_data_tab.tab_controller.model.workers
+    qtbot.waitUntil(lambda: not workers.get(WRITER), timeout=120_000)
+    before = event_starts(raw_data_tab.out_db)
+
+    mocker.patch(
+        "poriscope.plugins.analysistabs.RawDataView.QMessageBox.question",
+        return_value=QMessageBox.No,
+    )
+    raw_data_tab.tab_view.handle_parameter_change(
+        "rawdatacontrols",
+        "commit_events",
+        ({"writer": WRITER, "channel": [str(channel)]},),
+    )
+
+    # Nothing is staged on a No, so there is no worker to wait for.
+    assert not workers.get(WRITER)
+    assert event_starts(raw_data_tab.out_db) == before

@@ -522,3 +522,85 @@ class TestHandlePlotEvents:
         assert list(drawn_indices) == [0, 2]
         assert drawn_times is times
         assert [float(entry[0]) for entry in drawn_data] == [1.0, 3.0]
+
+
+class TestCommitPrompt:
+    """
+    The View half of a commit: ask which channels the output already holds, then confirm.
+
+    Committing into a channel the output already holds used to keep the old events
+    silently. The writer now refuses unless told to overwrite, so the View asks first,
+    one channel at a time as the event-finding prompt does - declining skips only that
+    channel - and flags a stored experiment name that differs from the one being
+    committed, for the user to decide on.
+    """
+
+    QUESTION = "poriscope.plugins.analysistabs.RawDataView.QMessageBox.question"
+
+    def test_a_commit_asks_for_the_channels_statuses_first(
+        self, view: RawDataView
+    ) -> None:
+        """Nothing is committed until the output has been asked about."""
+        view._extract_commit_event_parameters = MagicMock(return_value=("W1", 0))
+
+        view._handle_commit_events({"writer": "W1", "channel": ["0"]})
+
+        view.commit_statuses_requested.emit.assert_called_once_with("W1", [0])
+        view.commit_requested.emit.assert_not_called()
+
+    def test_a_channel_the_output_does_not_hold_is_committed_without_asking(
+        self, view: RawDataView, mocker
+    ) -> None:
+        """No prompt where there is nothing to replace."""
+        question = mocker.patch(self.QUESTION)
+
+        view.set_commit_statuses("W1", [(0, None)], "exp", "out.sqlite3")
+
+        question.assert_not_called()
+        view.commit_requested.emit.assert_called_once_with("W1", [0], True)
+
+    def test_declining_skips_only_that_channel(self, view: RawDataView, mocker) -> None:
+        """No keeps that channel's events; the other channels still commit."""
+        mocker.patch(self.QUESTION, side_effect=[QMessageBox.No, QMessageBox.Yes])
+
+        view.set_commit_statuses(
+            "W1", [(0, "exp"), (1, "exp"), (2, None)], "exp", "out.sqlite3"
+        )
+
+        view.commit_requested.emit.assert_called_once_with("W1", [1, 2], True)
+        assert any(
+            "channel 0" in call.args[0]
+            for call in view.add_text_to_display.emit.call_args_list
+        ), "declining left no message on the status panel"
+
+    def test_declining_every_channel_commits_nothing(
+        self, view: RawDataView, mocker
+    ) -> None:
+        """An empty approval list is not a commit."""
+        mocker.patch(self.QUESTION, return_value=QMessageBox.No)
+
+        view.set_commit_statuses("W1", [(0, "exp")], "exp", "out.sqlite3")
+
+        view.commit_requested.emit.assert_not_called()
+
+    def test_a_different_stored_experiment_is_flagged_in_the_prompt(
+        self, view: RawDataView, mocker
+    ) -> None:
+        """The user decides, but only after being told the names do not match."""
+        question = mocker.patch(self.QUESTION, return_value=QMessageBox.Yes)
+
+        view.set_commit_statuses("W1", [(0, "old_run")], "new_run", "out.sqlite3")
+
+        text = question.call_args[0][2]
+        assert "old_run" in text and "new_run" in text
+        view.commit_requested.emit.assert_called_once_with("W1", [0], True)
+
+    def test_a_matching_experiment_is_not_flagged(
+        self, view: RawDataView, mocker
+    ) -> None:
+        """The warning is for a conflict, not for every replacement."""
+        question = mocker.patch(self.QUESTION, return_value=QMessageBox.Yes)
+
+        view.set_commit_statuses("W1", [(0, "exp")], "exp", "out.sqlite3")
+
+        assert "experiment" not in question.call_args[0][2].lower()

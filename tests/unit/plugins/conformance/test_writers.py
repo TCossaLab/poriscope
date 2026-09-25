@@ -199,6 +199,133 @@ def test_writer_releases_its_output_file(committed) -> None:
         pytest.fail(f"output still locked after close_resources: {exc}")
 
 
+def event_starts(path: Path, channel: int) -> List[int]:
+    """
+    List the stored event starts for one channel, closing the connection after.
+
+    :param path: Path to the SQLite file to inspect.
+    :type path: Path
+    :param channel: The physical channel to list.
+    :type channel: int
+    :return: The ``absolute_start`` of each stored event, in order.
+    :rtype: List[int]
+    """
+    connection = sqlite3.connect(str(path))
+    try:
+        rows = connection.execute(
+            "SELECT absolute_start FROM events WHERE channel_id = ? ORDER BY event_id",
+            (channel,),
+        ).fetchall()
+    finally:
+        connection.close()
+    return [row[0] for row in rows]
+
+
+@pytest.mark.conformance
+def test_a_second_commit_into_a_held_channel_is_refused(committed) -> None:
+    """
+    Committing a channel the output already holds fails loudly and changes nothing.
+
+    The writer used to accept the commit, silently keep the old events through
+    ``INSERT OR IGNORE`` and report "Wrote 0/N" - or, with more events the second
+    time, keep the old ones and add the rest. Without ``overwrite`` there is no way to
+    tell which run the file should reflect, so it refuses.
+
+    :param committed: Writer and output path from the fixture.
+    :type committed: tuple
+    """
+    writer, out_path = committed
+    before = event_starts(out_path, CHIMERA_CHANNEL)
+
+    with pytest.raises(ValueError, match="already holds events"):
+        for _progress in writer.commit_events(CHIMERA_CHANNEL):
+            pass
+
+    assert event_starts(out_path, CHIMERA_CHANNEL) == before
+    assert writer.written[CHIMERA_CHANNEL] == 0, "a refused commit reports writes"
+
+
+@pytest.mark.conformance
+def test_overwrite_replaces_only_that_channel(committed) -> None:
+    """
+    ``overwrite=True`` replaces the channel's events and leaves other channels alone.
+
+    Another channel's row is planted by hand, standing in for a second run filed in
+    the same file, so a reset that deleted more than its own channel would show.
+
+    :param committed: Writer and output path from the fixture.
+    :type committed: tuple
+    """
+    writer, out_path = committed
+    other = CHIMERA_CHANNEL + 100
+    connection = sqlite3.connect(str(out_path))
+    try:
+        connection.execute("PRAGMA foreign_keys = ON;")
+        connection.execute(
+            "INSERT INTO channels (name, channel_id, voltage, thickness, "
+            "conductivity, samplerate, data_format) VALUES ('other', ?, 1, 1, 1, 1, '<f8')",
+            (other,),
+        )
+        channel_db_id = connection.execute(
+            "SELECT id FROM channels WHERE channel_id = ?", (other,)
+        ).fetchone()[0]
+        connection.execute(
+            "INSERT INTO events (channel_db_id, channel_id, event_id, absolute_start, "
+            "padding_before, padding_after, baseline_mean, baseline_std, raw_data) "
+            "VALUES (?, ?, 0, 7, 0, 0, 0, 0, x'00')",
+            (channel_db_id, other),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+    before = event_starts(out_path, CHIMERA_CHANNEL)
+
+    for _progress in writer.commit_events(CHIMERA_CHANNEL, overwrite=True):
+        pass
+
+    assert event_starts(out_path, CHIMERA_CHANNEL) == before
+    assert writer.written[CHIMERA_CHANNEL] == CHIMERA_EVENTS
+    assert event_starts(out_path, other) == [7], "overwrite reached another channel"
+
+
+@pytest.mark.conformance
+@pytest.mark.parametrize("writer_cls", WRITERS, ids=[cls.__name__ for cls in WRITERS])
+def test_the_committed_experiment_is_reported_without_creating_a_file(
+    writer_cls, chimera_log_path, tmp_path
+) -> None:
+    """
+    A writer names the experiment a channel is filed under, and None before a commit.
+
+    The question is asked before anything is written, so asking must not create the
+    output file.
+
+    :param writer_cls: The writer class under test.
+    :type writer_cls: Type[MetaWriter]
+    :param chimera_log_path: Path to the synthetic Chimera recording.
+    :type chimera_log_path: str
+    :param tmp_path: Per-test temporary directory.
+    :type tmp_path: pathlib.Path
+    """
+    reader = build_reader(chimera_log_path)
+    finder = build_event_finder(ClassicBlockageFinder, reader)
+    for _progress in finder.find_events(CHIMERA_CHANNEL, [(0.0, 0.0)], 3.0, identity):
+        pass
+    out_path = tmp_path / "fresh.sqlite3"
+    writer = build_writer(writer_cls, finder, str(out_path))
+    try:
+        assert writer.get_committed_experiment_name(CHIMERA_CHANNEL) is None
+        assert not out_path.exists(), "asking created the output file"
+
+        for _progress in writer.commit_events(CHIMERA_CHANNEL):
+            pass
+        assert writer.get_committed_experiment_name(CHIMERA_CHANNEL) == "conformance"
+        assert writer.get_committed_experiment_name(CHIMERA_CHANNEL + 1) is None
+    finally:
+        writer.close_resources()
+        finder.close_resources()
+        reader.close_resources()
+
+
 @pytest.mark.conformance
 @pytest.mark.parametrize("writer_cls", WRITERS, ids=[cls.__name__ for cls in WRITERS])
 def test_a_stored_trace_is_the_readers_scaled_data(writer_cls, tmp_path) -> None:

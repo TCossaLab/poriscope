@@ -20,6 +20,8 @@
 
 #### Data plugin API:
 
+* **Breaking: `MetaWriter.commit_events` refuses to write into a channel its output already holds** unless called with `overwrite=True`, which replaces that channel's events; a writer reports what it holds through the new `get_committed_experiment_name`
+
 * **Breaking: `MetaEventFinder.get_empty_settings` now declares `Threshold`**, with no unit, because the base event-finding loop reads it - an event finder built directly on `MetaEventFinder` used to fail with a `KeyError` on its first chunk; a subclass sets the unit (`ClassicBlockageFinder` pA, `ThresholdBlockageFinder` σ), and one that redeclared the whole entry still works
 
 * **Breaking: a writer plugin's `_write_data` takes the event dict instead of thirteen positional parameters, and its data is always in pA** - its `raw_data` parameter, the event's `scale` and `offset` keys and `MetaWriter._rescale_data_to_adc` are removed, as are `MetaEventFinder.get_dtype` and the `raw_data` argument of `get_single_event_data`/`get_event_data_generator`, since events no longer reach a writer unscaled
@@ -131,6 +133,8 @@
 * Fixed the Raw Data and Event Analysis tabs failing with an unhandled error, rather than reporting it, when an action arrived with no channel selection
 
 #### Raw Data:
+
+* **Fixed committing events into a database that already held them for a channel silently keeping the old events**, or mixing both runs' events when the second found more; the tab now asks before replacing a channel's events, warns when they belong to a different experiment, and skips only the channels you decline
 
 * **Fixed the Raw Data tab's event plots showing the wrong events**: if the tab could not read an event finder's state, it silently reused the previous channel's answers — including the event count that decides which event indices are in range — and an event that failed to load was replaced by the previous one under the wrong index
 

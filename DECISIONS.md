@@ -10,6 +10,28 @@ which ran through August 2026 and is complete. The step numbers only date the de
 
 ---
 
+## 2026-09-25 - A re-commit is confirmed per channel and keyed on channel alone
+
+**Context.** A second commit into an events file that already held a channel kept the old
+events through `INSERT OR IGNORE`. The fix asks first, then resets the channel.
+
+**Decision** (Kyle, 2026-09-25). The writer refuses a held channel unless `overwrite=True`;
+the Raw Data tab asks once per held channel (No skips only that channel, as the
+event-finding prompt does) and passes `overwrite`. A held channel is matched on channel
+alone: `channels.channel_id` is unique and nothing downstream reads the experiment `name`,
+so a differing name is flagged in the question for the user to decide, not treated as a
+separate slot. `DontConfirmOverwrite` stays on the file picker - no file is replaced, and
+`SQLiteDBWriter` appends to one on purpose.
+
+**Evidence.** Commit 10, re-find 5, commit reported "Wrote 0/5" and kept the 10; a later,
+larger run stored some events twice and lost others. `reset_channel` already cascades to
+the channel's events and leaves other channels intact.
+
+**Revisit if** the events loader starts distinguishing experiments - then one file could
+hold the same channel for two experiments and the key would need the name.
+
+---
+
 ## 2026-09-25 - The raw-data path is removed: every read and every stored event is in pA
 
 **Context.** Readers, finders and writers carried a second, unscaled path: `load_raw_data`,

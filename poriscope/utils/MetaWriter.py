@@ -168,17 +168,44 @@ class MetaWriter(BaseDataPlugin):
 
     @serialize_channels
     @log(logger=logger)
-    def commit_events(self, channel: int) -> Generator[float, Optional[bool], None]:
+    def commit_events(
+        self, channel: int, overwrite: bool = False
+    ) -> Generator[float, Optional[bool], None]:
         """
         Create a generator that will loop through events in self.eventfinder in channel
         and call self._write_data() to commit it to file
 
+        If the output already holds ``channel`` (see
+        :meth:`get_committed_experiment_name`), the commit is refused with
+        ``ValueError`` unless ``overwrite`` is True, in which case the channel is reset
+        first. Writing into it anyway would mix two runs' events in one channel. The
+        Raw Data tab asks the user before passing ``overwrite``.
+
         :param channel: the index of the channel to commit
         :type channel: int
+        :param overwrite: replace the channel's events if the output already holds it
+        :type overwrite: bool
         :yield: the progress of the interator, normalized to [0,1]
         :ytype: float
         """
-        yield from self._commit_events(channel)
+        yield from self._commit_events(channel, overwrite)
+
+    @log(logger=logger)
+    def get_committed_experiment_name(self, channel: int) -> Optional[str]:
+        """
+        Name the experiment the output already holds ``channel`` under, if it does.
+
+        Asked before a commit, so it must not create the output file. The base returns
+        None, meaning "this writer's output never already holds a channel"; override it
+        in a writer that can write into an existing file, so :meth:`commit_events` can
+        refuse to mix two runs in one channel.
+
+        :param channel: the channel to look up
+        :type channel: int
+        :return: the stored experiment name, or None if the output does not hold the channel
+        :rtype: Optional[str]
+        """
+        return None
 
     @log(logger=logger)
     def force_serial_channel_operations(self) -> bool:
@@ -343,13 +370,18 @@ class MetaWriter(BaseDataPlugin):
     # private API continued, should implemented by subclasses, but has default behavior if it is not needed
 
     @log(logger=logger)
-    def _commit_events(self, channel: int) -> Generator[float, Optional[bool], None]:
+    def _commit_events(
+        self, channel: int, overwrite: bool = False
+    ) -> Generator[float, Optional[bool], None]:
         """
         Create a generator that will loop through events in self.eventfinder in channel
         and call self._write_data() to commit it to file
 
         :param channel: the index of the channel to commit
         :type channel: int
+        :param overwrite: replace the channel's events if the output already holds it
+        :type overwrite: bool
+        :raises ValueError: if the output already holds the channel and ``overwrite`` is False
         :raises Exception: if the output file cannot be opened, if writing channel metadata fails unexpectedly, or if an unrecoverable error occurs while iterating events
         :yield: the progress of the interator, normalized to [0,1]
         :ytype: float
@@ -371,6 +403,10 @@ class MetaWriter(BaseDataPlugin):
                     yield current, True  # True means this is the last item
                     break
 
+        # Reset before anything can raise, so a refused commit reports what it wrote
+        # (nothing) rather than the previous commit's tally.
+        self.written[channel] = 0
+        self.rejected[channel] = {}
         try:
             self._initialize_database(channel)
         except Exception:
@@ -389,6 +425,18 @@ class MetaWriter(BaseDataPlugin):
             self.close_resources(channel)
             raise
 
+        # After _initialize_database, which migrates an existing file's triggers before
+        # anything is deleted from it.
+        if self.get_committed_experiment_name(channel) is not None:
+            if not overwrite:
+                self.close_resources(channel)
+                raise ValueError(
+                    f"Channel {channel} already holds events in "
+                    f"{self.get_output_file_name()}; commit it with overwrite=True to "
+                    "replace them, or choose a new output file"
+                )
+            self.reset_channel(channel)
+
         try:
             self._write_channel_metadata(channel)
         except Exception as e:
@@ -399,8 +447,6 @@ class MetaWriter(BaseDataPlugin):
             self.close_resources(channel)
             raise
         try:
-            self.written[channel] = 0
-            self.rejected[channel] = {}
             num_events = self.eventfinder.get_num_events_found(channel)
             if num_events == 0:
                 self.logger.info(
@@ -446,6 +492,11 @@ class MetaWriter(BaseDataPlugin):
                         else:
                             if success:
                                 self.written[channel] += 1
+                            else:
+                                reason = "Event not stored by the writer"
+                                self.rejected[channel][reason] = (
+                                    self.rejected[channel].get(reason, 0) + 1
+                                )
 
                     except StopIteration:
                         break

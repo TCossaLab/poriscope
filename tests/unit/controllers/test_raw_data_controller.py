@@ -462,11 +462,11 @@ class TestCommitEvents:
         """
         controller.model.call.side_effect = ["gen0", "gen1"]
 
-        controller.commit_events("W1", [0, 1])
+        controller.commit_events("W1", [0, 1], True)
 
         assert controller.model.call.call_args_list == [
-            mocker.call("MetaWriter", "W1", "commit_events", 0),
-            mocker.call("MetaWriter", "W1", "commit_events", 1),
+            mocker.call("MetaWriter", "W1", "commit_events", 0, overwrite=True),
+            mocker.call("MetaWriter", "W1", "commit_events", 1, overwrite=True),
         ]
         assert controller.model.set_generator.call_args_list == [
             mocker.call("gen0", 0, "W1", "MetaWriter"),
@@ -483,7 +483,7 @@ class TestCommitEvents:
         """
         controller.model.call.side_effect = ["gen0", "gen1"]
 
-        controller.commit_events("W1", [0, 1])
+        controller.commit_events("W1", [0, 1], False)
 
         controller.model.run_generators.assert_called_once_with("W1")
 
@@ -503,7 +503,7 @@ class TestCommitEvents:
         """
         controller.model.call.side_effect = ["gen0", RuntimeError("boom"), "gen2"]
 
-        controller.commit_events("W1", [0, 1, 2])
+        controller.commit_events("W1", [0, 1, 2], False)
 
         registered = [
             call.args[1] for call in controller.model.set_generator.call_args_list
@@ -522,9 +522,63 @@ class TestCommitEvents:
         """
         controller.model.call.side_effect = RuntimeError("writer failed")
 
-        controller.commit_events("W1", [0])
+        controller.commit_events("W1", [0], False)
 
         controller.model.set_generator.assert_not_called()
+
+
+class TestCommitStatuses:
+    """The first half of a commit: which channels the output already holds, and as what."""
+
+    def test_each_channel_is_looked_up_and_handed_back_with_the_new_name(
+        self, controller: RawDataController, mock_view: MagicMock, mocker: MockerFixture
+    ) -> None:
+        """
+        One look-up per channel, and the writer's own name and file travel with them.
+
+        The View needs the name being committed to flag a conflict, and the file to say
+        where the events are; carrying both back means it holds nothing between halves.
+
+        :param controller: Controller under test.
+        :param mock_view: Mocked raw data view.
+        :param mocker: Pytest-mock fixture.
+        """
+        settings = {
+            "Experiment Name": {"Value": "new_run"},
+            "Output File": {"Value": "out.sqlite3"},
+        }
+        controller.model.call.side_effect = [settings, "old_run", None]
+
+        controller.request_commit_statuses("W1", [0, 1])
+
+        assert controller.model.call.call_args_list == [
+            mocker.call("MetaWriter", "W1", "get_raw_settings"),
+            mocker.call("MetaWriter", "W1", "get_committed_experiment_name", 0),
+            mocker.call("MetaWriter", "W1", "get_committed_experiment_name", 1),
+        ]
+        mock_view.set_commit_statuses.assert_called_once_with(
+            "W1", [(0, "old_run"), (1, None)], "new_run", "out.sqlite3"
+        )
+
+    def test_a_channel_that_cannot_be_looked_up_is_dropped(
+        self, controller: RawDataController, mock_view: MagicMock
+    ) -> None:
+        """
+        Dropped rather than guessed at, so it is never committed on a wrong assumption.
+
+        :param controller: Controller under test.
+        :param mock_view: Mocked raw data view.
+        """
+        settings = {
+            "Experiment Name": {"Value": "exp"},
+            "Output File": {"Value": "out.sqlite3"},
+        }
+        controller.model.call.side_effect = [settings, RuntimeError("boom"), None]
+
+        controller.request_commit_statuses("W1", [0, 1])
+
+        assert mock_view.set_commit_statuses.call_args[0][1] == [(1, None)]
+        controller.add_text_to_display.emit.assert_called_once()
 
 
 # ------------- trace loading and filtering ---------------------------

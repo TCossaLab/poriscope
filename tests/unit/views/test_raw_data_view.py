@@ -95,6 +95,7 @@ def view(mocker, mock_logging):
     v.psd_data_requested = mocker.Mock()
     v.event_plot_requested = mocker.Mock()
     v.commit_requested = mocker.Mock()
+    v.commit_statuses_requested = mocker.Mock()
     v.calculate_psd = mocker.Mock()
     v.export_plot_data = mocker.Mock()
     v.run_generators = mocker.Mock()
@@ -649,23 +650,23 @@ def test_handle_find_events_none_params_aborts(view, mocker):
 
 
 def test_handle_commit_events_emits_a_typed_intent(view, mocker):
-    """The commit call itself is the Controller's."""
+    """The first half of a commit asks what the output already holds."""
     view._extract_commit_event_parameters = mocker.Mock(return_value=("W1", [0]))
     view._handle_commit_events({"writer": "W1", "channel": ["0"]})
-    view.commit_requested.emit.assert_called_once_with("W1", [0])
+    view.commit_statuses_requested.emit.assert_called_once_with("W1", [0])
 
 
 def test_handle_commit_events_normalises_a_bare_channel(view, mocker):
     """``_start_writer`` used to coerce this; the intent carries a list either way."""
     view._extract_commit_event_parameters = mocker.Mock(return_value=("W1", 0))
     view._handle_commit_events({"writer": "W1", "channel": ["0"]})
-    view.commit_requested.emit.assert_called_once_with("W1", [0])
+    view.commit_statuses_requested.emit.assert_called_once_with("W1", [0])
 
 
 def test_handle_commit_events_extraction_failure(view, mocker):
     view._extract_commit_event_parameters = mocker.Mock(side_effect=ValueError("bad"))
     view._handle_commit_events({})
-    view.commit_requested.emit.assert_not_called()
+    view.commit_statuses_requested.emit.assert_not_called()
     view.logger.error.assert_called()
 
 

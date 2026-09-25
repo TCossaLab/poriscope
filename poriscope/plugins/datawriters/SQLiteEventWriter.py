@@ -249,6 +249,46 @@ class SQLiteEventWriter(MetaWriter):
 
     @log(logger=logger)
     @override
+    def get_committed_experiment_name(self, channel: int) -> Optional[str]:
+        """
+        Name the experiment the output already holds ``channel`` under, if it does.
+
+        ``channels.channel_id`` is unique, so a file holds at most one row per channel
+        and this reads its ``name``. A file that does not exist yet, or has no
+        ``channels`` table, holds no channel - and is not created by asking.
+
+        :param channel: the channel to look up
+        :type channel: int
+        :return: the stored experiment name, or None if the output does not hold the channel
+        :rtype: Optional[str]
+        """
+        output = (
+            self.settings.get("Output File", {}).get("Value") if self.settings else None
+        )
+        if output is None or not Path(output).exists():
+            return None
+        conn: Optional[sqlite3.Connection] = None
+        cursor: Optional[sqlite3.Cursor] = None
+        try:
+            conn = sqlite3.connect(Path(output))
+            cursor = conn.cursor()
+            has_table = cursor.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='channels'"
+            ).fetchone()
+            if has_table is None:
+                return None
+            row = cursor.execute(
+                "SELECT name FROM channels WHERE channel_id = ?", (channel,)
+            ).fetchone()
+            return None if row is None else str(row[0])
+        finally:
+            if cursor:
+                cursor.close()
+            if conn:
+                conn.close()
+
+    @log(logger=logger)
+    @override
     def reset_channel(self, channel: Optional[int] = None) -> None:
         """
         Permanently delete the given channel's row (and, via cascading foreign keys,

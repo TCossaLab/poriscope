@@ -65,11 +65,6 @@ Fix ahead of the registry below: pop without replaying on refusal, replay only f
 
 ### Data integrity and scientific correctness
 
-- **A second commit into an existing events file silently keeps the old events.**
-  Nothing resets the channel (`RawDataController.commit_events:171`); `channels.channel_id` is
-  UNIQUE and events use `INSERT OR IGNORE`; the file dialog passes `DontConfirmOverwrite`
-  (`dict_dialog_widget.py:304`). Commit 10, re-find 5, commit: "Wrote 0/5", no reason given, 10
-  old events remain. More events the second time mixes both runs.
 - **Reader filename globs over-match sibling prefixes.** `prefix*.log` at
   `ChimeraReader20240501:223-225`, and the same shape in `ChimeraReaderVC100:209-212`,
   `TCossaLabABFReader:229-231`, `LegacyElementsReader:113-115`, `ChimeraReader20240101`:
@@ -341,8 +336,8 @@ obvious fix and needs the registry design above to carry it.
   ClassicCUSUM tests mock `_calculate_threshold`, and nothing pins the variance-reset fix.
   Plant levels in `synthetic_events_db` and assert current, blockage and duration within
   tolerance for CUSUM, ClassicCUSUM and NoFitter across SNRs and short events.
-- **Conformance recipes never leave the happy path**: add a re-commit,
-  sibling-prefix files and multi-file sets, which is where the four entries above live.
+- **Conformance recipes never leave the happy path**: add sibling-prefix files and
+  multi-file sets.
 - **`NoFitter` places event edges asymmetrically** (`NoFitter.py:226`): the start walks
   back to the baseline crossing, the end sits `rise_time` before the threshold crossing (838
   against 860 on a 40-sample ramp), so the overlay and `raw_ecd` shift left.

@@ -62,6 +62,7 @@ class RawDataController(MetaEventTabController):
         self.view.psd_data_requested.connect(self.load_psd_data)
         self.view.event_plot_requested.connect(self.load_event_plot_data)
         self.view.commit_requested.connect(self.commit_events)
+        self.view.commit_statuses_requested.connect(self.request_commit_statuses)
         self.view.eventfinding_statuses_requested.connect(
             self.request_eventfinding_statuses
         )
@@ -168,7 +169,56 @@ class RawDataController(MetaEventTabController):
 
     @log(logger=logger)
     @Slot(str, list)
-    def commit_events(self, writer: str, channels: List[int]) -> None:
+    def request_commit_statuses(self, writer: str, channels: List[int]) -> None:
+        """
+        Ask the writer which channels its output already holds, for the View to confirm.
+
+        The first half of a commit, shaped like ``request_eventfinding_statuses``. The
+        writer's own experiment name and output file travel back with the answers, so
+        the View can name a conflicting experiment and the file without holding
+        anything between the two halves. A channel whose status cannot be read is
+        dropped rather than guessed at, so it is never committed on a wrong assumption.
+
+        :param writer: the writer plugin's key
+        :type writer: str
+        :param channels: the channels the user asked to commit
+        :type channels: List[int]
+        :return: None
+        :rtype: None
+        """
+        try:
+            settings = self.model.call("MetaWriter", writer, "get_raw_settings")
+            experiment_name = str(settings["Experiment Name"]["Value"])
+            output_file = str(settings["Output File"]["Value"])
+        except Exception as e:
+            self.logger.error(f"Unable to read the settings of {writer}: {repr(e)}")
+            self.add_text_to_display.emit(
+                f"Unable to read the settings of {writer}, so nothing was committed: {e}",
+                self.__class__.__name__,
+            )
+            return
+        statuses: List[Tuple[int, Optional[str]]] = []
+        for channel in channels:
+            try:
+                stored = self.model.call(
+                    "MetaWriter", writer, "get_committed_experiment_name", channel
+                )
+            except Exception as e:
+                self.logger.error(
+                    f"Unable to read what {writer} holds for channel {channel}: {repr(e)}"
+                )
+                self.add_text_to_display.emit(
+                    f"Unable to read what the output holds for channel {channel}, so "
+                    f"it was skipped: {e}",
+                    self.__class__.__name__,
+                )
+                continue
+            statuses.append((channel, None if stored is None else str(stored)))
+        self.view.set_commit_statuses(writer, statuses, experiment_name, output_file)
+
+    @log(logger=logger)
+    @Slot(str, list, bool)
+    def commit_events(self, writer: str, channels: List[int], overwrite: bool) -> None:
         """
         Hand each channel's found events to a writer and run the resulting generators.
 
@@ -188,13 +238,15 @@ class RawDataController(MetaEventTabController):
         :type writer: str
         :param channels: the channels whose events are being committed
         :type channels: List[int]
+        :param overwrite: replace any of these channels the output already holds
+        :type overwrite: bool
         :return: None
         :rtype: None
         """
         for channel in channels:
             try:
                 generator = self.model.call(
-                    "MetaWriter", writer, "commit_events", channel
+                    "MetaWriter", writer, "commit_events", channel, overwrite=overwrite
                 )
             except Exception as e:
                 self.logger.error(

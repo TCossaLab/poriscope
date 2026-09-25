@@ -142,5 +142,8 @@ Step 4: Writing Events
    The results generated during the eventfinding process are stored in a **SQLite database**, allowing for efficient access, export, and integration with downstream tools.
 
 3. After confirming the settings, **click** the **Commit Events** button to write the selected events to the database.
+   If the database already holds events for a channel, you are asked before they are replaced, and the question
+   warns you when those events were committed under a different experiment name. Answering **No** keeps that
+   channel's events and skips only it; the other channels are still committed.
 
 4. *(Optional)* You can **click** the **Export Plot Data** button at any time to save the data behind the current graph as a `.csv` file.

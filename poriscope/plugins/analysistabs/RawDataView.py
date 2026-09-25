@@ -91,11 +91,16 @@ class RawDataView(MetaEventTabView):
     event_plot_requested = Signal(str, int, list, str)
 
     #: Asks the Controller to commit this tab's found events through a writer, one
-    #: channel at a time. Unlike the other request signals this one expects no answer:
-    #: the plugin hands back a generator, which the Controller registers with the Model
-    #: and runs. There was never an attribute to park it on, so there is no stale read
-    #: here.
-    commit_requested = Signal(str, list)
+    #: channel at a time: writer, channels, overwrite. Unlike the other request signals
+    #: this one expects no answer: the plugin hands back a generator, which the
+    #: Controller registers with the Model and runs. ``overwrite`` is True once the user
+    #: has confirmed replacing any channel the output already held.
+    commit_requested = Signal(str, list, bool)
+
+    #: Asks the Controller which of these channels the writer's output already holds:
+    #: writer, channels. The answer arrives as ``set_commit_statuses``, because the
+    #: prompt that follows belongs to the View and the look-up does not.
+    commit_statuses_requested = Signal(str, list)
 
     #: Asks the Controller which of these channels the finder has already completed.
     #: eventfinder, channels, filter key. The answer arrives as
@@ -704,11 +709,70 @@ class RawDataView(MetaEventTabView):
             return
 
         if writer is not None and channels is not None:
-            # The commit call itself is the Controller's, so this is the whole of the
-            # View's part.
-            self.commit_requested.emit(
+            # Ask what the output already holds before committing anything; the prompt
+            # comes back through set_commit_statuses.
+            self.commit_statuses_requested.emit(
                 writer, channels if isinstance(channels, list) else [channels]
             )
+
+    @log(logger=logger)
+    def set_commit_statuses(
+        self,
+        writer: str,
+        statuses: List[Tuple[int, Optional[str]]],
+        experiment_name: str,
+        output_file: str,
+    ) -> None:
+        """
+        Confirm replacing any channel the output already holds, then ask for the commit.
+
+        One prompt per held channel, as the event-finding prompt does, so declining one
+        keeps that channel's events and skips only it. A stored experiment name that
+        differs from ``experiment_name`` is named in the prompt for the user to decide
+        on: the events file keys on channel alone, so a Yes replaces the other
+        experiment's events.
+
+        :param writer: the writer plugin's key
+        :type writer: str
+        :param statuses: (channel, stored experiment name or None) for each channel that answered
+        :type statuses: List[Tuple[int, Optional[str]]]
+        :param experiment_name: the experiment name this commit would store
+        :type experiment_name: str
+        :param output_file: the writer's output file, for the prompt
+        :type output_file: str
+        :return: None
+        :rtype: None
+        """
+        approved: List[int] = []
+        for channel, stored in statuses:
+            if stored is not None:
+                text = (
+                    f"Channel {channel} already holds events in {output_file}. "
+                    "Delete them and commit this run's events instead?"
+                )
+                if stored != experiment_name:
+                    text += (
+                        f"\n\nWarning: they were committed as experiment "
+                        f"'{stored}', not '{experiment_name}'."
+                    )
+                reply = QMessageBox.question(
+                    self,
+                    "Confirmation",
+                    text,
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.No,
+                )
+                if reply == QMessageBox.No:
+                    self.add_text_to_display.emit(
+                        f"Did not commit channel {channel}; its events already in "
+                        f"{output_file} were kept",
+                        self.__class__.__name__,
+                    )
+                    continue
+            approved.append(channel)
+
+        if approved:
+            self.commit_requested.emit(writer, approved, True)
 
     @log(logger=logger)
     def _start_eventfinder(
