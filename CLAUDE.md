@@ -41,8 +41,10 @@ runs ruff (strict, no fix), mypy, and pydoclint.
 disagree wildly and are blind in opposite directions. The hook runs in an isolated
 virtualenv with no project dependencies, so PySide6/numpy/pandas types are all `Any` to
 it; the project venv's `mypy poriscope` sees real types but is a different version and
-reports several hundred errors that are overwhelmingly known noise (191 PySide6
-short-form enum accesses alone - see `DECISIONS.md`). **Always measure with the hook.**
+reports several hundred errors (684 with mypy 2.3.1 on 2026-09-24). About half are known
+noise - 343 PySide6 short-form enum accesses and 41 untyped imports, see `DECISIONS.md` - but
+the rest include real gaps the hook cannot see, such as 81 uses of `self.view`/`self.model`
+that the controller bases never declare. **Always measure with the hook.**
 The hook is scoped `files: ^poriscope/` because `mypy.ini`'s `exclude = ^tests/` governs
 directory discovery only and does not apply to explicitly listed paths.
 
@@ -69,18 +71,22 @@ Two layers using the same MVC pattern recursively: an app-shell triad (`MainMode
 `MainView` / `MainController`) and a plugin system for everything else — analysis tabs and
 data plugins. **Load the `plugin-architecture` skill** before adding, moving or
 restructuring a plugin, a `Meta*` base or an analysis tab; it carries the two plugin
-families, the signal-relay bus, discovery, and the `BaseDataPlugin` settings lifecycle.
+families, discovery, and the `BaseDataPlugin` settings lifecycle.
 Three rules apply regardless:
 
-- Cross-tab behavior goes through the `MetaController` signal relay, never a direct import
-  of another tab's controller.
+- An analysis tab never imports another tab's modules. It reaches data plugins only through
+  `MetaModel.call()`, over the instance map `MainController.update_available_plugins`
+  pushes to every tab; create/edit/delete and plugin-state changes go out on the typed
+  signals `MainController.instantiate_analysis_tab` wires point to point. The old
+  string-dispatched `global_signal` bus is gone - do not rebuild one.
 - New data plugin: **generate it, don't hand-write it** —
   `python scripts/new_plugin.py MetaEventFinder MyFinder` (`--list` shows the eight
-  families and every shipped plugin). Signatures and docstrings are copied from the base
-  verbatim, which is what the compliance test's exact-equality comparison requires.
-- New analysis tab: a Controller/Model/View triad under
-  `poriscope/plugins/analysistabs/`, subclassing `MetaController`/`MetaModel`/`MetaView`
-  and following an existing tab as a template.
+  data-plugin families, the `AnalysisTab` keyword and every shipped plugin). Signatures and
+  docstrings are copied from the base verbatim, which is what the compliance test's
+  exact-equality comparison requires.
+- New analysis tab: generate it too - `python scripts/new_plugin.py AnalysisTab MyTab`
+  writes the Controller/Model/View triad and its controls panel under
+  `poriscope/plugins/analysistabs/`, subclassing `MetaController`/`MetaModel`/`MetaView`.
 
 ## Testing conventions
 
@@ -150,9 +156,10 @@ revisiting.
 - `DECISIONS.md` — why we chose *not* to do something, with the evidence and what
   would make it worth revisiting. Check here before re-litigating a settled question.
 - `future_refactors_and_features.md` — larger speculative work.
-- `refactor_2.0.0.md` — the approved plan for the 2.0.0 refactor: the nine steps, the
-  dependency graph and decisions A–E. **Read it before picking anything out of
-  `future_fixes.md`**, since it claims much of that queue. Delete it once 2.0.0 ships.
+- `refactor_2.0.0.md` — the execution record of the 2.0.0 refactor, which is complete; 2.0.0
+  is held on `develop` for burn-in. It no longer claims anything in `future_fixes.md`. Before
+  deleting it at release, move its method notes into the `planning-and-executing-changes` /
+  `refactoring-codebases` skills and any lasting decisions into `DECISIONS.md`.
 - `fit_fallbacks.md` — every fallback path in `PeakFinder`'s shared double-Gaussian fit
   chain (`fit_threshold` and its callees) and how each classifier responds to a degraded
   fit. **Update it whenever a fallback is added, removed, or changes what it degrades to**,
@@ -173,6 +180,25 @@ re-measured before it can be worked.
 
 Depth belongs in those files, not in this one: this file is loaded in full at the start
 of every session, so it should stay a short list of standing rules.
+
+## Planning and executing work
+
+**Load the `planning-and-executing-changes` skill for most planning and execution tasks** -
+any fix, feature, review, investigation or release step beyond a typo. It holds the general
+method and its lessons; `refactoring-codebases` builds on it for refactors. Five of its rules
+hold in every session:
+
+- Re-derive every inherited claim - plan figures, handoff notes, subagent reports, comments, a
+  user's diagnosis, your own earlier reasoning - before building on it.
+- Green means you read this run's summary line, not an exit code, a progress line or a `tail`;
+  every gate is blind somewhere, so launch the app when app code changed.
+- Never reshape production code to keep a test passing: edit the test, and stub collaborators
+  the way they really behave.
+- Make the smallest change that fixes the defect, and close findings in the piece of work where
+  they surfaced rather than filing them.
+- Code, comments and tests never cite a plan document or its step numbers; describe the mechanism.
+
+A lesson learned here that generalises beyond Poriscope goes into those skills, not this file.
 
 ## General Instructions
 

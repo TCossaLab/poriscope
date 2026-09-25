@@ -1,6 +1,6 @@
 ---
 name: plugin-architecture
-description: How Poriscope's two-layer MVC and plugin system fit together - the app-shell triad, the GUI/analysis-tab and data-plugin families, the signal-relay bus, plugin discovery and the BaseDataPlugin settings lifecycle, and where to add a new data plugin or analysis tab. Load before adding, moving or restructuring a plugin, a Meta* base, or an analysis tab.
+description: How Poriscope's two-layer MVC and plugin system fit together - the app-shell triad, the GUI/analysis-tab and data-plugin families, how a tab reaches data plugins, plugin discovery and the BaseDataPlugin settings lifecycle, and where to add a new data plugin or analysis tab. Load before adding, moving or restructuring a plugin, a Meta* base, or an analysis tab.
 ---
 
 # Architecture
@@ -22,12 +22,15 @@ Poriscope is built from two layers that use the *same* MVC pattern recursively:
 - **GUI/analysis-tab plugins** (`poriscope/plugins/analysistabs/`): each tab (RawData,
   EventAnalysis, Clustering, Metadata, Protein) is its own Controller/Model/View triad
   inheriting `MetaController`/`MetaModel`/`MetaView` (`poriscope/utils/Meta*.py`).
-  `MetaController` wires a `QObject`-based signal bus (`global_signal`,
-  `data_plugin_controller_signal`, etc.) so a tab can invoke methods on *another* tab's
-  plugin or on a data plugin without a direct reference — the call is relayed up
-  through `MainController`, which resolves `(metaclass, subclass_key)` to a live
-  instance. When adding cross-tab behavior, follow this signal-relay pattern rather
-  than importing another tab's controller directly.
+  A tab reaches a data plugin by calling `self.call(metaclass, key, method, ...)` on its
+  Model (`MetaModel.call`), which raises at the call site on failure and refuses `_private`
+  methods. It resolves against the live instance map that `MainController.update_available_plugins`
+  pushes to every tab (`set_plugin_instances`, always before the names). Creating, editing and
+  deleting plugins, plugin-state changes, status text and action history go out on typed
+  signals that `MainController.instantiate_analysis_tab` connects point to point. This replaced
+  the string-dispatched `global_signal` / `data_plugin_controller_signal` bus that used to relay
+  every call up through `MainController`; that bus is gone, so do not rebuild one, and never
+  import another tab's modules.
 
 - **Data plugins** (`poriscope/plugins/{datareaders,datawriters,eventfinders,
   eventfitters,eventloaders,filters,db_loaders,dbwriters}/`): algorithmic/IO plugins,
@@ -68,14 +71,14 @@ Poriscope is built from two layers that use the *same* MVC pattern recursively:
 - New data plugin: **generate it, don't hand-write it.**
   `python scripts/new_plugin.py MetaEventFinder MyFinder` (or with no arguments, to be
   asked) writes a stub in the right folder that already passes ruff, mypy, pydoclint,
-  the compliance suite and the schema check. `--list` shows the eight families and every
-  shipped plugin, since the same command also produces a *variant* of an existing plugin
+  the compliance suite and the schema check. `--list` shows the eight families, the
+  `AnalysisTab` keyword and every shipped plugin, since the same command also produces a *variant* of an existing plugin
   (`--override <methods>`, bodies delegating to `super()`). Signatures and docstrings are
   copied verbatim from the base, which is what the compliance test's exact-equality
   comparison requires. Hand-writing one still works: pick the matching
   `plugins/<category>/` folder, subclass the matching `Meta*` base, implement its
   `__abstractmethods__`, and drop the file in — no registration needed.
-- New analysis tab: add a Controller/Model/View triad under
-  `poriscope/plugins/analysistabs/` following an existing tab (e.g. `Protein*`) as a
-  template, subclassing `MetaController`/`MetaModel`/`MetaView`.
+- New analysis tab: generate it too. `python scripts/new_plugin.py AnalysisTab MyTab`
+  writes the Controller/Model/View triad and its controls panel under
+  `poriscope/plugins/analysistabs/`, subclassing `MetaController`/`MetaModel`/`MetaView`.
 
