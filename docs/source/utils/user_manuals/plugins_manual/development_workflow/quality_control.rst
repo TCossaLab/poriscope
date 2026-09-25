@@ -1183,8 +1183,9 @@ one copy to a shared base. ``.duplication-baseline.json`` records those counts, 
 **The check is exact, not "no worse than".** A rise means duplication was added. A fall is
 a win — and it fails too, so the win is recorded in the same commit that earned it. The
 baseline also records each family's file and function counts, so adding or removing *any*
-method in a measured file fails the check as well, reported as duplication added or removed
-even when the removable count has not moved; rerun ``--update`` in the same commit. Under
+method in a measured file fails the check as well. That failure names the function count
+("the family gained functions") rather than calling it duplication, since the removable
+count has not moved; rerun ``--update`` in the same commit. Under
 a "no worse than" rule the baseline would quietly overstate the duplication still present
 and the slack would accumulate unnoticed. If your change legitimately removed duplication,
 rerun with ``--update`` and commit the new baseline alongside it.

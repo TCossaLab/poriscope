@@ -408,6 +408,17 @@ def compare(
                 continue
             if was is None or now is None:
                 problems.append(f"{family}.{key}: baseline {was!r}, measured {now!r}")
+            elif key == "functions":
+                # A changing function count is not itself duplication: adding an
+                # ordinary method raises it, deleting one lowers it. It is still
+                # checked exactly, because `_divergence_warning` reads it to tell a
+                # promotion from a copy edited into divergence, so say what moved.
+                direction = "gained" if now > was else "lost"
+                problems.append(
+                    f"{family}.{key}: {was} -> {now}, the family {direction} functions "
+                    f"- expected when a method is added or removed; rerun with "
+                    f"--update in the same commit to record it"
+                )
             elif now > was:
                 problems.append(
                     f"{family}.{key}: rose from {was} to {now} - duplication was added"

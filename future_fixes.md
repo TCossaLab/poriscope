@@ -140,11 +140,11 @@ Fix ahead of the registry below: pop without replaying on refusal, replay only f
 
 ### Types, tests and CI
 
-- **The duplication ratchet fails any new method as added duplication**:
-  `measure_duplication.py:404-419` has no `functions` special case (the complexity ratchet got
-  one, `measure_shell_complexity.py:397`), so one trivial method in `MetadataController`
-  fails with "rose from 68 to 69 - duplication was added". Conversely a new plugin file is never
-  measured, since the family lists are explicit.
+- **The duplication ratchet never measures most plugin files**: its family lists are explicit,
+  so every file in `datawriters/`, `db_loaders/`, `dbwriters/`, `eventloaders/` and `filters/`,
+  and `views/widgets/walkthrough.py`/`walkthrough_mixin.py` (25 functions, 0 removable today),
+  is invisible to it, as is any new plugin. Check that every `.py` in a measured directory is
+  listed or explicitly excluded (the three owner-held fitters).
 - **`ci-internal-pr.yml:129` runs `--maxfail=1 --disable-warnings`**, unlike every other
   workflow, hiding every failure after the first.
 - **The post-merge wavelet hook reaches deep into a contributor's machine**: without

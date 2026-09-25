@@ -306,6 +306,36 @@ class TestBaselineComparison:
         assert any("edited into divergence" in p for p in problems)
         assert any("no function was deleted" in p for p in problems)
 
+    def test_a_new_function_is_not_reported_as_added_duplication(
+        self, mod: types.ModuleType
+    ) -> None:
+        """
+        A family gaining a function is not a regression, and the message says so.
+
+        Adding an ordinary method raises the function count and leaves the removable
+        lines alone. The count is still checked exactly - the divergence check reads
+        it, so it has to be kept current - but calling the change "duplication was
+        added" sends the author looking for a duplicate that does not exist.
+        """
+        problems: List[str] = mod.compare(
+            self._counts(10, functions=11), self._counts(10, functions=10)
+        )
+        assert len(problems) == 1
+        assert "duplication was added" not in problems[0]
+        assert "gained functions" in problems[0]
+        assert "--update" in problems[0]
+
+    def test_added_duplication_is_still_reported_alongside_new_functions(
+        self, mod: types.ModuleType
+    ) -> None:
+        """Pasting in a duplicate raises both counts, and the lines still say so."""
+        problems: List[str] = mod.compare(
+            self._counts(12, functions=12), self._counts(10, functions=10)
+        )
+        assert any(
+            "removable_lines" in p and "duplication was added" in p for p in problems
+        )
+
     def test_a_new_family_is_reported(self, mod: types.ModuleType) -> None:
         """Measuring a family the baseline does not know about is a disagreement."""
         problems = mod.compare(self._counts(10) | {"*New.py": {}}, self._counts(10))
