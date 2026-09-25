@@ -72,9 +72,10 @@ class CUSUM(MetaEventFitter):
 
         - ``Step Size`` (pA) - the smallest change in current the detector should call
           a sublevel transition, in absolute current.
-        - ``Sensitivity`` - how many standard deviations of evidence the cumulative sum
-          must accumulate before it declares a change point; higher is more
-          conservative.
+        - ``Sensitivity`` - divides the detection threshold that CUSUM chooses from the
+          event's length and the step size. 1, the default and the minimum, is the most
+          conservative; higher values call smaller or shorter steps, at the cost of more
+          false transitions.
         - ``Rise Time`` (us) - how much of the signal either side of a transition to
           exclude from the level averages, so a finite edge does not bias them.
         - ``Max Sublevels`` - the largest number of sublevels an event may be fitted
@@ -392,7 +393,7 @@ class CUSUM(MetaEventFitter):
         sublevel_starts: List[Any],
     ) -> Dict[str, npt.NDArray[Numeric]]:
         """
-        Build a dict of lists of sublevel metadata with whatever arbitrary keys you want to consider in your event fitter. Every list must have exactly the same length as the sublevel_starts list. Note that 'index' is already handled in the base class
+        Build a dict of lists of sublevel metadata with whatever arbitrary keys you want to consider in your event fitter. Every list must have one value per sublevel - one fewer than the entries in sublevel_starts, whose last entry is the terminal boundary. Note that 'index' is already handled in the base class
 
         :param data: an array of data from which to extract the locations of sublevel transitions
         :type data: npt.NDArray[np.float64]

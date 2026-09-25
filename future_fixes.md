@@ -43,14 +43,6 @@ docstring/comment-only, so no tests and no changelog entry:
 
 ### Data integrity and scientific correctness
 
-- **CUSUM `Sensitivity` is documented backwards.** `CUSUM.py:76-77` and
-  `event_analysis_tab.rst:68` say "higher is more conservative"; `:824` returns
-  `threshold / Sensitivity`. At a 2σ step, Sensitivity 1 gave 3 levels in 30/30 events and
-  Sensitivity 5 gave 6-26.
-- **The fitter contract's own docstring example is rejected by the base.**
-  `MetaEventFitter._locate_sublevel_transitions`'s example (`:936`) returns 3 entries with no
-  terminal index; `fit_events` rejects 3 or fewer as "Too Few Levels" (`:653`) and expects
-  `len(sublevel_starts) - 1` values per key (`:690`), while `:959` says "exactly equal".
 - **`NoFitter` passes per-event state through `self.rise_time`** (`NoFitter.py:228`
   written, `:268` read) on an instance shared by parallel channel threads: 30 of 3,000 events
   took another channel's `sublevel_stdev` with the switch interval forced to 10 µs, 0 at 5 ms.

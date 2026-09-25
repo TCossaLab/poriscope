@@ -10,6 +10,22 @@ which ran through August 2026 and is complete. The step numbers only date the de
 
 ---
 
+## 2026-09-25 - CUSUM Sensitivity is documented as it works, not inverted
+
+**Context.** `Sensitivity` was documented as "higher is more conservative", but CUSUM
+returns `threshold / Sensitivity`, so higher detects more transitions.
+
+**Decision** (Kyle, 2026-09-25). Fix the documentation, not the setting: the name already
+describes the behaviour, the range (1-5, default 1) makes the default the most conservative,
+and inverting it would silently change every saved session and configuration.
+
+**Evidence.** At a 2σ step over 30 events, Sensitivity 1 fitted the planted four sublevels
+in 30/30, 3 in 16/30, and 5 in 0/30 (8-34 sublevels each).
+
+**Revisit if** users read the name the other way round in practice.
+
+---
+
 ## 2026-09-25 - Quitting saves the session only when something is open
 
 **Context.** Quit always flushed the session, so quitting after Reset Session - or straight

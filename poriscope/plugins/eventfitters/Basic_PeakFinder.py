@@ -680,7 +680,7 @@ class Basic_PeakFinder(MetaEventFitter):
         sublevel_starts: List[Any],
     ) -> Dict[str, npt.NDArray[Numeric]]:
         """
-        Build a dict of lists of sublevel metadata with whatever arbitrary keys you want to consider in your event fitter. Every list must have exactly the same length as the sublevel_starts list. Note that 'index' is already handled in the base class
+        Build a dict of lists of sublevel metadata with whatever arbitrary keys you want to consider in your event fitter. Every list must have one value per sublevel - one fewer than the entries in sublevel_starts, whose last entry is the terminal boundary. Note that 'index' is already handled in the base class
 
         :param data: an array of data from which to extract the locations of sublevel transitions
         :type data: npt.NDArray[np.float64]

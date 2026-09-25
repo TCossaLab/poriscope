@@ -65,7 +65,7 @@ Step 3: Fit Events
 
 - ``Name``: Custom name for the fitter instance.
 - ``Step Size`` (pA): Minimum change in current to detect (in σ for ``ClassicCUSUM``).
-- ``Sensitivity``: How many standard deviations of evidence are needed to declare a step; higher is more conservative.
+- ``Sensitivity``: Divides the detection threshold CUSUM picks from the event length and step size; 1 (the default and minimum) is the most conservative, and higher values detect smaller or shorter steps at the cost of more false transitions.
 - ``Rise Time`` (µs): Expected duration of a step change.
 - ``Max Sublevels``: Maximum number of levels to detect per event.
 

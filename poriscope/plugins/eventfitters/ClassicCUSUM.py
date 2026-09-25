@@ -70,8 +70,10 @@ class ClassicCUSUM(CUSUM):
         - ``Step Size`` (σ) - the smallest change the detector should call a sublevel
           transition, **in baseline standard deviations** rather than the pA ``CUSUM``
           takes. That is the only difference between the two fitters.
-        - ``Sensitivity`` - how many standard deviations of evidence the cumulative sum
-          must accumulate before it declares a change point.
+        - ``Sensitivity`` - divides the detection threshold that CUSUM chooses from the
+          event's length and the step size. 1, the default and the minimum, is the most
+          conservative; higher values call smaller or shorter steps, at the cost of more
+          false transitions.
         - ``Rise Time`` (us) - how much of the signal either side of a transition to
           exclude from the level averages.
         - ``Max Sublevels`` - the largest number of sublevels an event may be fitted

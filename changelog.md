@@ -402,6 +402,10 @@
 
 ### Documentation:
 
+* **Fixed CUSUM's `Sensitivity` being documented backwards**: it divides the detection threshold, so a higher value detects more transitions, not fewer; 1, the default, is the most conservative
+
+* Fixed the event-fitter contract's docstrings, which described a sublevel list the base class rejects: it ends with the terminal boundary `len(data)`, and each sublevel metadata list has one value fewer than it has entries
+
 * **The generated API documentation no longer publishes internal helper methods** - 257 private methods that were never anyone's contract are gone from the site, while every `Meta*` abstract method, every plugin's implementation of one, and every documented constructor stay; the published method count falls from 1,109 to 852
 
 * **The HelloWorld tutorial is now generated rather than transcribed** - its four files are written by `scripts/new_plugin.py` and included into the page from the real files, so the example cannot drift from what the tool produces; it teaches a control panel reaching a handler rather than a label in a box, and the stale second copy of it that no page ever rendered is gone
