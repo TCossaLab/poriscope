@@ -65,10 +65,6 @@ Fix ahead of the registry below: pop without replaying on refusal, replay only f
 
 ### Data integrity and scientific correctness
 
-- **Reader filename globs over-match sibling prefixes.** `prefix*.log` at
-  `ChimeraReader20240501:223-225`, and the same shape in `ChimeraReaderVC100:209-212`,
-  `TCossaLabABFReader:229-231`, `LegacyElementsReader:113-115`, `ChimeraReader20240101`:
-  opening `exp1_…` also reads `exp10_…` (channel 3 read 1.0 s where the file holds 0.5 s).
 - **CUSUM `Sensitivity` is documented backwards.** `CUSUM.py:76-77` and
   `event_analysis_tab.rst:68` say "higher is more conservative"; `:824` returns
   `threshold / Sensitivity`. At a 2σ step, Sensitivity 1 gave 3 levels in 30/30 events and
@@ -336,20 +332,15 @@ obvious fix and needs the registry design above to carry it.
   ClassicCUSUM tests mock `_calculate_threshold`, and nothing pins the variance-reset fix.
   Plant levels in `synthetic_events_db` and assert current, blockage and duration within
   tolerance for CUSUM, ClassicCUSUM and NoFitter across SNRs and short events.
-- **Conformance recipes never leave the happy path**: add sibling-prefix files and
-  multi-file sets.
+- **Conformance recipes never leave the happy path**: add multi-file sets.
 - **`NoFitter` places event edges asymmetrically** (`NoFitter.py:226`): the start walks
   back to the baseline crossing, the end sits `rise_time` before the threshold crossing (838
   against 860 on a 40-sample ramp), so the overlay and `raw_ecd` shift left.
 - **ABF conversion folds the offsets into the gain** (`ABF2Header.py:199-200`) instead of
   `raw*gain + (instOffset - sigOffset)`, and `TCossaLabABFReader:253` hardcodes offset 0.0.
   Latent: the synthetic ABF writer uses 0.0 offsets.
-- **`LegacyElementsReader` cannot open a multi-file set**:
-  `_get_file_channel_stamps:96` returns `[0]` whatever the count, so sorting raises
-  `ValueError` (verified with `_0000`/`_0001`).
 - **`MetaReader._set_sample_rate` checks only each channel's first file**, so a set whose
-  files disagree on sample rate is read at the first file's rate. `_sort_objects_by_channel_and_time:937-941` raises `TypeError`
-  on a timestamp tie *(by reading)*.
+  files disagree on sample rate is read at the first file's rate.
 - **`SQLiteDBLoader._load_event_data` drops an event on a NULL `padding_before`** via
   `try … continue`, logging only at INFO.
 - **`IntraCUSUM` defaults make it count noise**: threshold and hysteresis both 0.0

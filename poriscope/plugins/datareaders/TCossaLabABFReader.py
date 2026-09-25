@@ -23,6 +23,7 @@
 # Contributors:
 # Kyle Briggs
 
+import glob
 import logging
 import os
 import re
@@ -225,10 +226,21 @@ class TCossaLabABFReader(MetaReader):
 
         :raises ValueError: If the base naming pattern cannot be ascertained.
         """
-        # replace date and time in a file name with wildcard, keep id, extension and headstage
+        # Keep the base name and wildcard the 12-digit stamp, channel and part, spelled
+        # out so a recording whose name merely starts with this one's is not globbed
+        # into this set; the base is escaped so brackets stay literal.
         match = re.split(r"_\d{12}_CH\d{3}_\d{3}\.abf", file_name)
         if len(match) > 1:
-            return match[0] + "*" + self.file_extension
+            return (
+                glob.escape(match[0])
+                + "_"
+                + "[0-9]" * 12
+                + "_CH"
+                + "[0-9]" * 3
+                + "_"
+                + "[0-9]" * 3
+                + self.file_extension
+            )
         else:
             raise ValueError(
                 "Unable to ascertain base naming pattern for {0}".format(file_name)

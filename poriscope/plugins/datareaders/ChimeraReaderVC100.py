@@ -23,6 +23,7 @@
 # Contributors:
 # Kyle Briggs
 
+import glob
 import logging
 import os
 import re
@@ -205,11 +206,20 @@ class ChimeraReaderVC100(MetaReader):
 
         :raises ValueError: If the base naming pattern cannot be ascertained.
         """
-        # replace date and time in a file name with wildcard, keep id, extension and headstage
+        # Keep the base name and wildcard the date-time, spelled out digit by digit so a
+        # recording whose name merely starts with this one's is not globbed into this
+        # set; the base is escaped so brackets stay literal.
         pattern = r"^(.*)_(\d{8}_\d{6})\.log$"
         match = re.match(pattern, file_name)
         if match:
-            file_pattern = match.group(1) + "*" + self.file_extension
+            file_pattern = (
+                glob.escape(match.group(1))
+                + "_"
+                + "[0-9]" * 8
+                + "_"
+                + "[0-9]" * 6
+                + self.file_extension
+            )
             return file_pattern
         else:
             raise ValueError(

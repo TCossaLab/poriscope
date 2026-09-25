@@ -23,6 +23,7 @@
 # Contributors:
 # Kyle Briggs
 
+import glob
 import json
 import logging
 import os
@@ -219,10 +220,12 @@ class ChimeraReader20240501(MetaReader):
 
         :raises ValueError: If the base naming pattern cannot be ascertained.
         """
-        # replace date and time in a file name with wildcard, keep id, extension and headstage
+        # Keep the base name and wildcard the headstage and date-time, anchored on "_HS"
+        # so that a recording whose name merely starts with this one's (exp1 and exp10)
+        # is not globbed into this set; the base is escaped so brackets stay literal.
         match = re.split(r"_HS\d+_", file_name)
         if len(match) > 1:
-            return match[0] + "*" + self.file_extension
+            return glob.escape(match[0]) + "_HS*" + self.file_extension
         else:
             raise ValueError(
                 "Unable to ascertain base naming pattern for {0}".format(file_name)

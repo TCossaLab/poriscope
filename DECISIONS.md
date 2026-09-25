@@ -10,6 +10,25 @@ which ran through August 2026 and is complete. The step numbers only date the de
 
 ---
 
+## 2026-09-25 - Reader file sets are globbed on each format's own grammar
+
+**Context.** Five readers globbed `<base>*<ext>`, so `exp1` also picked up `exp10`: the other
+recording was spliced into the channel, or the sort crashed on a tied timestamp.
+
+**Decision** (Kyle, 2026-09-25). Anchor each pattern on what follows the base and
+`glob.escape` the base: Chimera on `_HS` (always present) with the date-time left wild,
+since the reader takes its timestamp from the sidecar, not the name; VC100 and TCossaLab on
+their digit counts, the TCossaLab 12-digit stamp still wild within a set; Legacy Elements
+on the exact file name, because its recordings are always one file. The timestamp sort
+keys on the timestamp alone, so a tie no longer compares memmaps.
+
+**Evidence.** A sibling-prefix conformance test failed on all five readers and a bracketed
+name on six; both pass, and multi-HS and multi-part sets still load.
+
+**Revisit if** a format's real file names turn out not to follow the grammar coded here.
+
+---
+
 ## 2026-09-25 - A re-commit is confirmed per channel and keyed on channel alone
 
 **Context.** A second commit into an events file that already held a channel kept the old

@@ -15,11 +15,11 @@ snapshot was the nearest thing that looked like one.
 | Refactor-coverage audit | - | **112 of 112 pinned** | 100% |
 | Shell complexity, functions over cx 10 | 8 / 121 | **0 / 0** | 0 - reached, no floor |
 | Signal-bus machinery in `poriscope/` | dispatcher + 2 signals + 4 relays | **0** | 0 - reached |
-| Duplication, removable - all 8 measured families | 1,889 (6 families) | **605** (650 until the raw-data path's removal, 2026-09-25) | - |
+| Duplication, removable - all 8 measured families | 1,889 (6 families) | **608** (650 until the raw-data path's removal, 2026-09-25) | - |
 | - `*Model.py`, a 7th family added 2026-09-14 | not measured | **8** | 8 - reached |
 | - `eventfinders`, an 8th family added 2026-09-19 | not measured | **0** | 0 |
 | - the 3 analysis-tab families of the original six | 1,199 | **0** | 0 - reached; the 31 floor's other half was dead code |
-| - the other 3 of the original six: datareaders, eventfitters, `views/widgets` | 690 (435 / 193 / 62) | **597** (401 / 193 / 3) | - |
+| - the other 3 of the original six: datareaders, eventfitters, `views/widgets` | 690 (435 / 193 / 62) | **600** (404 / 193 / 3) | - |
 | Decision C ABC breaks outstanding | 5 | **0** | 0 - reached; `"Kind"` amended out, `close_resources` deferred out of 2.0.0 |
 
 **The duplication rows do not add up to one before/after pair, deliberately.** `*Model.py`

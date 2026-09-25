@@ -23,6 +23,7 @@
 # Contributors:
 # Kyle Briggs
 
+import glob
 import logging
 import re
 from typing import List, override
@@ -109,10 +110,12 @@ class LegacyElementsReader(TCossaLabABFReader):
 
         :raises ValueError: If the base naming pattern cannot be ascertained.
         """
-        # replace date and time in a file name with wildcard, keep id, extension and headstage
+        # A Legacy Elements recording is always a single file, so the set is exactly the
+        # chosen file - escaped, so brackets in its name stay literal. The naming check
+        # is kept so an unrecognised file is still refused.
         match = re.split(r"_\d{4}\.abf", file_name)
         if len(match) > 1:
-            return match[0] + "*" + self.file_extension
+            return glob.escape(file_name)
         else:
             raise ValueError(
                 "Unable to ascertain base naming pattern for {0}".format(file_name)

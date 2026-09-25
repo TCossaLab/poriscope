@@ -22,8 +22,10 @@ Every read is in pA: the unscaled raw-data path readers used to offer alongside
 ``load_data`` was removed in 2.0.0, so there is one conversion per reader to check.
 """
 
+import dataclasses
 import gc
 import shutil
+from pathlib import Path
 from typing import List, Type
 
 import numpy as np
@@ -262,3 +264,119 @@ def test_reader_releases_its_input_file(reader_cls, tmp_path_factory) -> None:
 def test_at_least_one_reader_was_discovered() -> None:
     """Guard against the discovery walk silently finding nothing."""
     assert READERS, "no concrete MetaReader subclasses were discovered"
+
+
+def _copy_renamed(source_dir: Path, dest_dir: Path, old: str, new: str) -> None:
+    """
+    Copy every file of one recording into another folder under a different base name.
+
+    :param source_dir: folder holding the recording to copy
+    :type source_dir: Path
+    :param dest_dir: folder to copy it into
+    :type dest_dir: Path
+    :param old: the base name the files carry
+    :type old: str
+    :param new: the base name to give the copies
+    :type new: str
+    """
+    for path in source_dir.iterdir():
+        shutil.copy(path, dest_dir / path.name.replace(old, new, 1))
+
+
+@pytest.mark.conformance
+@pytest.mark.parametrize("suffix", ["0", "_b"], ids=["exp1-exp10", "exp-exp_b"])
+@pytest.mark.parametrize("reader_cls", READERS, ids=[cls.__name__ for cls in READERS])
+def test_a_sibling_recording_is_not_read_as_part_of_this_one(
+    reader_cls: Type[MetaReader], suffix: str, tmp_path: Path
+) -> None:
+    """
+    A recording whose name merely starts with this one's is a different recording.
+
+    Readers find the rest of a file set by globbing on the chosen file's base name, and
+    a bare ``<base>*`` also matched ``<base>0...`` and ``<base>_b...``: the other
+    recording was spliced into this one's channel, doubling its length, or crashed
+    the sort when the two files carried the same timestamp.
+
+    :param reader_cls: The reader class under test.
+    :type reader_cls: Type[MetaReader]
+    :param suffix: what the sibling's base name adds to this one's
+    :type suffix: str
+    :param tmp_path: Per-test temporary directory.
+    :type tmp_path: Path
+    """
+    target_dir = tmp_path / "data"
+    target = build_reader_dataset(reader_cls, target_dir)
+    sibling_dir = tmp_path / "sibling"
+    build_reader_dataset(reader_cls, sibling_dir)
+    base = target.config.base_name
+    _copy_renamed(sibling_dir, target_dir, base, base + suffix)
+
+    reader = build_any_reader(reader_cls, target)
+    try:
+        expected = int(round(target.duration_s * target.samplerate))
+        actual = reader.get_channel_length(target.channel)
+    finally:
+        reader.close_resources()
+    assert (
+        abs(actual - expected) <= 1
+    ), f"read {actual} samples of a {expected} recording"
+
+
+@pytest.mark.conformance
+@pytest.mark.parametrize("reader_cls", READERS, ids=[cls.__name__ for cls in READERS])
+def test_a_file_name_with_glob_characters_opens(
+    reader_cls: Type[MetaReader], tmp_path: Path
+) -> None:
+    """
+    Square brackets in a file name are part of the name, not a glob pattern.
+
+    The base name went into the glob unescaped, so ``exp[1]`` matched only ``exp1`` and
+    the chosen file itself was never found.
+
+    :param reader_cls: The reader class under test.
+    :type reader_cls: Type[MetaReader]
+    :param tmp_path: Per-test temporary directory.
+    :type tmp_path: Path
+    """
+    built_dir = tmp_path / "built"
+    dataset = build_reader_dataset(reader_cls, built_dir)
+    base = dataset.config.base_name
+    renamed = base[:2] + "[1]" + base[2:]
+    target_dir = tmp_path / "data"
+    target_dir.mkdir()
+    _copy_renamed(built_dir, target_dir, base, renamed)
+    moved = dataclasses.replace(
+        dataset,
+        data_path=target_dir / dataset.data_path.name.replace(base, renamed, 1),
+    )
+
+    reader = build_any_reader(reader_cls, moved)
+    try:
+        expected = int(round(dataset.duration_s * dataset.samplerate))
+        actual = reader.get_channel_length(dataset.channel)
+    finally:
+        reader.close_resources()
+    assert (
+        abs(actual - expected) <= 1
+    ), f"read {actual} samples of a {expected} recording"
+
+
+@pytest.mark.conformance
+def test_files_with_tied_timestamps_sort_without_comparing_their_data(opened) -> None:
+    """
+    Two files in one channel with the same timestamp keep their order instead of crashing.
+
+    The sort ordered ``(timestamp, data)`` pairs, so a tie fell through to comparing the
+    two memmaps and raised "truth value of an array is ambiguous". It is reachable with
+    TCossaLab ABF files, which sort on the part index alone: two recordings sharing a
+    base, channel and part but not the 12-digit stamp tie.
+
+    :param opened: The reader and its dataset ground truth.
+    :type opened: tuple
+    """
+    reader, _dataset = opened
+    first, second = np.zeros(4), np.ones(4)
+
+    ordered = reader._sort_objects_by_channel_and_time([first, second], [0, 0], [7, 7])
+
+    assert ordered[0][0] is first and ordered[0][1] is second

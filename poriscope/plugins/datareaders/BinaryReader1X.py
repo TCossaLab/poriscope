@@ -23,6 +23,7 @@
 # Contributors:
 # Kyle Briggs
 
+import glob
 import logging
 import os
 import re
@@ -210,7 +211,8 @@ class BinaryReader1X(MetaReader):
         :return: Base name for matching other files.
         :rtype: str
         """
-        return file_name
+        # Escaped so that brackets in the file name are matched literally.
+        return glob.escape(file_name)
 
     @log(logger=logger)
     @override

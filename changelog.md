@@ -134,6 +134,8 @@
 
 #### Raw Data:
 
+* **Fixed opening a recording also reading other recordings whose names start with the same prefix** (`exp1` and `exp10` in one folder), which lengthened the channel with the other recording's samples or failed to open; a file name containing square brackets now opens too
+
 * **Fixed committing events into a database that already held them for a channel silently keeping the old events**, or mixing both runs' events when the second found more; the tab now asks before replacing a channel's events, warns when they belong to a different experiment, and skips only the channels you decline
 
 * **Fixed the Raw Data tab's event plots showing the wrong events**: if the tab could not read an event finder's state, it silently reused the previous channel's answers — including the event count that decides which event indices are in range — and an event that failed to load was replaced by the previous one under the wrong index

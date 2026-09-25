@@ -725,6 +725,12 @@ class MetaReader(BaseDataPlugin):
 
         Poriscope will use this file pattern to search the folder of the input file for other files that match the pattern. It will not search outside of that folder.
 
+        Anchor the pattern on what follows the base name rather than ending it in a bare
+        ``*``: ``experiment_1*.log`` also matches ``experiment_10_channel_01_001.log``, a
+        different recording, and its files are then read as part of this one. Pass the
+        literal part through :func:`glob.escape`, so that a name containing ``[`` or ``]``
+        matches itself: ``glob.escape("experiment_1") + "_channel_*_*.log"``.
+
         For more information on ``glob`` patterns, refer to the `glob module documentation <https://docs.python.org/3/library/glob.html>`_.
 
         :param file_name: File name to get the base pattern for.
@@ -790,9 +796,11 @@ class MetaReader(BaseDataPlugin):
                 temp_dict[channel] = []
             temp_dict[channel].append((timestamp, obj))
 
-        # Sort each list of objects by timestamp
+        # Sort each list of objects by timestamp alone. Sorting the pairs themselves
+        # fell through to comparing the objects - memmaps - on a tied timestamp, which
+        # raises; sort is stable, so tied files keep the order they were found in.
         for channel in temp_dict.keys():
-            temp_dict[channel].sort()
+            temp_dict[channel].sort(key=lambda pair: pair[0])
 
         # Extract only the objects, discarding the timestamps
         for channel in temp_dict:
