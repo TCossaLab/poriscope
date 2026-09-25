@@ -25,13 +25,9 @@
 # Alejandra Carolina González González
 
 import logging
-import warnings
 from abc import abstractmethod
 from pathlib import Path
 from typing import Any, Dict, Generator, List, Optional, Tuple
-
-import numpy as np
-import numpy.typing as npt
 
 from poriscope.utils.BaseDataPlugin import BaseDataPlugin
 from poriscope.utils.DocstringDecorator import inherit_docstrings
@@ -258,7 +254,6 @@ class MetaWriter(BaseDataPlugin):
         event: Dict[str, Any],
         channel: int,
         index: int,
-        raw_data: bool = False,
         abort: Optional[bool] = False,
         last_call: Optional[bool] = False,
     ) -> bool:
@@ -282,8 +277,11 @@ class MetaWriter(BaseDataPlugin):
           side. ``data`` therefore spans
           ``start_sample - padding_before`` to ``start_sample + len(event) + padding_after``.
         - ``baseline_mean`` / ``baseline_std`` - the local baseline the event sits on.
-        - ``scale`` / ``offset`` - the factors that convert ``data`` to pA, present only
-          when ``raw_data`` is True; both are None otherwise.
+
+        ``data`` is always in pA, exactly as the reader's ``load_data`` returns it, so it is
+        consistent with the ``baseline_mean`` stored beside it. Until 2.0.0 a writer whose
+        output type matched the reader's source type was handed unscaled samples with
+        ``scale`` and ``offset`` keys and a ``raw_data`` flag; that path is gone.
 
         Treat a missing key as a programming error and raise, rather than substituting a
         default: a silently defaulted padding writes an event whose samples do not line
@@ -295,8 +293,6 @@ class MetaWriter(BaseDataPlugin):
         :type channel: int
         :param index: The event's index within that channel.
         :type index: int
-        :param raw_data: True when ``data`` holds unscaled ADC codes rather than pA.
-        :type raw_data: bool
         :param abort: True to discard the channel's uncommitted batch and stop.
         :type abort: Optional[bool]
         :param last_call: True when this is the final event of the channel.
@@ -311,7 +307,7 @@ class MetaWriter(BaseDataPlugin):
         """
         **Purpose**: Set the datatype of the data to be saved for each event.
 
-        This function returns a string encoding a numpy datatype that tells the writer in what format the data should be stored in the database. If the output dtype exactly matches the intput dtype, the plugin will attempt to store raw data without any precision loss. In the case of a mismatch, it is not possible for poriscope to guarantee that there is no loss of precision between the input and output operation. If there is any dount, we suggest that use of double precision floating point numbers (``"<f8"``) will not incur any meaningful loss of precision in the vast majority of operations regardless of input type.
+        This function returns a string encoding a numpy datatype that tells the writer in what format the event data, which is always in pA, should be stored in the database. Double precision floating point (``"<f8"``) loses no meaningful precision for any input type, and is what the shipped writer uses.
 
         :return: A string representing a :mod:`numpy` dtype
         :rtype: str
@@ -418,13 +414,8 @@ class MetaWriter(BaseDataPlugin):
                 )
                 yield 1.0
                 return
-            source_dtype = self.eventfinder.get_dtype()
-            raw_data = False
-            if source_dtype == self.output_dtype:
-                raw_data = True
-
             event_generator = self.eventfinder.get_event_data_generator(
-                channel, data_filter=None, rectify=False, raw_data=raw_data
+                channel, data_filter=None, rectify=False
             )
 
             index = 0
@@ -439,7 +430,6 @@ class MetaWriter(BaseDataPlugin):
                                 event,
                                 channel,
                                 index,
-                                raw_data,
                                 abort=abort,
                                 last_call=last_call,
                             )
@@ -509,65 +499,6 @@ class MetaWriter(BaseDataPlugin):
                         raise TypeError(
                             "MetaEventFinder key must have as value an object that inherits from MetaEventFinder"
                         )
-
-    @log(logger=logger)
-    def _rescale_data_to_adc(
-        self,
-        data: npt.NDArray[np.number],
-        scale: Optional[float] = None,
-        offset: Optional[float] = None,
-        raw_data: bool = False,
-        dtype: npt.DTypeLike = np.int16,
-        adc_min: int = np.iinfo(np.int16).min,
-        adc_max: int = np.iinfo(np.int16).max,
-    ) -> tuple[npt.NDArray[np.number], Optional[float], Optional[float]]:
-        """
-        Rescale data to int16 Chimera VC100-style adc codes.
-
-        For other adc code types or encoding schemes, this function should be overridden. Default to Chimera-style conversion.
-
-        :param data: 1D numpy array of data to write to the active file in the specified channel.
-        :type data: npt.NDArray[np.number]
-        :param scale: Float indicating scaling between provided data type and encoded form for storage. If None, scale is calculated based on the data to maximally use the available adc range.
-        :type scale: Optional[float]
-        :param offset: Float indicating offset between provided data type and encoded form for storage. If None, offset is calculated based on the data to maximally use the available adc range.
-        :type offset: Optional[float]
-        :param raw_data: Boolean, True means to simply write data as-is to file, False indicates to first rescale it. Default False.
-        :type raw_data: bool
-        :param dtype: Numpy dtype to use for storage. Defaults to 16-bit signed int.
-        :type dtype: npt.DTypeLike
-        :param adc_min: Integer encoding the minimum adc code for the adc conversion.
-        :type adc_min: int
-        :param adc_max: Integer encoding the maximum adc code for the adc conversion.
-        :type adc_max: int
-        :raises ValueError: If scale cannot be computed from the data.
-        :raises IOError: If raw_data is True but scale or offset is not provided.
-        :return: Tuple containing rescaled data as numpy array, scale factor, and offset.
-        :rtype: tuple[npt.NDArray[np.number], Optional[float], Optional[float]]
-        """
-        if not raw_data:
-            if scale is not None and offset is not None:
-                data = (data - offset) / scale
-            else:
-                warnings.warn(
-                    "Rescaling data to ADC codes without providing a gain setting may result in loss of precision!",
-                    stacklevel=2,
-                )
-                data_max = np.max(data)
-                data_min = np.min(data)
-                data_range = data_max - data_min
-                adc_range = adc_max - adc_min
-                scale = data_range / adc_range
-                if scale is None:
-                    raise ValueError("Scale could not be computed.")
-                offset = data_max - scale * adc_max
-                data = (data - offset) / scale
-        else:
-            if scale is None or offset is None:
-                raise IOError(
-                    "Scale and offset must be provided in order to save raw data"
-                )
-        return data.astype(dtype), scale, offset
 
     @abstractmethod
     def _validate_settings(self, settings: dict) -> None:

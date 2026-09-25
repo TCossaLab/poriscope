@@ -22,7 +22,7 @@
 
 * **Breaking: `MetaEventFinder.get_empty_settings` now declares `Threshold`**, with no unit, because the base event-finding loop reads it - an event finder built directly on `MetaEventFinder` used to fail with a `KeyError` on its first chunk; a subclass sets the unit (`ClassicBlockageFinder` pA, `ThresholdBlockageFinder` σ), and one that redeclared the whole entry still works
 
-* **Breaking: a writer plugin's `_write_data` takes the event dict instead of thirteen positional parameters** - ten of the thirteen were keys of that dict, and two of those (`scale` and `offset`) were never read by the writer that receives them
+* **Breaking: a writer plugin's `_write_data` takes the event dict instead of thirteen positional parameters, and its data is always in pA** - its `raw_data` parameter and `MetaWriter._rescale_data_to_adc` are removed, since events no longer reach a writer unscaled
 
 * **Breaking: `MetaReader.load_data` no longer takes a `raw_data` flag** - it always returns rescaled pA, and the new `load_raw_data` returns unscaled ADC codes with the scale and offset alongside; `continuous_read` splits the same way into `continuous_read` and `continuous_read_raw`
 
