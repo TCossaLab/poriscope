@@ -29,6 +29,8 @@ Line numbers were re-verified 2026-09-24.
 ## 2.0.0 - before the release ships
 
 Silent data corruption, wrong science in the docs, user data loss, and release hygiene. Mostly small, local fixes.
+The approved plan for this section's Phase 0 items is at
+<https://claude.ai/artifact/JjR68okz9koTwcwQ6sSSJk>.
 
 ### Four plan-step citations survived the sweep (2026-09-24)
 
@@ -60,17 +62,6 @@ a stub harness: one refusal after 10 overlays replayed 11 actions, each re-query
 database on the GUI thread. Plot under filter A, switch to B, plot, Undo: the replay draws B.
 Fix ahead of the registry below: pop without replaying on refusal, replay only from the last
 `_reset_actions`, and record the filter selection in the payload.
-
-### The metadata export flow is still intermittently flaky
-
-`tests/integration/flows/test_metadata_export_flow_no_gui.py` failed once on 2026-09-22 with
-`pandas.errors.EmptyDataError: No columns to parse from file`. `a35e7bc8` made the wait
-(`subset_is_written:141-159`) require the three table CSVs to parse with rows, but a race is
-still live: `MetaDatabaseLoader.export_subset_to_csv` writes `data.csv` (`:683`) and only then
-the per-event `{name}_event_{id}.csv` files (`:700`), while `export()` returns
-`folder.glob(f"{name}_*.csv")` (`:161`) - which includes per-event files still being written -
-and `row_counts()` (`:178-195`) reads every one. Glob only the table files, or wait for the
-worker to finish. Derived from the code, not reproduced.
 
 ### Data integrity and scientific correctness
 

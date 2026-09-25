@@ -18,6 +18,7 @@ the tab still learns about the loader through the notification it normally learn
 from, and the export still runs the same generator with the same arguments.
 """
 
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
@@ -127,36 +128,20 @@ def export(
         "metadatacontrols", "export_csv_subset", ({"db_loader": LOADER_KEY},)
     )
 
-    # The View emits run_generators itself and the export runs on a worker thread,
-    # so the files appear some time after this call returns.
+    # The export runs on a worker thread, so the files appear some time after this
+    # call returns. Only the worker finishing says they are all there: the export
+    # writes its tables and then one trace file per event, so a wait on any of the
+    # files - even all six tables - is satisfied while trace files are still being
+    # written, and a test that then reads them fails with EmptyDataError.
     #
-    # The predicate is deliberately specific to *this* subset's tables, for the
-    # reason DECISIONS.md 2026-09-03 records: a wait that is satisfied by a partial
-    # signal reports done too early. A first attempt here waited for "any CSV with
-    # rows in this folder", which a second export into the same folder satisfied
-    # instantly from the first export's files - so it asserted against files the
-    # run under test had not written. The export writes events, then sublevels, then
-    # data, so all three are waited on: waiting on sublevels alone let a test read the
-    # data table before it existed.
-    def subset_is_written() -> bool:
-        """
-        Report whether this subset's events, sublevels and data tables are readable.
-
-        :return: True once all three parse with rows in them
-        :rtype: bool
-        """
-        for table in ("events", "sublevels", "data"):
-            path = folder / f"{name}_{table}.csv"
-            if not path.exists():
-                return False
-            try:
-                if len(pd.read_csv(path)) == 0:
-                    return False
-            except (pd.errors.EmptyDataError, OSError):
-                return False
-        return True
-
-    qtbot.waitUntil(subset_is_written, timeout=60_000)
+    # The Controller stages the worker under the loader's key synchronously, inside
+    # the call above, and it is popped by a queued signal once the generator is
+    # exhausted - so the entry existing now and emptying later is this run's
+    # completion, not a previous export's. Asserting it exists first is what stops a
+    # refused export from satisfying the wait instantly.
+    workers = triad.tab_controller.model.workers
+    assert workers.get(LOADER_KEY), "the export never started a worker"
+    qtbot.waitUntil(lambda: not workers.get(LOADER_KEY), timeout=60_000)
 
     return sorted(folder.glob(f"{name}_*.csv"))
 
@@ -226,6 +211,51 @@ def test_a_channel_exports_its_own_events_and_sublevels(
     assert rows["events"] == 25
     assert rows["sublevels"] == 75
     assert rows["data"] == 25
+
+
+@pytest.mark.timeout(90)
+def test_every_event_gets_its_own_trace_file(
+    metadata_tab: Triad, qtbot, tmp_path: Path, monkeypatch
+) -> None:
+    """
+    The per-event trace files are part of the export, and all of them are finished.
+
+    The export writes its six tables first and one ``<subset>_event_<id>.csv`` per
+    event after them, yielding between events. Each per-event write is slowed here so
+    that a wait satisfied by the tables alone - before the worker is done - returns
+    while trace files are still missing or empty, which is how this flow once read a
+    half-written file and failed with ``EmptyDataError``.
+    """
+    original_to_csv = pd.DataFrame.to_csv
+
+    def slow_event_writes(self: pd.DataFrame, path: Any, *args: Any, **kwargs: Any):
+        """
+        Delay each per-event write, then write it as the real method does.
+
+        :param self: the frame being written
+        :type self: pd.DataFrame
+        :param path: the destination
+        :type path: Any
+        :param args: positional arguments for ``to_csv``
+        :type args: Any
+        :param kwargs: keyword arguments for ``to_csv``
+        :type kwargs: Any
+        :return: whatever ``to_csv`` returns
+        :rtype: Any
+        """
+        if "_event_" in Path(str(path)).name:
+            time.sleep(0.05)
+        return original_to_csv(self, path, *args, **kwargs)
+
+    monkeypatch.setattr(pd.DataFrame, "to_csv", slow_event_writes)
+    out = tmp_path / "export_traces"
+    out.mkdir()
+
+    export(metadata_tab, qtbot, out, "traces", {"exp_a": [0]})
+
+    traces = sorted(out.glob("traces_event_*.csv"))
+    assert len(traces) == 25
+    assert all(len(pd.read_csv(path)) > 0 for path in traces)
 
 
 @pytest.mark.timeout(90)

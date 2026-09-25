@@ -390,7 +390,7 @@
 
 ### Developer Tooling:
 
-* Fixed the headless metadata-export flow test failing intermittently: it waited for the events and sublevels tables but asserted on the data table, which the export writes after them
+* Fixed the metadata CSV-export flow and end-to-end tests failing intermittently with `EmptyDataError`: both now wait for the export's worker to finish, since the per-event trace files are written after every table
 
 * CI no longer collects test coverage, which slowed every run for a figure nothing acted on; run `pytest --cov=poriscope` locally when you want the number
 
@@ -447,8 +447,6 @@
 * Fixed the pydoclint gate failing on `PeakFinder._curve_fit_bounded`: a failed double-Gaussian fit is now re-raised from inside its own `except` clause rather than stashed and raised after the loop, which the checker could not read as `RuntimeError`/`ValueError`
 
 * Fixed the headless flow tests aborting the interpreter instead of finishing: the harness closed a tab without stopping its worker threads, so Qt destroyed a thread that was still running
-
-* Made the metadata CSV-export end-to-end test less prone to failing intermittently: it waited for the exported-file count to settle, which happens before the last files are written, and then size-checked whichever one set iteration surfaced - the window is narrower but not closed, and a recurrence on 2026-09-22 is recorded in `future_fixes.md`
 
 * Fixed: `pytest tests/unit/views` failed when run on its own; the missing `sys.path` shim now lives in the root `tests/conftest.py`
 
