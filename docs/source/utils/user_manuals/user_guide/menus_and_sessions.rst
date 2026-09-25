@@ -16,7 +16,9 @@ Session Options Overview
   Reloads the most recently autosaved session.
 
 - **Load Session**  
-  Opens a previously saved session JSON file and restores its state.
+  Opens a previously saved session JSON file and restores its state. A file that is not a
+  saved session - a tab's saved actions, for instance - is refused with an error, and the
+  current workspace is left as it was.
 
 - **Save Session**
   Stores the current state — including datasets, filters, readers, writers, and analysis results — into a `.json` file.

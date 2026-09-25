@@ -81,18 +81,6 @@ Fix ahead of the registry below: pop without replaying on refusal, replay only f
 
 ### Session and settings persistence
 
-- **Loading the wrong JSON destroys the workspace and the autosave.**
-  `MainController.load_session:651-664` calls `reset_session()` and `save_session()` before
-  checking the file's shape, then indexes `plugin["metaclass"]` outside any try: a
-  `tab_action_history.json` (same folder, same `*.json` filter) raises `KeyError` in the slot
-  after `plugin_history.json` is overwritten. A parse failure logs at INFO, below the default
-  level, and reaches no panel. Validate before resetting; do not autosave until restored.
-- **Quitting after a reset writes `{}` over the session.** `handle_about_to_quit`
-  saves unconditionally (`main_controller.py:133`) though `reset_session` tells the user saved
-  files are untouched. Decide what quit-after-reset should do.
-
-### Numeric input and widgets
-
 - **Finishing the tutorial inside a dialog, then closing it, raises `AttributeError`**:
   the `finished` lambdas at `ClusteringView.py:485-488` and `MetaSubsetTabView.py:648-651` call
   `dialog.walkthrough_dialog.force_close()` after `walkthrough_mixin.py:209` set it to `None`.
@@ -176,11 +164,6 @@ Fix ahead of the registry below: pop without replaying on refusal, replay only f
 
 ### From the 2026-09-03 review - high
 
-- **The two session writes are non-atomic and omit `default=serialize_object`.** The
-  config write uses it; `save_session` (`main_model.py:457`) and `save_tab_actions` (`:496`)
-  open the file for writing and then `json.dump` without it, so a value neither can serialise
-  raises mid-write - now caught and reported, but the file `_suppress_session_save` exists to
-  protect is already truncated. Write to a temporary file and `os.replace`.
 - **`SQLitePeakDBLoader.py:150-153`'s comment is stale** since `f6f75a8e`: it says
   `query_database_directly` returns None for an empty result, which now returns an empty
   frame. Comment-only.

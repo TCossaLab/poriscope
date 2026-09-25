@@ -454,8 +454,7 @@ class MainModel(QObject):
         if save_file is None:
             save_file = Path(self.session_path, "plugin_history.json")
         try:
-            with open(save_file, "w") as jf:
-                json.dump(json_dump, jf, indent=4)
+            self._write_json_atomically(json_dump, save_file)
         except Exception as e:
             message = f"Unable to save session to {save_file}: {e}"
             if user_specified:
@@ -493,8 +492,7 @@ class MainModel(QObject):
         if save_file is None:
             save_file = Path(self.session_path, "tab_action_history.json")
         try:
-            with open(save_file, "w") as jf:
-                json.dump(json_dump, jf, indent=4)
+            self._write_json_atomically(json_dump, save_file)
         except Exception as e:
             message = f"Unable to save tab action history to {save_file}: {e}"
             if user_specified:
@@ -507,23 +505,64 @@ class MainModel(QObject):
                     self.__class__.__name__,
                 )
 
+    def _write_json_atomically(self, data: Any, save_file: Union[str, Path]) -> None:
+        """
+        Write ``data`` as JSON so that a failure leaves the previous file untouched.
+
+        It is written to a temporary file beside ``save_file`` and moved over it only
+        once complete. Opening the target for writing first truncated it, so a value
+        that could not be serialised left the session file cut off mid-entry.
+
+        :param data: the JSON-serialisable content
+        :type data: Any
+        :param save_file: the file to write
+        :type save_file: Union[str, Path]
+        :raises Exception: whatever writing or serialising raised; the temporary file
+            is removed first
+        """
+        target = Path(save_file)
+        temporary = target.with_name(target.name + ".tmp")
+        try:
+            with open(temporary, "w") as jf:
+                json.dump(data, jf, indent=4)
+            os.replace(temporary, target)
+        except Exception:
+            temporary.unlink(missing_ok=True)
+            raise
+
     @log(logger=logger)
     def load_session(
         self, file_name: Optional[Union[str, Path]] = None
     ) -> Optional[Dict[str, Any]]:
+        """
+        Read a saved session, or None if the file is missing, unreadable, or not a session.
+
+        A session maps each key to an entry carrying ``metaclass`` and ``subclass``, as
+        every writer of the history produces; anything else - a tab action history
+        from the same folder, a config file - is refused here, before the caller resets
+        the workspace to apply it. The caller reports a refusal to the user.
+
+        :param file_name: the file to read, or None for the default session file
+        :type file_name: Optional[Union[str, Path]]
+        :return: the session, or None if it could not be loaded
+        :rtype: Optional[Dict[str, Any]]
+        """
         if not file_name:
             file_name = Path(self.session_path, "plugin_history.json")
         try:
             with open(file_name, "r") as jf:
                 plugin_history = json.load(jf, object_pairs_hook=OrderedDict)
-        except Exception:
-            self.logger.info(
-                "Unable to load previous session. Session history will not be available, but you can continue normally."
-            )
+        except Exception as e:
+            self.logger.debug(f"Unable to read a session from {file_name}: {e}")
             return None
-        else:
-            self.replace_class_names_with_classes(plugin_history)
-            return plugin_history
+        if not isinstance(plugin_history, dict) or not all(
+            isinstance(entry, dict) and "metaclass" in entry and "subclass" in entry
+            for entry in plugin_history.values()
+        ):
+            self.logger.debug(f"{file_name} does not hold a session")
+            return None
+        self.replace_class_names_with_classes(plugin_history)
+        return plugin_history
 
     @log(logger=logger)
     def replace_classes_with_class_names(self, d: Any) -> None:

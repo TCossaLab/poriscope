@@ -108,27 +108,77 @@ def test_populate_available_plugins(main_model):
         assert "MetaFilter" in available_plugins_list
 
 
-def test_save_session(main_model):
-    """
-    Test saving the session to a JSON file.
-    """
-    plugin_history = {"plugin": "MetaReader"}
+SESSION = {"reader": {"metaclass": "MetaReader", "subclass": "SomeReader"}}
 
-    with patch("builtins.open", new_callable=MagicMock) as mock_open:
-        main_model.save_session(plugin_history)
 
-    mock_open.assert_called_once()
+def test_save_session(main_model, tmp_path):
+    """A saved session reads back as what was saved."""
+    path = tmp_path / "session.json"
+
+    main_model.save_session(SESSION, path)
+
+    assert json.loads(path.read_text()) == SESSION
 
 
 def test_load_session_default_path(main_model):
-    mock_data = {"plugin": "MetaReader"}
-    m = mock_open(read_data=json.dumps(mock_data))
+    """Restore reads the default session file."""
+    default = Path(main_model.session_path, "plugin_history.json")
+    default.write_text(json.dumps(SESSION))
 
-    with patch("builtins.open", m):
-        with patch("pathlib.Path.exists", return_value=True):
-            result = main_model.load_session()
+    assert main_model.load_session() == SESSION
 
-    assert result == mock_data
+
+def test_load_session_refuses_a_file_that_is_not_a_session(main_model, tmp_path):
+    """
+    A tab action history sits beside the session file under the same *.json filter.
+
+    Loading one as a session used to come back as a dict, and the controller then
+    reset the workspace and overwrote the autosave with it before failing on the first
+    entry, so the next Restore failed the same way.
+    """
+    path = tmp_path / "tab_action_history.json"
+    path.write_text(
+        json.dumps({"MetadataController": {"0": {"function": "_reset_actions"}}})
+    )
+
+    assert main_model.load_session(path) is None
+
+
+def test_load_session_accepts_an_empty_session(main_model, tmp_path):
+    """Nothing open is a valid session, and restores as nothing."""
+    path = tmp_path / "empty.json"
+    path.write_text("{}")
+
+    assert main_model.load_session(path) == {}
+
+
+def test_a_failed_session_save_keeps_the_previous_file(main_model, tmp_path):
+    """
+    A save that fails partway leaves the last good file, not a truncated one.
+
+    The file was opened for writing before the data was serialised, so a value that
+    could not be serialised left it cut off mid-entry.
+    """
+    path = tmp_path / "session.json"
+    main_model.save_session(SESSION, path)
+    before = path.read_text()
+
+    main_model.save_session({"reader": {"metaclass": object()}}, path)
+
+    assert path.read_text() == before
+    assert not list(tmp_path.glob("*.tmp")), "the failed save left its temp file"
+
+
+def test_a_failed_tab_action_save_keeps_the_previous_file(main_model, tmp_path):
+    """The tab action history is written the same way, for the same reason."""
+    path = tmp_path / "actions.json"
+    main_model.save_tab_actions({"Tab": {"0": {"function": "f"}}}, path)
+    before = path.read_text()
+
+    main_model.save_tab_actions({"Tab": {"0": {"function": object()}}}, path)
+
+    assert path.read_text() == before
+    assert not list(tmp_path.glob("*.tmp")), "the failed save left its temp file"
 
 
 def test_load_session_nonexistent(main_model):
@@ -219,13 +269,14 @@ def test_update_logging_level_handlers(main_model):
         mock_qt_handler.setLevel.assert_not_called()
 
 
-def test_save_tab_actions(main_model):
-    plugin_history = {"plugin": "MetaReader"}
+def test_save_tab_actions(main_model, tmp_path):
+    """A saved tab action history reads back as what was saved."""
+    history = {"Tab": {"0": {"function": "f", "parameters": {}}}}
+    path = tmp_path / "actions.json"
 
-    with patch("builtins.open", new_callable=MagicMock) as mock_open:
-        main_model.save_tab_actions(plugin_history)
+    main_model.save_tab_actions(history, path)
 
-    mock_open.assert_called_once()
+    assert json.loads(path.read_text()) == history
 
 
 def test_get_available_plugins(main_model):

@@ -156,7 +156,11 @@ class MainController(QObject):
         # view and is otherwise persisted lazily, only when some other plugin-history
         # event happens to fire. Without this, editing filters and quitting without
         # touching a data plugin or clicking Save Session would silently lose them.
-        self.save_session()
+        # Skipped when nothing is open: an empty history is either already saved (every
+        # delete autosaves) or means nothing happened since launch or Reset Session, and
+        # saving it wrote {} over the session the next Restore would have loaded.
+        if self.plugin_history:
+            self.save_session()
         for key, val in self.analysis_tabs.items():
             if val:
                 val.handle_kill_all_workers(key, exiting=True)
@@ -622,6 +626,27 @@ class MainController(QObject):
     ) -> None:
         self.main_model.save_tab_actions(history, save_file)
 
+    def _report_unloadable_session(self, file_name: Optional[Union[str, Path]]) -> None:
+        """
+        Tell the user a session could not be loaded, at the level that fits who asked.
+
+        A file the user picked logs ERROR, so a dialog says it did not load; Restore with
+        nothing saved is routine, so it logs WARNING and says so on the status panel.
+
+        :param file_name: the file the user chose, or None for Restore Session
+        :type file_name: Optional[Union[str, Path]]
+        """
+        if file_name:
+            self.logger.error(
+                f"{file_name} is not a readable Poriscope session file, so nothing "
+                "was loaded"
+            )
+        else:
+            self.logger.warning("No saved session to restore")
+            self.main_view.add_text_to_display(
+                "There is no saved session to restore", self.__class__.__name__
+            )
+
     @log(logger=logger)
     @Slot(str)
     def load_session(self, file_name: Optional[Union[str, Path]] = None) -> None:
@@ -651,7 +676,9 @@ class MainController(QObject):
         self.logger.debug(f"Loading session from file {file_name}")
         plugin_history = self.main_model.load_session(file_name)
         if plugin_history is None:
-            self.logger.info(f"Unable to recover plugin history from {file_name}")
+            # Refused before reset_session(), so the workspace and the autosave are
+            # left as they were.
+            self._report_unloadable_session(file_name)
             return
         self.reset_session()
         self.plugin_history = plugin_history

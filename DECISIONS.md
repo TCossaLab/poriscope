@@ -10,6 +10,24 @@ which ran through August 2026 and is complete. The step numbers only date the de
 
 ---
 
+## 2026-09-25 - Quitting saves the session only when something is open
+
+**Context.** Quit always flushed the session, so quitting after Reset Session - or straight
+after launch - wrote `{}` over the file Restore reads.
+
+**Decision** (Kyle, 2026-09-25). Skip the flush when the history is empty, rather than track
+a "dirty since reset" flag: an empty history is already saved (every delete autosaves) or
+means nothing happened. Session writes go through a temporary file and `os.replace`
+without `default=serialize_object`: no reachable value needs it, a failed save now leaves
+the last good file, and a default would turn a reported failure into a silent coercion.
+
+**Evidence.** Reset -> quit -> relaunch and launch -> quit -> relaunch both restored nothing;
+an unserialisable value truncated the file mid-entry. Both pinned by tests.
+
+**Revisit if** a non-JSON value is found reaching the session history.
+
+---
+
 ## 2026-09-25 - Numeric fields use the C locale, and a comma disables OK
 
 **Context.** Float fields validated with the system locale and parsed with `float()`, so a

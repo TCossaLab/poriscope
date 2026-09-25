@@ -397,6 +397,30 @@ def test_handle_about_to_quit_flushes_session_state_first(
     )
 
 
+def test_quitting_with_nothing_open_does_not_overwrite_the_session(
+    controller: MainController,
+    mock_main_model: MagicMock,
+) -> None:
+    """
+    An empty history on quit is not saved over the last real session.
+
+    Quitting straight after launch, or after Reset Session, wrote ``{}`` over the
+    session file, so the next Restore brought back nothing - though the reset tells the
+    user saved files are untouched. An empty history is either already saved (every
+    delete autosaves) or means nothing happened, so there is nothing to flush.
+
+    :param controller: Controller under test.
+    :param mock_main_model: Mocked main model.
+    """
+    controller.plugin_history = {}
+    controller.analysis_tabs = {}
+    controller.data_plugin_controller.handle_exit = MagicMock()
+
+    controller.handle_about_to_quit()
+
+    mock_main_model.save_session.assert_not_called()
+
+
 def test_send_curent_data_server_delegates_to_model_and_view(
     controller: MainController,
     mock_main_model: MagicMock,
@@ -1053,6 +1077,46 @@ def test_load_session_returns_early_when_history_is_none(
 
     controller.main_model.save_session.assert_not_called()
     reset_spy.assert_not_called()
+
+
+def test_a_chosen_file_that_is_not_a_session_is_reported_as_an_error(
+    controller: MainController,
+    mocker: MockerFixture,
+) -> None:
+    """
+    The user picked this file, so failing to load it gets a dialog, not silence.
+
+    It used to log at INFO, below the default level, so nothing reached the user. ERROR
+    is what QtHandler raises a dialog for.
+
+    :param controller: Controller under test.
+    :param mocker: Pytest-mock fixture.
+    """
+    controller.main_model.load_session = mocker.Mock(return_value=None)
+
+    controller.load_session("not_a_session.json")
+
+    controller.logger.error.assert_called_once()
+    assert "not_a_session.json" in controller.logger.error.call_args[0][0]
+
+
+def test_restore_with_no_saved_session_says_so_on_the_status_panel(
+    controller: MainController,
+    mocker: MockerFixture,
+) -> None:
+    """
+    Nothing to restore is routine, so it is a warning on the panel, not a dialog.
+
+    :param controller: Controller under test.
+    :param mocker: Pytest-mock fixture.
+    """
+    controller.main_model.load_session = mocker.Mock(return_value=None)
+
+    controller.load_session(None)
+
+    controller.logger.error.assert_not_called()
+    controller.logger.warning.assert_called_once()
+    controller.main_view.add_text_to_display.assert_called_once()
 
 
 def test_load_session_resets_before_applying_the_loaded_history(

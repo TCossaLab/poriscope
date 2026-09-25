@@ -368,6 +368,12 @@
 
 ### Application Shell:
 
+* **Fixed Load Session wiping the workspace and the autosave when given a file that is not a session**, such as a tab's saved actions from the same folder - the file is now refused with an error before anything is reset, and Restore with nothing saved says so on the status panel
+
+* **Fixed quitting with nothing open - including straight after Reset Session - erasing the session Restore would have loaded**
+
+* **Fixed a session save that failed partway leaving a truncated session file**; the previous file is now kept
+
 * **Fixed a plugin in a relocated user plugin folder never being made importable** - the folder put on the import path at startup was the default one a fresh install creates, not the one the configuration points at and the app actually scans
 
 * **Fixed an analysis tab in the user plugin folder being unable to import its own View and Model** - only the folder's parent was on the import path, so it worked only when the folder happened to be named like a Python identifier, and a folder named `User Plugins` could not be imported at all
