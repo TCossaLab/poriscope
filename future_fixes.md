@@ -145,8 +145,6 @@ Fix ahead of the registry below: pop without replaying on refusal, replay only f
   and `views/widgets/walkthrough.py`/`walkthrough_mixin.py` (25 functions, 0 removable today),
   is invisible to it, as is any new plugin. Check that every `.py` in a measured directory is
   listed or explicitly excluded (the three owner-held fitters).
-- **`ci-internal-pr.yml:129` runs `--maxfail=1 --disable-warnings`**, unlike every other
-  workflow, hiding every failure after the first.
 - **The post-merge wavelet hook reaches deep into a contributor's machine**: without
   MSYS2's `mingw32-make`, `full_setup_and_build.py` runs `pacman -Syuu --noconfirm` (`:113`)
   before checking the tracked DLL exists (`:125`), and opens a modal folder dialog mid-merge

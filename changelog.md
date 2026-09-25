@@ -390,6 +390,8 @@
 
 ### Developer Tooling:
 
+* The internal pull-request CI job now runs plain `pytest -q`, reporting every failing test instead of stopping at the first and hiding warnings
+
 * The duplication ratchet no longer reports adding or removing an ordinary method as duplication added or removed; it names the function count and asks for `--update`
 
 * Fixed the metadata CSV-export flow and end-to-end tests failing intermittently with `EmptyDataError`: both now wait for the export's worker to finish, since the per-event trace files are written after every table
