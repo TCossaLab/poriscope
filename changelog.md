@@ -16,6 +16,8 @@
 
 * **Breaking:** the Metadata tab's shared plot limits now describe the filtered, log-scaled values rather than the raw column, so a log-scaled density plot bins differently than before - the limits exist to make overlaid datasets comparable on what is actually drawn
 
+* **Breaking: `PeakFinder` now classifies a single population instead of declining** - when folding finds one population it fits a single Gaussian, assumes it is unfolded and calls folded at or above `max(1.5 x mu, mu + 3 sigma)`; a single prominence population is assumed to be class 0, with class 1 at or above `mu + 3 sigma` in log10 and no confidence; both thresholds are written out in the report and on the plots
+
 * **Breaking: raw SQL subset filters can no longer be selected for a plot**, on either tab, and say so when chosen. They never worked - the filter was passed where a WHERE clause was expected, so the database rejected the query and the plot came back empty without a word. Creating, saving and loading them is unchanged
 
 #### Data plugin API:
@@ -157,6 +159,8 @@
 * The Event Analysis tab now says which event indices were out of range and how many events the channel actually holds, instead of reporting "No data available for plotting"
 
 * An event the Event Analysis tab cannot load, or whose fit features cannot be read, no longer abandons the whole plot: the remaining events are still drawn
+
+* **Fixed `PeakFinder` fit overlays failing with "unsupported operand type(s) for *: 'float' and 'NoneType'"** when an event has no unfolded level yet (before folded/unfolded classification has run, or when it could not separate two populations): the baseline and peaks are now drawn and the unfolded-level lines are left out
 
 * Event fitting now reports a channel it cannot read or start and continues with the others, instead of abandoning the whole batch
 
@@ -303,6 +307,8 @@
 * `PeakFinder.get_metadata_columns` and `get_sublevel_columns` no longer name the five fields it keeps for itself, so the columns it reports, the types and units it declares and the keys `get_single_event_metadata` hands out all agree again
 
 * The `PeakFinder` changes in this release are Nada Kerrouri's, integrated from `feature/peakfinders_1.8.0`
+
+* Fixed: `PeakFinder`'s classification report crashed on a run with no peaks
 
 * Fixed: `Basic_PeakFinder` crashed on a zero-width sublevel in `sublevel_max_deviation`; now returns `0.0` for that case, and is covered by the behavioural conformance suite
 

@@ -693,7 +693,9 @@ class PeakFinder(MetaEventFitter):
         ``construct_fitted_event()`` for the same event. Returns horizontal
         lines (baseline, unfolded level, and that level offset by each of the
         two filter thresholds), one marker per peak, and the label strings
-        that go with them.
+        that go with them. The three unfolded-level lines are omitted when the
+        event has no unfolded level - before the run-wide folded/unfolded
+        classification has run, or when it could not separate two populations.
 
         Only metadata that is actually populated reaches a label: an event the
         classifiers never reached reads as having no value rather than a value
@@ -733,26 +735,26 @@ class PeakFinder(MetaEventFitter):
             # are visible against the trace.
             bases.append(baseline)
             hlabel.append("Baseline")
-            bases.append(
-                -np.sign(baseline)
-                * self.event_metadata[channel][index]["unfolded_level"]
-                + self.event_metadata[channel][index]["baseline_current"]
-            )
-            hlabel.append("unfolded level")
-            bases.append(
-                -np.sign(baseline)
-                * self.event_metadata[channel][index]["unfolded_level"]
-                + self.event_metadata[channel][index]["baseline_current"]
-                - np.sign(baseline) * t2_std * baseline_stdev
-            )
-            hlabel.append(f"unfolded level {t2_std:+d}σ")
-            bases.append(
-                -np.sign(baseline)
-                * self.event_metadata[channel][index]["unfolded_level"]
-                + self.event_metadata[channel][index]["baseline_current"]
-                - np.sign(baseline) * t1_std * baseline_stdev
-            )
-            hlabel.append(f"unfolded level {t1_std:+d}σ")
+
+            # unfolded_level is None until the folded/unfolded classifier has
+            # run over the whole fitting session, and stays None when that
+            # classifier cannot separate two populations. The unfolded level
+            # and the two filter bands hung off it are then left out rather
+            # than raising TypeError, which took the whole overlay down with
+            # it; the baseline and the peaks are still drawn.
+            unfolded_level = self.event_metadata[channel][index]["unfolded_level"]
+            if unfolded_level is not None and not np.isnan(unfolded_level):
+                unfolded_line = -np.sign(baseline) * unfolded_level + baseline
+                bases.append(unfolded_line)
+                hlabel.append("unfolded level")
+                bases.append(
+                    unfolded_line - np.sign(baseline) * t2_std * baseline_stdev
+                )
+                hlabel.append(f"unfolded level {t2_std:+d}σ")
+                bases.append(
+                    unfolded_line - np.sign(baseline) * t1_std * baseline_stdev
+                )
+                hlabel.append(f"unfolded level {t1_std:+d}σ")
 
             event_data = self.event_metadata[channel][index]
             direction = event_data.get("translocation_direction")
