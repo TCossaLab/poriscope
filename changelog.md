@@ -16,7 +16,7 @@
 
 * **Breaking:** the Metadata tab's shared plot limits now describe the filtered, log-scaled values rather than the raw column, so a log-scaled density plot bins differently than before - the limits exist to make overlaid datasets comparable on what is actually drawn
 
-* **Breaking: `PeakFinder` now classifies a single population instead of declining** - when folding finds one population it fits a single Gaussian, assumes it is unfolded and calls folded at or above `max(1.5 x mu, mu + 3 sigma)`; a single prominence population is assumed to be class 0, with class 1 at or above `mu + 3 sigma` in log10 and no confidence; both thresholds are written out in the report and on the plots
+* **Breaking: `PeakFinder` now classifies a single population instead of declining** - when folding finds one population it assumes that population is unfolded and the folded level exactly twice as deep, calls folded at or above `max(1.5 x mu, mu + 3 sigma)` from a single-Gaussian fit (or the median and MAD if that fit fails), and so always gives every event carrier levels for peak filtering; a single prominence population is assumed to be class 0, with class 1 at or above `mu + 3 sigma` in log10 and no confidence; both thresholds are written out in the report and on the plots
 
 * **Breaking: raw SQL subset filters can no longer be selected for a plot**, on either tab, and say so when chosen. They never worked - the filter was passed where a WHERE clause was expected, so the database rejected the query and the plot came back empty without a word. Creating, saving and loading them is unchanged
 

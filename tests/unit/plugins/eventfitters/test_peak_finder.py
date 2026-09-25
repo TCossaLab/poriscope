@@ -3645,17 +3645,31 @@ class TestFoldingSinglePopulationFallback(unittest.TestCase):
         self.assertEqual(calls[0].args, (0, 0, 1000.0, 2000.0))
         self.assertAlmostEqual(pf._classification_results["threshold"], 1500.0)
 
-    def test_declines_when_the_single_fit_fails(self):
-        levels = np.random.default_rng(3).normal(1000.0, 50.0, 500)
+    def test_single_fit_failure_falls_back_to_median_and_mad(self):
+        """
+        The single-population path never declines: without a fit, the median
+        and scaled MAD describe the population, and every event still gets
+        both carrier levels, so peak filtering downstream is not starved.
+        """
+        levels = np.array([990.0, 1000.0, 1000.0, 1010.0, 2000.0])
         pf = self._run(levels, single_fit=None)
-        self.assertIn("error", pf._classification_results)
-        pf.update_event_metadata_post_processing.assert_not_called()
+        results = pf._classification_results
+        self.assertNotIn("error", results)
+        self.assertIn("median", results["lower_center_source"])
+        self.assertAlmostEqual(results["lower_center"], 1000.0)
+        self.assertAlmostEqual(results["lower_std"], 1.4826 * 10.0)
+        self.assertAlmostEqual(results["threshold"], 1500.0)
+        self.assertEqual(
+            pf.update_event_metadata_post_processing.call_count, len(levels)
+        )
+        self.assertEqual(results["folded_count"], 1)
 
-    def test_declines_when_the_single_centre_is_not_positive(self):
+    def test_folded_level_is_assumed_twice_the_unfolded_centre(self):
         levels = np.random.default_rng(4).normal(1000.0, 50.0, 500)
-        pf = self._run(levels, single_fit=(10.0, -5.0, 1.0))
-        self.assertIn("error", pf._classification_results)
-        pf.update_event_metadata_post_processing.assert_not_called()
+        pf = self._run(levels, single_fit=(10.0, 1000.0, 50.0))
+        results = pf._classification_results
+        self.assertEqual(results["lower_center_source"], "single-Gaussian fit")
+        self.assertAlmostEqual(results["assumed_folded_level"], 2000.0)
 
     def test_the_report_states_the_assumption_and_the_rule(self):
         levels = np.random.default_rng(5).normal(1000.0, 50.0, 1000)
@@ -3667,6 +3681,7 @@ class TestFoldingSinglePopulationFallback(unittest.TestCase):
         ):
             report = pf.report_channel_status(0)
         self.assertIn("assumed it is unfolded", report)
+        self.assertIn("Folded level (assumed, 2 x unfolded)", report)
         self.assertIn("Threshold rule: max(1.5 x mu, mu + 3 sigma)", report)
         self.assertNotIn("Higher center", report)
 

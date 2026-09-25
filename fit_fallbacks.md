@@ -246,16 +246,16 @@ found. Folding and prominence instead describe the one population with a single 
 | `fit_threshold` raises | `error: "double-Gaussian fit failed"` | logs an error and returns; no peak classified | `skipped`, reason `"fit failure"` |
 | Missing threshold or centres | `error: "fit insufficient results"` | raises `RuntimeError` (see below) | raises `RuntimeError` (see below) |
 | Fewer than two centres | `error: "Could not find two distinct distributions"` | proceeds — centres are not required to split | `skipped`, reason `"insufficient centers"` |
-| `n_components = 1` | **single-Gaussian fallback**: assumed unfolded, folded at or above `max(1.5·μ, μ + 3σ)` | **single-Gaussian fallback**: assumed class 0, class 1 at or above `μ + 3σ` in the fitted variable | `skipped`, reason `"only one population detected"` |
-| `n_components = 1` and the single fit fails | `error: "only one population detected, and the single-Gaussian fallback failed; …"` — also when μ ≤ 0 | proceeds on `fit_threshold`'s own above-floor threshold, with two-component confidences, and warns | as above |
+| `n_components = 1` | **single-Gaussian fallback**: assumed unfolded, folded level assumed at 2·μ, folded at or above `max(1.5·μ, μ + 3σ)` | **single-Gaussian fallback**: assumed class 0, class 1 at or above `μ + 3σ` in the fitted variable | `skipped`, reason `"only one population detected"` |
+| `n_components = 1` and the single fit fails | **still classifies**: the pool's median and 1.4826·MAD stand in for μ and σ — this path never declines | proceeds on `fit_threshold`'s own above-floor threshold, with two-component confidences, and warns | as above |
 
 Each folded/unfolded decline also calls `_collect_peak_statistics` before returning, so the
 peak-filtering section of the report is still populated.
 
 ### Knock-on effects
 
-- A **folding** decline — now only on a fit failure, or a single population whose
-  single-Gaussian fit also fails — means no event gets an `unfolded_level` or `folded_level`. `bound_star`
+- A **folding** decline — now only when the double-Gaussian fit itself fails; a single
+  population never declines — means no event gets an `unfolded_level` or `folded_level`. `bound_star`
   then has no depth floor to test candidates against and counts every sequence-bearing event
   under `no_height_reference`. That is reported ahead of the widest-peak rule, which needs no
   fitted level of its own — so a folding decline still shows up as "no floor" rather than
@@ -298,16 +298,17 @@ double-fit failure still declines, since a failed fit is not evidence of one pop
 `_fit_single_gaussian` is a bounded three-parameter `curve_fit` on the box `_curve_fit_bounded`
 uses per component, seeded at the tallest bin with the count-weighted σ. No flat constant. Only
 convergence failures reject (exception, or non-finite parameters/covariance), plus a histogram
-that is empty or under 3 bins. It has no fallback of its own.
+that is empty or under 3 bins. It has no fallback of its own; each caller decides what stands
+in for it (table below).
 
 | | Folded / unfolded | Peak prominence |
 |---|---|---|
-| Population assumed to be | unfolded | class 0 |
+| Population assumed to be | unfolded, with the folded level at exactly 2·μ | class 0 |
 | Cut | `max(FOLDING_SINGLE_POPULATION_RATIO·μ, μ + FOLDING_SINGLE_POPULATION_SIGMA·σ)`, pA | `μ + PROMINENCE_SINGLE_POPULATION_SIGMA·σ`, in the fitted variable (log10) |
 | Which term won | named in `threshold_rule` — the ratio term on a narrow population, σ on a wide one | n/a |
-| Results keys | `single_population`, `lower_std`, `threshold_rule`; `higher_center` None, no `ratio` | `single_population`, `threshold_rule`; one centre and one std |
+| Results keys | `single_population`, `lower_std`, `lower_center_source`, `assumed_folded_level`, `threshold_rule`; `higher_center` None, no `ratio` | `single_population`, `threshold_rule`; one centre and one std |
 | Confidence | n/a | NaN for every peak — no second population to weigh against |
-| Single fit fails | declines, as before | keeps `fit_threshold`'s above-floor threshold, as before |
+| Single fit fails | median and 1.4826·MAD of the pool stand in for μ and σ; never declines, so every event gets both carrier levels and peak filtering always runs | keeps `fit_threshold`'s above-floor threshold, as before |
 
 Both cuts are **arbitrary**, which is why the rule is written out in full in the results, on the
 plot legend, in the plot title ("single population - fallback threshold") and as a warning the
