@@ -734,7 +734,9 @@ sigma_log 0.45, 12 trials: the linear fit returned `n_components = 1` in **10 of
 trials and recovered the true classes **61%** of the time, against **1 of 12** and **85%**
 on the log scale. The cost is that the log fit raised "could not fit a double Gaussian"
 in **2 of 12**, where the linear fit never did - an exception classifies nothing at all
-rather than degrading to a coarser rung.
+rather than degrading to a coarser rung. Poisson-weighted `curve_fit` was also measured on the
+same real data and made the fit worse unless paired with tail trimming, where the pairing is
+cliff-edged; do not revisit it alongside this.
 
 **Revisit** on the first real dataset moved onto this scale; `PROMINENCE_FIT_LOG_SCALE =
 False` restores the linear fit for a side-by-side.

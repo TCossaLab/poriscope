@@ -148,7 +148,8 @@ revisiting.
 ## Where things are written down
 
 - `changelog.md` — what changed, user-facing. Update it for any code change.
-- `future_fixes.md` — what is still queued. Keep it terse; prune items as they land
+- `future_fixes.md` — the authoritative record of what is still queued, organised under
+  release-target headers (2.0.0, 2.1, 2.2, Later, Owner-held). Keep it terse; prune items as they land
   rather than leaving completed-work narrative behind. Delete a landed entry outright —
   do not mark it `**Fixed**`, strike it through with `~~`, or retitle its section
   `DONE`/`CLOSED`; the history already lives in `changelog.md`. When only part of an
