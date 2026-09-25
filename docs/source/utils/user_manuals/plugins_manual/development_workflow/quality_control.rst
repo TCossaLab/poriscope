@@ -725,8 +725,7 @@ written for what that family's output is actually used for:
    * - ``MetaReader``
      - Agrees with the recording about channels, sample rate and length; ``load_data``
        recovers the planted baseline and event depth in picoamps, not just a plausible
-       shape; ``get_raw_dtype()`` resolves to a real dtype and the raw-data path returns
-       the same sample count as the normal one.
+       shape.
    * - ``MetaFilter``
      - Shape and dtype preserved, output finite, the data actually changed but the
        blockage still detectable, and ``get_callable_filter()`` agreeing with
@@ -1081,16 +1080,6 @@ carry the class name, so ``-k`` matches it:
    ``ClassicCUSUM``'s ``Step Size`` — so a recipe value copied from a sibling silently
    detects nothing. Read the parameter's ``Units`` entry rather than the sibling's
    number. Declaring ``Units`` on your own parameters is what makes this checkable.
-
-.. tip::
-
-   If you are writing a reader, check your ``_set_raw_dtype()`` yourself, because the
-   suite cannot. It verifies that ``get_raw_dtype()`` resolves to a usable dtype and
-   that the raw-data call returns as many samples as the normal one — but not that the
-   dtype matches what is really on disk. It cannot: ``MetaReader.load_data`` finishes
-   its raw-data branch with ``.astype(self.get_raw_dtype())``, so the returned array
-   has that dtype whatever you declared. A reader passing every raw-data check can
-   still be describing its file's encoding wrongly.
 
 .. _reader_fuzz_testing:
 

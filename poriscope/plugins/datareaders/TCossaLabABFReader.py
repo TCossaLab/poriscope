@@ -27,7 +27,7 @@ import logging
 import os
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, override
+from typing import Any, Dict, List, Optional, override
 
 import numpy as np
 import numpy.typing as npt
@@ -261,25 +261,6 @@ class TCossaLabABFReader(MetaReader):
 
     @log(logger=logger)
     @override
-    def _convert_raw_data(
-        self, data: npt.NDArray[np.int16], config: dict
-    ) -> Tuple[npt.NDArray[Any], float, float]:
-        """
-        Report the raw ADC codes, with the scale and offset that would convert them.
-
-        :param data: Data to report unscaled.
-        :type data: npt.NDArray[np.int16]
-        :param config: Configuration dictionary the scale and offset are derived from.
-        :type config: dict
-        :return: The unscaled data, its scale factor, and its offset.
-        :rtype: Tuple[npt.NDArray[Any], float, float]
-        """
-        scale = config["scale"]
-        offset = 0.0
-        return data, scale, offset
-
-    @log(logger=logger)
-    @override
     def _get_configs(self, datafiles: List[str]) -> List[dict]:
         """
         Load configuration files as dictionaries, corresponding to datamaps as needed.
@@ -330,20 +311,6 @@ class TCossaLabABFReader(MetaReader):
             config["header_bytes"] = header.get_header_bytes()
             configs.append(config)
         return configs
-
-    @log(logger=logger)
-    @override
-    def _set_raw_dtype(self, configs: List[dict]) -> np.dtype:
-        """
-        Set the data type for the raw data in files of this type
-
-        :param configs: List of configuration dictionaries corresponding to data files.
-        :type configs: List[dict]
-
-        :return: the dtype of the raw data in your data files
-        :rtype: np.dtype
-        """
-        return np.dtype(configs[0]["columntypes"][0])
 
     # public API
     @log(logger=logger)

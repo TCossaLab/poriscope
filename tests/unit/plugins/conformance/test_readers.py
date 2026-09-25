@@ -18,20 +18,8 @@ Before this module, only ChimeraReader20240501 had ever been driven against
 real data (by ``tests/integration/flows`` and ``tests/e2e/raw_data``); the
 other six readers had compliance and settings-schema coverage only.
 
-The raw-data path deserves a note on what is and is not meaningful to assert
-here. ``MetaReader.load_data`` always finishes its raw-data branch with
-``data.astype(self.get_raw_dtype())`` before returning, so
-``load_data(raw_data=True).dtype == get_raw_dtype()`` holds by construction
-for every reader - it is not a per-plugin invariant and asserting it proves
-nothing. What genuinely varies per plugin, and is worth checking, is that
-``get_raw_dtype()`` itself resolves to a real, usable numpy dtype, and that
-the raw-data call succeeds and returns an array of the same length as the
-non-raw call. A byte-for-byte "raw reconstructs non-raw via scale/offset"
-check was considered and rejected: `ChimeraReaderVC100._convert_data`
-reinterprets the raw code through a bitmask/uint16 step that (scale, offset)
-alone does not capture, so a literal ``raw*scale+offset`` formula is only
-valid for *some* readers, not the family in general - confirmed directly
-against the real reader rather than assumed.
+Every read is in pA: the unscaled raw-data path readers used to offer alongside
+``load_data`` was removed in 2.0.0, so there is one conversion per reader to check.
 """
 
 import gc
@@ -178,40 +166,6 @@ def test_load_data_rejects_an_out_of_bounds_request(opened) -> None:
     one_sample_s = 1.0 / dataset.samplerate
     with pytest.raises(ValueError):
         reader.load_data(0.0, dataset.duration_s + one_sample_s, channel)
-
-
-@pytest.mark.conformance
-def test_raw_data_path_is_self_consistent(opened) -> None:
-    """
-    ``get_raw_dtype()`` is usable, and ``load_raw_data`` returns a matching shape.
-
-    Split from ``load_data`` in 2.0.0: the two used to be one method whose return type
-    depended on a ``raw_data`` flag's value, so this test could not say which shape it
-    expected without repeating the flag.
-
-    See the module docstring for why this stops short of a
-    reconstruct-via-scale-and-offset check: that formula is not valid for
-    every reader in the family (ChimeraReaderVC100's bitmask step is not
-    representable by (scale, offset) alone), so asserting it here would be
-    testing this test's assumption, not the plugin.
-
-    :param opened: The reader and its dataset ground truth.
-    :type opened: tuple
-    """
-    reader, dataset = opened
-    channel = dataset.channel
-
-    raw_dtype = reader.get_raw_dtype()
-    assert np.dtype(raw_dtype) is not None  # raises TypeError if unusable
-
-    non_raw = reader.load_data(0.0, dataset.duration_s, channel)
-    raw, scale, offset = reader.load_raw_data(0.0, dataset.duration_s, channel)
-
-    assert (
-        raw.size == non_raw.size
-    ), f"raw path returned {raw.size} samples, non-raw returned {non_raw.size}"
-    assert isinstance(scale, (int, float, np.floating, np.integer))
-    assert isinstance(offset, (int, float, np.floating, np.integer))
 
 
 @pytest.mark.conformance

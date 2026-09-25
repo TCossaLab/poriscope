@@ -24,9 +24,9 @@
 
 * **Breaking: a writer plugin's `_write_data` takes the event dict instead of thirteen positional parameters, and its data is always in pA** - its `raw_data` parameter, the event's `scale` and `offset` keys and `MetaWriter._rescale_data_to_adc` are removed, as are `MetaEventFinder.get_dtype` and the `raw_data` argument of `get_single_event_data`/`get_event_data_generator`, since events no longer reach a writer unscaled
 
-* **Breaking: `MetaReader.load_data` no longer takes a `raw_data` flag** - it always returns rescaled pA, and the new `load_raw_data` returns unscaled ADC codes with the scale and offset alongside; `continuous_read` splits the same way into `continuous_read` and `continuous_read_raw`
+* **Breaking: the unscaled raw-data read path is removed** - `MetaReader.load_data` and `continuous_read` no longer take a `raw_data` flag and always return pA, and `get_raw_dtype` is gone
 
-* **Breaking: a reader plugin now implements `_convert_data` and `_convert_raw_data` rather than one `_convert_data` taking a `raw_data` flag** - each returns one type instead of a type that depended on the flag's value, and `_scale_data` loses its own now-unused `raw_data` argument
+* **Breaking: a reader plugin implements `_convert_data` without a `raw_data` flag, and no longer implements `_set_raw_dtype`** - every read returns pA, so there is one conversion per reader, and `_scale_data` loses its now-unused `raw_data` argument
 
 * **Breaking:** `MetaReader.load_data()` now raises `ValueError` on an out-of-bounds request instead of silently returning fewer samples than asked for
 
