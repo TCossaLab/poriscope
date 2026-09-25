@@ -25,6 +25,7 @@
 # Kyle Briggs
 
 import bisect
+import copy
 import logging
 import re
 import warnings
@@ -1135,6 +1136,7 @@ class ProteinView(MetaSubsetTabView):
                 self._update_distribution_individual(parameters)
             else:
                 parameters["plot_type"] = "Filtered Histogram"
+                self._record_selection(parameters)
                 self._update_distribution_ensemble(parameters)
 
         elif action_name == "add_filter":
@@ -1895,7 +1897,9 @@ class ProteinView(MetaSubsetTabView):
         self._reset_actions()
         self._clear_cache()
 
-        selected_filters = self.get_selected_filters()
+        # The selection comes from the parameters, not the widgets, so a replay draws
+        # what was recorded; see _record_selection.
+        selected_filters = dict(parameters["selected_filters"])
         if self._refuse_raw_filters(selected_filters):
             return
         loader = parameters["db_loader"]
@@ -1906,7 +1910,7 @@ class ProteinView(MetaSubsetTabView):
 
         experiments_and_channels: Optional[
             Union[Dict[str, List[str]], Dict[Any, Any]]
-        ] = self.selected_experiment_and_channels_by_loader.get(loader)
+        ] = copy.deepcopy(parameters["experiments_and_channels"])
 
         self.plot_initialized = True
 

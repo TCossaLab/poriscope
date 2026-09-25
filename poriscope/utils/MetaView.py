@@ -69,6 +69,9 @@ class MetaView(QWidget, WalkthroughMixin, metaclass=QObjectABCMeta):
     update_tab_action_history = Signal(
         object, bool
     )  # OrderedDict of actions to take, whether or not to delete the most recent key
+    #: Drops the most recently recorded action without replaying anything, for an action
+    #: that was refused and left the figure as it was.
+    discard_last_tab_action = Signal()
     save_tab_action_history = Signal(str)  # save file name
     kill_worker = Signal(str, str)
     kill_all_workers = Signal(str)

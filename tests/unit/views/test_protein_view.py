@@ -65,6 +65,27 @@ from tests.unit.views._qt_mocks import mock_axes, shadow_signals
 # ===========================================================================
 
 
+def recorded(view, parameters):
+    """
+    Give a plot's parameters the selection ``handle_parameter_change`` records into them.
+
+    The recorded plot methods read the filter and channel selection from their
+    parameters, so a replay draws what was recorded. A test calling one directly has to
+    hand it parameters shaped the same way, and this calls the real ``_record_selection``
+    to build them, from whatever the test has stubbed ``get_selected_filters`` and the
+    channel selection to be.
+
+    :param view: the view under test
+    :type view: Any
+    :param parameters: the plot's parameters, updated in place
+    :type parameters: dict
+    :return: the same parameters
+    :rtype: dict
+    """
+    view._record_selection(parameters)
+    return parameters
+
+
 @pytest.fixture(scope="session", autouse=True)
 def qt_app():
     app = QApplication.instance()
@@ -1927,7 +1948,7 @@ class TestUpdateDistributionEnsemble:
         }
         mock_view.get_selected_filters = MagicMock(return_value={})
         with caplog.at_level("WARNING"):
-            mock_view._update_distribution_ensemble(self._params())
+            mock_view._update_distribution_ensemble(recorded(mock_view, self._params()))
         assert any("single experiment" in r.message for r in caplog.records)
 
     def test_multiple_channels_logs_warning_and_returns(self, mock_view, caplog):
@@ -1936,7 +1957,7 @@ class TestUpdateDistributionEnsemble:
         }
         mock_view.get_selected_filters = MagicMock(return_value={})
         with caplog.at_level("WARNING"):
-            mock_view._update_distribution_ensemble(self._params())
+            mock_view._update_distribution_ensemble(recorded(mock_view, self._params()))
         assert any("single channel" in r.message for r in caplog.records)
 
     def test_multiple_filters_warns_and_returns(self, mock_view):
@@ -1944,7 +1965,7 @@ class TestUpdateDistributionEnsemble:
         mock_view.get_selected_filters = MagicMock(return_value={"f1": "a", "f2": "b"})
         received = []
         mock_view.add_text_to_display.connect(lambda m, s: received.append(m))
-        mock_view._update_distribution_ensemble(self._params())
+        mock_view._update_distribution_ensemble(recorded(mock_view, self._params()))
         assert any("single subset" in m for m in received)
 
     def test_sets_plot_initialized_true(self, mock_view):
@@ -1953,7 +1974,7 @@ class TestUpdateDistributionEnsemble:
         }
         mock_view.get_selected_filters = MagicMock(return_value={})
         mock_view.plot_initialized = False
-        mock_view._update_distribution_ensemble(self._params())
+        mock_view._update_distribution_ensemble(recorded(mock_view, self._params()))
         assert mock_view.plot_initialized is True
 
     # These four assert on the *status panel*, not the log. The caplog tests above
@@ -1967,7 +1988,7 @@ class TestUpdateDistributionEnsemble:
         }
         mock_view.get_selected_filters = MagicMock(return_value={})
 
-        mock_view._update_distribution_ensemble(self._params())
+        mock_view._update_distribution_ensemble(recorded(mock_view, self._params()))
 
         said = [c.args[0] for c in mock_view.add_text_to_display.emit.call_args_list]
         assert any("single experiment" in m for m in said)
@@ -1978,7 +1999,7 @@ class TestUpdateDistributionEnsemble:
         }
         mock_view.get_selected_filters = MagicMock(return_value={})
 
-        mock_view._update_distribution_ensemble(self._params())
+        mock_view._update_distribution_ensemble(recorded(mock_view, self._params()))
 
         said = [c.args[0] for c in mock_view.add_text_to_display.emit.call_args_list]
         assert any("single channel" in m for m in said)
@@ -1993,7 +2014,7 @@ class TestUpdateDistributionEnsemble:
         mock_view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": []}}
         mock_view.get_selected_filters = MagicMock(return_value={})
 
-        mock_view._update_distribution_ensemble(self._params())
+        mock_view._update_distribution_ensemble(recorded(mock_view, self._params()))
 
         said = [c.args[0] for c in mock_view.add_text_to_display.emit.call_args_list]
         assert any("single channel" in m for m in said)
@@ -2323,7 +2344,7 @@ class TestEnsembleHistogramRequest:
     def test_the_request_carries_the_subset_and_the_bin_request(self, mock_view):
         self._scoped(mock_view)
 
-        mock_view._update_distribution_ensemble(self._params())
+        mock_view._update_distribution_ensemble(recorded(mock_view, self._params()))
 
         args = mock_view.ensemble_histogram_requested.emit.call_args.args
         loader, sql_filter, scope, plot_type, bins, sizes = args[:6]
@@ -2342,7 +2363,7 @@ class TestEnsembleHistogramRequest:
         """
         self._scoped(mock_view)
 
-        mock_view._update_distribution_ensemble(self._params())
+        mock_view._update_distribution_ensemble(recorded(mock_view, self._params()))
 
         args = mock_view.ensemble_histogram_requested.emit.call_args.args
         dataset_label, dataset_key, d, L, N = args[6:]
@@ -2358,7 +2379,7 @@ class TestEnsembleHistogramRequest:
         """
         self._scoped(mock_view)
 
-        mock_view._update_distribution_ensemble(self._params())
+        mock_view._update_distribution_ensemble(recorded(mock_view, self._params()))
 
         assert not hasattr(mock_view, "event_data_generator")
 

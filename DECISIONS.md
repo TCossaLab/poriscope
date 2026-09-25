@@ -696,7 +696,7 @@ than through `getattr` on whatever the file happens to name. Five rules:
 5. **A replayable action is a pure function of its recorded arguments.** Everything it
    depends on is captured when the action is recorded and passed in; the body reads **no**
    widget state. Replay has to reproduce what the user actually did, not press the button
-   again against whatever is in the entry boxes now.
+   again against whatever is in the entry boxes now. *Met 2026-09-25 for both decorated plot methods: the filter and channel selection is recorded in their parameters (`MetaSubsetTabView._record_selection`), without the registry.*
 
 **Backward compatibility is explicitly not a constraint.** Kyle's ruling, 2026-09-17: the
 feature is barely used, so existing `.json` action files may be broken where doing so makes

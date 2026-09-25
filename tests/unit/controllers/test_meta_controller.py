@@ -520,6 +520,71 @@ def test_update_tab_actions_undo_removes_last_entry(
     mock_view.update_actions_from_json.assert_called_once()
 
 
+def test_discarding_drops_the_last_action_without_replaying(
+    controller: MetaController,
+    mock_view: MagicMock,
+) -> None:
+    """
+    A discarded action leaves the rest of the history, and the figure, alone.
+
+    :param controller: Controller under test.
+    :param mock_view: Mocked meta view.
+    """
+    controller.tab_action_history = OrderedDict(
+        {0: {"function": "step1"}, 1: {"function": "step2"}}
+    )
+
+    controller.discard_last_tab_action()
+
+    assert controller.tab_action_history == OrderedDict({0: {"function": "step1"}})
+    mock_view.update_actions_from_json.assert_not_called()
+    controller.update_tab_action_history.emit.assert_called_once()
+
+
+def test_discarding_from_an_empty_history_does_nothing(
+    controller: MetaController,
+) -> None:
+    """
+    Nothing to drop is not an error.
+
+    :param controller: Controller under test.
+    """
+    controller.tab_action_history = OrderedDict()
+
+    controller.discard_last_tab_action()
+
+    controller.update_tab_action_history.emit.assert_not_called()
+
+
+def test_undo_replays_from_the_last_reset_and_keeps_the_rest(
+    controller: MetaController,
+    mock_view: MagicMock,
+) -> None:
+    """
+    Only what the last reset left on the figure is redrawn; the earlier history stays.
+
+    :param controller: Controller under test.
+    :param mock_view: Mocked meta view.
+    """
+    controller.tab_action_history = OrderedDict(
+        {
+            0: {"function": "plot_a"},
+            1: {"function": "_reset_actions"},
+            2: {"function": "plot_b"},
+            3: {"function": "plot_c"},
+        }
+    )
+
+    controller.update_tab_actions(undo=True)
+
+    replayed = mock_view.update_actions_from_json.call_args[0][0]
+    assert [entry["function"] for entry in replayed.values()] == [
+        "_reset_actions",
+        "plot_b",
+    ]
+    assert controller.tab_action_history == OrderedDict({0: {"function": "plot_a"}})
+
+
 def test_update_tab_actions_undo_on_empty_history_returns_early(
     controller: MetaController,
 ) -> None:

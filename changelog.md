@@ -36,6 +36,8 @@
 
 #### Analysis-tab API:
 
+* **Breaking: plot configurations saved before 2.0.0 no longer load** - a saved plot now carries its filter and channel selection, which older files do not have
+
 * **Breaking: the global signal bus is gone.** `global_signal` and `data_plugin_controller_signal` are removed from `MetaView`, `MetaModel` and `MetaController`, along with the relays and dispatcher behind them - an analysis tab outside this repository that emits either will stop working, and should call its plugin through `self.call(...)` on the Model or use the typed create/edit/delete signals instead
 
 * **Breaking: `MetaView.handle_parameter_change` is now abstract** - `_set_control_area` has always connected the controls panel to it while the View is being constructed, so a tab that did not define it raised `AttributeError` out of `__init__`; a tab that lays out its own control area can implement it as `pass`
@@ -195,6 +197,12 @@
 * Validating a subset filter no longer queries across all three metadata tables regardless of what the filter references, which was joining `sublevels` and `experiments` even for a filter over `events` alone
 
 #### Metadata:
+
+* **Fixed Undo, and a saved plot configuration, redrawing earlier plots with the current filter and channel selection** instead of the ones they were made with; a plot now records its selection, on the Protein tab's ensemble plot too
+
+* **Undo on the Metadata tab redraws only what the last reset left on the figure**, instead of re-running every plot since the tab opened
+
+* **Fixed a refused plot - including a double-click on Plot - wiping the earlier overlays**: a plot that changes nothing is now dropped from the history without redrawing the figure
 
 * **Fixed the Metadata tab plotting the wrong subset's data when a database call failed**: the query, the column units and the event generator were each reused from the previous subset, so a failure mid-plot drew the previous subset under this one's label, or labelled the axes with another column's units
 

@@ -41,28 +41,6 @@ docstring/comment-only, so no tests and no changelog entry:
 `tests/unit/scripts/test_mvc_boundary_allowlist.py:7` ("Steps 3-5"),
 `tests/integration/flows/test_clustering_flow_no_gui.py:10` ("Steps 3-5").
 
-### Action replay re-reads the filter selection instead of replaying it (2026-09-17)
-
-Both non-trivial `@register_action` methods call `self.get_selected_filters()` inside their
-own bodies - `MetadataView._overlay_plot:1405` and
-`ProteinView._update_distribution_ensemble:1898` - and that reads
-`self._subset_controls.filter_comboBox.getSelectedItems()`, i.e. live widget state. Everything
-else the action needs arrives in its recorded `parameters` dict, so **replaying a saved plot
-applies whichever filters are selected at replay time**, silently, and the plot is not the one
-that was saved. Capture the selection into the recorded payload at record time and pass it in;
-`_reset_actions` already reads nothing. `DECISIONS.md` 2026-09-17 rule 5 is the standing rule
-this violates.
-
-**It is reachable from Undo, not only from a saved file** (2026-09-24). `@register_action`
-records after the call whatever it returned (`LogDecorator.py:177-194`); a refused overlay -
-including "every dataset already plotted", so a double-click on Plot - emits `(None, True)`
-(`MetadataView.py:1941-1943`), and `MetaController.update_tab_actions:443-484` then replays
-the *whole* remaining history, since nothing truncates it at `_reset_actions`. Measured with
-a stub harness: one refusal after 10 overlays replayed 11 actions, each re-querying the
-database on the GUI thread. Plot under filter A, switch to B, plot, Undo: the replay draws B.
-Fix ahead of the registry below: pop without replaying on refusal, replay only from the last
-`_reset_actions`, and record the filter selection in the payload.
-
 ### Data integrity and scientific correctness
 
 - **CUSUM `Sensitivity` is documented backwards.** `CUSUM.py:76-77` and
@@ -99,10 +77,8 @@ Fix ahead of the registry below: pop without replaying on refusal, replay only f
 
 ### Analysis tabs
 
-- **Dead load-plot branch**: `MetadataView.py:1948-1951` calls
-  `self._update_actions_from_json`, which exists nowhere, behind a condition that is always
-  false; `ProteinView._update_distribution_ensemble` returns None, so it never rolls back a
-  refusal the way Metadata does.
+- **`ProteinView._update_distribution_ensemble` returns None**, so a refused ensemble plot is
+  never rolled back out of the action history the way Metadata's is.
 
 ### Types, tests and CI
 
@@ -274,13 +250,6 @@ barely used), so the design is free:
 
 Breaking, and to be called out as such whenever it lands.
 
-**It also has to fix a live defect, which is the reason it is a design step and not an
-edit.** A replayable action must be a pure function of its recorded arguments, and both
-non-trivial decorated methods call `get_selected_filters()` inside their own bodies, reading
-the combobox. Everything else they need arrives in the recorded `parameters`, so replaying a
-saved plot applies *whichever filters are selected now* and the plot that comes back is not
-the plot that was saved. Recording the selection alongside the rest of the intent is the
-obvious fix and needs the registry design above to carry it.
 
 ### Other queued items
 

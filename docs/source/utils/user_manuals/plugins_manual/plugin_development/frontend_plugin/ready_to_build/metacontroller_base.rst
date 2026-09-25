@@ -30,7 +30,12 @@ No need to manually handle cross-plugin communication — :ref:`MetaController` 
 
 - Built-in support for tracking user actions per tab
 - Can save and reload these actions from a JSON file
-- Undo logic included (with safety checks and filtering)
+- Undo logic included (with safety checks and filtering): Undo replays the history from
+  the last reset onward, and ``discard_last_tab_action`` drops a record without
+  replaying anything, for an action that was refused and changed nothing
+- A recorded action must be a pure function of its recorded arguments, so put anything
+  it reads from the widgets - a selection, say - into its parameters before calling it,
+  as ``MetaSubsetTabView._record_selection`` does
 
 **Session state**
 

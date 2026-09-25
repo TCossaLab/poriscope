@@ -88,6 +88,7 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
         self.model.add_text_to_display.connect(self.relay_add_text_to_display)
         self.view.save_tab_action_history.connect(self.save_tab_actions)
         self.view.update_tab_action_history.connect(self.update_tab_actions)
+        self.view.discard_last_tab_action.connect(self.discard_last_tab_action)
         self.view.cache_plot_data.connect(self.model.cache_plot_data)
         self.view.export_plot_data.connect(self.export_plot_data)
         self.view.load_actions_from_json.connect(self.load_actions_from_json)
@@ -475,9 +476,39 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
                         ]
                     except StopIteration:
                         break
-            history = deepcopy(self.tab_action_history)
-            self.tab_action_history = OrderedDict()
-            self.view.update_actions_from_json(history)
+            # Replay from the last reset only. Everything before it was cleared off the
+            # figure by that reset, so replaying it re-queried the database on the GUI
+            # thread for nothing. It is kept, not truncated, so a later Undo past the
+            # reset still has it to redraw from.
+            entries = list(deepcopy(self.tab_action_history).items())
+            start = max(
+                (
+                    position
+                    for position, (_, entry) in enumerate(entries)
+                    if entry.get("function") == "_reset_actions"
+                ),
+                default=0,
+            )
+            self.tab_action_history = OrderedDict(entries[:start])
+            self.view.update_actions_from_json(OrderedDict(entries[start:]))
+        self.update_tab_action_history.emit(
+            self.__class__.__name__, self.tab_action_history
+        )
+
+    @log(logger=logger)
+    @Slot()
+    def discard_last_tab_action(self) -> None:
+        """
+        Drop the most recently recorded action without replaying anything.
+
+        For an action that was refused and left the figure unchanged - a plot of what is
+        already shown, say. Undoing it instead cleared the figure and replayed the whole
+        history, which redrew it with the current selection rather than the recorded one.
+        """
+        try:
+            self.tab_action_history.popitem()
+        except KeyError:
+            return
         self.update_tab_action_history.emit(
             self.__class__.__name__, self.tab_action_history
         )
