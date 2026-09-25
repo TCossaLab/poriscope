@@ -1938,9 +1938,17 @@ class MetadataView(MetaSubsetTabView):
                     # Exit immediately out of handle_parameter_change.
                     # This prevents _overlay_plot from running and avoids the history rollback entirely.
                     return
+            before = set(self.plotted_datasets)
             success = self._overlay_plot(parameters)
             if success is False:
-                self.update_tab_action_history.emit(None, True)
+                # The call was recorded whatever it returned. If the figure is as it
+                # was - everything already plotted, or refused before drawing - drop
+                # that record; if the refusal changed the figure (it reset it, or drew
+                # part of the request), undo it, which redraws from the history.
+                if self.plotted_datasets == before:
+                    self.discard_last_tab_action.emit()
+                else:
+                    self.update_tab_action_history.emit(None, True)
         elif action_name == "reset_plot":
             self._reset_actions()
         elif action_name == "load_plot":

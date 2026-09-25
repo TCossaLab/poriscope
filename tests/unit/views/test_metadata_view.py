@@ -81,6 +81,7 @@ def view(mocker: MockerFixture, mock_qt_dependencies: None) -> MetadataView:
     view_instance.add_text_to_display.emit = mocker.Mock()
     view_instance.update_tab_action_history = mocker.Mock()
     view_instance.update_tab_action_history.emit = mocker.Mock()
+    view_instance.discard_last_tab_action = mocker.Mock()
 
     # Mock helper methods
     view_instance._update_cache = mocker.Mock()
@@ -3238,16 +3239,49 @@ def test_handle_parameter_change_calls_overlay_plot_on_update(
     view._overlay_plot.assert_called_once_with(parameters)
 
 
-def test_handle_parameter_change_undoes_on_failed_overlay(
+def test_a_refusal_that_left_the_figure_unchanged_is_discarded(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify update_tab_action_history is emitted when overlay fails."""
+    """
+    Nothing drawn and nothing cleared: drop the record, replay nothing.
+
+    Undoing here cleared the figure and replayed the whole history with the current
+    selection - a double-click on Plot lost every earlier overlay but the last.
+    """
+    view.plotted_datasets = {("loader", "exp", 0, "", "A")}
     view._overlay_plot = mocker.Mock(return_value=False)  # type: ignore[method-assign]
-    parameters = {"plot_type": "Histogram"}
 
-    view.handle_parameter_change("metadata", "update_plot", (parameters,))
+    view.handle_parameter_change(
+        "metadata", "update_plot", ({"plot_type": "Histogram"},)
+    )
 
-    view.update_tab_action_history.emit.assert_called_with(None, True)
+    view.discard_last_tab_action.emit.assert_called_once_with()
+    view.update_tab_action_history.emit.assert_not_called()
+
+
+def test_a_refusal_that_changed_the_figure_is_undone(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """
+    A refused call that reset the figure first is undone, which redraws it.
+
+    The overlay is stubbed the way the real one behaves on this path: it resets the
+    figure, clearing ``plotted_datasets``, and then refuses.
+    """
+    view.plotted_datasets = {("loader", "exp", 0, "", "A")}
+
+    def reset_then_refuse(parameters):
+        view.plotted_datasets = set()
+        return False
+
+    view._overlay_plot = mocker.Mock(side_effect=reset_then_refuse)  # type: ignore[method-assign]
+
+    view.handle_parameter_change(
+        "metadata", "update_plot", ({"plot_type": "Histogram"},)
+    )
+
+    view.update_tab_action_history.emit.assert_called_once_with(None, True)
+    view.discard_last_tab_action.emit.assert_not_called()
 
 
 def test_handle_parameter_change_resets_plot(

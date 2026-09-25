@@ -196,6 +196,8 @@
 
 #### Metadata:
 
+* **Fixed a refused plot - including a double-click on Plot - wiping the earlier overlays**: a plot that changes nothing is now dropped from the history without redrawing the figure
+
 * **Fixed the Metadata tab plotting the wrong subset's data when a database call failed**: the query, the column units and the event generator were each reused from the previous subset, so a failure mid-plot drew the previous subset under this one's label, or labelled the axes with another column's units
 
 * **Fixed the Metadata tab plotting another channel's events when the experiment could not be looked up**: the events to plot were resolved without their experiment and channel scope, so an event number that exists in more than one channel could return the wrong channel's data
