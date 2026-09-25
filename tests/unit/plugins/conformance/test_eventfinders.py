@@ -212,7 +212,6 @@ def test_single_event_data_is_usable(found) -> None:
     missing = required - set(event)
     assert not missing, f"missing keys {sorted(missing)}; got {sorted(event)}"
     assert event["data"].size > 0, "event data is empty"
-    assert finder.get_dtype() is not None, "get_dtype returned None"
 
 
 @pytest.mark.conformance

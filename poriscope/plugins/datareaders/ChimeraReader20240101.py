@@ -30,7 +30,7 @@ import os
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, override
+from typing import Any, Dict, List, Optional, override
 
 import numpy as np
 import numpy.typing as npt
@@ -291,32 +291,6 @@ class ChimeraReader20240101(MetaReader):
 
     @log(logger=logger)
     @override
-    def _convert_raw_data(
-        self, data: npt.NDArray[np.int16], config: dict
-    ) -> Tuple[npt.NDArray[Any], float, float]:
-        """
-        Report the raw ADC codes, with the scale and offset that would convert them.
-
-        :param data: Data to report unscaled.
-        :type data: npt.NDArray[np.int16]
-        :param config: Configuration dictionary the scale and offset are derived from.
-        :type config: dict
-        :return: The unscaled data, its scale factor, and its offset.
-        :rtype: Tuple[npt.NDArray[Any], float, float]
-        """
-        tia_gain = config["tia_gain"]
-        i_offset = config["i_offset"]
-        filter_gain = config["filter_gain"]
-        # rescale adc data to current (A) to (pA)
-        conv_unit = 1e12  # pA/A
-        scale = (
-            conv_unit * ((2 * 2 * 2.048 / 2**16) / filter_gain) / tia_gain
-        )  # adc conversion factor
-        offset = -i_offset * conv_unit
-        return data, scale, offset
-
-    @log(logger=logger)
-    @override
     def _get_configs(self, datafiles: List[str]) -> List[dict]:
         """
         Load configuration files as dictionaries, corresponding to datamaps as needed.
@@ -374,20 +348,6 @@ class ChimeraReader20240101(MetaReader):
                 }
             )
         return configs
-
-    @log(logger=logger)
-    @override
-    def _set_raw_dtype(self, configs: List[dict]) -> np.dtype:
-        """
-        Set the data type for the raw data in files of this type
-
-        :param configs: List of configuration dictionaries corresponding to data files.
-        :type configs: List[dict]
-
-        :return: the dtype of the raw data in your data files
-        :rtype: np.dtype
-        """
-        return np.int16
 
     # public API
     @log(logger=logger)

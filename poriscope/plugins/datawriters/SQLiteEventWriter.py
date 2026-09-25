@@ -28,9 +28,6 @@ import sqlite3
 from pathlib import Path
 from typing import Any, Dict, List, Optional, override
 
-import numpy as np
-import numpy.typing as npt
-
 from poriscope.utils.DocstringDecorator import inherit_docstrings
 from poriscope.utils.LogDecorator import log
 from poriscope.utils.MetaWriter import MetaWriter
@@ -477,7 +474,6 @@ class SQLiteEventWriter(MetaWriter):
         event: Dict[str, Any],
         channel: int,
         index: int,
-        raw_data: bool = False,
         abort: Optional[bool] = False,
         last_call: Optional[bool] = False,
     ) -> bool:
@@ -485,8 +481,7 @@ class SQLiteEventWriter(MetaWriter):
         Append one event's samples and metadata to the active database file.
 
         The event's keys are the contract, and are documented on
-        ``MetaWriter._write_data``. This writer stores whatever ``data`` already is, so
-        it reads neither ``scale`` nor ``offset``.
+        ``MetaWriter._write_data``. ``data`` arrives in pA and is stored as it is.
 
         :param event: One event, as ``get_single_event_data`` builds it.
         :type event: Dict[str, Any]
@@ -494,8 +489,6 @@ class SQLiteEventWriter(MetaWriter):
         :type channel: int
         :param index: event index
         :type index: int
-        :param raw_data: True when the samples are unscaled ADC codes rather than pA.
-        :type raw_data: bool
         :param abort: True to discard the channel's uncommitted batch and stop.
         :type abort: Optional[bool]
         :param last_call: True when this is the final event of the channel.
@@ -523,9 +516,6 @@ class SQLiteEventWriter(MetaWriter):
         # Unpacked here rather than taken as thirteen parameters; the keys are the
         # contract, documented on MetaWriter._write_data.
         data = event["data"]
-        # scale and offset are deliberately not read: this writer stores whatever
-        # `data` already is. They were parameters 4 and 5 of the old thirteen and were
-        # ignored there too - see `_rescale_data_to_adc`, which nothing calls.
         start_sample = event["start_sample"]
         padding_before = event["padding_before"]
         padding_after = event["padding_after"]
@@ -624,41 +614,6 @@ class SQLiteEventWriter(MetaWriter):
             raise KeyError(
                 """settings must include a 'MetaEventFinder' key with value equal to the key of the vent finder from which to pull event data"""
             )
-
-    # private API continued, should implemented by subclasses, but has default behavior if it is not needed
-    @log(logger=logger)
-    def _rescale_data_to_adc(
-        self,
-        data: npt.NDArray[np.number],
-        scale: Optional[float] = None,
-        offset: Optional[float] = None,
-        raw_data: bool = False,
-        dtype: npt.DTypeLike = np.uint16,
-        adc_min: int = np.iinfo(np.int16).min,
-        adc_max: int = np.iinfo(np.int16).max,
-    ) -> tuple[npt.NDArray[np.number], Optional[float], Optional[float]]:
-        """
-        Not used by this writer
-
-        :param data: 1D numpy array of data to write to the active file in the specified channel.
-        :type data: npt.NDArray[np.number]
-        :param scale: Scaling between provided data type and encoded form for storage. If None, scale is calculated based on the data to maximally use the available adc range.
-        :type scale: Optional[float]
-        :param offset: Offset between provided data type and encoded form for storage. If None, offset is calculated based on the data to maximally use the available adc range.
-        :type offset: Optional[float]
-        :param raw_data: True means to simply write data as-is to file, False indicates to first rescale it. Default False.
-        :type raw_data: bool
-        :param dtype: Numpy dtype to use for storage. Defaults to 16-bit unsigned int.
-        :type dtype: npt.DTypeLike
-        :param adc_min: Integer encoding the minimum adc code for the adc conversion.
-        :type adc_min: int
-        :param adc_max: Integer encoding the maximum adc code for the adc conversion.
-        :type adc_max: int
-
-        :return: Rescaled data as numpy array, scale factor, and offset.
-        :rtype: tuple[npt.NDArray[np.number], Optional[float], Optional[float]]
-        """
-        return data, scale, offset
 
     @log(logger=logger)
     @override

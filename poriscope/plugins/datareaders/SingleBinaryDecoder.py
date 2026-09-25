@@ -26,7 +26,7 @@
 import logging
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union, override
+from typing import Any, Dict, List, Optional, Union, override
 
 import numpy as np
 import numpy.typing as npt
@@ -154,8 +154,9 @@ class SingleBinaryDecoder(MetaReader):
         datamaps = []
         fmt = []
         offset = self.settings["Header Bytes"]["Value"]
+        sample_dtype = self._sample_dtype()
         for channel, (_filename, _config) in enumerate(zip(datafiles, configs)):
-            fmt.append((f"data_{channel}", self.dtype))
+            fmt.append((f"data_{channel}", sample_dtype))
 
         try:
             memmaps = np.memmap(Path(datafiles[0]), dtype=fmt, offset=offset, mode="r")
@@ -278,25 +279,6 @@ class SingleBinaryDecoder(MetaReader):
 
     @log(logger=logger)
     @override
-    def _convert_raw_data(
-        self, data: npt.NDArray[np.int16], config: dict
-    ) -> Tuple[npt.NDArray[Any], float, float]:
-        """
-        Report the raw ADC codes, with the scale and offset that would convert them.
-
-        :param data: Data to report unscaled.
-        :type data: npt.NDArray[np.int16]
-        :param config: Configuration dictionary the scale and offset are derived from.
-        :type config: dict
-        :return: The unscaled data, its scale factor, and its offset.
-        :rtype: Tuple[npt.NDArray[Any], float, float]
-        """
-        scale = self.settings["Scale"]["Value"]
-        offset = self.settings["Offset"]["Value"]
-        return data, scale, offset
-
-    @log(logger=logger)
-    @override
     def _get_configs(self, datafiles: List[str]) -> List[dict]:
         """
         Load configuration files as dictionaries, corresponding to datamaps as needed.
@@ -311,15 +293,11 @@ class SingleBinaryDecoder(MetaReader):
         return [{}] * self.settings["Number of Arrays"]["Value"]
 
     @log(logger=logger)
-    @override
-    def _set_raw_dtype(self, configs: List[dict]) -> np.dtype:
+    def _sample_dtype(self) -> np.dtype:
         """
-        Set the data type for the raw data in files of this type
+        Build the on-disk sample dtype from the Byte Order, Data Type and Data Bytes settings.
 
-        :param configs: List of configuration dictionaries corresponding to data files.
-        :type configs: List[dict]
-
-        :return: the dtype of the raw data in your data files
+        :return: the dtype of one sample in the file
         :rtype: np.dtype
 
         :raises ValueError: If the byte order symbol, data type, or data size settings are invalid.

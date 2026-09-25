@@ -70,9 +70,6 @@ Required Private Methods
 .. automethod:: poriscope.utils.MetaReader.MetaReader._set_file_extension
    :no-index:
 
-.. automethod:: poriscope.utils.MetaReader.MetaReader._set_raw_dtype
-   :no-index:
-
 .. automethod:: poriscope.utils.MetaReader.MetaReader._get_file_pattern
    :no-index:
 
@@ -94,8 +91,11 @@ Required Private Methods
 .. automethod:: poriscope.utils.MetaReader.MetaReader._validate_settings
    :no-index:
 
-.. automethod:: poriscope.utils.MetaReader.MetaReader._convert_raw_data
-   :no-index:
+Until 2.0.0 a reader also implemented ``_set_raw_dtype`` and ``_convert_raw_data``, for an
+unscaled read path that returned the samples on disk with the scale and offset alongside.
+That path is gone: every read is in pA through ``_convert_data``. If your format needs its
+on-disk sample type, build it in a private method and use it from ``_map_data``, as
+``SingleBinaryDecoder`` does.
 
 .. automethod:: poriscope.utils.MetaReader.MetaReader._validate_file_type
    :no-index:

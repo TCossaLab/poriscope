@@ -689,7 +689,6 @@ class MetaEventFinder(BaseDataPlugin):
         channel: int,
         data_filter: Optional[Callable] = None,
         rectify: bool = False,
-        raw_data: bool = False,
     ) -> Generator[
         Optional[Dict[str, Union[npt.NDArray[np.float64], float]]], None, None
     ]:
@@ -702,8 +701,6 @@ class MetaEventFinder(BaseDataPlugin):
         :type data_filter: Optional[Callable]
         :param rectify: should the data be returned rectified?
         :type rectify: bool
-        :param raw_data: return raw adc codes on True, pA values on False
-        :type raw_data: bool
         :raises KeyError: If the channel does not exist.
         :raises ValueError: If events have not been found, or event finding has not finished, for this channel.
         :yield: for each event in the channel, a dict of data and metadata as returned by :meth:`get_single_event_data`, or None if the event index is out of bounds.
@@ -728,9 +725,7 @@ class MetaEventFinder(BaseDataPlugin):
 
         else:
             for i in range(len(self.event_starts[channel])):
-                yield self.get_single_event_data(
-                    channel, i, data_filter, rectify, raw_data
-                )
+                yield self.get_single_event_data(channel, i, data_filter, rectify)
 
     @log(logger=logger)
     def get_channels(self) -> List[int]:
@@ -752,7 +747,6 @@ class MetaEventFinder(BaseDataPlugin):
         index: int,
         data_filter: Optional[Callable] = None,
         rectify: bool = False,
-        raw_data: bool = False,
     ) -> Optional[Dict[str, Union[npt.NDArray[np.float64], float]]]:
         """
         Return a dictionary of data and metadata for the requested event
@@ -765,8 +759,6 @@ class MetaEventFinder(BaseDataPlugin):
         :type data_filter: Optional[Callable]
         :param rectify: should the data be returned rectified?
         :type rectify: bool
-        :param raw_data: return raw adc codes on True, pA values on False
-        :type raw_data: bool
         :raises AttributeError: If no :ref:`MetaReader` instance is attached to this eventfinder.
         :raises KeyError: If the channel does not exist
         :raises ValueError: if no events have been found in the channel
@@ -789,8 +781,6 @@ class MetaEventFinder(BaseDataPlugin):
                 raise AttributeError(
                     "Event finders need an attached MetaEventReader instance to function"
                 )
-            scale = None
-            offset = None
             try:
                 start = (
                     self.event_starts[channel][index]
@@ -802,18 +792,11 @@ class MetaEventFinder(BaseDataPlugin):
                     + self.padding_before[channel][index]
                     + self.padding_after[channel][index]
                 ) / self.reader.get_samplerate()
-                # Filtering and rectifying are scaled-data operations, so they belong
-                # inside the scaled arm rather than behind a `not raw_data` on each.
-                if raw_data:
-                    data, scale, offset = self.reader.load_raw_data(
-                        start, length, channel
-                    )
-                else:
-                    data = self.reader.load_data(start, length, channel)
-                    if data_filter:
-                        data = data_filter(data)
-                    if rectify:
-                        data *= np.sign(data[0])
+                data = self.reader.load_data(start, length, channel)
+                if data_filter:
+                    data = data_filter(data)
+                if rectify:
+                    data *= np.sign(data[0])
 
                 event = {
                     "data": data,
@@ -823,8 +806,6 @@ class MetaEventFinder(BaseDataPlugin):
                     "padding_after": self.padding_after[channel][index],
                     "baseline_mean": self.baseline_means[channel][index],
                     "baseline_std": self.baseline_stds[channel][index],
-                    "scale": scale,
-                    "offset": offset,
                 }
                 return event
             except (IndexError, ValueError) as e:
@@ -848,22 +829,6 @@ class MetaEventFinder(BaseDataPlugin):
             raise ValueError("Events have not been located or no events were found")
         else:
             return self.event_starts, self.event_ends
-
-    @log(logger=logger)
-    def get_dtype(self) -> object:
-        """
-        return the raw data type of the associated reader
-
-        :raises AttributeError: If no :ref:`MetaReader` instance is attached to this eventfinder.
-        :return: the raw data type of the associated reader
-        :rtype: object
-        """
-        if self.reader is not None:
-            return self.reader.get_raw_dtype()
-        else:
-            raise AttributeError(
-                "Event finders needs an attached MetaReader object to function"
-            )
 
     @log(logger=logger)
     def get_num_events_found(self, channel: int) -> int:

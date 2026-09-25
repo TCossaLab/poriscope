@@ -21,8 +21,10 @@ import sqlite3
 from pathlib import Path
 from typing import List, Type
 
+import numpy as np
 import pytest
 
+from poriscope.plugins.datareaders.SingleBinaryDecoder import SingleBinaryDecoder
 from poriscope.plugins.db_loaders.SQLiteDBLoader import SQLiteDBLoader
 from poriscope.plugins.eventfinders.ClassicBlockageFinder import ClassicBlockageFinder
 from poriscope.plugins.eventfitters.CUSUM import CUSUM
@@ -33,12 +35,14 @@ from tests.unit.plugins.conformance._recipes import (
     CHIMERA_EVENTS,
     EVENTS_CHANNEL,
     EVENTS_COUNT,
+    _fill,
     build_db_loader,
     build_db_writer,
     build_event_finder,
     build_event_fitter,
     build_event_loader,
     build_reader,
+    build_reader_dataset,
     build_writer,
     discover_concrete,
 )
@@ -193,6 +197,65 @@ def test_writer_releases_its_output_file(committed) -> None:
         out_path.unlink()
     except PermissionError as exc:
         pytest.fail(f"output still locked after close_resources: {exc}")
+
+
+@pytest.mark.conformance
+@pytest.mark.parametrize("writer_cls", WRITERS, ids=[cls.__name__ for cls in WRITERS])
+def test_a_stored_trace_is_the_readers_scaled_data(writer_cls, tmp_path) -> None:
+    """
+    What a writer stores for an event is exactly what the reader returns for it.
+
+    Every other test here drives a Chimera recording, whose int16 samples can never
+    match a float writer's output type. A float64 source can, so it is the case that
+    shows whether anything between the reader and the file bypasses the reader's
+    Scale and Offset: with both non-trivial, a stored trace that differs from
+    ``load_data`` over the same span is one that skipped the scaling, and it would
+    disagree with the ``baseline_mean`` stored beside it.
+
+    :param writer_cls: The writer class under test.
+    :type writer_cls: Type[MetaWriter]
+    :param tmp_path: Per-test temporary directory.
+    :type tmp_path: pathlib.Path
+    """
+    dataset = build_reader_dataset(SingleBinaryDecoder, tmp_path / "data")
+    reader = SingleBinaryDecoder()
+    settings = reader.get_empty_settings(standalone=True)
+    _fill(
+        settings,
+        {
+            "Input File": str(dataset.data_path),
+            "Sampling Rate": dataset.samplerate,
+            "Scale": 2.0,
+            "Offset": 100.0,
+        },
+        "SingleBinaryDecoder",
+    )
+    reader.apply_settings(settings)
+    reader.report_channel_status(init=True)
+    channel = dataset.channel
+
+    finder = build_event_finder(ClassicBlockageFinder, reader)
+    for _progress in finder.find_events(channel, [(0.0, 0.0)], 3.0, identity):
+        pass
+    assert finder.get_num_events_found(channel) > 0, "no events to write"
+
+    out_path = tmp_path / "scaled.sqlite3"
+    writer = build_writer(writer_cls, finder, str(out_path))
+    for _progress in writer.commit_events(channel):
+        pass
+    writer.close_resources()
+
+    expected = finder.get_single_event_data(channel, 0)
+    assert expected is not None
+    loader = build_event_loader(str(out_path))
+    try:
+        stored = loader.load_event(channel, 0, None)
+    finally:
+        loader.close_resources()
+        finder.close_resources()
+        reader.close_resources()
+
+    np.testing.assert_array_equal(stored["data"], expected["data"])
 
 
 # ===========================================================================

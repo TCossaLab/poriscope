@@ -65,11 +65,6 @@ Fix ahead of the registry below: pop without replaying on refusal, replay only f
 
 ### Data integrity and scientific correctness
 
-- **The raw write path drops scale and offset.** `MetaWriter._commit_events:421-424`
-  takes the raw path whenever the finder's dtype equals the writer's `<f8`, and
-  `SQLiteEventWriter._write_data` never applies scale/offset (`:526-528`). `SingleBinaryDecoder`
-  (float64 by default) with Scale=2 stored `baseline_mean` 1999.9 pA against a trace median of
-  996 pA, so every fitted metric from that database is wrong.
 - **A second commit into an existing events file silently keeps the old events.**
   Nothing resets the channel (`RawDataController.commit_events:171`); `channels.channel_id` is
   UNIQUE and events use `INSERT OR IGNORE`; the file dialog passes `DontConfirmOverwrite`
@@ -346,7 +341,7 @@ obvious fix and needs the registry design above to carry it.
   ClassicCUSUM tests mock `_calculate_threshold`, and nothing pins the variance-reset fix.
   Plant levels in `synthetic_events_db` and assert current, blockage and duration within
   tolerance for CUSUM, ClassicCUSUM and NoFitter across SNRs and short events.
-- **Conformance recipes never leave the happy path**: add non-unit scale, a re-commit,
+- **Conformance recipes never leave the happy path**: add a re-commit,
   sibling-prefix files and multi-file sets, which is where the four entries above live.
 - **`NoFitter` places event edges asymmetrically** (`NoFitter.py:226`): the start walks
   back to the baseline crossing, the end sits `rise_time` before the threshold crossing (838
@@ -357,9 +352,8 @@ obvious fix and needs the registry design above to carry it.
 - **`LegacyElementsReader` cannot open a multi-file set**:
   `_get_file_channel_stamps:96` returns `[0]` whatever the count, so sorting raises
   `ValueError` (verified with `_0000`/`_0001`).
-- **`MetaReader.load_raw_data:296` returns the last file piece's scale/offset**, so a
-  read across files with different gains is mis-scaled; `_set_sample_rate:719-726` checks only
-  each channel's first file. `_sort_objects_by_channel_and_time:937-941` raises `TypeError`
+- **`MetaReader._set_sample_rate` checks only each channel's first file**, so a set whose
+  files disagree on sample rate is read at the first file's rate. `_sort_objects_by_channel_and_time:937-941` raises `TypeError`
   on a timestamp tie *(by reading)*.
 - **`SQLiteDBLoader._load_event_data` drops an event on a NULL `padding_before`** via
   `try … continue`, logging only at INFO.
@@ -728,9 +722,9 @@ real; latent today, and the same soft governance as `_get_plugin` staying privat
 `ChimeraReader20240101` and `ChimeraReader20240501` differ in **27 lines of ~396**. The only
 real difference is `_get_configs`: 2024-01 parses a JSON header embedded in the `.log` file,
 2024-05 reads a companion `.json` of the same stem. Everything else - `_map_data`,
-`_get_file_pattern`, `_get_file_time_stamps`, `_get_file_channel_stamps`, `_set_raw_dtype`,
-`_convert_data`, `_convert_raw_data` - is byte-identical, and the pair is the largest single
-contributor to the `datareaders` duplication figure (446).
+`_get_file_pattern`, `_get_file_time_stamps`, `_get_file_channel_stamps` and `_convert_data`
+- is byte-identical, and the pair is the largest single contributor to the `datareaders`
+duplication figure (401).
 
 **Do not give them a shared base.** `ChimeraReader20240101` is slated for deprecation in a
 future cycle (Kyle, 2026-09-22), so making the surviving reader subclass it - the
@@ -780,7 +774,7 @@ absorbs what it needs and stands alone, leaving 20240101 a clean deletion.
 
 - **`_validate_param_ranges:559` rejects any `None`**, so a plugin cannot declare an
   optional parameter.
-- **A trivial reader implements 15 abstract methods**, 29 of the shipped bodies `pass`;
+- **A trivial reader implements 13 abstract methods**, many of the shipped bodies `pass`;
   default implementations for the lifecycle no-ops would cut that to about 8.
 
 ### Types, tests and CI

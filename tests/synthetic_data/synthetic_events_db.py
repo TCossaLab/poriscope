@@ -24,9 +24,8 @@ Data encoding
 ``raw_data`` is written as ``SQLiteEventWriter._set_output_dtype()``'s
 real value, ``"<f8"`` (little-endian float64) -- not the ``"<u2"`` shown
 in that method's own docstring, which is an illustrative comment rather
-than the actual returned value. ``SQLiteEventWriter._rescale_data_to_adc``
-is explicitly documented as unused by this writer, so no scale/offset
-conversion happens on write. Consequently, unlike a Chimera recording,
+than the actual returned value. Event data reaches the writer in pA, so no
+scale/offset conversion happens on write. Consequently, unlike a Chimera recording,
 there is no ADC-code inversion to perform here: event traces are stored
 already in physical units (picoamps), and this generator writes them the
 same way, matching what ``SQLiteEventLoader.load_event()`` reads back via

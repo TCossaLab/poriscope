@@ -28,7 +28,6 @@ class FakeReader(MetaReader):
         channels: Tuple[int, ...] = (0,),
         key: str = "reader1",
         experiment_name: str = "exp1",
-        raw_dtype: type = np.float64,
         serial: bool = False,
         serial_raises: bool = False,
     ):
@@ -37,7 +36,6 @@ class FakeReader(MetaReader):
         self.channels = channels
         self.key = key
         self.experiment_name = experiment_name
-        self.raw_dtype = raw_dtype
         self.serial = serial
         self.serial_raises = serial_raises
 
@@ -61,17 +59,8 @@ class FakeReader(MetaReader):
     def load_data(self, start_sec, length_sec, channel):
         return self._chunk(start_sec, length_sec, channel)
 
-    def load_raw_data(self, start_sec, length_sec, channel):
-        # Two methods rather than one flagged method, because that is what MetaReader
-        # offers since 2.0.0 - a double that kept the flag would let the finder call a
-        # signature the real reader no longer has.
-        return self._chunk(start_sec, length_sec, channel), 1.0, 0.0
-
     def get_base_experiment_name(self):
         return self.experiment_name
-
-    def get_raw_dtype(self):
-        return self.raw_dtype
 
     def force_serial_channel_operations(self):
         if self.serial_raises:
@@ -438,7 +427,7 @@ class TestResetChannel:
 
 
 # ---------------------------------------------------------------------------
-# get_samplerate / get_base_experiment_name / get_channels / get_dtype
+# get_samplerate / get_base_experiment_name / get_channels
 # ---------------------------------------------------------------------------
 class TestSimpleReaderDelegates:
     def test_get_samplerate_no_reader_raises(self, bare_finder):
@@ -461,13 +450,6 @@ class TestSimpleReaderDelegates:
 
     def test_get_channels(self, finder):
         assert finder.get_channels() == [0, 1]
-
-    def test_get_dtype_no_reader_raises(self, bare_finder):
-        with pytest.raises(AttributeError):
-            bare_finder.get_dtype()
-
-    def test_get_dtype(self, finder):
-        assert finder.get_dtype() is np.float64
 
 
 # ---------------------------------------------------------------------------
@@ -1000,8 +982,8 @@ class TestGetSingleEventData:
         event = finder.get_single_event_data(0, 0)
         assert event is not None
         assert "data" in event
-        assert event["scale"] is None
-        assert event["offset"] is None
+        # The data is always pA, so there is no scale or offset to report with it.
+        assert "scale" not in event and "offset" not in event
 
     def test_index_out_of_bounds_returns_none(self, finder):
         list(finder.find_events(0, [(0, 0)], chunk_length=10.0))
@@ -1023,13 +1005,6 @@ class TestGetSingleEventData:
         list(finder.find_events(0, [(0, 0)], chunk_length=10.0))
         event = finder.get_single_event_data(0, 0, rectify=True)
         assert event is not None
-
-    def test_raw_data_path(self, finder):
-        list(finder.find_events(0, [(0, 0)], chunk_length=10.0))
-        event = finder.get_single_event_data(0, 0, raw_data=True)
-        assert event is not None
-        assert event["scale"] == 1.0
-        assert event["offset"] == 0.0
 
 
 # ---------------------------------------------------------------------------

@@ -27,7 +27,7 @@ import logging
 import os
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, override
+from typing import Any, Dict, List, Optional, override
 
 import numpy as np
 import numpy.typing as npt
@@ -254,32 +254,6 @@ class ChimeraReaderVC100(MetaReader):
 
     @log(logger=logger)
     @override
-    def _convert_raw_data(
-        self, data: npt.NDArray[np.int16], config: dict
-    ) -> Tuple[npt.NDArray[Any], float, float]:
-        """
-        Report the raw ADC codes, with the scale and offset that would convert them.
-
-        :param data: Data to report unscaled.
-        :type data: npt.NDArray[np.int16]
-        :param config: Configuration dictionary the scale and offset are derived from.
-        :type config: dict
-        :return: The unscaled data, its scale factor, and its offset.
-        :rtype: Tuple[npt.NDArray[Any], float, float]
-        """
-        tia_gain = config["tia_gain"]
-        preADCgain = config["preadc_gain"]
-        currentoffset = config["i_offset"]
-        ADCvref = config["v_ref"]
-        closedloop_gain = tia_gain * preADCgain
-
-        # No bitmask here: masking is part of converting, and raw means unconverted.
-        scale = 1e12 * 2 * ADCvref / (2**16 * closedloop_gain)
-        offset = 1e12 * (currentoffset - ADCvref / closedloop_gain)
-        return data, scale, offset
-
-    @log(logger=logger)
-    @override
     def _get_configs(self, datafiles: List[str]) -> List[dict]:
         """
         Load configuration files as dictionaries, corresponding to datamaps as needed.
@@ -319,20 +293,6 @@ class ChimeraReaderVC100(MetaReader):
                 }
             )
         return configs
-
-    @log(logger=logger)
-    @override
-    def _set_raw_dtype(self, configs: List[dict]) -> np.dtype:
-        """
-        Set the data type for the raw data in files of this type
-
-        :param configs: List of configuration dictionaries corresponding to data files.
-        :type configs: List[dict]
-
-        :return: the dtype of the raw data in your data files
-        :rtype: np.dtype
-        """
-        return np.int16
 
     # public API
     @log(logger=logger)

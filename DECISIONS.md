@@ -10,6 +10,29 @@ which ran through August 2026 and is complete. The step numbers only date the de
 
 ---
 
+## 2026-09-25 - The raw-data path is removed: every read and every stored event is in pA
+
+**Context.** Readers, finders and writers carried a second, unscaled path: `load_raw_data`,
+`continuous_read_raw`, `_convert_raw_data`, `_set_raw_dtype`/`get_raw_dtype`, a `raw_data`
+flag on the finder's event methods, and `MetaWriter._rescale_data_to_adc`. Its only use was
+the writer storing the file's samples whenever the reader's dtype equalled its own `<f8`,
+which for a `SingleBinaryDecoder` with Scale or Offset set stored unscaled traces beside a
+scaled `baseline_mean`.
+
+**Decision** (Kyle, 2026-09-25). Remove the path at every layer; everything goes through
+`load_data` in pA. No user relies on it, and float64 pA loses nothing that matters. The
+`events.raw_data` column keeps its name: it means unfiltered, not unscaled, and removing the
+path removes the ambiguity.
+
+**Evidence.** The writer shortcut was the only producer; no view, export, filter or loader
+consumed a raw symbol. `datareaders` duplication fell 446 -> 401. A conformance test pins a
+stored trace to `load_data` under Scale=2, Offset=100 (798 of 798 samples differed before).
+
+**Revisit if** a format needs lossless integer storage - that would be a writer choosing its
+own output dtype, not a second read path.
+
+---
+
 ## 2026-09-23 - The refactor-coverage audit is retired, and CI stops collecting coverage
 
 **Context.** `scripts/check_refactor_coverage.py` held every method the 2.0.0 refactor moved
@@ -42,7 +65,7 @@ stays too: a documented writer hook, kept as author-facing API although nothing 
 
 **Revisit if** `_rescale_data_to_adc` is still uncalled when the writer contract is next
 changed - a hook the base never invokes teaches authors to override something that does
-nothing.
+nothing. *Met 2026-09-25: it was removed with the raw-data path.*
 
 ---
 
@@ -99,7 +122,8 @@ difference is `_get_configs` - 2024-01 parses a JSON header embedded in the `.lo
 made an existing near-duplicate more expensive. Filed in `future_fixes.md`.
 
 **Revisit if** the Chimera pair is deduplicated, which should take `datareaders` to roughly
-100 and the total below where it started.
+100 and the total below where it started. *Superseded 2026-09-25: the raw arm was removed
+outright, taking `datareaders` 446 -> 401.*
 
 ---
 
@@ -2755,7 +2779,8 @@ path returns the same sample count as the normal one.
 reader regardless of whether `get_raw_dtype()` bears any relationship to the file's actual
 on-disk type - not a per-plugin invariant. A literal `raw*scale+offset` reconstruction was
 also considered and rejected: `ChimeraReaderVC100._convert_data` reinterprets the raw code
-through a bitmask/uint16 step that `(scale, offset)` alone doesn't capture.
+through a bitmask/uint16 step that `(scale, offset)` alone doesn't capture. *Moot since
+2026-09-25: the raw path and `get_raw_dtype` are removed.*
 
 ---
 
