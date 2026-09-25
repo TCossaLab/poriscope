@@ -190,3 +190,45 @@ def test_a_refusal_after_a_reset_keeps_the_figure_empty(metadata_tab: Triad) -> 
     plot(metadata_tab, "Raw_raw")
 
     assert on_figure(metadata_tab) == set()
+
+
+@pytest.mark.timeout(120)
+def test_undo_redraws_the_earlier_plot_with_its_own_filter(metadata_tab: Triad) -> None:
+    """Plot F0, then F1, then Undo: F0 comes back, not F1 drawn in its place."""
+    plot(metadata_tab, "F0")
+    plot(metadata_tab, "F1")
+
+    undo(metadata_tab)
+
+    assert on_figure(metadata_tab) == {(0, "F0")}
+
+
+@pytest.mark.timeout(120)
+def test_undo_redraws_the_earlier_plot_on_its_own_channel(metadata_tab: Triad) -> None:
+    """The channel selection is replayed as recorded too, not as currently selected."""
+    plot(metadata_tab, "F0", channel="0")
+    plot(metadata_tab, "F1", channel="1")
+
+    undo(metadata_tab)
+
+    assert on_figure(metadata_tab) == {(0, "F0")}
+
+
+@pytest.mark.timeout(120)
+def test_undo_replays_only_from_the_last_reset(metadata_tab: Triad) -> None:
+    """
+    Five overlays, a bin change that resets the figure, two overlays, Undo: two queries.
+
+    Everything before the reset is off the figure, so replaying it re-queried the
+    database on the GUI thread for nothing - twelve queries where two are needed.
+    """
+    for index in range(5):
+        plot(metadata_tab, f"F{index}")
+    plot(metadata_tab, "F5", bins=40)
+    plot(metadata_tab, "F6", bins=40)
+    queries = count_queries(metadata_tab)
+
+    undo(metadata_tab)
+
+    assert on_figure(metadata_tab) == {(0, "F5")}
+    assert len(queries) <= 2

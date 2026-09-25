@@ -34,6 +34,27 @@ from poriscope.plugins.analysistabs.MetadataView import MetadataView
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
+def recorded(view, parameters):
+    """
+    Give a plot's parameters the selection ``handle_parameter_change`` records into them.
+
+    The recorded plot methods read the filter and channel selection from their
+    parameters, so a replay draws what was recorded. A test calling one directly has to
+    hand it parameters shaped the same way, and this calls the real ``_record_selection``
+    to build them, from whatever the test has stubbed ``get_selected_filters`` and the
+    channel selection to be.
+
+    :param view: the view under test
+    :type view: Any
+    :param parameters: the plot's parameters, updated in place
+    :type parameters: dict
+    :return: the same parameters
+    :rtype: dict
+    """
+    view._record_selection(parameters)
+    return parameters
+
+
 @pytest.fixture
 def mock_qt_dependencies(mocker: MockerFixture) -> None:
     """Mock all Qt and external dependencies to prevent GUI initialization."""
@@ -1653,7 +1674,7 @@ def test_overlay_plot_sets_plot_initialized_true(
     view.canned_units = "ms"
     view.update_plot = mocker.Mock()
 
-    view._overlay_plot(parameters)
+    view._overlay_plot(recorded(view, parameters))
 
     assert view.plot_initialized is True
 
@@ -1680,7 +1701,7 @@ def test_overlay_plot_defaults_to_full_dataset_when_no_filters(
     view.canned_units = "ms"
     view.update_plot = mocker.Mock()
 
-    view._overlay_plot(parameters)
+    view._overlay_plot(recorded(view, parameters))
 
     view.metadata_subset_requested.emit.assert_called()
 
@@ -1707,7 +1728,7 @@ def test_overlay_plot_defaults_experiments_and_channels_when_none(
     view.canned_units = "ms"
     view.update_plot = mocker.Mock()
 
-    view._overlay_plot(parameters)
+    view._overlay_plot(recorded(view, parameters))
 
     view.metadata_subset_requested.emit.assert_called()
 
@@ -1726,7 +1747,7 @@ def test_overlay_plot_rejects_multiple_experiments_for_event_overlay(
         "test_loader": {"exp1": [1], "exp2": [1]}
     }
 
-    result = view._overlay_plot(parameters)
+    result = view._overlay_plot(recorded(view, parameters))
 
     assert result is False
     view.add_text_to_display.emit.assert_called()
@@ -1750,7 +1771,7 @@ def test_overlay_plot_rejects_multiple_channels_for_heatmap(
     view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
     view.selected_experiment_and_channels_by_loader = {"test_loader": {"exp1": [1, 2]}}
 
-    result = view._overlay_plot(parameters)
+    result = view._overlay_plot(recorded(view, parameters))
 
     assert result is False
     view.add_text_to_display.emit.assert_called()
@@ -1770,7 +1791,7 @@ def test_overlay_plot_rejects_multiple_filters_for_filtered_event_overlay(
     )
     view.selected_experiment_and_channels_by_loader = {"test_loader": {"exp1": [1]}}
 
-    result = view._overlay_plot(parameters)
+    result = view._overlay_plot(recorded(view, parameters))
 
     assert result is False
     view.add_text_to_display.emit.assert_called()
@@ -1896,7 +1917,7 @@ def test_overlay_plot_constructs_histogram_columns_correctly(
     view.canned_units = "ms"
     view.update_plot = mocker.Mock()
 
-    view._overlay_plot(parameters)
+    view._overlay_plot(recorded(view, parameters))
 
     call_args = view.update_plot.call_args
     assert call_args is not None
@@ -1929,7 +1950,7 @@ def test_overlay_plot_constructs_scatterplot_columns_correctly(
     view.canned_units = "ms"
     view.update_plot = mocker.Mock()
 
-    view._overlay_plot(parameters)
+    view._overlay_plot(recorded(view, parameters))
 
     call_args = view.update_plot.call_args
     assert call_args is not None
@@ -1968,7 +1989,7 @@ def test_overlay_plot_constructs_3d_scatterplot_columns_correctly(
     view.canned_units = "ms"
     view.update_plot = mocker.Mock()
 
-    view._overlay_plot(parameters)
+    view._overlay_plot(recorded(view, parameters))
 
     call_args = view.update_plot.call_args
     assert call_args is not None
@@ -1999,7 +2020,7 @@ def test_overlay_plot_constructs_capture_rate_with_start_time(
     view.canned_units = "s"
     view.update_plot = mocker.Mock()
 
-    view._overlay_plot(parameters)
+    view._overlay_plot(recorded(view, parameters))
 
     call_args = view.update_plot.call_args
     assert call_args is not None
@@ -2021,7 +2042,7 @@ def test_overlay_plot_returns_false_for_unsupported_metadata_plot_type(
     view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
     view.selected_experiment_and_channels_by_loader = {}
 
-    result = view._overlay_plot(parameters)
+    result = view._overlay_plot(recorded(view, parameters))
 
     assert result is False
     view.add_text_to_display.emit.assert_called()
@@ -2052,7 +2073,7 @@ def test_overlay_plot_resets_when_columns_change(
     view.canned_units = "ms"
     view.update_plot = mocker.Mock()
 
-    view._overlay_plot(parameters)
+    view._overlay_plot(recorded(view, parameters))
 
     view._reset_actions.assert_called_once()
 
@@ -2083,7 +2104,7 @@ def test_overlay_plot_resets_when_logscales_change(
     view.canned_units = "ms"
     view.update_plot = mocker.Mock()
 
-    view._overlay_plot(parameters)
+    view._overlay_plot(recorded(view, parameters))
 
     view._reset_actions.assert_called_once()
 
@@ -2114,7 +2135,7 @@ def test_overlay_plot_resets_when_plot_type_changes(
     view.canned_units = "ms"
     view.update_plot = mocker.Mock()
 
-    view._overlay_plot(parameters)
+    view._overlay_plot(recorded(view, parameters))
 
     view._reset_actions.assert_called_once()
 
@@ -2146,7 +2167,7 @@ def test_overlay_plot_resets_when_bins_change_for_bin_sensitive_plot(
     view.canned_units = "ms"
     view.update_plot = mocker.Mock()
 
-    view._overlay_plot(parameters)
+    view._overlay_plot(recorded(view, parameters))
 
     view._reset_actions.assert_called_once()
 
@@ -2179,7 +2200,7 @@ def test_overlay_plot_resets_when_sizes_change_for_bin_sensitive_plot(
     view.canned_units = "ms"
     view.update_plot = mocker.Mock()
 
-    view._overlay_plot(parameters)
+    view._overlay_plot(recorded(view, parameters))
 
     view._reset_actions.assert_called_once()
 
@@ -2207,7 +2228,7 @@ def test_overlay_plot_rejects_duplicate_columns(
     view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
     view.selected_experiment_and_channels_by_loader = {}
 
-    result = view._overlay_plot(parameters)
+    result = view._overlay_plot(recorded(view, parameters))
 
     assert result is False
     mock_warning.assert_called_once()
@@ -2237,7 +2258,7 @@ def test_overlay_plot_skips_already_plotted_datasets(
     view.selected_experiment_and_channels_by_loader = {}
     view.update_plot = mocker.Mock()
 
-    result = view._overlay_plot(parameters)
+    result = view._overlay_plot(recorded(view, parameters))
 
     # Every requested dataset was skipped as already plotted, so nothing
     # reached the axes. _overlay_plot reports that as False so the caller can
@@ -2266,7 +2287,7 @@ def test_overlay_plot_returns_false_when_query_empty(
     view.selected_experiment_and_channels_by_loader = {}
     view.canned_query = ""
 
-    result = view._overlay_plot(parameters)
+    result = view._overlay_plot(recorded(view, parameters))
 
     assert result is False
 
@@ -2291,7 +2312,7 @@ def test_overlay_plot_skips_subset_when_no_plot_data(
     view.canned_query = "SELECT * FROM events"
     view.canned_plot_data = None
 
-    view._overlay_plot(parameters)
+    view._overlay_plot(recorded(view, parameters))
 
     view.add_text_to_display.emit.assert_called()
     call_args = view.add_text_to_display.emit.call_args_list[-1]
@@ -2321,7 +2342,7 @@ def test_overlay_plot_emits_row_count_message(
     view.canned_units = "ms"
     view.update_plot = mocker.Mock()
 
-    view._overlay_plot(parameters)
+    view._overlay_plot(recorded(view, parameters))
 
     view.add_text_to_display.emit.assert_called()
     call_args = view.add_text_to_display.emit.call_args_list[0]
@@ -2349,7 +2370,7 @@ def test_overlay_plot_returns_false_when_columns_missing_from_dataframe(
     view.canned_plot_data = pd.DataFrame({"duration": [1.0, 2.0, 3.0]})
     view.canned_units = "ms"
 
-    result = view._overlay_plot(parameters)
+    result = view._overlay_plot(recorded(view, parameters))
 
     assert result is False
     view.add_text_to_display.emit.assert_called()
@@ -2378,7 +2399,7 @@ def test_overlay_plot_calls_update_plot_with_correct_arguments(
     view.canned_units = "ms"
     view.update_plot = mocker.Mock()
 
-    view._overlay_plot(parameters)
+    view._overlay_plot(recorded(view, parameters))
 
     view.update_plot.assert_called_once()
     call_args = view.update_plot.call_args
@@ -2414,7 +2435,7 @@ def test_overlay_plot_updates_allowed_properties_after_successful_plot(
     view.canned_units = "ms"
     view.update_plot = mocker.Mock()
 
-    view._overlay_plot(parameters)
+    view._overlay_plot(recorded(view, parameters))
 
     assert view.allowed_plot_type == "Histogram"
     assert view.allowed_columns == ["duration"]
@@ -2446,7 +2467,7 @@ def test_overlay_plot_adds_dataset_to_plotted_datasets(
     view.canned_units = "ms"
     view.update_plot = mocker.Mock()
 
-    view._overlay_plot(parameters)
+    view._overlay_plot(recorded(view, parameters))
 
     assert ("test_loader", "exp1", 2, "WHERE x > 1", "Filter1") in view.plotted_datasets
 
@@ -2466,7 +2487,7 @@ def test_overlay_plot_asks_for_a_raw_all_points_histogram(
     view.selected_experiment_and_channels_by_loader = {}
     view.canned_event_query = "SELECT * FROM events"
 
-    assert view._overlay_plot(parameters) is True
+    assert view._overlay_plot(recorded(view, parameters)) is True
 
     view.all_points_histogram_requested.emit.assert_called_once()
     args = view.all_points_histogram_requested.emit.call_args[0]
@@ -2492,7 +2513,7 @@ def test_overlay_plot_asks_for_a_filtered_all_points_histogram(
     view.selected_experiment_and_channels_by_loader = {}
     view.canned_event_query = "SELECT * FROM events"
 
-    view._overlay_plot(parameters)
+    view._overlay_plot(recorded(view, parameters))
 
     args = view.all_points_histogram_requested.emit.call_args[0]
     assert args[3] == "Filtered All Points Histogram"
@@ -2517,7 +2538,7 @@ def test_overlay_plot_resets_for_all_points_histogram_when_bins_change(
     view.selected_experiment_and_channels_by_loader = {}
     view.canned_event_query = "SELECT * FROM events"
 
-    view._overlay_plot(parameters)
+    view._overlay_plot(recorded(view, parameters))
 
     view._reset_actions.assert_called_once()
 
@@ -2555,7 +2576,7 @@ def test_overlay_plot_sends_the_limits_left_by_the_reset(
     view.selected_experiment_and_channels_by_loader = {}
     view.canned_event_query = "SELECT * FROM events"
 
-    view._overlay_plot(parameters)
+    view._overlay_plot(recorded(view, parameters))
 
     args = view.all_points_histogram_requested.emit.call_args[0]
     assert args[6] is None
@@ -2575,7 +2596,7 @@ def test_overlay_plot_asks_for_a_raw_event_overlay(
     view.selected_experiment_and_channels_by_loader = {}
     view.canned_event_query = "SELECT * FROM events"
 
-    view._overlay_plot(parameters)
+    view._overlay_plot(recorded(view, parameters))
 
     view.event_overlay_requested.emit.assert_called_once_with(
         "test_loader", "", {None: [None]}, "Raw Event Overlay"
@@ -2596,7 +2617,7 @@ def test_overlay_plot_returns_false_when_event_query_empty(
     view.selected_experiment_and_channels_by_loader = {}
     view.canned_event_query = ""
 
-    result = view._overlay_plot(parameters)
+    result = view._overlay_plot(recorded(view, parameters))
 
     assert result is False
 
@@ -2622,7 +2643,7 @@ def test_overlay_plot_returns_false_when_the_histogram_could_not_be_built(
     view.selected_experiment_and_channels_by_loader = {}
     view.canned_event_query = ""
 
-    assert view._overlay_plot(parameters) is False
+    assert view._overlay_plot(recorded(view, parameters)) is False
 
 
 def test_overlay_plot_clears_allowed_columns_for_event_plots(
@@ -2641,7 +2662,7 @@ def test_overlay_plot_clears_allowed_columns_for_event_plots(
     view.selected_experiment_and_channels_by_loader = {}
     view.canned_event_query = "SELECT * FROM events"
 
-    view._overlay_plot(parameters)
+    view._overlay_plot(recorded(view, parameters))
 
     assert view.allowed_columns == []
     assert view.allowed_logs == []
@@ -2670,7 +2691,7 @@ def test_overlay_plot_returns_true_on_success(
     view.canned_units = "ms"
     view.update_plot = mocker.Mock()
 
-    result = view._overlay_plot(parameters)
+    result = view._overlay_plot(recorded(view, parameters))
 
     assert result is True
 
@@ -3232,7 +3253,7 @@ def test_handle_parameter_change_calls_overlay_plot_on_update(
 ) -> None:
     """Verify _overlay_plot is called on update_plot action."""
     view._overlay_plot = mocker.Mock(return_value=True)  # type: ignore[method-assign]
-    parameters = {"plot_type": "Histogram"}
+    parameters = {"db_loader": "loader", "plot_type": "Histogram"}
 
     view.handle_parameter_change("metadata", "update_plot", (parameters,))
 
@@ -3252,7 +3273,7 @@ def test_a_refusal_that_left_the_figure_unchanged_is_discarded(
     view._overlay_plot = mocker.Mock(return_value=False)  # type: ignore[method-assign]
 
     view.handle_parameter_change(
-        "metadata", "update_plot", ({"plot_type": "Histogram"},)
+        "metadata", "update_plot", ({"db_loader": "loader", "plot_type": "Histogram"},)
     )
 
     view.discard_last_tab_action.emit.assert_called_once_with()
@@ -3277,7 +3298,7 @@ def test_a_refusal_that_changed_the_figure_is_undone(
     view._overlay_plot = mocker.Mock(side_effect=reset_then_refuse)  # type: ignore[method-assign]
 
     view.handle_parameter_change(
-        "metadata", "update_plot", ({"plot_type": "Histogram"},)
+        "metadata", "update_plot", ({"db_loader": "loader", "plot_type": "Histogram"},)
     )
 
     view.update_tab_action_history.emit.assert_called_once_with(None, True)
@@ -3298,28 +3319,17 @@ def test_handle_parameter_change_resets_plot(
 def test_handle_parameter_change_loads_plot_config(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify plot configuration is loaded."""
-    view._load_actions_from_json = mocker.Mock(return_value={"action": "data"})  # type: ignore[method-assign]
-    view._update_actions_from_json = mocker.Mock()  # type: ignore[method-assign]
-    parameters = {"db_loader": "test_loader"}
+    """
+    Load hands off to the file dialog, which emits the file for the Controller to replay.
 
-    view.handle_parameter_change("metadata", "load_plot", (parameters,))
-
-    view._load_actions_from_json.assert_called_once()
-    view._update_actions_from_json.assert_called_once()
-
-
-def test_handle_parameter_change_returns_early_when_no_actions(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
-    """Verify early return when no actions are loaded."""
+    The branch used to read a return value ``_load_actions_from_json`` never produces and
+    call a method that does not exist; the two tests here stubbed both into being.
+    """
     view._load_actions_from_json = mocker.Mock(return_value=None)  # type: ignore[method-assign]
-    view._update_actions_from_json = mocker.Mock()  # type: ignore[method-assign]
-    parameters = {"db_loader": "test_loader"}
 
-    view.handle_parameter_change("metadata", "load_plot", (parameters,))
+    view.handle_parameter_change("metadata", "load_plot", ({"db_loader": "loader"},))
 
-    view._update_actions_from_json.assert_not_called()
+    view._load_actions_from_json.assert_called_once_with()
 
 
 def test_handle_parameter_change_saves_plot_config(
@@ -4908,7 +4918,9 @@ class TestOverlayPlotNormalizedHistograms:
         self, view: MetadataView, mocker: MockerFixture
     ) -> None:
         self._setup(view, mocker)
-        view._overlay_plot(self._base_params("Normalized Raw All Points Histogram"))
+        view._overlay_plot(
+            recorded(view, self._base_params("Normalized Raw All Points Histogram"))
+        )
         view.all_points_histogram_requested.emit.assert_called_once()
         assert (
             view.all_points_histogram_requested.emit.call_args[0][3]
@@ -4920,7 +4932,9 @@ class TestOverlayPlotNormalizedHistograms:
     ) -> None:
         self._setup(view, mocker)
         view._overlay_plot(
-            self._base_params("Normalized Filtered All Points Histogram")
+            recorded(
+                view, self._base_params("Normalized Filtered All Points Histogram")
+            )
         )
         view.all_points_histogram_requested.emit.assert_called_once()
         assert (
@@ -4957,7 +4971,7 @@ class TestOverlayPlotCategoricalHistogram:
         view.canned_units = ""
         view.update_plot = mocker.Mock()
 
-        view._overlay_plot(self._params())
+        view._overlay_plot(recorded(view, self._params()))
 
         view.update_plot.assert_called_once()
         assert view.update_plot.call_args[0][0] == "Categorical Histogram"
@@ -4974,7 +4988,7 @@ class TestOverlayPlotCategoricalHistogram:
         view.canned_units = ""
         view.update_plot = mocker.Mock()
 
-        view._overlay_plot(self._params())
+        view._overlay_plot(recorded(view, self._params()))
 
         call_args = view.update_plot.call_args
         assert call_args[0][2] == ["category"]
@@ -4991,7 +5005,7 @@ class TestOverlayPlotCategoricalHistogram:
         view.canned_units = ""
         view.update_plot = mocker.Mock()
 
-        result = view._overlay_plot(self._params())
+        result = view._overlay_plot(recorded(view, self._params()))
 
         assert result is True
 
@@ -5380,7 +5394,9 @@ def test_overlay_plot_reports_multiple_channels_for_a_heatmap(
         "test_loader": {"exp1": ["1", "2"]}
     }
 
-    result = view._overlay_plot({"db_loader": "test_loader", "plot_type": "Heatmap"})
+    result = view._overlay_plot(
+        recorded(view, {"db_loader": "test_loader", "plot_type": "Heatmap"})
+    )
 
     assert result is False
     said = [call.args[0] for call in view.add_text_to_display.emit.call_args_list]
@@ -5405,7 +5421,9 @@ def test_overlay_plot_resets_before_an_event_overlay_after_another_plot_type(
     view._axes_valid = mocker.Mock(return_value=True)
     view._reset_actions = mocker.Mock()
 
-    view._overlay_plot({"db_loader": "test_loader", "plot_type": "Raw Event Overlay"})
+    view._overlay_plot(
+        recorded(view, {"db_loader": "test_loader", "plot_type": "Raw Event Overlay"})
+    )
 
     view._reset_actions.assert_called_once_with(axis_type="2d")
 
@@ -5421,6 +5439,8 @@ def test_overlay_plot_does_not_reset_a_second_overlay_of_the_same_type(
     view._axes_valid = mocker.Mock(return_value=True)
     view._reset_actions = mocker.Mock()
 
-    view._overlay_plot({"db_loader": "test_loader", "plot_type": "Raw Event Overlay"})
+    view._overlay_plot(
+        recorded(view, {"db_loader": "test_loader", "plot_type": "Raw Event Overlay"})
+    )
 
     view._reset_actions.assert_not_called()

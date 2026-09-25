@@ -25,6 +25,7 @@
 # Kyle Briggs
 
 import bisect
+import copy
 import logging
 import re
 import warnings
@@ -1402,14 +1403,16 @@ class MetadataView(MetaSubsetTabView):
         :rtype: bool
         """
 
-        selected_filters = self.get_selected_filters()
+        # The selection comes from the parameters, not the widgets, so a replay draws
+        # what was recorded; see _record_selection.
+        selected_filters = dict(parameters["selected_filters"])
         if self._refuse_raw_filters(selected_filters):
             return False
         loader = parameters["db_loader"]
         plot_type = parameters["plot_type"]
         experiments_and_channels: Optional[
             Union[Dict[str, List[str]], Dict[Any, Any]]
-        ] = self.selected_experiment_and_channels_by_loader.get(loader)
+        ] = copy.deepcopy(parameters["experiments_and_channels"])
 
         self.plot_initialized = True
 
@@ -1938,6 +1941,7 @@ class MetadataView(MetaSubsetTabView):
                     # Exit immediately out of handle_parameter_change.
                     # This prevents _overlay_plot from running and avoids the history rollback entirely.
                     return
+            self._record_selection(parameters)
             before = set(self.plotted_datasets)
             success = self._overlay_plot(parameters)
             if success is False:
@@ -1952,11 +1956,9 @@ class MetadataView(MetaSubsetTabView):
         elif action_name == "reset_plot":
             self._reset_actions()
         elif action_name == "load_plot":
-            loader = parameters["db_loader"]
-            actions = self._load_actions_from_json()
-            if not actions:
-                return
-            self._update_actions_from_json(actions)
+            # The file is read and replayed through load_actions_from_json and the
+            # Controller; there is nothing to return here.
+            self._load_actions_from_json()
         elif action_name == "save_plot_config":
             self._save_actions_to_json()
         elif action_name == "undo_plot":

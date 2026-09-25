@@ -24,6 +24,7 @@
 # Alejandra Carolina González González
 # Kyle Briggs
 
+import copy
 import logging
 import os
 from abc import abstractmethod
@@ -835,6 +836,25 @@ class MetaSubsetTabView(MetaView):
             self.__class__.__name__,
         )
         return True
+
+    @log(logger=logger)
+    def _record_selection(self, parameters: Dict[str, Any]) -> None:
+        """
+        Put the current filter and channel selection into a plot's parameters.
+
+        A plot's parameters are what its recorded action replays, so the selection has to
+        travel in them: read from the widgets inside the plot, a replay by Undo or from a
+        saved configuration drew with whatever was selected at replay time. The filters
+        go in by name and SQL, so a replay does not depend on the filter still existing.
+
+        :param parameters: the plot's parameters, from the controls panel, updated in place
+        :type parameters: Dict[str, Any]
+        """
+        parameters["selected_filters"] = self.get_selected_filters()
+        parameters["experiments_and_channels"] = copy.deepcopy(
+            self.selected_experiment_and_channels_by_loader.get(parameters["db_loader"])
+            or {}
+        )
 
     @log(logger=logger)
     def get_selected_filters(self) -> dict:
