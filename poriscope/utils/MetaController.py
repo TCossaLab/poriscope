@@ -476,9 +476,21 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
                         ]
                     except StopIteration:
                         break
-            history = deepcopy(self.tab_action_history)
-            self.tab_action_history = OrderedDict()
-            self.view.update_actions_from_json(history)
+            # Replay from the last reset only. Everything before it was cleared off the
+            # figure by that reset, so replaying it re-queried the database on the GUI
+            # thread for nothing. It is kept, not truncated, so a later Undo past the
+            # reset still has it to redraw from.
+            entries = list(deepcopy(self.tab_action_history).items())
+            start = max(
+                (
+                    position
+                    for position, (_, entry) in enumerate(entries)
+                    if entry.get("function") == "_reset_actions"
+                ),
+                default=0,
+            )
+            self.tab_action_history = OrderedDict(entries[:start])
+            self.view.update_actions_from_json(OrderedDict(entries[start:]))
         self.update_tab_action_history.emit(
             self.__class__.__name__, self.tab_action_history
         )
