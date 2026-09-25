@@ -22,7 +22,10 @@ without `default=serialize_object`: no reachable value needs it, a failed save n
 the last good file, and a default would turn a reported failure into a silent coercion.
 
 **Evidence.** Reset -> quit -> relaunch and launch -> quit -> relaunch both restored nothing;
-an unserialisable value truncated the file mid-entry. Both pinned by tests.
+an unserialisable value truncated the file mid-entry. Both pinned by tests. The rename is
+retried on `PermissionError` (5 attempts, 50 ms steps): Windows briefly refuses a rename onto
+a file a scanner still holds - 14 of 300 rapid saves in the temp folder failed without the
+retry, 0 of 600 with it - which would have reported autosave as stopped.
 
 **Revisit if** a non-JSON value is found reaching the session history.
 

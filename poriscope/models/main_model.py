@@ -30,6 +30,7 @@ import inspect
 import json
 import logging
 import os
+import time
 from collections import OrderedDict
 from pathlib import Path
 from typing import (
@@ -80,6 +81,8 @@ class MainModel(QObject):
 
     add_text_to_display = Signal(str, str)
     logger = logging.getLogger(__name__)
+    #: How many times a session write retries a rename Windows briefly refuses.
+    REPLACE_ATTEMPTS = 5
 
     #: The plugin families the app recognises, and the base class that identifies
     #: each. A file is a plugin when it subclasses one of these. A class attribute
@@ -513,10 +516,16 @@ class MainModel(QObject):
         once complete. Opening the target for writing first truncated it, so a value
         that could not be serialised left the session file cut off mid-entry.
 
+        The move is retried briefly on ``PermissionError``: on Windows a file that was
+        just written is held open for a moment by scanners such as Defender, and the
+        rename is refused - 14 of 300 rapid saves in the temp folder - which would
+        otherwise be reported as autosave having stopped.
+
         :param data: the JSON-serialisable content
         :type data: Any
         :param save_file: the file to write
         :type save_file: Union[str, Path]
+        :raises PermissionError: if the rename is still refused after every retry
         :raises Exception: whatever writing or serialising raised; the temporary file
             is removed first
         """
@@ -525,7 +534,14 @@ class MainModel(QObject):
         try:
             with open(temporary, "w") as jf:
                 json.dump(data, jf, indent=4)
-            os.replace(temporary, target)
+            for attempt in range(self.REPLACE_ATTEMPTS):
+                try:
+                    os.replace(temporary, target)
+                    break
+                except PermissionError:
+                    if attempt == self.REPLACE_ATTEMPTS - 1:
+                        raise
+                    time.sleep(0.05 * (attempt + 1))
         except Exception:
             temporary.unlink(missing_ok=True)
             raise

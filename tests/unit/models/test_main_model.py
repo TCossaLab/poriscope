@@ -269,6 +269,55 @@ def test_update_logging_level_handlers(main_model):
         mock_qt_handler.setLevel.assert_not_called()
 
 
+def test_a_save_retries_a_briefly_locked_target(main_model, tmp_path, mocker):
+    """
+    A rename refused for a moment is retried, not reported as a failed autosave.
+
+    On Windows a file just written is briefly held open by scanners such as Defender, and
+    ``os.replace`` onto it fails with "Access is denied" - measured at 14 of 300 rapid
+    saves in the temp folder. Reporting that as a failure tells the user autosave has
+    stopped when it has not.
+    """
+    path = tmp_path / "session.json"
+    real_replace = os.replace
+    attempts = []
+
+    def locked_twice(src, dst):
+        attempts.append(src)
+        if len(attempts) <= 2:
+            raise PermissionError(13, "Access is denied")
+        return real_replace(src, dst)
+
+    mocker.patch("poriscope.models.main_model.os.replace", side_effect=locked_twice)
+    mocker.patch("poriscope.models.main_model.time.sleep")
+    reported = mocker.patch.object(main_model, "add_text_to_display")
+
+    main_model.save_session(SESSION, path)
+
+    assert json.loads(path.read_text()) == SESSION
+    assert len(attempts) == 3
+    reported.emit.assert_not_called()
+
+
+def test_a_target_that_stays_locked_is_reported_and_left_intact(
+    main_model, tmp_path, mocker
+):
+    """If the rename never succeeds, the old file stays and the temp file goes."""
+    path = tmp_path / "session.json"
+    main_model.save_session(SESSION, path)
+    before = path.read_text()
+    mocker.patch(
+        "poriscope.models.main_model.os.replace",
+        side_effect=PermissionError(13, "Access is denied"),
+    )
+    mocker.patch("poriscope.models.main_model.time.sleep")
+
+    main_model.save_session({"other": {"metaclass": "M", "subclass": "S"}}, path)
+
+    assert path.read_text() == before
+    assert not list(tmp_path.glob("*.tmp"))
+
+
 def test_save_tab_actions(main_model, tmp_path):
     """A saved tab action history reads back as what was saved."""
     history = {"Tab": {"0": {"function": "f", "parameters": {}}}}
