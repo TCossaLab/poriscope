@@ -45,10 +45,18 @@ from poriscope.utils.MetaEventFitter import MetaEventFitter
 # ---------------------------------------------------------------------------
 
 
-def _make_pf(rise_time=0):
-    pf = object.__new__(NoFitter)
-    pf.rise_time = rise_time
-    return pf
+def _make_pf():
+    return object.__new__(NoFitter)
+
+
+def _entries(indices, rise_time=0):
+    """
+    Build a sublevel list the way ``_locate_sublevel_transitions`` returns it.
+
+    Each entry is ``(index, rise_time)``: the rise time is the event's own, carried in
+    the list from one step to the next rather than kept on the shared instance.
+    """
+    return [(index, rise_time) for index in indices]
 
 
 # ---------------------------------------------------------------------------
@@ -149,7 +157,7 @@ class TestConstructFittedEvent(unittest.TestCase):
             0: {0: {"sublevel_current": np.array([100.0, 300.0, 100.0])}}
         }
         pf.eventfitting_status = {0: True}
-        pf.sublevel_starts = {0: {0: np.array([0, 30, 70])}}
+        pf.sublevel_starts = {0: {0: _entries([0, 30, 70, 100])}}
         pf.event_lengths = {0: {0: 100}}
 
         result = pf.construct_fitted_event(0, 0)
@@ -169,7 +177,7 @@ class TestConstructFittedEvent(unittest.TestCase):
         pf.eventloader.get_samplerate.return_value = "not a real samplerate"
         pf.sublevel_metadata = {0: {0: {"sublevel_current": np.array([100.0])}}}
         pf.eventfitting_status = {0: True}
-        pf.sublevel_starts = {0: {0: np.array([0])}}
+        pf.sublevel_starts = {0: {0: _entries([0, 50])}}
         pf.event_lengths = {0: {0: 50}}
 
         result = pf.construct_fitted_event(0, 0)
@@ -187,30 +195,27 @@ class TestLocateSublevelTransitions(unittest.TestCase):
         pf = object.__new__(NoFitter)
         data = np.full(50, 200.0)
         edges = pf._locate_sublevel_transitions(data, 1e6, 10, 5, 200.0, 5.0)
-        np.testing.assert_array_equal(edges, [0, 10, 45, 50])
-        self.assertEqual(pf.rise_time, 0)
+        self.assertEqual(edges, _entries([0, 10, 45, 50], 0))
 
     def test_with_rise_time(self):
         pf = object.__new__(NoFitter)
         data = np.full(50, 200.0)
         data[6:11] = 150.0  # samples below baseline, inside the nominal padding
         edges = pf._locate_sublevel_transitions(data, 1e6, 10, 5, 200.0, 5.0)
-        np.testing.assert_array_equal(edges, [0, 5, 40, 50])
-        self.assertEqual(pf.rise_time, 5)
+        self.assertEqual(edges, _entries([0, 5, 40, 50], 5))
 
     def test_negative_baseline_mirrors_positive_case(self):
         pf = object.__new__(NoFitter)
         data = np.full(50, -200.0)
         edges = pf._locate_sublevel_transitions(data, 1e6, 10, 5, -200.0, 5.0)
-        np.testing.assert_array_equal(edges, [0, 10, 45, 50])
-        self.assertEqual(pf.rise_time, 0)
+        self.assertEqual(edges, _entries([0, 10, 45, 50], 0))
 
     def test_first_and_last_edges_match_data_bounds(self):
         pf = object.__new__(NoFitter)
         data = np.full(80, 200.0)
         edges = pf._locate_sublevel_transitions(data, 1e6, 20, 10, 200.0, 5.0)
-        self.assertEqual(edges[0], 0)
-        self.assertEqual(edges[-1], len(data))
+        self.assertEqual(edges[0][0], 0)
+        self.assertEqual(edges[-1][0], len(data))
 
 
 # ---------------------------------------------------------------------------
@@ -220,11 +225,11 @@ class TestLocateSublevelTransitions(unittest.TestCase):
 
 class TestPopulateSublevelMetadata(unittest.TestCase):
     def test_happy_path_values(self):
-        pf = _make_pf(rise_time=0)
+        pf = _make_pf()
         data = np.concatenate(
             [np.full(20, 200.0), np.full(60, 150.0), np.full(20, 200.0)]
         )
-        starts = np.array([0, 20, 80, 100])
+        starts = _entries([0, 20, 80, 100], 0)
         meta = pf._populate_sublevel_metadata(data, 1e6, 200.0, 5.0, starts)
 
         np.testing.assert_allclose(meta["sublevel_current"], [200.0, 150.0, 200.0])
@@ -238,11 +243,11 @@ class TestPopulateSublevelMetadata(unittest.TestCase):
         np.testing.assert_allclose(meta["sublevel_fitted_ecd"], [0.0, 0.003, 0.0])
 
     def test_required_keys_present(self):
-        pf = _make_pf(rise_time=0)
+        pf = _make_pf()
         data = np.concatenate(
             [np.full(20, 200.0), np.full(60, 150.0), np.full(20, 200.0)]
         )
-        starts = np.array([0, 20, 80, 100])
+        starts = _entries([0, 20, 80, 100], 0)
         meta = pf._populate_sublevel_metadata(data, 1e6, 200.0, 5.0, starts)
         for key in [
             "sublevel_current",
@@ -258,22 +263,22 @@ class TestPopulateSublevelMetadata(unittest.TestCase):
             self.assertIn(key, meta)
 
     def test_baseline_mismatch_raises(self):
-        pf = _make_pf(rise_time=0)
+        pf = _make_pf()
         data = np.concatenate(
             [np.full(20, 200.0), np.full(60, 150.0), np.full(20, 250.0)]
         )
-        starts = np.array([0, 20, 80, 100])
+        starts = _entries([0, 20, 80, 100], 0)
         with self.assertRaises(ValueError):
             pf._populate_sublevel_metadata(data, 1e6, 200.0, 5.0, starts)
 
     def test_no_mismatch_when_within_tolerance(self):
         # Diff of exactly 2*baseline_std should NOT raise (condition is
         # strictly "> 2*baseline_std").
-        pf = _make_pf(rise_time=0)
+        pf = _make_pf()
         data = np.concatenate(
             [np.full(20, 200.0), np.full(60, 150.0), np.full(20, 210.0)]
         )
-        starts = np.array([0, 20, 80, 100])
+        starts = _entries([0, 20, 80, 100], 0)
         # diff = 10 = 2*5, not strictly greater -> should not raise
         meta = pf._populate_sublevel_metadata(data, 1e6, 200.0, 5.0, starts)
         self.assertIn("sublevel_current", meta)
@@ -282,11 +287,11 @@ class TestPopulateSublevelMetadata(unittest.TestCase):
         # Asymmetric widths (first=10, last=30) with rise_time=10 makes only
         # the first sublevel's window fully consumed by rise_time, isolating
         # the "else" branch to that one sublevel.
-        pf = _make_pf(rise_time=10)
+        pf = _make_pf()
         data = np.concatenate(
             [np.full(10, 200.0), np.full(60, 150.0), np.full(30, 200.0)]
         )
-        starts = np.array([0, 10, 70, 100])
+        starts = _entries([0, 10, 70, 100], 10)
         meta = pf._populate_sublevel_metadata(data, 1e6, 200.0, 5.0, starts)
 
         # Degenerate branch: sublevel_current falls back to data[end - 1].
@@ -472,3 +477,39 @@ class TestDefineMetadataTypesAndUnits(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# ---------------------------------------------------------------------------
+# the rise time travels with its event
+# ---------------------------------------------------------------------------
+
+
+class TestRiseTimeTravelsWithTheEvent(unittest.TestCase):
+    """
+    One fitter instance fits every channel, on one thread per channel.
+
+    The rise time found for an event in ``_locate_sublevel_transitions`` used to be
+    stored on the instance and read back in ``_populate_sublevel_metadata``, so another
+    channel's event located in between replaced it, and this event's levels were
+    averaged with the other event's rise time.
+    """
+
+    def test_an_event_located_in_between_does_not_change_this_events_metadata(self):
+        pf = object.__new__(NoFitter)
+        this_event = np.full(50, 200.0)
+        this_event[6:11] = 150.0  # a rise time of 5
+        other_event = np.full(50, 200.0)  # a rise time of 0
+
+        edges = pf._locate_sublevel_transitions(this_event, 1e6, 10, 5, 200.0, 5.0)
+        expected = pf._populate_sublevel_metadata(this_event, 1e6, 200.0, 5.0, edges)
+
+        pf._locate_sublevel_transitions(other_event, 1e6, 10, 5, 200.0, 5.0)
+        interleaved = pf._populate_sublevel_metadata(this_event, 1e6, 200.0, 5.0, edges)
+
+        for key, values in expected.items():
+            np.testing.assert_array_equal(interleaved[key], values, err_msg=key)
+
+    def test_the_instance_keeps_no_rise_time(self):
+        pf = object.__new__(NoFitter)
+        pf._locate_sublevel_transitions(np.full(50, 200.0), 1e6, 10, 5, 200.0, 5.0)
+        self.assertFalse(hasattr(pf, "rise_time"))

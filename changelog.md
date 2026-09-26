@@ -174,6 +174,8 @@
 
 #### Event Analysis:
 
+* **Fixed `NoFitter` computing one event's sublevel values with another channel's rise time** when channels were fitted at the same time; each event now carries its own
+
 * **Fixed the Event Analysis tab asking about the wrong channel before re-fitting**: if it could not read whether a channel was already fitted, it reused the previous channel's answer, so the "start over?" prompt could appear for a channel that was not fitted or be skipped for one that was
 
 * The Event Analysis tab now says which event indices were out of range and how many events the channel actually holds, instead of reporting "No data available for plotting"

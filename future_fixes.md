@@ -43,9 +43,6 @@ docstring/comment-only, so no tests and no changelog entry:
 
 ### Data integrity and scientific correctness
 
-- **`NoFitter` passes per-event state through `self.rise_time`** (`NoFitter.py:228`
-  written, `:268` read) on an instance shared by parallel channel threads: 30 of 3,000 events
-  took another channel's `sublevel_stdev` with the switch interval forced to 10 µs, 0 at 5 ms.
 - **One NaN rejects an event as "Too Few Levels".** It poisons `varM` and every
   comparison goes false; reject with an explicit "Non-finite data" reason instead.
 

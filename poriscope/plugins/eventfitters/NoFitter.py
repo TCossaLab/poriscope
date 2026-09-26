@@ -123,8 +123,11 @@ class NoFitter(MetaEventFitter):
                 raise AttributeError(
                     "NoFitter cannot operate without a linked MetaEventLoader"
                 )
-            sublevel_start_indices = self.sublevel_starts[channel][index]
-            sublevel_end_indices = self.sublevel_starts[channel][index][1:]
+            # Each stored entry is (index, rise_time); only the index matters here.
+            sublevel_start_indices = [
+                entry[0] for entry in self.sublevel_starts[channel][index]
+            ]
+            sublevel_end_indices = sublevel_start_indices[1:]
             sublevel_end_indices = np.append(
                 sublevel_end_indices, self.event_lengths[channel][index]
             )
@@ -193,7 +196,7 @@ class NoFitter(MetaEventFitter):
 
 
 
-        :return: a list of entries that details sublevel transitions. Normally this would be as a list of ints, but can be a list of tuples or other entries if more info is needed. First entry must correspond to the start of the event.
+        :return: ``(index, rise_time)`` for each sublevel boundary - 0, the baseline crossing, the end of the event proper and ``len(data)`` - where ``rise_time`` is this event's walk-back from ``padding_before`` to the crossing, carried to :meth:`_populate_sublevel_metadata` in the list rather than on the instance.
         :rtype: Optional[List[Any]]
 
         :raises ValueError: if the event is rejected. Note that ValueError will skip and reject the event but will not stop processing of the rest of the dataset
@@ -225,8 +228,10 @@ class NoFitter(MetaEventFitter):
         edges = np.append(edges, k)  # add start point as an edge
         edges = np.append(edges, len(data) - padding_after - rise_time)
         edges = np.append(edges, length)  # mark the end of the event as an edge
-        self.rise_time = rise_time
-        return edges
+        # The rise time travels with the event in each entry, not on the instance: one
+        # fitter fits every channel on a thread per channel, so a stored value was
+        # replaced by another channel's event before _populate_sublevel_metadata read it.
+        return [(int(edge), rise_time) for edge in edges]
 
     @log(logger=logger)
     @override
@@ -263,10 +268,11 @@ class NoFitter(MetaEventFitter):
 
         sublevel_metadata = {}
 
+        # Each entry is (index, rise_time), as _locate_sublevel_transitions returns it;
+        # the rise time is this event's own. Multiply it to ignore more when averaging.
+        rise_time = int(sublevel_starts[0][1])
+        sublevel_starts = [int(entry[0]) for entry in sublevel_starts]
         num_states = len(sublevel_starts) - 1
-        rise_time = (
-            self.rise_time
-        )  # multiply this if you want to ignore more in your averaging
         dt_us = 1.0 / samplerate * 1e6
         aC_pC = 1e-6
 
