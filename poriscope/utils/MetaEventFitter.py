@@ -471,14 +471,14 @@ class MetaEventFitter(BaseDataPlugin):
         """
         Count one rejected event, say why, and drop the metadata already built for it.
 
-        ``fit_events`` gives up on an event from eight places, and each one owed the same
+        ``fit_events`` gives up on an event from nine places, and each one owed the same
         three pieces of bookkeeping: tally the reason, log it, and remove the two
         half-built metadata entries the event had already accumulated. Missing either pop
         leaves a partial event in the tables that the writer will later try to commit, so
-        this is one place rather than eight.
+        this is one place rather than nine.
 
         **The control flow stays at the call site**, deliberately, because it differs.
-        Seven of the eight decrement the running event count and ``continue`` the event
+        Eight of the nine decrement the running event count and ``continue`` the event
         loop; the sublevel-count mismatch is raised from inside the loop over the
         metadata columns, so it has to set a flag and ``break`` out of that inner loop
         before its caller can do the same. Folding that difference in here would mean a
@@ -602,6 +602,17 @@ class MetaEventFitter(BaseDataPlugin):
 
             if not hasattr(data, "__len__"):
                 raise TypeError("Event data must be sized")
+            # One NaN or infinity poisons every statistic a fitter computes from the event,
+            # so it would otherwise be rejected for an unrelated reason or fitted into nonsense.
+            if not np.all(np.isfinite(data)):
+                self._reject_event(
+                    channel,
+                    index,
+                    "Non-finite Data",
+                    f"Event {event_id} in channel {channel} contains NaN or infinite samples and will be skipped",
+                )
+                total_events -= 1
+                continue
             self.event_lengths[channel][index] = len(data)
 
             self.event_metadata[channel][index]["start_time"] = (
@@ -912,7 +923,7 @@ class MetaEventFitter(BaseDataPlugin):
         baseline_std: Optional[float],
     ) -> Optional[List[Any]]:
         """
-        :param data: an array of data from which to extract the locations of sublevel transitions
+        :param data: an array of data from which to extract the locations of sublevel transitions. Always finite: ``fit_events`` rejects an event holding a NaN or infinite sample before calling this
         :type data: npt.NDArray[np.float64]
         :param samplerate: the sampling rate
         :type samplerate: float
@@ -959,7 +970,7 @@ class MetaEventFitter(BaseDataPlugin):
 
         The ``sublevel_starts`` list corresponds verbatim to the return value of :py:meth:`~poriscope.utils.MetaeventFitter.MetaeventFitter._locate_sublevel_transitions`. Using this information, provide values for all of the sublevle metadata required by the fitter.  This should be returned as a dict with keys that match exactly those defined in :py:meth:`~poriscope.utils.MetaeventFitter.MetaeventFitter._define_sublevel_metadata_types` and :py:meth:`~poriscope.utils.MetaeventFitter.MetaeventFitter._define_sublevel_metadata_units`. Values for each key should be a list with one value per sublevel - one fewer than the entries in ``sublevel_starts``, whose last entry is the terminal boundary - and types consistent with :py:meth:`~poriscope.utils.MetaeventFitter.MetaeventFitter._define_sublevel_metadata_units`. Do not provide values for any reserved keys.
 
-        :param data: an array of data from which to extract the locations of sublevel transitions
+        :param data: an array of data from which to extract the locations of sublevel transitions. Always finite: ``fit_events`` rejects an event holding a NaN or infinite sample before calling this
         :type data: npt.NDArray[np.float64]
         :param samplerate: the sampling rate
         :type samplerate: float
@@ -1116,7 +1127,7 @@ class MetaEventFitter(BaseDataPlugin):
 
         The ``sublevel_metadata`` list corresponds  to the return value of :py:meth:`~poriscope.utils.MetaeventFitter.MetaeventFitter._populate_sublevel_metadata`. Using this information, provide values for all of the event metadata required by the fitter.  This should be returned as a dict with keys that match exactly those defined in :py:meth:`~poriscope.utils.MetaeventFitter.MetaeventFitter._define_event_metadata_types` and :py:meth:`~poriscope.utils.MetaeventFitter.MetaeventFitter._define_event_metadata_units`. Values for each key should be a single value with type consistent with :py:meth:`~poriscope.utils.MetaeventFitter.MetaeventFitter._define_sublevel_metadata_units`. Do not provide values for any reserved keys.
 
-        :param data: an array of data from which to extract the locations of sublevel transitions
+        :param data: an array of data from which to extract the locations of sublevel transitions. Always finite: ``fit_events`` rejects an event holding a NaN or infinite sample before calling this
         :type data: npt.NDArray[np.float64]
         :param samplerate: the sampling rate
         :type samplerate: float

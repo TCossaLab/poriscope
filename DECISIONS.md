@@ -10,6 +10,25 @@ which ran through August 2026 and is complete. The step numbers only date the de
 
 ---
 
+## 2026-09-26 - Non-finite event data is rejected in the base, before any fitter
+
+**Context.** A NaN or infinite sample poisons every statistic a fitter computes, and each
+fitter tripped over it differently.
+
+**Decision** (Kyle, 2026-09-26, as recommended). `MetaEventFitter.fit_events` rejects the
+event as "Non-finite Data" right after loading (after any filter), so no fitter needs its
+own guard and the hooks are documented as receiving finite data. Filed as a breaking result
+change, because some fitters used to keep such events.
+
+**Evidence.** One planted NaN per event, 25 events: CUSUM and IntraCUSUM rejected 25 as "Too
+Few Levels", ClassicCUSUM 21 (4 fitted), Basic_PeakFinder rejected 5 as "No Peaks Found" (20
+fitted), PeakFinder 25 "No Peaks Found", NanoTrees 25 with sklearn's "Input y contains NaN.",
+and NoFitter fitted all 25. Now all seven reject 25 as "Non-finite Data".
+
+**Revisit if** a fitter is added that can meaningfully fit through gaps in the data.
+
+---
+
 ## 2026-09-25 - NoFitter's rise time travels in its sublevel entries
 
 **Context.** NoFitter stored each event's rise time on the instance between

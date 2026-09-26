@@ -4,6 +4,8 @@
 
 #### Results that change:
 
+* **Breaking: event fitting now rejects an event holding a NaN or infinite sample as "Non-finite Data"**, for every fitter; before, depending on the fitter, it was rejected for an unrelated reason such as "Too Few Levels" or fitted into metadata containing NaN
+
 * **Breaking: `PeakFinder`'s shipped defaults are now a working barcode configuration** - `Event Type` `Barcode`, `Number of peaks` 4, filter thresholds -5 and +5, `Peak to Peak Distance Ratio` 30% - so results change for anyone who accepted the old defaults; a saved configuration keeps what it stored, so only new plugin instances see them
 
 * **Breaking: the barcode is now the best-*matched* set of type-1 peaks rather than the most prominent consecutive run**, scored on how alike its consecutive spacings and its peaks' ECDs are; a winning set may skip an off-pattern peak, which keeps its type 1 and so does not appear in the event's `sequence`

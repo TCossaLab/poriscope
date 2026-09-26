@@ -43,8 +43,6 @@ docstring/comment-only, so no tests and no changelog entry:
 
 ### Data integrity and scientific correctness
 
-- **One NaN rejects an event as "Too Few Levels".** It poisons `varM` and every
-  comparison goes false; reject with an explicit "Non-finite data" reason instead.
 
 ### Session and settings persistence
 

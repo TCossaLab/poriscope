@@ -180,6 +180,33 @@ def test_fits_every_planted_event(fitter: MetaEventFitter) -> None:
 
 
 @pytest.mark.conformance
+def test_non_finite_data_is_rejected_by_name(fitter: MetaEventFitter) -> None:
+    """
+    Every fitter rejects an event holding a NaN sample as "Non-finite Data".
+
+    The check lives in the shared ``fit_events``, before any fitter sees the data, so
+    a NaN is not misreported as whatever that fitter's statistics happen to trip over -
+    CUSUM called it "Too Few Levels".
+
+    :param fitter: The configured fitter under test.
+    :type fitter: MetaEventFitter
+    """
+
+    def plant_nan(data: np.ndarray) -> np.ndarray:
+        poisoned = np.array(data, dtype=np.float64)
+        poisoned[len(poisoned) // 2] = np.nan
+        return poisoned
+
+    for _progress in fitter.fit_events(EVENTS_CHANNEL, data_filter=plant_nan):
+        pass
+
+    assert fitter.rejected[EVENTS_CHANNEL] == {"Non-finite Data": EVENTS_COUNT}, (
+        f"expected all {EVENTS_COUNT} events rejected as non-finite:"
+        f"\n{fitter.report_channel_status()}"
+    )
+
+
+@pytest.mark.conformance
 def test_produced_columns_are_declared(fitter: MetaEventFitter) -> None:
     """
     Every metadata column a fitter produces is declared with a type and a unit.
