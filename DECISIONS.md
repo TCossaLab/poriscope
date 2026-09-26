@@ -10,6 +10,24 @@ which ran through August 2026 and is complete. The step numbers only date the de
 
 ---
 
+## 2026-09-25 - NoFitter's rise time travels in its sublevel entries
+
+**Context.** NoFitter stored each event's rise time on the instance between
+`_locate_sublevel_transitions` and `_populate_sublevel_metadata`, and one instance fits every
+channel on a thread per channel, so another channel's event could replace it in between.
+
+**Decision** (Kyle, 2026-09-25). Carry it in the sublevel list the base already passes from
+one step to the next - `List[Any]` exists to carry such per-sublevel information - as
+`(index, rise_time)` entries. No contract change: serialising NoFitter would cost
+parallelism, and neither step is given the channel to key a dict by.
+
+**Evidence.** An event located in between shifted `sublevel_stdev` by 8.5 in a
+single-threaded interleave test, which now passes; conformance is unchanged.
+
+**Revisit if** the base contract gains a per-event channel for plugins.
+
+---
+
 ## 2026-09-25 - CUSUM Sensitivity is documented as it works, not inverted
 
 **Context.** `Sensitivity` was documented as "higher is more conservative", but CUSUM
