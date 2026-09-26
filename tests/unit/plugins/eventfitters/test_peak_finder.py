@@ -1300,6 +1300,37 @@ class TestGetPlotFeatures(unittest.TestCase):
         self.assertIn("unfolded level +3σ", hlabel)
         self.assertIn("unfolded level -3σ", hlabel)
 
+    def test_unclassified_unfolded_level_keeps_baseline_and_peaks(self):
+        """
+        unfolded_level stays None until the folded/unfolded classifier has
+        run, and for good when it cannot separate two populations. The
+        overlay then drops the three unfolded-level lines instead of raising
+        TypeError, and still draws the baseline and the peaks.
+        """
+        for missing in (None, np.nan):
+            with self.subTest(unfolded_level=missing):
+                pf = self._setup_full_pf("All")
+                pf.event_metadata[0][0]["unfolded_level"] = missing
+                _, bases, peaks, _, hlabel, plabel = pf.get_plot_features(0, 0)
+                self.assertEqual(bases, [100.0])
+                self.assertEqual(hlabel, ["Baseline"])
+                self.assertEqual(peaks, [(50.0, -500.0)])
+                self.assertEqual(len(plabel), 1)
+
+    def test_unfolded_level_lines_hang_off_the_unfolded_level(self):
+        pf = self._setup_full_pf("All")
+        _, bases, _, _, hlabel, _ = pf.get_plot_features(0, 0)
+        # baseline 100, unfolded 200, stdev 10, thresholds -3 and +3
+        self.assertEqual(
+            dict(zip(hlabel, bases)),
+            {
+                "Baseline": 100.0,
+                "unfolded level": -100.0,
+                "unfolded level +3σ": -130.0,
+                "unfolded level -3σ": -70.0,
+            },
+        )
+
     def test_filtered_peak_in_plabel(self):
         pf = self._setup_full_pf("All")
         pf_filtered, bases, peaks, vlabel, hlabel, plabel = pf.get_plot_features(0, 0)
@@ -2663,22 +2694,103 @@ class TestTranslocationDirectionFitSample(unittest.TestCase):
                 pf.event_metadata[0][i]["translocation_direction"], "forward"
             )
 
-    def test_small_samples_are_fitted_whole(self):
-        # Same gate as the case below, reached from the other direction:
-        # six events cannot yield a core anywhere near the bin floor.
+    def test_small_samples_are_not_fitted(self):
+        # Below DIRECTION_MIN_FIT_EVENTS no fit is attempted at all; the
+        # per-event ratio-vs-1 rule decides instead.
         ratios = [-0.3, -0.28, 0.4, 0.42, -4.0, 4.0]
+        pf = self._run(ratios)
+        pf.fit_threshold.assert_not_called()
+
+    def test_a_core_too_small_to_fit_falls_back_to_the_whole_array(self):
+        # 32 events clear DIRECTION_MIN_FIT_EVENTS, but their 5-95% core is
+        # 28, under the MIN_FIT_BINS floor, so trimming would trade one bad fit
+        # for another. The full array is used instead.
+        ratios = list(np.linspace(-0.4, 0.5, 32))
         pf = self._run(ratios)
         fitted = pf.fit_threshold.call_args[0][0]
         self.assertEqual(fitted.size, len(ratios))
 
-    def test_a_core_too_small_to_fit_falls_back_to_the_whole_array(self):
-        # 25 events: the core would come out under the MIN_FIT_BINS floor, so
-        # trimming would trade one bad fit for another. The full array is
-        # used instead.
-        ratios = list(np.linspace(-0.4, 0.5, 25))
+
+class TestTranslocationDirectionRatioRule(unittest.TestCase):
+    """
+    Too few events to fit, or a fit that finds one population: each event's
+    own pre/post ECD ratio is compared with 1, and the longer arm marks the
+    beginning of the event - pre > post is forward, pre < post backward.
+    """
+
+    def _run(self, log_ratios, fit_result=None):
+        pf = _make_pf()
+        pf.sublevel_metadata = {0: {i: _ecd_event(r) for i, r in enumerate(log_ratios)}}
+        pf.event_metadata = {0: {i: {} for i in range(len(log_ratios))}}
+        pf.fit_threshold = MagicMock(return_value=fit_result)
+        pf._classify_translocation_direction([0])
+        return pf
+
+    def _directions(self, pf, n):
+        return [
+            pf.event_metadata[0][i].get("translocation_direction") for i in range(n)
+        ]
+
+    def test_too_few_events_compare_each_ratio_with_one(self):
+        ratios = [0.3, -0.2, 0.05, -1.5, 0.0]
         pf = self._run(ratios)
-        fitted = pf.fit_threshold.call_args[0][0]
-        self.assertEqual(fitted.size, len(ratios))
+        pf.fit_threshold.assert_not_called()
+        self.assertEqual(
+            self._directions(pf, 5),
+            ["forward", "backward", "forward", "backward", None],
+        )
+        results = pf._translocation_direction_results
+        self.assertEqual(results["threshold"], 0.0)
+        self.assertIn("too few events", results["ratio_rule"])
+        self.assertEqual(results["threshold_basis"], "ECD ratio = 1")
+        self.assertEqual(results["forward_count"], 2)
+        self.assertEqual(results["backward_count"], 2)
+        self.assertEqual(results["unassigned_count"], 1)
+        self.assertIsNone(results["lower_center"])
+
+    def test_no_confidence_is_claimed(self):
+        pf = self._run([0.3, -0.2])
+        for i in range(2):
+            self.assertIsNone(pf.event_metadata[0][i]["translocation_confidence"])
+
+    def test_one_population_uses_zero_not_the_fitted_threshold(self):
+        # 40 events, all but two with the long arm first; the fit's own
+        # single-population threshold (0.2) would call 0.1 backward.
+        ratios = [0.1] * 20 + [0.5] * 18 + [-0.3, -0.4]
+        one_population = {
+            "threshold": 0.2,
+            "centers": np.array([0.3, 0.31]),
+            "params": (10.0, 0.3, 0.1, 10.0, 0.31, 0.1),
+            "n_components": 1,
+            "hist": (None, None),
+        }
+        pf = self._run(ratios, fit_result=one_population)
+        pf.fit_threshold.assert_called_once()
+        directions = self._directions(pf, len(ratios))
+        self.assertEqual(directions[:38], ["forward"] * 38)
+        self.assertEqual(directions[38:], ["backward"] * 2)
+        results = pf._translocation_direction_results
+        self.assertEqual(results["threshold"], 0.0)
+        self.assertEqual(results["n_components"], 1)
+        self.assertIn("one population", results["ratio_rule"])
+
+    def test_the_report_states_the_rule(self):
+        pf = self._run([0.3, -0.2, 0.1])
+        pf._classification_results = {"error": "not under test"}
+        pf._peak_statistics = {
+            "total_peaks": 0,
+            "total_classified": 0,
+            "total_unclassified": 0,
+            "peak_type_counts": {},
+        }
+        with patch(
+            "poriscope.utils.MetaEventFitter.MetaEventFitter.report_channel_status",
+            return_value="",
+        ):
+            report = pf.report_channel_status(0)
+        self.assertIn("compared with 1", report)
+        self.assertIn("Threshold: log10 ECD ratio 0 (ECD ratio = 1)", report)
+        self.assertNotIn("Lower center", report)
 
 
 # ---------------------------------------------------------------------------
@@ -3526,6 +3638,271 @@ class TestClassificationWarningCollector(unittest.TestCase):
         # so tearDown's removeHandler on an already-removed handler is a
         # harmless no-op, matching what logging.Logger.removeHandler does
         self.logger.addHandler(self.collector)
+
+
+# ---------------------------------------------------------------------------
+# Single-population fallbacks - _fit_single_gaussian and the two classifiers
+# ---------------------------------------------------------------------------
+
+
+class TestFitSingleGaussian(unittest.TestCase):
+    def test_recovers_the_centre_and_width_of_one_population(self):
+        pf = _make_pf()
+        data = np.random.default_rng(0).normal(1000.0, 50.0, 4000)
+        counts, edges, _ = pf._histogram_for_fit(data)
+        fit = pf._fit_single_gaussian(counts, edges)
+        self.assertIsNotNone(fit)
+        _, mean, std, _ = fit
+        self.assertAlmostEqual(mean, 1000.0, delta=5.0)
+        self.assertAlmostEqual(std, 50.0, delta=5.0)
+
+    def test_returns_none_for_an_unusable_histogram(self):
+        pf = _make_pf()
+        self.assertIsNone(
+            pf._fit_single_gaussian(np.zeros(10), np.linspace(0.0, 1.0, 11))
+        )
+        self.assertIsNone(
+            pf._fit_single_gaussian(np.array([1.0, 2.0]), np.array([0.0, 1.0, 2.0]))
+        )
+
+    def test_a_flat_background_is_fitted_rather_than_widening_the_gaussian(self):
+        rng = np.random.default_rng(8)
+        data = np.concatenate(
+            [rng.normal(1000.0, 50.0, 3000), rng.uniform(0.0, 3000.0, 1500)]
+        )
+        pf = _make_pf()
+        counts, edges, _ = pf._histogram_for_fit(data)
+        _, mean, std, offset = pf._fit_single_gaussian(counts, edges)
+        self.assertGreater(offset, 0.0)
+        self.assertAlmostEqual(mean, 1000.0, delta=10.0)
+        self.assertAlmostEqual(std, 50.0, delta=10.0)
+        # without the background the pedestal widens the Gaussian
+        pf.FIT_CONSTANT_OFFSET = False
+        _, _, plain_std, plain_offset = pf._fit_single_gaussian(counts, edges)
+        self.assertEqual(plain_offset, 0.0)
+        self.assertGreater(plain_std, std)
+
+
+class TestFoldingSinglePopulationFallback(unittest.TestCase):
+    """
+    One population in the blockage levels: fit one Gaussian, assume it is
+    unfolded, and call folded at or above max(1.5 mu, mu + 3 sigma).
+    """
+
+    def _run(self, levels, single_fit="real"):
+        pf = _make_pf()
+        counts, edges, _ = pf._histogram_for_fit(levels)
+        pf.fit_threshold = MagicMock(
+            return_value={
+                "threshold": float(np.median(levels)),
+                "centers": np.array([np.median(levels), np.median(levels) + 1.0]),
+                "params": (1.0, 1000.0, 50.0, 1.0, 1001.0, 50.0, 0.0),
+                "n_components": 1,
+                "hist": (counts, edges),
+            }
+        )
+        if single_fit != "real":
+            pf._fit_single_gaussian = MagicMock(return_value=single_fit)
+        pf.update_event_metadata_post_processing = MagicMock()
+        pf._collect_peak_statistics = MagicMock()
+        info = [(0, i) for i in range(len(levels))]
+        pf._classify_folded_unfolded([0], info, np.asarray(levels, dtype=float))
+        return pf
+
+    def test_ratio_term_sets_the_cut_on_a_narrow_population(self):
+        rng = np.random.default_rng(1)
+        levels = np.concatenate([rng.normal(1000.0, 50.0, 2000), [2000.0, 2100.0]])
+        pf = self._run(levels)
+        results = pf._classification_results
+        self.assertTrue(results["single_population"])
+        self.assertIsNone(results["higher_center"])
+        self.assertNotIn("ratio", results)
+        # 1.5 x ~1000 beats ~1000 + 3 x ~50
+        self.assertAlmostEqual(results["threshold"], 1.5 * results["lower_center"])
+        self.assertIn("the ratio term", results["threshold_rule"])
+        self.assertEqual(results["folded_count"], 2)
+        self.assertEqual(results["unfolded_count"], 2000)
+
+    def test_sigma_term_sets_the_cut_on_a_wide_population(self):
+        levels = np.random.default_rng(2).normal(1000.0, 250.0, 3000)
+        pf = self._run(levels)
+        results = pf._classification_results
+        mu, sigma = results["lower_center"], results["lower_std"]
+        self.assertGreater(mu + 3.0 * sigma, 1.5 * mu)
+        self.assertAlmostEqual(results["threshold"], mu + 3.0 * sigma)
+        self.assertIn("the sigma term", results["threshold_rule"])
+
+    def test_every_event_gets_levels_from_the_fallback_cut(self):
+        levels = np.array([1000.0] * 50 + [980.0] * 30 + [1020.0] * 30 + [2000.0])
+        pf = self._run(levels, single_fit=(50.0, 1000.0, 20.0, 0.0))
+        calls = pf.update_event_metadata_post_processing.call_args_list
+        self.assertEqual(len(calls), len(levels))
+        # the last event, at 2000 >= 1500, is folded: unfolded level = half
+        self.assertEqual(calls[-1].args, (0, len(levels) - 1, 1000.0, 2000.0))
+        # an event at 1000 is unfolded: folded level = double
+        self.assertEqual(calls[0].args, (0, 0, 1000.0, 2000.0))
+        self.assertAlmostEqual(pf._classification_results["threshold"], 1500.0)
+
+    def test_single_fit_failure_falls_back_to_median_and_mad(self):
+        """
+        The single-population path never declines: without a fit, the median
+        and scaled MAD describe the population, and every event still gets
+        both carrier levels, so peak filtering downstream is not starved.
+        """
+        levels = np.array([990.0, 1000.0, 1000.0, 1010.0, 2000.0])
+        pf = self._run(levels, single_fit=None)
+        results = pf._classification_results
+        self.assertNotIn("error", results)
+        self.assertIn("median", results["lower_center_source"])
+        self.assertAlmostEqual(results["lower_center"], 1000.0)
+        self.assertAlmostEqual(results["lower_std"], 1.4826 * 10.0)
+        self.assertAlmostEqual(results["threshold"], 1500.0)
+        self.assertEqual(
+            pf.update_event_metadata_post_processing.call_count, len(levels)
+        )
+        self.assertEqual(results["folded_count"], 1)
+
+    def test_folded_level_is_assumed_twice_the_unfolded_centre(self):
+        levels = np.random.default_rng(4).normal(1000.0, 50.0, 500)
+        pf = self._run(levels, single_fit=(10.0, 1000.0, 50.0, 0.0))
+        results = pf._classification_results
+        self.assertEqual(results["lower_center_source"], "single-Gaussian fit")
+        self.assertAlmostEqual(results["assumed_folded_level"], 2000.0)
+
+    def test_the_warning_names_only_the_method_and_why(self):
+        levels = np.random.default_rng(9).normal(1000.0, 50.0, 500)
+        with self.assertLogs(PeakFinder.logger, level="WARNING") as captured:
+            pf = self._run(levels, single_fit=(10.0, 1000.0, 50.0, 0.0))
+        self.assertEqual(
+            pf._classification_results["threshold_basis"], "1.5 x unfolded"
+        )
+        folding = [m for m in captured.output if "Folding:" in m]
+        self.assertEqual(len(folding), 1)
+        self.assertIn("one population found", folding[0])
+        self.assertIn("threshold 1.5 x unfolded", folding[0])
+        self.assertNotIn("pA", folding[0])
+
+    def test_the_report_states_the_assumption_and_the_rule(self):
+        levels = np.random.default_rng(5).normal(1000.0, 50.0, 1000)
+        pf = self._run(levels)
+        pf.sublevel_metadata = {}
+        with patch(
+            "poriscope.utils.MetaEventFitter.MetaEventFitter.report_channel_status",
+            return_value="",
+        ):
+            report = pf.report_channel_status(0)
+        self.assertIn("assumed it is unfolded", report)
+        self.assertIn("Folded level (assumed, 2 x unfolded)", report)
+        self.assertIn("Threshold rule: max(1.5 x mu, mu + 3 sigma)", report)
+        self.assertNotIn("Higher center", report)
+
+    def test_the_report_survives_a_run_with_no_peaks(self):
+        levels = np.random.default_rng(7).normal(1000.0, 50.0, 500)
+        pf = self._run(levels)
+        pf._peak_statistics = {
+            "total_peaks": 0,
+            "total_classified": 0,
+            "total_unclassified": 0,
+            "peak_type_counts": {},
+        }
+        with patch(
+            "poriscope.utils.MetaEventFitter.MetaEventFitter.report_channel_status",
+            return_value="",
+        ):
+            report = pf.report_channel_status(0)
+        self.assertIn("Filtered peaks: 0 (0.0%)", report)
+
+
+class TestProminenceSinglePopulationFallback(unittest.TestCase):
+    """
+    One population in the log prominences: fit one Gaussian, assume it is
+    class 0, and call class 1 at or above mu + 3 sigma in log10.
+    """
+
+    def _run(self, ratios, single_fit="real"):
+        pf = _make_pf()
+        ratios = np.asarray(ratios, dtype=float)
+        counts, edges, _ = pf._histogram_for_fit(np.log10(ratios))
+        pf.sublevel_metadata = {
+            0: {
+                0: {
+                    "filtered": np.full(ratios.size, 3.0),
+                    "normalized_prominence": ratios,
+                    "peak_id": [float(i) for i in range(ratios.size)],
+                }
+            }
+        }
+        pf.event_metadata = {0: {0: {}}}
+        pf.fit_threshold = MagicMock(
+            return_value={
+                # the double fit's own single-population threshold, which the
+                # fallback must replace
+                "threshold": -0.9,
+                "centers": np.array([-1.0, -0.99]),
+                "params": (1.0, -1.0, 0.1, 1.0, -0.99, 0.1, 0.0),
+                "n_components": 1,
+                "threshold_method": "spline_valley_above_floor",
+                "hist": (counts, edges),
+            }
+        )
+        if single_fit != "real":
+            pf._fit_single_gaussian = MagicMock(return_value=single_fit)
+        pf._classify_peak_prominences([0])
+        return pf
+
+    def test_cut_is_mu_plus_three_sigma_and_confidence_is_not_claimed(self):
+        ratios = np.concatenate([np.full(40, 0.1), np.full(20, 0.08), [10.0]])
+        pf = self._run(ratios, single_fit=(40.0, -1.0, 0.1, 0.0))
+        results = pf._peak_prominence_classification_results
+        self.assertAlmostEqual(results["threshold_fitted"], -0.7)
+        self.assertTrue(results["single_population"])
+        self.assertIn("mu + 3 sigma", results["threshold_rule"])
+        classified = pf.sublevel_metadata[0][0]["classified"]
+        self.assertEqual(classified[-1], 1.0)
+        self.assertTrue(np.all(classified[:-1] == 0.0))
+        self.assertTrue(
+            np.all(np.isnan(pf.sublevel_metadata[0][0]["classification_confidence"]))
+        )
+        self.assertEqual(results["centers_fitted"], [-1.0])
+        self.assertEqual(results["stds_fitted"], [0.1])
+        self.assertEqual(results["threshold_basis"], "class 0 + 3 sigma")
+
+    def test_real_fit_on_one_log_normal_population(self):
+        rng = np.random.default_rng(6)
+        ratios = np.concatenate([10.0 ** rng.normal(-1.0, 0.1, 3000), [10.0]])
+        pf = self._run(ratios)
+        results = pf._peak_prominence_classification_results
+        self.assertAlmostEqual(results["threshold_fitted"], -0.7, delta=0.05)
+        self.assertEqual(
+            results["higher_count"],
+            1 + int(np.sum(np.log10(ratios[:-1]) >= results["threshold_fitted"])),
+        )
+
+    def test_keeps_the_double_fit_threshold_when_the_single_fit_fails(self):
+        ratios = np.array([0.05, 0.1, 0.2, 0.5])
+        pf = self._run(ratios, single_fit=None)
+        results = pf._peak_prominence_classification_results
+        self.assertAlmostEqual(results["threshold_fitted"], -0.9)
+        self.assertNotIn("single_population", results)
+        np.testing.assert_array_equal(
+            pf.sublevel_metadata[0][0]["classified"], [0.0, 0.0, 1.0, 1.0]
+        )
+
+
+class TestDescribeFitThreshold(unittest.TestCase):
+    def test_names_each_placement(self):
+        pf = _make_pf()
+        self.assertEqual(
+            pf._describe_fit_threshold({"params_method": "constrained"}),
+            "Gaussian crossing",
+        )
+        self.assertEqual(
+            pf._describe_fit_threshold(
+                {"params_method": "joint", "threshold_method": "spline_valley"}
+            ),
+            "valley between populations",
+        )
+        self.assertEqual(pf._describe_fit_threshold({}), "fitted split")
 
 
 if __name__ == "__main__":
