@@ -259,7 +259,8 @@ A lesson learned here that generalises beyond Poriscope goes into those skills, 
   once-per-release command, which is why the step is handed off. Whoever runs it should check the
   annotation before pushing, and fix it with
   `git tag -d <tag> && git tag -a <tag> -m "<tag>" <commit>` if git flow duplicated it.
-- **Allow at least five minutes for `git flow release finish` and `feature finish`.** The
-  `post-merge` hook regenerates the autodoc, which ran past a two-minute timeout during the
-  1.8.0 release. All the git work had already completed by then; only the release branch
+- **Run `git flow release finish` and `feature finish` with no timeout wrapper, in the
+  background.** The `post-merge` hook regenerates the autodoc and rebuilds Sphinx: it ran past
+  a two-minute timeout during the 1.8.0 release, and a `feature finish` passed ten minutes on
+  2026-09-26. All the git work had already completed by then; only the release branch
   deletion was left undone, so check `git branch` and `git tag` before re-running anything.

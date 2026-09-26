@@ -29,9 +29,6 @@ Line numbers were re-verified 2026-09-24.
 ## 2.0.0 - before the release ships
 
 Silent data corruption, wrong science in the docs, user data loss, and release hygiene. Mostly small, local fixes.
-The approved plan for this section's Phase 0 items is at
-<https://claude.ai/artifact/JjR68okz9koTwcwQ6sSSJk>.
-
 ### Four plan-step citations survived the sweep (2026-09-24)
 
 `refactor_2.0.0.md` is deleted when 2.0.0 ships. Rewrite each as the mechanism it stands for;
