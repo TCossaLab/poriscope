@@ -11,7 +11,6 @@ Covers:
 - send_curent_user_plugin_location delegates to model and view
 - update_data_server_location delegates to model and data_plugin_controller
 - update_user_plugin_location adds the folder and its parent to sys.path, once
-- get_plugin_instance retrieves instance and invokes callback
 - _lookup_historical_settings (found in current, found in previous, not found)
 - update_available_plugins caches and pushes to tabs
 - save_session (with file, without file, tab state synced first)
@@ -558,30 +557,6 @@ def test_update_user_plugin_location_does_not_duplicate_syspath(
     controller.update_user_plugin_location(str(plugins_dir))
 
     assert sys.path.count(parent) == 1
-
-
-def test_get_plugin_instance_calls_callback_with_result(
-    controller: MainController,
-    mocker: MockerFixture,
-) -> None:
-    """
-    Retrieve a plugin instance from the data plugin controller and invoke the callback.
-
-    :param controller: Controller under test.
-    :param mocker: Pytest-mock fixture.
-    """
-    plugin_instance = mocker.Mock()
-    controller.data_plugin_controller.get_plugin_instance = mocker.Mock(
-        return_value=plugin_instance
-    )
-    callback = mocker.Mock()
-
-    controller.get_plugin_instance("MetaReader", "MyReader", callback)
-
-    controller.data_plugin_controller.get_plugin_instance.assert_called_once_with(
-        "MetaReader", "MyReader"
-    )
-    callback.assert_called_once_with(plugin_instance)
 
 
 def test_lookup_historical_settings_found_in_current_history(

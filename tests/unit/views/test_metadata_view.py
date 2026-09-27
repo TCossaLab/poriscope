@@ -3873,11 +3873,10 @@ def test_export_csv_subset_extracts_filter_value(
 def test_export_csv_subset_emits_signal_on_success(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify the export intent carries the whole request, and starts no worker here.
+    """Verify the export intent carries the whole request.
 
-    ``run_generators`` used to be emitted from this method. Staging the
-    generator and starting it are the Controller's now, which is the only place that
-    knows whether the export was set up at all.
+    Staging the generator and starting it are the Controller's, which is the only
+    place that knows whether the export was set up at all.
     """
     view.available_plugins = {}  # type: ignore[attr-defined]
     view.subset_export_count = 0
@@ -3890,7 +3889,6 @@ def test_export_csv_subset_emits_signal_on_success(
         "export_name",
     )
     mock_dialog_class.return_value = mock_dialog
-    view.run_generators = mocker.Mock()
 
     view._export_csv_subset("test_loader", {"Filter1": "WHERE x > 1"}, {"exp1": [1]})
 
@@ -3902,7 +3900,6 @@ def test_export_csv_subset_emits_signal_on_success(
         {"exp1": [1]},
         0,
     )
-    view.run_generators.emit.assert_not_called()
 
 
 def test_export_csv_subset_does_not_advance_the_index_by_itself(

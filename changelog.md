@@ -48,6 +48,8 @@
 
 #### Analysis-tab API:
 
+* **Breaking: `MetaController.ignore()` and the `MetaView.run_generators` signal are removed** - nothing called or emitted either; a Controller slot starts a generator with `self.model.run_generators(key)`, as every shipped tab does
+
 * **Breaking: plot configurations saved before 2.0.0 no longer load** - a saved plot now carries its filter and channel selection, which older files do not have
 
 * **Breaking: the global signal bus is gone.** `global_signal` and `data_plugin_controller_signal` are removed from `MetaView`, `MetaModel` and `MetaController`, along with the relays and dispatcher behind them - an analysis tab outside this repository that emits either will stop working, and should call its plugin through `self.call(...)` on the Model or use the typed create/edit/delete signals instead

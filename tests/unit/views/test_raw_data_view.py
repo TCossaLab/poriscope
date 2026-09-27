@@ -98,7 +98,6 @@ def view(mocker, mock_logging):
     v.commit_statuses_requested = mocker.Mock()
     v.calculate_psd = mocker.Mock()
     v.export_plot_data = mocker.Mock()
-    v.run_generators = mocker.Mock()
 
     # --- RawDataControls mock ---
     v.rawdatacontrols = mocker.Mock()

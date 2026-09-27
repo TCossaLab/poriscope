@@ -78,7 +78,6 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
         self._init()
         self.view.set_available_subclasses(available_subclasses)
         self.view.plugin_state_changed.connect(self.plugin_state_changed)
-        self.view.run_generators.connect(self.model.run_generators)
         self.model.update_progressbar.connect(self.view.update_progressbar)
         self.view.kill_worker.connect(self.handle_kill_worker)
         self.view.kill_all_workers.connect(self.handle_kill_all_workers)
@@ -446,13 +445,6 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
         self.update_tab_action_history.emit(
             self.__class__.__name__, self.tab_action_history
         )
-
-    @log(logger=logger)
-    def ignore(self) -> None:
-        """
-        Placeholder method that does nothing. Can be overridden if needed.
-        """
-        pass
 
     @log(logger=logger)
     def get_session_state(self) -> Dict[str, Any]:

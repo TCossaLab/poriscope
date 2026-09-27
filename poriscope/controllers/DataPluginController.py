@@ -743,19 +743,6 @@ class DataPluginController(QObject):
         """
         return self.model.get_plugin_instances()
 
-    def get_plugin_instance(self, metaclass: str, key: str) -> object:
-        """
-        Get the plugin instance corresponding to the given key.
-
-        :param metaclass: The metaclass of the plugin.
-        :type metaclass: str
-        :param key: The key of the plugin instance.
-        :type key: str
-        :return: The plugin instance, or None if the key is not found.
-        :rtype: object
-        """
-        return self.model.get_plugin_instance(metaclass, key)
-
     @log(logger=logger)
     @Slot(str, str)
     def validate_and_instantiate_plugin(

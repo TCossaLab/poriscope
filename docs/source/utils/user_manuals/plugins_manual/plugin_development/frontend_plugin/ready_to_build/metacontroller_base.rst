@@ -13,7 +13,7 @@ What You Get by Inheriting MetaController
 
 As soon as you subclass and instantiate a :ref:`MetaController`, the following happens:
 
-- The view’s request to start a generator connects directly to the model's ``run_generators`` method
+- A Controller slot starts a background generator with ``self.model.run_generators(key)``; the View asks the Controller rather than signalling the Model (the ``run_generators`` signal on ``MetaView`` was removed in 2.0.0)
 - Signals from both the view and model are routed to log output and progress bars
 - The controller listens for user commands to kill workers or save/export data
 - Plugin-state changes, status messages and create/edit/delete requests are relayed to the app shell as typed signals

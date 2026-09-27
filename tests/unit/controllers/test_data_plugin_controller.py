@@ -6,7 +6,6 @@ Covers:
 - edit_plugin_settings (plugin found with settings, plugin found no get_raw_settings, plugin not found)
 - delete_plugin (no dependents success, has dependents blocked, instance not found)
 - handle_exit delegates to model
-- get_plugin_instance delegates to model
 - validate_and_instantiate_plugin (full success with provided key+settings, temp_instance
   creation error, key collision, apply_settings error, register_plugin error,
   empty settings early return, plugin reference resolution error)
@@ -303,30 +302,6 @@ def test_handle_exit_delegates_to_model(
     """
     controller.handle_exit()
     mock_model.handle_exit.assert_called_once()
-
-
-# -------------------- get_plugin_instance ----------------------------
-
-
-def test_get_plugin_instance_returns_model_result(
-    controller: DataPluginController,
-    mock_model: MagicMock,
-    mocker: MockerFixture,
-) -> None:
-    """
-    Return the plugin instance from the model.
-
-    :param controller: Controller under test.
-    :param mock_model: Mocked data plugin model.
-    :param mocker: Pytest-mock fixture.
-    """
-    plugin = mocker.Mock()
-    mock_model.get_plugin_instance.return_value = plugin
-
-    result = controller.get_plugin_instance("MetaReader", "r1")
-
-    mock_model.get_plugin_instance.assert_called_once_with("MetaReader", "r1")
-    assert result is plugin
 
 
 # -------------- validate_and_instantiate_plugin ----------------------

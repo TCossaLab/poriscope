@@ -81,7 +81,6 @@ class MetaView(QWidget, WalkthroughMixin, metaclass=QObjectABCMeta):
     delete_plugin = Signal(str, str)  # metaclass, key
     logger = logging.getLogger(__name__)
     export_plot_data = Signal()
-    run_generators = Signal(str)
     add_text_to_display = Signal(str, str)
     load_actions_from_json = Signal(str)  # filename
 

@@ -10,7 +10,6 @@ Covers:
 - update_available_plugins delegation
 - save_tab_actions emits signal
 - update_tab_actions (add history, undo normal, undo empty, undo skips reset_actions)
-- ignore is a no-op
 - _relay_create_plugin emits create_plugin signal
 """
 
@@ -38,7 +37,6 @@ def mock_view(mocker: MockerFixture) -> MagicMock:
     """
     view: MagicMock = mocker.Mock()
     for signal in [
-        "run_generators",
         "kill_worker",
         "kill_all_workers",
         "add_text_to_display",
@@ -749,7 +747,6 @@ def test_init_kwargs_are_set_as_instance_attributes(
 
     # Patch all Qt signal connections so __init__ completes without real Qt
     mock_view.set_available_subclasses = mocker.Mock()
-    mock_view.run_generators.connect = mocker.Mock()
     mock_view.kill_worker.connect = mocker.Mock()
     mock_view.kill_all_workers.connect = mocker.Mock()
     mock_view.add_text_to_display.connect = mocker.Mock()
@@ -772,15 +769,3 @@ def test_init_kwargs_are_set_as_instance_attributes(
 
     assert ctrl.my_custom_attr == "hello"
     assert ctrl.another_attr == 42
-
-
-# ---------------------------- ignore ---------------------------------
-
-
-def test_ignore_is_a_no_op(controller: MetaController) -> None:
-    """
-    Verify that ignore() completes without raising or producing side effects.
-
-    :param controller: Controller under test.
-    """
-    controller.ignore()  # should not raise
