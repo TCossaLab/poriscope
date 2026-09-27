@@ -285,6 +285,11 @@ rendering problem the moment you merge rather than when you open a pull request.
    on the class line, but the ``:param:`` fields explaining each argument live only in
    its docstring.
 
+   A class whose name starts with an underscore is not published at all: it is internal
+   to its module. A base class is linked by its page when it has one - a ``Meta*`` base,
+   another plugin, or a hand-written page such as the walkthrough mixin's - and is
+   otherwise shown as plain text rather than as a guessed link.
+
    So if a method you documented does not appear on the site, check whether it is private
    and not part of any declared contract. That is the rule working, not a build problem.
 
@@ -354,8 +359,7 @@ After running:
    are, so suppressing it there would suppress essentially all of it. ``B905`` needs a
    per-site ``strict=`` judgement, and at least one call cannot be proven equal-length in
    advance. The handful of sites left for ``B904``, ``B007``, ``S110`` and ``S112`` are
-   spread across the test suite, the ``scripts/autodoc/`` generators and the fitter
-   plugins another developer maintains. In each case enabling the rule would require a
+   spread across the test suite and the fitter plugins another developer maintains. In each case enabling the rule would require a
    ``per-file-ignores`` entry that hides a real check rather than satisfying it. The
    reasoning, and the separate acceptance of the ``S608`` hardcoded-SQL sites, are
    recorded in ``DECISIONS.md``; what each audit found is in ``changelog.md``. Please do

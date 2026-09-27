@@ -62,6 +62,13 @@ EXTERNAL_BASES = {
     "ABCMeta": "abc.ABCMeta",
     "QObject": "PySide6.QtCore.QObject",
     "QWidget": "PySide6.QtWidgets.QWidget",
+    "logging.Handler": "logging.Handler",
+}
+
+# Bases documented on a hand-written page rather than a generated one, by that page's
+# label.
+HANDWRITTEN_BASES = {
+    "WalkthroughMixin": "walkthrough_mixin",
 }
 
 
@@ -142,6 +149,56 @@ def is_property(method_node: ast.FunctionDef) -> bool:
     )
 
 
+def documented_class_names() -> Set[str]:
+    """
+    Name every class this generator will write a page for, before it writes any.
+
+    A base is linked by its page label only if that page exists, and the pages are
+    written in directory order - so checking for the file while writing linked a base
+    only when it happened to sort first. Collecting the names up front makes the link
+    independent of that order.
+
+    :return: the names of the documented classes under ``FOLDER_ORIGIN``
+    :rtype: Set[str]
+    """
+    names: Set[str] = set()
+    for source in FOLDER_ORIGIN.glob("*.py"):
+        if source.name.startswith("__"):
+            continue
+        tree = ast.parse(source.read_text(encoding="utf-8"))
+        names.update(
+            node.name
+            for node in tree.body
+            if isinstance(node, ast.ClassDef) and ast.get_docstring(node)
+        )
+    return names
+
+
+def base_reference(base: str, documented: Set[str]) -> str:
+    """
+    Write the reference for one base class on a generated page.
+
+    A base with a generated or hand-written page is linked by its label, a known
+    external base by its intersphinx target, and anything else is shown as a literal:
+    a guessed ``:class:`` path into ``poriscope`` resolves to nothing, because no
+    page documents classes at those paths.
+
+    :param base: the base class name, dotted if it was written dotted
+    :type base: str
+    :param documented: the classes this generator writes pages for
+    :type documented: Set[str]
+    :return: the reStructuredText for the reference
+    :rtype: str
+    """
+    if base in EXTERNAL_BASES:
+        return f":class:`~{EXTERNAL_BASES[base]}`"
+    if base in HANDWRITTEN_BASES:
+        return f":ref:`{base} <{HANDWRITTEN_BASES[base]}>`"
+    if base in documented:
+        return f":ref:`{base}`"
+    return f"``{base}``"
+
+
 def parse_base_classes(base_nodes):
     bases = []
     for base in base_nodes:
@@ -159,6 +216,8 @@ def parse_base_classes(base_nodes):
             bases.append(ast.unparse(base))
     return bases
 
+
+DOCUMENTED = documented_class_names()
 
 # Loop through all Python files
 for filename in os.listdir(FOLDER_ORIGIN):
@@ -207,16 +266,7 @@ for filename in os.listdir(FOLDER_ORIGIN):
 
             # Base class references
             base_classes = parse_base_classes(node.bases)
-            base_refs = []
-            for base in base_classes:
-                if base in EXTERNAL_BASES:
-                    base_refs.append(f":class:`~{EXTERNAL_BASES[base]}`")
-                else:
-                    ref_path = OUTPUT_DIR / f"{base.lower()}.rst"
-                    if ref_path.exists():
-                        base_refs.append(f":ref:`{base}`")
-                    else:
-                        base_refs.append(f":class:`~{BASE_PACKAGE}.{base}`")
+            base_refs = [base_reference(base, DOCUMENTED) for base in base_classes]
             base_str = f"Bases: {', '.join(base_refs)}" if base_refs else ""
 
             # Init signature
@@ -230,18 +280,11 @@ for filename in os.listdir(FOLDER_ORIGIN):
                     arg_list = []
                     for arg, default in zip(args, defaults):
                         arg_str = arg.arg
+                        # ast.unparse cannot fail on a node from ast.parse.
                         if arg.annotation:
-                            try:
-                                annotation = ast.unparse(arg.annotation)
-                                arg_str += f": {annotation}"
-                            except Exception:
-                                pass
+                            arg_str += f": {ast.unparse(arg.annotation)}"
                         if default is not None:
-                            try:
-                                default_val = ast.unparse(default)
-                                arg_str += f" = {default_val}"
-                            except Exception:
-                                arg_str += " = ..."
+                            arg_str += f" = {ast.unparse(default)}"
                         arg_list.append(arg_str)
                     init_args = f"({', '.join(arg_list)})"
                     break

@@ -269,3 +269,38 @@ def test_the_promoted_controls_methods_are_documented_on_metacontrols() -> None:
     for method in promoted:
         assert f".. automethod:: {BASE_CLASS_PATH}.{method}" in base_page, method
         assert method not in per_tab, f"{method} still has a per-tab copy"
+
+
+# ---------------------------------------------------------------------------
+# base-class links and private classes
+# ---------------------------------------------------------------------------
+
+
+@needs_autodoc
+def test_no_bases_line_guesses_a_link_into_poriscope() -> None:
+    """
+    A generated ``Bases:`` line links a Poriscope class by its page label, never a path.
+
+    Both generators used to fall back to ``:class:`~poriscope...``` for any base they
+    had no page for yet - a plugin subclassing another plugin, or a base whose page
+    happened to be written later - and nothing documents classes at those paths, so
+    every such link was dead while the ``-W`` build passed.
+    """
+    guessed = [
+        f"{page.relative_to(AUTODOC)}: {line.strip()}"
+        for page in AUTODOC.rglob("*.rst")
+        for line in page.read_text(encoding="utf-8").splitlines()
+        if line.lstrip().startswith("Bases:") and ":class:`~poriscope." in line
+    ]
+    assert guessed == []
+
+
+@needs_autodoc
+def test_no_private_class_gets_a_page() -> None:
+    """A class whose name starts with an underscore is internal, so it is not published."""
+    private = sorted(
+        str(page.relative_to(AUTODOC))
+        for page in AUTODOC.rglob("*.rst")
+        if page.stem.startswith("_")
+    )
+    assert private == []

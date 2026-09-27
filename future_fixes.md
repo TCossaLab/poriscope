@@ -65,9 +65,6 @@ docstring/comment-only, so no tests and no changelog entry:
 
 ### Docs and records
 
-- **The autodoc generator writes 9 dead base-class links** (`plugins_generate_autodoc.py:315-316`
-  prefixes any non-Meta base with `poriscope.plugins.`, e.g. `poriscope.plugins.CUSUM`) and
-  publishes private helper classes; `conf.py` has no `nitpicky`, so the `-W` build passes.
 - **`future_refactors_and_features.md` analyses deleted code** with no status markers:
   Part 5 #3 (`:871-880`) and Part 6 #2 (`:1044`) study `handle_global_signal`/`_relay_global_signal`,
   Part 1's `BasePluginControls` exists as `MetaControls`, and it cites `global_signal` 10 times.
@@ -103,15 +100,19 @@ docstring/comment-only, so no tests and no changelog entry:
 
 ### Other queued items
 
-- **Three `scripts/autodoc/` lint sites are ours to fix, and are the only part of the
-  declined-rules sweep that is.** Two `S110` in `metaclasses_generate_autodoc.py:237-238` and
-  `plugins_generate_autodoc.py:227-228`, one `S112` in the latter (`:279-280`). Fixing them would not enable
-  either rule. **Not licence to re-propose the rules** - `DECISIONS.md` records why all six
-  stay off, per rule.
 
 ## 2.1 - trust the numbers
 
 Accuracy tests against ground truth, reader and database correctness, type checking that sees the MVC layer, a Windows CI leg.
+
+### The API reference has no dead-link gate (2026-09-27)
+
+`-W` passes while references are unresolved, because `conf.py` has no `nitpicky`. With `-n`
+the build reports 1,463 warnings (1,503 before the 2026-09-27 base-link fix): about 1,350 are
+numpy, pandas, Qt and typing names, which intersphinx plus `nitpick_ignore_regex` would clear,
+and about 117 are ours across ~25 files - wrong-owner `:meth:` targets such as
+`MetaFilter.apply_settings`, unqualified short names, and undocumented internal classes. Fix
+ours, then turn `nitpicky` on so CI catches a dead link.
 
 ### A milestone blocks the page switch but not what caused it (2026-09-21)
 

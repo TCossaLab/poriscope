@@ -434,6 +434,8 @@
 
 ### Documentation:
 
+* Fixed the API reference's dead links to base classes and to `MetaEventFitter`'s methods, and it no longer publishes a page for an internal `PeakFinder` helper class
+
 * **Fixed CUSUM's `Sensitivity` being documented backwards**: it divides the detection threshold, so a higher value detects more transitions, not fewer; 1, the default, is the most conservative
 
 * Fixed the event-fitter contract's docstrings, which described a sublevel list the base class rejects: it ends with the terminal boundary `len(data)`, and each sublevel metadata list has one value fewer than it has entries

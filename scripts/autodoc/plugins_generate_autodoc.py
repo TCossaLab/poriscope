@@ -77,6 +77,9 @@ EXTERNAL_BASES = {
     "ABCMeta": "abc.ABCMeta",
     "QObject": "PySide6.QtCore.QObject",
     "QWidget": "PySide6.QtWidgets.QWidget",
+    "list": "list",
+    "IntEnum": "enum.IntEnum",
+    "logging.Handler": "logging.Handler",
 }
 
 
@@ -165,10 +168,36 @@ def is_property_accessor(method_node):
 
 
 def find_classes_and_nodes(py_file):
-    """Return a list of (class_name, class_node) tuples."""
+    """Return a list of (class_name, class_node) tuples for the file's public classes.
+
+    A class whose name starts with an underscore is internal to its module, so it is
+    not published.
+    """
     with open(py_file, "r", encoding="utf-8") as f:
         tree = ast.parse(f.read(), filename=py_file.name)
-    return [(node.name, node) for node in tree.body if isinstance(node, ast.ClassDef)]
+    return [
+        (node.name, node)
+        for node in tree.body
+        if isinstance(node, ast.ClassDef) and not node.name.startswith("_")
+    ]
+
+
+def documented_plugin_classes(plugin_root):
+    """
+    Name every class this generator will write a page for, before it writes any.
+
+    A plugin that subclasses another plugin links its base by that page's label, and
+    the pages are written in directory order, so the names are collected up front.
+    """
+    names = set()
+    for category_dir in plugin_root.iterdir():
+        if not category_dir.is_dir() or category_dir.name.startswith("__"):
+            continue
+        for folder in (category_dir, category_dir / "utils"):
+            for py_file in folder.glob("*.py"):
+                if not py_file.name.startswith("__"):
+                    names.update(name for name, _ in find_classes_and_nodes(py_file))
+    return names
 
 
 def get_import_path(py_path, class_name):
@@ -221,16 +250,11 @@ def format_function_signature(func_node):
     arg_list = []
     for arg, default in zip(args, full_defaults):
         arg_str = arg.arg
+        # ast.unparse cannot fail on a node that came out of ast.parse.
         if arg.annotation:
-            try:
-                arg_str += f": {ast.unparse(arg.annotation)}"
-            except Exception:
-                pass
+            arg_str += f": {ast.unparse(arg.annotation)}"
         if default is not None:
-            try:
-                arg_str += f" = {ast.unparse(default)}"
-            except Exception:
-                arg_str += " = ..."
+            arg_str += f" = {ast.unparse(default)}"
         arg_list.append(arg_str)
 
     if func_node.args.vararg:
@@ -265,25 +289,32 @@ def get_init_signature_with_inheritance(class_node, current_file_path, project_r
     else:
         return "()"
 
-    # Attempt to locate the base class source file
-    possible_file = list(project_root.rglob(f"{base_name}.py"))
+    # Locate the base class source file. Searched under the package only: the whole
+    # checkout also holds build/lib copies, which sort first and may be stale. A file
+    # there that does not parse fails loudly rather than being skipped.
+    possible_file = list((project_root / "poriscope").rglob(f"{base_name}.py"))
     for file_path in possible_file:
-        try:
-            with open(file_path, "r", encoding="utf-8") as f:
-                tree = ast.parse(f.read(), filename=str(file_path))
-            for node in tree.body:
-                if isinstance(node, ast.ClassDef) and node.name == base_name:
-                    return get_init_signature_with_inheritance(
-                        node, file_path, project_root
-                    )
-        except Exception:
-            continue
+        with open(file_path, "r", encoding="utf-8") as f:
+            tree = ast.parse(f.read(), filename=str(file_path))
+        for node in tree.body:
+            if isinstance(node, ast.ClassDef) and node.name == base_name:
+                return get_init_signature_with_inheritance(
+                    node, file_path, project_root
+                )
 
     return "()"
 
 
-def write_class_rst(category_dir, class_node, import_path, class_name, exclusions=None):
-    """Write a single .rst file for a given class."""
+def write_class_rst(
+    category_dir, class_node, import_path, class_name, exclusions=None, documented=()
+):
+    """Write a single .rst file for a given class.
+
+    ``documented`` holds the plugin classes that get pages of their own, so a base
+    among them is linked by its label. Any other base that is not external or a
+    ``Meta*`` class is shown as a literal: a guessed ``:class:`` path into
+    ``poriscope.plugins`` resolves to nothing.
+    """
     exclusions = exclusions or []
     rst_file = category_dir / f"{class_name.lower()}.rst"
     docstring = ast.get_docstring(class_node) or ""
@@ -313,16 +344,14 @@ def write_class_rst(category_dir, class_node, import_path, class_name, exclusion
             base_refs.append(f":class:`~{EXTERNAL_BASES[base]}`")
         elif (OUTPUT_DIR.parent / "metaclasses" / f"{base.lower()}.rst").exists():
             base_refs.append(f":ref:`{base}`")
+        elif base in documented:
+            base_refs.append(f":ref:`{base}`")
         else:
-            base_refs.append(f":class:`~{BASE_PACKAGE}.{base}`")
+            base_refs.append(f"``{base}``")
 
     with open(rst_file, "w", encoding="utf-8") as f:
-        # Anchor and title. A private class's leading underscore cannot survive into
-        # the anchor: ".. __Name:" parses as a malformed anonymous target rather than
-        # as a label. The title below still carries the real name. Two classes whose
-        # names differ only by leading underscores would collide here, and Sphinx
-        # fails the -W build on a duplicate label rather than resolving it silently.
-        f.write(f".. _{class_name.lstrip('_')}:\n\n")
+        # Anchor and title
+        f.write(f".. _{class_name}:\n\n")
         f.write(f"{class_name}\n{'=' * len(class_name)}\n\n")
 
         # Bold class signature
@@ -416,6 +445,7 @@ def write_utils_index(category_name, utils_classes):
 def main():
     plugin_root = FOLDER_ORIGIN
     all_categories = []
+    documented = documented_plugin_classes(plugin_root)
 
     for category_dir in plugin_root.iterdir():
         if not category_dir.is_dir() or category_dir.name.startswith("__"):
@@ -438,7 +468,12 @@ def main():
                 import_path = get_import_path(py_file, class_name)
                 exclusions = get_exclusions(class_name)
                 write_class_rst(
-                    output_dir, class_node, import_path, class_name, exclusions
+                    output_dir,
+                    class_node,
+                    import_path,
+                    class_name,
+                    exclusions,
+                    documented,
                 )
                 class_names.append(class_name)
         # Process utils/ subfolder if it exists
@@ -455,7 +490,12 @@ def main():
                     utils_output = OUTPUT_DIR / category_name / "utils"
                     utils_output.mkdir(parents=True, exist_ok=True)
                     write_class_rst(
-                        utils_output, class_node, import_path, class_name, exclusions
+                        utils_output,
+                        class_node,
+                        import_path,
+                        class_name,
+                        exclusions,
+                        documented,
                     )
                     utils_class_names.append(class_name)
             if utils_class_names:

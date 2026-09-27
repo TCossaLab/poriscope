@@ -2862,14 +2862,15 @@ wrong answer originally:
   ownership resolves and whether or not it is deprecated.**
 - **`B904` - 3 sites, all `tests/e2e/_helpers.py`.** Zero under `poriscope/`.
 - **`B007` - 5 sites: 3 `PeakFinder.py`, 2 `tests/`.** Only the first three are owner-held.
-- **`S112` - 2 sites: 1 `PeakFinder.py`, 1 `scripts/autodoc/`.**
-- **`S110` - 3 sites: 2 `scripts/autodoc/`, 1 `tests/unit/views/`.** None owner-held.
+- **`S112` - 1 site, `PeakFinder.py`** (the `scripts/autodoc/` one was fixed 2026-09-27).
+- **`S110` - 1 site, `tests/unit/views/`** (the two `scripts/autodoc/` ones were fixed
+  2026-09-27). None owner-held.
 
 In every case enabling the rule still needs a `per-file-ignores` entry, which *hides* a
 real check rather than satisfying it - worse than not selecting it, because it looks
-enforced. **The three `scripts/autodoc/` sites are ours and are fixable**, and are the only
-part of this sweep that is; fixing them would still leave `S110` blocked by one test file
-and `S112` by one `PeakFinder` line.
+enforced. The three `scripts/autodoc/` sites, the only part of this sweep that was ours to fix,
+were fixed 2026-09-27; `S110` stays blocked by one test file and `S112` by one `PeakFinder`
+line.
 
 **`B905` (`zip` without `strict=`) is different: the rule itself is the problem.** 54 sites
 each need their own judgement, at least one (`MetaDatabaseLoader`'s CSV export, list against
