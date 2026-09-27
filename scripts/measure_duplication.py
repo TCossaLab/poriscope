@@ -35,9 +35,11 @@ taken with a one-off script that was never committed and could not be re-derived
 
 **The rule, stated exactly, because the definition is the number.**
 
-- Three families, each five files, enumerated explicitly below rather than globbed.
-  A ``*controls.py`` glob is case-sensitive and silently misses
-  ``eventAnalysisControls.py`` - 742 lines, 17% of that family.
+- Families of files that may copy from each other, enumerated explicitly below
+  rather than globbed. A ``*controls.py`` glob is case-sensitive and silently misses
+  ``eventAnalysisControls.py`` - 742 lines, 17% of that family. Every module under
+  ``poriscope/plugins/`` and ``poriscope/views/widgets/`` is either in a family or in
+  ``EXCLUDED`` with its reason, which a test checks, so a new file cannot go unmeasured.
 - Within a family, every *module-level function* and every *method of a
   module-level class* is considered. Functions nested inside another function are
   not: their text is already contained in their parent's, so counting both would
@@ -96,10 +98,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 #: ratchet in exactly the families then being deduplicated.
 #:
 #: ``PeakFinder.py``, ``Basic_PeakFinder.py`` and ``NanoTrees.py`` are deliberately
-#: absent from the fitters family. Their logic is another developer's under standing
-#: policy, so a ratchet over them would fail on their owner's commits and block work
-#: that is not ours to gate. Their duplication is therefore unmeasured by design, not
-#: by oversight.
+#: absent from the fitters family, and listed in ``EXCLUDED`` below.
 #:
 #: ``*Model.py`` was added 2026-09-14, while computation was being moved into the
 #: analysis-tab Models, which nothing measured - so every method landed there could be
@@ -167,6 +166,7 @@ FAMILIES: Dict[str, Tuple[str, ...]] = {
         "poriscope/plugins/eventfinders/ThresholdBlockageFinder.py",
     ),
     "datareaders": (
+        "poriscope/plugins/datareaders/helpers/ABF2Header.py",
         "poriscope/plugins/datareaders/BinaryReader1X.py",
         "poriscope/plugins/datareaders/ChimeraReader20240101.py",
         "poriscope/plugins/datareaders/ChimeraReader20240501.py",
@@ -177,6 +177,7 @@ FAMILIES: Dict[str, Tuple[str, ...]] = {
     ),
     "views/widgets": (
         "poriscope/views/widgets/add_subset_filter_dialog.py",
+        "poriscope/views/widgets/base_widgets/base_subset_filter_dialog.py",
         "poriscope/views/widgets/clustering_settings_widget.py",
         "poriscope/views/widgets/dict_dialog_widget.py",
         "poriscope/views/widgets/dropdown_selection_widget.py",
@@ -188,7 +189,36 @@ FAMILIES: Dict[str, Tuple[str, ...]] = {
         "poriscope/views/widgets/SelectionTree.py",
         "poriscope/views/widgets/text_menu_widget.py",
         "poriscope/views/widgets/time_widget.py",
+        "poriscope/views/widgets/validators/numeric_validation.py",
+        "poriscope/views/widgets/walkthrough.py",
+        "poriscope/views/widgets/walkthrough_mixin.py",
     ),
+    # Added 2026-09-27 with the completeness check. The two filters share
+    # close_resources and reset_channel byte for byte, 16 removable lines on entry.
+    "filters": (
+        "poriscope/plugins/filters/BesselFilter.py",
+        "poriscope/plugins/filters/WaveletFilter.py",
+    ),
+    # One family across five directories: each holds a single SQLite plugin, and
+    # these are the files likely to copy from each other. 0 removable on entry.
+    "SQLite plugins": (
+        "poriscope/plugins/datawriters/SQLiteEventWriter.py",
+        "poriscope/plugins/db_loaders/SQLiteDBLoader.py",
+        "poriscope/plugins/db_loaders/SQLitePeakDBLoader.py",
+        "poriscope/plugins/dbwriters/SQLiteDBWriter.py",
+        "poriscope/plugins/eventloaders/SQLiteEventLoader.py",
+    ),
+}
+
+#: Modules under the measured trees that are deliberately not measured, with the reason.
+#: Everything else there must be in a family.
+EXCLUDED: Dict[str, str] = {
+    "poriscope/plugins/eventfitters/PeakFinder.py": (
+        "owner-held: its logic is another developer's under standing policy, so a "
+        "ratchet over it would fail on their commits and gate work that is not ours"
+    ),
+    "poriscope/plugins/eventfitters/Basic_PeakFinder.py": "owner-held, as PeakFinder",
+    "poriscope/plugins/eventfitters/NanoTrees.py": "owner-held, as PeakFinder",
 }
 
 BASELINE_PATH = REPO_ROOT / ".duplication-baseline.json"
@@ -408,16 +438,17 @@ def compare(
                 continue
             if was is None or now is None:
                 problems.append(f"{family}.{key}: baseline {was!r}, measured {now!r}")
-            elif key == "functions":
-                # A changing function count is not itself duplication: adding an
-                # ordinary method raises it, deleting one lowers it. It is still
-                # checked exactly, because `_divergence_warning` reads it to tell a
-                # promotion from a copy edited into divergence, so say what moved.
+            elif key in ("functions", "files"):
+                # Neither count is itself duplication: adding an ordinary method, or
+                # a file to the family's list, raises it, and deleting one lowers it.
+                # Both are still checked exactly - `_divergence_warning` reads the
+                # function count to tell a promotion from a copy edited into
+                # divergence - so say what moved.
                 direction = "gained" if now > was else "lost"
                 problems.append(
-                    f"{family}.{key}: {was} -> {now}, the family {direction} functions "
-                    f"- expected when a method is added or removed; rerun with "
-                    f"--update in the same commit to record it"
+                    f"{family}.{key}: {was} -> {now}, the family {direction} {key} "
+                    f"- expected when a method or file is added or removed; rerun "
+                    f"with --update in the same commit to record it"
                 )
             elif now > was:
                 problems.append(

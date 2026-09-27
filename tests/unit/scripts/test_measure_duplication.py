@@ -325,6 +325,27 @@ class TestBaselineComparison:
         assert "gained functions" in problems[0]
         assert "--update" in problems[0]
 
+    @pytest.mark.parametrize(("now", "direction"), [(6, "gained"), (4, "lost")])
+    def test_a_changed_file_list_is_not_reported_as_duplication(
+        self, mod: types.ModuleType, now: int, direction: str
+    ) -> None:
+        """
+        A file joining or leaving a family is a list change, reported as one.
+
+        It used to read "duplication was added" on the way up and "record the win" on
+        the way down, and neither is true: the removable lines say whether copies moved.
+        """
+        current = self._counts(10)
+        current["*View.py"]["files"] = now
+
+        problems: List[str] = mod.compare(current, self._counts(10))
+
+        assert len(problems) == 1
+        assert "duplication was added" not in problems[0]
+        assert "record the win" not in problems[0]
+        assert f"{direction} files" in problems[0]
+        assert "--update" in problems[0]
+
     def test_added_duplication_is_still_reported_alongside_new_functions(
         self, mod: types.ModuleType
     ) -> None:
@@ -401,6 +422,37 @@ class TestFamilyLists:
         listed = {name for names in mod.FAMILIES.values() for name in names}
         for excluded in ("PeakFinder.py", "Basic_PeakFinder.py", "NanoTrees.py"):
             assert not any(name.endswith(excluded) for name in listed), excluded
+            path = f"poriscope/plugins/eventfitters/{excluded}"
+            assert mod.EXCLUDED.get(path), f"{path} is not recorded as excluded"
+
+    def test_every_plugin_and_widget_file_is_measured_or_excluded(
+        self, mod: types.ModuleType
+    ) -> None:
+        """
+        No file under the measured trees is invisible to the ratchet by accident.
+
+        The family lists are explicit, so a new plugin - or a directory nobody
+        listed - was never measured, and duplication added there could not be seen.
+        Every module is either in a family or in ``EXCLUDED`` with its reason.
+        """
+        listed = {name for names in mod.FAMILIES.values() for name in names}
+        unaccounted = sorted(
+            path.relative_to(mod.REPO_ROOT).as_posix()
+            for root in ("poriscope/plugins", "poriscope/views/widgets")
+            for path in (mod.REPO_ROOT / root).rglob("*.py")
+            if path.name != "__init__.py" and "__pycache__" not in path.parts
+        )
+        unaccounted = [
+            name
+            for name in unaccounted
+            if name not in listed and name not in mod.EXCLUDED
+        ]
+        assert unaccounted == []
+
+    def test_every_excluded_file_exists(self, mod: types.ModuleType) -> None:
+        """An exclusion for a file that has gone would hide nothing and mislead."""
+        for name in mod.EXCLUDED:
+            assert (mod.REPO_ROOT / name).is_file(), f"{name} is missing"
 
     def test_the_controls_family_includes_the_camelcase_file(
         self, mod: types.ModuleType

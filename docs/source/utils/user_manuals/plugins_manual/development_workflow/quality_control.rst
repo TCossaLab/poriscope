@@ -1138,18 +1138,26 @@ enough to run on their own while you are working on a parser:
 Duplication Ratchet
 --------------------
 
-This one affects you if you edit any file in one of the **eight measured families**: the
-five ``*View.py``, ``*Controller.py`` and ``*Model.py`` files under
-``poriscope/plugins/analysistabs/``, the five ``*controls.py`` under its ``utils/``, and
-the data readers, event fitters, event finders and shared widgets. Those families carry a
+This one affects you if you edit any plugin or widget file: the ratchet measures ten
+**families**. They are the five ``*View.py``, ``*Controller.py`` and ``*Model.py`` files under
+``poriscope/plugins/analysistabs/``, the five ``*controls.py`` under its ``utils/``, the data
+readers, event fitters, event finders, filters, shared widgets, and the five SQLite plugins
+(the event writer, the two database loaders, the database writer and the event loader). Those families carry a
 large amount of byte-identical duplication, and the 2.0.0 refactor removed most of it. The
 ratchet exists so that removal is *demonstrated* rather than asserted, and so it cannot
 grow back unnoticed.
 
 ``PeakFinder.py``, ``Basic_PeakFinder.py`` and ``NanoTrees.py`` are **deliberately outside**
 the fitters family: their logic is another maintainer's under standing policy, so a ratchet
-over them would fail on their commits for a metric about someone else's refactor. That
-exclusion is asserted by a test, so a later tidy-up cannot quietly add them back.
+over them would fail on their commits for a metric about someone else's refactor. They
+are recorded in ``EXCLUDED`` in ``scripts/measure_duplication.py`` with that reason, and a
+test asserts it, so a later tidy-up cannot quietly add them back.
+
+**Every module under** ``poriscope/plugins/`` **and** ``poriscope/views/widgets/`` **is
+either in a family or in** ``EXCLUDED``, and a test fails on any that is neither. So a
+**new plugin or widget file** has to be added to the family it may copy from, or excluded
+with its reason, in the commit that adds it. A changed file or function count is reported
+as a list change, not as duplication; rerun with ``--update`` to record it.
 
 **A family is widened before the step that would fool it, never after.** ``*Model.py`` and
 ``eventfinders`` were both added that way, and the reason is the same in both cases: a gate

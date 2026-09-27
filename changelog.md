@@ -452,6 +452,8 @@
 
 ### Developer Tooling:
 
+* The duplication ratchet now measures every plugin and widget file, or records why it does not, and fails on a new file that is in neither list; a changed file count is no longer reported as added duplication
+
 * The internal pull-request CI job now runs plain `pytest -q`, reporting every failing test instead of stopping at the first and hiding warnings
 
 * The duplication ratchet no longer reports adding or removing an ordinary method as duplication added or removed; it names the function count and asks for `--update`

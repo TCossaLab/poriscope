@@ -44,11 +44,6 @@ docstring/comment-only, so no tests and no changelog entry:
 
 ### Types, tests and CI
 
-- **The duplication ratchet never measures most plugin files**: its family lists are explicit,
-  so every file in `datawriters/`, `db_loaders/`, `dbwriters/`, `eventloaders/` and `filters/`,
-  and `views/widgets/walkthrough.py`/`walkthrough_mixin.py` (25 functions, 0 removable today),
-  is invisible to it, as is any new plugin. Check that every `.py` in a measured directory is
-  listed or explicitly excluded (the three owner-held fitters).
 - **The post-merge wavelet hook reaches deep into a contributor's machine**: without
   MSYS2's `mingw32-make`, `full_setup_and_build.py` runs `pacman -Syuu --noconfirm` (`:113`)
   before checking the tracked DLL exists (`:125`), and opens a modal folder dialog mid-merge
@@ -104,6 +99,12 @@ docstring/comment-only, so no tests and no changelog entry:
 ## 2.1 - trust the numbers
 
 Accuracy tests against ground truth, reader and database correctness, type checking that sees the MVC layer, a Windows CI leg.
+
+### The two filters share 16 byte-identical lines (2026-09-27)
+
+`close_resources` and `reset_channel` are identical in `BesselFilter` and `WaveletFilter`,
+8 lines each (the `filters` duplication family, measured on entry). Promote them to
+`MetaFilter`.
 
 ### The API reference has no dead-link gate (2026-09-27)
 

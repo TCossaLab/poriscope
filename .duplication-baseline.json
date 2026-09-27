@@ -23,9 +23,15 @@
     "identical_bodies": 0,
     "removable_lines": 0
   },
+  "SQLite plugins": {
+    "files": 5,
+    "functions": 61,
+    "identical_bodies": 0,
+    "removable_lines": 0
+  },
   "datareaders": {
-    "files": 7,
-    "functions": 86,
+    "files": 8,
+    "functions": 99,
     "identical_bodies": 14,
     "removable_lines": 404
   },
@@ -41,9 +47,15 @@
     "identical_bodies": 10,
     "removable_lines": 193
   },
+  "filters": {
+    "files": 2,
+    "functions": 14,
+    "identical_bodies": 2,
+    "removable_lines": 16
+  },
   "views/widgets": {
-    "files": 12,
-    "functions": 121,
+    "files": 16,
+    "functions": 155,
     "identical_bodies": 1,
     "removable_lines": 3
   }
