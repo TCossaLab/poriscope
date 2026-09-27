@@ -8,6 +8,154 @@ lives in `changelog.md` and git history.
 Entries referring to "step 3/4/6/7" mean stages of the full-codebase type-annotation pass,
 which ran through August 2026 and is complete. The step numbers only date the decision.
 
+Entries from September 2026 that name a "Step 4a", "5c.1", "Decision C", "Tier A" or the
+"closeout" refer to the 2.0.0 refactor plan, `refactor_2.0.0.md`, deleted at release; it is
+in git history (last present at the parent of the commit that deleted it) and its write-up,
+with the method rules, is at <https://claude.ai/code/artifact/304ba119-d177-4918-90af-471d6de6bb80>.
+Like the annotation-pass numbers, these labels only date and place the decision.
+`future_refactors_and_features.md`, cited by some entries, was folded into `future_fixes.md`
+and deleted on 2026-09-27; it too is in git history.
+
+---
+
+## 2026-09-27 - A coverage ratchet is not queued
+
+**Context.** The 2.0.0 refactor plan's verification row claimed a coverage ratchet "is queued in
+`future_fixes.md`". It was not, and the 2026-09-23 entry here retired coverage collection.
+
+**Decision** (Kyle, 2026-09-27). Let the claim drop with the plan; no coverage ratchet.
+
+**Revisit if** coverage collection returns, which would first need QThread code traced
+(`concurrency` in a `.coveragerc`), or worker and writer coverage reads falsely low.
+
+---
+
+## 2026-09-27 - Session load restores plugins; action replay stays an explicit, per-tab step
+
+**Context.** A session holds `plugin_history.json` and each tab's `tab_action_history.json`.
+Replay re-runs recorded actions, which can mean expensive reconstruction, synchronously on the
+GUI thread. Recorded in the 2026-08 architecture notes as settled design, with no owner named.
+
+**Decision.** Opening a session restores plugins (and, once built, control-panel state)
+automatically; replaying a tab's actions stays a separate, user-triggered step per tab, and
+no "replay everything" is built. Two invariants follow: a control's *options* never depend on
+replayed state, only on plugins and the database; and a tab's replay never assumes another
+tab's has run.
+
+**Evidence.** Already how the code behaves: `MainController.load_session` never replays, and
+replay is reached only through `MetaView._load_actions_from_json`'s file dialog. History is
+keyed per tab class, and every analysis tab is an independent triad, so restoring Metadata
+without re-running RawData is coherent. Filters, cluster columns and database columns all come
+from loader plugins, not from replay.
+
+**Revisit if** a user needs a whole session's plots back in one step, or a tab starts
+populating a control from something only replay creates.
+
+---
+
+## 2026-09-20 - No alias module for a removed exposed name
+
+**Context.** Collapsing `QWidgetABCMeta` into `QObjectABCMeta` first kept a one-line alias
+module, since both names were in `exposed.py` and a third-party plugin might import either.
+
+**Decision** (Kyle, 2026-09-20). Delete the alias: there are no third-party plugins to break,
+and an alias module is orphaned code. A removed exposed name is a breaking change in the
+changelog instead.
+
+**Revisit if** Poriscope acquires third-party plugins, when a deprecation period is worth it.
+
+---
+
+## 2026-09-19 - `_find_events_in_chunk` stays one copy per finder
+
+**Context.** `ClassicBlockageFinder` and `ThresholdBlockageFinder` override it at 72 and 69
+lines, differing in 13.
+
+**Decision** (2026-09-19). Leave both, as a recorded duplication floor. The 13 lines are the
+policy: Classic's threshold is in pA over sigma with hysteresis 1 and walks the event *start* back
+into the baseline; Threshold's is already in sigma with hysteresis 0 and walks the *end* back. A
+helper parameterised on which edge to walk is more machinery than the duplication costs.
+
+**Revisit if** a third finder needs the same loop, or the two policies converge.
+
+---
+
+## 2026-09-19 - Code shared by a plugin family goes on its `Meta*` base
+
+**Context.** The histogram fit behind `_get_baseline_stats` was the same ~60 lines in two
+finders, and the first proposal was a module-level helper.
+
+**Decision** (Kyle, 2026-09-19). Shared code stays in the family, as a concrete protected
+method on the `Meta*` base that already exists, never in a helper module beside it; the
+abstract hook it serves stays abstract, so each plugin still writes its own policy around one
+call. It applies only to code universal to the family: code shared by three of seven readers
+*because they read one vendor's format* is not, and is answered on its own terms.
+
+**Revisit if** the shared code needs state or imports the base should not carry.
+
+---
+
+## 2026-09-19 - No new inheritance layers in the data plugins, and the no-op hooks stay abstract
+
+**Context.** Deduplicating the reader, finder and fitter families invited intermediate bases
+(a Chimera base, a CUSUM-family base, a finder base) and making the no-op hooks concrete.
+
+**Decision** (Kyle, 2026-09-19). `BaseDataPlugin` -> `Meta*` -> plugin is deep enough:
+deduplicate with protected methods on the base, parameters and deletions, and record what
+remains as a floor with its reason - some duplication is acceptable. The abstract hooks
+`_init`, `close_resources`, `reset_channel`, `_validate_settings` and `_validate_file_type`
+stay abstract even though most plugins implement them as a docstring plus `pass` - 280 lines
+across the reader and fitter families - because the hook exists to make the author decide, and
+a plugin that really holds a file handle is the one that must not inherit a silent no-op.
+
+**Revisit if** a sub-family grows past three members, which is when an intermediate base
+starts paying for itself.
+
+---
+
+## 2026-09-14 - A raw SQL filter runs as written, and its scope is the user's
+
+**Context.** A raw filter is a complete `SELECT`, but every plot path passes it where a
+WHERE body is expected, so it is refused at six call sites (2026-09-12). Making it work was
+framed as teaching `MetaDatabaseLoader` to *scope* a user's `SELECT` to the experiment and
+channel selection.
+
+**Decision** (Kyle, 2026-09-14). No scoping and no rewriting: validate the text, then pass it
+to `query_database_directly` exactly as written. A raw filter ignores the selection tree, and
+the user is responsible both for selecting the rows they mean and for projecting every column
+the downstream plot reads.
+
+**Evidence.** `query_database_directly` already takes a complete statement; scoping one
+means wrapping it as a subquery, which changes what columns reach the plot and puts a
+generated clause around text the user wrote. Withdrawing raw filters from the UI was priced as
+the smaller alternative before this ruling.
+
+**Revisit if** users need a raw filter restricted by the selection tree, or nobody turns out
+to have a filter only expressible as raw SQL - then withdrawing it is cheaper than building it.
+
+---
+
+## 2026-08-31 - `close_resources()` does not get a threaded timeout in this shape
+
+**Context.** Reset Session and quit call every plugin's `close_resources()` unguarded, so a
+hung one freezes the app without naming itself. A fix ran each call on a thread joined with a
+10 s timeout, logging a named failure and deleting the plugin anyway.
+
+**Decision** (2026-08-31). Reverted before commit, although its three tests and the full
+suite passed. The approach stands; this shape does not.
+
+**Evidence.** A closer thread is a third thread relative to whichever one opened a resource.
+An audit of all 17 concrete overrides found two with persistent state, `SQLiteDBWriter` and
+`SQLiteEventWriter`, each holding a `sqlite3` connection with the default
+`check_same_thread=True`, so closing from the new thread raises `ProgrammingError` - leaking
+the file lock in one and silently skipping the commit in the other. The quit path
+(`DataPluginModel.handle_exit`) was left unguarded, so it fixed half the exposure.
+
+**Revisit** when the queued `close_resources` item is worked: `check_same_thread=False` on those
+two connections (safe, since the join already serialises access), quit routed through the same
+guard, and "callable from another thread" written into the contract. Re-check for new writer
+plugins first.
+
 ---
 
 ## 2026-09-27 - A refused Protein ensemble plot stays in the action history
@@ -508,8 +656,8 @@ sat between them and was deleted whole. The application could not start, and **t
    invisible to static analysis. Restoring the method alone reproduced a second failure,
    `NameError: MainModel`, because the imports were gone too.
 
-Only the manual pass found it, which is the case for standing ruling 3 stated in one
-sentence.
+Only the manual pass found it, which is the case for the standing ruling that every commit
+moving application code gets a manual pass, stated in one sentence.
 
 **Decision.** Keep splice-by-anchor, but **verify the method list before and after** -
 `git show develop:<file> | grep "def "` against the same on the working tree - whenever a
@@ -968,8 +1116,8 @@ converted - and that copy is deleted in the closeout's branch 6 once the last on
 and pandas, so the move needs no new imports and the helper's three status-panel emits work
 unchanged. The two alternatives were measured and are worse: one branch for all eight
 callers spans three tabs and ~20 methods with no green per-tab state in between, and
-deferring the helper rewrites every caller twice - method rule 60, which is the reason 3d
-was folded into 4c to begin with.
+deferring the helper rewrites every caller twice - two steps that share callers are one
+step, which is the reason 3d was folded into 4c to begin with.
 
 **The window is invisible to the ratchet, deliberately recorded here instead.** `MetaView`
 and `MetaModel` share no measured family, so nothing books the two copies. `*Model.py` is
@@ -985,7 +1133,8 @@ not a duplication family at all, which is the wider gap - see `future_fixes.md`.
 `EventAnalysisView.plot_samplerate` write-only, and reading the samplerate path showed
 `MetaEventTabController.update_plot_samplerate` had **no production callers at all** -
 both event tabs call `self.view.update_plot_samplerate(...)` directly and always did.
-Only tests kept it reachable, which is what made it look alive (method rule 65). Both
+Only tests kept it reachable, which is what made it look alive: a converted call can leave a
+slot that only its own tests reach. Both
 were filed rather than removed, on the grounds that one is a removal from a published
 `Meta*` base and therefore breaking.
 
@@ -1135,8 +1284,8 @@ base. The method writes six instance attributes and reads nothing else.
 **Decision.** Leave it. **31 is the floor for the three analysis-tab families**, recorded
 with its reason rather than driven to 0.
 
-**Evidence.** Method rule 34: interface width on a published base is the expensive axis, and
-a promotion that carries instance state wants an intermediate. There is none here, so the
+**Evidence.** Interface width on a published base is the expensive axis, and a promotion
+that carries instance state wants an intermediate. There is none here, so the
 alternative is putting six attributes on all five tabs - three of which read none of them -
 to delete 31 lines.
 
@@ -1269,7 +1418,8 @@ converting the protein tab's copy of the same chain, which would have inherited 
 could never fire either, and `_echo_applied_query` called `.strip()` on a tuple. **No test
 caught it and the whole suite was green**, because the Controller test's stub answered with a
 bare string - the assertion had been written from the implementation rather than from the
-collaborator's signature, which is precisely the failure rule 42 records. The e2e and flow
+collaborator's signature - a stub answering the way the caller expects rather than the way
+the collaborator behaves. The e2e and flow
 suites pass identically before and after, so nothing above the unit layer exercised it either.
 
 **Revisit if** another `call()` conversion binds a declared tuple return to one name; the
@@ -2488,7 +2638,7 @@ golden files are not generated over known bugs), Tier B2 (zero-risk deletions) a
 **Moved tests are re-pointed, test owner reviews the diff.** This stretches the standing "do
 not edit her suites" rule and **needs her explicit agreement before Step 2 starts**. *Put to
 her as a four-part ask on 2026-09-04 and agreed the same day; the wording and its measurements
-are in `refactor_2.0.0.md`. The whole plan is ours and she will not write any of it, so all five
+were in `refactor_2.0.0.md` (now in git history). The whole plan is ours and she will not write any of it, so all five
 Step 2 deliverables are ours along with re-pointing the existing unit and e2e suites - a standing
 exception to "test-writing is hers" for this plan only.* The
 alternative considered was leaving a thin View facade per moved method, rejected because ~200

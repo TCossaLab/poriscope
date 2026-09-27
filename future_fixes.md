@@ -30,20 +30,8 @@ Line numbers were re-verified 2026-09-24.
 
 Silent data corruption, wrong science in the docs, user data loss, and release hygiene. Mostly small, local fixes.
 
-The approved plan for this section's Phase 1 items (release prep) is at
-<https://claude.ai/artifact/NAGuHCf6pisqD47S9kmyDp>.
-
-### Docs and records
-
-- **`future_refactors_and_features.md` analyses deleted code** with no status markers:
-  Part 5 #3 (`:871-880`) and Part 6 #2 (`:1044`) study `handle_global_signal`/`_relay_global_signal`,
-  Part 1's `BasePluginControls` exists as `MetaControls`, it cites `global_signal` 10 times,
-  and `:283` still asks whether `PluginManagerPopup.py` is dead code (deleted in `d0dbc53`).
-  Fold what is still open into this file and delete it.
-- **Distil `refactor_2.0.0.md` before deleting it at release**: all 97 method rules are
-  already in the skills; what remains is 3 lessons and ~10 additions from its prose, 5
-  decisions `DECISIONS.md` lacks, and the pointers into it. Then delete it and its
-  `CLAUDE.md` entry.
+Phase 1 (release prep) landed 2026-09-27; its plan is at
+<https://claude.ai/artifact/NAGuHCf6pisqD47S9kmyDp>. Nothing else is queued against 2.0.0.
 
 ## 2.1 - trust the numbers
 
@@ -66,8 +54,8 @@ ours, then turn `nitpicky` on so CI catches a dead link.
 
 ### A milestone blocks the page switch but not what caused it (2026-09-21)
 
-Found during a manual pass; **pre-existing**. `MainView.switch_to_page:893` refuses to change
-page (`:909`) while `_milestone_dialog` is up and the target is not `_expected_next_view` - but
+Found during a manual pass; **pre-existing**. `MainView.switch_to_page:895` refuses to change
+page (`:912`) while `_milestone_dialog` is up and the target is not `_expected_next_view` - but
 every caller does its work *before* calling it, so the refusal comes too late to prevent
 anything:
 
@@ -83,7 +71,8 @@ Observed: during a milestone, clicking any sidebar button opens that tab and sta
 tutorial, and every menu stays live under the dimming overlay. The gate is in the wrong
 layer - it guards the last step of an action whose earlier steps have already run. Fixing
 it means asking "is this navigation allowed?" before the handler acts, not inside the
-final call.
+final call; the walkthrough and milestone guards at `switch_to_page:899-925` are that
+predicate's body, so move them rather than copy them.
 
 ### The capture-rate plot always reports one row dropped (2026-09-14)
 
@@ -133,8 +122,8 @@ mechanics. `DECISIONS.md` 2026-09-17 settled *what* to do; what moved is *when*.
 
 **5** `@register_action` sites over **3** names, all private, replayed off the View:
 `_reset_actions` on `ClusteringView`, `MetadataView` and `ProteinView`, plus
-`MetadataView._overlay_plot:1395` and `ProteinView._update_distribution_ensemble:1887`. Replay is
-`getattr(self, name)` on the View via `MetaView.update_actions_from_json:387` (`:394`), so renaming a
+`MetadataView._overlay_plot:1396` and `ProteinView._update_distribution_ensemble:1857`. Replay is
+`getattr(self, name)` on the View via `MetaView.update_actions_from_json:389` (`:396`), so renaming a
 decorated method breaks saved `.json` files today.
 
 Saved action files carry **no compatibility obligation** (Kyle's ruling - the feature is
@@ -144,15 +133,23 @@ barely used), so the design is free:
 - Replay dispatches through the registry those declarations build, not `getattr`, so an
   unknown action name is reported rather than called.
 - Recorded arguments stay small and JSON-round-trippable - user intent, not bulk data.
+- `register_action` (`LogDecorator.py:177`) has no docstring at all. Write the contract on it:
+  the declared name, small recorded arguments, a body that is a pure function of them, and
+  replay self-contained to its own tab.
 
 Breaking, and to be called out as such whenever it lands.
 
 
 ### Other queued items
 
-- [2.1] **Raw SQL subset filters still cannot scope a plot**, and the fix is a feature build in
-  `MetaDatabaseLoader` rather than a defect repair - see `future_refactors_and_features.md`
-  Part 13. Queued deliberately for after the 2.0.0 refactor.
+- [2.1] **Raw SQL subset filters can be saved but never plotted.** Six call sites refuse them
+  (`MetaSubsetTabView._refuse_raw_filters:234`, called at `MetadataView.py:1409`/`:2067` and
+  `ProteinView.py:1356`/`:1451`/`:1710`/`:1871`), because every plot path splices the filter in as a
+  WHERE body. The design is settled (`DECISIONS.md` 2026-09-14): a raw filter goes to
+  `query_database_directly` (`MetaDatabaseLoader.py:1416`) exactly as written, ignores the
+  experiment/channel selection, and the user owns its projection - so a plot missing a column it
+  needs must say which, not draw nothing. Clustering only gets this through the shared filter
+  base queued under Later.
 - **`format_axis_label` truncates a column name containing parentheses.** The pattern
   `\s*\(.*?\)$` is anchored at `$`, so the leftmost match wins and the lazy `.*?` expands
   across every intervening `)`: the strip reaches back to the **first** parenthesis, not the
@@ -190,6 +187,12 @@ Breaking, and to be called out as such whenever it lands.
 - **`ClassicCUSUM` merges short levels on a median but reports them on CUSUM's
   single-sample fallback**, so the merge decision and the reported current use different
   estimators.
+- **An event finder reports a multi-range channel finished after its first range**
+  *(by reading)*: `_find_events_single_range` sets `eventfinding_finished[channel] = True` and
+  yields 1.0 at the end of *every* range (`MetaEventFinder.py:609-610`), not only the last. While
+  a later range runs, `get_eventfinding_status` says done, so the writer's gate
+  (`MetaWriter.py:457`) lets a commit start on a partial event list, and
+  `get_num_events_found` returns a partial count.
 
 ### Session and settings persistence
 
@@ -201,9 +204,13 @@ Breaking, and to be called out as such whenever it lands.
 
 ### Analysis tabs
 
-- **The Metadata and Protein `_shift_range_and_update_plot` copies have drifted**
-  (`MetadataView.py:1977`, `ProteinView.py:1187`): past the end, Metadata clamps and wraps to 0
-  while Protein lands on `n_events`; only Metadata tells the user when no scope is selected.
+- **`_shift_range_and_update_plot` is four copies in two drifted pairs.** Subset tabs
+  (`MetadataView.py:1987`, `ProteinView.py:1157`): past the end, Metadata clamps and wraps to 0
+  while Protein lands on `n_events`, and only Metadata says when no scope is selected. Event
+  tabs (`RawDataView.py:461`, `EventAnalysisView.py:194`): only RawData tells the user it cannot
+  shift below 0, and they catch different exceptions. Promote each pair to
+  `MetaSubsetTabView`/`MetaEventTabView`, with `_get_event_index_text` (`RawDataView.py:528`,
+  `EventAnalysisView.py:252`, differing only in the panel attribute).
 - **`set_heatmap` passes bin centres as the `imshow` extent** (`MetadataView.py:985`),
   compressing the image by a bin width; its export cache (`:990-995`) is built in the View.
 
@@ -264,8 +271,10 @@ Breaking, and to be called out as such whenever it lands.
   (7 tests) drives both families through real chains on the happy path; nothing covers
   duplicate rows, a schema mismatch, abort, or the `rejected` bookkeeping.
 - **`channel: Optional[int] = None` meaning "every channel" - deferred out of 2.0.0** (Kyle,
-  2026-09-22). `MetaEventFitter.reset_channel:325-356` ignores `None` and writes
-  `eventfitting_status[None]` behind four `type: ignore`s; `close_resources` is `pass` in 15 of
+  2026-09-22). `MetaEventFitter.reset_channel:325-359` ignores `None` and writes
+  `eventfitting_status[None]` behind four `type: ignore`s, each inside a `try/except KeyError`
+  that `dict.pop(channel, None)` replaces (`:343-358`); `MetaEventFinder.reset_channel:172-195`
+  writes the same ten resets twice, once per branch. `close_resources` is `pass` in 15 of
   18 overriding plugin files and the two SQLite writers ignore the argument. Scope, as designed 2026-09-22:
   - `close_resources`, `reset_channel`, `report_channel_status` take a required `channel: int`
     on the six channelled families, every `if channel is None` arm deleted; callers loop, as
@@ -284,12 +293,20 @@ Breaking, and to be called out as such whenever it lands.
   `MetaEventFinder.find_events:453` skips a chunk when `mean < Threshold`, which is right for
   `ClassicBlockageFinder`'s pA threshold; at 8σ it skips only chunks with a baseline under 8 pA.
   A behaviour question, not a contract one - the key is declared on the base since 2.0.0.
-- **The baseline histogram is coarse, at `int(len(data)**(1/3)/2)` bins** (`MetaEventFinder.py:1029`). (Same method as
-  Part 15 of `future_refactors_and_features.md`; likely belongs in that piece of work.) That is 10 bins
-  on a 10k-sample chunk, of which ~6 survive the two windowing passes, and the
-  log-linearised fit is biased high at that few points: +2.3% at 10k, falling to +0.2% at
-  1M. Rice's rule would give four times as many bins. Retuning it changes which events are
-  found, so it needs the same treatment the σ correction got, not a quiet edit.
+- **`MetaEventFinder._fit_baseline_histogram:964` picks, windows and bins the baseline peak
+  on rules nobody chose.** One piece of work, since each answer depends on the one before it;
+  every σ threshold in every finder comes from this fit. Needs synthetic-data evidence, not a
+  quiet edit.
+  - *Peak:* `np.argmax(hist)` (`:1004`) follows the tallest bin, but the baseline is the fitted
+    peak farthest from zero (Kyle, 2026-09-20). Baseline 1000 with a second population at 850:
+    correct up to 49% occupancy of the lower one, then reports **852** from 55%. Needs a stated
+    rule first - prominence floor, fraction of the tallest bin, or minimum separation.
+  - *Window:* `hist[peak - half_width : peak + half_width]` (`:1028`) keeps one more bin below the
+    peak. It helps only when the contaminant sits *above* the baseline; below it, σ is 1-4% worse
+    in six configurations of 40 trials. Settle it after the peak rule (`DECISIONS.md` 2026-09-20).
+  - *Bins:* `int(len(data)**(1/3)/2)` (`:994`) is 10 on a 10k-sample chunk, ~6 surviving the two
+    windowing passes; the log-linearised fit is biased high at that few points, +2.3% at 10k
+    falling to +0.2% at 1M. Rice's rule gives four times as many.
 - **No schema version, and the compatibility check has a dead branch.** No
   `PRAGMA user_version` anywhere. `SQLiteDBLoader._finalize_initialization:1034-1039` guards
   `extra_tables` against `"event_counts"`, already in `expected_tables` (`:1004`) and so
@@ -316,10 +333,11 @@ Breaking, and to be called out as such whenever it lands.
   including `metadata_units["duration"]` in both PeakFinders, which reaches the database,
   against 53 writing ASCII `"us"` - one physical unit with two spellings in the database.
 - **Chunk boundaries can duplicate a sample through a float round-trip.**
-  `MetaReader.py:461-462` and `:505-506` convert an integer sample index to seconds and
-  `:161-162` (also `:407-409`) truncate it back; measured, `int((i/sr)*sr) != i` for 7.7% of the first 2M indices at
-  100 kHz, and when it slips low `i += len(data)` (`:468`, `:510`) compounds it. Pass sample counts, or
-  `round()`.
+  `MetaReader.continuous_read:386` converts an integer sample index to seconds (`:421-422`) and
+  `load_data` truncates it back (`:159-160`, also `_read_bounds:369-371`); measured,
+  `int((i/sr)*sr) != i` for 7.7% of the first 2M indices at 100 kHz, and when it slips low
+  `i += len(data)` (`:428`) compounds it. Pass sample counts, or `round()`; name the unnamed
+  tail-chunk test (`:416-417`) in the same change.
 - **`SQLiteEventLoader` opens one connection per event** (`:126`, from
   `MetaEventLoader.get_event_generator:320` per index); `construct_metadata_query` opens ten
   connections for a single call, measured. No connection reuse and no `PRAGMA journal_mode`
@@ -337,9 +355,11 @@ Breaking, and to be called out as such whenever it lands.
   `eventfitting_status = True` (`:764`). Also `:641` checks `isinstance(..., Iterable)` then
   `:646` calls `len()` - a generator passes and dies on the call - and `fit_events(indices=[])`
   marks the channel fully fitted while the docstring at `:524` says it fits everything.
-- **`get_single_event_data` returns `None` on a bad index** (`MetaEventFinder.py:834`) and
-  yields it into the writer (`:731`), which then fails on it as a swallowed rejection. It
-  should raise.
+- **`get_single_event_data` returns `None` on a bad index** (`MetaEventFinder.py:815`) and
+  `get_event_data_generator` yields it into the writer (`:728`), which then fails on it as a
+  swallowed rejection. It should raise. The two methods also guard "are events ready" with
+  different chains in a different order (`:711-724`, `:768-778`); only the generator checks
+  `eventfinding_finished`. One shared guard, keeping which exception fires.
 - **Silent scientific fallbacks with no metadata flag, in `CUSUM.py`.** For a sublevel
   shorter than `rise_time`: `sublevel_current` becomes the single last sample before the next
   level's onset instead of a median (`:439`), `sublevel_stdev` becomes `baseline_std` (`:467`), and
@@ -532,17 +552,34 @@ one. Measured 2026-09-24: **49 `self.model.call(...)` sites across the Controlle
 allowlist of named wiring operations for Controller-side `call()` before the accumulation is
 real; latent today, and the same soft governance as `_get_plugin` staying private.
 
-### Leftovers from `future_refactors_and_features.md` Parts 10-12 (2026-09-24)
+### Shell and shared-widget duplication (2026-09-27)
 
 - `MainView` menu table: 9 `addMenu` + `add_plugin_actions` blocks at `main_view.py:420-467`
   and nine one-line `on_load_*` wrappers (`:558-714`).
+- `MainView.get_milestone_step:1183` wraps each highlight getter in `lambda: [...]` and unwraps
+  it with `[0]` on the next line (`:1190-1212`); store the getter. `populate_plugins_menu:641`
+  mixes building the menu with 20 lines of anchor-position arithmetic (`:667-688`).
 - `SettingsWindow` rows hand-built as HBox + widget + `add_horizontal_line()` in
   `add_general_tab_contents:504`, `add_advanced_settings_tab_contents:571`,
   `add_about_tab_contents:669`; two opposite 6-entry log-level dicts at `:771` and `:785`.
-- Select-all branches identical in `multiselect.py:148-155`, `multiselect_filter.py:241-248`
-  and `SelectionTree.py:169-186` (three of four identical).
-- `dict_dialog_widget.on_ok:368` dispatches by nested `try/except AttributeError` probing.
-- `clustering_settings_widget` builds its checkbox rows three times (`:301`, `:384`, `:512`).
+- `MultiSelectComboBox` and `MultiSelectFilterComboBox` still carry the same
+  `updateSelectAllButton`, `selectAllToggle`, `getSelectedItems`, `_set_outside_click_filter`
+  and `eventFilter` (`multiselect.py:129-250`, `multiselect_filter.py:124-300`), differing only in
+  reading a check state off the item or off an embedded `QCheckBox`: a shared base with that
+  accessor as its hook. Select-all's three-way branch has two identical arms in both and in
+  `SelectionTree.py:169-186`; the Linux popup branch is written as two `if`s (`multiselect.py:62`,
+  `:72`) and again at `SelectionTree.py:213`. An empty `MultiSelectComboBox` shows "Deselect All"
+  checked, since `checked == total == 0`; `SelectionTree` special-cases it.
+- `dict_dialog_widget.on_ok:368` dispatches by nested `try/except AttributeError` probing;
+  `init_ui:111` (136 lines) builds its Input File and Output File rows identically but for the
+  picker called (`:131-168`).
+- `clustering_settings_widget` builds its column rows three times (`:314`, `:397`, `:525`), and
+  `init_ui` restores a preselected config inside one broad `except Exception` (`:211-236`).
+- `icon_menu_widget`/`text_menu_widget`: `emitSignal` identical but for the `"menu"` key
+  (`icon_menu_widget.py:295`, `text_menu_widget.py:276`), six `set*Checked` slots each, and
+  `QPushButton:hover` QSS six times. Share the constants and those methods, not the classes.
+- `FloatRangeLineEdit.set_range` counts decimal places with the same inline expression twice
+  (`float_range_line_edit.py:144-153`).
 
 ### The two Chimera readers are near-identical, and the deprecation resolves it
 
@@ -564,8 +601,23 @@ absorbs what it needs and stands alone, leaving 20240101 a clean deletion.
 
 ### Session and settings persistence
 
-- **The autosaved `tab_action_history.json` is never read back** except by a manual
-  "load actions".
+- **Load Actions has no shortcut to the autosaved `session/tab_action_history.json`**: the
+  user must find it in the app-data folder. Replay stays explicit and per tab by design
+  (`DECISIONS.md` 2026-09-27), so this is a convenience - offer the autosave in each tab's
+  Load Actions - not automatic replay.
+- **A reloaded session restores plugins but not what the control panels showed.** Snapshot and
+  restore each panel's widget state on `MetaControls` by walking its children keyed by
+  `objectName` (not every control sets one today), with `MultiSelectComboBox` and
+  `MultiSelectFilterComboBox` supplying their own get/set; modal dialogs stay out of scope. A
+  direct snapshot, not an event-sourced log like `@register_action`. Restore with signals
+  blocked, after the tab's plugins exist and before any replay is offered (`DECISIONS.md`
+  2026-09-27: replay stays explicit and per tab). Replay itself is a synchronous loop on the GUI
+  thread (`MetaView.update_actions_from_json:389`), so a heavy log wants a worker.
+- **`@register_action` has no overwrite mode**: every call appends (`MetaController.py:391`),
+  so an action whose final call is all that matters is replayed once per intermediate call.
+  Decide the dedup key (name alone, or name plus identifying arguments) and whether a
+  replacement keeps its position before building it, alongside the declared-name redesign
+  in 2.1.
 
 ### Numeric input and widgets
 
@@ -579,9 +631,9 @@ absorbs what it needs and stands alone, leaving 20240101 a clean deletion.
   `cast()` at `walkthrough_mixin.py:143-150`; dead `QDialog` fallbacks at
   `walkthrough.py:481-495`; `show_walkthrough_intro` (`:314-328`) is dead and would crash; the
   intro text (`walkthrough.py:111`) omits Protein.
-- **Popup helpers are still triplicated** across the two multiselect boxes and
-  `SelectionTree`; `SelectionTree.show_dialog` has no Cancel; select-all in the filter box
+- **Popup tidiness**: `SelectionTree.show_dialog` has no Cancel; select-all in the filter box
   emits `selectionChanged` N+1 times; the popup lists hide their scrollbar (`multiselect.py:58`).
+  The duplication itself is under "Shell and shared-widget duplication".
 - **No accessibility work**: no accessible names, `QShortcut`s, mnemonics or tab order
   anywhere in `poriscope/`; sidebar colours hardcoded (`icon_menu_widget.py:72-80`,
   `text_menu_widget.py:79-86`); Windows-only fonts hardcoded 7 times.
@@ -590,19 +642,97 @@ absorbs what it needs and stands alone, leaving 20240101 a clean deletion.
 
 - **`new_plugin.py` cannot generate a `MetaSubsetTab*` tab**, the likely shape of any
   new database-analysis tab; add `--base subset`.
+- **`update_available_plugins` is hand-written in all five Views** (`ClusteringView.py:813`,
+  `MetadataView.py:1333`, `ProteinView.py:1008`, `RawDataView.py:376`,
+  `EventAnalysisView.py:136`): `super()`, then a `try` pushing each metaclass list into the panel.
+  Metadata's and Protein's are identical but for the panel attribute, so `MetaSubsetTabView` can
+  own them through `_subset_controls`.
+- **`get_save_filename` is four identical bodies** (`ClusteringView.py:143`, `RawDataView.py:141`,
+  `EventAnalysisView.py:119`, `MetaSubsetTabView.py:899`), all reached from
+  `MetaController.py:170`; it belongs on `MetaView`.
+- **The "my selected loader gained columns" guard is written twice**:
+  `ClusteringView.notify_plugin_state_changed:831` and `MetadataView:1357` (Protein's is a no-op).
+- **Overwriting committed columns is built twice**: the confirm (`ClusteringView.on_cluster_column_checked:286`,
+  `ProteinView.confirm_fit_commit:477`) and the drop (`ClusteringModel.drop_cluster_columns:244`,
+  `ProteinModel.drop_fit_columns:360`); Protein's `drop_fit_columns(loader, table, columns)` is
+  already the general form. Protein's prompt reads "fit data data already exists" (`ProteinView.py:500`).
+- **Figure reset differs per tab**: `ClusteringView._reset_actions:161` guards `figure.clear()`
+  with `except AttributeError` where Metadata has `_clear_figure_state:315`/`_axes_valid:355`, and
+  `ProteinView._reset_actions:671` runs clear/add_subplot/tight_layout/draw twice, once per figure
+  (`:687-705`).
+- **A repeated column is refused two ways**: Clustering raises `KeyError`
+  (`ClusteringView.py:546`), logged at ERROR by its caller after the config is already saved
+  under its title; Metadata warns in a `QMessageBox` (`MetadataView.py:1567`) and its panel
+  already disables Update Plot (`metadatacontrols.py:865-871`). The clustering dialog's
+  `_check_apply_enabled:569` could refuse it the same way.
+- **`MetaEventTabController.update_available_plugins:68` re-implements the base** with the Model
+  pushed before the View (`MetaController.py:353` does View first). Nothing in the tab layer reads
+  `MetaModel.available_plugins` (`MetaModel.py:348`), so the override is a debug log; delete it.
+- **Clustering has no named-filter layer**: one anonymous `QTextEdit`
+  (`clustering_settings_widget.py:132`), validated only at apply, where Metadata and Protein name,
+  save, reload and multi-select filters through ~16 methods on `MetaSubsetTabView` (1,098 lines,
+  31 methods). Validation is already shared (`construct_metadata_query`). Putting
+  `ClusteringView` under `MetaSubsetTabView` would inherit its scope and event-cache state, so the
+  shape is a thin base holding only the filter dict, the add/edit dialogs and save/load, under
+  both. Worth it when raw SQL filters are built, or Clustering keeps refusing a `SELECT`.
+
+### App shell and plugin management
+
+- **The plugin-name uniqueness loop is written twice**: `DataPluginController._rename_plugin:254-264`
+  and `_key_is_unused:952`, differing only in the rename also restoring parent links.
+- **Deleting from the edit dialog** (`_complete_requested_deletion:173`) re-implements
+  `delete_plugin:606` and posts no "deleted" message to the panel.
+- **`instantiate_analysis_tab` wires seven tab signals as seven `connect` calls**
+  (`main_controller.py:572-596`); `MainView.connect_signals:225` already has the table form.
+- **`sys.path` only grows**: `update_user_plugin_location` (`main_controller.py:197-201`) and
+  startup (`main_app.py:122-125`) append the plugin folder and its parent and never remove a
+  previous one, so after the folder changes an abandoned folder's module still wins a name clash
+  until relaunch.
+
+### Base-class internals
+
+Readability only; each is behaviour-preserving and wants the covering tests read first.
+
+- `LogDecorator.log`'s one-shot latch is the same block in `log_call` and `log_return`
+  (`LogDecorator.py:119-127`, `:134-142`). One helper over a module-level latch also retires the
+  two `setattr`s `DECISIONS.md` 2026-09-02 keeps.
+- `MetaController.update_tab_actions`' undo walks back through nested `try/except
+  KeyError`/`StopIteration` (`MetaController.py:392-411`); `handle_kill_worker:245` nests three
+  deep; `MetaView.update_progressbar:315` (74 lines) builds its widget inline; `MetaModel`
+  repeats `if key not in self.<dict>` four times (`:205-239`).
+- `MetaEventFinder`: boundary reconciliation is duplicated in `find_events:339-356` and
+  `_find_events_single_range:578-594`; four comprehensions test `idx not in bad_indices` against
+  a list (`:549-564`, quadratic - use a set); the `end is None or end == 0` re-check at `:300`
+  cannot fire after the normalisation at `:276-289`.
+- `MetaEventFitter.fit_events` coerces `padding_before` and `padding_after` with the same seven
+  lines twice (`MetaEventFitter.py:584-598`).
+- `MetaReader._get_file_index:855` ends its scan by catching `IndexError` (`:868-872`);
+  `bisect_right` says what it means.
+- `MetaDatabaseLoader`: the experiment/channel scope clause is hand-built three times
+  (`:499-501`, `:1131-1133`, `:1230-1232`, only the last alias-qualified), and
+  `export_subset_to_csv:557` repeats validate/query/raise five times (`:601-670`).
 
 ### Database
 
 - **34 hand-rolled `sqlite3.connect`/`finally` blocks** across the four SQLite plugins,
-  and `lookahead_generator` nested twice (`MetaWriter:362`, `MetaDatabaseWriter:121`) in two
-  near-copy write loops.
+  and `lookahead_generator` nested twice (`MetaWriter:390`, `MetaDatabaseWriter:121`) in two
+  near-copy write loops. `MetaWriter._commit_events:373` is 164 lines with an abort flag threaded
+  through four `try` levels; `MetaDatabaseWriter.write_events:107` repeats
+  try/`close_resources`/log/raise for three setup steps (`:137-172`), and its `index = 0`
+  (`:182`) is dead - `:196` reassigns it before any read.
 
 ### Plugin contract
 
 - **`_validate_param_ranges:559` rejects any `None`**, so a plugin cannot declare an
   optional parameter.
-- **A trivial reader implements 13 abstract methods**, many of the shipped bodies `pass`;
-  default implementations for the lifecycle no-ops would cut that to about 8.
+- **Nothing bounds a plugin's `close_resources()`**: Reset Session and quit call it unguarded
+  (`DataPluginModel.py:217`, `:239`), so one that hangs freezes the app without naming itself,
+  and its contract says only "gracefully close" (`BaseDataPlugin.py:135`). A threaded timeout
+  was built and reverted (`DECISIONS.md` 2026-08-31): doing it means `check_same_thread=False` on
+  the two writers' `self.conn` (`SQLiteDBWriter.py:299`, `SQLiteEventWriter.py:580`), the quit
+  path routed through the same guard, and the contract written down - join your threads, close
+  your handles, idempotent, callable from another thread. Lands with or after the
+  `channel: Optional[int]` item in 2.1.
 
 ### Types, tests and CI
 

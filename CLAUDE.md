@@ -151,18 +151,14 @@ revisiting.
 
 - `changelog.md` — what changed, user-facing. Update it for any code change.
 - `future_fixes.md` — the authoritative record of what is still queued, organised under
-  release-target headers (2.0.0, 2.1, 2.2, Later, Owner-held). Keep it terse; prune items as they land
+  release-target headers (2.0.0, 2.1, 2.2, Later, Owner-held); larger speculative work goes
+  under Later. Keep it terse; prune items as they land
   rather than leaving completed-work narrative behind. Delete a landed entry outright —
   do not mark it `**Fixed**`, strike it through with `~~`, or retitle its section
   `DONE`/`CLOSED`; the history already lives in `changelog.md`. When only part of an
   item lands, delete it and rewrite what remains as a forward-facing item.
 - `DECISIONS.md` — why we chose *not* to do something, with the evidence and what
   would make it worth revisiting. Check here before re-litigating a settled question.
-- `future_refactors_and_features.md` — larger speculative work.
-- `refactor_2.0.0.md` — the execution record of the 2.0.0 refactor, which is complete; 2.0.0
-  is held on `develop` for burn-in. It no longer claims anything in `future_fixes.md`. Before
-  deleting it at release, move its method notes into the `planning-and-executing-changes` /
-  `refactoring-codebases` skills and any lasting decisions into `DECISIONS.md`.
 - `fit_fallbacks.md` — every fallback path in `PeakFinder`'s shared double-Gaussian fit
   chain (`fit_threshold` and its callees) and how each classifier responds to a degraded
   fit. **Update it whenever a fallback is added, removed, or changes what it degrades to**,
