@@ -17,6 +17,7 @@ Comprehensive test coverage for:
 from __future__ import annotations
 
 import ast
+import sys
 from pathlib import Path
 from typing import Any, Callable
 from unittest.mock import MagicMock
@@ -27,6 +28,7 @@ import pytest
 from pytest_mock import MockerFixture
 
 from poriscope.plugins.analysistabs.MetadataView import MetadataView
+from poriscope.views.widgets.add_subset_filter_dialog import AddSubsetFilterDialog
 
 # ----------------------------- Fixtures ------------------------------
 
@@ -4248,6 +4250,41 @@ def test_show_add_filter_dialog_validates_filter_on_accept(
         "NewFilter",
         None,
     )
+
+
+def test_cancelling_add_filter_after_finishing_the_tutorial_raises_nothing(
+    view: MetadataView, mocker: MockerFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    Closing Add Filter after its tutorial has finished is quiet.
+
+    Finishing the tutorial clears the dialog's ``walkthrough_dialog``, and the
+    View's close handler used to call ``force_close()`` on it regardless. The real
+    dialog is built without a parent only because this fixture's View never ran
+    ``QWidget.__init__``.
+    """
+
+    def finish_tutorial_then_cancel(dialog: AddSubsetFilterDialog) -> int:
+        tutorial = dialog.walkthrough_dialog
+        assert tutorial is not None
+        for _ in range(len(tutorial.steps)):
+            tutorial.next_step()
+        dialog.done(0)
+        return 0
+
+    raised: list = []
+    monkeypatch.setattr(sys, "excepthook", lambda *exc: raised.append(exc[1]))
+    monkeypatch.setattr(AddSubsetFilterDialog, "exec", finish_tutorial_then_cancel)
+    mocker.patch(
+        "poriscope.utils.MetaSubsetTabView.AddSubsetFilterDialog",
+        side_effect=lambda _parent, **kwargs: AddSubsetFilterDialog(None, **kwargs),
+    )
+    view._walkthrough_active = True
+    view.subset_filters = {}
+
+    view._show_add_filter_dialog({"db_loader": "db"})
+
+    assert raised == []
 
 
 def test_show_add_filter_dialog_returns_when_no_loader(

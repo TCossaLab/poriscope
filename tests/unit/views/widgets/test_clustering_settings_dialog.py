@@ -71,8 +71,22 @@ def _make_dialog(
     return dlg
 
 
+def _param_edit(dlg, key):
+    """The parameter QLineEdit whose object name is ``key``."""
+    return dlg.param_container.findChild(QLineEdit, key)
+
+
+def _choose_dbscan(dlg, eps="0.5", min_samples="5"):
+    """Helper: pick DBSCAN and fill in both of its parameters."""
+    dlg.method_combo.setCurrentText("DBSCAN")
+    _param_edit(dlg, "DBSCAN_Eps_input").setText(eps)
+    _param_edit(dlg, "DBSCAN_Min_Samples_input").setText(min_samples)
+
+
 def _select_two_plot_cols(dlg):
-    """Helper: set both default rows to real columns and tick plot on each."""
+    """Helper: a fully configured dialog - a method with its parameters, and two
+    default rows set to real columns with plot ticked on each."""
+    _choose_dbscan(dlg)
     dlg.default_row_widgets[0]["combo"].setCurrentText("duration")
     dlg.default_row_widgets[0]["plot_cb"].setChecked(True)
     dlg.default_row_widgets[1]["combo"].setCurrentText("current")
@@ -680,3 +694,63 @@ def test_a_float_parameter_keeps_its_decimal_point_under_a_comma_locale(qt_app):
         dlg.close()
     finally:
         QLocale.setDefault(saved)
+
+
+# ===========================================================================
+# Apply needs a method with every parameter filled in
+# ===========================================================================
+
+
+class TestApplyNeedsAValidMethod:
+    """
+    Apply stays disabled until the clustering method and its parameters are usable.
+
+    It used to look only at the column rows, so a missing method or an empty or
+    half-typed parameter got through and failed only after the database had loaded.
+    """
+
+    def _columns_only(self, dlg):
+        dlg.default_row_widgets[0]["combo"].setCurrentText("duration")
+        dlg.default_row_widgets[0]["plot_cb"].setChecked(True)
+        dlg.default_row_widgets[1]["combo"].setCurrentText("current")
+        dlg.default_row_widgets[1]["plot_cb"].setChecked(True)
+
+    def test_no_method_selected_disables_apply(self, dlg):
+        self._columns_only(dlg)
+        assert not dlg.apply_button.isEnabled()
+        assert dlg.plot_warning_label.text() == "Select a clustering method."
+
+    def test_an_empty_parameter_disables_apply(self, dlg):
+        self._columns_only(dlg)
+        _choose_dbscan(dlg, min_samples="")
+        assert not dlg.apply_button.isEnabled()
+        assert dlg.plot_warning_label.text() == "Fill in every method parameter."
+
+    def test_a_half_typed_number_disables_apply(self, dlg):
+        self._columns_only(dlg)
+        _choose_dbscan(dlg, eps=".")
+        assert not dlg.apply_button.isEnabled()
+
+    def test_filling_the_last_parameter_enables_apply(self, dlg):
+        self._columns_only(dlg)
+        _choose_dbscan(dlg, min_samples="")
+        _param_edit(dlg, "DBSCAN_Min_Samples_input").setText("5")
+        assert dlg.apply_button.isEnabled()
+        assert not dlg.plot_warning_label.isVisible()
+
+
+class TestParameterMinimum:
+    """A parameter's declared ``min`` bounds its field, so it cannot be applied below it."""
+
+    PARAMS = {"HDBSCAN": [{"name": "Cluster Size", "type": "int", "min": 2}]}
+
+    def test_a_value_below_the_minimum_is_not_acceptable(self, qt_app):
+        dlg = _make_dialog(
+            methods=["HDBSCAN"], method_params=self.PARAMS, qt_app=qt_app
+        )
+        dlg.method_combo.setCurrentText("HDBSCAN")
+        edit = _param_edit(dlg, "HDBSCAN_Cluster_Size_input")
+        edit.setText("1")
+        assert not edit.hasAcceptableInput()
+        edit.setText("2")
+        assert edit.hasAcceptableInput()

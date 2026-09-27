@@ -793,6 +793,23 @@ class TestRemovePagesExcept:
         main_view.stackedWidget.setCurrentIndex(info["index"])
         assert main_view.stackedWidget.currentWidget().objectName() == "TabA"
 
+    def test_replacing_a_page_keeps_every_other_page_on_its_own_widget(self, main_view):
+        """
+        Re-adding a page by name leaves every other page selecting its own widget.
+
+        Settings is re-added on every click, which removes its old wrapper from the
+        stack and renumbers everything after it. ``add_page`` did not re-derive the
+        cached indices, so a tab opened after Settings then showed Settings.
+        """
+        main_view.add_page("Settings", QWidget())
+        self._add_tabs(main_view, "TabA", "TabB")
+
+        main_view.add_page("Settings", QWidget())
+
+        for name, info in main_view.pages.items():
+            main_view.stackedWidget.setCurrentIndex(info["index"])
+            assert main_view.stackedWidget.currentWidget().objectName() == name
+
 
 class TestCloseSettingsPage:
     """

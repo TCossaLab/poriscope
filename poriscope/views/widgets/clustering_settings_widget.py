@@ -114,6 +114,8 @@ class ClusteringSettingsDialog(QDialog, WalkthroughMixin):
         self.method_combo.addItems(self.available_methods)
         self.method_combo.setCurrentIndex(0)
         self.method_combo.currentTextChanged.connect(self.update_method_parameters)
+        # After update_method_parameters, so the new method's fields exist when checked.
+        self.method_combo.currentTextChanged.connect(self._check_apply_enabled)
         main_layout.addWidget(method_label)
         main_layout.addWidget(self.method_combo)
 
@@ -286,10 +288,14 @@ class ClusteringSettingsDialog(QDialog, WalkthroughMixin):
             if input_type == "int":
                 validator: QValidator = QIntValidator()
                 validator.setLocale(QLocale.c())
+                if "min" in field_def:
+                    validator.setBottom(int(field_def["min"]))
                 line_edit.setValidator(validator)
             elif input_type == "float":
                 validator = QDoubleValidator()
                 validator.setLocale(QLocale.c())
+                if "min" in field_def:
+                    validator.setBottom(float(field_def["min"]))
                 line_edit.setValidator(validator)
 
             key = f"{method_name}_{field.replace(' ', '_')}_input"
@@ -301,6 +307,7 @@ class ClusteringSettingsDialog(QDialog, WalkthroughMixin):
                 if key in saved:
                     line_edit.setText(saved[key])
 
+            line_edit.textChanged.connect(self._check_apply_enabled)
             self.param_layout.addWidget(label)
             self.param_layout.addWidget(line_edit)
 
@@ -596,9 +603,35 @@ class ClusteringSettingsDialog(QDialog, WalkthroughMixin):
             )
             self.plot_warning_label.setVisible(True)
             self.apply_button.setEnabled(False)
+        elif self.method_combo.currentText() not in self.method_parameters:
+            self.plot_warning_label.setText("Select a clustering method.")
+            self.plot_warning_label.setVisible(True)
+            self.apply_button.setEnabled(False)
+        elif not self._method_parameters_filled():
+            self.plot_warning_label.setText("Fill in every method parameter.")
+            self.plot_warning_label.setVisible(True)
+            self.apply_button.setEnabled(False)
         else:
             self.plot_warning_label.setVisible(False)
             self.apply_button.setEnabled(True)
+
+    def _method_parameters_filled(self) -> bool:
+        """
+        Report whether every field of the chosen method holds a usable value.
+
+        A field with a validator must hold acceptable input, not a prefix such as
+        ``.`` or a value below its minimum; one without must not be empty.
+
+        :return: True if every parameter field can be read as its type.
+        :rtype: bool
+        """
+        for i in range(self.param_layout.count()):
+            widget = self.param_layout.itemAt(i).widget()
+            if isinstance(widget, QLineEdit) and (
+                not widget.text().strip() or not widget.hasAcceptableInput()
+            ):
+                return False
+        return True
 
     def _refresh_add_button_position(self) -> None:
         self.scroll_layout.removeWidget(self.add_row_container)

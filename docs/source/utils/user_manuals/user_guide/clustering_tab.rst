@@ -70,8 +70,11 @@ Step 2: Configure Clustering Settings
 
      .. note::
 
-        **Apply** stays disabled until every row has a column and 2 or 3 of them are
-        ticked **PLOT**.
+        **Apply** stays disabled until a method is chosen and each of its parameters
+        holds a valid value, every row has a column, and 2 or 3 rows are ticked
+        **PLOT**; the line above the buttons says what is missing. The parameters
+        take scikit-learn's own minimums: ``Cluster Size`` at least 2, ``Min Points``
+        and ``Number of Clusters`` at least 1, and ``Sensitivity`` at least 0.
 
 
    - Click **Apply** to launch the clustering process, or **Cancel** to discard changes.

@@ -783,6 +783,8 @@ class MainView(QMainWindow, WalkthroughMixin):
             if old_page is not None:
                 self.stackedWidget.removeWidget(old_page)
                 old_page.deleteLater()
+                # The stack renumbers every page after the one removed.
+                self._reindex_pages()
 
         page = QWidget()
         page.setObjectName(page_name)

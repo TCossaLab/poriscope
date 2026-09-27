@@ -35,11 +35,6 @@ from PySide6.QtWidgets import QApplication, QLabel, QMainWindow, QVBoxLayout, QW
 from poriscope.utils.BaseLineEdit import BaseLineEdit
 from poriscope.utils.BaseValidator import BaseValidator
 
-# Configure logging
-logging.basicConfig(
-    level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s"
-)
-
 
 class FloatRangeValidator(BaseValidator):
     logger = logging.getLogger(__name__)

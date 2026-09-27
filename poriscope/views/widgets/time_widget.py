@@ -31,9 +31,6 @@ from PySide6.QtCore import QObject, QTimer
 from PySide6.QtGui import QValidator
 from PySide6.QtWidgets import QDialog, QGridLayout, QLabel, QLineEdit, QPushButton
 
-# Configure logging
-logging.basicConfig(level=logging.DEBUG)
-
 
 class TimeRangeValidator(QValidator):
     logger = logging.getLogger(__name__)

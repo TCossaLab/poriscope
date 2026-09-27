@@ -123,7 +123,7 @@ class IconTextMenuWidget(QWidget):
             layout,
             "data",
             "    Raw Data",  # spaces are intentional for desired alignment
-            os.path.join(self.icon_path, "stats-black.svg"),
+            os.path.join(self.icon_path, "datapie-black.svg"),
             25,
         )
         self.event_analysis_text_button = self.createTextButton(

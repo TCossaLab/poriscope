@@ -29,6 +29,10 @@ Line numbers were re-verified 2026-09-24.
 ## 2.0.0 - before the release ships
 
 Silent data corruption, wrong science in the docs, user data loss, and release hygiene. Mostly small, local fixes.
+
+The approved plan for this section's Phase 1 items (release prep) is at
+<https://claude.ai/artifact/NAGuHCf6pisqD47S9kmyDp>.
+
 ### Four plan-step citations survived the sweep (2026-09-24)
 
 `refactor_2.0.0.md` is deleted when 2.0.0 ships. Rewrite each as the mechanism it stands for;
@@ -37,27 +41,6 @@ docstring/comment-only, so no tests and no changelog entry:
 `tests/unit/scripts/test_duplication_ratchet.py:5` ("Steps 3a-3c"),
 `tests/unit/scripts/test_mvc_boundary_allowlist.py:7` ("Steps 3-5"),
 `tests/integration/flows/test_clustering_flow_no_gui.py:10` ("Steps 3-5").
-
-### Data integrity and scientific correctness
-
-
-### Session and settings persistence
-
-- **Finishing the tutorial inside a dialog, then closing it, raises `AttributeError`**:
-  the `finished` lambdas at `ClusteringView.py:485-488` and `MetaSubsetTabView.py:648-651` call
-  `dialog.walkthrough_dialog.force_close()` after `walkthrough_mixin.py:209` set it to `None`.
-- **The clustering dialog's Apply ignores method and parameters**
-  (`_check_apply_enabled`, `clustering_settings_widget.py:540-579`); the error surfaces later
-  in `ClusteringView.py:590-614`.
-- **Three widget modules call `logging.basicConfig(DEBUG)` at import**
-  (`views/widgets/time_widget.py:35`, `utils/BaseLineEdit.py:34`,
-  `views/float_range_line_edit.py:39`): importing `main_app` leaves root at DEBUG with a stray
-  handler, so every console line prints twice; `TimeRangeValidator` logs ~10 records a keystroke.
-- **The icon sidebar's Help and Settings emit their switch signal twice**
-  (`icon_menu_widget.py:320-326` and `:291-292`), so `on_settings_button_click` runs twice.
-- **Broken icon references**: `help-252.png` does not exist (`icon_menu_widget.py:151`);
-  `tcossalab.png` (`:259`) is `TCossaLab.png` on disk, which breaks on case-sensitive Linux;
-  the text menu's "Raw Data" reuses `stats-black.svg` (`text_menu_widget.py:131`).
 
 ### Analysis tabs
 

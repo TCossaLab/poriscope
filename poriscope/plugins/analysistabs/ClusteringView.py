@@ -465,12 +465,16 @@ class ClusteringView(MetaView):
             available_columns=self.columns,
             available_methods=["HDBSCAN", "Gaussian Mixtures"],
             method_parameters={
+                # Each min is scikit-learn's own lower bound for the parameter it feeds
+                # (min_cluster_size, min_samples, cluster_selection_epsilon, n_components).
                 "HDBSCAN": [
-                    {"name": "Cluster Size", "type": "int"},
-                    {"name": "Min Points", "type": "int"},
-                    {"name": "Sensitivity", "type": "float"},
+                    {"name": "Cluster Size", "type": "int", "min": 2},
+                    {"name": "Min Points", "type": "int", "min": 1},
+                    {"name": "Sensitivity", "type": "float", "min": 0.0},
                 ],
-                "Gaussian Mixtures": [{"name": "Number of Clusters", "type": "int"}],
+                "Gaussian Mixtures": [
+                    {"name": "Number of Clusters", "type": "int", "min": 1}
+                ],
             },
             column_units=self.units,
             preselected_config=config_for_title,
@@ -483,8 +487,14 @@ class ClusteringView(MetaView):
 
             # Force close the walkthrough if dialog closes (reject or otherwise)
             if dialog.walkthrough_dialog:
+                # Finishing the tutorial clears walkthrough_dialog before the dialog
+                # closes, so there may be nothing left to close by then.
                 dialog.finished.connect(
-                    lambda _: dialog.walkthrough_dialog.force_close()
+                    lambda _: (
+                        dialog.walkthrough_dialog.force_close()
+                        if dialog.walkthrough_dialog
+                        else None
+                    )
                 )
 
         result = dialog.exec()

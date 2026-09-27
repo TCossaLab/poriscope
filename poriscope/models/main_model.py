@@ -33,6 +33,7 @@ import os
 import time
 from collections import OrderedDict
 from pathlib import Path
+from types import ModuleType
 from typing import (
     Any,
     Dict,
@@ -158,39 +159,27 @@ class MainModel(QObject):
         allowed_base_classes: Tuple[type, ...],
     ) -> Optional[type]:
         """
-        Dynamically loads a plugin, ensuring it is a subclass of a supported abstract class.
+        Import one plugin file and return its class if it subclasses an allowed base.
 
-        Args:
-            plugin_key (str): The key representing the plugin to load.
+        The file ``<plugin_key>.py`` in ``folder`` is executed as a module with
+        :py:mod:`importlib`, one plugin at a time, and the class of the same name is
+        taken from it. The ``simple-plugin-loader`` package was considered and rejected
+        because it loads every plugin at once. Any failure - a missing file, an import
+        error, no class of that name, or a class outside ``allowed_base_classes`` - is
+        logged and yields ``None`` rather than raising.
 
-        Returns:
-            plugin_class (type): The loaded plugin class, or None if loading fails.
-
-        Note:
-            This method uses dynamic module loading as described in the Python documentation:
-            https://docs.python.org/3/library/importlib.html
-
-            The simple-plugin-loader package was initially considered but was found to be unsuitable
-            for on-demand loading as it loads all plugins upon execution:
-            https://pypi.org/project/simple-plugin-loader/
+        :param plugin_key: The plugin's name, which is both its file stem and its class name.
+        :type plugin_key: str
+        :param folder: The folder holding the plugin file.
+        :type folder: Union[str, Path]
+        :param allowed_base_classes: The bases a plugin class must inherit from to be accepted.
+        :type allowed_base_classes: Tuple[type, ...]
+        :return: The plugin class, or ``None`` if it could not be loaded or is not a plugin.
+        :rtype: Optional[type]
         """
         try:
-            plugin_file = f"{plugin_key}.py"
-            plugin_full_path = Path(folder, plugin_file)
-
-            if not plugin_full_path.exists():
-                raise FileNotFoundError(f"No plugin file found: {plugin_full_path}")
-            spec = importlib.util.spec_from_file_location(plugin_key, plugin_full_path)
-            if spec is not None:
-                module = importlib.util.module_from_spec(spec)
-                if spec.loader is not None:
-                    spec.loader.exec_module(module)
-                else:
-                    raise ValueError(
-                        "Unable to resolve spec.loader while loadinng plugin"
-                    )
-            else:
-                raise ValueError("Unable to resolve spec while loadinng plugin")
+            plugin_full_path = Path(folder, f"{plugin_key}.py")
+            module = self._import_plugin_module(plugin_key, plugin_full_path)
 
             # Get the plugin class from the module
             plugin_class = getattr(module, plugin_key, None)
@@ -221,6 +210,35 @@ class MainModel(QObject):
                 f"Error loading plugin {plugin_key}: {e}", self.__class__.__name__
             )
             return None
+
+    def _import_plugin_module(
+        self, plugin_key: str, plugin_full_path: Path
+    ) -> ModuleType:
+        """
+        Execute one plugin file as a module and return it.
+
+        Separate from ``load_plugin`` so that the failures raised here are documented
+        where they are raised; ``load_plugin`` catches every one of them.
+
+        :param plugin_key: The name to give the module, which is the plugin's name.
+        :type plugin_key: str
+        :param plugin_full_path: The plugin file to execute.
+        :type plugin_full_path: Path
+        :return: The executed module.
+        :rtype: ModuleType
+        :raises FileNotFoundError: If the plugin file does not exist.
+        :raises ValueError: If importlib cannot build a spec or a loader for the file.
+        """
+        if not plugin_full_path.exists():
+            raise FileNotFoundError(f"No plugin file found: {plugin_full_path}")
+        spec = importlib.util.spec_from_file_location(plugin_key, plugin_full_path)
+        if spec is None:
+            raise ValueError("Unable to resolve spec while loadinng plugin")
+        if spec.loader is None:
+            raise ValueError("Unable to resolve spec.loader while loadinng plugin")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
 
     @log(logger=logger)
     def populate_available_plugins(

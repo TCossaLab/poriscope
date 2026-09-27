@@ -29,6 +29,8 @@ import ast
 import builtins
 import json
 import logging
+import os
+import subprocess
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -725,3 +727,47 @@ class TestInitializeComponents:
         assert stub.main_model is model_cls.return_value
         assert stub.main_view is view_cls.return_value
         assert stub.main_controller is controller_cls.return_value
+
+
+# ---------------------------------------------------------------------------
+# importing the app configures no logging of its own
+# ---------------------------------------------------------------------------
+
+_ROOT_HANDLERS_AFTER_IMPORT = """
+import logging
+import poriscope.main_app
+from PySide6.QtGui import QIntValidator
+from PySide6.QtWidgets import QApplication
+from poriscope.utils.BaseLineEdit import BaseLineEdit
+
+app = QApplication([])
+edit = BaseLineEdit()
+edit.setValidator(QIntValidator())
+edit.setText("5")
+edit.isValid()
+root = logging.getLogger()
+print(len(root.handlers), logging.getLevelName(root.level))
+"""
+
+
+def test_importing_the_app_adds_no_root_logging_handler() -> None:
+    """
+    Importing ``main_app`` and validating a line edit leaves the root logger untouched.
+
+    Three widget modules called ``logging.basicConfig(DEBUG)`` at import, and a
+    module-level ``logging.debug`` in ``BaseLineEdit`` calls it implicitly, so the
+    root logger gained a handler of its own beside the one ``configure_logger``
+    installs, and every console line printed twice. Run in a fresh interpreter,
+    because this suite has already imported those modules.
+    """
+    env = dict(os.environ, QT_QPA_PLATFORM="offscreen")
+    result = subprocess.run(
+        [sys.executable, "-c", _ROOT_HANDLERS_AFTER_IMPORT],
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=120,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.split() == ["0", "WARNING"]

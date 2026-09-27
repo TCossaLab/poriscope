@@ -120,6 +120,14 @@
 
 #### General:
 
+* **Fixed every console log line printing twice**: three widget modules configured logging for the whole app when imported
+
+* **Fixed a tab opened after Settings showing the Settings page** once Settings had been opened again
+
+* Fixed the collapsed sidebar's Help and Settings icons acting twice per click, and the missing or wrongly cased Help, logo and Raw Data menu icons
+
+* Fixed closing the clustering settings or Add Filter dialog after finishing its tutorial raising an error
+
 * **Fixed decimal fields in plugin-settings and clustering dialogs on comma-decimal systems** (French, for instance): a pre-filled value no longer disables OK and a typed `0.5` is no longer saved as 5.0; the decimal point is always '.', and a comma disables OK instead of raising when OK is pressed
 
 * **Fixed integer fields with a minimum refusing values typed digit by digit** - `15` can now be typed where the minimum is 10, and a negative value such as PeakFinder's filter thresholds keeps its sign instead of being saved as positive
@@ -301,6 +309,8 @@
 * The Protein tab now asks its database loader for event plot data through a direct call from its controller rather than through the signal bus, so a lookup that fails is reported instead of silently widening the query
 
 #### Clustering:
+
+* The clustering dialog's **Apply** now stays disabled, and says why, until a method is chosen and each of its parameters holds a valid value within scikit-learn's minimum, instead of failing after the database has loaded
 
 * **The Clustering tab now says what is actually wrong with a rejected SQL filter** instead of also telling you to check your column selections, which was the wrong advice for an unknown column, a syntax error or a complete `SELECT` pasted into the filter box
 

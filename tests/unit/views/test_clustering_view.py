@@ -21,6 +21,7 @@ Run with:
     pytest test_clustering_view.py --cov=poriscope --cov-report=html
 """
 
+import sys
 from unittest.mock import patch
 
 import numpy as np
@@ -29,6 +30,7 @@ import pytest
 from PySide6.QtWidgets import QApplication, QVBoxLayout, QWidget
 
 from poriscope.plugins.analysistabs.ClusteringView import ClusteringView
+from poriscope.views.widgets.clustering_settings_widget import ClusteringSettingsDialog
 
 # ===========================================================================
 # Fixtures
@@ -870,3 +872,43 @@ class TestResetActions:
     def test_3d_no_error(self, view):
         with patch.object(view.canvas, "draw"):
             view._reset_actions(axis_type="3d")
+
+
+# ===========================================================================
+# the tutorial finishing inside the settings dialog
+# ===========================================================================
+
+
+def _finish_tutorial_then_cancel(dialog) -> int:
+    """
+    Stand in for ``exec``: click the dialog's tutorial through to Done, then cancel.
+
+    Finishing the tutorial runs the mixin's completion handler, which clears
+    ``walkthrough_dialog``; cancelling then emits ``finished``, which is what the
+    View's close handler listens for.
+    """
+    tutorial = dialog.walkthrough_dialog
+    for _ in range(len(tutorial.steps)):
+        tutorial.next_step()
+    dialog.done(0)
+    return 0
+
+
+def test_cancelling_after_finishing_the_tutorial_raises_nothing(view, monkeypatch):
+    """
+    Closing the clustering settings dialog after its tutorial has finished is quiet.
+
+    The View closes the tutorial when the dialog closes, but finishing the tutorial
+    had already cleared it, so the close handler used to raise ``AttributeError`` on
+    ``None``.
+    """
+    raised = []
+    monkeypatch.setattr(sys, "excepthook", lambda *exc: raised.append(exc[1]))
+    monkeypatch.setattr(ClusteringSettingsDialog, "exec", _finish_tutorial_then_cancel)
+    view._walkthrough_active = True
+    view.columns = ["a", "b"]
+    view.units = ["pA", "us"]
+
+    view._handle_clustering_settings({"db_loader": "db"})
+
+    assert raised == []
