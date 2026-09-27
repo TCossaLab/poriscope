@@ -84,22 +84,11 @@ docstring/comment-only, so no tests and no changelog entry:
   known violations" beside a live 2 and "22 of 24 data plugins" beside "all 24"; both Chimera
   readers' `get_empty_settings` docstrings name a `.mat` settings file their JSON-based
   `_get_configs` never reads (20240101 `:410-415`, 20240501 `:380-385`).
-- **Two stale docstrings in the app shell**: `SerializeDecorator.py` says `__wrapped__`
-  matters for "the signal dispatcher in `MainController`", which is gone, and
-  `main_model.py`'s `load_plugin` has a Google-style docstring with the wrong parameters.
+- **`SerializeDecorator.py`'s docstring is stale**: it says `__wrapped__` matters for "the
+  signal dispatcher in `MainController`", which is gone.
 - **`DECISIONS.md:1772` rests on a premise that did not happen**: that `WalkthroughMixin`
   folds into the base. It is still a mixin with four hosts, two outside `MetaView`; correct the
   entry or schedule the fold.
-- **Remove the leftovers of the bus on `MetaController`**: `call`/`_get_plugin`/
-  `_plugin_instances` (`MetaController.py:184-262`) duplicate `MetaModel`'s with no production
-  caller, plus `MainController.get_plugin_instance(…, callback)` (`:377`, tested but uncalled),
-  `MetaController.ignore()` and `MainController.config_path` (`:52`). Breaking on a `Meta*` base.
-
-### From the 2026-09-03 review - high
-
-- **`SQLitePeakDBLoader.py:150-153`'s comment is stale** since `f6f75a8e`: it says
-  `query_database_directly` returns None for an empty result, which now returns an empty
-  frame. Comment-only.
 
 ### From the 2026-09-03 review - CI, packaging and tooling (not logic changes - no plan needed)
 

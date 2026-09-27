@@ -4,7 +4,7 @@ Calling a Data Plugin
 =====================
 
 An analysis tab reaches a data plugin by **calling it**, through ``call()`` on its
-Controller or its Model:
+Model:
 
 .. code-block:: python
 
@@ -21,10 +21,10 @@ method, and returns whatever the method returns. A failure raises where it happe
 Where the call goes
 -------------------
 
-``call()`` lives on ``MetaController`` and on ``MetaModel``, so both halves of a tab
-have it. Which you use follows the tab's own layering: commands arrive at the
-Controller, and computation belongs in the Model, so a Controller slot answering a
-View intent normally calls ``self.model.call(...)``.
+``call()`` lives on ``MetaModel``. Commands arrive at the Controller and computation
+belongs in the Model, so a Controller slot answering a View intent calls
+``self.model.call(...)``. ``MetaController`` only forwards the instances it is handed to
+its Model; it keeps no copy and has no ``call()`` of its own.
 
 The plugin instances are **pushed** to every tab as they are created, renamed,
 reconfigured and destroyed, so nothing is resolved lazily and nothing goes stale.

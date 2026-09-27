@@ -28,7 +28,7 @@ import copy
 import logging
 import sys
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 from PySide6.QtCore import QObject, Slot
 
@@ -49,7 +49,6 @@ class MainController(QObject):
         super().__init__()
         self.main_model = main_model
         self.main_view = main_view
-        self.config_path = Path(Path(__file__).resolve().parent, "..", "configs")
 
         # analysis tab managers
         self.analysis_tabs: Dict[str, Any] = (
@@ -375,13 +374,6 @@ class MainController(QObject):
             message = "Session reset. Saved session files are untouched."
             self.logger.info(message)
         self.main_view.add_text_to_display(message, "MainController")
-
-    @log(logger=logger)
-    @Slot(str, str, object)
-    def get_plugin_instance(
-        self, metaclass: str, key: str, callback: Callable[[object], None]
-    ) -> None:
-        callback(self.data_plugin_controller.get_plugin_instance(metaclass, key))
 
     @log(logger=logger)
     def _lookup_historical_settings(

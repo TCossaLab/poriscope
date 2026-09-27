@@ -62,8 +62,8 @@ The five rules:
    ``views/widgets/``. **Reads zero since 2026-09-06**, and stays in as a ratchet
    against a new inversion appearing.
 5. **No analysis-tab module reaches a data plugin except through ``call()``.**
-   ``MetaController.call`` and ``MetaModel.call`` are the whole plugin-facing API a tab
-   gets; a tab that resolves an instance for itself, or imports a
+   ``MetaModel.call`` is the whole plugin-facing API a tab gets (a Controller slot uses
+   ``self.model.call(...)``); a tab that resolves an instance for itself, or imports a
    concrete plugin class, has gone around it. Added 2026-09-07 and **reads zero**, so
    it is a ratchet from the start rather than a backlog. Python cannot enforce this at
    runtime without inspecting the call stack on every plugin call, which would cost
