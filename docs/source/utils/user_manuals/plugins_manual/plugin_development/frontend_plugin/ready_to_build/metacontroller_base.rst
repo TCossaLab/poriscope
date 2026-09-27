@@ -22,7 +22,7 @@ As soon as you subclass and instantiate a :ref:`MetaController`, the following h
 
 No need to manually handle cross-plugin communication — :ref:`MetaController` takes care of:
 
-- ``call()`` for reaching a data plugin, and typed signals for asking the application to create, edit or delete one
+- Forwarding the live data plugin instances to the Model, so a slot reaches a plugin with ``self.model.call(...)``, and typed signals for asking the application to create, edit or delete one
 - Returning the plugin's result directly from ``call()`` - there is no return function to route
 - Updating the main display with log messages via ``add_text_to_display``
 

@@ -1,8 +1,8 @@
 """
 The direct plugin-call path that replaced the global signal bus.
 
-The return-value signal bus is replaced by ``call`` on ``MetaController`` and
-``MetaModel``, with live plugin instances **pushed** down the notification path that
+The return-value signal bus is replaced by ``call`` on ``MetaModel``, with live plugin
+instances **pushed** through ``MetaController`` to the Model down the notification path that
 already refreshes the plugin *names* a View shows in its comboboxes. The lookup
 behind it is ``_get_plugin``, private, so that ``call()`` is the only public door -
 see point 3 below.
@@ -28,7 +28,7 @@ So the two things these tests hold are the two things that were wrong with the b
    ``check_mvc_boundary``'s rule 5 ratchets the ways around them at zero.
 
 No Qt widgets: ``MetaController`` and ``MetaModel`` are built by ``__new__`` so that the
-methods under test can be reached without a view, a model, or a running application.
+methods under test can be reached without a view or a running application.
 """
 
 from typing import Any, Dict, Optional
@@ -122,25 +122,17 @@ def _model(instances: Optional[Dict[str, Dict[str, object]]] = None) -> MetaMode
     return model
 
 
-def _controller(
-    instances: Optional[Dict[str, Dict[str, object]]] = None,
-    model: Optional[Any] = None,
-) -> MetaController:
+def _controller(model: Any) -> MetaController:
     """
-    Build a MetaController without Qt, optionally with instances already pushed.
+    Build a MetaController without Qt, holding the given model.
 
-    :param instances: metaclass -> key -> instance, or None for an empty map
-    :type instances: Optional[Dict[str, Dict[str, object]]]
-    :param model: the model to forward to, or None
-    :type model: Optional[Any]
+    :param model: the model the controller forwards to
+    :type model: Any
     :return: the controller
     :rtype: MetaController
     """
     controller = MetaController.__new__(MetaController)  # type: ignore[type-abstract]
-    controller._plugin_instances = {}
     controller.model = model
-    if instances is not None:
-        controller.set_plugin_instances(instances)
     return controller
 
 
@@ -393,27 +385,19 @@ class TestPushedInstancesCannotGoStale:
 
 
 # ===========================================================================
-# MetaController - the same surface, plus the hand-off to the Model
+# MetaController - the hand-off to the Model
 # ===========================================================================
 
 
-class TestControllerSurface:
-    """The Controller has the same two methods and forwards the push down."""
-
-    def test_it_resolves_and_calls(self) -> None:
-        """Same behaviour as the Model's, for the cases that are Controller work."""
-        controller = _controller({"MetaDatabaseLoader": {"L": _Loader()}})
-
-        assert (
-            controller.call("MetaDatabaseLoader", "L", "get_experiment_id_by_name", "e")
-            == 7
-        )
+class TestControllerForwardsToTheModel:
+    """The Controller keeps no copy of the instances; it passes them to the Model."""
 
     def test_it_forwards_the_push_to_the_model(self) -> None:
         """
         The Model is where the calls belong, so it must receive the instances.
 
-        This is the connection that makes ``self.call(...)`` work in a Model at all.
+        This is the connection that makes ``self.call(...)`` work in a Model at all,
+        and the only route a Controller slot has to a plugin, ``self.model.call(...)``.
         """
         model = _model()
         controller = _controller(model=model)
@@ -422,23 +406,3 @@ class TestControllerSurface:
         controller.set_plugin_instances({"MetaDatabaseLoader": {"L": loader}})
 
         assert model._get_plugin("MetaDatabaseLoader", "L") is loader
-
-    def test_a_controller_with_no_model_yet_does_not_raise(self) -> None:
-        """
-        Pushed before ``_init`` has built the model.
-
-        ``MainController`` pushes to every registered tab, and a tab's model is built
-        by its own ``_init``; the ordering is not something this class controls.
-        """
-        controller = _controller(model=None)
-
-        controller.set_plugin_instances({"MetaDatabaseLoader": {"L": _Loader()}})
-
-        assert controller._get_plugin("MetaDatabaseLoader", "L") is not None
-
-    def test_an_unknown_key_raises_on_the_controller_too(self) -> None:
-        """The failure mode does not differ between the two classes."""
-        controller = _controller({"MetaDatabaseLoader": {}})
-
-        with pytest.raises(KeyError):
-            controller._get_plugin("MetaDatabaseLoader", "nope")

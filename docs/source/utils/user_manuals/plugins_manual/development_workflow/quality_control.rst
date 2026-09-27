@@ -1290,7 +1290,8 @@ work a Model should do. Five rules describe the boundary the 2.0.0 refactor put 
    ``poriscope.plugins.analysistabs.utils.walkthrough`` is a layering inversion: the shell
    depending on a plugin.
 5. **No analysis-tab module reaches a data plugin except through** ``call()``.
-   ``MetaController.call`` and ``MetaModel.call`` are the whole plugin-facing API a tab gets;
+   ``MetaModel.call`` is the whole plugin-facing API a tab gets, and a Controller slot uses
+   ``self.model.call(...)``;
    resolving an instance directly, touching ``data_plugin_controller``, or importing a
    concrete plugin class has gone around it.
 

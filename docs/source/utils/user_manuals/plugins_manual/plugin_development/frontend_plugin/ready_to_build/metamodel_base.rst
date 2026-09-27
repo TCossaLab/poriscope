@@ -46,8 +46,8 @@ from a plugin:
 
 **Failures raise at the call site** rather than being logged somewhere else, so a
 ``try``/``except`` around the call is a working guard and the Controller can report what
-went wrong. ``MetaController.call`` is the same method for the Controller's own use;
-neither the View nor the Controller should reach a plugin any other way.
+went wrong. A Controller slot reaches a plugin through its Model, with
+``self.model.call(...)``; neither the View nor the Controller should reach one any other way.
 
 **Computation you inherit**
 
