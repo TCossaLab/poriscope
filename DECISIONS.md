@@ -10,6 +10,24 @@ which ran through August 2026 and is complete. The step numbers only date the de
 
 ---
 
+## 2026-09-27 - Replacing a channel does not renumber `events.id`
+
+**Context.** After a re-commit replaced a channel, its rows in the events file took new,
+higher `events.id` values instead of restarting (manual pass, 2026-09-27).
+
+**Decision** (Kyle, 2026-09-27). Not a defect; `events.id` and `channels.id` are storage keys
+and are never renumbered. `AUTOINCREMENT` guarantees a row id is never reused, both tables
+hold every channel's rows in one sequence, so restarting one channel's ids would collide with
+another channel's rows or force renumbering them. The per-channel `event_id`, which does
+restart, is the only event number anything reads.
+
+**Evidence.** `SQLiteEventLoader` selects by `(channel_id, event_id)`, counts and lists by
+`channel_id`, and uses `channels.id` only as a join key (`:131`, `:200`, `:295`).
+
+**Revisit if** something starts reading `events.id` as a position or showing it to the user.
+
+---
+
 ## 2026-09-26 - Non-finite event data is rejected in the base, before any fitter
 
 **Context.** A NaN or infinite sample poisons every statistic a fitter computes, and each

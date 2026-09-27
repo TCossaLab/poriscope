@@ -293,7 +293,10 @@ class SQLiteEventWriter(MetaWriter):
         """
         Permanently delete the given channel's row (and, via cascading foreign keys,
         its associated event rows) from the database, so a subsequent write starts
-        from a clean slate. This is destructive, not a resource-cleanup step.
+        from a clean slate. This is destructive, not a resource-cleanup step. The rows
+        written afterwards take new ``id`` values rather than the deleted ones:
+        ``AUTOINCREMENT`` never reuses a row id, and events are addressed by
+        ``(channel_id, event_id)``, whose ``event_id`` does start again.
 
         :param channel: channel ID. Note that `channel=None` does not reset all
             channels; SQL `channel_id = NULL` never matches, so no rows are deleted.
