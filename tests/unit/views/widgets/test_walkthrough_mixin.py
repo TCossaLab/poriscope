@@ -217,7 +217,7 @@ class TestRunNextWalkthroughStep:
 
 
 # ---------------------------------------------------------------------------
-# _reposition_dialog – fallback branches (lines 240, 253, 265)
+# _reposition_dialog – the primary position and its two fallbacks
 # ---------------------------------------------------------------------------
 
 
@@ -249,7 +249,7 @@ class TestRepositionDialogFallbacks:
         reason="Qt object lifetime makes this unreliable across platforms"
     )
     def test_candidate_fits_calls_move_and_returns(self, qtbot):
-        """Primary candidate fits → dialog.move(pos) called (lines 240-241).
+        """Primary candidate fits → dialog.move(pos) called.
         Parent is enormous so 'right of widget' candidate fits inside window_rect."""
         from poriscope.views.widgets.walkthrough import Overlay, StepDialog
 
@@ -295,7 +295,7 @@ class TestRepositionDialogFallbacks:
         reason="Qt object lifetime makes this unreliable across platforms"
     )
     def test_fallback_below_branch(self, qtbot):
-        """All candidates fail, fallback_below fits → lines 253-254 hit."""
+        """All candidates fail, fallback_below fits → the dialog moves below."""
         parent, dialog = self._setup(qtbot)
 
         move_calls = []
@@ -323,7 +323,7 @@ class TestRepositionDialogFallbacks:
         assert len(move_calls) >= 1
 
     def test_fallback_above_branch(self, qtbot):
-        """Candidates + below fail, fallback_above fits → lines 265-266 hit."""
+        """Candidates + below fail, fallback_above fits → the dialog moves above."""
         parent, dialog = self._setup(qtbot)
 
         move_calls = []
@@ -363,7 +363,7 @@ class TestRepositionDialogFallbacks:
 
 
 # ---------------------------------------------------------------------------
-# check_next_view auto-advance (line 128-131) and pseudo while-loop (line 197)
+# check_next_view auto-advance, and the loop that skips pseudo steps
 # ---------------------------------------------------------------------------
 
 
@@ -371,7 +371,7 @@ class TestCheckNextViewAndPseudo:
     def test_check_next_view_auto_advances_on_view_change(self, qtbot):
         """
         When check_next_view fires and current_view != target_view,
-        _handle_walkthrough_done is called with is_pseudo=True (lines 128-131).
+        _handle_walkthrough_done is called with is_pseudo=True.
         """
         real_widget = QWidget()
         qtbot.addWidget(real_widget)
@@ -415,7 +415,7 @@ class TestCheckNextViewAndPseudo:
         """
         is_pseudo=True with steps [MainView, OtherView, MainView]:
         after completing MainView step (index=0), pseudo should scan forward,
-        skip OtherView (index 1, line 197 hit), and find next MainView.
+        skip OtherView (index 1, a pseudo step), and find next MainView.
         """
         real_widget = QWidget()
         qtbot.addWidget(real_widget)
@@ -438,7 +438,7 @@ class TestCheckNextViewAndPseudo:
 
         with patch.object(w, "_run_next_walkthrough_step") as mock_run:
             w._handle_walkthrough_done(0, is_pseudo=True)
-            # index 1 is OtherView (skipped via line 197), index 2 is MainView
+            # index 1 is OtherView (skipped as a pseudo step), index 2 is MainView
             mock_run.assert_called_once()
             assert w._walkthrough_index == 2
 

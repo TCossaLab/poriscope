@@ -11,7 +11,7 @@ timeseries data (event detection, fitting, clustering, protein analysis, etc.). 
 ## Setup
 
 ```
-pip install -e ".[dev]"
+pip install -e ".[dev,docs]"   # [docs] is Sphinx, which the post-merge hook runs
 python scripts/setup_hooks.py   # git hooks (pre-commit, post-merge) + git flow tag prefix
 ```
 
@@ -54,8 +54,10 @@ commit through.
 
 `pydoclint` checks a docstring's documented parameters, return type and raised exceptions
 against the real signature and body — see `[tool.pydoclint]` in `pyproject.toml` for the
-settings and the reasoning behind each. A function with no docstring is skipped entirely;
-a documented one must carry type hints that agree with its `:type:`/`:rtype:`. **Every
+settings and the reasoning behind each. A function with no docstring is skipped entirely,
+and so is a summary-only one - including a Google-style `Args:` docstring, which reads as
+summary under `style = "sphinx"`; a documented one must carry type hints that agree with its
+`:type:`/`:rtype:`. Its raise check also counts exceptions a local `try` catches. **Every
 function under `poriscope/` is annotated, with no exclusions.**
 
 Keep `.pydoclint-baseline.txt` empty: prefer fixing the violation, and do not let the file

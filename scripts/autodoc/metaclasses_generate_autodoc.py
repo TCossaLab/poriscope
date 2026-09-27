@@ -132,7 +132,7 @@ def is_property(method_node: ast.FunctionDef) -> bool:
     ``.. automethod::`` on a property makes Sphinx warn that the object "is not a
     callable object", and both docs workflows build with ``-W``, so one property
     documented as a method turns the docs job red. ``MetaSubsetTabView``'s
-    ``_subset_controls`` did exactly that from the moment Step 3b added it.
+    ``_subset_controls`` did exactly that when it was first added.
 
     Only the bare ``@property`` form is recognised, which is every property under
     ``poriscope/utils/`` today; a setter is written ``@<name>.setter`` and is

@@ -161,7 +161,7 @@ Windows
 
    If no candidate passes, the hook prints what it skipped and exits without
    running anything, which is the intended outcome - install the project with
-   ``pip install -e ".[dev]"`` and run ``python scripts/hooks/post-merge.py`` by
+   ``pip install -e ".[dev,docs]"`` and run ``python scripts/hooks/post-merge.py`` by
    hand to catch up.
 
 Linux and macOS

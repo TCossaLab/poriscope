@@ -33,57 +33,17 @@ Silent data corruption, wrong science in the docs, user data loss, and release h
 The approved plan for this section's Phase 1 items (release prep) is at
 <https://claude.ai/artifact/NAGuHCf6pisqD47S9kmyDp>.
 
-### Four plan-step citations survived the sweep (2026-09-24)
-
-`refactor_2.0.0.md` is deleted when 2.0.0 ships. Rewrite each as the mechanism it stands for;
-docstring/comment-only, so no tests and no changelog entry:
-`scripts/autodoc/metaclasses_generate_autodoc.py:128` ("Step 3b"),
-`tests/unit/scripts/test_duplication_ratchet.py:5` ("Steps 3a-3c"),
-`tests/unit/scripts/test_mvc_boundary_allowlist.py:7` ("Steps 3-5"),
-`tests/integration/flows/test_clustering_flow_no_gui.py:10` ("Steps 3-5").
-
-### Types, tests and CI
-
-- **Stale line-number comments** in `test_data_plugin_controller.py:903-1126` ("lines
-  88-91", "lines 56-73") point into docstrings since `edit_plugin` was split. Comment-only.
-
 ### Docs and records
 
 - **`future_refactors_and_features.md` analyses deleted code** with no status markers:
   Part 5 #3 (`:871-880`) and Part 6 #2 (`:1044`) study `handle_global_signal`/`_relay_global_signal`,
-  Part 1's `BasePluginControls` exists as `MetaControls`, and it cites `global_signal` 10 times.
-  Delete what the refactor made moot; tag the rest open or partial.
-- **Distil `refactor_2.0.0.md` before deleting it at release**: its ~96 method rules go
-  to the `planning-and-executing-changes` / `refactoring-codebases` skills, lasting decisions to
-  `DECISIONS.md`, then delete it and its `CLAUDE.md` entry.
-- **The dev install instructions disagree**: `README.md:15` and
-  `plugins_manual/getting_started.rst:59` say `pip install -e .`, `CLAUDE.md` and the post-merge
-  hook need `.[dev]`, and the getting-started page never mentions `setup_hooks.py`; README typos
-  ("dor", "run_"). No CONTRIBUTING.md.
-- **Stale claims in the docs and changelog**: `quality_control.rst:1284` says the tab
-  layer "never grew a real Model" (the Models are 2,608 lines); the 2.0.0 changelog cites "113
-  known violations" beside a live 2 and "22 of 24 data plugins" beside "all 24"; both Chimera
-  readers' `get_empty_settings` docstrings name a `.mat` settings file their JSON-based
-  `_get_configs` never reads (20240101 `:410-415`, 20240501 `:380-385`).
-- **`SerializeDecorator.py`'s docstring is stale**: it says `__wrapped__` matters for "the
-  signal dispatcher in `MainController`", which is gone.
-- **`DECISIONS.md:1772` rests on a premise that did not happen**: that `WalkthroughMixin`
-  folds into the base. It is still a mixin with four hosts, two outside `MetaView`; correct the
-  entry or schedule the fold.
-
-### From the 2026-09-03 review - CI, packaging and tooling (not logic changes - no plan needed)
-
-- **`test_mapping_audit.csv` is stale and nothing executable reads it.** Its
-  `LooseMatchFound` column still names files renamed by the very commit that added it
-  (`43d556d`). Referenced by nothing but this entry. Regenerate or drop.
-
-### From the 2026-09-03 review - Docs
-
-- **One stale doc claim.** `future_refactors_and_features.md:283` still asks someone to
-  confirm whether `PluginManagerPopup.py` is dead code; it was deleted in `d0dbc53`.
-
-### Other queued items
-
+  Part 1's `BasePluginControls` exists as `MetaControls`, it cites `global_signal` 10 times,
+  and `:283` still asks whether `PluginManagerPopup.py` is dead code (deleted in `d0dbc53`).
+  Fold what is still open into this file and delete it.
+- **Distil `refactor_2.0.0.md` before deleting it at release**: all 97 method rules are
+  already in the skills; what remains is 3 lessons and ~10 additions from its prose, 5
+  decisions `DECISIONS.md` lacks, and the pointers into it. Then delete it and its
+  `CLAUDE.md` entry.
 
 ## 2.1 - trust the numbers
 
@@ -382,12 +342,12 @@ Breaking, and to be called out as such whenever it lands.
   should raise.
 - **Silent scientific fallbacks with no metadata flag, in `CUSUM.py`.** For a sublevel
   shorter than `rise_time`: `sublevel_current` becomes the single last sample before the next
-  level's onset instead of a median (`:438`), `sublevel_stdev` becomes `baseline_std` (`:466`), and
+  level's onset instead of a median (`:439`), `sublevel_stdev` becomes `baseline_std` (`:467`), and
   `sublevel_blockage` becomes an unsigned max-absolute instead of a signed mean deviation
-  (`:493-502`). The retry loop at `:370-372` fits different events in one channel at 1.5^0
-  to 1.5^4 times the user's step size and records which nowhere. `:215`'s
+  (`:494-503`). The retry loop at `:371-373` fits different events in one channel at 1.5^0
+  to 1.5^4 times the user's step size and records which nowhere. `:216`'s
   `np.std(data[-padding_after:])` returns the whole event when `padding_after == 0` and its
-  sibling returns `nan` when `padding_before == 0`, poisoning `step_size` at `:221` (both
+  sibling returns `nan` when `padding_before == 0`, poisoning `step_size` at `:222` (both
   verified). `Step Size` has no default and `_validate_settings` is `pass`, so `None`/`0.0`
   reach the division and every event is rejected with an opaque key.
 - **`replace_raw_settings_option` is dead in practice.** `BaseDataPlugin.py:356-387` exists
@@ -413,7 +373,7 @@ Breaking, and to be called out as such whenever it lands.
   guarded by `if ! git diff --quiet`, so it only fires when the manual hooks change a file.
 - **No Windows CI job.** Every matrix is single-entry and none runs `windows-latest`, so
   Linux takes the opposite branch from the shipped platform at the platform-conditional sites
-  (10 of them) - including `WaveletFilter.py:178-179`'s `os.add_dll_directory`, in the one module
+  (10 of them) - including `WaveletFilter.py:181-182`'s `os.add_dll_directory`, in the one module
   that loads a native binary.
 - **`release.yml` holds `contents: write` plus a PyPI OIDC token (`:12-14`) while calling five
   floating action tags**, three of them third-party, none SHA-pinned. It installs `mingw-w64`
@@ -435,13 +395,13 @@ Breaking, and to be called out as such whenever it lands.
 ### From the 2026-09-03 review - CUSUM follow-ons (the variance-reset fix landed 2026-09-03)
 
 - **The C resets the counters on any threshold crossing; this implementation resets only on
-  an accepted jump**, (`CUSUM.py:314`), so a crossing rejected by the `rise_time` guard still accumulates
+  an accepted jump**, (`CUSUM.py:316`), so a crossing rejected by the `rise_time` guard still accumulates
   `varS` across the rejected boundary - the same bias the landed fix removed, just rarer. It
   also leaves `gpos`/`gneg` above threshold, so the next iteration re-detects and re-rejects
   the same jump. Moving to the unconditional form changes detection behaviour and needs
   validating against reference data first.
 - **The `length - jump > rise_time` half of the C's edge guard is still missing**, already
-  flagged by a comment in the loop (`CUSUM.py:301-302`). Adding it would suppress a transition detected too close
+  flagged by a comment in the loop (`CUSUM.py:302-303`). Adding it would suppress a transition detected too close
   to the end of an event, which the C refuses.
 
 ### From the 2026-08-25 structural audit
@@ -508,9 +468,9 @@ Tab state onto the Models, heavy work off the GUI thread, event-finder and CUSUM
 
 - **The CUSUM family's duplication was never ruled on.** `eventfitters` is 193 removable
   (`measure_duplication.py --verbose`): `_populate_event_metadata` (72) and four `_define_*`
-  (88) shared by `CUSUM`/`NoFitter` (`CUSUM.py:573,668-745`, `NoFitter.py:422,517-594`), plus 33
-  of no-op stubs. `ClassicCUSUM.py:94`'s
-  `_locate_sublevel_transitions` is a 202/205-line near-copy of `CUSUM.py:178`, 6 lines
+  (88) shared by `CUSUM`/`NoFitter` (`CUSUM.py:574,669-746`, `NoFitter.py:428,523-600`), plus 33
+  of no-op stubs. `ClassicCUSUM.py:96`'s
+  `_locate_sublevel_transitions` is a 202/205-line near-copy of `CUSUM.py:179`, 6 lines
   differing. It was booked as a floor with no recorded reason: rule on it or take it.
 - **`format_axis_label` still exists in three places** - a module function at `ProteinView.py:2357`,
   a method at `MetadataView.py:2822` and inlined at `ClusteringView.py:729`. The behavioural drift is

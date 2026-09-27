@@ -70,7 +70,7 @@ To install directly from the latest commit on GitHub (does not track future upda
 
    This installs the package from source but does **not** give you an editable codebase.
    If you want to browse or modify the code locally, refer to :ref:`getting_started`
-   for the full developer setup using ``git clone`` and ``pip install -e .``.
+   for the full developer setup using ``git clone`` and ``pip install -e ".[dev,docs]"``.
 
 Launching Poriscope
 -------------------

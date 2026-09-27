@@ -1,10 +1,8 @@
 """
 The duplication ratchet: the analysis-tab families must match their baseline exactly.
 
-This is the instrument that makes the 2.0.0 refactor's central claim checkable.
-Steps 3a-3c promote byte-identical methods to shared bases; the whole point is
-that the copies are deleted, and until now nothing would have noticed if they
-were not. ``.duplication-baseline.json`` records the counts and this test holds
+Promoting a byte-identical method to a shared base only pays off if the copies are
+deleted, and without this test nothing would notice if they were not. ``.duplication-baseline.json`` records the counts and this test holds
 them.
 
 **The check is exact, not ``<=``.** A rise means duplication was added. A fall is

@@ -374,8 +374,8 @@ class ChimeraReader20240101(MetaReader):
         The keys this plugin adds:
 
         - ``Input File`` - the Chimera ``.log`` file to read. Everything else - sample
-          rate, bit depth, scaling - comes from the matching ``.mat`` settings file in
-          the 2024-01-01 layout.
+          rate, bit depth, scaling - comes from the JSON header embedded at the start of
+          that file, ahead of its ``<END HEADER>`` marker.
 
         :param globally_available_plugins: a dict containing all data plugins that exist to date, keyes by metaclass
         :type globally_available_plugins: Optional[Dict[str, List[str]]]

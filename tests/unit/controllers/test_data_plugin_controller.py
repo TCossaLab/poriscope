@@ -875,7 +875,7 @@ def test_edit_plugin_logs_info_on_apply_settings_failure(
     ctrl.add_text_to_display.emit.assert_called_once()
 
 
-# ---- edit_plugin: settings_key in available_metaclasses (lines 88-91) ----
+# ---- edit_plugin: plugin-typed settings become dropdowns (_coerce_plugin_references_to_keys) ----
 
 
 def test_edit_plugin_updates_app_settings_for_metaclass_keys(
@@ -884,7 +884,7 @@ def test_edit_plugin_updates_app_settings_for_metaclass_keys(
     mocker: MockerFixture,
 ) -> None:
     """
-    Cover lines 88-91: when a settings key matches an available metaclass,
+    Cover ``_coerce_plugin_references_to_keys``: when a settings key matches an available metaclass,
     set its Type to str and populate Options from the instantiated plugins list.
 
     :param mock_model: Mocked data plugin model.
@@ -924,7 +924,7 @@ def test_edit_plugin_updates_app_settings_for_metaclass_keys(
     assert captured["Options"] == ["loader1"]
 
 
-# ---- edit_plugin: parents unregister loop (lines 110-111) ----
+# ---- edit_plugin: parents unregister loop (_unregister_parent_dependent_links) ----
 
 
 def test_edit_plugin_unregisters_from_parents(
@@ -933,7 +933,7 @@ def test_edit_plugin_unregisters_from_parents(
     mocker: MockerFixture,
 ) -> None:
     """
-    Cover lines 110-111: unregister from each parent before editing.
+    Cover ``_unregister_parent_dependent_links``: unregister from each parent before editing.
 
     :param mock_model: Mocked data plugin model.
     :param mock_view: Mocked data plugin view.
@@ -958,7 +958,7 @@ def test_edit_plugin_unregisters_from_parents(
     parent_instance.unregister_dependent.assert_called_once_with("MetaReader", "r1")
 
 
-# ---- edit_plugin: key rename path (lines 120-170) ----
+# ---- edit_plugin: key rename path (_rename_plugin, _update_dependents_after_rename) ----
 
 
 def test_edit_plugin_rename_key_updates_dependents_and_emits(
@@ -1098,7 +1098,7 @@ def test_edit_plugin_set_key_exception_logs_and_returns(
     mock_model.update_plugin_key.assert_not_called()  # type: ignore[attr-defined]
 
 
-# ---- validate_and_instantiate_plugin: except Exception (lines 56-73) ----
+# ---- validate_and_instantiate_plugin: _prepare_new_plugin_settings's except handler ----
 
 
 def test_validate_and_instantiate_plugin_logs_exception_on_key_setup_error(
@@ -1108,7 +1108,7 @@ def test_validate_and_instantiate_plugin_logs_exception_on_key_setup_error(
     mocker: MockerFixture,
 ) -> None:
     """
-    Cover lines 56-73: the except Exception block around key/settings setup
+    Cover ``_prepare_new_plugin_settings``'s except handler around key/settings setup
     when settings is None and set_key raises.
 
     :param controller: Controller under test.

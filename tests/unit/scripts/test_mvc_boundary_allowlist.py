@@ -1,12 +1,12 @@
 """
 The MVC boundary gate: the analysis tabs must match their allowlist exactly.
 
-``.mvc-boundary-allowlist.json`` records every known violation of the three rules
-in ``scripts/check_mvc_boundary.py`` - a View emitting on the plugin bus, a View
-importing a computation library, a Controller reading a View private. **The
-allowlist reaching zero is Steps 3-5 of the 2.0.0 refactor finishing**, which is
-why it is a progress metric rather than a pass/fail gate: every entry is a known
-violation, recorded so a *new* one cannot slip in unnoticed beside it.
+``.mvc-boundary-allowlist.json`` records every known violation of the five rules
+in ``scripts/check_mvc_boundary.py`` - among them a View importing a computation
+library and a Controller reading a View private. Every entry is a violation that
+remains - two today, both a View importing numpy, recorded as a floor - which is why
+it is a progress metric rather than a pass/fail gate: each is recorded so a *new* one
+cannot slip in unnoticed beside it.
 
 The check is exact in both directions. A rise is a new violation. A fall is
 progress and fails too, so the win is recorded in the same commit that earned it -

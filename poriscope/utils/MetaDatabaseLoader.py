@@ -1420,7 +1420,7 @@ class MetaDatabaseLoader(BaseDataPlugin):
         :param query: query to  run on the database
         :type query: str
 
-        :return: List of numpy arrays containing retrieved data.
+        :return: The matching rows, empty if nothing matched, or ``None`` if the query failed validation or could not be run - a failure already logged here or by the loader.
         :rtype: Optional[pd.DataFrame]
         """
         valid, debug = self.validate_filter_query(query)

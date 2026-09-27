@@ -355,8 +355,8 @@ After running:
    *project-wide*, and this is settled rather than pending. Each of ``B905``, ``B904``,
    ``B007``, ``S110``, ``S112`` and ``S101`` was run once as an audit and its findings in
    maintained code fixed. What keeps each one from becoming a gate differs by rule.
-   ``S101`` would flag every ``assert`` in the test suite, where 3,743 of its 3,750 sites
-   are, so suppressing it there would suppress essentially all of it. ``B905`` needs a
+   ``S101`` would flag every ``assert`` in the test suite, where 3,674 of its 3,681 sites
+   are (2026-09-27), so suppressing it there would suppress essentially all of it. ``B905`` needs a
    per-site ``strict=`` judgement, and at least one call cannot be proven equal-length in
    advance. The handful of sites left for ``B904``, ``B007``, ``S110`` and ``S112`` are
    spread across the test suite and the fitter plugins another developer maintains. In each case enabling the rule would require a
@@ -470,6 +470,15 @@ Concretely, for every documented function, ``pydoclint`` checks that:
    ``pydoclint`` does **not** require every function to have a docstring. It only
    holds a docstring accountable *if one already exists* — if you didn't write one,
    ``pydoclint`` has nothing to check.
+
+   Two more gaps follow from its defaults. A docstring with only a summary - no
+   ``:param:``, ``:return:`` or ``:raises:`` fields - is treated as short and not checked,
+   and so is one written in another style: a Google ``Args:`` section reads as plain
+   summary under ``style = "sphinx"``, so its parameters are never compared with the
+   signature. And its raise check counts an exception the function raises even when a
+   local ``try`` in the same function catches it; move such code into a helper that
+   documents its own ``:raises:`` rather than documenting an exception that never
+   escapes.
 
    It *does* require that a documented function's signature carry type hints, and
    that those hints agree with the docstring's ``:type:`` and ``:rtype:`` fields. The
@@ -1283,8 +1292,9 @@ Analysis-Tab MVC Boundary
 
 Like the ratchet above, this one affects you if you edit the analysis tabs, the widgets they
 are built from, the app shell's own views and controllers, or the shared bases under
-``poriscope/utils/``. The analysis-tab layer never grew a real Model, so its Views absorbed
-work a Model should do. Five rules describe the boundary the 2.0.0 refactor put back:
+``poriscope/utils/``. Before 2.0.0 the analysis tabs had no real Model, so their Views
+absorbed work a Model should do; 2.0.0 moved that work onto the tab Models. Five rules
+describe the boundary it put back:
 
 1. **No View emits on the plugin bus, and the bus does not come back.** The
    ``global_signal`` bus was removed in 2.0.0, so this rule can no longer fire against

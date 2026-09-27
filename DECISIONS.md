@@ -1962,8 +1962,10 @@ families - `update_plot_features` is byte-identical between `EventAnalysisView` 
 onto an existing base if it is stateless and self-contained, onto a new intermediate base if
 it carries state, abstract hooks or new imports.
 
-**Evidence.** `WalkthroughMixin` is the codebase's only mixin and Steps 3f/3g fold it into
-the base, so adding a second while removing the first would leave two competing composition
+**Evidence.** `WalkthroughMixin` is the codebase's only mixin. 2.0.0 put it on `MetaView`'s
+bases, so no tab declares it, but it stays a mixin because `MainView` and two dialogs outside
+the `Meta*` chain host it (corrected 2026-09-27; the plan had been to fold it away). It is the
+one sanctioned exception, and a second mixin would still leave two competing composition
 mechanisms and no rule for choosing. The split above is what keeps `MetaView` - the published
 plugin API, exported from `exposed.py` and documented as the extension point - from widening
 with contracts most subclasses do not participate in: folding 3b's View half into it would
@@ -2856,7 +2858,8 @@ gate.
 mypy is scoped to `poriscope/`, and measuring these under `poriscope/` is what produced the
 wrong answer originally:
 
-- **`S101` - 2,250 sites: 7 in `NanoTrees.py`, 2,243 in `tests/`.** Ownership is not the
+- **`S101` - 3,681 sites: 7 in `NanoTrees.py`, 3,674 in `tests/`** (re-measured 2026-09-27;
+  2,250 when first counted). Ownership is not the
   obstacle at all; `assert` is the test suite's fundamental idiom, so a `per-file-ignores`
   for `tests/` would suppress 99.7% of findings. **This stays true however `NanoTrees.py`'s
   ownership resolves and whether or not it is deprecated.**

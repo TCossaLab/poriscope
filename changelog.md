@@ -436,6 +436,8 @@
 
 ### Documentation:
 
+* The developer install instructions now agree everywhere - `pip install -e ".[dev,docs]"` then `python scripts/setup_hooks.py` - and a short `CONTRIBUTING.md` points new contributors at the setup, the pre-PR checklist and the plugin generator
+
 * Fixed the API reference's dead links to base classes and to `MetaEventFitter`'s methods, and it no longer publishes a page for an internal `PeakFinder` helper class
 
 * **Fixed CUSUM's `Sensitivity` being documented backwards**: it divides the detection threshold, so a higher value detects more transitions, not fewer; 1, the default, is the most conservative
@@ -474,7 +476,7 @@
 
 * Duplication across the five analysis-tab View, Controller and controls files is now measured by `scripts/measure_duplication.py` and held against a checked-in baseline, so a refactor that promotes a shared method has to show that it deleted the copies
 
-* The analysis-tab MVC boundary is now checked by `scripts/check_mvc_boundary.py` against a recorded allowlist of 113 known violations across the analysis tabs, the widgets they are built from, the app shell and the shared bases, so no new one can be added while the 2.0.0 refactor removes the existing ones
+* The analysis-tab MVC boundary is now checked by `scripts/check_mvc_boundary.py` against a recorded allowlist of its known violations across the analysis tabs, the widgets they are built from, the app shell and the shared bases, so no new one can be added; the 2.0.0 refactor took it from 113 to 2
 
 * Each of the five analysis tabs now has a headless end-to-end test that drives the real tab and asserts on the file or database rows it produces, so a refactor of the tab layer cannot silently change what the app writes
 
@@ -492,7 +494,7 @@
 
 * `MetaReader` conformance lands: all 24 data plugins across all 8 `Meta*` families now run against real synthetic data
 
-* Behavioural conformance extended to six more plugin families (filters, event finders/loaders, db loaders, writers): 22 of 24 data plugins now run against real data
+* Behavioural conformance extended to six more plugin families (filters, event finders/loaders, db loaders, writers), run against real data
 
 * Event fitters gain behavioural conformance tests (new `conformance` marker), driven against real data rather than mocked loaders
 

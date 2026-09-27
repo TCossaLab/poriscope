@@ -7,14 +7,14 @@ the wrong rows is the failure that matters here, and it is invisible in any
 assertion about widget state - the plot would look identical.
 
 Everything the flow drives is an action name on ``handle_parameter_change``, the
-entry point the controls widget uses. It names no internal method, so Steps 3-5 can
-move the computation to the Model without touching it.
+entry point the controls widget uses. It names no internal method, so computation
+can move between the View and the Model without touching it.
 
 The clustering settings dialog is stubbed the same way the metadata flow stubs the
 folder picker: it returns the configuration a user would have chosen, so the paths
 either side of it are real. HDBSCAN is used rather than Gaussian Mixtures because
 it is deterministic - ``ClusteringView`` seeds the GMM, but HDBSCAN needs no seed
-at all, so the flow cannot become flaky for reasons unrelated to the refactor.
+at all, so the flow cannot become flaky for reasons unrelated to what it tests.
 """
 
 import sqlite3
