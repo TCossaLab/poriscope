@@ -6,7 +6,7 @@ which notifications it acts on and which it ignores. It was a five-way duplicate
 slated for merging, so the behaviour had to be pinned before the copies were
 touched.
 
-Three of the five share one implementation - refresh this tab's column list, but
+Two of the five share one implementation - refresh this tab's column list, but
 *only* when a ``MetaDatabaseLoader``'s columns changed and the loader that changed
 is the one currently selected here. The filtering is the whole method; a merge that
 loosened any of the three conditions would make every tab refetch its columns on
@@ -37,17 +37,17 @@ from tests.unit.views._qt_mocks import shadow_signals
 
 pytestmark = pytest.mark.characterization
 
-#: The three tabs that react, paired with the attribute holding their controls
-#: widget - the only thing that differs between the three otherwise-identical
+#: The two tabs that react, paired with the attribute holding their controls
+#: widget - the only thing that differs between the two otherwise-identical
 #: implementations.
 REACTING = (
     (ClusteringView, "clusteringcontrols"),
     (MetadataView, "metadatacontrols"),
-    (ProteinView, "proteincontrols"),
 )
 
-#: The two tabs whose correct response is to do nothing.
-INERT = (EventAnalysisView, RawDataView)
+#: The tabs whose correct response is to do nothing. Protein reads no column names,
+#: so the one notification the app sends - a loader gaining columns - is not its concern.
+INERT = (EventAnalysisView, RawDataView, ProteinView)
 
 
 def build(cls: type, controls_attr: str = "", selected: str = "") -> Any:
@@ -75,7 +75,7 @@ def build(cls: type, controls_attr: str = "", selected: str = "") -> Any:
 
 
 class TestTabsThatRefreshTheirColumns:
-    """Clustering, Metadata and Protein all act on the same narrow condition."""
+    """Clustering and Metadata both act on the same narrow condition."""
 
     @pytest.mark.parametrize(("cls", "controls_attr"), REACTING)
     def test_a_matching_notification_refreshes_the_columns(
@@ -164,12 +164,12 @@ class TestTabsThatRefreshTheirColumns:
 
 
 class TestTabsThatDeliberatelyDoNothing:
-    """RawData and EventAnalysis react to no notification at all."""
+    """RawData, EventAnalysis and Protein react to no notification at all."""
 
     @pytest.mark.parametrize("cls", INERT)
     def test_it_is_a_no_op_for_every_notification(self, cls: type) -> None:
         """
-        Including the one the other three act on, which is the point.
+        Including the one the other two act on, which is the point.
 
         These tabs have no column list to refresh. If a future change gives them
         one, this test failing is the reminder to implement the hook rather than
@@ -195,7 +195,7 @@ class TestTheHookIsRequiredByTheBase:
     """
 
     def test_the_base_declares_it_abstract(self) -> None:
-        """So the two `pass` bodies are mandatory, not redundant."""
+        """So the do-nothing bodies are mandatory, not redundant."""
         assert "notify_plugin_state_changed" in MetaView.__abstractmethods__
 
     def test_factors_by_contrast_is_concrete_on_the_base(self) -> None:
@@ -205,7 +205,7 @@ class TestTheHookIsRequiredByTheBase:
 
     def test_a_subclass_omitting_the_hook_cannot_be_instantiated(self) -> None:
         """
-        The concrete consequence: deleting the `pass` bodies breaks both tabs.
+        The concrete consequence: deleting the do-nothing bodies breaks those tabs.
 
         Instantiating is what raises, so this builds a subclass that implements
         every other abstract method and checks the ABC still refuses it.

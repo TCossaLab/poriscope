@@ -10,6 +10,20 @@ which ran through August 2026 and is complete. The step numbers only date the de
 
 ---
 
+## 2026-09-27 - A refused Protein ensemble plot stays in the action history
+
+**Context.** `ProteinView._update_distribution_ensemble` returns None, so unlike Metadata a
+refused ensemble plot is never discarded from the history.
+
+**Decision** (Kyle, 2026-09-27). Close it as moot. The method calls `_reset_actions()` before
+any refusal (`ProteinView.py:1897`), so replaying the history reproduces the cleared figure
+the user sees; the only difference is the refusal warning shown again on replay. Protein has
+no Undo, Load or Save-plot action to reach it.
+
+**Revisit if** Protein gains Undo or saved plot configurations.
+
+---
+
 ## 2026-09-27 - Replacing a channel does not renumber `events.id`
 
 **Context.** After a re-commit replaced a channel, its rows in the events file took new,

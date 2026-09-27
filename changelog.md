@@ -362,6 +362,8 @@
 
 ### Analysis Tabs:
 
+* The Protein tab no longer asks its database loader for column names it never uses, on every loader change and fit commit
+
 * Analysis tabs can now call a data plugin directly through `call()` on their model or controller, so a failed plugin call raises where it happened instead of being logged several hops away and leaving the caller with the previous call's answer
 
 * `MetaView._set_control_area` is no longer abstract: it now builds the control area for you from a new `_build_controls` hook and connects the four signals every controls panel carries, so a new tab writes three lines instead of twenty-five; a tab that lays out its own control area can still override it

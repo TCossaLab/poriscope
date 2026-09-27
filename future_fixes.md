@@ -42,11 +42,6 @@ docstring/comment-only, so no tests and no changelog entry:
 `tests/unit/scripts/test_mvc_boundary_allowlist.py:7` ("Steps 3-5"),
 `tests/integration/flows/test_clustering_flow_no_gui.py:10` ("Steps 3-5").
 
-### Analysis tabs
-
-- **`ProteinView._update_distribution_ensemble` returns None**, so a refused ensemble plot is
-  never rolled back out of the action history the way Metadata's is.
-
 ### Types, tests and CI
 
 - **The duplication ratchet never measures most plugin files**: its family lists are explicit,
@@ -99,11 +94,6 @@ docstring/comment-only, so no tests and no changelog entry:
   `_plugin_instances` (`MetaController.py:184-262`) duplicate `MetaModel`'s with no production
   caller, plus `MainController.get_plugin_instance(…, callback)` (`:377`, tested but uncalled),
   `MetaController.ignore()` and `MainController.config_path` (`:52`). Breaking on a `Meta*` base.
-
-### Left open by the 2.0.0 refactor (2026-09-22)
-
-- **`ProteinView.available_columns` is write-only** (`:322`, `:652`) since `de13e2eb` removed
-  its reader; only `tests/unit/views/test_protein_view.py:278` reads it.
 
 ### From the 2026-09-03 review - high
 

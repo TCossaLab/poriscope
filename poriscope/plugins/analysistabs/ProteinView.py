@@ -320,7 +320,6 @@ class ProteinView(MetaSubsetTabView):
         self.available_experiment_and_channels_by_loader: Dict[
             str, Dict[str, List[str]]
         ] = {}
-        self.available_columns: List[str] = []
         self.selected_experiment_and_channels_by_loader = {}
         self.allowed_plot_type: Optional[str] = None
         self.allowed_columns: List[str] = []
@@ -515,20 +514,18 @@ class ProteinView(MetaSubsetTabView):
     @log(logger=logger)
     def on_fit_commit_finished(self, loader: str) -> None:
         """
-        Refresh this tab's column list, and tell the rest of the app.
+        Tell the rest of the app that the loader has new columns.
 
         Called by the Controller once the write has been attempted, so a commit that
-        never reached the database does not announce new columns.
+        never reached the database does not announce new columns. This tab reads no
+        column names itself, so it asks for none.
 
         :param loader: Name or ID of the database loader plugin.
         :type loader: str
         :return: None
         :rtype: None
         """
-        self.update_available_columns(loader)  # refresh this tab locally
-        self.plugin_state_changed.emit(
-            "MetaDatabaseLoader", loader, "columns"
-        )  # notify everyone else
+        self.plugin_state_changed.emit("MetaDatabaseLoader", loader, "columns")
 
     @log(logger=logger)
     def _summarize_vm(self, df: pd.DataFrame) -> tuple:
@@ -640,17 +637,6 @@ class ProteinView(MetaSubsetTabView):
         """
         self.proteincontrols = ProteinControls()
         return self.proteincontrols
-
-    @log(logger=logger)
-    def update_column_names(self, column_names: List[str]) -> None:
-        """
-        Store available column names for internal use (filter validation, etc.)
-        No UI update is performed.
-
-        :param column_names: List of column names retrieved from the database.
-        :type column_names: List[str]
-        """
-        self.available_columns = column_names
 
     @log(logger=logger)
     def _clear_figure_state(
@@ -1047,38 +1033,21 @@ class ProteinView(MetaSubsetTabView):
         self, metaclass: str, plugin_key: str, reason: str
     ) -> None:
         """
-        Called when some other plugin instance's state changed elsewhere in the
-        app. Refreshes this tab's column list only when the change concerns a
-        MetaDatabaseLoader's columns and the loader that changed is the one
-        currently selected here; any other metaclass, reason, or a loader that
-        isn't currently selected in this tab is ignored.
+        Ignore plugin state changes: nothing this tab shows depends on them.
 
-        :param metaclass: The metaclass of the plugin instance whose state
-                        changed.
+        The one change the app announces is a database loader gaining columns, and
+        this tab reads no column names. The experiment tree is fetched when the
+        loader is selected.
+
+        :param metaclass: The metaclass of the plugin instance whose state changed.
         :type metaclass: str
-        :param plugin_key: The unique key identifying the plugin instance that
-                        changed.
+        :param plugin_key: The unique key identifying the plugin instance that changed.
         :type plugin_key: str
         :param reason: A short string identifying what kind of change occurred.
         :type reason: str
         :return: None
         :rtype: None
         """
-        if metaclass != "MetaDatabaseLoader" or reason != "columns":
-            self.logger.debug(
-                f"notify_plugin_state_changed: ignoring (metaclass={metaclass}, reason={reason})"
-            )
-            return
-        current = self.proteincontrols.db_loader_comboBox.currentText()
-        if plugin_key == current:
-            self.logger.debug(
-                f"notify_plugin_state_changed: refreshing columns for {plugin_key}"
-            )
-            self.update_available_columns(plugin_key)
-        else:
-            self.logger.debug(
-                f"notify_plugin_state_changed: ignoring, {plugin_key} != current selection {current}"
-            )
 
     @log(logger=logger)
     @Slot(str, str, tuple)
@@ -1109,7 +1078,6 @@ class ProteinView(MetaSubsetTabView):
         elif action_name == "loader_changed":
             loader = parameters.get("db_loader")
             if loader:
-                self.update_available_columns(loader)
                 self.request_experiment_structure(loader)
 
         elif action_name == "select_experiment_and_channel":
