@@ -187,12 +187,6 @@ Breaking, and to be called out as such whenever it lands.
 - **`ClassicCUSUM` merges short levels on a median but reports them on CUSUM's
   single-sample fallback**, so the merge decision and the reported current use different
   estimators.
-- **An event finder reports a multi-range channel finished after its first range**
-  *(by reading)*: `_find_events_single_range` sets `eventfinding_finished[channel] = True` and
-  yields 1.0 at the end of *every* range (`MetaEventFinder.py:609-610`), not only the last. While
-  a later range runs, `get_eventfinding_status` says done, so the writer's gate
-  (`MetaWriter.py:457`) lets a commit start on a partial event list, and
-  `get_num_events_found` returns a partial count.
 
 ### Session and settings persistence
 

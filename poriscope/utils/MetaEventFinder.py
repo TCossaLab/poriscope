@@ -606,7 +606,8 @@ class MetaEventFinder(BaseDataPlugin):
                 )
             )
         self.num_events_found[channel] = len(self.event_starts[channel])
-        self.eventfinding_finished[channel] = True
+        # Not marked finished here: this is one range of possibly several, and
+        # find_events marks the channel finished once all of them are done.
         yield 1.0
 
     @log(logger=logger)

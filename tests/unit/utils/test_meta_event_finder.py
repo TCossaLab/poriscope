@@ -545,6 +545,27 @@ class TestFindEventsHappyPath:
         list(gen)
         assert finder.eventfinding_finished[0] is True
 
+    def test_a_multi_range_find_is_not_finished_until_its_last_range(self, finder):
+        """
+        Finding events over several ranges reports the channel finished only at the end.
+
+        Each range used to mark the channel finished as it completed, so while a later
+        range was still being searched the status said done and the count was partial,
+        and a commit started then would write a partial event list.
+        """
+        # Two-second chunks, as in test_small_chunk_length_straddles_event: shorter ones
+        # leave this fixture's chunks half event and find nothing.
+        gen = finder.find_events(0, [(0, 3.0), (5.0, 0)], chunk_length=2.0)
+        status_while_running = []
+        for _ in gen:
+            status_while_running.append(finder.get_eventfinding_status(0))
+
+        # The final yield comes after the channel is marked finished; every one before
+        # it is mid-run.
+        assert status_while_running[:-1] == [False] * (len(status_while_running) - 1)
+        assert finder.get_eventfinding_status(0) is True
+        assert finder.get_num_events_found(0) == 2
+
 
 class TestFindEventsErrorBranches:
     def test_no_reader_raises(self, bare_finder):
@@ -683,7 +704,8 @@ class TestFindEventsSingleRange:
         assert len(finder.event_starts[0]) == 2
         assert len(finder.event_ends[0]) == 2
         assert finder.num_events_found[0] == 2
-        assert finder.eventfinding_finished[0] is True
+        # One range of possibly several: only find_events marks the channel finished.
+        assert not finder.eventfinding_finished.get(0)
 
     def test_chunk_length_none_defaults_to_one_second(self, finder):
         # default chunk_length (None -> 1s = 100 samples here) chunks the
@@ -743,7 +765,8 @@ class TestFindEventsSingleRange:
         self._reset(finder)
         # end far beyond available samples should be clamped
         list(finder._find_events_single_range(0, 0, 1000.0, 10.0))
-        assert finder.eventfinding_finished[0] is True
+        # One range of possibly several: only find_events marks the channel finished.
+        assert not finder.eventfinding_finished.get(0)
 
     def test_chunk_length_larger_than_total_samples_is_clamped(self, finder):
         self._reset(finder)
@@ -823,7 +846,8 @@ class TestFindEventsSingleRange:
             list(finder._find_events_single_range(0, 0, 10.0, 10.0))
         assert finder.event_starts[0] == [10]
         assert finder.event_ends[0] == [60]
-        assert finder.eventfinding_finished[0] is True
+        # One range of possibly several: only find_events marks the channel finished.
+        assert not finder.eventfinding_finished.get(0)
 
 
 # ---------------------------------------------------------------------------

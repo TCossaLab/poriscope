@@ -162,6 +162,8 @@
 
 #### Raw Data:
 
+* **Fixed a multi-range event search reporting the channel finished, with a partial count, as soon as its first range was done**, which let a commit started while later ranges were still being searched write a partial event list
+
 * **The Wavelet filter no longer ships a macOS library**: the one it shipped was a Linux binary that could never load on a Mac. On macOS, build one with `make dylib` in `poriscope/cdlls/wavelet/`, or point `PORISCOPE_WAVELET_PATH` at one
 
 * **Fixed opening a recording also reading other recordings whose names start with the same prefix** (`exp1` and `exp10` in one folder), which lengthened the channel with the other recording's samples or failed to open; a file name containing square brackets now opens too
