@@ -59,7 +59,6 @@ def main():
     hook_scripts = [
         "scripts/hooks/post-merge-update_requirements.py",
         "scripts/hooks/post-merge-run_autodoc_pipeline.py",
-        "scripts/hooks/post-merge-create_wavelet_dll.py",
         # Add more hooks here (can be .py or .sh)
     ]
 

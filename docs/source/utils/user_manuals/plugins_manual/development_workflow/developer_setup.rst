@@ -90,7 +90,6 @@ It performs tasks such as:
 
 - Updating Python dependencies when ``requirements.txt`` changes
 - Regenerating autodoc and Sphinx documentation
-- Building native wavelet libraries when required
 
 For a detailed explanation of this automation, see:
 

@@ -162,6 +162,8 @@
 
 #### Raw Data:
 
+* **The Wavelet filter no longer ships a macOS library**: the one it shipped was a Linux binary that could never load on a Mac. On macOS, build one with `make dylib` in `poriscope/cdlls/wavelet/`, or point `PORISCOPE_WAVELET_PATH` at one
+
 * **Fixed opening a recording also reading other recordings whose names start with the same prefix** (`exp1` and `exp10` in one folder), which lengthened the channel with the other recording's samples or failed to open; a file name containing square brackets now opens too
 
 * **Fixed committing events into a database that already held them for a channel silently keeping the old events**, or mixing both runs' events when the second found more; the tab now asks before replacing a channel's events, warns when they belong to a different experiment, and skips only the channels you decline
@@ -451,6 +453,8 @@
 * Fixed two links in the "Adding a walkthrough" tutorial that had never resolved, and gave `WalkthroughMixin` an API reference page for them to point at
 
 ### Developer Tooling:
+
+* The post-merge hook no longer tries to build the wavelet library, so a merge can no longer run an MSYS2 system upgrade or open a folder dialog; CI rebuilds the library on `develop` when its source changes, byte-for-byte reproducibly
 
 * The duplication ratchet now measures every plugin and widget file, or records why it does not, and fails on a new file that is in neither list; a changed file count is no longer reported as added duplication
 

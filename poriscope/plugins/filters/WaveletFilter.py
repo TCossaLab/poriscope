@@ -157,6 +157,9 @@ class WaveletFilter(MetaFilter):
             dll_path = os.path.abspath(override_path)
         else:
             system = platform.system()
+            # No macOS library is shipped, so on Darwin this finds one only if the
+            # user built it into dist/ with `make dylib`; otherwise the not-found
+            # error below names the PORISCOPE_WAVELET_PATH override.
             ext_map = {"Windows": ".dll", "Linux": ".so", "Darwin": ".dylib"}
             if system not in ext_map:
                 raise RuntimeError(f"Unsupported platform: {system}")

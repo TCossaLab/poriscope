@@ -64,7 +64,6 @@ poriscope = [
     "configs/icons/*",
     "cdlls/wavelet/dist/*.dll",
     "cdlls/wavelet/dist/*.so",
-    "cdlls/wavelet/dist/*.dylib",
 ]
 
 [tool.ruff]

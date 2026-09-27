@@ -44,17 +44,6 @@ docstring/comment-only, so no tests and no changelog entry:
 
 ### Types, tests and CI
 
-- **The post-merge wavelet hook reaches deep into a contributor's machine**: without
-  MSYS2's `mingw32-make`, `full_setup_and_build.py` runs `pacman -Syuu --noconfirm` (`:113`)
-  before checking the tracked DLL exists (`:125`), and opens a modal folder dialog mid-merge
-  (`:38-59`) whose cancel fails the hook.
-- **The shipped `wavelet.dylib` is an x86-64 Linux ELF** (cross-built by `make dylib` on
-  Ubuntu, `build_wavelet.yml:76`), so `WaveletFilter`'s Darwin branch (`:160`) cannot load it.
-  Build a Mach-O on `macos-latest` or drop the macOS claim.
-- **Wavelet rebuilds are not deterministic**: `build_wavelet.yml` rebuilds on every
-  push to main (20+ bot commits differing only in the PE timestamp, e.g. `1b072fe4` ->
-  `9d2b9e8a`, 673,945 bytes each), so `origin/main` holds commits `develop` lacks. Make it
-  `workflow_dispatch`-only or link with `--no-insert-timestamp`.
 - **Stale line-number comments** in `test_data_plugin_controller.py:903-1126` ("lines
   88-91", "lines 56-73") point into docstrings since `edit_plugin` was split. Comment-only.
 

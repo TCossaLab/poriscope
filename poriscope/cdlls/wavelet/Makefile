@@ -71,6 +71,9 @@ ifeq ($(MODE),dll)
     OUT    = dist$(SEP)wavelet.dll
     ODIR   = build$(SEP)obj_mingw
     CFLAGS = $(CFLAGS_COMMON)
+    # Zero the PE and export-table timestamps, so rebuilding unchanged source
+    # produces a byte-identical DLL and CI has nothing to commit.
+    LDFLAGS = -Wl,--no-insert-timestamp
 endif
 
 ifeq ($(MODE),dylib)
@@ -88,7 +91,7 @@ all_one: $(OUT)
 
 $(OUT): $(OBJS)
 	$(call MKDIR,dist)
-	$(CC) -shared -o $@ $^ $(CFLAGS) $(INCDIR) $(LIBS)
+	$(CC) -shared -o $@ $^ $(CFLAGS) $(LDFLAGS) $(INCDIR) $(LIBS)
 
 # Compile rule (uses mode-specific ODIR/CC/CFLAGS)
 $(ODIR)$(SEP)%.o: $(SRC)/%.c $(wildcard $(INC)/*.h)
