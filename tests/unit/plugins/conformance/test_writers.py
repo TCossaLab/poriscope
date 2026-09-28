@@ -17,6 +17,7 @@ let go of it. That is stricter than inspecting the process's open files, and nee
 extra dependency.
 """
 
+import shutil
 import sqlite3
 from pathlib import Path
 from typing import List, Type
@@ -492,3 +493,120 @@ def test_both_writer_families_were_discovered() -> None:
     """Guard against either discovery walk silently finding nothing."""
     assert WRITERS, "no concrete MetaWriter subclasses were discovered"
     assert DB_WRITERS, "no concrete MetaDatabaseWriter subclasses were discovered"
+
+
+# ===========================================================================
+# A writer refuses an output file it cannot write into
+# ===========================================================================
+
+
+def _copy(source: str, tmp_path: Path, name: str) -> Path:
+    target = tmp_path / name
+    shutil.copyfile(source, target)
+    return target
+
+
+def _not_a_database(tmp_path: Path) -> Path:
+    target = tmp_path / "notes.sqlite3"
+    target.write_text("not a database, just text\n", encoding="utf-8")
+    return target
+
+
+@pytest.fixture
+def finder(chimera_log_path):
+    """A finder with events located, as an event writer needs."""
+    reader = build_reader(chimera_log_path)
+    finder = build_event_finder(ClassicBlockageFinder, reader)
+    for _progress in finder.find_events(CHIMERA_CHANNEL, [(0.0, 0.0)], 3.0, identity):
+        pass
+    yield finder
+    finder.close_resources()
+    reader.close_resources()
+
+
+@pytest.fixture
+def fitter(events_db_path):
+    """A fitter attached to an events database, as a database writer needs."""
+    loader = build_event_loader(events_db_path)
+    fitter = build_event_fitter(CUSUM, loader)
+    yield fitter
+    fitter.close_resources()
+    loader.close_resources()
+
+
+@pytest.mark.conformance
+@pytest.mark.parametrize("writer_cls", WRITERS, ids=[cls.__name__ for cls in WRITERS])
+def test_an_event_writer_refuses_a_metadata_database(
+    writer_cls, finder, metadata_db_path, tmp_path
+) -> None:
+    """
+    Choosing a fitted-metadata database as an event writer's output is refused up front.
+
+    Both kinds of file have an ``events`` table, so nothing stopped the choice, and the
+    writer failed only once it tried to write.
+    """
+    wrong = _copy(metadata_db_path, tmp_path, "metadata.sqlite3")
+    with pytest.raises(ValueError, match="metadata"):
+        build_writer(writer_cls, finder, str(wrong))
+
+
+@pytest.mark.conformance
+@pytest.mark.parametrize(
+    "writer_cls", DB_WRITERS, ids=[cls.__name__ for cls in DB_WRITERS]
+)
+def test_a_database_writer_refuses_an_events_database(
+    writer_cls, fitter, events_db_path, tmp_path
+) -> None:
+    """
+    Choosing an events database as a metadata writer's output is refused up front.
+
+    It used to be accepted, and every channel then failed on
+    ``no such column: experiment_id`` once writing started.
+    """
+    wrong = _copy(events_db_path, tmp_path, "events.sqlite3")
+    with pytest.raises(ValueError, match="events"):
+        build_db_writer(writer_cls, fitter, str(wrong))
+
+
+@pytest.mark.conformance
+@pytest.mark.parametrize("writer_cls", WRITERS, ids=[cls.__name__ for cls in WRITERS])
+def test_an_event_writer_refuses_a_file_that_is_not_a_database(
+    writer_cls, finder, tmp_path
+) -> None:
+    with pytest.raises(ValueError, match="not an SQLite database"):
+        build_writer(writer_cls, finder, str(_not_a_database(tmp_path)))
+
+
+@pytest.mark.conformance
+@pytest.mark.parametrize(
+    "writer_cls", DB_WRITERS, ids=[cls.__name__ for cls in DB_WRITERS]
+)
+def test_a_database_writer_refuses_a_file_that_is_not_a_database(
+    writer_cls, fitter, tmp_path
+) -> None:
+    with pytest.raises(ValueError, match="not an SQLite database"):
+        build_db_writer(writer_cls, fitter, str(_not_a_database(tmp_path)))
+
+
+@pytest.mark.conformance
+@pytest.mark.parametrize("writer_cls", WRITERS, ids=[cls.__name__ for cls in WRITERS])
+def test_an_event_writer_accepts_an_existing_events_database(
+    writer_cls, finder, events_db_path, tmp_path
+) -> None:
+    """Its own kind of file is accepted: re-committing into one is intended."""
+    own = _copy(events_db_path, tmp_path, "events.sqlite3")
+    writer = build_writer(writer_cls, finder, str(own))
+    writer.close_resources()
+
+
+@pytest.mark.conformance
+@pytest.mark.parametrize(
+    "writer_cls", DB_WRITERS, ids=[cls.__name__ for cls in DB_WRITERS]
+)
+def test_a_database_writer_accepts_an_existing_metadata_database(
+    writer_cls, fitter, metadata_db_path, tmp_path
+) -> None:
+    """Its own kind of file is accepted: appending experiments to one is intended."""
+    own = _copy(metadata_db_path, tmp_path, "metadata.sqlite3")
+    writer = build_db_writer(writer_cls, fitter, str(own))
+    writer.close_resources()

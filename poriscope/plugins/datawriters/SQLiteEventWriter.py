@@ -649,6 +649,9 @@ class SQLiteEventWriter(MetaWriter):
         """
         Validate that the settings dict contains the correct information for use by the subclass.
 
+        An existing output file of another kind is refused by
+        ``_refuse_an_output_file_of_another_kind``, which raises ``ValueError``.
+
         :param settings: Parameters for event detection.
         :type settings: dict
         :raises KeyError: If the settings dict does not contain the correct information.
@@ -656,6 +659,54 @@ class SQLiteEventWriter(MetaWriter):
         if "MetaEventFinder" not in settings.keys():
             raise KeyError(
                 """settings must include a 'MetaEventFinder' key with value equal to the key of the vent finder from which to pull event data"""
+            )
+        value = settings.get("Output File", {}).get("Value")
+        if value:
+            self._refuse_an_output_file_of_another_kind(Path(value))
+
+    def _refuse_an_output_file_of_another_kind(self, output_file: Path) -> None:
+        """
+        Refuse an existing output file that is not an events database.
+
+        A new or empty file is created as one, and an existing events database is
+        accepted, since re-committing into one is intended. Anything else is refused
+        when the plugin is configured rather than when events are committed.
+
+        :param output_file: The configured output file.
+        :type output_file: Path
+        :raises ValueError: If the file exists and is not an SQLite database, or is a
+            fitted-metadata database or one of some other kind.
+        """
+        if not output_file.is_file() or output_file.stat().st_size == 0:
+            return
+        conn = None
+        cursor = None
+        try:
+            conn = sqlite3.connect(
+                f"{output_file.resolve().as_uri()}?mode=ro", uri=True
+            )
+            cursor = conn.cursor()
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+            tables = {row[0] for row in cursor.fetchall()}
+        except sqlite3.DatabaseError as e:
+            raise ValueError(
+                f"{output_file} is not an SQLite database, so events cannot be written "
+                f"to it ({e}). Choose an events database or a new file."
+            ) from e
+        finally:
+            if cursor is not None:
+                cursor.close()
+            if conn is not None:
+                conn.close()
+        if "experiments" in tables:
+            raise ValueError(
+                f"{output_file} is a fitted-metadata database, not an events database. "
+                "Choose an events database or a new file."
+            )
+        if tables and not {"channels", "events", "columns"} <= tables:
+            raise ValueError(
+                f"{output_file} is an SQLite database of some other kind, not an events "
+                "database. Choose an events database or a new file."
             )
 
     @log(logger=logger)

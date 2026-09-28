@@ -509,12 +509,53 @@ class SQLiteDBWriter(MetaDatabaseWriter):
     @override
     def _validate_settings(self, settings: dict) -> None:
         """
-        Validate that the settings dict contains the correct information for use by the subclass.
+        Refuse an existing output file that is not a fitted-metadata database.
+
+        A new or empty file is created as one, and an existing metadata database is
+        appended to. Anything else is refused here, when the plugin is configured,
+        rather than failing on every channel once writing starts - an events database
+        from the Raw Data tab in particular, which also has an ``events`` table.
 
         :param settings: Parameters for event detection.
         :type settings: dict
+        :raises ValueError: If the output file exists and is not an SQLite database, or
+            is one without the fitted-metadata tables.
         """
-        pass
+        value = settings.get("Output File", {}).get("Value")
+        if not value:
+            return
+        output_file = Path(value)
+        if not output_file.is_file() or output_file.stat().st_size == 0:
+            return
+        conn = None
+        cursor = None
+        try:
+            conn = sqlite3.connect(
+                f"{output_file.resolve().as_uri()}?mode=ro", uri=True
+            )
+            cursor = conn.cursor()
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+            tables = {row[0] for row in cursor.fetchall()}
+        except sqlite3.DatabaseError as e:
+            raise ValueError(
+                f"{output_file} is not an SQLite database, so it cannot hold fitted "
+                f"metadata ({e}). Choose a metadata database or a new file."
+            ) from e
+        finally:
+            if cursor is not None:
+                cursor.close()
+            if conn is not None:
+                conn.close()
+        if tables and not {"experiments", "sublevels"} <= tables:
+            kind = (
+                "an events database, as the Raw Data tab writes"
+                if {"channels", "events"} <= tables
+                else "an SQLite database of some other kind"
+            )
+            raise ValueError(
+                f"{output_file} is {kind}, not a fitted-metadata database. Choose a "
+                "metadata database or a new file."
+            )
 
     @log(logger=logger)
     @override

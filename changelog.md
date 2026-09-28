@@ -154,6 +154,8 @@
 
 #### Raw Data and Event Analysis:
 
+* **Choosing the wrong kind of database as a writer's output file is now refused when the writer is set up**: an events database from Raw Data as the Event Analysis tab's metadata output, a metadata database as Raw Data's events output, or a file that is not a database at all. It used to be accepted, and failed on every channel once writing started
+
 * **Finding or fitting events with no filter selected now asks for confirmation first**: on a noisy trace an unfiltered run can register almost every sample as an event, which takes a very long time and is hard to tell apart from the application hanging; cancelling works, but only takes effect at the end of the current chunk, so it can be slow to respond
 
 * **The "No Filter" option no longer disappears from the Raw Data and Event Analysis filter dropdowns once a filter exists**: choosing not to filter is a valid selection, so it stays available, and it is now also what a dropdown falls back to when the filter it was showing is deleted (a newly created filter is no longer selected for you)
