@@ -121,6 +121,10 @@ def view(mocker: MockerFixture, mock_qt_dependencies: None) -> MetadataView:
     # app; the tests that drive the answer call set_loaded_filters directly.
     view_instance.filters_load_requested = mocker.Mock()
     view_instance.filters_save_requested = mocker.Mock()
+    # Opening the selection tree asks for the loader's structure first. A bare stand-in
+    # leaves the cached structure as it is, which is the Controller answering with an
+    # unchanged one; the test of the refresh itself files a new structure instead.
+    view_instance.experiment_structure_requested = mocker.Mock()
     # The two subset intents, answered from whatever a test parked as
     # canned_*. Wired here rather than per test because _overlay_plot clears the
     # answers before emitting, so every test that drives it needs the replay.
@@ -3183,6 +3187,35 @@ def test_handle_parameter_change_shows_selection_tree(
     view.show_selection_tree.assert_called_once()
 
 
+def test_the_selection_tree_shows_experiments_written_since_the_loader_was_chosen(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """
+    Opening the experiment and channel tree asks the loader again before showing it.
+
+    The structure was read only when the plugin list changed, so an experiment
+    written into an already loaded database - by the Event Analysis tab, say - did
+    not appear until the loader was reloaded. The stand-in answers the request the
+    way the Controller does: synchronously, filing the loader's current structure.
+    """
+    view.available_experiment_and_channels_by_loader = {"test_loader": {"exp1": ["1"]}}  # type: ignore[assignment]
+    view.selected_experiment_and_channels_by_loader = {"test_loader": {"exp1": ["1"]}}  # type: ignore[assignment]
+    now_on_disk = {"exp1": ["1"], "exp2": ["3"]}
+
+    def answer(loader: str) -> None:
+        view.available_experiment_and_channels_by_loader[loader] = now_on_disk
+
+    view.request_experiment_structure = mocker.Mock(side_effect=answer)  # type: ignore[method-assign]
+    view.show_selection_tree = mocker.Mock()  # type: ignore[method-assign]
+
+    view.handle_parameter_change(
+        "metadata", "select_experiment_and_channel", ({"db_loader": "test_loader"},)
+    )
+
+    view.request_experiment_structure.assert_called_once_with("test_loader")
+    assert view.show_selection_tree.call_args.args[0] == now_on_disk
+
+
 def test_handle_parameter_change_shifts_range_backward(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
@@ -4250,7 +4283,10 @@ def test_show_add_filter_dialog_validates_filter_on_accept(
 
 
 def test_cancelling_add_filter_after_finishing_the_tutorial_raises_nothing(
-    view: MetadataView, mocker: MockerFixture, monkeypatch: pytest.MonkeyPatch
+    qapp: Any,
+    view: MetadataView,
+    mocker: MockerFixture,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """
     Closing Add Filter after its tutorial has finished is quiet.
@@ -4258,7 +4294,8 @@ def test_cancelling_add_filter_after_finishing_the_tutorial_raises_nothing(
     Finishing the tutorial clears the dialog's ``walkthrough_dialog``, and the
     View's close handler used to call ``force_close()`` on it regardless. The real
     dialog is built without a parent only because this fixture's View never ran
-    ``QWidget.__init__``.
+    ``QWidget.__init__``. ``qapp`` because the dialog is a real widget: without it the
+    test crashes the interpreter whenever it runs before anything else made the app.
     """
 
     def finish_tutorial_then_cancel(dialog: AddSubsetFilterDialog) -> int:

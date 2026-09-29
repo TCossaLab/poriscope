@@ -1901,6 +1901,9 @@ class MetadataView(MetaSubsetTabView):
             self.update_available_columns(loader)
         elif action_name == "select_experiment_and_channel":
             loader = parameters.get("db_loader")
+            # Asked again each time, so experiments written into the loaded database
+            # since it was chosen appear; the Controller answers synchronously.
+            self.request_experiment_structure(loader)
             structure = self.available_experiment_and_channels_by_loader.get(loader, {})
             selection = self.selected_experiment_and_channels_by_loader.get(loader, {})
             self.show_selection_tree(structure, loader, selection)

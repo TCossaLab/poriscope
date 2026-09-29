@@ -208,6 +208,8 @@
 
 #### Metadata and Protein:
 
+* The experiment and channel selection now lists experiments written into an already loaded database, such as fits just committed from Event Analysis, instead of only those present when the loader was chosen
+
 * **Fixed the Metadata and Protein tabs silently widening the experiment and channel scope back to everything**: re-reading the database structure - which happens whenever the loader changes or the selection tree is opened - overwrote the scope you had chosen, so plots quietly used more data than was asked for and heatmaps refused with "Only a single channel can be used"
 
 * **Fixed restoring a session losing the last-restored tab's subset filters**: the session was written back while that tab's filter list was still empty, so the filters survived one restore and were gone from the next - in practice the Metadata tab kept its filters and the Protein tab did not

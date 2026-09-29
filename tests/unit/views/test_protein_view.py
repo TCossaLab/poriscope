@@ -1232,6 +1232,34 @@ class TestHandleParameterChange:
             )
         mock_tree.assert_called_once()
 
+    def test_the_selection_tree_shows_experiments_written_since_the_loader_was_chosen(
+        self, mock_view
+    ):
+        """
+        Opening the experiment and channel tree asks the loader again before showing it.
+
+        The stand-in answers the way the Controller does: synchronously, filing the
+        loader's current structure.
+        """
+        mock_view.available_experiment_and_channels_by_loader = {"ldr": {"exp1": ["0"]}}
+        mock_view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": ["0"]}}
+        now_on_disk = {"exp1": ["0"], "exp2": ["1"]}
+
+        def answer(loader):
+            mock_view.available_experiment_and_channels_by_loader[loader] = now_on_disk
+
+        with (
+            patch.object(
+                mock_view, "request_experiment_structure", side_effect=answer
+            ) as mock_request,
+            patch.object(mock_view, "show_selection_tree") as mock_tree,
+        ):
+            mock_view.handle_parameter_change(
+                "p", "select_experiment_and_channel", (self._params(db_loader="ldr"),)
+            )
+        mock_request.assert_called_once_with("ldr")
+        assert mock_tree.call_args.args[0] == now_on_disk
+
     def test_shift_backward_routes_left(self, mock_view):
         with patch.object(mock_view, "_shift_range_and_update_plot") as mock:
             mock_view.handle_parameter_change(
