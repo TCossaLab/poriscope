@@ -900,22 +900,6 @@ class MetaSubsetTabView(MetaView):
         """
 
     @log(logger=logger)
-    def get_save_filename(self) -> str:
-        """
-        Open a file dialog for the user to choose a save location.
-
-        :return: Selected filename.
-        :rtype: str
-        """
-        file_name, _ = QFileDialog.getSaveFileName(
-            self,
-            "Save CSV File",
-            os.path.expanduser("~"),
-            "CSV Files (*.csv);;All Files (*)",
-        )
-        return file_name
-
-    @log(logger=logger)
     def set_event_data_generator(self, generator: Iterator[Dict[str, Any]]) -> None:
         """
         Set the event data generator for event-based plots.

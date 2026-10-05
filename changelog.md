@@ -8,6 +8,10 @@
 
 * `MetaController` now declares the `view` and `model` attributes every controller uses, so a type checker run against the installed project sees them; branch CI prints that checker's error count as a non-blocking report
 
+### Analysis Tabs:
+
+* `get_save_filename`, the CSV export's file picker that `MetaController.export_plot_data` calls on every tab, now lives once on `MetaView` instead of as four identical copies on the Views
+
 ### User-Facing Behaviour:
 
 #### General:

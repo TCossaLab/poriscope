@@ -26,7 +26,6 @@
 
 
 import logging
-import os
 import warnings
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union, override
 
@@ -34,7 +33,7 @@ import matplotlib.pyplot as pl
 import numpy as np
 import numpy.typing as npt
 from PySide6.QtCore import Signal, Slot
-from PySide6.QtWidgets import QFileDialog, QMessageBox
+from PySide6.QtWidgets import QMessageBox
 
 from poriscope.plugins.analysistabs.utils.eventAnalysisControls import (
     EventAnalysisControls,
@@ -114,22 +113,6 @@ class EventAnalysisView(MetaEventTabView):
         """
         self.eventAnalysisControls = EventAnalysisControls()
         return self.eventAnalysisControls
-
-    @log(logger=logger)
-    def get_save_filename(self) -> str:
-        """
-        Open a file dialog to let the user select a filename for saving a CSV file.
-
-        :return: Absolute path to the selected file.
-        :rtype: str
-        """
-        file_name, _ = QFileDialog.getSaveFileName(
-            self,
-            "Save CSV File",
-            os.path.expanduser("~"),
-            "CSV Files (*.csv);;All Files (*)",
-        )
-        return file_name
 
     @log(logger=logger)
     @override

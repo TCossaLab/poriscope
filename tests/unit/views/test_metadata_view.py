@@ -357,7 +357,7 @@ def test_get_save_filename_opens_dialog(
 ) -> None:
     """Verify QFileDialog.getSaveFileName is called."""
     mock_dialog: MagicMock = mocker.patch(
-        "poriscope.utils.MetaSubsetTabView.QFileDialog.getSaveFileName",
+        "poriscope.utils.MetaView.QFileDialog.getSaveFileName",
         return_value=("/path/to/file.csv", "CSV Files (*.csv)"),
     )
 
@@ -372,7 +372,7 @@ def test_get_save_filename_returns_empty_on_cancel(
 ) -> None:
     """Verify empty string is returned when user cancels."""
     mocker.patch(
-        "poriscope.utils.MetaSubsetTabView.QFileDialog.getSaveFileName",
+        "poriscope.utils.MetaView.QFileDialog.getSaveFileName",
         return_value=("", ""),
     )
 
