@@ -14,7 +14,12 @@
 #     1) Auto-fix (non-blocking)
 #     2) Strict validation (blocking)
 # - Commits auto-fixes back to the branch if needed
-# - Runs the full test suite under Xvfb (no marker filter, e2e included)
+# - Runs the full test suite on ubuntu-latest under Xvfb and on windows-latest
+#   offscreen (no marker filter, e2e included). Windows is the platform users run
+#   and the one the ten platform-conditional sites - including the wavelet DLL load
+#   in WaveletFilter - take the other branch on; until 2.1 no job ran there.
+#   Lint, auto-fix and the mypy report run on the Linux leg only: their results do
+#   not depend on the platform, and two legs pushing auto-fixes would race.
 # - In a second job, builds the wheel and sdist, checks them with twine, installs the
 #   wheel into a fresh venv and imports it with the wavelet binary (see `wheel` below)
 #
@@ -52,7 +57,11 @@ concurrency:
 
 jobs:
   quick:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
 
     env:
       QT_QPA_PLATFORM: offscreen
@@ -64,6 +73,7 @@ jobs:
           fetch-depth: 0
 
       - name: Install system libs for Qt + Xvfb
+        if: runner.os == 'Linux'
         run: |
           # The runner image ships apt sources for packages.microsoft.com, which this project
           # never installs from. A 403 there fails `apt-get update` with exit 100 even when
@@ -104,16 +114,19 @@ jobs:
           pip install -r requirements.txt
 
       - name: Clear pre-commit cache
+        if: runner.os == 'Linux'
         run: pre-commit clean
 
       # ---------------------------------------------------------------------
       # Phase 1: Auto-fix (never fails)
       # ---------------------------------------------------------------------
       - name: Run pre-commit auto-fix (non-blocking)
+        if: runner.os == 'Linux'
         run: |
           pre-commit run --all-files --hook-stage manual || true
 
       - name: Commit and push pre-commit fixes
+        if: runner.os == 'Linux'
         run: |
           if ! git diff --quiet; then
             git config user.name "github-actions[bot]"
@@ -127,6 +140,7 @@ jobs:
       # Phase 2: Strict validation (must pass)
       # ---------------------------------------------------------------------
       - name: Run pre-commit validation
+        if: runner.os == 'Linux'
         run: |
           pre-commit run --all-files
 
@@ -140,6 +154,7 @@ jobs:
       # the figure is tracked in future_fixes.md and DECISIONS.md (2026-08-24), and the
       # known noise (Qt short-form enum accesses, untyped imports) would fail every run.
       - name: Project-environment mypy report
+        if: runner.os == 'Linux'
         continue-on-error: true
         run: |
           python -m mypy poriscope | tail -n 1
@@ -150,8 +165,16 @@ jobs:
       # Runs the whole suite, e2e included - no marker filter. At ~6 minutes the
       # e2e tests are worth their cost.
       - name: Run tests under Xvfb
+        if: runner.os == 'Linux'
         run: |
           xvfb-run -a pytest -q
+
+      # Qt needs no display server here: QT_QPA_PLATFORM=offscreen is set at job
+      # level and the e2e tests drive real widgets against that platform plugin.
+      - name: Run tests (Windows, offscreen)
+        if: runner.os == 'Windows'
+        run: |
+          pytest -q
 
   # ---------------------------------------------------------------------------
   # Wheel smoke: the suite above runs against `pip install -e`, which never
@@ -163,7 +186,11 @@ jobs:
   # against rather than the newest the ranges in pyproject.toml admit.
   # ---------------------------------------------------------------------------
   wheel:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     env:
       QT_QPA_PLATFORM: offscreen
     steps:
@@ -178,6 +205,7 @@ jobs:
       # Importing poriscope.exposed imports PySide6's QtWidgets, whose bundled Qt
       # needs these three system libraries present even offscreen.
       - name: Install Qt system libs
+        if: runner.os == 'Linux'
         run: |
           sudo grep -rl packages.microsoft.com /etc/apt/sources.list.d/ | sudo xargs -r rm -f || true
           sudo apt-get update
@@ -193,14 +221,17 @@ jobs:
         shell: bash
         run: |
           python -m venv "$RUNNER_TEMP/smoke"
-          "$RUNNER_TEMP/smoke/bin/python" -m pip install --upgrade pip
-          "$RUNNER_TEMP/smoke/bin/python" -m pip install dist/*.whl -c requirements.txt
+          # The venv's interpreter sits under bin/ on Linux and Scripts/ on Windows.
+          PY="$RUNNER_TEMP/smoke/bin/python"; [ -x "$PY" ] || PY="$RUNNER_TEMP/smoke/Scripts/python.exe"
+          "$PY" -m pip install --upgrade pip
+          "$PY" -m pip install dist/*.whl -c requirements.txt
 
       - name: Import the package and load the wavelet binary
         shell: bash
         working-directory: ${{ runner.temp }}
         run: |
-          "$RUNNER_TEMP/smoke/bin/python" - <<'EOF'
+          PY="$RUNNER_TEMP/smoke/bin/python"; [ -x "$PY" ] || PY="$RUNNER_TEMP/smoke/Scripts/python.exe"
+          "$PY" - <<'EOF'
           import ctypes
           import importlib.resources
           import platform
