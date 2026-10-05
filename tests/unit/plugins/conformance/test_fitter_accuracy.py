@@ -1,0 +1,544 @@
+"""
+Ground truth for the event fitters: fitted values against planted ones.
+
+The conformance suite asserts level *counts*. These tests plant a three-step staircase
+with known currents and widths, pass it through the shipped Bessel filter so the edges
+carry a realistic rise time, drive each fitter through the real loader, and compare what
+it reports - sublevel current, blockage, duration and the level count - with what was
+planted, event by event and sublevel by sublevel.
+
+The bounds are the 2.1 tolerance policy (ruling A, re-measured on filtered data on
+2026-10-05): fixtures Bessel-filtered at 100 kHz with Rise Time 16 µs, CUSUM step 100 pA and
+ClassicCUSUM step 10 σ; current and blockage within 1.0 σ of the stored (post-filter) sigma
+at 83-sample steps and 2.0 σ at 40-sample steps; duration within 2 samples at 15 pA drawn
+noise and 12 samples at 50 pA; the level count exact on every event at 15 pA and on at
+least 24 of 25 at 50 pA, the missing event named. A median over low-pass noise has far
+fewer effective samples than the step is wide, which is why the bounds are wider than the
+white-noise intuition and narrower at wider steps.
+
+Bands a fitter was never meant for are recorded as strict expected failures rather than
+left out: ClassicCUSUM on 40-sample steps at 15 pA (it resolves fewer levels at *higher*
+SNR - queued under step 5) and at 100 pA (its 10 σ threshold exceeds the 150 pA step);
+every CUSUM variant on 20-sample steps behind a 3-sample rise; and NoFitter's edge
+placement, which walks the start back to the baseline crossing but sets the end a rise
+time early (``NoFitter.py:228-229``, step 5).
+"""
+
+from typing import Dict, List, Tuple, Type
+
+import numpy as np
+import pytest
+
+from poriscope.plugins.eventfitters.ClassicCUSUM import ClassicCUSUM
+from poriscope.plugins.eventfitters.CUSUM import CUSUM
+from poriscope.plugins.eventfitters.IntraCUSUM import IntraCUSUM
+from poriscope.plugins.eventfitters.NoFitter import NoFitter
+from poriscope.utils.MetaEventFitter import MetaEventFitter
+from poriscope.utils.MetaEventLoader import MetaEventLoader
+from tests.synthetic_data.synthetic_events_db import (
+    SyntheticEventsDatabase,
+    generate_events_database,
+)
+from tests.unit.plugins.conformance._recipes import build_event_loader
+
+pytestmark = pytest.mark.conformance
+
+# --- the planted recording ---------------------------------------------------------------
+SAMPLERATE_HZ = 500_000.0
+DT_US = 1e6 / SAMPLERATE_HZ
+CHANNEL = 0
+NUM_EVENTS = 25
+PADDING_SAMPLES = 100
+BASELINE_PA = 2000.0
+AMPLITUDE_PA = -400.0
+#: Three steps 150 pA apart inside the blockage.
+STAIRCASE_PA = [0.0, -150.0, -300.0]
+#: The shipped BesselFilter at this cutoff puts its -3 dB point near 53 kHz and gives a
+#: 10-90% rise of about 3 samples at 500 kHz.
+BESSEL_CUTOFF_HZ = 100_000.0
+
+# --- fitter settings a user would choose for data filtered like this ---------------------
+RISE_TIME_US = 16.0
+_CUSUM_COMMON = {"Rise Time": RISE_TIME_US, "Sensitivity": 1.0, "Max Sublevels": 10}
+FITTER_SETTINGS: Dict[str, Dict[str, object]] = {
+    "CUSUM": {**_CUSUM_COMMON, "Step Size": 100.0},  # pA
+    "ClassicCUSUM": {**_CUSUM_COMMON, "Step Size": 10.0},  # sigma
+    "IntraCUSUM": {
+        **_CUSUM_COMMON,
+        "Step Size": 100.0,
+        "Intraevent Threshold": 0.0,
+        "Intraevent Hysteresis": 0.0,
+    },
+    "NoFitter": {},
+}
+
+CUSUM_FAMILY: List[Type[MetaEventFitter]] = [CUSUM, ClassicCUSUM, IntraCUSUM]
+
+# --- bands ------------------------------------------------------------------------------
+#: (drawn noise in pA, event length in samples). 250 -> 83/83/84-sample steps,
+#: 120 -> 40/40/40, 60 -> 20/20/20.
+Band = Tuple[float, int]
+REQUIRED_BANDS: List[Band] = [(15.0, 250), (50.0, 250), (15.0, 120), (50.0, 120)]
+INFORMATIVE_BANDS: List[Band] = [(100.0, 250), (15.0, 60)]
+
+
+def step_width(length: int) -> int:
+    """
+    Return the width of the first planted step for an event length.
+
+    :param length: the blockage length in samples
+    :type length: int
+    :return: ``length // 3``
+    :rtype: int
+    """
+    return length // len(STAIRCASE_PA)
+
+
+def current_bound_sigma(length: int) -> float:
+    """
+    Return the current and blockage bound, in stored sigmas, for a step width.
+
+    :param length: the blockage length in samples
+    :type length: int
+    :return: 1.0 at 83-sample steps, 2.0 at 40-sample steps
+    :rtype: float
+    """
+    return 1.0 if step_width(length) >= 80 else 2.0
+
+
+def duration_bound_samples(noise: float) -> int:
+    """
+    Return the duration bound, in samples, for a drawn noise level.
+
+    :param noise: the drawn (pre-filter) noise sigma in pA
+    :type noise: float
+    :return: 2 at 15 pA, 12 at 50 pA
+    :rtype: int
+    """
+    return 2 if noise <= 15.0 else 12
+
+
+def allowed_count_misses(noise: float) -> int:
+    """
+    Return how many events may miss the planted level count at a noise level.
+
+    :param noise: the drawn (pre-filter) noise sigma in pA
+    :type noise: float
+    :return: 0 at 15 pA, 1 at 50 pA
+    :rtype: int
+    """
+    return 0 if noise <= 15.0 else 1
+
+
+# --- fixtures ---------------------------------------------------------------------------
+@pytest.fixture(scope="session")
+def filtered_staircase(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> Dict[Band, SyntheticEventsDatabase]:
+    """
+    Generate one Bessel-filtered staircase database per band, once per session.
+
+    :param tmp_path_factory: pytest's session temporary-directory factory
+    :type tmp_path_factory: pytest.TempPathFactory
+    :return: the ground-truth database object per ``(noise, length)`` band
+    :rtype: Dict[Tuple[float, int], SyntheticEventsDatabase]
+    """
+    out = tmp_path_factory.mktemp("filtered_staircases")
+    databases: Dict[Band, SyntheticEventsDatabase] = {}
+    for noise, length in REQUIRED_BANDS + INFORMATIVE_BANDS:
+        databases[(noise, length)] = generate_events_database(
+            out / f"noise{int(noise)}_len{length}.sqlite",
+            channel_id=CHANNEL,
+            num_events=NUM_EVENTS,
+            samplerate=SAMPLERATE_HZ,
+            baseline_mean_pA=BASELINE_PA,
+            baseline_std_pA=noise,
+            event_amplitude_pA=AMPLITUDE_PA,
+            event_length_samples=length,
+            padding_samples=PADDING_SAMPLES,
+            sublevel_amplitudes_pA=STAIRCASE_PA,
+            bessel_cutoff_hz=BESSEL_CUTOFF_HZ,
+        )
+    return databases
+
+
+def build_fitter(
+    fitter_cls: Type[MetaEventFitter], loader: MetaEventLoader
+) -> MetaEventFitter:
+    """
+    Build a fitter standalone with the filtered-data settings above.
+
+    Mirrors the conformance recipe builder, but with settings chosen for a filtered
+    recording rather than the sharp-edged one the conformance fixtures plant.
+
+    :param fitter_cls: the fitter class under test
+    :type fitter_cls: Type[MetaEventFitter]
+    :param loader: the event loader opened on the band's database
+    :type loader: MetaEventLoader
+    :return: a fitter with settings applied, ready for ``fit_events``
+    :rtype: MetaEventFitter
+    """
+    fitter = fitter_cls()
+    settings = fitter.get_empty_settings(standalone=True)
+    settings["MetaEventLoader"]["Value"] = loader
+    settings["MetaEventLoader"]["Type"] = None
+    for key, value in FITTER_SETTINGS[fitter_cls.__name__].items():
+        settings[key]["Value"] = value
+    fitter.apply_settings(settings)
+    return fitter
+
+
+class Fit:
+    """One fitter run over one band's database, with the planted truth beside it."""
+
+    def __init__(
+        self, fitter_cls: Type[MetaEventFitter], database: SyntheticEventsDatabase
+    ) -> None:
+        """
+        Fit every event of the database with the given fitter.
+
+        :param fitter_cls: the fitter class under test
+        :type fitter_cls: Type[MetaEventFitter]
+        :param database: the band's ground-truth database
+        :type database: SyntheticEventsDatabase
+        """
+        self.database = database
+        self.events = database[CHANNEL].events
+        self.sigma = self.events[0].baseline_std  # stored, post-filter
+        self.loader = build_event_loader(str(database.db_path))
+        self.fitter = build_fitter(fitter_cls, self.loader)
+        for _progress in self.fitter.fit_events(CHANNEL):
+            pass
+
+    def close(self) -> None:
+        """
+        Release the fitter and loader.
+
+        :return: None
+        :rtype: None
+        """
+        self.fitter.close_resources()
+        self.loader.close_resources()
+
+    def fitted_ids(self) -> List[int]:
+        """
+        Return the ids of the events the fitter kept, in order.
+
+        :return: event ids with metadata
+        :rtype: List[int]
+        """
+        return sorted(self.fitter.event_metadata[CHANNEL].keys())
+
+    def inner(self, event_id: int, key: str) -> np.ndarray:
+        """
+        Return one sublevel metadata column for an event, paddings excluded.
+
+        :param event_id: the event
+        :type event_id: int
+        :param key: the sublevel metadata key
+        :type key: str
+        :return: the values for the inner sublevels only
+        :rtype: numpy.ndarray
+        """
+        _event_meta, sublevel_meta, _f, _r, _fit = (
+            self.fitter.get_single_event_metadata(CHANNEL, event_id)
+        )
+        return np.asarray(sublevel_meta[key], dtype=float)[1:-1]
+
+    def miscounted(self, expected: int) -> List[int]:
+        """
+        Return the ids of events whose inner sublevel count is not ``expected``.
+
+        :param expected: the planted inner sublevel count
+        :type expected: int
+        :return: offending event ids
+        :rtype: List[int]
+        """
+        return [
+            event_id
+            for event_id in self.fitted_ids()
+            if self.inner(event_id, "sublevel_current").size != expected
+        ]
+
+
+# --- parametrisation --------------------------------------------------------------------
+def _band_id(band: Band) -> str:
+    noise, length = band
+    return f"noise{int(noise)}pA-steps{step_width(length)}"
+
+
+def _xfail(reason: str) -> pytest.MarkDecorator:
+    return pytest.mark.xfail(strict=True, reason=reason)
+
+
+CLASSIC_HIGH_SNR = _xfail(
+    "ClassicCUSUM resolves fewer planted levels at higher SNR (22/25 on 83-sample steps "
+    "and 0/25 on 40-sample steps at 15 pA, against 25/25 on both at 50 pA); queued under "
+    "2.1 step 5"
+)
+CLASSIC_THRESHOLD_ABOVE_STEP = _xfail(
+    "ClassicCUSUM at Step Size 10 sigma: 416 pA threshold exceeds the 150 pA planted step"
+)
+TWENTY_SAMPLE_STEPS = _xfail(
+    "20-sample steps behind a 3-sample rise with a 16 us rise-time setting are not "
+    "resolvable by any CUSUM variant; informative band"
+)
+
+
+def cusum_cases() -> List[object]:
+    """
+    Build the (fitter, band) parameters for the CUSUM family with the expected failures marked.
+
+    :return: ``pytest.param`` entries
+    :rtype: List[object]
+    """
+    cases: List[object] = []
+    for fitter_cls in CUSUM_FAMILY:
+        for band in REQUIRED_BANDS + INFORMATIVE_BANDS:
+            noise, length = band
+            marks: List[pytest.MarkDecorator] = []
+            if length == 60:
+                marks.append(TWENTY_SAMPLE_STEPS)
+            elif fitter_cls is ClassicCUSUM and noise == 15.0:
+                marks.append(CLASSIC_HIGH_SNR)
+            elif fitter_cls is ClassicCUSUM and noise == 100.0:
+                marks.append(CLASSIC_THRESHOLD_ABOVE_STEP)
+            elif noise == 100.0:
+                marks.append(
+                    _xfail(
+                        "100 pA drawn noise is an informative band: 9/25 level counts"
+                    )
+                )
+            cases.append(
+                pytest.param(
+                    fitter_cls,
+                    band,
+                    marks=marks,
+                    id=f"{fitter_cls.__name__}-{_band_id(band)}",
+                )
+            )
+    return cases
+
+
+@pytest.fixture(scope="module")
+def fits() -> Dict[Tuple[str, Band], Fit]:
+    """
+    Cache one fit per (fitter, band) for the module, closing them at the end.
+
+    :return: a mutable cache the tests fill through :func:`fit_for`
+    :rtype: Dict[Tuple[str, Tuple[float, int]], Fit]
+    """
+    cache: Dict[Tuple[str, Band], Fit] = {}
+    yield cache
+    for fit in cache.values():
+        fit.close()
+
+
+def fit_for(
+    fits: Dict[Tuple[str, Band], Fit],
+    filtered_staircase: Dict[Band, SyntheticEventsDatabase],
+    fitter_cls: Type[MetaEventFitter],
+    band: Band,
+) -> Fit:
+    """
+    Return the cached fit for a (fitter, band), running it on first use.
+
+    :param fits: the module cache
+    :type fits: Dict[Tuple[str, Tuple[float, int]], Fit]
+    :param filtered_staircase: the per-band databases
+    :type filtered_staircase: Dict[Tuple[float, int], SyntheticEventsDatabase]
+    :param fitter_cls: the fitter class
+    :type fitter_cls: Type[MetaEventFitter]
+    :param band: ``(noise, length)``
+    :type band: Tuple[float, int]
+    :return: the fit
+    :rtype: Fit
+    """
+    key = (fitter_cls.__name__, band)
+    if key not in fits:
+        fits[key] = Fit(fitter_cls, filtered_staircase[band])
+    return fits[key]
+
+
+# --- the CUSUM family -------------------------------------------------------------------
+@pytest.mark.parametrize("fitter_cls, band", cusum_cases())
+def test_the_level_count_matches_the_planted_staircase(
+    fits, filtered_staircase, fitter_cls: Type[MetaEventFitter], band: Band
+) -> None:
+    """
+    Every event has the three planted inner sublevels, with the one allowance the policy
+    makes at 50 pA named by event id.
+    """
+    noise, _length = band
+    fit = fit_for(fits, filtered_staircase, fitter_cls, band)
+    assert fit.fitter.get_eventfitting_status(CHANNEL) is True
+    assert fit.fitter.rejected.get(CHANNEL, {}) == {}, fit.fitter.report_channel_status(
+        CHANNEL
+    )
+    assert len(fit.fitted_ids()) == NUM_EVENTS
+    misses = fit.miscounted(len(STAIRCASE_PA))
+    assert len(misses) <= allowed_count_misses(
+        noise
+    ), f"{fitter_cls.__name__} missed the planted level count on events {misses}"
+
+
+@pytest.mark.parametrize("fitter_cls, band", cusum_cases())
+def test_sublevel_currents_and_blockages_match_the_planted_levels(
+    fits, filtered_staircase, fitter_cls: Type[MetaEventFitter], band: Band
+) -> None:
+    """
+    On every event with the right level count, each sublevel's current is within the
+    bound of its planted level and its blockage within the bound of the planted drop.
+    """
+    _noise, length = band
+    fit = fit_for(fits, filtered_staircase, fitter_cls, band)
+    bound = current_bound_sigma(length) * fit.sigma
+    misses = set(fit.miscounted(len(STAIRCASE_PA)))
+    checked = 0
+    for event_id in fit.fitted_ids():
+        if event_id in misses:
+            continue
+        planted = fit.events[event_id].planted_sublevels()
+        currents = fit.inner(event_id, "sublevel_current")
+        blockages = fit.inner(event_id, "sublevel_blockage")
+        for (_start, _width, level), current, blockage in zip(
+            planted, currents, blockages, strict=True
+        ):
+            assert abs(current - level) <= bound, (
+                f"event {event_id}: current {current:.1f} vs planted {level:.1f} pA, "
+                f"bound {bound:.1f} pA ({current_bound_sigma(length)} sigma of {fit.sigma:.2f})"
+            )
+            assert abs(blockage - (BASELINE_PA - level)) <= bound, (
+                f"event {event_id}: blockage {blockage:.1f} vs planted "
+                f"{BASELINE_PA - level:.1f} pA, bound {bound:.1f} pA"
+            )
+        checked += 1
+    assert checked >= NUM_EVENTS - allowed_count_misses(band[0])
+
+
+@pytest.mark.parametrize("fitter_cls, band", cusum_cases())
+def test_sublevel_durations_match_the_planted_widths(
+    fits, filtered_staircase, fitter_cls: Type[MetaEventFitter], band: Band
+) -> None:
+    """Each sublevel's duration is within the band's bound of its planted width."""
+    noise, _length = band
+    fit = fit_for(fits, filtered_staircase, fitter_cls, band)
+    bound = duration_bound_samples(noise)
+    misses = set(fit.miscounted(len(STAIRCASE_PA)))
+    checked = 0
+    for event_id in fit.fitted_ids():
+        if event_id in misses:
+            continue
+        checked += 1
+        planted = fit.events[event_id].planted_sublevels()
+        durations = fit.inner(event_id, "sublevel_duration") / DT_US
+        for (_start, width, _level), duration in zip(planted, durations, strict=True):
+            assert abs(duration - width) <= bound, (
+                f"event {event_id}: duration {duration:.1f} vs planted {width} samples, "
+                f"bound {bound}"
+            )
+    # A band where no event had the planted level count must not pass vacuously.
+    assert checked >= NUM_EVENTS - allowed_count_misses(noise)
+
+
+# --- NoFitter ---------------------------------------------------------------------------
+NOFITTER_EDGE_DEFECT = _xfail(
+    "NoFitter walks the start back to the baseline crossing but sets the end a rise time "
+    "early (NoFitter.py:228-229), so a short filtered blockage's mean and edges are off; "
+    "fixed in 2.1 step 5"
+)
+
+
+def nofitter_cases() -> List[object]:
+    """
+    Build NoFitter's band parameters: 83-sample steps required, shorter ones expected to fail.
+
+    :return: ``pytest.param`` entries
+    :rtype: List[object]
+    """
+    cases: List[object] = []
+    for band in REQUIRED_BANDS + INFORMATIVE_BANDS:
+        _noise, length = band
+        marks = [NOFITTER_EDGE_DEFECT] if length < 250 else []
+        cases.append(pytest.param(band, marks=marks, id=_band_id(band)))
+    return cases
+
+
+@pytest.mark.parametrize("band", nofitter_cases())
+def test_nofitter_reports_the_whole_blockage_at_its_planted_mean(
+    fits, filtered_staircase, band: Band
+) -> None:
+    """
+    NoFitter sees one inner sublevel; its current is the width-weighted mean of the
+    planted steps within 1.0 sigma, and its duration the blockage length within a sample.
+    """
+    _noise, length = band
+    fit = fit_for(fits, filtered_staircase, NoFitter, band)
+    assert fit.fitter.rejected.get(CHANNEL, {}) == {}
+    assert fit.miscounted(1) == []
+    for event_id in fit.fitted_ids():
+        planted = fit.events[event_id].planted_sublevels()
+        mean_level = sum(width * level for _s, width, level in planted) / length
+        current = fit.inner(event_id, "sublevel_current")[0]
+        duration = fit.inner(event_id, "sublevel_duration")[0] / DT_US
+        assert abs(current - mean_level) <= 1.0 * fit.sigma, (
+            f"event {event_id}: whole-blockage current {current:.1f} vs planted mean "
+            f"{mean_level:.1f} pA, sigma {fit.sigma:.2f}"
+        )
+        assert abs(duration - length) <= 1, (event_id, duration, length)
+
+
+@pytest.fixture(scope="module")
+def slow_edge_database(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> SyntheticEventsDatabase:
+    """
+    A flat blockage filtered at 20 kHz, whose edges rise over about 16 samples.
+
+    Slow enough that where a fitter puts each edge is unambiguous in the data.
+
+    :param tmp_path_factory: pytest's session temporary-directory factory
+    :type tmp_path_factory: pytest.TempPathFactory
+    :return: the ground-truth database
+    :rtype: SyntheticEventsDatabase
+    """
+    return generate_events_database(
+        tmp_path_factory.mktemp("slow_edges") / "slow_edges.sqlite",
+        channel_id=CHANNEL,
+        num_events=10,
+        samplerate=SAMPLERATE_HZ,
+        baseline_mean_pA=BASELINE_PA,
+        baseline_std_pA=15.0,
+        event_amplitude_pA=AMPLITUDE_PA,
+        event_length_samples=250,
+        padding_samples=PADDING_SAMPLES,
+        bessel_cutoff_hz=20_000.0,
+    )
+
+
+@NOFITTER_EDGE_DEFECT
+def test_nofitter_places_its_two_edges_symmetrically(
+    slow_edge_database: SyntheticEventsDatabase,
+) -> None:
+    """
+    The start and end NoFitter reports sit symmetrically about the planted boundaries.
+
+    The filter is zero-phase, so the planted boundary is the 50% point of each edge. A
+    fitter may place its edges earlier or later along the rise, but whatever offset it
+    applies at the start it should apply, mirrored, at the end; today the end is shifted
+    the same way as the start rather than mirrored, so the whole blockage reads early.
+    """
+    fit = Fit(NoFitter, slow_edge_database)
+    try:
+        for event_id in fit.fitted_ids():
+            (planted_start, width, _level) = fit.events[event_id].planted_sublevels()[0]
+            start = fit.inner(event_id, "sublevel_start_times")[0] / DT_US
+            end = fit.inner(event_id, "sublevel_end_times")[0] / DT_US
+            start_offset = start - planted_start
+            end_offset = end - (planted_start + width)
+            assert abs(start_offset + end_offset) <= 2, (
+                f"event {event_id}: start offset {start_offset:+.1f}, "
+                f"end offset {end_offset:+.1f} samples - not mirrored"
+            )
+    finally:
+        fit.close()

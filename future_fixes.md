@@ -168,6 +168,13 @@ Step 10 waits for both tracks.
 - **The `length - jump > rise_time` half of the C's edge guard is missing** (`CUSUM.py:302-303`).
 - **`ClassicCUSUM` merges short levels on a median but reports them on CUSUM's single-sample
   fallback**, so merge decision and reported current use different estimators.
+- **`ClassicCUSUM` resolves fewer planted levels at *higher* SNR.** On Bessel-filtered synthetic
+  staircases (100 kHz, 8 poles, 500 kHz sampling; steps 150 pA, 40 samples; Step Size 10 σ,
+  Rise Time 16 µs) it found the planted three levels on 0 of 25 events at drawn noise 15 pA
+  (stored σ 6.2) but 25 of 25 at 50 pA (σ 20.8), and 22 of 25 against CUSUM's 25 of 25 at
+  83-sample steps and 15 pA. CUSUM and IntraCUSUM on the same data: 25 of 25 at both noise
+  levels. Measured 2026-10-05 while re-measuring ruling A; the σ-normalised step and the
+  median merge in `_locate_sublevel_transitions` are the suspects. Pinned by a step 1 `xfail`.
 - **`NoFitter` places event edges asymmetrically** (`:228-229`): the start walks back to the
   baseline crossing, the end sits `rise_time` before the threshold crossing (838 against 860 on a
   40-sample ramp), so the overlay and `raw_ecd` shift left.
