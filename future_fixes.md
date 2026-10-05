@@ -252,7 +252,7 @@ Step 10 waits for both tracks.
   `DataPluginModel.py:217`, `:239`); convert them to loop `get_channels()` here so step 8 is
   signatures and overrides only.
 
-### Step 8 - data-plugin API break (breaking; may slip to 2.2)
+### Step 8 - data-plugin API break (breaking; Kyle takes the PeakFinder side)
 
 - **`channel: Optional[int] = None` meaning "every channel"** - scope as designed 2026-09-22
   (`DECISIONS.md`). `MetaEventFitter.reset_channel:325-358` ignores `None` and writes
@@ -265,9 +265,10 @@ Step 10 waits for both tracks.
   `test_base_data_plugin_context_manager.py`); `MetaDatabaseWriter._initialize_database:379` and
   `_write_experiment_metadata:355` go `Optional[int]` -> `int` (`MetaWriter`'s already is). All 21
   overrides change verbatim. **`PeakFinder.py:2591-2593` and `:5143` pass `None` in the body** -
-  owner's, named in the ask.
-- **Coordinate a run-wide "all channels finished" hook on `MetaEventFitter`** with the PeakFinder
-  owner, so the barrier in `_post_process_events:2133-2178` is built by the base rather than raced.
+  Kyle makes these two changes himself (2026-10-05), with both PeakFinders' signature and
+  docstring updates, so step 8 has no owner gate; Nada gets a heads-up.
+- **Add a run-wide "all channels finished" hook on `MetaEventFitter`**; Kyle wires it into PeakFinder
+  (`_post_process_events:2133-2178`), so the barrier is built by the base rather than raced.
 - **The two filters share 16 byte-identical lines**: `close_resources` and `reset_channel` in
   `BesselFilter` (`:128`/`:139`) and `WaveletFilter` (`:92`/`:103`). Both are `@abstractmethod` on
   `MetaFilter` (`:104-126`), so promotion is a contract change; it rides this step.
