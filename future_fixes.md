@@ -225,6 +225,15 @@ Step 10 waits for both tracks.
   it as a swallowed rejection. Raise instead, and share one readiness guard (`:710-725` vs
   `:769-780` today); the writer decides whether that is a rejected event or an aborted channel.
 
+- **`MetaWriter.write_events` writes the next event under a rejected event's index.** The
+  rejection branch (`:470-503`) records `rejected[channel][str(e)]` and `continue`s past
+  `index += 1`, so the event after a rejected one is written with the rejected one's index.
+  Found mapping the writer harness, 2026-10-05; pinned by a step 1 `xfail`.
+- **`MetaDatabaseWriter.write_events` skips an event with a `None` component silently.** A tuple
+  with `None` in any of event metadata, sublevel metadata, raw, filtered or fit data is skipped at
+  `:197-237` with no yield and no `rejected` entry, while `index` still advances. Same provenance
+  and pin as above.
+
 ### Step 7 - plugin lifecycle
 
 - **`apply_settings` assigns `raw_settings` before validating** (`BaseDataPlugin.py:422`,
