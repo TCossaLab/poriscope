@@ -1,3 +1,11 @@
+## Poriscope 2.1.0: in progress
+
+### Developer Tooling:
+
+* The release workflow now runs only when a version tag is pushed; a push to `main` no longer runs the test suite a second time on the same commit
+
+* Release branches now get the branch CI and the documentation render check on every push, so a release is tested before `git flow release finish` rather than after it has merged into `main`
+
 ## Poriscope 2.0.0: 2026-10-05
 
 ### Breaking Changes:

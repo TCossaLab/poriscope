@@ -18,6 +18,36 @@ and deleted on 2026-09-27; it too is in git history.
 
 ---
 
+## 2026-10-05 - The release workflow runs on the tag only; release branches get branch CI
+
+**Context.** `release.yml` ran on every push to `main` as well as on `v*` tags: the same job,
+minus the publish steps, on the same merge commit the tag then pointed at. Meanwhile no
+`release/*` branch had ever had a workflow run - `ci-branches.yml` listed develop, feature,
+bugfix and hotfix, and `docs-check.yml` only saw release branches through pull requests,
+which git flow never opens - so the 2.0.0 preparation commit's first CI was after it had
+merged into `main`.
+
+**Decision** (Kyle, 2026-10-05). Drop the `main` push trigger from `release.yml` and add
+`release/*` to the push triggers of `ci-branches.yml` and `docs-check.yml`. The gate moves
+to before the merge; the tag run still runs the full suite before it publishes.
+
+**Evidence.** The `main` run bought only a staged push order - push `main`, see green, then
+push the tag. When that run fails the broken merge commit is already public on `main` and a
+hotfix is needed regardless; all the staging saves is a tag with no release behind it, and
+the tag run refuses to publish on a failed suite anyway. For 2.0.0 both runs went green on
+`c2d79e9f` six minutes apart, for one answer. GitHub showed 0 runs for `release/1.9.0` and
+`release/1.8.0`.
+
+**Residual risk.** A merge commit can differ from the release tip when `main` carries commits
+`develop` does not (two bot binary commits, this release); the tag run still tests that exact
+commit before publishing. A push to `main` outside git flow now runs only the docs deploy -
+a branch-protection question, not a workflow one.
+
+**Revisit if** a release run on the tag fails on something the release branch's run passed,
+which would mean the merge commit is where the risk lives after all.
+
+---
+
 ## 2026-09-27 - A coverage ratchet is not queued
 
 **Context.** The 2.0.0 refactor plan's verification row claimed a coverage ratchet "is queued in

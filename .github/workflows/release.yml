@@ -1,20 +1,24 @@
-# Continuous Deployment: 
-# Build and release when pushing to main or tagging a version
+# Continuous Deployment: run the suite, build, and publish when a version tag is pushed.
+#
+# Only the tag triggers this. A push to main used to run the same job without the
+# publish steps, on the same commit the tag then points at, so a release ran the suite
+# twice for one answer. main only ever receives git flow release and hotfix merges,
+# and the code behind both is tested on its own branch by ci-branches.yml before it
+# merges; the tag run below re-tests the merge commit itself before anything is
+# published. See DECISIONS.md, 2026-10-05.
 name: CD (Build & Release)
 
 on:
   push:
-    branches:
-      - main              # Trigger on push to main branch
     tags:
-      - 'v*'              # Also trigger on version tags like v1.5.1
+      - 'v*'              # Version tags like v1.5.1; setup_hooks.py makes git flow add the v
 
 permissions:
   contents: write         # Required to upload release assets to GitHub
   id-token: write         # Required for trusted publishing to PyPI
 
 
-# One run per branch; newest cancels older on same branch
+# One run per tag
 concurrency:
   group: "release-${{ github.ref }}"
   cancel-in-progress: true
@@ -116,7 +120,8 @@ jobs:
       #    TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
       #  run: twine upload dist/*
 
-      # Publish to PyPI using trusted publishing (no token needed)
+      # Publish to PyPI using trusted publishing (no token needed). The ref guards are
+      # kept even though only tags trigger this, so a widened trigger cannot publish.
       - name: Publish to PyPI
         if: startsWith(github.ref, 'refs/tags/v')
         uses: pypa/gh-action-pypi-publish@release/v1

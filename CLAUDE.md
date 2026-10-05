@@ -245,7 +245,9 @@ A lesson learned here that generalises beyond Poriscope goes into those skills, 
   `poriscope/constants.py` and `CITATION.cff`, dating the `changelog.md` header, a full green
   `pytest`, and the preparation commit. Then stop and let someone run
   `GIT_MERGE_AUTOEDIT=no git flow release finish <version>` themselves, and push `main`,
-  `develop` and the tag afterwards.
+  `develop` and the tag afterwards. Only the tag push runs `release.yml`; the release
+  branch itself is tested by `ci-branches.yml` and `docs-check.yml` on every push, so push
+  the release branch and see it green before handing off the finish.
   It opens three editors — two merge commit messages and the tag annotation.
   `GIT_MERGE_AUTOEDIT=no` suppresses the merges, but the tag editor always opens and **git flow
   prefills it with nothing**, so `GIT_EDITOR=true` yields an empty message and the command dies

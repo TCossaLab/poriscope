@@ -62,7 +62,7 @@ Three further gates are not pre-commit hooks but are enforced just as strictly:
   deliberately malformed files.
 - the **documentation render check** — :ref:`docs_render_check` below — rebuilds the
   Sphinx documentation on every pull request, and on every push to ``develop`` or a
-  ``hotfix/*`` branch, with warnings treated as errors. pydoclint
+  ``hotfix/*`` or ``release/*`` branch, with warnings treated as errors. pydoclint
   checks that a docstring *describes the right things*; it does not check that the
   docstring is valid reStructuredText. Those are different failure modes, and only this
   gate catches the second one.
@@ -254,9 +254,14 @@ reStructuredText is well formed. Sphinx catches it, so Sphinx is a gate.
 Every pull request targeting ``main``, ``develop`` or a ``release/*`` branch runs the
 **Docs Render Check** workflow, which regenerates the autodoc ``.rst`` files and builds
 the HTML with ``-W`` — warnings are errors. It also runs on every push to ``develop`` and
-to a ``hotfix/*`` branch, because neither arrives through a pull request: both
-``git flow feature finish`` and ``git flow hotfix finish`` merge locally, so a PR-only
-gate would never see the path most work actually takes. To run exactly what it runs:
+to a ``hotfix/*`` or ``release/*`` branch, because none of them arrives through a pull
+request: ``git flow feature finish``, ``hotfix finish`` and ``release finish`` all merge
+locally, so a PR-only gate would never see the path most work actually takes. The
+**CI (Branches)** workflow, which runs the strict pre-commit checks and the full test
+suite, has the same push triggers plus ``feature/*`` and ``bugfix/*``. The release
+workflow runs only when a ``v*`` tag is pushed: it re-runs the suite on the tagged commit
+and publishes to PyPI and GitHub only if that passes. To run exactly what the docs check
+runs:
 
 .. code-block:: bash
 

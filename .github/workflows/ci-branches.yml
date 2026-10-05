@@ -1,10 +1,12 @@
 # CI (Branches)
 # -----------------------------------------------------------------------------
 # What it does
-# - Runs on branch pushes to: develop, feature/*, bugfix/*, hotfix/*
-#   hotfix/* is included because a hotfix branches off main and git flow merges it
-#   straight back into main locally - there is no pull request in that flow, so
-#   without this trigger the first CI a hotfix ever sees is the release itself.
+# - Runs on branch pushes to: develop, feature/*, bugfix/*, hotfix/*, release/*
+#   hotfix/* and release/* are included because both are merged into main locally by
+#   git flow - there is no pull request in either flow - and release.yml runs only on
+#   the version tag, after the merge has landed. Without these triggers the first CI
+#   a hotfix or a release-preparation commit ever sees is the release itself; no
+#   release/* branch had a single workflow run before 2.0.0.
 # - Installs Linux GUI prereqs for PySide6 (EGL/GL/XCB) + Xvfb virtual display
 # - Sets up Python, caches pip by requirements files
 # - Installs runtime + dev deps
@@ -37,6 +39,7 @@ on:
       - 'feature/*'
       - 'bugfix/*'
       - 'hotfix/*'
+      - 'release/*'
 
 permissions:
   contents: write  # required for auto-commit of pre-commit fixes

@@ -1,17 +1,19 @@
 # Docs Render Check
 # -----------------
 # Verifies that the Sphinx documentation still builds cleanly, with warnings treated as
-# errors, on every pull request, on every push to develop, and on every push to a hotfix
+# errors, on every pull request, and on every push to develop or to a hotfix or release
 # branch.
 #
-# Why develop and hotfix/* are on the push trigger:
-# neither reaches this workflow through a pull request. A feature branch finishes with
-# `git flow feature finish`, which merges into develop locally and opens no PR, and a
-# hotfix branches off main and is merged back into main locally the same way - so a
-# PR-only trigger never sees the path either one actually takes, and the first docs build
-# they get is build_and_deploy_docs.yml running against main after the fact, which is
-# exactly the failure this workflow exists to prevent; see DECISIONS.md, 2026-09-19. If a branch also has a pull request open, both triggers fire
-# and it renders twice; that is a few wasted minutes, not a correctness problem.
+# Why develop, hotfix/* and release/* are on the push trigger:
+# none of them reaches this workflow through a pull request. A feature branch finishes with
+# `git flow feature finish`, which merges into develop locally and opens no PR; a hotfix
+# branches off main and is merged back into main locally the same way; and a release
+# branch is merged into main and develop by `git flow release finish`, again with no PR.
+# A PR-only trigger never sees the path any of them actually takes, and the first docs
+# build they get is build_and_deploy_docs.yml running against main after the fact, which
+# is exactly the failure this workflow exists to prevent; see DECISIONS.md, 2026-09-19 and
+# 2026-10-05. If a branch also has a pull request open, both triggers fire and it renders
+# twice; that is a few wasted minutes, not a correctness problem.
 #
 # Why this exists separately from the docs deploy workflow:
 # build_and_deploy_docs.yml only runs on push to main, i.e. after merge, so a
@@ -39,7 +41,7 @@ on:
     types: [opened, synchronize, reopened]
     branches: [main, develop, 'release/*']
   push:
-    branches: [develop, 'hotfix/*']
+    branches: [develop, 'hotfix/*', 'release/*']
   workflow_dispatch:
 
 permissions:
