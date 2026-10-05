@@ -37,6 +37,16 @@ re-measured at HEAD when it comes up. Anchors re-verified 2026-10-05 at `90ad82e
 slip to 2.2 if the PeakFinder owner does not engage; runtime pins loosen to compatible ranges while
 `requirements.txt` stays exact; the ABF offset arithmetic is correct (`DECISIONS.md` 2026-10-05).
 
+**Two tracks** (Kyle, 2026-10-05). Steps 1-8 and 10 are Kyle's track, in order. **Step 9 (9a, 9b) is
+Carolina's track**, run in parallel: its files (`plugins/analysistabs/`, `utils/Meta{View,Controller,
+SubsetTab*,EventTab*}`, `views/main_view.py`) and its instruments (duplication and complexity
+ratchets, MVC boundary allowlist, headless flows) are disjoint from the data-plugin layer steps 1-6
+change, and tabs reach plugins only through `call()`. Rules of the road: start once step 0's Windows
+and wheel runs are green on `develop`; one feature branch per sub-step, in the order 9a lists; a
+promotion updates `.duplication-baseline.json` in the same commit; each track edits only its own
+step sections here and its own changelog lines, and rebases onto `develop` before `feature finish`.
+Step 10 waits for both tracks.
+
 ### Step 0 - baseline and tooling
 
 - **`test_plugin_compliance` parametrizes from `__subclasses__()` at import time**
@@ -264,7 +274,7 @@ slip to 2.2 if the PeakFinder owner does not engage; runtime pins loosen to comp
 - **The compliance test checks only `__abstractmethods__`** (`test_plugin_compliance.py:43`), so
   overrides of concrete methods such as `load_data` go unchecked. Measured in step 0, widened here.
 
-### Step 9a - analysis-tab views
+### Step 9a - analysis-tab views (Carolina's track)
 
 - **The experiment/channel scope has three annotations for one value.** The tab layer declares
   `Optional[Dict[str, List[Optional[int]]]]` in 9 signatures (`MetadataController.py:513/603/674/742`,
@@ -300,7 +310,7 @@ slip to 2.2 if the PeakFinder owner does not engage; runtime pins loosen to comp
   `Rate (Hz)`. Two copies, `ProteinView.py:2337` and `MetadataView.py:2840`; pinned in
   `test_duplicated_helpers.py:273-316`, so the fix updates those tests.
 
-### Step 9b - breaking tab designs and the milestone guard
+### Step 9b - breaking tab designs and the milestone guard (Carolina's track)
 
 - **Raw SQL subset filters can be saved but never plotted.** Six call sites refuse them
   (`MetaSubsetTabView._refuse_raw_filters:234`, from `MetadataView.py:1409`/`:2070` and
