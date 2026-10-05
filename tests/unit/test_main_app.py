@@ -54,6 +54,7 @@ class _StubApp:
 
     create_appdata_folders = App.create_appdata_folders
     initialize_components = App.initialize_components
+    configure_logger = App.configure_logger
     _ensure_folder = App._ensure_folder
     _write_config = App._write_config
     _backfill_missing_config = App._backfill_missing_config
@@ -748,6 +749,38 @@ edit.isValid()
 root = logging.getLogger()
 print(len(root.handlers), logging.getLevelName(root.level))
 """
+
+
+def test_the_log_file_keeps_a_record_containing_a_micro_sign(tmp_path) -> None:
+    """
+    ``app.log`` is written as UTF-8, so a ``μs`` in a message is recorded, not dropped.
+
+    ``logging.FileHandler`` defaults to the locale encoding, which on Windows is
+    cp1252 and cannot encode U+03BC. The handler then discarded the whole record and
+    printed ``--- Logging error ---`` to stderr, so every line carrying the unit the
+    fitters write for duration never reached the file.
+    """
+    root = logging.getLogger()
+    before = list(root.handlers)
+    level_before = root.level
+    stub = _StubApp()
+    stub.log_path = tmp_path
+    try:
+        stub.configure_logger(logging.INFO)
+        added = [h for h in root.handlers if h not in before]
+        file_handlers = [h for h in added if isinstance(h, logging.FileHandler)]
+        assert len(file_handlers) == 1, added
+        assert file_handlers[0].encoding == "utf-8"
+
+        root.info("duration unit is μs")
+        file_handlers[0].flush()
+        written = Path(tmp_path, "app.log").read_text(encoding="utf-8")
+        assert "duration unit is μs" in written
+    finally:
+        for handler in [h for h in root.handlers if h not in before]:
+            root.removeHandler(handler)
+            handler.close()
+        root.setLevel(level_before)
 
 
 def test_importing_the_app_adds_no_root_logging_handler() -> None:

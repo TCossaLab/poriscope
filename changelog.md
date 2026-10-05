@@ -6,6 +6,14 @@
 
 * Release branches now get the branch CI and the documentation render check on every push, so a release is tested before `git flow release finish` rather than after it has merged into `main`
 
+### User-Facing Behaviour:
+
+#### General:
+
+* **Fixed the log file on Windows dropping any line containing `μ`** - such as a fitter's `μs` duration unit - with `--- Logging error ---` on the console; `app.log` is now written as UTF-8
+
+* The Metadata tab's Kernel Density Plot no longer warns about a deprecated SciPy namespace on every plot
+
 ### Documentation:
 
 * The API reference no longer publishes `NanoTrees`' four module helpers (`P6Flags`, `SingleSublevel`, `HackyList`, `Sublevels`) as event fitters; a page under a data-plugin family now goes only to a class that descends from that family's `Meta*` base

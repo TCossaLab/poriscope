@@ -223,7 +223,11 @@ class App(QApplication):
         # file logger - create logfile location if not yet available
 
         log_file_path = Path(self.log_path, "app.log")
-        fileHandler = logging.FileHandler(log_file_path)
+        # Explicit encoding: FileHandler defaults to the locale's, cp1252 on Windows,
+        # which cannot encode U+03BC. The handler then dropped the whole record and
+        # printed "--- Logging error ---" to stderr, so every line carrying "μs" - the
+        # unit the fitters write for duration - never reached the file.
+        fileHandler = logging.FileHandler(log_file_path, encoding="utf-8")
         fileHandler.setFormatter(formatter)
         root_logger.addHandler(fileHandler)
 

@@ -16,6 +16,8 @@ histogram, a fourth root for a 2-D heatmap. The tests below assert each against 
 own formula precisely so that collapsing them would fail.
 """
 
+import warnings
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -427,6 +429,18 @@ class TestKernelDensities:
             )
             np.testing.assert_allclose(positions, expected_positions)
             np.testing.assert_allclose(density, expected_density)
+
+    def test_the_density_path_raises_no_deprecation_warning(self, model):
+        """
+        ``kernel_density`` reaches ``gaussian_kde`` through a namespace SciPy still ships.
+
+        ``scipy.stats.kde`` warns that it will be removed in SciPy 2.0 on every density
+        plot; the import belongs on ``scipy.stats`` itself. Warnings are promoted to
+        errors here so the deprecated path cannot come back unnoticed.
+        """
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", DeprecationWarning)
+            model.kernel_density(np.linspace(0.0, 1.0, 40), 12, False, None, None)
 
     def test_the_order_is_the_input_order(self, model):
         """

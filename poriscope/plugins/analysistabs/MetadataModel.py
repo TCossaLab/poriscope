@@ -40,9 +40,8 @@ from typing import (
 import numpy as np
 import numpy.typing as npt
 import pandas as pd
-from scipy import stats
 from scipy.optimize import curve_fit
-from scipy.stats import iqr, t
+from scipy.stats import gaussian_kde, iqr, t
 
 from poriscope.utils.DocstringDecorator import inherit_docstrings
 from poriscope.utils.LogDecorator import log
@@ -294,7 +293,7 @@ class MetadataModel(MetaSubsetTabModel):
         :rtype: Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]
         """
         numbins = self._resolve_1d_bins(data, bins, sizes, hist_min, hist_max)
-        density = stats.kde.gaussian_kde(data.T)
+        density = gaussian_kde(data.T)
         x = np.linspace(np.min(data), np.max(data), numbins)
         return x, density(x)
 
