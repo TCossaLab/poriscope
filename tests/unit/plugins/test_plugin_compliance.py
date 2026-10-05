@@ -133,15 +133,37 @@ BASE_CLASS_DATA: Dict[str, Dict[str, Any]] = {
 }
 
 
+def is_project_class(cls: Type) -> bool:
+    """
+    Tell whether a class is defined inside the ``poriscope`` package.
+
+    ``__subclasses__()`` returns every subclass alive in the interpreter, including the
+    test doubles other test modules define (``ConcreteEventFitter``, ``MockEventLoader``
+    and friends). Whether those are alive when this module imports depends on collection
+    order, so without this filter the set of audited classes changed with the paths
+    passed to pytest, and an inverted order reported failures natural order never saw.
+
+    :param cls: the class to classify
+    :return: True when the class's module is ``poriscope`` or a submodule of it
+    """
+    return cls.__module__.split(".")[0] == "poriscope"
+
+
 def get_all_subclasses(cls: Type) -> Set[Type]:
     """
-    Recursively collect all direct and indirect subclasses of a given class.
+    Recursively collect all direct and indirect subclasses of a given class that are
+    defined inside the ``poriscope`` package.
+
+    Test doubles are excluded (see :func:`is_project_class`); the walk still descends
+    through them so a project class defined below one would not be missed.
 
     :param cls: Base class
-    :return: Set of all subclasses
+    :return: Set of all project subclasses
     """
-    subclasses: Set[Type] = set(cls.__subclasses__())
+    subclasses: Set[Type] = set()
     for subcls in cls.__subclasses__():
+        if is_project_class(subcls):
+            subclasses.add(subcls)
         subclasses |= get_all_subclasses(subcls)
     return subclasses
 
@@ -321,6 +343,7 @@ def test_plugin_subclass_compliance(base_class_name: str, plugin_cls: Type) -> N
     annotation_mismatches: List[str] = []
     missing_methods: List[str] = []
     missing_docstrings: List[str] = []
+    uninspectable: List[Tuple[str, str]] = []
     errors: List[str] = []
     unimplemented_abstracts: Set[str] = set()
 
@@ -379,9 +402,12 @@ def test_plugin_subclass_compliance(base_class_name: str, plugin_cls: Type) -> N
                         f"sub={getattr(sub_ret, '__name__', sub_ret)}"
                     )
 
-            except (ValueError, TypeError):
-                # Ignore methods we can't introspect (builtins, C-extensions, etc.)
-                pass
+            except (ValueError, TypeError) as exc:
+                # A method whose signature or hints cannot be read (a builtin, a
+                # C-extension slot, an unresolvable forward reference) has had none of
+                # the checks above applied to it. That used to pass silently, which
+                # made such a method look compliant; it is reported instead.
+                uninspectable.append((method_name, f"{type(exc).__name__}: {exc}"))
 
     # 3) Check docstring requirements
     if not (plugin_cls.__doc__ and plugin_cls.__doc__.strip()):
@@ -440,5 +466,30 @@ def test_plugin_subclass_compliance(base_class_name: str, plugin_cls: Type) -> N
         errors.append(f"annotation incompatibilities: {annotation_mismatches}")
     if missing_docstrings:
         errors.append(f"missing docstrings: {missing_docstrings}")
+    if uninspectable:
+        errors.append(
+            "methods that could not be introspected, so were not checked: "
+            f"{uninspectable}"
+        )
 
     assert not errors, f"{plugin_cls.__name__} failed compliance: {', '.join(errors)}"
+
+
+def test_discovery_ignores_classes_defined_outside_poriscope() -> None:
+    """
+    A subclass defined in a test module must not enter the compliance audit.
+
+    Collection order decides which test doubles are alive when this module imports, so
+    a filter keyed on the defining package is what keeps the audited set the same for
+    every invocation of pytest.
+    """
+
+    class _DoubleDefinedInATest(MetaFilter):  # type: ignore[misc]
+        """A test double that must stay out of the audit."""
+
+    try:
+        assert not is_project_class(_DoubleDefinedInATest)
+        assert _DoubleDefinedInATest not in get_all_subclasses(MetaFilter)
+        assert all(is_project_class(cls) for _base, cls in compliance_test_cases)
+    finally:
+        del _DoubleDefinedInATest
