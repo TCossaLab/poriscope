@@ -117,9 +117,70 @@ class Abf2RecordingConfig(BaseRecordingConfig):
         requires exactly 2 (current, voltage); LegacyElementsReader requires
         exactly 1 (current only).
     :type num_channels: int
+    :param data_type: ``"float32"`` writes the trace as-is and the reader's
+        parser forces the scale factor to 1, so none of the gain fields matter;
+        ``"int16"`` writes ADC codes and the reader reconstructs picoamps
+        through the full ABF2 gain stack, which is what a real acquisition
+        produces and the only way to exercise that arithmetic.
+    :type data_type: str
+    :param adc_range: fADCRange, the converter's full-scale range.
+    :type adc_range: float
+    :param adc_resolution: lADCResolution, codes per full scale.
+    :type adc_resolution: int
+    :param instrument_scale_factor: fInstrumentScaleFactor, a divisor.
+    :type instrument_scale_factor: float
+    :param signal_gain: fSignalGain, a divisor.
+    :type signal_gain: float
+    :param adc_programmable_gain: fADCProgrammableGain, a divisor.
+    :type adc_programmable_gain: float
+    :param telegraph_enable: nTelegraphEnable; when nonzero the parser also
+        divides by telegraph_addit_gain.
+    :type telegraph_enable: int
+    :param telegraph_addit_gain: fTelegraphAdditGain.
+    :type telegraph_addit_gain: float
+    :param instrument_offset: fInstrumentOffset. ABF2 folds this into the
+        scale factor (it is added to it), not into an additive offset; the
+        shipped parser follows the format, and so does the encoder here.
+    :type instrument_offset: float
+    :param signal_offset: fSignalOffset, subtracted from the scale factor
+        the same way.
+    :type signal_offset: float
     """
 
     num_channels: int = 2
+    data_type: str = "float32"
+    adc_range: float = 1.0
+    adc_resolution: int = 1
+    instrument_scale_factor: float = 1.0
+    signal_gain: float = 1.0
+    adc_programmable_gain: float = 1.0
+    telegraph_enable: int = 0
+    telegraph_addit_gain: float = 1.0
+    instrument_offset: float = 0.0
+    signal_offset: float = 0.0
+
+    def pa_per_code(self) -> float:
+        """
+        The picoamps one ADC code stands for, by the ABF2 convention the reader applies.
+
+        Mirrors ``ABF2Header.get_scale_factor`` exactly: the gains divide, the range
+        over the resolution multiplies, and both offsets are folded into the factor
+        rather than applied additively.
+
+        :return: picoamps per code
+        :rtype: float
+        """
+        scale = 1.0
+        scale /= self.instrument_scale_factor
+        scale /= self.signal_gain
+        scale /= self.adc_programmable_gain
+        if self.telegraph_enable:
+            scale /= self.telegraph_addit_gain
+        scale *= self.adc_range
+        scale /= self.adc_resolution
+        scale += self.instrument_offset
+        scale -= self.signal_offset
+        return scale
 
 
 def _build_strings_blob(num_channels: int) -> bytes:
@@ -219,7 +280,13 @@ class Abf2RecordingWriter(BaseSyntheticRecordingWriter[Abf2RecordingConfig]):
 
         header = bytearray(BLOCK_SIZE)
         header[0:4] = b"ABF2"
-        _pack_at(header, 30, "<H", 1)  # nonzero => float32 samples
+        is_int16 = config.data_type == "int16"
+        if config.data_type not in ("float32", "int16"):
+            raise ValueError(
+                f'data_type must be "float32" or "int16", got {config.data_type!r}'
+            )
+        # Byte 30: zero means int16 ADC codes, nonzero means float32 samples.
+        _pack_at(header, 30, "<H", 0 if is_int16 else 1)
         _pack_at(header, 76, "<IIl", protocol_block, 0, 0)  # ProtocolSection
         _pack_at(header, 92, "<IIl", adc_block, ADC_RECORD_STRIDE, n)  # ADCSection
         strings_blob = _build_strings_blob(n)
@@ -227,14 +294,14 @@ class Abf2RecordingWriter(BaseSyntheticRecordingWriter[Abf2RecordingConfig]):
             header, 220, "<IIl", strings_block, len(strings_blob), 0
         )  # StringsSection
         _pack_at(
-            header, 236, "<IIl", data_block, 4, trace.size
-        )  # DataSection: 4 bytes/value (float32), trace.size records
+            header, 236, "<IIl", data_block, 2 if is_int16 else 4, trace.size
+        )  # DataSection: bytes per value, then trace.size records
 
         protocol = bytearray(BLOCK_SIZE)
         fADCSequenceInterval = 1.0e6 / config.samplerate
         _pack_at(protocol, 2, "<f", fADCSequenceInterval)
-        _pack_at(protocol, 110, "<f", 1.0)  # fADCRange
-        _pack_at(protocol, 118, "<i", 1)  # lADCResolution, must be nonzero
+        _pack_at(protocol, 110, "<f", config.adc_range)  # fADCRange
+        _pack_at(protocol, 118, "<i", config.adc_resolution)  # lADCResolution
 
         adc = bytearray(ADC_RECORD_STRIDE * n)
         for i in range(n):
@@ -256,22 +323,22 @@ class Abf2RecordingWriter(BaseSyntheticRecordingWriter[Abf2RecordingConfig]):
                 # lADCChannelNameIndex, lADCUnitsIndex
                 "<hhh" "fff" "h" "f" "hh" "fffffffff" "BB" "f" "c" "B" "h" "ii",
                 i,  # nADCNum
-                0,  # nTelegraphEnable - disabled, skips the AdditGain divide
+                config.telegraph_enable,  # nTelegraphEnable
                 0,  # nTelegraphInstrument
-                1.0,  # fTelegraphAdditGain
+                config.telegraph_addit_gain,  # fTelegraphAdditGain
                 0.0,  # fTelegraphFilter
                 0.0,  # fTelegraphMembraneCap
                 0,  # nTelegraphMode
                 0.0,  # fTelegraphAccessResistance
                 0,  # nADCPtoLChannelMap
                 0,  # nADCSamplingSeq
-                1.0,  # fADCProgrammableGain - divisor, must be nonzero
+                config.adc_programmable_gain,  # fADCProgrammableGain
                 0.0,  # fADCDisplayAmplification
                 0.0,  # fADCDisplayOffset
-                1.0,  # fInstrumentScaleFactor - divisor, must be nonzero
-                0.0,  # fInstrumentOffset
-                1.0,  # fSignalGain - divisor, must be nonzero
-                0.0,  # fSignalOffset
+                config.instrument_scale_factor,  # fInstrumentScaleFactor
+                config.instrument_offset,  # fInstrumentOffset
+                config.signal_gain,  # fSignalGain
+                config.signal_offset,  # fSignalOffset
                 0.0,  # fSignalLowpassFilter
                 0.0,  # fSignalHighpassFilter
                 0,  # nLowpassFilterType
@@ -286,10 +353,23 @@ class Abf2RecordingWriter(BaseSyntheticRecordingWriter[Abf2RecordingConfig]):
 
         strings = bytearray(strings_blob)
 
-        data = np.empty((trace.size, n), dtype="<f4")
-        data[:, 0] = trace
-        for i in range(1, n):
-            data[:, i] = VOLTAGE_CHANNEL_FILL
+        if is_int16:
+            # Encode picoamps as the codes the reader will turn back into picoamps.
+            codes = np.round(trace / config.pa_per_code())
+            if np.any(np.abs(codes) > 32767):
+                raise ValueError(
+                    "the planted trace does not fit in int16 at "
+                    f"{config.pa_per_code():.4g} pA per code; adjust the gains"
+                )
+            data = np.empty((trace.size, n), dtype="<i2")
+            data[:, 0] = codes.astype("<i2")
+            for i in range(1, n):
+                data[:, i] = int(round(VOLTAGE_CHANNEL_FILL / config.pa_per_code()))
+        else:
+            data = np.empty((trace.size, n), dtype="<f4")
+            data[:, 0] = trace
+            for i in range(1, n):
+                data[:, i] = VOLTAGE_CHANNEL_FILL
 
         stem = self._filename_stem(config, channel)
         abf_path = out_dir / f"{stem}.abf"
