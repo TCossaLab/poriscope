@@ -151,7 +151,7 @@ revisiting.
 
 - `changelog.md` — what changed, user-facing. Update it for any code change.
 - `future_fixes.md` — the authoritative record of what is still queued, organised under
-  release-target headers (2.0.0, 2.1, 2.2, Later, Owner-held); larger speculative work goes
+  release-target headers (2.1, 2.2, Later, Owner-held); larger speculative work goes
   under Later. Keep it terse; prune items as they land
   rather than leaving completed-work narrative behind. Delete a landed entry outright —
   do not mark it `**Fixed**`, strike it through with `~~`, or retitle its section
