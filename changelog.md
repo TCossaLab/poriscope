@@ -10,6 +10,12 @@
 
 * `python scripts/new_plugin.py AnalysisTab` now writes a controller that redeclares `view` and `model` with the tab's own types, as the shipped tabs do; the HelloWorld tutorial files are regenerated from it
 
+* **Breaking for anyone pinning on Poriscope's own metadata: the wheel now declares compatible-release ranges** (`numpy~=2.2`, `PySide6~=6.9`, ...) instead of exact pins, so it installs beside other packages; the exact versions CI tests against stay in `requirements.txt`
+
+* `hdbscan` 0.8.44 replaces 0.8.40, which warned on every clustering run that scikit-learn 1.8 will remove `force_all_finite`
+
+* GitHub Actions and the pinned Python dependencies are now kept current by Dependabot, weekly, against `develop`
+
 ### Analysis Tabs:
 
 * `get_save_filename`, the CSV export's file picker that `MetaController.export_plot_data` calls on every tab, now lives once on `MetaView` instead of as four identical copies on the Views
