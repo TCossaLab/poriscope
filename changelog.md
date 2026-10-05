@@ -6,6 +6,10 @@
 
 * Release branches now get the branch CI and the documentation render check on every push, so a release is tested before `git flow release finish` rather than after it has merged into `main`
 
+### Documentation:
+
+* The API reference no longer publishes `NanoTrees`' four module helpers (`P6Flags`, `SingleSublevel`, `HackyList`, `Sublevels`) as event fitters; a page under a data-plugin family now goes only to a class that descends from that family's `Meta*` base
+
 ## Poriscope 2.0.0: 2026-10-05
 
 ### Breaking Changes:

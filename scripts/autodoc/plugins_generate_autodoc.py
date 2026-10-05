@@ -182,21 +182,61 @@ def find_classes_and_nodes(py_file):
     ]
 
 
+def plugin_classes(category_dir):
+    """
+    Return the plugin classes of one family as ``(py_file, class_name, class_node)``.
+
+    A family's section documents plugins, so a class earns a page only when it
+    descends from a ``Meta*`` base: directly (``CUSUM(MetaEventFitter)``), or through
+    another plugin in the same family (``ClassicCUSUM(CUSUM)``,
+    ``LegacyElementsReader(TCossaLabABFReader)``). A helper class that merely shares a
+    plugin's module - ``NanoTrees.py`` carries ``P6Flags``, ``SingleSublevel``,
+    ``HackyList`` and ``Sublevels`` beside the fitter - has no such ancestor and gets
+    no page. Resolved by name within the family, which is as far as any shipped plugin's
+    inheritance reaches.
+    """
+    candidates = []
+    for py_file in sorted(category_dir.glob("*.py")):
+        if py_file.name.startswith("__"):
+            continue
+        for class_name, class_node in find_classes_and_nodes(py_file):
+            bases = {b.split(".")[-1] for b in parse_base_classes(class_node.bases)}
+            candidates.append((py_file, class_name, class_node, bases))
+
+    plugins: Set[str] = set()
+    changed = True
+    while changed:
+        changed = False
+        for _, class_name, _, bases in candidates:
+            if class_name in plugins:
+                continue
+            if any(base.startswith("Meta") or base in plugins for base in bases):
+                plugins.add(class_name)
+                changed = True
+    return [
+        (py_file, class_name, class_node)
+        for py_file, class_name, class_node, _ in candidates
+        if class_name in plugins
+    ]
+
+
 def documented_plugin_classes(plugin_root):
     """
     Name every class this generator will write a page for, before it writes any.
 
     A plugin that subclasses another plugin links its base by that page's label, and
     the pages are written in directory order, so the names are collected up front.
+    Family files contribute their plugin classes only (:func:`plugin_classes`); a
+    ``utils/`` folder contributes every public class.
     """
     names = set()
     for category_dir in plugin_root.iterdir():
         if not category_dir.is_dir() or category_dir.name.startswith("__"):
             continue
-        for folder in (category_dir, category_dir / "utils"):
-            for py_file in folder.glob("*.py"):
-                if not py_file.name.startswith("__"):
-                    names.update(name for name, _ in find_classes_and_nodes(py_file))
+        names.update(name for _, name, _ in plugin_classes(category_dir))
+        for py_file in (category_dir / "utils").glob("*.py"):
+            if not py_file.name.startswith("__"):
+                names.update(name for name, _ in find_classes_and_nodes(py_file))
     return names
 
 
@@ -460,22 +500,18 @@ def main():
 
         class_names = []
 
-        for py_file in category_dir.glob("*.py"):
-            if py_file.name.startswith("__"):
-                continue
-
-            for class_name, class_node in find_classes_and_nodes(py_file):
-                import_path = get_import_path(py_file, class_name)
-                exclusions = get_exclusions(class_name)
-                write_class_rst(
-                    output_dir,
-                    class_node,
-                    import_path,
-                    class_name,
-                    exclusions,
-                    documented,
-                )
-                class_names.append(class_name)
+        for py_file, class_name, class_node in plugin_classes(category_dir):
+            import_path = get_import_path(py_file, class_name)
+            exclusions = get_exclusions(class_name)
+            write_class_rst(
+                output_dir,
+                class_node,
+                import_path,
+                class_name,
+                exclusions,
+                documented,
+            )
+            class_names.append(class_name)
         # Process utils/ subfolder if it exists
         utils_dir = category_dir / "utils"
         utils_class_names = []
