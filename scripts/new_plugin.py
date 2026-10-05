@@ -1373,6 +1373,24 @@ def render_tab_file(role: TabRole, name: str, folder: Path, author: str) -> str:
         sections.append(f"    # {label} API, must be implemented by subclasses\n{head}")
         sections += rest
 
+    if is_controller:
+        # MetaController declares `view: MetaView` and `model: MetaModel`; a tab's
+        # controller redeclares them with its own types, or every call to a method its
+        # View or Model adds reads as an attribute error to the type checker. Written
+        # here so a generated tab starts out the way the shipped ones are.
+        role_classes = {r.suffix: f"{name}{r.suffix}" for r in TRIAD}
+        sections.insert(
+            0,
+            "\n".join(
+                [
+                    "    #: Declared with this tab's own types so the type checker sees",
+                    "    #: the methods its View and Model add to the bases.",
+                    f"    view: {role_classes[TRIAD[2].suffix]}",
+                    f"    model: {role_classes[TRIAD[1].suffix]}",
+                ]
+            ),
+        )
+
     return render_file(
         f"{name}{role.suffix}",
         base_cls.__name__,

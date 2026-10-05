@@ -44,6 +44,11 @@ class HelloWorldController(MetaController):
 
     logger = logging.getLogger(__name__)
 
+    #: Declared with this tab's own types so the type checker sees
+    #: the methods its View and Model add to the bases.
+    view: HelloWorldView
+    model: HelloWorldModel
+
     # private API, must be implemented by subclasses
     @log(logger=logger)
     @override
