@@ -26,7 +26,13 @@
 
 
 import logging
-from typing import override
+from typing import Any, Dict, List, Optional, Tuple, override
+
+import hdbscan
+import numpy as np
+import pandas as pd
+from pandas.api.types import is_float_dtype
+from sklearn.mixture import GaussianMixture
 
 from poriscope.utils.DocstringDecorator import inherit_docstrings
 from poriscope.utils.LogDecorator import log
@@ -37,6 +43,16 @@ from poriscope.utils.MetaModel import MetaModel
 class ClusteringModel(MetaModel):
     """
     Subclass of MetaModel for handling clustering-related data processing.
+
+    Owns the clustering computation itself, rather than
+    ``ClusteringView``, which had been importing ``hdbscan``,
+    ``sklearn.mixture.GaussianMixture`` and ``pandas.api.types.is_float_dtype`` into a
+    ``QWidget``; none of those names appears in the View any more.
+
+    The View asks for a result by emitting ``cluster_requested``;
+    ``ClusteringController`` calls :meth:`cluster` and hands what comes back to
+    ``ClusteringView.set_clustering_result``; ``RawDataController.calculate_psd`` is
+    the same shape.
     """
 
     logger = logging.getLogger(__name__)
@@ -45,3 +61,238 @@ class ClusteringModel(MetaModel):
     @override
     def _init(self) -> None:
         pass
+
+    @log(logger=logger)
+    def build_clustering_frame(
+        self,
+        plot_data: pd.DataFrame,
+        frame_columns: List[str],
+        log_flags: List[bool],
+    ) -> pd.DataFrame:
+        """
+        Filter and log-scale the loaded rows into the frame that gets clustered.
+
+        The View still reads the settings dialog, since the per-column flags are
+        strings the user typed; deciding what the numbers mean is this layer's.
+
+        ``logscale_and_filter_columns`` masks rows across **every** array it is handed
+        at once, which is what keeps the columns aligned - so ``"id"`` is passed through
+        the filter with the rest rather than reattached afterwards, or it would index
+        rows that are no longer there.
+
+        :param plot_data: the rows the loader returned
+        :type plot_data: pd.DataFrame
+        :param frame_columns: the columns to carry through, ``"id"`` included
+        :type frame_columns: List[str]
+        :param log_flags: per column, whether to log-scale it, index-aligned with frame_columns
+        :type log_flags: List[bool]
+        :return: the filtered, log-scaled frame to cluster
+        :rtype: pd.DataFrame
+        :raises KeyError: If a requested column is missing from the loaded rows.
+        """
+        missing = [c for c in frame_columns if c not in plot_data.columns]
+        if missing:
+            raise KeyError(
+                f"All columns {frame_columns} must be present in the provided dataframe"
+            )
+
+        filtered = self.logscale_and_filter_columns(
+            *(plot_data[c].to_numpy() for c in frame_columns),
+            log_flags=log_flags,
+        )
+        return pd.DataFrame(dict(zip(frame_columns, filtered, strict=True)))
+
+    @log(logger=logger)
+    def cluster(
+        self,
+        frame: pd.DataFrame,
+        exclude_cols: List[str],
+        method: str,
+        params: Dict[str, Any],
+    ) -> Tuple[pd.DataFrame, np.ndarray, np.ndarray]:
+        """
+        Normalize the given columns and cluster the frame by the named method.
+
+        The single entry point the Controller calls. ``params`` carries values the View
+        has already parsed and validated - integers and floats, not the raw strings from
+        the settings dialog - so a malformed entry is reported to the user where they
+        typed it rather than raised from in here.
+
+        :param frame: the rows to cluster, carrying an ``id`` column for row identity
+        :type frame: pd.DataFrame
+        :param exclude_cols: columns to leave un-normalized, ``id`` among them
+        :type exclude_cols: List[str]
+        :param method: either ``"HDBSCAN"`` or ``"Gaussian Mixtures"``
+        :type method: str
+        :param params: the method's already-parsed parameters
+        :type params: Dict[str, Any]
+        :return: the normalized frame, the cluster labels, and the confidences
+        :rtype: Tuple[pd.DataFrame, np.ndarray, np.ndarray]
+        :raises ValueError: if the method is not one this model implements
+        """
+        frame = self.normalize_column_data(frame, exclude_cols=exclude_cols)
+
+        if method == "HDBSCAN":
+            labels, probs = self.cluster_hdbscan(frame, **params)
+        elif method == "Gaussian Mixtures":
+            labels, probs = self.cluster_gaussian_mixture(frame, **params)
+        else:
+            raise ValueError(f"Unknown clustering method: {method!r}")
+
+        return frame, labels, probs
+
+    @log(logger=logger)
+    def normalize_column_data(
+        self, df: pd.DataFrame, exclude_cols: Optional[List[str]] = None
+    ) -> pd.DataFrame:
+        """
+        Applies MAD-based normalization to float columns in the dataframe.
+
+        :param df: Input DataFrame.
+        :type df: pd.DataFrame
+        :param exclude_cols: Columns to exclude from normalization. None means exclude nothing.
+        :type exclude_cols: Optional[List[str]]
+        :return: Normalized DataFrame.
+        :rtype: pd.DataFrame
+        """
+        if exclude_cols is None:
+            exclude_cols = []
+        df = df.copy()  # avoid SettingWithCopyWarning
+        datatypes = df.dtypes
+        for col, dt in datatypes.items():
+            if col not in exclude_cols and is_float_dtype(dt):  # leave int types alone
+                median = df[col].median()
+                mad = (df[col] - median).abs().median()
+                if mad != 0:
+                    df.loc[:, col] = (df[col] - median) / mad
+        return df
+
+    @log(logger=logger)
+    def cluster_hdbscan(
+        self,
+        df: pd.DataFrame,
+        min_cluster_size: int = 30,
+        min_samples: int = 1,
+        cluster_selection_epsilon: float = 1,
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        Performs HDBSCAN clustering on the provided data.
+
+        :param df: DataFrame to cluster.
+        :type df: pd.DataFrame
+        :param min_cluster_size: Minimum size of clusters.
+        :type min_cluster_size: int
+        :param min_samples: Minimum samples per cluster.
+        :type min_samples: int
+        :param cluster_selection_epsilon: Epsilon value to influence cluster boundaries.
+        :type cluster_selection_epsilon: float
+        :return: Cluster labels and probabilities.
+        :rtype: Tuple[np.ndarray, np.ndarray]
+        """
+        columns_except_id = df.columns[df.columns != "id"]
+        clusterer = hdbscan.HDBSCAN(
+            min_cluster_size=min_cluster_size,
+            min_samples=min_samples,
+            cluster_selection_epsilon=cluster_selection_epsilon,
+        ).fit(df[columns_except_id])
+        labels = clusterer.labels_
+        probs = clusterer.probabilities_
+        return labels, probs
+
+    @log(logger=logger)
+    def cluster_gaussian_mixture(
+        self, df: pd.DataFrame, n_components: int
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        Fit a Gaussian mixture to the data and return its labels and confidences.
+
+        Seeded (``random_state=42``, ``n_init=100``) so that re-running on the same rows
+        gives the same answer, which 1.9.0 fixed and this move preserves.
+
+        :param df: DataFrame to cluster.
+        :type df: pd.DataFrame
+        :param n_components: Number of mixture components to fit.
+        :type n_components: int
+        :return: Cluster labels and per-row confidences.
+        :rtype: Tuple[np.ndarray, np.ndarray]
+        """
+        columns_except_id = df.columns[df.columns != "id"]
+        clusterer = GaussianMixture(
+            n_components=n_components, n_init=100, random_state=42
+        )
+        labels = clusterer.fit_predict(df[columns_except_id])
+        probs = clusterer.predict_proba(df[columns_except_id])
+        probs = np.max(probs, axis=1) / np.sum(probs, axis=1)
+        return labels, probs
+
+    @log(logger=logger)
+    def find_cluster_column_table(self, loader: str) -> Optional[str]:
+        """
+        Return the table already holding cluster columns, or None if there is none.
+
+        :param loader: the database loader's plugin key
+        :type loader: str
+        :return: the table name, or None if ``cluster_label`` is not in the database
+        :rtype: Optional[str]
+        """
+        table: Optional[str] = self.call(
+            "MetaDatabaseLoader", loader, "get_table_by_column", "cluster_label"
+        )
+        return table
+
+    @log(logger=logger)
+    def drop_cluster_columns(self, loader: str, table: str) -> bool:
+        """
+        Delete an existing clustering result so a new one can replace it.
+
+        Owns the SQL, rather than ``ClusteringView`` - authoring ``ALTER TABLE``
+        statements is not a widget's job. ``DECISIONS.md`` (2026-08-25) accepts the
+        f-string interpolation itself, because the database is a local file owned by
+        the user running the app; this is about *where* the SQL lives.
+
+        :param loader: the database loader's plugin key
+        :type loader: str
+        :param table: the table the cluster columns are in
+        :type table: str
+        :return: True if the loader reported success
+        :rtype: bool
+        """
+        queries = [
+            f"ALTER TABLE {table} DROP COLUMN cluster_label",
+            f"ALTER TABLE {table} DROP COLUMN cluster_confidence",
+            "DELETE FROM columns WHERE name = 'cluster_label'",
+            "DELETE FROM columns WHERE name = 'cluster_confidence'",
+        ]
+        status: bool = self.call(
+            "MetaDatabaseLoader", loader, "alter_database", queries
+        )
+        return status
+
+    @log(logger=logger)
+    def commit_cluster_columns(
+        self, loader: str, cluster_data: pd.DataFrame, table_name: str
+    ) -> bool:
+        """
+        Write the cluster labels and confidences into the database.
+
+        The two new columns are unitless, which is what the ``[None, None]`` says. It
+        belongs with the call it describes rather than with the widget that asks.
+
+        :param loader: the database loader's plugin key
+        :type loader: str
+        :param cluster_data: the id, label and confidence columns to write
+        :type cluster_data: pd.DataFrame
+        :param table_name: the table to write them into
+        :type table_name: str
+        :return: True if the loader reported success
+        :rtype: bool
+        """
+        status: bool = self.call(
+            "MetaDatabaseLoader",
+            loader,
+            "add_columns_to_table",
+            cluster_data,
+            [None, None],
+            table_name,
+        )
+        return status

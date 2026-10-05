@@ -25,13 +25,9 @@
 # Alejandra Carolina González González
 
 import logging
-import warnings
 from abc import abstractmethod
 from pathlib import Path
 from typing import Any, Dict, Generator, List, Optional, Tuple
-
-import numpy as np
-import numpy.typing as npt
 
 from poriscope.utils.BaseDataPlugin import BaseDataPlugin
 from poriscope.utils.DocstringDecorator import inherit_docstrings
@@ -160,7 +156,9 @@ class MetaWriter(BaseDataPlugin):
 
         settings: Dict[str, Dict[str, Any]] = {
             "MetaEventFinder": {
-                "Type": str,
+                # A script holds the parent object and has no controller to resolve a
+                # name, so standalone declares the class it must be an instance of.
+                "Type": MetaEventFinder if standalone else str,
                 "Value": eventfinder_options[0] if eventfinder_options else "",
                 "Options": eventfinder_options,
             },
@@ -170,17 +168,44 @@ class MetaWriter(BaseDataPlugin):
 
     @serialize_channels
     @log(logger=logger)
-    def commit_events(self, channel: int) -> Generator[float, Optional[bool], None]:
+    def commit_events(
+        self, channel: int, overwrite: bool = False
+    ) -> Generator[float, Optional[bool], None]:
         """
         Create a generator that will loop through events in self.eventfinder in channel
         and call self._write_data() to commit it to file
 
+        If the output already holds ``channel`` (see
+        :meth:`get_committed_experiment_name`), the commit is refused with
+        ``ValueError`` unless ``overwrite`` is True, in which case the channel is reset
+        first. Writing into it anyway would mix two runs' events in one channel. The
+        Raw Data tab asks the user before passing ``overwrite``.
+
         :param channel: the index of the channel to commit
         :type channel: int
+        :param overwrite: replace the channel's events if the output already holds it
+        :type overwrite: bool
         :yield: the progress of the interator, normalized to [0,1]
         :ytype: float
         """
-        yield from self._commit_events(channel)
+        yield from self._commit_events(channel, overwrite)
+
+    @log(logger=logger)
+    def get_committed_experiment_name(self, channel: int) -> Optional[str]:
+        """
+        Name the experiment the output already holds ``channel`` under, if it does.
+
+        Asked before a commit, so it must not create the output file. The base returns
+        None, meaning "this writer's output never already holds a channel"; override it
+        in a writer that can write into an existing file, so :meth:`commit_events` can
+        refuse to mix two runs in one channel.
+
+        :param channel: the channel to look up
+        :type channel: int
+        :return: the stored experiment name, or None if the output does not hold the channel
+        :rtype: Optional[str]
+        """
+        return None
 
     @log(logger=logger)
     def force_serial_channel_operations(self) -> bool:
@@ -253,52 +278,53 @@ class MetaWriter(BaseDataPlugin):
     @abstractmethod
     def _write_data(
         self,
-        data: npt.NDArray[np.number],
+        event: Dict[str, Any],
         channel: int,
         index: int,
-        scale: Optional[float] = None,
-        offset: Optional[float] = None,
-        start_sample: Optional[int] = 0,
-        padding_before: Optional[int] = 0,
-        padding_after: Optional[int] = None,
-        baseline_mean: Optional[float] = None,
-        baseline_std: Optional[float] = None,
-        raw_data: bool = False,
         abort: Optional[bool] = False,
         last_call: Optional[bool] = False,
     ) -> bool:
         """
-        **Purpose**: Append a single event data and metadata to the database of event data.
+        **Purpose**: Append a single event's data and metadata to the output file.
 
-        Given a series of metadata about the event to be written, write it to the database file (append to an existing databse in the case of atomic operations). Return True if that operation succeeds. If the write operation fails, Raise an exception for handling in the caller. Note that raising on a write failure will not cause a crash - poriscope will continue trying to write subsequent events and store the string associated with the raised error as reason for that write failure for downstream reporting.
+        Given one event, write it to the active file for ``channel`` (appending to an
+        existing file in the case of atomic operations) and return True if that
+        succeeds. If the write fails, raise: raising does not crash poriscope, which
+        carries on to the next event and files the exception's text as that event's
+        rejection reason for downstream reporting.
 
-        :param data: 1D numpy array of data to write to the active file in the specified channel.
-        :type data: npt.NDArray[np.number]
-        :param channel: Int indicating the channel from which it was acquired.
+        ``event`` is the dict :meth:`MetaEventFinder.get_single_event_data` produces, and
+        is passed through whole rather than exploded into arguments - this took thirteen
+        positional parameters until 2.0.0, of which ten were its keys. Its keys are:
+
+        - ``data`` - the event's samples, as a 1D numpy array.
+        - ``start_sample`` - index of the first sample *of the event itself*, not of the
+          padding before it, relative to the start of the channel.
+        - ``padding_before`` / ``padding_after`` - samples of context included on each
+          side. ``data`` therefore spans
+          ``start_sample - padding_before`` to ``start_sample + len(event) + padding_after``.
+        - ``baseline_mean`` / ``baseline_std`` - the local baseline the event sits on.
+
+        ``data`` is always in pA, exactly as the reader's ``load_data`` returns it, so it is
+        consistent with the ``baseline_mean`` stored beside it. Until 2.0.0 a writer whose
+        output type matched the reader's source type was handed unscaled samples with
+        ``scale`` and ``offset`` keys and a ``raw_data`` flag; that path is gone.
+
+        Treat a missing key as a programming error and raise, rather than substituting a
+        default: a silently defaulted padding writes an event whose samples do not line
+        up with its own metadata.
+
+        :param event: One event, as ``get_single_event_data`` builds it.
+        :type event: Dict[str, Any]
+        :param channel: The channel the event belongs to.
         :type channel: int
-        :param index: event index
+        :param index: The event's index within that channel.
         :type index: int
-        :param scale: Float indicating scaling between provided data type and encoded form for storage, default None.
-        :type scale: Optional[float]
-        :param offset: Float indicating offset between provided data type and encoded form for storage, default None.
-        :type offset: Optional[float]
-        :param start_sample: Integer index of the starting point of the provided array relative to the start of the experimental run, default 0.
-        :type start_sample: Optional[int]
-        :param padding_before: the length of the padding before the actual event start
-        :type padding_before: Optional[int]
-        :param padding_after: the length of the padding after the actual event end
-        :type padding_after: Optional[int]
-        :param baseline_mean: The local baseline, if available
-        :type baseline_mean: Optional[float]
-        :param baseline_std: the local standard deviation, if available
-        :type baseline_std: Optional[float]
-        :param raw_data: True means to simply write data as-is to file, False indicates to first rescale it. Default False.
-        :type raw_data: bool
-        :param abort: True if an abort request was issued in the caller, perform cleanup as needed, default False.
+        :param abort: True to discard the channel's uncommitted batch and stop.
         :type abort: Optional[bool]
-        :param last_call: If True, flush the remaining batch, default False.
+        :param last_call: True when this is the final event of the channel.
         :type last_call: Optional[bool]
-        :return: success of the write operation.
+        :return: True if the event was written.
         :rtype: bool
         """
         pass
@@ -308,7 +334,7 @@ class MetaWriter(BaseDataPlugin):
         """
         **Purpose**: Set the datatype of the data to be saved for each event.
 
-        This function returns a string encoding a numpy datatype that tells the writer in what format the data should be stored in the database. If the output dtype exactly matches the intput dtype, the plugin will attempt to store raw data without any precision loss. In the case of a mismatch, it is not possible for poriscope to guarantee that there is no loss of precision between the input and output operation. If there is any dount, we suggest that use of double precision floating point numbers (``"<f8"``) will not incur any meaningful loss of precision in the vast majority of operations regardless of input type.
+        This function returns a string encoding a numpy datatype that tells the writer in what format the event data, which is always in pA, should be stored in the database. Double precision floating point (``"<f8"``) loses no meaningful precision for any input type, and is what the shipped writer uses.
 
         :return: A string representing a :mod:`numpy` dtype
         :rtype: str
@@ -344,13 +370,18 @@ class MetaWriter(BaseDataPlugin):
     # private API continued, should implemented by subclasses, but has default behavior if it is not needed
 
     @log(logger=logger)
-    def _commit_events(self, channel: int) -> Generator[float, Optional[bool], None]:
+    def _commit_events(
+        self, channel: int, overwrite: bool = False
+    ) -> Generator[float, Optional[bool], None]:
         """
         Create a generator that will loop through events in self.eventfinder in channel
         and call self._write_data() to commit it to file
 
         :param channel: the index of the channel to commit
         :type channel: int
+        :param overwrite: replace the channel's events if the output already holds it
+        :type overwrite: bool
+        :raises ValueError: if the output already holds the channel and ``overwrite`` is False
         :raises Exception: if the output file cannot be opened, if writing channel metadata fails unexpectedly, or if an unrecoverable error occurs while iterating events
         :yield: the progress of the interator, normalized to [0,1]
         :ytype: float
@@ -372,6 +403,10 @@ class MetaWriter(BaseDataPlugin):
                     yield current, True  # True means this is the last item
                     break
 
+        # Reset before anything can raise, so a refused commit reports what it wrote
+        # (nothing) rather than the previous commit's tally.
+        self.written[channel] = 0
+        self.rejected[channel] = {}
         try:
             self._initialize_database(channel)
         except Exception:
@@ -390,6 +425,18 @@ class MetaWriter(BaseDataPlugin):
             self.close_resources(channel)
             raise
 
+        # After _initialize_database, which migrates an existing file's triggers before
+        # anything is deleted from it.
+        if self.get_committed_experiment_name(channel) is not None:
+            if not overwrite:
+                self.close_resources(channel)
+                raise ValueError(
+                    f"Channel {channel} already holds events in "
+                    f"{self.get_output_file_name()}; commit it with overwrite=True to "
+                    "replace them, or choose a new output file"
+                )
+            self.reset_channel(channel)
+
         try:
             self._write_channel_metadata(channel)
         except Exception as e:
@@ -400,8 +447,6 @@ class MetaWriter(BaseDataPlugin):
             self.close_resources(channel)
             raise
         try:
-            self.written[channel] = 0
-            self.rejected[channel] = {}
             num_events = self.eventfinder.get_num_events_found(channel)
             if num_events == 0:
                 self.logger.info(
@@ -415,45 +460,22 @@ class MetaWriter(BaseDataPlugin):
                 )
                 yield 1.0
                 return
-            source_dtype = self.eventfinder.get_dtype()
-            raw_data = False
-            if source_dtype == self.output_dtype:
-                raw_data = True
-
             event_generator = self.eventfinder.get_event_data_generator(
-                channel, data_filter=None, rectify=False, raw_data=raw_data
+                channel, data_filter=None, rectify=False
             )
 
-            scale = None
-            offset = None
             index = 0
             abort = False
             try:
                 for event, last_call in lookahead_generator(event_generator):
                     try:
-                        event_data = event["data"]
-                        start_sample = event["start_sample"]
-                        padding_before = event["padding_before"]
-                        padding_after = event["padding_after"]
-                        scale = event["scale"]
-                        offset = event["offset"]
-                        baseline_mean = event["baseline_mean"]
-                        baseline_std = event["baseline_std"]
                         abort_opt = yield index / num_events
                         abort = bool(abort_opt)
                         try:
                             success = self._write_data(
-                                event_data,
+                                event,
                                 channel,
                                 index,
-                                scale,
-                                offset,
-                                start_sample,
-                                padding_before,
-                                padding_after,
-                                baseline_mean,
-                                baseline_std,
-                                raw_data,
                                 abort=abort,
                                 last_call=last_call,
                             )
@@ -470,6 +492,11 @@ class MetaWriter(BaseDataPlugin):
                         else:
                             if success:
                                 self.written[channel] += 1
+                            else:
+                                reason = "Event not stored by the writer"
+                                self.rejected[channel][reason] = (
+                                    self.rejected[channel].get(reason, 0) + 1
+                                )
 
                     except StopIteration:
                         break
@@ -523,65 +550,6 @@ class MetaWriter(BaseDataPlugin):
                         raise TypeError(
                             "MetaEventFinder key must have as value an object that inherits from MetaEventFinder"
                         )
-
-    @log(logger=logger)
-    def _rescale_data_to_adc(
-        self,
-        data: npt.NDArray[np.number],
-        scale: Optional[float] = None,
-        offset: Optional[float] = None,
-        raw_data: bool = False,
-        dtype: npt.DTypeLike = np.int16,
-        adc_min: int = np.iinfo(np.int16).min,
-        adc_max: int = np.iinfo(np.int16).max,
-    ) -> tuple[npt.NDArray[np.number], Optional[float], Optional[float]]:
-        """
-        Rescale data to int16 Chimera VC100-style adc codes.
-
-        For other adc code types or encoding schemes, this function should be overridden. Default to Chimera-style conversion.
-
-        :param data: 1D numpy array of data to write to the active file in the specified channel.
-        :type data: npt.NDArray[np.number]
-        :param scale: Float indicating scaling between provided data type and encoded form for storage. If None, scale is calculated based on the data to maximally use the available adc range.
-        :type scale: Optional[float]
-        :param offset: Float indicating offset between provided data type and encoded form for storage. If None, offset is calculated based on the data to maximally use the available adc range.
-        :type offset: Optional[float]
-        :param raw_data: Boolean, True means to simply write data as-is to file, False indicates to first rescale it. Default False.
-        :type raw_data: bool
-        :param dtype: Numpy dtype to use for storage. Defaults to 16-bit signed int.
-        :type dtype: npt.DTypeLike
-        :param adc_min: Integer encoding the minimum adc code for the adc conversion.
-        :type adc_min: int
-        :param adc_max: Integer encoding the maximum adc code for the adc conversion.
-        :type adc_max: int
-        :raises ValueError: If scale cannot be computed from the data.
-        :raises IOError: If raw_data is True but scale or offset is not provided.
-        :return: Tuple containing rescaled data as numpy array, scale factor, and offset.
-        :rtype: tuple[npt.NDArray[np.number], Optional[float], Optional[float]]
-        """
-        if not raw_data:
-            if scale is not None and offset is not None:
-                data = (data - offset) / scale
-            else:
-                warnings.warn(
-                    "Rescaling data to ADC codes without providing a gain setting may result in loss of precision!",
-                    stacklevel=2,
-                )
-                data_max = np.max(data)
-                data_min = np.min(data)
-                data_range = data_max - data_min
-                adc_range = adc_max - adc_min
-                scale = data_range / adc_range
-                if scale is None:
-                    raise ValueError("Scale could not be computed.")
-                offset = data_max - scale * adc_max
-                data = (data - offset) / scale
-        else:
-            if scale is None or offset is None:
-                raise IOError(
-                    "Scale and offset must be provided in order to save raw data"
-                )
-        return data.astype(dtype), scale, offset
 
     @abstractmethod
     def _validate_settings(self, settings: dict) -> None:

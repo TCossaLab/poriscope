@@ -65,14 +65,27 @@ Step 2: Configure Clustering Settings
      - **NORM**: Normalize using median absolute deviation.
      - **PLOT**: Include in the clustering visualization.
 
-   - **➕ Add Column**: Once the column and options are selected, **click the ➕ button** to add it to the configuration.
+   - **Add Column**: The dialog starts with two column rows, and every row is used.
+     **Add Column** adds another, up to 8.
 
-     .. warning::
+     .. note::
 
-        If you do not click the **➕ button**, your selected column will **not be included** in the clustering operation.
+        **Apply** stays disabled until a method is chosen and each of its parameters
+        holds a valid value, every row has a column, and 2 or 3 rows are ticked
+        **PLOT**; the line above the buttons says what is missing. The parameters
+        take scikit-learn's own minimums: ``Cluster Size`` at least 2, ``Min Points``
+        and ``Number of Clusters`` at least 1, and ``Sensitivity`` at least 0.
 
 
    - Click **Apply** to launch the clustering process, or **Cancel** to discard changes.
+
+.. note::
+
+   Anything that stops a clustering run is reported on the status panel: a filter the
+   database rejects is shown with the database's own message — an unknown column, a
+   syntax error, a complete ``SELECT`` pasted into the filter box — a query that matches
+   no rows says so, and a column the loader did not return is named rather than failing
+   somewhere inside the clustering algorithm.
 
 Step 3: Merge Clusters (Optional)
 ---------------------------------

@@ -43,11 +43,6 @@ def ec(qt_app):
 # ===========================================================================
 
 
-def _select_channel(ec, channel_text):
-    """Add and select a channel in the MultiSelectComboBox."""
-    ec.update_channels([channel_text])
-
-
 def _collect_actions(ec):
     received = []
     ec.actionTriggered.connect(lambda m, a, p: received.append((m, a)))
@@ -108,12 +103,6 @@ class TestInstantiation:
     def test_has_raw_checkbox(self, ec):
         assert hasattr(ec, "raw_checkbox")
         assert not ec.raw_checkbox.isChecked()
-
-    def test_max_range_size(self, ec):
-        assert ec.max_range_size == 16
-
-    def test_active_popups_empty(self, ec):
-        assert ec.active_popups == {}
 
 
 # ===========================================================================
@@ -228,23 +217,6 @@ class TestPlaceholderAndToggle:
         btn = ec.createButton(ec, "t")
         ec.toggle_info_button(btn, cb)
         assert not btn.isEnabled()
-
-
-# ===========================================================================
-# clear_popup_reference
-# ===========================================================================
-
-
-class TestClearPopupReference:
-    def test_removes_existing(self, ec):
-        cb = ec.create_comboBox(ec)
-        ec.active_popups[cb] = object()
-        ec.clear_popup_reference(cb)
-        assert cb not in ec.active_popups
-
-    def test_missing_key_no_error(self, ec):
-        cb = ec.create_comboBox(ec)
-        ec.clear_popup_reference(cb)  # should not raise
 
 
 # ===========================================================================
@@ -610,13 +582,41 @@ class TestUpdateLoaders:
 
 
 class TestUpdateFilters:
+    """
+    The filter dropdown is the one plugin dropdown whose placeholder is permanent.
+
+    Reader, writer, eventfinder and loader dropdowns show "No X" only while the list is
+    empty, because there is no such thing as running without one. Not filtering *is* a
+    legitimate choice, so "No Filter" stays at index 0 however many filters exist.
+    """
+
     def test_populates_combobox(self, ec):
         ec.update_filters(["f1", "f2"])
-        assert ec.filters_comboBox.count() == 2
+        assert ec.filters_comboBox.count() == 3  # f1, f2 and "No Filter"
 
     def test_empty_inserts_placeholder(self, ec):
         ec.update_filters([])
         assert ec.filters_comboBox.itemText(0) == "No Filter"
+
+    def test_no_filter_stays_available_once_filters_exist(self, ec):
+        ec.update_filters(["f1", "f2"])
+        items = [
+            ec.filters_comboBox.itemText(i) for i in range(ec.filters_comboBox.count())
+        ]
+        assert items == ["No Filter", "f1", "f2"]
+
+    def test_a_new_filter_does_not_override_the_no_filter_choice(self, ec):
+        """
+        The reported defect: instantiating a filter used to take the option away.
+
+        It vanished from the list, so the restore logic could not find the current
+        selection and fell through to index 0 - which was the new filter. Selecting a
+        filter is now the user's move to make.
+        """
+        ec.update_filters([])
+        assert ec.filters_comboBox.currentText() == "No Filter"
+        ec.update_filters(["f1"])
+        assert ec.filters_comboBox.currentText() == "No Filter"
 
     def test_restores_previous_selection(self, ec):
         ec.update_filters(["f1", "f2"])
@@ -624,11 +624,16 @@ class TestUpdateFilters:
         ec.update_filters(["f1", "f2"])
         assert ec.filters_comboBox.currentText() == "f2"
 
-    def test_falls_back_to_first(self, ec):
+    def test_deleting_the_selected_filter_falls_back_to_no_filter(self, ec):
+        """
+        Index 0 is now "No Filter", so a deleted filter cannot land the user on
+        some other filter's settings without them choosing it.
+        """
         ec.update_filters(["f1"])
         ec.filters_comboBox.setCurrentText("f1")
         ec.update_filters(["f2"])
         assert ec.filters_comboBox.currentIndex() == 0
+        assert ec.filters_comboBox.currentText() == "No Filter"
 
 
 # ===========================================================================

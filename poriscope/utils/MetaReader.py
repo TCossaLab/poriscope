@@ -29,7 +29,7 @@ import logging
 import os
 from abc import abstractmethod
 from pathlib import Path
-from typing import Any, Dict, Generator, List, Optional, Tuple, Union, cast
+from typing import Any, Dict, Generator, List, Optional, Tuple, Union
 
 import numpy as np
 import numpy.typing as npt
@@ -134,11 +134,14 @@ class MetaReader(BaseDataPlugin):
         pass
 
     @log(logger=logger)
-    def load_data(
-        self, start: float, length: float, channel: int = 0, raw_data: bool = False
-    ) -> npt.NDArray[np.float64]:
+    def _slice_request(
+        self, start: float, length: float, channel: int
+    ) -> List[Tuple[npt.NDArray[Any], dict]]:
         """
-        Return raw data starting from index start and of length samples and rescale it to pA
+        Validate a read request and return the on-disk pieces it spans.
+
+        Every bounds check and every index calculation for :meth:`load_data` lives here,
+        apart from the conversion of what it hands back.
 
         :param start: Start time of the data to load, in seconds.
         :type start: float
@@ -146,14 +149,10 @@ class MetaReader(BaseDataPlugin):
         :type length: float
         :param channel: Channel number from which to load data.
         :type channel: int
-        :param raw_data: Decide whether to rescale data or return raw adc codes
-        :type raw_data: bool
-
-        :return: Converted and rescaled data.
-        :rtype: npt.NDArray[np.float64]
-
         :raises ValueError: If start or end indices are out of bounds, or if channel, start, or length cannot be coerced to int
         :raises IndexError: If the data map or configuration for the requested channel is not available in the reader
+        :return: The unconverted slices and the config each one must be converted with, in order.
+        :rtype: List[Tuple[npt.NDArray[Any], dict]]
         """
         try:
             channel = int(channel)
@@ -165,13 +164,13 @@ class MetaReader(BaseDataPlugin):
             ) from e
         try:
             datamaps = self.datamaps[channel]
-        except KeyError as e:  # Changed from IndexError to KeyError
+        except KeyError as e:
             raise IndexError(
                 "Data map for channel index {0} not available in reader".format(channel)
             ) from e
         try:
             configs = self.configs[channel]
-        except KeyError as e:  # Changed from IndexError to KeyError
+        except KeyError as e:
             raise IndexError(
                 "Configuration data for channel index {0} not available in reader".format(
                     channel
@@ -183,16 +182,11 @@ class MetaReader(BaseDataPlugin):
         start_index = start_sample
         end_index = start_sample + length_samples
 
-        if start_index > total_samples:
-            start_index = total_samples
-
-        if end_index > total_samples:
-            end_index = total_samples
-
         if (
             start_index < 0
             or start_index > total_samples
             or end_index < 0
+            or end_index > total_samples
             or start_index > end_index
         ):
             raise ValueError(
@@ -205,49 +199,68 @@ class MetaReader(BaseDataPlugin):
         end_file_index = self._get_file_index(end_index, file_start_index)
 
         if start_file_index == end_file_index:
-            tempdata = datamaps[start_file_index][
-                start_index
-                - file_start_index[start_file_index] : end_index
-                - file_start_index[start_file_index]
+            return [
+                (
+                    datamaps[start_file_index][
+                        start_index
+                        - file_start_index[start_file_index] : end_index
+                        - file_start_index[start_file_index]
+                    ],
+                    configs[start_file_index],
+                )
             ]
-            data = self._convert_data(tempdata, configs[start_file_index], raw_data)
-            if raw_data:
-                data, scale, offset = data
-        else:
-            tempdata = datamaps[start_file_index][
-                start_index - file_start_index[start_file_index] :
-            ]
-            data = self._convert_data(tempdata, configs[start_file_index], raw_data)
-            if raw_data:
-                data, scale, offset = data
-            for i in range(start_file_index + 1, end_file_index):
-                tempdata = self._convert_data(datamaps[i], configs[i], raw_data)
-                if raw_data:
-                    tempdata, scale, offset = tempdata
-                data = np.concatenate((data, tempdata))
-            tempdata = self._convert_data(
+
+        pieces: List[Tuple[npt.NDArray[Any], dict]] = [
+            (
+                datamaps[start_file_index][
+                    start_index - file_start_index[start_file_index] :
+                ],
+                configs[start_file_index],
+            )
+        ]
+        for i in range(start_file_index + 1, end_file_index):
+            pieces.append((datamaps[i], configs[i]))
+        pieces.append(
+            (
                 datamaps[end_file_index][
                     : end_index - file_start_index[end_file_index]
                 ],
                 configs[end_file_index],
-                raw_data,
             )
-            if raw_data:
-                tempdata, scale, offset = tempdata
-            data = np.concatenate((data, tempdata))
+        )
+        return pieces
 
-        if raw_data:
-            # data is always unpacked from the (array, scale, offset) tuple returned
-            # by _convert_data(..., raw_data=True) above before reaching this point;
-            # mypy can't track that narrowing through the branching/loop above, so
-            # tell it explicitly rather than restructure working logic.
-            return (
-                cast(np.ndarray, data).astype(self.get_raw_dtype()),
-                scale,
-                offset,
-            )  # assumes constant scale and offset between files
-        else:
-            return data
+    @log(logger=logger)
+    def load_data(
+        self, start: float, length: float, channel: int = 0
+    ) -> npt.NDArray[np.float64]:
+        """
+        Return data starting at ``start`` and of ``length`` seconds, rescaled to pA.
+
+        Every read returns pA. Until 2.0.0 a ``raw_data`` flag, and then a separate
+        ``load_raw_data``, returned the unscaled samples instead; that path is gone,
+        because a float64 reading loses nothing that matters and nothing used it.
+
+        Validation happens in :meth:`_slice_request`, which raises ``ValueError`` for an
+        out-of-bounds or uncoercible request and ``IndexError`` when the channel has no
+        data map or config. Both propagate out of this method unchanged.
+
+        :param start: Start time of the data to load, in seconds.
+        :type start: float
+        :param length: Length of data to load, in seconds.
+        :type length: float
+        :param channel: Channel number from which to load data.
+        :type channel: int
+        :return: Converted and rescaled data.
+        :rtype: npt.NDArray[np.float64]
+        """
+        converted = [
+            self._convert_data(data, config)
+            for data, config in self._slice_request(start, length, channel)
+        ]
+        if len(converted) == 1:
+            return converted[0]
+        return np.concatenate(converted)
 
     @log(logger=logger)
     def get_empty_settings(
@@ -333,6 +346,42 @@ class MetaReader(BaseDataPlugin):
         """
         return self.samplerate
 
+    def _read_bounds(
+        self, start: float, total_length: float, channel: int, chunk_length: float
+    ) -> Tuple[int, int, int]:
+        """
+        Work out where a chunked read starts, where it ends, and how big a chunk is.
+
+        Keeps what "to the end of the data" and "auto-determined" mean out of the read
+        loop in :meth:`continuous_read`.
+
+        :param start: Start time in the timeseries data, in seconds.
+        :type start: float
+        :param total_length: Length of data to read, in seconds; 0 means to the end.
+        :type total_length: float
+        :param channel: Channel index to read.
+        :type channel: int
+        :param chunk_length: Length of each chunk, in seconds; 0 auto-determines it.
+        :type chunk_length: float
+        :return: The first sample, the sample to stop before, and the chunk size.
+        :rtype: Tuple[int, int, int]
+        """
+        start_sample = int(start * self.samplerate)
+        total_length_samples = int(total_length * self.samplerate)
+        chunk_length_samples = int(chunk_length * self.samplerate)
+        channel = int(channel)
+        channel_length = self.get_channel_length(channel)
+        if chunk_length_samples == 0:
+            chunk_length_samples = int(
+                np.minimum(self.get_samplerate(), self.get_channel_length(channel))
+            )
+        if total_length_samples == 0:
+            total_length_samples = channel_length - start_sample
+        last_sample = int(
+            np.minimum(channel_length, start_sample + total_length_samples)
+        )
+        return start_sample, last_sample, chunk_length_samples
+
     @log(logger=logger)
     def continuous_read(
         self,
@@ -340,14 +389,11 @@ class MetaReader(BaseDataPlugin):
         total_length: float = 0,
         channel: int = 0,
         chunk_length: float = 0,
-        raw_data: bool = False,
-    ) -> Generator[
-        Union[npt.NDArray[np.float64], Tuple[npt.NDArray[np.float64], float, float]],
-        None,
-        None,
-    ]:
+    ) -> Generator[npt.NDArray[np.float64], None, None]:
         """
-        Read data in chunks and return it as a generator.
+        Read rescaled data in chunks and yield it.
+
+        Every chunk is in pA; the unscaled ``continuous_read_raw`` was removed in 2.0.0.
 
         :param start: Start time in the timeseries data, in seconds (default is 0).
         :type start: float
@@ -357,48 +403,30 @@ class MetaReader(BaseDataPlugin):
         :type channel: int
         :param chunk_length: Length of the data chunks to process at a time, in seconds (default is 0, auto-determined).
         :type chunk_length: float
-        :param raw_data: Decide whether to rescale data or return raw adc codes
-        :type raw_data: bool
-        :yield: successive chunks of data, or tuples of (data, scale, offset) if raw_data is True.
-        :ytype: Union[npt.NDArray[np.float64], Tuple[npt.NDArray[np.float64], float, float]]
+        :yield: successive chunks of rescaled data.
+        :ytype: npt.NDArray[np.float64]
         """
-        start_sample = int(start * self.samplerate)
-        total_length_samples = int(total_length * self.samplerate)
-        chunk_length_samples = int(chunk_length * self.samplerate)
+        start_sample, last_sample, chunk_length_samples = self._read_bounds(
+            start, total_length, channel, chunk_length
+        )
         i = start_sample
-        channel = int(channel)
-        channel_length = self.get_channel_length(channel)
-        if chunk_length_samples == 0:
-            chunk_length_samples = int(
-                np.minimum(self.get_samplerate(), self.get_channel_length(channel))
-            )
-        if total_length_samples == 0:
-            total_length_samples = channel_length - start_sample
-        last_sample = np.minimum(channel_length, start_sample + total_length_samples)
-        scale = None
-        offset = None
         while i < last_sample:
-            samples_to_load = np.minimum(chunk_length_samples, last_sample - i)
-
+            samples_to_load = int(np.minimum(chunk_length_samples, last_sample - i))
             if (
                 samples_to_load == chunk_length_samples
                 and last_sample - (i + chunk_length_samples) < chunk_length_samples / 2
             ):  # if we are near the end, just load it to avoid small offset errors
                 samples_to_load = last_sample - i
-
             data = self.load_data(
                 float(i / self.samplerate),
                 float(samples_to_load / self.samplerate),
-                channel,
-                raw_data,
+                int(channel),
             )
-            if raw_data:
-                data, scale, offset = data
+            # Advance by what came back, never by what was asked for. A read can
+            # return far less than requested when a file ends early, and resuming
+            # from the requested end would silently skip everything in between.
             i += len(data)
-            if not raw_data:
-                yield data
-            else:
-                yield data.astype(self.get_raw_dtype()), scale, offset
+            yield data
 
     @log(logger=logger)
     def get_channels(self) -> List[int]:  # Changed return type hint to List[int]
@@ -421,16 +449,6 @@ class MetaReader(BaseDataPlugin):
         :rtype: str
         """
         return self.name_stub
-
-    @log(logger=logger)
-    def get_raw_dtype(self) -> np.dtype:
-        """
-        Return the data type for the raw data in files of this type
-
-        :return: the dtype of the raw data on disk for this reader
-        :rtype: np.dtype
-        """
-        return self.dtype
 
     @log(logger=logger)
     def get_base_file(self) -> os.PathLike:
@@ -505,75 +523,42 @@ class MetaReader(BaseDataPlugin):
         pass
 
     @abstractmethod
-    def _set_raw_dtype(self, configs: List[dict]) -> np.dtype:
-        """
-        Set the data type for the raw data in files of this type
-
-        **Purpose:** Inform Poriscope what NumPy datatype to expect for raw data on disk.
-
-        This function is used to tell Poriscope what datatype to expect on disk for downstream use by :py:meth:`~poriscope.utils.BaseDataPlugin.BaseDataPlugin._map_data`. You should return a NumPy dtype object. For example, if you are using a 16-bit ADC code, you might return ``np.uint16``. This is also a single-line function:
-
-        .. code-block:: python
-
-            return np.uint16
-
-        If you need to refer to this value again, you can access it via the class variable ``self.dtype``. For more details on NumPy dtypes, refer to the `NumPy documentation on dtypes <https://numpy.org/doc/stable/reference/arrays.dtypes.html>`_.
-
-        :param configs: List of configuration dictionaries corresponding to data files.
-        :type configs: List[dict]
-        :return: the dtype of the raw data in your data files
-        :rtype: np.dtype
-        """
-        pass
-
-    @abstractmethod
     def _convert_data(
-        self, data: npt.NDArray[np.int16], config: dict, raw_data: bool = False
-    ) -> Union[Tuple[np.ndarray, float, float], np.ndarray]:
+        self, data: npt.NDArray[np.int16], config: dict
+    ) -> npt.NDArray[np.float64]:
         """
-        **Purpose:** Convert raw data from disk format to a usable numerical format.
+        **Purpose:** Convert raw data from disk into rescaled floating-point current.
 
-        Given a numpy array of raw data extracted from one of the :py:class:`~numpy.memmap` instances you defined in the previous function along with its associated ``config`` dict, provide a means to turn this raw data into a numpy array of `~numpy.float64` double precision floats. For this purpose, if convenient, you can use the :py:meth:`~poriscope.utils.BaseDataPlugin.BaseDataPlugin._scale_data` function, which will apply bitmasks, multiply data by a scaling factor, and add an offset, like so:
-
-        .. code-block:: python
-
-            def _scale_data(self, data: npt.NDArray[Any], copy:Optional[bool]=True, bitmask:Optional[np.uint64]=None, dtype:Optional[str]=None, scale:Optional[float]=None, offset:Optional[float]=None, raw_data:Optional[bool]=False) -> npt.NDArray[Any]:
-                if bitmask == 0:
-                    bitmask = None
-                if not raw_data:
-                    if (copy):
-                        data = np.copy(data)
-                    if (bitmask is not None):
-                        data = np.bitwise_and(data.astype(type(bitmask)), bitmask)
-                    if (dtype is not None):
-                        data = data.astype(dtype)
-                    if (scale is not None):
-                        data *= scale
-                    if (offset is not None):
-                        data += offset
-                    return data
-                else:
-                    if not dtype:
-                        raise ValueError('Specify dtype to retrieve raw data')
-                return data
-
-        if ``raw_data`` is ``True``, your function must also return a scale and offset factor, like so:
+        Given a numpy array of raw data taken from one of the :py:class:`~numpy.memmap`
+        instances you built in :meth:`_map_data`, along with the ``config`` dict that
+        belongs to the same file, return it as ``float64`` in pA. Derive whatever scale,
+        offset and bitmask the format needs from ``config`` and hand them to
+        :meth:`_scale_data`, which applies them in the right order:
 
         .. code-block:: python
 
-            if raw_data:
-                    return data, scale, offset
-            else:
-                    return data
+            def _convert_data(self, data, config):
+                scale = 1e12 * 2 * config["v_ref"] / (2**16 * config["tia_gain"])
+                offset = -config["i_offset"] * 1e12
+                return self._scale_data(
+                    data,
+                    scale=scale,
+                    offset=offset,
+                    dtype=np.float64,
+                    copy=False,
+                )
+
+        This is the only conversion a reader provides. Until 2.0.0 readers also
+        implemented ``_convert_raw_data`` (the same bytes unscaled, with the factors
+        alongside) and ``_set_raw_dtype``; both are gone with the raw-data path. A reader
+        that needs its on-disk dtype builds it privately, for use in :meth:`_map_data`.
 
         :param data: Data to convert.
         :type data: npt.NDArray[np.int16]
         :param config: Configuration dictionary for data conversion.
         :type config: dict
-        :param raw_data: Decide whether to rescale data or return raw adc codes
-        :type raw_data: bool
-        :return: Converted data, and scale and offset if and only if raw_data is True
-        :rtype: Union[Tuple[np.ndarray, float, float], np.ndarray]
+        :return: The data, rescaled to pA.
+        :rtype: npt.NDArray[np.float64]
         """
         pass
 
@@ -627,8 +612,6 @@ class MetaReader(BaseDataPlugin):
 
         # load config files to help decode each file into a 2D list matching the datafiles list
         configs = self._get_configs(file_names)
-
-        self.dtype = self._set_raw_dtype(configs)
 
         # memory-map the data into a list of memmaps or numpy arrays
         datamaps = self._map_data(file_names, configs)
@@ -742,6 +725,12 @@ class MetaReader(BaseDataPlugin):
 
         Poriscope will use this file pattern to search the folder of the input file for other files that match the pattern. It will not search outside of that folder.
 
+        Anchor the pattern on what follows the base name rather than ending it in a bare
+        ``*``: ``experiment_1*.log`` also matches ``experiment_10_channel_01_001.log``, a
+        different recording, and its files are then read as part of this one. Pass the
+        literal part through :func:`glob.escape`, so that a name containing ``[`` or ``]``
+        matches itself: ``glob.escape("experiment_1") + "_channel_*_*.log"``.
+
         For more information on ``glob`` patterns, refer to the `glob module documentation <https://docs.python.org/3/library/glob.html>`_.
 
         :param file_name: File name to get the base pattern for.
@@ -807,9 +796,11 @@ class MetaReader(BaseDataPlugin):
                 temp_dict[channel] = []
             temp_dict[channel].append((timestamp, obj))
 
-        # Sort each list of objects by timestamp
+        # Sort each list of objects by timestamp alone. Sorting the pairs themselves
+        # fell through to comparing the objects - memmaps - on a tied timestamp, which
+        # raises; sort is stable, so tied files keep the order they were found in.
         for channel in temp_dict.keys():
-            temp_dict[channel].sort()
+            temp_dict[channel].sort(key=lambda pair: pair[0])
 
         # Extract only the objects, discarding the timestamps
         for channel in temp_dict:
@@ -826,7 +817,6 @@ class MetaReader(BaseDataPlugin):
         dtype: Optional[str] = None,
         scale: Optional[float] = None,
         offset: Optional[float] = None,
-        raw_data: Optional[bool] = False,
     ) -> npt.NDArray[Any]:
         """
         Apply scaling and masking operations to data as needed.
@@ -844,29 +834,21 @@ class MetaReader(BaseDataPlugin):
         :type scale: Optional[float]
         :param offset: Offset to add to scaled data, defaults to None.
         :type offset: Optional[float]
-        :param raw_data: is the data to be returned as the original type?
-        :type raw_data: Optional[bool]
-        :raises ValueError: If raw_data is True but no dtype is specified.
         :return: Scaled data.
         :rtype: npt.NDArray[Any]
         """
         if bitmask == 0:
             bitmask = None
-        if not raw_data:
-            if copy:
-                data = np.copy(data)
-            if bitmask is not None:
-                data = np.bitwise_and(data.astype(type(bitmask)), bitmask)
-            if dtype is not None:
-                data = data.astype(dtype)
-            if scale is not None:
-                data *= scale
-            if offset is not None:
-                data += offset
-            return data
-        else:
-            if not dtype:
-                raise ValueError("Specify dtype to retrieve raw data")
+        if copy:
+            data = np.copy(data)
+        if bitmask is not None:
+            data = np.bitwise_and(data.astype(type(bitmask)), bitmask)
+        if dtype is not None:
+            data = data.astype(dtype)
+        if scale is not None:
+            data *= scale
+        if offset is not None:
+            data += offset
         return data
 
     @log(logger=logger)

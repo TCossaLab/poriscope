@@ -11,7 +11,7 @@ timeseries data (event detection, fitting, clustering, protein analysis, etc.). 
 ## Setup
 
 ```
-pip install -e ".[dev]"
+pip install -e ".[dev,docs]"   # [docs] is Sphinx, which the post-merge hook runs
 python scripts/setup_hooks.py   # git hooks (pre-commit, post-merge) + git flow tag prefix
 ```
 
@@ -41,8 +41,10 @@ runs ruff (strict, no fix), mypy, and pydoclint.
 disagree wildly and are blind in opposite directions. The hook runs in an isolated
 virtualenv with no project dependencies, so PySide6/numpy/pandas types are all `Any` to
 it; the project venv's `mypy poriscope` sees real types but is a different version and
-reports several hundred errors that are overwhelmingly known noise (191 PySide6
-short-form enum accesses alone - see `DECISIONS.md`). **Always measure with the hook.**
+reports several hundred errors (684 with mypy 2.3.1 on 2026-09-24). About half are known
+noise - 343 PySide6 short-form enum accesses and 41 untyped imports, see `DECISIONS.md` - but
+the rest include real gaps the hook cannot see, such as 81 uses of `self.view`/`self.model`
+that the controller bases never declare. **Always measure with the hook.**
 The hook is scoped `files: ^poriscope/` because `mypy.ini`'s `exclude = ^tests/` governs
 directory discovery only and does not apply to explicitly listed paths.
 
@@ -52,8 +54,10 @@ commit through.
 
 `pydoclint` checks a docstring's documented parameters, return type and raised exceptions
 against the real signature and body — see `[tool.pydoclint]` in `pyproject.toml` for the
-settings and the reasoning behind each. A function with no docstring is skipped entirely;
-a documented one must carry type hints that agree with its `:type:`/`:rtype:`. **Every
+settings and the reasoning behind each. A function with no docstring is skipped entirely,
+and so is a summary-only one - including a Google-style `Args:` docstring, which reads as
+summary under `style = "sphinx"`; a documented one must carry type hints that agree with its
+`:type:`/`:rtype:`. Its raise check also counts exceptions a local `try` catches. **Every
 function under `poriscope/` is annotated, with no exclusions.**
 
 Keep `.pydoclint-baseline.txt` empty: prefer fixing the violation, and do not let the file
@@ -69,24 +73,29 @@ Two layers using the same MVC pattern recursively: an app-shell triad (`MainMode
 `MainView` / `MainController`) and a plugin system for everything else — analysis tabs and
 data plugins. **Load the `plugin-architecture` skill** before adding, moving or
 restructuring a plugin, a `Meta*` base or an analysis tab; it carries the two plugin
-families, the signal-relay bus, discovery, and the `BaseDataPlugin` settings lifecycle.
+families, discovery, and the `BaseDataPlugin` settings lifecycle.
 Three rules apply regardless:
 
-- Cross-tab behavior goes through the `MetaController` signal relay, never a direct import
-  of another tab's controller.
+- An analysis tab never imports another tab's modules. It reaches data plugins only through
+  `MetaModel.call()`, over the instance map `MainController.update_available_plugins`
+  pushes to every tab; create/edit/delete and plugin-state changes go out on the typed
+  signals `MainController.instantiate_analysis_tab` wires point to point. The old
+  string-dispatched `global_signal` bus is gone - do not rebuild one.
 - New data plugin: **generate it, don't hand-write it** —
   `python scripts/new_plugin.py MetaEventFinder MyFinder` (`--list` shows the eight
-  families and every shipped plugin). Signatures and docstrings are copied from the base
-  verbatim, which is what the compliance test's exact-equality comparison requires.
-- New analysis tab: a Controller/Model/View triad under
-  `poriscope/plugins/analysistabs/`, subclassing `MetaController`/`MetaModel`/`MetaView`
-  and following an existing tab as a template.
+  data-plugin families, the `AnalysisTab` keyword and every shipped plugin). Signatures and
+  docstrings are copied from the base verbatim, which is what the compliance test's
+  exact-equality comparison requires.
+- New analysis tab: generate it too - `python scripts/new_plugin.py AnalysisTab MyTab`
+  writes the Controller/Model/View triad and its controls panel under
+  `poriscope/plugins/analysistabs/`, subclassing `MetaController`/`MetaModel`/`MetaView`.
 
 ## Testing conventions
 
 - **Run the whole suite before every commit: plain `pytest`, no path arguments and no
-  marker filter.** A full run is ~2.5 minutes, so there is no reason to select a subset,
-  and choosing one is itself the error-prone step — a scoped run that skipped
+  marker filter.** A full run takes ~4 minutes on CI and ~10 on the OneDrive-synced dev
+  checkout (run it in the background, redirected to a file); that is still no reason to
+  select a subset, because choosing one is itself the error-prone step — a scoped run that skipped
   `tests/unit/controllers/` once let a broken commit reach CI. Iterating on a single
   failing test while debugging is fine; the gate is a full green run immediately before
   the commit. Documentation-only changes (docstrings, comments, markdown) need no run.
@@ -141,17 +150,15 @@ revisiting.
 ## Where things are written down
 
 - `changelog.md` — what changed, user-facing. Update it for any code change.
-- `future_fixes.md` — what is still queued. Keep it terse; prune items as they land
+- `future_fixes.md` — the authoritative record of what is still queued, organised under
+  release-target headers (2.1, 2.2, Later, Owner-held); larger speculative work goes
+  under Later. Keep it terse; prune items as they land
   rather than leaving completed-work narrative behind. Delete a landed entry outright —
   do not mark it `**Fixed**`, strike it through with `~~`, or retitle its section
   `DONE`/`CLOSED`; the history already lives in `changelog.md`. When only part of an
   item lands, delete it and rewrite what remains as a forward-facing item.
 - `DECISIONS.md` — why we chose *not* to do something, with the evidence and what
   would make it worth revisiting. Check here before re-litigating a settled question.
-- `future_refactors_and_features.md` — larger speculative work.
-- `refactor_2.0.0.md` — the approved plan for the 2.0.0 refactor: the eight steps, the
-  dependency graph and decisions A–E. **Read it before picking anything out of
-  `future_fixes.md`**, since it claims much of that queue. Delete it once 2.0.0 ships.
 - `fit_fallbacks.md` — every fallback path in `PeakFinder`'s shared double-Gaussian fit
   chain (`fit_threshold` and its callees) and how each classifier responds to a degraded
   fit. **Update it whenever a fallback is added, removed, or changes what it degrades to**,
@@ -172,6 +179,25 @@ re-measured before it can be worked.
 
 Depth belongs in those files, not in this one: this file is loaded in full at the start
 of every session, so it should stay a short list of standing rules.
+
+## Planning and executing work
+
+**Load the `planning-and-executing-changes` skill for most planning and execution tasks** -
+any fix, feature, review, investigation or release step beyond a typo. It holds the general
+method and its lessons; `refactoring-codebases` builds on it for refactors. Five of its rules
+hold in every session:
+
+- Re-derive every inherited claim - plan figures, handoff notes, subagent reports, comments, a
+  user's diagnosis, your own earlier reasoning - before building on it.
+- Green means you read this run's summary line, not an exit code, a progress line or a `tail`;
+  every gate is blind somewhere, so launch the app when app code changed.
+- Never reshape production code to keep a test passing: edit the test, and stub collaborators
+  the way they really behave.
+- Make the smallest change that fixes the defect, and close findings in the piece of work where
+  they surfaced rather than filing them.
+- Code, comments and tests never cite a plan document or its step numbers; describe the mechanism.
+
+A lesson learned here that generalises beyond Poriscope goes into those skills, not this file.
 
 ## General Instructions
 
@@ -214,14 +240,25 @@ of every session, so it should stay a short list of standing rules.
   triggers on `tags: ['v*']`. `scripts/setup_hooks.py` sets `gitflow.prefix.versiontag`
   to `v` so plain `git flow release finish <version>` does this; git config is per-clone,
   so a fresh checkout needs that script run before cutting a release.
-- `git flow release finish` opens three editors by default — a merge commit message into
-  `main`, the tag annotation, and a merge commit message into `develop`. Prefix the command
-  with `GIT_MERGE_AUTOEDIT=no` to suppress the two merge editors. **Do not pass `-m` for the
-  tag message**: git flow appends its own text to it, which produced the annotation
-  `v1.8.0 v1.8.0` where every earlier tag reads just `v1.7.1`. Without `-m` the tag editor
-  still opens, so either accept the prefilled message or fix the annotation with
-  `git tag -d <tag> && git tag -a <tag> -m "<tag>" <commit>` **before** pushing it.
-- **Allow at least five minutes for `git flow release finish` and `feature finish`.** The
-  `post-merge` hook regenerates the autodoc, which ran past a two-minute timeout during the
-  1.8.0 release. All the git work had already completed by then; only the release branch
+- **`git flow release finish` is run by a human, interactively — hand it off, do not automate
+  it.** Everything up to it is ordinary work: `release start`, the version bumps in
+  `poriscope/constants.py` and `CITATION.cff`, dating the `changelog.md` header, a full green
+  `pytest`, and the preparation commit. Then stop and let someone run
+  `GIT_MERGE_AUTOEDIT=no git flow release finish <version>` themselves, and push `main`,
+  `develop` and the tag afterwards.
+  It opens three editors — two merge commit messages and the tag annotation.
+  `GIT_MERGE_AUTOEDIT=no` suppresses the merges, but the tag editor always opens and **git flow
+  prefills it with nothing**, so `GIT_EDITOR=true` yields an empty message and the command dies
+  with `fatal: no tag message?` *after* the merge into `main` has landed, leaving the release
+  half-finished. **Do not pass `-m` either**: git flow appends its own text, which produced the
+  annotation `v1.8.0 v1.8.0` where every other tag reads just its version. Pointing `GIT_EDITOR`
+  at a command that writes the annotation into the file does work, and is idempotent over an
+  already-completed merge — that is how 1.9.0 was salvaged — but it is a fragile trick for a
+  once-per-release command, which is why the step is handed off. Whoever runs it should check the
+  annotation before pushing, and fix it with
+  `git tag -d <tag> && git tag -a <tag> -m "<tag>" <commit>` if git flow duplicated it.
+- **Run `git flow release finish` and `feature finish` with no timeout wrapper, in the
+  background.** The `post-merge` hook regenerates the autodoc and rebuilds Sphinx: it ran past
+  a two-minute timeout during the 1.8.0 release, and a `feature finish` passed ten minutes on
+  2026-09-26. All the git work had already completed by then; only the release branch
   deletion was left undone, so check `git branch` and `git tag` before re-running anything.

@@ -97,9 +97,14 @@ class TestGetEmptySettings(unittest.TestCase):
         self.assertIn("Sensitivity", settings)
 
     def test_step_size_has_no_value_key(self):
-        # Unlike every other setting dict in this codebase, "Step Size" is
-        # given Type/Min/Units but no "Value" key at all. This is tested
-        # explicitly as documented, observed behavior.
+        # "Step Size" has no usable default - the caller must supply one - and
+        # omitting "Value" entirely is the codebase's adopted encoding for that
+        # (see poriscope/utils/settings_schema.py's module note: an omitted
+        # Value means the same as an explicit None, and most shipped readers
+        # already do this). validate_settings_schema() does not flag it, and
+        # tests/unit/plugins/test_plugin_settings_schema.py enforces the schema
+        # stays internally consistent under that rule across every plugin; this
+        # pins the shape ClassicCUSUM itself produces.
         with patch.object(CUSUM, "get_empty_settings", return_value={}):
             pf = object.__new__(ClassicCUSUM)
             settings = pf.get_empty_settings(standalone=True)

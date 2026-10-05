@@ -27,11 +27,8 @@
 import logging
 import threading
 from abc import abstractmethod
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
-import numpy as np
-import numpy.typing as npt
-import pandas as pd
 from matplotlib.backends.backend_qt5agg import (
     FigureCanvasQTAgg as FigureCanvas,
     NavigationToolbar2QT as NavigationToolbar,
@@ -54,10 +51,12 @@ from PySide6.QtWidgets import (
 )
 
 from poriscope.utils.LogDecorator import log
-from poriscope.utils.QWidgetABCMeta import QWidgetABCMeta
+from poriscope.utils.MetaControls import MetaControls
+from poriscope.utils.QObjectABCMeta import QObjectABCMeta
+from poriscope.views.widgets.walkthrough_mixin import WalkthroughMixin
 
 
-class MetaView(QWidget, metaclass=QWidgetABCMeta):
+class MetaView(QWidget, WalkthroughMixin, metaclass=QObjectABCMeta):
     """
     Abstract base class designed to provide a unified interface for different analysis tabs.
 
@@ -66,32 +65,24 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
     interactions or analysis results.
     """
 
-    global_signal = Signal(
-        str, str, str, tuple, str, tuple
-    )  # metaclass type, subclass key, function to call, args for function to call, function to call with reval (can be None), added args for retval
-    # NOTE: every connection to global_signal/data_plugin_controller_signal must stay
-    # Qt.ConnectionType.DirectConnection (or otherwise guaranteed same-thread). A caller
-    # that passes a return_function_name reads the result back off an attribute the
-    # callback sets, on the very next statement after .emit() - a queued connection
-    # would silently degrade that read to stale/None data with no error and no log line.
-    data_plugin_controller_signal = Signal(
-        str, str, str, tuple, str, tuple
-    )  # metaclass type, subclass key, function to call, args for function to call, function to call with reval (cane be None), added args for retval
     plugin_state_changed = Signal(str, str, str)  # metaclass, plugin_key, reason
     update_tab_action_history = Signal(
         object, bool
     )  # OrderedDict of actions to take, whether or not to delete the most recent key
+    #: Drops the most recently recorded action without replaying anything, for an action
+    #: that was refused and left the figure as it was.
+    discard_last_tab_action = Signal()
     save_tab_action_history = Signal(str)  # save file name
     kill_worker = Signal(str, str)
     kill_all_workers = Signal(str)
     cache_plot_data = Signal(list, list)
     create_plugin = Signal(str, str)  # metaclass, subclass
+    edit_plugin = Signal(str, str)  # metaclass, key
+    delete_plugin = Signal(str, str)  # metaclass, key
     logger = logging.getLogger(__name__)
     export_plot_data = Signal()
-    run_generators = Signal(str)
     add_text_to_display = Signal(str, str)
     load_actions_from_json = Signal(str)  # filename
-    lock = threading.Lock()
 
     def __init__(self) -> None:
         """
@@ -100,8 +91,17 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
         super().__init__()
         self.available_plugins: Dict[str, List[str]] = {}
         self.progress_bars: Dict[str, Dict[str, Any]] = {}
+        # Guards progress_bars, which is per-instance - so this is too. It was a
+        # per instance, not a class attribute: one shared lock would serialise every
+        # tab against every other for a dict none of them share.
+        self.lock = threading.Lock()
         self._init()
         self._setup_ui()
+        # Every tab used to repeat this pair in its own __init__, calling _init() a
+        # second time after _setup_ui(). Measured as a no-op before removing it: no
+        # attribute _init assigns is also assigned anywhere in the _setup_ui call
+        # tree, in any of the five tabs, so the second call rewrote its own values.
+        self._init_walkthrough()
         self.plot_data: Optional[Any] = None
         self.threads: List[Any] = []
         self.layout().setContentsMargins(0, 0, 0, 0)
@@ -207,20 +207,72 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
         # Add display container to the provided layout
         layout.addWidget(display_container, stretch=4)  # Adjusted stretch factor
 
-    @abstractmethod
+    def _build_controls(self) -> MetaControls:
+        """
+        Build this tab's controls panel and return it.
+
+        The subclass also stores it under whatever name the rest of that tab uses -
+        ``self.metadatacontrols``, ``self.rawdatacontrols`` and so on - because those
+        names appear throughout each tab and in its saved action history. This hook
+        only has to hand the widget back, so the base can wire it and place it.
+
+        Concrete rather than abstract, returning an empty panel, so that a tab which
+        lays out its own control area can override ``_set_control_area`` instead and
+        never implement this. Making it abstract would leave such a tab uninstantiable.
+
+        Being concrete is also why ``scripts/new_plugin.py`` writes an override rather
+        than leaving it to be discovered: the default is legal and constructs fine, so a
+        tab that does not override it simply shows an empty strip under its plot with
+        nothing to say which method fills it.
+
+        :return: the tab's controls panel
+        :rtype: MetaControls
+        """
+        return MetaControls()
+
+    def _connect_control_signals(self, controls: MetaControls) -> None:
+        """
+        Connect any signals beyond the four that every controls panel carries.
+
+        A no-op by default. ``MetaSubsetTabView`` overrides it for the two filter
+        signals that only ``MetaSubsetTabControls`` declares.
+
+        :param controls: the panel just built by ``_build_controls``
+        :type controls: MetaControls
+        """
+
+    @log(logger=logger)
     def _set_control_area(self, layout: QBoxLayout) -> None:
         """
-        Create and set up the control area for user interaction elements.
+        Build the tab's controls panel, wire it up, and place it in the layout.
+
+        Concrete rather than abstract. All five tabs carried a copy differing only in
+        the widget class, the attribute name it was stored under, and - for the two
+        subset tabs - two extra signal connections. Those three differences are now
+        ``_build_controls`` and ``_connect_control_signals``.
 
         :param layout: The main layout to which the control area will be added. A box layout specifically, since implementations nest a sub-layout with addLayout().
         :type layout: QBoxLayout
         """
-        pass
+        controls = self._build_controls()
+        controls.actionTriggered.connect(self.handle_parameter_change)
+        controls.edit_processed.connect(self.handle_edit_triggered)
+        controls.add_processed.connect(self.handle_add_triggered)
+        controls.delete_processed.connect(self.handle_delete_triggered)
+        self._connect_control_signals(controls)
+
+        controlsAndAnalysisLayout = QHBoxLayout()
+        controlsAndAnalysisLayout.setContentsMargins(0, 0, 0, 0)
+        controlsAndAnalysisLayout.addWidget(controls, stretch=1)
+        layout.setSpacing(0)
+        layout.addLayout(controlsAndAnalysisLayout, stretch=1)
 
     @log(logger=logger)
-    def _setup_canvas(self, num_channels: int = 1) -> None:
+    def _setup_canvas(self) -> None:
         """
-        Set up the canvas with a given number of subplots corresponding to the number of channels.
+        Build the figure and its canvas, and parent the canvas to this widget.
+
+        Subclasses lay out their own subplots afterwards; this makes one empty figure.
         """
         self.figure = Figure()
         self.canvas = FigureCanvas(self.figure)
@@ -257,16 +309,6 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
         self.progress_bar_layout.addWidget(
             self.kill_all_button, alignment=Qt.AlignRight
         )
-
-    @log(logger=logger)
-    def set_column_exists(self, exists_in_table: Optional[str]) -> None:
-        """
-        Sets the status indicating if cluster columns already exist.
-
-        :param exists_in_table: Name of table where columns exist or None.
-        :type exists_in_table: Optional[str]
-        """
-        self.column_table = exists_in_table
 
     @log(logger=logger)
     @Slot(float, str)
@@ -388,17 +430,9 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
         :type key: str
         """
         self.logger.info(
-            f"RawDataView: Settings edit request emitted for metaclass: {metaclass}, plugin: {key}"
+            f"Settings edit request emitted for metaclass: {metaclass}, plugin: {key}"
         )
-        # Ensure call_args is prepared with metaclass and plugin_name
-        call_args = (
-            metaclass,
-            key,
-        )  # This is a tuple of the arguments expected by 'edit_plugin_settings'
-        # Emit the signal with correct arguments
-        self.data_plugin_controller_signal.emit(
-            metaclass, key, "edit_plugin_settings", call_args, "", ()
-        )
+        self.edit_plugin.emit(metaclass, key)
 
     @log(logger=logger)
     def handle_add_triggered(self, metaclass: str) -> None:
@@ -450,15 +484,7 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
         self.logger.info(
             f"Delete request emitted for metaclass: {metaclass}, plugin: {key}"
         )
-        # Ensure call_args is prepared with metaclass and plugin_name
-        call_args = (
-            metaclass,
-            key,
-        )  # This is a tuple of the arguments expected by 'edit_plugin_settings'
-        # Emit the signal with correct arguments
-        self.data_plugin_controller_signal.emit(
-            metaclass, key, "delete_plugin", call_args, "", ()
-        )
+        self.delete_plugin.emit(metaclass, key)
 
     @log(logger=logger)
     def remove_progress_bar(self, identifier: str) -> None:
@@ -502,6 +528,35 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
         )  # Emits a signal to stop all processes
 
     # public API, must be implemented by sublcasses
+    @abstractmethod
+    def handle_parameter_change(
+        self, submodel_name: str, action_name: str, args: tuple
+    ) -> None:
+        """
+        React to an action the tab's controls panel has emitted.
+
+        Abstract because ``_set_control_area`` connects the panel's ``actionTriggered``
+        signal straight to it while the View is still being constructed, so a tab that
+        does not provide it raises ``AttributeError`` out of ``__init__`` before it can
+        ever be shown. Declaring it here is what turns that into a refusal to instantiate
+        the class at all, which is the only form of the failure that names the cause. The
+        three sibling handlers ``_set_control_area`` connects beside it -
+        ``handle_edit_triggered``, ``handle_add_triggered`` and ``handle_delete_triggered``
+        - are concrete on this class and need no implementation.
+
+        A tab that lays out its own control area by overriding ``_set_control_area``
+        never has this connected, and may implement it as a no-op.
+
+        :param submodel_name: Name of the controls submodel the action came from.
+        :type submodel_name: str
+        :param action_name: Identifier of the action to perform.
+        :type action_name: str
+        :param args: The action's arguments, as the controls panel packed them.
+        :type args: tuple
+        :return: None
+        :rtype: None
+        """
+
     @abstractmethod
     def update_available_plugins(self, available_plugins: Dict[str, List[str]]) -> None:
         """
@@ -550,124 +605,7 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
         """
         pass
 
-    @log(logger=logger)
-    def _parse_event_indices(
-        self, indices: str, allow_floats: bool
-    ) -> list[tuple[float, float]]:
-        """
-        Parse '7-10,12' → [(7,10), (12,12)]
-        If allow_floats=True, accepts '1.5-4.5,6' → [(1.5, 4.5), (6.0, 6.0)];
-        otherwise every bound is parsed with int().
-        """
-        result: list[tuple[float, float]] = []
-        caster = float if allow_floats else int
-
-        for segment in indices.split(","):
-            segment = segment.strip()
-            if "-" in segment:
-                try:
-                    start, end = map(caster, segment.split("-"))
-                    result.append((start, end))
-                except ValueError:
-                    self.logger.warning(f"Invalid range segment: {segment}")
-            elif segment:
-                try:
-                    val = caster(segment)
-                    result.append((val, val))
-                except ValueError:
-                    self.logger.warning(f"Invalid index segment: {segment}")
-
-        return result
-
-    @log(logger=logger)
-    def _shift_ranges(
-        self, ranges: Sequence[tuple[float, float]], direction: str, offset: float
-    ) -> list[tuple[float, float]]:
-        """Shift each tuple range left or right."""
-        shifted: list[tuple[float, float]] = []
-        for start, end in ranges:
-            if start == end:  # Sigle index
-                val = start + offset if direction == "right" else start - offset
-                shifted.append((val, val))
-            else:  # Range
-                new_start = (
-                    end + offset
-                    if direction == "right"
-                    else ((2 * start) - end) - offset
-                )
-                new_end = (
-                    ((2 * end) - start) + offset
-                    if direction == "right"
-                    else start - offset
-                )
-                shifted.append((new_start, new_end))
-        return shifted
-
-    @log(logger=logger)
-    def _merge_ranges(
-        self, ranges: Sequence[tuple[float, float]]
-    ) -> list[tuple[float, float]]:
-        """Merge overlapping or contiguous ranges."""
-        merged: list[tuple[float, float]] = []
-        for start, end in sorted(ranges):
-            if not merged or merged[-1][1] < start - 1:
-                merged.append((start, end))
-            else:
-                last_start, last_end = merged[-1]
-                merged[-1] = (last_start, max(last_end, end))
-        return merged
-
-    @log(logger=logger)
-    def _format_ranges(self, ranges: Sequence[tuple[float, float]]) -> str:
-        """Format list of tuples into '8-11,13'"""
-        return ",".join(
-            f"{start}-{end}" if start != end else str(start) for start, end in ranges
-        )
-
-    @log(logger=logger)
-    def _expand_event_indices(self, indices_str: str) -> list[int]:
-        """
-        Expand '1,3-5' → [1,3,4,5], exclude segments with negatives.
-        """
-        result: Set[int] = set()
-        for segment in indices_str.split(","):
-            segment = segment.strip()
-            try:
-                if "-" in segment:
-                    parts = segment.split("-")
-                    if len(parts) != 2:
-                        raise ValueError
-                    start, end = map(int, parts)
-                    if start < 0 or end < 0:
-                        continue
-                    result.update(range(start, end + 1))
-                else:
-                    val = int(segment)
-                    if val < 0:
-                        continue
-                    result.add(val)
-            except ValueError:
-                continue
-        return sorted(result)
-
     # private API, should generally be left alone by subclasses
-
-    @log(logger=logger)
-    def _set_display_area_base(self, layout: QLayout) -> None:
-        """
-        Create and set up the display area for the plot canvas.
-
-        :param layout: The main layout to which the display area will be added.
-        :type layout: QLayout
-        """
-        self.dataDisplayArea = QWidget(self)
-        self.dataDisplayArea.setStyleSheet(
-            "background-color: rgb(255, 255, 255); border-radius: 25px; border: 1px solid;"
-        )
-
-        self.dataDisplayAreaLayout = QHBoxLayout(self.dataDisplayArea)
-        layout.addWidget(self.dataDisplayArea, stretch=2)
-        self._set_custom_display_area(layout)
 
     @log(logger=logger)
     def _setup_ui(self) -> None:
@@ -691,175 +629,3 @@ class MetaView(QWidget, metaclass=QWidgetABCMeta):
         self._set_progress_area(mainLayout)
         mainLayout.setStretch(0, 8)  # Increase stretch factor for display area
         mainLayout.setStretch(1, 1)  # Decrease stretch factor for control area
-
-    @log(logger=logger)
-    def _logscale_and_filter_multiple_columns(
-        self, *data: npt.NDArray[Any], log_flags: Optional[Sequence[bool]] = None
-    ) -> Tuple[npt.NDArray[Any], ...]:
-        """
-        Filters multiple data columns for NaN values and applies logarithmic scaling.
-
-        This function takes an arbitrary number of 1D NumPy arrays as input.
-        It first removes any data points (rows) where any of the input arrays
-        contain a NaN value.
-        Then, it optionally applies a base-10 logarithmic scale to specified
-        columns. When applying log scale, it handles potentially negative data
-        by 'rectifying' it based on its average sign and filters out any
-        non-positive values after rectification. This filtering is applied
-        sequentially, meaning filtering based on one column affects all others.
-
-        :param \\*data: A variable number of 1D NumPy arrays representing the data columns.
-        :type \\*data: npt.NDArray[Any]
-        :param log_flags: A sequence of booleans, one for each data array. If True, the corresponding array will be log-scaled. If None, no log scaling is applied. Defaults to None.
-        :type log_flags: Optional[Sequence[bool]]
-        :raises ValueError: If log_flags is provided but is not a list or tuple with the same length as the number of data arguments.
-        :return: A tuple containing the processed 1D NumPy arrays. The number of arrays returned matches the number of input arrays.
-        :rtype: Tuple[npt.NDArray[Any], ...]
-        """
-        if not data:
-            return ()
-
-        num_arrays = len(data)
-        current_data = list(data)  # Work with a list
-
-        # --- Input Validation ---
-        if log_flags is None:
-            log_flags = [False] * num_arrays
-        elif not isinstance(log_flags, (list, tuple)) or len(log_flags) != num_arrays:
-            raise ValueError(
-                "log_flags must be a list or tuple with the same length as the number of data arguments."
-            )
-
-        num_points_init = len(current_data[0])
-
-        # --- NaN Filtering ---
-        # Create a combined mask to filter NaNs across all arrays
-        mask = np.ones(num_points_init, dtype=bool)
-        for d in current_data:
-            mask &= ~np.isnan(d)
-
-        # Apply the NaN mask
-        current_data = [d[mask] for d in current_data]
-
-        num_points_after_nan = len(current_data[0])
-        num_points_nan = num_points_init - num_points_after_nan
-        if num_points_nan > 0:
-            self.add_text_to_display.emit(
-                f"Removed {num_points_nan} out of {num_points_init} points that contained NaN",
-                self.__class__.__name__,
-            )
-
-        # --- Log Scaling (Sequential) ---
-        num_points_before_log = num_points_after_nan
-
-        for i in range(num_arrays):
-            if log_flags[i]:
-                d = current_data[i]
-
-                # Skip if no data left or data is already scaled
-                if len(d) == 0:
-                    continue
-
-                # Rectify: Flip data based on average sign, then filter > 0
-                avg = np.average(d)
-                sign = (
-                    np.sign(avg) if avg != 0 else 1
-                )  # Default to positive sign if avg is zero
-                rectified = sign * d
-
-                log_mask = rectified > 0
-
-                # Apply the mask to *all* current data arrays
-                current_data = [arr[log_mask] for arr in current_data]
-
-                current_data[i] = np.log10(
-                    current_data[i] * sign
-                )  # Apply log10 to the *rectified* value
-
-        num_points_final = len(current_data[0])
-        num_points_log_removed = num_points_before_log - num_points_final
-        if num_points_log_removed > 0:
-            self.add_text_to_display.emit(
-                f"Removed {num_points_log_removed} out of {num_points_before_log} points that could not be logscaled",
-                self.__class__.__name__,
-            )
-
-        return tuple(current_data)
-
-    def _logscale_and_filter_dataframe(
-        self, df: pd.DataFrame, log_columns: Optional[List[str]] = None
-    ) -> pd.DataFrame:
-        """
-        Filters a DataFrame for NaN values and applies logarithmic scaling to specified columns, returning a new DataFrame; the input is not modified.
-
-        This function:
-
-        - Removes rows with NaN values in any column.
-        - Applies log10 scaling to specified columns after rectifying based on average sign.
-        - Sequentially removes rows with non-positive values in log columns.
-
-        Args:
-            df (pd.DataFrame): Input DataFrame with numerical data. Not modified; a copy is filtered and transformed internally.
-            log_columns (list of str, optional): List of column names to apply log scaling.
-            If None, no log scaling is applied.
-
-        Returns:
-            pd.DataFrame: A new, filtered and transformed DataFrame.
-        """
-
-        if df.empty:
-            return df
-
-        # Create a copy to avoid SettingWithCopyWarning
-        df = df.copy()
-
-        if log_columns is None:
-            log_columns = []
-
-        if not all(col in df.columns for col in log_columns):
-            missing = [col for col in log_columns if col not in df.columns]
-            raise ValueError(f"Columns not found in DataFrame: {missing}")
-
-        num_points_init = len(df)
-
-        # Drop NaNs in place
-        df.dropna(inplace=True)
-        num_points_after_nan = len(df)
-        num_points_nan = num_points_init - num_points_after_nan
-
-        if num_points_nan > 0:
-            self.add_text_to_display.emit(
-                f"Removed {num_points_nan} out of {num_points_init} points that contained NaN",
-                self.__class__.__name__,
-            )
-
-        num_points_before_log = len(df)
-
-        for col in log_columns:
-            if df.empty:
-                break
-
-            d = df[col].values
-            avg = np.average(d)
-            sign = np.sign(avg) if avg != 0 else 1
-
-            rectified = sign * d
-            log_mask = rectified > 0
-
-            # Filter rows based on log_mask
-            df = df.loc[log_mask].copy()
-
-            # Apply log10 transformation using .loc
-            df[col] = df[col].astype(np.float64)
-            df.loc[:, col] = np.log10(sign * df[col]).astype(np.float64)
-
-        num_points_final = len(df)
-        num_points_log_removed = num_points_before_log - num_points_final
-
-        if num_points_log_removed > 0:
-            self.add_text_to_display.emit(
-                f"Removed {num_points_log_removed} out of {num_points_before_log} points that could not be logscaled",
-                self.__class__.__name__,
-            )
-
-        return df

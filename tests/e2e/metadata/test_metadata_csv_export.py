@@ -16,11 +16,12 @@ Key behaviors this test relies on:
 - export_subset_to_csv writes one file per event plus several table-dump
   CSVs (channels/events/experiments/columns/sublevels/data), not a
   single combined CSV.
-- Export runs asynchronously via run_generators, so the accept-path
-  wait must wait for the file COUNT to STABILIZE (unchanged across
-  several consecutive polls), not just "any file appears" - otherwise a
-  still-finishing export can look like the cancel path incorrectly
-  created files.
+- Export runs asynchronously via run_generators, so the accept path
+  waits for the export's worker to finish, not for any state of the
+  folder - the trace files are written after the tables, so a file
+  count or byte total can hold still while the export is still running,
+  and a still-finishing export can look like the cancel path created
+  files.
 - DictDialog holds its outcome in the private attribute dlg._result (a
   tuple), read through get_result(). It was formerly dlg.result, which
   shadowed QDialog's built-in .result() method.
@@ -33,9 +34,6 @@ Run with:
 """
 
 import os
-import sys
-import time
-from pathlib import Path
 
 import pytest
 from PySide6 import QtCore, QtWidgets
@@ -46,10 +44,6 @@ from poriscope.controllers.main_controller import MainController
 from poriscope.models.main_model import MainModel
 from poriscope.views.main_view import MainView
 from tests.e2e._helpers import open_menu_hybrid
-
-REPO_ROOT = Path(__file__).resolve().parents[3]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
 LOADER_SUBCLASS_NAME = os.getenv("E2E_DBLOADER_NAME", "SQLiteDBLoader")
 
@@ -106,34 +100,6 @@ def _fake_get_item_exact_then_substring(*wants):
         return (items[0] if items else "No Selection"), True
 
     return fake_get_item
-
-
-def _wait_for_stable_export(
-    qtbot, get_files_fn, stable_polls=3, poll_ms=200, timeout_ms=QT_WAIT_TIMEOUT_MS
-):
-    """Wait for the exported-file COUNT to stabilize (unchanged across
-    stable_polls consecutive checks), not just "any file appears" - export
-    writes ~29 files asynchronously (one per event + table dumps), and
-    waiting for only the first one leaves the generator still writing the
-    rest in the background."""
-    deadline = time.monotonic() + timeout_ms / 1000
-    last_count = -1
-    stable_count = 0
-    while time.monotonic() < deadline:
-        current = get_files_fn()
-        n = len(current)
-        if n > 0 and n == last_count:
-            stable_count += 1
-            if stable_count >= stable_polls:
-                return current
-        else:
-            stable_count = 0
-        last_count = n
-        qtbot.wait(poll_ms)
-    raise TimeoutError(
-        f"Export never stabilized within {timeout_ms}ms "
-        f"(last count={last_count}, stable_count={stable_count})"
-    )
 
 
 # ------------- Test -------------------------------------------------------
@@ -193,12 +159,12 @@ def test_metadata_csv_export(
 
     # SelectionTree.show_dialog() bypass (Qt.Popup hangs under offscreen -
     # see test_metadata_flow.py for full rationale)
-    import poriscope.plugins.analysistabs.MetadataView as metadata_view_mod
+    from poriscope.views.widgets.SelectionTree import SelectionTree
 
     def _patched_show_dialog(
         self, structure, loader_name, title="Select Channels", selected=None
     ):
-        selection_widget = metadata_view_mod.SelectionTree()
+        selection_widget = SelectionTree()
         selection_widget.populate_tree(structure, loader_name, selected)
         select_all_btn = selection_widget.select_all_button
         if select_all_btn.text() == "Select All":
@@ -208,7 +174,7 @@ def test_metadata_csv_export(
         return result
 
     monkeypatch.setattr(
-        metadata_view_mod.SelectionTree,
+        SelectionTree,
         "show_dialog",
         _patched_show_dialog,
         raising=True,
@@ -222,7 +188,7 @@ def test_metadata_csv_export(
     }
     model = MainModel(app_config)
     view = MainView(model.get_available_plugins())
-    controller = MainController(model, view)  # noqa
+    controller = MainController(model, view)
     qtbot.addWidget(view)
     view.show()
 
@@ -361,18 +327,32 @@ def test_metadata_csv_export(
     QTest.mouseClick(controls.export_csv_subset_button, Qt.MouseButton.LeftButton)
     print("[DEBUG] export_csv_subset_button clicked, entering waitUntil...")
 
-    def _get_new_csvs():
-        return set(export_folder.glob("*.csv")) - before_files
-
-    new_csv_files = _wait_for_stable_export(qtbot, _get_new_csvs)
+    # Only the export's worker finishing says every file is written: it writes the
+    # tables and then one trace file per event, so no state of the folder - a file
+    # count, total bytes, no empty files - is reached only at the end. The worker is
+    # staged under the loader's key before the click returns and popped by a queued
+    # signal when the generator is exhausted, so its entry existing now and emptying
+    # later is this run's completion.
+    tab_model = controller.analysis_tabs["MetadataController"].model
+    loader_key = controls.db_loader_comboBox.currentText()
+    assert tab_model.workers.get(loader_key), "the export never started a worker"
+    qtbot.waitUntil(
+        lambda: not tab_model.workers.get(loader_key), timeout=QT_WAIT_TIMEOUT_MS
+    )
+    new_csv_files = set(export_folder.glob("*.csv")) - before_files
     print(
         f"[DEBUG] CSV export (accept path) produced {len(new_csv_files)} file(s): {new_csv_files}"
     )
     assert (
         len(new_csv_files) > 0
     ), "Expected at least one new CSV file after accepting export"
-    sample_csv = next(iter(new_csv_files))
-    assert sample_csv.stat().st_size > 0, f"Expected {sample_csv} to be non-empty"
+    empty = sorted(path.name for path in new_csv_files if path.stat().st_size == 0)
+    assert (
+        not empty
+    ), f"Exported CSVs were still empty after the export finished: {empty}"
+    # Sorted rather than an arbitrary element of the set, so a failure names the same
+    # file on every run instead of whichever one hash order happened to surface.
+    sample_csv = sorted(new_csv_files)[0]
     with open(sample_csv) as f:
         header = f.readline().strip()
     print(f"[DEBUG] CSV header (from {sample_csv.name}): {header!r}")

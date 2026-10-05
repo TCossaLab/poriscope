@@ -25,7 +25,18 @@
 
 import logging
 from collections import Counter
-from typing import Any, Dict, List, Optional, Tuple, Type, Union, cast, override
+from typing import (
+    Any,
+    Dict,
+    List,
+    Optional,
+    Sequence,
+    Tuple,
+    Type,
+    Union,
+    cast,
+    override,
+)
 
 import matplotlib
 import matplotlib.pyplot as plt
@@ -92,9 +103,46 @@ class PeakFinder(MetaEventFitter):
     logger = logging.getLogger(__name__)
 
     #: Minimum number of histogram bins handed to the double-Gaussian fit.
-    #: Six free parameters need meaningfully more bins than that to be
+    #: Seven free parameters need meaningfully more bins than that to be
     #: constrained; see ``_histogram_for_fit`` for the measurements behind this.
     MIN_FIT_BINS = 30
+
+    #: Fit a flat constant alongside the two Gaussians, as a seventh free
+    #: parameter of the same ``curve_fit`` (and of the constrained refit).
+    #:
+    #: A uniform background - counts spread across the whole histogram rather
+    #: than belonging to either population - is otherwise absorbed by the two
+    #: Gaussians, which widen to cover it. Measured on two symmetric
+    #: populations (true sigma 300) sitting on a flat background of 2500
+    #: events: without the constant the fitted widths come back 335 and 338 and
+    #: the residual sum of squares is 52632; with it they come back 305 and 301,
+    #: the constant lands on 79.6 counts against a true 78.1, and the residual
+    #: falls to 6880 - better than sevenfold. On data with no background it is
+    #: inert: the constant settles at 1-8 counts and moves no fitted mean by
+    #: more than 0.1%, on clean bimodal, skewed bimodal, single-population,
+    #: minimum-bin and 60-point histograms alike.
+    #:
+    #: The constant is bounded to ``[0, max(counts)]``, the same ceiling the
+    #: amplitudes get. Counting data cannot go negative, and a pedestal taller
+    #: than the tallest bin would put the model above the data everywhere. A
+    #: *tighter* ceiling is actively harmful rather than safer: capping it at
+    #: 2% and 5% of the tallest bin clipped the real 78-count pedestal above to
+    #: 21.9 and 54.7 and left the fit worse than the unclipped one, and no
+    #: fraction below 10% recovered it. Nothing needs the ceiling to bind,
+    #: because least squares has no incentive to raise a pedestal that is not
+    #: in the data.
+    #:
+    #: See ``_curve_fit_bounded`` for the guard that makes this a strict
+    #: improvement rather than a trade: the extra degree of freedom can in
+    #: principle move the optimizer into a *worse* local minimum - measured,
+    #: from a deliberately poorer initial guess, to lose a 5%-minority
+    #: population outright - so both fits are run and the constant is dropped
+    #: if it cost anything.
+    #:
+    #: Set False to fit the two Gaussians alone. Everything downstream reads
+    #: the fitted value rather than assuming it is present, so this is the only
+    #: change needed to compare the two on one dataset.
+    FIT_CONSTANT_OFFSET = True
 
     #: Percentile core of the log-ECD-ratio distribution that the translocation
     #: direction fit is run on. ``_histogram_for_fit`` takes its bin width from
@@ -104,7 +152,7 @@ class PeakFinder(MetaEventFitter):
     #: until the two real populations share a handful of bins. A single event
     #: two decades out roughly halves the bins the two populations span, and
     #: three events three decades out cut it by about four - at which point the
-    #: six parameters are underdetermined and, per ``_histogram_for_fit``, the
+    #: seven parameters are underdetermined and, per ``_histogram_for_fit``, the
     #: fit can converge with both Gaussians on the same mode while passing every
     #: convergence check. ``n_components`` then comes back 1 and the whole pass
     #: declines, leaving every event with no direction at all.
@@ -114,10 +162,130 @@ class PeakFinder(MetaEventFitter):
     #: events get classified - only which ones the fit is estimated from.
     #:
     #: The trim is skipped when the core comes out below ``MIN_FIT_BINS``, which
-    #: is the only gate it needs: the core is about 90% of the sample, so
-    #: reaching that floor already requires 34 events, and a separate
-    #: minimum-event count in front of it could never be the binding test.
+    #: is the only gate the trim needs: the core is about 90% of the sample, so
+    #: reaching that floor already requires 34 events. Below
+    #: ``DIRECTION_MIN_FIT_EVENTS`` there is no fit, and so no trim, at all.
+    #:
+    #: NOTE (merge fix): this was briefly (1.0, 99.0). Everything around it
+    #: still described (5.0, 95.0) - the paragraph above ("about 90% of the
+    #: sample", "requires 34 events", which only holds for a 90% core against
+    #: MIN_FIT_BINS = 30), the changelog entry ("5th-95th percentile") and
+    #: test_extremes_are_kept_out_of_the_fit, which trims 5 events off each end
+    #: of a 100-event sample and is what turned CI red. The 98% core that
+    #: (1.0, 99.0) gives leaves five events several decades out in the fit
+    #: sample, which is the exact failure this constant exists to prevent, so
+    #: the value is restored rather than the three descriptions rewritten.
     DIRECTION_FIT_PERCENTILES = (5.0, 95.0)
+
+    #: Fewest barcoded events ``_classify_translocation_direction`` fits a
+    #: double Gaussian to. Below it, each event's own pre/post ECD ratio is
+    #: compared with 1 instead - the longer arm marks the beginning of the
+    #: event - which is also the rule used when the fit finds one population.
+    #: Set equal to ``MIN_FIT_BINS``: with fewer points than the histogram has
+    #: bins, the six-parameter fit has too little to go on.
+    DIRECTION_MIN_FIT_EVENTS = 30
+
+    #: Whether ``_classify_peak_prominences`` fits the base-10 logarithm of
+    #: the normalized prominences rather than the values themselves.
+    #:
+    #: A double Gaussian on log values is a double log-normal on the measured
+    #: ones, which is the shape the upper population has: it is right-skewed,
+    #: and a log-normal was measured to beat a Gaussian on it by 24% RMS. The
+    #: base is presentational - it rescales the fitted variable by a constant,
+    #: which the histogram, the fit and the split are equivariant under, so
+    #: base 10 buys legible decades and changes no class. The
+    #: transform gets that without disturbing the six-element ``params``
+    #: contract shared by the plotting code and all three classifiers, which
+    #: is what made fitting a log-normal directly too invasive to attempt.
+    #:
+    #: Set False to fit the linear values, which is the only change needed to
+    #: compare the two on one dataset - everything downstream of the fit reads
+    #: this constant rather than assuming a scale.
+    PROMINENCE_FIT_LOG_SCALE = True
+
+    #: Metadata this plugin computes for its own use and does not persist.
+    #:
+    #: These are working values, not results: the carrier levels every later
+    #: stage measures against, the star's end now that the peak itself carries
+    #: it as filter type 4 or 5, and the flag recording which bases the trim
+    #: invented. Each is still written onto ``event_metadata`` /
+    #: ``sublevel_metadata`` and read from there exactly as before -
+    #: ``get_plot_features``, ``filter_peaks`` and the classifiers are
+    #: untouched - but ``get_single_event_metadata`` strips them from what it
+    #: hands out, and they are absent from the declared types and units.
+    #:
+    #: Both halves of that are needed and have to agree. The database writer
+    #: builds its ``INSERT`` from the keys of the dict it is handed, so a key
+    #: with no declared column fails the write outright ("no such column"),
+    #: while a declared column that is never supplied is merely NULL. Removing
+    #: a field therefore means removing it from *both*, which is what these
+    #: tuples and the accessor override do between them.
+    PRIVATE_EVENT_METADATA = (
+        "unfolded_level",
+        "folded_level",
+        "bound_star",
+        "translocation_confidence",
+    )
+    PRIVATE_SUBLEVEL_METADATA = ("base_at_edge",)
+
+    #: Half-width of the baseline band, in baseline standard deviations, that
+    #: ``filter_peaks`` calls type 0 in its barcode branch: a peak is on the
+    #: baseline when both its bases sit within this many sigma of it.
+    #:
+    #: Fixed rather than taken from ``Higher Filter Threshold`` because that
+    #: setting sizes the tolerance around the *carrier* levels, which is a
+    #: different question - at ``t2 = 5`` it opened a baseline band wide
+    #: enough to reach the bottom of the type-1 band and, being tested first,
+    #: to claim peaks sitting on the unfolded carrier. Type 1 is now tested
+    #: ahead of type 0, so an overlap can no longer mistype a carrier peak,
+    #: and this constant only decides how far from the baseline a peak may sit
+    #: and still be called one.
+    #:
+    #: Note that ``baseline_stdev`` is the conservative ``min`` of the two
+    #: padding estimates and their weighted mean, so the effective band is
+    #: somewhat tighter than three standard deviations of the raw baseline.
+    BASELINE_BAND_SIGMA = 3.0
+
+    #: Relative weights of the three terms ``_select_barcode_peaks`` scores a
+    #: candidate barcode on: how alike its consecutive peak-to-peak spacings,
+    #: its peaks' widths, and its peaks' ECDs are. Each term is divided by a
+    #: per-event median before weighting, so all three are dimensionless and
+    #: equal weights really do weigh them equally - changing one of these
+    #: expresses a belief about the construct, not a correction for units.
+    #:
+    #: Spacing and width are both *time* quantities, set by how fast the
+    #: construct went through, so a barcode's labels stay alike in both even
+    #: when they thread at different depths. ECD is depth-weighted, and its
+    #: weight is 0 for that reason: on a real event whose labels varied in
+    #: depth by a factor of two it ranked a noise peak's set above the true
+    #: barcode, which spacing and width together rejected by a factor of ten.
+    #: ECD is still what breaks a tie between equally well-matched sets, so
+    #: setting this to zero silences it as a *preference* without discarding
+    #: it - raise it if a construct's labels really are alike in charge.
+    BARCODE_SPACING_WEIGHT = 1.0
+    BARCODE_WIDTH_WEIGHT = 1.0
+    BARCODE_ECD_WEIGHT = 0.0
+
+    #: Largest number of partial selections ``_select_barcode_peaks`` will
+    #: expand for one event before giving up and keeping the best complete
+    #: candidate it has found so far.
+    #:
+    #: The search is exponential in ``Number of peaks`` and, more sharply, in
+    #: how many type-1 peaks fall inside one ``max_distance`` window - so a
+    #: large ``Peak to Peak Distance Ratio`` on a peak-dense event is what
+    #: reaches this, not event count. Measured cost per event is a few
+    #: microseconds on a clean barcode and a few milliseconds at 40 candidate
+    #: peaks with the window opened to the whole event; the cap bounds the
+    #: latter rather than the former. Hitting it is deterministic for a given
+    #: event, since the walk order is fixed, and is logged.
+    BARCODE_SEARCH_NODE_CAP = 100_000
+
+    #: Absolute tolerance for calling two candidate barcodes equally
+    #: well-matched. The cost is a dimensionless sum of order one, and on an
+    #: ideal event - even spacing, even ECD - exact ties are the normal case
+    #: rather than an edge case, so without a tolerance floating-point noise
+    #: would decide between them instead of the documented tie-break.
+    BARCODE_COST_TOLERANCE = 1e-9
 
     #: Minimum separation, in units of the dominant peak's FWHM, that two
     #: histogram maxima must have before they are accepted as seeds for the two
@@ -166,6 +334,33 @@ class PeakFinder(MetaEventFitter):
     #: safe to fit a single spline across.
     SPLINE_FIT_DOMAIN_COVERAGE = 0.995
 
+    #: Single-population fallback for ``_classify_folded_unfolded``. When the
+    #: double-Gaussian fit reports one population, a single Gaussian is fitted
+    #: instead, that population is assumed to be **unfolded**, and an event is
+    #: called folded at or above ``max(RATIO * mu, mu + SIGMA * sigma)``.
+    #:
+    #: Both values are arbitrary choices, not measurements, which is why they
+    #: are named here and printed in the report and on the plot. The ratio term
+    #: sits halfway between the unfolded depth (1x) and the depth a folded
+    #: carrier is expected at (2x - the same 2:1 rule the two-population path
+    #: checks its centres against), and keeps the cut physically meaningful on
+    #: a narrow population, where ``mu + 3 sigma`` alone can fall at ~1.1x. The
+    #: sigma term keeps the cut clear of the population's own tail on a wide
+    #: one, where 1.5x alone would call part of the unfolded population folded.
+    FOLDING_SINGLE_POPULATION_RATIO = 1.5
+    FOLDING_SINGLE_POPULATION_SIGMA = 3.0
+
+    #: Single-population fallback for ``_classify_peak_prominences``. When the
+    #: double-Gaussian fit reports one population, a single Gaussian is fitted
+    #: to the fitted variable (log10 of the normalized prominence while
+    #: ``PROMINENCE_FIT_LOG_SCALE`` holds), that population is assumed to be
+    #: **class 0**, and a peak is class 1 at or above ``mu + SIGMA * sigma`` in
+    #: that variable - "too prominent to belong to the one population found".
+    #: Arbitrary, like the folding pair above, and reported for that reason. At
+    #: 3 sigma about 0.13% of a truly Gaussian class-0 population lands above
+    #: the cut.
+    PROMINENCE_SINGLE_POPULATION_SIGMA = 3.0
+
     # public API, must be overridden by subclasses:
     @log(logger=logger)
     @override
@@ -179,8 +374,13 @@ class PeakFinder(MetaEventFitter):
 
         Called by poriscope when the plugin is instantiated or reconfigured, to
         build the settings dialog and to sanity-check whatever the user enters;
-        the accepted values are then readable through ``self.settings``. The
-        ``super()`` call supplies the mandatory ``"MetaReader"`` key.
+        the accepted values are then readable through ``self.settings``. See
+        :py:meth:`~poriscope.utils.MetaEventFitter.MetaEventFitter.get_empty_settings`
+        for the structure of the dict and what ``Type``, ``Value``, ``Min``, ``Max``,
+        ``Options`` and ``Units`` mean in it.
+
+        The ``super()`` call supplies the mandatory ``"MetaEventLoader"`` key, which is
+        how this plugin is wired to its data source.
 
         The keys added here, and where each one is consumed:
 
@@ -203,7 +403,7 @@ class PeakFinder(MetaEventFitter):
         - ``Min Carrier Blockage`` - the smallest carrier blockage an event may
           have and still be admitted to the folding fit.
 
-        :param globally_available_plugins: a dict containing all data plugins that exist to date, keyed by metaclass. Must include "MetaReader" as a key, with explicitly set Type MetaReader.
+        :param globally_available_plugins: a dict containing all data plugins that exist to date, keyed by metaclass. Must include "MetaEventLoader" as a key, with explicitly set Type MetaEventLoader.
         :type globally_available_plugins: Optional[Dict[str, List[str]]]
         :param standalone: False if this is called as part of a GUI, True otherwise. Default False
         :type standalone: bool
@@ -213,31 +413,35 @@ class PeakFinder(MetaEventFitter):
         settings = super().get_empty_settings(globally_available_plugins, standalone)
         settings["Event Type"] = {
             "Type": str,
-            "Value": "Unspecified",
+            "Value": "Barcode",
             "Options": ["Unspecified", "Single Peak", "Barcode"],
         }
         settings["Number of peaks"] = {
             "Type": int,
-            "Value": 1,
+            "Value": 4,
             "Min": 1,
         }
         settings["Lower Filter Threshold"] = {
             "Type": int,
-            "Value": -4,
+            "Value": -5,
             "Min": -10,
             "Max": 10,
             "Units": "σ",
         }
         settings["Higher Filter Threshold"] = {
             "Type": int,
-            "Value": 2,
+            "Value": 5,
             "Min": -10,
             "Max": 10,
             "Units": "σ",
         }
         settings["Peak to Peak Distance Ratio"] = {
             "Type": float,
-            "Value": 5.0,  # 5% of event length, in the same microseconds as peak_loc
+            # 30% of event length, in the same microseconds as peak_loc. This
+            # is also the setting the barcode search's cost scales with - it
+            # sets how many candidates fall inside one window - so raising it
+            # further buys reach at a superlinear runtime price.
+            "Value": 30.0,
             "Min": 0.01,
             "Max": 99,  # Maximum 99% of event
             "Units": "%",
@@ -405,6 +609,109 @@ class PeakFinder(MetaEventFitter):
 
     # public API, should generally be left alone by subclasses
     @log(logger=logger)
+    @override
+    def get_metadata_columns(self, channel: int) -> List[str]:
+        """
+        List the event metadata columns, less this plugin's working values.
+
+        NOTE (merge fix): this override is new. ``PRIVATE_EVENT_METADATA`` is
+        stripped from ``get_single_event_metadata`` and from the declared types
+        and units, but the base ``get_metadata_columns`` reads the keys of
+        ``event_metadata`` directly, so it went on naming the four private
+        fields - leaving the three accessors disagreeing about what a column
+        is. That is what the behavioural conformance suite caught: every
+        produced column must carry a declared type and unit, and the keys of
+        ``get_single_event_metadata`` must be exactly the produced columns.
+        Both hold again once the same tuple is stripped here.
+
+        :param channel: analyze only events from this channel
+        :type channel: int
+        :return: a list of column names
+        :rtype: List[str]
+        """
+        return [
+            column
+            for column in super().get_metadata_columns(channel)
+            if column not in self.PRIVATE_EVENT_METADATA
+        ]
+
+    # public API, should generally be left alone by subclasses
+    @log(logger=logger)
+    @override
+    def get_sublevel_columns(self, channel: int) -> List[str]:
+        """
+        List the sublevel metadata columns, less this plugin's working values.
+
+        The sublevel half of ``get_metadata_columns`` above, stripping
+        ``PRIVATE_SUBLEVEL_METADATA`` for the same reason.
+
+        :param channel: analyze only events from this channel
+        :type channel: int
+        :return: a list of column names
+        :rtype: List[str]
+        """
+        return [
+            column
+            for column in super().get_sublevel_columns(channel)
+            if column not in self.PRIVATE_SUBLEVEL_METADATA
+        ]
+
+    # public API, should generally be left alone by subclasses
+    @log(logger=logger)
+    @override
+    def get_single_event_metadata(self, channel: int, index: int) -> Tuple[
+        dict,
+        dict,
+        npt.NDArray[np.float64],
+        npt.NDArray[np.float64],
+        Optional[npt.NDArray[np.float64]],
+    ]:
+        """
+        Return one event's metadata with this plugin's working values removed.
+
+        Called through ``get_event_metadata_generator``, which is what
+        ``MetaDatabaseWriter`` iterates when writing a database - the only
+        consumer of this method - so this is the single seam where "what
+        PeakFinder computes" and "what gets persisted" part company. See
+        ``PRIVATE_EVENT_METADATA`` for what is dropped and why it has to be
+        dropped here as well as from the declared types.
+
+        The dicts returned are fresh shallow copies, so the internal metadata
+        this strips from is left intact for ``get_plot_features`` and the
+        classifiers, which keep reading the full set.
+
+        :param channel: Channel from which to retrieve the event
+        :type channel: int
+        :param index: Index of the event to retrieve
+        :type index: int
+        :return: Tuple of event metadata, sublevel metadata, filtered data, raw data, and fitted data
+        :rtype: Tuple[dict, dict, npt.NDArray[np.float64], npt.NDArray[np.float64], Optional[npt.NDArray[np.float64]]]
+        """
+        (
+            event_metadata,
+            sublevel_metadata,
+            filtered_data,
+            raw_data,
+            fitted_data,
+        ) = super().get_single_event_metadata(channel, index)
+
+        return (
+            {
+                key: value
+                for key, value in event_metadata.items()
+                if key not in self.PRIVATE_EVENT_METADATA
+            },
+            {
+                key: value
+                for key, value in sublevel_metadata.items()
+                if key not in self.PRIVATE_SUBLEVEL_METADATA
+            },
+            filtered_data,
+            raw_data,
+            fitted_data,
+        )
+
+    @log(logger=logger)
     def get_plot_features(self, channel: int, index: int) -> Tuple[
         Optional[List[float]],
         Optional[List[float]],
@@ -421,7 +728,9 @@ class PeakFinder(MetaEventFitter):
         ``construct_fitted_event()`` for the same event. Returns horizontal
         lines (baseline, unfolded level, and that level offset by each of the
         two filter thresholds), one marker per peak, and the label strings
-        that go with them.
+        that go with them. The three unfolded-level lines are omitted when the
+        event has no unfolded level - before the run-wide folded/unfolded
+        classification has run, or when it could not separate two populations.
 
         Only metadata that is actually populated reaches a label: an event the
         classifiers never reached reads as having no value rather than a value
@@ -461,26 +770,26 @@ class PeakFinder(MetaEventFitter):
             # are visible against the trace.
             bases.append(baseline)
             hlabel.append("Baseline")
-            bases.append(
-                -np.sign(baseline)
-                * self.event_metadata[channel][index]["unfolded_level"]
-                + self.event_metadata[channel][index]["baseline_current"]
-            )
-            hlabel.append("unfolded level")
-            bases.append(
-                -np.sign(baseline)
-                * self.event_metadata[channel][index]["unfolded_level"]
-                + self.event_metadata[channel][index]["baseline_current"]
-                - np.sign(baseline) * t2_std * baseline_stdev
-            )
-            hlabel.append(f"unfolded level {t2_std:+d}σ")
-            bases.append(
-                -np.sign(baseline)
-                * self.event_metadata[channel][index]["unfolded_level"]
-                + self.event_metadata[channel][index]["baseline_current"]
-                - np.sign(baseline) * t1_std * baseline_stdev
-            )
-            hlabel.append(f"unfolded level {t1_std:+d}σ")
+
+            # unfolded_level is None until the folded/unfolded classifier has
+            # run over the whole fitting session, and stays None when that
+            # classifier cannot separate two populations. The unfolded level
+            # and the two filter bands hung off it are then left out rather
+            # than raising TypeError, which took the whole overlay down with
+            # it; the baseline and the peaks are still drawn.
+            unfolded_level = self.event_metadata[channel][index]["unfolded_level"]
+            if unfolded_level is not None and not np.isnan(unfolded_level):
+                unfolded_line = -np.sign(baseline) * unfolded_level + baseline
+                bases.append(unfolded_line)
+                hlabel.append("unfolded level")
+                bases.append(
+                    unfolded_line - np.sign(baseline) * t2_std * baseline_stdev
+                )
+                hlabel.append(f"unfolded level {t2_std:+d}σ")
+                bases.append(
+                    unfolded_line - np.sign(baseline) * t1_std * baseline_stdev
+                )
+                hlabel.append(f"unfolded level {t1_std:+d}σ")
 
             event_data = self.event_metadata[channel][index]
             direction = event_data.get("translocation_direction")
@@ -985,6 +1294,31 @@ class PeakFinder(MetaEventFitter):
         if len(peaks) == 0:
             raise ValueError("No Peaks Found")
 
+        # Whether `find_peaks` had to stop its base walk at an end of the
+        # trimmed event rather than at a genuine local minimum. Recorded here
+        # because the indices it is read from are overwritten with currents
+        # immediately below, and the trimmed length is only in scope here.
+        #
+        # A base pinned to an edge is an artefact of the trim: the walk was
+        # heading for the baseline and ran out of samples, so the base value
+        # is whatever the event happened to be doing at its own edge - a
+        # carrier level, usually - and neither it nor the prominence measured
+        # from it describes the peak. `filter_peaks` rejects such peaks rather
+        # than typing them from a base the trim invented. Bases stopped early
+        # by `wlen` are not edge cases and are not flagged.
+        last_trimmed_index = len(trimmed_data) - 1
+        properties.update(
+            {
+                "base_at_edge": [
+                    bool(
+                        properties["left_bases"][i] <= 0
+                        or properties["right_bases"][i] >= last_trimmed_index
+                    )
+                    for i in range(len(peaks))
+                ]
+            }
+        )
+
         properties.update(
             {
                 "left_bases": [
@@ -1052,6 +1386,7 @@ class PeakFinder(MetaEventFitter):
                         "left_ips": left_ip,
                         "right_ips": right_ip,
                         "max_blockage": max_blockage,
+                        "base_at_edge": properties["base_at_edge"][i],
                         "filtered": properties.get("filtered", [0] * len(peaks))[i],
                     }
                 )
@@ -1361,6 +1696,22 @@ class PeakFinder(MetaEventFitter):
             ],
             dtype=np.float64,
         )
+        # 1.0 where the trim, not the trace, decided one of this peak's bases;
+        # see _locate_sublevel_transitions. Float rather than bool so that
+        # non-peak sublevels can hold NaN like every other peak column, and
+        # defaulted the same way max_blockage is, so a peak record built
+        # without the key types as though its bases were found freely.
+        sublevel_metadata["base_at_edge"] = np.array(
+            [
+                (
+                    float(bool(sublevel_starts[i].get("base_at_edge", False)))
+                    if "peak" in sublevel_starts[i]["type"]
+                    else np.nan
+                )
+                for i in range(num_states)
+            ],
+            dtype=np.float64,
+        )
         sublevel_metadata["right_ips"] = np.array(
             [
                 (
@@ -1642,14 +1993,10 @@ class PeakFinder(MetaEventFitter):
             "raw_ecd": float,
             "max_deviation": float,
             "baseline_current": float,
-            "unfolded_level": float,
-            "folded_level": float,
             "primary_level": float,
             "baseline_stdev": float,
             "translocation_direction": str,
-            "translocation_confidence": float,
             "sequence": str,
-            "bound_star": str,
         }
 
         return metadata_types
@@ -1722,14 +2069,10 @@ class PeakFinder(MetaEventFitter):
         metadata_units["raw_ecd"] = "pC"
         metadata_units["max_deviation"] = "pA"
         metadata_units["baseline_current"] = "pA"
-        metadata_units["unfolded_level"] = "pA"
-        metadata_units["folded_level"] = "pA"
         metadata_units["primary_level"] = "pA"
         metadata_units["baseline_stdev"] = "pA"
         metadata_units["translocation_direction"] = None
-        metadata_units["translocation_confidence"] = None
         metadata_units["sequence"] = None
-        metadata_units["bound_star"] = None
 
         return metadata_units
 
@@ -1798,8 +2141,8 @@ class PeakFinder(MetaEventFitter):
            writes ``unfolded_level`` / ``folded_level`` and re-runs
            ``filter_peaks`` against the run-wide levels through
            ``update_event_metadata_post_processing``.
-        3. ``_classify_peak_prominences`` fits the prominences of all type 1,
-           2 and 3 peaks and writes ``classified`` /
+        3. ``_classify_peak_prominences`` fits the normalized prominences of
+           all type 1, 2 and 3 peaks and writes ``classified`` /
            ``classification_confidence`` per peak.
         4. ``_classify_translocation_direction`` fits the log ratio of the ECD
            before and after each event's barcode and writes
@@ -2130,6 +2473,9 @@ class PeakFinder(MetaEventFitter):
                     "peak_heights": [],
                     "filtered": [],
                     "peak_loc": [],
+                    "peak_width": [],
+                    "base_at_edge": [],
+                    "sublevel_raw_ecd": [],
                 }
 
                 for i, peak_id in enumerate(sublevel_data.get("peak_id", [])):
@@ -2149,6 +2495,27 @@ class PeakFinder(MetaEventFitter):
                         )
                         properties["filtered"].append(sublevel_data["filtered"][i])
                         properties["peak_loc"].append(sublevel_data["peak_loc"][i])
+                        # Barcode selection scores candidates on how alike
+                        # their widths are, alongside their spacing.
+                        peak_widths = sublevel_data.get("peak_width")
+                        properties["peak_width"].append(
+                            peak_widths[i] if peak_widths is not None else np.nan
+                        )
+                        # Recorded at detection time; NaN on a database written
+                        # before this column existed, which reads as "not at an
+                        # edge" so those files type exactly as they used to.
+                        edge_flags = sublevel_data.get("base_at_edge")
+                        properties["base_at_edge"].append(
+                            edge_flags[i] if edge_flags is not None else np.nan
+                        )
+                        # Barcode selection scores candidates on how alike
+                        # their ECDs are; NaN on a database written before the
+                        # column existed, which drops the term rather than
+                        # poisoning the score.
+                        sublevel_ecds = sublevel_data.get("sublevel_raw_ecd")
+                        properties["sublevel_raw_ecd"].append(
+                            sublevel_ecds[i] if sublevel_ecds is not None else np.nan
+                        )
 
                 if len(peak_indices) > 0:
                     # filter_peaks indexes its properties lists positionally,
@@ -2260,18 +2627,38 @@ class PeakFinder(MetaEventFitter):
             results = self._classification_results
             total_events = cast(int, results["total_events"])
             lower_center = cast(float, results["lower_center"])
-            higher_center = cast(float, results["higher_center"])
+            higher_center = results.get("higher_center")
             threshold = cast(float, results["threshold"])
             folded_count = cast(int, results["folded_count"])
             unfolded_count = cast(int, results["unfolded_count"])
 
             classification_report += f"\n  Total classified: {total_events} events"
-            classification_report += (
-                f"\n  Lower center (unfolded): {lower_center:.2f} pA"
-            )
-            classification_report += (
-                f"\n  Higher center (folded): {higher_center:.2f} pA"
-            )
+            if results.get("single_population"):
+                lower_std = results["lower_std"]
+                classification_report += (
+                    "\n  Single population found: assumed it is unfolded, "
+                    "with the folded level twice as deep"
+                )
+                classification_report += (
+                    f"\n  Center (unfolded, assumed): {lower_center:.2f} pA, "
+                    f"sigma {lower_std:.2f} pA, from "
+                    f"{results.get('lower_center_source')}"
+                )
+                classification_report += (
+                    "\n  Folded level (assumed, 2 x unfolded): "
+                    f"{results['assumed_folded_level']:.2f} pA"
+                )
+                classification_report += (
+                    f"\n  Threshold rule: {results['threshold_rule']}"
+                )
+            else:
+                classification_report += (
+                    f"\n  Lower center (unfolded): {lower_center:.2f} pA"
+                )
+            if higher_center is not None:
+                classification_report += (
+                    f"\n  Higher center (folded): {higher_center:.2f} pA"
+                )
             if "ratio" in results:
                 ratio = cast(float, results["ratio"])
                 classification_report += f"\n  Ratio (folded/unfolded): {ratio:.3f}"
@@ -2279,7 +2666,11 @@ class PeakFinder(MetaEventFitter):
                     classification_report += "✔ (within expected 2:1 ratio)"
                 else:
                     classification_report += "✖ (outside expected 2:1 ratio)"
-            classification_report += f"\n  Threshold: {threshold:.2f} pA"
+            classification_report += f"\n  Threshold: {threshold:.2f} pA" + (
+                f" ({results['threshold_basis']})"
+                if results.get("threshold_basis")
+                else ""
+            )
             classification_report += (
                 f"\n  Folded events: {folded_count} ({folded_count/total_events:.1%})"
             )
@@ -2302,16 +2693,19 @@ class PeakFinder(MetaEventFitter):
             total_classified = cast(int, peak_stats["total_classified"])
             total_unclassified = cast(int, peak_stats["total_unclassified"])
             peak_type_counts = cast(dict[int, int], peak_stats["peak_type_counts"])
+            # Zero, not unbound, on a run with no peaks at all - the lines
+            # below format both unconditionally.
+            classified_pct = unclassified_pct = 0.0
             if total_peaks > 0:
                 classified_pct = total_classified / total_peaks * 100
                 unclassified_pct = total_unclassified / total_peaks * 100
 
             classification_report += f"\n  Total peaks detected: {total_peaks}"
             classification_report += (
-                f"\n  Filtered peaks: {total_classified} ({classified_pct:.1f}%"
+                f"\n  Filtered peaks: {total_classified} ({classified_pct:.1f}%)"
             )
             classification_report += (
-                f"\n  Unfiltered peaks: {total_unclassified} ({unclassified_pct:.1f}%"
+                f"\n  Unfiltered peaks: {total_unclassified} ({unclassified_pct:.1f}%)"
             )
 
             if peak_type_counts:
@@ -2330,6 +2724,10 @@ class PeakFinder(MetaEventFitter):
                         type_label = "Type 2 (Above Carrier)"
                     elif peak_type == 3:
                         type_label = "Type 3 (Bundle/Cluster)"
+                    elif peak_type == 4:
+                        type_label = "Type 4 (Bound Star - Short End)"
+                    elif peak_type == 5:
+                        type_label = "Type 5 (Bound Star - Long End)"
                     elif peak_type == 11:
                         type_label = "Type 11 (1U - Unfolding)"
                     elif peak_type == 12:
@@ -2349,7 +2747,7 @@ class PeakFinder(MetaEventFitter):
 
         if hasattr(self, "_peak_prominence_classification_results"):
             prominence_stats = self._peak_prominence_classification_results
-            classification_report += "\n\nPeak Prominence Classification:"
+            classification_report += "\n\nNormalized Peak Prominence Classification:"
 
             total_prominence_peaks = cast(int, prominence_stats.get("total_peaks", 0))
             lower_prominence_count = cast(int, prominence_stats.get("lower_count", 0))
@@ -2373,17 +2771,93 @@ class PeakFinder(MetaEventFitter):
                     f"{higher_prominence_count/total_prominence_peaks:.1%} class 1)"
                 )
 
-            raw_threshold = prominence_stats.get("threshold")
-            if isinstance(raw_threshold, (int, float)) and not isinstance(
-                raw_threshold, bool
-            ):
-                classification_report += f"\n  Threshold: {float(raw_threshold):.2f} pA"
+            # Every location in whichever of three units apply, chained with
+            # "~": the fitted variable the plot's axis shows, the multiple of
+            # the unfolded level, and the current that multiple works out to
+            # against this run's own level. The widths carry the fitted value
+            # and a single pA span rather than a ratio, because a log-space
+            # width is a multiplicative factor and has no ratio of its own -
+            # see _classify_peak_prominences for the conversion.
+            log_scale = bool(prominence_stats.get("log_scale"))
+            reference = prominence_stats.get("unfolded_reference")
+            has_reference = isinstance(reference, (int, float)) and not isinstance(
+                reference, bool
+            )
+
+            def numeric(value: Any) -> Optional[float]:
+                """The value as a float, or None if it is not a real number."""
+                if isinstance(value, (int, float)) and not isinstance(value, bool):
+                    return float(value)
+                return None
+
+            def in_all_units(ratio: Optional[float], fitted: Optional[float]) -> str:
+                """One location rendered in whichever units are available."""
+                if ratio is None:
+                    return ""
+                parts = [f"{ratio:.3g}"]
+                if log_scale and fitted is not None:
+                    parts.insert(0, f"log10 {fitted:+.3f}")
+                if has_reference:
+                    parts.append(f"{ratio * float(cast(float, reference)):.1f} pA")
+                return " ~ ".join(parts)
+
+            threshold_line = in_all_units(
+                numeric(prominence_stats.get("threshold")),
+                numeric(prominence_stats.get("threshold_fitted")),
+            )
+            single_population = bool(prominence_stats.get("single_population"))
+            if single_population:
+                classification_report += (
+                    "\n  Single population found: fitted one Gaussian and "
+                    "assumed it is class 0"
+                )
+                classification_report += (
+                    f"\n  Threshold rule: {prominence_stats.get('threshold_rule')}"
+                )
+            if threshold_line:
+                basis = prominence_stats.get("threshold_basis")
+                classification_report += f"\n  Threshold: {threshold_line}" + (
+                    f" ({basis})" if basis else ""
+                )
 
             centers = prominence_stats.get("centers")
-
+            centers_fitted = prominence_stats.get("centers_fitted") or []
             if isinstance(centers, list) and centers:
-                formatted_centers = ", ".join(f"{center:.2f}" for center in centers)
-                classification_report += f"\n  Centers: {formatted_centers} pA"
+                for position, center in enumerate(centers):
+                    fitted = (
+                        numeric(centers_fitted[position])
+                        if position < len(centers_fitted)
+                        else None
+                    )
+                    line = in_all_units(numeric(center), fitted)
+                    if line:
+                        name = (
+                            "class 0, assumed"
+                            if single_population
+                            else "lower" if position == 0 else "higher"
+                        )
+                        classification_report += f"\n  Centre ({name}): {line}"
+
+            stds_fitted = prominence_stats.get("stds_fitted") or []
+            std_currents = prominence_stats.get("std_currents") or []
+            for position, std in enumerate(stds_fitted):
+                value = numeric(std)
+                if value is None:
+                    continue
+                name = (
+                    "class 0, assumed"
+                    if single_population
+                    else "lower" if position == 0 else "higher"
+                )
+                parts = [f"log10 {value:.3f}" if log_scale else f"{value:.3g}"]
+                current = (
+                    numeric(std_currents[position])
+                    if position < len(std_currents)
+                    else None
+                )
+                if current is not None:
+                    parts.append(f"{current:.1f} pA")
+                classification_report += f"\n  Std ({name}): {' ~ '.join(parts)}"
 
         classification_report += "\n\nTranslocation Direction Classification:"
         if hasattr(self, "_translocation_direction_results"):
@@ -2400,11 +2874,31 @@ class PeakFinder(MetaEventFitter):
                 classification_report += f"\n  Total classified: {total_td} events"
                 classification_report += f"\n  Forward: {fwd} ({fwd/total_td:.1%})"
                 classification_report += f"\n  Backward: {bwd} ({bwd/total_td:.1%})"
-                classification_report += f"\n  Lower center : {td['lower_center']:.3f}"
-                classification_report += (
-                    f"\n  Higher center : {td['higher_center']:.3f}"
-                )
-                classification_report += f"\n  Threshold: {td['threshold']:.3f}"
+                if td.get("ratio_rule"):
+                    classification_report += (
+                        f"\n  Rule: {td['ratio_rule']}, so each event's pre/post "
+                        "ECD ratio is compared with 1 - the longer arm marks the "
+                        "beginning of the event"
+                    )
+                    classification_report += (
+                        "\n  Threshold: log10 ECD ratio 0 (ECD ratio = 1)"
+                    )
+                    unassigned = cast(int, td.get("unassigned_count", 0))
+                    if unassigned:
+                        classification_report += (
+                            f"\n  Left without a direction (pre = post): {unassigned}"
+                        )
+                else:
+                    classification_report += (
+                        f"\n  Lower center : {td['lower_center']:.3f}"
+                    )
+                    classification_report += (
+                        f"\n  Higher center : {td['higher_center']:.3f}"
+                    )
+                    classification_report += (
+                        f"\n  Threshold: {td['threshold']:.3f}"
+                        f" ({td.get('threshold_basis', 'fitted split')})"
+                    )
         else:
             classification_report += "\n  Not run"
 
@@ -2461,6 +2955,7 @@ class PeakFinder(MetaEventFitter):
             star_short_end = star_stats.get("short_end", 0)
             no_star = star_stats.get("no_star", 0)
             no_height_reference = star_stats.get("no_height_reference", 0)
+            widest_peak = star_stats.get("widest_peak", 0)
 
             classification_report += (
                 f"\n  Events with an assigned sequence: {sequence_events}"
@@ -2472,12 +2967,17 @@ class PeakFinder(MetaEventFitter):
                     f"({with_star/sequence_events:.1%})"
                 )
                 if with_star > 0:
+                    # Named by the arm the star is bound to, not by where it
+                    # falls in the trace - see _classify_bound_star. The two
+                    # differ, and the previous wording here ("star translocates
+                    # first") asserted the temporal reading, which is wrong for
+                    # backward events.
                     classification_report += (
-                        f"\n    Long end (star translocates first): "
+                        f"\n    Long end (star on the higher-ECD arm): "
                         f"{star_long_end} ({star_long_end/with_star:.1%})"
                     )
                     classification_report += (
-                        f"\n    Short end (star translocates last): "
+                        f"\n    Short end (star on the lower-ECD arm): "
                         f"{star_short_end} ({star_short_end/with_star:.1%})"
                     )
                 classification_report += (
@@ -2492,6 +2992,14 @@ class PeakFinder(MetaEventFitter):
                         f"\n  Candidate peaks but no unfolded level to size "
                         f"them against: {no_height_reference} "
                         f"({no_height_reference/sequence_events:.1%})"
+                    )
+                # Also only when it fires. A high count here says the depth
+                # floor is letting broad features through, which is a different
+                # problem from having no candidates at all.
+                if widest_peak:
+                    classification_report += (
+                        f"\n  Candidate peaks rejected as the event's widest: "
+                        f"{widest_peak} ({widest_peak/sequence_events:.1%})"
                     )
             else:
                 classification_report += "\n  No sequences assigned; nothing to report"
@@ -2509,6 +3017,9 @@ class PeakFinder(MetaEventFitter):
                     row.get("no_height_reference", 0) > 0
                     for row in per_sequence.values()
                 )
+                show_widest = any(
+                    row.get("widest_peak", 0) > 0 for row in per_sequence.values()
+                )
                 seq_width = max([len("sequence")] + [len(seq) for seq in per_sequence])
                 classification_report += "\n\n  Breakdown by sequence:"
                 header = (
@@ -2520,6 +3031,8 @@ class PeakFinder(MetaEventFitter):
                     header += f"  {'no direction':>15}"
                 if show_no_floor:
                     header += f"  {'no floor':>15}"
+                if show_widest:
+                    header += f"  {'widest peak':>15}"
                 classification_report += header
 
                 for seq, row in sorted(
@@ -2557,6 +3070,10 @@ class PeakFinder(MetaEventFitter):
                         row_no_floor = row["no_height_reference"]
                         no_floor_text = f"{row_no_floor} ({row_no_floor/events:.1%})"
                         line += f"  {no_floor_text:>15}"
+                    if show_widest:
+                        row_widest = row.get("widest_peak", 0)
+                        widest_text = f"{row_widest} ({row_widest/events:.1%})"
+                        line += f"  {widest_text:>15}"
                     classification_report += line
 
         warnings_seen = getattr(self, "_classification_warnings", None)
@@ -2595,6 +3112,24 @@ class PeakFinder(MetaEventFitter):
         both levels on the event and re-runs ``filter_peaks`` against them.
         Everything downstream depends on this: without an unfolded level there
         are no peak types, and so no sequences, no direction and no stars.
+
+        When the fit reports a single population (``n_components`` 1), the
+        double fit's centres mean nothing, so ``_fit_single_gaussian`` is fitted
+        to the same histogram instead, its population is **assumed to be
+        unfolded**, a folded carrier is assumed to block **exactly twice as
+        deep**, and an event is called folded at or above
+        ``max(FOLDING_SINGLE_POPULATION_RATIO * mu,
+        mu + FOLDING_SINGLE_POPULATION_SIGMA * sigma)``. Each event then gets
+        both levels exactly as on the two-population path - its own level and
+        twice it if unfolded, its own level and half it if folded - so peak
+        filtering always has carrier levels to type against. That cut is an
+        arbitrary choice rather than a fitted boundary, so it is written out in
+        the results (``threshold_rule``), on the plot and as a warning, which
+        the run's report collects. **This path never declines**: where the
+        single fit fails, the pool's median and scaled MAD (1.4826 x MAD) stand
+        in for mu and sigma, and the results name which was used. An outright
+        failure of the double fit is not covered: it still declines, because a
+        failed fit is not evidence of a single population.
 
         Carrier-blockage filtering is already applied to
         ``all_longest_levels_array`` by the caller and must not be repeated
@@ -2677,38 +3212,83 @@ class PeakFinder(MetaEventFitter):
         # centres on the same mode, and that outcome is acted on here instead
         # of only appearing as a log line.
         n_components = bt.get("n_components", 2)
+        # Set only on the single-population path, where they replace the
+        # double fit's centres and threshold.
+        single_population = False
+        single_fit: Optional[Tuple[float, float, float, float]] = None
+        center_source: Optional[str] = None
+        unfolded_std: Optional[float] = None
+        threshold_rule: Optional[str] = None
+        higher_center: Optional[float] = None
+        ratio: Optional[float] = None
         if n_components < 2:
-            self.logger.warning(
-                "folding classification: the double-Gaussian fit describes a "
-                "single population in the longest-blockage-level "
-                "distribution; folded and unfolded cannot be distinguished "
-                "from blockage level alone, so no split is reported."
+            # One population: assume it is the unfolded carrier, that a folded
+            # carrier blocks exactly twice as deep, and call folded anything at
+            # or above an explicit, arbitrary cut - see
+            # FOLDING_SINGLE_POPULATION_RATIO. This path never declines: every
+            # event gets both levels, so peak filtering downstream always has
+            # carrier levels to type peaks against.
+            single_population = True
+            counts_bt, edges_bt = bt.get("hist", (None, None))
+            if counts_bt is not None and edges_bt is not None:
+                single_fit = self._fit_single_gaussian(counts_bt, edges_bt)
+            if single_fit is not None:
+                _, lower_center, unfolded_std, _ = single_fit
+                center_source = "single-Gaussian fit"
+            else:
+                # Median and scaled MAD, which estimate a Gaussian's centre
+                # and width without a fit - so the population is still
+                # described, and the cut still placed, when the fit fails.
+                levels = np.asarray(all_longest_levels_array, dtype=float)
+                lower_center = float(np.nanmedian(levels))
+                unfolded_std = float(
+                    1.4826 * np.nanmedian(np.abs(levels - lower_center))
+                )
+                center_source = "median and MAD, single-Gaussian fit failed"
+            ratio_cut = self.FOLDING_SINGLE_POPULATION_RATIO * lower_center
+            sigma_cut = (
+                lower_center + self.FOLDING_SINGLE_POPULATION_SIGMA * unfolded_std
             )
-            self._classification_results = {
-                "n_components": 1,
-                "error": "only one population detected; cannot classify "
-                "folded vs unfolded",
-            }
-            self._collect_peak_statistics(channels)
-            return
-
-        sorted_idx = np.argsort(centers_bt)
-        lower_center = float(centers_bt[sorted_idx[0]])
-        higher_center = float(centers_bt[sorted_idx[1]])
-        ratio = higher_center / lower_center if lower_center > 0 else 0
-        # A folded carrier blocks roughly twice as deeply as an unfolded one,
-        # so a healthy fit puts the two centres at a ratio near 2. Reported and
-        # logged but deliberately NOT acted on: re-fitting until the ratio
-        # looks right is exactly what makes a bad fit rate invisible.
-        if not 1.7 <= ratio <= 2.3:
-            self.logger.warning(
-                f"folding fit: centre ratio {ratio:.3f} is outside the expected "
-                f"1.7-2.3 band (lower={lower_center:.3f}, "
-                f"higher={higher_center:.3f}); the fit may not have resolved the "
-                "folded and unfolded populations."
+            threshold = max(ratio_cut, sigma_cut)
+            threshold_rule = (
+                f"max({self.FOLDING_SINGLE_POPULATION_RATIO:g} x mu, "
+                f"mu + {self.FOLDING_SINGLE_POPULATION_SIGMA:g} sigma) = "
+                f"max({ratio_cut:.2f}, {sigma_cut:.2f}) pA, the "
+                f"{'ratio' if ratio_cut >= sigma_cut else 'sigma'} term"
             )
+            threshold_basis = (
+                f"{self.FOLDING_SINGLE_POPULATION_RATIO:g} x unfolded"
+                if ratio_cut >= sigma_cut
+                else f"unfolded + {self.FOLDING_SINGLE_POPULATION_SIGMA:g} sigma"
+            )
+            # Warning level on purpose: it is collected into the run's report,
+            # so the reader sees that the split rests on an assumption. Kept to
+            # the method and the reason; the numbers are in the report.
+            self.logger.warning(
+                "Folding: one population found, so it is assumed unfolded and "
+                f"folded is 2 x unfolded; threshold {threshold_basis} "
+                f"({center_source})."
+            )
+        else:
+            sorted_idx = np.argsort(centers_bt)
+            lower_center = float(centers_bt[sorted_idx[0]])
+            higher_center = float(centers_bt[sorted_idx[1]])
+            ratio = higher_center / lower_center if lower_center > 0 else 0
+            # A folded carrier blocks roughly twice as deeply as an unfolded
+            # one, so a healthy fit puts the two centres at a ratio near 2.
+            # Reported and logged but deliberately NOT acted on: re-fitting
+            # until the ratio looks right is exactly what makes a bad fit rate
+            # invisible.
+            if not 1.7 <= ratio <= 2.3:
+                self.logger.warning(
+                    f"folding fit: centre ratio {ratio:.3f} is outside the expected "
+                    f"1.7-2.3 band (lower={lower_center:.3f}, "
+                    f"higher={higher_center:.3f}); the fit may not have resolved the "
+                    "folded and unfolded populations."
+                )
 
-        threshold = bt.get("threshold", (lower_center + higher_center) / 2.0)
+            threshold = bt.get("threshold", (lower_center + higher_center) / 2.0)
+            threshold_basis = self._describe_fit_threshold(bt)
 
         # `all_event_info` and `all_longest_levels_array` are built together,
         # index-for-index, by the sole caller, so this lookup cannot
@@ -2752,8 +3332,19 @@ class PeakFinder(MetaEventFitter):
             "lower_center": lower_center,
             "higher_center": higher_center,
             "threshold": threshold,
-            "ratio": ratio,
+            "threshold_basis": threshold_basis,
         }
+        if single_population:
+            # No folded population was fitted, so there is no higher centre
+            # and no centre ratio - only the assumed-unfolded one, the folded
+            # level assumed at twice it, and the cut.
+            self._classification_results["single_population"] = True
+            self._classification_results["lower_std"] = unfolded_std
+            self._classification_results["lower_center_source"] = center_source
+            self._classification_results["assumed_folded_level"] = 2.0 * lower_center
+            self._classification_results["threshold_rule"] = threshold_rule
+        else:
+            self._classification_results["ratio"] = ratio
 
         # The plot is built from the same histogram the fit used, so the bars
         # cannot be binned against edges the fit never saw.
@@ -2865,22 +3456,42 @@ class PeakFinder(MetaEventFitter):
                     exc_info=True,
                 )
 
-            self._overlay_fitted_gaussians(
-                ax,
-                bt.get("params"),
-                np.linspace(arr.min(), arr.max(), 1000),
-                "Unfolded fit",
-                "Folded fit",
-                "folded/unfolded classification",
-            )
+            if single_fit is not None:
+                self._overlay_single_gaussian(
+                    ax,
+                    single_fit,
+                    np.linspace(arr.min(), arr.max(), 1000),
+                    "Unfolded fit (single population, assumed)",
+                    "folded/unfolded classification",
+                )
+            elif not single_population:
+                # With one population and no single fit either, there is no
+                # curve worth drawing - the double fit's parameters describe
+                # nothing there.
+                self._overlay_fitted_gaussians(
+                    ax,
+                    bt.get("params"),
+                    np.linspace(arr.min(), arr.max(), 1000),
+                    "Unfolded fit",
+                    "Folded fit",
+                    "folded/unfolded classification",
+                )
 
             ax.axvline(
                 threshold,
                 color="black",
                 linestyle="-",
                 linewidth=2,
-                label=f"Threshold: {threshold:.3f} pA",
+                label=f"Threshold: {threshold:.2f} pA ({threshold_basis})",
             )
+            if single_population:
+                ax.axvline(
+                    2.0 * lower_center,
+                    color="red",
+                    linestyle=":",
+                    linewidth=1.5,
+                    label=f"Folded level, assumed 2 x mu: {2.0 * lower_center:.3f} pA",
+                )
 
             try:
                 pct_low = (
@@ -2893,6 +3504,7 @@ class PeakFinder(MetaEventFitter):
                     f"Total Events: {total_events_plot}\n"
                     f"Unfolded: {lower_count} ({pct_low:.1%})\n"
                     f"Folded: {higher_count} ({pct_high:.1%})\n"
+                    f"Threshold: {threshold:.2f} pA ({threshold_basis})"
                 )
                 ax.text(
                     0.02,
@@ -2912,7 +3524,14 @@ class PeakFinder(MetaEventFitter):
 
             ax.set_xlabel("Longest Blockage Level (pA)")
             ax.set_ylabel("Counts")
-            ax.set_title("Folding Classification")
+            ax.set_title(
+                "Folding Classification"
+                + (
+                    " (single population - fallback threshold)"
+                    if single_population
+                    else ""
+                )
+            )
             ax.legend()
             plt.tight_layout()
             if plot_path is not None:
@@ -2923,10 +3542,65 @@ class PeakFinder(MetaEventFitter):
             self.logger.error(f"Error saving folding classification plot: {e}")
 
     @log(logger=logger)
+    def _run_unfolded_level(
+        self, channels: list[int]
+    ) -> Tuple[Optional[float], Optional[str]]:
+        """
+        Return one unfolded level in pA to size the run's normalized
+        prominences against, and where it came from.
+
+        Called by ``_classify_peak_prominences`` so its report can quote a
+        threshold in current as well as in unfolded levels. There is no single
+        such level in the data - ``unfolded_level`` is per event - so this
+        picks a representative one and says which, rather than leaving a
+        reader to guess what a pA figure was divided by.
+
+        The folding fit's own lower centre is preferred: it is the run-wide
+        unfolded population's mean, in pA, and is the same number the report
+        prints as "Lower center (unfolded)". Where that pass declined or was
+        skipped there is no fitted centre, so the median of the per-event
+        levels stands in - those were still assigned, from each event's own
+        primary level. With neither available the caller omits the pA column
+        rather than inventing a scale.
+
+        :param channels: the channels whose events may be sampled for a level
+        :type channels: list[int]
+        :return: the level in pA and a short description of its origin, or ``(None, None)`` if the run has neither
+        :rtype: Tuple[Optional[float], Optional[str]]
+        """
+        folding = getattr(self, "_classification_results", None)
+        if isinstance(folding, dict):
+            center = folding.get("lower_center")
+            if (
+                isinstance(center, (int, float))
+                and not isinstance(center, bool)
+                and np.isfinite(center)
+                and center > 0
+            ):
+                return float(center), "fitted unfolded centre"
+
+        levels = [
+            float(value)
+            for ch in channels
+            for event_data in self.event_metadata.get(ch, {}).values()
+            if isinstance(event_data, dict)
+            for value in [event_data.get("unfolded_level")]
+            if isinstance(value, (int, float))
+            and not isinstance(value, bool)
+            and np.isfinite(value)
+            and value > 0
+        ]
+        if levels:
+            return float(np.median(levels)), "median per-event unfolded level"
+
+        return None, None
+
+    @log(logger=logger)
     def _classify_peak_prominences(self, channels: list[int]) -> None:
         """
-        Split peaks into two prominence classes, writing ``classified`` and
-        ``classification_confidence`` onto every type 1, 2 or 3 peak.
+        Split peaks into two normalized-prominence classes, writing
+        ``classified`` and ``classification_confidence`` onto every type 1, 2
+        or 3 peak.
 
         Called by ``_post_process_events``, second of the four classifiers,
         after ``_classify_folded_unfolded`` has re-typed every peak - so the
@@ -2935,16 +3609,61 @@ class PeakFinder(MetaEventFitter):
         it writes are what ``_post_process_events`` reads back to build each
         event's ``sequence``.
 
+        The fit is taken on the **base-10 logarithm** of the normalized
+        prominences while ``PROMINENCE_FIT_LOG_SCALE`` holds, so a Gaussian in
+        the fitted variable is a log-normal in the measured one. The base is
+        presentational only - changing it rescales the fitted variable by a
+        constant, which the histogram, the fit and the split are all
+        equivariant under, so the classes come out identical either way. Base
+        10 is used because a reader can convert a decade in their head. That is the shape the
+        upper population actually has - it is right-skewed, and a log-normal
+        was measured to beat a Gaussian on it by 24% RMS - and taking the
+        logarithm buys that without touching the six-element ``params``
+        contract the plotting code and all three classifiers unpack, which is
+        what deferred the change when it was posed as fitting a log-normal
+        directly. Everything the fit produces is consequently in log units:
+        the split, the per-peak confidences and the plot all live there, and
+        only the threshold and centres handed to the run's report are
+        exponentiated back into prominence ratios, where they mean something
+        to a reader, in three units at once: the fitted decade, the multiple
+        of the unfolded level, and the current that works out to against the
+        run's own unfolded level (see ``_run_unfolded_level`` for which level
+        that is). Fitted widths convert differently, since a log-space
+        standard deviation is a multiplicative spread with no ratio of its
+        own: they are reported as the total pA span of +/-1 sigma, which is
+        the one number that answers "how wide is this population" in the same
+        units as the centres. A peak whose normalized prominence is not
+        strictly positive has no logarithm and is dropped from the fit with a
+        warning.
+
+        Classifies on ``normalized_prominence`` (each peak's prominence
+        divided by its event's ``unfolded_level``) rather than raw
+        ``prominence``, so the split is comparable across events whose
+        unfolded level drifts run to run. ``normalized_prominence`` is only
+        filled in by ``update_event_metadata_post_processing`` once an event
+        has a positive ``unfolded_level`` - which ``_classify_folded_unfolded``
+        guarantees has already run for every event by the time this method is
+        called - so a peak whose event never got a level is skipped here even
+        if it would have qualified on raw prominence.
+
         Peaks below the threshold are written as class 0 and peaks at or above
-        it as class 1. This holds whether ``fit_threshold`` found two
-        populations or one: on single-population data the threshold is the first
-        local minimum above ``2 * mean - 2 * std`` rather than a valley between
-        two centres (see ``_threshold_between_populations``), but the split
-        itself is the same. That is deliberately unlike
-        ``_classify_folded_unfolded`` and ``_classify_translocation_direction``,
-        which decline to classify a single population at all - "folded" and
-        "forward" are claims about a second population that was not found,
-        whereas "more prominent than this population accounts for" is not.
+        it as class 1, whether ``fit_threshold`` found two populations or one.
+        On single-population data (``n_components`` 1) ``_fit_single_gaussian``
+        is fitted to the same histogram, that population is **assumed to be
+        class 0**, and the threshold is the explicit, arbitrary
+        ``mu + PROMINENCE_SINGLE_POPULATION_SIGMA * sigma`` in the fitted
+        variable, written out in the results (``threshold_rule``), on the plot
+        and as a warning the run's report collects. Those peaks get no
+        ``classification_confidence`` - NaN - since there is no second
+        population to weigh them against. Only if the single fit fails does the
+        double fit's own single-population threshold stand in (the first local
+        minimum above ``2 * mean - 2 * std``, see
+        ``_threshold_between_populations``), with its two-component
+        confidences. The folding classifier makes the matching assumption on
+        its single-population path; ``_classify_translocation_direction`` still
+        declines, since "forward" is a claim about a second population that was
+        not found, whereas "more prominent than this population accounts for"
+        is not.
 
         :param channels: the indices of every channel whose peaks are to be classified
         :type channels: list[int]
@@ -2963,7 +3682,7 @@ class PeakFinder(MetaEventFitter):
                     sublevel_data.get("filtered", []), dtype=float
                 )
                 prominences = np.asarray(
-                    sublevel_data.get("prominence", []), dtype=float
+                    sublevel_data.get("normalized_prominence", []), dtype=float
                 )
                 peak_ids = sublevel_data.get("peak_id", [])
 
@@ -3003,21 +3722,51 @@ class PeakFinder(MetaEventFitter):
 
         if not prominence_values:
             self.logger.warning(
-                "No peaks with filtered values 1, 2, or 3 were available for prominence classification"
+                "No peaks with filtered values 1, 2, or 3 and a valid "
+                "normalized_prominence (requires a positive unfolded_level "
+                "on their event) were available for prominence classification"
             )
             return
 
         prominence_array = np.asarray(prominence_values, dtype=np.float64)
+
+        # On a log scale the fitted variable is log(normalized prominence), so
+        # a non-positive value has nowhere to go and is dropped here rather
+        # than becoming a -inf that would take the histogram's range with it.
+        # Prominences from `find_peaks` are positive and unfolded levels are
+        # too, so this is a guard rather than an expected path.
+        if self.PROMINENCE_FIT_LOG_SCALE:
+            positive = prominence_array > 0
+            if not np.all(positive):
+                self.logger.warning(
+                    f"{int(np.sum(~positive))} of {prominence_array.size} peaks "
+                    "have a normalized prominence of zero or less and cannot be "
+                    "placed on a log scale; they are dropped from the fit and "
+                    "left unclassified"
+                )
+                prominence_array = prominence_array[positive]
+                prominence_refs = [
+                    ref for ref, keep in zip(prominence_refs, positive) if keep
+                ]
+                if prominence_array.size == 0:
+                    self.logger.warning(
+                        "No peak has a positive normalized prominence, so there "
+                        "is nothing to fit on a log scale"
+                    )
+                    return
+            fit_values = np.log10(prominence_array)
+        else:
+            fit_values = prominence_array
 
         # Fit the prominence histogram. `fit_threshold` reports whether the fit
         # describes two populations or one (see its "n_components") via the
         # collapsed-component / centres-not-separated diagnostics
         # `_fit_and_check_double_gaussian` computes.
         try:
-            bt = self.fit_threshold(prominence_array)
+            bt = self.fit_threshold(fit_values)
         except Exception as e:
             self.logger.error(
-                f"double-Gaussian fit failed for prominence classification: {e}"
+                f"double-Gaussian fit failed for normalized prominence classification: {e}"
             )
             return
 
@@ -3037,31 +3786,67 @@ class PeakFinder(MetaEventFitter):
         threshold = float(fit_threshold_value)
 
         # A single population still gets a threshold and a split. Unlike the
-        # other two classifiers - which decline, because there is no meaningful
-        # "folded" or "forward" to name without a second population - a
-        # prominence split above 2*mean-2*std remains meaningful here: it is the
-        # boundary above which a peak is too prominent to belong to the one
-        # population that was found, whether or not those peaks are numerous
-        # enough to form a mode of their own.
+        # folding and direction classifiers, which have no "folded" or
+        # "forward" to name without a second population, a prominence cut
+        # remains meaningful: it is the boundary above which a peak is too
+        # prominent to belong to the one population that was found, whether or
+        # not those peaks are numerous enough to form a mode of their own. The
+        # population is described by a single Gaussian, assumed to be class 0,
+        # and cut at an explicit mu + k sigma - see
+        # PROMINENCE_SINGLE_POPULATION_SIGMA. Only where that fit fails does the
+        # double fit's own single-population threshold stand in.
+        single_fit: Optional[Tuple[float, float, float, float]] = None
+        threshold_rule: Optional[str] = None
+        threshold_basis = self._describe_fit_threshold(bt)
         if n_components < 2:
-            self.logger.info(
-                "peak prominence classification: the fit describes a single "
-                f"population, so the {threshold:.4g} pA threshold comes from "
-                f"'{bt.get('threshold_method')}' rather than a valley between "
-                "two centres. Peaks below it are class 0, above it class 1."
-            )
+            counts_bt, edges_bt = bt.get("hist", (None, None))
+            if counts_bt is not None and edges_bt is not None:
+                single_fit = self._fit_single_gaussian(counts_bt, edges_bt)
+            if single_fit is not None:
+                _, population_mean, population_std, _ = single_fit
+                sigmas = self.PROMINENCE_SINGLE_POPULATION_SIGMA
+                threshold = population_mean + sigmas * population_std
+                threshold_rule = (
+                    f"mu + {sigmas:g} sigma = {population_mean:.3f} + {sigmas:g} x "
+                    f"{population_std:.3f} = {threshold:.3f}"
+                    + (" in log10" if self.PROMINENCE_FIT_LOG_SCALE else "")
+                )
+                centers = np.array([population_mean], dtype=float)
+                threshold_basis = f"class 0 + {sigmas:g} sigma"
+                # Warning level on purpose: it is collected into the run's
+                # report, so the reader sees that the split rests on an
+                # assumption. Kept to the method and the reason; the numbers
+                # are in the report.
+                self.logger.warning(
+                    "Peak prominence: one population found, so it is assumed "
+                    f"class 0; threshold {threshold_basis} (single-Gaussian fit)."
+                )
+            else:
+                self.logger.warning(
+                    "Peak prominence: one population found and the single-Gaussian "
+                    f"fit failed; threshold {threshold_basis} from the double fit."
+                )
 
-        class_labels = np.where(prominence_array >= threshold, 1.0, 0.0).astype(
-            np.float64
-        )
+        # The threshold came out of a fit to `fit_values`, so the comparison
+        # has to happen there too - on a log scale that is equivalent to
+        # comparing the prominences against 10**threshold, but doing it in
+        # the fitted variable keeps one scale in play rather than two.
+        class_labels = np.where(fit_values >= threshold, 1.0, 0.0).astype(np.float64)
 
         # Per-peak confidence that the assigned class is correct - see
         # _classification_confidence for the derivation. Uses bt["params"]
         # as fit, which already reflects the constrained refit (and its
-        # Gaussian-crossing threshold) when params_method is "constrained".
-        confidence_values = self._classification_confidence(
-            prominence_array, bt["params"], class_labels.astype(bool)
-        )
+        # Gaussian-crossing threshold) when params_method is "constrained",
+        # and which describes the fitted variable - hence `fit_values` again.
+        # On the single-Gaussian path there is no second population to weigh
+        # a peak against, so no confidence is claimed and the values stay NaN,
+        # which the plot labels and the database both read as "not assessed".
+        if single_fit is not None:
+            confidence_values = np.full(fit_values.shape, np.nan, dtype=np.float64)
+        else:
+            confidence_values = self._classification_confidence(
+                fit_values, bt["params"], class_labels.astype(bool)
+            )
 
         for class_label, confidence_value, (ch, event_index, peak_index) in zip(
             class_labels, confidence_values, prominence_refs
@@ -3073,14 +3858,92 @@ class PeakFinder(MetaEventFitter):
                 peak_index
             ] = confidence_value
 
+        # The classification itself stays in the fitted variable above; what
+        # follows is presentation. The report carries every location in three
+        # units, because each answers a different question: the fitted decade
+        # is what the plot's axis shows, the ratio is how many unfolded levels
+        # deep the peak is, and the current is what a reader finds on a trace.
+        unfolded_reference, reference_source = self._run_unfolded_level(channels)
+        if single_fit is not None:
+            stds = [single_fit[2]]
+        else:
+            stds = (
+                [float(bt["params"][2]), float(bt["params"][5])]
+                if bt.get("params") is not None and len(bt["params"]) >= 6
+                else []
+            )
+
+        def in_ratio(value: float) -> float:
+            """The fitted value as a multiple of the unfolded level."""
+            return float(10.0**value) if self.PROMINENCE_FIT_LOG_SCALE else float(value)
+
+        center_ratios = [in_ratio(center) for center in centers]
+        std_factors = (
+            [float(10.0**std) for std in stds] if self.PROMINENCE_FIT_LOG_SCALE else []
+        )
+
+        # A width needs converting differently from a location, because on a
+        # log scale a standard deviation is a *multiplicative* spread: +/-1
+        # sigma spans centre/factor to centre*factor, which is not symmetric
+        # about the centre and so has no single "+/- x pA". What it does have
+        # is a total width, and that is what gets reported - the pA distance
+        # from the bottom of that span to the top, centre * (factor - 1/factor)
+        # against the run's unfolded level. It is the honest one-number answer
+        # to "how wide is this population in pA", and unlike the factor it is
+        # in the same units as the centres above it, so the two can be compared
+        # by eye. On a linear fit the width is already a ratio and only needs
+        # scaling by the reference.
+        std_currents: list[float] = []
+        if unfolded_reference is not None:
+            reference_value = float(unfolded_reference)
+            for position, std in enumerate(stds):
+                if position < len(std_factors) and position < len(center_ratios):
+                    factor = std_factors[position]
+                    if factor > 0:
+                        std_currents.append(
+                            center_ratios[position]
+                            * (factor - 1.0 / factor)
+                            * reference_value
+                        )
+                elif not self.PROMINENCE_FIT_LOG_SCALE:
+                    std_currents.append(float(std) * reference_value)
+
         self._peak_prominence_classification_results = {
             "total_peaks": len(prominence_array),
             "n_components": n_components,
-            "threshold": threshold,
-            "centers": centers.tolist() if centers.size > 0 else [],
+            "log_scale": bool(self.PROMINENCE_FIT_LOG_SCALE),
+            # in the fitted variable - log10 of the ratio, or the ratio itself
+            "threshold_fitted": threshold,
+            "centers_fitted": centers.tolist() if centers.size > 0 else [],
+            "stds_fitted": stds,
+            # as a multiple of the event's unfolded level
+            "threshold": in_ratio(threshold),
+            "centers": center_ratios,
+            # the multiplicative spread each width corresponds to
+            "std_factors": std_factors,
+            # and in current, against the run's own unfolded level - the widths
+            # as the total pA span of +/-1 sigma, empty without a reference
+            "unfolded_reference": unfolded_reference,
+            "unfolded_reference_source": reference_source,
+            "std_currents": std_currents,
             "lower_count": int(np.sum(class_labels == 0)),
             "higher_count": int(np.sum(class_labels == 1)),
+            "threshold_basis": threshold_basis,
         }
+        # On a log scale the line sits at the fitted value, but the ratio is
+        # what the reader recognises, so the plot gives both.
+        threshold_text = (
+            f"{threshold:.3f} (ratio {10.0**threshold:.3g})"
+            if self.PROMINENCE_FIT_LOG_SCALE
+            else f"{threshold:.3f}"
+        )
+        if single_fit is not None:
+            # One fitted population, assumed class 0; `centers` and `stds`
+            # above then hold its single centre and width.
+            self._peak_prominence_classification_results["single_population"] = True
+            self._peak_prominence_classification_results["threshold_rule"] = (
+                threshold_rule
+            )
 
         # The plot is built from the same histogram the fit used.
         try:
@@ -3095,7 +3958,11 @@ class PeakFinder(MetaEventFitter):
             matplotlib.use("Agg")
 
             counts, bins = bt.get("hist", (None, None))
-            arr_all = np.asarray(prominence_array, dtype=float)
+            # The fitted variable, so the bars line up with the bins the fit
+            # used and with the Gaussians drawn over them - on a log scale
+            # that is log(normalized prominence), which is the axis the two
+            # components are actually Gaussian in.
+            arr_all = np.asarray(fit_values, dtype=float)
             arr = arr_all
             fig, ax = plt.subplots(figsize=(12, 6))
 
@@ -3146,18 +4013,28 @@ class PeakFinder(MetaEventFitter):
             higher_count = int(np.sum(class_labels == 1))
             total_peaks = len(arr)
 
-            self._overlay_fitted_gaussians(
-                ax,
-                bt.get("params"),
-                (
-                    np.linspace(np.nanmin(arr), np.nanmax(arr), 1000)
-                    if arr.size > 0
-                    else np.linspace(0, 1, 1000)
-                ),
-                "Lower prominence fit",
-                "Higher prominence fit",
-                "peak prominence classification",
+            overlay_x = (
+                np.linspace(np.nanmin(arr), np.nanmax(arr), 1000)
+                if arr.size > 0
+                else np.linspace(0, 1, 1000)
             )
+            if single_fit is not None:
+                self._overlay_single_gaussian(
+                    ax,
+                    single_fit,
+                    overlay_x,
+                    "Class 0 fit (single population, assumed)",
+                    "peak prominence classification",
+                )
+            else:
+                self._overlay_fitted_gaussians(
+                    ax,
+                    bt.get("params"),
+                    overlay_x,
+                    "Lower prominence fit",
+                    "Higher prominence fit",
+                    "peak prominence classification",
+                )
 
             lower_mask = class_labels == 0
             higher_mask = class_labels == 1
@@ -3200,7 +4077,9 @@ class PeakFinder(MetaEventFitter):
                     color="black",
                     linestyle="-",
                     linewidth=2,
-                    label=f"Threshold: {threshold:.3f} pA",
+                    # Both, on a log scale: the line sits at the fitted
+                    # value, but the ratio is what the reader recognises.
+                    label=f"Threshold: {threshold_text} ({threshold_basis})",
                 )
 
             try:
@@ -3211,6 +4090,7 @@ class PeakFinder(MetaEventFitter):
                     f"Selected populations: {n_components}\n"
                     f"Class 0: {lower_count} ({pct_low:.1%})\n"
                     f"Class 1: {higher_count} ({pct_high:.1%})\n"
+                    f"Threshold: {threshold_text} ({threshold_basis})"
                 )
                 ax.text(
                     0.02,
@@ -3228,9 +4108,21 @@ class PeakFinder(MetaEventFitter):
                     exc_info=True,
                 )
 
-            ax.set_xlabel("Peak Prominence (pA)")
+            ax.set_xlabel(
+                "log10(Normalized Peak Prominence)"
+                if self.PROMINENCE_FIT_LOG_SCALE
+                else "Normalized Peak Prominence (fraction of unfolded level)"
+            )
             ax.set_ylabel("Counts")
-            ax.set_title("Peak Prominence Classification")
+            ax.set_title(
+                "Normalized Peak Prominence Classification"
+                + (" (log scale)" if self.PROMINENCE_FIT_LOG_SCALE else "")
+                + (
+                    " (single population - fallback threshold)"
+                    if single_fit is not None
+                    else ""
+                )
+            )
             ax.legend()
             plt.tight_layout()
             if plot_path is not None:
@@ -3245,14 +4137,14 @@ class PeakFinder(MetaEventFitter):
     @log(logger=logger)
     def _classify_translocation_direction(self, channels: list[int]) -> None:
         """
-        Decide which end of the construct entered the pore first, writing
+        Decide which way round the construct threaded, writing
         ``translocation_direction`` and ``translocation_confidence`` onto every
         event that has a barcode.
 
         Called by ``_post_process_events``, third of the four classifiers,
         after the peak types are settled and before sequences are built - the
         direction is what decides whether an event's sequence is reversed, and
-        which end of the molecule ``_classify_bound_star`` attributes a star to.
+        which arm of the molecule ``_classify_bound_star`` attributes a star to.
 
         The construct is asymmetric about its barcode, so the ratio of the ECD
         before the first type-3 peak to the ECD after the last one says which
@@ -3261,10 +4153,35 @@ class PeakFinder(MetaEventFitter):
         and ``fit_threshold`` separates them. Events with no type-3 peak at all
         contribute nothing and keep no direction.
 
+        **``"forward"`` is a name for the higher-ratio population**, nothing
+        more: it is the side of the fitted threshold where the pre-barcode arm
+        carries the larger ECD, and so where the long arm precedes the barcode
+        in the trace. Which of the two populations physically corresponds to
+        which threading order is a property of the construct, not something
+        this method establishes - it separates the two and names them, and
+        every consumer that needs a physical reading (``sequence``'s reversal,
+        ``bound_star``'s arm) is consistent with that naming rather than with
+        an independent claim about pore entry.
+
+        Being a fitted split also means it is not a per-event ``pre > post``
+        test. The threshold sits wherever the two populations separate, which
+        need not be at a ratio of one, so an event whose own pre/post ratio is
+        below one can still fall in the ``"forward"`` population.
+
         The fit is estimated from the percentile core of the distribution but
-        applied to every event - see ``DIRECTION_FIT_PERCENTILES``. Where the
-        fit describes only one population the whole pass declines, because
-        "forward" is a claim about a second population that was not found.
+        applied to every event - see ``DIRECTION_FIT_PERCENTILES``.
+
+        **Two cases use the per-event ``pre > post`` test instead**: fewer
+        barcoded events than ``DIRECTION_MIN_FIT_EVENTS``, where no fit is
+        attempted, and a fit that finds only one population, where there is no
+        fitted boundary to split on. The threshold is then a log ratio of 0 -
+        the longer arm marks the beginning of the event, so ``pre > post`` is
+        ``"forward"`` and ``pre < post`` ``"backward"``, consistent with the
+        naming above. An exact tie is left without a direction, and no
+        ``translocation_confidence`` is claimed (it stays None). The results
+        carry ``ratio_rule`` naming which case applied, and the report and plot
+        say so. A fit that fails outright, or returns fewer than two centres,
+        still declines.
 
         :param channels: the indices of every channel whose events are to be classified
         :type channels: list[int]
@@ -3351,123 +4268,151 @@ class PeakFinder(MetaEventFitter):
 
         log_ecds_arr = np.asarray(log_ecds, dtype=float)
 
-        # Estimate the fit from the percentile core, then classify everything
-        # with the threshold it produces. See DIRECTION_FIT_PERCENTILES for why
-        # the untrimmed array cannot be fitted reliably: a few near-zero ECDs
-        # stretch the histogram until the two populations share too few bins and
-        # the fit collapses onto one mode, declining the pass outright.
-        #
-        # This is deliberately not the old pre-filter, which trimmed the fit and
-        # the classification together and so left the excluded events with no
-        # direction at all. Only the estimate is trimmed here.
-        fit_sample = log_ecds_arr
-        low, high = np.percentile(log_ecds_arr, self.DIRECTION_FIT_PERCENTILES)
-        core = log_ecds_arr[(log_ecds_arr >= low) & (log_ecds_arr <= high)]
-        # A core below the bin floor cannot be fitted any better than the whole
-        # array - a degenerate distribution piled on one value does this - so
-        # the trim is skipped there and the untrimmed array is the better of two
-        # bad options. That single test also covers a small sample, and there is
-        # deliberately no separate minimum-event count in front of it: the core
-        # is about 90% of n, so reaching MIN_FIT_BINS points already requires
-        # n >= 34, and any threshold below that could never be the binding one.
-        if core.size >= self.MIN_FIT_BINS:
-            fit_sample = core
-            self.logger.info(
-                f"Translocation direction: fitting on the "
-                f"{self.DIRECTION_FIT_PERCENTILES[0]:g}-"
-                f"{self.DIRECTION_FIT_PERCENTILES[1]:g} percentile core "
-                f"({core.size} of {log_ecds_arr.size} events, "
-                f"log-ECD ratio {low:.3f} to {high:.3f}); all "
-                f"{log_ecds_arr.size} are classified against the resulting "
-                f"threshold"
-            )
+        # Set when the direction comes from comparing each event's own ratio
+        # with 1 rather than from a fitted split; names why, for the report.
+        ratio_rule: Optional[str] = None
+        # The fit's result, left empty when there are too few events to fit.
+        bt: Dict[str, Any] = {}
+        centers = np.array([])
+        n_components: Optional[int] = None
 
-        try:
-            bt = self.fit_threshold(fit_sample)
-        except Exception as e:
-            self.logger.error(
-                f"double-Gaussian fit failed for translocation direction: {e}"
+        if log_ecds_arr.size < self.DIRECTION_MIN_FIT_EVENTS:
+            ratio_rule = (
+                f"too few events to fit ({log_ecds_arr.size} < "
+                f"{self.DIRECTION_MIN_FIT_EVENTS})"
             )
-            self._translocation_direction_results = {
-                "skipped": True,
-                "reason": "fit failure",
-            }
-            return
+        else:
+            # Estimate the fit from the percentile core, then classify
+            # everything with the threshold it produces. See
+            # DIRECTION_FIT_PERCENTILES for why the untrimmed array cannot be
+            # fitted reliably: a few near-zero ECDs stretch the histogram until
+            # the two populations share too few bins and the fit collapses onto
+            # one mode.
+            #
+            # This is deliberately not the old pre-filter, which trimmed the
+            # fit and the classification together and so left the excluded
+            # events with no direction at all. Only the estimate is trimmed
+            # here.
+            fit_sample = log_ecds_arr
+            low, high = np.percentile(log_ecds_arr, self.DIRECTION_FIT_PERCENTILES)
+            core = log_ecds_arr[(log_ecds_arr >= low) & (log_ecds_arr <= high)]
+            # A core below the bin floor cannot be fitted any better than the
+            # whole array - a degenerate distribution piled on one value does
+            # this - so the trim is skipped there and the untrimmed array is
+            # the better of two bad options.
+            if core.size >= self.MIN_FIT_BINS:
+                fit_sample = core
+                self.logger.info(
+                    f"Translocation direction: fitting on the "
+                    f"{self.DIRECTION_FIT_PERCENTILES[0]:g}-"
+                    f"{self.DIRECTION_FIT_PERCENTILES[1]:g} percentile core "
+                    f"({core.size} of {log_ecds_arr.size} events, "
+                    f"log-ECD ratio {low:.3f} to {high:.3f}); all "
+                    f"{log_ecds_arr.size} are classified against the resulting "
+                    f"threshold"
+                )
 
-        centers = (
-            np.asarray(bt.get("centers"), dtype=float)
-            if bt.get("centers") is not None
-            else np.array([])
-        )
-        if centers.size < 2:
-            # Single population -> cannot reliably classify
+            try:
+                bt = self.fit_threshold(fit_sample)
+            except Exception as e:
+                self.logger.error(
+                    f"double-Gaussian fit failed for translocation direction: {e}"
+                )
+                self._translocation_direction_results = {
+                    "skipped": True,
+                    "reason": "fit failure",
+                }
+                return
+
+            centers = (
+                np.asarray(bt.get("centers"), dtype=float)
+                if bt.get("centers") is not None
+                else np.array([])
+            )
+            if centers.size < 2:
+                self.logger.warning(
+                    "the double-Gaussian fit did not yield two centres for "
+                    "translocation direction"
+                )
+                self._translocation_direction_results = {
+                    "skipped": True,
+                    "reason": "insufficient centers",
+                }
+                return
+
+            # `fit_threshold` reports whether the log-ECD-ratio distribution
+            # has two populations via "n_components", from the
+            # collapsed-component / centres-not-separated diagnostics
+            # `_fit_and_check_double_gaussian` computes. With one, there is no
+            # fitted boundary to split on, so the per-event ratio-vs-1 rule
+            # below stands in for it.
+            n_components = int(bt.get("n_components", 2))
+            if n_components < 2:
+                ratio_rule = "one population found"
+
+        lower_center: Optional[float] = None
+        higher_center: Optional[float] = None
+        if ratio_rule is not None:
+            # log10(pre / post) against 0 is pre against post: the longer arm
+            # marks the beginning of the event, so pre > post is forward and
+            # pre < post backward. An exact tie has no longer arm and is left
+            # without a direction.
+            threshold = 0.0
+            class_labels = np.where(
+                log_ecds_arr > threshold, 1, np.where(log_ecds_arr < threshold, 0, -1)
+            )
+            # No fitted populations, so no confidence is claimed. None rather
+            # than NaN: it is the field's value before classification, and what
+            # the plot label and the report both read as "not assessed".
+            confidence_values: List[Optional[float]] = [None] * len(event_refs)
+            threshold_basis = "ECD ratio = 1"
+            # Kept to the method and the reason for the report.
             self.logger.warning(
-                "the double-Gaussian fit did not yield two centres for "
-                "translocation direction"
+                f"Translocation direction: {ratio_rule}; threshold ECD ratio = 1 "
+                "(longer arm first is forward)."
             )
-            self._translocation_direction_results = {
-                "skipped": True,
-                "reason": "insufficient centers",
-            }
-            return
+        else:
+            sorted_indices = np.argsort(centers)
+            lower_center = float(centers[sorted_indices[0]])
+            higher_center = float(centers[sorted_indices[1]])
+            fit_threshold_value = bt.get("threshold")
+            if fit_threshold_value is None:
+                raise RuntimeError(
+                    "the fit returned no 'threshold'; translocation direction "
+                    "cannot be classified without one"
+                )
+            threshold = float(fit_threshold_value)
+            threshold_basis = self._describe_fit_threshold(bt)
 
-        # A forward/backward split only means something if the log-ECD-ratio
-        # distribution actually has two populations. `fit_threshold` reports
-        # that via "n_components", derived from the same
-        # collapsed-component / centres-not-separated diagnostics
-        # `_fit_and_check_double_gaussian` already computes - forcing a split
-        # onto genuinely unimodal data produces a collapsed component or two
-        # centres on the same mode, and that outcome is acted on here instead
-        # of only appearing as a log line.
-        n_components = bt.get("n_components", 2)
-        if n_components < 2:
-            self.logger.warning(
-                "translocation direction: the double-Gaussian fit describes "
-                "a single population in the log-ECD-ratio distribution; "
-                "forward and backward cannot be distinguished, so no "
-                "direction is assigned."
-            )
-            self._translocation_direction_results = {
-                "skipped": True,
-                "reason": "only one population detected",
-                "n_components": 1,
-            }
-            return
+            class_labels = (log_ecds_arr >= threshold).astype(int)
 
-        sorted_indices = np.argsort(centers)
-        lower_center = float(centers[sorted_indices[0]])
-        higher_center = float(centers[sorted_indices[1]])
-        fit_threshold_value = bt.get("threshold")
-        if fit_threshold_value is None:
-            raise RuntimeError(
-                "the fit returned no 'threshold'; translocation direction "
-                "cannot be classified without one"
-            )
-        threshold = float(fit_threshold_value)
-
-        class_labels = (log_ecds_arr >= threshold).astype(int)
+            # Per-event confidence that the assigned direction is correct - see
+            # _classification_confidence for the derivation. Uses bt["params"]
+            # as fit, which already reflects the constrained refit (and its
+            # Gaussian-crossing threshold) when params_method is "constrained".
+            confidence_values = [
+                float(value)
+                for value in self._classification_confidence(
+                    log_ecds_arr, bt["params"], class_labels.astype(bool)
+                )
+            ]
         forward_count = int(np.sum(class_labels == 1))
         backward_count = int(np.sum(class_labels == 0))
-
-        # Per-event confidence that the assigned direction is correct - see
-        # _classification_confidence for the derivation. Uses bt["params"]
-        # as fit, which already reflects the constrained refit (and its
-        # Gaussian-crossing threshold) when params_method is "constrained".
-        confidence_values = self._classification_confidence(
-            log_ecds_arr, bt["params"], class_labels.astype(bool)
-        )
+        unassigned_count = int(np.sum(class_labels == -1))
 
         for label, confidence_value, (ch, event_index) in zip(
             class_labels, confidence_values, event_refs
         ):
+            if int(label) == -1:
+                continue
             direction = "forward" if int(label) == 1 else "backward"
             if ch in self.event_metadata and event_index in self.event_metadata[ch]:
                 self.event_metadata[ch][event_index][
                     "translocation_direction"
                 ] = direction
-                self.event_metadata[ch][event_index]["translocation_confidence"] = (
-                    float(confidence_value)
-                )
+                self.event_metadata[ch][event_index][
+                    "translocation_confidence"
+                ] = confidence_value  # type: ignore[assignment]
 
         self.logger.info(
             f"Forward: {forward_count} ({forward_count/len(event_refs):.1%}), "
@@ -3479,10 +4424,14 @@ class PeakFinder(MetaEventFitter):
             "n_components": n_components,
             "forward_count": forward_count,
             "backward_count": backward_count,
-            "lower_center": float(lower_center),
-            "higher_center": float(higher_center),
+            "lower_center": lower_center,
+            "higher_center": higher_center,
             "threshold": float(threshold),
+            "threshold_basis": threshold_basis,
         }
+        if ratio_rule is not None:
+            self._translocation_direction_results["ratio_rule"] = ratio_rule
+            self._translocation_direction_results["unassigned_count"] = unassigned_count
 
         # The plot is built from the same histogram the fit used.
         try:
@@ -3531,6 +4480,26 @@ class PeakFinder(MetaEventFitter):
                         label="All Events",
                     )
                     hist_bins = None
+            elif ratio_rule is not None and arr_all.size > 0:
+                # No fit, so no fitted histogram: one set of edges shared by
+                # the grey bars and both class overlays, so they line up, with
+                # 0 - the threshold - on an edge so no bar straddles it.
+                span = float(np.nanmax(arr) - np.nanmin(arr))
+                width = span / 20.0 if span > 0 else 0.05
+                hist_bins = width * np.arange(
+                    np.floor(np.nanmin(arr) / width),
+                    np.ceil(np.nanmax(arr) / width) + 1.0,
+                )
+                if hist_bins.size < 2:
+                    hist_bins = np.array([-width, 0.0, width])
+                ax.hist(
+                    arr_all,
+                    bins=hist_bins,
+                    density=False,
+                    alpha=0.5,
+                    color="gray",
+                    label="All Events",
+                )
             else:
                 ax.hist(
                     arr_all,
@@ -3542,14 +4511,18 @@ class PeakFinder(MetaEventFitter):
                 )
                 hist_bins = None
 
-            class_mask = arr >= threshold
+            # From the labels actually assigned, so the plot shows the same
+            # split the events got - including any tie the ratio rule leaves
+            # without a direction, which is in neither class.
+            class_mask = class_labels == 1
+            backward_mask = class_labels == 0
             forward_count = int(np.sum(class_mask))
-            backward_count = int(len(arr) - forward_count)
+            backward_count = int(np.sum(backward_mask))
             total_events_plot = len(arr)
 
             try:
                 if hist_bins is not None:
-                    lower_counts, _ = np.histogram(arr[~class_mask], bins=hist_bins)
+                    lower_counts, _ = np.histogram(arr[backward_mask], bins=hist_bins)
                     higher_counts, _ = np.histogram(arr[class_mask], bins=hist_bins)
                     widths = np.diff(hist_bins)
                     centers = (hist_bins[:-1] + hist_bins[1:]) / 2.0
@@ -3579,7 +4552,7 @@ class PeakFinder(MetaEventFitter):
                         label="Forward",
                     )
                     ax.hist(
-                        arr[~class_mask],
+                        arr[backward_mask],
                         bins=100,
                         density=False,
                         alpha=0.6,
@@ -3598,16 +4571,23 @@ class PeakFinder(MetaEventFitter):
                 if arr.size > 0
                 else np.linspace(0, 1, 1000)
             )
-            self._overlay_fitted_gaussians(
-                ax,
-                bt.get("params"),
-                x_range,
-                "Backward fit",
-                "Forward fit",
-                "translocation direction classification",
-            )
+            if ratio_rule is None:
+                self._overlay_fitted_gaussians(
+                    ax,
+                    bt.get("params"),
+                    x_range,
+                    "Backward fit",
+                    "Forward fit",
+                    "translocation direction classification",
+                )
 
-            ax.axvline(threshold, color="black", linestyle="-", linewidth=2)
+            ax.axvline(
+                threshold,
+                color="black",
+                linestyle="-",
+                linewidth=2,
+                label=f"Threshold: {threshold:.3f} ({threshold_basis})",
+            )
 
             try:
                 pct_fwd = (
@@ -3621,6 +4601,9 @@ class PeakFinder(MetaEventFitter):
                     f"Forward: {forward_count} ({pct_fwd:.1%})\n"
                     f"Backward: {backward_count} ({pct_bwd:.1%})\n"
                 )
+                if unassigned_count:
+                    info_text += f"No direction (pre = post): {unassigned_count}\n"
+                info_text += f"Threshold: {threshold:.3f} ({threshold_basis})"
                 ax.text(
                     0.02,
                     0.98,
@@ -3639,8 +4622,13 @@ class PeakFinder(MetaEventFitter):
 
             ax.set_xlabel("log10(ECD ratio)")
             ax.set_ylabel("Counts")
-            ax.set_title("Translocation Direction Classification")
-            ax.legend()
+            ax.set_title(
+                "Translocation Direction Classification"
+                + ("" if ratio_rule is None else f"\nECD ratio vs 1: {ratio_rule}")
+            )
+            # The summary box sits top left; with no fitted curves to avoid,
+            # keep the legend clear of it.
+            ax.legend(loc="best" if ratio_rule is None else "upper right")
             plt.tight_layout()
             if plot_path is not None:
                 plt.savefig(plot_path, dpi=300, bbox_inches="tight")
@@ -3665,11 +4653,24 @@ class PeakFinder(MetaEventFitter):
         barcode - the tall spike that makes the pre- or post-barcode ECD large,
         and so the same feature ``_classify_translocation_direction`` reads a
         direction off. Only -1 peaks strictly before the first or strictly after
-        the last type-3 peak are candidates: one sitting between them has no
-        "first or last through the pore" reading. Where an event has several
-        candidates the most prominent one wins, ties going to the earlier peak;
-        the losing peaks keep their labels, so peak-filtering statistics are
-        untouched by this pass.
+        the last type-3 peak are candidates: one sitting between them is on
+        neither arm and so has no arm to be attributed to. Where an event has
+        several candidates the most prominent one wins, ties going to the
+        earlier peak; the losing peaks keep their -1.
+
+        The winning peak's own ``filtered`` label is rewritten to name **the arm
+        of the construct the star is bound to** - **5** for the long arm, **4**
+        for the short - so the star is identifiable per peak and not only
+        through the event's ``bound_star``. Neither code says anything about
+        where the star sits in the trace: both temporal positions can produce
+        either code, depending on the event's direction (see the label
+        discussion below). Both are written here and nowhere else, and only for
+        a star whose arm could be resolved: a candidate on an event with no
+        translocation direction keeps its -1. This is why the pass runs after
+        the two that select on labels; it also makes the pass non-idempotent,
+        since a re-run would no longer find that peak among the -1s, which
+        ``_post_process_events`` prevents by way of
+        ``_global_postprocessing_done``.
 
         A candidate must also be *deeper than a fold*: its modal blockage has
         to clear the folded level - twice that event's unfolded level - by the
@@ -3686,18 +4687,52 @@ class PeakFinder(MetaEventFitter):
         more than the tolerance itself, so it admits exactly the folds this is
         meant to reject.
 
+        A candidate must finally not be **the widest peak in its own event**.
+        The depth floor tests only how deep a peak goes, never how long it
+        lasts, so a carrier body, a long fold, or a stretch the peak finder
+        resolved as a single broad peak can clear it while being the wrong
+        shape for a star, which is a sharp spike. Width here is ``peak_width``,
+        measured at half height, and the test is against the maximum over every
+        peak in the event including the candidate itself, so peaks tied at that
+        maximum are all excluded. The rule filters the candidate pool rather
+        than vetoing the winner: where a wide candidate and a narrow one both
+        qualify, dropping the wide one lets the narrow one take the star
+        instead of the event losing it. Events where the rule empties the pool
+        are counted under ``widest_peak``, apart from the genuinely starless
+        ones - they had a deep enough peak in the right place, and a run where
+        this fires often is one where the depth floor is admitting broad
+        features.
+
         An event whose unfolded level was never determined - which is every
         event at once when folding classification declines - has no floor to
         test against and is counted apart rather than reported as starless.
 
-        The label written to ``bound_star`` names the end of the construct the
-        star is bound to - ``"long end"`` or ``"short end"`` - and is in the
-        molecule's frame rather than the trace's: the observed temporal
-        position is flipped for ``translocation_direction == "backward"``
-        events, exactly as ``sequence`` is reversed for them, so ``"long end"``
-        always means the star end entered the pore first however that event
-        happened to thread. A star bound to one consistent end of the construct
-        should therefore give one dominant label.
+        The label written to ``bound_star`` names **which arm of the construct
+        the star is bound to** - ``"long end"`` or ``"short end"`` - and says
+        nothing about where the star sits in the trace. The two are different
+        questions, and conflating them is the easy mistake here: the observed
+        temporal position is flipped for ``translocation_direction ==
+        "backward"`` events, exactly as ``sequence`` is reversed for them, and
+        what survives that flip is a statement about the arm alone. A star
+        before the barcode on a forward event and one after the barcode on a
+        backward event are both on the long arm and both labelled ``"long
+        end"`` (filter type 5). A star bound to one consistent end of the
+        construct therefore gives one dominant label however individual events
+        happened to thread, which is the whole point.
+
+        "Long" and "short" are the two arms as
+        ``_classify_translocation_direction`` resolves them: ``"forward"`` is
+        the higher-``log10(pre / post)`` population, so on a forward event the
+        pre-barcode arm is the long one. Note that this is a run-wide fitted
+        split rather than a per-event ``pre > post`` test - which arm is long
+        is decided by where the threshold between the two populations falls -
+        so an event can be read as long-arm-first even where its own ECD ratio
+        is below one.
+
+        It is specifically **not** true that ``"long end"`` means the star went
+        through the pore first. On a backward event the long arm threads last,
+        so a type-5 star there is temporally last. Removing the threading order
+        is what the flip is for.
 
         This deliberately does not reuse the forward/backward vocabulary that
         ``translocation_direction`` owns. The two fields answer different
@@ -3728,6 +4763,7 @@ class PeakFinder(MetaEventFitter):
             "no_star": 0,
             "unresolved_direction": 0,
             "no_height_reference": 0,
+            "widest_peak": 0,
         }
         # One bucket of the same counters per distinct sequence. `bucket` below
         # is None exactly when the event has no sequence to attribute it to,
@@ -3767,6 +4803,7 @@ class PeakFinder(MetaEventFitter):
                             "no_star": 0,
                             "unresolved_direction": 0,
                             "no_height_reference": 0,
+                            "widest_peak": 0,
                         },
                     )
                     bucket["events"] += 1
@@ -3870,6 +4907,50 @@ class PeakFinder(MetaEventFitter):
                         bucket["no_star"] += 1
                     continue
 
+                # A star is a sharp spike, not the event's broadest feature, so
+                # a candidate that is the widest peak in its own event cannot be
+                # promoted. The widest peak is the carrier body, a long fold, or
+                # a stretch of the event the peak finder resolved as one peak -
+                # all of which can clear the depth floor above while being the
+                # wrong shape entirely, because that floor tests only how deep
+                # the peak goes and never how long it lasts.
+                #
+                # Applied to the pool rather than to the winner: where a wide
+                # candidate and a narrow one both qualify, excluding the wide
+                # one lets the narrow one win instead of losing the event's
+                # star altogether. Only when the rule empties the pool does the
+                # event end up without one.
+                #
+                # `nanmax` returns one of the array's own elements, so the
+                # candidate that is the maximum compares exactly equal to it and
+                # needs no tolerance; `>=` is written rather than `==` so that
+                # peaks tied at the maximum are all excluded. A candidate whose
+                # own width is NaN cannot be the widest and is left alone.
+                widths = np.asarray(sublevel_data.get("peak_width", []), dtype=float)
+                if widths.size > 0 and not np.all(np.isnan(widths)):
+                    widest = float(np.nanmax(widths))
+                    narrower_candidates = [
+                        idx
+                        for idx in candidate_indices
+                        if not (
+                            idx < widths.size
+                            and np.isfinite(widths[idx])
+                            and widths[idx] >= widest
+                        )
+                    ]
+                    if not narrower_candidates:
+                        # Counted apart from `no_star`: an event rejected here
+                        # did have a deep enough peak in the right place, and a
+                        # run where this fires often is one where the depth
+                        # floor is admitting broad features, which is worth
+                        # seeing rather than folding in with the events that
+                        # genuinely have no candidate at all.
+                        if bucket is not None:
+                            results["widest_peak"] += 1
+                            bucket["widest_peak"] += 1
+                        continue
+                    candidate_indices = narrower_candidates
+
                 if bucket is not None and len(candidate_indices) > 1:
                     results["multi_candidate"] += 1
 
@@ -3893,18 +4974,52 @@ class PeakFinder(MetaEventFitter):
                         bucket["unresolved_direction"] += 1
                     continue
 
-                # A backward event ran the construct through in reverse, so a
-                # star seen last in the trace went through the pore first.
-                star_went_first = star_is_before == (direction == "forward")
-                bound_star = "long end" if star_went_first else "short end"
+                # Which arm of the construct the star sits on, which is what
+                # the label names - not where it sits in the trace.
+                #
+                # `direction` is "forward" exactly when this event fell in the
+                # higher-`log10(pre / post)` population, i.e. when the
+                # pre-barcode arm is the long one. So on a forward event the
+                # star is on the long arm iff it is before the barcode, and on
+                # a backward event iff it is after it. The temporal term
+                # cancels either way, leaving a statement about the arm alone:
+                #
+                #   before + forward  -> long arm    after + forward  -> short
+                #   before + backward -> short arm   after + backward -> long
+                #
+                # Note what this is *not*: it is not "the star went through the
+                # pore first". On a backward event the long arm threads last,
+                # so a long-arm star is temporally last. Removing the threading
+                # order is the entire point of the flip - the label has to mean
+                # the same thing whichever way round the molecule went, exactly
+                # as `sequence` is reversed for the same reason.
+                star_on_long_arm = star_is_before == (direction == "forward")
+                bound_star = "long end" if star_on_long_arm else "short end"
 
                 if event_data is not None:
                     event_data["bound_star"] = bound_star
 
+                # The winning peak stops being an unclassified -1 and carries
+                # the end it was bound to: 5 for the long end, 4 for the short.
+                # Written only here, and only for a star whose end is known -
+                # a candidate with no translocation direction has already
+                # `continue`d above and keeps its -1, because the label is the
+                # end and there is no end to name.
+                #
+                # Safe against the earlier passes because this classifier runs
+                # last: prominence classification reads types 1, 2 and 3 and
+                # the sequence builder reads 3, both before this point, and
+                # the `filter_peaks` re-run that would overwrite the label
+                # happens in _classify_folded_unfolded, earlier still. It does
+                # mean the pass is not idempotent - a second run would not
+                # find this peak in the -1 pool - which `_post_process_events`
+                # prevents with `_global_postprocessing_done`.
+                sublevel_data["filtered"][star_index] = 5 if star_on_long_arm else 4
+
                 if bucket is not None:
                     results["with_star"] += 1
                     bucket["with_star"] += 1
-                    if star_went_first:
+                    if star_on_long_arm:
                         results["long_end"] += 1
                         bucket["long_end"] += 1
                     else:
@@ -4107,7 +5222,7 @@ class PeakFinder(MetaEventFitter):
     def _overlay_fitted_gaussians(
         self,
         ax: Any,
-        params: Optional[Tuple[float, float, float, float, float, float]],
+        params: Optional[Sequence[float]],
         x_range: npt.NDArray[np.float64],
         lower_label: str,
         higher_label: str,
@@ -4125,6 +5240,13 @@ class PeakFinder(MetaEventFitter):
         same data. Amplitudes are already in histogram-count units, so the
         curves need no rescaling to sit on the plotted bars.
 
+        Where the fit found a flat background (see ``FIT_CONSTANT_OFFSET``)
+        both components are drawn on top of it and it also gets its own
+        horizontal line, so the pedestal is visible as a fitted quantity rather
+        than as an unexplained gap between the curves and the bars. With no
+        background - the constant zero, or switched off - the plot is exactly
+        what it was before the constant existed.
+
         Nothing here rejects or raises. A plot that cannot draw this overlay is
         still worth producing, so every failure is logged and swallowed - but
         it is logged, so an absent curve can be told apart from a curve that
@@ -4132,10 +5254,11 @@ class PeakFinder(MetaEventFitter):
 
         :param ax: the matplotlib axes to draw onto
         :type ax: Any
-        :param params: the six fitted parameters,
-            ``(amp1, mean1, std1, amp2, mean2, std2)``, in either mean order,
-            or None if the fit produced none
-        :type params: Optional[Tuple[float, float, float, float, float, float]]
+        :param params: the fitted parameters,
+            ``(amp1, mean1, std1, amp2, mean2, std2)`` in either mean order,
+            optionally followed by the fitted flat constant, or None if the fit
+            produced none
+        :type params: Optional[Sequence[float]]
         :param x_range: x positions to evaluate the two curves at
         :type x_range: npt.NDArray[np.float64]
         :param lower_label: legend label for the lower-mean component
@@ -4149,16 +5272,18 @@ class PeakFinder(MetaEventFitter):
         """
         if params is None:
             return
-        if len(params) != 6:
+        if len(params) not in (6, 7):
             self.logger.warning(
                 f"{context}: the fit returned 'params' with {len(params)} "
-                "values, expected 6 (amp1, mean1, std1, amp2, mean2, std2); "
-                "skipping the fitted-Gaussian overlay for this plot."
+                "values, expected 6 (amp1, mean1, std1, amp2, mean2, std2) or "
+                "7 with the flat constant; skipping the fitted-Gaussian "
+                "overlay for this plot."
             )
             return
 
         try:
-            amp1, mean1, std1, amp2, mean2, std2 = params
+            amp1, mean1, std1, amp2, mean2, std2 = params[:6]
+            offset = float(params[6]) if len(params) > 6 else 0.0
             means = np.array([mean1, mean2], dtype=float)
             stds = np.array([std1, std2], dtype=float)
             amps = np.array([amp1, amp2], dtype=float)
@@ -4168,6 +5293,7 @@ class PeakFinder(MetaEventFitter):
                 np.any(np.isnan(means))
                 or np.any(np.isnan(stds))
                 or np.any(np.isnan(amps))
+                or not np.isfinite(offset)
             ):
                 unusable = "fitted parameters contain nan"
             elif np.any(stds <= 0):
@@ -4176,8 +5302,16 @@ class PeakFinder(MetaEventFitter):
             curves: List[npt.NDArray[np.float64]] = []
             order = np.argsort(means)
             if unusable is None:
+                # Each component is drawn sitting *on* the fitted background,
+                # which is where it sits in the model the bars were fitted
+                # with: away from both modes the two curves then meet the bars
+                # at the pedestal instead of running along zero beneath them.
+                # Adding the same constant to both leaves their crossing - the
+                # threshold, where it came from the constrained refit - at the
+                # same x it was solved for.
                 curves = [
                     amps[i] * np.exp(-0.5 * ((x_range - means[i]) / stds[i]) ** 2)
+                    + offset
                     for i in order
                 ]
                 # A negative curve means the parameters are not describing a
@@ -4203,9 +5337,104 @@ class PeakFinder(MetaEventFitter):
                     color=color,
                     label=f"{label} (mu={means[index]:.3f}, std={stds[index]:.3f})",
                 )
+
+            # Only when there is one to show, so a plot with no fitted
+            # background looks exactly as it did before the constant existed.
+            if offset > 0:
+                ax.axhline(
+                    offset,
+                    color="gray",
+                    linestyle=":",
+                    linewidth=1,
+                    label=f"Fitted background ({offset:.3g} counts)",
+                )
         except Exception as e:
             self.logger.debug(
                 f"{context}: failed to draw the fitted-Gaussian overlay: {e}",
+                exc_info=True,
+            )
+
+    #: How ``_describe_fit_threshold`` names each way ``fit_threshold`` can place
+    #: its threshold, for plot legends and the report.
+    FIT_THRESHOLD_BASIS = {
+        "spline_valley": "valley between populations",
+        "spline_valley_above_floor": "first valley above floor",
+        "fallback": "first point above floor",
+        "fallback_degenerate": "midpoint of means",
+    }
+
+    def _describe_fit_threshold(self, bt: Dict[str, Any]) -> str:
+        """
+        Name, in a few words, how ``fit_threshold`` placed its threshold.
+
+        Used by all three classifiers for the threshold line on their plot and
+        in the report, so a reader sees which rule produced the number without
+        the calculation. A constrained refit replaces the threshold with the
+        two curves' crossing, so that is what it is called then.
+
+        :param bt: the dict ``fit_threshold`` returned
+        :type bt: Dict[str, Any]
+        :return: a short description, e.g. ``"Gaussian crossing"``
+        :rtype: str
+        """
+        if bt.get("params_method") == "constrained":
+            return "Gaussian crossing"
+        method = bt.get("threshold_method")
+        return self.FIT_THRESHOLD_BASIS.get(str(method), "fitted split")
+
+    @log(logger=logger)
+    def _overlay_single_gaussian(
+        self,
+        ax: Any,
+        params: Tuple[float, float, float, float],
+        x_range: npt.NDArray[np.float64],
+        label: str,
+        context: str,
+    ) -> None:
+        """
+        Draw a single fitted Gaussian as a dashed curve, on its fitted background.
+
+        The single-population counterpart of ``_overlay_fitted_gaussians``,
+        called by ``_classify_folded_unfolded`` and ``_classify_peak_prominences``
+        when they classified against ``_fit_single_gaussian`` rather than the
+        double fit. Like that method it never raises: a plot missing its curve
+        is still worth saving, so a failure is logged at debug and swallowed.
+
+        :param ax: the matplotlib axes to draw onto
+        :type ax: Any
+        :param params: the fitted ``(amp, mean, std, offset)``; a positive
+            background also gets its own dotted line, as in
+            ``_overlay_fitted_gaussians``
+        :type params: Tuple[float, float, float, float]
+        :param x_range: x positions to evaluate the curve at
+        :type x_range: npt.NDArray[np.float64]
+        :param label: legend label for the population
+        :type label: str
+        :param context: classifier name, used to prefix log messages
+        :type context: str
+        :return: None; the curve is drawn onto ``ax`` in place
+        :rtype: None
+        """
+        try:
+            amp, mean, std, offset = params
+            ax.plot(
+                x_range,
+                self._single_gaussian(x_range, amp, mean, std, offset),
+                "--",
+                color="blue",
+                label=f"{label} (mu={mean:.3f}, std={std:.3f})",
+            )
+            if offset > 0:
+                ax.axhline(
+                    offset,
+                    color="gray",
+                    linestyle=":",
+                    linewidth=1,
+                    label=f"Fitted background ({offset:.3g} counts)",
+                )
+        except Exception as e:
+            self.logger.debug(
+                f"{context}: failed to draw the single-Gaussian overlay: {e}",
                 exc_info=True,
             )
 
@@ -4218,15 +5447,25 @@ class PeakFinder(MetaEventFitter):
         amp2: float,
         mean2: float,
         std2: float,
+        offset: float = 0.0,
     ) -> npt.NDArray[np.float64]:
         """
-        Return the value of a double gaussian with the specified parameters.
+        Return the value of a double gaussian, plus a flat constant, with the
+        specified parameters.
 
         The parameter order is grouped **per component** - ``(amp, mean, std)``
-        then ``(amp, mean, std)`` - rather than by kind. Every consumer of the
-        ``"params"`` key must unpack in this order, and nothing can catch a
-        mix-up automatically: any other grouping of the same six values is also
-        a six-element tuple, so an arity check cannot tell them apart.
+        then ``(amp, mean, std)`` - rather than by kind, with the shared
+        constant appended last. Every consumer of the ``"params"`` key must
+        unpack in this order, and nothing can catch a mix-up automatically: any
+        other grouping of the same six leading values is also a six-element
+        tuple, so an arity check cannot tell them apart.
+
+        The constant goes **last, and defaults to zero**, so that positions 0-5
+        keep the meanings every consumer written before it already assumed: a
+        six-element unpack, and reads like ``params[2]`` and ``params[5]`` for
+        the two widths, stay correct either way, and calling this without an
+        offset gives the pure double Gaussian. See ``FIT_CONSTANT_OFFSET`` for
+        what the constant is for and what it was measured to do.
 
         Called by ``_curve_fit_bounded`` as the model handed to ``curve_fit``,
         and by ``_fit_double_gaussian_bounded_at_valley`` as the model inside
@@ -4248,12 +5487,16 @@ class PeakFinder(MetaEventFitter):
         :type mean2: float
         :param std2: standard deviation of the second gaussian
         :type std2: float
+        :param offset: flat constant added to both gaussians, describing a
+            uniform background belonging to neither population; zero gives the
+            pure double gaussian
+        :type offset: float
         :return: array of gaussian values at the given x positions
         :rtype: npt.NDArray[np.float64]
         """
         g1 = amp1 * np.exp(-((x - mean1) ** 2) / (2 * std1**2))
         g2 = amp2 * np.exp(-((x - mean2) ** 2) / (2 * std2**2))
-        return g1 + g2
+        return g1 + g2 + offset
 
     @staticmethod
     def _gaussian_intersection(
@@ -4268,8 +5511,14 @@ class PeakFinder(MetaEventFitter):
         Return the x position between ``mean1`` and ``mean2`` where two
         Gaussians are equal, or None if they do not cross there.
 
-        Called by ``_fit_double_gaussian_bounded_at_valley``, on the parameters
-        of its constrained refit, to place the classification threshold.
+        Called by ``_fit_double_gaussian_bounded_at_valley``, on the two
+        components of its constrained refit, to place the classification
+        threshold.
+
+        Takes the six component parameters only, and needs nothing else: any
+        flat constant the fit carries is common to both curves, so it cancels
+        from ``g1(x) + c == g2(x) + c`` exactly and cannot move a crossing.
+        A caller holding a seven-element parameter vector slices it.
 
         Both curves are strictly positive everywhere, so ``g1(x) == g2(x)``
         has exactly the same solutions as ``ln(g1(x)) == ln(g2(x))``, and
@@ -4357,8 +5606,9 @@ class PeakFinder(MetaEventFitter):
 
         Both of ``_fit_double_gaussian``'s initial guesses are fit against the
         same box, so it lives here once: amplitudes non-negative and no larger
-        than the tallest bin, means inside the histogram, and widths between
-        half a bin and the histogram's span.
+        than the tallest bin, means inside the histogram, widths between half a
+        bin and the histogram's span, and - while ``FIT_CONSTANT_OFFSET``
+        holds - the flat constant between zero and the tallest bin.
 
         The lower width bound is half a bin rather than zero because at
         ``std == 0`` the model divides by zero - it evaluates to 0 away from
@@ -4367,20 +5617,56 @@ class PeakFinder(MetaEventFitter):
         binning is meaningful for a binned fit anyway. The initial guess is
         clamped up to the same floor so it cannot start outside its own bounds.
 
-        Nothing is caught here. ``curve_fit`` raises ``RuntimeError`` when the
-        least-squares fit does not converge and ``ValueError`` when the guess
-        or bounds are unusable, and both propagate to ``_fit_double_gaussian``,
-        which is where the decision to fall through to the next initial guess
-        belongs.
+        **Both the seven- and the six-parameter fit are run, and the constant
+        is discarded if it made the residual sum of squares meaningfully
+        worse.** The constant only *adds* a degree of freedom, so at a true
+        optimum the seven-parameter fit can never be the worse of the two - if
+        it is, the optimizer has landed somewhere worse and the extra dimension
+        is what took it there. That failure is reachable: seeded from the
+        histogram-split guess alone, on two populations where the higher one
+        holds 5% of the events, the free constant walked the fit into a local
+        minimum whose residual was 6426 against the six-parameter fit's 4900,
+        collapsing the minority component onto the majority one (its mean 2384
+        against a true 3500) and flipping ``n_components`` from 2 to 1 - a
+        population lost to a fit that scored *worse on its own objective*.
+        Against the two-stage seeding ``_fit_double_gaussian`` actually uses it
+        did not recur, over 112 fits spanning minority fractions from 1% to 45%
+        and four skew levels; the comparison is kept as the net that makes the
+        constant a strict improvement rather than a trade, and costs one extra
+        ``curve_fit`` per seed.
+
+        Near-ties go to the seven-parameter fit. Where the data has no
+        background the constant converges to approximately zero and the two
+        fits are the same curve, agreeing to the last few bits of the residual
+        - on 11 of 112 fits above the six-parameter residual was lower by a
+        float-noise margin - so a strict comparison would flip the length of
+        the returned parameter vector between runs on equivalent data for no
+        reason. Only a relative shortfall too large to be rounding discards the
+        constant.
+
+        Nothing is caught here *unless the other fit succeeded*. ``curve_fit``
+        raises ``RuntimeError`` when the least-squares fit does not converge and
+        ``ValueError`` when the guess or bounds are unusable; where one of the
+        two fits raises and the other does not, the survivor is returned, and
+        only when both fail does the error propagate to
+        ``_fit_double_gaussian``, which is where the decision to fall through to
+        the next initial guess belongs.
 
         :param bins: histogram bin centers
         :type bins: npt.NDArray[np.float64]
         :param amplitude: histogram bin counts
         :type amplitude: npt.NDArray[np.float64]
-        :param p0: initial guess, ``(amp1, mean1, std1, amp2, mean2, std2)``
+        :param p0: initial guess for the two components,
+            ``(amp1, mean1, std1, amp2, mean2, std2)``; the constant is seeded
+            here rather than by the caller
         :type p0: Tuple[float, float, float, float, float, float]
-        :return: tuple of (best-fit parameters, parameter covariance matrix)
+        :return: tuple of (best-fit parameters, parameter covariance matrix).
+            The parameters are seven long when the fitted constant won and six
+            long when it did not, so a consumer must read the constant by
+            length rather than assume it is present
         :rtype: Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]
+        :raises RuntimeError: if neither fit converges
+        :raises ValueError: if neither fit has a usable guess or bounds
         """
         min_mean = np.min(bins)
         max_mean = np.max(bins)
@@ -4394,16 +5680,83 @@ class PeakFinder(MetaEventFitter):
             tuple(max(v, min_std) if i in (2, 5) else v for i, v in enumerate(p0)),
         )
 
-        return curve_fit(
-            self._double_gaussian,
-            bins,
-            amplitude,
-            p0=p0,
-            bounds=(
-                [min_amp, min_mean, min_std, min_amp, min_mean, min_std],
-                [max_amp, max_mean, max_std, max_amp, max_mean, max_std],
-            ),
-        )
+        lower = [min_amp, min_mean, min_std, min_amp, min_mean, min_std]
+        upper = [max_amp, max_mean, max_std, max_amp, max_mean, max_std]
+
+        def run(guess: List[float], lo: List[float], hi: List[float]) -> Any:
+            popt, pcov = curve_fit(
+                self._double_gaussian, bins, amplitude, p0=guess, bounds=(lo, hi)
+            )
+            residual = float(
+                np.sum((self._double_gaussian(bins, *popt) - amplitude) ** 2)
+            )
+            return popt, pcov, residual
+
+        candidates = []
+        attempts = (True, False) if self.FIT_CONSTANT_OFFSET else (False,)
+        for use_offset in attempts:
+            try:
+                if use_offset:
+                    # Seeded at the emptiest decile's median count, which is
+                    # where a uniform background shows itself; the seed makes no
+                    # measurable difference to where the fit lands (an offset
+                    # seeded at 0 gave identical parameters on every dataset
+                    # benchmarked bar one, where this seed did better), but it
+                    # starts inside the bounds and costs nothing.
+                    floor_bins = max(1, len(amplitude) // 10)
+                    offset_seed = float(
+                        np.clip(
+                            np.median(np.sort(np.asarray(amplitude))[:floor_bins]),
+                            0.0,
+                            max_amp,
+                        )
+                    )
+                    candidates.append(
+                        run(
+                            list(p0) + [offset_seed],
+                            lower + [0.0],
+                            upper + [max(float(max_amp), 1e-9)],
+                        )
+                    )
+                else:
+                    candidates.append(run(list(p0), lower, upper))
+            except (RuntimeError, ValueError):
+                # NOTE (merge fix, not a behavioural rewrite): this used to
+                # collect each failure in an `errors` list and, after the loop,
+                # `raise errors[0]`. That is a re-raise of a *variable*, and
+                # pydoclint cannot see through it - it read the raised type as
+                # `errors` and failed DOC503 against the documented
+                # RuntimeError/ValueError, which is what turned CI red. Raising
+                # from inside the handler instead lets pydoclint resolve the
+                # types from the `except` clause. The guard keeps the original
+                # rule intact: a failure is fatal only when nothing has
+                # succeeded and no attempt is left, so the seven-parameter fit
+                # failing first can still be rescued by the six-parameter one.
+                # The only change is which of two failures propagates - the
+                # last now rather than the first - and both callers catch
+                # `(RuntimeError, ValueError)` without inspecting it.
+                if not candidates and use_offset == attempts[-1]:
+                    raise
+
+        # The seven-parameter fit wins ties, and near-ties. Where there is no
+        # background to find the constant converges to ~0 and the two fits are
+        # the same curve, agreeing on the residual to the last few bits - and
+        # letting float noise pick between them would flip the length of
+        # `params` back and forth between runs on equivalent data. So the
+        # constant is discarded only when it costs a *relative* amount that no
+        # rounding could account for, which is also the only regime where it
+        # means anything.
+        popt, pcov, residual = candidates[0]
+        if len(candidates) == 2:
+            offset_rss, plain_rss = candidates[0][2], candidates[1][2]
+            if offset_rss - plain_rss > 1e-6 * max(1.0, abs(plain_rss)):
+                popt, pcov, residual = candidates[1]
+                self.logger.debug(
+                    "double-Gaussian fit: the fitted constant made the residual "
+                    f"worse ({offset_rss:.6g} against {plain_rss:.6g}), so the "
+                    "six-parameter fit is kept for this initial guess."
+                )
+        return popt, pcov
 
     @log(logger=logger)
     def _resolve_two_histogram_peaks(
@@ -4503,8 +5856,8 @@ class PeakFinder(MetaEventFitter):
         :param amplitude: numpy array of amplitude (counts) in each bin
         :type amplitude: npt.NDArray[np.float64]
         :return: tuple of (best-fit parameters (amp1, mean1, std1, amp2, mean2,
-            std2), parameter covariance matrix), or (None, None) if both stages
-            fail
+            std2) optionally followed by the fitted flat constant, parameter
+            covariance matrix), or (None, None) if both stages fail
         :rtype: Tuple[Optional[npt.NDArray[np.float64]], Optional[npt.NDArray[np.float64]]]
         :raises ValueError: if too few peaks are found for the first-stage guess,
             or the histogram cannot be split for the second-stage guess; both are
@@ -4639,14 +5992,20 @@ class PeakFinder(MetaEventFitter):
           parameter at all. This one is deliberately *not* folded into the
           one-population signal below: it also fires on a genuinely bimodal but
           small or heavily overlapping dataset, which is a precision problem
-          rather than a population-count one.
+          rather than a population-count one. The fitted flat constant is
+          exempt from it, for the reason given at the check itself.
+
+        None of the three are changed by the flat constant otherwise: a
+        collapsed width, two centres on one mode and an undetermined amplitude
+        all mean the same thing whether or not a pedestal sits under them.
 
         :param bins: numpy array of bin centers
         :type bins: npt.NDArray[np.float64]
         :param amplitude: numpy array of amplitude (counts) in each bin
         :type amplitude: npt.NDArray[np.float64]
         :return: tuple of (fit parameters (amp1, mean1, std1, amp2, mean2,
-            std2), or None if the fit did not converge or produced a
+            std2), followed by the fitted flat constant where one improved the
+            residual, or None if the fit did not converge or produced a
             non-finite covariance) and a bool that is True when the converged
             fit describes one population rather than two (a collapsed
             component, or two centres on the same mode). The bool is
@@ -4670,9 +6029,16 @@ class PeakFinder(MetaEventFitter):
         # that a converged-but-meaningless fit is visible in the log instead
         # of being indistinguishable from a good one, and so the first two
         # can drive the one-vs-two-population decision returned below.
-        names = ("amp1", "mean1", "std1", "amp2", "mean2", "std2")
+        names = ("amp1", "mean1", "std1", "amp2", "mean2", "std2", "offset")
         bin_width = float(bins[1] - bins[0])
         one_population = False
+
+        if len(popt) > 6:
+            self.logger.debug(
+                f"double-Gaussian fit: fitted a flat constant of {popt[6]:.4g} "
+                f"counts under both components (tallest bin "
+                f"{float(np.max(amplitude)):.4g})."
+            )
 
         for comp, std_idx, mean_idx in ((1, 2, 1), (2, 5, 4)):
             if popt[std_idx] <= bin_width:
@@ -4705,6 +6071,15 @@ class PeakFinder(MetaEventFitter):
 
         perr = np.sqrt(np.diag(pcov))
         unconstrained = perr > np.abs(popt) * 10
+        # The flat constant is exempt from this one test. It is the only
+        # parameter whose *correct* value is routinely zero - on data with no
+        # background it settles at a count or two - and a relative-error test
+        # can never be passed by a parameter that is legitimately near zero,
+        # so including it would fire this warning on almost every clean fit
+        # and bury the cases where it means something. Its own value is logged
+        # above either way.
+        if unconstrained.size > 6:
+            unconstrained[6] = False
         if np.any(unconstrained):
             detail = ", ".join(
                 f"{names[i]}={popt[i]:.4g}+/-{perr[i]:.4g}"
@@ -4712,7 +6087,8 @@ class PeakFinder(MetaEventFitter):
             )
             self.logger.warning(
                 "double-Gaussian fit: the data does not constrain "
-                f"{np.count_nonzero(unconstrained)} of 6 parameters (standard "
+                f"{np.count_nonzero(unconstrained)} of {min(len(popt), 6)} "
+                "parameters (standard "
                 f"error exceeds 10x the value): {detail}. The fit converged but "
                 "these parameters carry no information."
             )
@@ -4724,7 +6100,7 @@ class PeakFinder(MetaEventFitter):
         self,
         bins: npt.NDArray[np.float64],
         amplitude: npt.NDArray[np.float64],
-        params: Tuple[float, float, float, float, float, float],
+        params: Sequence[float],
     ) -> None:
         """
         Warn when a fitted mean lands outside the half-maximum span of the
@@ -4768,9 +6144,10 @@ class PeakFinder(MetaEventFitter):
         :type bins: npt.NDArray[np.float64]
         :param amplitude: histogram bin counts, as built for the double-Gaussian fit
         :type amplitude: npt.NDArray[np.float64]
-        :param params: the six fitted parameters being reported,
-            ``(amp1, mean1, std1, amp2, mean2, std2)``, in either mean order
-        :type params: Tuple[float, float, float, float, float, float]
+        :param params: the fitted parameters being reported,
+            ``(amp1, mean1, std1, amp2, mean2, std2)`` in either mean order,
+            optionally followed by the flat constant, which is ignored here
+        :type params: Sequence[float]
         :return: None; this only logs
         :rtype: None
         """
@@ -4796,7 +6173,9 @@ class PeakFinder(MetaEventFitter):
             )
             return
 
-        _, mean1, _, _, mean2, _ = params
+        # Positional, and tolerant of the trailing flat constant: only the two
+        # means matter here, and they are at fixed positions either way.
+        mean1, mean2 = params[1], params[4]
         ordered_means = sorted((float(mean1), float(mean2)))
 
         for index, (label, fitted_mean) in enumerate(
@@ -4842,7 +6221,7 @@ class PeakFinder(MetaEventFitter):
         populations inflate the IQR, and therefore the bin width, collapsing
         the histogram to a handful of bins. Measured on synthetic
         two-population data (means 300 and 600), the rule alone yields 3 bins
-        at n=60, 6 at n=300 and 7 at n=600 - against which a six-parameter
+        at n=60, 6 at n=300 and 7 at n=600 - against which a seven-parameter
         double Gaussian is underdetermined. The fit then fails outright below
         roughly 600 points and, worse, near 600-1000 it can converge with
         *both* Gaussians sitting on the same mode (595.4 and 597.3 for a
@@ -4875,13 +6254,169 @@ class PeakFinder(MetaEventFitter):
             self.logger.debug(
                 f"Freedman-Diaconis suggested {s_bins} bins for {arr.size} "
                 f"points; raising to the {self.MIN_FIT_BINS}-bin floor so the "
-                "six-parameter double-Gaussian fit is not underdetermined."
+                "seven-parameter double-Gaussian fit is not underdetermined."
             )
             s_bins = self.MIN_FIT_BINS
 
         counts, bin_edges = np.histogram(arr, bins=s_bins)
         bin_centers = (bin_edges[1:] + bin_edges[:-1]) / 2.0
         return counts.astype(float), bin_edges, bin_centers
+
+    def _single_gaussian(
+        self,
+        x: npt.NDArray[np.float64],
+        amp: float,
+        mean: float,
+        std: float,
+        offset: float = 0.0,
+    ) -> npt.NDArray[np.float64]:
+        """
+        Return the value of one Gaussian, plus a flat constant, with the
+        specified parameters.
+
+        The model ``_fit_single_gaussian`` hands to ``curve_fit``, and the curve
+        ``_overlay_single_gaussian`` draws. The constant goes last and defaults
+        to zero, as in ``_double_gaussian``, so calling this without it gives
+        the pure Gaussian. Not decorated with ``@log`` for the same reason
+        ``_double_gaussian`` is not: ``curve_fit`` calls it on every iteration.
+
+        :param x: x positions to evaluate at
+        :type x: npt.NDArray[np.float64]
+        :param amp: peak height above the background, in histogram counts
+        :type amp: float
+        :param mean: centre
+        :type mean: float
+        :param std: standard deviation
+        :type std: float
+        :param offset: flat background, in histogram counts; default 0.0
+        :type offset: float
+        :return: the Gaussian plus background evaluated at ``x``
+        :rtype: npt.NDArray[np.float64]
+        """
+        return cast(
+            npt.NDArray[np.float64],
+            amp * np.exp(-0.5 * ((x - mean) / std) ** 2) + offset,
+        )
+
+    @log(logger=logger)
+    def _fit_single_gaussian(
+        self, counts: npt.NDArray[np.float64], bin_edges: npt.NDArray[np.float64]
+    ) -> Optional[Tuple[float, float, float, float]]:
+        """
+        Fit one Gaussian, plus a flat background, to a histogram
+        ``fit_threshold`` already built.
+
+        Called by ``_classify_folded_unfolded`` and ``_classify_peak_prominences``
+        when ``fit_threshold`` reports a single population, to describe that
+        population with parameters that mean what they say. The double fit's
+        own parameters cannot: on one population it is a single Gaussian
+        wearing two sets of parameters, one of them collapsed or sitting on the
+        other. Reusing ``fit_threshold``'s histogram keeps the fit, the plot and
+        the classification on the same bins.
+
+        Fitted against the same box ``_curve_fit_bounded`` uses for each
+        double-Gaussian component - amplitude in ``[0, tallest bin]``, mean
+        inside the histogram, width between half a bin and the span - and
+        seeded at the tallest bin, with the count-weighted standard deviation as
+        the width, so the seed starts on the mode rather than on a skewed
+        population's mean.
+
+        While ``FIT_CONSTANT_OFFSET`` holds, a flat background is fitted as a
+        fourth parameter, bounded like it is in the double fit (``[0, tallest
+        bin]``, seeded at the emptiest decile's median count), so a uniform
+        pedestal - the sparse outliers a single population is often cut from -
+        is modelled rather than widening the Gaussian and with it any cut
+        placed at ``mu + k sigma``. Both the four- and three-parameter fits are
+        run and the background is dropped only if it made the residual sum of
+        squares worse by more than rounding, the same rule
+        ``_curve_fit_bounded`` applies and for the same reason: adding a free
+        parameter can never be worse at a true optimum.
+
+        Only convergence failures reject, as in
+        ``_fit_and_check_double_gaussian``. There is deliberately no further
+        fallback here: each caller decides what stands in when this fails.
+
+        :param counts: histogram counts, as returned in ``fit_threshold``'s ``"hist"``
+        :type counts: npt.NDArray[np.float64]
+        :param bin_edges: the matching bin edges
+        :type bin_edges: npt.NDArray[np.float64]
+        :return: ``(amp, mean, std, offset)``, with ``offset`` 0.0 where no background was kept, or None if the histogram is unusable or neither fit converges
+        :rtype: Optional[Tuple[float, float, float, float]]
+        """
+        counts = np.asarray(counts, dtype=float)
+        bin_edges = np.asarray(bin_edges, dtype=float)
+        if counts.size < 3 or bin_edges.size != counts.size + 1 or counts.sum() <= 0:
+            self.logger.debug(
+                "single-Gaussian fit: the histogram is empty or has fewer than 3 bins"
+            )
+            return None
+
+        bins = (bin_edges[:-1] + bin_edges[1:]) / 2.0
+        min_std = (bins[1] - bins[0]) / 2.0
+        max_std = float(np.abs(bins[-1] - bins[0]))
+        max_amp = float(np.max(counts))
+        if not min_std > 0 or not max_std > min_std:
+            self.logger.debug("single-Gaussian fit: degenerate bin edges")
+            return None
+
+        weighted_mean = float(np.average(bins, weights=counts))
+        weighted_std = float(
+            np.sqrt(np.average((bins - weighted_mean) ** 2, weights=counts))
+        )
+        seed = [
+            max_amp,
+            float(bins[int(np.argmax(counts))]),
+            float(np.clip(weighted_std, min_std, max_std)),
+        ]
+        lower = [0.0, float(bins[0]), min_std]
+        upper = [max_amp, float(bins[-1]), max_std]
+        floor_bins = max(1, counts.size // 10)
+        offset_seed = float(
+            np.clip(np.median(np.sort(counts)[:floor_bins]), 0.0, max_amp)
+        )
+
+        # (parameters, residual sum of squares) per converged fit, the fit
+        # with the background first.
+        candidates: List[Tuple[npt.NDArray[np.float64], float]] = []
+        attempts = (True, False) if self.FIT_CONSTANT_OFFSET else (False,)
+        for use_offset in attempts:
+            try:
+                popt, pcov = curve_fit(
+                    self._single_gaussian,
+                    bins,
+                    counts,
+                    p0=seed + [offset_seed] if use_offset else seed,
+                    bounds=(
+                        lower + [0.0] if use_offset else lower,
+                        upper + [max(max_amp, 1e-9)] if use_offset else upper,
+                    ),
+                )
+            except (RuntimeError, ValueError) as e:
+                self.logger.debug(
+                    f"single-Gaussian fit ({'with' if use_offset else 'without'} "
+                    f"background) did not converge: {e}"
+                )
+                continue
+            if not np.all(np.isfinite(popt)) or not np.all(np.isfinite(pcov)):
+                self.logger.debug(
+                    f"single-Gaussian fit ({'with' if use_offset else 'without'} "
+                    "background): non-finite parameters or covariance"
+                )
+                continue
+            residual = float(np.sum((self._single_gaussian(bins, *popt) - counts) ** 2))
+            candidates.append((popt, residual))
+
+        if not candidates:
+            return None
+        popt, residual = candidates[0]
+        if len(candidates) == 2 and len(popt) == 4:
+            plain_popt, plain_rss = candidates[1]
+            if residual - plain_rss > 1e-6 * max(1.0, abs(plain_rss)):
+                popt = plain_popt
+
+        amp, mean, std = (float(p) for p in popt[:3])
+        offset = float(popt[3]) if len(popt) > 3 else 0.0
+        return amp, mean, std, offset
 
     @log(logger=logger)
     def fit_threshold(self, data: npt.NDArray[np.float64]) -> Dict[str, Any]:
@@ -4890,10 +6425,23 @@ class PeakFinder(MetaEventFitter):
 
         Shared by all three ``_classify_*`` methods and their plotting code,
         which consume the returned dict generically. ``"params"`` is ordered
-        per component, ``(amp1, mean1, std1, amp2, mean2, std2)``; the key is
-        called ``"threshold"`` rather than anything implying a midpoint,
-        because it is placed from the histogram's shape (see
-        ``_threshold_between_populations``) and is not the midpoint of anything.
+        per component, ``(amp1, mean1, std1, amp2, mean2, std2, offset)``,
+        where the trailing ``offset`` is the flat constant fitted alongside the
+        two Gaussians (see ``FIT_CONSTANT_OFFSET``) and is 0.0 wherever the
+        constant is switched off or lost the residual comparison in
+        ``_curve_fit_bounded``; it is also given its own ``"offset"`` key so a
+        consumer need not index for it. The key is called ``"threshold"``
+        rather than anything implying a midpoint, because it is placed from the
+        histogram's shape (see ``_threshold_between_populations``) and is not
+        the midpoint of anything.
+
+        The constant does not enter the threshold. Being common to both
+        components it cancels out of the crossing that
+        ``_gaussian_intersection`` solves for, and it is excluded by
+        construction from the Gaussian-mixture posterior
+        ``_classification_confidence`` computes, so adding it moves no class
+        boundary - it only stops the two Gaussians from having to widen to
+        cover a background that belongs to neither population.
 
         **This raises when the fit fails rather than falling back to raw
         histogram peak locations.** A failed fit is a result worth seeing, not
@@ -4932,7 +6480,9 @@ class PeakFinder(MetaEventFitter):
         :return: dict with keys ``"threshold"`` (float), ``"centers"``
             (np.ndarray of the two fitted means), ``"hist"``
             (tuple of counts and bin edges), ``"params"``
-            (tuple of the six fitted parameters), ``"n_components"``
+            (tuple of the six fitted component parameters followed by the
+            fitted flat constant), ``"offset"`` (that same constant on its
+            own, 0.0 where none was fitted), ``"n_components"``
             (``1`` if the fit describes one population, ``2`` if it describes
             two), ``"threshold_method"`` (how the valley/floor point that
             anchored the fit was picked - see ``_threshold_between_populations``;
@@ -4959,7 +6509,8 @@ class PeakFinder(MetaEventFitter):
                 "could not fit a double Gaussian to the histogram of this data"
             )
 
-        amp1, mean1, std1, amp2, mean2, std2 = (float(p) for p in popt)
+        amp1, mean1, std1, amp2, mean2, std2 = (float(p) for p in popt[:6])
+        offset = float(popt[6]) if len(popt) > 6 else 0.0
 
         threshold, threshold_method, spline = self._threshold_between_populations(
             data, bin_centers, counts, mean1, std1, mean2, std2, one_population
@@ -4983,7 +6534,8 @@ class PeakFinder(MetaEventFitter):
             )
             if constrained is not None:
                 fit, crossing = constrained
-                amp1, mean1, std1, amp2, mean2, std2 = (float(p) for p in fit)
+                amp1, mean1, std1, amp2, mean2, std2 = (float(p) for p in fit[:6])
+                offset = float(fit[6]) if len(fit) > 6 else 0.0
                 threshold = crossing
                 params_method = "constrained"
 
@@ -4992,7 +6544,7 @@ class PeakFinder(MetaEventFitter):
         # the joint fit's, so what is checked is what the plots draw and the
         # classifiers consume, on both the constrained and the fallback path.
         self._warn_if_fitted_means_are_off_their_peaks(
-            bin_centers, counts, (amp1, mean1, std1, amp2, mean2, std2)
+            bin_centers, counts, (amp1, mean1, std1, amp2, mean2, std2, offset)
         )
 
         # Recomputed rather than threaded out of `_threshold_between_populations`,
@@ -5010,7 +6562,8 @@ class PeakFinder(MetaEventFitter):
             "threshold": threshold,
             "centers": np.array([mean1, mean2], dtype=float),
             "hist": (counts, bin_edges),
-            "params": (amp1, mean1, std1, amp2, mean2, std2),
+            "params": (amp1, mean1, std1, amp2, mean2, std2, offset),
+            "offset": offset,
             "n_components": 1 if one_population else 2,
             "threshold_method": threshold_method,
             "spline": spline,
@@ -5499,6 +7052,15 @@ class PeakFinder(MetaEventFitter):
         measured accuracy holds and the collapsed-component guard below catches
         the extreme cases.
 
+        **The flat constant rides along rather than being re-derived.** Where
+        the joint fit found one it stays a free parameter of this optimization,
+        seeded from that fit and bounded the same way, so both components are
+        re-fitted against the same model they were originally fitted against.
+        It takes no part in either constraint: being common to the two
+        components it cancels out of the dominance comparison and out of the
+        crossing ``_gaussian_intersection`` solves for, so it cannot move the
+        threshold this method returns.
+
         **This also runs on single-population data**, where ``split_point``
         is the above-floor threshold rather than a valley between two modes.
         There the higher component has no population of its own to describe,
@@ -5518,12 +7080,13 @@ class PeakFinder(MetaEventFitter):
             that came from a valley between two centres or from the first
             local minimum above the ``2 * mean - 2 * std`` floor
         :type split_point: float
-        :param popt: the unconstrained joint double-Gaussian fit's six
-            parameters, used to seed this refit and returned unchanged by the
-            caller if this declines
+        :param popt: the unconstrained joint double-Gaussian fit's parameters,
+            optionally including its fitted flat constant, used to seed this
+            refit and returned unchanged by the caller if this declines
         :type popt: npt.NDArray[np.float64]
         :return: tuple of (six parameters ``(amp1, mean1, std1, amp2, mean2,
-            std2)`` for the lower population then the higher one, the x
+            std2)`` for the lower population then the higher one, followed by
+            the re-fitted flat constant where the joint fit had one, and the x
             position where those two curves cross), or None if the
             constrained refit could not be done, did not converge, collapsed
             a component, or - which the dominance constraint should make
@@ -5533,7 +7096,14 @@ class PeakFinder(MetaEventFitter):
         :rtype: Optional[Tuple[npt.NDArray[np.float64], float]]
         """
         bin_width = float(bins[1] - bins[0])
-        amp1, mean1, std1, amp2, mean2, std2 = (float(p) for p in popt)
+        amp1, mean1, std1, amp2, mean2, std2 = (float(p) for p in popt[:6])
+        # Carried through rather than re-fitted from scratch, and only when the
+        # joint fit found one: this refit shares the joint fit's model, so
+        # dropping the pedestal here would make the two components re-absorb a
+        # background the joint fit had already accounted for, and the
+        # constrained answer would no longer be comparable to the one it
+        # replaces.
+        offset_seed = float(popt[6]) if len(popt) > 6 else None
         if mean1 > mean2:
             amp1, mean1, std1, amp2, mean2, std2 = (
                 amp2,
@@ -5599,13 +7169,20 @@ class PeakFinder(MetaEventFitter):
             seed_mean2,
             seed_std2,
         ]
+        if offset_seed is not None:
+            p0.append(float(np.clip(offset_seed, min_amp, max_amp)))
+            lower_bounds.append(0.0)
+            upper_bounds.append(max_amp)
 
         def _residual_sum_of_squares(params: npt.NDArray[np.float64]) -> float:
             model = self._double_gaussian(bins, *params)
             return float(np.sum((model - amplitude) ** 2))
 
         def _dominance(params: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
-            a_lower, m_lower, s_lower, a_higher, m_higher, s_higher = params
+            # Both constraints read the two components only. The flat constant
+            # is common to them, so it cancels out of every comparison of one
+            # against the other and out of their crossing.
+            a_lower, m_lower, s_lower, a_higher, m_higher, s_higher = params[:6]
             with np.errstate(divide="ignore", invalid="ignore"):
                 at_lower_mean = (
                     np.log(a_lower)
@@ -5622,7 +7199,7 @@ class PeakFinder(MetaEventFitter):
         def _valley_separation(
             params: npt.NDArray[np.float64],
         ) -> npt.NDArray[np.float64]:
-            _, m_lower, s_lower, _, m_higher, s_higher = params
+            _, m_lower, s_lower, _, m_higher, s_higher = params[:6]
             return np.array(
                 [
                     (m_higher - split_point) - k * s_higher,
@@ -5677,7 +7254,7 @@ class PeakFinder(MetaEventFitter):
             )
             return None
 
-        crossing = self._gaussian_intersection(*fit)
+        crossing = self._gaussian_intersection(*fit[:6])
         if crossing is None:
             # The dominance constraint above guarantees a sign change in
             # `_gaussian_intersection`'s quadratic between the two means, so
@@ -5703,7 +7280,7 @@ class PeakFinder(MetaEventFitter):
     def _classification_confidence(
         self,
         values: npt.NDArray[np.float64],
-        params: Tuple[float, float, float, float, float, float],
+        params: Sequence[float],
         is_higher_class: npt.NDArray[np.bool_],
     ) -> npt.NDArray[np.float64]:
         """
@@ -5732,6 +7309,22 @@ class PeakFinder(MetaEventFitter):
         records that assignment so this method does not need to know
         ``fit_threshold``'s own threshold value).
 
+        **The flat constant ``fit_threshold`` fits alongside the two Gaussians
+        is deliberately excluded from this.** Including it - as a third,
+        uniform "background" class in the denominator - would be the more
+        complete mixture model, but it would also break the property the next
+        paragraph documents: with a pedestal in the denominator the score at
+        the crossing becomes ``g / (2g + offset)``, strictly below 0.5, so a
+        ``"constrained"`` threshold would no longer be the point where this
+        reads 0.5 and the shape-based label and the mixture vote would disagree
+        by a margin that varies with the background level. The classes
+        themselves would not move - a constant added to both sides scales them
+        equally and leaves the argmax alone - so what excluding it costs is
+        only that a point sitting on pure background still gets scored on which
+        population it is *nearer*, rather than on whether it belongs to either.
+        Read ``"offset"`` from ``fit_threshold``'s result to see how much
+        background there was.
+
         This is a relative/ordinal score, not a calibrated probability: it
         comes from the same symmetric-Gaussian model ``fit_threshold`` uses,
         so on data where a population is genuinely skewed (see the log-normal
@@ -5754,10 +7347,11 @@ class PeakFinder(MetaEventFitter):
         :param values: the 1-D data that was thresholded to produce
             ``is_higher_class``
         :type values: npt.NDArray[np.float64]
-        :param params: the six fitted double-Gaussian parameters from
+        :param params: the fitted double-Gaussian parameters from
             ``fit_threshold``'s ``"params"`` - ``(amp1, mean1, std1, amp2,
-            mean2, std2)``, not necessarily ordered lower-then-higher
-        :type params: Tuple[float, float, float, float, float, float]
+            mean2, std2)``, not necessarily ordered lower-then-higher,
+            optionally followed by the fitted flat constant, which is ignored
+        :type params: Sequence[float]
         :param is_higher_class: boolean array, same length as ``values``,
             True where the caller assigned the higher-mean class (i.e.
             ``values >= threshold``)
@@ -5768,7 +7362,9 @@ class PeakFinder(MetaEventFitter):
             not in the overlap between them
         :rtype: npt.NDArray[np.float64]
         """
-        amp1, mean1, std1, amp2, mean2, std2 = params
+        # Positionally, ignoring any trailing flat constant - see the docstring
+        # for why the pedestal is deliberately left out of the posterior.
+        amp1, mean1, std1, amp2, mean2, std2 = params[:6]
         values = np.asarray(values, dtype=float)
 
         g1 = amp1 * np.exp(-((values - mean1) ** 2) / (2 * std1**2))
@@ -5856,6 +7452,210 @@ class PeakFinder(MetaEventFitter):
         return labels
 
     @log(logger=logger)
+    def _select_barcode_peaks(
+        self,
+        candidates: List[int],
+        locations: npt.NDArray[np.float64],
+        widths: npt.NDArray[np.float64],
+        ecds: npt.NDArray[np.float64],
+        num_peaks: int,
+        max_distance: float,
+    ) -> List[int]:
+        """
+        Pick the ``num_peaks`` candidate peaks that look most like one
+        barcode, and return their indices in time order.
+
+        Called by ``filter_peaks``' barcode branch, once per event, to decide
+        which of that event's type-1 peaks become type 3.
+
+        A barcode is read here as a run of like labels at like spacing, so a
+        selection is scored on how *alike* it is rather than on how large:
+
+        - the differences between its consecutive peak-to-peak spacings,
+        - the differences between its consecutive peaks' widths, and
+        - the differences between its consecutive peaks' ECDs,
+
+        each divided by a per-event median of that same quantity over the
+        candidates, so all three terms are dimensionless and comparable
+        between events, then weighted by ``BARCODE_SPACING_WEIGHT``,
+        ``BARCODE_WIDTH_WEIGHT`` and ``BARCODE_ECD_WEIGHT`` - the last of
+        which is 0 by default, for the reason given on those constants.
+        Lowest total wins. Scoring *consecutive* differences rather than the
+        spread about a mean is deliberate: a barcode whose spacing or width
+        drifts as the translocation slows is still one barcode, and a
+        spread-based score would reject it.
+
+        The selection need not be consecutive in the candidate list - that is
+        the point of it - but every adjacent pair in the *selected* set must
+        still be within ``max_distance``, measured on the recomputed spacings
+        rather than on the ones the candidates had before peaks were skipped.
+        A skipped peak keeps its type 1.
+
+        Ties - which an ideal event produces in numbers, since every window of
+        an even train scores alike - go to the selection with the largest
+        total ECD, and then to the earliest.
+
+        Search is depth-first over the candidates in time order, pruned two
+        ways: a partial selection that already costs more than the best
+        complete one is abandoned, and so is one with too few candidates left
+        to reach ``num_peaks``. Cost is a sum of non-negative terms, so the
+        first prune is exact rather than heuristic, and it is what makes the
+        exponential search cheap on the events that matter - a near-ideal
+        barcode scores near zero, which cuts almost every other branch
+        immediately. ``BARCODE_SEARCH_NODE_CAP`` bounds the pathological case.
+
+        :param candidates: indices of the peaks to choose from, in ascending time order
+        :type candidates: List[int]
+        :param locations: peak positions in microseconds, indexable by the values in ``candidates``
+        :type locations: npt.NDArray[np.float64]
+        :param widths: per-peak width in microseconds, indexable by the values in ``candidates``; the width term is dropped if any candidate's is not finite
+        :type widths: npt.NDArray[np.float64]
+        :param ecds: per-peak ECD, indexable by the values in ``candidates``; the ECD term is dropped, and ties fall through to the earliest selection, if any candidate's is not finite
+        :type ecds: npt.NDArray[np.float64]
+        :param num_peaks: how many peaks the selection must contain, exactly
+        :type num_peaks: int
+        :param max_distance: largest permitted spacing between adjacent selected peaks, in microseconds
+        :type max_distance: float
+        :return: the chosen peak indices in time order, or an empty list if no selection of the required size satisfies the spacing limit
+        :rtype: List[int]
+        """
+        count = len(candidates)
+        if num_peaks <= 0 or count < num_peaks:
+            return []
+
+        locs = np.asarray(locations, dtype=float)[candidates]
+        spans = np.abs(np.asarray(widths, dtype=float)[candidates])
+        values = np.abs(np.asarray(ecds, dtype=float)[candidates])
+        # One non-finite value would poison every comparison its term takes
+        # part in, so a term is dropped wholesale rather than per peak. Peak
+        # sublevels always carry a width and an ECD, so these guard against a
+        # caller - or a database written before the column was plumbed
+        # through - that supplied none, rather than an expected path. Dropping
+        # ECD also drops the tie-break with it, leaving ties to the earliest
+        # selection.
+        use_width = bool(np.all(np.isfinite(spans)))
+        use_ecd = bool(np.all(np.isfinite(values)))
+        if not (use_width and use_ecd):
+            self.logger.debug(
+                "barcode selection: this event's candidates carry no usable "
+                f"{'width' if not use_width else ''}"
+                f"{' and ' if not use_width and not use_ecd else ''}"
+                f"{'ECD' if not use_ecd else ''}, so that term is dropped"
+            )
+
+        def median_scale(data: npt.NDArray[np.float64]) -> float:
+            """Median of the positive, finite entries, or 1.0 if there are none."""
+            usable = data[np.isfinite(data) & (data > 0)]
+            scale = float(np.median(usable)) if usable.size else 1.0
+            return scale if np.isfinite(scale) and scale > 0 else 1.0
+
+        gap_scale = median_scale(np.diff(locs))
+        width_scale = median_scale(spans)
+        ecd_scale = median_scale(values)
+
+        best_key: Optional[Tuple[float, float, int]] = None
+        best: List[int] = []
+        nodes = 0
+        capped = False
+
+        # Explicit stack of partial selections - (positions, cost, ECD sum,
+        # the spacing that closed it) - rather than recursion, so the walk
+        # order and the node budget are both in plain sight. Positions are
+        # into `candidates`; they are mapped back on the way out.
+        #
+        # Built descending and popped from the end, so the earliest start is
+        # explored first: that is also the final tie-break, so the first
+        # complete selection is the one every later tie has to beat.
+        stack: List[Tuple[List[int], float, float, Optional[float]]] = [
+            ([pos], 0.0, float(values[pos]) if use_ecd else 0.0, None)
+            for pos in reversed(range(count - num_peaks + 1))
+        ]
+
+        while stack:
+            selected, cost, ecd_sum, previous_gap = stack.pop()
+
+            nodes += 1
+            if nodes > self.BARCODE_SEARCH_NODE_CAP:
+                capped = True
+                break
+
+            if len(selected) == num_peaks:
+                key = (cost, -ecd_sum, selected[0])
+                if best_key is None or (
+                    key[0] < best_key[0] - self.BARCODE_COST_TOLERANCE
+                    or (
+                        abs(key[0] - best_key[0]) <= self.BARCODE_COST_TOLERANCE
+                        and key[1:] < best_key[1:]
+                    )
+                ):
+                    best_key, best = key, list(selected)
+                continue
+
+            last = selected[-1]
+            still_needed = num_peaks - len(selected)
+            extensions: List[Tuple[List[int], float, float, Optional[float]]] = []
+
+            for nxt in range(last + 1, count):
+                gap = float(locs[nxt] - locs[last])
+                if gap > max_distance:
+                    # Candidates are in time order, so no later one is nearer.
+                    break
+                if count - 1 - nxt < still_needed - 1:
+                    break
+
+                addition = 0.0
+                if use_width:
+                    addition += (
+                        self.BARCODE_WIDTH_WEIGHT
+                        * abs(float(spans[nxt]) - float(spans[last]))
+                        / width_scale
+                    )
+                if use_ecd:
+                    addition += (
+                        self.BARCODE_ECD_WEIGHT
+                        * abs(float(values[nxt]) - float(values[last]))
+                        / ecd_scale
+                    )
+                if previous_gap is not None:
+                    addition += (
+                        self.BARCODE_SPACING_WEIGHT
+                        * abs(gap - previous_gap)
+                        / gap_scale
+                    )
+
+                extended_cost = cost + addition
+                if (
+                    best_key is not None
+                    and extended_cost - best_key[0] > self.BARCODE_COST_TOLERANCE
+                ):
+                    continue
+
+                extensions.append(
+                    (
+                        selected + [nxt],
+                        extended_cost,
+                        ecd_sum + (float(values[nxt]) if use_ecd else 0.0),
+                        gap,
+                    )
+                )
+
+            # Reversed, so the nearest extension is on top and gets explored
+            # first: on a real barcode that is the one that scores well, and
+            # finding it early is what arms the cost prune for everything else.
+            stack.extend(reversed(extensions))
+
+        if capped:
+            self.logger.warning(
+                f"barcode selection gave up after {self.BARCODE_SEARCH_NODE_CAP} "
+                f"partial selections on an event with {count} candidate peaks "
+                f"and a {max_distance:.1f} us spacing limit, and kept the best "
+                f"of the {'complete candidates found so far' if best else 'none it completed'}"
+                ". Lower 'Peak to Peak Distance Ratio' to search a smaller window."
+            )
+
+        return [candidates[pos] for pos in best]
+
+    @log(logger=logger)
     def filter_peaks(
         self,
         peaks: npt.NDArray[np.intp],
@@ -5884,32 +7684,58 @@ class PeakFinder(MetaEventFitter):
         **Barcode.** Each peak is typed from its two bases, which must both
         land in the same band. Writing ``U`` for the unfolded level, ``s`` for
         the baseline standard deviation, ``t1`` for ``Lower Filter Threshold``
-        and ``t2`` for ``Higher Filter Threshold`` (both blockage depths, so
-        larger means deeper), the bands are contiguous:
+        and ``t2`` for ``Higher Filter Threshold``, the bands are as follows.
+        Every band and both bases are blockage *depths* from the baseline -
+        deeper is always larger - so the typing does not depend on the sign of
+        the current:
 
-        - **0** - both bases at or below ``t2*s``: on the baseline, not on a
-          carrier.
-        - **1** - both bases within ``[U + t1*s, U + t2*s]``: a peak sitting on
-          the unfolded carrier. ``t1`` defaults negative, so this band opens
-          below the unfolded level and closes above it.
-        - **2** - both bases within ``[U + t2*s, 2*U + t2*s]``: a peak sitting
-          on the folded carrier.
         - **-1** - both bases above ``2*U + t2*s``, or the two bases in
           different bands. This is the catch-all, and it is where a bound star
           lands as well as any straddling or spurious peak.
+        - **2** - both bases within ``[U + t2*s, 2*U + t2*s]``: a peak sitting
+          on the folded carrier.
+        - **1** - both bases within ``[U + t1*s, U + t2*s]``: a peak sitting on
+          the unfolded carrier. ``t1`` defaults negative, so this band opens
+          below the unfolded level and closes above it.
+        - **0** - both bases at or below ``BASELINE_BAND_SIGMA * s``: on the
+          baseline, not on a carrier.
 
-        A second pass then promotes the **most prominent** run of adjacent
-        type-1 peaks to **type 3**, the barcode. Every type-1 peak is a
-        candidate; consecutive members of a run must be within ``Peak to Peak
-        Distance Ratio`` percent of the event length of each other, and a run
-        must reach ``Number of peaks`` members to qualify. Every starting
-        position is tried, so an event can have several separated candidate
-        runs; the qualifying run with the highest summed prominence wins, and
-        a tie goes to whichever run occurs earliest in time. A qualifying run
-        longer than ``Number of peaks`` is truncated to that many members
-        before its prominence is summed, so a barcode never has more than
-        ``Number of peaks`` peaks even when a longer real one exists. Peaks
-        left over keep the type the first pass gave them.
+        They are tested in that order, which is what decides the two cases
+        where the bands overlap rather than meet. The baseline band is sized
+        by the ``BASELINE_BAND_SIGMA`` class constant rather than by ``t2``,
+        because ``t2`` sizes the tolerance around the *carrier* levels and at
+        larger ``t2`` it opened a baseline band that reached the bottom of the
+        type-1 band; testing type 1 first means a peak seated on the unfolded
+        carrier is typed 1 either way, and only a genuinely baseline-seated
+        peak falls through to type 0.
+
+        A peak that qualifies as type 1 but whose ``base_at_edge`` flag is set
+        - one of its bases is where the trim stopped ``find_peaks``' base
+        walk, at either end of the trimmed event, rather than a minimum in the
+        trace - is rejected to **-1** instead. Such a base holds whatever the
+        event was doing at its own edge, usually a carrier level, so neither
+        it nor the prominence measured from it describes the peak. Both ends
+        are treated alike because ``_classify_translocation_direction`` may
+        reverse a sequence, and a rule that rejected only the leading edge
+        would take opposite ends off a forward and a backward copy of the same
+        molecule. Note that these peaks join the type -1 pool that
+        ``_classify_bound_star`` draws its candidates from.
+
+        A second pass then promotes exactly ``Number of peaks`` type-1 peaks
+        to **type 3**, the barcode, choosing the set that looks most like one
+        barcode rather than the set that is largest. Candidates are the type-1
+        peaks with another type-1 peak within ``Peak to Peak Distance Ratio``
+        percent of the event length; ``_select_barcode_peaks`` then scores
+        every legal set of that size on how alike its consecutive spacings,
+        peak widths and peak ECDs are, lowest total winning, ties going to the
+        largest total ECD and then to the earliest set. Adjacent members of the chosen
+        set must be within that same spacing limit, measured *after* the set
+        is chosen, since skipping a peak widens the gap it leaves behind.
+
+        The set need not be consecutive among the candidates. Every peak not
+        chosen - skipped from the middle of the barcode included - keeps the
+        type the first pass gave it, so a skipped interior peak stays type 1
+        and does not appear in the event's ``sequence``.
 
         **Single Peak.** Peaks are typed 11, 12, 13, 21 or 22 by which
         transition their bases describe, and everything but the single most
@@ -5965,23 +7791,33 @@ class PeakFinder(MetaEventFitter):
         filtered = np.array(filtered_list, dtype=int)
         if self.settings["Event Type"]["Value"] == "Barcode":
             # Step 1: type each peak from its two bases, which must both land
-            # in the same band. The bands are ordered and adjacent - baseline,
-            # around the unfolded level, around the folded level - and anything
-            # above the top of the last one, or straddling two, is -1. See the
-            # docstring for what each type means.
-            type0_thresh = t2_std * baseline_std
+            # in the same band. The bands are ordered - baseline, around the
+            # unfolded level, around the folded level - and anything above the
+            # top of the last one, or straddling two, is -1. See the docstring
+            # for what each type means.
+            #
+            # The baseline band is a fixed BASELINE_BAND_SIGMA rather than the
+            # carrier tolerance t2, which sizes a different thing and at
+            # larger t2 opened a baseline band reaching the bottom of the
+            # type-1 band. Type 1 is now tested ahead of type 0, so even where
+            # the two do overlap a peak seated on the unfolded carrier is
+            # typed 1 and only genuinely baseline-seated peaks fall through.
+            #
+            # Every threshold here, and both bases as converted in the loop,
+            # is a blockage depth from the baseline - deeper is larger - so
+            # none of this depends on the sign of the current.
+            type0_thresh = self.BASELINE_BAND_SIGMA * baseline_std
             type1_thresh = unfolded_level + t1_std * baseline_std
             type2_thresh = unfolded_level + t2_std * baseline_std
+
+            edge_flags = properties.get("base_at_edge")
 
             for i in range(len(peaks)):
                 left_base = properties["left_bases"][i] + np.sign(baseline) * baseline
                 right_base = properties["right_bases"][i] + np.sign(baseline) * baseline
 
-                # Type 0: both bases are below the lower carrier threshold.
-                if left_base <= type0_thresh and right_base <= type0_thresh:
-                    filtered[i] = 0
                 # Type -1: both bases above the upper type-2 cutoff (noise)
-                elif (
+                if (
                     left_base >= type2_thresh + unfolded_level
                     and right_base >= type2_thresh + unfolded_level
                 ):
@@ -5994,28 +7830,47 @@ class PeakFinder(MetaEventFitter):
                     and right_base <= type2_thresh + unfolded_level
                 ):
                     filtered[i] = 2
-                # Type 1: both bases within the type-1 band around unfolded_level
+                # Type 1: both bases within the type-1 band around
+                # unfolded_level, and neither base pinned to an end of the
+                # trimmed event.
                 elif (
                     left_base >= type1_thresh
                     and right_base >= type1_thresh
                     and left_base <= type2_thresh
                     and right_base <= type2_thresh
                 ):
-                    filtered[i] = 1
+                    # A base sitting on either end of the trimmed event is
+                    # where the trim stopped find_peaks' walk, not a minimum
+                    # on the carrier, so neither it nor the prominence
+                    # measured from it describes the peak - it is rejected
+                    # rather than seated on a carrier it may not belong to.
+                    # Both ends are treated alike: a sequence can be reversed
+                    # by _classify_translocation_direction, and a rule that
+                    # rejected only the leading edge would take opposite ends
+                    # off a forward and a backward copy of one molecule.
+                    at_edge = (
+                        edge_flags is not None
+                        and i < len(edge_flags)
+                        and bool(edge_flags[i] == 1)
+                    )
+                    filtered[i] = -1 if at_edge else 1
+                # Type 0: both bases on the baseline. Last of the carrier
+                # tests, so a peak that qualifies as type 1 or 2 keeps that
+                # label even when a wide baseline band would also admit it.
+                elif left_base <= type0_thresh and right_base <= type0_thresh:
+                    filtered[i] = 0
                 else:
                     filtered[i] = -1
 
-            # Step 2: promote the most prominent run of adjacent type-1 peaks
-            # to type 3, the barcode.
+            # Step 2: promote the best-matched set of exactly `num_peaks`
+            # type-1 peaks to type 3, the barcode. `_select_barcode_peaks`
+            # holds the scoring and the search; what is decided here is only
+            # which peaks it may choose from.
             #
-            # Every type-1 peak is a candidate, and every starting position is
-            # tried, so a single event can produce several separated candidate
-            # runs; the qualifying one with the highest summed prominence
-            # wins, a tie going to whichever was found first (equivalently the
-            # earlier run, since starts are walked in time order). A
-            # qualifying run is truncated to `num_peaks` members before its
-            # prominence is summed, so a barcode never has more than
-            # `num_peaks` peaks even when a longer real one exists.
+            # The set need not be consecutive among the candidates: a barcode
+            # is a run of like labels at like spacing, and an intervening peak
+            # that does not match the rest is better skipped than admitted.
+            # Skipped peaks keep their type 1.
             #
             # max_distance is in microseconds, because that is what it is
             # compared against: `event_length` arrives in us, and the peak
@@ -6035,71 +7890,53 @@ class PeakFinder(MetaEventFitter):
                 f"({max_distance * samplerate * 1e-6:.0f} samples at "
                 f"{samplerate * 1e-6:.3g} MHz)"
             )
-            min_group_size = num_peaks
-            prom_indices = np.argsort(properties["prominences"])[
-                ::-1
-            ]  # all sorted by prominence
-            best_cluster = []
-            best_prom_sum = 0
+            locations = np.asarray(properties["peak_loc"], dtype=float)
+            raw_widths = properties.get("peak_width")
+            widths = (
+                np.asarray(raw_widths, dtype=float)
+                if raw_widths is not None
+                else np.full(len(peaks), np.nan)
+            )
+            raw_ecds = properties.get("sublevel_raw_ecd")
+            ecds = (
+                np.asarray(raw_ecds, dtype=float)
+                if raw_ecds is not None
+                else np.full(len(peaks), np.nan)
+            )
 
-            for label in [1]:
-                # Every type-1 peak is a clustering candidate. An earlier
-                # version pre-filtered this list down to the `num_peaks` most
-                # prominent peaks before ever looking for a run, which capped
-                # the whole event to a single possible candidate cluster - the
-                # comparison below could never see a second one to prefer.
-                label_idxs = [i for i in prom_indices if filtered[i] == label]
-                if not label_idxs:
-                    continue
-                sorted_idxs = sorted(label_idxs, key=lambda i: peaks[i])
+            # The candidate pool is every type-1 peak with another type-1 peak
+            # within max_distance. An isolated peak is dropped because it
+            # could not appear in any legal selection anyway - every adjacent
+            # pair of the winning set has to clear the same limit - so this is
+            # a cheap prune rather than a second criterion.
+            in_time_order = sorted(
+                (i for i in range(len(peaks)) if filtered[i] == 1),
+                key=lambda i: locations[i],
+            )
+            candidates = [
+                index
+                for position, index in enumerate(in_time_order)
+                if (
+                    position > 0
+                    and locations[index] - locations[in_time_order[position - 1]]
+                    <= max_distance
+                )
+                or (
+                    position + 1 < len(in_time_order)
+                    and locations[in_time_order[position + 1]] - locations[index]
+                    <= max_distance
+                )
+            ]
 
-                # Clusters are runs that are adjacent in time, not in
-                # prominence, so the walk below is over sublevel order.
-                for i in range(len(sorted_idxs)):
-                    group = [sorted_idxs[i]]
-
-                    for j in range(i + 1, len(sorted_idxs)):
-                        prev_peak_idx = group[-1]
-                        curr_peak_idx = sorted_idxs[j]
-                        distance = abs(
-                            properties["peak_loc"][curr_peak_idx]
-                            - properties["peak_loc"][prev_peak_idx]
-                        )
-
-                        if distance <= max_distance:
-                            group.append(curr_peak_idx)
-                        else:
-                            break
-
-                    group = group[:num_peaks]
-
-                    if len(group) >= min_group_size:
-                        prom_sum = sum(properties["prominences"][idx] for idx in group)
-
-                        if prom_sum > best_prom_sum:
-                            best_cluster = group
-                            best_prom_sum = prom_sum
-
-                # Recheck adjacency inside best_cluster before labeling
-                validated_cluster = []
-                best_cluster_sorted = sorted(best_cluster, key=lambda idx: peaks[idx])
-
-                for i, idx in enumerate(best_cluster_sorted):
-                    if i == 0:
-                        validated_cluster.append(idx)
-                        continue
-
-                    prev_idx = validated_cluster[-1]
-                    distance = abs(
-                        properties["peak_loc"][idx] - properties["peak_loc"][prev_idx]
-                    )
-
-                    if distance <= max_distance:
-                        validated_cluster.append(idx)
-                    else:
-                        continue
-
-                for idx in validated_cluster:
+            if len(candidates) >= num_peaks:
+                selected = self._select_barcode_peaks(
+                    candidates, locations, widths, ecds, num_peaks, max_distance
+                )
+                self.logger.debug(
+                    f"filter_peaks: {len(candidates)} barcode candidates, "
+                    f"selected {len(selected)} of them as type 3"
+                )
+                for idx in selected:
                     filtered[idx] = 3
 
             properties["filtered"] = list(filtered.tolist())

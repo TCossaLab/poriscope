@@ -111,22 +111,26 @@ This ensures that documentation always reflects the current codebase.
    see :ref:`docs_render_check` for how to reproduce and fix it.
 
 
-Building the Wavelet Native Library
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+The Wavelet Native Library
+^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-The post-merge hook checks whether a platform-specific wavelet binary already
-exists.
+The hook **does not build the wavelet library**. Until 2.0.0 it tried to: on a Windows
+machine without MSYS2's toolchain it ran a full ``pacman -Syuu`` upgrade, or opened a
+folder dialog in the middle of the merge, only to find the library was already there.
 
-If not present, it automatically:
+The libraries are built by CI instead and committed under
+``poriscope/cdlls/wavelet/dist/``, so a checkout always has them:
 
-- Detects the operating system
-- Verifies required toolchains
-- Builds the appropriate shared library:
-  - ``.dll`` on Windows
-  - ``.so`` on Linux
-  - ``.dylib`` on macOS
+- ``wavelet.dll`` for Windows and ``wavelet.so`` for Linux, built by the
+  **Build Wavelet** workflow whenever the C source or its ``Makefile`` changes on
+  ``develop``. The DLL is linked without timestamps, so rebuilding unchanged source
+  produces the same bytes and commits nothing.
+- **No macOS library is shipped.** On macOS, build one with ``make dylib`` in
+  ``poriscope/cdlls/wavelet/`` and either leave it in ``dist/`` or set
+  ``PORISCOPE_WAVELET_PATH`` to the file.
 
-On Windows, MSYS2 and MinGW are used to build the DLL when available.
+To rebuild by hand after changing the C source, run ``python scripts/build_wavelet.py``,
+which builds whichever library the current platform can.
 
 
 Platform-specific Behavior
@@ -135,9 +139,6 @@ Platform-specific Behavior
 Windows
 ^^^^^^^
 
-- Detects MSYS2 installations automatically
-- Installs missing toolchains if required
-- Uses MinGW to build native extensions
 - Ensures the correct Python interpreter is used
 
 .. note::
@@ -149,8 +150,8 @@ Windows
    affects the whole pipeline.
 
    Two checks that look sufficient are not. Testing whether the candidate merely
-   starts is not enough: if you have MSYS2 installed - which this same hook may
-   have installed for you, to build the wavelet library - then under Git Bash
+   starts is not enough: if you have MSYS2 installed - which earlier versions of
+   this hook could install for you, to build the wavelet library - then under Git Bash
    ``python3`` resolves to the MSYS2 interpreter, which runs perfectly well but
    has none of the project's dependencies. Testing ``import poriscope`` is not
    enough either, because ``poriscope/__init__.py`` deliberately swallows a failed
@@ -160,15 +161,14 @@ Windows
 
    If no candidate passes, the hook prints what it skipped and exits without
    running anything, which is the intended outcome - install the project with
-   ``pip install -e ".[dev]"`` and run ``python scripts/hooks/post-merge.py`` by
+   ``pip install -e ".[dev,docs]"`` and run ``python scripts/hooks/post-merge.py`` by
    hand to catch up.
 
 Linux and macOS
 ^^^^^^^^^^^^^^^
 
-- Uses available system compilers
-- Builds only supported binary formats
-- Skips unavailable targets gracefully
+- Nothing platform-specific: the hook installs changed requirements and rebuilds the
+  documentation, as on Windows
 
 
 Failure Handling
@@ -223,7 +223,7 @@ from the repository root:
 
 .. code-block:: bash
 
-   python .git/hooks/post-merge
+   python scripts/hooks/post-merge.py
 
 This runs the same sequence of tasks as the automatic post-merge hook and
 is the recommended approach when using GitHub Desktop or when multiple

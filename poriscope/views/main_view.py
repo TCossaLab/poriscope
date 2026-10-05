@@ -26,10 +26,9 @@
 
 import logging
 import sys
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
+from datetime import datetime
+from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple
 
-import matplotlib.pyplot as plt
-from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from PySide6.QtCore import QRect, QSize, Qt, QTimer, Signal, Slot
 from PySide6.QtGui import QAction, QCloseEvent, QResizeEvent, QTextCursor
 from PySide6.QtWidgets import (
@@ -50,20 +49,20 @@ from PySide6.QtWidgets import (
 )
 
 from poriscope.constants import __VERSION__
-from poriscope.plugins.analysistabs.utils.walkthrough import (
-    IntroDialog,
-    Overlay,
-    StepDialog,
-)
-from poriscope.plugins.analysistabs.utils.walkthrough_mixin import (
-    WalkthroughMixin,
-    WalkthroughStep,
-)
 from poriscope.utils.LogDecorator import log
 from poriscope.views.help import HelpCentre
 from poriscope.views.settings_window import SettingsWindow
 from poriscope.views.widgets.icon_menu_widget import IconMenuWidget
 from poriscope.views.widgets.text_menu_widget import IconTextMenuWidget
+from poriscope.views.widgets.walkthrough import (
+    IntroDialog,
+    Overlay,
+    StepDialog,
+)
+from poriscope.views.widgets.walkthrough_mixin import (
+    WalkthroughMixin,
+    WalkthroughStep,
+)
 
 
 class MainView(QMainWindow, WalkthroughMixin):
@@ -107,10 +106,7 @@ class MainView(QMainWindow, WalkthroughMixin):
         self._expected_next_view: Optional[str] = None
         self._plugins_menu_anchor: Optional[QWidget] = None
         self.setup_ui()
-        self.figure = plt.Figure()
-        self.canvas = FigureCanvas(self.figure)
         self.toggle_in_progress = False
-        self.child_windows: List[QWidget] = []
         self.help_window: Optional[HelpCentre] = None
         self.settings_window: Optional[SettingsWindow] = None
         self._analysis_proxy: Optional[QWidget] = None
@@ -188,9 +184,24 @@ class MainView(QMainWindow, WalkthroughMixin):
     @log(logger=logger)
     @Slot(str, str)
     def add_text_to_display(self, text: str, source: str) -> None:
-        """Method to dynamically add text to the QTextEdit and scroll to bottom"""
+        """
+        Append a status message to the panel and scroll to it.
+
+        Each line is stamped with the wall-clock time it arrived. Without it two
+        identical messages are indistinguishable from one: a refused plot reported
+        twice looks exactly like the panel not having changed at all, which is
+        precisely how one was read as never having been reported.
+
+        :param text: the message to show; an empty one is ignored
+        :type text: str
+        :param source: the class that raised it, shown before the message
+        :type source: str
+        :return: None
+        :rtype: None
+        """
         if text:
-            self.text_display_widget.append(f"{source}: {text}\n")  # Add new text
+            stamp = datetime.now().strftime("%H:%M:%S")
+            self.text_display_widget.append(f"[{stamp}] {source}: {text}\n")
             cursor = self.text_display_widget.textCursor()  # Get current text cursor
             cursor.movePosition(
                 QTextCursor.MoveOperation.End
@@ -772,6 +783,8 @@ class MainView(QMainWindow, WalkthroughMixin):
             if old_page is not None:
                 self.stackedWidget.removeWidget(old_page)
                 old_page.deleteLater()
+                # The stack renumbers every page after the one removed.
+                self._reindex_pages()
 
         page = QWidget()
         page.setObjectName(page_name)
@@ -797,39 +810,58 @@ class MainView(QMainWindow, WalkthroughMixin):
         ``close_settings_page()`` first if Settings' page is among them, since
         its widget is a reusable singleton rather than something disposable.
 
-        Reindexing is not optional. ``self.pages`` caches each page's index into
-        the QStackedWidget, and the stack renumbers whatever follows a widget it
-        removes - so without rebuilding the map, every page after the first
-        removal would switch to the wrong widget. Indices are re-derived from the
-        stack itself, matching on the wrapper's objectName, rather than being
-        arithmetic guesses about what shifted.
-
         :param keep: Page names to leave in place.
         :type keep: Sequence[str]
         """
         keep_names = set(keep)
         doomed = {n for n in self.pages if n not in keep_names}
 
-        # Resolve every widget before removing any. removeWidget() renumbers the
-        # stack, so a cached index read after the first removal points at the
-        # wrong widget - which silently removes the wrong page rather than
-        # failing. Matching on the wrapper's objectName avoids indices entirely.
-        pages_to_remove = [
-            page
-            for page in (
-                self.stackedWidget.widget(i) for i in range(self.stackedWidget.count())
-            )
-            if page is not None and page.objectName() in doomed
-        ]
-
-        for page in pages_to_remove:
+        # Every widget is resolved before any is removed. removeWidget()
+        # renumbers the stack, so a cached index read after the first removal
+        # points at the wrong widget - which removes the wrong page silently
+        # rather than failing.
+        for page in self._pages_named(doomed):
             self.stackedWidget.removeWidget(page)
             page.deleteLater()
+
         for page_name in doomed:
             del self.pages[page_name]
             self.logger.debug(f"Removed page '{page_name}'")
 
-        # Re-derive the cached indices from the stack's current order.
+        self._reindex_pages()
+
+    def _pages_named(self, names: Set[str]) -> List[QWidget]:
+        """
+        Find the stacked widgets whose page names are in the given set.
+
+        Matching on the wrapper's ``objectName`` rather than on a cached index,
+        because indices are exactly what stops being trustworthy the moment a
+        widget is removed. Returns a list rather than a generator so the caller
+        holds every widget before it removes any.
+
+        :param names: The page names to find.
+        :type names: Set[str]
+        :return: The matching page wrappers, in stack order.
+        :rtype: List[QWidget]
+        """
+        found = []
+        for index in range(self.stackedWidget.count()):
+            page = self.stackedWidget.widget(index)
+            if page is not None and page.objectName() in names:
+                found.append(page)
+        return found
+
+    def _reindex_pages(self) -> None:
+        """
+        Re-derive every cached page index from the stack's current order.
+
+        Not optional after a removal. ``self.pages`` caches each page's index
+        into the QStackedWidget, and the stack renumbers whatever follows a
+        widget it removes - so without this, every page after the first removal
+        would switch to the wrong widget. The indices are read back off the
+        stack and matched by name, rather than being arithmetic guesses about
+        what shifted.
+        """
         for index in range(self.stackedWidget.count()):
             page = self.stackedWidget.widget(index)
             if page is not None and page.objectName() in self.pages:
@@ -884,28 +916,8 @@ class MainView(QMainWindow, WalkthroughMixin):
                 return
             else:
                 self.logger.info(f"Switching to expected milestone target: {page_name}")
-                # Clean up milestone overlay if it exists
-                try:
-                    if (
-                        hasattr(self._milestone_dialog, "overlay")
-                        and self._milestone_dialog.overlay
-                    ):
-                        self._milestone_dialog.overlay.close()
-                        self._milestone_dialog.overlay.deleteLater()
-                except Exception as e:
-                    self.logger.debug(f"Overlay cleanup error: {e}")
-
-                # Clean up milestone dialog itself
-                try:
-                    self._milestone_dialog.close()
-                    self._milestone_dialog.deleteLater()
-                except Exception as e:
-                    self.logger.debug(f"Milestone dialog cleanup error: {e}")
-
-                self._milestone_dialog = None
-
+                self.clear_milestone_dialog()
                 self._clear_analysis_proxy()
-
                 self._expected_next_view = None
 
                 # Delay walkthrough until after switch
@@ -1050,7 +1062,6 @@ class MainView(QMainWindow, WalkthroughMixin):
                 if not self._walkthrough_active:
                     self.logger.info(f"Launching walkthrough for {current_view}.")
                     self._walkthrough_active = True
-                    self._walkthrough_origin = current_view
                     view_widget.walkthrough_finished.connect(
                         self._reset_walkthrough_flag
                     )
@@ -1081,9 +1092,6 @@ class MainView(QMainWindow, WalkthroughMixin):
 
         if completed_successfully:
             self.show_milestone_step(view_name)
-
-    def on_view_switched(self, view_name: str) -> None:
-        self._current_view = view_name
 
     def clear_milestone_dialog(self) -> None:
         """Safely clear the milestone dialog and its overlay."""

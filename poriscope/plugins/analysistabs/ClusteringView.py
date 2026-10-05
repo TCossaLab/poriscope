@@ -31,33 +31,27 @@ import sys
 import warnings
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union, override
 
-import hdbscan
 import matplotlib.cm as cm
 import matplotlib.colors as mcolors
 import numpy as np
 import pandas as pd
 from matplotlib.lines import Line2D
 from mpl_toolkits.mplot3d import Axes3D
-from pandas.api.types import is_float_dtype
-from PySide6.QtCore import Slot
+from PySide6.QtCore import Signal, Slot
 from PySide6.QtWidgets import (
-    QBoxLayout,
     QDialog,
     QFileDialog,
-    QHBoxLayout,
     QMessageBox,
 )
-from sklearn.mixture import GaussianMixture
 
 from poriscope.plugins.analysistabs.utils.clusteringcontrols import ClusteringControls
-from poriscope.plugins.analysistabs.utils.walkthrough_mixin import (
-    WalkthroughMixin,
-    WalkthroughStep,
-)
 from poriscope.utils.DocstringDecorator import inherit_docstrings
 from poriscope.utils.LogDecorator import log, register_action
 from poriscope.utils.MetaView import MetaView
 from poriscope.views.widgets.clustering_settings_widget import ClusteringSettingsDialog
+from poriscope.views.widgets.walkthrough_mixin import (
+    WalkthroughStep,
+)
 
 # Check if running on Windows
 if sys.platform == "win32":
@@ -68,19 +62,46 @@ warnings.filterwarnings("ignore", category=FutureWarning, module="sklearn")
 
 
 @inherit_docstrings
-class ClusteringView(MetaView, WalkthroughMixin):
+class ClusteringView(MetaView):
     """
     Subclass of MetaView for displaying and interacting with clustering analysis.
 
     Handles plotting, user input, and signal exchanges.
     """
 
-    logger = logging.getLogger(__name__)
+    #: Asks the Controller to cluster an already-loaded frame. Carries the frame, the
+    #: columns to leave un-normalized, the method name, and that method's already-parsed
+    #: parameters. The clustering itself is ``ClusteringModel``'s, and the answer
+    #: arrives at :meth:`set_clustering_result`; ``RawDataView.calculate_psd`` is the
+    #: same shape.
+    cluster_requested = Signal(object, list, list, list, str, dict)
 
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        super().__init__(*args, **kwargs)
-        self._init()
-        self._init_walkthrough()
+    #: Asks the Controller for the column names a database loader offers, answered
+    #: through ``update_column_names``. The Controller calls the loader itself, so a
+    #: failed lookup is reported rather than swallowed on the way back.
+    column_names_requested = Signal(str)
+
+    #: Asks the Controller for one column's unit string. Same shape as above.
+    column_units_requested = Signal(str, str)
+
+    #: Asks whether the database already holds a clustering result. The answer arrives
+    #: at ``on_cluster_column_checked``, which is also where the overwrite confirmation
+    #: lives - the question the user is asked depends on the answer, so the two belong
+    #: together rather than either side of a value parked here.
+    cluster_column_check_requested = Signal(str)
+
+    #: Asks the Controller to commit the current clustering result, dropping an
+    #: existing one first when the last argument names its table. Two round trips
+    #: rather than one because a modal confirmation sits between them.
+    cluster_commit_requested = Signal(str, object, str, object)
+
+    #: Asks the Controller to build the metadata query and load the rows for it; the
+    #: rows arrive at ``on_metadata_loaded``. One request rather than a query and a load
+    #: asked for separately, because reading each answer back off this widget is what
+    #: twice shipped a plot of the *previous* subset's rows.
+    metadata_load_requested = Signal(dict, str)
+
+    logger = logging.getLogger(__name__)
 
     @log(logger=logger)
     @override
@@ -91,35 +112,32 @@ class ClusteringView(MetaView, WalkthroughMixin):
         self._clear_cache()
         self.cluster_data: Optional[pd.DataFrame] = None
         self.query = ""
+        # Set by update_column_names when the loader answers. Initialised here
+        # because the clustering settings dialog reads it. Created only by that
+        # callback, a loader whose columns could not be read would leave the dialog
+        # raising AttributeError instead of opening empty.
+        self.columns: List[str] = []
         # Positional units for the currently plotted columns, set by
         # update_plot and read back by _merge_clusters when it replots.
         # Declared here so the attribute exists before the first plot.
         self.plot_units: Sequence[Optional[str]] = []
+        # Held between emitting cluster_requested and set_clustering_result
+        # receiving the answer; None means no request is outstanding.
+        self._pending_cluster_display: Optional[Tuple[Any, ...]] = None
 
     @log(logger=logger)
-    @override
-    def _set_control_area(self, layout: QBoxLayout) -> None:
+    def _build_controls(self) -> ClusteringControls:
         """
-        Sets up the left-hand control area for the clustering plugin.
+        Build the tab's controls panel and keep it under this tab's own name.
 
-        :param layout: The parent layout to which controls are added.
-        :type layout: QBoxLayout
+        ``MetaView._set_control_area`` connects it and places it in the layout; the
+        named attribute is kept because it is used throughout this tab.
+
+        :return: the controls panel
+        :rtype: ClusteringControls
         """
-
         self.clusteringcontrols = ClusteringControls()
-        self.clusteringcontrols.actionTriggered.connect(self.handle_parameter_change)
-        self.clusteringcontrols.edit_processed.connect(self.handle_edit_triggered)
-        self.clusteringcontrols.add_processed.connect(self.handle_add_triggered)
-        self.clusteringcontrols.delete_processed.connect(self.handle_delete_triggered)
-
-        controlsAndAnalysisLayout = QHBoxLayout()
-        controlsAndAnalysisLayout.setContentsMargins(0, 0, 0, 0)
-
-        # Add the rawdatacontrols directly to the main layout
-        controlsAndAnalysisLayout.addWidget(self.clusteringcontrols, stretch=1)
-
-        layout.setSpacing(0)
-        layout.addLayout(controlsAndAnalysisLayout, stretch=1)
+        return self.clusteringcontrols
 
     @log(logger=logger)
     def get_save_filename(self) -> str:
@@ -160,8 +178,6 @@ class ClusteringView(MetaView, WalkthroughMixin):
             self.axes = self.figure.add_subplot(1, 1, 1, projection="3d")
         self.figure.set_layout_engine("constrained")
         self.canvas.draw()
-        self.allowed_cols = None
-        self.allowed_logs = None
         self.allowed_plot_type = None
 
     @log(logger=logger)
@@ -249,29 +265,14 @@ class ClusteringView(MetaView, WalkthroughMixin):
         )
 
     @log(logger=logger)
-    def set_cluster_column_exists(self, exists_in_table: Optional[str]) -> None:
-        """
-        Sets the status indicating if cluster columns already exist.
-
-        :param exists_in_table: Name of table where columns exist or None.
-        :type exists_in_table: Optional[str]
-        """
-        self.cluster_column_table = exists_in_table
-
-    @log(logger=logger)
-    def set_alter_database_status(self, status: bool) -> None:
-        """
-        Sets the success status of a database operation.
-
-        :param status: True if successful, False otherwise.
-        :type status: bool
-        """
-        self.operation_success = status
-
-    @log(logger=logger)
     def _commit_clusters(self, loader: str) -> None:
         """
-        Commits clustered data to the database, optionally overwriting existing clustering columns.
+        Begin committing the clustering result, checking for an existing one first.
+
+        Three parts, because a modal confirmation sits in the middle: this asks, and
+        :meth:`on_cluster_column_checked` continues when the answer arrives. Doing it in
+        one pass would mean reading each answer back off this widget, and a look-up that
+        failed would leave it acting on the *previous* commit's answers.
 
         :param loader: Name or ID of the database loader plugin.
         :type loader: str
@@ -279,59 +280,59 @@ class ClusteringView(MetaView, WalkthroughMixin):
         """
         if self.cluster_data is None:
             raise AttributeError("cluster data has not been set, unable to commit")
-        cluster_data = self.cluster_data[["id", "cluster_label", "cluster_confidence"]]
-        units = [None, None]
-        table_name = self.table_name
+        self.cluster_column_check_requested.emit(loader)
 
-        self.cluster_column_table = None
-        self.global_signal.emit(
-            "MetaDatabaseLoader",
-            loader,
-            "get_table_by_column",
-            ("cluster_label",),
-            "check_cluster_column_exists",
-            (),
-        )
-        if self.cluster_column_table is not None:
+    @log(logger=logger)
+    def on_cluster_column_checked(
+        self, loader: str, existing_table: Optional[str]
+    ) -> None:
+        """
+        Confirm an overwrite if needed, then ask the Controller to commit.
+
+        The confirmation stays in the View - it is a modal dialog - which is why this
+        is two round trips rather than one. ``existing_table`` being None means there
+        is nothing to overwrite and the commit proceeds without asking.
+
+        :param loader: Name or ID of the database loader plugin.
+        :type loader: str
+        :param existing_table: The table already holding cluster columns, or None.
+        :type existing_table: Optional[str]
+        :return: None
+        :rtype: None
+        """
+        if self.cluster_data is None:
+            self.logger.error("Cluster column check returned with no data to commit")
+            return
+        cluster_data = self.cluster_data[["id", "cluster_label", "cluster_confidence"]]
+
+        if existing_table is not None:
             reply = QMessageBox.question(
                 self,
                 "Confirm Overwrite",
                 "Clustering data already exists, are you sure you want to overwrite? This action cannot be undone.",
                 QMessageBox.Ok | QMessageBox.Cancel,
             )
-            if reply == QMessageBox.Ok:
-                self.operation_success = False
-                queries = [
-                    f"ALTER TABLE {self.cluster_column_table} DROP COLUMN cluster_label",
-                    f"ALTER TABLE {self.cluster_column_table} DROP COLUMN cluster_confidence",
-                    "DELETE FROM columns WHERE name = 'cluster_label'",
-                    "DELETE FROM columns WHERE name = 'cluster_confidence'",
-                ]
-
-                self.global_signal.emit(
-                    "MetaDatabaseLoader",
-                    loader,
-                    "alter_database",
-                    (queries,),
-                    "alter_database_status",
-                    (),
-                )
-                if self.operation_success is not True:
-                    self.add_text_to_display.emit(
-                        "Unable to delete clustering data, you will have to clean it up manually",
-                        self.__class__.__name__,
-                    )
-                    return
-            else:
+            if reply != QMessageBox.Ok:
                 return
-        self.global_signal.emit(
-            "MetaDatabaseLoader",
-            loader,
-            "add_columns_to_table",
-            (cluster_data, units, table_name),
-            "display_write_status",
-            (),
+
+        self.cluster_commit_requested.emit(
+            loader, cluster_data, self.table_name, existing_table
         )
+
+    @log(logger=logger)
+    def on_clusters_committed(self, loader: str, status: bool) -> None:
+        """
+        Refresh this tab and tell the rest of the app, once the write has landed.
+
+        :param loader: Name or ID of the database loader plugin.
+        :type loader: str
+        :param status: True if the write succeeded.
+        :type status: bool
+        :return: None
+        :rtype: None
+        """
+        if not status:
+            return
         self.update_available_columns(loader)  # refresh this tab locally
         self.plugin_state_changed.emit(
             "MetaDatabaseLoader", loader, "columns"
@@ -351,41 +352,27 @@ class ClusteringView(MetaView, WalkthroughMixin):
         self.table_name = table_name
 
     @log(logger=logger)
-    def set_units(self, units: Dict[str, Optional[str]]) -> None:
-        """
-        Sets the column units for current clustering configuration.
-
-        :param units: Mapping of column name to unit label.
-        :type units: Dict[str, Optional[str]]
-        """
-        self.units = units
-
-    @log(logger=logger)
     def update_available_columns(self, loader: str) -> None:
         """
-        Requests updated column names from the specified database loader.
+        Ask the Controller for the column names the given loader offers.
+
+        The answer arrives at ``update_column_names``. There is no try/except here:
+        emitting a request does not raise, and the call that can fail is the
+        Controller's, which is where a failure can be reported.
 
         :param loader: Identifier for the loader plugin.
         :type loader: str
         """
         if not loader or loader == "No Event Database":
             return
-        try:
-            self.global_signal.emit(
-                "MetaDatabaseLoader",
-                loader,
-                "get_column_names_by_table",
-                (),
-                "update_column_names",
-                (),
-            )
-        except Exception as e:
-            self.logger.error(f"Failed to request column data: {repr(e)}")
+        self.column_names_requested.emit(loader)
 
     @log(logger=logger)
     def update_units(self, loader: str, column: str) -> None:
         """
-        Requests units for a specific column from the database loader.
+        Ask the Controller for one column's unit string.
+
+        The answer arrives at ``update_column_units``.
 
         :param loader: Plugin name or ID.
         :type loader: str
@@ -396,17 +383,7 @@ class ClusteringView(MetaView, WalkthroughMixin):
         # rather than an error, so do not dispatch it as a plugin key.
         if not loader or loader == "No Event Database":
             return
-        try:
-            self.global_signal.emit(
-                "MetaDatabaseLoader",
-                loader,
-                "get_column_units",
-                (column,),
-                "update_column_units",
-                (column,),
-            )
-        except Exception as e:
-            self.logger.error(f"Failed to request units for column {column}: {repr(e)}")
+        self.column_units_requested.emit(loader, column)
 
     @log(logger=logger)
     def update_column_names(self, column_names: List[str]) -> None:
@@ -488,12 +465,16 @@ class ClusteringView(MetaView, WalkthroughMixin):
             available_columns=self.columns,
             available_methods=["HDBSCAN", "Gaussian Mixtures"],
             method_parameters={
+                # Each min is scikit-learn's own lower bound for the parameter it feeds
+                # (min_cluster_size, min_samples, cluster_selection_epsilon, n_components).
                 "HDBSCAN": [
-                    {"name": "Cluster Size", "type": "int"},
-                    {"name": "Min Points", "type": "int"},
-                    {"name": "Sensitivity", "type": "float"},
+                    {"name": "Cluster Size", "type": "int", "min": 2},
+                    {"name": "Min Points", "type": "int", "min": 1},
+                    {"name": "Sensitivity", "type": "float", "min": 0.0},
                 ],
-                "Gaussian Mixtures": [{"name": "Number of Clusters", "type": "int"}],
+                "Gaussian Mixtures": [
+                    {"name": "Number of Clusters", "type": "int", "min": 1}
+                ],
             },
             column_units=self.units,
             preselected_config=config_for_title,
@@ -506,8 +487,14 @@ class ClusteringView(MetaView, WalkthroughMixin):
 
             # Force close the walkthrough if dialog closes (reject or otherwise)
             if dialog.walkthrough_dialog:
+                # Finishing the tutorial clears walkthrough_dialog before the dialog
+                # closes, so there may be nothing left to close by then.
                 dialog.finished.connect(
-                    lambda _: dialog.walkthrough_dialog.force_close()
+                    lambda _: (
+                        dialog.walkthrough_dialog.force_close()
+                        if dialog.walkthrough_dialog
+                        else None
+                    )
                 )
 
         result = dialog.exec()
@@ -521,54 +508,37 @@ class ClusteringView(MetaView, WalkthroughMixin):
                 f"Clustering parameters updated for '{title}': {config_result}"
             )
             try:
-                clustered_data, labels, confidence, logs, norm, units, plot = (
-                    self._load_metadata_and_cluster(config_result, title)
-                )
+                self._load_metadata_and_request_clustering(config_result, title)
             except (ValueError, KeyError, TypeError) as e:
                 self.logger.error(f"Unable to cluster data: {repr(e)}")
                 return
-            if clustered_data is None:
-                self.logger.error("Unable to cluster data: dataframe came back empty")
-                return
-
-            self.add_text_to_display.emit(
-                f"{config_result['method']} applied to {len(clustered_data)} rows",
-                self.__class__.__name__,
-            )
-            self._reset_actions()
-            self.update_plot(
-                clustered_data, labels, confidence, logs, norm, units, plot
-            )
         else:
             self.logger.debug("Clustering dialog cancelled.")
 
     @log(logger=logger)
-    def _load_metadata_and_cluster(self, config: Dict[str, Any], loader: str) -> Tuple[
-        Any,  # clustering_data (likely a DataFrame)
-        Any,  # labels (e.g. ndarray or list)
-        Any,  # probs (e.g. ndarray or list)
-        List[Any],  # logs
-        List[Any],  # norm
-        List[Any],  # units
-        List[Any],  # plot
-    ]:
+    def _load_metadata_and_request_clustering(
+        self, config: Dict[str, Any], loader: str
+    ) -> None:
         """
-        Loads metadata from the database and performs clustering.
+        Validate the settings dialog's config and ask the Controller for the rows.
+
+        Split in two: the rows arrive at :meth:`on_metadata_loaded`, which does the
+        filtering and the clustering request. Asking for the query and the rows
+        separately would mean reading each answer back off this widget.
+
+        What stays here is validation of what the user just selected, which is the
+        View's own business: a duplicate column makes for a meaningless plot and is
+        worth refusing before anything is loaded.
 
         :param config: Dictionary with selected columns and method configuration.
         :type config: Dict[str, Any]
         :param loader: Identifier of the loader plugin.
         :type loader: str
-        :return: Tuple containing clustered data, labels, confidence, logs, normalized flags, units, and plot flags.
-        :rtype: Tuple[Any, Any, Any, List[Any], List[Any], List[Any], List[Any]]
-        :raises KeyError: If a duplicate column is selected, or if a selected column is missing from the loaded dataframe.
-        :raises ValueError: If the metadata query cannot be generated, no data matches the query, or the clustering method/parameters are invalid or missing.
+        :return: None
+        :rtype: None
+        :raises KeyError: If a duplicate column is selected.
         """
         columns = [val["column"] for val in config["columns"]]
-        units = [val["unit"] for val in config["columns"]]
-        logs = [val["log"] for val in config["columns"]]
-        norm = [val["norm"] for val in config["columns"]]
-        plot = [val["plot"] for val in config["columns"]]
 
         seen = set()
         for col in columns:
@@ -576,42 +546,41 @@ class ClusteringView(MetaView, WalkthroughMixin):
                 raise KeyError("All columns should be different for a meaningful plot")
             seen.add(col)
 
-        sql_filter = config["filter"]
-        self.global_signal.emit(
-            "MetaDatabaseLoader",
-            loader,
-            "construct_metadata_query",
-            (columns, sql_filter),
-            "relay_query",
-            (),
-        )
-        if self.query == "":
-            raise ValueError(
-                "Unable to generate metadata query, double check your solumn selections"
-            )
+        self.metadata_load_requested.emit(config, loader)
 
-        # Cleared first: a dispatch that fails never calls update_plot_data, so
-        # without this the guard below would cluster the previous run's rows.
-        self.plot_data = None
-        self.global_signal.emit(
-            "MetaDatabaseLoader",
-            loader,
-            "load_metadata",
-            (columns, sql_filter),
-            "update_plot_data",
-            (),
-        )
+    @log(logger=logger)
+    def on_metadata_loaded(
+        self, config: Dict[str, Any], loader: str, plot_data: pd.DataFrame
+    ) -> None:
+        """
+        Parse the settings dialog, then ask for the rows to be clustered.
 
-        # .empty as well as None: the loader now returns an empty frame for a
-        # query that matched nothing, and clustering an empty frame raises an
-        # opaque error from deep inside sklearn.
-        if self.plot_data is None or self.plot_data.empty:
-            raise ValueError("No data matches the given query")
+        The second half of :meth:`_load_metadata_and_request_clustering`. The rows are a
+        parameter now rather than something read back off ``self.plot_data``, so the
+        clear-before-emit guard that used to protect that read is gone with the read.
 
-        if not all(col in self.plot_data.columns for col in columns):
-            raise KeyError(
-                f"All columns {columns} must be present in the provided dataframe"
-            )
+        **The filtering itself is** :meth:`ClusteringModel.build_clustering_frame`'s.
+        What stays here is reading the settings dialog - the per-column flags and the
+        method parameters are strings the user typed, so a bad one is this form's
+        problem to report.
+
+        :param config: Dictionary with selected columns and method configuration.
+        :type config: Dict[str, Any]
+        :param loader: Identifier of the loader plugin.
+        :type loader: str
+        :param plot_data: the rows the Controller loaded
+        :type plot_data: pd.DataFrame
+        :return: None
+        :rtype: None
+        :raises ValueError: If the clustering method or its parameters are invalid or missing.
+        """
+        columns = [val["column"] for val in config["columns"]]
+        units = [val["unit"] for val in config["columns"]]
+        logs = [val["log"] for val in config["columns"]]
+        norm = [val["norm"] for val in config["columns"]]
+        plot = [val["plot"] for val in config["columns"]]
+
+        logged = {c for c, b in zip(columns, logs, strict=True) if b}
 
         # "id" is carried through for row identity, but is kept out of `columns` so
         # that `columns` stays index-aligned with the per-column flag lists (logs,
@@ -620,57 +589,86 @@ class ClusteringView(MetaView, WalkthroughMixin):
         # reach "id" - which is why it was never actually excluded from
         # normalization despite the code appearing to exclude it.
         frame_columns = columns + ["id"]
-        clustering_data = self.plot_data[frame_columns]
-        clustering_data = self._logscale_and_filter_dataframe(
-            clustering_data,
-            log_columns=[c for c, b in zip(columns, logs, strict=True) if b],
-        )
-        clustering_data = self._normalize_column_data(
-            clustering_data,
-            exclude_cols=[c for c, b in zip(columns, norm, strict=True) if not b]
-            + ["id"],
+
+        # Which columns to log-scale, index-aligned with `frame_columns` rather than
+        # with `columns`, since "id" is carried through the filter along with the rest.
+        log_flags = [c in logged for c in frame_columns]
+        exclude_cols = [c for c, b in zip(columns, norm, strict=True) if not b] + ["id"]
+
+        # Parsed here rather than in the Model: these are the strings the user typed
+        # into the settings dialog, so a bad one is this form's problem to report.
+        method = config["method"]
+        if method not in ("HDBSCAN", "Gaussian Mixtures"):
+            raise ValueError(f"Unknown clustering method: {method!r}")
+        try:
+            if method == "HDBSCAN":
+                params: Dict[str, Any] = {
+                    "min_cluster_size": int(
+                        config["method_params"]["HDBSCAN_Cluster_Size_input"]
+                    ),
+                    "min_samples": int(
+                        config["method_params"]["HDBSCAN_Min_Points_input"]
+                    ),
+                    "cluster_selection_epsilon": float(
+                        config["method_params"]["HDBSCAN_Sensitivity_input"]
+                    ),
+                }
+            else:
+                params = {
+                    "n_components": int(
+                        config["method_params"][
+                            "Gaussian Mixtures_Number_of_Clusters_input"
+                        ]
+                    )
+                }
+        except ValueError as e:
+            raise ValueError("Did you forget to fill in clustering parameters?") from e
+
+        # The per-column display flags are this View's own request context, not
+        # anything the Model or Controller needs, so they are held here rather than
+        # sent on a round trip. set_clustering_result reads them back.
+        self._pending_cluster_display = (method, logs, norm, units, plot)
+        # The unfiltered rows and the spec go out together; the Model filters,
+        # log-scales and rebuilds the frame, which is what took pandas out of this file.
+        self.cluster_requested.emit(
+            plot_data, frame_columns, log_flags, exclude_cols, method, params
         )
 
-        if config["method"] == "HDBSCAN":
-            try:
-                min_cluster_size = int(
-                    config["method_params"]["HDBSCAN_Cluster_Size_input"]
-                )
-                min_samples = int(config["method_params"]["HDBSCAN_Min_Points_input"])
-                cluster_selection_epsilon = float(
-                    config["method_params"]["HDBSCAN_Sensitivity_input"]
-                )
-            except ValueError as e:
-                raise ValueError(
-                    "Did you forget to fill in clustering parameters?"
-                ) from e
-            labels, probs = self._update_clusters_hdbscan(
-                clustering_data,
-                min_cluster_size=min_cluster_size,
-                min_samples=min_samples,
-                cluster_selection_epsilon=cluster_selection_epsilon,
-            )
-        elif config["method"] == "Gaussian Mixtures":
-            try:
-                n_components = int(
-                    config["method_params"][
-                        "Gaussian Mixtures_Number_of_Clusters_input"
-                    ]
-                )
-            except ValueError as e:
-                raise ValueError(
-                    "Did you forget to fill in clustering parameters?"
-                ) from e
-            columns_except_id = clustering_data.columns[clustering_data.columns != "id"]
-            clusterer = GaussianMixture(
-                n_components=n_components, n_init=100, random_state=42
-            )
-            labels = clusterer.fit_predict(clustering_data[columns_except_id])
-            probs = clusterer.predict_proba(clustering_data[columns_except_id])
-            probs = np.max(probs, axis=1) / np.sum(probs, axis=1)
-        else:
-            raise ValueError(f"Unknown clustering method: {config['method']!r}")
-        return clustering_data, labels, probs, logs, norm, units, plot
+    @log(logger=logger)
+    def set_clustering_result(
+        self,
+        data: pd.DataFrame,
+        labels: Union[Sequence[Any], np.ndarray],
+        confidence: Union[Sequence[Any], np.ndarray],
+    ) -> None:
+        """
+        Receive the Model's clustering result and plot it.
+
+        The other half of cluster_requested: the clustering is ClusteringModel's, so
+        everything that depends on its result is drawn from here rather than inline
+        after the call.
+
+        :param data: the normalized frame the Model clustered
+        :type data: pd.DataFrame
+        :param labels: cluster label per row
+        :type labels: Union[Sequence[Any], np.ndarray]
+        :param confidence: cluster confidence per row
+        :type confidence: Union[Sequence[Any], np.ndarray]
+        :return: None
+        :rtype: None
+        """
+        if self._pending_cluster_display is None:
+            self.logger.error("Clustering result arrived with no request outstanding")
+            return
+        method, logs, norm, units, plot = self._pending_cluster_display
+        self._pending_cluster_display = None
+
+        self.add_text_to_display.emit(
+            f"{method} applied to {len(data)} rows",
+            self.__class__.__name__,
+        )
+        self._reset_actions()
+        self.update_plot(data, labels, confidence, logs, norm, units, plot)
 
     @log(logger=logger)
     def update_plot(
@@ -866,64 +864,6 @@ class ClusteringView(MetaView, WalkthroughMixin):
             self.logger.debug(
                 f"notify_plugin_state_changed: ignoring, {plugin_key} != current selection {current}"
             )
-
-    @log(logger=logger)
-    def _normalize_column_data(
-        self, df: pd.DataFrame, exclude_cols: Optional[List[str]] = None
-    ) -> pd.DataFrame:
-        """
-        Applies MAD-based normalization to float columns in the dataframe.
-
-        :param df: Input DataFrame.
-        :type df: pd.DataFrame
-        :param exclude_cols: Columns to exclude from normalization. None means exclude nothing.
-        :type exclude_cols: Optional[List[str]]
-        :return: Normalized DataFrame.
-        :rtype: pd.DataFrame
-        """
-        if exclude_cols is None:
-            exclude_cols = []
-        df = df.copy()  # avoid SettingWithCopyWarning
-        datatypes = df.dtypes
-        for col, dt in datatypes.items():
-            if col not in exclude_cols and is_float_dtype(dt):  # leave int types alone
-                median = df[col].median()
-                mad = (df[col] - median).abs().median()
-                if mad != 0:
-                    df.loc[:, col] = (df[col] - median) / mad
-        return df
-
-    @log(logger=logger)
-    def _update_clusters_hdbscan(
-        self,
-        df: pd.DataFrame,
-        min_cluster_size: int = 30,
-        min_samples: int = 1,
-        cluster_selection_epsilon: float = 1,
-    ) -> tuple[np.ndarray, np.ndarray]:
-        """
-        Performs HDBSCAN clustering on the provided data.
-
-        :param df: DataFrame to cluster.
-        :type df: pd.DataFrame
-        :param min_cluster_size: Minimum size of clusters.
-        :type min_cluster_size: int
-        :param min_samples: Minimum samples per cluster.
-        :type min_samples: int
-        :param cluster_selection_epsilon: Epsilon value to influence cluster boundaries.
-        :type cluster_selection_epsilon: float
-        :return: Cluster labels and probabilities.
-        :rtype: tuple[np.ndarray, np.ndarray]
-        """
-        columns_except_id = df.columns[df.columns != "id"]
-        clusterer = hdbscan.HDBSCAN(
-            min_cluster_size=min_cluster_size,
-            min_samples=min_samples,
-            cluster_selection_epsilon=cluster_selection_epsilon,
-        ).fit(df[columns_except_id])
-        labels = clusterer.labels_
-        probs = clusterer.probabilities_
-        return labels, probs
 
     def get_current_view(self) -> str:
         return "ClusteringView"

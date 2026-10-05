@@ -30,9 +30,22 @@ import inspect
 import json
 import logging
 import os
+import time
 from collections import OrderedDict
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional, Set, Tuple, Union
+from types import ModuleType
+from typing import (
+    Any,
+    Dict,
+    FrozenSet,
+    Iterator,
+    List,
+    Mapping,
+    Optional,
+    Set,
+    Tuple,
+    Union,
+)
 
 from platformdirs import user_data_dir
 from PySide6.QtCore import QObject, Signal, Slot
@@ -69,6 +82,32 @@ class MainModel(QObject):
 
     add_text_to_display = Signal(str, str)
     logger = logging.getLogger(__name__)
+    #: How many times a session write retries a rename Windows briefly refuses.
+    REPLACE_ATTEMPTS = 5
+
+    #: The plugin families the app recognises, and the base class that identifies
+    #: each. A file is a plugin when it subclasses one of these. A class attribute
+    #: rather than rebuilt per call, since `refresh_available_plugins` makes
+    #: discovery a repeated operation and the mapping never varies.
+    ALLOWED_BASE_CLASSES: Dict[str, type] = {
+        "MetaFilter": MetaFilter,
+        "MetaReader": MetaReader,
+        "MetaWriter": MetaWriter,
+        "MetaEventLoader": MetaEventLoader,
+        "MetaEventFinder": MetaEventFinder,
+        "MetaEventFitter": MetaEventFitter,
+        "MetaDatabaseWriter": MetaDatabaseWriter,
+        "MetaDatabaseLoader": MetaDatabaseLoader,
+        "MetaController": MetaController,
+        "MetaView": MetaView,
+        "MetaModel": MetaModel,
+    }
+
+    #: Settings keys whose value is a real type rather than data. Session JSON
+    #: cannot hold a type, so it is written as its name and restored from that -
+    #: but only here. Matching on the string alone is what turned a setting whose
+    #: value happened to read "float" into `<class 'float'>`.
+    _TYPE_VALUED_KEYS: FrozenSet[str] = frozenset({"Type"})
 
     def __init__(self, app_config: Dict[str, Any]) -> None:
         """
@@ -120,39 +159,27 @@ class MainModel(QObject):
         allowed_base_classes: Tuple[type, ...],
     ) -> Optional[type]:
         """
-        Dynamically loads a plugin, ensuring it is a subclass of a supported abstract class.
+        Import one plugin file and return its class if it subclasses an allowed base.
 
-        Args:
-            plugin_key (str): The key representing the plugin to load.
+        The file ``<plugin_key>.py`` in ``folder`` is executed as a module with
+        :py:mod:`importlib`, one plugin at a time, and the class of the same name is
+        taken from it. The ``simple-plugin-loader`` package was considered and rejected
+        because it loads every plugin at once. Any failure - a missing file, an import
+        error, no class of that name, or a class outside ``allowed_base_classes`` - is
+        logged and yields ``None`` rather than raising.
 
-        Returns:
-            plugin_class (type): The loaded plugin class, or None if loading fails.
-
-        Note:
-            This method uses dynamic module loading as described in the Python documentation:
-            https://docs.python.org/3/library/importlib.html
-
-            The simple-plugin-loader package was initially considered but was found to be unsuitable
-            for on-demand loading as it loads all plugins upon execution:
-            https://pypi.org/project/simple-plugin-loader/
+        :param plugin_key: The plugin's name, which is both its file stem and its class name.
+        :type plugin_key: str
+        :param folder: The folder holding the plugin file.
+        :type folder: Union[str, Path]
+        :param allowed_base_classes: The bases a plugin class must inherit from to be accepted.
+        :type allowed_base_classes: Tuple[type, ...]
+        :return: The plugin class, or ``None`` if it could not be loaded or is not a plugin.
+        :rtype: Optional[type]
         """
         try:
-            plugin_file = f"{plugin_key}.py"
-            plugin_full_path = Path(folder, plugin_file)
-
-            if not plugin_full_path.exists():
-                raise FileNotFoundError(f"No plugin file found: {plugin_full_path}")
-            spec = importlib.util.spec_from_file_location(plugin_key, plugin_full_path)
-            if spec is not None:
-                module = importlib.util.module_from_spec(spec)
-                if spec.loader is not None:
-                    spec.loader.exec_module(module)
-                else:
-                    raise ValueError(
-                        "Unable to resolve spec.loader while loadinng plugin"
-                    )
-            else:
-                raise ValueError("Unable to resolve spec while loadinng plugin")
+            plugin_full_path = Path(folder, f"{plugin_key}.py")
+            module = self._import_plugin_module(plugin_key, plugin_full_path)
 
             # Get the plugin class from the module
             plugin_class = getattr(module, plugin_key, None)
@@ -184,48 +211,98 @@ class MainModel(QObject):
             )
             return None
 
+    def _import_plugin_module(
+        self, plugin_key: str, plugin_full_path: Path
+    ) -> ModuleType:
+        """
+        Execute one plugin file as a module and return it.
+
+        Separate from ``load_plugin`` so that the failures raised here are documented
+        where they are raised; ``load_plugin`` catches every one of them.
+
+        :param plugin_key: The name to give the module, which is the plugin's name.
+        :type plugin_key: str
+        :param plugin_full_path: The plugin file to execute.
+        :type plugin_full_path: Path
+        :return: The executed module.
+        :rtype: ModuleType
+        :raises FileNotFoundError: If the plugin file does not exist.
+        :raises ValueError: If importlib cannot build a spec or a loader for the file.
+        """
+        if not plugin_full_path.exists():
+            raise FileNotFoundError(f"No plugin file found: {plugin_full_path}")
+        spec = importlib.util.spec_from_file_location(plugin_key, plugin_full_path)
+        if spec is None:
+            raise ValueError("Unable to resolve spec while loadinng plugin")
+        if spec.loader is None:
+            raise ValueError("Unable to resolve spec.loader while loadinng plugin")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
     @log(logger=logger)
     def populate_available_plugins(
         self,
     ) -> Tuple[Dict[str, Dict[str, type]], Dict[str, List[str]]]:
         """
-        Get a dict of available plugin names, keyed by base class.
-        Each entry in the dict is a list of plugin class names.
-        Built at runtime by searching plugin directories.
-        """
-        allowed_base_classes = {
-            "MetaFilter": MetaFilter,
-            "MetaReader": MetaReader,
-            "MetaWriter": MetaWriter,
-            "MetaEventLoader": MetaEventLoader,
-            "MetaEventFinder": MetaEventFinder,
-            "MetaEventFitter": MetaEventFitter,
-            "MetaDatabaseWriter": MetaDatabaseWriter,
-            "MetaDatabaseLoader": MetaDatabaseLoader,
-            "MetaController": MetaController,
-            "MetaView": MetaView,
-            "MetaModel": MetaModel,
-        }
+        Find every plugin the app can offer, keyed by the family it belongs to.
 
+        Walks the shipped plugin tree and then the user's plugin folder, importing
+        each file to see what it subclasses.
+
+        Plugin names are unique across the whole app rather than per family, so the
+        duplicate check here is keyed by name alone. Built-ins are walked first, so
+        a user file of the same name is the one rejected - without that, it
+        silently replaced the shipped plugin and there was no way to tell which had
+        run.
+
+        :return: The plugin classes keyed by family then name, and the same names
+            as a plain list per family.
+        :rtype: Tuple[Dict[str, Dict[str, type]], Dict[str, List[str]]]
+        """
         available_plugin_classes: Dict[str, Dict[str, type]] = {
-            k: {} for k in allowed_base_classes
+            k: {} for k in self.ALLOWED_BASE_CLASSES
         }
         available_plugins_list: Dict[str, List[str]] = {
-            k: [] for k in allowed_base_classes
+            k: [] for k in self.ALLOWED_BASE_CLASSES
         }
-
-        # plugin names are unique across the whole app, not per metaclass, so this is
-        # keyed by name alone. Built-ins are walked before the user plugin folder, so
-        # without this check a user file of the same name silently replaced the shipped
-        # plugin and there was no way to tell which one had run.
         seen_plugin_names: Set[str] = set()
 
-        plugin_dirs_to_search = [
+        for plugin_folder, plugin_name in self._plugin_files():
+            found = self._classify_plugin_file(plugin_folder, plugin_name)
+            if found is None:
+                continue
+            metaclass, subclass, plugin_class = found
+
+            if subclass in seen_plugin_names:
+                self.logger.error(
+                    f"More than one plugin is named {subclass}. The copy at "
+                    f"{Path(plugin_folder, plugin_name)} is ignored; rename it "
+                    f"to load it."
+                )
+                continue
+
+            seen_plugin_names.add(subclass)
+            available_plugin_classes[metaclass][subclass] = plugin_class
+            available_plugins_list[metaclass].append(subclass)
+
+        return available_plugin_classes, available_plugins_list
+
+    def _plugin_files(self) -> Iterator[Tuple[Path, str]]:
+        """
+        Yield every candidate plugin file, the shipped ones before the user's.
+
+        The order is load-bearing rather than incidental: the caller rejects the
+        *second* file of any given name, so walking the shipped tree first is what
+        decides that a user file loses a name collision.
+
+        :yield: The containing folder and file name of each file worth importing.
+        :ytype: Tuple[Path, str]
+        """
+        for base_path in (
             self.plugin_path,
             Path(self.get_app_config("User Plugin Folder")),
-        ]
-
-        for base_path in plugin_dirs_to_search:
+        ):
             if not Path(base_path).is_dir():
                 self.logger.warning(
                     f"Skipping plugin directory {base_path}: not a valid directory"
@@ -233,52 +310,100 @@ class MainModel(QObject):
                 continue
 
             for root_dir, _, files in os.walk(base_path):
-                try:
-                    files = [
-                        f for f in files if f.endswith(".py") and f != "__init__.py"
-                    ]
-                except Exception as e:
-                    self.logger.warning(f"Error reading files in {root_dir}: {e}")
-                    continue
+                for plugin_name in self._python_files(root_dir, files):
+                    yield Path(root_dir), plugin_name
 
-                for plugin_name in files:
-                    subclass = plugin_name[:-3]
-                    plugin_folder = Path(root_dir)
-                    try:
-                        plugin_class = self.load_plugin(
-                            subclass,
-                            plugin_folder,
-                            tuple(allowed_base_classes.values()),
-                        )
-                    except Exception as e:
-                        self.logger.warning(f"Failed to load plugin {subclass}: {e}")
-                        plugin_class = None
+    def _python_files(self, root_dir: str, files: List[str]) -> List[str]:
+        """
+        Pick the importable files out of one directory's listing.
 
-                    metaclass = None
-                    for key, val in allowed_base_classes.items():
-                        if (
-                            plugin_class
-                            and isinstance(plugin_class, type)
-                            and issubclass(plugin_class, val)
-                        ):
-                            metaclass = key
-                            break
+        The guard is inherited rather than newly added. Filtering a list of names
+        that `os.walk` has already produced should not be able to fail, but this
+        walks user-supplied directories and the cost of keeping it is one branch in
+        a small method, so it stays.
 
-                    # plugin_class is necessarily non-None whenever metaclass was
-                    # set above; the explicit check is what lets mypy see that.
-                    if metaclass and plugin_class is not None:
-                        if subclass in seen_plugin_names:
-                            self.logger.error(
-                                f"More than one plugin is named {subclass}. The copy at "
-                                f"{Path(plugin_folder, plugin_name)} is ignored; rename it "
-                                f"to load it."
-                            )
-                            continue
-                        seen_plugin_names.add(subclass)
-                        available_plugin_classes[metaclass][subclass] = plugin_class
-                        available_plugins_list[metaclass].append(subclass)
+        :param root_dir: The directory being listed, named only in the warning.
+        :type root_dir: str
+        :param files: The file names `os.walk` gave for that directory.
+        :type files: List[str]
+        :return: The names worth importing, empty if the listing could not be read.
+        :rtype: List[str]
+        """
+        try:
+            return [f for f in files if f.endswith(".py") and f != "__init__.py"]
+        except Exception as e:
+            self.logger.warning(f"Error reading files in {root_dir}: {e}")
+            return []
 
-        return available_plugin_classes, available_plugins_list
+    def _classify_plugin_file(
+        self, plugin_folder: Path, plugin_name: str
+    ) -> Optional[Tuple[str, str, type]]:
+        """
+        Import one file and work out which plugin family, if any, it belongs to.
+
+        :param plugin_folder: The directory holding the file.
+        :type plugin_folder: Path
+        :param plugin_name: The file's name, including its `.py`.
+        :type plugin_name: str
+        :return: The family, the plugin's name and its class, or None if the file
+            is not a plugin or could not be imported.
+        :rtype: Optional[Tuple[str, str, type]]
+        """
+        subclass = plugin_name[:-3]
+        plugin_class = self._load_plugin_class(subclass, plugin_folder)
+
+        # Covers both a failed import, which gives None, and a file that defines
+        # something other than a class under the name we looked for.
+        if not isinstance(plugin_class, type):
+            return None
+
+        metaclass = self._metaclass_for(plugin_class)
+        if metaclass is None:
+            return None
+        return metaclass, subclass, plugin_class
+
+    def _load_plugin_class(self, subclass: str, plugin_folder: Path) -> Optional[type]:
+        """
+        Import one candidate file, giving back None rather than raising.
+
+        Discovery executes every file it walks, including the user's, so anything
+        at all can come out of this - and one bad file must not stop the rest of
+        the plugins loading.
+
+        :param subclass: The file's name without its extension, which is also the
+            class name looked for inside it.
+        :type subclass: str
+        :param plugin_folder: The directory holding the file.
+        :type plugin_folder: Path
+        :return: The class, or None if the file could not be imported.
+        :rtype: Optional[type]
+        """
+        try:
+            return self.load_plugin(
+                subclass,
+                plugin_folder,
+                tuple(self.ALLOWED_BASE_CLASSES.values()),
+            )
+        except Exception as e:
+            self.logger.warning(f"Failed to load plugin {subclass}: {e}")
+            return None
+
+    def _metaclass_for(self, plugin_class: type) -> Optional[str]:
+        """
+        Name the plugin family a class belongs to.
+
+        First match wins. The eleven families are disjoint in practice, so the
+        order of `ALLOWED_BASE_CLASSES` does not decide anything today.
+
+        :param plugin_class: The class to classify.
+        :type plugin_class: type
+        :return: The family's name, or None if it subclasses none of them.
+        :rtype: Optional[str]
+        """
+        for name, base in self.ALLOWED_BASE_CLASSES.items():
+            if issubclass(plugin_class, base):
+                return name
+        return None
 
     @log(logger=logger)
     def refresh_available_plugins(self) -> None:
@@ -313,40 +438,6 @@ class MainModel(QObject):
     @log(logger=logger)
     def get_plugin_classes(self, metaclass: str) -> Dict[str, type]:
         return self.available_plugin_classes[metaclass]
-
-    @log(logger=logger)
-    def get_plugin(self, metaclass: str, subclass: str) -> Optional[type]:
-        try:
-            return self.available_plugin_classes[metaclass][subclass]
-        except KeyError:
-            self.logger.error(f"unable to load class {metaclass} {subclass}")
-            return None
-
-    @log(logger=logger)
-    def get_plugin_data(self, plugin_key: str) -> Dict[str, Any]:
-        """
-        Fetches plugin data from the local application data JSON file.
-
-        Args:
-            plugin_key (str): The key representing the plugin to retrieve data for.
-
-        Returns:
-            dict: Plugin data if available, otherwise returns an empty dictionary.
-        """
-        file_path = Path(user_data_dir(), "Poriscope", "session", "plugin_history.json")
-        if not file_path.exists():
-            self.logger.error(f"Plugin data file does not exist: {file_path}")
-            return {}
-
-        try:
-            with open(file_path, "r") as file:
-                data = json.load(file)
-                plugin_data = data.get(plugin_key, {})
-                self.replace_class_names_with_classes(plugin_data)
-                return plugin_data
-        except Exception as e:
-            self.logger.error(f"Failed to load plugin data for {plugin_key}: {e}")
-            return {}
 
     @log(logger=logger)
     def save_session(
@@ -384,8 +475,7 @@ class MainModel(QObject):
         if save_file is None:
             save_file = Path(self.session_path, "plugin_history.json")
         try:
-            with open(save_file, "w") as jf:
-                json.dump(json_dump, jf, indent=4)
+            self._write_json_atomically(json_dump, save_file)
         except Exception as e:
             message = f"Unable to save session to {save_file}: {e}"
             if user_specified:
@@ -423,8 +513,7 @@ class MainModel(QObject):
         if save_file is None:
             save_file = Path(self.session_path, "tab_action_history.json")
         try:
-            with open(save_file, "w") as jf:
-                json.dump(json_dump, jf, indent=4)
+            self._write_json_atomically(json_dump, save_file)
         except Exception as e:
             message = f"Unable to save tab action history to {save_file}: {e}"
             if user_specified:
@@ -437,38 +526,114 @@ class MainModel(QObject):
                     self.__class__.__name__,
                 )
 
+    def _write_json_atomically(self, data: Any, save_file: Union[str, Path]) -> None:
+        """
+        Write ``data`` as JSON so that a failure leaves the previous file untouched.
+
+        It is written to a temporary file beside ``save_file`` and moved over it only
+        once complete. Opening the target for writing first truncated it, so a value
+        that could not be serialised left the session file cut off mid-entry.
+
+        The move is retried briefly on ``PermissionError``: on Windows a file that was
+        just written is held open for a moment by scanners such as Defender, and the
+        rename is refused - 14 of 300 rapid saves in the temp folder - which would
+        otherwise be reported as autosave having stopped.
+
+        :param data: the JSON-serialisable content
+        :type data: Any
+        :param save_file: the file to write
+        :type save_file: Union[str, Path]
+        :raises PermissionError: if the rename is still refused after every retry
+        :raises Exception: whatever writing or serialising raised; the temporary file
+            is removed first
+        """
+        target = Path(save_file)
+        temporary = target.with_name(target.name + ".tmp")
+        try:
+            with open(temporary, "w") as jf:
+                json.dump(data, jf, indent=4)
+            for attempt in range(self.REPLACE_ATTEMPTS):
+                try:
+                    os.replace(temporary, target)
+                    break
+                except PermissionError:
+                    if attempt == self.REPLACE_ATTEMPTS - 1:
+                        raise
+                    time.sleep(0.05 * (attempt + 1))
+        except Exception:
+            temporary.unlink(missing_ok=True)
+            raise
+
     @log(logger=logger)
     def load_session(
         self, file_name: Optional[Union[str, Path]] = None
     ) -> Optional[Dict[str, Any]]:
+        """
+        Read a saved session, or None if the file is missing, unreadable, or not a session.
+
+        A session maps each key to an entry carrying ``metaclass`` and ``subclass``, as
+        every writer of the history produces; anything else - a tab action history
+        from the same folder, a config file - is refused here, before the caller resets
+        the workspace to apply it. The caller reports a refusal to the user.
+
+        :param file_name: the file to read, or None for the default session file
+        :type file_name: Optional[Union[str, Path]]
+        :return: the session, or None if it could not be loaded
+        :rtype: Optional[Dict[str, Any]]
+        """
         if not file_name:
             file_name = Path(self.session_path, "plugin_history.json")
         try:
             with open(file_name, "r") as jf:
                 plugin_history = json.load(jf, object_pairs_hook=OrderedDict)
-        except Exception:
-            self.logger.info(
-                "Unable to load previous session. Session history will not be available, but you can continue normally."
-            )
+        except Exception as e:
+            self.logger.debug(f"Unable to read a session from {file_name}: {e}")
             return None
-        else:
-            self.replace_class_names_with_classes(plugin_history)
-            return plugin_history
+        if not isinstance(plugin_history, dict) or not all(
+            isinstance(entry, dict) and "metaclass" in entry and "subclass" in entry
+            for entry in plugin_history.values()
+        ):
+            self.logger.debug(f"{file_name} does not hold a session")
+            return None
+        self.replace_class_names_with_classes(plugin_history)
+        return plugin_history
 
     @log(logger=logger)
     def replace_classes_with_class_names(self, d: Any) -> None:
-        if isinstance(d, dict):
-            for key, value in d.items():
-                if isinstance(value, dict):
-                    self.replace_classes_with_class_names(value)
-                elif isinstance(value, type):
-                    d[key] = value.__name__
-        elif isinstance(d, list):
-            for i in range(len(d)):
-                if isinstance(d[i], dict):
-                    self.replace_classes_with_class_names(d[i])
-                elif isinstance(d[i], type):
-                    d[i] = d[i].__name__
+        """
+        Replace every type in a settings tree with its name, so it can be written as JSON.
+
+        A plugin setting carries a real type under `Type` - `float`, `str` and so
+        on - and JSON cannot hold one, so it is written as its name and turned
+        back by `replace_class_names_with_classes` on load.
+
+        This converts a type under *any* key, not only the expected ones, so that
+        no save can fail on a value `json.dump` cannot serialise. It warns about
+        the unexpected ones, because the load side will not convert those back:
+        the asymmetry is deliberate, and the warning is what stops it being
+        silent.
+
+        Only dict values are walked. A list nested in a dict is not visited - the
+        branch that once claimed to do so was unreachable from every caller, and
+        nothing needs it: `Options` holds plugin names, not types.
+
+        :param d: The settings tree, edited in place.
+        :type d: Any
+        """
+        if not isinstance(d, dict):
+            return
+
+        for key, value in d.items():
+            if isinstance(value, dict):
+                self.replace_classes_with_class_names(value)
+            elif isinstance(value, type):
+                if key not in self._TYPE_VALUED_KEYS:
+                    self.logger.warning(
+                        f"Saving the type {value.__name__} under the key '{key}', "
+                        f"which is not restored as a type on load - it will come "
+                        f"back as the string '{value.__name__}'."
+                    )
+                d[key] = value.__name__
 
     @log(logger=logger)
     def replace_class_names_with_classes(
@@ -476,22 +641,33 @@ class MainModel(QObject):
         d: Any,
         class_dict: Mapping[str, Any] = _JSON_CLASS_NAMES,
     ) -> None:
-        if isinstance(d, dict):
-            for key, value in d.items():
-                if isinstance(value, dict):
-                    self.replace_class_names_with_classes(value, class_dict)
-                elif isinstance(value, str):
-                    # Check if the value is a class name in the provided class_dict
-                    if value in class_dict:
-                        d[key] = class_dict[value]
-        elif isinstance(d, list):
-            for i in range(len(d)):
-                if isinstance(d[i], dict):
-                    self.replace_class_names_with_classes(d[i], class_dict)
-                elif isinstance(d[i], str):
-                    # Check if the value is a class name in the provided class_dict
-                    if d[i] in class_dict:
-                        d[i] = class_dict[d[i]]
+        """
+        Turn the type names written into session JSON back into real types.
+
+        **Only under the keys that actually hold a type.** Matching on the string
+        alone converted any setting whose *value* happened to read `"float"` into
+        `<class 'float'>`, so a plugin configured with `Event Type: "float"` came
+        back corrupted. The key is what distinguishes a serialised type from a
+        string that looks like one, because the save side only ever writes a type
+        name in place of a type.
+
+        A name the map does not know is left exactly as written.
+
+        Only dict values are walked, matching the save side.
+
+        :param d: The settings tree, edited in place.
+        :type d: Any
+        :param class_dict: The names to restore, and the types to restore them to.
+        :type class_dict: Mapping[str, Any]
+        """
+        if not isinstance(d, dict):
+            return
+
+        for key, value in d.items():
+            if isinstance(value, dict):
+                self.replace_class_names_with_classes(value, class_dict)
+            elif key in self._TYPE_VALUED_KEYS and isinstance(value, str):
+                d[key] = class_dict.get(value, value)
 
     @log(logger=logger)
     def reset_app_config(self) -> Dict[str, Any]:

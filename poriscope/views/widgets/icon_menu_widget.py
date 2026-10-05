@@ -151,7 +151,7 @@ class IconMenuWidget(QWidget):
             layout,
             "help",
             os.path.join(self.icon_path, "help-white.png"),
-            os.path.join(self.icon_path, "help-252.png"),
+            os.path.join(self.icon_path, "help-black.png"),
             25,
             self.handleHelp,
             "Get help",
@@ -263,7 +263,7 @@ class IconMenuWidget(QWidget):
         button = QPushButton(self)
         button.setObjectName("icon_menu_pushButton")
         icon = QIcon()
-        icon_file = os.path.join(self.icon_path, "tcossalab.png")
+        icon_file = os.path.join(self.icon_path, "TCossaLab.png")
         icon.addFile(icon_file, QSize(), QIcon.Normal, QIcon.Off)
         button.setIcon(icon)
         button.setIconSize(QSize(50, 50))
@@ -329,17 +329,15 @@ class IconMenuWidget(QWidget):
 
     @log(logger=logger)
     def handleHelp(self) -> None:
-        self.switchToHelp.emit()
+        # connectSignals already emits switchToHelp on this click.
+        self.logger.info("Help clicked")
 
     @log(logger=logger)
     def handleSettings(self) -> None:
-        self.switchToSettings.emit()
+        # connectSignals already emits switchToSettings on this click.
+        self.logger.info("Settings clicked")
 
     # Slot methods to update button states
-    @log(logger=logger)
-    def setMenuChecked(self, checked: bool) -> None:
-        self.menu_button.setChecked(checked)
-
     @log(logger=logger)
     def setRawDataChecked(self, checked: bool) -> None:
         self.raw_data_icon_button.setChecked(checked)

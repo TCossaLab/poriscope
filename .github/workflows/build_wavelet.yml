@@ -1,29 +1,35 @@
 # GitHub Actions Workflow: Build Wavelet Libraries
 #
 # This workflow runs on Ubuntu and:
-#  1. Installs required compilers (gcc, clang, mingw-w64).
-#  2. Builds the Wavelet library in three formats:
+#  1. Installs required compilers (gcc, mingw-w64).
+#  2. Builds the Wavelet library for the two platforms it can build natively:
 #       - Linux shared object (.so)
 #       - Windows dynamic link library (.dll)
-#       - macOS-style dynamic library (.dylib, built via clang on Linux)
 #  3. Uploads the compiled binaries as an artifact.
-#  4. Commits and pushes the built binaries in `dist/` back to the `main` branch
+#  4. Commits and pushes the built binaries in `dist/` back to `develop`
 #     (only if there are changes).
 #
 # Note:
-#   - The `.dylib` built on Linux is not a native macOS binary, it is produced
-#     using clang for compatibility testing and naming purposes.
-#   - Ensure branch protections allow this workflow to push changes to `main`,
-#     or restrict usage to `workflow_dispatch` (manual trigger).
+#   - No macOS library is built or shipped: one cross-built here would be a Linux
+#     ELF file that macOS cannot load. A macOS user builds one with `make dylib`
+#     and points PORISCOPE_WAVELET_PATH at it.
+#   - It runs when the C source or the Makefile changes on `develop`, so rebuilt
+#     binaries land before a release branch is cut rather than on `main` after the
+#     release is tagged. The DLL links without timestamps, so rebuilding unchanged
+#     source commits nothing.
 
-name: Build Wavelet (Linux .so, Windows .dll, macOS-style .dylib)
+name: Build Wavelet (Linux .so, Windows .dll)
 
 on:
   # Manual trigger
   workflow_dispatch:
-  # Automatic run on pushes to main
+  # Automatic run when the library's source changes on develop
   push:
-    branches: [ main ]
+    branches: [ develop ]
+    paths:
+      - "poriscope/cdlls/wavelet/src/**"
+      - "poriscope/cdlls/wavelet/lib/**"
+      - "poriscope/cdlls/wavelet/Makefile"
 
 # Required so the workflow can push back to the repo
 permissions:
@@ -56,24 +62,22 @@ jobs:
           # so the `|| true` is load-bearing - without it the guard fails the step it protects.
           sudo grep -rl packages.microsoft.com /etc/apt/sources.list.d/ | sudo xargs -r rm -f || true
           sudo apt-get update
-          sudo apt-get install -y build-essential make gcc clang mingw-w64
+          sudo apt-get install -y build-essential make gcc mingw-w64
 
       # 3. Display versions for debugging
       - name: Show toolchain versions
         run: |
           echo "gcc: $(gcc --version | head -n1)"
-          echo "clang: $(clang --version | head -n1)"
           echo "mingw: $(x86_64-w64-mingw32-gcc --version | head -n1)"
           echo "uname: $(uname -a)"
 
-      # 4. Run Makefile to build .so, .dll, .dylib
+      # 4. Run Makefile to build .so and .dll
       - name: Build Wavelet libraries
         working-directory: poriscope/cdlls/wavelet
         run: |
           make clean
           make so       # Build Linux .so
           make dll      # Build Windows .dll (via mingw)
-          make dylib    # Build macOS-style .dylib (via clang)
 
       # 5. Verify that outputs exist in dist/
       - name: Verify outputs
@@ -82,7 +86,6 @@ jobs:
           ls -la
           test -f wavelet.so     || (echo "Missing wavelet.so" && exit 1)
           test -f wavelet.dll    || (echo "Missing wavelet.dll" && exit 1)
-          test -f wavelet.dylib  || (echo "Missing wavelet.dylib" && exit 1)
 
       # 6. Upload dist/ as a build artifact
       - name: Upload artifact (dist/)
@@ -93,9 +96,9 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      # 7. Commit and push dist/ updates back to main (only if changes exist)
+      # 7. Commit and push dist/ updates back to develop (only if changes exist)
       - name: Commit & push dist/ binaries
-        if: github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/develop'
         run: |
           # Configure git identity for commits
           git config user.name "github-actions[bot]"
@@ -106,8 +109,8 @@ jobs:
 
           # Commit only if there are modifications
           if ! git diff --cached --quiet; then
-            git commit -m "chore(wavelet): update built binaries (.so/.dll/.dylib) [skip ci]"
-            git push origin main
+            git commit -m "chore(wavelet): update built binaries (.so/.dll) [skip ci]"
+            git push origin develop
           else
             echo "No changes to commit."
           fi

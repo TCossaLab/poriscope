@@ -6,6 +6,11 @@ from unittest.mock import patch
 import numpy as np
 import pytest
 
+from poriscope.plugins.eventfinders.BoundedBlockageFinder import BoundedBlockageFinder
+from poriscope.plugins.eventfinders.ClassicBlockageFinder import ClassicBlockageFinder
+from poriscope.plugins.eventfinders.ThresholdBlockageFinder import (
+    ThresholdBlockageFinder,
+)
 from poriscope.utils.MetaEventFinder import MetaEventFinder
 from poriscope.utils.MetaReader import MetaReader
 
@@ -23,7 +28,6 @@ class FakeReader(MetaReader):
         channels: Tuple[int, ...] = (0,),
         key: str = "reader1",
         experiment_name: str = "exp1",
-        raw_dtype: type = np.float64,
         serial: bool = False,
         serial_raises: bool = False,
     ):
@@ -32,7 +36,6 @@ class FakeReader(MetaReader):
         self.channels = channels
         self.key = key
         self.experiment_name = experiment_name
-        self.raw_dtype = raw_dtype
         self.serial = serial
         self.serial_raises = serial_raises
 
@@ -48,19 +51,16 @@ class FakeReader(MetaReader):
     def get_channel_length(self, channel):
         return len(self.data[channel])
 
-    def load_data(self, start_sec, length_sec, channel, raw_data=False):
+    def _chunk(self, start_sec, length_sec, channel):
         start_idx = int(round(start_sec * self.samplerate))
         n = int(round(length_sec * self.samplerate))
-        chunk = self.data[channel][start_idx : start_idx + n]
-        if raw_data:
-            return chunk, 1.0, 0.0
-        return chunk
+        return self.data[channel][start_idx : start_idx + n]
+
+    def load_data(self, start_sec, length_sec, channel):
+        return self._chunk(start_sec, length_sec, channel)
 
     def get_base_experiment_name(self):
         return self.experiment_name
-
-    def get_raw_dtype(self):
-        return self.raw_dtype
 
     def force_serial_channel_operations(self):
         if self.serial_raises:
@@ -289,6 +289,53 @@ class TestInitAndSettings:
         assert settings["MetaReader"]["Value"] == ""
         assert settings["MetaReader"]["Options"] is None
 
+    def test_get_empty_settings_declares_threshold(self, finder):
+        # find_events reads Threshold in the base loop, so the base has to declare
+        # it; the unit is each subclass's to set, since the shipped finders
+        # disagree on it.
+        settings = finder.get_empty_settings(standalone=True)
+        assert settings["Threshold"] == {
+            "Type": float,
+            "Value": None,
+            "Min": 0.0,
+            "Units": None,
+        }
+
+    def test_finder_built_from_the_base_schema_finds_events(self, reader):
+        # A finder that adds nothing to the base's settings - what new_plugin.py
+        # generates - must be able to run the base loop once its values are filled.
+        settings = ConcreteEventFinder.get_empty_settings(
+            ConcreteEventFinder.__new__(ConcreteEventFinder), standalone=True
+        )
+        settings["MetaReader"] = {"Type": None, "Value": reader, "Options": None}
+        settings["Threshold"]["Value"] = 20.0
+        f = build_finder(settings)
+        progress = list(f.find_events(0, [(0, 0)], chunk_length=10.0))
+        assert progress[-1] == 1.0
+        assert f.num_events_found[0] == 2
+
+
+class TestShippedFinderThresholdUnits:
+    """Each shipped finder sets the unit of the Threshold the base declares."""
+
+    def test_classic_blockage_finder_threshold_is_in_pA(self):
+        settings = ClassicBlockageFinder.get_empty_settings(
+            ClassicBlockageFinder.__new__(ClassicBlockageFinder), standalone=True
+        )
+        assert settings["Threshold"]["Units"] == "pA"
+
+    def test_bounded_blockage_finder_threshold_is_in_pA(self):
+        settings = BoundedBlockageFinder.get_empty_settings(
+            BoundedBlockageFinder.__new__(BoundedBlockageFinder), standalone=True
+        )
+        assert settings["Threshold"]["Units"] == "pA"
+
+    def test_threshold_blockage_finder_threshold_is_in_sigma(self):
+        settings = ThresholdBlockageFinder.get_empty_settings(
+            ThresholdBlockageFinder.__new__(ThresholdBlockageFinder), standalone=True
+        )
+        assert settings["Threshold"]["Units"] == "σ"
+
 
 # ---------------------------------------------------------------------------
 # report_channel_status
@@ -380,7 +427,7 @@ class TestResetChannel:
 
 
 # ---------------------------------------------------------------------------
-# get_samplerate / get_base_experiment_name / get_channels / get_dtype
+# get_samplerate / get_base_experiment_name / get_channels
 # ---------------------------------------------------------------------------
 class TestSimpleReaderDelegates:
     def test_get_samplerate_no_reader_raises(self, bare_finder):
@@ -403,13 +450,6 @@ class TestSimpleReaderDelegates:
 
     def test_get_channels(self, finder):
         assert finder.get_channels() == [0, 1]
-
-    def test_get_dtype_no_reader_raises(self, bare_finder):
-        with pytest.raises(AttributeError):
-            bare_finder.get_dtype()
-
-    def test_get_dtype(self, finder):
-        assert finder.get_dtype() is np.float64
 
 
 # ---------------------------------------------------------------------------
@@ -504,6 +544,27 @@ class TestFindEventsHappyPath:
         gen = finder.find_events(0, [(-5.0, 10.0)], chunk_length=10.0)
         list(gen)
         assert finder.eventfinding_finished[0] is True
+
+    def test_a_multi_range_find_is_not_finished_until_its_last_range(self, finder):
+        """
+        Finding events over several ranges reports the channel finished only at the end.
+
+        Each range used to mark the channel finished as it completed, so while a later
+        range was still being searched the status said done and the count was partial,
+        and a commit started then would write a partial event list.
+        """
+        # Two-second chunks, as in test_small_chunk_length_straddles_event: shorter ones
+        # leave this fixture's chunks half event and find nothing.
+        gen = finder.find_events(0, [(0, 3.0), (5.0, 0)], chunk_length=2.0)
+        status_while_running = []
+        for _ in gen:
+            status_while_running.append(finder.get_eventfinding_status(0))
+
+        # The final yield comes after the channel is marked finished; every one before
+        # it is mid-run.
+        assert status_while_running[:-1] == [False] * (len(status_while_running) - 1)
+        assert finder.get_eventfinding_status(0) is True
+        assert finder.get_num_events_found(0) == 2
 
 
 class TestFindEventsErrorBranches:
@@ -643,7 +704,8 @@ class TestFindEventsSingleRange:
         assert len(finder.event_starts[0]) == 2
         assert len(finder.event_ends[0]) == 2
         assert finder.num_events_found[0] == 2
-        assert finder.eventfinding_finished[0] is True
+        # One range of possibly several: only find_events marks the channel finished.
+        assert not finder.eventfinding_finished.get(0)
 
     def test_chunk_length_none_defaults_to_one_second(self, finder):
         # default chunk_length (None -> 1s = 100 samples here) chunks the
@@ -703,7 +765,8 @@ class TestFindEventsSingleRange:
         self._reset(finder)
         # end far beyond available samples should be clamped
         list(finder._find_events_single_range(0, 0, 1000.0, 10.0))
-        assert finder.eventfinding_finished[0] is True
+        # One range of possibly several: only find_events marks the channel finished.
+        assert not finder.eventfinding_finished.get(0)
 
     def test_chunk_length_larger_than_total_samples_is_clamped(self, finder):
         self._reset(finder)
@@ -783,7 +846,8 @@ class TestFindEventsSingleRange:
             list(finder._find_events_single_range(0, 0, 10.0, 10.0))
         assert finder.event_starts[0] == [10]
         assert finder.event_ends[0] == [60]
-        assert finder.eventfinding_finished[0] is True
+        # One range of possibly several: only find_events marks the channel finished.
+        assert not finder.eventfinding_finished.get(0)
 
 
 # ---------------------------------------------------------------------------
@@ -942,8 +1006,8 @@ class TestGetSingleEventData:
         event = finder.get_single_event_data(0, 0)
         assert event is not None
         assert "data" in event
-        assert event["scale"] is None
-        assert event["offset"] is None
+        # The data is always pA, so there is no scale or offset to report with it.
+        assert "scale" not in event and "offset" not in event
 
     def test_index_out_of_bounds_returns_none(self, finder):
         list(finder.find_events(0, [(0, 0)], chunk_length=10.0))
@@ -965,13 +1029,6 @@ class TestGetSingleEventData:
         list(finder.find_events(0, [(0, 0)], chunk_length=10.0))
         event = finder.get_single_event_data(0, 0, rectify=True)
         assert event is not None
-
-    def test_raw_data_path(self, finder):
-        list(finder.find_events(0, [(0, 0)], chunk_length=10.0))
-        event = finder.get_single_event_data(0, 0, raw_data=True)
-        assert event is not None
-        assert event["scale"] == 1.0
-        assert event["offset"] == 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -1031,6 +1088,186 @@ class TestRemainingPreconditionBranches:
         bare_finder.padding_after[0] = [1]
         with pytest.raises(AttributeError, match="need an attached MetaEventReader"):
             bare_finder.get_single_event_data(0, 0)
+
+
+# ---------------------------------------------------------------------------
+# _fit_baseline_histogram - the half of _get_baseline_stats that is shared
+# ---------------------------------------------------------------------------
+class TestFitBaselineHistogram:
+    """
+    The histogram-and-fit half every finder in the family calls.
+
+    ``_get_baseline_stats`` stays abstract, so these drive the base method directly
+    rather than through a subclass's policy. ``ConcreteEventFinder`` above overrides
+    ``_get_baseline_stats`` with a MAD estimator and never calls this, which is what
+    makes the base method reachable here without a shipped finder's settings.
+    """
+
+    @staticmethod
+    def noise(n=200_000, mean=1000.0, sigma=25.0, seed=4):
+        """
+        Pure Gaussian noise with a known mean and standard deviation.
+
+        :param n: Number of samples.
+        :type n: int
+        :param mean: True mean of the distribution.
+        :type mean: float
+        :param sigma: True standard deviation of the distribution.
+        :type sigma: float
+        :param seed: Seed for the generator, so a failure is reproducible.
+        :type seed: int
+        :return: The sample.
+        :rtype: numpy.ndarray
+        """
+        return np.random.default_rng(seed).normal(mean, sigma, n)
+
+    def test_recovers_the_mean(self, finder):
+        """The fitted mean lands on the true one; only sigma carries a known bias."""
+        data = self.noise()
+        mean, _ = finder._fit_baseline_histogram(
+            data, float(np.min(data)), float(np.max(data))
+        )
+        assert mean == pytest.approx(1000.0, abs=0.5)
+
+    def test_recovers_the_standard_deviation(self, finder):
+        """
+        Sigma comes back in the data's own units.
+
+        The fit is handed true bin centres. Labelling the bins edge to edge with
+        ``linspace`` instead stretches that axis by ``bins/(bins-1)`` and inflates sigma
+        by the same factor, which was +5.2% at this sample size until 2026-09-20.
+        ``ThresholdBlockageFinder`` denominates its threshold in sigma, so the error went
+        straight into which events it found.
+        """
+        data = self.noise()
+        _, std = finder._fit_baseline_histogram(
+            data, float(np.min(data)), float(np.max(data))
+        )
+        assert std == pytest.approx(25.0, rel=0.02)
+
+    @pytest.mark.parametrize("n", [50_000, 200_000, 800_000])
+    def test_sigma_does_not_track_chunk_size(self, finder, n):
+        """
+        The same noise gives the same sigma however the chunks are cut.
+
+        The bin count is ``int(len(data)**(1/3)/2)``, so a bias that scales with the bin
+        count moves with ``chunk_length`` - which made a sigma-denominated threshold mean
+        something different on every chunk size. Sigma is the physical property of the
+        recording here, not of how it was sliced.
+
+        The tolerance is tight enough that every size fails against the uncorrected
+        code, which added 5.9%, 3.6% and 2.3% respectively on top of what is left here.
+        """
+        data = self.noise(n=n)
+        _, std = finder._fit_baseline_histogram(
+            data, float(np.min(data)), float(np.max(data))
+        )
+        assert std == pytest.approx(25.0, rel=0.02)
+
+    def test_a_flat_range_is_refused(self, finder):
+        """
+        No width means no histogram, and the caller is told rather than handed a
+        fit of a single bin.
+        """
+        data = np.full(10_000, 7.0)
+        with pytest.raises(ValueError, match="no variation in the data"):
+            finder._fit_baseline_histogram(data, 7.0, 7.0)
+
+    def test_an_inverted_range_is_refused(self, finder):
+        """``top`` below ``bottom`` is the same failure, not an empty histogram."""
+        data = self.noise()
+        with pytest.raises(ValueError, match="no variation in the data"):
+            finder._fit_baseline_histogram(data, 100.0, 50.0)
+
+    def test_only_samples_inside_the_range_reach_the_fit(self, finder):
+        """
+        A population outside the requested range does not move the answer.
+
+        This is what ``BoundedBlockageFinder`` relies on: it hands over a configured
+        window and expects everything else to be ignored.
+        """
+        clean = self.noise()
+        contaminated = np.concatenate([clean, np.full(50_000, 400.0)])
+        narrow = (900.0, 1100.0)
+
+        from_clean = finder._fit_baseline_histogram(clean, *narrow)
+        from_contaminated = finder._fit_baseline_histogram(contaminated, *narrow)
+
+        assert from_contaminated[0] == pytest.approx(from_clean[0], rel=1e-3)
+
+    def test_a_second_population_does_not_widen_the_window(self, finder):
+        """
+        Events on one side do not drag the window out to that side.
+
+        ``half_width`` takes the narrower of the two sides both ways, which is the one
+        place the two finders' copies disagreed before this method existed, so it is
+        pinned rather than left to the finders. This is not the same thing as the
+        window being centred on the peak - see ``TestBimodalBaseline``.
+        """
+        clean = self.noise()
+        skewed = np.concatenate([clean, self.noise(n=40_000, mean=930.0, sigma=8.0)])
+
+        _, clean_std = finder._fit_baseline_histogram(
+            clean, float(np.min(skewed)), float(np.max(skewed))
+        )
+        _, skewed_std = finder._fit_baseline_histogram(
+            skewed, float(np.min(skewed)), float(np.max(skewed))
+        )
+        assert skewed_std == pytest.approx(clean_std, rel=0.1)
+
+
+# ---------------------------------------------------------------------------
+# The shipped fit window, pinned rather than justified
+# ---------------------------------------------------------------------------
+class TestTheShippedFitWindow:
+    """
+    Characterization of the asymmetric fit window, which is unchanged shipped behaviour.
+
+    ``_fit_baseline_histogram`` slices ``hist[peak - h : peak + h]``, keeping ``h`` bins
+    below the histogram peak and ``h - 1`` above it. On unimodal noise that is worth 0.13
+    percentage points of sigma, inside the run-to-run scatter, which is why it reads as an
+    off-by-one; on a bimodal baseline it is worth several percent, which is why it is not
+    safe to remove as one. It was removed on that basis on 2026-09-20 and restored the same
+    day.
+
+    Whether the direction it trims is the right one is **not** settled here, and the test
+    deliberately asserts no rationale: the population the baseline fit should follow is the
+    fitted peak farthest from zero, and this window trims the side nearer that peak.
+    ``future_fixes.md`` carries that question and the peak-selection gap beside it. This
+    test exists so neither can change without someone noticing.
+    """
+
+    MU = 1000.0
+    SIGMA = 25.0
+
+    def bimodal(self):
+        """
+        A dominant population with a smaller one below it, as a blockage would be.
+
+        :return: 100,000 samples, 35% of them in the lower population 3 sigma down.
+        :rtype: numpy.ndarray
+        """
+        rng = np.random.default_rng(9)
+        minor = 35_000
+        return np.concatenate(
+            [
+                rng.normal(self.MU, self.SIGMA, 100_000 - minor),
+                rng.normal(self.MU - 3.0 * self.SIGMA, self.SIGMA, minor),
+            ]
+        )
+
+    def test_the_window_is_the_shipped_asymmetric_one(self, finder):
+        """
+        Sigma on a fixed bimodal sample is what the asymmetric window produces.
+
+        A symmetric window gives 35.06 on this exact sample against the 38.29 asserted
+        here, so this fails if the slice is changed in either direction.
+        """
+        data = self.bimodal()
+        _, std = finder._fit_baseline_histogram(
+            data, float(np.min(data)), float(np.max(data))
+        )
+        assert std == pytest.approx(38.29, rel=0.02)
 
 
 if __name__ == "__main__":

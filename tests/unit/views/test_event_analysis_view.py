@@ -3,15 +3,15 @@ Full unit-test suite for EventAnalysisView.
 
 Strategy
 --------
-EventAnalysisView inherits from MetaView (Qt widget) and uses global_signal
-to communicate with the plugin bus.  Tests are split into three groups:
+EventAnalysisView inherits from MetaView (Qt widget) and sends its requests to
+EventAnalysisController as signals.  Tests are split into three groups:
 
-1. Pure-logic methods — tested standalone with no Qt or bus needed.
+1. Pure-logic methods — tested standalone with no Qt needed.
 2. View-fixture methods — tested through a real EventAnalysisView instance
    (same pattern as test_protein_view.py).
-3. Bus-dependent methods — covered at the boundary: we verify that
-   handle_parameter_change routes correctly to the right sub-handler,
-   patching the sub-handlers so the bus is never actually called.
+3. Methods that hand work to the Controller — covered at the boundary: we verify
+   that handle_parameter_change routes correctly to the right sub-handler,
+   patching the sub-handlers so no request is actually sent.
 
 Run with:
     pytest test_event_analysis_view.py -v
@@ -22,7 +22,7 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
-from PySide6.QtWidgets import QApplication, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QApplication, QMessageBox, QVBoxLayout, QWidget
 
 from poriscope.plugins.analysistabs.EventAnalysisView import EventAnalysisView
 from tests.unit.views._qt_mocks import mock_axes, mock_figure, shadow_signals
@@ -56,6 +56,23 @@ def real_view(qt_app):
     v._set_control_area(layout)
     v._test_container = container
     return v
+
+
+def _time_bases(traces):
+    """
+    The time axes MetaModel.time_bases would build for these traces.
+
+    That derivation is not the View's - it is a property of the samples and
+    the rate they were taken at - so the traces now arrive already paired with it.
+    A 1 MHz rate is used throughout; no test here asserts on the values, only that
+    the arity and the per-trace lengths line up.
+
+    :param traces: the current traces about to be plotted
+    :type traces: list
+    :return: one time array per trace, in microseconds
+    :rtype: list
+    """
+    return [np.arange(len(trace)) / 1_000_000 * 1e6 for trace in traces]
 
 
 @pytest.fixture
@@ -126,11 +143,6 @@ class TestFactors:
 
 
 class TestUpdatePlotData:
-    def test_dict_input_stores_data_field(self, mock_view):
-        arr = np.array([1, 2, 3])
-        mock_view.update_plot_data({"data": arr})
-        np.testing.assert_array_equal(mock_view.plot_data, arr)
-
     def test_array_input_stored_directly(self, mock_view):
         arr = np.array([4, 5, 6])
         mock_view.update_plot_data(arr)
@@ -143,103 +155,6 @@ class TestUpdatePlotData:
     def test_list_input(self, mock_view):
         mock_view.update_plot_data([1, 2, 3])
         assert mock_view.plot_data == [1, 2, 3]
-
-
-# ===========================================================================
-# update_plot_features
-# ===========================================================================
-
-
-class TestUpdatePlotFeatures:
-    def test_all_params_stored(self, mock_view):
-        mock_view.update_plot_features(
-            vertical=[1.0, 2.0],
-            horizontal=[3.0],
-            points=[(0.5, 1.5)],
-            vlabels=["v1", "v2"],
-            hlabels=["h1"],
-            plabels=["p1"],
-        )
-        assert mock_view.vertical == [1.0, 2.0]
-        assert mock_view.horizontal == [3.0]
-        assert mock_view.points == [(0.5, 1.5)]
-        assert mock_view.vlabels == ["v1", "v2"]
-        assert mock_view.hlabels == ["h1"]
-        assert mock_view.plabels == ["p1"]
-
-    def test_none_defaults(self, mock_view):
-        mock_view.update_plot_features()
-        assert mock_view.vertical is None
-        assert mock_view.horizontal is None
-        assert mock_view.points is None
-
-    def test_partial_params(self, mock_view):
-        mock_view.update_plot_features(vertical=[5.0])
-        assert mock_view.vertical == [5.0]
-        assert mock_view.horizontal is None
-
-
-# ===========================================================================
-# update_plot_samplerate
-# ===========================================================================
-
-
-class TestUpdatePlotSamplerate:
-    def test_stores_samplerate(self, mock_view):
-        mock_view.update_plot_samplerate(1_000_000)
-        assert mock_view.plot_samplerate == 1_000_000
-
-    def test_float_samplerate(self, mock_view):
-        mock_view.update_plot_samplerate(250_000.5)
-        assert mock_view.plot_samplerate == 250_000.5
-
-
-# ===========================================================================
-# set_eventfitting_status
-# ===========================================================================
-
-
-class TestSetEventfittingStatus:
-    def test_true(self, mock_view):
-        mock_view.set_eventfitting_status(True)
-        assert mock_view.eventfitting_status is True
-
-    def test_false(self, mock_view):
-        mock_view.set_eventfitting_status(False)
-        assert mock_view.eventfitting_status is False
-
-
-# ===========================================================================
-# set_num_events_allowed
-# ===========================================================================
-
-
-class TestSetNumEventsAllowed:
-    def test_sets_value(self, mock_view):
-        mock_view.set_num_events_allowed(500)
-        assert mock_view.num_events_allowed == 500
-
-    def test_zero(self, mock_view):
-        mock_view.set_num_events_allowed(0)
-        assert mock_view.num_events_allowed == 0
-
-
-# ===========================================================================
-# set_data_filter_function
-# ===========================================================================
-
-
-class TestSetDataFilterFunction:
-    def test_stores_callable(self, mock_view):
-        def my_filter(x):
-            return x * 2
-
-        mock_view.set_data_filter_function(my_filter)
-        assert mock_view.data_filter is my_filter
-
-    def test_stores_none(self, mock_view):
-        mock_view.set_data_filter_function(None)
-        assert mock_view.data_filter is None
 
 
 # ===========================================================================
@@ -438,8 +353,10 @@ class TestUpdateAvailablePlugins:
         assert real_view.eventAnalysisControls.loaders_comboBox.count() == 2
 
     def test_updates_filters(self, real_view):
+        # 2, not 1: "No Filter" is a permanent option on filter dropdowns rather than
+        # an empty-list placeholder, because not filtering is a real choice.
         real_view.update_available_plugins({"MetaFilter": ["f1"]})
-        assert real_view.eventAnalysisControls.filters_comboBox.count() == 1
+        assert real_view.eventAnalysisControls.filters_comboBox.count() == 2
 
     def test_updates_writers(self, real_view):
         real_view.update_available_plugins({"MetaDatabaseWriter": ["w1"]})
@@ -462,7 +379,9 @@ class TestUpdateAvailablePlugins:
             }
         )
         assert real_view.eventAnalysisControls.loaders_comboBox.count() == 1
-        assert real_view.eventAnalysisControls.filters_comboBox.count() == 1
+        assert (
+            real_view.eventAnalysisControls.filters_comboBox.count() == 2
+        )  # + No Filter
         assert real_view.eventAnalysisControls.writers_comboBox.count() == 1
         assert real_view.eventAnalysisControls.eventfitters_comboBox.count() == 1
 
@@ -542,18 +461,23 @@ class TestHandleParameterChange:
 
 
 class TestHandleOtherActions:
-    def test_with_loader_emits_signal(self, mock_view):
-        emitted = []
-        mock_view.global_signal.connect(lambda *a: emitted.append(a))
-        mock_view._handle_other_actions("any", {"loader": "my_loader"})
-        assert any("get_channels" in str(a) for a in emitted)
+    """
+    A typed intent naming the loader, not a bus call describing the dispatch.
 
-    def test_without_loader_no_signal(self, mock_view):
-        emitted = []
-        mock_view.global_signal.connect(lambda *a: emitted.append(a))
-        before = len(emitted)
+    Both tests target ``loader_channels_requested``. The second one used to assert that
+    ``global_signal`` did not fire, which is trivially true of a method that no longer
+    emits it - re-pointed rather than left passing for the wrong reason.
+    """
+
+    def test_with_loader_requests_its_channels(self, mock_view):
+        mock_view.loader_channels_requested = MagicMock()
+        mock_view._handle_other_actions("any", {"loader": "my_loader"})
+        mock_view.loader_channels_requested.emit.assert_called_once_with("my_loader")
+
+    def test_without_loader_requests_nothing(self, mock_view):
+        mock_view.loader_channels_requested = MagicMock()
         mock_view._handle_other_actions("any", {"loader": None})
-        assert len(emitted) == before
+        mock_view.loader_channels_requested.emit.assert_not_called()
 
 
 # ===========================================================================
@@ -582,6 +506,41 @@ class TestHandleFitEvents:
                     {"eventfitter": "ef1", "filter": "No Filter", "channel": ["0"]}
                 )
         mock.assert_not_called()
+
+    def test_it_asks_before_fitting_unfiltered(self, mock_view):
+        """
+        Fitting unfiltered inherits the event finder's problem: on a noisy trace almost
+        every sample is an event, so there are far more of them to fit than intended.
+        """
+        with patch.object(EventAnalysisView, "_start_eventfitter") as start:
+            with patch.object(
+                EventAnalysisView, "confirm_unfiltered_run", return_value=True
+            ) as confirm:
+                mock_view._handle_fit_events(self._params())
+
+        confirm.assert_called_once()
+        assert "Event fitting" in confirm.call_args[0]
+        start.assert_called_once()
+
+    def test_declining_the_unfiltered_confirmation_fits_nothing(self, mock_view):
+        """Answering No stops the launch."""
+        with patch.object(EventAnalysisView, "_start_eventfitter") as start:
+            with patch.object(
+                EventAnalysisView, "confirm_unfiltered_run", return_value=False
+            ):
+                mock_view._handle_fit_events(self._params())
+
+        start.assert_not_called()
+
+    def test_a_selected_filter_is_not_second_guessed(self, mock_view):
+        """The confirmation covers the unfiltered case only."""
+        params = dict(self._params(), filter="LowPass_0")
+        with patch.object(EventAnalysisView, "_start_eventfitter") as start:
+            with patch.object(EventAnalysisView, "confirm_unfiltered_run") as confirm:
+                mock_view._handle_fit_events(params)
+
+        confirm.assert_not_called()
+        start.assert_called_once()
 
     def test_valid_params_calls_start_eventfitter(self, mock_view):
         with patch.object(EventAnalysisView, "_start_eventfitter") as mock:
@@ -632,78 +591,53 @@ class TestHandleFitEvents:
 
 
 class TestHandleCommitEvents:
+    """The write call is the Controller's, so this emits and stops."""
+
     def test_bad_params_returns_gracefully(self, mock_view):
-        # Patch the extractor to raise ValueError — _handle_commit_events must catch it
-        # and return without calling _start_writer.
+        mock_view.write_requested = MagicMock()
         with patch.object(
             EventAnalysisView,
             "_extract_commit_event_parameters",
             side_effect=ValueError("bad params"),
         ):
-            with patch.object(EventAnalysisView, "_start_writer") as mock:
-                mock_view._handle_commit_events({"writer": "w", "channel": ["0"]})
-        mock.assert_not_called()
-
-    def test_valid_params_calls_start_writer(self, mock_view):
-        with patch.object(EventAnalysisView, "_start_writer") as mock:
             mock_view._handle_commit_events({"writer": "w", "channel": ["0"]})
-        mock.assert_called_once()
-        all_args = mock.call_args[0]
-        flat = [a for a in all_args if a is not mock_view]
-        assert "w" in flat
-        assert [0] in flat
+        mock_view.write_requested.emit.assert_not_called()
 
-    def test_none_writer_does_not_call_start(self, mock_view):
+    def test_valid_params_emit_a_typed_intent(self, mock_view):
+        mock_view.write_requested = MagicMock()
+        mock_view._handle_commit_events({"writer": "w", "channel": ["0"]})
+        mock_view.write_requested.emit.assert_called_once_with("w", [0])
+
+    def test_none_writer_requests_nothing(self, mock_view):
+        mock_view.write_requested = MagicMock()
         with patch.object(
             EventAnalysisView,
             "_extract_commit_event_parameters",
             return_value=(None, [0]),
         ):
-            with patch.object(EventAnalysisView, "_start_writer") as mock:
-                mock_view._handle_commit_events({"writer": "w", "channel": ["0"]})
-        mock.assert_not_called()
+            mock_view._handle_commit_events({"writer": "w", "channel": ["0"]})
+        mock_view.write_requested.emit.assert_not_called()
 
-    def test_none_channels_does_not_call_start(self, mock_view):
+    def test_none_channels_requests_nothing(self, mock_view):
+        mock_view.write_requested = MagicMock()
         with patch.object(
             EventAnalysisView,
             "_extract_commit_event_parameters",
             return_value=("w", None),
         ):
-            with patch.object(EventAnalysisView, "_start_writer") as mock:
-                mock_view._handle_commit_events({"writer": "w", "channel": ["0"]})
-        mock.assert_not_called()
+            mock_view._handle_commit_events({"writer": "w", "channel": ["0"]})
+        mock_view.write_requested.emit.assert_not_called()
 
-
-# ===========================================================================
-# _start_writer
-# ===========================================================================
-
-
-class TestStartWriter:
-    def test_emits_signal_per_channel(self, mock_view):
-        emitted = []
-        mock_view.global_signal.connect(lambda *a: emitted.append(a))
-        mock_view.run_generators = MagicMock()
-        mock_view._start_writer("w1", [0, 1])
-        write_calls = [e for e in emitted if "write_events" in str(e)]
-        assert len(write_calls) == 2
-        mock_view.run_generators.emit.assert_called_once_with("w1")
-
-    def test_single_channel_as_int_converted(self, mock_view):
-        emitted = []
-        mock_view.global_signal.connect(lambda *a: emitted.append(a))
-        mock_view.run_generators = MagicMock()
-        mock_view._start_writer("w1", 0)  # non-list
-        # non-list is converted to list internally
-        mock_view.run_generators.emit.assert_called_once_with("w1")
-
-    def test_index_error_logged(self, mock_view):
-        mock_view.global_signal = MagicMock()
-        mock_view.global_signal.emit.side_effect = IndexError("bad index")
-        mock_view.run_generators = MagicMock()
-        mock_view._start_writer("w1", [0])
-        # Should not raise; run_generators not called on error
-        mock_view.run_generators.emit.assert_not_called()
+    def test_a_bare_channel_is_normalised_to_a_list(self, mock_view):
+        """``_start_writer`` used to coerce this; the intent carries a list either way."""
+        mock_view.write_requested = MagicMock()
+        with patch.object(
+            EventAnalysisView,
+            "_extract_commit_event_parameters",
+            return_value=("w", 0),
+        ):
+            mock_view._handle_commit_events({"writer": "w", "channel": ["0"]})
+        mock_view.write_requested.emit.assert_called_once_with("w", [0])
 
 
 # ===========================================================================
@@ -712,53 +646,87 @@ class TestStartWriter:
 
 
 class TestStartEventfitter:
-    def _setup(self, mock_view):
-        mock_view.global_signal = MagicMock()
-        mock_view.run_generators = MagicMock()
-        mock_view.eventfitting_status = False
-        mock_view.data_filter = None
+    """
+    The View half of the fitting launch: ask, prompt, ask again.
 
-    def test_emits_fit_events_signal(self, mock_view):
-        self._setup(mock_view)
-        mock_view._start_eventfitter("ef1", "No Filter", [0])
-        emitted_actions = [
-            c.args[2] for c in mock_view.global_signal.emit.call_args_list
-        ]
-        assert "fit_events" in emitted_actions
+    All three bus round trips - the filter callable, the per-channel status, and the
+    per-channel ``fit_events`` - are the Controller's now, and asserted in
+    ``tests/unit/controllers/test_event_analysis_controller.py``. What stays here is
+    coercing the channel argument, collapsing the filter placeholder, and prompting
+    before refitting a finished channel.
+    """
 
-    def test_run_generators_called(self, mock_view):
-        self._setup(mock_view)
-        mock_view._start_eventfitter("ef1", "No Filter", [0])
-        mock_view.run_generators.emit.assert_called_once_with("ef1")
-
-    def test_with_filter_emits_get_callable_filter(self, mock_view):
-        self._setup(mock_view)
-        mock_view._start_eventfitter("ef1", "MyFilter", [0])
-        emitted_actions = [
-            c.args[2] for c in mock_view.global_signal.emit.call_args_list
-        ]
-        assert "get_callable_filter" in emitted_actions
-
-    def test_non_list_channels_converted(self, mock_view):
-        self._setup(mock_view)
-        # Should not raise even if channels is not a list
+    def test_a_bare_channel_is_coerced_to_a_list(self, mock_view):
+        """Callers pass either shape, and a bare int must not be iterated as one."""
+        mock_view.fitting_statuses_requested = MagicMock()
         mock_view._start_eventfitter("ef1", "No Filter", 0)
-        mock_view.run_generators.emit.assert_called_once_with("ef1")
+        mock_view.fitting_statuses_requested.emit.assert_called_once_with(
+            "ef1", [0], ""
+        )
 
-    def test_already_fitted_and_no_skipped(self, mock_view):
-        """If status is True but user would say No in dialog, we patch QMessageBox."""
-        self._setup(mock_view)
-        mock_view.eventfitting_status = True
+    def test_no_filter_is_carried_as_an_empty_key(self, mock_view):
+        """The Controller never has to know the placeholder's spelling."""
+        mock_view.fitting_statuses_requested = MagicMock()
+        mock_view._start_eventfitter("ef1", "No Filter", [0])
+        assert mock_view.fitting_statuses_requested.emit.call_args[0][2] == ""
+
+    def test_a_named_filter_is_carried_by_key(self, mock_view):
+        """Fetching the callable is the Controller's job; naming it is the View's."""
+        mock_view.fitting_statuses_requested = MagicMock()
+        mock_view._start_eventfitter("ef1", "MyFilter", [0, 1])
+        mock_view.fitting_statuses_requested.emit.assert_called_once_with(
+            "ef1", [0, 1], "MyFilter"
+        )
+
+    def test_an_unfitted_channel_is_approved_without_asking(self, mock_view):
+        """No prompt where there is nothing to overwrite."""
+        mock_view.fitting_requested = MagicMock()
+        with patch(
+            "poriscope.plugins.analysistabs.EventAnalysisView.QMessageBox.question"
+        ) as question:
+            mock_view.set_fitting_statuses("ef1", [(0, False)], "")
+        question.assert_not_called()
+        mock_view.fitting_requested.emit.assert_called_once_with("ef1", [0], "")
+
+    def test_accepting_the_refit_prompt_approves_the_channel(self, mock_view):
+        """A finished channel asks first, and Yes means go."""
+        mock_view.fitting_requested = MagicMock()
         with patch(
             "poriscope.plugins.analysistabs.EventAnalysisView.QMessageBox.question",
-            return_value=MagicMock(),  # anything that isn't QMessageBox.No
+            return_value=QMessageBox.Yes,
         ):
-            mock_view._start_eventfitter("ef1", "No Filter", [0])
-        # Should still emit fit_events since we didn't return early
-        emitted_actions = [
-            c.args[2] for c in mock_view.global_signal.emit.call_args_list
-        ]
-        assert "fit_events" in emitted_actions
+            mock_view.set_fitting_statuses("ef1", [(0, True)], "")
+        mock_view.fitting_requested.emit.assert_called_once_with("ef1", [0], "")
+
+    def test_declining_the_refit_prompt_skips_only_that_channel(self, mock_view):
+        """The other channels still run, rather than the batch being abandoned."""
+        mock_view.fitting_requested = MagicMock()
+        with patch(
+            "poriscope.plugins.analysistabs.EventAnalysisView.QMessageBox.question",
+            side_effect=[QMessageBox.No, QMessageBox.Yes],
+        ):
+            mock_view.set_fitting_statuses("ef1", [(0, True), (1, True)], "")
+        mock_view.fitting_requested.emit.assert_called_once_with("ef1", [1], "")
+
+    def test_declining_every_channel_launches_nothing(self, mock_view):
+        """An empty approval list is not a launch."""
+        mock_view.fitting_requested = MagicMock()
+        with patch(
+            "poriscope.plugins.analysistabs.EventAnalysisView.QMessageBox.question",
+            return_value=QMessageBox.No,
+        ):
+            mock_view.set_fitting_statuses("ef1", [(0, True)], "")
+        mock_view.fitting_requested.emit.assert_not_called()
+
+    def test_the_filter_key_is_carried_through_to_the_launch(self, mock_view):
+        """
+        The Controller hands it back rather than the View holding it between halves.
+
+        One less piece of state that could go stale across a round trip.
+        """
+        mock_view.fitting_requested = MagicMock()
+        mock_view.set_fitting_statuses("ef1", [(0, False)], "MyFilter")
+        assert mock_view.fitting_requested.emit.call_args[0][2] == "MyFilter"
 
 
 # ===========================================================================
@@ -857,135 +825,6 @@ class TestShiftRangeAndUpdatePlot:
 
 
 # ===========================================================================
-# _handle_plot_events
-# ===========================================================================
-
-
-class TestHandlePlotEvents:
-    def _params(self, events=None):
-        return {
-            "loader": "ldr",
-            "eventfitter": "No Event Fitter",
-            "filter": "No Filter",
-            "channel": ["0"],
-            "event_index": events if events is not None else [0],
-            "raw": False,
-        }
-
-    def _setup(self, mock_view, plot_data=None):
-        """Replace global_signal with a MagicMock so we can inspect emissions."""
-        mock_view.global_signal = MagicMock()
-        mock_view.global_signal.emit = MagicMock()
-        mock_view.global_signal.connect = MagicMock()
-        mock_view.num_events_allowed = 999
-        mock_view.eventfitting_status = False
-        mock_view.data_filter = None
-        mock_view.plot_data = plot_data
-        mock_view.plot_samplerate = 1_000_000
-
-    @pytest.fixture(autouse=True)
-    def _patch_update_event_plot(self):
-        """
-        Keep _update_event_plot patched for every test in this class.
-
-        This patch used to be started inside the setup helper and stopped by an
-        explicit teardown call at the end of each test body. A test that failed
-        before reaching that call left the patch installed for the rest of the
-        session, so a single genuine failure here surfaced as a cascade of
-        unrelated failures in later classes. As a yielding fixture the patch is
-        always undone, pass or fail.
-        """
-        with patch.object(EventAnalysisView, "_update_event_plot") as mock:
-            self._mock_update = mock
-            yield
-
-    def test_no_events_skips_plot(self, mock_view):
-        self._setup(mock_view)
-        mock_view._handle_plot_events(self._params(events=[]))
-        self._mock_update.assert_not_called()
-
-    def test_valid_event_calls_update_plot(self, mock_view):
-        self._setup(mock_view, plot_data=np.ones(10) * 100.0)
-
-        def side_effect(*args):
-            # When load_event is called, set plot_data so the handler sees data
-            if len(args) > 2 and args[2] == "load_event":
-                mock_view.plot_data = np.ones(10) * 100.0
-
-        mock_view.global_signal.emit.side_effect = side_effect
-        mock_view._handle_plot_events(self._params(events=[0]))
-        self._mock_update.assert_called_once()
-
-    def test_events_truncated_when_above_allowed(self, mock_view):
-        self._setup(mock_view)
-        mock_view.num_events_allowed = 3
-        # Events [0, 1, 2, 5] — index 5 should be dropped
-        params = self._params(events=[0, 1, 2, 5])
-
-        def side_effect(*args):
-            if len(args) > 2 and args[2] == "load_event":
-                mock_view.plot_data = np.ones(5) * 50.0
-
-        mock_view.global_signal.emit.side_effect = side_effect
-        mock_view._handle_plot_events(params)
-        # _update_event_plot should be called with at most 3 data entries
-        if self._mock_update.called:
-            data_list = self._mock_update.call_args[0][1]
-            assert len(data_list) <= 3
-
-    def test_no_data_loaded_skips_event(self, mock_view):
-        self._setup(mock_view, plot_data=None)
-        mock_view._handle_plot_events(self._params(events=[0]))
-        self._mock_update.assert_not_called()
-
-    def test_multiple_channels_handled_gracefully(self, mock_view):
-        self._setup(mock_view)
-        params = self._params()
-        params["channel"] = ["0", "1"]
-        # Should not raise — extract will raise ValueError caught internally
-        mock_view._handle_plot_events(params)
-
-    def test_get_num_events_signal_emitted(self, mock_view):
-        self._setup(mock_view)
-        mock_view._handle_plot_events(self._params(events=[0]))
-        actions = [c.args[2] for c in mock_view.global_signal.emit.call_args_list]
-        assert "get_num_events" in actions
-
-    def test_with_filter_emits_get_callable_filter(self, mock_view):
-        self._setup(mock_view, plot_data=np.ones(5) * 10.0)
-
-        def side_effect(*args):
-            if len(args) > 2 and args[2] == "load_event":
-                mock_view.plot_data = np.ones(5) * 10.0
-
-        mock_view.global_signal.emit.side_effect = side_effect
-        params = self._params(events=[0])
-        params["filter"] = "MyFilter"
-        mock_view._handle_plot_events(params)
-        actions = [c.args[2] for c in mock_view.global_signal.emit.call_args_list]
-        assert "get_callable_filter" in actions
-
-    def test_with_raw_flag_and_filter_loads_raw(self, mock_view):
-        """When raw=True and data_filter is set, a second load_event for raw is emitted."""
-        self._setup(mock_view)
-        mock_view.data_filter = MagicMock()  # simulate active filter
-
-        load_event_calls = []
-
-        def side_effect(*args):
-            if len(args) > 2 and args[2] == "load_event":
-                mock_view.plot_data = np.ones(5) * 10.0
-                load_event_calls.append(args)
-
-        mock_view.global_signal.emit.side_effect = side_effect
-        params = self._params(events=[0])
-        params["raw"] = True
-        mock_view._handle_plot_events(params)
-        # At least one load_event for filtered data; raw=True should trigger a second
-        assert len(load_event_calls) >= 1
-
-
-# ===========================================================================
 # _update_event_plot
 # ===========================================================================
 
@@ -1016,45 +855,45 @@ class TestUpdateEventPlot:
         )
 
     def test_runs_without_error_one_event(self, mock_view):
-        mock_view.plot_samplerate = 1_000_000
         mock_view._update_event_plot(
             [self._make_data()],
+            _time_bases([self._make_data()]),
             ["Event 0 Data"],
             1,
             *self._none_lists(1),
         )
 
     def test_runs_without_error_two_events(self, mock_view):
-        mock_view.plot_samplerate = 1_000_000
         mock_view._update_event_plot(
             [self._make_data(), self._make_data()],
+            _time_bases([self._make_data(), self._make_data()]),
             ["Event 0 Data", "Event 1 Data"],
             2,
             *self._none_lists(2),
         )
 
     def test_runs_without_error_with_fit_trace(self, mock_view):
-        mock_view.plot_samplerate = 1_000_000
         mock_view._update_event_plot(
             [self._make_data(), self._make_data()],
+            _time_bases([self._make_data(), self._make_data()]),
             ["Event 0 Data", "Event 0 Fit"],
             1,
             *self._none_lists(1),
         )
 
     def test_runs_without_error_with_raw_trace(self, mock_view):
-        mock_view.plot_samplerate = 1_000_000
         mock_view._update_event_plot(
             [self._make_data(), self._make_data()],
+            _time_bases([self._make_data(), self._make_data()]),
             ["Event 0 Data", "Event 0 Raw"],
             1,
             *self._none_lists(1),
         )
 
     def test_runs_without_error_with_vlines(self, mock_view):
-        mock_view.plot_samplerate = 1_000_000
         mock_view._update_event_plot(
             [self._make_data()],
+            _time_bases([self._make_data()]),
             ["Event 0 Data"],
             1,
             [[10.0]],
@@ -1066,9 +905,9 @@ class TestUpdateEventPlot:
         )
 
     def test_runs_without_error_with_hlines(self, mock_view):
-        mock_view.plot_samplerate = 1_000_000
         mock_view._update_event_plot(
             [self._make_data()],
+            _time_bases([self._make_data()]),
             ["Event 0 Data"],
             1,
             [None],
@@ -1080,9 +919,9 @@ class TestUpdateEventPlot:
         )
 
     def test_runs_without_error_with_points(self, mock_view):
-        mock_view.plot_samplerate = 1_000_000
         mock_view._update_event_plot(
             [self._make_data()],
+            _time_bases([self._make_data()]),
             ["Event 0 Data"],
             1,
             [None],
@@ -1094,9 +933,9 @@ class TestUpdateEventPlot:
         )
 
     def test_runs_without_error_unlabelled_vline(self, mock_view):
-        mock_view.plot_samplerate = 1_000_000
         mock_view._update_event_plot(
             [self._make_data()],
+            _time_bases([self._make_data()]),
             ["Event 0 Data"],
             1,
             [[10.0]],
@@ -1108,9 +947,9 @@ class TestUpdateEventPlot:
         )
 
     def test_runs_without_error_unlabelled_hline(self, mock_view):
-        mock_view.plot_samplerate = 1_000_000
         mock_view._update_event_plot(
             [self._make_data()],
+            _time_bases([self._make_data()]),
             ["Event 0 Data"],
             1,
             [None],
@@ -1122,10 +961,10 @@ class TestUpdateEventPlot:
         )
 
     def test_cache_committed_after_plot(self, mock_view):
-        mock_view.plot_samplerate = 1_000_000
         with patch.object(EventAnalysisView, "_commit_cache") as mock_cache:
             mock_view._update_event_plot(
                 [self._make_data()],
+                _time_bases([self._make_data()]),
                 ["Event 0 Data"],
                 1,
                 *self._none_lists(1),
@@ -1133,9 +972,9 @@ class TestUpdateEventPlot:
         mock_cache.assert_called()
 
     def test_figure_has_axes_after_plot(self, mock_view):
-        mock_view.plot_samplerate = 1_000_000
         mock_view._update_event_plot(
             [self._make_data()],
+            _time_bases([self._make_data()]),
             ["Event 0 Data"],
             1,
             *self._none_lists(1),
@@ -1143,9 +982,9 @@ class TestUpdateEventPlot:
         assert len(mock_view.figure.get_axes()) >= 1
 
     def test_two_events_produce_two_axes(self, mock_view):
-        mock_view.plot_samplerate = 1_000_000
         mock_view._update_event_plot(
             [self._make_data(), self._make_data()],
+            _time_bases([self._make_data(), self._make_data()]),
             ["Event 0 Data", "Event 1 Data"],
             2,
             *self._none_lists(2),
@@ -1170,13 +1009,13 @@ class TestUpdateEventPlotExtended:
         )
 
     def test_clear_cache_called(self, mock_view):
-        mock_view.plot_samplerate = 1_000_000
         mock_view.data_cache = []
         mock_view.label_cache = []
         mock_view.data_cache_labels = []
         with patch.object(EventAnalysisView, "_clear_cache") as mock_cc:
             mock_view._update_event_plot(
                 [self._make_data()],
+                _time_bases([self._make_data()]),
                 ["Event 0 Data"],
                 1,
                 *self._none_lists(1),
@@ -1184,10 +1023,10 @@ class TestUpdateEventPlotExtended:
         mock_cc.assert_called()
 
     def test_update_cache_called_per_data_item(self, mock_view):
-        mock_view.plot_samplerate = 1_000_000
         with patch.object(EventAnalysisView, "_update_cache") as mock_uc:
             mock_view._update_event_plot(
                 [self._make_data(), self._make_data()],
+                _time_bases([self._make_data(), self._make_data()]),
                 ["Event 0 Data", "Event 1 Data"],
                 2,
                 *self._none_lists(2),
@@ -1195,9 +1034,9 @@ class TestUpdateEventPlotExtended:
         assert mock_uc.call_count >= 2
 
     def test_multiple_vlines_no_error(self, mock_view):
-        mock_view.plot_samplerate = 1_000_000
         mock_view._update_event_plot(
             [self._make_data()],
+            _time_bases([self._make_data()]),
             ["Event 0 Data"],
             1,
             [[5.0, 10.0, 15.0]],
@@ -1209,9 +1048,9 @@ class TestUpdateEventPlotExtended:
         )
 
     def test_labelled_vline_no_error(self, mock_view):
-        mock_view.plot_samplerate = 1_000_000
         mock_view._update_event_plot(
             [self._make_data()],
+            _time_bases([self._make_data()]),
             ["Event 0 Data"],
             1,
             [[10.0]],
@@ -1223,9 +1062,9 @@ class TestUpdateEventPlotExtended:
         )
 
     def test_labelled_hline_no_error(self, mock_view):
-        mock_view.plot_samplerate = 1_000_000
         mock_view._update_event_plot(
             [self._make_data()],
+            _time_bases([self._make_data()]),
             ["Event 0 Data"],
             1,
             [None],
@@ -1237,9 +1076,9 @@ class TestUpdateEventPlotExtended:
         )
 
     def test_labelled_point_no_error(self, mock_view):
-        mock_view.plot_samplerate = 1_000_000
         mock_view._update_event_plot(
             [self._make_data()],
+            _time_bases([self._make_data()]),
             ["Event 0 Data"],
             1,
             [None],
@@ -1251,11 +1090,11 @@ class TestUpdateEventPlotExtended:
         )
 
     def test_figure_set_constrained_layout_called(self, mock_view):
-        mock_view.plot_samplerate = 1_000_000
         # constrained_layout is set via figure.set_constrained_layout(True)
         # We can verify indirectly: figure should have axes after call
         mock_view._update_event_plot(
             [self._make_data()],
+            _time_bases([self._make_data()]),
             ["Event 0 Data"],
             1,
             *self._none_lists(1),
@@ -1263,9 +1102,9 @@ class TestUpdateEventPlotExtended:
         assert mock_view.figure.get_constrained_layout() is True
 
     def test_legend_no_error_with_labelled_lines(self, mock_view):
-        mock_view.plot_samplerate = 1_000_000
         mock_view._update_event_plot(
             [self._make_data()],
+            _time_bases([self._make_data()]),
             ["Event 0 Data"],
             1,
             [[1.0, 2.0]],
@@ -1277,9 +1116,9 @@ class TestUpdateEventPlotExtended:
         )
 
     def test_grid_is_enabled_on_axes(self, mock_view):
-        mock_view.plot_samplerate = 1_000_000
         mock_view._update_event_plot(
             [self._make_data()],
+            _time_bases([self._make_data()]),
             ["Event 0 Data"],
             1,
             *self._none_lists(1),
@@ -1362,11 +1201,6 @@ class TestFactorsExtended:
 
 
 class TestUpdatePlotDataExtended:
-    def test_dict_with_extra_keys_uses_data_key(self, mock_view):
-        arr = np.array([7.0, 8.0])
-        mock_view.update_plot_data({"data": arr, "extra": "ignored"})
-        np.testing.assert_array_equal(mock_view.plot_data, arr)
-
     def test_empty_array(self, mock_view):
         arr = np.array([])
         mock_view.update_plot_data(arr)
@@ -1376,35 +1210,6 @@ class TestUpdatePlotDataExtended:
         arr = np.ones((3, 4))
         mock_view.update_plot_data(arr)
         np.testing.assert_array_equal(mock_view.plot_data, arr)
-
-
-# ===========================================================================
-# update_plot_features — extended
-# ===========================================================================
-
-
-class TestUpdatePlotFeaturesExtended:
-    def test_overwrites_previous_values(self, mock_view):
-        mock_view.update_plot_features(vertical=[1.0])
-        mock_view.update_plot_features(vertical=[2.0])
-        assert mock_view.vertical == [2.0]
-
-    def test_all_none_by_default(self, mock_view):
-        mock_view.update_plot_features()
-        for attr in (
-            "vertical",
-            "horizontal",
-            "points",
-            "vlabels",
-            "hlabels",
-            "plabels",
-        ):
-            assert getattr(mock_view, attr) is None
-
-    def test_points_stored_correctly(self, mock_view):
-        pts = [(0.1, 0.2), (0.3, 0.4)]
-        mock_view.update_plot_features(points=pts)
-        assert mock_view.points == pts
 
 
 # ===========================================================================
@@ -1423,39 +1228,6 @@ class TestValidateSingleChannelExtended:
     def test_error_message_mentions_multiple(self, mock_view):
         with pytest.raises(ValueError, match="multiple"):
             mock_view.validate_single_channel([0, 1])
-
-
-# ===========================================================================
-# set_num_events_allowed — extended
-# ===========================================================================
-
-
-class TestSetNumEventsAllowedExtended:
-    def test_large_number(self, mock_view):
-        mock_view.set_num_events_allowed(1_000_000)
-        assert mock_view.num_events_allowed == 1_000_000
-
-    def test_overwrite(self, mock_view):
-        mock_view.set_num_events_allowed(10)
-        mock_view.set_num_events_allowed(20)
-        assert mock_view.num_events_allowed == 20
-
-
-# ===========================================================================
-# set_data_filter_function — extended
-# ===========================================================================
-
-
-class TestSetDataFilterFunctionExtended:
-    def test_lambda_stored(self, mock_view):
-        fn = lambda x: x + 1  # noqa: E731
-        mock_view.set_data_filter_function(fn)
-        assert mock_view.data_filter is fn
-
-    def test_overwrite_with_none(self, mock_view):
-        mock_view.set_data_filter_function(lambda x: x)
-        mock_view.set_data_filter_function(None)
-        assert mock_view.data_filter is None
 
 
 # ===========================================================================
@@ -1527,27 +1299,41 @@ class TestExtractCommitEventParametersExtended:
 
 
 class TestHandleOtherActionsExtended:
-    def test_loader_none_does_not_emit(self, mock_view):
-        mock_view.global_signal = MagicMock()
-        mock_view._handle_other_actions("any_action", {"loader": None})
-        mock_view.global_signal.emit.assert_not_called()
+    """
+    The same intent, over the parameter shapes the controls panel can produce.
 
-    def test_loader_present_emits_get_channels(self, mock_view):
-        mock_view.global_signal = MagicMock()
+    Three of these asserted that ``global_signal`` did not fire and would have gone on
+    passing for the wrong reason after the conversion; all four target the intent now.
+    """
+
+    def test_loader_none_does_not_request(self, mock_view):
+        mock_view.loader_channels_requested = MagicMock()
+        mock_view._handle_other_actions("any_action", {"loader": None})
+        mock_view.loader_channels_requested.emit.assert_not_called()
+
+    def test_loader_present_requests_channels(self, mock_view):
+        mock_view.loader_channels_requested = MagicMock()
         mock_view._handle_other_actions("any_action", {"loader": "my_loader"})
-        actions = [c.args[2] for c in mock_view.global_signal.emit.call_args_list]
-        assert "get_channels" in actions
+        mock_view.loader_channels_requested.emit.assert_called_once()
 
     def test_loader_present_targets_correct_loader(self, mock_view):
-        mock_view.global_signal = MagicMock()
+        mock_view.loader_channels_requested = MagicMock()
         mock_view._handle_other_actions("any_action", {"loader": "specific_loader"})
-        args = mock_view.global_signal.emit.call_args[0]
-        assert args[1] == "specific_loader"
+        assert (
+            mock_view.loader_channels_requested.emit.call_args[0][0]
+            == "specific_loader"
+        )
 
     def test_missing_loader_key_treated_as_none(self, mock_view):
-        mock_view.global_signal = MagicMock()
+        mock_view.loader_channels_requested = MagicMock()
         mock_view._handle_other_actions("any_action", {})
-        mock_view.global_signal.emit.assert_not_called()
+        mock_view.loader_channels_requested.emit.assert_not_called()
+
+    def test_the_no_loader_placeholder_is_not_a_loader(self, mock_view):
+        """The dropdown's empty-state text must not be dispatched as a plugin key."""
+        mock_view.loader_channels_requested = MagicMock()
+        mock_view._handle_other_actions("any_action", {"loader": "No Loader"})
+        mock_view.loader_channels_requested.emit.assert_not_called()
 
 
 # ===========================================================================
@@ -1590,82 +1376,14 @@ class TestHandleFitEventsExtended:
 
 class TestHandleCommitEventsExtended:
     def test_channels_passed_as_ints(self, mock_view):
-        with patch.object(EventAnalysisView, "_start_writer") as mock:
-            mock_view._handle_commit_events({"writer": "w", "channel": ["2"]})
-        mock.assert_called_once()
-        all_args = mock.call_args[0]
-        assert [2] in all_args
+        mock_view.write_requested = MagicMock()
+        mock_view._handle_commit_events({"writer": "w", "channel": ["2"]})
+        mock_view.write_requested.emit.assert_called_once_with("w", [2])
 
     def test_multiple_channels_passed_correctly(self, mock_view):
-        with patch.object(EventAnalysisView, "_start_writer") as mock:
-            mock_view._handle_commit_events({"writer": "w", "channel": ["0", "1"]})
-        mock.assert_called_once()
-        all_args = mock.call_args[0]
-        assert [0, 1] in all_args
-
-
-# ===========================================================================
-# _start_writer — extended
-# ===========================================================================
-
-
-class TestStartWriterExtended:
-    def test_empty_channels_does_not_emit_write(self, mock_view):
-        emitted = []
-        mock_view.global_signal.connect(lambda *a: emitted.append(a))
-        mock_view.run_generators = MagicMock()
-        mock_view._start_writer("w1", [])
-        write_calls = [e for e in emitted if "write_events" in str(e)]
-        assert len(write_calls) == 0
-
-    def test_run_generators_called_with_writer_name(self, mock_view):
-        mock_view.global_signal = MagicMock()
-        mock_view.run_generators = MagicMock()
-        mock_view._start_writer("my_writer", [0])
-        mock_view.run_generators.emit.assert_called_once_with("my_writer")
-
-    def test_value_error_prevents_run_generators(self, mock_view):
-        mock_view.global_signal = MagicMock()
-        mock_view.global_signal.emit.side_effect = ValueError("bad value")
-        mock_view.run_generators = MagicMock()
-        mock_view._start_writer("w1", [0])
-        mock_view.run_generators.emit.assert_not_called()
-
-
-# ===========================================================================
-# _start_eventfitter — extended
-# ===========================================================================
-
-
-class TestStartEventfitterExtended:
-    def _setup(self, mock_view):
-        mock_view.global_signal = MagicMock()
-        mock_view.run_generators = MagicMock()
-        mock_view.eventfitting_status = False
-        mock_view.data_filter = None
-
-    def test_no_filter_does_not_emit_get_callable_filter(self, mock_view):
-        self._setup(mock_view)
-        mock_view._start_eventfitter("ef1", "No Filter", [0])
-        actions = [c.args[2] for c in mock_view.global_signal.emit.call_args_list]
-        assert "get_callable_filter" not in actions
-
-    def test_multiple_channels_emits_fit_per_channel(self, mock_view):
-        self._setup(mock_view)
-        mock_view._start_eventfitter("ef1", "No Filter", [0, 1])
-        fit_calls = [
-            c
-            for c in mock_view.global_signal.emit.call_args_list
-            if len(c.args) > 2 and c.args[2] == "fit_events"
-        ]
-        assert len(fit_calls) == 2
-
-    def test_index_error_logged_not_raised(self, mock_view):
-        self._setup(mock_view)
-        mock_view.global_signal.emit.side_effect = IndexError("bad")
-        # Should not raise — error is caught
-        mock_view._start_eventfitter("ef1", "No Filter", [0])
-        mock_view.run_generators.emit.assert_not_called()
+        mock_view.write_requested = MagicMock()
+        mock_view._handle_commit_events({"writer": "w", "channel": ["0", "1"]})
+        mock_view.write_requested.emit.assert_called_once_with("w", [0, 1])
 
 
 # ===========================================================================
@@ -1706,94 +1424,6 @@ class TestHandleParameterChangeExtended:
             )
         mock.assert_called_once()
         assert mock.call_args[1]["direction"] == "right"
-
-
-# ===========================================================================
-# _handle_plot_events — extended
-# ===========================================================================
-
-
-class TestHandlePlotEventsExtended:
-    def _params(self, events=None):
-        return {
-            "loader": "ldr",
-            "eventfitter": "No Event Fitter",
-            "filter": "No Filter",
-            "channel": ["0"],
-            "event_index": events if events is not None else [0],
-            "raw": False,
-        }
-
-    def _setup(self, mock_view, plot_data=None):
-        mock_view.global_signal = MagicMock()
-        mock_view.global_signal.emit = MagicMock()
-        mock_view.global_signal.connect = MagicMock()
-        mock_view.num_events_allowed = 999
-        mock_view.eventfitting_status = False
-        mock_view.data_filter = None
-        mock_view.plot_data = plot_data
-        mock_view.plot_samplerate = 1_000_000
-
-    @pytest.fixture(autouse=True)
-    def _patch_update_event_plot(self):
-        """
-        Keep _update_event_plot patched for every test in this class.
-
-        This patch used to be started inside the setup helper and stopped by an
-        explicit teardown call at the end of each test body. A test that failed
-        before reaching that call left the patch installed for the rest of the
-        session, so a single genuine failure here surfaced as a cascade of
-        unrelated failures in later classes. As a yielding fixture the patch is
-        always undone, pass or fail.
-        """
-        with patch.object(EventAnalysisView, "_update_event_plot") as mock:
-            self._mock_update = mock
-            yield
-
-    def test_events_within_bounds_not_truncated(self, mock_view):
-        self._setup(mock_view)
-        mock_view.num_events_allowed = 10
-        params = self._params(events=[0, 1, 2])
-
-        def side_effect(*args):
-            if len(args) > 2 and args[2] == "load_event":
-                mock_view.plot_data = np.ones(5)
-
-        mock_view.global_signal.emit.side_effect = side_effect
-        mock_view._handle_plot_events(params)
-        # All 3 events within bounds — update_plot should be called
-        self._mock_update.assert_called_once()
-
-    def test_samplerate_signal_emitted(self, mock_view):
-        self._setup(mock_view)
-        mock_view._handle_plot_events(self._params(events=[0]))
-        actions = [c.args[2] for c in mock_view.global_signal.emit.call_args_list]
-        assert "get_samplerate" in actions
-
-    def test_load_event_signal_emitted(self, mock_view):
-        self._setup(mock_view)
-        params = self._params(events=[0])
-
-        def side_effect(*args):
-            if len(args) > 2 and args[2] == "load_event":
-                mock_view.plot_data = np.ones(5)
-
-        mock_view.global_signal.emit.side_effect = side_effect
-        mock_view._handle_plot_events(params)
-        actions = [c.args[2] for c in mock_view.global_signal.emit.call_args_list]
-        assert "load_event" in actions
-
-    def test_all_events_out_of_bounds_no_plot(self, mock_view):
-        self._setup(mock_view)
-        mock_view.num_events_allowed = 3
-        params = self._params(events=[5, 6, 7])  # all >= 3
-        mock_view._handle_plot_events(params)
-        self._mock_update.assert_not_called()
-
-
-# ===========================================================================
-# _update_event_plot — extended
-# ===========================================================================
 
 
 # ===========================================================================
@@ -1856,4 +1486,4 @@ class TestUpdateAvailablePluginsExtended:
 
     def test_multiple_filters(self, real_view):
         real_view.update_available_plugins({"MetaFilter": ["f1", "f2"]})
-        assert real_view.eventAnalysisControls.filters_comboBox.count() == 2
+        assert real_view.eventAnalysisControls.filters_comboBox.count() == 3

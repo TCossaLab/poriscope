@@ -3,11 +3,6 @@ Full unit-test suite for ProteinView.
 
 Covers the ProteinView analysis tab end-to-end, including:
   - format_axis_label (module-level helper)
-  - Gaussian fitting: _double_gaussian, _fit_double_gaussian,
-    _fit_and_sanity_check_double_gaussian
-  - Physical model: _compute_theoretical_blockages, _generate_vm_ensemble
-  - Histogram construction: _construct_single_event_histogram,
-    _construct_all_points_histogram
   - Plotting: _plot_all_points_histogram, _plot_scatterplot,
     _plot_xyerr_scatterplot, update_plot
   - Event/histogram navigation and caching: _fetch_event_data,
@@ -29,7 +24,7 @@ Uses:
     fully wired.
   - Real imports from the poriscope package rather than a mocked ProteinView,
     so tests exercise actual widget and signal behaviour.
-  - unittest.mock (MagicMock, patch) to stub out global_signal emissions,
+  - unittest.mock (MagicMock, patch) to stub out the tab's request signals,
     file dialogs, and modal dialogs (AddSubsetFilterDialog,
     EditSubsetFilterDialog, SelectionTree) so tests remain non-blocking and
     independent of a live plugin bus or database backend.
@@ -41,31 +36,54 @@ Notes:
     fallback fit's degenerate single-peak behaviour) rather than asserting
     an ideal/fixed outcome. Treat failures in these tests as a prompt to
     re-evaluate intent, not just to "fix" them blindly.
-  - Tests involving global_signal generally leave it unconnected (no live
-    plugin bus), so any code path depending on a slot's return value should
-    be set up manually on the mock_view fixture before calling into it.
+  - Nothing answers the view's request signals in these tests, so any code path
+    that depends on the Controller's answer should either connect a stand-in that
+    calls the matching setter, or set the result on the mock_view fixture first.
 
 Run with:
     pytest tests/unit/views/test_protein_view.py -v
 """
 
-import json
-import os
-import tempfile
-import warnings
 from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pandas as pd
 import pytest
-from PySide6.QtWidgets import QApplication, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QApplication, QMessageBox, QVBoxLayout, QWidget
 
-from poriscope.plugins.analysistabs.ProteinView import ProteinView, format_axis_label
+from poriscope.plugins.analysistabs.ProteinModel import ProteinModel
+from poriscope.plugins.analysistabs.ProteinView import (
+    FIT_COLUMN_UNITS,
+    FIT_COLUMNS,
+    ProteinView,
+    format_axis_label,
+)
 from tests.unit.views._qt_mocks import mock_axes, shadow_signals
 
 # ===========================================================================
 # Fixtures
 # ===========================================================================
+
+
+def recorded(view, parameters):
+    """
+    Give a plot's parameters the selection ``handle_parameter_change`` records into them.
+
+    The recorded plot methods read the filter and channel selection from their
+    parameters, so a replay draws what was recorded. A test calling one directly has to
+    hand it parameters shaped the same way, and this calls the real ``_record_selection``
+    to build them, from whatever the test has stubbed ``get_selected_filters`` and the
+    channel selection to be.
+
+    :param view: the view under test
+    :type view: Any
+    :param parameters: the plot's parameters, updated in place
+    :type parameters: dict
+    :return: the same parameters
+    :rtype: dict
+    """
+    view._record_selection(parameters)
+    return parameters
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -138,7 +156,6 @@ def mock_view():
 
     v.fig_event = MagicMock()
     v.canvas_event = MagicMock()
-    v.event_outer_ax = None
     v.display_stack = MagicMock()
     v.mode_stack = MagicMock()
     v.individual_dist_page = MagicMock()
@@ -272,489 +289,11 @@ class TestFormatAxisLabel:
 
 
 # ===========================================================================
-# _double_gaussian
-# ===========================================================================
-
-
-class TestDoubleGaussian:
-    def test_peak_at_mean1(self, mock_view):
-        r = mock_view._double_gaussian(np.array([0.2]), 1.0, 0.2, 0.05, 0.8, 0.6, 0.05)
-        assert r[0] == pytest.approx(1.0, rel=1e-6)
-
-    def test_peak_at_mean2(self, mock_view):
-        r = mock_view._double_gaussian(np.array([0.6]), 1.0, 0.2, 0.05, 0.8, 0.6, 0.05)
-        assert r[0] == pytest.approx(0.8, rel=1e-6)
-
-    def test_zero_amplitudes(self, mock_view):
-        x = np.linspace(0, 1, 50)
-        np.testing.assert_array_equal(
-            mock_view._double_gaussian(x, 0, 0.3, 0.05, 0, 0.7, 0.05), 0
-        )
-
-    def test_output_shape(self, mock_view):
-        x = np.linspace(0, 1, 100)
-        assert mock_view._double_gaussian(x, 1, 0.3, 0.1, 1, 0.7, 0.1).shape == (100,)
-
-    def test_tails_near_zero(self, mock_view):
-        x = np.array([-10.0, 10.0])
-        assert np.all(mock_view._double_gaussian(x, 1, 0.3, 0.05, 1, 0.7, 0.05) < 1e-10)
-
-    def test_symmetry(self, mock_view):
-        x = np.linspace(0, 1, 50)
-        r1 = mock_view._double_gaussian(x, 1.0, 0.3, 0.05, 0.5, 0.7, 0.05)
-        r2 = mock_view._double_gaussian(x, 0.5, 0.7, 0.05, 1.0, 0.3, 0.05)
-        np.testing.assert_allclose(r1, r2, rtol=1e-12)
-
-    def test_non_negative(self, mock_view):
-        x = np.linspace(-1, 2, 200)
-        assert np.all(mock_view._double_gaussian(x, 2, 0.3, 0.1, 1.5, 0.8, 0.15) >= 0)
-
-
-# ===========================================================================
-# _fit_double_gaussian
-# ===========================================================================
-
-
-class TestFitDoubleGaussian:
-    def test_clean_two_peak_signal(self, mock_view, qt_app):
-        x, y = _make_double_gaussian_histogram()
-        popt, pcov = mock_view._fit_double_gaussian(x, y)
-        qt_app.processEvents()
-        assert popt is not None and len(popt) == 6
-
-    def test_single_peak_fallback_degenerate_bug(self, mock_view, qt_app):
-        # BUG: fallback produces a degenerate two-component fit at the same position
-        x = np.linspace(0, 1, 200)
-        y = np.exp(-((x - 0.5) ** 2) / (2 * 0.05**2))
-        popt, _ = mock_view._fit_double_gaussian(x, y)
-        qt_app.processEvents()
-        assert popt is not None and len(popt) == 6
-        assert abs(popt[1] - popt[4]) < 0.05
-
-    def test_flat_returns_none(self, mock_view, qt_app):
-        x = np.linspace(0, 1, 100)
-        popt, _ = mock_view._fit_double_gaussian(x, np.zeros_like(x))
-        qt_app.processEvents()
-        assert popt is None
-
-
-# ===========================================================================
-# _fit_and_sanity_check_double_gaussian
-# ===========================================================================
-
-
-class TestFitAndSanityCheck:
-    def test_clean_signal_passes(self, mock_view):
-        x, y = _make_double_gaussian_histogram()
-        popt = mock_view._fit_and_sanity_check_double_gaussian(x, y)
-        assert popt is not None and len(popt) == 6
-
-    def test_recovered_means(self, mock_view):
-        x, y = _make_double_gaussian_histogram(mean1=0.2, mean2=0.6)
-        popt = mock_view._fit_and_sanity_check_double_gaussian(x, y)
-        assert popt is not None
-        means = sorted([popt[1], popt[4]])
-        assert means[0] == pytest.approx(0.2, abs=0.01)
-        assert means[1] == pytest.approx(0.6, abs=0.01)
-
-    def test_flat_returns_none(self, mock_view):
-        x = np.linspace(0, 1, 100)
-        assert (
-            mock_view._fit_and_sanity_check_double_gaussian(x, np.zeros_like(x)) is None
-        )
-
-    def test_single_peak_behaviour_documented(self, mock_view):
-        # Documents that single-peak input may pass or fail the sanity check
-        x = np.linspace(0, 1, 200)
-        y = np.exp(-((x - 0.5) ** 2) / (2 * 0.05**2))
-        result = mock_view._fit_and_sanity_check_double_gaussian(x, y)
-        assert result is None or (
-            len(result) == 6 and abs(result[1] - result[4]) < 0.05
-        )
-
-    def test_dominated_peak_behaviour_documented(self, mock_view):
-        # BUG: dominated-peak guard is unreliable when fallback co-locates both components
-        x = np.linspace(0, 1, 300)
-        y = mock_view._double_gaussian(x, 1.0, 0.2, 0.02, 0.001, 0.7, 0.02)
-        result = mock_view._fit_and_sanity_check_double_gaussian(x, y)
-        assert result is None or len(result) == 6
-
-    def test_roundtrip_residuals(self, mock_view):
-        x, y = _make_double_gaussian_histogram()
-        popt = mock_view._fit_and_sanity_check_double_gaussian(x, y)
-        assert popt is not None
-        assert np.max(np.abs(y - mock_view._double_gaussian(x, *popt))) < 0.02
-
-
-# ===========================================================================
-# _compute_theoretical_blockages
-# ===========================================================================
-
-
-class TestComputeTheoreticalBlockages:
-    D, L = 20.0, 30.0
-
-    def test_prolate_output_shape(self, mock_view):
-        V, m = np.array([500.0] * 3), np.array([2.0] * 3)
-        dmax, dmin = mock_view._compute_theoretical_blockages(V, m, self.D, self.L)
-        assert dmax.shape == (3,) and dmin.shape == (3,)
-
-    def test_oblate_output_shape(self, mock_view):
-        V, m = np.array([500.0] * 3), np.array([0.5] * 3)
-        dmax, dmin = mock_view._compute_theoretical_blockages(V, m, self.D, self.L)
-        assert dmax.shape == (3,) and dmin.shape == (3,)
-
-    def test_blockages_positive(self, mock_view):
-        for m_val in [2.0, 0.5]:
-            V, m = np.array([500.0]), np.array([m_val])
-            dmax, dmin = mock_view._compute_theoretical_blockages(V, m, self.D, self.L)
-            assert np.all(dmax > 0) and np.all(dmin > 0)
-
-    def test_max_ge_min(self, mock_view):
-        for m_val in [2.0, 0.5]:
-            V, m = np.array([500.0]), np.array([m_val])
-            dmax, dmin = mock_view._compute_theoretical_blockages(V, m, self.D, self.L)
-            assert np.all(dmax >= dmin)
-
-    def test_monotone_in_volume(self, mock_view):
-        m = np.array([2.0])
-        dmax_s, _ = mock_view._compute_theoretical_blockages(
-            np.array([100.0]), m, self.D, self.L
-        )
-        dmax_l, _ = mock_view._compute_theoretical_blockages(
-            np.array([1000.0]), m, self.D, self.L
-        )
-        assert dmax_l > dmax_s
-
-    def test_mixed_raises(self, mock_view):
-        V, m = np.array([500.0, 500.0]), np.array([0.5, 2.0])
-        with pytest.raises(ValueError, match="Cannot mix"):
-            mock_view._compute_theoretical_blockages(V, m, self.D, self.L)
-
-    def test_negative_m_silent_nan_bug(self, mock_view):
-        # BUG: negative m satisfies all(m<=1) so the ValueError guard is never reached
-        V, m = np.array([500.0]), np.array([-1.0])
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            dmax, dmin = mock_view._compute_theoretical_blockages(V, m, self.D, self.L)
-        assert np.any(np.isnan(dmax)) or np.any(np.isinf(dmax))
-
-    def test_single_element(self, mock_view):
-        V, m = np.array([500.0]), np.array([3.0])
-        dmax, _ = mock_view._compute_theoretical_blockages(V, m, self.D, self.L)
-        assert dmax.shape == (1,)
-
-    def test_linear_scaling_small_objects(self, mock_view):
-        m = np.array([2.0])
-        dmax1, _ = mock_view._compute_theoretical_blockages(
-            np.array([10.0]), m, self.D, self.L
-        )
-        dmax2, _ = mock_view._compute_theoretical_blockages(
-            np.array([20.0]), m, self.D, self.L
-        )
-        assert dmax2[0] / dmax1[0] == pytest.approx(2.0, abs=0.5)
-
-
-# ===========================================================================
-# _generate_vm_ensemble
-# ===========================================================================
-
-
-class TestGenerateVmEnsemble:
-    D, L = 20.0, 30.0
-    MMAX, SMAX, MMIN, SMIN = 0.30, 0.03, 0.10, 0.02
-
-    def test_prolate_count(self, mock_view):
-        V, m = mock_view._generate_vm_ensemble(
-            20, self.MMAX, self.SMAX, self.MMIN, self.SMIN, self.D, self.L, prolate=True
-        )
-        assert len(V) == 20 and len(m) == 20
-
-    def test_oblate_count(self, mock_view):
-        V, m = mock_view._generate_vm_ensemble(
-            20,
-            self.MMAX,
-            self.SMAX,
-            self.MMIN,
-            self.SMIN,
-            self.D,
-            self.L,
-            prolate=False,
-        )
-        assert len(V) == 20 and len(m) == 20
-
-    def test_prolate_m_gt1(self, mock_view):
-        _, m = mock_view._generate_vm_ensemble(
-            20, self.MMAX, self.SMAX, self.MMIN, self.SMIN, self.D, self.L, prolate=True
-        )
-        assert np.all(m >= 1.0)
-
-    def test_oblate_m_lt1(self, mock_view):
-        _, m = mock_view._generate_vm_ensemble(
-            20,
-            self.MMAX,
-            self.SMAX,
-            self.MMIN,
-            self.SMIN,
-            self.D,
-            self.L,
-            prolate=False,
-        )
-        assert np.all(m > 0) and np.all(m <= 1.0)
-
-    def test_volumes_positive(self, mock_view):
-        for p in (True, False):
-            V, _ = mock_view._generate_vm_ensemble(
-                20,
-                self.MMAX,
-                self.SMAX,
-                self.MMIN,
-                self.SMIN,
-                self.D,
-                self.L,
-                prolate=p,
-            )
-            assert np.all(V > 0)
-
-    def test_unphysical_bails_out(self, mock_view):
-        V, m = mock_view._generate_vm_ensemble(50, 5.0, 0.01, 4.0, 0.01, self.D, self.L)
-        assert len(V) < 50
-
-    def test_zero_target(self, mock_view):
-        V, m = mock_view._generate_vm_ensemble(
-            0, self.MMAX, self.SMAX, self.MMIN, self.SMIN, self.D, self.L
-        )
-        assert len(V) == 0 and len(m) == 0
-
-    def test_accepted_within_cutoff(self, mock_view):
-        cutoff = 4
-        V, m = mock_view._generate_vm_ensemble(
-            30,
-            self.MMAX,
-            self.SMAX,
-            self.MMIN,
-            self.SMIN,
-            self.D,
-            self.L,
-            prolate=True,
-            cutoff_std=cutoff,
-        )
-        if len(V) == 0:
-            pytest.skip("no results for this seed")
-        dmax, dmin = mock_view._compute_theoretical_blockages(V, m, self.D, self.L)
-        assert np.all(np.abs(dmax - self.MMAX) / self.SMAX <= cutoff + 1e-6)
-        assert np.all(np.abs(dmin - self.MMIN) / self.SMIN <= cutoff + 1e-6)
-
-
-# ===========================================================================
-# _construct_single_event_histogram
-# ===========================================================================
-
-
-class TestConstructSingleEventHistogram:
-    def test_returns_dataframe(self, mock_view):
-        df = mock_view._construct_single_event_histogram(
-            _make_event(), "Filtered Histogram"
-        )
-        assert isinstance(df, pd.DataFrame)
-        assert list(df.columns) == ["Normalized Current", "Amplitude"]
-
-    def test_default_uses_freedman_diaconis(self, mock_view):
-        """Default binning (no explicit bins arg) now uses Freedman-Diaconis,
-        which is data-dependent — assert it's a sane positive integer, not a
-        fixed count."""
-        df = mock_view._construct_single_event_histogram(
-            _make_event(), "Filtered Histogram"
-        )
-        assert len(df) > 0
-
-    def test_explicit_100_bins_still_works(self, mock_view):
-        """Explicit bin count still overrides FD and behaves as before."""
-        df = mock_view._construct_single_event_histogram(
-            _make_event(), "Filtered Histogram", bins=[100]
-        )
-        assert len(df) == 100
-
-    def test_custom_bin_count(self, mock_view):
-        df = mock_view._construct_single_event_histogram(
-            _make_event(), "Filtered Histogram", bins=[50]
-        )
-        assert len(df) == 50
-
-    def test_custom_bin_size(self, mock_view):
-        df = mock_view._construct_single_event_histogram(
-            _make_event(), "Filtered Histogram", bins=[0.01], sizes=True
-        )
-        assert len(df) > 0
-
-    def test_empty_event_returns_none(self, mock_view):
-        ev = {
-            "id": 1,
-            "event_id": 1,
-            "experiment_id": 1,
-            "channel_id": 0,
-            "raw_data": np.zeros(400),
-            "filtered_data": np.zeros(400),
-            "fit_data": np.zeros(400),
-            "samplerate": 1_000_000,
-            "padding_before": 200,
-            "padding_after": 200,
-        }
-        assert (
-            mock_view._construct_single_event_histogram(ev, "Filtered Histogram")
-            is None
-        )
-
-    def test_updates_hist_min_max(self, mock_view):
-        mock_view._construct_single_event_histogram(
-            _make_event(blockage=0.4), "Filtered Histogram"
-        )
-        assert mock_view.hist_min is not None
-        assert mock_view.hist_max is not None
-        assert mock_view.hist_min < mock_view.hist_max
-
-    def test_raw_vs_filtered(self, mock_view):
-        ev = _make_event()
-        ev["raw_data"] = ev["filtered_data"].copy()
-        assert (
-            mock_view._construct_single_event_histogram(ev, "Raw Histogram") is not None
-        )
-        assert (
-            mock_view._construct_single_event_histogram(ev, "Filtered Histogram")
-            is not None
-        )
-
-    def test_invalid_bins_raises(self, mock_view):
-        with pytest.raises((ValueError, TypeError)):
-            mock_view._construct_single_event_histogram(
-                _make_event(), "Filtered Histogram", bins="bad", sizes=False
-            )
-
-
-# ===========================================================================
-# _construct_all_points_histogram
-# ===========================================================================
-
-
-class TestConstructAllPointsHistogram:
-    def _events(self, n=3):
-        return [_make_event(i, blockage=0.2 + i * 0.05, rng_seed=i) for i in range(n)]
-
-    def test_returns_dataframe(self, mock_view):
-        df = mock_view._construct_all_points_histogram(
-            iter(self._events()), "Filtered Histogram"
-        )
-        assert isinstance(df, pd.DataFrame)
-        assert "Normalized Current" in df.columns
-
-    def test_default_100_bins(self, mock_view):
-        df = mock_view._construct_all_points_histogram(
-            iter(self._events()), "Filtered Histogram"
-        )
-        assert len(df) == 100
-
-    def test_custom_bins(self, mock_view):
-        df = mock_view._construct_all_points_histogram(
-            iter(self._events()), "Filtered Histogram", bins=[50]
-        )
-        assert len(df) == 50
-
-    def test_bin_size_mode(self, mock_view):
-        df = mock_view._construct_all_points_histogram(
-            iter(self._events()), "Filtered Histogram", bins=[0.05], sizes=True
-        )
-        assert len(df) > 0
-
-    def test_raw_histogram_type(self, mock_view):
-        df = mock_view._construct_all_points_histogram(
-            iter(self._events()), "Raw Histogram"
-        )
-        assert df is not None
-
-    def test_amplitude_nonnegative(self, mock_view):
-        df = mock_view._construct_all_points_histogram(
-            iter(self._events()), "Filtered Histogram"
-        )
-        assert np.all(df["Amplitude"].values >= 0)
-
-    def test_multiple_events_extend_range(self, mock_view):
-        evs = [
-            _make_event(blockage=0.1, rng_seed=0),
-            _make_event(blockage=0.5, rng_seed=1),
-        ]
-        df = mock_view._construct_all_points_histogram(iter(evs), "Filtered Histogram")
-        assert df["Normalized Current"].max() - df["Normalized Current"].min() > 0
-
-
-# ===========================================================================
-# _build_load_event_data_args
-# ===========================================================================
-
-
-class TestBuildLoadEventDataArgs:
-    def test_non_raw_returns_filter_and_exp(self, mock_view):
-        exp_ch = {"ExpA": ["0"]}
-        result = mock_view._build_load_event_data_args(
-            "dur > 100", "myfilter", "ExpA", "0", exp_ch, "loader1"
-        )
-        assert result == ("dur > 100", exp_ch)
-
-    def test_raw_returns_none_second(self, mock_view):
-        result = mock_view._build_load_event_data_args(
-            "SELECT * FROM events", "myfilter_raw", "ExpA", "0", {}, "loader1"
-        )
-        assert result[1] is None
-
-    def test_raw_strips_trailing_semicolon(self, mock_view):
-        result = mock_view._build_load_event_data_args(
-            "SELECT * FROM events;", "filter_raw", None, "0", {}, "loader1"
-        )
-        assert not result[0].endswith(";")
-
-    def test_raw_no_exp_no_scope(self, mock_view):
-        result = mock_view._build_load_event_data_args(
-            "SELECT * FROM events", "filter_raw", None, "0", {}, "loader1"
-        )
-        assert "WHERE" not in result[0].upper()
-
-    def test_raw_scope_requires_live_bus(self, mock_view):
-        # global_signal.emit() has no connected slots in tests so
-        # experiment_id stays None and the scope clause is not appended.
-        mock_view.experiment_id = 5
-        mock_view.channel_db_id = 2
-        result = mock_view._build_load_event_data_args(
-            "SELECT * FROM events", "filter_raw", "ExpA", "0", {}, "loader1"
-        )
-        assert result[1] is None
-        assert "SELECT * FROM events" in result[0]
-
-
-# ===========================================================================
 # State setters
 # ===========================================================================
 
 
 class TestStateSetters:
-    def test_set_alter_database_status_true(self, mock_view):
-        mock_view.set_alter_database_status(True)
-        assert mock_view.operation_success is True
-
-    def test_set_alter_database_status_false(self, mock_view):
-        mock_view.set_alter_database_status(False)
-        assert mock_view.operation_success is False
-
-    def test_update_column_names(self, mock_view):
-        mock_view.update_column_names(["a", "b", "c"])
-        assert mock_view.available_columns == ["a", "b", "c"]
-
-    def test_set_channel_db_id(self, mock_view):
-        mock_view.set_channel_db_id(42)
-        assert mock_view.channel_db_id == 42
-
-    def test_set_baseline_duration(self, mock_view):
-        mock_view.set_baseline_duration(500)
-        assert mock_view.baseline_duration == 500
-
     def test_set_event_data_generator(self, mock_view):
         g = iter([1, 2, 3])
         mock_view.set_event_data_generator(g)
@@ -764,39 +303,6 @@ class TestStateSetters:
         g = iter([])
         mock_view.set_event_plot_data_generator(g)
         assert mock_view.plot_events_generator is g
-        assert mock_view.plot_events_generator_updated is True
-
-    def test_set_experiment_id(self, mock_view):
-        mock_view.set_experiment_id(99)
-        assert mock_view.experiment_id == 99
-
-    def test_set_table_by_column_appends(self, mock_view):
-        if not hasattr(mock_view, "involved_tables"):
-            mock_view.involved_tables = []
-        before = len(mock_view.involved_tables)
-        mock_view.set_table_by_column("events")
-        assert len(mock_view.involved_tables) == before + 1
-        assert "events" in mock_view.involved_tables
-
-    def test_set_table_by_column_none_ignored(self, mock_view):
-        if not hasattr(mock_view, "involved_tables"):
-            mock_view.involved_tables = []
-        before = len(mock_view.involved_tables)
-        mock_view.set_table_by_column(None)
-        assert len(mock_view.involved_tables) == before
-
-    def test_set_units(self, mock_view):
-        mock_view.set_units("nm")
-        assert mock_view.units == "nm"
-
-    def test_clear_pending_filter_state(self, mock_view):
-        mock_view._pending_filter_name = "x"
-        mock_view._pending_filter_text = "y"
-        mock_view._pending_old_filter_name = "z"
-        mock_view.clear_pending_filter_state()
-        assert mock_view._pending_filter_name is None
-        assert mock_view._pending_filter_text is None
-        assert mock_view._pending_old_filter_name is None
 
     def test_get_current_view(self, mock_view):
         assert mock_view.get_current_view() == "ProteinView"
@@ -811,14 +317,6 @@ class TestStateSetters:
         mock_view.set_query("", "events")
         assert mock_view.query == ""
 
-    def test_set_query_shows_sql_when_flag(self, mock_view):
-        received = []
-        mock_view.add_text_to_display.connect(lambda msg, src: received.append(msg))
-        mock_view._show_sql_in_display = True
-        mock_view.set_query("SELECT 1", "events")
-        assert any("SELECT 1" in m for m in received)
-        assert mock_view._show_sql_in_display is False
-
     def test_set_event_query_stores(self, mock_view):
         mock_view.set_event_query("SELECT * FROM events")
         assert mock_view.event_query == "SELECT * FROM events"
@@ -826,14 +324,6 @@ class TestStateSetters:
     def test_set_event_query_empty(self, mock_view):
         mock_view.set_event_query("")
         assert mock_view.event_query == ""
-
-    def test_set_event_query_shows_when_flag(self, mock_view):
-        received = []
-        mock_view.add_text_to_display.connect(lambda msg, src: received.append(msg))
-        mock_view._show_event_sql_in_display = True
-        mock_view.set_event_query("SELECT 2")
-        assert any("SELECT 2" in m for m in received)
-        assert mock_view._show_event_sql_in_display is False
 
 
 # ===========================================================================
@@ -878,29 +368,6 @@ class TestCommitFits:
         with pytest.raises(AttributeError, match="fit data has not been set"):
             mock_view._commit_fits("loader1")
 
-    def test_proceeds_with_fit_data(self, mock_view):
-        # column_table is None so the overwrite dialog is never shown;
-        # global_signal is emitted with no connected handler, which is fine.
-        mock_view.fit_data = pd.DataFrame(
-            {
-                "id": [1],
-                "prolate_volume": [100.0],
-                "prolate_shape_factor": [2.0],
-                "prolate_major_axis": [10.0],
-                "prolate_minor_axis": [5.0],
-                "oblate_volume": [80.0],
-                "oblate_shape_factor": [0.5],
-                "oblate_major_axis": [4.0],
-                "oblate_minor_axis": [8.0],
-                "min_fractional_blockage": [0.1],
-                "min_fractional_blockage_std": [0.01],
-                "max_fractional_blockage": [0.3],
-                "max_fractional_blockage_std": [0.02],
-            }
-        )
-        mock_view.column_table = None
-        mock_view._commit_fits("loader1")  # should not raise
-
 
 # ===========================================================================
 # _reset_actions
@@ -909,15 +376,17 @@ class TestCommitFits:
 
 class TestResetActions:
     def test_clears_hist_state(self, mock_view):
-        mock_view.hist_min = 1.0
-        mock_view.hist_max = 2.0
+        """
+        ``hist_min``/``hist_max`` went with the binning to the Model: the two
+        methods that wrote them live there now, which left three clears and no
+        reader at all.
+        """
         mock_view.hist_data = [([1], [2])]
         mock_view.hist_labels = ["x"]
         mock_view._reset_actions()
-        assert mock_view.hist_min is None
-        assert mock_view.hist_max is None
         assert mock_view.hist_data == []
         assert mock_view.hist_labels == []
+        assert not hasattr(mock_view, "hist_min")
 
     def test_clears_bins(self, mock_view):
         mock_view.allowed_bins = [10]
@@ -942,11 +411,6 @@ class TestClearFigureState:
         # Just verify _clear_figure_state runs without error
         # (cache internals belong to MetaView and vary by implementation)
         mock_view._clear_figure_state()
-
-    def test_resets_event_outer_ax(self, mock_view):
-        mock_view.event_outer_ax = object()
-        mock_view._clear_figure_state()
-        assert mock_view.event_outer_ax is None
 
     def test_heatmap_colorbar_reset(self, mock_view):
         mock_view._heatmap_colorbar = object()
@@ -1002,36 +466,67 @@ class TestPlotScatterplot:
         rng = np.random.default_rng(0)
         return pd.DataFrame({"V": rng.random(10), "m": rng.random(10)})
 
-    def test_labels_set(self, real_view):
+    def _emitted(self, real_view, df, logscales, units=("nm^3", "au")):
+        """
+        Drive the request half and capture what it asked for.
+
+        The filtering is the Model's, so the request half only formats the labels
+        and asks; the drawing is ``MetaSubsetTabView.set_scatterplot``.
+
+        :param real_view: the view under test
+        :type real_view: ProteinView
+        :param df: the frame to plot
+        :type df: pd.DataFrame
+        :param logscales: the log flags for the two axes
+        :type logscales: list
+        :param units: the units for the two axes
+        :type units: tuple
+        :return: the emitted arguments
+        :rtype: tuple
+        """
+        captured = []
+        real_view.scatterplot_requested.connect(lambda *args: captured.append(args))
         real_view._plot_scatterplot(
-            real_view.ax_vm, self._df(), ["V", "m"], ["nm^3", "au"], [False, False]
+            real_view.ax_vm, df, ["V", "m"], list(units), logscales
         )
-        assert "V" in real_view.ax_vm.get_xlabel()
-        assert "m" in real_view.ax_vm.get_ylabel()
+        return captured[0]
+
+    def test_labels_set(self, real_view):
+        _columns, _flags, ax, labels, _label = self._emitted(
+            real_view, self._df(), [False, False]
+        )
+
+        assert "V" in labels[0]
+        assert "m" in labels[1]
+        assert ax is real_view.ax_vm
+
+    def test_the_raw_columns_and_their_flags_go_out(self, real_view):
+        """The filter is the Model's, so the columns leave unfiltered."""
+        df = self._df()
+
+        columns, flags, _ax, _labels, _label = self._emitted(
+            real_view, df, [True, False]
+        )
+
+        assert [list(column) for column in columns] == [
+            df["V"].tolist(),
+            df["m"].tolist(),
+        ]
+        assert flags == [True, False]
 
     def test_log_x_prefix(self, real_view):
-        df = pd.DataFrame(
-            {
-                "V": np.abs(np.random.rand(10)) + 0.01,
-                "m": np.abs(np.random.rand(10)) + 0.01,
-            }
+        _columns, _flags, _ax, labels, _label = self._emitted(
+            real_view, self._df(), [True, False], units=("", "")
         )
-        real_view._plot_scatterplot(
-            real_view.ax_vm, df, ["V", "m"], ["", ""], [True, False]
-        )
-        assert "log10" in real_view.ax_vm.get_xlabel()
+
+        assert "log10" in labels[0]
 
     def test_log_y_prefix(self, real_view):
-        df = pd.DataFrame(
-            {
-                "V": np.abs(np.random.rand(10)) + 0.01,
-                "m": np.abs(np.random.rand(10)) + 0.01,
-            }
+        _columns, _flags, _ax, labels, _label = self._emitted(
+            real_view, self._df(), [False, True], units=("", "")
         )
-        real_view._plot_scatterplot(
-            real_view.ax_vm, df, ["V", "m"], ["", ""], [False, True]
-        )
-        assert "log10" in real_view.ax_vm.get_ylabel()
+
+        assert "log10" in labels[1]
 
 
 # ===========================================================================
@@ -1068,15 +563,23 @@ class TestPlotXyerrScatterplot:
             err_cols=["xe", "ye"],
         )
 
-    def test_null_err_col(self, mock_view):
-        mock_view._plot_xyerr_scatterplot(
-            mock_view.ax_hist,
-            self._df(),
-            ["x", "y"],
-            ["", ""],
-            [False, False],
-            err_cols=["xe", None],
-        )
+    def test_a_missing_error_column_is_refused(self, mock_view):
+        """
+        Both error columns are required now. The old code accepted a None and drew
+        that axis without bars; nothing ever passed one - the single caller names
+        two real columns - and supporting it through the filter would mean telling
+        the drawing half which of the four arrays it was given. Refusing it is the
+        smaller contract, and the wrong-length case already raised.
+        """
+        with pytest.raises(ValueError, match="two error columns"):
+            mock_view._plot_xyerr_scatterplot(
+                mock_view.ax_hist,
+                self._df(),
+                ["x", "y"],
+                ["", ""],
+                [False, False],
+                err_cols=["xe", None],
+            )
 
 
 # ===========================================================================
@@ -1101,9 +604,17 @@ class TestUpdatePlot:
         assert "NC" in real_view.ax_hist.get_xlabel()
 
     def test_scatterplot_routes_to_vm(self, real_view):
+        """
+        The panel choice is still ``update_plot``'s; what reaches the request half
+        is the axes it picked.
+        """
+        captured = []
+        real_view.scatterplot_requested.connect(lambda *args: captured.append(args))
         df = pd.DataFrame({"V": np.random.rand(5), "m": np.random.rand(5)})
+
         real_view.update_plot("Scatterplot", df, ["V", "m"], ["", ""], [False, False])
-        assert "V" in real_view.ax_vm.get_xlabel()
+
+        assert captured[0][2] is real_view.ax_vm
 
     def test_peak_scatterplot_routes_to_hist(self, mock_view):
         df = pd.DataFrame(
@@ -1135,65 +646,19 @@ class TestUpdatePlot:
 # ===========================================================================
 
 
-class TestRangeHelpers:
-    def test_parse_single(self, mock_view):
-        assert mock_view._parse_event_indices("5", False) == [(5, 5)]
+class TestFactors:
+    """
+    ``MetaView._factors``, the subplot-grid helper.
 
-    def test_parse_range(self, mock_view):
-        assert mock_view._parse_event_indices("3-7", False) == [(3, 7)]
-
-    def test_parse_mixed(self, mock_view):
-        assert mock_view._parse_event_indices("1,3-5,8", False) == [
-            (1, 1),
-            (3, 5),
-            (8, 8),
-        ]
-
-    def test_shift_right_increases_values(self, mock_view):
-        before = mock_view._shift_ranges([(3, 3)], "right", 1)
-        assert before[0][0] > 3 or before[0][1] > 3 or before[0] == (4, 4)
-
-    def test_shift_left_decreases_values(self, mock_view):
-        result = mock_view._shift_ranges([(5, 5)], "left", 1)
-        # Left shift should move the range downward
-        assert result[0][0] <= 5 and result[0][1] <= 5
-
-    def test_shift_left_does_not_go_below_one(self, mock_view):
-        # Shifting left from 1 should not produce 0 or negative
-        result = mock_view._shift_ranges([(1, 1)], "left", 1)
-        assert result[0][0] >= 0  # at worst 0; real impls clamp to 1
-
-    def test_merge_adjacent(self, mock_view):
-        assert mock_view._merge_ranges([(1, 2), (3, 4)]) == [(1, 4)]
-
-    def test_merge_disjoint(self, mock_view):
-        assert mock_view._merge_ranges([(1, 2), (5, 6)]) == [(1, 2), (5, 6)]
-
-    def test_merge_empty(self, mock_view):
-        assert mock_view._merge_ranges([]) == []
-
-    def test_format_single(self, mock_view):
-        assert mock_view._format_ranges([(5, 5)]) == "5"
-
-    def test_format_range(self, mock_view):
-        assert mock_view._format_ranges([(3, 7)]) == "3-7"
-
-    def test_format_mixed(self, mock_view):
-        assert mock_view._format_ranges([(1, 1), (3, 5)]) == "1,3-5"
-
-    def test_expand_single(self, mock_view):
-        assert mock_view._expand_event_indices("5") == [5]
-
-    def test_expand_range(self, mock_view):
-        assert mock_view._expand_event_indices("3-5") == [3, 4, 5]
-
-    def test_expand_mixed(self, mock_view):
-        assert mock_view._expand_event_indices("1,3-5,8") == [1, 3, 4, 5, 8]
-
-    def test_expand_positive_only(self, mock_view):
-        # Only positive indices should appear
-        result = mock_view._expand_event_indices("1,2,3")
-        assert all(i > 0 for i in result)
+    This class held sixteen more tests, for the five event-index range helpers. Those
+    helpers live on ``MetaEventTabView`` rather than ``MetaView``, and its only
+    subclasses are the two event tabs - the protein tab never had a claim on them, and
+    reaching a base method through an unrelated tab is what let that go unnoticed.
+    ``tests/unit/views/test_meta_view_characterization.py`` pins all five properly, with
+    28 tests asserting literal values; the ones deleted here asserted an ``or``-chain of
+    three alternatives, and one asserted ``>= 0`` under a comment claiming a clamp the
+    implementation does not have.
+    """
 
     def test_factors_perfect_square(self, mock_view):
         assert mock_view._factors(4) == (2, 2)
@@ -1294,21 +759,91 @@ class TestUpdateEventPlot:
 # ===========================================================================
 
 
+def _answer_event_histogram_fits(view):
+    """
+    Run the round trip ProteinController runs, and hand the answer back to the View.
+
+    ``_update_event_histogram`` is only the request; ``set_event_histogram_fits``
+    draws the answer. These tests drive both halves, because driving only
+    the first asserts against a View that has not drawn anything yet.
+
+    The histograms and the fits both come from a **real ProteinModel** rather than a
+    stub, so their arity and their shapes are the collaborator's own rather than this
+    test's idea of them. The binning sits on the Model beside the fitting, so this
+    helper runs both calls the Controller runs.
+
+    :param view: the view whose request has just been emitted
+    :type view: ProteinView
+    :return: None
+    :rtype: None
+    """
+    event_data, plot_type, bins, sizes = (
+        view.event_histogram_fits_requested.emit.call_args.args
+    )
+    model = ProteinModel()
+    histograms = model.build_event_histograms(event_data, plot_type, bins, sizes)
+    view.set_event_histogram_fits(
+        model.fit_histograms(histograms), histograms, event_data
+    )
+
+
 class TestUpdateEventHistogram:
+    def test_the_request_carries_the_events_and_the_bin_request(self, mock_view):
+        """
+        The binning is done below the widget, so what goes out is the events
+        themselves and how the caller asked for them to be binned.
+        """
+        events = [_make_event(i, rng_seed=i) for i in range(1, 4)]
+
+        mock_view._update_event_histogram(events, bins=[40], sizes=False)
+
+        event_data, plot_type, bins, sizes = (
+            mock_view.event_histogram_fits_requested.emit.call_args.args
+        )
+        assert event_data is events
+        assert plot_type == "Filtered Histogram"
+        assert bins == [40]
+        assert sizes is False
+
     def test_switches_to_event_mode(self, mock_view):
         mock_view._update_event_histogram([_make_event(1)])
+        _answer_event_histogram_fits(mock_view)
         assert mock_view._display_mode == "event"
 
     def test_multiple_events(self, mock_view):
         mock_view._update_event_histogram(
             [_make_event(i, rng_seed=i) for i in range(1, 4)]
         )
+        _answer_event_histogram_fits(mock_view)
 
     def test_custom_bins(self, mock_view):
         mock_view._update_event_histogram([_make_event(1)], bins=[50])
+        _answer_event_histogram_fits(mock_view)
 
     def test_cache_committed(self, mock_view):
         mock_view._update_event_histogram([_make_event(1)])
+        _answer_event_histogram_fits(mock_view)
+
+    def test_an_event_with_no_fit_still_gets_its_histogram_drawn(self, mock_view):
+        """
+        A failed fit removes the overlay, not the subplot.
+
+        Every fit is refused here, so the only thing that can still be drawn is the
+        histogram itself - which is what stops a fit regression showing up as an
+        empty grid rather than as a missing orange line.
+        """
+        mock_view._update_event_histogram([_make_event(1)])
+        event_data, plot_type, bins, sizes = (
+            mock_view.event_histogram_fits_requested.emit.call_args.args
+        )
+        histograms = ProteinModel().build_event_histograms(
+            event_data, plot_type, bins, sizes
+        )
+
+        mock_view.set_event_histogram_fits([(None, None)], histograms, event_data)
+
+        assert mock_view._display_mode == "event"
+        assert mock_view.fig_event.add_subplot.call_count == 1
 
 
 # ===========================================================================
@@ -1375,40 +910,42 @@ class TestFilterManagement:
 
 
 class TestOnRawFilterValidated:
-    def _setup(self, mock_view, old_name=None):
-        mock_view._pending_filter_name = "newfilter"
-        mock_view._pending_filter_text = "SELECT * FROM events"
-        mock_view._pending_old_filter_name = old_name
+    # The filter's name, the name it replaces and its text travel through the call.
+    # They used to be parked on the widget by a _setup helper and read back off it
+    # here, which is state-on-the-widget the View should not be carrying.
+    def _answer(self, mock_view, valid=True, error_msg="", old_name=None):
+        mock_view.on_raw_filter_validated(
+            valid, error_msg, "newfilter", old_name, "SELECT * FROM events"
+        )
 
-    def test_invalid_clears_pending(self, mock_view):
-        self._setup(mock_view)
-        mock_view.on_raw_filter_validated(False, "syntax error")
-        assert mock_view._pending_filter_name is None
+    def test_invalid_shows_warning(self, mock_view, monkeypatch):
+        """
+        Renamed from test_invalid_emits_message: it is a modal now, not a message.
 
-    def test_invalid_emits_message(self, mock_view):
-        received = []
-        mock_view.add_text_to_display.connect(lambda m, s: received.append(m))
-        self._setup(mock_view)
-        mock_view.on_raw_filter_validated(False, "syntax error")
-        assert any("syntax error" in m for m in received)
+        on_raw_filter_validated lives on MetaSubsetTabView and uses Metadata's
+        QMessageBox rather than this tab's old status-panel line, so that a rejected
+        raw filter reads the same on both tabs.
+        """
+        warned = MagicMock()
+        monkeypatch.setattr(QMessageBox, "warning", staticmethod(warned))
+        self._answer(mock_view, False, "syntax error")
+        warned.assert_called_once()
+        assert "syntax error" in warned.call_args[0][2]
 
     def test_valid_add_path(self, mock_view):
-        self._setup(mock_view)
-        mock_view.on_raw_filter_validated(True, "")
+        self._answer(mock_view)
         assert "newfilter" in mock_view.subset_filters
 
     def test_valid_add_emits_added(self, mock_view):
         received = []
         mock_view.add_text_to_display.connect(lambda m, s: received.append(m))
-        self._setup(mock_view)
-        mock_view.on_raw_filter_validated(True, "")
+        self._answer(mock_view)
         assert any("added" in m for m in received)
 
     def test_valid_edit_path(self, mock_view):
         mock_view.subset_filters["oldfilter"] = "old text"
         mock_view.proteincontrols.filter_comboBox.addItem("oldfilter")
-        self._setup(mock_view, old_name="oldfilter")
-        mock_view.on_raw_filter_validated(True, "")
+        self._answer(mock_view, old_name="oldfilter")
         assert "oldfilter" not in mock_view.subset_filters
         assert "newfilter" in mock_view.subset_filters
 
@@ -1417,14 +954,8 @@ class TestOnRawFilterValidated:
         mock_view.add_text_to_display.connect(lambda m, s: received.append(m))
         mock_view.subset_filters["oldfilter"] = "old text"
         mock_view.proteincontrols.filter_comboBox.addItem("oldfilter")
-        self._setup(mock_view, old_name="oldfilter")
-        mock_view.on_raw_filter_validated(True, "")
+        self._answer(mock_view, old_name="oldfilter")
         assert any("updated" in m for m in received)
-
-    def test_clears_pending_after_success(self, mock_view):
-        self._setup(mock_view)
-        mock_view.on_raw_filter_validated(True, "")
-        assert mock_view._pending_filter_name is None
 
 
 # ===========================================================================
@@ -1433,49 +964,40 @@ class TestOnRawFilterValidated:
 
 
 class TestSaveLoadFilter:
-    @patch("poriscope.plugins.analysistabs.ProteinView.QFileDialog.getSaveFileName")
-    def test_save_filter_writes_json(self, mock_dialog, mock_view):
-        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as fp:
-            path = fp.name
-        mock_dialog.return_value = (path, "JSON Files (*.json)")
+    @patch("poriscope.utils.MetaSubsetTabView.QFileDialog.getSaveFileName")
+    def test_save_filter_asks_for_the_path_and_the_filters(
+        self, mock_dialog, mock_view
+    ):
+        """Writing the file is the model's; choosing where is still the dialog's."""
+        mock_dialog.return_value = ("/tmp/filters.json", "JSON Files (*.json)")
         mock_view.subset_filters = {"f1": "dur>100", "f2": "dur<500"}
-        mock_view._save_filter()
-        with open(path) as f:
-            data = json.load(f)
-        assert data == {"f1": "dur>100", "f2": "dur<500"}
-        os.unlink(path)
 
-    @patch("poriscope.plugins.analysistabs.ProteinView.QFileDialog.getSaveFileName")
+        mock_view._save_filter()
+
+        path, filters = mock_view.filters_save_requested.emit.call_args.args
+        assert path == "/tmp/filters.json"
+        assert filters == {"f1": "dur>100", "f2": "dur<500"}
+
+    @patch("poriscope.utils.MetaSubsetTabView.QFileDialog.getSaveFileName")
     def test_save_filter_empty_is_noop(self, mock_dialog, mock_view):
         mock_view.subset_filters = {}
         mock_view._save_filter()
         mock_dialog.assert_not_called()
 
-    @patch("poriscope.plugins.analysistabs.ProteinView.QFileDialog.getOpenFileName")
-    def test_load_filter_adds_filters(self, mock_dialog, mock_view):
-        filters = {"loaded_f": "dur>50"}
-        with tempfile.NamedTemporaryFile(suffix=".json", delete=False, mode="w") as fp:
-            json.dump(filters, fp)
-            path = fp.name
-        mock_dialog.return_value = (path, "JSON Files (*.json)")
-        # No loader → else-branch adds filter directly without validation
-        mock_view._load_filter({"db_loader": None})
+    def test_loaded_filters_are_added(self, mock_view):
+        """No loader, so the else-branch adds the filter without validating it."""
+        mock_view.set_loaded_filters({"loaded_f": "dur>50"}, "")
+
         assert "loaded_f" in mock_view.subset_filters
-        os.unlink(path)
 
-    @patch("poriscope.plugins.analysistabs.ProteinView.QFileDialog.getOpenFileName")
-    def test_load_filter_blocks_duplicates(self, mock_dialog, mock_view):
+    def test_loaded_filters_block_duplicates(self, mock_view):
         mock_view.subset_filters = {"existing": "dur>0"}
-        filters = {"existing": "dur>999"}
-        with tempfile.NamedTemporaryFile(suffix=".json", delete=False, mode="w") as fp:
-            json.dump(filters, fp)
-            path = fp.name
-        mock_dialog.return_value = (path, "JSON Files (*.json)")
-        mock_view._load_filter({})
-        assert mock_view.subset_filters["existing"] == "dur>0"
-        os.unlink(path)
 
-    @patch("poriscope.plugins.analysistabs.ProteinView.QFileDialog.getOpenFileName")
+        mock_view.set_loaded_filters({"existing": "dur>999"}, "")
+
+        assert mock_view.subset_filters["existing"] == "dur>0"
+
+    @patch("poriscope.utils.MetaSubsetTabView.QFileDialog.getOpenFileName")
     def test_load_filter_no_path_is_noop(self, mock_dialog, mock_view):
         mock_dialog.return_value = ("", "")
         mock_view._load_filter({})
@@ -1509,8 +1031,11 @@ class TestMiscMethods:
     def test_update_available_columns_no_error(self, mock_view):
         mock_view.update_available_columns("my_loader")
 
-    def test_update_units_no_error(self, mock_view):
-        mock_view.update_units("ldr", "duration", "x_axis")
+    # update_units is gone from this tab: it lives on MetadataView, which was its only
+    # caller. The protein tab has no units label, keeps no units cache and
+    # labels its axes with hardcoded literals, so there was nothing here for the answer
+    # to reach - which is also why ProteinView's missing update_column_units was
+    # unreachable rather than merely swallowed.
 
     def test_update_available_plugins_no_error(self, mock_view):
         mock_view.update_available_plugins({"MetaDatabaseLoader": ["ldr1"]})
@@ -1550,33 +1075,36 @@ class TestPipeline:
     D, L = 20.0, 30.0
 
     def test_single_event_histogram(self, mock_view):
-        ev = _make_event(blockage=0.3)
-        df = mock_view._construct_single_event_histogram(ev, "Filtered Histogram")
-        assert df is not None and len(df) > 0  # FD-derived, not fixed 100
+        """The binning is the Model's; drive it there."""
+        ((bincenters, amplitude),) = ProteinModel().build_event_histograms(
+            [_make_event(blockage=0.3)], "Filtered Histogram", None, False
+        )
+        assert len(bincenters) > 0  # FD-derived, not fixed 100
 
     def test_all_points_histogram_three_events(self, mock_view):
+        """The averaging is the Model's; drive it there."""
         evs = [_make_event(i, blockage=0.2 + i * 0.05, rng_seed=i) for i in range(3)]
-        df = mock_view._construct_all_points_histogram(iter(evs), "Filtered Histogram")
+        df = ProteinModel().build_all_points_histogram(
+            iter(evs), "Filtered Histogram", None, False
+        )
         assert isinstance(df, pd.DataFrame) and len(df) == 100
 
-    def test_double_gaussian_roundtrip(self, mock_view):
-        x, y = _make_double_gaussian_histogram()
-        popt = mock_view._fit_and_sanity_check_double_gaussian(x, y)
-        assert popt is not None
-        y_fit = mock_view._double_gaussian(x, *popt)
-        assert np.max(np.abs(y - y_fit)) < 0.02
-
     def test_vm_ensemble_from_histogram_fit(self, mock_view):
+        """
+        The fit and the sampling are both the Model's, so this is not cross-layer:
+        it checks that one really does take the other's output, which is the join
+        a stub on either side would hide.
+        """
+        model = ProteinModel()
         x, y = _make_double_gaussian_histogram(mean1=0.1, mean2=0.3)
-        popt = mock_view._fit_and_sanity_check_double_gaussian(x, y)
+        popt = model._fit_and_sanity_check_double_gaussian(x, y)
         if popt is None:
             pytest.skip("fit did not converge")
-        means = sorted([popt[1], popt[4]])
-        stds = [abs(popt[2]), abs(popt[5])]
-        V, m = mock_view._generate_vm_ensemble(
-            20, max(means), stds[1], min(means), stds[0], self.D, self.L
-        )
-        assert len(V) <= 20
+
+        df_prolate, df_oblate = model.sample_vm_solutions(popt, self.D, self.L, 20)
+
+        assert len(df_prolate) <= 20 and len(df_oblate) <= 20
+        assert list(df_prolate.columns) == ["V", "m", "a", "b"]
 
     def test_update_event_plot_end_to_end(self, mock_view):
         mock_view._update_event_plot([_make_event(1), _make_event(2)])
@@ -1584,6 +1112,7 @@ class TestPipeline:
 
     def test_update_event_histogram_end_to_end(self, mock_view):
         mock_view._update_event_histogram([_make_event(1)])
+        _answer_event_histogram_fits(mock_view)
         assert mock_view._display_mode == "event"
 
 
@@ -1608,9 +1137,6 @@ class TestSetCustomDisplayArea:
 
     def test_display_stack_starts_on_distribution_page(self, real_view):
         assert real_view.display_stack.currentIndex() == 0
-
-    def test_event_outer_ax_initially_none(self, real_view):
-        assert real_view.event_outer_ax is None
 
 
 class TestSetControlArea:
@@ -1652,7 +1178,12 @@ class TestHandleParameterChange:
         mock_view.handle_parameter_change("p", "export_plot_data", (self._params(),))
         assert any("Export Subset as CSV" in m for m in received)
 
-    def test_loader_changed_updates_columns_and_structure(self, mock_view):
+    def test_loader_changed_requests_the_structure_but_no_column_names(self, mock_view):
+        """
+        A loader change asks for the experiment structure only.
+
+        The tab reads no column names, so it no longer asks the database for them.
+        """
         with (
             patch.object(mock_view, "update_available_columns") as mock_cols,
             patch.object(mock_view, "request_experiment_structure") as mock_struct,
@@ -1660,15 +1191,37 @@ class TestHandleParameterChange:
             mock_view.handle_parameter_change(
                 "p", "loader_changed", (self._params(db_loader="ldr1"),)
             )
-        mock_cols.assert_called_once_with("ldr1")
+        mock_cols.assert_not_called()
         mock_struct.assert_called_once_with("ldr1")
 
     def test_loader_changed_no_loader_skips(self, mock_view):
-        with patch.object(mock_view, "update_available_columns") as mock_cols:
+        with patch.object(mock_view, "request_experiment_structure") as mock_struct:
             mock_view.handle_parameter_change(
                 "p", "loader_changed", ({"db_loader": None},)
             )
-        mock_cols.assert_not_called()
+        mock_struct.assert_not_called()
+
+    def test_a_column_change_elsewhere_asks_for_nothing(self, mock_view):
+        """Another tab adding columns to this tab's loader prompts no request here."""
+        asked = []
+        mock_view.column_names_requested.connect(asked.append)
+        mock_view.notify_plugin_state_changed(
+            "MetaDatabaseLoader",
+            mock_view.proteincontrols.db_loader_comboBox.currentText(),
+            "columns",
+        )
+        assert asked == []
+
+    def test_a_fit_commit_announces_new_columns_without_asking_for_them(
+        self, mock_view
+    ):
+        """Committing fits tells the other tabs, which do read columns, and asks nothing."""
+        asked, announced = [], []
+        mock_view.column_names_requested.connect(asked.append)
+        mock_view.plugin_state_changed.connect(lambda *a: announced.append(a))
+        mock_view.on_fit_commit_finished("ldr")
+        assert asked == []
+        assert announced == [("MetaDatabaseLoader", "ldr", "columns")]
 
     def test_select_experiment_and_channel_shows_tree(self, mock_view):
         mock_view.available_experiment_and_channels_by_loader = {"ldr": {"exp1": ["0"]}}
@@ -1678,6 +1231,34 @@ class TestHandleParameterChange:
                 "p", "select_experiment_and_channel", (self._params(db_loader="ldr"),)
             )
         mock_tree.assert_called_once()
+
+    def test_the_selection_tree_shows_experiments_written_since_the_loader_was_chosen(
+        self, mock_view
+    ):
+        """
+        Opening the experiment and channel tree asks the loader again before showing it.
+
+        The stand-in answers the way the Controller does: synchronously, filing the
+        loader's current structure.
+        """
+        mock_view.available_experiment_and_channels_by_loader = {"ldr": {"exp1": ["0"]}}
+        mock_view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": ["0"]}}
+        now_on_disk = {"exp1": ["0"], "exp2": ["1"]}
+
+        def answer(loader):
+            mock_view.available_experiment_and_channels_by_loader[loader] = now_on_disk
+
+        with (
+            patch.object(
+                mock_view, "request_experiment_structure", side_effect=answer
+            ) as mock_request,
+            patch.object(mock_view, "show_selection_tree") as mock_tree,
+        ):
+            mock_view.handle_parameter_change(
+                "p", "select_experiment_and_channel", (self._params(db_loader="ldr"),)
+            )
+        mock_request.assert_called_once_with("ldr")
+        assert mock_tree.call_args.args[0] == now_on_disk
 
     def test_shift_backward_routes_left(self, mock_view):
         with patch.object(mock_view, "_shift_range_and_update_plot") as mock:
@@ -1781,14 +1362,21 @@ class TestHandleParameterChange:
 
 
 class TestFetchEventData:
+    """
+    ``None`` means refused and already reported; ``[]`` means the fetch ran and
+    found nothing. The callers tell the two apart so a refusal does not get a
+    second, contradictory line naming the event - see
+    ``test_protein_event_fetch_messages.py``.
+    """
+
     def _params(self):
         return {"db_loader": "ldr", "event_index": [1]}
 
-    def test_no_experiments_returns_empty(self, mock_view):
+    def test_no_experiments_is_refused(self, mock_view):
         mock_view.selected_experiment_and_channels_by_loader = {}
         mock_view.get_selected_filters = MagicMock(return_value={})
         result = mock_view._fetch_event_data(self._params())
-        assert result == []
+        assert result is None
 
     def test_no_experiments_emits_message(self, mock_view):
         mock_view.selected_experiment_and_channels_by_loader = {}
@@ -1798,11 +1386,11 @@ class TestFetchEventData:
         mock_view._fetch_event_data(self._params())
         assert any("No experiments or channels" in m for m in received)
 
-    def test_multiple_filters_returns_empty(self, mock_view):
+    def test_multiple_filters_is_refused(self, mock_view):
         mock_view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": ["0"]}}
         mock_view.get_selected_filters = MagicMock(return_value={"f1": "a", "f2": "b"})
         result = mock_view._fetch_event_data(self._params())
-        assert result == []
+        assert result is None
 
     def test_multiple_filters_emits_message(self, mock_view):
         mock_view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": ["0"]}}
@@ -1812,19 +1400,19 @@ class TestFetchEventData:
         mock_view._fetch_event_data(self._params())
         assert any("more than one subset" in m for m in received)
 
-    def test_empty_loader_selection_returns_empty(self, mock_view):
+    def test_empty_loader_selection_is_refused(self, mock_view):
         mock_view.selected_experiment_and_channels_by_loader = {"ldr": {}}
         mock_view.get_selected_filters = MagicMock(return_value={})
         result = mock_view._fetch_event_data(self._params())
-        assert result == []
+        assert result is None
 
-    def test_multiple_experiments_returns_empty(self, mock_view):
+    def test_multiple_experiments_is_refused(self, mock_view):
         mock_view.selected_experiment_and_channels_by_loader = {
             "ldr": {"exp1": ["0"], "exp2": ["0"]}
         }
         mock_view.get_selected_filters = MagicMock(return_value={})
         result = mock_view._fetch_event_data(self._params())
-        assert result == []
+        assert result is None
 
     def test_multiple_experiments_emits_message(self, mock_view):
         mock_view.selected_experiment_and_channels_by_loader = {
@@ -1836,13 +1424,13 @@ class TestFetchEventData:
         mock_view._fetch_event_data(self._params())
         assert any("single experiment" in m for m in received)
 
-    def test_multiple_channels_returns_empty(self, mock_view):
+    def test_multiple_channels_is_refused(self, mock_view):
         mock_view.selected_experiment_and_channels_by_loader = {
             "ldr": {"exp1": ["0", "1"]}
         }
         mock_view.get_selected_filters = MagicMock(return_value={})
         result = mock_view._fetch_event_data(self._params())
-        assert result == []
+        assert result is None
 
     def test_multiple_channels_emits_message(self, mock_view):
         mock_view.selected_experiment_and_channels_by_loader = {
@@ -1855,37 +1443,84 @@ class TestFetchEventData:
         assert any("single channel" in m for m in received)
 
     def test_empty_filters_default_to_full_dataset(self, mock_view):
-        """When no filters selected, defaults to {'Full Dataset': ''}. The generator
-        never actually gets populated in this test (global_signal is mocked), so
-        we request only event_index values that are already in cached_events to
-        avoid the code trying to pull from a None generator."""
+        """When no filters selected, defaults to {'Full Dataset': ''}. Nothing answers
+        the event-plot request in this test, so the generator is never populated;
+        requesting no event indices keeps the code from pulling from a None generator.
+        """
         mock_view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": ["0"]}}
         mock_view.get_selected_filters = MagicMock(return_value={})
         mock_view.plot_events_generator = None
         mock_view.current_sql_filter = None
         mock_view.current_experiment = None
         mock_view.current_channel = None
-        mock_view.global_signal = MagicMock()
-        mock_view.plot_events_generator_updated = False
         mock_view.cached_events = {}
         params = {"db_loader": "ldr", "event_index": []}
         result = mock_view._fetch_event_data(params)
-        assert result == []
+        assert result is None
 
-    def test_fetches_fresh_via_resolve_and_generator(self, mock_view):
+    def test_asks_the_controller_for_exactly_the_events_requested(self, mock_view):
+        """
+        The resolve-and-load chain is one intent answered by
+        ``ProteinController.load_event_plot_data``, so the stub stands in for the
+        Controller by setting the generator the way it does - a stub that does nothing
+        where the real collaborator sets the answer would make every assertion below
+        vacuous.
+        """
         mock_view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": ["0"]}}
         mock_view.get_selected_filters = MagicMock(return_value={"Full Dataset": ""})
         mock_view.current_sql_filter = ""
         mock_view.current_experiment = "exp1"
         mock_view.current_channel = 0
-        mock_view._resolve_event_db_ids = MagicMock(
-            return_value=pd.DataFrame({"id": [10], "event_id": [1]})
-        )
-        mock_view.global_signal = MagicMock()
-        mock_view.plot_events_generator = iter([_make_event(1)])
+
+        requested = []
+
+        def answer(loader, event_ids, exp, channel, scope, action_label):
+            requested.append((loader, event_ids, exp, channel, scope, action_label))
+            mock_view.plot_events_generator = iter([_make_event(1)])
+
+        mock_view.event_plot_data_requested.connect(answer)
+
         result = mock_view._fetch_event_data(self._params())
+
+        assert requested == [("ldr", [1], "exp1", 0, {"exp1": ["0"]}, "events")]
         assert len(result) == 1
         assert result[0]["event_id"] == 1
+
+    def test_a_chain_that_did_not_finish_plots_nothing(self, mock_view):
+        """
+        The generator is cleared before the intent goes out, so a Controller that
+        returned early leaves None rather than the previous plot's events - the stale
+        read this step exists to remove.
+        """
+        mock_view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": ["0"]}}
+        mock_view.get_selected_filters = MagicMock(return_value={"Full Dataset": ""})
+        mock_view.plot_events_generator = iter([_make_event(99)])
+        mock_view.event_plot_data_requested.connect(lambda *a: None)
+
+        assert mock_view._fetch_event_data(self._params()) is None
+
+    def test_the_answer_comes_back_in_the_order_it_was_asked_for(self, mock_view):
+        """
+        ``load_event_data`` yields in whatever order the database gives, and the
+        navigation cares about the order it requested. The re-sort keys off the
+        ``event_id`` the loader reports on each event, against the indices asked
+        for - not off anything the id-resolution query projects.
+        """
+        mock_view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": ["0"]}}
+        mock_view.get_selected_filters = MagicMock(return_value={"Full Dataset": ""})
+        mock_view.event_plot_data_requested.connect(
+            lambda *a: setattr(
+                mock_view,
+                "plot_events_generator",
+                iter([_make_event(7), _make_event(3), _make_event(5)]),
+            )
+        )
+
+        result = mock_view._fetch_event_data(
+            {"db_loader": "ldr", "event_index": [3, 5, 7]}
+        )
+
+        assert [e["event_id"] for e in result] == [3, 5, 7]
 
 
 class TestHandlePlotEvents:
@@ -2062,67 +1697,72 @@ class TestShowAddFilterDialog:
         dialog.walkthrough_dialog = None
         return dialog
 
-    def test_sets_show_sql_flag(self, mock_view):
-        mock_view._walkthrough_active = False
-        with patch(
-            "poriscope.plugins.analysistabs.ProteinView.AddSubsetFilterDialog",
-            return_value=self._mock_dialog(None, accepted=False),
-        ):
-            mock_view._show_add_filter_dialog({"db_loader": "ldr"})
-        assert mock_view._show_sql_in_display is True
-
     def test_cancelled_dialog_does_not_emit_signal(self, mock_view):
         mock_view._walkthrough_active = False
-        mock_view.global_signal = MagicMock()
         with patch(
-            "poriscope.plugins.analysistabs.ProteinView.AddSubsetFilterDialog",
+            "poriscope.utils.MetaSubsetTabView.AddSubsetFilterDialog",
             return_value=self._mock_dialog(None, accepted=False),
         ):
             mock_view._show_add_filter_dialog({"db_loader": "ldr"})
-        mock_view.global_signal.emit.assert_not_called()
 
     def test_no_loader_logs_error_and_returns(self, mock_view):
         mock_view._walkthrough_active = False
-        mock_view.global_signal = MagicMock()
         with patch(
-            "poriscope.plugins.analysistabs.ProteinView.AddSubsetFilterDialog",
+            "poriscope.utils.MetaSubsetTabView.AddSubsetFilterDialog",
             return_value=self._mock_dialog(None, accepted=True),
         ):
             mock_view._show_add_filter_dialog({"db_loader": None})
-        mock_view.global_signal.emit.assert_not_called()
 
-    def test_assisted_filter_emits_construct_metadata_query(self, mock_view):
+    def test_assisted_filter_asks_the_controller_to_validate(self, mock_view):
+        """
+        Renamed: an intent replaced the construct_metadata_query emit.
+
+        The Controller makes that call now, and chooses the columns to validate
+        against, so what this tab does is state the intent.
+        """
         mock_view._walkthrough_active = False
-        mock_view.global_signal = MagicMock()
+        mock_view.filter_validation_requested = MagicMock()
         with patch(
-            "poriscope.plugins.analysistabs.ProteinView.AddSubsetFilterDialog",
+            "poriscope.utils.MetaSubsetTabView.AddSubsetFilterDialog",
             return_value=self._mock_dialog(None, accepted=True, is_raw=False),
         ):
             mock_view._show_add_filter_dialog({"db_loader": "ldr"})
-        mock_view.global_signal.emit.assert_called_once()
-        call_args = mock_view.global_signal.emit.call_args[0]
-        assert call_args[2] == "construct_metadata_query"
+        mock_view.filter_validation_requested.emit.assert_called_once_with(
+            # The filter's name and the name it replaces (None, for a new
+            # one) ride along with the intent instead of being parked on the widget.
+            "ldr",
+            "dur>1",
+            "validate_new_filter",
+            "f1",
+            None,
+        )
 
-    def test_raw_filter_requires_select_statement(self, mock_view):
+    def test_raw_filter_requires_select_statement(self, mock_view, monkeypatch):
+        """
+        Reported in a modal since this method moved to MetaSubsetTabView.
+
+        This tab used to put the rejection on the status panel and the metadata tab
+        put it in a QMessageBox; the promoted copy uses the modal, by decision,
+        because the dialog has just closed and a status line is easy to miss then.
+        """
         mock_view._walkthrough_active = False
-        mock_view.global_signal = MagicMock()
-        received = []
-        mock_view.add_text_to_display.connect(lambda m, s: received.append(m))
+        warned = MagicMock()
+        monkeypatch.setattr(QMessageBox, "warning", staticmethod(warned))
         with patch(
-            "poriscope.plugins.analysistabs.ProteinView.AddSubsetFilterDialog",
+            "poriscope.utils.MetaSubsetTabView.AddSubsetFilterDialog",
             return_value=self._mock_dialog(
                 None, accepted=True, is_raw=True, text="dur > 100"
             ),
         ):
             mock_view._show_add_filter_dialog({"db_loader": "ldr"})
-        assert any("SELECT statements" in m for m in received)
-        mock_view.global_signal.emit.assert_not_called()
+        warned.assert_called_once()
+        assert "SELECT statements" in warned.call_args[0][2]
 
     def test_raw_filter_with_select_validates(self, mock_view):
         mock_view._walkthrough_active = False
-        mock_view.global_signal = MagicMock()
+        mock_view.raw_filter_validation_requested = MagicMock()
         with patch(
-            "poriscope.plugins.analysistabs.ProteinView.AddSubsetFilterDialog",
+            "poriscope.utils.MetaSubsetTabView.AddSubsetFilterDialog",
             return_value=self._mock_dialog(
                 None,
                 accepted=True,
@@ -2132,25 +1772,16 @@ class TestShowAddFilterDialog:
             ),
         ):
             mock_view._show_add_filter_dialog({"db_loader": "ldr"})
-        mock_view.global_signal.emit.assert_called_once()
-        call_args = mock_view.global_signal.emit.call_args[0]
-        assert call_args[2] == "validate_filter_query"
-
-    def test_raw_filter_appends_raw_suffix(self, mock_view):
-        mock_view._walkthrough_active = False
-        mock_view.global_signal = MagicMock()
-        with patch(
-            "poriscope.plugins.analysistabs.ProteinView.AddSubsetFilterDialog",
-            return_value=self._mock_dialog(
-                None,
-                accepted=True,
-                is_raw=True,
-                name="f1",
-                text="SELECT * FROM events",
-            ),
-        ):
-            mock_view._show_add_filter_dialog({"db_loader": "ldr"})
-        assert mock_view._pending_filter_name == "f1_raw"
+        mock_view.raw_filter_validation_requested.emit.assert_called_once_with(
+            # The View sends the filter as written; the Controller adds the
+            # LIMIT 0 that makes the check cheap. The name it will be
+            # stored under - already _raw-suffixed - and the name it replaces
+            # travel with it.
+            "ldr",
+            "SELECT * FROM events",
+            "f1_raw",
+            None,
+        )
 
 
 # ===========================================================================
@@ -2174,68 +1805,68 @@ class TestShowEditFilterDialog:
         yield
         qt_app.processEvents()
 
-    def test_sets_show_sql_flag(self, mock_view):
-        mock_view.subset_filters = {"f1": "dur>1"}
-        with patch(
-            "poriscope.plugins.analysistabs.ProteinView.EditSubsetFilterDialog",
-            return_value=self._mock_dialog(accepted=False),
-        ):
-            mock_view.show_edit_filter_dialog("f1", "ldr")
-        assert mock_view._show_sql_in_display is True
-
     def test_cancelled_dialog_no_emit(self, mock_view):
         mock_view.subset_filters = {"f1": "dur>1"}
-        mock_view.global_signal = MagicMock()
         with patch(
-            "poriscope.plugins.analysistabs.ProteinView.EditSubsetFilterDialog",
+            "poriscope.utils.MetaSubsetTabView.EditSubsetFilterDialog",
             return_value=self._mock_dialog(accepted=False),
         ):
             mock_view.show_edit_filter_dialog("f1", "ldr")
-        mock_view.global_signal.emit.assert_not_called()
 
     def test_no_loader_logs_error(self, mock_view):
         mock_view.subset_filters = {"f1": "dur>1"}
-        mock_view.global_signal = MagicMock()
         with patch(
-            "poriscope.plugins.analysistabs.ProteinView.EditSubsetFilterDialog",
+            "poriscope.utils.MetaSubsetTabView.EditSubsetFilterDialog",
             return_value=self._mock_dialog(accepted=True),
         ):
             mock_view.show_edit_filter_dialog("f1", None)
-        mock_view.global_signal.emit.assert_not_called()
 
-    def test_assisted_edit_emits_construct_metadata_query(self, mock_view):
+    def test_assisted_edit_asks_the_controller_to_validate(self, mock_view):
+        """
+        Renamed: an intent replaced the construct_metadata_query emit.
+
+        The edited filter carries validate_edited_filter rather than
+        validate_new_filter, which is what tells relay_query to replace the old name
+        instead of adding a second entry.
+        """
         mock_view.subset_filters = {"f1": "dur>1"}
-        mock_view.global_signal = MagicMock()
+        mock_view.filter_validation_requested = MagicMock()
         dialog = self._mock_dialog(accepted=True, is_raw=False)
         with patch(
-            "poriscope.plugins.analysistabs.ProteinView.EditSubsetFilterDialog",
+            "poriscope.utils.MetaSubsetTabView.EditSubsetFilterDialog",
             return_value=dialog,
         ):
             mock_view.show_edit_filter_dialog("f1", "ldr")
-        mock_view.global_signal.emit.assert_called_once()
-        assert (
-            mock_view.global_signal.emit.call_args[0][2] == "construct_metadata_query"
+        mock_view.filter_validation_requested.emit.assert_called_once_with(
+            # An edit carries both names, so the Controller knows which
+            # entry to replace without reading anything off the widget.
+            "ldr",
+            dialog.new_filter,
+            "validate_edited_filter",
+            dialog.new_name,
+            "f1",
         )
 
-    def test_raw_edit_requires_select(self, mock_view):
+    def test_raw_edit_requires_select(self, mock_view, monkeypatch):
+        """Modal rather than status panel, for the reason above."""
         mock_view.subset_filters = {"f1": "dur>1"}
-        mock_view.global_signal = MagicMock()
-        received = []
-        mock_view.add_text_to_display.connect(lambda m, s: received.append(m))
+        warned = MagicMock()
+        monkeypatch.setattr(QMessageBox, "warning", staticmethod(warned))
         with patch(
-            "poriscope.plugins.analysistabs.ProteinView.EditSubsetFilterDialog",
+            "poriscope.utils.MetaSubsetTabView.EditSubsetFilterDialog",
             return_value=self._mock_dialog(
                 accepted=True, is_raw=True, new_filter="dur > 5"
             ),
         ):
             mock_view.show_edit_filter_dialog("f1", "ldr")
-        assert any("SELECT statements" in m for m in received)
+        warned.assert_called_once()
+        assert "SELECT statements" in warned.call_args[0][2]
 
     def test_raw_edit_with_select_validates(self, mock_view):
         mock_view.subset_filters = {"f1": "dur>1"}
-        mock_view.global_signal = MagicMock()
+        mock_view.raw_filter_validation_requested = MagicMock()
         with patch(
-            "poriscope.plugins.analysistabs.ProteinView.EditSubsetFilterDialog",
+            "poriscope.utils.MetaSubsetTabView.EditSubsetFilterDialog",
             return_value=self._mock_dialog(
                 accepted=True,
                 is_raw=True,
@@ -2244,19 +1875,14 @@ class TestShowEditFilterDialog:
             ),
         ):
             mock_view.show_edit_filter_dialog("f1", "ldr")
-        mock_view.global_signal.emit.assert_called_once()
-        assert mock_view.global_signal.emit.call_args[0][2] == "validate_filter_query"
-
-    def test_pending_old_filter_name_set(self, mock_view):
-        mock_view.subset_filters = {"f1": "dur>1"}
-        mock_view.global_signal = MagicMock()
-        with patch(
-            "poriscope.plugins.analysistabs.ProteinView.EditSubsetFilterDialog",
-            return_value=self._mock_dialog(accepted=True, is_raw=False, new_name="f2"),
-        ):
-            mock_view.show_edit_filter_dialog("f1", "ldr")
-        assert mock_view._pending_old_filter_name == "f1"
-        assert mock_view._pending_filter_name == "f2"
+        mock_view.raw_filter_validation_requested.emit.assert_called_once_with(
+            # The View sends the filter as written; the Controller adds the
+            # LIMIT 0 that makes the check cheap. Both names ride along.
+            "ldr",
+            "SELECT * FROM events",
+            "f1_raw",
+            "f1",
+        )
 
 
 # ===========================================================================
@@ -2309,6 +1935,48 @@ class TestUpdateDistributionIndividual:
         mock_view._update_distribution_individual(self._params())
         assert mock_view.plot_initialized is True
 
+    # These four assert on the *status panel*, not the log. The caplog tests above
+    # passed throughout while the user was told nothing: QtHandler sits at ERROR and
+    # deliberately does not surface WARNING, and its own docstring says anything the
+    # user should be told belongs on add_text_to_display. Reported from a real run.
+
+    def test_multiple_experiments_are_reported_on_the_status_panel(self, mock_view):
+        mock_view.selected_experiment_and_channels_by_loader = {
+            "ldr": {"exp1": ["0"], "exp2": ["0"]}
+        }
+        mock_view.get_selected_filters = MagicMock(return_value={})
+
+        mock_view._update_distribution_individual(self._params())
+
+        said = [c.args[0] for c in mock_view.add_text_to_display.emit.call_args_list]
+        assert any("single experiment" in m for m in said)
+
+    def test_multiple_channels_are_reported_on_the_status_panel(self, mock_view):
+        mock_view.selected_experiment_and_channels_by_loader = {
+            "ldr": {"exp1": ["0", "1"]}
+        }
+        mock_view.get_selected_filters = MagicMock(return_value={})
+
+        mock_view._update_distribution_individual(self._params())
+
+        said = [c.args[0] for c in mock_view.add_text_to_display.emit.call_args_list]
+        assert any("single channel" in m for m in said)
+
+    def test_an_experiment_with_no_channel_is_reported(self, mock_view):
+        """
+        The empty case reaches the same guard as the too-many case.
+
+        The guard used to read ``> 1`` and a ``for channel in channels:`` over
+        an empty list simply never ran, so the tab drew nothing and said nothing.
+        """
+        mock_view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": []}}
+        mock_view.get_selected_filters = MagicMock(return_value={})
+
+        mock_view._update_distribution_individual(self._params())
+
+        said = [c.args[0] for c in mock_view.add_text_to_display.emit.call_args_list]
+        assert any("single channel" in m for m in said)
+
 
 # ===========================================================================
 # _update_distribution_ensemble — guard clauses
@@ -2331,7 +1999,7 @@ class TestUpdateDistributionEnsemble:
         }
         mock_view.get_selected_filters = MagicMock(return_value={})
         with caplog.at_level("WARNING"):
-            mock_view._update_distribution_ensemble(self._params())
+            mock_view._update_distribution_ensemble(recorded(mock_view, self._params()))
         assert any("single experiment" in r.message for r in caplog.records)
 
     def test_multiple_channels_logs_warning_and_returns(self, mock_view, caplog):
@@ -2340,7 +2008,7 @@ class TestUpdateDistributionEnsemble:
         }
         mock_view.get_selected_filters = MagicMock(return_value={})
         with caplog.at_level("WARNING"):
-            mock_view._update_distribution_ensemble(self._params())
+            mock_view._update_distribution_ensemble(recorded(mock_view, self._params()))
         assert any("single channel" in r.message for r in caplog.records)
 
     def test_multiple_filters_warns_and_returns(self, mock_view):
@@ -2348,7 +2016,7 @@ class TestUpdateDistributionEnsemble:
         mock_view.get_selected_filters = MagicMock(return_value={"f1": "a", "f2": "b"})
         received = []
         mock_view.add_text_to_display.connect(lambda m, s: received.append(m))
-        mock_view._update_distribution_ensemble(self._params())
+        mock_view._update_distribution_ensemble(recorded(mock_view, self._params()))
         assert any("single subset" in m for m in received)
 
     def test_sets_plot_initialized_true(self, mock_view):
@@ -2357,8 +2025,65 @@ class TestUpdateDistributionEnsemble:
         }
         mock_view.get_selected_filters = MagicMock(return_value={})
         mock_view.plot_initialized = False
-        mock_view._update_distribution_ensemble(self._params())
+        mock_view._update_distribution_ensemble(recorded(mock_view, self._params()))
         assert mock_view.plot_initialized is True
+
+    # These four assert on the *status panel*, not the log. The caplog tests above
+    # passed throughout while the user was told nothing: QtHandler sits at ERROR and
+    # deliberately does not surface WARNING, and its own docstring says anything the
+    # user should be told belongs on add_text_to_display. Reported from a real run.
+
+    def test_multiple_experiments_are_reported_on_the_status_panel(self, mock_view):
+        mock_view.selected_experiment_and_channels_by_loader = {
+            "ldr": {"exp1": ["0"], "exp2": ["0"]}
+        }
+        mock_view.get_selected_filters = MagicMock(return_value={})
+
+        mock_view._update_distribution_ensemble(recorded(mock_view, self._params()))
+
+        said = [c.args[0] for c in mock_view.add_text_to_display.emit.call_args_list]
+        assert any("single experiment" in m for m in said)
+
+    def test_multiple_channels_are_reported_on_the_status_panel(self, mock_view):
+        mock_view.selected_experiment_and_channels_by_loader = {
+            "ldr": {"exp1": ["0", "1"]}
+        }
+        mock_view.get_selected_filters = MagicMock(return_value={})
+
+        mock_view._update_distribution_ensemble(recorded(mock_view, self._params()))
+
+        said = [c.args[0] for c in mock_view.add_text_to_display.emit.call_args_list]
+        assert any("single channel" in m for m in said)
+
+    def test_an_experiment_with_no_channel_is_reported(self, mock_view):
+        """
+        The empty case reaches the same guard as the too-many case.
+
+        The guard used to read ``> 1`` and a ``for channel in channels:`` over
+        an empty list simply never ran, so the tab drew nothing and said nothing.
+        """
+        mock_view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": []}}
+        mock_view.get_selected_filters = MagicMock(return_value={})
+
+        mock_view._update_distribution_ensemble(recorded(mock_view, self._params()))
+
+        said = [c.args[0] for c in mock_view.add_text_to_display.emit.call_args_list]
+        assert any("single channel" in m for m in said)
+
+
+def _fit_frame() -> pd.DataFrame:
+    """
+    A fit-data frame carrying every column the commit writes.
+
+    Built from ``FIT_COLUMNS`` rather than typed out, so a column added to the
+    production list cannot leave this fixture silently short of it.
+
+    :return: one row, keyed by event id
+    :rtype: pd.DataFrame
+    """
+    frame = {"id": [1]}
+    frame.update({column: [1.0] for column in FIT_COLUMNS})
+    return pd.DataFrame(frame)
 
 
 # ===========================================================================
@@ -2367,30 +2092,66 @@ class TestUpdateDistributionEnsemble:
 
 
 class TestCommitFitsExtended:
-    def test_emits_get_table_by_column(self, mock_view):
-        mock_view.fit_data = pd.DataFrame(
-            {
-                "id": [1],
-                "prolate_volume": [1.0],
-                "prolate_shape_factor": [1.0],
-                "prolate_major_axis": [1.0],
-                "prolate_minor_axis": [1.0],
-                "oblate_volume": [1.0],
-                "oblate_shape_factor": [1.0],
-                "oblate_major_axis": [1.0],
-                "oblate_minor_axis": [1.0],
-                "min_fractional_blockage": [0.1],
-                "min_fractional_blockage_std": [0.01],
-                "max_fractional_blockage": [0.3],
-                "max_fractional_blockage_std": [0.02],
-            }
-        )
-        mock_view.column_table = None
-        mock_view.global_signal = MagicMock()
+    """
+    The commit is two-phase: the View asks and the Controller looks.
+
+    What is left to pin on this side is that the question goes out and that the
+    answer decides whether the user is asked - the plugin call itself is
+    ``ProteinController.check_for_existing_fit_columns``, covered in
+    ``test_protein_fetch_slots``.
+    """
+
+    def test_asks_whether_the_database_already_holds_fit_data(self, mock_view):
+        mock_view.fit_data = _fit_frame()
+        asked = []
+        mock_view.fit_commit_requested.connect(asked.append)
+
         mock_view._commit_fits("ldr")
-        emit_calls = mock_view.global_signal.emit.call_args_list
-        actions = [c[0][2] for c in emit_calls]
-        assert "get_table_by_column" in actions
+
+        assert asked == ["ldr"]
+
+    def test_no_existing_columns_commits_without_asking_the_user(self, mock_view):
+        mock_view.fit_data = _fit_frame()
+        sent = []
+        mock_view.fit_commit_confirmed.connect(lambda *args: sent.append(args))
+
+        with patch.object(QMessageBox, "question") as dialog:
+            mock_view.confirm_fit_commit("ldr", None)
+
+        dialog.assert_not_called()
+        assert len(sent) == 1
+        loader, frame, units, table = sent[0]
+        assert (loader, table) == ("ldr", None)
+        assert list(frame.columns) == ["id"] + FIT_COLUMNS
+        assert len(units) == len(FIT_COLUMNS)
+
+    def test_existing_columns_ask_first_and_carry_the_table_through(self, mock_view):
+        mock_view.fit_data = _fit_frame()
+        sent = []
+        mock_view.fit_commit_confirmed.connect(lambda *args: sent.append(args))
+
+        with patch.object(QMessageBox, "question", return_value=QMessageBox.Ok):
+            mock_view.confirm_fit_commit("ldr", "events")
+
+        assert sent[0][0] == "ldr"
+        assert sent[0][3] == "events"
+
+    def test_declining_the_overwrite_sends_nothing(self, mock_view):
+        mock_view.fit_data = _fit_frame()
+        sent = []
+        mock_view.fit_commit_confirmed.connect(lambda *args: sent.append(args))
+
+        with patch.object(QMessageBox, "question", return_value=QMessageBox.Cancel):
+            mock_view.confirm_fit_commit("ldr", "events")
+
+        assert sent == []
+
+    def test_the_units_line_up_with_the_columns(self, mock_view):
+        """
+        A column added to one list and not the other would mislabel every column
+        after it, and nothing downstream could notice.
+        """
+        assert len(FIT_COLUMN_UNITS) == len(FIT_COLUMNS)
 
 
 # ===========================================================================
@@ -2459,3 +2220,286 @@ class TestModeScopedProperties:
         untouched = getattr(mock_view, f"{prop}_ensemble")
         setattr(mock_view, prop, MagicMock())
         assert getattr(mock_view, f"{prop}_ensemble") is untouched
+
+
+# ===========================================================================
+# set_distribution_fits - the answering half of distribution_fits_requested
+# ===========================================================================
+#
+# These were written when this method had **no test reference anywhere in the
+# suite** - its body ran under the e2e suite with nothing asserting what it
+# produced - and before its computation moved to the Model, which is what makes
+# their passing against the Model afterwards evidence the computation is unchanged.
+#
+# The ensembles are real, not stubbed: N is kept small so the Monte Carlo stays
+# fast, and every assertion is about index alignment, skipping and the shape of
+# what comes out rather than about sampled values, which are drawn from a seeded
+# generator but are not the contract.
+
+
+def _blockage_fit(mean_low=0.3, mean_high=0.6, std=0.02):
+    """
+    Build a popt tuple in the order the double-gaussian fit returns it.
+
+    :param mean_low: the smaller fractional blockage
+    :type mean_low: float
+    :param mean_high: the larger fractional blockage
+    :type mean_high: float
+    :param std: the standard deviation given to both peaks
+    :type std: float
+    :return: a six-element popt, as (amp1, mean1, std1, amp2, mean2, std2)
+    :rtype: tuple
+    """
+    return (1.0, mean_low, std, 1.0, mean_high, std)
+
+
+def _histogram_pair():
+    """
+    A stand-in for one event's histogram.
+
+    Only its presence is read by the method under test - a None entry means the
+    histogram could not be built - so the contents are deliberately minimal. It was
+    a one-column DataFrame until the binning moved to the Model, which returns the
+    two arrays the drawing half actually uses.
+
+    :return: a (bin centers, amplitude) pair
+    :rtype: tuple
+    """
+    return (np.array([0.1, 0.2, 0.3]), np.array([1.0, 2.0, 1.0]))
+
+
+class TestSetDistributionFits:
+    """
+    What is left here is the drawing. The sampling and every question about which
+    events survive it live in ``ProteinModel.sample_event_geometries``, and are
+    pinned in ``tests/unit/models/test_protein_model.py``.
+    """
+
+    def _frames(self, rows=1):
+        """
+        The three frames the Model hands back.
+
+        :param rows: how many fitted events to describe
+        :type rows: int
+        :return: the prolate solutions, the oblate solutions, and the summary rows
+        :rtype: tuple
+        """
+        solutions = pd.DataFrame(
+            {"V": [100.0, 200.0], "m": [2.0, 3.0], "a": [4.0, 5.0], "b": [2.0, 2.5]}
+        )
+        fit_data = pd.DataFrame(
+            [
+                {
+                    "id": i + 1,
+                    "min_fractional_blockage": 0.3,
+                    "min_fractional_blockage_std": 0.02,
+                    "max_fractional_blockage": 0.6,
+                    "max_fractional_blockage_std": 0.02,
+                }
+                for i in range(rows)
+            ]
+        )
+        return solutions, solutions.copy(), fit_data
+
+    def test_the_summary_rows_are_kept_for_the_commit(self, mock_view, mocker):
+        """``_commit_fits`` writes these back to the database."""
+        mocker.patch.object(mock_view, "update_plot")
+        prolate, oblate, fit_data = self._frames(rows=2)
+
+        mock_view.set_distribution_fits(prolate, oblate, fit_data)
+
+        assert mock_view.fit_data["id"].tolist() == [1, 2]
+
+    def test_the_three_plots_are_requested(self, mock_view, mocker):
+        """
+        Two scatterplots of the sampled solutions and one errorbar plot of the
+        per-event fit parameters.
+        """
+        update_plot = mocker.patch.object(mock_view, "update_plot")
+
+        mock_view.set_distribution_fits(*self._frames())
+
+        labels = [call.kwargs["dataset_label"] for call in update_plot.call_args_list]
+        assert labels == [
+            "Prolate Solutions",
+            "Oblate Solutions",
+            "Event Peak Fit Parameters",
+        ]
+
+    def test_the_peak_plot_carries_the_error_columns(self, mock_view, mocker):
+        """The errorbar plot is the only one given ``err_cols``."""
+        update_plot = mocker.patch.object(mock_view, "update_plot")
+
+        mock_view.set_distribution_fits(*self._frames())
+
+        with_errors = [
+            call
+            for call in update_plot.call_args_list
+            if call.kwargs.get("err_cols") is not None
+        ]
+        assert len(with_errors) == 1
+        assert with_errors[0].args[0] == "Peak Scatterplot"
+
+    def test_an_empty_solution_set_draws_only_what_there_is(self, mock_view, mocker):
+        """
+        A fit that sampled nothing still has its peak parameters worth plotting, so
+        the empty scatterplots are skipped rather than the whole figure.
+        """
+        update_plot = mocker.patch.object(mock_view, "update_plot")
+        _prolate, _oblate, fit_data = self._frames()
+        empty = pd.DataFrame(columns=["V", "m", "a", "b"])
+
+        mock_view.set_distribution_fits(empty, empty, fit_data)
+
+        labels = [call.kwargs["dataset_label"] for call in update_plot.call_args_list]
+        assert labels == ["Event Peak Fit Parameters"]
+
+
+# ===========================================================================
+# The ensemble histogram's request and answer halves
+# ===========================================================================
+
+
+class TestEnsembleHistogramRequest:
+    """What ``_update_distribution_ensemble`` asks for now that it builds nothing."""
+
+    def _params(self):
+        """
+        The controls' parameters for one ensemble plot.
+
+        :return: the parameter dict
+        :rtype: dict
+        """
+        return {
+            "db_loader": "ldr",
+            "plot_type": "Filtered Histogram",
+            "pore_diameter": "20.0",
+            "pore_length": "30.0",
+            "n_values": "10",
+            "bins": [40],
+            "sizes": False,
+        }
+
+    def _scoped(self, mock_view):
+        """
+        Put one experiment, one channel and one subset in scope.
+
+        :param mock_view: the view under test
+        :type mock_view: ProteinView
+        :return: None
+        :rtype: None
+        """
+        mock_view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": ["3"]}}
+        mock_view.get_selected_filters = MagicMock(return_value={"sub": "duration < 3"})
+
+    def test_the_request_carries_the_subset_and_the_bin_request(self, mock_view):
+        self._scoped(mock_view)
+
+        mock_view._update_distribution_ensemble(recorded(mock_view, self._params()))
+
+        args = mock_view.ensemble_histogram_requested.emit.call_args.args
+        loader, sql_filter, scope, plot_type, bins, sizes = args[:6]
+        assert loader == "ldr"
+        assert sql_filter == "duration < 3"
+        assert scope == {"exp1": ["3"]}
+        assert plot_type == "Filtered Histogram"
+        assert bins == [40]
+        assert sizes is False
+
+    def test_the_request_carries_the_drawing_context_and_the_geometry(self, mock_view):
+        """
+        The label, the plotted-datasets key and the pore geometry depart unchanged
+        and come back through the setter, so nothing is parked on the widget
+        between asking and answering.
+        """
+        self._scoped(mock_view)
+
+        mock_view._update_distribution_ensemble(recorded(mock_view, self._params()))
+
+        args = mock_view.ensemble_histogram_requested.emit.call_args.args
+        dataset_label, dataset_key, d, L, N = args[6:]
+        assert "sub" in dataset_label
+        assert dataset_key == ("ldr", "exp1", 3, "duration < 3", "sub")
+        assert (d, L, N) == (20.0, 30.0, 10)
+
+    def test_nothing_is_fetched_into_the_widget(self, mock_view):
+        """
+        The events never reach it, so neither does the generator - this path does
+        not touch the attribute at all now, where it used to clear it, fill it and
+        walk it twice.
+        """
+        self._scoped(mock_view)
+
+        mock_view._update_distribution_ensemble(recorded(mock_view, self._params()))
+
+        assert not hasattr(mock_view, "event_data_generator")
+
+
+class TestSetEnsembleHistogram:
+    """The answering half: draw, record, then ask for the geometry."""
+
+    def _frame(self):
+        """
+        A stand-in for the averaged histogram the Model hands back.
+
+        :return: a two-column frame
+        :rtype: pd.DataFrame
+        """
+        return pd.DataFrame(
+            {
+                "Normalized Current": np.linspace(0.0, 1.0, 10),
+                "Amplitude": np.linspace(1.0, 2.0, 10),
+            }
+        )
+
+    def test_the_histogram_is_drawn(self, mock_view, mocker):
+        mocker.patch.object(mock_view, "update_plot")
+
+        mock_view.set_ensemble_histogram(
+            self._frame(), "Filtered Histogram", [40], False, "lbl", ("k",), 1.0, 2.0, 3
+        )
+
+        assert mock_view.update_plot.call_args.args[0] == "Filtered Histogram"
+
+    def test_the_bookkeeping_describes_this_plot(self, mock_view, mocker):
+        mocker.patch.object(mock_view, "update_plot")
+
+        mock_view.set_ensemble_histogram(
+            self._frame(), "Filtered Histogram", [40], False, "lbl", ("k",), 1.0, 2.0, 3
+        )
+
+        assert mock_view.allowed_plot_type == "Filtered Histogram"
+        assert mock_view.allowed_bins == [40]
+        assert mock_view.allowed_sizes is False
+        assert ("k",) in mock_view.plotted_datasets
+
+    def test_the_bins_are_recorded_before_the_fit_is_asked_for(self, mock_view, mocker):
+        """
+        ``set_ensemble_geometry_fit`` reads ``allowed_bins`` and ``allowed_sizes``
+        to describe the fit it draws, so they have to describe *this* plot by the
+        time the request goes out. The request half used to set them between the
+        drawing and the fit; moving the drawing into a setter is exactly the change
+        that could have reordered them.
+        """
+        mocker.patch.object(mock_view, "update_plot")
+        seen = {}
+        mock_view._request_ensemble_geometry_fit = lambda *a, **k: seen.update(
+            bins=mock_view.allowed_bins, sizes=mock_view.allowed_sizes
+        )
+
+        mock_view.set_ensemble_histogram(
+            self._frame(), "Filtered Histogram", [40], True, "lbl", ("k",), 1.0, 2.0, 3
+        )
+
+        assert seen == {"bins": [40], "sizes": True}
+
+    def test_the_geometry_reaches_the_fit_request(self, mock_view, mocker):
+        mocker.patch.object(mock_view, "update_plot")
+        frame = self._frame()
+
+        mock_view.set_ensemble_histogram(
+            frame, "Filtered Histogram", [40], False, "lbl", ("k",), 11.0, 22.0, 33
+        )
+
+        args = mock_view.ensemble_fit_requested.emit.call_args.args
+        assert args[3:] == ("Filtered Histogram", 11.0, 22.0, 33)

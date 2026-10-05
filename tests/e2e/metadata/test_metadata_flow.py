@@ -41,8 +41,6 @@ Stages:
 """
 
 import os
-import sys
-from pathlib import Path
 
 import pytest
 from PySide6 import QtCore, QtWidgets
@@ -55,9 +53,6 @@ from poriscope.views.main_view import MainView
 from tests.e2e._helpers import open_menu_hybrid
 
 # tests/e2e/metadata/this_file.py -> parents[3] == repo root
-REPO_ROOT = Path(__file__).resolve().parents[3]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
 # ---- Env knobs --------------------------------------------------------
 LOADER_SUBCLASS_NAME = os.getenv("E2E_DBLOADER_NAME", "SQLiteDBLoader")
@@ -222,12 +217,12 @@ def test_metadata_flow(
     # exercising the REAL populate_tree/select_all_button/get_selected
     # logic on a plain (non-popup) widget instance instead of faking the
     # whole class.
-    import poriscope.plugins.analysistabs.MetadataView as metadata_view_mod
+    from poriscope.views.widgets.SelectionTree import SelectionTree
 
     def _patched_show_dialog(
         self, structure, loader_name, title="Select Channels", selected=None
     ):
-        selection_widget = metadata_view_mod.SelectionTree()
+        selection_widget = SelectionTree()
         selection_widget.populate_tree(structure, loader_name, selected)
         tree = selection_widget.tree
         select_all_btn = selection_widget.select_all_button
@@ -385,7 +380,7 @@ def test_metadata_flow(
         return result
 
     monkeypatch.setattr(
-        metadata_view_mod.SelectionTree,
+        SelectionTree,
         "show_dialog",
         _patched_show_dialog,
         raising=True,

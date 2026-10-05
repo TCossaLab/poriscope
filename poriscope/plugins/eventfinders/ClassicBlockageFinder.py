@@ -29,7 +29,6 @@ from typing import Any, Dict, List, Optional, Tuple, override
 
 import numpy as np
 import numpy.typing as npt
-from fast_histogram import histogram1d
 
 from poriscope.utils.DocstringDecorator import inherit_docstrings
 from poriscope.utils.LogDecorator import log
@@ -84,21 +83,29 @@ class ClassicBlockageFinder(MetaEventFinder):
         standalone: bool = False,
     ) -> Dict[str, Dict[str, Any]]:
         """
-        Get a dict populated with keys needed to initialize the filter if they are not set yet.
-        This dict must have the following structure, but Min, Max, and Options can be skipped or explicitly set to None if they are not used.
-        Type is required; Value may be omitted or set to None, both meaning there is no default and the user must supply one. All values provided must be consistent with Type.
-        EventFinder objects MUST include a MetaReader object in settings
+        Declare the settings this event finder exposes, on top of the base contract.
 
-        .. code-block:: python
+        Called by poriscope when the plugin is instantiated or reconfigured, to build
+        the settings dialog and to sanity-check whatever the user enters; the accepted
+        values are then readable through ``self.settings``. See
+        :py:meth:`~poriscope.utils.MetaEventFinder.MetaEventFinder.get_empty_settings`
+        for the structure of the dict and what ``Type``, ``Value``, ``Min``, ``Max``, ``Options`` and
+        ``Units`` mean in it, and for the reserved keys the GUI builds file pickers
+        from.
 
-          settings = {'Parameter 1': {'Type': <int, float, str, bool>,
-                                           'Value': <value> or None,
-                                           'Options': [<option_1>, <option_2>, ... ] or None,
-                                           'Min': <min_value> or None,
-                                           'Max': <max_value> or None
-                                          },
-                          ...
-                          }
+        The ``super()`` call supplies the mandatory ``"MetaReader"`` key, which is how
+        this plugin is wired to its data source, and ``"Threshold"``, which the base
+        declares without a unit because the base loop reads it; this plugin sets
+        the unit.
+
+        The keys this plugin adds or configures:
+
+        - ``Threshold`` (pA) - how far below the fitted baseline the signal must fall
+          for an event to start, in absolute current.
+        - ``Min Duration`` / ``Max Duration`` (us) - events outside this range are
+          rejected.
+        - ``Min Separation`` (us) - two events closer together than this are rejected
+          rather than merged.
 
         :param globally_available_plugins: a dict containing all data plugins that exist to date, keyed by metaclass. Must include "MetaReader" as a key, with explicitly set Type MetaReader.
         :type globally_available_plugins: Optional[Dict[str, List[str]]]
@@ -108,12 +115,7 @@ class ClassicBlockageFinder(MetaEventFinder):
         :rtype: Dict[str, Dict[str, Any]]
         """
         settings = super().get_empty_settings(globally_available_plugins, standalone)
-        settings["Threshold"] = {
-            "Type": float,
-            "Value": None,
-            "Min": 0.0,
-            "Units": "pA",
-        }
+        settings["Threshold"]["Units"] = "pA"
         settings["Min Duration"] = {
             "Type": float,
             "Value": 0.0,
@@ -295,206 +297,17 @@ class ClassicBlockageFinder(MetaEventFinder):
         """
         Get the local mean and standard deviation for a chunk of data. Assumes data is rectified.
 
+        The range is taken from the chunk itself, so every sample contributes; a finder
+        that wants to restrict what counts as baseline overrides this and narrows the
+        range it asks for. A chunk with no variation in it has no histogram to fit, and
+        :py:meth:`~poriscope.utils.MetaEventFinder.MetaEventFinder._fit_baseline_histogram`
+        raises ``ValueError`` for it.
 
         :param data: Chunk of timeseries data to compute statistics on.
         :type data: npt.NDArray[np.float64]
         :return: Tuple of mean and standard deviation of the baseline.
         :rtype: tuple[float, float]
-        :raises ValueError: if a baseline histogram width cannot be estimated for this chunk (no variation in the data)
         """
-        top = np.max(data)
-        bottom = np.min(data)
-
-        width = 2 * (top - bottom) / len(data) ** (1 / 3)
-        if width <= 0:
-            raise ValueError(
-                "Unable to estimate a baseline histogram width for this chunk (no variation in the data)"
-            )
-        bins = int((top - bottom) / width)
-        hist = histogram1d(data, range=[bottom, top], bins=bins)
-        centers = np.linspace(bottom, top, len(hist))
-        max_index = np.argmax(hist)
-
-        maxval = hist[max_index]
-        # top_index: the first index where hist[i] <= maxval/5 starting from max_index
-        try:
-            top_index = next(
-                i for i in range(max_index, len(hist)) if hist[i] <= maxval / 5
-            )
-        except StopIteration:
-            top_index = len(hist) - 1
-
-        # bottom_index: the first index where hist[i] <= maxval/5 going backwards from max_index
-        try:
-            bottom_index = next(
-                i for i in range(max_index, -1, -1) if hist[i] <= maxval / 5
-            )
-        except StopIteration:
-            bottom_index = 0
-
-        half_width = np.minimum(top_index - max_index, max_index - bottom_index)
-        top_index = max_index + half_width
-        bottom_index = max_index - half_width
-
-        top = centers[top_index]
-        bottom = centers[bottom_index]
-
-        mask = (data > bottom) & (data < top)
-        data = data[mask]
-
-        hist = hist[bottom_index:top_index]
-        centers = centers[bottom_index:top_index]
-
-        max_index = np.argmax(hist)
-        maxval = hist[max_index]
-
-        # top_index: the first index where hist[i] <= 0.6*maxval starting from max_index
-        try:
-            top_index = next(
-                i for i in range(max_index, len(hist)) if hist[i] <= 0.6 * maxval
-            )
-        except StopIteration:
-            top_index = len(hist) - 1
-
-        # bottom_index: the first index where hist[i] <= 0.6*maxval going backwards from max_index
-        try:
-            bottom_index = next(
-                i for i in range(max_index, -1, -1) if hist[i] <= 0.6 * maxval
-            )
-        except StopIteration:
-            bottom_index = 0
-
-        try:
-            _, mean, std = np.array(
-                self._gaussian_fit(
-                    hist,
-                    centers,
-                    centers[max_index],
-                    np.absolute(centers[top_index] - centers[bottom_index]),
-                )
-            )
-        except ValueError:
-            raise
-        return mean, std
-
-    # Utility functions, specific to subclasses as needed
-
-    # Utility functions, specific to subclasses as needed
-    @log(logger=logger)
-    def _gaussian(self, x: float, A: float, m: float, s: float) -> float:
-        """
-        Evaluate a Gaussian function at a given point.
-
-        :param x: Input value at which to evaluate the function.
-        :type x: float
-        :param A: Amplitude of the Gaussian.
-        :type A: float
-        :param m: Mean (center) of the Gaussian.
-        :type m: float
-        :param s: Standard deviation (spread) of the Gaussian.
-        :type s: float
-        :return: Value of the Gaussian function at x.
-        :rtype: float
-        """
-        return A * np.exp(-((x - m) ** 2) / (2 * s**2))
-
-    @log(logger=logger)
-    def _gaussian_fit(
-        self,
-        histogram: npt.NDArray[np.float64],
-        bins: npt.NDArray[np.float64],
-        mean_guess: float,
-        stdev_guess: float,
-    ) -> tuple[float, float, float]:
-        """
-        Fit a Gaussian function to histogram data using a linearized least squares approach.
-
-        :param histogram: Array of counts in each histogram bin.
-        :type histogram: npt.NDArray[np.float64]
-        :param bins: Center positions of histogram bins.
-        :type bins: npt.NDArray[np.float64]
-        :param mean_guess: Initial estimate of the Gaussian mean.
-        :type mean_guess: float
-        :param stdev_guess: Initial estimate of the Gaussian standard deviation.
-        :type stdev_guess: float
-        :return: Tuple containing (amplitude, mean, standard deviation) of the fitted Gaussian.
-        :rtype: tuple[float, float, float]
-        :raises ValueError: If standard deviation guess is invalid or the fit fails.
-        """
-        if stdev_guess <= 0:
-            raise ValueError("Invalid standard deviation guess")
-
-        amp = np.max(histogram)
-        max_loc = int(np.argmax(histogram))
-
-        # Clean Windowing: A gaussian drops to ~1.1% height at 3 standard deviations.
-        threshold = np.exp(-4.5) * amp
-
-        # --- CONTIGUOUS MASKING LOGIC ---
-        # Walk left from the peak until we hit the threshold or the array edge
-        left_bound = max_loc
-        while left_bound > 0 and histogram[left_bound - 1] > threshold:
-            left_bound -= 1
-
-        # Walk right from the peak until we hit the threshold or the array edge
-        right_bound = max_loc
-        while (
-            right_bound < len(histogram) - 1 and histogram[right_bound + 1] > threshold
-        ):
-            right_bound += 1
-
-        # Slice the arrays using the exclusive right bound
-        y_slice = histogram[left_bound : right_bound + 1]
-        x_slice = bins[left_bound : right_bound + 1]
-
-        localy = y_slice / amp
-        localx = (x_slice - mean_guess) / stdev_guess
-
-        # Vectorized Matrix Math
-        x0 = localy
-        x1 = localx * x0
-        x2 = localx * x1
-        x3 = localx * x2
-        x4 = localx * x3
-
-        x0_sum = np.sum(x0)
-        x1_sum = np.sum(x1)
-        x2_sum = np.sum(x2)
-        x3_sum = np.sum(x3)
-        x4_sum = np.sum(x4)
-
-        # localy is strictly > 0 because of the threshold mask, so log is safe
-        lny = np.log(localy) * localy
-        xlny = localx * lny
-        x2lny = localx * xlny
-
-        lny_sum = np.sum(lny)
-        xlny_sum = np.sum(xlny)
-        x2lny_sum = np.sum(x2lny)
-
-        xTx = np.array(
-            [
-                [x4_sum, x3_sum, x2_sum],
-                [x3_sum, x2_sum, x1_sum],
-                [x2_sum, x1_sum, x0_sum],
-            ]
+        return self._fit_baseline_histogram(
+            data, float(np.min(data)), float(np.max(data))
         )
-
-        xnlny = np.array([x2lny_sum, xlny_sum, lny_sum])
-        xTxinv = np.linalg.inv(xTx)
-        params = np.dot(xTxinv, xnlny)
-
-        if params[0] >= 0:
-            raise ValueError("Unable to estimate standard deviation (inverted fit)")
-
-        stdev = np.sqrt(-1.0 / (2 * params[0]))
-
-        # 'mean_offset' here is the shift in standardized units (mlocal)
-        mean_offset = stdev**2 * params[1]
-        amplitude = np.exp(params[2] + mean_offset**2 / (2 * stdev**2))
-
-        # --- THE CRITICAL MATH FIX ---
-        stdev *= stdev_guess
-        mean = (mean_offset * stdev_guess) + mean_guess  # The missing multiplier
-        amplitude *= amp
-        return amplitude, mean, np.absolute(stdev)

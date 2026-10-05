@@ -55,6 +55,9 @@ Required Public API Methods
 .. automethod:: poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader.alter_database
    :no-index:
 
+.. automethod:: poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader.get_column_type
+   :no-index:
+
 Required Private Methods
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -71,6 +74,9 @@ Required Private Methods
    :no-index:
    
 .. automethod:: poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader._validate_settings
+   :no-index:
+
+.. automethod:: poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader._ensure_event_counts
    :no-index:
 
 Optional Method Overrides

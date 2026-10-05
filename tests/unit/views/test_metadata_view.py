@@ -16,6 +16,9 @@ Comprehensive test coverage for:
 
 from __future__ import annotations
 
+import ast
+import sys
+from pathlib import Path
 from typing import Any, Callable
 from unittest.mock import MagicMock
 
@@ -25,23 +28,44 @@ import pytest
 from pytest_mock import MockerFixture
 
 from poriscope.plugins.analysistabs.MetadataView import MetadataView
+from poriscope.views.widgets.add_subset_filter_dialog import AddSubsetFilterDialog
 
 # ----------------------------- Fixtures ------------------------------
+
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
+
+
+def recorded(view, parameters):
+    """
+    Give a plot's parameters the selection ``handle_parameter_change`` records into them.
+
+    The recorded plot methods read the filter and channel selection from their
+    parameters, so a replay draws what was recorded. A test calling one directly has to
+    hand it parameters shaped the same way, and this calls the real ``_record_selection``
+    to build them, from whatever the test has stubbed ``get_selected_filters`` and the
+    channel selection to be.
+
+    :param view: the view under test
+    :type view: Any
+    :param parameters: the plot's parameters, updated in place
+    :type parameters: dict
+    :return: the same parameters
+    :rtype: dict
+    """
+    view._record_selection(parameters)
+    return parameters
 
 
 @pytest.fixture
 def mock_qt_dependencies(mocker: MockerFixture) -> None:
     """Mock all Qt and external dependencies to prevent GUI initialization."""
-    mocker.patch("poriscope.plugins.analysistabs.MetadataView.QFileDialog")
-    mocker.patch("poriscope.plugins.analysistabs.MetadataView.QHBoxLayout")
+    mocker.patch("poriscope.utils.MetaSubsetTabView.QFileDialog")
+    mocker.patch("poriscope.utils.MetaView.QHBoxLayout")
     mocker.patch("poriscope.plugins.analysistabs.MetadataView.MetadataControls")
     mocker.patch("poriscope.plugins.analysistabs.MetadataView.QMessageBox")
     mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.MetaView.__init__",
-        return_value=None,
-    )
-    mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.WalkthroughMixin.__init__",
+        "poriscope.utils.MetaView.MetaView.__init__",
         return_value=None,
     )
 
@@ -80,17 +104,76 @@ def view(mocker: MockerFixture, mock_qt_dependencies: None) -> MetadataView:
     view_instance.add_text_to_display.emit = mocker.Mock()
     view_instance.update_tab_action_history = mocker.Mock()
     view_instance.update_tab_action_history.emit = mocker.Mock()
+    view_instance.discard_last_tab_action = mocker.Mock()
 
     # Mock helper methods
     view_instance._update_cache = mocker.Mock()
     view_instance._clear_cache = mocker.Mock()
-    view_instance._logscale_and_filter_multiple_columns = mocker.Mock(
-        side_effect=lambda *args, **kwargs: (args[0],) if args else ()
-    )
-
     # Mock methods called by _overlay_plot
     view_instance.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
-    view_instance.global_signal = mocker.Mock()
+    # The two filter-validation intents. Stood in for the same reason global_signal
+    # is: this fixture builds the view with __new__ and a patched MetaView.__init__,
+    # so no QObject exists behind it and emitting a real Signal raises "Signal source
+    # has been deleted".
+    view_instance.filter_validation_requested = mocker.Mock()
+    view_instance.raw_filter_validation_requested = mocker.Mock()
+    # The filter file's two intents. Answered by MetaSubsetTabController in the real
+    # app; the tests that drive the answer call set_loaded_filters directly.
+    view_instance.filters_load_requested = mocker.Mock()
+    view_instance.filters_save_requested = mocker.Mock()
+    # Opening the selection tree asks for the loader's structure first. A bare stand-in
+    # leaves the cached structure as it is, which is the Controller answering with an
+    # unchanged one; the test of the refresh itself files a new structure instead.
+    view_instance.experiment_structure_requested = mocker.Mock()
+    # The two subset intents, answered from whatever a test parked as
+    # canned_*. Wired here rather than per test because _overlay_plot clears the
+    # answers before emitting, so every test that drives it needs the replay.
+    view_instance.metadata_subset_requested = mocker.Mock()
+    view_instance.metadata_subset_requested.emit.side_effect = _subset_answers(
+        view_instance
+    )
+    view_instance.all_points_histogram_requested = mocker.Mock()
+    view_instance.all_points_histogram_requested.emit.side_effect = (
+        _event_intent_answers(view_instance)
+    )
+    view_instance.event_overlay_requested = mocker.Mock()
+    view_instance.event_overlay_requested.emit.side_effect = _event_intent_answers(
+        view_instance
+    )
+    # The four intents that replaced the last of this tab's bus emits. The two
+    # whose answer is read back on the next statement replay a canned_* value; the two
+    # that are fire-and-forget - the per-event feature lookup and the CSV export, which
+    # runs in a worker - are bare Mocks, so a test that wants features parks them
+    # itself and a test that wants the export just asserts on the emit.
+    view_instance.column_type_requested = mocker.Mock()
+    view_instance.column_type_requested.emit.side_effect = _column_type_answer(
+        view_instance
+    )
+    view_instance.event_plot_data_requested = mocker.Mock()
+    view_instance.event_plot_data_requested.emit.side_effect = _event_plot_data_answer(
+        view_instance
+    )
+    view_instance.plot_features_requested = mocker.Mock()
+    view_instance.csv_subset_export_requested = mocker.Mock()
+    # Answered by MetadataController.calculate_heatmap in the real app; the tests
+    # that drive _plot_heatmap supply the binning themselves via _answer_heatmap,
+    # exactly as they used to supply it to a mocked _calculate_heatmap.
+    view_instance.heatmap_requested = mocker.Mock()
+    # Answered by MetadataController.filter_scatterplot / filter_3d_scatterplot in
+    # the real app; the tests that drive them replay the setter via _answer_*.
+    view_instance.scatterplot_requested = mocker.Mock()
+    view_instance.scatterplot_3d_requested = mocker.Mock()
+    # Answered by MetadataController.estimate_kernel_densities in the real app.
+    view_instance.density_requested = mocker.Mock()
+    # Answered by MetadataController.calculate_histogram_bins in the real app.
+    view_instance.histogram_bins_requested = mocker.Mock()
+    # Answered by MetadataController.fit_capture_rate in the real app.
+    view_instance.capture_rate_requested = mocker.Mock()
+    # Answered by MetadataController.count_categories in the real app.
+    view_instance.categorical_counts_requested = mocker.Mock()
+    # Answered by MetaSubsetTabController.load_event_id_cache in the real app;
+    # each test that drives _rebuild_event_id_cache sets its own answer.
+    view_instance.event_id_cache_requested = mocker.Mock()
 
     # Additional mocks needed before _init()
     view_instance._commit_cache = mocker.Mock()
@@ -185,16 +268,6 @@ def test_init_sets_plotted_datasets_empty_set(view: MetadataView) -> None:
     assert view.plotted_datasets == set()
 
 
-def test_init_sets_show_sql_in_display_false(view: MetadataView) -> None:
-    """Verify _show_sql_in_display is initialized to False."""
-    assert view._show_sql_in_display is False
-
-
-def test_init_sets_show_event_sql_in_display_false(view: MetadataView) -> None:
-    """Verify _show_event_sql_in_display is initialized to False."""
-    assert view._show_event_sql_in_display is False
-
-
 def test_init_sets_allowed_plot_type_none(view: MetadataView) -> None:
     """Verify allowed_plot_type is initialized to None."""
     assert view.allowed_plot_type is None
@@ -226,7 +299,13 @@ def test_init_sets_allowed_sizes_none(view: MetadataView) -> None:
 def test_set_control_area_creates_metadata_controls(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify MetadataControls instance is created."""
+    """
+    Verify MetadataControls instance is created.
+
+    Still patched in the tab module: the wiring and layout live on ``MetaView``,
+    but ``_build_controls`` - which constructs the widget and stores it
+    under this tab's own name - stayed here, which is the whole point of that hook.
+    """
     mock_layout: MagicMock = mocker.Mock()
     mock_controls_cls: MagicMock = mocker.patch(
         "poriscope.plugins.analysistabs.MetadataView.MetadataControls"
@@ -254,9 +333,14 @@ def test_set_control_area_connects_action_triggered_signal(
 def test_set_control_area_adds_controls_to_layout(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify controls are added to layout."""
+    """
+    Verify controls are added to layout.
+
+    The layout is built by ``MetaView._set_control_area``, which the tab inherits,
+    so the ``QHBoxLayout`` to patch is the base module's.
+    """
     mock_layout: MagicMock = mocker.Mock()
-    mocker.patch("poriscope.plugins.analysistabs.MetadataView.QHBoxLayout")
+    mocker.patch("poriscope.utils.MetaView.QHBoxLayout")
 
     view._set_control_area(mock_layout)
 
@@ -271,7 +355,7 @@ def test_get_save_filename_opens_dialog(
 ) -> None:
     """Verify QFileDialog.getSaveFileName is called."""
     mock_dialog: MagicMock = mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.QFileDialog.getSaveFileName",
+        "poriscope.utils.MetaSubsetTabView.QFileDialog.getSaveFileName",
         return_value=("/path/to/file.csv", "CSV Files (*.csv)"),
     )
 
@@ -286,7 +370,7 @@ def test_get_save_filename_returns_empty_on_cancel(
 ) -> None:
     """Verify empty string is returned when user cancels."""
     mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.QFileDialog.getSaveFileName",
+        "poriscope.utils.MetaSubsetTabView.QFileDialog.getSaveFileName",
         return_value=("", ""),
     )
 
@@ -473,110 +557,114 @@ def test_reset_actions_resets_plotted_datasets(view: MetadataView) -> None:
 # ----------------------------- Plot 1D Density Tests ------------------------------
 
 
-def test_plot_1d_density_updates_hist_min(
-    view: MetadataView, mocker: MockerFixture
+def _answer_density(view, densities, hist_min=0.0, hist_max=1.0):
+    """
+    Answer ``density_requested`` the way MetadataController does.
+
+    The estimate, the filter, the shared limits and the accumulation are all
+    below ``_plot_1d_density``: the View emits the raw columns and
+    ``set_kernel_densities`` does every bit of drawing and all of the bookkeeping.
+    What the Controller decides in between is asserted in
+    ``tests/unit/controllers/test_metadata_controller.py``.
+
+    :param view: the view whose request has just been emitted
+    :type view: MetadataView
+    :param densities: one (positions, density) pair per dataset, to answer with
+    :type densities: list
+    :param hist_min: the widened lower limit to answer with
+    :type hist_min: float
+    :param hist_max: the widened upper limit to answer with
+    :type hist_max: float
+    :return: None
+    :rtype: None
+    """
+    args = view.density_requested.emit.call_args.args
+    datasets, ax, x_label, dataset_label = args[0], args[6], args[7], args[9]
+    view.set_kernel_densities(
+        datasets[-1], dataset_label, densities, hist_min, hist_max, ax, x_label
+    )
+
+
+def test_plot_1d_density_sends_the_raw_column_and_the_log_flag(
+    view: MetadataView,
 ) -> None:
-    """Verify hist_min is updated with minimum data value."""
+    """
+    The filter is applied below the View, so the column leaves unfiltered.
+
+    The newest dataset travels at the end of the accumulated ones rather than being
+    appended first, which is what lets the Controller refuse a subset that filters
+    away without the View having to take it back out again.
+    """
     data: pd.DataFrame = pd.DataFrame({"x": np.array([1.0, 2.0, 5.0, 10.0])})
 
-    mock_kde_class: MagicMock = mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.stats.kde.gaussian_kde"
-    )
-    mock_kde_instance: MagicMock = mocker.Mock()
-    mock_kde_instance.return_value = np.array([0.1, 0.2, 0.3])
-    mock_kde_class.return_value = mock_kde_instance
+    view._plot_1d_density(view.axes, data, ["x"], ["units"], [True], bins=[7])
 
-    view._logscale_and_filter_multiple_columns = mocker.Mock(  # type: ignore[method-assign]
-        return_value=(np.array([1.0, 2.0, 5.0, 10.0]),)
-    )
+    emitted = view.density_requested.emit.call_args.args
+    assert [list(dataset) for dataset in emitted[0]] == [[1.0, 2.0, 5.0, 10.0]]
+    assert emitted[1] is True
+    assert emitted[2] == 7
+    assert emitted[8] == "x"
 
-    original_min = min
 
-    def mock_min(*args: Any, **kwargs: Any) -> Any:
-        if len(args) == 1 and isinstance(args[0], pd.DataFrame):
-            return args[0].min().min()
-        return original_min(*args, **kwargs)
-
-    mocker.patch("builtins.min", side_effect=mock_min)
+def test_plot_1d_density_does_not_accumulate_before_the_answer(
+    view: MetadataView,
+) -> None:
+    """
+    A dataset that filters away must not stay in the overlay, or the next plot
+    redraws it and hits the same empty array from inside the loop. Nothing is
+    accumulated until ``set_kernel_densities`` runs, and the Controller does not
+    call it when nothing survived.
+    """
+    data: pd.DataFrame = pd.DataFrame({"x": np.array([np.nan, np.nan])})
 
     view._plot_1d_density(view.axes, data, ["x"], ["units"], [False])
 
-    assert view.hist_min == 1.0
+    view.density_requested.emit.assert_called_once()
+    assert view.hist_data == []
+    assert view.hist_labels == []
 
 
-def test_plot_1d_density_updates_hist_max(
-    view: MetadataView, mocker: MockerFixture
+def test_set_kernel_densities_accumulates_the_newest_dataset(
+    view: MetadataView,
 ) -> None:
-    """Verify hist_max is updated with maximum data value."""
-    data: pd.DataFrame = pd.DataFrame({"x": np.array([1.0, 2.0, 5.0, 10.0])})
-
-    mock_kde_class: MagicMock = mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.stats.kde.gaussian_kde"
-    )
-    mock_kde_instance: MagicMock = mocker.Mock()
-    mock_kde_instance.return_value = np.array([0.1, 0.2, 0.3])
-    mock_kde_class.return_value = mock_kde_instance
-
-    view._logscale_and_filter_multiple_columns = mocker.Mock(  # type: ignore[method-assign]
-        return_value=(np.array([1.0, 2.0, 5.0, 10.0]),)
-    )
-
-    original_max = max
-
-    def mock_max(*args: Any, **kwargs: Any) -> Any:
-        if len(args) == 1 and isinstance(args[0], pd.DataFrame):
-            return args[0].max().max()
-        return original_max(*args, **kwargs)
-
-    mocker.patch("builtins.max", side_effect=mock_max)
-
-    view._plot_1d_density(view.axes, data, ["x"], ["units"], [False])
-
-    assert view.hist_max == 10.0
-
-
-def test_plot_1d_density_clears_axes(view: MetadataView, mocker: MockerFixture) -> None:
-    """Verify axes are cleared before plotting."""
-    data: pd.DataFrame = pd.DataFrame({"x": np.array([1.0, 2.0])})
-
-    mock_kde_class: MagicMock = mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.stats.kde.gaussian_kde"
-    )
-    mock_kde_instance: MagicMock = mocker.Mock()
-    mock_kde_instance.return_value = np.array([0.1, 0.2])
-    mock_kde_class.return_value = mock_kde_instance
-
-    view._logscale_and_filter_multiple_columns = mocker.Mock(  # type: ignore[method-assign]
-        return_value=(np.array([1.0, 2.0]),)
-    )
-
-    view._plot_1d_density(view.axes, data, ["x"], [""], [False])
-
-    view.axes.clear.assert_called()
-
-
-def test_plot_1d_density_appends_to_hist_data(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
-    """Verify data is appended to hist_data."""
+    """Verify the raw column and its label join the overlay when it is drawn."""
     data: pd.DataFrame = pd.DataFrame({"x": np.array([1.0, 2.0, 3.0])})
 
-    mock_kde_class: MagicMock = mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.stats.kde.gaussian_kde"
-    )
-    mock_kde_instance: MagicMock = mocker.Mock()
-    mock_kde_instance.return_value = np.array([0.1, 0.2, 0.3])
-    mock_kde_class.return_value = mock_kde_instance
-
-    view._logscale_and_filter_multiple_columns = mocker.Mock(  # type: ignore[method-assign]
-        return_value=(np.array([1.0, 2.0, 3.0]),)
-    )
-
     view._plot_1d_density(view.axes, data, ["x"], [""], [False], dataset_label="test")
+    _answer_density(view, [(np.array([1.0, 2.0]), np.array([0.1, 0.2]))])
 
     assert len(view.hist_data) == 1
-    assert len(view.hist_labels) == 1
-    assert view.hist_labels[0] == "test"
+    assert list(view.hist_data[0]) == [1.0, 2.0, 3.0]
+    assert view.hist_labels == ["test"]
+
+
+def test_set_kernel_densities_takes_the_widened_limits(view: MetadataView) -> None:
+    """Verify the shared limits the Model widened come back onto the view."""
+    data: pd.DataFrame = pd.DataFrame({"x": np.array([1.0, 2.0, 3.0])})
+
+    view._plot_1d_density(view.axes, data, ["x"], [""], [False])
+    _answer_density(
+        view, [(np.array([1.0, 2.0]), np.array([0.1, 0.2]))], hist_min=1.0, hist_max=3.0
+    )
+
+    assert view.hist_min == 1.0
+    assert view.hist_max == 3.0
+
+
+def test_set_kernel_densities_clears_axes(view: MetadataView) -> None:
+    """
+    Verify the axes are cleared before drawing, and not before that.
+
+    They used to be cleared in the request half, so a subset that filtered away
+    wiped the plot that was there and drew nothing in its place.
+    """
+    data: pd.DataFrame = pd.DataFrame({"x": np.array([1.0, 2.0])})
+
+    view._plot_1d_density(view.axes, data, ["x"], [""], [False])
+    view.axes.clear.assert_not_called()
+
+    _answer_density(view, [(np.array([1.0, 2.0]), np.array([0.1, 0.2]))])
+    view.axes.clear.assert_called()
 
 
 def test_plot_1d_density_raises_on_invalid_bins_list(view: MetadataView) -> None:
@@ -593,322 +681,157 @@ def test_plot_1d_density_sets_log10_label_when_logscale_true(
     """Verify log10 label is set when logscale is True."""
     data: pd.DataFrame = pd.DataFrame({"x": np.array([1.0, 10.0, 100.0])})
 
-    mock_kde_class: MagicMock = mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.stats.kde.gaussian_kde"
-    )
-    mock_kde_instance: MagicMock = mocker.Mock()
-    mock_kde_instance.return_value = np.array([0.1, 0.2, 0.3])
-    mock_kde_class.return_value = mock_kde_instance
-
-    view._logscale_and_filter_multiple_columns = mocker.Mock(  # type: ignore[method-assign]
-        return_value=(np.array([0.0, 1.0, 2.0]),)
-    )
-
     view._plot_1d_density(view.axes, data, ["x"], ["units"], [True])
+    _answer_density(view, [(np.array([0.0, 1.0, 2.0]), np.array([0.1, 0.2, 0.3]))])
 
     view.axes.set_xlabel.assert_called()
     call_args: str = str(view.axes.set_xlabel.call_args)
     assert "log10" in call_args
 
 
-def test_dunder_init_calls_super_and_initializers(mocker: MockerFixture) -> None:
-    """Verify __init__ delegates to the parent and helper initializers."""
-    mock_super_init: MagicMock = mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.MetaView.__init__",
-        return_value=None,
+def test_metaview_runs_each_initializer_exactly_once() -> None:
+    """
+    ``MetaView.__init__`` is the only constructor, and it calls each hook once.
+
+    ``MetadataView.__init__`` was deleted; it was byte-identical in all five
+    tabs. It called ``self._init()`` after ``super().__init__(...)`` - and
+    ``MetaView.__init__`` already calls ``_init()`` itself, so **every tab ran it
+    twice**, once before ``_setup_ui()`` and once after. That was measured to be a
+    no-op before it was removed: no attribute ``_init`` assigns is also assigned
+    anywhere in the ``_setup_ui`` call tree, in any of the five tabs, so the second
+    call only rewrote its own values.
+
+    Asserted against the source rather than by constructing a tab, because reaching
+    ``MetaView.__init__`` at all means building a real ``QWidget``, and the only way
+    this file's fixtures avoid that is by patching that very method away.
+    """
+    source = Path(REPO_ROOT, "poriscope", "utils", "MetaView.py").read_text(
+        encoding="utf-8"
     )
-    mock_init: MagicMock = mocker.patch.object(MetadataView, "_init", autospec=True)
-    mock_init_walkthrough: MagicMock = mocker.patch.object(
+    tree = ast.parse(source)
+    cls = next(
+        n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "MetaView"
+    )
+    init = next(
+        n for n in cls.body if isinstance(n, ast.FunctionDef) and n.name == "__init__"
+    )
+    called = [
+        n.func.attr
+        for n in ast.walk(init)
+        if isinstance(n, ast.Call)
+        and isinstance(n.func, ast.Attribute)
+        and isinstance(n.func.value, ast.Name)
+        and n.func.value.id == "self"
+    ]
+
+    assert called.count("_init") == 1, called
+    assert called.count("_init_walkthrough") == 1, called
+    assert called.count("_setup_ui") == 1, called
+
+
+def test_no_tab_defines_its_own_dunder_init() -> None:
+    """
+    All five tabs inherit construction, so the duplicate cannot creep back.
+
+    Asserted across the family rather than on Metadata alone: the five copies were
+    identical, so a regression would most likely reintroduce all five.
+    """
+    from poriscope.plugins.analysistabs.ClusteringView import ClusteringView
+    from poriscope.plugins.analysistabs.EventAnalysisView import EventAnalysisView
+    from poriscope.plugins.analysistabs.ProteinView import ProteinView
+    from poriscope.plugins.analysistabs.RawDataView import RawDataView
+
+    for cls in (
+        ClusteringView,
+        EventAnalysisView,
         MetadataView,
-        "_init_walkthrough",
-        autospec=True,
-    )
-
-    view = MetadataView("arg", key="value")
-
-    mock_super_init.assert_called_once_with("arg", key="value")
-    mock_init.assert_called_once_with(view)
-    mock_init_walkthrough.assert_called_once_with(view)
-
-
-def test_plot_1d_density_uses_first_bins_entry(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
-    """Verify a non-empty bins list is reduced to its first entry."""
-    data = pd.DataFrame({"x": np.array([1.0, 2.0, 3.0, 4.0])})
-    mock_kde_class: MagicMock = mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.stats.kde.gaussian_kde"
-    )
-    mock_kde_instance: MagicMock = mocker.Mock()
-    mock_kde_instance.return_value = np.array([0.1, 0.2, 0.3, 0.4])
-    mock_kde_class.return_value = mock_kde_instance
-
-    view._logscale_and_filter_multiple_columns = mocker.Mock(  # type: ignore[method-assign]
-        return_value=(np.array([1.0, 2.0, 3.0, 4.0]),)
-    )
-
-    view._plot_1d_density(view.axes, data, ["x"], ["u"], [False], bins=[4])
-
-    assert view.hist_data
-
-
-def test_plot_1d_density_uses_bin_count_directly_when_sizes_false(
-    view: MetadataView,
-    mocker: MockerFixture,
-) -> None:
-    """Verify scalar bin counts are used directly when sizes is False."""
-    data = pd.DataFrame({"x": np.array([1.0, 2.0, 3.0, 4.0])})
-    mock_kde_class: MagicMock = mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.stats.kde.gaussian_kde"
-    )
-    mock_kde_instance: MagicMock = mocker.Mock()
-    mock_kde_instance.return_value = np.array([0.1, 0.2, 0.3, 0.4])
-    mock_kde_class.return_value = mock_kde_instance
-
-    view._logscale_and_filter_multiple_columns = mocker.Mock(  # type: ignore[method-assign]
-        return_value=(np.array([1.0, 2.0, 3.0, 4.0]),)
-    )
-
-    view._plot_1d_density(view.axes, data, ["x"], ["u"], [False], bins=[6], sizes=False)
-
-    assert view.hist_data
-
-
-def test_plot_1d_density_handles_bin_size_without_hist_bounds(
-    view: MetadataView,
-    mocker: MockerFixture,
-) -> None:
-    """Verify size-based bins fall back when histogram bounds are unavailable."""
-    data = pd.DataFrame({"x": np.array([1.0, 2.0, 3.0, 4.0])})
-    mock_kde_class: MagicMock = mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.stats.kde.gaussian_kde"
-    )
-    mock_kde_instance: MagicMock = mocker.Mock()
-    mock_kde_instance.return_value = np.array([0.1, 0.2, 0.3, 0.4])
-    mock_kde_class.return_value = mock_kde_instance
-
-    view.hist_min = None
-    view.hist_max = None
-    view._logscale_and_filter_multiple_columns = mocker.Mock(  # type: ignore[method-assign]
-        return_value=(np.array([1.0, 2.0, 3.0, 4.0]),)
-    )
-
-    view._plot_1d_density(
-        view.axes, data, ["x"], ["u"], [False], bins=[0.5], sizes=True
-    )
-
-    assert view.hist_data
-
-
-def test_plot_1d_density_resets_to_auto_bins_when_hist_bounds_are_cleared_before_loop(
-    view: MetadataView,
-    mocker: MockerFixture,
-) -> None:
-    """Verify missing histogram bounds force the size-based bins path back to auto-bin estimation."""
-
-    class ResettingList(list[pd.DataFrame]):
-        def __init__(self, owner: MetadataView) -> None:
-            super().__init__()
-            self._owner = owner
-
-        def append(self, item: pd.DataFrame) -> None:
-            super().append(item)
-            self._owner.hist_min = None
-            self._owner.hist_max = None
-
-    data = pd.DataFrame({"x": np.array([1.0, 2.0, 3.0, 4.0])})
-
-    mock_kde_class: MagicMock = mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.stats.kde.gaussian_kde"
-    )
-    mock_kde_instance: MagicMock = mocker.Mock()
-    mock_kde_instance.return_value = np.array([0.1, 0.2, 0.3, 0.4])
-    mock_kde_class.return_value = mock_kde_instance
-
-    mock_iqr: MagicMock = mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.iqr",
-        return_value=1.0,
-    )
-
-    view.hist_data = ResettingList(view)  # type: ignore[assignment]
-    view.hist_labels = []
-    view._logscale_and_filter_multiple_columns = mocker.Mock(  # type: ignore[method-assign]
-        return_value=(np.array([1.0, 2.0, 3.0, 4.0]),)
-    )
-
-    original_min = min
-    original_max = max
-
-    def mock_min(*args: Any, **kwargs: Any) -> Any:
-        if len(args) == 1 and isinstance(args[0], pd.DataFrame):
-            return args[0].min().min()
-        return original_min(*args, **kwargs)
-
-    def mock_max(*args: Any, **kwargs: Any) -> Any:
-        if len(args) == 1 and isinstance(args[0], pd.DataFrame):
-            return args[0].max().max()
-        return original_max(*args, **kwargs)
-
-    mocker.patch("builtins.min", side_effect=mock_min)
-    mocker.patch("builtins.max", side_effect=mock_max)
-
-    view._plot_1d_density(
-        view.axes, data, ["x"], ["u"], [False], bins=[0.5], sizes=True
-    )
-
-    assert mock_iqr.call_count >= 1
-    assert len(view.hist_data) == 1
-
-
-def test_plot_1d_density_handles_type_error_for_bin_size(
-    view: MetadataView,
-    mocker: MockerFixture,
-) -> None:
-    """Verify invalid size-based bin entries fall back without crashing."""
-    data = pd.DataFrame({"x": np.array([1.0, 2.0, 3.0, 4.0])})
-    mock_kde_class: MagicMock = mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.stats.kde.gaussian_kde"
-    )
-    mock_kde_instance: MagicMock = mocker.Mock()
-    mock_kde_instance.return_value = np.array([0.1, 0.2, 0.3, 0.4])
-    mock_kde_class.return_value = mock_kde_instance
-
-    original_min = min
-    original_max = max
-
-    def mock_min(*args: Any, **kwargs: Any) -> Any:
-        if len(args) == 1 and isinstance(args[0], pd.DataFrame):
-            return args[0].min().min()
-        return original_min(*args, **kwargs)
-
-    def mock_max(*args: Any, **kwargs: Any) -> Any:
-        if len(args) == 1 and isinstance(args[0], pd.DataFrame):
-            return args[0].max().max()
-        return original_max(*args, **kwargs)
-
-    mocker.patch("builtins.min", side_effect=mock_min)
-    mocker.patch("builtins.max", side_effect=mock_max)
-
-    view.hist_min = 0.0
-    view.hist_max = 10.0
-    view._logscale_and_filter_multiple_columns = mocker.Mock(  # type: ignore[method-assign]
-        return_value=(np.array([1.0, 2.0, 3.0, 4.0]),)
-    )
-
-    view._plot_1d_density(
-        view.axes,
-        data,
-        ["x"],
-        ["u"],
-        [False],
-        bins=[None],  # type: ignore[list-item]
-        sizes=True,
-    )
-
-    assert view.hist_data
-
-
-def test_plot_1d_density_discards_size_bins_that_produce_one_or_fewer_bins(
-    view: MetadataView,
-    mocker: MockerFixture,
-) -> None:
-    """Verify tiny histogram ranges disable invalid computed bin counts."""
-    data = pd.DataFrame({"x": np.array([1.0, 2.0, 3.0, 4.0])})
-    mock_kde_class: MagicMock = mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.stats.kde.gaussian_kde"
-    )
-    mock_kde_instance: MagicMock = mocker.Mock()
-    mock_kde_instance.return_value = np.array([0.1, 0.2, 0.3, 0.4])
-    mock_kde_class.return_value = mock_kde_instance
-
-    original_min = min
-    original_max = max
-
-    def mock_min(*args: Any, **kwargs: Any) -> Any:
-        if len(args) == 1 and isinstance(args[0], pd.DataFrame):
-            return args[0].min().min()
-        return original_min(*args, **kwargs)
-
-    def mock_max(*args: Any, **kwargs: Any) -> Any:
-        if len(args) == 1 and isinstance(args[0], pd.DataFrame):
-            return args[0].max().max()
-        return original_max(*args, **kwargs)
-
-    mocker.patch("builtins.min", side_effect=mock_min)
-    mocker.patch("builtins.max", side_effect=mock_max)
-
-    view.hist_min = 0.0
-    view.hist_max = 0.4
-    view._logscale_and_filter_multiple_columns = mocker.Mock(  # type: ignore[method-assign]
-        return_value=(np.array([1.0, 2.0, 3.0, 4.0]),)
-    )
-
-    view._plot_1d_density(
-        view.axes, data, ["x"], ["u"], [False], bins=[1.0], sizes=True
-    )
-
-    assert view.hist_data
-
-
-def test_plot_1d_density_uses_log_length_fallback_when_iqr_is_zero(
-    view: MetadataView,
-    mocker: MockerFixture,
-) -> None:
-    """Verify the zero-IQR branch computes a fallback number of bins."""
-    data = pd.DataFrame({"x": np.array([5.0] * 12)})
-    mock_kde_class: MagicMock = mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.stats.kde.gaussian_kde"
-    )
-    mock_kde_instance: MagicMock = mocker.Mock()
-    mock_kde_instance.return_value = np.array([0.1, 0.2, 0.3])
-    mock_kde_class.return_value = mock_kde_instance
-    mocker.patch("poriscope.plugins.analysistabs.MetadataView.iqr", return_value=0.0)
-
-    view._logscale_and_filter_multiple_columns = mocker.Mock(  # type: ignore[method-assign]
-        return_value=(np.array([5.0] * 12),)
-    )
-
-    view._plot_1d_density(view.axes, data, ["x"], ["u"], [False], bins=None)
-
-    assert view.hist_data
-
-
-def test_plot_1d_density_handles_overflow_when_estimating_bins(
-    view: MetadataView,
-    mocker: MockerFixture,
-) -> None:
-    """Verify OverflowError during fallback bin estimation is handled."""
-    data = pd.DataFrame({"x": np.array([5.0] * 12)})
-    mock_kde_class: MagicMock = mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.stats.kde.gaussian_kde"
-    )
-    mock_kde_instance: MagicMock = mocker.Mock()
-    mock_kde_instance.return_value = np.array([0.1, 0.2, 0.3])
-    mock_kde_class.return_value = mock_kde_instance
-    mocker.patch("poriscope.plugins.analysistabs.MetadataView.iqr", return_value=0.0)
-    mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.np.log10",
-        side_effect=OverflowError,
-    )
-
-    view._logscale_and_filter_multiple_columns = mocker.Mock(  # type: ignore[method-assign]
-        return_value=(np.array([5.0] * 12),)
-    )
-
-    view._plot_1d_density(view.axes, data, ["x"], ["u"], [False], bins=None)
-
-    assert view.hist_data
+        ProteinView,
+        RawDataView,
+    ):
+        assert "__init__" not in cls.__dict__, f"{cls.__name__} regrew an __init__"
 
 
 # ----------------------------- Plot Capture Rate Tests ------------------------------
 
 
-def test_plot_capture_rate_raises_on_insufficient_data(view: MetadataView) -> None:
-    """Verify ValueError is raised when insufficient data after filtering."""
-    data: pd.DataFrame = pd.DataFrame({"time": np.array([1.0, 1.01])})
+def _answer_categorical_counts(view):
+    """
+    Answer ``categorical_counts_requested`` the way MetadataController does.
 
-    with pytest.raises(ValueError, match="Not enough data"):
-        view._plot_capture_rate(view.axes, data, ["time"], ["s"], [False])
+    The tallying is ``MetadataModel.categorical_counts``, so the View no longer
+    decides what the categories are. The real Model is used here
+    rather than a canned answer, so these tests still exercise the counting they were
+    written to cover; what the counting *produces* for nulls, NaNs and numeric
+    ordering is asserted directly in ``tests/unit/models/test_metadata_model.py``.
+
+    :param view: the view whose request has just been emitted
+    :type view: MetadataView
+    :return: None
+    :rtype: None
+    """
+    from poriscope.plugins.analysistabs.MetadataModel import MetadataModel
+
+    datasets, labels, ax, x_label, y_label = (
+        view.categorical_counts_requested.emit.call_args.args
+    )
+    counts = MetadataModel.__new__(MetadataModel).categorical_counts(datasets)
+    view.set_categorical_counts(counts, labels, ax, x_label, y_label)
+
+
+def _answer_capture_rate(view, numbins=4):
+    """
+    Answer ``capture_rate_requested`` the way MetadataController does.
+
+    The binning and the exponential fit are ``MetadataModel``'s, so the View
+    decides neither. These tests supplied a stubbed ``curve_fit``
+    before; they supply the finished fit here instead, and what the fit actually
+    produces is asserted in ``tests/unit/models/test_metadata_model.py``.
+
+    :param view: the view whose request has just been emitted
+    :type view: MetadataView
+    :param numbins: how many bins to answer with
+    :type numbins: int
+    :return: None
+    :rtype: None
+    """
+    data, _bins, _sizes, ax, x_label, y_label, dataset_label = (
+        view.capture_rate_requested.emit.call_args.args
+    )
+    edges = np.linspace(np.min(data), np.max(data), numbins + 1)
+    centers = edges[:-1] + np.diff(edges) / 2.0
+    counts = np.ones_like(centers)
+    view.set_capture_rate(
+        edges,
+        centers,
+        counts,
+        counts,
+        1.0,
+        0.1,
+        data,
+        ax,
+        x_label,
+        y_label,
+        dataset_label,
+    )
+
+
+def test_plot_capture_rate_sends_the_column_as_it_stands(view: MetadataView) -> None:
+    """
+    The request carries the event times, not the inter-event times.
+
+    The gap calculation is the Model's, and with it the two
+    conditions that were judged on its result - too little surviving data, and how
+    much the log filter dropped. Both are pinned in
+    ``tests/unit/controllers/test_metadata_controller.py`` now; a View that still
+    reduced the column before emitting would fail here.
+    """
+    times = np.array([1.0, 1.01, 3.0])
+    data: pd.DataFrame = pd.DataFrame({"time": times})
+
+    view._plot_capture_rate(view.axes, data, ["time"], ["s"], [False])
+
+    sent = view.capture_rate_requested.emit.call_args[0][0]
+    np.testing.assert_array_equal(sent, times)
 
 
 def test_plot_capture_rate_calls_hist(
@@ -923,12 +846,8 @@ def test_plot_capture_rate_calls_hist(
         }
     )
 
-    mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.curve_fit",
-        return_value=(np.array([1.0, 1.0]), np.array([[0.01, 0], [0, 0.01]])),
-    )
-
     view._plot_capture_rate(view.axes, data, ["time"], ["s"], [False])
+    _answer_capture_rate(view)
 
     view.axes.hist.assert_called()
 
@@ -945,37 +864,12 @@ def test_plot_capture_rate_fits_exponential_curve(
         }
     )
 
-    mock_curve_fit: MagicMock = mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.curve_fit",
-        return_value=(np.array([1.5, 2.5]), np.array([[0.01, 0], [0, 0.01]])),
-    )
-
     view._plot_capture_rate(view.axes, data, ["time"], ["s"], [False])
+    _answer_capture_rate(view)
 
-    mock_curve_fit.assert_called_once()
+    # the curve itself is fitted by MetadataModel and tested there; what is pinned
+    # here is that the answer is drawn, as a line over the histogram
     view.axes.plot.assert_called()
-
-
-def test_plot_capture_rate_emits_message_for_filtered_rows(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
-    """Verify message is emitted when rows are filtered."""
-    data: pd.DataFrame = pd.DataFrame(
-        {
-            "time": np.array(
-                [-1.0, 0.1, 0.2, 0.35, 0.5, 0.7, 0.9, 1.1, 1.3, 1.5, 1.7, 2.0, 2.3]
-            )
-        }
-    )
-
-    mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.curve_fit",
-        return_value=(np.array([1.0, 1.0]), np.array([[0.01, 0], [0, 0.01]])),
-    )
-
-    view._plot_capture_rate(view.axes, data, ["time"], ["s"], [False])
-
-    view.add_text_to_display.emit.assert_called()
 
 
 def test_plot_capture_rate_raises_on_invalid_bins_list(view: MetadataView) -> None:
@@ -1004,20 +898,14 @@ def test_plot_capture_rate_sets_axis_labels(
         }
     )
 
-    mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.curve_fit",
-        return_value=(np.array([1.0, 1.0]), np.array([[0.01, 0], [0, 0.01]])),
-    )
-
     view._plot_capture_rate(view.axes, data, ["time"], ["s"], [False])
+    _answer_capture_rate(view)
 
     view.axes.set_xlabel.assert_called()
     view.axes.set_ylabel.assert_called()
 
 
-def test_plot_capture_rate_uses_first_bins_entry(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
+def test_plot_capture_rate_uses_first_bins_entry(view: MetadataView) -> None:
     """Verify capture-rate plotting uses the first element from a bins list."""
     data = pd.DataFrame(
         {
@@ -1026,16 +914,11 @@ def test_plot_capture_rate_uses_first_bins_entry(
             )
         }
     )
-    mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.curve_fit",
-        return_value=(np.array([1.0, 1.0]), np.array([[0.01, 0.0], [0.0, 0.01]])),
-    )
-
     view._plot_capture_rate(view.axes, data, ["time"], ["s"], [False], bins=[4])
 
-    hist_call = view.axes.hist.call_args
-    assert hist_call is not None
-    assert hist_call.kwargs.get("bins") == 4
+    # the list is unwrapped before the request goes out; that the Model then makes
+    # four bins of it is asserted in tests/unit/models/test_metadata_model.py
+    assert view.capture_rate_requested.emit.call_args.args[1] == 4
 
 
 def test_plot_capture_rate_sets_log10_label_when_logscale_true(
@@ -1050,65 +933,13 @@ def test_plot_capture_rate_sets_log10_label_when_logscale_true(
             )
         }
     )
-    mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.curve_fit",
-        return_value=(np.array([1.0, 1.0]), np.array([[0.01, 0.0], [0.0, 0.01]])),
-    )
-
     view._plot_capture_rate(view.axes, data, ["time"], ["s"], [True])
+    _answer_capture_rate(view)
 
     xlabel_call = view.axes.set_xlabel.call_args
     assert xlabel_call is not None
     xlabel = xlabel_call.args[0]
     assert "log10" in xlabel
-
-
-def test_plot_capture_rate_uses_log_length_fallback_when_iqr_is_zero(
-    view: MetadataView,
-    mocker: MockerFixture,
-) -> None:
-    """Verify zero-IQR capture-rate data uses the fallback bin estimator."""
-    data = pd.DataFrame({"time": np.linspace(1.0, 1.11, 12)})
-    mocker.patch("poriscope.plugins.analysistabs.MetadataView.iqr", return_value=0.0)
-    mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.curve_fit",
-        return_value=(np.array([1.0, 1.0]), np.array([[0.01, 0.0], [0.0, 0.01]])),
-    )
-
-    view._plot_capture_rate(view.axes, data, ["time"], ["s"], [False], bins=None)
-
-    view.axes.hist.assert_called()
-
-
-def test_plot_capture_rate_handles_overflow_when_estimating_bins(
-    view: MetadataView,
-    mocker: MockerFixture,
-) -> None:
-    """Verify OverflowError in the primary estimator falls back to log-length bins."""
-    data = pd.DataFrame({"time": np.linspace(1.0, 1.11, 12)})
-    mocker.patch("poriscope.plugins.analysistabs.MetadataView.iqr", return_value=1.0)
-
-    original_max = np.max
-
-    def mock_np_max(values: Any, *args: Any, **kwargs: Any) -> Any:
-        if isinstance(values, np.ndarray):
-            raise OverflowError
-        return original_max(values, *args, **kwargs)
-
-    mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.np.max",
-        side_effect=mock_np_max,
-    )
-    mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.curve_fit",
-        return_value=(np.array([1.0, 1.0]), np.array([[0.01, 0.0], [0.0, 0.01]])),
-    )
-
-    view._plot_capture_rate(view.axes, data, ["time"], ["s"], [False], bins=None)
-
-    hist_call = view.axes.hist.call_args
-    assert hist_call is not None
-    assert hist_call.kwargs.get("bins") == int(3.332 * np.log10(len(data)))
 
 
 # ----------------------------- Format Axis Label Tests ------------------------------
@@ -1141,6 +972,61 @@ def test_format_axis_label_handles_multiple_parentheses(view: MetadataView) -> N
 # ----------------------------- Plot 1D Histogram Tests ------------------------------
 
 
+def _answer_histogram_bins(view, numbins=8):
+    """
+    Answer ``histogram_bins_requested`` the way MetadataController does.
+
+    The bin decision, the counting, the filter, the shared limits and the
+    accumulation are all below ``_plot_1d_histogram``: the View emits every
+    overlaid dataset raw and ``set_histogram_bins`` is handed the tallies. The real
+    Model is used here so these tests still exercise the counting they were written
+    over; what the bin decision returns for a given request is asserted directly in
+    ``tests/unit/models/test_metadata_model.py``.
+
+    :param view: the view whose request has just been emitted
+    :type view: MetadataView
+    :param numbins: how many bins to answer with
+    :type numbins: int
+    :return: None
+    :rtype: None
+    """
+    from poriscope.plugins.analysistabs.MetadataModel import MetadataModel
+
+    (
+        datasets,
+        logx,
+        _bins,
+        _sizes,
+        hist_min,
+        hist_max,
+        norm,
+        ax,
+        x_label,
+        _column,
+        dataset_label,
+    ) = view.histogram_bins_requested.emit.call_args.args
+
+    model = MetadataModel()
+    filtered = model.logscale_and_filter_datasets(datasets, logx)
+    hist_min, hist_max = model.widen_shared_limits(filtered[-1], hist_min, hist_max)
+    _edges, centers, widths, counts = model.overlaid_histograms(
+        filtered, numbins, False, hist_min, hist_max, norm
+    )
+    view.set_histogram_bins(
+        datasets[-1],
+        dataset_label,
+        centers,
+        widths,
+        counts,
+        hist_min,
+        hist_max,
+        ax,
+        x_label,
+        logx,
+        norm,
+    )
+
+
 def test_plot_1d_histogram_raises_on_invalid_bins_list(view: MetadataView) -> None:
     """Verify ValueError is raised for invalid bins list."""
     data: pd.DataFrame = pd.DataFrame({"x": np.array([1.0, 2.0, 3.0])})
@@ -1155,29 +1041,29 @@ def test_plot_1d_histogram_uses_first_bins_entry(
     """Verify bins list is reduced to first entry."""
     data = pd.DataFrame({"x": np.array([1.0, 2.0, 3.0, 4.0])})
 
-    view._logscale_and_filter_multiple_columns = mocker.Mock(  # type: ignore[method-assign]
-        return_value=(np.array([1.0, 2.0, 3.0, 4.0]),)
-    )
-
     view._plot_1d_histogram(view.axes, data, ["x"], ["u"], [False], bins=[10])
 
-    assert len(view.hist_data) == 1
+    # the list is unwrapped to its first entry before the request goes out; what
+    # the bin decision then does with it is asserted on the Model
+    assert view.histogram_bins_requested.emit.call_args.args[2] == 10
 
 
-def test_plot_1d_histogram_updates_hist_min_max(
-    view: MetadataView, mocker: MockerFixture
+def test_plot_1d_histogram_sends_the_raw_column_and_the_log_flag(
+    view: MetadataView,
 ) -> None:
-    """Verify hist_min and hist_max are updated."""
+    """
+    The same shape as the density's, deliberately: the two write the same
+    accumulator and the same pair of shared limits, which is why they converted
+    together rather than one branch each.
+    """
     data = pd.DataFrame({"x": np.array([1.0, 2.0, 5.0, 10.0])})
 
-    view._logscale_and_filter_multiple_columns = mocker.Mock(  # type: ignore[method-assign]
-        return_value=(np.array([1.0, 2.0, 5.0, 10.0]),)
-    )
+    view._plot_1d_histogram(view.axes, data, ["x"], ["units"], [True])
 
-    view._plot_1d_histogram(view.axes, data, ["x"], ["units"], [False])
-
-    assert view.hist_min == 1.0
-    assert view.hist_max == 10.0
+    emitted = view.histogram_bins_requested.emit.call_args.args
+    assert [list(dataset) for dataset in emitted[0]] == [[1.0, 2.0, 5.0, 10.0]]
+    assert emitted[1] is True
+    assert emitted[9] == "x"
 
 
 def test_plot_1d_histogram_normalizes_when_norm_true(
@@ -1186,11 +1072,8 @@ def test_plot_1d_histogram_normalizes_when_norm_true(
     """Verify histogram is normalized when norm=True."""
     data = pd.DataFrame({"x": np.array([1.0, 2.0, 3.0, 4.0])})
 
-    view._logscale_and_filter_multiple_columns = mocker.Mock(  # type: ignore[method-assign]
-        return_value=(np.array([1.0, 2.0, 3.0, 4.0]),)
-    )
-
     view._plot_1d_histogram(view.axes, data, ["x"], ["u"], [False], norm=True)
+    _answer_histogram_bins(view)
 
     ylabel_call = view.axes.set_ylabel.call_args
     assert ylabel_call is not None
@@ -1203,11 +1086,8 @@ def test_plot_1d_histogram_sets_log10_label_when_logscale_true(
     """Verify log10 label is set when logscale is True."""
     data = pd.DataFrame({"x": np.array([1.0, 10.0, 100.0])})
 
-    view._logscale_and_filter_multiple_columns = mocker.Mock(  # type: ignore[method-assign]
-        return_value=(np.array([0.0, 1.0, 2.0]),)
-    )
-
     view._plot_1d_histogram(view.axes, data, ["x"], ["units"], [True])
+    _answer_histogram_bins(view)
 
     xlabel_call = view.axes.set_xlabel.call_args
     assert xlabel_call is not None
@@ -1217,12 +1097,8 @@ def test_plot_1d_histogram_sets_log10_label_when_logscale_true(
 def test_plot_1d_histogram_handles_bin_sizes(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify bin sizes mode calculates bins correctly."""
+    """Verify bin sizes mode reaches the request as a width."""
     data = pd.DataFrame({"x": np.array([1.0, 2.0, 3.0, 4.0])})
-
-    view._logscale_and_filter_multiple_columns = mocker.Mock(  # type: ignore[method-assign]
-        return_value=(np.array([1.0, 2.0, 3.0, 4.0]),)
-    )
     view.hist_min = 0.0
     view.hist_max = 10.0
 
@@ -1230,58 +1106,77 @@ def test_plot_1d_histogram_handles_bin_sizes(
         view.axes, data, ["x"], ["u"], [False], bins=[0.5], sizes=True
     )
 
-    assert len(view.hist_data) == 1
+    emitted = view.histogram_bins_requested.emit.call_args.args
+    assert emitted[2] == 0.5
+    assert emitted[3] is True
+    assert emitted[4] == 0.0
+    assert emitted[5] == 10.0
 
 
 def test_plot_1d_histogram_overlays_multiple_datasets(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify multiple datasets can be overlaid."""
+    """
+    Verify multiple datasets can be overlaid.
+
+    Each one joins the accumulator as it is drawn, so the second request carries
+    the first dataset as well as its own.
+    """
     data1 = pd.DataFrame({"x": np.array([1.0, 2.0, 3.0])})
     data2 = pd.DataFrame({"x": np.array([4.0, 5.0, 6.0])})
 
-    view._logscale_and_filter_multiple_columns = mocker.Mock(  # type: ignore[method-assign]
-        side_effect=[
-            (np.array([1.0, 2.0, 3.0]),),
-            (np.array([4.0, 5.0, 6.0]),),
-        ]
-    )
-
     view._plot_1d_histogram(view.axes, data1, ["x"], ["u"], [False], dataset_label="d1")
+    _answer_histogram_bins(view)
     view._plot_1d_histogram(view.axes, data2, ["x"], ["u"], [False], dataset_label="d2")
 
+    assert len(view.histogram_bins_requested.emit.call_args.args[0]) == 2
+
+    _answer_histogram_bins(view)
+
     assert len(view.hist_data) == 2
-    assert len(view.hist_labels) == 2
+    assert view.hist_labels == ["d1", "d2"]
 
 
 # ----------------------------- Plot Heatmap Tests ------------------------------
 
 
-def test_plot_heatmap_calls_calculate_heatmap(
+def _answer_heatmap(view, x_bins, y_bins, z_grid):
+    """
+    Answer ``heatmap_requested`` the way MetadataController does.
+
+    ``_plot_heatmap`` stops at the binning: it emits the filtered columns
+    and ``set_heatmap`` does every bit of drawing. The binning result is supplied
+    here rather than computed, which is what the mocked ``_calculate_heatmap``
+    used to do for these tests.
+
+    :param view: the view whose request has just been emitted
+    :type view: MetadataView
+    :param x_bins: bin-center x values to answer with
+    :type x_bins: np.ndarray
+    :param y_bins: bin-center y values to answer with
+    :type y_bins: np.ndarray
+    :param z_grid: the log2-scaled counts to answer with
+    :type z_grid: np.ndarray
+    :return: None
+    :rtype: None
+    """
+    context = view.heatmap_requested.emit.call_args.args[5:]
+    view.set_heatmap(x_bins, y_bins, z_grid, *context)
+
+
+def test_plot_heatmap_requests_the_binning(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify _calculate_heatmap is called."""
+    """Verify the binning is asked for rather than done here."""
     data = pd.DataFrame({"x": np.array([1.0, 2.0]), "y": np.array([3.0, 4.0])})
-
-    # Create explicit arrays before mocking to avoid evaluation issues
-    x_bins = np.array([1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5])
-    y_bins = np.array([3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0, 7.5])
-    z_grid = np.ones((10, 10))
-
-    view._calculate_heatmap = mocker.Mock(  # type: ignore[method-assign]
-        return_value=(x_bins, y_bins, z_grid)
-    )
-
-    # Mock the colorbar to return proper ticks
-    mock_colorbar = mocker.Mock()
-    mock_colorbar.get_ticks = mocker.Mock(
-        return_value=np.array([0.0, 0.5, 1.0, 1.5, 2.0])
-    )
-    view.figure.colorbar = mocker.Mock(return_value=mock_colorbar)
 
     view._plot_heatmap(view.axes, data, ["x", "y"], ["u1", "u2"], [False, False])
 
-    view._calculate_heatmap.assert_called_once()
+    view.heatmap_requested.emit.assert_called_once()
+    # the raw columns go out, and the drawing context comes back untouched
+    emitted = view.heatmap_requested.emit.call_args.args
+    assert emitted[5] is view.axes
+    assert len(emitted) == 9
 
 
 def test_plot_heatmap_sets_axis_labels(
@@ -1294,10 +1189,6 @@ def test_plot_heatmap_sets_axis_labels(
     y_bins = np.array([3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0, 7.5])
     z_grid = np.ones((10, 10))
 
-    view._calculate_heatmap = mocker.Mock(  # type: ignore[method-assign]
-        return_value=(x_bins, y_bins, z_grid)
-    )
-
     # Mock the colorbar
     mock_colorbar = mocker.Mock()
     mock_colorbar.get_ticks = mocker.Mock(
@@ -1306,6 +1197,7 @@ def test_plot_heatmap_sets_axis_labels(
     view.figure.colorbar = mocker.Mock(return_value=mock_colorbar)
 
     view._plot_heatmap(view.axes, data, ["x", "y"], ["u1", "u2"], [False, False])
+    _answer_heatmap(view, x_bins, y_bins, z_grid)
 
     view.axes.set_xlabel.assert_called()
     view.axes.set_ylabel.assert_called()
@@ -1321,10 +1213,6 @@ def test_plot_heatmap_sets_log10_labels_when_logscale_true(
     y_bins = np.array([3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0, 7.5])
     z_grid = np.ones((10, 10))
 
-    view._calculate_heatmap = mocker.Mock(  # type: ignore[method-assign]
-        return_value=(x_bins, y_bins, z_grid)
-    )
-
     # Mock the colorbar
     mock_colorbar = mocker.Mock()
     mock_colorbar.get_ticks = mocker.Mock(
@@ -1333,6 +1221,7 @@ def test_plot_heatmap_sets_log10_labels_when_logscale_true(
     view.figure.colorbar = mocker.Mock(return_value=mock_colorbar)
 
     view._plot_heatmap(view.axes, data, ["x", "y"], ["u1", "u2"], [True, True])
+    _answer_heatmap(view, x_bins, y_bins, z_grid)
 
     xlabel_call = view.axes.set_xlabel.call_args
     ylabel_call = view.axes.set_ylabel.call_args
@@ -1352,10 +1241,6 @@ def test_plot_heatmap_removes_previous_colorbar(
     y_bins = np.array([3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0, 7.5])
     z_grid = np.ones((10, 10))
 
-    view._calculate_heatmap = mocker.Mock(  # type: ignore[method-assign]
-        return_value=(x_bins, y_bins, z_grid)
-    )
-
     # Mock the colorbar
     mock_new_colorbar = mocker.Mock()
     mock_new_colorbar.get_ticks = mocker.Mock(
@@ -1370,11 +1255,44 @@ def test_plot_heatmap_removes_previous_colorbar(
     view._heatmap_colorbar = mock_old_colorbar  # type: ignore[attr-defined]
 
     view._plot_heatmap(view.axes, data, ["x", "y"], ["u1", "u2"], [False, False])
+    _answer_heatmap(view, x_bins, y_bins, z_grid)
 
     mock_old_colorbar.remove.assert_called_once()
 
 
 # ----------------------------- Plot Scatterplot Tests ------------------------------
+
+
+def _answer_scatterplot(view: MetadataView, columns: tuple) -> None:
+    """
+    Stand in for the Controller answering ``scatterplot_requested``.
+
+    Replays ``set_scatterplot`` with the drawing context the View emitted, so the
+    test drives the request and the drawing as one, exactly as the app does.
+
+    :param view: the view whose request to answer
+    :type view: MetadataView
+    :param columns: the filtered columns to answer with
+    :type columns: tuple
+    :return: None
+    :rtype: None
+    """
+    context = view.scatterplot_requested.emit.call_args.args[2:]
+    view.set_scatterplot(columns, *context)
+
+
+def test_plot_scatterplot_requests_the_filtering(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify the filter is asked for rather than done here."""
+    data = pd.DataFrame({"x": np.array([1.0, 2.0]), "y": np.array([3.0, 4.0])})
+
+    view._plot_scatterplot(view.axes, data, ["x", "y"], ["u1", "u2"], [True, False])
+
+    emitted = view.scatterplot_requested.emit.call_args.args
+    assert [list(column) for column in emitted[0]] == [[1.0, 2.0], [3.0, 4.0]]
+    assert emitted[1] == [True, False]
+    assert emitted[2] is view.axes
 
 
 def test_plot_scatterplot_calls_scatter(
@@ -1383,11 +1301,8 @@ def test_plot_scatterplot_calls_scatter(
     """Verify scatter is called on axes."""
     data = pd.DataFrame({"x": np.array([1.0, 2.0]), "y": np.array([3.0, 4.0])})
 
-    view._logscale_and_filter_multiple_columns = mocker.Mock(  # type: ignore[method-assign]
-        return_value=(np.array([1.0, 2.0]), np.array([3.0, 4.0]))
-    )
-
     view._plot_scatterplot(view.axes, data, ["x", "y"], ["u1", "u2"], [False, False])
+    _answer_scatterplot(view, (np.array([1.0, 2.0]), np.array([3.0, 4.0])))
 
     view.axes.scatter.assert_called_once()
 
@@ -1398,11 +1313,8 @@ def test_plot_scatterplot_sets_axis_labels(
     """Verify axis labels are set."""
     data = pd.DataFrame({"x": np.array([1.0, 2.0]), "y": np.array([3.0, 4.0])})
 
-    view._logscale_and_filter_multiple_columns = mocker.Mock(  # type: ignore[method-assign]
-        return_value=(np.array([1.0, 2.0]), np.array([3.0, 4.0]))
-    )
-
     view._plot_scatterplot(view.axes, data, ["x", "y"], ["u1", "u2"], [False, False])
+    _answer_scatterplot(view, (np.array([1.0, 2.0]), np.array([3.0, 4.0])))
 
     view.axes.set_xlabel.assert_called()
     view.axes.set_ylabel.assert_called()
@@ -1414,11 +1326,8 @@ def test_plot_scatterplot_sets_log10_labels_when_logscale_true(
     """Verify log10 labels are set when logscales are True."""
     data = pd.DataFrame({"x": np.array([1.0, 2.0]), "y": np.array([3.0, 4.0])})
 
-    view._logscale_and_filter_multiple_columns = mocker.Mock(  # type: ignore[method-assign]
-        return_value=(np.array([1.0, 2.0]), np.array([3.0, 4.0]))
-    )
-
     view._plot_scatterplot(view.axes, data, ["x", "y"], ["u1", "u2"], [True, True])
+    _answer_scatterplot(view, (np.array([1.0, 2.0]), np.array([3.0, 4.0])))
 
     xlabel_call = view.axes.set_xlabel.call_args
     ylabel_call = view.axes.set_ylabel.call_args
@@ -1431,32 +1340,69 @@ def test_plot_scatterplot_sets_log10_labels_when_logscale_true(
 # ----------------------------- Plot 3D Scatterplot Tests ------------------------------
 
 
+_THREE_COLUMNS = pd.DataFrame(
+    {
+        "x": np.array([1.0, 2.0]),
+        "y": np.array([3.0, 4.0]),
+        "z": np.array([5.0, 6.0]),
+    }
+)
+
+
+def _answer_3d_scatterplot(view: MetadataView, columns: tuple) -> None:
+    """
+    Stand in for the Controller answering ``scatterplot_3d_requested``.
+
+    :param view: the view whose request to answer
+    :type view: MetadataView
+    :param columns: the filtered columns to answer with
+    :type columns: tuple
+    :return: None
+    :rtype: None
+    """
+    context = view.scatterplot_3d_requested.emit.call_args.args[2:]
+    view.set_3d_scatterplot(columns, *context)
+
+
+_THREE_FILTERED = (
+    np.array([1.0, 2.0]),
+    np.array([3.0, 4.0]),
+    np.array([5.0, 6.0]),
+)
+
+
+def test_plot_3d_scatterplot_requests_the_filtering(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify all three columns and all three flags go out to be filtered."""
+    view._plot_3d_scatterplot(
+        view.axes,
+        _THREE_COLUMNS,
+        ["x", "y", "z"],
+        ["u1", "u2", "u3"],
+        [True, False, True],
+    )
+
+    emitted = view.scatterplot_3d_requested.emit.call_args.args
+    assert len(emitted[0]) == 3
+    assert emitted[1] == [True, False, True]
+
+
 def test_plot_3d_scatterplot_calls_scatter(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify scatter is called on 3D axes."""
-    data = pd.DataFrame(
-        {
-            "x": np.array([1.0, 2.0]),
-            "y": np.array([3.0, 4.0]),
-            "z": np.array([5.0, 6.0]),
-        }
-    )
-
     # Make isinstance check pass by setting view.axes as an instance
     type(view.axes).__name__ = "Axes3D"
 
-    view._logscale_and_filter_multiple_columns = mocker.Mock(  # type: ignore[method-assign]
-        return_value=(
-            np.array([1.0, 2.0]),
-            np.array([3.0, 4.0]),
-            np.array([5.0, 6.0]),
-        )
-    )
-
     view._plot_3d_scatterplot(
-        view.axes, data, ["x", "y", "z"], ["u1", "u2", "u3"], [False, False, False]
+        view.axes,
+        _THREE_COLUMNS,
+        ["x", "y", "z"],
+        ["u1", "u2", "u3"],
+        [False, False, False],
     )
+    _answer_3d_scatterplot(view, _THREE_FILTERED)
 
     view.axes.scatter.assert_called_once()
 
@@ -1465,33 +1411,47 @@ def test_plot_3d_scatterplot_sets_axis_labels(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify all three axis labels are set."""
-    data = pd.DataFrame(
-        {
-            "x": np.array([1.0, 2.0]),
-            "y": np.array([3.0, 4.0]),
-            "z": np.array([5.0, 6.0]),
-        }
-    )
-
     # Make isinstance check pass
     type(view.axes).__name__ = "Axes3D"
-
-    view._logscale_and_filter_multiple_columns = mocker.Mock(  # type: ignore[method-assign]
-        return_value=(
-            np.array([1.0, 2.0]),
-            np.array([3.0, 4.0]),
-            np.array([5.0, 6.0]),
-        )
-    )
     view.axes.set_zlabel = mocker.Mock()
 
     view._plot_3d_scatterplot(
-        view.axes, data, ["x", "y", "z"], ["u1", "u2", "u3"], [False, False, False]
+        view.axes,
+        _THREE_COLUMNS,
+        ["x", "y", "z"],
+        ["u1", "u2", "u3"],
+        [False, False, False],
     )
+    _answer_3d_scatterplot(view, _THREE_FILTERED)
 
     view.axes.set_xlabel.assert_called()
     view.axes.set_ylabel.assert_called()
     view.axes.set_zlabel.assert_called()
+
+
+def test_3d_scatterplot_rebuilds_two_dimensional_axes(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """
+    A 2-D pair left by the previous plot type is replaced before drawing.
+
+    The check used to sit in the request half, after the filtering; it belongs
+    with the drawing, which is the half that needs the axes.
+    """
+    type(view.axes).__name__ = "Axes"
+    view._reset_actions = mocker.Mock()
+    view.axes.set_zlabel = mocker.Mock()
+
+    view._plot_3d_scatterplot(
+        view.axes,
+        _THREE_COLUMNS,
+        ["x", "y", "z"],
+        ["u1", "u2", "u3"],
+        [False, False, False],
+    )
+    _answer_3d_scatterplot(view, _THREE_FILTERED)
+
+    view._reset_actions.assert_called_once_with(axis_type="3d")
 
 
 # ----------------------------- Plot All Points Histogram Tests ------------------------------
@@ -1501,9 +1461,13 @@ def test_plot_all_points_histogram_plots_data(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify plot is called with data."""
-    data = pd.DataFrame({"x": np.array([1.0, 2.0]), "y": np.array([3.0, 4.0])})
-
-    view._plot_all_points_histogram(view.axes, data, ["x", "y"], ["u1", "u2"])
+    view._plot_all_points_histogram(
+        view.axes,
+        np.array([1.0, 2.0]),
+        np.array([3.0, 4.0]),
+        ["x", "y"],
+        ["u1", "u2"],
+    )
 
     view.axes.plot.assert_called()
 
@@ -1512,10 +1476,13 @@ def test_plot_all_points_histogram_normalizes_when_norm_true(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify data is normalized when norm=True."""
-    data = pd.DataFrame({"x": np.array([1.0, 2.0]), "y": np.array([10.0, 20.0])})
-
     view._plot_all_points_histogram(
-        view.axes, data, ["x", "y"], ["u1", "u2"], norm=True
+        view.axes,
+        np.array([1.0, 2.0]),
+        np.array([10.0, 20.0]),
+        ["x", "y"],
+        ["u1", "u2"],
+        norm=True,
     )
 
     ylabel_call = view.axes.set_ylabel.call_args
@@ -1527,9 +1494,13 @@ def test_plot_all_points_histogram_clears_axes(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify axes are cleared before plotting."""
-    data = pd.DataFrame({"x": np.array([1.0, 2.0]), "y": np.array([3.0, 4.0])})
-
-    view._plot_all_points_histogram(view.axes, data, ["x", "y"], ["u1", "u2"])
+    view._plot_all_points_histogram(
+        view.axes,
+        np.array([1.0, 2.0]),
+        np.array([3.0, 4.0]),
+        ["x", "y"],
+        ["u1", "u2"],
+    )
 
     view.axes.clear.assert_called()
 
@@ -1547,9 +1518,6 @@ def test_update_plot_calls_histogram_for_histogram_type(
     view.data_cache = []  # type: ignore[attr-defined]
     view._commit_cache = mocker.Mock()  # type: ignore[method-assign]
 
-    view._logscale_and_filter_multiple_columns = mocker.Mock(  # type: ignore[method-assign]
-        return_value=(np.array([1.0, 2.0, 3.0]),)
-    )
     view._plot_1d_histogram = mocker.Mock()  # type: ignore[method-assign]
 
     view.update_plot("Histogram", data, ["x"], ["u"], [False])
@@ -1612,9 +1580,6 @@ def test_update_plot_calls_scatterplot_for_scatterplot_type(
 
     view.data_cache = []  # type: ignore[attr-defined]
     view._commit_cache = mocker.Mock()  # type: ignore[method-assign]
-    view._logscale_and_filter_multiple_columns = mocker.Mock(  # type: ignore[method-assign]
-        return_value=(np.array([1.0, 2.0]), np.array([3.0, 4.0]))
-    )
     view._plot_scatterplot = mocker.Mock()  # type: ignore[method-assign]
 
     view.update_plot("Scatterplot", data, ["x", "y"], ["u1", "u2"], [False, False])
@@ -1630,13 +1595,6 @@ def test_update_plot_calls_heatmap_for_heatmap_type(
 
     view.data_cache = []  # type: ignore[attr-defined]
     view._commit_cache = mocker.Mock()  # type: ignore[method-assign]
-    view._calculate_heatmap = mocker.Mock(  # type: ignore[method-assign]
-        return_value=(
-            np.array([1.0, 2.0]),
-            np.array([3.0, 4.0]),
-            np.array([[1.0, 2.0], [3.0, 4.0]]),
-        )
-    )
     view._plot_heatmap = mocker.Mock()  # type: ignore[method-assign]
 
     view.update_plot("Heatmap", data, ["x", "y"], ["u1", "u2"], [False, False])
@@ -1690,9 +1648,6 @@ def test_update_plot_redraws_canvas(view: MetadataView, mocker: MockerFixture) -
 
     view.data_cache = []  # type: ignore[attr-defined]
     view._commit_cache = mocker.Mock()  # type: ignore[method-assign]
-    view._logscale_and_filter_multiple_columns = mocker.Mock(  # type: ignore[method-assign]
-        return_value=(np.array([1.0, 2.0, 3.0]),)
-    )
 
     view.update_plot("Histogram", data, ["x"], ["u"], [False])
 
@@ -1700,37 +1655,6 @@ def test_update_plot_redraws_canvas(view: MetadataView, mocker: MockerFixture) -
 
 
 # ----------------------------- Overlay Plot Tests ------------------------------
-
-
-def test_overlay_plot_sets_show_sql_flags_to_false(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
-    """Verify SQL display flags are set to False at start of overlay."""
-    view.figure.axes = []
-    view._show_sql_in_display = True
-    view._show_event_sql_in_display = True
-
-    parameters = {
-        "db_loader": "test_loader",
-        "plot_type": "Histogram",
-        "x_axis": "duration",
-        "x_log": False,
-        "bins": [50],
-        "sizes": False,
-    }
-
-    view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
-    view.selected_experiment_and_channels_by_loader = {}
-    view.global_signal.emit = mocker.Mock()
-    view.query = "SELECT * FROM events"
-    view.plot_data = pd.DataFrame({"duration": [1.0, 2.0, 3.0]})
-    view.units = "ms"
-    view.update_plot = mocker.Mock()
-
-    view._overlay_plot(parameters)
-
-    assert view._show_sql_in_display is False
-    assert view._show_event_sql_in_display is False
 
 
 def test_overlay_plot_sets_plot_initialized_true(
@@ -1751,13 +1675,12 @@ def test_overlay_plot_sets_plot_initialized_true(
 
     view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
     view.selected_experiment_and_channels_by_loader = {}
-    view.global_signal.emit = mocker.Mock()
-    view.query = "SELECT * FROM events"
-    view.plot_data = pd.DataFrame({"duration": [1.0, 2.0, 3.0]})
-    view.units = "ms"
+    view.canned_query = "SELECT * FROM events"
+    view.canned_plot_data = pd.DataFrame({"duration": [1.0, 2.0, 3.0]})
+    view.canned_units = "ms"
     view.update_plot = mocker.Mock()
 
-    view._overlay_plot(parameters)
+    view._overlay_plot(recorded(view, parameters))
 
     assert view.plot_initialized is True
 
@@ -1779,15 +1702,14 @@ def test_overlay_plot_defaults_to_full_dataset_when_no_filters(
 
     view.get_selected_filters = mocker.Mock(return_value={})
     view.selected_experiment_and_channels_by_loader = {}
-    view.global_signal.emit = mocker.Mock()
-    view.query = "SELECT * FROM events"
-    view.plot_data = pd.DataFrame({"duration": [1.0, 2.0, 3.0]})
-    view.units = "ms"
+    view.canned_query = "SELECT * FROM events"
+    view.canned_plot_data = pd.DataFrame({"duration": [1.0, 2.0, 3.0]})
+    view.canned_units = "ms"
     view.update_plot = mocker.Mock()
 
-    view._overlay_plot(parameters)
+    view._overlay_plot(recorded(view, parameters))
 
-    view.global_signal.emit.assert_called()
+    view.metadata_subset_requested.emit.assert_called()
 
 
 def test_overlay_plot_defaults_experiments_and_channels_when_none(
@@ -1807,15 +1729,14 @@ def test_overlay_plot_defaults_experiments_and_channels_when_none(
 
     view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
     view.selected_experiment_and_channels_by_loader = {"test_loader": None}
-    view.global_signal.emit = mocker.Mock()
-    view.query = "SELECT * FROM events"
-    view.plot_data = pd.DataFrame({"duration": [1.0, 2.0, 3.0]})
-    view.units = "ms"
+    view.canned_query = "SELECT * FROM events"
+    view.canned_plot_data = pd.DataFrame({"duration": [1.0, 2.0, 3.0]})
+    view.canned_units = "ms"
     view.update_plot = mocker.Mock()
 
-    view._overlay_plot(parameters)
+    view._overlay_plot(recorded(view, parameters))
 
-    view.global_signal.emit.assert_called()
+    view.metadata_subset_requested.emit.assert_called()
 
 
 def test_overlay_plot_rejects_multiple_experiments_for_event_overlay(
@@ -1832,7 +1753,7 @@ def test_overlay_plot_rejects_multiple_experiments_for_event_overlay(
         "test_loader": {"exp1": [1], "exp2": [1]}
     }
 
-    result = view._overlay_plot(parameters)
+    result = view._overlay_plot(recorded(view, parameters))
 
     assert result is False
     view.add_text_to_display.emit.assert_called()
@@ -1856,7 +1777,7 @@ def test_overlay_plot_rejects_multiple_channels_for_heatmap(
     view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
     view.selected_experiment_and_channels_by_loader = {"test_loader": {"exp1": [1, 2]}}
 
-    result = view._overlay_plot(parameters)
+    result = view._overlay_plot(recorded(view, parameters))
 
     assert result is False
     view.add_text_to_display.emit.assert_called()
@@ -1876,43 +1797,105 @@ def test_overlay_plot_rejects_multiple_filters_for_filtered_event_overlay(
     )
     view.selected_experiment_and_channels_by_loader = {"test_loader": {"exp1": [1]}}
 
-    result = view._overlay_plot(parameters)
+    result = view._overlay_plot(recorded(view, parameters))
 
     assert result is False
     view.add_text_to_display.emit.assert_called()
 
 
-def _bus_sets_plot_data(
-    view: MetadataView, plot_data: pd.DataFrame
-) -> Callable[[str, str, str, tuple, str, tuple], None]:
+def _subset_answers(view: MetadataView) -> Callable[..., None]:
     """
-    Stand in for the global signal bus on a ``load_metadata`` call.
+    Stand in for the Controller answering ``metadata_subset_requested``.
 
-    The real bus dispatches synchronously and its return function assigns
-    ``view.plot_data``, which ``_overlay_plot`` clears immediately before
-    emitting and reads back on the next statement - so that a dispatch which
-    never returns cannot be mistaken for a successful one. A bare ``Mock()``
-    leaves the attribute cleared, so a stub of the bus has to make the same
-    assignment the real return function would.
+    ``_overlay_plot`` clears ``query``, ``plot_data`` and ``column_units`` before
+    emitting and reads them back on the next statement, so that a fetch which failed
+    cannot be mistaken for one that succeeded. A bare ``Mock()`` leaves them cleared,
+    so a stub has to make the same assignments the real Controller would - from
+    whatever the test parked as ``canned_*``.
 
-    :param view: The view whose plot_data the bus would set.
+    ``canned_units`` is a single value, expanded to one per column, because that is
+    what the three separate ``get_column_units`` round trips produced before they
+    were collapsed into one list.
+
+    :param view: the view whose answers to set
     :type view: MetadataView
-    :param plot_data: The frame the loader is standing in for.
-    :type plot_data: pd.DataFrame
-    :return: A side_effect for the mocked emit.
-    :rtype: Callable[[str, str, str, tuple, str, tuple], None]
+    :return: a side_effect for the mocked intent emit
+    :rtype: Callable[..., None]
+    """
+
+    def _emit(loader: str, columns: list, sql_filter: str, scope: object) -> None:
+        view.query = getattr(view, "canned_query", "SELECT 1")
+        view.plot_data = getattr(view, "canned_plot_data", None)
+        units = getattr(view, "canned_units", None)
+        view.column_units = [units] * len(columns)
+
+    return _emit
+
+
+def _event_intent_answers(view: MetadataView) -> Callable[..., None]:
+    """
+    The same, for either of the two event-data intents.
+
+    The generator is not kept on the widget: the Controller answers
+    both intents by drawing through a setter, and sets the query only once the whole
+    fetch *and* the reduction succeeded. So the one thing a test parks is
+    ``canned_event_query``, which is what says the round trip got that far.
+
+    :param view: the view whose answers to set
+    :type view: MetadataView
+    :return: a side_effect for the mocked intent emit
+    :rtype: Callable[..., None]
+    """
+
+    def _emit(*args: object) -> None:
+        view.event_query = getattr(view, "canned_event_query", "")
+
+    return _emit
+
+
+def _column_type_answer(view: MetadataView) -> Callable[..., None]:
+    """
+    Stand in for the Controller answering ``column_type_requested``.
+
+    ``handle_parameter_change`` clears ``column_type`` before asking, so a test that
+    wants the categorical guard to see a type parks it as ``canned_column_type``.
+    Absent that, the answer is None, which is what a failed lookup leaves.
+
+    :param view: the view whose answer to set
+    :type view: MetadataView
+    :return: a side_effect for the mocked intent emit
+    :rtype: Callable[..., None]
+    """
+
+    def _emit(loader: str, column: str) -> None:
+        view.column_type = getattr(view, "canned_column_type", None)
+
+    return _emit
+
+
+def _event_plot_data_answer(view: MetadataView) -> Callable[..., None]:
+    """
+    Stand in for the Controller answering ``event_plot_data_requested``.
+
+    The one intent replaced three chained emits, so a test that used to park an
+    experiment id and a query result now parks only the generator they were resolved
+    in order to fetch - as ``canned_plot_events_generator``.
+
+    :param view: the view whose answer to set
+    :type view: MetadataView
+    :return: a side_effect for the mocked intent emit
+    :rtype: Callable[..., None]
     """
 
     def _emit(
-        metaclass: str,
-        key: str,
-        call_function: str,
-        call_args: tuple,
-        return_function: str,
-        ret_args: tuple,
+        loader: str,
+        event_ids: list,
+        exp: object,
+        channel: object,
+        scope: object,
+        action_label: str,
     ) -> None:
-        if call_function == "load_metadata":
-            view.plot_data = plot_data
+        view.plot_events_generator = getattr(view, "canned_plot_events_generator", None)
 
     return _emit
 
@@ -1935,14 +1918,12 @@ def test_overlay_plot_constructs_histogram_columns_correctly(
     view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
     view.selected_experiment_and_channels_by_loader = {}
     plot_data = pd.DataFrame({"duration": [1.0, 2.0, 3.0]})
-    view.global_signal.emit = mocker.Mock(
-        side_effect=_bus_sets_plot_data(view, plot_data)
-    )
-    view.query = "SELECT * FROM events"
-    view.units = "ms"
+    view.canned_plot_data = plot_data
+    view.canned_query = "SELECT * FROM events"
+    view.canned_units = "ms"
     view.update_plot = mocker.Mock()
 
-    view._overlay_plot(parameters)
+    view._overlay_plot(recorded(view, parameters))
 
     call_args = view.update_plot.call_args
     assert call_args is not None
@@ -1970,14 +1951,12 @@ def test_overlay_plot_constructs_scatterplot_columns_correctly(
     view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
     view.selected_experiment_and_channels_by_loader = {}
     plot_data = pd.DataFrame({"duration": [1.0, 2.0], "current": [3.0, 4.0]})
-    view.global_signal.emit = mocker.Mock(
-        side_effect=_bus_sets_plot_data(view, plot_data)
-    )
-    view.query = "SELECT * FROM events"
-    view.units = "ms"
+    view.canned_plot_data = plot_data
+    view.canned_query = "SELECT * FROM events"
+    view.canned_units = "ms"
     view.update_plot = mocker.Mock()
 
-    view._overlay_plot(parameters)
+    view._overlay_plot(recorded(view, parameters))
 
     call_args = view.update_plot.call_args
     assert call_args is not None
@@ -2011,14 +1990,12 @@ def test_overlay_plot_constructs_3d_scatterplot_columns_correctly(
             "voltage": [5.0, 6.0],
         }
     )
-    view.global_signal.emit = mocker.Mock(
-        side_effect=_bus_sets_plot_data(view, plot_data)
-    )
-    view.query = "SELECT * FROM events"
-    view.units = "ms"
+    view.canned_plot_data = plot_data
+    view.canned_query = "SELECT * FROM events"
+    view.canned_units = "ms"
     view.update_plot = mocker.Mock()
 
-    view._overlay_plot(parameters)
+    view._overlay_plot(recorded(view, parameters))
 
     call_args = view.update_plot.call_args
     assert call_args is not None
@@ -2044,14 +2021,12 @@ def test_overlay_plot_constructs_capture_rate_with_start_time(
     plot_data = pd.DataFrame(
         {"start_time": [0.1, 0.2, 0.3, 0.5, 0.7, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0]}
     )
-    view.global_signal.emit = mocker.Mock(
-        side_effect=_bus_sets_plot_data(view, plot_data)
-    )
-    view.query = "SELECT * FROM events"
-    view.units = "s"
+    view.canned_plot_data = plot_data
+    view.canned_query = "SELECT * FROM events"
+    view.canned_units = "s"
     view.update_plot = mocker.Mock()
 
-    view._overlay_plot(parameters)
+    view._overlay_plot(recorded(view, parameters))
 
     call_args = view.update_plot.call_args
     assert call_args is not None
@@ -2073,7 +2048,7 @@ def test_overlay_plot_returns_false_for_unsupported_metadata_plot_type(
     view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
     view.selected_experiment_and_channels_by_loader = {}
 
-    result = view._overlay_plot(parameters)
+    result = view._overlay_plot(recorded(view, parameters))
 
     assert result is False
     view.add_text_to_display.emit.assert_called()
@@ -2099,13 +2074,12 @@ def test_overlay_plot_resets_when_columns_change(
 
     view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
     view.selected_experiment_and_channels_by_loader = {}
-    view.global_signal.emit = mocker.Mock()
-    view.query = "SELECT * FROM events"
-    view.plot_data = pd.DataFrame({"new_column": [1.0, 2.0, 3.0]})
-    view.units = "ms"
+    view.canned_query = "SELECT * FROM events"
+    view.canned_plot_data = pd.DataFrame({"new_column": [1.0, 2.0, 3.0]})
+    view.canned_units = "ms"
     view.update_plot = mocker.Mock()
 
-    view._overlay_plot(parameters)
+    view._overlay_plot(recorded(view, parameters))
 
     view._reset_actions.assert_called_once()
 
@@ -2131,13 +2105,12 @@ def test_overlay_plot_resets_when_logscales_change(
 
     view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
     view.selected_experiment_and_channels_by_loader = {}
-    view.global_signal.emit = mocker.Mock()
-    view.query = "SELECT * FROM events"
-    view.plot_data = pd.DataFrame({"duration": [1.0, 2.0, 3.0]})
-    view.units = "ms"
+    view.canned_query = "SELECT * FROM events"
+    view.canned_plot_data = pd.DataFrame({"duration": [1.0, 2.0, 3.0]})
+    view.canned_units = "ms"
     view.update_plot = mocker.Mock()
 
-    view._overlay_plot(parameters)
+    view._overlay_plot(recorded(view, parameters))
 
     view._reset_actions.assert_called_once()
 
@@ -2163,13 +2136,12 @@ def test_overlay_plot_resets_when_plot_type_changes(
 
     view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
     view.selected_experiment_and_channels_by_loader = {}
-    view.global_signal.emit = mocker.Mock()
-    view.query = "SELECT * FROM events"
-    view.plot_data = pd.DataFrame({"duration": [1.0, 2.0, 3.0]})
-    view.units = "ms"
+    view.canned_query = "SELECT * FROM events"
+    view.canned_plot_data = pd.DataFrame({"duration": [1.0, 2.0, 3.0]})
+    view.canned_units = "ms"
     view.update_plot = mocker.Mock()
 
-    view._overlay_plot(parameters)
+    view._overlay_plot(recorded(view, parameters))
 
     view._reset_actions.assert_called_once()
 
@@ -2196,13 +2168,12 @@ def test_overlay_plot_resets_when_bins_change_for_bin_sensitive_plot(
 
     view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
     view.selected_experiment_and_channels_by_loader = {}
-    view.global_signal.emit = mocker.Mock()
-    view.query = "SELECT * FROM events"
-    view.plot_data = pd.DataFrame({"duration": [1.0, 2.0, 3.0]})
-    view.units = "ms"
+    view.canned_query = "SELECT * FROM events"
+    view.canned_plot_data = pd.DataFrame({"duration": [1.0, 2.0, 3.0]})
+    view.canned_units = "ms"
     view.update_plot = mocker.Mock()
 
-    view._overlay_plot(parameters)
+    view._overlay_plot(recorded(view, parameters))
 
     view._reset_actions.assert_called_once()
 
@@ -2230,13 +2201,12 @@ def test_overlay_plot_resets_when_sizes_change_for_bin_sensitive_plot(
 
     view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
     view.selected_experiment_and_channels_by_loader = {}
-    view.global_signal.emit = mocker.Mock()
-    view.query = "SELECT * FROM events"
-    view.plot_data = pd.DataFrame({"duration": [1.0, 2.0, 3.0]})
-    view.units = "ms"
+    view.canned_query = "SELECT * FROM events"
+    view.canned_plot_data = pd.DataFrame({"duration": [1.0, 2.0, 3.0]})
+    view.canned_units = "ms"
     view.update_plot = mocker.Mock()
 
-    view._overlay_plot(parameters)
+    view._overlay_plot(recorded(view, parameters))
 
     view._reset_actions.assert_called_once()
 
@@ -2264,7 +2234,7 @@ def test_overlay_plot_rejects_duplicate_columns(
     view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
     view.selected_experiment_and_channels_by_loader = {}
 
-    result = view._overlay_plot(parameters)
+    result = view._overlay_plot(recorded(view, parameters))
 
     assert result is False
     mock_warning.assert_called_once()
@@ -2275,9 +2245,9 @@ def test_overlay_plot_skips_already_plotted_datasets(
 ) -> None:
     """Verify already plotted datasets are skipped and the no-op is reported."""
     view.figure.axes = []
-    view.query = "SELECT * FROM events"
-    view.plot_data = pd.DataFrame({"duration": [1.0, 2.0, 3.0]})
-    view.units = ["ms"]
+    view.canned_query = "SELECT * FROM events"
+    view.canned_plot_data = pd.DataFrame({"duration": [1.0, 2.0, 3.0]})
+    view.canned_units = ["ms"]
     view.plotted_datasets.add(("test_loader", None, None, "", "Full Dataset"))
     view._reset_actions = mocker.Mock()  # prevent decorator side effects
 
@@ -2292,10 +2262,9 @@ def test_overlay_plot_skips_already_plotted_datasets(
 
     view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
     view.selected_experiment_and_channels_by_loader = {}
-    view.global_signal = mocker.Mock()
     view.update_plot = mocker.Mock()
 
-    result = view._overlay_plot(parameters)
+    result = view._overlay_plot(recorded(view, parameters))
 
     # Every requested dataset was skipped as already plotted, so nothing
     # reached the axes. _overlay_plot reports that as False so the caller can
@@ -2322,10 +2291,9 @@ def test_overlay_plot_returns_false_when_query_empty(
 
     view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
     view.selected_experiment_and_channels_by_loader = {}
-    view.global_signal.emit = mocker.Mock()
-    view.query = ""
+    view.canned_query = ""
 
-    result = view._overlay_plot(parameters)
+    result = view._overlay_plot(recorded(view, parameters))
 
     assert result is False
 
@@ -2347,11 +2315,10 @@ def test_overlay_plot_skips_subset_when_no_plot_data(
 
     view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
     view.selected_experiment_and_channels_by_loader = {}
-    view.global_signal.emit = mocker.Mock()
-    view.query = "SELECT * FROM events"
-    view.plot_data = None
+    view.canned_query = "SELECT * FROM events"
+    view.canned_plot_data = None
 
-    view._overlay_plot(parameters)
+    view._overlay_plot(recorded(view, parameters))
 
     view.add_text_to_display.emit.assert_called()
     call_args = view.add_text_to_display.emit.call_args_list[-1]
@@ -2376,14 +2343,12 @@ def test_overlay_plot_emits_row_count_message(
     view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
     view.selected_experiment_and_channels_by_loader = {}
     plot_data = pd.DataFrame({"duration": [1.0, 2.0, 3.0, 4.0, 5.0]})
-    view.global_signal.emit = mocker.Mock(
-        side_effect=_bus_sets_plot_data(view, plot_data)
-    )
-    view.query = "SELECT * FROM events"
-    view.units = "ms"
+    view.canned_plot_data = plot_data
+    view.canned_query = "SELECT * FROM events"
+    view.canned_units = "ms"
     view.update_plot = mocker.Mock()
 
-    view._overlay_plot(parameters)
+    view._overlay_plot(recorded(view, parameters))
 
     view.add_text_to_display.emit.assert_called()
     call_args = view.add_text_to_display.emit.call_args_list[0]
@@ -2407,12 +2372,11 @@ def test_overlay_plot_returns_false_when_columns_missing_from_dataframe(
 
     view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
     view.selected_experiment_and_channels_by_loader = {}
-    view.global_signal.emit = mocker.Mock()
-    view.query = "SELECT * FROM events"
-    view.plot_data = pd.DataFrame({"duration": [1.0, 2.0, 3.0]})
-    view.units = "ms"
+    view.canned_query = "SELECT * FROM events"
+    view.canned_plot_data = pd.DataFrame({"duration": [1.0, 2.0, 3.0]})
+    view.canned_units = "ms"
 
-    result = view._overlay_plot(parameters)
+    result = view._overlay_plot(recorded(view, parameters))
 
     assert result is False
     view.add_text_to_display.emit.assert_called()
@@ -2436,14 +2400,12 @@ def test_overlay_plot_calls_update_plot_with_correct_arguments(
     view.get_selected_filters = mocker.Mock(return_value={"Filter1": "WHERE x > 1"})
     view.selected_experiment_and_channels_by_loader = {"test_loader": {"exp1": [2]}}
     plot_data = pd.DataFrame({"duration": [1.0, 2.0, 3.0]})
-    view.global_signal.emit = mocker.Mock(
-        side_effect=_bus_sets_plot_data(view, plot_data)
-    )
-    view.query = "SELECT * FROM events"
-    view.units = "ms"
+    view.canned_plot_data = plot_data
+    view.canned_query = "SELECT * FROM events"
+    view.canned_units = "ms"
     view.update_plot = mocker.Mock()
 
-    view._overlay_plot(parameters)
+    view._overlay_plot(recorded(view, parameters))
 
     view.update_plot.assert_called_once()
     call_args = view.update_plot.call_args
@@ -2474,14 +2436,12 @@ def test_overlay_plot_updates_allowed_properties_after_successful_plot(
     view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
     view.selected_experiment_and_channels_by_loader = {}
     plot_data = pd.DataFrame({"duration": [1.0, 2.0, 3.0]})
-    view.global_signal.emit = mocker.Mock(
-        side_effect=_bus_sets_plot_data(view, plot_data)
-    )
-    view.query = "SELECT * FROM events"
-    view.units = "ms"
+    view.canned_plot_data = plot_data
+    view.canned_query = "SELECT * FROM events"
+    view.canned_units = "ms"
     view.update_plot = mocker.Mock()
 
-    view._overlay_plot(parameters)
+    view._overlay_plot(recorded(view, parameters))
 
     assert view.allowed_plot_type == "Histogram"
     assert view.allowed_columns == ["duration"]
@@ -2508,22 +2468,20 @@ def test_overlay_plot_adds_dataset_to_plotted_datasets(
     view.get_selected_filters = mocker.Mock(return_value={"Filter1": "WHERE x > 1"})
     view.selected_experiment_and_channels_by_loader = {"test_loader": {"exp1": [2]}}
     plot_data = pd.DataFrame({"duration": [1.0, 2.0, 3.0]})
-    view.global_signal.emit = mocker.Mock(
-        side_effect=_bus_sets_plot_data(view, plot_data)
-    )
-    view.query = "SELECT * FROM events"
-    view.units = "ms"
+    view.canned_plot_data = plot_data
+    view.canned_query = "SELECT * FROM events"
+    view.canned_units = "ms"
     view.update_plot = mocker.Mock()
 
-    view._overlay_plot(parameters)
+    view._overlay_plot(recorded(view, parameters))
 
     assert ("test_loader", "exp1", 2, "WHERE x > 1", "Filter1") in view.plotted_datasets
 
 
-def test_overlay_plot_handles_raw_all_points_histogram_event_plot(
+def test_overlay_plot_asks_for_a_raw_all_points_histogram(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify Raw All Points Histogram event plot is handled."""
+    """Verify the Raw All Points Histogram branch asks for the tally it draws."""
     parameters = {
         "db_loader": "test_loader",
         "plot_type": "Raw All Points Histogram",
@@ -2533,24 +2491,23 @@ def test_overlay_plot_handles_raw_all_points_histogram_event_plot(
 
     view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
     view.selected_experiment_and_channels_by_loader = {}
-    view.global_signal.emit = mocker.Mock()
-    view.event_query = "SELECT * FROM events"
-    view.event_data_generator = iter([{"raw_data": np.array([1.0, 2.0, 3.0])}])
-    view._construct_all_points_histogram = mocker.Mock(
-        return_value=pd.DataFrame({"Current": [1.0, 2.0], "Count": [10, 20]})
-    )
-    view.update_plot = mocker.Mock()
+    view.canned_event_query = "SELECT * FROM events"
 
-    view._overlay_plot(parameters)
+    assert view._overlay_plot(recorded(view, parameters)) is True
 
-    view._construct_all_points_histogram.assert_called_once()
-    view.update_plot.assert_called_once()
+    view.all_points_histogram_requested.emit.assert_called_once()
+    args = view.all_points_histogram_requested.emit.call_args[0]
+    assert args[0] == "test_loader"
+    assert args[3] == "Raw All Points Histogram"
+    assert args[4] == [50]
+    assert args[5] is False
+    view.event_overlay_requested.emit.assert_not_called()
 
 
-def test_overlay_plot_handles_filtered_all_points_histogram_event_plot(
+def test_overlay_plot_asks_for_a_filtered_all_points_histogram(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify Filtered All Points Histogram event plot is handled."""
+    """Verify the plot type reaches the Controller, since it picks the trace."""
     parameters = {
         "db_loader": "test_loader",
         "plot_type": "Filtered All Points Histogram",
@@ -2560,17 +2517,12 @@ def test_overlay_plot_handles_filtered_all_points_histogram_event_plot(
 
     view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
     view.selected_experiment_and_channels_by_loader = {}
-    view.global_signal.emit = mocker.Mock()
-    view.event_query = "SELECT * FROM events"
-    view.event_data_generator = iter([{"filtered_data": np.array([1.0, 2.0, 3.0])}])
-    view._construct_all_points_histogram = mocker.Mock(
-        return_value=pd.DataFrame({"Current": [1.0, 2.0], "Count": [10, 20]})
-    )
-    view.update_plot = mocker.Mock()
+    view.canned_event_query = "SELECT * FROM events"
 
-    view._overlay_plot(parameters)
+    view._overlay_plot(recorded(view, parameters))
 
-    view._construct_all_points_histogram.assert_called_once()
+    args = view.all_points_histogram_requested.emit.call_args[0]
+    assert args[3] == "Filtered All Points Histogram"
 
 
 def test_overlay_plot_resets_for_all_points_histogram_when_bins_change(
@@ -2590,23 +2542,35 @@ def test_overlay_plot_resets_for_all_points_histogram_when_bins_change(
 
     view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
     view.selected_experiment_and_channels_by_loader = {}
-    view.global_signal.emit = mocker.Mock()
-    view.event_query = "SELECT * FROM events"
-    view.event_data_generator = iter([{"raw_data": np.array([1.0, 2.0, 3.0])}])
-    view._construct_all_points_histogram = mocker.Mock(
-        return_value=pd.DataFrame({"Current": [1.0, 2.0], "Count": [10, 20]})
-    )
-    view.update_plot = mocker.Mock()
+    view.canned_event_query = "SELECT * FROM events"
 
-    view._overlay_plot(parameters)
+    view._overlay_plot(recorded(view, parameters))
 
     view._reset_actions.assert_called_once()
 
 
-def test_overlay_plot_returns_false_when_all_points_histogram_returns_none(
+def test_overlay_plot_sends_the_limits_left_by_the_reset(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify returns False when _construct_all_points_histogram returns None."""
+    """
+    Verify the shared limits are read *after* the reset that clears them.
+
+    The limits decide the bins the whole overlay is drawn on, so sending the ones
+    the previous plot type left behind would bin this one against data no longer on
+    the axes. Reading them before the reset is what that mistake looks like, and it
+    is invisible unless the reset is the thing that changes them.
+    """
+    view.allowed_bins = [30]
+    view.allowed_sizes = False
+    view.hist_min = -99.0
+    view.hist_max = 99.0
+
+    def _clear(axis_type: str = "2d") -> None:
+        view.hist_min = None
+        view.hist_max = None
+
+    view._reset_actions = mocker.Mock(side_effect=_clear)
+
     parameters = {
         "db_loader": "test_loader",
         "plot_type": "Raw All Points Histogram",
@@ -2616,20 +2580,19 @@ def test_overlay_plot_returns_false_when_all_points_histogram_returns_none(
 
     view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
     view.selected_experiment_and_channels_by_loader = {}
-    view.global_signal.emit = mocker.Mock()
-    view.event_query = "SELECT * FROM events"
-    view.event_data_generator = iter([{"raw_data": np.array([1.0, 2.0, 3.0])}])
-    view._construct_all_points_histogram = mocker.Mock(return_value=None)
+    view.canned_event_query = "SELECT * FROM events"
 
-    result = view._overlay_plot(parameters)
+    view._overlay_plot(recorded(view, parameters))
 
-    assert result is False
+    args = view.all_points_histogram_requested.emit.call_args[0]
+    assert args[6] is None
+    assert args[7] is None
 
 
-def test_overlay_plot_handles_raw_event_overlay_plot(
+def test_overlay_plot_asks_for_a_raw_event_overlay(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify Raw Event Overlay plot is handled."""
+    """Verify Raw Event Overlay asks for the traces it draws."""
     parameters = {
         "db_loader": "test_loader",
         "plot_type": "Raw Event Overlay",
@@ -2637,14 +2600,14 @@ def test_overlay_plot_handles_raw_event_overlay_plot(
 
     view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
     view.selected_experiment_and_channels_by_loader = {}
-    view.global_signal.emit = mocker.Mock()
-    view.event_query = "SELECT * FROM events"
-    view.event_data_generator = iter([{"raw_data": np.array([1.0, 2.0, 3.0])}])
-    view._construct_event_overlay = mocker.Mock()
+    view.canned_event_query = "SELECT * FROM events"
 
-    view._overlay_plot(parameters)
+    view._overlay_plot(recorded(view, parameters))
 
-    view._construct_event_overlay.assert_called_once()
+    view.event_overlay_requested.emit.assert_called_once_with(
+        "test_loader", "", {None: [None]}, "Raw Event Overlay"
+    )
+    view.all_points_histogram_requested.emit.assert_not_called()
 
 
 def test_overlay_plot_returns_false_when_event_query_empty(
@@ -2658,32 +2621,35 @@ def test_overlay_plot_returns_false_when_event_query_empty(
 
     view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
     view.selected_experiment_and_channels_by_loader = {}
-    view.global_signal.emit = mocker.Mock()
-    view.event_query = ""
+    view.canned_event_query = ""
 
-    result = view._overlay_plot(parameters)
+    result = view._overlay_plot(recorded(view, parameters))
 
     assert result is False
 
 
-def test_overlay_plot_returns_false_when_event_data_generator_none(
+def test_overlay_plot_returns_false_when_the_histogram_could_not_be_built(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify returns False when event_data_generator is None."""
+    """
+    Verify a failed all-points tally rolls the action back.
+
+    The Controller sets the query only once the tally succeeded, so the same empty
+    query that reports a failed fetch reports a failed reduction - which used to be
+    an exception escaping a Qt slot.
+    """
     parameters = {
         "db_loader": "test_loader",
-        "plot_type": "Raw Event Overlay",
+        "plot_type": "Raw All Points Histogram",
+        "bins": [50],
+        "sizes": False,
     }
 
     view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
     view.selected_experiment_and_channels_by_loader = {}
-    view.global_signal.emit = mocker.Mock()
-    view.event_query = "SELECT * FROM events"
-    view.event_data_generator = None
+    view.canned_event_query = ""
 
-    result = view._overlay_plot(parameters)
-
-    assert result is False
+    assert view._overlay_plot(recorded(view, parameters)) is False
 
 
 def test_overlay_plot_clears_allowed_columns_for_event_plots(
@@ -2700,12 +2666,9 @@ def test_overlay_plot_clears_allowed_columns_for_event_plots(
 
     view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
     view.selected_experiment_and_channels_by_loader = {}
-    view.global_signal.emit = mocker.Mock()
-    view.event_query = "SELECT * FROM events"
-    view.event_data_generator = iter([{"raw_data": np.array([1.0, 2.0, 3.0])}])
-    view._construct_event_overlay = mocker.Mock()
+    view.canned_event_query = "SELECT * FROM events"
 
-    view._overlay_plot(parameters)
+    view._overlay_plot(recorded(view, parameters))
 
     assert view.allowed_columns == []
     assert view.allowed_logs == []
@@ -2729,309 +2692,199 @@ def test_overlay_plot_returns_true_on_success(
     view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
     view.selected_experiment_and_channels_by_loader = {}
     plot_data = pd.DataFrame({"duration": [1.0, 2.0, 3.0]})
-    view.global_signal.emit = mocker.Mock(
-        side_effect=_bus_sets_plot_data(view, plot_data)
-    )
-    view.query = "SELECT * FROM events"
-    view.units = "ms"
+    view.canned_plot_data = plot_data
+    view.canned_query = "SELECT * FROM events"
+    view.canned_units = "ms"
     view.update_plot = mocker.Mock()
 
-    result = view._overlay_plot(parameters)
+    result = view._overlay_plot(recorded(view, parameters))
 
     assert result is True
 
 
-# ----------------------------- Construct All Points Histogram Tests ------------------------------
+# ----------------------------- set_all_points_histogram Tests ------------------------------
+#
+# The tally itself is MetadataModel.build_all_points_histogram, pinned in
+# tests/unit/models/test_metadata_model.py. What is left
+# here is the drawing half, and the shared limits the answer carries back.
 
 
-def test_construct_all_points_histogram_returns_dataframe_with_correct_columns(
+def test_set_all_points_histogram_takes_the_widened_limits(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify returns DataFrame with Current and Count columns."""
-    events = [
-        {
-            "raw_data": np.array([10.0, 11.0, 12.0, 13.0, 14.0]),
-            "padding_before": 100.0,
-            "samplerate": 10000.0,
-        }
-    ]
-
-    result = view._construct_all_points_histogram(
-        iter(events), "Raw All Points Histogram", bins=[10], sizes=False
-    )
-
-    assert result is not None
-    assert "Current" in result.columns
-    assert "Count" in result.columns
-
-
-def test_construct_all_points_histogram_uses_raw_data_for_raw_plot(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
-    """Verify uses raw_data for Raw All Points Histogram."""
-    events = [
-        {
-            "raw_data": np.array([10.0, 11.0, 12.0, 13.0, 14.0]),
-            "filtered_data": np.array([20.0, 21.0, 22.0, 23.0, 24.0]),
-            "padding_before": 100.0,
-            "samplerate": 10000.0,
-        }
-    ]
-
-    result = view._construct_all_points_histogram(
-        iter(events), "Raw All Points Histogram", bins=[10], sizes=False
-    )
-
-    assert result is not None
-    # Verify the histogram was built from raw_data (around 10-14) not filtered (20-24)
-    assert result["Current"].min() < 15.0
-
-
-def test_construct_all_points_histogram_uses_filtered_data_for_filtered_plot(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
-    """Verify uses filtered_data for Filtered All Points Histogram."""
-    # Use larger values and more samples so median baseline is clear
-    events = [
-        {
-            "raw_data": np.array([5.0, 5.0, 5.0, 10.0, 11.0, 12.0, 13.0, 14.0]),
-            "filtered_data": np.array([20.0, 20.0, 20.0, 25.0, 26.0, 27.0, 28.0, 29.0]),
-            "padding_before": 300.0,  # 300 µs * 10000 Hz / 1e6 = 3 samples
-            "samplerate": 10000.0,
-        }
-    ]
-
-    result = view._construct_all_points_histogram(
-        iter(events), "Filtered All Points Histogram", bins=[10], sizes=False
-    )
-
-    assert result is not None
-    # After baseline subtraction with filtered data, values should be different than raw
-    # Check that at least one value is non-zero to confirm data was processed
-    assert result["Count"].sum() > 0
-
-
-def test_construct_all_points_histogram_updates_hist_min_and_max(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
-    """Verify updates hist_min and hist_max based on data."""
+    """Verify the limits the tally widened come back onto the view."""
     view.hist_min = None
     view.hist_max = None
+    view._plot_all_points_histogram = mocker.Mock()
 
-    events = [
-        {
-            "raw_data": np.array([10.0, 11.0, 12.0, 13.0, 14.0]),
-            "padding_before": 100.0,
-            "samplerate": 10000.0,
-        }
-    ]
-
-    view._construct_all_points_histogram(
-        iter(events), "Raw All Points Histogram", bins=[10], sizes=False
+    view.set_all_points_histogram(
+        np.array([1.0, 2.0]),
+        np.array([10.0, 20.0]),
+        -3.0,
+        7.0,
+        "Raw All Points Histogram",
+        "a label",
     )
 
-    assert view.hist_min is not None
-    assert view.hist_max is not None
+    assert view.hist_min == -3.0
+    assert view.hist_max == 7.0
 
 
-def test_construct_all_points_histogram_uses_bins_parameter(
+def test_set_all_points_histogram_draws_the_counts(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify uses bins parameter when provided."""
-    events = [
-        {
-            "raw_data": np.array([10.0, 11.0, 12.0, 13.0, 14.0]),
-            "padding_before": 100.0,
-            "samplerate": 10000.0,
-        }
-    ]
+    """Verify the bin centers and counts reach the drawing method unchanged."""
+    view._plot_all_points_histogram = mocker.Mock()
+    x = np.array([1.0, 2.0])
+    y = np.array([10.0, 20.0])
 
-    result = view._construct_all_points_histogram(
-        iter(events), "Raw All Points Histogram", bins=[15], sizes=False
+    view.set_all_points_histogram(x, y, 0.0, 3.0, "Raw All Points Histogram", "a label")
+
+    view._plot_all_points_histogram.assert_called_once()
+    args, kwargs = view._plot_all_points_histogram.call_args
+    assert args[1] is x
+    assert args[2] is y
+    assert kwargs["dataset_label"] == "a label"
+    assert kwargs["norm"] is False
+
+
+@pytest.mark.parametrize(
+    "plot_type",
+    [
+        "Normalized Raw All Points Histogram",
+        "Normalized Filtered All Points Histogram",
+    ],
+)
+def test_set_all_points_histogram_normalizes_for_a_normalized_type(
+    view: MetadataView, mocker: MockerFixture, plot_type: str
+) -> None:
+    """Verify the two normalized variants ask the drawing method to normalize."""
+    view._plot_all_points_histogram = mocker.Mock()
+
+    view.set_all_points_histogram(
+        np.array([1.0, 2.0]),
+        np.array([10.0, 20.0]),
+        0.0,
+        3.0,
+        plot_type,
+        "a label",
     )
 
-    assert result is not None
-    assert len(result) == 15
+    assert view._plot_all_points_histogram.call_args[1]["norm"] is True
 
 
-def test_construct_all_points_histogram_calculates_bin_size_when_sizes_true(
+def test_set_all_points_histogram_redraws_the_canvas(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify calculates bins from size when sizes=True."""
-    view.hist_min = 0.0
-    view.hist_max = 10.0
+    """Verify the canvas is redrawn and the cache committed."""
+    view._plot_all_points_histogram = mocker.Mock()
 
-    events = [
-        {
-            "raw_data": np.array([10.0, 11.0, 12.0, 13.0, 14.0]),
-            "padding_before": 100.0,
-            "samplerate": 10000.0,
-        }
-    ]
-
-    result = view._construct_all_points_histogram(
-        iter(events), "Raw All Points Histogram", bins=[1.0], sizes=True
+    view.set_all_points_histogram(
+        np.array([1.0, 2.0]),
+        np.array([10.0, 20.0]),
+        0.0,
+        3.0,
+        "Raw All Points Histogram",
+        "a label",
     )
 
-    assert result is not None
+    view.canvas.draw.assert_called()
+    view._commit_cache.assert_called()
 
 
-def test_construct_all_points_histogram_raises_for_invalid_bins(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
-    """Verify raises ValueError for invalid bins."""
-    events = [
-        {
-            "raw_data": np.array([10.0, 11.0, 12.0, 13.0, 14.0]),
-            "padding_before": 100.0,
-            "samplerate": 10000.0,
-        }
-    ]
-
-    with pytest.raises(ValueError, match="Invalid bins entry"):
-        view._construct_all_points_histogram(
-            iter(events), "Raw All Points Histogram", bins=[], sizes=False
-        )
+# ----------------------------- set_event_overlay Tests ------------------------------
+#
+# The baseline subtraction and the normalised time base moved to
+# MetadataModel.build_event_overlay; the alpha stays here, because it is read by
+# nothing outside these axes.
 
 
-def test_construct_all_points_histogram_defaults_to_100_bins_when_none(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
-    """Verify defaults to 100 bins when bins=None."""
-    events = [
-        {
-            "raw_data": np.array([10.0, 11.0, 12.0, 13.0, 14.0]),
-            "padding_before": 100.0,
-            "samplerate": 10000.0,
-        }
-    ]
-
-    result = view._construct_all_points_histogram(
-        iter(events), "Raw All Points Histogram", bins=None, sizes=False
-    )
-
-    assert result is not None
-    assert len(result) == 100
-
-
-def test_construct_all_points_histogram_handles_multiple_events(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
-    """Verify accumulates histogram across multiple events."""
-    events = [
-        {
-            "raw_data": np.array([10.0, 11.0, 12.0]),
-            "padding_before": 100.0,
-            "samplerate": 10000.0,
-        },
-        {
-            "raw_data": np.array([11.0, 12.0, 13.0]),
-            "padding_before": 100.0,
-            "samplerate": 10000.0,
-        },
-    ]
-
-    result = view._construct_all_points_histogram(
-        iter(events), "Raw All Points Histogram", bins=[10], sizes=False
-    )
-
-    assert result is not None
-    assert result["Count"].sum() == 6  # 3 points from each event
-
-
-# ----------------------------- Set Baseline Duration Tests ------------------------------
-
-
-def test_set_baseline_duration_sets_value(view: MetadataView) -> None:
-    """Verify baseline_duration is set correctly."""
-    view.set_baseline_duration(0.5)
-
-    assert view.baseline_duration == 0.5
-
-
-# ----------------------------- Construct Event Overlay Tests ------------------------------
-
-
-_TWO_EVENTS = [
-    {
-        "raw_data": np.linspace(10.0, 40.0, 30),
-        "filtered_data": np.linspace(10.0, 40.0, 30),
-        "padding_before": 200.0,
-        "padding_after": 200.0,
-        "samplerate": 10000.0,
-    },
-    {
-        "raw_data": np.linspace(10.0, 40.0, 40),  # different length avoids div/zero
-        "filtered_data": np.linspace(10.0, 40.0, 40),
-        "padding_before": 200.0,
-        "padding_after": 200.0,
-        "samplerate": 10000.0,
-    },
+_TWO_TRACES = [
+    (np.linspace(-0.2, 1.2, 30), np.linspace(0.0, 30.0, 30)),
+    (np.linspace(-0.2, 1.2, 40), np.linspace(0.0, 30.0, 40)),
 ]
 
 
-def test_construct_event_overlay_sets_axis_labels(
+def test_set_event_overlay_sets_axis_labels(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify axis labels are set correctly."""
-    view._construct_event_overlay(iter(_TWO_EVENTS), "Raw Event Overlay", "test_loader")
+    view.set_event_overlay(_TWO_TRACES)
 
     view.axes.set_xlabel.assert_called_with("Normalized Time")
     view.axes.set_ylabel.assert_called_with("Rectified Current (pA)")
 
 
-def test_construct_event_overlay_sets_xlim(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
+def test_set_event_overlay_sets_xlim(view: MetadataView, mocker: MockerFixture) -> None:
     """Verify x-axis limits are set correctly."""
-    view._construct_event_overlay(iter(_TWO_EVENTS), "Raw Event Overlay", "test_loader")
+    view.set_event_overlay(_TWO_TRACES)
 
     view.axes.set_xlim.assert_called_with(left=-0.333, right=1.333)
 
 
-def test_construct_event_overlay_plots_raw_data_for_raw_overlay(
+def test_set_event_overlay_draws_one_trace_per_event(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify uses raw_data for Raw Event Overlay."""
-    view._construct_event_overlay(iter(_TWO_EVENTS), "Raw Event Overlay", "test_loader")
-
-    view.axes.plot.assert_called()
-
-
-def test_construct_event_overlay_plots_filtered_data_for_filtered_overlay(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
-    """Verify uses filtered_data for Filtered Event Overlay."""
-    view._construct_event_overlay(
-        iter(_TWO_EVENTS), "Filtered Event Overlay", "test_loader"
-    )
-
-    view.axes.plot.assert_called()
-
-
-def test_construct_event_overlay_adjusts_alpha_based_on_event_count(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
-    """Verify alpha is adjusted based on number of events (plot called once per event)."""
-    view._construct_event_overlay(iter(_TWO_EVENTS), "Raw Event Overlay", "test_loader")
+    """Verify every trace handed back is drawn."""
+    view.set_event_overlay(_TWO_TRACES)
 
     assert view.axes.plot.call_count == 2
 
 
-def test_construct_event_overlay_sets_no_cached_data_true(
+def test_set_event_overlay_draws_a_shorter_event_more_opaquely(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """
+    Verify the alpha falls with duration, and is capped.
+
+    Short events are the ones that would otherwise be lost under a crowd of long
+    ones, so they are drawn more opaquely; the cap keeps a small overlay readable.
+    """
+    view.set_event_overlay(_TWO_TRACES)
+
+    alphas = [call.kwargs["alpha"] for call in view.axes.plot.call_args_list]
+    assert alphas[0] > alphas[1]
+    assert all(alpha <= 0.5 for alpha in alphas)
+
+
+def test_set_event_overlay_uses_one_alpha_when_every_event_is_the_same_length(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify equal durations do not divide by a zero spread."""
+    traces = [
+        (np.linspace(-0.2, 1.2, 30), np.linspace(0.0, 30.0, 30)),
+        (np.linspace(-0.2, 1.2, 30), np.linspace(5.0, 35.0, 30)),
+    ]
+
+    view.set_event_overlay(traces)
+
+    alphas = [call.kwargs["alpha"] for call in view.axes.plot.call_args_list]
+    assert alphas == [0.5, 0.5]
+
+
+def test_set_event_overlay_draws_nothing_for_an_empty_subset(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Verify no event divides by a zero count."""
+    view.set_event_overlay([])
+
+    view.axes.plot.assert_not_called()
+
+
+def test_set_event_overlay_sets_no_cached_data_true(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify no_cached_data flag is set to True."""
-    view._construct_event_overlay(iter(_TWO_EVENTS), "Raw Event Overlay", "test_loader")
+    view.set_event_overlay(_TWO_TRACES)
 
     assert view.no_cached_data is True
 
 
-def test_construct_event_overlay_redraws_canvas(
+def test_set_event_overlay_redraws_canvas(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify canvas is redrawn after plotting."""
-    view._construct_event_overlay(iter(_TWO_EVENTS), "Raw Event Overlay", "test_loader")
+    view.set_event_overlay(_TWO_TRACES)
 
     view.canvas.draw.assert_called()
 
@@ -3071,7 +2924,7 @@ def test_save_filter_returns_early_when_no_filters(
     """Verify returns early when subset_filters is empty."""
     view.subset_filters = {}
     mock_file_dialog = mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.QFileDialog.getSaveFileName"
+        "poriscope.utils.MetaSubsetTabView.QFileDialog.getSaveFileName"
     )
 
     view._save_filter()
@@ -3085,11 +2938,9 @@ def test_save_filter_opens_file_dialog(
     """Verify file dialog is opened."""
     view.subset_filters = {"Filter1": "WHERE x > 1"}
     mock_file_dialog = mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.QFileDialog.getSaveFileName",
+        "poriscope.utils.MetaSubsetTabView.QFileDialog.getSaveFileName",
         return_value=("/path/to/filters.json", "JSON Files (*.json)"),
     )
-    mocker.patch("builtins.open", mocker.mock_open())
-    mocker.patch("json.dump")
 
     view._save_filter()
 
@@ -3099,54 +2950,54 @@ def test_save_filter_opens_file_dialog(
 def test_save_filter_returns_when_no_path_selected(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify returns when user cancels file dialog."""
+    """Verify nothing is asked for when the user cancels the dialog."""
     view.subset_filters = {"Filter1": "WHERE x > 1"}
     mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.QFileDialog.getSaveFileName",
+        "poriscope.utils.MetaSubsetTabView.QFileDialog.getSaveFileName",
         return_value=("", ""),
     )
-    mock_open = mocker.patch("builtins.open", mocker.mock_open())
 
     view._save_filter()
 
-    mock_open.assert_not_called()
+    view.filters_save_requested.emit.assert_not_called()
 
 
-def test_save_filter_writes_json_to_file(
+def test_save_filter_asks_for_the_path_and_the_filters(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify filters are written to JSON file."""
+    """
+    Choosing the file is the widget's; writing it is not.
+
+    The filters are copied into the request rather than read back off the widget
+    later, so what is written is what was on screen when the user chose the path.
+    """
     view.subset_filters = {"Filter1": "WHERE x > 1", "Filter2": "WHERE y < 10"}
     mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.QFileDialog.getSaveFileName",
+        "poriscope.utils.MetaSubsetTabView.QFileDialog.getSaveFileName",
         return_value=("/path/to/filters.json", "JSON Files (*.json)"),
     )
-    mock_open = mocker.patch("builtins.open", mocker.mock_open())
-    mock_json_dump = mocker.patch("json.dump")
 
     view._save_filter()
 
-    mock_open.assert_called_with("/path/to/filters.json", "w")
-    mock_json_dump.assert_called_once()
+    path, filters = view.filters_save_requested.emit.call_args.args
+    assert path == "/path/to/filters.json"
+    assert filters == {"Filter1": "WHERE x > 1", "Filter2": "WHERE y < 10"}
+    assert filters is not view.subset_filters
 
 
-def test_save_filter_logs_error_on_exception(
+def test_save_filter_asks_for_nothing_when_there_is_nothing_to_save(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify error is logged when save fails."""
-    view.subset_filters = {"Filter1": "WHERE x > 1"}
-    mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.QFileDialog.getSaveFileName",
-        return_value=("/path/to/filters.json", "JSON Files (*.json)"),
+    """No filters means no dialog, not an empty file."""
+    view.subset_filters = {}
+    dialog = mocker.patch(
+        "poriscope.utils.MetaSubsetTabView.QFileDialog.getSaveFileName"
     )
-    mocker.patch("builtins.open", side_effect=OSError("Permission denied"))
 
     view._save_filter()
 
-    # Just verify it doesn't crash
-
-
-# ----------------------------- Load Filter Tests ------------------------------
+    dialog.assert_not_called()
+    view.filters_save_requested.emit.assert_not_called()
 
 
 def test_load_filter_opens_file_dialog(
@@ -3154,15 +3005,11 @@ def test_load_filter_opens_file_dialog(
 ) -> None:
     """Verify file dialog is opened."""
     mock_file_dialog = mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.QFileDialog.getOpenFileName",
+        "poriscope.utils.MetaSubsetTabView.QFileDialog.getOpenFileName",
         return_value=("/path/to/filters.json", "JSON Files (*.json)"),
     )
-    mocker.patch("json.load", return_value={"Filter1": "WHERE x > 1"})
-    view.metadatacontrols = mocker.Mock()
-    view.metadatacontrols.filter_comboBox = mocker.Mock()
 
-    parameters = {"db_loader": "test_loader"}
-    view._load_filter(parameters)
+    view._load_filter({"db_loader": "test_loader"})
 
     mock_file_dialog.assert_called_once()
 
@@ -3170,135 +3017,85 @@ def test_load_filter_opens_file_dialog(
 def test_load_filter_returns_when_no_path_selected(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify returns when user cancels file dialog."""
+    """Verify nothing is asked for when the user cancels the dialog."""
     mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.QFileDialog.getOpenFileName",
+        "poriscope.utils.MetaSubsetTabView.QFileDialog.getOpenFileName",
         return_value=("", ""),
     )
-    mock_open = mocker.patch("builtins.open", mocker.mock_open())
 
-    parameters = {"db_loader": "test_loader"}
-    view._load_filter(parameters)
+    view._load_filter({"db_loader": "test_loader"})
 
-    mock_open.assert_not_called()
+    view.filters_load_requested.emit.assert_not_called()
 
 
-def test_load_filter_reads_json_from_file(
+def test_load_filter_asks_for_the_path_and_the_loader(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify filters are read from JSON file."""
+    """The loader travels with the request, because the answer is validated against it."""
     mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.QFileDialog.getOpenFileName",
+        "poriscope.utils.MetaSubsetTabView.QFileDialog.getOpenFileName",
         return_value=("/path/to/filters.json", "JSON Files (*.json)"),
     )
-    mock_open = mocker.patch(
-        "builtins.open", mocker.mock_open(read_data='{"Filter1": "WHERE x > 1"}')
+
+    view._load_filter({"db_loader": "test_loader"})
+
+    assert view.filters_load_requested.emit.call_args.args == (
+        "/path/to/filters.json",
+        "test_loader",
     )
-    mock_json_load = mocker.patch("json.load", return_value={"Filter1": "WHERE x > 1"})
-    view.metadatacontrols = mocker.Mock()
-    view.metadatacontrols.filter_comboBox = mocker.Mock()
-
-    parameters = {"db_loader": "test_loader"}
-    view._load_filter(parameters)
-
-    mock_open.assert_called_with("/path/to/filters.json", "r")
-    mock_json_load.assert_called_once()
 
 
-def test_load_filter_raises_for_invalid_format(
+def test_load_filter_carries_an_empty_loader_when_none_is_chosen(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify ValueError is raised for non-dict format."""
+    """
+    A missing loader is not a failure - the filters load unvalidated - so it has to
+    survive the round trip as something the answering half can test.
+    """
     mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.QFileDialog.getOpenFileName",
+        "poriscope.utils.MetaSubsetTabView.QFileDialog.getOpenFileName",
         return_value=("/path/to/filters.json", "JSON Files (*.json)"),
     )
-    mocker.patch("builtins.open", mocker.mock_open(read_data='["not", "a", "dict"]'))
-    mocker.patch("json.load", return_value=["not", "a", "dict"])
 
-    parameters = {"db_loader": "test_loader"}
-    view._load_filter(parameters)
+    view._load_filter({})
 
-    # Should log error but not crash
+    assert view.filters_load_requested.emit.call_args.args[1] == ""
 
 
-def test_load_filter_warns_on_duplicate_names(
+def test_set_loaded_filters_warns_on_duplicate_names(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify warning when duplicate filter names found."""
+    """All or nothing: a partial load leaves the user guessing which half arrived."""
     view.subset_filters = {"Filter1": "WHERE x > 1"}
-    mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.QFileDialog.getOpenFileName",
-        return_value=("/path/to/filters.json", "JSON Files (*.json)"),
-    )
-    mocker.patch(
-        "builtins.open", mocker.mock_open(read_data='{"Filter1": "WHERE y < 10"}')
-    )
-    mocker.patch("json.load", return_value={"Filter1": "WHERE y < 10"})
 
-    parameters = {"db_loader": "test_loader"}
-    view._load_filter(parameters)
+    view.set_loaded_filters({"Filter1": "WHERE y < 10"}, "test_loader")
 
-    # Should log warning and not load
+    said = [call.args[0] for call in view.add_text_to_display.emit.call_args_list]
+    assert any("Duplicate filter names" in message for message in said)
+    assert view.subset_filters == {"Filter1": "WHERE x > 1"}
 
 
-def test_load_filter_validates_with_loader_when_provided(
+def test_set_loaded_filters_validates_with_loader_when_provided(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify filters are validated when loader is provided."""
-    mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.QFileDialog.getOpenFileName",
-        return_value=("/path/to/filters.json", "JSON Files (*.json)"),
-    )
-    mocker.patch(
-        "builtins.open", mocker.mock_open(read_data='{"Filter1": "WHERE x > 1"}')
-    )
-    mocker.patch("json.load", return_value={"Filter1": "WHERE x > 1"})
-    view.metadatacontrols = mocker.Mock()
-    view.metadatacontrols.filter_comboBox = mocker.Mock()
-    view.global_signal.emit = mocker.Mock()
+    """Verify filters are validated when a loader is available."""
+    view.subset_filters = {}
 
-    parameters = {"db_loader": "test_loader"}
-    view._load_filter(parameters)
+    view.set_loaded_filters({"Filter1": "WHERE x > 1"}, "test_loader")
 
-    view.global_signal.emit.assert_called()
+    view.filter_validation_requested.emit.assert_called_once()
 
 
-def test_load_filter_adds_filter_directly_when_no_loader(
+def test_set_loaded_filters_adds_filter_directly_when_no_loader(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify filter is added directly when no loader provided."""
-    mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.QFileDialog.getOpenFileName",
-        return_value=("/path/to/filters.json", "JSON Files (*.json)"),
-    )
-    mocker.patch(
-        "builtins.open", mocker.mock_open(read_data='{"Filter1": "WHERE x > 1"}')
-    )
-    mocker.patch("json.load", return_value={"Filter1": "WHERE x > 1"})
-    view.metadatacontrols = mocker.Mock()
-    view.metadatacontrols.filter_comboBox = mocker.Mock()
+    """Verify filters are added directly when no loader is available."""
+    view.subset_filters = {}
 
-    parameters = {}
-    view._load_filter(parameters)
+    view.set_loaded_filters({"Filter1": "WHERE x > 1"}, "")
 
-    assert "Filter1" in view.subset_filters
-
-
-def test_load_filter_logs_error_on_exception(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
-    """Verify error is logged when load fails."""
-    mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.QFileDialog.getOpenFileName",
-        return_value=("/path/to/filters.json", "JSON Files (*.json)"),
-    )
-    mocker.patch("builtins.open", side_effect=OSError("File not found"))
-
-    parameters = {"db_loader": "test_loader"}
-    view._load_filter(parameters)
-
-    # Should log error but not crash
+    assert view.subset_filters == {"Filter1": "WHERE x > 1"}
+    view.filter_validation_requested.emit.assert_not_called()
 
 
 # ------------------------ Restore Subset Filters (Session Load) Tests --------------------
@@ -3390,6 +3187,35 @@ def test_handle_parameter_change_shows_selection_tree(
     view.show_selection_tree.assert_called_once()
 
 
+def test_the_selection_tree_shows_experiments_written_since_the_loader_was_chosen(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """
+    Opening the experiment and channel tree asks the loader again before showing it.
+
+    The structure was read only when the plugin list changed, so an experiment
+    written into an already loaded database - by the Event Analysis tab, say - did
+    not appear until the loader was reloaded. The stand-in answers the request the
+    way the Controller does: synchronously, filing the loader's current structure.
+    """
+    view.available_experiment_and_channels_by_loader = {"test_loader": {"exp1": ["1"]}}  # type: ignore[assignment]
+    view.selected_experiment_and_channels_by_loader = {"test_loader": {"exp1": ["1"]}}  # type: ignore[assignment]
+    now_on_disk = {"exp1": ["1"], "exp2": ["3"]}
+
+    def answer(loader: str) -> None:
+        view.available_experiment_and_channels_by_loader[loader] = now_on_disk
+
+    view.request_experiment_structure = mocker.Mock(side_effect=answer)  # type: ignore[method-assign]
+    view.show_selection_tree = mocker.Mock()  # type: ignore[method-assign]
+
+    view.handle_parameter_change(
+        "metadata", "select_experiment_and_channel", ({"db_loader": "test_loader"},)
+    )
+
+    view.request_experiment_structure.assert_called_once_with("test_loader")
+    assert view.show_selection_tree.call_args.args[0] == now_on_disk
+
+
 def test_handle_parameter_change_shifts_range_backward(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
@@ -3462,23 +3288,56 @@ def test_handle_parameter_change_calls_overlay_plot_on_update(
 ) -> None:
     """Verify _overlay_plot is called on update_plot action."""
     view._overlay_plot = mocker.Mock(return_value=True)  # type: ignore[method-assign]
-    parameters = {"plot_type": "Histogram"}
+    parameters = {"db_loader": "loader", "plot_type": "Histogram"}
 
     view.handle_parameter_change("metadata", "update_plot", (parameters,))
 
     view._overlay_plot.assert_called_once_with(parameters)
 
 
-def test_handle_parameter_change_undoes_on_failed_overlay(
+def test_a_refusal_that_left_the_figure_unchanged_is_discarded(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify update_tab_action_history is emitted when overlay fails."""
+    """
+    Nothing drawn and nothing cleared: drop the record, replay nothing.
+
+    Undoing here cleared the figure and replayed the whole history with the current
+    selection - a double-click on Plot lost every earlier overlay but the last.
+    """
+    view.plotted_datasets = {("loader", "exp", 0, "", "A")}
     view._overlay_plot = mocker.Mock(return_value=False)  # type: ignore[method-assign]
-    parameters = {"plot_type": "Histogram"}
 
-    view.handle_parameter_change("metadata", "update_plot", (parameters,))
+    view.handle_parameter_change(
+        "metadata", "update_plot", ({"db_loader": "loader", "plot_type": "Histogram"},)
+    )
 
-    view.update_tab_action_history.emit.assert_called_with(None, True)
+    view.discard_last_tab_action.emit.assert_called_once_with()
+    view.update_tab_action_history.emit.assert_not_called()
+
+
+def test_a_refusal_that_changed_the_figure_is_undone(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """
+    A refused call that reset the figure first is undone, which redraws it.
+
+    The overlay is stubbed the way the real one behaves on this path: it resets the
+    figure, clearing ``plotted_datasets``, and then refuses.
+    """
+    view.plotted_datasets = {("loader", "exp", 0, "", "A")}
+
+    def reset_then_refuse(parameters):
+        view.plotted_datasets = set()
+        return False
+
+    view._overlay_plot = mocker.Mock(side_effect=reset_then_refuse)  # type: ignore[method-assign]
+
+    view.handle_parameter_change(
+        "metadata", "update_plot", ({"db_loader": "loader", "plot_type": "Histogram"},)
+    )
+
+    view.update_tab_action_history.emit.assert_called_once_with(None, True)
+    view.discard_last_tab_action.emit.assert_not_called()
 
 
 def test_handle_parameter_change_resets_plot(
@@ -3495,28 +3354,17 @@ def test_handle_parameter_change_resets_plot(
 def test_handle_parameter_change_loads_plot_config(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify plot configuration is loaded."""
-    view._load_actions_from_json = mocker.Mock(return_value={"action": "data"})  # type: ignore[method-assign]
-    view._update_actions_from_json = mocker.Mock()  # type: ignore[method-assign]
-    parameters = {"db_loader": "test_loader"}
+    """
+    Load hands off to the file dialog, which emits the file for the Controller to replay.
 
-    view.handle_parameter_change("metadata", "load_plot", (parameters,))
-
-    view._load_actions_from_json.assert_called_once()
-    view._update_actions_from_json.assert_called_once()
-
-
-def test_handle_parameter_change_returns_early_when_no_actions(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
-    """Verify early return when no actions are loaded."""
+    The branch used to read a return value ``_load_actions_from_json`` never produces and
+    call a method that does not exist; the two tests here stubbed both into being.
+    """
     view._load_actions_from_json = mocker.Mock(return_value=None)  # type: ignore[method-assign]
-    view._update_actions_from_json = mocker.Mock()  # type: ignore[method-assign]
-    parameters = {"db_loader": "test_loader"}
 
-    view.handle_parameter_change("metadata", "load_plot", (parameters,))
+    view.handle_parameter_change("metadata", "load_plot", ({"db_loader": "loader"},))
 
-    view._update_actions_from_json.assert_not_called()
+    view._load_actions_from_json.assert_called_once_with()
 
 
 def test_handle_parameter_change_saves_plot_config(
@@ -4028,15 +3876,10 @@ def test_export_csv_subset_converts_empty_filters_to_none(
         "export_name",
     )
     mock_dialog_class.return_value = mock_dialog
-    view.global_signal = mocker.Mock()
-    view.run_generators = mocker.Mock()
 
     view._export_csv_subset("test_loader", {}, {"exp1": [1]})
 
-    # Verify global_signal was called with None for filters
-    call_args = view.global_signal.emit.call_args[0]
-    export_args = call_args[3]
-    assert export_args[2] is None  # filters should be None
+    assert view.csv_subset_export_requested.emit.call_args[0][3] is None
 
 
 def test_export_csv_subset_extracts_filter_value(
@@ -4054,21 +3897,20 @@ def test_export_csv_subset_extracts_filter_value(
         "export_name",
     )
     mock_dialog_class.return_value = mock_dialog
-    view.global_signal = mocker.Mock()
-    view.run_generators = mocker.Mock()
 
     view._export_csv_subset("test_loader", {"Filter1": "WHERE x > 1"}, {})
 
-    # Verify global_signal was called with filter value
-    call_args = view.global_signal.emit.call_args[0]
-    export_args = call_args[3]
-    assert export_args[2] == "WHERE x > 1"
+    assert view.csv_subset_export_requested.emit.call_args[0][3] == "WHERE x > 1"
 
 
 def test_export_csv_subset_emits_signal_on_success(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify global signal is emitted for export."""
+    """Verify the export intent carries the whole request.
+
+    Staging the generator and starting it are the Controller's, which is the only
+    place that knows whether the export was set up at all.
+    """
     view.available_plugins = {}  # type: ignore[attr-defined]
     view.subset_export_count = 0
     mock_dialog_class = mocker.patch(
@@ -4080,19 +3922,28 @@ def test_export_csv_subset_emits_signal_on_success(
         "export_name",
     )
     mock_dialog_class.return_value = mock_dialog
-    view.global_signal = mocker.Mock()
-    view.run_generators = mocker.Mock()
 
     view._export_csv_subset("test_loader", {"Filter1": "WHERE x > 1"}, {"exp1": [1]})
 
-    view.global_signal.emit.assert_called_once()
-    view.run_generators.emit.assert_called_once_with("test_loader")
+    view.csv_subset_export_requested.emit.assert_called_once_with(
+        "test_loader",
+        "/path/to/folder",
+        "export_name",
+        "WHERE x > 1",
+        {"exp1": [1]},
+        0,
+    )
 
 
-def test_export_csv_subset_increments_counter(
+def test_export_csv_subset_does_not_advance_the_index_by_itself(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify subset export counter is incremented."""
+    """Verify the index advances on the Controller's word, not on the request.
+
+    Was ``..._increments_counter``, which held when this method staged the export
+    itself. It advances in ``on_subset_export_started`` now, so an export the loader
+    refused does not consume a name.
+    """
     view.available_plugins = {}  # type: ignore[attr-defined]
     initial_count = view.subset_export_count
     mock_dialog_class = mocker.patch(
@@ -4104,10 +3955,12 @@ def test_export_csv_subset_increments_counter(
         "export_name",
     )
     mock_dialog_class.return_value = mock_dialog
-    view.global_signal = mocker.Mock()
-    view.run_generators = mocker.Mock()
 
     view._export_csv_subset("test_loader", {"Filter1": "WHERE x > 1"}, {})
+
+    assert view.subset_export_count == initial_count
+
+    view.on_subset_export_started()
 
     assert view.subset_export_count == initial_count + 1
 
@@ -4129,42 +3982,7 @@ def test_export_csv_subset_does_not_increment_counter_on_cancel(
 
     assert view.subset_export_count == initial_count
 
-
-def test_export_csv_subset_handles_exception(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
-    """Verify exception is logged when export fails."""
-    view.available_plugins = {}
-    view.subset_export_count = 0
-    mock_dialog_class = mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.DictDialog"
-    )
-    mock_dialog = mocker.Mock()
-    mock_dialog.get_result.return_value = (
-        {"Folder": {"Value": "/path/to/folder"}},
-        "export_name",
-    )
-    mock_dialog_class.return_value = mock_dialog
-
-    # Create a fresh mock for global_signal that will raise exception
-    view.global_signal = mocker.Mock()
-    view.global_signal.emit = mocker.Mock(side_effect=Exception("Export failed"))
-
-    view._export_csv_subset("test_loader", {"Filter1": "WHERE x > 1"}, {})
-
-    # Should log error but not crash
-    assert view.logger.error.called
-
     # ----------------------------- Set Exported Event Count Tests ------------------------------
-
-
-def test_set_exported_event_count_sets_value(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
-    """Verify exported event count is set correctly."""
-    view.set_exported_event_count(42)
-
-    assert view.exported_event_count == 42
 
 
 # ----------------------------- Set Query Tests ------------------------------
@@ -4180,48 +3998,10 @@ def test_set_query_sets_query_and_table_name(
     assert view.table_name == "events"
 
 
-def test_set_query_returns_early_when_query_empty(
+def test_set_query_does_not_echo_to_the_status_panel(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify early return when query is empty."""
-    view._show_sql_in_display = True
-
-    view.set_query("", "events")
-
-    view.add_text_to_display.emit.assert_not_called()
-
-
-def test_set_query_emits_sql_when_show_flag_true(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
-    """Verify SQL is emitted when show flag is True."""
-    view._show_sql_in_display = True
-
-    view.set_query("SELECT * FROM events", "events")
-
-    view.add_text_to_display.emit.assert_called()
-    call_args = view.add_text_to_display.emit.call_args[0]
-    assert "SQL (events)" in call_args[0]
-    assert "SELECT * FROM events" in call_args[0]
-
-
-def test_set_query_resets_show_flag_after_display(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
-    """Verify show SQL flag is reset after displaying."""
-    view._show_sql_in_display = True
-
-    view.set_query("SELECT * FROM events", "events")
-
-    assert view._show_sql_in_display is False
-
-
-def test_set_query_does_not_emit_when_show_flag_false(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
-    """Verify SQL is not emitted when show flag is False."""
-    view._show_sql_in_display = False
-
+    """The validation query is not the one that pulls the subset, so it is not shown."""
     view.set_query("SELECT * FROM events", "events")
 
     view.add_text_to_display.emit.assert_not_called()
@@ -4237,104 +4017,64 @@ def test_set_event_query_sets_query(view: MetadataView, mocker: MockerFixture) -
     assert view.event_query == "SELECT * FROM events WHERE id > 100"
 
 
-def test_set_event_query_returns_early_when_empty(
+def test_set_event_query_does_not_echo_to_the_status_panel(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify early return when query is empty."""
-    view._show_event_sql_in_display = True
-
-    view.set_event_query("")
+    """Storing the event query shows nothing on the status panel."""
+    view.set_event_query("SELECT * FROM events WHERE id > 100")
 
     view.add_text_to_display.emit.assert_not_called()
-
-
-def test_set_event_query_emits_sql_when_show_flag_true(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
-    """Verify SQL is emitted when show flag is True."""
-    view._show_event_sql_in_display = True
-
-    view.set_event_query("SELECT * FROM events")
-
-    view.add_text_to_display.emit.assert_called()
-    call_args = view.add_text_to_display.emit.call_args[0]
-    assert "Event SQL" in call_args[0]
-
-
-def test_set_event_query_resets_show_flag_after_display(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
-    """Verify show flag is reset after displaying."""
-    view._show_event_sql_in_display = True
-
-    view.set_event_query("SELECT * FROM events")
-
-    assert view._show_event_sql_in_display is False
-
-
-# ----------------------------- Set Units Tests ------------------------------
-
-
-def test_set_units_sets_value(view: MetadataView, mocker: MockerFixture) -> None:
-    """Verify units are set correctly."""
-    view.set_units("ms")
-
-    assert view.units == "ms"
-
-
-def test_set_units_accepts_list(view: MetadataView, mocker: MockerFixture) -> None:
-    """Verify units can be set as a list."""
-    view.set_units(["ms", "pA"])
-
-    assert view.units == ["ms", "pA"]
 
 
 # ----------------------------- Update Available Columns Tests ------------------------------
 
 
-def test_update_available_columns_emits_signal(
+def test_update_available_columns_emits_a_typed_intent(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify global signal is emitted to request columns."""
-    view.global_signal = mocker.Mock()
+    """An intent naming the loader, not a bus call describing the dispatch."""
+    view.column_names_requested = mocker.Mock()
 
     view.update_available_columns("test_loader")
 
-    view.global_signal.emit.assert_called_once()
-    call_args = view.global_signal.emit.call_args[0]
-    assert call_args[0] == "MetaDatabaseLoader"
-    assert call_args[1] == "test_loader"
-    assert call_args[2] == "get_column_names_by_table"
+    view.column_names_requested.emit.assert_called_once_with("test_loader")
 
 
-def test_update_available_columns_handles_exception(
+def test_update_available_columns_ignores_the_placeholder(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify exception is logged when signal emission fails."""
-    view.global_signal = mocker.Mock()
-    view.global_signal.emit = mocker.Mock(side_effect=Exception("Signal failed"))
+    """
+    Replaces test_update_available_columns_handles_exception.
 
-    view.update_available_columns("test_loader")
+    That test made ``global_signal.emit`` raise, which was worth guarding while the emit
+    ran the whole dispatch synchronously. A typed intent has nothing to fail, and the
+    Controller slot carries the try/except now - so the property left to assert here is
+    the empty-state guard, which is what the method still decides.
+    """
+    view.column_names_requested = mocker.Mock()
 
-    view.logger.error.assert_called()
+    view.update_available_columns("No Event Database")
+
+    view.column_names_requested.emit.assert_not_called()
 
 
 # ----------------------------- Request Experiment Structure Tests ------------------------------
 
 
-def test_request_experiment_structure_emits_signal(
+def test_request_experiment_structure_emits_a_typed_intent(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify global signal is emitted to request structure."""
-    view.global_signal = mocker.Mock()
+    """
+    The loader key travels with the request.
+
+    The bus carried it as ``ret_args`` so the answer could be filed under the loader it
+    came from; the intent carries it for the same reason.
+    """
+    view.experiment_structure_requested = mocker.Mock()
 
     view.request_experiment_structure("test_loader")
 
-    view.global_signal.emit.assert_called_once()
-    call_args = view.global_signal.emit.call_args[0]
-    assert call_args[0] == "MetaDatabaseLoader"
-    assert call_args[1] == "test_loader"
-    assert call_args[2] == "get_experiments_and_channels"
+    view.experiment_structure_requested.emit.assert_called_once_with("test_loader")
 
 
 # ----------------------------- Show Selection Tree Tests ------------------------------
@@ -4347,9 +4087,7 @@ def test_show_selection_tree_creates_tree_if_not_exists(
     if hasattr(view, "selection_tree"):
         delattr(view, "selection_tree")
 
-    mock_tree_class = mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.SelectionTree"
-    )
+    mock_tree_class = mocker.patch("poriscope.utils.MetaSubsetTabView.SelectionTree")
     mock_tree = mocker.Mock()
     mock_tree.show_dialog.return_value = {"exp1": [1, 2]}
     mock_tree_class.return_value = mock_tree
@@ -4398,30 +4136,34 @@ def test_show_selection_tree_updates_selection(
 # ----------------------------- Update Units Tests ------------------------------
 
 
-def test_update_units_emits_signal(view: MetadataView, mocker: MockerFixture) -> None:
-    """Verify global signal is emitted to request units."""
-    view.global_signal = mocker.Mock()
-
-    view.update_units("test_loader", "duration", "x_axis")
-
-    view.global_signal.emit.assert_called_once()
-    call_args = view.global_signal.emit.call_args[0]
-    assert call_args[0] == "MetaDatabaseLoader"
-    assert call_args[1] == "test_loader"
-    assert call_args[2] == "get_column_units"
-    assert call_args[3] == ("duration",)
-
-
-def test_update_units_handles_exception(
+def test_update_units_emits_a_typed_intent(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify exception is logged when signal emission fails."""
-    view.global_signal = mocker.Mock()
-    view.global_signal.emit = mocker.Mock(side_effect=Exception("Signal failed"))
+    """
+    The column and the axis both travel with the request.
+
+    ``update_units`` moved down here from ``MetaSubsetTabView`` in the same commit that
+    converted it: it sat on the shared base but only this tab ever called it, because the
+    protein tab has no units label to write an answer to.
+    """
+    view.column_units_requested = mocker.Mock()
 
     view.update_units("test_loader", "duration", "x_axis")
 
-    view.logger.error.assert_called()
+    view.column_units_requested.emit.assert_called_once_with(
+        "test_loader", "duration", "x_axis"
+    )
+
+
+def test_update_units_ignores_the_placeholder(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Replaces test_update_units_handles_exception, for the reason given above."""
+    view.column_units_requested = mocker.Mock()
+
+    view.update_units("No Event Database", "duration", "x_axis")
+
+    view.column_units_requested.emit.assert_not_called()
 
 
 # ----------------------------- Update Column Names Tests ------------------------------
@@ -4471,139 +4213,26 @@ def test_handle_other_actions_raises_not_implemented(
 # ----------------------------- Calculate Heatmap Tests ------------------------------
 
 
-def test_calculate_heatmap_returns_three_arrays(
+def test_plot_heatmap_sends_the_raw_columns_and_their_log_flags(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify calculate_heatmap returns x, y, z arrays."""
-    xdata = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
-    ydata = np.array([10.0, 20.0, 30.0, 40.0, 50.0])
-    view._logscale_and_filter_multiple_columns = mocker.Mock(
-        return_value=(xdata, ydata)
-    )
+    """
+    The filter is applied below the View, along with the binning.
 
-    x, y, z = view._calculate_heatmap(xdata, ydata, bins=[5])
+    What the View sends is the column as it came out of the dataframe, plus the
+    flags saying which axes are log-scaled - so the values that survive the filter
+    are produced once, by the layer that also exports them.
+    """
+    data = pd.DataFrame({"x": np.array([1.0, 10.0]), "y": np.array([1.0, 10.0])})
 
-    assert len(x) == 5
-    assert len(y) == 5
-    assert z.shape == (5, 5)
+    view._plot_heatmap(view.axes, data, ["x", "y"], ["u1", "u2"], [True, True])
 
-
-def test_calculate_heatmap_applies_logscale(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
-    """Verify logscale is applied when requested."""
-    xdata = np.array([1.0, 10.0, 100.0])
-    ydata = np.array([1.0, 10.0, 100.0])
-    view._logscale_and_filter_multiple_columns = mocker.Mock(
-        return_value=(xdata, ydata)
-    )
-
-    view._calculate_heatmap(xdata, ydata, logx=True, logy=True)
-
-    view._logscale_and_filter_multiple_columns.assert_called_once()
-    call_args = view._logscale_and_filter_multiple_columns.call_args
-    assert call_args.kwargs["log_flags"] == [True, True]
-
-
-def test_calculate_heatmap_uses_different_bins_for_x_and_y(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
-    """Verify different bin counts can be specified for x and y."""
-    xdata = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
-    ydata = np.array([10.0, 20.0, 30.0, 40.0, 50.0])
-    view._logscale_and_filter_multiple_columns = mocker.Mock(
-        return_value=(xdata, ydata)
-    )
-
-    x, y, z = view._calculate_heatmap(xdata, ydata, bins=[3, 5])
-
-    assert z.shape == (5, 3)  # Note: transposed, so y bins first
-
-
-def test_calculate_heatmap_calculates_bin_sizes_when_sizes_true(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
-    """Verify bin sizes are calculated when sizes=True."""
-    xdata = np.array([0.0, 10.0, 20.0, 30.0])
-    ydata = np.array([0.0, 10.0, 20.0, 30.0])
-    view._logscale_and_filter_multiple_columns = mocker.Mock(
-        return_value=(xdata, ydata)
-    )
-
-    x, y, z = view._calculate_heatmap(xdata, ydata, bins=[5.0], sizes=True)
-
-    # (30 - 0) / 5.0 = 6 bins per axis
-    assert z.shape[0] == 6
-    assert z.shape[1] == 6
-
-
-def test_calculate_heatmap_raises_for_invalid_bins(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
-    """Verify ValueError is raised for empty bins list."""
-    xdata = np.array([1.0, 2.0, 3.0])
-    ydata = np.array([10.0, 20.0, 30.0])
-    view._logscale_and_filter_multiple_columns = mocker.Mock(
-        return_value=(xdata, ydata)
-    )
-
-    with pytest.raises(ValueError, match="Invalid bin entry"):
-        view._calculate_heatmap(xdata, ydata, bins=[], sizes=False)
-
-
-def test_calculate_heatmap_defaults_to_iqr_when_bins_none(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
-    """Verify IQR-based bin calculation when bins=None."""
-    xdata = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
-    ydata = np.array([10.0, 20.0, 30.0, 40.0, 50.0])
-    view._logscale_and_filter_multiple_columns = mocker.Mock(
-        return_value=(xdata, ydata)
-    )
-    mocker.patch("poriscope.plugins.analysistabs.MetadataView.iqr", return_value=2.0)
-
-    x, y, z = view._calculate_heatmap(xdata, ydata, bins=None)
-
-    assert z.shape[0] > 0
-    assert z.shape[1] > 0
-
-
-def test_calculate_heatmap_applies_log2_to_counts(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
-    """Verify counts are log2 transformed."""
-    xdata = np.array([1.0, 1.0, 2.0, 2.0])
-    ydata = np.array([10.0, 10.0, 20.0, 20.0])
-    view._logscale_and_filter_multiple_columns = mocker.Mock(
-        return_value=(xdata, ydata)
-    )
-
-    x, y, z = view._calculate_heatmap(xdata, ydata, bins=[2])
-
-    # All non-zero entries should be log2 transformed
-    assert np.all((z == -1) | (z >= 0))  # -1 for zero counts, >=0 for others
+    emitted = view.heatmap_requested.emit.call_args.args
+    assert list(emitted[0]) == [1.0, 10.0]
+    assert emitted[2] == [True, True]
 
 
 # ----------------------------- Show Add Filter Dialog Tests ------------------------------
-
-
-def test_show_add_filter_dialog_sets_show_sql_flag(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
-    """Verify show SQL flag is set before dialog."""
-    view._show_sql_in_display = False
-    view._walkthrough_active = False  # Add this attribute
-    mock_dialog_class = mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.AddSubsetFilterDialog"
-    )
-    mock_dialog = mocker.Mock()
-    mock_dialog.exec.return_value = 0  # Rejected
-    mock_dialog.is_raw = False  # Ensure assisted path
-    mock_dialog_class.return_value = mock_dialog
-
-    view._show_add_filter_dialog({"db_loader": "test"})
-
-    assert view._show_sql_in_display is True
 
 
 def test_show_add_filter_dialog_opens_dialog(
@@ -4613,7 +4242,7 @@ def test_show_add_filter_dialog_opens_dialog(
     view._walkthrough_active = False
     view.subset_filters = {"Filter1": "WHERE x > 1"}
     mock_dialog_class = mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.AddSubsetFilterDialog"
+        "poriscope.utils.MetaSubsetTabView.AddSubsetFilterDialog"
     )
     mock_dialog = mocker.Mock()
     mock_dialog.exec.return_value = 0
@@ -4632,7 +4261,7 @@ def test_show_add_filter_dialog_validates_filter_on_accept(
     """Verify filter is validated via global signal when accepted."""
     view._walkthrough_active = False
     mock_dialog_class = mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.AddSubsetFilterDialog"
+        "poriscope.utils.MetaSubsetTabView.AddSubsetFilterDialog"
     )
     mock_dialog = mocker.Mock()
     mock_dialog.exec.return_value = 1  # Accepted
@@ -4640,13 +4269,56 @@ def test_show_add_filter_dialog_validates_filter_on_accept(
     mock_dialog.filter_text = "WHERE duration > 100"
     mock_dialog.is_raw = False  # Ensure assisted path
     mock_dialog_class.return_value = mock_dialog
-    view.global_signal = mocker.Mock()
-
     view._show_add_filter_dialog({"db_loader": "test_loader"})
 
-    view.global_signal.emit.assert_called_once()
-    call_args = view.global_signal.emit.call_args[0]
-    assert call_args[2] == "construct_metadata_query"
+    # The Controller makes the construct_metadata_query call, and picks
+    # the columns to validate against, so the View's half is the intent alone.
+    view.filter_validation_requested.emit.assert_called_once_with(
+        "test_loader",
+        "WHERE duration > 100",
+        "validate_new_filter",
+        "NewFilter",
+        None,
+    )
+
+
+def test_cancelling_add_filter_after_finishing_the_tutorial_raises_nothing(
+    qapp: Any,
+    view: MetadataView,
+    mocker: MockerFixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """
+    Closing Add Filter after its tutorial has finished is quiet.
+
+    Finishing the tutorial clears the dialog's ``walkthrough_dialog``, and the
+    View's close handler used to call ``force_close()`` on it regardless. The real
+    dialog is built without a parent only because this fixture's View never ran
+    ``QWidget.__init__``. ``qapp`` because the dialog is a real widget: without it the
+    test crashes the interpreter whenever it runs before anything else made the app.
+    """
+
+    def finish_tutorial_then_cancel(dialog: AddSubsetFilterDialog) -> int:
+        tutorial = dialog.walkthrough_dialog
+        assert tutorial is not None
+        for _ in range(len(tutorial.steps)):
+            tutorial.next_step()
+        dialog.done(0)
+        return 0
+
+    raised: list = []
+    monkeypatch.setattr(sys, "excepthook", lambda *exc: raised.append(exc[1]))
+    monkeypatch.setattr(AddSubsetFilterDialog, "exec", finish_tutorial_then_cancel)
+    mocker.patch(
+        "poriscope.utils.MetaSubsetTabView.AddSubsetFilterDialog",
+        side_effect=lambda _parent, **kwargs: AddSubsetFilterDialog(None, **kwargs),
+    )
+    view._walkthrough_active = True
+    view.subset_filters = {}
+
+    view._show_add_filter_dialog({"db_loader": "db"})
+
+    assert raised == []
 
 
 def test_show_add_filter_dialog_returns_when_no_loader(
@@ -4655,7 +4327,7 @@ def test_show_add_filter_dialog_returns_when_no_loader(
     """Verify early return when no loader is provided."""
     view._walkthrough_active = False
     mock_dialog_class = mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.AddSubsetFilterDialog"
+        "poriscope.utils.MetaSubsetTabView.AddSubsetFilterDialog"
     )
     mock_dialog = mocker.Mock()
     mock_dialog.exec.return_value = 1
@@ -4663,29 +4335,8 @@ def test_show_add_filter_dialog_returns_when_no_loader(
     mock_dialog.filter_text = "WHERE x > 1"
     mock_dialog.is_raw = False  # Ensure assisted path
     mock_dialog_class.return_value = mock_dialog
-    view.global_signal = mocker.Mock()
 
     view._show_add_filter_dialog({"db_loader": ""})
-
-    view.global_signal.emit.assert_not_called()
-
-
-# ----------------------------- Clear Pending Filter State Tests ------------------------------
-
-
-def test_clear_pending_filter_state_resets_all_pending_values(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
-    """Verify all pending filter values are reset to None."""
-    view._pending_filter_name = "Filter"
-    view._pending_filter_text = "WHERE x > 1"
-    view._pending_old_filter_name = "OldFilter"
-
-    view.clear_pending_filter_state()
-
-    assert view._pending_filter_name is None
-    assert view._pending_filter_text is None
-    assert view._pending_old_filter_name is None
 
 
 # ----------------------------- Show Filter Info Dialog Tests ------------------------------
@@ -4731,32 +4382,13 @@ def test_show_filter_info_dialog_calls_edit_dialog(
 # ----------------------------- Show Edit Filter Dialog Tests ------------------------------
 
 
-def test_show_edit_filter_dialog_sets_show_sql_flag(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
-    """Verify show SQL flag is set before dialog."""
-    view._show_sql_in_display = False
-    view.subset_filters = {"Filter1": "WHERE x > 1"}
-    mock_dialog_class = mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.EditSubsetFilterDialog"
-    )
-    mock_dialog = mocker.Mock()
-    mock_dialog.exec.return_value = 0
-    mock_dialog.is_raw = False  # Ensure assisted path
-    mock_dialog_class.return_value = mock_dialog
-
-    view.show_edit_filter_dialog("Filter1", "test_loader")
-
-    assert view._show_sql_in_display is True
-
-
 def test_show_edit_filter_dialog_opens_dialog(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify edit dialog is opened with correct parameters."""
     view.subset_filters = {"Filter1": "WHERE x > 1"}
     mock_dialog_class = mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.EditSubsetFilterDialog"
+        "poriscope.utils.MetaSubsetTabView.EditSubsetFilterDialog"
     )
     mock_dialog = mocker.Mock()
     mock_dialog.exec.return_value = 0
@@ -4777,7 +4409,7 @@ def test_show_edit_filter_dialog_validates_on_accept(
     """Verify filter is validated when dialog is accepted."""
     view.subset_filters = {"Filter1": "WHERE x > 1"}
     mock_dialog_class = mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.EditSubsetFilterDialog"
+        "poriscope.utils.MetaSubsetTabView.EditSubsetFilterDialog"
     )
     mock_dialog = mocker.Mock()
     mock_dialog.exec.return_value = 1
@@ -4785,34 +4417,17 @@ def test_show_edit_filter_dialog_validates_on_accept(
     mock_dialog.new_filter = "WHERE x > 10"
     mock_dialog.is_raw = False  # Ensure assisted path
     mock_dialog_class.return_value = mock_dialog
-    view.global_signal = mocker.Mock()
-
     view.show_edit_filter_dialog("Filter1", "test_loader")
 
-    view.global_signal.emit.assert_called_once()
-
-
-def test_show_edit_filter_dialog_stores_pending_data_including_old_name(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
-    """Verify pending data includes old filter name for replacement."""
-    view.subset_filters = {"Filter1": "WHERE x > 1"}
-    mock_dialog_class = mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.EditSubsetFilterDialog"
+    view.filter_validation_requested.emit.assert_called_once_with(
+        # An edit carries the new name and the one it replaces, which is
+        # what used to be parked on the widget as _pending_old_filter_name.
+        "test_loader",
+        "WHERE x > 10",
+        "validate_edited_filter",
+        "Filter1Updated",
+        "Filter1",
     )
-    mock_dialog = mocker.Mock()
-    mock_dialog.exec.return_value = 1
-    mock_dialog.new_name = "Filter1Updated"
-    mock_dialog.new_filter = "WHERE x > 10"
-    mock_dialog.is_raw = False  # Ensure assisted path
-    mock_dialog_class.return_value = mock_dialog
-    view.global_signal = mocker.Mock()
-
-    view.show_edit_filter_dialog("Filter1", "test_loader")
-
-    assert view._pending_filter_name == "Filter1Updated"
-    assert view._pending_filter_text == "WHERE x > 10"
-    assert view._pending_old_filter_name == "Filter1"
 
 
 # ----------------------------- Delete Filter By Name Tests ------------------------------
@@ -5151,28 +4766,6 @@ class TestSimpleSetters:
         view.set_column_type(None)
         assert view.column_type is None
 
-    def test_set_experiment_id(self, view: MetadataView) -> None:
-        view.set_experiment_id(42)
-        assert view.experiment_id == 42
-
-    def test_set_experiment_id_none(self, view: MetadataView) -> None:
-        view.set_experiment_id(None)
-        assert view.experiment_id is None
-
-    def test_set_table_by_column_appends(self, view: MetadataView) -> None:
-        view.involved_tables = []
-        view.set_table_by_column("events")
-        assert "events" in view.involved_tables
-
-    def test_set_table_by_column_none_does_not_append(self, view: MetadataView) -> None:
-        view.involved_tables = []
-        view.set_table_by_column(None)
-        assert view.involved_tables == []
-
-    def test_set_channel_db_id(self, view: MetadataView) -> None:
-        view.set_channel_db_id(7)
-        assert view.channel_db_id == 7
-
 
 # ===========================================================================
 # _plot_categorical_histogram
@@ -5185,6 +4778,7 @@ class TestPlotCategoricalHistogram:
 
     def test_calls_bar(self, view: MetadataView) -> None:
         view._plot_categorical_histogram(view.axes, self._data(), ["category"], [""])
+        _answer_categorical_counts(view)
         view.axes.bar.assert_called()
 
     def test_clears_axes_before_plot(self, view: MetadataView) -> None:
@@ -5195,11 +4789,13 @@ class TestPlotCategoricalHistogram:
         view._plot_categorical_histogram(
             view.axes, self._data(), ["category"], ["unit"]
         )
+        _answer_categorical_counts(view)
         view.axes.set_xlabel.assert_called()
         view.axes.set_ylabel.assert_called()
 
     def test_rotates_x_tick_labels(self, view: MetadataView) -> None:
         view._plot_categorical_histogram(view.axes, self._data(), ["category"], [""])
+        _answer_categorical_counts(view)
         view.axes.tick_params.assert_called()
 
     def test_appends_to_hist_data(self, view: MetadataView) -> None:
@@ -5213,6 +4809,7 @@ class TestPlotCategoricalHistogram:
     def test_counts_categories_correctly(self, view: MetadataView) -> None:
         # A=3, B=2, C=1
         view._plot_categorical_histogram(view.axes, self._data(), ["category"], [""])
+        _answer_categorical_counts(view)
         call_args = view.axes.bar.call_args
         categories = list(call_args[0][0])
         counts = list(call_args[0][1])
@@ -5259,42 +4856,40 @@ def test_update_plot_categorical_histogram_redraws_canvas(
 # ===========================================================================
 
 
-def test_update_plot_calls_all_points_histogram_for_normalized_raw(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
-    data = pd.DataFrame(
-        {"Current": np.array([1.0, 2.0]), "Count": np.array([10.0, 20.0])}
-    )
-    view._plot_all_points_histogram = mocker.Mock()
-    view.update_plot(
+@pytest.mark.parametrize(
+    "plot_type",
+    [
+        "Raw All Points Histogram",
+        "Filtered All Points Histogram",
         "Normalized Raw All Points Histogram",
-        data,
-        ["Current", "Count"],
-        ["pA", ""],
-        [False, False],
-    )
-    view._plot_all_points_histogram.assert_called_once()
-    call_kwargs = view._plot_all_points_histogram.call_args[1]
-    assert call_kwargs.get("norm") is True
-
-
-def test_update_plot_calls_all_points_histogram_for_normalized_filtered(
-    view: MetadataView, mocker: MockerFixture
+        "Normalized Filtered All Points Histogram",
+    ],
+)
+def test_update_plot_no_longer_dispatches_the_all_points_histogram(
+    view: MetadataView, mocker: MockerFixture, plot_type: str
 ) -> None:
+    """
+    Verify the four event-data types are refused by the metadata dispatch.
+
+    Their data is not kept on the widget, so they no longer arrive as a
+    dataframe and ``set_all_points_histogram`` draws them instead. Leaving the
+    branch here would have left a path nothing can reach with a frame to give it.
+    """
+    view._plot_all_points_histogram = mocker.Mock()
     data = pd.DataFrame(
         {"Current": np.array([1.0, 2.0]), "Count": np.array([10.0, 20.0])}
     )
-    view._plot_all_points_histogram = mocker.Mock()
-    view.update_plot(
-        "Normalized Filtered All Points Histogram",
-        data,
-        ["Current", "Count"],
-        ["pA", ""],
-        [False, False],
-    )
-    view._plot_all_points_histogram.assert_called_once()
-    call_kwargs = view._plot_all_points_histogram.call_args[1]
-    assert call_kwargs.get("norm") is True
+
+    with pytest.raises(NotImplementedError):
+        view.update_plot(
+            plot_type,
+            data,
+            ["Current", "Count"],
+            ["pA", ""],
+            [False, False],
+        )
+
+    view._plot_all_points_histogram.assert_not_called()
 
 
 # ===========================================================================
@@ -5306,96 +4901,6 @@ class TestOnRawFilterValidated:
     def _setup(self, view: MetadataView, mocker: MockerFixture) -> None:
         view.metadatacontrols = mocker.Mock()
         view.metadatacontrols.filter_comboBox = mocker.Mock()
-
-    def test_invalid_shows_warning_and_clears_pending(
-        self, view: MetadataView, mocker: MockerFixture
-    ) -> None:
-        self._setup(view, mocker)
-        view._pending_filter_name = "F"
-        view._pending_filter_text = "SELECT * FROM events"
-        view._pending_old_filter_name = None
-        mock_warn = mocker.patch(
-            "poriscope.plugins.analysistabs.MetadataView.QMessageBox.warning"
-        )
-        view.on_raw_filter_validated(False, "syntax error")
-        mock_warn.assert_called_once()
-        assert view._pending_filter_name is None
-        assert view._pending_filter_text is None
-
-    def test_valid_add_path_stores_filter(
-        self, view: MetadataView, mocker: MockerFixture
-    ) -> None:
-        self._setup(view, mocker)
-        view._pending_filter_name = "NewFilter"
-        view._pending_filter_text = "SELECT * FROM events"
-        view._pending_old_filter_name = None
-        view.on_raw_filter_validated(True, "")
-        assert "NewFilter" in view.subset_filters
-        assert view.subset_filters["NewFilter"] == "SELECT * FROM events"
-        view.metadatacontrols.filter_comboBox.addItem.assert_called_with("NewFilter")
-
-    def test_valid_add_path_emits_message(
-        self, view: MetadataView, mocker: MockerFixture
-    ) -> None:
-        self._setup(view, mocker)
-        view._pending_filter_name = "NewFilter"
-        view._pending_filter_text = "SELECT * FROM events"
-        view._pending_old_filter_name = None
-        view.on_raw_filter_validated(True, "")
-        view.add_text_to_display.emit.assert_called()
-
-    def test_valid_add_path_clears_pending(
-        self, view: MetadataView, mocker: MockerFixture
-    ) -> None:
-        self._setup(view, mocker)
-        view._pending_filter_name = "NewFilter"
-        view._pending_filter_text = "SELECT * FROM events"
-        view._pending_old_filter_name = None
-        view.on_raw_filter_validated(True, "")
-        assert view._pending_filter_name is None
-        assert view._pending_filter_text is None
-        assert view._pending_old_filter_name is None
-
-    def test_valid_edit_path_replaces_filter(
-        self, view: MetadataView, mocker: MockerFixture
-    ) -> None:
-        self._setup(view, mocker)
-        view.subset_filters = {"OldFilter": "WHERE x > 1"}
-        view._pending_filter_name = "NewFilter"
-        view._pending_filter_text = "WHERE x > 10"
-        view._pending_old_filter_name = "OldFilter"
-        view.update_filter_name = mocker.Mock()
-        view.on_raw_filter_validated(True, "")
-        assert "OldFilter" not in view.subset_filters
-        assert "NewFilter" in view.subset_filters
-        assert view.subset_filters["NewFilter"] == "WHERE x > 10"
-        view.update_filter_name.assert_called_once_with("OldFilter", "NewFilter")
-
-    def test_valid_edit_path_emits_message(
-        self, view: MetadataView, mocker: MockerFixture
-    ) -> None:
-        self._setup(view, mocker)
-        view.subset_filters = {"OldFilter": "WHERE x > 1"}
-        view._pending_filter_name = "NewFilter"
-        view._pending_filter_text = "WHERE x > 10"
-        view._pending_old_filter_name = "OldFilter"
-        view.update_filter_name = mocker.Mock()
-        view.on_raw_filter_validated(True, "")
-        view.add_text_to_display.emit.assert_called()
-
-    def test_valid_edit_path_clears_pending(
-        self, view: MetadataView, mocker: MockerFixture
-    ) -> None:
-        self._setup(view, mocker)
-        view.subset_filters = {"OldFilter": "WHERE x > 1"}
-        view._pending_filter_name = "NewFilter"
-        view._pending_filter_text = "WHERE x > 10"
-        view._pending_old_filter_name = "OldFilter"
-        view.update_filter_name = mocker.Mock()
-        view.on_raw_filter_validated(True, "")
-        assert view._pending_filter_name is None
-        assert view._pending_filter_text is None
-        assert view._pending_old_filter_name is None
 
 
 # ===========================================================================
@@ -5430,14 +4935,7 @@ class TestHandleParameterChangeCategoricalGuard:
         self, view: MetadataView, mocker: MockerFixture
     ) -> None:
         """When column type is continuous, emits a message and skips _overlay_plot."""
-        view.column_type = "REAL"
-        view.global_signal = mocker.Mock()
-
-        def side_effect(*args: Any) -> None:
-            if len(args) > 2 and args[2] == "get_column_type":
-                view.column_type = "REAL"
-
-        view.global_signal.emit.side_effect = side_effect
+        view.canned_column_type = "REAL"
         view._overlay_plot = mocker.Mock(return_value=True)
 
         view.handle_parameter_change("metadata", "update_plot", (self._params(),))
@@ -5449,14 +4947,7 @@ class TestHandleParameterChangeCategoricalGuard:
         self, view: MetadataView, mocker: MockerFixture
     ) -> None:
         """When column type is categorical (e.g. INTEGER), _overlay_plot is called."""
-        view.column_type = "INTEGER"
-        view.global_signal = mocker.Mock()
-
-        def side_effect(*args: Any) -> None:
-            if len(args) > 2 and args[2] == "get_column_type":
-                view.column_type = "INTEGER"
-
-        view.global_signal.emit.side_effect = side_effect
+        view.canned_column_type = "INTEGER"
         view._overlay_plot = mocker.Mock(return_value=True)
 
         view.handle_parameter_change("metadata", "update_plot", (self._params(),))
@@ -5467,14 +4958,7 @@ class TestHandleParameterChangeCategoricalGuard:
         self, view: MetadataView, mocker: MockerFixture
     ) -> None:
         """When column type is None (unknown), treated as categorical — proceeds."""
-        view.column_type = None
-        view.global_signal = mocker.Mock()
-
-        def side_effect(*args: Any) -> None:
-            if len(args) > 2 and args[2] == "get_column_type":
-                view.column_type = None
-
-        view.global_signal.emit.side_effect = side_effect
+        view.canned_column_type = None
         view._overlay_plot = mocker.Mock(return_value=True)
 
         view.handle_parameter_change("metadata", "update_plot", (self._params(),))
@@ -5497,76 +4981,35 @@ class TestOverlayPlotNormalizedHistograms:
         }
 
     def _setup(self, view: MetadataView, mocker: MockerFixture) -> None:
-        view.global_signal = mocker.Mock()
         view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
         view.selected_experiment_and_channels_by_loader = {}
-        view.event_query = "SELECT * FROM events"
-        view.event_data_generator = iter(
-            [
-                {
-                    "raw_data": np.array([1.0, 2.0, 3.0]),
-                    "padding_before": 100.0,
-                    "samplerate": 10000.0,
-                }
-            ]
-        )
-        view._construct_all_points_histogram = mocker.Mock(
-            return_value=pd.DataFrame({"Current": [1.0, 2.0], "Count": [10.0, 20.0]})
-        )
-        view.update_plot = mocker.Mock()
+        view.canned_event_query = "SELECT * FROM events"
 
-    def test_normalized_raw_all_points_histogram_calls_construct(
+    def test_normalized_raw_all_points_histogram_is_requested(
         self, view: MetadataView, mocker: MockerFixture
     ) -> None:
         self._setup(view, mocker)
-        view._overlay_plot(self._base_params("Normalized Raw All Points Histogram"))
-        view._construct_all_points_histogram.assert_called_once()
-
-    def test_normalized_raw_all_points_histogram_calls_update_plot(
-        self, view: MetadataView, mocker: MockerFixture
-    ) -> None:
-        self._setup(view, mocker)
-        view._overlay_plot(self._base_params("Normalized Raw All Points Histogram"))
-        view.update_plot.assert_called_once()
-        assert view.update_plot.call_args[0][0] == "Normalized Raw All Points Histogram"
-
-    def test_normalized_filtered_all_points_histogram_calls_construct(
-        self, view: MetadataView, mocker: MockerFixture
-    ) -> None:
-        self._setup(view, mocker)
-        view.event_data_generator = iter(
-            [
-                {
-                    "filtered_data": np.array([1.0, 2.0, 3.0]),
-                    "padding_before": 100.0,
-                    "samplerate": 10000.0,
-                }
-            ]
-        )
         view._overlay_plot(
-            self._base_params("Normalized Filtered All Points Histogram")
+            recorded(view, self._base_params("Normalized Raw All Points Histogram"))
         )
-        view._construct_all_points_histogram.assert_called_once()
-
-    def test_normalized_filtered_all_points_histogram_calls_update_plot(
-        self, view: MetadataView, mocker: MockerFixture
-    ) -> None:
-        self._setup(view, mocker)
-        view.event_data_generator = iter(
-            [
-                {
-                    "filtered_data": np.array([1.0, 2.0, 3.0]),
-                    "padding_before": 100.0,
-                    "samplerate": 10000.0,
-                }
-            ]
-        )
-        view._overlay_plot(
-            self._base_params("Normalized Filtered All Points Histogram")
-        )
-        view.update_plot.assert_called_once()
+        view.all_points_histogram_requested.emit.assert_called_once()
         assert (
-            view.update_plot.call_args[0][0]
+            view.all_points_histogram_requested.emit.call_args[0][3]
+            == "Normalized Raw All Points Histogram"
+        )
+
+    def test_normalized_filtered_all_points_histogram_is_requested(
+        self, view: MetadataView, mocker: MockerFixture
+    ) -> None:
+        self._setup(view, mocker)
+        view._overlay_plot(
+            recorded(
+                view, self._base_params("Normalized Filtered All Points Histogram")
+            )
+        )
+        view.all_points_histogram_requested.emit.assert_called_once()
+        assert (
+            view.all_points_histogram_requested.emit.call_args[0][3]
             == "Normalized Filtered All Points Histogram"
         )
 
@@ -5594,15 +5037,12 @@ class TestOverlayPlotCategoricalHistogram:
         view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
         view.selected_experiment_and_channels_by_loader = {}
         plot_data = pd.DataFrame({"category": ["A", "B", "A"]})
-        view.global_signal = mocker.Mock()
-        view.global_signal.emit = mocker.Mock(
-            side_effect=_bus_sets_plot_data(view, plot_data)
-        )
-        view.query = "SELECT * FROM events"
-        view.units = ""
+        view.canned_plot_data = plot_data
+        view.canned_query = "SELECT * FROM events"
+        view.canned_units = ""
         view.update_plot = mocker.Mock()
 
-        view._overlay_plot(self._params())
+        view._overlay_plot(recorded(view, self._params()))
 
         view.update_plot.assert_called_once()
         assert view.update_plot.call_args[0][0] == "Categorical Histogram"
@@ -5614,15 +5054,12 @@ class TestOverlayPlotCategoricalHistogram:
         view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
         view.selected_experiment_and_channels_by_loader = {}
         plot_data = pd.DataFrame({"category": ["A", "B", "C"]})
-        view.global_signal = mocker.Mock()
-        view.global_signal.emit = mocker.Mock(
-            side_effect=_bus_sets_plot_data(view, plot_data)
-        )
-        view.query = "SELECT * FROM events"
-        view.units = ""
+        view.canned_plot_data = plot_data
+        view.canned_query = "SELECT * FROM events"
+        view.canned_units = ""
         view.update_plot = mocker.Mock()
 
-        view._overlay_plot(self._params())
+        view._overlay_plot(recorded(view, self._params()))
 
         call_args = view.update_plot.call_args
         assert call_args[0][2] == ["category"]
@@ -5634,15 +5071,12 @@ class TestOverlayPlotCategoricalHistogram:
         view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
         view.selected_experiment_and_channels_by_loader = {}
         plot_data = pd.DataFrame({"category": ["A", "B", "C"]})
-        view.global_signal = mocker.Mock()
-        view.global_signal.emit = mocker.Mock(
-            side_effect=_bus_sets_plot_data(view, plot_data)
-        )
-        view.query = "SELECT * FROM events"
-        view.units = ""
+        view.canned_plot_data = plot_data
+        view.canned_query = "SELECT * FROM events"
+        view.canned_units = ""
         view.update_plot = mocker.Mock()
 
-        result = view._overlay_plot(self._params())
+        result = view._overlay_plot(recorded(view, self._params()))
 
         assert result is True
 
@@ -5670,18 +5104,8 @@ def test_handle_plot_events_uses_cache_for_navigation(
     view.current_sql_filter = ""
     view.current_experiment = "exp1"
     view.current_channel = 1
-    view.relayed_query_result = pd.DataFrame({"id": [1]})
-    view.plot_events_generator = iter([_FULL_EVENT])
     view._update_event_plot = mocker.Mock()
-    view.global_signal = mocker.Mock()
-
-    def side_effect(*args: Any) -> None:
-        if args[2] == "query_database_directly":
-            view.relayed_query_result = pd.DataFrame({"id": [1]})
-        elif args[2] == "load_event_data":
-            view.plot_events_generator = iter([_FULL_EVENT])
-
-    view.global_signal.emit.side_effect = side_effect
+    view.canned_plot_events_generator = iter([_FULL_EVENT])
     parameters = {
         "db_loader": "test_loader",
         "event_id": 3,
@@ -5705,13 +5129,9 @@ def test_rebuild_event_id_cache_returns_false_when_no_events(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify False is returned when no filtered events are found."""
-    view.global_signal = mocker.Mock()
-
-    def side_effect(*args: Any) -> None:
-        if args[2] == "load_metadata":
-            view.relayed_query_result = pd.DataFrame()
-
-    view.global_signal.emit.side_effect = side_effect
+    view.event_id_cache_requested.emit.side_effect = lambda *_: setattr(
+        view, "event_id_rows", pd.DataFrame()
+    )
 
     result = view._rebuild_event_id_cache("loader", "", None, None)
 
@@ -5724,13 +5144,9 @@ def test_rebuild_event_id_cache_stores_event_ids(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify filtered_event_ids is populated, and sorted, from the query result."""
-    view.global_signal = mocker.Mock()
-
-    def side_effect(*args: Any) -> None:
-        if args[2] == "load_metadata":
-            view.relayed_query_result = pd.DataFrame({"event_id": [10, 0, 5]})
-
-    view.global_signal.emit.side_effect = side_effect
+    view.event_id_cache_requested.emit.side_effect = lambda *_: setattr(
+        view, "event_id_rows", pd.DataFrame({"event_id": [10, 0, 5]})
+    )
 
     result = view._rebuild_event_id_cache("loader", "", None, None)
 
@@ -5742,13 +5158,9 @@ def test_rebuild_event_id_cache_updates_current_trackers(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify current_sql_filter, current_experiment, and current_channel are updated."""
-    view.global_signal = mocker.Mock()
-
-    def side_effect(*args: Any) -> None:
-        if args[2] == "load_metadata":
-            view.relayed_query_result = pd.DataFrame({"event_id": [1, 2, 3]})
-
-    view.global_signal.emit.side_effect = side_effect
+    view.event_id_cache_requested.emit.side_effect = lambda *_: setattr(
+        view, "event_id_rows", pd.DataFrame({"event_id": [1, 2, 3]})
+    )
 
     view._rebuild_event_id_cache("loader", "duration > 1", "exp1", 2)
 
@@ -5761,14 +5173,10 @@ def test_rebuild_event_id_cache_emits_all_events_when_no_filter(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify display panel message says 'All events' when no filter is active."""
-    view.global_signal = mocker.Mock()
     view.get_selected_filters = mocker.Mock(return_value={})
-
-    def side_effect(*args: Any) -> None:
-        if args[2] == "load_metadata":
-            view.relayed_query_result = pd.DataFrame({"event_id": [0, 1, 2]})
-
-    view.global_signal.emit.side_effect = side_effect
+    view.event_id_cache_requested.emit.side_effect = lambda *_: setattr(
+        view, "event_id_rows", pd.DataFrame({"event_id": [0, 1, 2]})
+    )
 
     view._rebuild_event_id_cache("loader", "", None, None)
 
@@ -5780,14 +5188,10 @@ def test_rebuild_event_id_cache_emits_filter_name_when_filter_active(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify display panel message includes filter name and 'subset' when filter is active."""
-    view.global_signal = mocker.Mock()
     view.get_selected_filters = mocker.Mock(return_value={"my_filter": "duration > 1"})
-
-    def side_effect(*args: Any) -> None:
-        if args[2] == "load_metadata":
-            view.relayed_query_result = pd.DataFrame({"event_id": [3, 7]})
-
-    view.global_signal.emit.side_effect = side_effect
+    view.event_id_cache_requested.emit.side_effect = lambda *_: setattr(
+        view, "event_id_rows", pd.DataFrame({"event_id": [3, 7]})
+    )
 
     view._rebuild_event_id_cache("loader", "duration > 1", None, None)
 
@@ -5800,14 +5204,10 @@ def test_rebuild_event_id_cache_emits_total_and_bounds(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify display panel message includes total count, first and last event_id."""
-    view.global_signal = mocker.Mock()
     view.get_selected_filters = mocker.Mock(return_value={})
-
-    def side_effect(*args: Any) -> None:
-        if args[2] == "load_metadata":
-            view.relayed_query_result = pd.DataFrame({"event_id": [2, 5, 9]})
-
-    view.global_signal.emit.side_effect = side_effect
+    view.event_id_cache_requested.emit.side_effect = lambda *_: setattr(
+        view, "event_id_rows", pd.DataFrame({"event_id": [2, 5, 9]})
+    )
 
     view._rebuild_event_id_cache("loader", "", None, None)
 
@@ -5929,15 +5329,7 @@ def test_handle_plot_events_snaps_to_nearest_filtered_event(
     view.current_experiment = "exp1"
     view.current_channel = 1
     view._update_event_plot = mocker.Mock()
-    view.global_signal = mocker.Mock()
-
-    def side_effect(*args: Any) -> None:
-        if args[2] == "query_database_directly":
-            view.relayed_query_result = pd.DataFrame({"id": [1]})
-        elif args[2] == "load_event_data":
-            view.plot_events_generator = iter([dict(_FULL_EVENT)])
-
-    view.global_signal.emit.side_effect = side_effect
+    view.canned_plot_events_generator = iter([dict(_FULL_EVENT)])
 
     view._handle_plot_events(
         {"db_loader": "test_loader", "event_id": 3, "n_events": 1, "raw": False}
@@ -5958,15 +5350,7 @@ def test_handle_plot_events_wraps_to_first_when_past_last(
     view.current_experiment = "exp1"
     view.current_channel = 1
     view._update_event_plot = mocker.Mock()
-    view.global_signal = mocker.Mock()
-
-    def side_effect(*args: Any) -> None:
-        if args[2] == "query_database_directly":
-            view.relayed_query_result = pd.DataFrame({"id": [1]})
-        elif args[2] == "load_event_data":
-            view.plot_events_generator = iter([dict(_FULL_EVENT)])
-
-    view.global_signal.emit.side_effect = side_effect
+    view.canned_plot_events_generator = iter([dict(_FULL_EVENT)])
 
     view._handle_plot_events(
         {"db_loader": "test_loader", "event_id": 99, "n_events": 1, "raw": False}
@@ -6007,15 +5391,7 @@ def test_handle_plot_events_does_not_rebuild_cache_when_scope_unchanged(
     view.current_channel = 1
     view._rebuild_event_id_cache = mocker.Mock(return_value=True)
     view._update_event_plot = mocker.Mock()
-    view.global_signal = mocker.Mock()
-
-    def side_effect(*args: Any) -> None:
-        if args[2] == "query_database_directly":
-            view.relayed_query_result = pd.DataFrame({"id": [1]})
-        elif args[2] == "load_event_data":
-            view.plot_events_generator = iter([dict(_FULL_EVENT)])
-
-    view.global_signal.emit.side_effect = side_effect
+    view.canned_plot_events_generator = iter([dict(_FULL_EVENT)])
 
     view._handle_plot_events(
         {"db_loader": "test_loader", "event_id": 0, "n_events": 1, "raw": False}
@@ -6024,10 +5400,15 @@ def test_handle_plot_events_does_not_rebuild_cache_when_scope_unchanged(
     view._rebuild_event_id_cache.assert_not_called()
 
 
-def test_handle_plot_events_returns_early_when_no_db_ids(
+def test_handle_plot_events_requests_the_snapped_ids_in_scope(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify early return with message when db_id resolution returns empty result."""
+    """Verify the event-plot intent carries the snapped ids and the current scope.
+
+    Was ``..._returns_early_when_no_db_ids``, which drove the db-id resolution the
+    View used to do a statement at a time. That whole chain is the Controller's now,
+    so what is left to pin here is the request it sends.
+    """
     view.metadatacontrols = mocker.Mock()
     view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
     view.selected_experiment_and_channels_by_loader = {"test_loader": {"exp1": [1]}}
@@ -6036,26 +5417,24 @@ def test_handle_plot_events_returns_early_when_no_db_ids(
     view.current_experiment = "exp1"
     view.current_channel = 1
     view._update_event_plot = mocker.Mock()
-    view.global_signal = mocker.Mock()
-
-    def side_effect(*args: Any) -> None:
-        if args[2] == "query_database_directly":
-            view.relayed_query_result = pd.DataFrame()
-
-    view.global_signal.emit.side_effect = side_effect
 
     view._handle_plot_events(
-        {"db_loader": "test_loader", "event_id": 0, "n_events": 1, "raw": False}
+        {"db_loader": "test_loader", "event_id": 4, "n_events": 2, "raw": False}
     )
 
-    view._update_event_plot.assert_not_called()
-    view.add_text_to_display.emit.assert_called()
+    view.event_plot_data_requested.emit.assert_called_once_with(
+        "test_loader", [5, 10], "exp1", 1, {"exp1": [1]}, "events"
+    )
 
 
-def test_handle_plot_events_emits_warning_when_generator_none(
+def test_handle_plot_events_leaves_the_reporting_to_the_controller(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify warning is emitted when load_event_data produces no generator."""
+    """Verify nothing is plotted, and nothing said, when no generator comes back.
+
+    The Controller reports which part of the chain failed, so a message from here as
+    well would say the same thing twice.
+    """
     view.metadatacontrols = mocker.Mock()
     view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
     view.selected_experiment_and_channels_by_loader = {"test_loader": {"exp1": [1]}}
@@ -6063,20 +5442,76 @@ def test_handle_plot_events_emits_warning_when_generator_none(
     view.current_sql_filter = ""
     view.current_experiment = "exp1"
     view.current_channel = 1
-    view.plot_events_generator = None
     view._update_event_plot = mocker.Mock()
-    view.global_signal = mocker.Mock()
-
-    def side_effect(*args: Any) -> None:
-        if args[2] == "query_database_directly":
-            view.relayed_query_result = pd.DataFrame({"id": [1]})
-        # load_event_data does not set plot_events_generator
-
-    view.global_signal.emit.side_effect = side_effect
 
     view._handle_plot_events(
         {"db_loader": "test_loader", "event_id": 0, "n_events": 1, "raw": False}
     )
 
+    assert view.plot_events_generator is None
     view._update_event_plot.assert_not_called()
-    view.add_text_to_display.emit.assert_called()
+    view.add_text_to_display.emit.assert_not_called()
+
+
+# ----------------------------- _overlay_plot scope guards ------------------------------
+
+
+def test_overlay_plot_reports_multiple_channels_for_a_heatmap(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Probe: does the refusal reach the status panel, or only the log?"""
+    view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
+    view.selected_experiment_and_channels_by_loader = {  # type: ignore[assignment]
+        "test_loader": {"exp1": ["1", "2"]}
+    }
+
+    result = view._overlay_plot(
+        recorded(view, {"db_loader": "test_loader", "plot_type": "Heatmap"})
+    )
+
+    assert result is False
+    said = [call.args[0] for call in view.add_text_to_display.emit.call_args_list]
+    assert any("single channel" in message for message in said), said
+
+
+def test_overlay_plot_resets_before_an_event_overlay_after_another_plot_type(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """
+    Reported from a real run: an All Points Histogram was still on the axes when
+    an Event Overlay drew over it, which superimposes two unrelated pictures.
+
+    Every other plot type resets on a change of type. The overlay branch checked
+    only whether the axes were *valid* - and a 2-D axes carrying someone else's
+    bars is perfectly valid - so nothing cleared them.
+    """
+    view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
+    view.selected_experiment_and_channels_by_loader = {}
+    view.canned_event_query = "SELECT * FROM events"
+    view.allowed_plot_type = "Raw All Points Histogram"
+    view._axes_valid = mocker.Mock(return_value=True)
+    view._reset_actions = mocker.Mock()
+
+    view._overlay_plot(
+        recorded(view, {"db_loader": "test_loader", "plot_type": "Raw Event Overlay"})
+    )
+
+    view._reset_actions.assert_called_once_with(axis_type="2d")
+
+
+def test_overlay_plot_does_not_reset_a_second_overlay_of_the_same_type(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Overlaying another subset of the same type is what the plot is for."""
+    view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
+    view.selected_experiment_and_channels_by_loader = {}
+    view.canned_event_query = "SELECT * FROM events"
+    view.allowed_plot_type = "Raw Event Overlay"
+    view._axes_valid = mocker.Mock(return_value=True)
+    view._reset_actions = mocker.Mock()
+
+    view._overlay_plot(
+        recorded(view, {"db_loader": "test_loader", "plot_type": "Raw Event Overlay"})
+    )
+
+    view._reset_actions.assert_not_called()

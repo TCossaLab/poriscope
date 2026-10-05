@@ -25,7 +25,7 @@
 # Kyle Briggs
 
 import logging
-from typing import Any, Callable, List, Sequence, override
+from typing import Any, Dict, List, Optional, Sequence, Tuple, override
 
 from PySide6.QtCore import Slot
 
@@ -33,13 +33,13 @@ from poriscope.plugins.analysistabs.RawDataModel import RawDataModel
 from poriscope.plugins.analysistabs.RawDataView import RawDataView
 from poriscope.utils.DocstringDecorator import inherit_docstrings
 from poriscope.utils.LogDecorator import log
-from poriscope.utils.MetaController import MetaController
+from poriscope.utils.MetaEventTabController import MetaEventTabController
 
 
 @inherit_docstrings
-class RawDataController(MetaController):
+class RawDataController(MetaEventTabController):
     """
-    Subclass of MetaController for managing raw data view-model logic.
+    Subclass of MetaEventTabController for managing raw data view-model logic.
 
     Handles raw data plotting and PSD logic.
     """
@@ -56,6 +56,665 @@ class RawDataController(MetaController):
     @override
     def _setup_connections(self) -> None:
         self.view.calculate_psd.connect(self.calculate_psd)
+        self.view.baseline_stats_requested.connect(self.compute_baseline_stats)
+        self.view.reader_channels_requested.connect(self.request_reader_channels)
+        self.view.trace_data_requested.connect(self.load_trace_data)
+        self.view.psd_data_requested.connect(self.load_psd_data)
+        self.view.event_plot_requested.connect(self.load_event_plot_data)
+        self.view.commit_requested.connect(self.commit_events)
+        self.view.commit_statuses_requested.connect(self.request_commit_statuses)
+        self.view.eventfinding_statuses_requested.connect(
+            self.request_eventfinding_statuses
+        )
+        self.view.eventfinding_requested.connect(self.start_eventfinding)
+
+    @log(logger=logger)
+    @Slot(str, list, str)
+    def request_eventfinding_statuses(
+        self, eventfinder: str, channels: List[int], data_filter: str
+    ) -> None:
+        """
+        Ask the finder which channels it has already completed, for the View to confirm.
+
+        The first half of the event-finding launch: every channel's status is resolved
+        here, in one call, and the View prompts on the answers. Asking per channel and
+        reading each answer back off the widget is how the "start over?" prompt gets
+        shown, or skipped, for the wrong channel - a look-up that fails leaves the
+        previous channel's finished-ness in place.
+
+        A channel whose status cannot be read is dropped rather than guessed at, and the
+        remaining channels still get their prompt. ``data_filter`` is carried through
+        untouched so the View does not have to hold it between the two halves.
+
+        :param eventfinder: the event finder plugin's key
+        :type eventfinder: str
+        :param channels: the channels the user asked to run
+        :type channels: List[int]
+        :param data_filter: the filter plugin's key, or "" for no filtering
+        :type data_filter: str
+        :return: None
+        :rtype: None
+        """
+        statuses: List[Tuple[int, bool]] = []
+        for channel in channels:
+            try:
+                finished = self.model.call(
+                    "MetaEventFinder", eventfinder, "get_eventfinding_status", channel
+                )
+            except Exception as e:
+                self.logger.error(
+                    f"Unable to read eventfinding status for channel {channel}: {repr(e)}"
+                )
+                self.add_text_to_display.emit(
+                    f"Unable to read the state of channel {channel}, so it was skipped: {e}",
+                    self.__class__.__name__,
+                )
+                continue
+            statuses.append((channel, bool(finished)))
+        self.view.set_eventfinding_statuses(eventfinder, statuses, data_filter)
+
+    @log(logger=logger)
+    @Slot(str, list, str)
+    def start_eventfinding(
+        self,
+        eventfinder: str,
+        channel_ranges: List[Tuple[int, List[Tuple[float, float]]]],
+        data_filter: str,
+    ) -> None:
+        """
+        Launch the finder over the approved channels and run the resulting generators.
+
+        The second half. ``chunk_length`` is passed explicitly as 1.0 because the View
+        always did, even though it is also the parameter's default - keeping it makes the
+        move visibly behaviour-preserving rather than relying on the default not changing.
+
+        A channel that cannot be launched is reported and skipped, and the ones that did
+        register still run, for the same reason as ``commit_events``.
+
+        :param eventfinder: the event finder plugin's key
+        :type eventfinder: str
+        :param channel_ranges: each approved channel with the ranges to search
+        :type channel_ranges: List[Tuple[int, List[Tuple[float, float]]]]
+        :param data_filter: the filter plugin's key, or "" for no filtering
+        :type data_filter: str
+        :return: None
+        :rtype: None
+        """
+        callable_filter = self._resolve_callable_filter(data_filter)
+        for channel, ranges in channel_ranges:
+            self.logger.info(
+                f"Launching find_events for channel {channel} over {len(ranges)} range(s)"
+            )
+            try:
+                generator = self.model.call(
+                    "MetaEventFinder",
+                    eventfinder,
+                    "find_events",
+                    channel,
+                    ranges,
+                    1.0,
+                    callable_filter,
+                )
+            except Exception as e:
+                self.logger.error(
+                    f"Unable to start event finding on channel {channel}: {repr(e)}"
+                )
+                self.add_text_to_display.emit(
+                    f"Unable to start event finding on channel {channel}: {e}",
+                    self.__class__.__name__,
+                )
+                continue
+            self.model.set_generator(generator, channel, eventfinder, "MetaEventFinder")
+        self.model.run_generators(eventfinder)
+
+    @log(logger=logger)
+    @Slot(str, list)
+    def request_commit_statuses(self, writer: str, channels: List[int]) -> None:
+        """
+        Ask the writer which channels its output already holds, for the View to confirm.
+
+        The first half of a commit, shaped like ``request_eventfinding_statuses``. The
+        writer's own experiment name and output file travel back with the answers, so
+        the View can name a conflicting experiment and the file without holding
+        anything between the two halves. A channel whose status cannot be read is
+        dropped rather than guessed at, so it is never committed on a wrong assumption.
+
+        :param writer: the writer plugin's key
+        :type writer: str
+        :param channels: the channels the user asked to commit
+        :type channels: List[int]
+        :return: None
+        :rtype: None
+        """
+        try:
+            settings = self.model.call("MetaWriter", writer, "get_raw_settings")
+            experiment_name = str(settings["Experiment Name"]["Value"])
+            output_file = str(settings["Output File"]["Value"])
+        except Exception as e:
+            self.logger.error(f"Unable to read the settings of {writer}: {repr(e)}")
+            self.add_text_to_display.emit(
+                f"Unable to read the settings of {writer}, so nothing was committed: {e}",
+                self.__class__.__name__,
+            )
+            return
+        statuses: List[Tuple[int, Optional[str]]] = []
+        for channel in channels:
+            try:
+                stored = self.model.call(
+                    "MetaWriter", writer, "get_committed_experiment_name", channel
+                )
+            except Exception as e:
+                self.logger.error(
+                    f"Unable to read what {writer} holds for channel {channel}: {repr(e)}"
+                )
+                self.add_text_to_display.emit(
+                    f"Unable to read what the output holds for channel {channel}, so "
+                    f"it was skipped: {e}",
+                    self.__class__.__name__,
+                )
+                continue
+            statuses.append((channel, None if stored is None else str(stored)))
+        self.view.set_commit_statuses(writer, statuses, experiment_name, output_file)
+
+    @log(logger=logger)
+    @Slot(str, list, bool)
+    def commit_events(self, writer: str, channels: List[int], overwrite: bool) -> None:
+        """
+        Hand each channel's found events to a writer and run the resulting generators.
+
+        The plugin returns a progress generator rather than a value, so it goes straight
+        to ``set_generator`` and there is nothing to park on the widget in between.
+
+        **One deliberate behaviour change.** The View wrapped the whole loop in
+        ``except (IndexError, ValueError)`` and skipped ``run_generators`` entirely if it
+        fired. That guard could not catch a plugin failure, because the bus swallowed
+        those before they reached it - and now that ``call()`` raises, an arbitrary
+        exception from a writer would escape a Qt slot, which is worse than either. So a
+        channel that cannot be committed is reported and skipped, and the channels that
+        did register still run. Losing one channel's commit is better than losing all of
+        them.
+
+        :param writer: the writer plugin's key
+        :type writer: str
+        :param channels: the channels whose events are being committed
+        :type channels: List[int]
+        :param overwrite: replace any of these channels the output already holds
+        :type overwrite: bool
+        :return: None
+        :rtype: None
+        """
+        for channel in channels:
+            try:
+                generator = self.model.call(
+                    "MetaWriter", writer, "commit_events", channel, overwrite=overwrite
+                )
+            except Exception as e:
+                self.logger.error(
+                    f"Unable to set up writer {writer} for channel {channel}: {repr(e)}"
+                )
+                self.add_text_to_display.emit(
+                    f"Unable to commit channel {channel} with {writer}: {e}",
+                    self.__class__.__name__,
+                )
+                continue
+            self.model.set_generator(generator, channel, writer, "MetaWriter")
+        # Called unconditionally, as the View did: with the bus swallowing failures it
+        # was already reached with nothing registered, so that case is the proven one.
+        self.model.run_generators(writer)
+
+    @log(logger=logger)
+    @Slot(str, list, float, float, str, bool)
+    def load_trace_data(
+        self,
+        reader: str,
+        channels: List[int],
+        start: float,
+        length: float,
+        data_filter: str,
+        baseline: bool,
+    ) -> None:
+        """
+        Load and optionally filter a trace, then hand it back for plotting.
+
+        :param reader: the reader plugin's key
+        :type reader: str
+        :param channels: the channels the user asked to plot
+        :type channels: List[int]
+        :param start: start time in seconds
+        :type start: float
+        :param length: duration in seconds
+        :type length: float
+        :param data_filter: the filter plugin's key, or "" for no filtering
+        :type data_filter: str
+        :param baseline: whether the user asked for the baseline band
+        :type baseline: bool
+        :return: None
+        :rtype: None
+        """
+        data_list, kept, samplerate = self._load_and_filter(
+            reader, channels, start, length, data_filter
+        )
+        time_bases = self.model.time_bases(data_list, samplerate, offset=start)
+        self.view.set_trace_data(data_list, time_bases, kept, start, baseline)
+
+    @log(logger=logger)
+    @Slot(str, list, float, float, str)
+    def load_psd_data(
+        self,
+        reader: str,
+        channels: List[int],
+        start: float,
+        length: float,
+        data_filter: str,
+    ) -> None:
+        """
+        Load and optionally filter a trace, then hand it back for the PSD.
+
+        Same loading as load_trace_data; only the tail differs, which is why the two
+        intents are separate signals rather than one carrying a mode flag.
+
+        :param reader: the reader plugin's key
+        :type reader: str
+        :param channels: the channels the user asked to analyse
+        :type channels: List[int]
+        :param start: start time in seconds
+        :type start: float
+        :param length: duration in seconds
+        :type length: float
+        :param data_filter: the filter plugin's key, or "" for no filtering
+        :type data_filter: str
+        :return: None
+        :rtype: None
+        """
+        # The PSD path does not plot against time, so the samplerate is discarded
+        # here rather than carried - the View still holds one for the PSD request.
+        data_list, kept, _samplerate = self._load_and_filter(
+            reader, channels, start, length, data_filter
+        )
+        self.view.set_trace_for_psd(data_list, kept)
+
+    @log(logger=logger)
+    @Slot(str, int, list, str)
+    def load_event_plot_data(
+        self,
+        eventfinder: str,
+        channel: int,
+        events: List[int],
+        data_filter: str,
+    ) -> None:
+        """
+        Check the finder, bound the indices, resolve the filter, and load each event.
+
+        Five calls in a fixed order - status, then count, then the filter callable, then
+        the samplerate, then one load per event - because each answer gates the next
+        question. The status and count are asked even when no indices are selected, since
+        they decide whether there is anything to select from.
+
+        **Four stale reads disappear with the emits.** Every one of those answers used to
+        be parked on a View attribute written only on success and never cleared before the
+        emit, so a dispatch failure that ``_dispatch_to`` swallowed left the previous
+        value in place: the previous channel's finished-ness, the previous channel's event
+        count - which then bounded *this* channel's indices - the previous samplerate, and
+        the previous event's samples. ``call()`` raises, so each failure now stops the
+        thing it should stop.
+
+        :param eventfinder: the event finder plugin's key
+        :type eventfinder: str
+        :param channel: the single channel whose events are being plotted
+        :type channel: int
+        :param events: the event indices the user selected, possibly empty
+        :type events: List[int]
+        :param data_filter: the filter plugin's key, or "" for no filtering
+        :type data_filter: str
+        :return: None
+        :rtype: None
+        """
+        try:
+            finished = self.model.call(
+                "MetaEventFinder", eventfinder, "get_eventfinding_status", channel
+            )
+        except Exception as e:
+            self.logger.error(
+                f"Unable to read eventfinding status for channel {channel}: {repr(e)}"
+            )
+            self.add_text_to_display.emit(
+                f"Unable to read eventfinding status for channel {channel}: {e}",
+                self.__class__.__name__,
+            )
+            return
+        if finished is False:
+            self.add_text_to_display.emit(
+                f"Eventfinding not finished in channel {channel}",
+                self.__class__.__name__,
+            )
+            return
+
+        try:
+            num_events = self.model.call(
+                "MetaEventFinder", eventfinder, "get_num_events_found", channel
+            )
+        except Exception as e:
+            self.logger.error(
+                f"Unable to read the event count for channel {channel}: {repr(e)}"
+            )
+            self.add_text_to_display.emit(
+                f"Unable to read the event count for channel {channel}: {e}",
+                self.__class__.__name__,
+            )
+            return
+        if num_events == 0:
+            self.add_text_to_display.emit(
+                f"No events to display from channel {channel}",
+                self.__class__.__name__,
+            )
+            return
+
+        if not events:
+            return
+
+        out_of_range = [event for event in events if event >= num_events]
+        events = [event for event in events if event < num_events]
+        if out_of_range:
+            self.logger.info(
+                f"Some event indices were out of bounds, truncating indices above {num_events - 1}"
+            )
+            # Said on the status panel as well as the log, and naming the bound. Without
+            # this, a selection entirely out of range fell through to the result path and
+            # reported "No data available for plotting" - true, but it reads like the
+            # events are missing rather than like the indices are wrong.
+            label = "event" if len(out_of_range) == 1 else "events"
+            indices = ", ".join(str(event) for event in out_of_range)
+            self.add_text_to_display.emit(
+                f"Channel {channel} has {num_events} events (0-{num_events - 1}), "
+                f"so {label} {indices} could not be plotted",
+                self.__class__.__name__,
+            )
+        if not events:
+            return
+
+        callable_filter = self._resolve_callable_filter(data_filter)
+        # Held as well as pushed: the View still needs it for the PSD request, and the
+        # Model needs it to build each event's time axis.
+        samplerate = self._event_samplerate(eventfinder)
+        self.view.update_plot_samplerate(samplerate)
+
+        event_data: List[Any] = []
+        kept: List[int] = []
+        for event in events:
+            try:
+                payload = self.model.call(
+                    "MetaEventFinder",
+                    eventfinder,
+                    "get_single_event_data",
+                    channel,
+                    event,
+                    callable_filter,
+                    False,
+                )
+            except Exception as e:
+                self.logger.error(
+                    f"Unable to retrieve requested data for event {event}: {repr(e)}"
+                )
+                continue
+            if payload is None:
+                self.logger.warning(f"No data loaded for event {event}, skipping")
+                continue
+            event_data.append(payload["data"])
+            kept.append(event)
+        self.view.set_event_plot_data(
+            event_data,
+            self.model.time_bases(event_data, samplerate, scale=1e6),
+            kept,
+        )
+
+    @log(logger=logger)
+    def _event_samplerate(self, eventfinder: str) -> float:
+        """
+        The event finder's samplerate, or 1 so the axis falls back to raw indices.
+
+        Asked of the *event finder* rather than the reader, which is what the View did:
+        the events came from the finder and carry its rate.
+
+        :param eventfinder: the event finder plugin's key
+        :type eventfinder: str
+        :return: the samplerate in Hz, or 1 if it could not be read
+        :rtype: float
+        """
+        try:
+            samplerate: float = self.model.call(
+                "MetaEventFinder", eventfinder, "get_samplerate"
+            )
+        except Exception:
+            self.logger.warning(
+                "Unable to get samplerate, time axis will indicate raw data index"
+            )
+            return 1
+        return samplerate
+
+    @log(logger=logger)
+    def _bounded_length(
+        self,
+        reader: str,
+        channel: int,
+        start: float,
+        length: float,
+        samplerate: float,
+    ) -> Optional[float]:
+        """
+        Trim a requested time range to what the channel actually holds, and say so.
+
+        ``MetaReader.load_data`` used to clamp an over-long request and hand back a
+        shorter array; it now raises ``ValueError`` instead. Nothing between the time
+        inputs and the reader bounds the request - ``_validate_plot_parameters`` only
+        checks that the values are present - so asking to plot past the end of a file
+        went from drawing what existed to drawing nothing, with the reason reaching
+        only the log.
+
+        Trimming here keeps the old visible behaviour without giving the reader's
+        stricter contract back, and the message is the point rather than an extra: a
+        silent clamp is the same "you are looking at something other than what you
+        asked for" fault this step has spent its time removing.
+
+        A reader that cannot report its length gets the benefit of the doubt and the
+        untrimmed request, which then fails in ``load_data`` and is reported there.
+
+        :param reader: the reader plugin's key
+        :type reader: str
+        :param channel: the channel the request is for
+        :type channel: int
+        :param start: start time in seconds
+        :type start: float
+        :param length: requested duration in seconds
+        :type length: float
+        :param samplerate: the reader's sample rate in Hz
+        :type samplerate: float
+        :return: the duration to ask for, or None if the range lies past the end
+        :rtype: Optional[float]
+        """
+        if samplerate <= 0:
+            return length
+        try:
+            channel_samples = self.model.call(
+                "MetaReader", reader, "get_channel_length", channel
+            )
+        except Exception as e:
+            self.logger.warning(
+                f"Unable to read the length of channel {channel}: {repr(e)}. "
+                "Requesting the range as entered."
+            )
+            return length
+
+        duration = channel_samples / samplerate
+        if start >= duration:
+            self.add_text_to_display.emit(
+                f"Channel {channel} is {duration:g} s long, so there is nothing to "
+                f"plot from {start:g} s",
+                self.__class__.__name__,
+            )
+            return None
+        if start + length > duration:
+            self.add_text_to_display.emit(
+                f"Channel {channel} ends at {duration:g} s, so plotting "
+                f"{start:g}-{duration:g} s rather than the {length:g} s requested",
+                self.__class__.__name__,
+            )
+            return duration - start
+        return length
+
+    @log(logger=logger)
+    def _load_and_filter(
+        self,
+        reader: str,
+        channels: List[int],
+        start: float,
+        length: float,
+        data_filter: str,
+    ) -> Tuple[List[Any], List[int], float]:
+        """
+        Read each channel through call(), filter it if asked, and drop what fails.
+
+        **A failed channel is dropped, and that is load-bearing.** The call raises, so a
+        channel the reader cannot supply never reaches the returned lists and they stay
+        index-aligned with ``channels`` by construction. Loading per channel into a
+        shared attribute and testing it for ``None`` instead is how channel N-1's trace
+        gets plotted under channel N's label: the attribute is written only on success,
+        so a failure leaves the previous channel's array in place and the guard passes.
+        ``_apply_filter`` has the same shape for the same reason.
+
+        The samplerate is fetched once per request rather than once per channel; it
+        cannot differ between channels of one reader.
+
+        Each channel's range is trimmed to what that channel holds before it is asked
+        for; see :py:meth:`_bounded_length`. Channels of a recording can differ in
+        length, which is why the trim is per channel rather than once per request.
+
+        :param reader: the reader plugin's key
+        :type reader: str
+        :param channels: the channels to read
+        :type channels: List[int]
+        :param start: start time in seconds
+        :type start: float
+        :param length: duration in seconds
+        :type length: float
+        :param data_filter: the filter plugin's key, or "" for no filtering
+        :type data_filter: str
+        :return: the loaded arrays, the channels that produced them index-aligned, and the samplerate they were read at
+        :rtype: Tuple[List[Any], List[int], float]
+        """
+        try:
+            samplerate = self.model.call("MetaReader", reader, "get_samplerate")
+        except Exception as e:
+            samplerate = 1
+            self.logger.warning(
+                f"Unable to get samplerate: {repr(e)}. X axis will denote raw data indices"
+            )
+        self.view.update_plot_samplerate(samplerate)
+
+        data_list: List[Any] = []
+        kept: List[int] = []
+        for channel in channels:
+            bounded = self._bounded_length(reader, channel, start, length, samplerate)
+            if bounded is None:
+                continue
+            try:
+                channel_data = self.model.call(
+                    "MetaReader", reader, "load_data", start, bounded, channel
+                )
+            except Exception as e:
+                self.logger.error(
+                    f"Unable to retrieve requested data for channel {channel}: {repr(e)}"
+                )
+                self.add_text_to_display.emit(
+                    f"Could not read channel {channel} from {reader}: {e}",
+                    self.__class__.__name__,
+                )
+                continue
+            if channel_data is None:
+                self.logger.debug(f"No data loaded for channel {channel}, skipping")
+                continue
+            if data_filter:
+                try:
+                    channel_data = self.model.call(
+                        "MetaFilter", data_filter, "filter_data", channel_data
+                    )
+                except Exception as e:
+                    self.logger.error(
+                        f"Unable to filter data with {data_filter}: {repr(e)}"
+                    )
+            data_list.append(channel_data)
+            kept.append(channel)
+        # The samplerate comes back rather than being resolved a second time by the
+        # caller: it is what the Model needs to build the plot's time axis, and asking
+        # the reader twice is two answers that could disagree.
+        return data_list, kept, samplerate
+
+    @log(logger=logger)
+    def request_reader_channels(self, reader: str) -> None:
+        """
+        Fetch a reader's channel list and hand it to the View.
+
+        A reader that cannot be read leaves the channel combobox alone rather than
+        clearing it - an empty combobox reads as "this reader has no channels", which is
+        a different and more
+        alarming thing than "this reader could not be read".
+
+        :param reader: the reader plugin's key
+        :type reader: str
+        :return: None
+        :rtype: None
+        """
+        try:
+            channels = self.model.call("MetaReader", reader, "get_channels")
+        except Exception as e:
+            self.logger.error(f"Unable to read channels from {reader}: {repr(e)}")
+            self.add_text_to_display.emit(
+                f"Unable to read channels from {reader}: {e}", self.__class__.__name__
+            )
+            return
+        self.view.update_channels(channels)
+
+    @log(logger=logger)
+    def compute_baseline_stats(
+        self,
+        data: List[Any],
+        time_bases: List[Any],
+        channels: List[int],
+        start: Any,
+    ) -> None:
+        """
+        Fit each channel's baseline and hand the results back for plotting.
+
+        A request slot, the same shape as calculate_psd below: the fitting is
+        RawDataModel's, and the View plots on the answer.
+
+        A channel whose fit fails contributes None rather than aborting the plot, which
+        is what the View did when it computed these itself - a flat or degenerate trace
+        should still be drawn, just without its baseline band.
+
+        The division by 1000 converts pA to nA, matching the scale update_plot draws on.
+        It moved here with the call it belongs to.
+
+        :param data: one array of samples per channel
+        :type data: List[Any]
+        :param time_bases: one time axis per channel, carried from the request because the samplerate that built it is not in scope here
+        :type time_bases: List[Any]
+        :param channels: the channel identifiers, index-aligned with data
+        :type channels: List[int]
+        :param start: the start time the View is plotting from, passed straight through
+        :type start: Any
+        :return: None
+        :rtype: None
+        """
+        stats: List[Optional[Tuple[float, float, float]]] = []
+        for channel_data, channel in zip(data, channels, strict=True):
+            try:
+                stats.append(self.model.get_baseline_stats(channel_data / 1000))
+            except ValueError as e:
+                self.logger.warning(
+                    f"Unable to compute baseline stats for channel {channel}: {e}"
+                )
+                stats.append(None)
+        self.view.update_plot(data, time_bases, channels, start, stats)
 
     @log(logger=logger)
     @Slot(list, float)
@@ -74,97 +733,64 @@ class RawDataController(MetaController):
         self.view.set_psd(Pxx_list, rms_list, frequency, kept_indices)
 
     @log(logger=logger)
+    @override
     @Slot(dict)
     def update_available_plugins(self, available_plugins: dict) -> None:
         """
-        Relay an updated dict of available plugin keys, keyed by metaclass, to both the model and the view.
+        Resolve every event finder's channels, then push the registry down as usual.
+
+        The finders are resolved here and handed down as a ready-made map, rather than
+        each being looked up from inside ``RawDataView.update_available_plugins`` - a
+        round trip nested inside a method the Controller is already running is the
+        hardest place for a failure to be reported from.
+
+        **The channels go down before the names, and that ordering is deliberate.**
+        Populating a combobox fires a selection change synchronously, which is what made
+        the plugin-instance push order load-bearing earlier on this branch. Checked here
+        rather than assumed: the event-finder combobox emits the action name
+        ``parameter_changed``, which lands in ``_handle_other_actions`` and reaches
+        nothing that reads ``analysis_time_limits``, so this order is defensive today
+        rather than load-bearing. It costs nothing and it is the order that stays correct
+        if a future handler does read that state.
 
         :param available_plugins: dict of lists keyed by MetaClass, listing the identifiers of all instantiated plugins throughout the app.
         :type available_plugins: dict
+        :return: None
+        :rtype: None
         """
-        self.logger.debug(
-            f"Controller received available plugins update: {available_plugins}"
+        self.view.register_eventfinder_channels(
+            self._resolve_eventfinder_channels(
+                available_plugins.get("MetaEventFinder", [])
+            )
         )
-        self.model.update_available_plugins(available_plugins)
-        self.view.update_available_plugins(available_plugins)
+        super().update_available_plugins(available_plugins)
 
     @log(logger=logger)
-    def set_event_filter(self, data_filter: Callable) -> None:
+    def _resolve_eventfinder_channels(
+        self, eventfinders: Sequence[str]
+    ) -> Dict[str, Sequence[int]]:
         """
-        Set the data filter function used for processing events.
+        Ask each event finder for its channels, skipping any that cannot answer.
 
-        :param data_filter: A callable used to filter or preprocess the data.
-        :type data_filter: Callable
-        """
-        self.view.set_data_filter_function(data_filter)
+        A finder that raises is left out of the returned map rather than mapped to an
+        empty list, so the View can tell "no channels" from "did not answer" and leaves
+        it unregistered for the next push to retry. Every finder is asked, not only the
+        unregistered ones: this runs on plugin lifecycle events rather than per chunk,
+        and letting the View own "which finders are new" keeps that state in one place.
 
-    @log(logger=logger)
-    def update_plot_data(self, data: Any) -> None:
+        :param eventfinders: keys of the event finder plugins to query
+        :type eventfinders: Sequence[str]
+        :return: channels per finder, for the finders that answered
+        :rtype: Dict[str, Sequence[int]]
         """
-        Relay processed data to the view for plotting.
-
-        :param data: Structured plot data.
-        :type data: Any
-        """
-        self.view.update_plot_data(data)
-
-    @log(logger=logger)
-    def update_plot_samplerate(self, samplerate: float) -> None:
-        """
-        Set the sampling rate to be used for time axis conversion in the plot.
-
-        :param samplerate: Sampling rate in Hz.
-        :type samplerate: float
-        """
-        self.view.update_plot_samplerate(samplerate)
-
-    @log(logger=logger)
-    @Slot(list)
-    def update_channels(self, num_channels: List[int]) -> None:
-        """
-        Update the view with the current number of channels available or selected.
-
-        :param num_channels: List of channel identifiers.
-        :type num_channels: List[int]
-        """
-        self.view.update_channels(num_channels)
-
-    @log(logger=logger)
-    def update_timer_channels(self, channels: Sequence[int]) -> None:
-        """
-        Update the view with the list of channels for timer-based processing.
-
-        :param channels: Channel identifiers reported by the event finder.
-        :type channels: Sequence[int]
-        """
-        self.view.update_timer_channels(channels)
-
-    @log(logger=logger)
-    def set_num_events_allowed(self, num_events: int) -> None:
-        """
-        Set the maximum number of events allowed to be processed or visualized.
-
-        :param num_events: Maximum number of events.
-        :type num_events: int
-        """
-        self.view.set_num_events_allowed(num_events)
-
-    @log(logger=logger)
-    def set_eventfinding_status(self, status: bool) -> None:
-        """
-        Set the current status of the event finding process in the view.
-
-        :param status: Boolean indicating if event finding was successful.
-        :type status: bool
-        """
-        self.view.set_eventfinding_status(status)
-
-    @log(logger=logger)
-    def relay_eventfinding_status(self, status: bool) -> None:
-        """
-        Relay the event finding status to the view for UI updates.
-
-        :param status: Boolean indicating the result of the event finding operation.
-        :type status: bool
-        """
-        self.view.set_eventfinding_status(status)
+        resolved: Dict[str, Sequence[int]] = {}
+        for finder in eventfinders:
+            try:
+                resolved[finder] = self.model.call(
+                    "MetaEventFinder", finder, "get_channels"
+                )
+            except Exception as e:
+                self.logger.error(
+                    f"Could not get channels for {finder}, not registering it yet: {repr(e)}"
+                )
+        return resolved

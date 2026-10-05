@@ -40,9 +40,9 @@ def serialize_channels(_func: F) -> F:
 
     The lock is held for the **whole run** of the generator, not per iteration: the wrapper suspends at ``yield from`` while still inside the ``with`` block, so the lock is acquired on the first advance and released when the generator is exhausted, closed, or raises. That is the same span the worker used to lock, so serialization behaviour is unchanged - what changes is *whose* lock it is.
 
-    This is a decorator rather than a public/private method split for two reasons: the split moves nothing but forces the public method to drop its ``:raises:`` documentation (pydoclint DOC502 - a thin ``yield from`` wrapper raises nothing itself), and ``functools.wraps`` keeps ``__wrapped__`` intact so ``inspect.signature`` still resolves the real signature, which the signal dispatcher in ``MainController`` depends on.
+    This is a decorator rather than a public/private method split for two reasons: the split moves nothing but forces the public method to drop its ``:raises:`` documentation (pydoclint DOC502 - a thin ``yield from`` wrapper raises nothing itself), and ``functools.wraps`` keeps the method's name, docstring and ``__wrapped__``, so ``inspect.signature`` - and with it the signature Sphinx autodoc renders - still resolves the real parameters rather than ``(self, *args, **kwargs)``.
 
-    Note the nested wrapper: decorators require a closure, the same reason ``LogDecorator`` is the standing exception to this codebase's no-nested-functions rule.
+    Note the nested wrapper: decorators require a closure, the same reason as ``LogDecorator``; the two are the exceptions to this codebase's no-nested-functions rule.
 
     Example, applied outermost so the lock brackets the logged operation:
 

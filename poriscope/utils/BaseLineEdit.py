@@ -30,13 +30,9 @@ from PySide6.QtCore import QEvent, QObject
 from PySide6.QtGui import QFocusEvent, QValidator
 from PySide6.QtWidgets import QApplication, QLineEdit, QMessageBox, QWidget
 
-# Configure logging
-logging.basicConfig(
-    level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s"
-)
-
 
 class BaseLineEdit(QLineEdit):
+    logger = logging.getLogger(__name__)
     suspend_validation = False  # Control flag to suspend validation
     app_closing = False  # Flag to check if the application is closing
 
@@ -68,7 +64,7 @@ class BaseLineEdit(QLineEdit):
         validator = self.validator()
         if validator:
             state, _, _ = validator.validate(self.text(), 0)
-            logging.debug(
+            self.logger.debug(
                 f"Validation state for {self.text()}: {state}"
             )  # Log the validation state
             return state == QValidator.Acceptable

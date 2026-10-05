@@ -10,8 +10,8 @@ SimpleCalc Full Code Example
       .. code-block:: python
 
          import logging
-         from utils.MetaModel import MetaModel
-         from utils.LogDecorator import log
+         from poriscope.utils.MetaModel import MetaModel
+         from poriscope.utils.LogDecorator import log
 
          class SimpleCalcModel(MetaModel):
              """
@@ -53,8 +53,8 @@ SimpleCalc Full Code Example
              QVBoxLayout, QHBoxLayout, QLineEdit, QComboBox, QPushButton, QLabel
          )
          from PySide6.QtCore import Signal
-         from utils.MetaView import MetaView
-         from utils.LogDecorator import log
+         from poriscope.utils.MetaView import MetaView
+         from poriscope.utils.LogDecorator import log
 
          class SimpleCalcView(MetaView):
              calculate_operation = Signal(float, str, float)
@@ -170,15 +170,27 @@ SimpleCalc Full Code Example
              def update_available_plugins(self, _):
                  pass
 
+             def notify_plugin_state_changed(self, metaclass, plugin_key, reason):
+                 # Nothing elsewhere in the app affects this tab, so a no-op is the
+                 # correct implementation - but it is abstract, so it must be written.
+                 pass
+
+             def handle_parameter_change(self, submodel_name, action_name, args):
+                 # Abstract on MetaView because _set_control_area connects a controls
+                 # panel's actionTriggered signal to it. This tab overrides
+                 # _set_control_area and wires its own buttons directly, so nothing is
+                 # connected here and a no-op is correct.
+                 pass
+
    .. tab:: SimpleCalcController
 
       .. code-block:: python
 
          import logging
-         from utils.MetaController import MetaController
-         from utils.LogDecorator import log
-         from plugins.analysistabs.SimpleCalcView import SimpleCalcView
-         from plugins.analysistabs.SimpleCalcModel import SimpleCalcModel
+         from poriscope.utils.MetaController import MetaController
+         from poriscope.utils.LogDecorator import log
+         from SimpleCalcView import SimpleCalcView
+         from SimpleCalcModel import SimpleCalcModel
 
          class SimpleCalcController(MetaController):
              """

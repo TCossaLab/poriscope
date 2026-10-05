@@ -27,8 +27,8 @@
 import logging
 from typing import Optional, Tuple, Union
 
-from PySide6.QtCore import QObject
-from PySide6.QtGui import QDoubleValidator, QIntValidator, QValidator
+from PySide6.QtCore import QLocale, QObject
+from PySide6.QtGui import QDoubleValidator, QValidator
 from PySide6.QtWidgets import QLineEdit, QWidget
 
 from poriscope.utils.LogDecorator import log
@@ -54,8 +54,11 @@ class NumericLineEdit(QLineEdit):
             # Use the custom validator for integers
             self._validator = CustomIntValidator(min_val, max_val, self)
         elif valtype is float:
-            # Use the QDoubleValidator for floating-point numbers
+            # The C locale, so the decimal point is always '.' - the value is read back
+            # with float(), and a validator following the system locale refused '.' on a
+            # comma-decimal system, turning a typed 0.5 into 05.
             self._validator = QDoubleValidator(self)
+            self._validator.setLocale(QLocale.c())
             if min_val is not None:
                 self._validator.setBottom(min_val)
             if max_val is not None:
@@ -68,6 +71,10 @@ class NumericLineEdit(QLineEdit):
     def isValid(self) -> bool:
         if self.text() == "":
             return False
+        # Even the C locale accepts ',' as a group separator, which float() cannot
+        # read, so a comma is never valid here - it disables OK rather than raising.
+        if "," in self.text():
+            return False
         if self._validator is not None:
             state, _, _ = self._validator.validate(self.text(), 0)
         else:
@@ -75,7 +82,7 @@ class NumericLineEdit(QLineEdit):
         return state == QValidator.Acceptable
 
     def currentText(self) -> Union[int, float, str]:
-        if isinstance(self._validator, QIntValidator):
+        if isinstance(self._validator, CustomIntValidator):
             return int(self.text())
         elif isinstance(self._validator, QDoubleValidator):
             return float(self.text())
@@ -98,14 +105,27 @@ class CustomIntValidator(QValidator):
         if input_text == "":
             return QValidator.Intermediate, input_text, pos
 
+        if input_text == "-":
+            # A sign on its own is the start of a negative number, if one is allowed.
+            if self.min_val is None or self.min_val < 0:
+                return QValidator.Intermediate, input_text, pos
+            return QValidator.Invalid, input_text, pos
+
         try:
             value = int(input_text)
         except ValueError:
             return QValidator.Invalid, input_text, pos
 
-        if (self.min_val is not None and value < self.min_val) or (
-            self.max_val is not None and value > self.max_val
+        if (self.min_val is None or value >= self.min_val) and (
+            self.max_val is None or value <= self.max_val
         ):
-            return QValidator.Invalid, input_text, pos
+            return QValidator.Acceptable, input_text, pos
 
-        return QValidator.Acceptable, input_text, pos
+        # Out of range, but more digits can still bring it in: 1 on the way to 15 with a
+        # minimum of 10, or -1 on the way to -15 with a maximum of -10. Refusing these
+        # made such values impossible to type, and dropped the sign from -5.
+        if self.min_val is not None and 0 < value < self.min_val:
+            return QValidator.Intermediate, input_text, pos
+        if self.max_val is not None and self.max_val < value < 0:
+            return QValidator.Intermediate, input_text, pos
+        return QValidator.Invalid, input_text, pos

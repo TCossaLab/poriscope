@@ -30,6 +30,7 @@ from typing import Any, Callable, Dict, Generator, List, Optional, Tuple, Union
 
 import numpy as np
 import numpy.typing as npt
+from fast_histogram import histogram1d
 
 from poriscope.utils.BaseDataPlugin import BaseDataPlugin
 from poriscope.utils.DocstringDecorator import inherit_docstrings
@@ -265,17 +266,10 @@ class MetaEventFinder(BaseDataPlugin):
             f"Starting eventfinding on channel {channel} for {len(ranges)} ranges"
         )
 
-        # Reset state
-        self.event_starts[channel] = []
-        self.event_ends[channel] = []
-        self.padding_before[channel] = []
-        self.padding_after[channel] = []
-        self.baseline_means[channel] = []
-        self.baseline_stds[channel] = []
-        self.eventfinding_finished[channel] = False
-        self.rejected_data[channel] = 0
-        self.accepted_data[channel] = 0
-        self.rejected_events[channel] = {}
+        # Exactly what reset_channel does, and it was written out here a second time.
+        # Calling it means a finder that overrides reset_channel to clear state of its own
+        # gets that cleared too, which is what starting a run on this channel should mean.
+        self.reset_channel(channel)
 
         self.reader.get_samplerate()
         total_found = 0
@@ -612,7 +606,8 @@ class MetaEventFinder(BaseDataPlugin):
                 )
             )
         self.num_events_found[channel] = len(self.event_starts[channel])
-        self.eventfinding_finished[channel] = True
+        # Not marked finished here: this is one range of possibly several, and
+        # find_events marks the channel finished once all of them are done.
         yield 1.0
 
     @log(logger=logger)
@@ -695,7 +690,6 @@ class MetaEventFinder(BaseDataPlugin):
         channel: int,
         data_filter: Optional[Callable] = None,
         rectify: bool = False,
-        raw_data: bool = False,
     ) -> Generator[
         Optional[Dict[str, Union[npt.NDArray[np.float64], float]]], None, None
     ]:
@@ -708,8 +702,6 @@ class MetaEventFinder(BaseDataPlugin):
         :type data_filter: Optional[Callable]
         :param rectify: should the data be returned rectified?
         :type rectify: bool
-        :param raw_data: return raw adc codes on True, pA values on False
-        :type raw_data: bool
         :raises KeyError: If the channel does not exist.
         :raises ValueError: If events have not been found, or event finding has not finished, for this channel.
         :yield: for each event in the channel, a dict of data and metadata as returned by :meth:`get_single_event_data`, or None if the event index is out of bounds.
@@ -734,9 +726,7 @@ class MetaEventFinder(BaseDataPlugin):
 
         else:
             for i in range(len(self.event_starts[channel])):
-                yield self.get_single_event_data(
-                    channel, i, data_filter, rectify, raw_data
-                )
+                yield self.get_single_event_data(channel, i, data_filter, rectify)
 
     @log(logger=logger)
     def get_channels(self) -> List[int]:
@@ -758,7 +748,6 @@ class MetaEventFinder(BaseDataPlugin):
         index: int,
         data_filter: Optional[Callable] = None,
         rectify: bool = False,
-        raw_data: bool = False,
     ) -> Optional[Dict[str, Union[npt.NDArray[np.float64], float]]]:
         """
         Return a dictionary of data and metadata for the requested event
@@ -771,8 +760,6 @@ class MetaEventFinder(BaseDataPlugin):
         :type data_filter: Optional[Callable]
         :param rectify: should the data be returned rectified?
         :type rectify: bool
-        :param raw_data: return raw adc codes on True, pA values on False
-        :type raw_data: bool
         :raises AttributeError: If no :ref:`MetaReader` instance is attached to this eventfinder.
         :raises KeyError: If the channel does not exist
         :raises ValueError: if no events have been found in the channel
@@ -795,8 +782,6 @@ class MetaEventFinder(BaseDataPlugin):
                 raise AttributeError(
                     "Event finders need an attached MetaEventReader instance to function"
                 )
-            scale = None
-            offset = None
             try:
                 start = (
                     self.event_starts[channel][index]
@@ -808,12 +793,10 @@ class MetaEventFinder(BaseDataPlugin):
                     + self.padding_before[channel][index]
                     + self.padding_after[channel][index]
                 ) / self.reader.get_samplerate()
-                data = self.reader.load_data(start, length, channel, raw_data)
-                if raw_data:
-                    data, scale, offset = data
-                if data_filter and not raw_data:
+                data = self.reader.load_data(start, length, channel)
+                if data_filter:
                     data = data_filter(data)
-                if rectify and not raw_data:
+                if rectify:
                     data *= np.sign(data[0])
 
                 event = {
@@ -824,8 +807,6 @@ class MetaEventFinder(BaseDataPlugin):
                     "padding_after": self.padding_after[channel][index],
                     "baseline_mean": self.baseline_means[channel][index],
                     "baseline_std": self.baseline_stds[channel][index],
-                    "scale": scale,
-                    "offset": offset,
                 }
                 return event
             except (IndexError, ValueError) as e:
@@ -849,22 +830,6 @@ class MetaEventFinder(BaseDataPlugin):
             raise ValueError("Events have not been located or no events were found")
         else:
             return self.event_starts, self.event_ends
-
-    @log(logger=logger)
-    def get_dtype(self) -> object:
-        """
-        return the raw data type of the associated reader
-
-        :raises AttributeError: If no :ref:`MetaReader` instance is attached to this eventfinder.
-        :return: the raw data type of the associated reader
-        :rtype: object
-        """
-        if self.reader is not None:
-            return self.reader.get_raw_dtype()
-        else:
-            raise AttributeError(
-                "Event finders needs an attached MetaReader object to function"
-            )
 
     @log(logger=logger)
     def get_num_events_found(self, channel: int) -> int:
@@ -981,12 +946,207 @@ class MetaEventFinder(BaseDataPlugin):
         """
         This function must calculate and return the mean and standard deviation of the baseline for the given chunk of data, excluding any events present in the chunk. These values are used downstream to determine where the baseline deviates from the open pore current. By default, :ref:`MetaEventFinder` assumes a Gaussian distribution of baseline noise. You may assume that the data is rectified.
 
+        You do not have to build the histogram or run the fit yourself: :py:meth:`~poriscope.utils.MetaEventFinder.MetaEventFinder._fit_baseline_histogram` does both for a range you choose, so your implementation is your own policy for what counts as baseline around one call to it. ``ClassicBlockageFinder`` hands it the chunk's own extremes; ``BoundedBlockageFinder`` hands it a configured range and refuses a fit that lands outside it.
+
         :param data: Chunk of timeseries data to compute statistics on.
         :type data: npt.NDArray[np.float64]
         :return: Tuple of mean, and standard deviation the baseline.
         :rtype: tuple[float, float]
         """
         pass
+
+    # Shared implementation offered to subclasses, not part of the API a plugin author
+    # must supply. ``_get_baseline_stats`` above stays abstract so every finder still
+    # decides for itself which part of a chunk counts as baseline; the two methods below
+    # carry the half that follows from the family's own assumption of Gaussian baseline
+    # noise, so a finder writes its policy around one call rather than its own histogram.
+
+    @log(logger=logger)
+    def _fit_baseline_histogram(
+        self, data: npt.NDArray[np.float64], bottom: float, top: float
+    ) -> tuple[float, float]:
+        """
+        Histogram ``data`` over ``[bottom, top]`` and fit a Gaussian to the peak.
+
+        The histogram is narrowed twice before the fit: once to the symmetric window
+        around the peak where counts stay above a fifth of the maximum, which is what
+        keeps events and drift out of the fit, and once more at 60% of the maximum,
+        whose width serves as the fit's initial guess for the standard deviation.
+
+        The fit runs against true bin centres, so the standard deviation it returns is in
+        the data's own units. The bin count is set by sample size alone, at
+        ``int(len(data) ** (1/3) / 2)``.
+
+        :param data: Chunk of timeseries data to histogram. Only samples inside ``[bottom, top]`` contribute.
+        :type data: npt.NDArray[np.float64]
+        :param bottom: Lower edge of the histogram range.
+        :type bottom: float
+        :param top: Upper edge of the histogram range.
+        :type top: float
+        :raises ValueError: if ``top`` does not exceed ``bottom``, so no histogram can be built, or if the Gaussian fit fails.
+        :return: Tuple of the fitted mean and standard deviation.
+        :rtype: tuple[float, float]
+        """
+        if top <= bottom:
+            raise ValueError(
+                "Unable to estimate a baseline histogram width for this chunk (no variation in the data)"
+            )
+
+        bins = int(len(data) ** (1 / 3) / 2)
+        hist = histogram1d(data, range=[bottom, top], bins=bins)
+        # Bin i spans [bottom + i*width, bottom + (i+1)*width), so its centre sits half a
+        # bin in. Labelling the bins with linspace(bottom, top, bins) instead - which is
+        # what this did until 2026-09-20 - spaces them (top-bottom)/(bins-1) apart, and a
+        # Gaussian fit reports sigma in the units of the axis it is handed, so sigma came
+        # back multiplied by bins/(bins-1).
+        width = (top - bottom) / bins
+        centers = bottom + width * (np.arange(bins) + 0.5)
+
+        max_index = int(np.argmax(hist))
+        maxval = hist[max_index]
+        # The first bin at or below a fifth of the peak, walking out each way.
+        top_index = next(
+            (i for i in range(max_index, len(hist)) if hist[i] <= maxval / 5),
+            len(hist) - 1,
+        )
+        bottom_index = next(
+            (i for i in range(max_index, -1, -1) if hist[i] <= maxval / 5), 0
+        )
+
+        # Take the narrower of the two sides both ways, so the window the fit sees is not
+        # dragged out by whichever side the events are on.
+        #
+        # The slice is right-exclusive, so the window holds ``half_width`` bins below the
+        # peak and ``half_width - 1`` above it rather than a symmetric
+        # ``2 * half_width + 1``. This is shipped behaviour, left exactly as it was found.
+        # Do not "correct" it to a symmetric window on the strength of a measurement over
+        # unimodal noise, where it is worth 0.13 percentage points of sigma and reads as an
+        # off-by-one: on a bimodal baseline it is worth several percent. Whether the
+        # direction it trims is the right one is an open question, filed in
+        # `future_fixes.md` together with the peak-selection gap beside it, and pinned by
+        # ``TestTheShippedFitWindow`` so it cannot be changed silently either way.
+        half_width = min(top_index - max_index, max_index - bottom_index)
+        hist = hist[max_index - half_width : max_index + half_width]
+        centers = centers[max_index - half_width : max_index + half_width]
+
+        max_index = int(np.argmax(hist))
+        maxval = hist[max_index]
+        top_index = next(
+            (i for i in range(max_index, len(hist)) if hist[i] <= 0.6 * maxval),
+            len(hist) - 1,
+        )
+        bottom_index = next(
+            (i for i in range(max_index, -1, -1) if hist[i] <= 0.6 * maxval), 0
+        )
+
+        _, mean, std = self._gaussian_fit(
+            hist,
+            centers,
+            centers[max_index],
+            np.absolute(centers[top_index] - centers[bottom_index]),
+        )
+        return mean, std
+
+    @log(logger=logger)
+    def _gaussian_fit(
+        self,
+        histogram: npt.NDArray[np.float64],
+        bins: npt.NDArray[np.float64],
+        mean_guess: float,
+        stdev_guess: float,
+    ) -> tuple[float, float, float]:
+        """
+        Fit a Gaussian function to histogram data using a linearized least squares approach.
+
+        :param histogram: Array of counts in each histogram bin.
+        :type histogram: npt.NDArray[np.float64]
+        :param bins: Center positions of histogram bins.
+        :type bins: npt.NDArray[np.float64]
+        :param mean_guess: Initial estimate of the Gaussian mean.
+        :type mean_guess: float
+        :param stdev_guess: Initial estimate of the Gaussian standard deviation.
+        :type stdev_guess: float
+        :return: Tuple containing (amplitude, mean, standard deviation) of the fitted Gaussian.
+        :rtype: tuple[float, float, float]
+        :raises ValueError: If standard deviation guess is invalid or the fit fails.
+        """
+        if stdev_guess <= 0:
+            raise ValueError("Invalid standard deviation guess")
+
+        amp = np.max(histogram)
+        max_loc = int(np.argmax(histogram))
+
+        # Clean Windowing: A gaussian drops to ~1.1% height at 3 standard deviations.
+        threshold = np.exp(-4.5) * amp
+
+        # --- CONTIGUOUS MASKING LOGIC ---
+        # Walk left from the peak until we hit the threshold or the array edge
+        left_bound = max_loc
+        while left_bound > 0 and histogram[left_bound - 1] > threshold:
+            left_bound -= 1
+
+        # Walk right from the peak until we hit the threshold or the array edge
+        right_bound = max_loc
+        while (
+            right_bound < len(histogram) - 1 and histogram[right_bound + 1] > threshold
+        ):
+            right_bound += 1
+
+        # Slice the arrays using the exclusive right bound
+        y_slice = histogram[left_bound : right_bound + 1]
+        x_slice = bins[left_bound : right_bound + 1]
+
+        localy = y_slice / amp
+        localx = (x_slice - mean_guess) / stdev_guess
+
+        # Vectorized Matrix Math
+        x0 = localy
+        x1 = localx * x0
+        x2 = localx * x1
+        x3 = localx * x2
+        x4 = localx * x3
+
+        x0_sum = np.sum(x0)
+        x1_sum = np.sum(x1)
+        x2_sum = np.sum(x2)
+        x3_sum = np.sum(x3)
+        x4_sum = np.sum(x4)
+
+        # localy is strictly > 0 because of the threshold mask, so log is safe
+        lny = np.log(localy) * localy
+        xlny = localx * lny
+        x2lny = localx * xlny
+
+        lny_sum = np.sum(lny)
+        xlny_sum = np.sum(xlny)
+        x2lny_sum = np.sum(x2lny)
+
+        xTx = np.array(
+            [
+                [x4_sum, x3_sum, x2_sum],
+                [x3_sum, x2_sum, x1_sum],
+                [x2_sum, x1_sum, x0_sum],
+            ]
+        )
+
+        xnlny = np.array([x2lny_sum, xlny_sum, lny_sum])
+        xTxinv = np.linalg.inv(xTx)
+        params = np.dot(xTxinv, xnlny)
+
+        if params[0] >= 0:
+            raise ValueError("Unable to estimate standard deviation (inverted fit)")
+
+        stdev = np.sqrt(-1.0 / (2 * params[0]))
+
+        # 'mean_offset' here is the shift in standardized units (mlocal)
+        mean_offset = stdev**2 * params[1]
+        amplitude = np.exp(params[2] + mean_offset**2 / (2 * stdev**2))
+
+        # --- THE CRITICAL MATH FIX ---
+        stdev *= stdev_guess
+        mean = (mean_offset * stdev_guess) + mean_guess  # The missing multiplier
+        amplitude *= amp
+        return amplitude, mean, np.absolute(stdev)
 
     # private API, should generally be left alone by subclasses
     @log(logger=logger)
@@ -1002,7 +1162,9 @@ class MetaEventFinder(BaseDataPlugin):
         This dict must have the following structure, but Min, Max, and Options can be skipped or explicitly set to None if they are not used.
         Type is required; Value may be omitted or set to None, both meaning there is no default and the user must supply one. All values provided must be consistent with Type.
 
-        Your Eventfinder MUST include at least the "MetaReader" key, which can be ensured by calling ``settings = super().get_empty_settings(globally_available_plugins, standalone)`` before adding any additional settings keys
+        Your Eventfinder MUST include at least the "MetaReader" and "Threshold" keys, which can be ensured by calling ``settings = super().get_empty_settings(globally_available_plugins, standalone)`` before adding any additional settings keys.
+
+        "Threshold" is declared here because :meth:`find_events` reads it: a chunk whose baseline mean is smaller than the threshold is skipped as unusable before your ``_find_events_in_chunk`` sees it. Its ``"Units"`` is left ``None``, because what the threshold means is yours to define - set it to the unit your implementation interprets it in, as the example below does.
 
         This function must implement returning of a dictionary of settings required to initialize the filter, in the specified format. Values in this dictionary can be accessed downstream through the ``self.settings`` class variable. This structure is a nested dictionary that supplies both values and a variety of information about those values, used by poriscope to perform sanity and consistency checking at instantiation.
 
@@ -1011,11 +1173,7 @@ class MetaEventFinder(BaseDataPlugin):
         .. code:: python
 
             settings = super().get_empty_settings(globally_available_plugins, standalone)
-            settings["Threshold"] = {"Type": float,
-                                    "Value": None,
-                                    "Min": 0.0,
-                                    "Units": "pA"
-                                    }
+            settings["Threshold"]["Units"] = "pA"
             settings["Min Duration"] = {"Type": float,
                                         "Value": 0.0,
                                         "Min": 0.0,
@@ -1033,7 +1191,7 @@ class MetaEventFinder(BaseDataPlugin):
                                         }
             return settings
 
-        which will ensure that your have the 3 keys specified above, as well as an additional key, ``"MetaReader"``, as required by eventfinders. In the case of categorical settings, you can also supply the "Options" key in the second level dictionaries.
+        which will ensure that you have the 3 keys specified above, as well as ``"MetaReader"`` and ``"Threshold"``, as required by eventfinders. In the case of categorical settings, you can also supply the "Options" key in the second level dictionaries.
 
         :param globally_available_plugins: a dict containing all data plugins that exist to date, keyed by metaclass. Must include "MetaReader" as a key, with explicitly set Type MetaReader.
         :type globally_available_plugins: Optional[ Dict[str, List[str]]]
@@ -1055,10 +1213,18 @@ class MetaEventFinder(BaseDataPlugin):
 
         settings: Dict[str, Dict[str, Any]] = {
             "MetaReader": {
-                "Type": str,
+                # A script holds the parent object and has no controller to resolve a
+                # name, so standalone declares the class it must be an instance of.
+                "Type": MetaReader if standalone else str,
                 "Value": reader_options[0] if reader_options is not None else "",
                 "Options": reader_options,
-            }
+            },
+            "Threshold": {
+                "Type": float,
+                "Value": None,
+                "Min": 0.0,
+                "Units": None,
+            },
         }
         return settings
 

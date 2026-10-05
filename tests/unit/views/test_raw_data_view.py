@@ -9,33 +9,32 @@ Coverage targets:
 - update_plot_data
 - update_plot_samplerate
 - update_channels
-- update_timer_channels
-- set_num_events_allowed
-- set_eventfinding_status
+- register_eventfinder_channels
 - validate_single_channel
 - _extract_plot_parameters
 - _extract_event_parameters
 - _extract_commit_event_parameters
 - _extract_plot_event_parameters
 - _validate_plot_parameters
-- _load_data (happy path + IndexError)
-- _apply_filter (happy path + Exception)
-- _handle_load_data_and_update_plot (success, invalid params, no data, with filter,
-  without filter, parameter extraction failure)
+- _filter_key (every "no filter" spelling)
+- _handle_load_data_and_update_plot / set_trace_data (intent + result)
+- _handle_load_data_and_update_psd / set_trace_for_psd (intent + result)
 - _handle_other_actions (with reader, without reader)
 - handle_parameter_change dispatch (load_data_and_update_plot, some_other_action)
 - _factors
-- _get_baseline_stats (degenerate guard)
 - update_available_plugins (success + exception path)
-- _start_writer
 - _shift_range_and_update_trace (left shift, negative guard)
 - _shift_range_and_update_plot (left, right, empty indices guard)
 - _handle_find_events (valid params, missing params)
 - _handle_commit_events (valid, extraction failure)
 - _handle_timer (no-op when finder == 'No Eventfinder')
-- set_data_filter_function
 - set_psd
 - _get_event_index_text
+
+Not covered here: the numeric methods ``_get_baseline_stats``, ``_gaussian_fit``
+and ``_gaussian`` live in ``test_raw_data_view_characterization.py``. This roster
+used to claim ``_get_baseline_stats (degenerate guard)`` while no such test
+existed anywhere in the repository.
 """
 
 from __future__ import annotations
@@ -86,10 +85,19 @@ def view(mocker, mock_logging):
     v.logger = mocker.Mock()
     v.figure = mocker.Mock()
     v.canvas = mocker.Mock()
-    v.global_signal = mocker.Mock()
     v.add_text_to_display = mocker.Mock()
+    # The View's intent signals. Mocked by hand like the rest here: this fixture builds
+    # the view with __new__, so a class-level Signal has no C++ object behind it and
+    # emitting one would raise "Signal source has been deleted".
+    v.reader_channels_requested = mocker.Mock()
+    v.baseline_stats_requested = mocker.Mock()
+    v.trace_data_requested = mocker.Mock()
+    v.psd_data_requested = mocker.Mock()
+    v.event_plot_requested = mocker.Mock()
+    v.commit_requested = mocker.Mock()
+    v.commit_statuses_requested = mocker.Mock()
+    v.calculate_psd = mocker.Mock()
     v.export_plot_data = mocker.Mock()
-    v.run_generators = mocker.Mock()
 
     # --- RawDataControls mock ---
     v.rawdatacontrols = mocker.Mock()
@@ -99,11 +107,7 @@ def view(mocker, mock_logging):
     # --- State attributes ---
     v.plot_data = None
     v.plot_samplerate = 1
-    v.timer_channels = []
     v.analysis_time_limits = {}
-    v.eventfinding_status = False
-    v.num_events_allowed = 0
-    v.data_filter = None
     v.available_plugins = {}
 
     # --- Cache helpers (no-ops) ---
@@ -135,12 +139,6 @@ def test_update_plot_data_stores_array(view):
     np.testing.assert_array_equal(view.plot_data, data)
 
 
-def test_update_plot_data_extracts_data_key_from_dict(view):
-    data = np.array([4, 5, 6])
-    view.update_plot_data({"data": data})
-    np.testing.assert_array_equal(view.plot_data, data)
-
-
 # ---------------------------------------------------------------------------
 # update_plot_samplerate
 # ---------------------------------------------------------------------------
@@ -152,13 +150,34 @@ def test_update_plot_samplerate(view):
 
 
 # ---------------------------------------------------------------------------
-# update_timer_channels
+# register_eventfinder_channels
 # ---------------------------------------------------------------------------
 
 
-def test_update_timer_channels(view):
-    view.update_timer_channels([0, 1, 2])
-    assert view.timer_channels == [0, 1, 2]
+def test_register_eventfinder_channels_gives_a_new_finder_defaults(view):
+    view.register_eventfinder_channels({"EF1": [0, 2]})
+    assert view.analysis_time_limits == {
+        "EF1": {0: {"start": 0, "end": 0}, 2: {"start": 0, "end": 0}}
+    }
+
+
+def test_register_eventfinder_channels_keeps_ranges_the_user_already_set(view):
+    """A finder already registered is not reset by a later plugin-registry push."""
+    view.analysis_time_limits = {"EF1": {0: {"start": 1.5, "end": 3.0}}}
+    view.register_eventfinder_channels({"EF1": [0, 1, 2]})
+    assert view.analysis_time_limits == {"EF1": {0: {"start": 1.5, "end": 3.0}}}
+
+
+def test_register_eventfinder_channels_leaves_a_silent_finder_unregistered(view):
+    """
+    No channels means no registration, so the next push retries the finder.
+
+    This is the surviving half of the 1.9.0 fix for ``timer_channels``: the finder key
+    used to be registered before its channels were known, so one failed lookup poisoned
+    that finder's time limits permanently.
+    """
+    view.register_eventfinder_channels({"EF1": []})
+    assert view.analysis_time_limits == {}
 
 
 # ---------------------------------------------------------------------------
@@ -174,39 +193,6 @@ def test_update_channels_delegates_to_controls(view):
 def test_update_channels_logs_info(view):
     view.update_channels([0])
     view.logger.info.assert_called()
-
-
-# ---------------------------------------------------------------------------
-# set_num_events_allowed / set_eventfinding_status
-# ---------------------------------------------------------------------------
-
-
-def test_set_num_events_allowed(view):
-    view.set_num_events_allowed(42)
-    assert view.num_events_allowed == 42
-
-
-def test_set_eventfinding_status_true(view):
-    view.set_eventfinding_status(True)
-    assert view.eventfinding_status is True
-
-
-def test_set_eventfinding_status_false(view):
-    view.set_eventfinding_status(False)
-    assert view.eventfinding_status is False
-
-
-# ---------------------------------------------------------------------------
-# set_data_filter_function
-# ---------------------------------------------------------------------------
-
-
-def test_set_data_filter_function(view):
-    def passthrough(x):
-        return x
-
-    view.set_data_filter_function(passthrough)
-    assert view.data_filter is passthrough
 
 
 # ---------------------------------------------------------------------------
@@ -351,75 +337,22 @@ def test_get_event_index_text_empty(view):
 
 
 # ---------------------------------------------------------------------------
-# _load_data
+# _filter_key
 # ---------------------------------------------------------------------------
 
 
-def test_load_data_emits_global_signal(view):
-    view._load_data("R1", 0, 0.0, 100.0)
-    view.global_signal.emit.assert_called()
-    # Verify the key args: plugin type, plugin name, method name
-    args = view.global_signal.emit.call_args[0]
-    assert args[0] == "MetaReader"
-    assert args[1] == "R1"
-    assert args[2] == "load_data"
+def test_filter_key_reads_the_selected_filter(view):
+    assert view._filter_key({"filter": "MyFilter"}) == "MyFilter"
 
 
-def test_load_data_passes_correct_data_args(view):
-    view._load_data("R1", 2, 5.0, 50.0)
-    args = view.global_signal.emit.call_args_list
-    # find the load_data call
-    load_call = next(a for a in args if a[0][2] == "load_data")
-    assert load_call[0][3] == (5.0, 50.0, 2)
-
-
-def test_load_data_handles_index_error(view):
-    view.global_signal.emit.side_effect = [None, IndexError("boom")]
-    # Should not raise
-    view._load_data("R1", 0, 0.0, 100.0)
-    view.logger.error.assert_called()
-
-
-def test_load_data_handles_list_of_channels(view):
-    """When channels is a list, _load_data should iterate and emit per channel."""
-    view._load_data("R1", [0, 1], 0.0, 100.0)
-    load_calls = [
-        a for a in view.global_signal.emit.call_args_list if a[0][2] == "load_data"
-    ]
-    assert len(load_calls) == 2
+@pytest.mark.parametrize("parameters", [{}, {"filter": None}, {"filter": "No Filter"}])
+def test_filter_key_collapses_every_no_filter_spelling(view, parameters):
+    """The controls panel reports "none" three ways; all mean no filtering."""
+    assert view._filter_key(parameters) == ""
 
 
 # ---------------------------------------------------------------------------
-# _apply_filter
-# ---------------------------------------------------------------------------
-
-
-def test_apply_filter_emits_global_signal(view):
-    view.plot_data = np.array([1.0, 2.0])
-    view._apply_filter("F1", view.plot_data)
-    args = view.global_signal.emit.call_args[0]
-    assert args[0] == "MetaFilter"
-    assert args[1] == "F1"
-    assert args[2] == "filter_data"
-
-
-def test_apply_filter_returns_plot_data_on_success(view):
-    expected = np.array([9.0, 8.0])
-    view.plot_data = expected
-    result = view._apply_filter("F1", np.array([1.0, 2.0]))
-    np.testing.assert_array_equal(result, expected)
-
-
-def test_apply_filter_returns_original_on_exception(view):
-    original = np.array([1.0, 2.0])
-    view.global_signal.emit.side_effect = Exception("boom")
-    result = view._apply_filter("F1", original)
-    np.testing.assert_array_equal(result, original)
-    view.logger.error.assert_called()
-
-
-# ---------------------------------------------------------------------------
-# _handle_load_data_and_update_plot
+# _handle_load_data_and_update_plot / set_trace_data
 # ---------------------------------------------------------------------------
 
 
@@ -427,52 +360,120 @@ def test_handle_load_data_parameter_extraction_failure(view, mocker):
     view._extract_plot_parameters = mocker.Mock(side_effect=ValueError("bad"))
     view._handle_load_data_and_update_plot({"channel": []})
     view.logger.error.assert_called()
+    view.trace_data_requested.emit.assert_not_called()
 
 
-def test_handle_load_data_invalid_params_logs_error(view, mocker):
+def test_handle_load_data_invalid_params_requests_nothing(view, mocker):
     view._extract_plot_parameters = mocker.Mock(return_value=("R", [0], 0.0, 100.0))
     view._validate_plot_parameters = mocker.Mock(return_value=False)
-    view.update_plot = mocker.Mock()
     view._handle_load_data_and_update_plot({})
-    view.update_plot.assert_not_called()
+    view.trace_data_requested.emit.assert_not_called()
     view.logger.error.assert_called()
 
 
-def test_handle_load_data_no_data_skips_plot(view, mocker):
-    view._extract_plot_parameters = mocker.Mock(return_value=("R", [0], 0.0, 100.0))
+def test_handle_load_data_emits_a_typed_intent(view, mocker):
+    """
+    The orchestrator asks, and stops. Loading is the Controller's.
+    """
+    view._extract_plot_parameters = mocker.Mock(return_value=("R", [0, 1], 2.0, 100.0))
     view._validate_plot_parameters = mocker.Mock(return_value=True)
-    view._load_data = mocker.Mock()
+    view._handle_load_data_and_update_plot({"channel": ["0"], "filter": "MyFilter"})
+    view.trace_data_requested.emit.assert_called_once_with(
+        "R", [0, 1], 2.0, 100.0, "MyFilter", False
+    )
+
+
+def test_handle_load_data_passes_the_baseline_flag_through(view, mocker):
+    view._extract_plot_parameters = mocker.Mock(return_value=("R", [0], 0.0, 1.0))
+    view._validate_plot_parameters = mocker.Mock(return_value=True)
+    view._handle_load_data_and_update_plot({"channel": ["0"]}, baseline=True)
+    assert view.trace_data_requested.emit.call_args[0][-1] is True
+
+
+def test_handle_load_data_makes_no_plugin_call_of_its_own(view, mocker):
+    """No bus round trip per channel: loading is the Controller's."""
+    view._extract_plot_parameters = mocker.Mock(return_value=("R", [0, 1], 0.0, 1.0))
+    view._validate_plot_parameters = mocker.Mock(return_value=True)
+    view._handle_load_data_and_update_plot({"channel": ["0"]})
+
+
+def test_set_trace_data_reports_when_nothing_loaded(view, mocker):
     view.update_plot = mocker.Mock()
-    view.plot_data = None
-    view._handle_load_data_and_update_plot({"channel": ["0"], "filter": "No Filter"})
+    view.set_trace_data([], [], [], 0.0, False)
+    view.update_plot.assert_not_called()
+    view.baseline_stats_requested.emit.assert_not_called()
+    view.add_text_to_display.emit.assert_called_once()
+
+
+def test_set_trace_data_plots_what_the_controller_loaded(view, mocker):
+    data = [np.array([1.0, 2.0])]
+    times = [np.array([3.0, 3.1])]
+    view.update_plot = mocker.Mock()
+    view.set_trace_data(data, times, [0], 3.0, False)
+    view.update_plot.assert_called_once_with(data, times, [0], 3.0)
+    view.baseline_stats_requested.emit.assert_not_called()
+
+
+def test_set_trace_data_asks_for_baseline_stats_instead_when_wanted(view, mocker):
+    data = [np.array([1.0, 2.0])]
+    times = [np.array([3.0, 3.1])]
+    view.update_plot = mocker.Mock()
+    view.set_trace_data(data, times, [0], 3.0, True)
+    view.baseline_stats_requested.emit.assert_called_once_with(data, times, [0], 3.0)
     view.update_plot.assert_not_called()
 
 
-def test_handle_load_data_success_no_filter(view, mocker):
-    data = np.array([1.0, 2.0, 3.0])
-    view._extract_plot_parameters = mocker.Mock(return_value=("R", [0], 0.0, 100.0))
-    view._validate_plot_parameters = mocker.Mock(return_value=True)
-    view._load_data = mocker.Mock()
-    view._apply_filter = mocker.Mock()
+def test_the_baseline_request_carries_the_axes_it_was_given(view, mocker):
+    """
+    The axes travel with the request rather than being rebuilt on the answer.
+
+    The Controller resolved the samplerate to build them and does not have it in
+    scope in the answering slot, so a request that dropped them would leave the
+    slot with no way to draw against time.
+    """
+    times = [np.array([0.0, 1.0])]
     view.update_plot = mocker.Mock()
-    view.plot_data = data
-    view._handle_load_data_and_update_plot({"channel": ["0"], "filter": "No Filter"})
-    view._apply_filter.assert_not_called()
-    view.update_plot.assert_called_once()
+
+    view.set_trace_data([np.array([1.0, 2.0])], times, [0], 0.0, True)
+
+    assert view.baseline_stats_requested.emit.call_args.args[1] == times
 
 
-def test_handle_load_data_success_with_filter(view, mocker):
-    data = np.array([1.0, 2.0])
-    filtered = np.array([0.5, 1.0])
-    view._extract_plot_parameters = mocker.Mock(return_value=("R", [0], 0.0, 100.0))
+# ---------------------------------------------------------------------------
+# _handle_load_data_and_update_psd / set_trace_for_psd
+# ---------------------------------------------------------------------------
+
+
+def test_handle_load_data_psd_emits_a_typed_intent(view, mocker):
+    view._extract_plot_parameters = mocker.Mock(return_value=("R", [0], 1.0, 9.0))
     view._validate_plot_parameters = mocker.Mock(return_value=True)
-    view._load_data = mocker.Mock()
-    view._apply_filter = mocker.Mock(return_value=filtered)
-    view.update_plot = mocker.Mock()
-    view.plot_data = data
-    view._handle_load_data_and_update_plot({"channel": ["0"], "filter": "MyFilter"})
-    view._apply_filter.assert_called_once_with("MyFilter", data)
-    view.update_plot.assert_called_once()
+    view._handle_load_data_and_update_psd({"channel": ["0"], "filter": "No Filter"})
+    view.psd_data_requested.emit.assert_called_once_with("R", [0], 1.0, 9.0, "")
+
+
+def test_set_trace_for_psd_reports_when_nothing_loaded(view, mocker):
+    view.update_psd = mocker.Mock()
+    view.set_trace_for_psd([], [])
+    view.update_psd.assert_not_called()
+    view.calculate_psd.emit.assert_not_called()
+    view.add_text_to_display.emit.assert_called_once()
+
+
+def test_set_trace_for_psd_computes_and_draws(view, mocker):
+    """
+    The PSD computation path itself still reads back off the
+    attributes set_psd parks, which is safe because that connection is direct.
+    """
+    data = [np.array([1.0, 2.0])]
+    view.update_psd = mocker.Mock()
+    view.plot_samplerate = 100.0
+    view.psd_kept_indices = [0]
+    view.Pxx_list = ["pxx"]
+    view.rms_list = ["rms"]
+    view.psd_frequency = "freq"
+    view.set_trace_for_psd(data, [7])
+    view.calculate_psd.emit.assert_called_once_with(data, 100.0)
+    view.update_psd.assert_called_once_with(["pxx"], ["rms"], "freq", [7])
 
 
 # ---------------------------------------------------------------------------
@@ -480,18 +481,30 @@ def test_handle_load_data_success_with_filter(view, mocker):
 # ---------------------------------------------------------------------------
 
 
-def test_handle_other_actions_with_reader_emits_signal(view):
+def test_handle_other_actions_with_reader_requests_its_channels(view):
+    """
+    An intent naming the reader, not a bus call describing the dispatch.
+
+    The View no longer names the plugin method or the return function - which is the
+    point, since it was naming both by string across seven hops.
+    """
     view._handle_other_actions("something", {"reader": "R1"})
-    view.global_signal.emit.assert_called_once()
-    args = view.global_signal.emit.call_args[0]
-    assert args[0] == "MetaReader"
-    assert args[1] == "R1"
-    assert args[2] == "get_channels"
+
+    view.reader_channels_requested.emit.assert_called_once_with("R1")
 
 
 def test_handle_other_actions_without_reader_does_nothing(view):
+    """The placeholder is a normal empty state, not a plugin key."""
     view._handle_other_actions("something", {"reader": None})
-    view.global_signal.emit.assert_not_called()
+
+    view.reader_channels_requested.emit.assert_not_called()
+
+
+def test_handle_other_actions_ignores_the_placeholder_reader(view):
+    """ "No Reader" is what the combobox shows before anything is chosen."""
+    view._handle_other_actions("something", {"reader": "No Reader"})
+
+    view.reader_channels_requested.emit.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -563,7 +576,6 @@ def test_handle_parameter_change_dispatches_export_plot_data(view, mocker):
 def test_update_available_plugins_success(view, mocker):
     # super().update_available_plugins must not crash
     mocker.patch.object(MetaView, "update_available_plugins", return_value=None)
-    view.timer_channels = [0]
     plugins = {
         "MetaReader": ["R1"],
         "MetaFilter": ["F1"],
@@ -582,6 +594,24 @@ def test_update_available_plugins_exception_is_caught(view, mocker):
     # Should not raise
     view.update_available_plugins({"MetaReader": ["R1"]})
     view.logger.info.assert_called()
+
+
+def test_update_available_plugins_makes_no_plugin_call_of_its_own(view, mocker):
+    """
+    Populating the comboboxes reaches no plugin, and registers no finder.
+
+    This method used to emit ``global_signal`` once per unregistered finder and read the
+    answer back off ``self.timer_channels`` - an emit-then-read nested inside a push the
+    Controller was already running. ``RawDataController`` resolves the channels now, so
+    what is left here is combobox population and nothing else.
+    """
+    mocker.patch.object(MetaView, "update_available_plugins", return_value=None)
+
+    view.update_available_plugins(
+        {"MetaReader": ["R1"], "MetaEventFinder": ["EF1", "EF2"]}
+    )
+
+    assert view.analysis_time_limits == {}
 
 
 # ---------------------------------------------------------------------------
@@ -618,18 +648,24 @@ def test_handle_find_events_none_params_aborts(view, mocker):
 # ---------------------------------------------------------------------------
 
 
-def test_handle_commit_events_calls_start_writer(view, mocker):
+def test_handle_commit_events_emits_a_typed_intent(view, mocker):
+    """The first half of a commit asks what the output already holds."""
     view._extract_commit_event_parameters = mocker.Mock(return_value=("W1", [0]))
-    view._start_writer = mocker.Mock()
     view._handle_commit_events({"writer": "W1", "channel": ["0"]})
-    view._start_writer.assert_called_once_with("W1", [0])
+    view.commit_statuses_requested.emit.assert_called_once_with("W1", [0])
+
+
+def test_handle_commit_events_normalises_a_bare_channel(view, mocker):
+    """``_start_writer`` used to coerce this; the intent carries a list either way."""
+    view._extract_commit_event_parameters = mocker.Mock(return_value=("W1", 0))
+    view._handle_commit_events({"writer": "W1", "channel": ["0"]})
+    view.commit_statuses_requested.emit.assert_called_once_with("W1", [0])
 
 
 def test_handle_commit_events_extraction_failure(view, mocker):
     view._extract_commit_event_parameters = mocker.Mock(side_effect=ValueError("bad"))
-    view._start_writer = mocker.Mock()
     view._handle_commit_events({})
-    view._start_writer.assert_not_called()
+    view.commit_statuses_requested.emit.assert_not_called()
     view.logger.error.assert_called()
 
 
@@ -640,12 +676,9 @@ def test_handle_commit_events_extraction_failure(view, mocker):
 
 def test_handle_timer_no_eventfinder_does_nothing(view, mocker):
     """When finder == 'No Eventfinder', no dialog should open."""
-    mocker.patch("poriscope.plugins.analysistabs.RawDataView.TimeWidget")
+    time_widget = mocker.patch("poriscope.plugins.analysistabs.RawDataView.TimeWidget")
     view._handle_timer({"eventfinder": "No Eventfinder"})
-    # TimeWidget should not be instantiated
-    # If TimeWidget was patched, confirm it was never called
-    # (easiest check: global_signal never touched)
-    view.global_signal.emit.assert_not_called()
+    time_widget.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -740,6 +773,25 @@ def test_shift_range_and_update_plot_empty_indices_aborts(view, mocker):
     view._handle_plot_events.assert_not_called()
 
 
+def test_shift_below_zero_is_reported_on_the_status_panel(view, mocker):
+    """
+    Declining the shift is correct; saying so only on the console was not.
+
+    Shifting the event index left past 0 expands to nothing, which the method has always
+    logged as "Indices must be positive" - a string an EventAnalysis e2e test pins - while
+    the user saw the arrow simply stop responding.
+    """
+    _setup_shift_plot(view, mocker)
+    view._expand_event_indices.return_value = []
+    params = {"eventfinder": "EF", "filter": "F", "channel": ["0"], "event_index": [0]}
+
+    view._shift_range_and_update_plot(params, "left")
+
+    view._handle_plot_events.assert_not_called()
+    view.add_text_to_display.emit.assert_called_once()
+    assert "below 0" in view.add_text_to_display.emit.call_args[0][0]
+
+
 def test_shift_range_and_update_plot_empty_text_aborts(view, mocker):
     view.rawdatacontrols.event_index_lineEdit.text.return_value = ""
     view._extract_plot_event_parameters = mocker.Mock(return_value=("EF", "F", [0], []))
@@ -751,20 +803,52 @@ def test_shift_range_and_update_plot_empty_text_aborts(view, mocker):
 
 
 # ---------------------------------------------------------------------------
-# _start_writer
+# the unfiltered-run confirmation
 # ---------------------------------------------------------------------------
 
 
-def test_start_writer_emits_signal_per_channel(view):
-    view._start_writer("W1", [0, 1])
-    # Should emit for each channel then run_generators
-    assert view.global_signal.emit.call_count == 2
-    view.run_generators.emit.assert_called_once_with("W1")
+def test_find_events_asks_before_running_unfiltered(view, mocker):
+    """
+    Running an event finder with no filter can register every sample as an event.
+
+    On a noisy trace that grinds for a very long time and is easy to mistake for a hang.
+    Cancelling does work - the abort flag is read at every chunk boundary - but a chunk
+    holding that many events takes long enough that it can look unresponsive. So the
+    launch asks first.
+    """
+    view._start_eventfinder = mocker.Mock()
+    view._extract_event_parameters = mocker.Mock(return_value=("EF1", "No Filter", [0]))
+    view.confirm_unfiltered_run = mocker.Mock(return_value=True)
+
+    view._handle_find_events({})
+
+    view.confirm_unfiltered_run.assert_called_once_with("Event finding")
+    view._start_eventfinder.assert_called_once()
 
 
-def test_start_writer_single_channel_as_int_converted(view):
-    # A non-list channel is normalised to a one-element list and committed, the
-    # same way EventAnalysisView._start_writer handles it.
-    view._start_writer("W1", 0)
-    assert view.global_signal.emit.call_count == 1
-    view.run_generators.emit.assert_called_once_with("W1")
+def test_declining_the_unfiltered_confirmation_runs_nothing(view, mocker):
+    """Answering No has to stop the launch, not merely warn about it."""
+    view._start_eventfinder = mocker.Mock()
+    view._extract_event_parameters = mocker.Mock(return_value=("EF1", "No Filter", [0]))
+    view.confirm_unfiltered_run = mocker.Mock(return_value=False)
+
+    view._handle_find_events({})
+
+    view._start_eventfinder.assert_not_called()
+
+
+def test_a_selected_filter_is_not_second_guessed(view, mocker):
+    """The confirmation is about the unfiltered case only; a real filter just runs."""
+    view._start_eventfinder = mocker.Mock()
+    view._extract_event_parameters = mocker.Mock(return_value=("EF1", "LowPass_0", [0]))
+    view.confirm_unfiltered_run = mocker.Mock(return_value=True)
+
+    view._handle_find_events({})
+
+    view.confirm_unfiltered_run.assert_not_called()
+    view._start_eventfinder.assert_called_once()
+
+
+# _start_writer is gone: the commit call lives in
+# RawDataController.commit_events, which registers the generator with the Model itself.
+# Its per-channel and bare-channel behaviour is asserted there and just above.

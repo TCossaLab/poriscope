@@ -31,7 +31,7 @@ But the point is, every house still needs all of them.
 
 So, you create a blueprint called ``HousePlan``. It doesn’t build the house — it just tells you what’s absolutely required.
 
-This is exactly what our ``MetaXXXX`` classes do. They are a base structure. On their own, they don’t do anything yet — but they define what must exist for a real analysis tab to work. Some methods come ready to use, and others are left for you to customize — those are marked with ``@abstractmethod``.
+This is exactly what our ``MetaXXXX`` classes do. They are a base structure. On their own they are not a working plugin — but they define what must exist for a real plugin, a data plugin or an analysis tab, to work, and they already carry much of the machinery that runs it. Some methods come ready to use, and others are left for you to customize — those are marked with ``@abstractmethod``.
 
 Now Let’s Build a Real House
 -----------------------------
@@ -47,5 +47,5 @@ So, in Programmer Talk:
 
 .. code-block:: text
 
-   MetaXXXX = HousePlan → defines what every analysis tab must have (but doesn’t build one)
-   CustomXXX = SmartHouse → follows the rules, but creates a fully functional, unique tab
+   MetaXXXX = HousePlan → defines what every plugin of its kind must have (but doesn’t build one)
+   CustomXXX = SmartHouse → follows the rules, but creates a fully functional, unique plugin

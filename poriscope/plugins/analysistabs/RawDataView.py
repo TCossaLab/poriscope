@@ -24,43 +24,97 @@
 # Alejandra Carolina González González
 # Kyle Briggs
 
+import bisect
 import logging
+import math
 import os
 import warnings
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union, override
+from typing import (
+    Any,
+    Dict,
+    List,
+    Mapping,
+    Optional,
+    Sequence,
+    Tuple,
+    Union,
+    override,
+)
 
 import numpy as np
 import numpy.typing as npt
-from fast_histogram import histogram1d
 from PySide6.QtCore import Signal, Slot
-from PySide6.QtWidgets import QBoxLayout, QFileDialog, QHBoxLayout, QMessageBox
+from PySide6.QtWidgets import QFileDialog, QMessageBox
 
 from poriscope.plugins.analysistabs.utils.rawdatacontrols import RawDataControls
-from poriscope.plugins.analysistabs.utils.walkthrough_mixin import (
-    WalkthroughMixin,
-    WalkthroughStep,
-)
 from poriscope.utils.DocstringDecorator import inherit_docstrings
 from poriscope.utils.LogDecorator import log
-from poriscope.utils.MetaView import MetaView
+from poriscope.utils.MetaEventTabView import MetaEventTabView
 from poriscope.views.widgets.time_widget import TimeWidget
+from poriscope.views.widgets.walkthrough_mixin import (
+    WalkthroughStep,
+)
 
 
 @inherit_docstrings
-class RawDataView(MetaView, WalkthroughMixin):
+class RawDataView(MetaEventTabView):
     """
-    Subclass of MetaView for visualizing raw signal data and PSD plots.
+    Subclass of MetaEventTabView for visualizing raw signal data and PSD plots.
 
     Handles plot rendering, signal responses, and interactions with readers, filters, and event finders.
     """
 
+    #: Asks the Controller for the baseline statistics of the channels about to be
+    #: plotted. The fitting is ``RawDataModel``'s, and the answer arrives as the
+    #: ``baseline_stats`` argument of ``update_plot``.
+    baseline_stats_requested = Signal(object, list, list, object)
+
+    #: Asks the Controller for a reader's channel list, answered through
+    #: ``update_channels``. The Controller calls the reader itself, so one that cannot be
+    #: read is reported rather than failing silently on the way back.
+    reader_channels_requested = Signal(str)
+
+    #: Asks the Controller to load a trace and optionally filter it, for plotting.
+    #: reader, channels, start, length, filter key ("" for none), baseline wanted.
+    #: The answer arrives as ``set_trace_data``.
+    trace_data_requested = Signal(str, list, float, float, str, bool)
+
+    #: The same request, for the PSD path. Separate rather than a mode flag so each
+    #: intent names what it is for and carries only what that tail needs. The answer
+    #: arrives as ``set_trace_for_psd``.
+    psd_data_requested = Signal(str, list, float, float, str)
+
+    #: Asks the Controller for one channel's events, ready to plot. eventfinder,
+    #: channel, event indices, filter key ("" for none). The Controller checks the
+    #: finder's state, bounds the indices, resolves the filter and loads each event;
+    #: the answer arrives as ``set_event_plot_data``.
+    event_plot_requested = Signal(str, int, list, str)
+
+    #: Asks the Controller to commit this tab's found events through a writer, one
+    #: channel at a time: writer, channels, overwrite. Unlike the other request signals
+    #: this one expects no answer: the plugin hands back a generator, which the
+    #: Controller registers with the Model and runs. ``overwrite`` is True once the user
+    #: has confirmed replacing any channel the output already held.
+    commit_requested = Signal(str, list, bool)
+
+    #: Asks the Controller which of these channels the writer's output already holds:
+    #: writer, channels. The answer arrives as ``set_commit_statuses``, because the
+    #: prompt that follows belongs to the View and the look-up does not.
+    commit_statuses_requested = Signal(str, list)
+
+    #: Asks the Controller which of these channels the finder has already completed.
+    #: eventfinder, channels, filter key. The answer arrives as
+    #: ``set_eventfinding_statuses``, because the prompt that follows it belongs to the
+    #: View and the call that answers it does not.
+    eventfinding_statuses_requested = Signal(str, list, str)
+
+    #: The second half of the same launch: the channels the user approved, each paired
+    #: with the ranges to search, plus the filter key. Same generator shape as
+    #: ``commit_requested`` - no answer is expected.
+    eventfinding_requested = Signal(str, list, str)
+
     logger = logging.getLogger(__name__)
     calculate_psd = Signal(list, float)
-
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        super().__init__(*args, **kwargs)
-        self._init()
-        self._init_walkthrough()
 
     @log(logger=logger)
     @override
@@ -68,63 +122,20 @@ class RawDataView(MetaView, WalkthroughMixin):
         """Initialize the RawDataView-specific attributes."""
 
         self.analysis_time_limits: Dict[str, Dict[int, Dict[str, Any]]] = {}
-        self.timer_channels: Sequence[int] = []
 
     @log(logger=logger)
-    @override
-    def _set_control_area(self, layout: QBoxLayout) -> None:
+    def _build_controls(self) -> RawDataControls:
         """
-        Set up the control area layout by embedding the RawDataControls widget.
+        Build the tab's controls panel and keep it under this tab's own name.
 
-        :param layout: The layout where controls will be added.
-        :type layout: QBoxLayout
+        ``MetaView._set_control_area`` connects it and places it in the layout; the
+        named attribute is kept because it is used throughout this tab.
+
+        :return: the controls panel
+        :rtype: RawDataControls
         """
         self.rawdatacontrols = RawDataControls()
-        self.rawdatacontrols.actionTriggered.connect(self.handle_parameter_change)
-        self.rawdatacontrols.edit_processed.connect(self.handle_edit_triggered)
-        self.rawdatacontrols.add_processed.connect(self.handle_add_triggered)
-        self.rawdatacontrols.delete_processed.connect(self.handle_delete_triggered)
-
-        controlsAndAnalysisLayout = QHBoxLayout()
-        controlsAndAnalysisLayout.setContentsMargins(0, 0, 0, 0)
-
-        # Add the rawdatacontrols directly to the main layout
-        controlsAndAnalysisLayout.addWidget(self.rawdatacontrols, stretch=1)
-
-        layout.setSpacing(0)
-        layout.addLayout(controlsAndAnalysisLayout, stretch=1)
-
-    @log(logger=logger)
-    @override
-    def _reset_actions(self, axis_type: str = "2d") -> None:
-        """
-        Clears the figure and reinitializes axes. This will also add a flag to the tab action history if @register_action is being used to keep track of actions. Only actions applied after the most recent call to this function will be recreated if the related file is loaded.
-
-        :param axis_type: Either '2d' or '3d' to determine plot projection.
-        :type axis_type: str
-        """
-        pass
-
-    @log(logger=logger)
-    def _factors(self, n: int) -> Tuple[int, int]:
-        """
-        Determine the factor pair (rows, cols) closest to a square layout.
-
-        :param n: Total number of plots.
-        :type n: int
-        :return: (rows, columns) representing subplot grid dimensions.
-        :rtype: Tuple[int, int]
-        """
-        diff = n
-        min_diff_pair = (1, n)
-        while diff > 2:
-            factor_pairs = [
-                (i, n // i) for i in range(1, int(n**0.5) + 1) if n % i == 0
-            ]
-            min_diff_pair = min(factor_pairs, key=lambda pair: abs(pair[0] - pair[1]))
-            diff = min_diff_pair[1] - min_diff_pair[0]
-            n += 1
-        return min_diff_pair
+        return self.rawdatacontrols
 
     @log(logger=logger)
     def get_save_filename(self) -> str:
@@ -146,21 +157,24 @@ class RawDataView(MetaView, WalkthroughMixin):
     def update_plot(
         self,
         data: Sequence[npt.NDArray[np.float64]],
+        time_bases: Sequence[npt.NDArray[np.float64]],
         channels: Sequence[int],
         start: float = 0,
-        baseline: bool = False,
+        baseline_stats: Optional[List[Optional[Tuple[float, float, float]]]] = None,
     ) -> None:
         """
         Update the plot area with the provided data across multiple channels in a grid layout.
 
         :param data: One array of current samples per channel.
         :type data: Sequence[npt.NDArray[np.float64]]
+        :param time_bases: One time axis per channel in seconds from the start of the recording, index-aligned with data. Built by MetaModel.time_bases, since the axis is a property of the samples and the rate they were taken at rather than of the drawing.
+        :type time_bases: Sequence[npt.NDArray[np.float64]]
         :param channels: List of channel identifiers corresponding to the data.
         :type channels: Sequence[int]
         :param start: Time offset added to the plotted time axis, in seconds.
         :type start: float
-        :param baseline: If True, overlay baseline mean and standard deviation statistics on each subplot.
-        :type baseline: bool
+        :param baseline_stats: Per-channel (amplitude, mean, stdev) from the Model, index-aligned with data, or None to draw no baseline overlay at all. An individual entry may be None where that channel's fit failed.
+        :type baseline_stats: Optional[List[Optional[Tuple[float, float, float]]]]
         """
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", UserWarning)
@@ -171,21 +185,21 @@ class RawDataView(MetaView, WalkthroughMixin):
 
         num_rows, num_cols = self._factors(num_channels)
 
-        for i, (channel_data, channel) in enumerate(zip(data, channels)):
+        for i, (channel_data, time, channel) in enumerate(
+            zip(data, time_bases, channels, strict=True)
+        ):
             ax = self.figure.add_subplot(
                 num_rows, num_cols, i + 1
             )  # Create subplots in a grid
-            time = np.arange(len(channel_data)) / self.plot_samplerate + float(start)
             ax.plot(time, channel_data / 1000, zorder=1)
 
-            if baseline is True:
-                try:
-                    amp, mean, std = self._get_baseline_stats(channel_data / 1000)
-                except ValueError as e:
-                    self.logger.warning(
-                        f"Unable to compute baseline stats for channel {channel}: {e}"
-                    )
-                else:
+            # Computed by RawDataModel and handed over by the Controller.
+            # A None entry is a channel whose fit failed, which the
+            # Controller has already logged - the trace is still drawn, without a band.
+            stats = baseline_stats[i] if baseline_stats is not None else None
+            if stats is not None:
+                amp, mean, std = stats
+                if True:
                     # Add green rectangle for mean ± 3*std
                     ax.axhspan(
                         mean - 3 * std,
@@ -266,10 +280,16 @@ class RawDataView(MetaView, WalkthroughMixin):
         num_rows, num_cols = self._factors(num_channels)
 
         for i, (psd, rms, channel) in enumerate(zip(psd_data, rms_data, channels)):
-            max_index = np.searchsorted(rms, 0.999 * rms[-1], side="right")
-            max_freq = 10 ** np.ceil(np.log10(frequency[max_index]))
-            psd_min = 10 ** (np.floor(np.log10(np.min(psd[:max_index])) * 2) / 2)
-            psd_max = 10 ** (np.ceil(np.log10(np.max(psd)) * 2) / 2)
+            # Axis limits are only ever view elements - nothing outside this method
+            # reads them and they are not exported with the data - so they are derived
+            # here rather than asked of the Model. The stdlib does all of it: the upper
+            # frequency bound is where the integrated RMS noise reaches 99.9% of its
+            # final value, which is a bisect on a monotonic array, and the bounds are
+            # rounded outward to half-decades so a log axis lands on readable gridlines.
+            max_index = bisect.bisect_right(rms, 0.999 * rms[-1])
+            max_freq = 10 ** math.ceil(math.log10(frequency[max_index]))
+            psd_min = 10 ** (math.floor(math.log10(min(psd[:max_index])) * 2) / 2)
+            psd_max = 10 ** (math.ceil(math.log10(max(psd)) * 2) / 2)
 
             ax = self.figure.add_subplot(
                 num_rows, num_cols, i + 1
@@ -313,22 +333,6 @@ class RawDataView(MetaView, WalkthroughMixin):
         self._commit_cache()
 
     @log(logger=logger)
-    def update_plot_data(self, data: Optional[Any] = None) -> None:
-        """
-        Update the stored plot data for future use.
-
-        :param data: Data dictionary or raw array to store.
-        :type data: Optional[Any]
-        """
-        self.logger.debug(f"Received data for plotting: {data}")
-        if not isinstance(data, dict):
-            self.plot_data = data
-        else:
-            self.plot_data = data[
-                "data"
-            ]  # event data now returns a dict - this should be refactored to handle this explicitly
-
-    @log(logger=logger)
     def update_plot_samplerate(self, samplerate: float) -> None:
         """
         Update the sampling rate used for plotting.
@@ -340,14 +344,32 @@ class RawDataView(MetaView, WalkthroughMixin):
         self.plot_samplerate = samplerate
 
     @log(logger=logger)
-    def update_timer_channels(self, channels: Sequence[int]) -> None:
+    def register_eventfinder_channels(
+        self, channels_by_finder: Mapping[str, Sequence[int]]
+    ) -> None:
         """
-        Update the list of channels for event timing.
+        Give each event finder not seen before a default time range for every channel.
 
-        :param channels: Valid channel indices.
-        :type channels: Sequence[int]
+        The channel lookup is ``RawDataController``'s: it resolves every finder up front
+        and hands the answers down. A finder absent from ``channels_by_finder``, or
+        present with no channels, is left **unregistered** so the next push retries it.
+        Registering one whose lookup failed would leave it with empty time limits
+        permanently, since nothing asks again for a finder it already knows.
+
+        A finder already in ``analysis_time_limits`` keeps the ranges the user set on it;
+        only genuinely new finders get defaults.
+
+        :param channels_by_finder: channels per event finder, for finders that answered
+        :type channels_by_finder: Mapping[str, Sequence[int]]
+        :return: None
+        :rtype: None
         """
-        self.timer_channels = channels
+        for finder, channels in channels_by_finder.items():
+            if finder in self.analysis_time_limits or not channels:
+                continue
+            self.analysis_time_limits[finder] = {
+                ch: {"start": 0, "end": 0} for ch in channels
+            }
 
     @log(logger=logger)
     @override
@@ -371,53 +393,9 @@ class RawDataView(MetaView, WalkthroughMixin):
             self.rawdatacontrols.update_writers(writers)
             self.rawdatacontrols.update_eventfinders(eventfinders)
 
-            for finder in eventfinders:
-                if finder not in self.analysis_time_limits.keys():
-                    # Cleared first so that a failed dispatch cannot seed this
-                    # finder with the previous finder's channels, and the finder
-                    # is registered only on success so the next call retries it.
-                    self.timer_channels = []
-                    self.global_signal.emit(
-                        "MetaEventFinder",
-                        finder,
-                        "get_channels",
-                        (),
-                        "update_timer_channels",
-                        (),
-                    )
-                    if not self.timer_channels:
-                        self.logger.error(
-                            f"Could not get channels for {finder}, not registering it yet"
-                        )
-                        continue
-                    self.analysis_time_limits[finder] = {
-                        ch: {"start": 0, "end": 0} for ch in self.timer_channels
-                    }
-
             self.logger.info("ComboBoxes updated with available readers and filters")
         except Exception as e:
             self.logger.info(f"Updating ComboBoxes failed: {repr(e)}")
-
-    @log(logger=logger)
-    def notify_plugin_state_changed(
-        self, metaclass: str, plugin_key: str, reason: str
-    ) -> None:
-        """
-        This tab does not currently react to any plugin_state_changed
-        notifications.
-
-        :param metaclass: The metaclass of the plugin instance whose state
-                        changed.
-        :type metaclass: str
-        :param plugin_key: The unique key identifying the plugin instance that
-                        changed.
-        :type plugin_key: str
-        :param reason: A short string identifying what kind of change occurred.
-        :type reason: str
-        :return: None
-        :rtype: None
-        """
-        pass
 
     @log(logger=logger)
     @Slot(str, str, tuple)
@@ -462,215 +440,6 @@ class RawDataView(MetaView, WalkthroughMixin):
             self.export_plot_data.emit()
         else:
             self._handle_other_actions(action_name, parameters)
-
-    @log(logger=logger)
-    def _get_baseline_stats(
-        self, data: npt.NDArray[np.float64]
-    ) -> npt.NDArray[np.float64]:
-        """
-        Get the local amplitude, mean, and standard deviation for a chunk of data. Assumes data is rectified.
-
-
-        :param data: Chunk of timeseries data to compute statistics on.
-        :type data: npt.NDArray[np.float64]
-        :return: Array of local amplitude, mean, and standard deviation, in that order.
-        :rtype: npt.NDArray[np.float64]
-        :raises ValueError: If a baseline histogram width cannot be estimated for this chunk (no variation in the data), or if the underlying Gaussian fit fails.
-        """
-        top = np.max(data)
-        bottom = np.min(data)
-
-        width = 2 * (top - bottom) / len(data) ** (1 / 3)
-        if width <= 0:
-            raise ValueError(
-                "Unable to estimate a baseline histogram width for this chunk (no variation in the data)"
-            )
-        bins = int((top - bottom) / width)
-        hist = histogram1d(data, range=[bottom, top], bins=bins)
-        centers = np.linspace(bottom, top, len(hist))
-        max_index = np.argmax(hist)
-
-        maxval = hist[max_index]
-
-        # top_index: the first index where hist[i] <= maxval/5 starting from max_index
-        try:
-            top_index = next(
-                i for i in range(max_index, len(hist)) if hist[i] <= maxval / 5
-            )
-        except StopIteration:
-            top_index = len(hist) - 1
-
-        # bottom_index: the first index where hist[i] <= maxval/5 going backwards from max_index
-        try:
-            bottom_index = next(
-                i for i in range(max_index, -1, -1) if hist[i] <= maxval / 5
-            )
-        except StopIteration:
-            bottom_index = 0
-
-        half_width = np.minimum(top_index - max_index, max_index - bottom_index)
-        top_index = max_index + half_width
-        bottom_index = max_index - half_width
-
-        top = centers[top_index]
-        bottom = centers[bottom_index]
-
-        hist = hist[bottom_index:top_index]
-        centers = centers[bottom_index:top_index]
-
-        max_index = np.argmax(hist)
-        maxval = hist[max_index]
-
-        # top_index: the first index where hist[i] <= 0.6*maxval starting from max_index
-        try:
-            top_index = next(
-                i for i in range(max_index, len(hist)) if hist[i] <= 0.6 * maxval
-            )
-        except StopIteration:
-            top_index = len(hist) - 1
-
-        # bottom_index: the first index where hist[i] <= 0.6*maxval going backwards from max_index
-        try:
-            bottom_index = next(
-                i for i in range(max_index, -1, -1) if hist[i] <= 0.6 * maxval
-            )
-        except StopIteration:
-            bottom_index = 0
-
-        try:
-            baseline_params = np.array(
-                self._gaussian_fit(
-                    hist,
-                    centers,
-                    centers[max_index],
-                    np.absolute(
-                        centers[top_index] - centers[bottom_index]
-                    ),  # take an overestimate for std, seems to perform better overall
-                )
-            )
-        except ValueError:
-            raise
-        return baseline_params
-
-    @log(logger=logger)
-    def _gaussian(self, x: float, A: float, m: float, s: float) -> float:
-        """
-        Calculate the value of a 1D gaussian distribution at a location x with the given paramters
-
-        :param x: location to calculate the value
-        :type x: float
-        :param A: amplitude of the gaussian
-        :type A: float
-        :param m: mean of the gaussian
-        :type m: float
-        :param s: standard deviation of the gaussian
-        :type s: float
-        :return: value of the gaussian distribution at x
-        :rtype: float
-        """
-        return A * np.exp(-((x - m) ** 2) / (2 * s**2))
-
-    @log(logger=logger)
-    def _gaussian_fit(
-        self,
-        histogram: npt.NDArray[np.float64],
-        bins: npt.NDArray[np.float64],
-        mean_guess: float,
-        stdev_guess: float,
-    ) -> tuple[float, float, float]:
-        """
-        Fit a Gaussian function to histogram data using a linearized least squares approach.
-
-        :param histogram: Array of counts in each histogram bin.
-        :type histogram: npt.NDArray[np.float64]
-        :param bins: Center positions of histogram bins.
-        :type bins: npt.NDArray[np.float64]
-        :param mean_guess: Initial estimate of the Gaussian mean.
-        :type mean_guess: float
-        :param stdev_guess: Initial estimate of the Gaussian standard deviation.
-        :type stdev_guess: float
-        :return: Tuple containing (amplitude, mean, standard deviation) of the fitted Gaussian.
-        :rtype: tuple[float, float, float]
-        :raises ValueError: If standard deviation guess is invalid or the fit fails.
-        """
-        if stdev_guess <= 0:
-            raise ValueError("Invalid standard deviation guess")
-
-        amp = np.max(histogram)
-        max_loc = int(np.argmax(histogram))
-
-        # Clean Windowing: A gaussian drops to ~1.1% height at 3 standard deviations.
-        threshold = np.exp(-4.5) * amp
-
-        # --- CONTIGUOUS MASKING LOGIC ---
-        # Walk left from the peak until we hit the threshold or the array edge
-        left_bound = max_loc
-        while left_bound > 0 and histogram[left_bound - 1] > threshold:
-            left_bound -= 1
-
-        # Walk right from the peak until we hit the threshold or the array edge
-        right_bound = max_loc
-        while (
-            right_bound < len(histogram) - 1 and histogram[right_bound + 1] > threshold
-        ):
-            right_bound += 1
-
-        # Slice the arrays using the exclusive right bound
-        y_slice = histogram[left_bound : right_bound + 1]
-        x_slice = bins[left_bound : right_bound + 1]
-
-        localy = y_slice / amp
-        localx = (x_slice - mean_guess) / stdev_guess
-
-        # Vectorized Matrix Math
-        x0 = localy
-        x1 = localx * x0
-        x2 = localx * x1
-        x3 = localx * x2
-        x4 = localx * x3
-
-        x0_sum = np.sum(x0)
-        x1_sum = np.sum(x1)
-        x2_sum = np.sum(x2)
-        x3_sum = np.sum(x3)
-        x4_sum = np.sum(x4)
-
-        # localy is strictly > 0 because of the threshold mask, so log is safe
-        lny = np.log(localy) * localy
-        xlny = localx * lny
-        x2lny = localx * xlny
-
-        lny_sum = np.sum(lny)
-        xlny_sum = np.sum(xlny)
-        x2lny_sum = np.sum(x2lny)
-
-        xTx = np.array(
-            [
-                [x4_sum, x3_sum, x2_sum],
-                [x3_sum, x2_sum, x1_sum],
-                [x2_sum, x1_sum, x0_sum],
-            ]
-        )
-
-        xnlny = np.array([x2lny_sum, xlny_sum, lny_sum])
-        xTxinv = np.linalg.inv(xTx)
-        params = np.dot(xTxinv, xnlny)
-
-        if params[0] >= 0:
-            raise ValueError("Unable to estimate standard deviation (inverted fit)")
-
-        stdev = np.sqrt(-1.0 / (2 * params[0]))
-
-        # 'mean_offset' here is the shift in standardized units (mlocal)
-        mean_offset = stdev**2 * params[1]
-        amplitude = np.exp(params[2] + mean_offset**2 / (2 * stdev**2))
-
-        # --- THE CRITICAL MATH FIX ---
-        stdev *= stdev_guess
-        mean = (mean_offset * stdev_guess) + mean_guess  # The missing multiplier
-        amplitude *= amp
-
-        return amplitude, mean, np.absolute(stdev)
 
     @log(logger=logger)
     def _handle_timer(self, parameters: Dict[str, Any]) -> None:
@@ -735,7 +504,14 @@ class RawDataView(MetaView, WalkthroughMixin):
         self.logger.debug(f"Expanded list for plotting: {expanded}")
 
         if not expanded:
+            # The log line is kept verbatim: an EventAnalysis e2e test asserts on this
+            # exact text. What was missing is the user-visible half - the shift correctly
+            # declines to go below event 0, but said so only on the console.
             self.logger.warning("Indices must be positive")
+            self.add_text_to_display.emit(
+                "Cannot shift further: event indices cannot go below 0",
+                self.__class__.__name__,
+            )
             return
 
         # Proceed with valid shift
@@ -759,27 +535,21 @@ class RawDataView(MetaView, WalkthroughMixin):
         return self.rawdatacontrols.event_index_lineEdit.text().strip()
 
     @log(logger=logger)
-    def validate_single_channel(self, channels: Sequence[int]) -> None:
-        """
-        Ensure only one channel is selected.
-
-        :param channels: List of selected channel indices.
-        :type channels: Sequence[int]
-        :raises ValueError: If more than one channel is selected.
-        """
-        if len(channels) > 1:
-            raise ValueError(
-                "Unable to plot events from multiple channels, select only one"
-            )
-
-    @log(logger=logger)
     def _handle_plot_events(self, parameters: Dict[str, Any]) -> None:
         """
-        Handle loading and plotting of selected events based on provided parameters.
+        Ask the Controller for the selected events, ready to plot.
+
+        One request rather than five separate look-ups - the finder's status and event
+        count, the filter callable, the samplerate, then the events themselves. They are
+        only useful together, and asking separately meant parking each answer where the
+        next line read it back: the event count in particular bounds which indices are in
+        range, so a stale one decides which events get plotted. The plot happens in
+        ``set_event_plot_data``.
 
         :param parameters: Dictionary containing eventfinder, filter, channels, and event indices.
         :type parameters: Dict[str, Any]
-        :raises Exception: If retrieving the eventfinding status or the number of found events fails.
+        :return: None
+        :rtype: None
         """
         try:
             eventfinder, data_filter, channels, events = (
@@ -793,168 +563,46 @@ class RawDataView(MetaView, WalkthroughMixin):
                 "Unable to plot events from multiple channels, select only one"
             )
             return
-        else:
-            channel = channels[0]
 
-        try:
-            get_status_args = (channel,)
-            self.global_signal.emit(
-                "MetaEventFinder",
-                eventfinder,
-                "get_eventfinding_status",
-                get_status_args,
-                "set_eventfinding_status",
-                (),
-            )
-        except Exception as e:
-            raise e
+        self.event_plot_requested.emit(
+            eventfinder, channels[0], list(events or []), self._filter_key(parameters)
+        )
 
-        if self.eventfinding_status is False:
+    @log(logger=logger)
+    def set_event_plot_data(
+        self,
+        event_data: Sequence[npt.NDArray[np.float64]],
+        time_bases: Sequence[npt.NDArray[np.float64]],
+        event_indices: Sequence[int],
+    ) -> None:
+        """
+        Plot the events the Controller loaded, or report that there were none.
+
+        ``event_indices`` is the surviving list: an event the finder could not supply is
+        dropped by the Controller, so the traces and the indices labelling them stay
+        aligned without this method having to prune anything.
+
+        :param event_data: one array of samples per surviving event
+        :type event_data: Sequence[npt.NDArray[np.float64]]
+        :param time_bases: one time axis per event in microseconds, index-aligned with event_data and built by MetaModel.time_bases
+        :type time_bases: Sequence[npt.NDArray[np.float64]]
+        :param event_indices: the event indices that produced data, index-aligned with event_data
+        :type event_indices: Sequence[int]
+        :return: None
+        :rtype: None
+        """
+        if not len(event_data):
             self.add_text_to_display.emit(
-                f"Eventfinding not finished in channel {channel}",
-                self.__class__.__name__,
+                "No data available for plotting", self.__class__.__name__
             )
             return
-
-        try:
-            get_num_events_args = (channel,)
-            self.global_signal.emit(
-                "MetaEventFinder",
-                eventfinder,
-                "get_num_events_found",
-                get_num_events_args,
-                "set_num_events_allowed",
-                (),
-            )
-        except Exception as e:
-            raise e
-
-        if self.num_events_allowed == 0:
-            self.add_text_to_display.emit(
-                f"No events to display from channel {channel}", self.__class__.__name__
-            )
-            return
-
-        if events and max(events) >= self.num_events_allowed:
-            self.logger.info(
-                f"Some event indices were out of bounds, truncating indices above {self.num_events_allowed - 1}"
-            )
-
-        if events:
-            events = [x for x in events if x < self.num_events_allowed]
-            # get the data filter to use
-            try:
-                data_filter_args = ()
-                self.data_filter: Optional[Callable] = None
-                if data_filter != "No Filter":
-                    self.global_signal.emit(
-                        "MetaFilter",
-                        data_filter,
-                        "get_callable_filter",
-                        data_filter_args,
-                        "set_event_filter",
-                        (),
-                    )
-            except Exception:
-                self.data_filter = None
-                self.logger.warning(
-                    f"Unable to load filter {data_filter}, proceeding without a filter"
-                )
-
-            # set plot samplerate
-            try:
-                self.global_signal.emit(
-                    "MetaEventFinder",
-                    eventfinder,
-                    "get_samplerate",
-                    (),
-                    "update_plot_samplerate",
-                    (),
-                )
-            except Exception:
-                self.plot_samplerate = 1
-                self.logger.warning(
-                    "Unable to get samplerate, time axis will indicate raw data index"
-                )
-
-            try:
-                # Load data and update plot
-                data_list = []
-                for event in events[:]:  # to allow removal if needed
-                    self._load_event_data(eventfinder, channel, event, self.data_filter)
-                    if self.plot_data is not None:
-                        data_list.append(self.plot_data)
-                    else:
-                        self.logger.warning(
-                            f"No data loaded for event {event}, skipping"
-                        )
-                        events.remove(event)
-
-                if data_list:
-                    self._update_event_plot(data_list, events)
-                else:
-                    self.add_text_to_display.emit(
-                        "No data available for plotting", self.__class__.__name__
-                    )
-            except Exception:
-                self.logger.error("Unable to plot event data")
-
-    @log(logger=logger)
-    def _start_writer(self, writer: str, channels: Union[int, List[int]]) -> None:
-        """
-        Start a writer plugin to commit events for the specified channels.
-
-        :param writer: Identifier for the writer plugin.
-        :type writer: str
-        :param channels: Channel index, or list of channel indices.
-        :type channels: Union[int, List[int]]
-        """
-        if not isinstance(channels, list):
-            channels = [channels]
-        try:
-            for channel in channels:
-                write_events_args = (channel,)
-                # Emit the signal with the correct handler name for when the data is ready
-                ret_args = (channel, writer, "MetaWriter")
-                self.global_signal.emit(
-                    "MetaWriter",
-                    writer,
-                    "commit_events",
-                    write_events_args,
-                    "set_generator",
-                    ret_args,
-                )
-        except (IndexError, ValueError) as e:
-            self.logger.error(
-                f"Unable to set up writer {writer} for channel {channel}: {repr(e)}"
-            )
-        else:
-            self.run_generators.emit(writer)
-
-    @log(logger=logger)
-    def set_num_events_allowed(self, num_events: int) -> None:
-        """
-        Set the number of events available for display.
-
-        :param num_events: Maximum valid event index + 1.
-        :type num_events: int
-        """
-        self.num_events_allowed = num_events
-
-    @log(logger=logger)
-    def set_eventfinding_status(self, status: bool) -> None:
-        """
-        Set the current event finding status.
-
-        :param status: Whether event finding is complete.
-        :type status: bool
-        """
-        self.eventfinding_status = status
+        self._update_event_plot(event_data, time_bases, event_indices)
 
     @log(logger=logger)
     def _update_event_plot(
         self,
         event_data: Sequence[npt.NDArray[np.float64]],
+        time_bases: Sequence[npt.NDArray[np.float64]],
         event_indices: Sequence[int],
     ) -> None:
         """
@@ -962,6 +610,8 @@ class RawDataView(MetaView, WalkthroughMixin):
 
         :param event_data: a list of event data to plot in a grid
         :type event_data: Sequence[npt.NDArray[np.float64]]
+        :param time_bases: One time axis per event in microseconds, index-aligned with event_data. Built by MetaModel.time_bases.
+        :type time_bases: Sequence[npt.NDArray[np.float64]]
         :param event_indices: the indices of the events to plot
         :type event_indices: Sequence[int]
         """
@@ -973,11 +623,12 @@ class RawDataView(MetaView, WalkthroughMixin):
         num_events = len(event_indices)
         num_rows, num_cols = self._factors(num_events)
 
-        for i, (data, event) in enumerate(zip(event_data, event_indices)):
+        for i, (data, time, event) in enumerate(
+            zip(event_data, time_bases, event_indices, strict=True)
+        ):
             ax = self.figure.add_subplot(
                 num_rows, num_cols, i + 1
             )  # Create subplots in a grid
-            time = np.arange(len(data)) / self.plot_samplerate * 1e6
             ax.plot(time, data / 1000)
 
             x_label = r"Time (us)"
@@ -1023,6 +674,13 @@ class RawDataView(MetaView, WalkthroughMixin):
             return
 
         if eventfinder is not None and channels is not None and data_filter is not None:
+            # Asked at the intent boundary rather than inside _start_eventfinder: this is
+            # where the user's click arrives, and it keeps the confirmation out of the
+            # mechanism that the characterization suite drives directly.
+            if data_filter == "No Filter" and not self.confirm_unfiltered_run(
+                "Event finding"
+            ):
+                return
             self.logger.info("Valid parameters found: Starting event finder.")
 
             self._start_eventfinder(eventfinder, data_filter, channels)
@@ -1051,14 +709,83 @@ class RawDataView(MetaView, WalkthroughMixin):
             return
 
         if writer is not None and channels is not None:
-            self._start_writer(writer, channels)
+            # Ask what the output already holds before committing anything; the prompt
+            # comes back through set_commit_statuses.
+            self.commit_statuses_requested.emit(
+                writer, channels if isinstance(channels, list) else [channels]
+            )
+
+    @log(logger=logger)
+    def set_commit_statuses(
+        self,
+        writer: str,
+        statuses: List[Tuple[int, Optional[str]]],
+        experiment_name: str,
+        output_file: str,
+    ) -> None:
+        """
+        Confirm replacing any channel the output already holds, then ask for the commit.
+
+        One prompt per held channel, as the event-finding prompt does, so declining one
+        keeps that channel's events and skips only it. A stored experiment name that
+        differs from ``experiment_name`` is named in the prompt for the user to decide
+        on: the events file keys on channel alone, so a Yes replaces the other
+        experiment's events.
+
+        :param writer: the writer plugin's key
+        :type writer: str
+        :param statuses: (channel, stored experiment name or None) for each channel that answered
+        :type statuses: List[Tuple[int, Optional[str]]]
+        :param experiment_name: the experiment name this commit would store
+        :type experiment_name: str
+        :param output_file: the writer's output file, for the prompt
+        :type output_file: str
+        :return: None
+        :rtype: None
+        """
+        approved: List[int] = []
+        for channel, stored in statuses:
+            if stored is not None:
+                text = (
+                    f"Channel {channel} already holds events in {output_file}. "
+                    "Delete them and commit this run's events instead?"
+                )
+                if stored != experiment_name:
+                    text += (
+                        f"\n\nWarning: they were committed as experiment "
+                        f"'{stored}', not '{experiment_name}'."
+                    )
+                reply = QMessageBox.question(
+                    self,
+                    "Confirmation",
+                    text,
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.No,
+                )
+                if reply == QMessageBox.No:
+                    self.add_text_to_display.emit(
+                        f"Did not commit channel {channel}; its events already in "
+                        f"{output_file} were kept",
+                        self.__class__.__name__,
+                    )
+                    continue
+            approved.append(channel)
+
+        if approved:
+            self.commit_requested.emit(writer, approved, True)
 
     @log(logger=logger)
     def _start_eventfinder(
         self, eventfinder: str, data_filter: str, channels: Union[int, List[int]]
     ) -> None:
         """
-        Start the event finding operation on the specified channels with an optional filter.
+        Ask the Controller which of these channels the finder has already completed.
+
+        Two round trips rather than one, because the launch interleaves a plugin call
+        with a question for the user: each channel's status is looked up, and only then
+        is the user prompted before redoing a finished channel. The prompt belongs in the
+        View and the look-up does not, so the statuses go out, the answers come back
+        through ``set_eventfinding_statuses``, and the approved channels go out again.
 
         :param eventfinder: Identifier for the event finder plugin.
         :type eventfinder: str
@@ -1066,116 +793,103 @@ class RawDataView(MetaView, WalkthroughMixin):
         :type data_filter: str
         :param channels: Channel index, or list of channel indices, to run the event finder on.
         :type channels: Union[int, List[int]]
-        :raises Exception: If setting up the data filter fails.
+        :return: None
+        :rtype: None
         """
-        self.logger.debug(
-            "Starting event finder with eventfinder=%s, data_filter=%s, channels=%s",
-            eventfinder,
-            data_filter,
-            channels,
-        )
-
         if not isinstance(channels, list):
             self.logger.warning("Channels parameter is not a list, converting to list.")
             channels = [channels]
 
-        try:
-            self.data_filter = None
-            data_filter_args = ()
+        # "No Filter" collapses here, as it does for the other intents, so the Controller
+        # never has to know the placeholder's spelling.
+        filter_key = "" if data_filter in (None, "No Filter") else str(data_filter)
+        self.eventfinding_statuses_requested.emit(eventfinder, channels, filter_key)
 
-            if data_filter != "No Filter":
-                self.logger.info("Applying data filter: %s", data_filter)
-                self.global_signal.emit(
-                    "MetaFilter",
-                    data_filter,
-                    "get_callable_filter",
-                    data_filter_args,
-                    "set_event_filter",
-                    (),
+    @log(logger=logger)
+    def set_eventfinding_statuses(
+        self, eventfinder: str, statuses: List[Tuple[int, bool]], data_filter: str
+    ) -> None:
+        """
+        Confirm any already-finished channels, then ask for the approved ones to run.
+
+        The per-channel prompt is kept exactly as it was, including that declining one
+        channel skips only that channel - a coarser guard that abandoned the batch would
+        be a behaviour change.
+
+        A channel with no configured time limits stops the whole launch, as before.
+        **What changed is how it stops:** it used to raise ``KeyError`` out of this tab,
+        which was survivable while the call chain started at a Qt signal on the View. It
+        now runs inside a call from the Controller's slot, where an escaping exception
+        would reach Qt, so it is reported instead. Nothing launches either way.
+
+        :param eventfinder: the event finder plugin's key
+        :type eventfinder: str
+        :param statuses: (channel, already_finished) for each channel that answered
+        :type statuses: List[Tuple[int, bool]]
+        :param data_filter: the filter plugin's key, or "" for no filtering
+        :type data_filter: str
+        :return: None
+        :rtype: None
+        """
+        approved: List[Tuple[int, List[Tuple[float, float]]]] = []
+        for channel, finished in statuses:
+            if finished:
+                reply = QMessageBox.question(
+                    self,
+                    "Confirmation",
+                    f"Event finding was already completed in channel {channel}. Start over anyway?",
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.No,
                 )
-            else:
-                self.logger.info("No data filter applied.")
-        except Exception as e:
-            self.logger.error("Error while setting up the data filter: %s", repr(e))
-            raise
-        else:
+                if reply == QMessageBox.No:
+                    continue  # Skip this channel
             try:
-                for channel in channels:
-                    # Check status before launching
-                    self.global_signal.emit(
-                        "MetaEventFinder",
-                        eventfinder,
-                        "get_eventfinding_status",
-                        (channel,),
-                        "relay_eventfinding_status",
-                        (),
-                    )
-
-                    if self.eventfinding_status is True:
-                        reply = QMessageBox.question(
-                            self,
-                            "Confirmation",
-                            f"Event finding was already completed in channel {channel}. Start over anyway?",
-                            QMessageBox.Yes | QMessageBox.No,
-                            QMessageBox.No,
-                        )
-                        if reply == QMessageBox.No:
-                            continue  # Skip this channel
-
-                    channel_limits = self.analysis_time_limits[eventfinder][channel]
-
-                    # Get list of ranges
-                    if "ranges" in channel_limits:
-                        ranges = list(
-                            channel_limits["ranges"]
-                        )  # Copy to avoid mutation
-                    else:
-                        start = channel_limits.get("start", 0.0)
-                        end = channel_limits.get("end", 0.0) or 0.0
-                        ranges = [(start, end)]
-
-                    self.logger.info(
-                        "Found %d range(s) for channel %s: %s",
-                        len(ranges),
-                        channel,
-                        ranges,
-                    )
-
-                    # Prepare args: ONE call to find_events per channel
-                    find_events_args = (
-                        channel,
-                        ranges,
-                        1.0,
-                        self.data_filter,
-                    )  # ranges is a list of (start, end)
-                    ret_args = (channel, eventfinder, "MetaEventFinder")  # unchanged
-
-                    self.logger.info(
-                        "Emitting bundled find_events for channel %s with %d range(s)",
-                        channel,
-                        len(ranges),
-                    )
-                    self.global_signal.emit(
-                        "MetaEventFinder",
-                        eventfinder,
-                        "find_events",
-                        find_events_args,
-                        "set_generator",
-                        ret_args,
-                    )
-
-                self.logger.info(
-                    "All channels processed. Triggering run_generators for eventfinder=%s",
-                    eventfinder,
+                approved.append(
+                    (channel, self._ranges_for_channel(eventfinder, channel))
                 )
-                self.run_generators.emit(eventfinder)
-
-            except (IndexError, ValueError) as e:
+            except KeyError:
                 self.logger.error(
-                    "Failed to set up generators for eventfinder=%s: %s",
-                    eventfinder,
-                    repr(e),
+                    f"No time limits configured for {eventfinder} channel {channel}; "
+                    "not starting event finding"
                 )
+                self.add_text_to_display.emit(
+                    f"No time range is set for channel {channel}, so event finding did "
+                    "not start",
+                    self.__class__.__name__,
+                )
+                return
+
+        if approved:
+            self.eventfinding_requested.emit(eventfinder, approved, data_filter)
+
+    @log(logger=logger)
+    def _ranges_for_channel(
+        self, eventfinder: str, channel: int
+    ) -> List[Tuple[float, float]]:
+        """
+        The time ranges the user set for one channel of one event finder.
+
+        An explicit ``ranges`` list is copied so the finder cannot mutate the tab's
+        state; otherwise the single start/end pair becomes a one-element list, where a
+        falsy end means "to the end of the signal" and the finder resolves it.
+
+        A finder or channel with no configured limits propagates ``KeyError`` from the
+        lookup, which the caller catches and reports. It is not declared as ``:raises:``
+        because there is no ``raise`` statement here for pydoclint to match it against.
+
+        :param eventfinder: the event finder plugin's key
+        :type eventfinder: str
+        :param channel: the channel whose limits are wanted
+        :type channel: int
+        :return: the ranges to search, in seconds
+        :rtype: List[Tuple[float, float]]
+        """
+        channel_limits = self.analysis_time_limits[eventfinder][channel]
+        if "ranges" in channel_limits:
+            return list(channel_limits["ranges"])  # Copy to avoid mutation
+        start = channel_limits.get("start", 0.0)
+        end = channel_limits.get("end", 0.0) or 0.0
+        return [(start, end)]
 
     @log(logger=logger)
     def _extract_plot_event_parameters(
@@ -1191,7 +905,7 @@ class RawDataView(MetaView, WalkthroughMixin):
         """
         eventfinder = parameters.get("eventfinder")
         data_filter = parameters.get("filter")
-        channels = [int(ch) for ch in parameters["channel"]]
+        channels = self._channels_from(parameters)
         events = parameters.get("event_index")
         return eventfinder, data_filter, channels, events
 
@@ -1209,34 +923,8 @@ class RawDataView(MetaView, WalkthroughMixin):
         """
         eventfinder = parameters.get("eventfinder")
         data_filter = parameters.get("filter")
-        channels = [int(ch) for ch in parameters["channel"]]
+        channels = self._channels_from(parameters)
         return eventfinder, data_filter, channels
-
-    @log(logger=logger)
-    def _extract_commit_event_parameters(
-        self, parameters: Dict[str, Any]
-    ) -> Tuple[Optional[str], List[int]]:
-        """
-        Extract writer and channels from parameters.
-
-        :param parameters: Input dictionary.
-        :type parameters: Dict[str, Any]
-        :return: (writer, channels)
-        :rtype: Tuple[Optional[str], List[int]]
-        """
-        writer = parameters.get("writer")
-        channels = [int(ch) for ch in parameters["channel"]]
-        return writer, channels
-
-    @log(logger=logger)
-    def set_data_filter_function(self, data_filter: Callable) -> None:
-        """
-        Set the callcable function to filter data
-
-        :param data_filter: a callable function
-        :type data_filter: Callable
-        """
-        self.data_filter = data_filter
 
     @log(logger=logger)
     def _shift_range_and_update_trace(
@@ -1324,32 +1012,79 @@ class RawDataView(MetaView, WalkthroughMixin):
 
         # Load data and update plot
         if self._validate_plot_parameters(reader, channels, start, length):
-            data_list = []
-            for channel in channels[:]:  # to allow removal if needed
-                self._load_data(reader, channel, start, length)
-                if self.plot_data is not None:
-                    data_list.append(self.plot_data)
-                else:
-                    self.logger.debug(f"No data loaded for channel {channel}, skipping")
-                    channels.remove(channel)
-
-            # Apply filter if needed
-            data_filter = parameters.get("filter")
-            if data_filter and data_filter != "No Filter":
-                filtered_data_list = []
-                for channel_data in data_list:
-                    filtered_data = self._apply_filter(data_filter, channel_data)
-                    filtered_data_list.append(filtered_data)
-                data_list = filtered_data_list
-
-            if data_list:
-                self.update_plot(data_list, channels, start, baseline=baseline)
-            else:
-                self.add_text_to_display.emit(
-                    "No data available for plotting", self.__class__.__name__
-                )
+            # Loading and filtering are the Controller's, so the plot happens in
+            # set_trace_data when it hands the channels back.
+            self.trace_data_requested.emit(
+                reader, channels, start, length, self._filter_key(parameters), baseline
+            )
         else:
             self.logger.error("Invalid parameters for plotting data")
+
+    @log(logger=logger)
+    def _filter_key(self, parameters: Dict[str, Any]) -> str:
+        """
+        Read the selected filter out of a parameter dict as a plain key.
+
+        The controls panel reports "no filter" as either a missing key or the literal
+        ``"No Filter"``; both collapse to the empty string here so the intent signals can
+        carry a plain ``str`` rather than an ``object``.
+
+        :param parameters: the parameter dict the controls panel emitted
+        :type parameters: Dict[str, Any]
+        :return: the filter plugin's key, or "" if none is selected
+        :rtype: str
+        """
+        data_filter = parameters.get("filter")
+        if not data_filter or data_filter == "No Filter":
+            return ""
+        return str(data_filter)
+
+    @log(logger=logger)
+    def set_trace_data(
+        self,
+        data_list: Sequence[npt.NDArray[np.float64]],
+        time_bases: Sequence[npt.NDArray[np.float64]],
+        channels: Sequence[int],
+        start: float,
+        baseline: bool,
+    ) -> None:
+        """
+        Plot the trace the Controller loaded, or report that there was none.
+
+        The tail of ``_handle_load_data_and_update_plot``. ``channels`` is the
+        **surviving** list - a channel the reader could not supply is dropped by the
+        Controller - so it and ``data_list`` stay index-aligned without this method
+        having to prune anything.
+
+        :param data_list: one array per surviving channel
+        :type data_list: Sequence[npt.NDArray[np.float64]]
+        :param time_bases: one time axis per channel, index-aligned with data_list
+        :type time_bases: Sequence[npt.NDArray[np.float64]]
+        :param channels: the channels that produced data, index-aligned with data_list
+        :type channels: Sequence[int]
+        :param start: the start time being plotted from
+        :type start: float
+        :param baseline: whether the user asked for the baseline band
+        :type baseline: bool
+        :return: None
+        :rtype: None
+        """
+        if not len(data_list):
+            self.add_text_to_display.emit(
+                "No data available for plotting", self.__class__.__name__
+            )
+            return
+        if baseline:
+            # The fitting is the Model's, so the plot happens when the Controller
+            # hands the statistics back.
+            # The axes travel with the request rather than being rebuilt on the way
+            # back: the Controller resolved the samplerate to make them and does not
+            # have it in scope in the answering slot.
+            self.baseline_stats_requested.emit(
+                data_list, list(time_bases), channels, start
+            )
+        else:
+            self.update_plot(data_list, time_bases, channels, start)
 
     @log(logger=logger)
     def _handle_load_data_and_update_psd(self, parameters: Dict[str, Any]) -> None:
@@ -1370,35 +1105,44 @@ class RawDataView(MetaView, WalkthroughMixin):
 
         # Load data and update plot
         if self._validate_plot_parameters(reader, channels, start, length):
-            data_list = []
-            for channel in channels[:]:  # to allow removal if needed
-                self._load_data(reader, channel, start, length)
-                if self.plot_data is not None:
-                    data_list.append(self.plot_data)
-                else:
-                    self.logger.debug(f"No data loaded for channel {channel}, skipping")
-                    channels.remove(channel)
-
-            # Apply filter if needed
-            data_filter = parameters.get("filter")
-            if data_filter and data_filter != "No Filter":
-                filtered_data_list = []
-                for channel_data in data_list:
-                    filtered_data = self._apply_filter(data_filter, channel_data)
-                    filtered_data_list.append(filtered_data)
-                data_list = filtered_data_list
-            if data_list:
-                self.calculate_psd.emit(data_list, self.plot_samplerate)
-                psd_channels = [channels[i] for i in self.psd_kept_indices]
-                self.update_psd(
-                    self.Pxx_list, self.rms_list, self.psd_frequency, psd_channels
-                )
-            else:
-                self.add_text_to_display.emit(
-                    "No data available for psd calculation", self.__class__.__name__
-                )
+            # As on the trace path, the loading is the Controller's and the PSD
+            # happens in set_trace_for_psd.
+            self.psd_data_requested.emit(
+                reader, channels, start, length, self._filter_key(parameters)
+            )
         else:
             self.logger.error("Invalid parameters for plotting data")
+
+    @log(logger=logger)
+    def set_trace_for_psd(
+        self,
+        data_list: Sequence[npt.NDArray[np.float64]],
+        channels: Sequence[int],
+    ) -> None:
+        """
+        Compute and draw the PSD of the trace the Controller loaded.
+
+        Only the *loading* happens elsewhere; the PSD computation below asks this tab's
+        own Controller through ``calculate_psd`` and reads the answer back off
+        ``psd_kept_indices`` and friends on the next statement. That read is safe because
+        the connection is direct, so ``set_psd`` has already run by the time it returns -
+        an invariant worth knowing before anyone makes the connection queued.
+
+        :param data_list: one array per surviving channel
+        :type data_list: Sequence[npt.NDArray[np.float64]]
+        :param channels: the channels that produced data, index-aligned with data_list
+        :type channels: Sequence[int]
+        :return: None
+        :rtype: None
+        """
+        if not len(data_list):
+            self.add_text_to_display.emit(
+                "No data available for psd calculation", self.__class__.__name__
+            )
+            return
+        self.calculate_psd.emit(list(data_list), self.plot_samplerate)
+        psd_channels = [channels[i] for i in self.psd_kept_indices]
+        self.update_psd(self.Pxx_list, self.rms_list, self.psd_frequency, psd_channels)
 
     @log(logger=logger)
     def set_psd(
@@ -1426,35 +1170,6 @@ class RawDataView(MetaView, WalkthroughMixin):
         self.psd_kept_indices = kept_indices
 
     @log(logger=logger)
-    def _apply_filter(
-        self, data_filter: str, channel_data: npt.NDArray[np.float64]
-    ) -> npt.NDArray[np.float64]:
-        """
-        Apply a data filter using a signal-based plugin system.
-
-        :param data_filter: Name of the filter plugin.
-        :type data_filter: str
-        :param channel_data: Data to filter.
-        :type channel_data: npt.NDArray[np.float64]
-        :return: Filtered data if successful, else the original data.
-        :rtype: npt.NDArray[np.float64]
-        """
-        try:
-            filter_data_args = (channel_data,)
-            self.global_signal.emit(
-                "MetaFilter",
-                data_filter,
-                "filter_data",
-                filter_data_args,
-                "update_plot_data",
-                (),
-            )
-            return self.plot_data  # Assuming the plot_data is updated by the filter
-        except Exception as e:
-            self.logger.error(f"Unable to filter data with {data_filter}: {repr(e)}")
-            return channel_data  # Return unfiltered data if the filter fails
-
-    @log(logger=logger)
     def _extract_plot_parameters(
         self, parameters: Dict[str, Any]
     ) -> Tuple[Optional[str], List[int], float, float]:
@@ -1467,7 +1182,7 @@ class RawDataView(MetaView, WalkthroughMixin):
         :rtype: Tuple[Optional[str], List[int], float, float]
         """
         reader = parameters.get("reader")
-        channels = [int(ch) for ch in parameters["channel"]]
+        channels = self._channels_from(parameters)
         start = float(parameters["start_time"])
         length = float(parameters["length"])
         return reader, channels, start, length
@@ -1497,92 +1212,6 @@ class RawDataView(MetaView, WalkthroughMixin):
         return all([reader, channel is not None, start is not None, length is not None])
 
     @log(logger=logger)
-    def _load_event_data(
-        self,
-        eventfinder: Optional[str],
-        channel: int,
-        event: int,
-        data_filter: Optional[Callable],
-    ) -> None:
-        """
-        Load data for a single event from the eventfinder.
-
-        :param eventfinder: Name of the event finder plugin.
-        :type eventfinder: Optional[str]
-        :param channel: Channel number.
-        :type channel: int
-        :param event: Event index.
-        :type event: int
-        :param data_filter: Callable filter to apply, if any.
-        :type data_filter: Optional[Callable]
-        """
-        try:
-            load_data_args = (channel, event, data_filter, False)
-            # Emit the signal with the correct handler name for when the data is ready
-            self.global_signal.emit(
-                "MetaEventFinder",
-                eventfinder,
-                "get_single_event_data",
-                load_data_args,
-                "update_plot_data",
-                (),
-            )
-        except (IndexError, ValueError) as e:
-            self.logger.error(
-                f"Unable to retrieve requested data for event {event}: {repr(e)}"
-            )
-
-    @log(logger=logger)
-    def _load_data(
-        self,
-        reader: Optional[str],
-        channels: Union[int, List[int]],
-        start: float,
-        length: float,
-    ) -> None:
-        """
-        Load data from the specified reader plugin.
-
-        :param reader: Reader plugin name.
-        :type reader: Optional[str]
-        :param channels: Channel index, or list of channel indices.
-        :type channels: Union[int, List[int]]
-        :param start: Start time.
-        :type start: float
-        :param length: Duration.
-        :type length: float
-        """
-        try:
-            self.global_signal.emit(
-                "MetaReader", reader, "get_samplerate", (), "update_plot_samplerate", ()
-            )
-        except Exception as e:
-            self.plot_samplerate = 1
-            self.logger.warning(
-                f"Unable to get samplerate: {repr(e)}. X axis will denote raw data indices"
-            )
-        try:
-            # If channels is not a list, make it a list
-            if not isinstance(channels, list):
-                channels = [channels]
-
-            for channel in channels:
-                load_data_args = (start, length, channel)
-                # Emit the signal with the correct handler name for when the data is ready
-                self.global_signal.emit(
-                    "MetaReader",
-                    reader,
-                    "load_data",
-                    load_data_args,
-                    "update_plot_data",
-                    (),
-                )
-        except (IndexError, ValueError) as e:
-            self.logger.error(
-                f"Unable to retrieve requested data for channels {channels}: {repr(e)}"
-            )
-
-    @log(logger=logger)
     def _handle_other_actions(
         self, action_name: str, parameters: Dict[str, Any]
     ) -> None:
@@ -1596,9 +1225,7 @@ class RawDataView(MetaView, WalkthroughMixin):
         """
         reader = parameters.get("reader")
         if reader and reader != "No Reader":
-            self.global_signal.emit(
-                "MetaReader", reader, "get_channels", (), "update_channels", ()
-            )
+            self.reader_channels_requested.emit(reader)
 
     @log(logger=logger)
     def update_channels(self, channels: Sequence[int]) -> None:

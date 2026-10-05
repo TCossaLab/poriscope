@@ -100,9 +100,6 @@ class TestInstantiation:
         ]:
             assert hasattr(mc, attr), f"Missing button: {attr}"
 
-    def test_active_popups_empty(self, mc):
-        assert mc.active_popups == {}
-
 
 # ===========================================================================
 # _on_sizes_checkbox_toggled
@@ -425,23 +422,6 @@ class TestPluginManagers:
 
 
 # ===========================================================================
-# clear_popup_reference
-# ===========================================================================
-
-
-class TestClearPopupReference:
-    def test_removes_existing_popup(self, mc):
-        cb = mc.create_comboBox(mc)
-        mc.active_popups[cb] = object()
-        mc.clear_popup_reference(cb)
-        assert cb not in mc.active_popups
-
-    def test_ignores_missing_popup(self, mc):
-        cb = mc.create_comboBox(mc)
-        mc.clear_popup_reference(cb)  # should not raise
-
-
-# ===========================================================================
 # collect_parameters
 # ===========================================================================
 
@@ -532,21 +512,6 @@ class TestOnLoaderChanged:
         mc.db_loader_comboBox.addItem("new_loader")
         mc.db_loader_comboBox.setCurrentIndex(mc.db_loader_comboBox.count() - 1)
         assert "loader_changed" in received
-
-
-# ===========================================================================
-# get_selected_filter_names
-# ===========================================================================
-
-
-class TestGetSelectedFilterNames:
-    def test_empty_by_default(self, mc):
-        assert mc.get_selected_filter_names() == []
-
-    def test_returns_selected_items(self, mc):
-        mc.filter_comboBox.addItem("filter_a")
-        mc.filter_comboBox.selectItem("filter_a", select=True)
-        assert "filter_a" in mc.get_selected_filter_names()
 
 
 # ===========================================================================

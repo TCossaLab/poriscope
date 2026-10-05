@@ -52,23 +52,30 @@ class IntraCUSUM(CUSUM):
         standalone: bool = False,
     ) -> Dict[str, Dict[str, Any]]:
         """
-        Get a dict populated with keys needed to initialize the filter if they are not set yet.
-        This dict must have the following structure, but Min, Max, and Options can be skipped or explicitly set to None if they are not used.
-        Type is required; Value may be omitted or set to None, both meaning there is no default and the user must supply one. All values provided must be consistent with Type.
-        EventFinder objects MUST include a MetaReader object in settings
+        Declare the settings this event fitter exposes, on top of the base contract.
 
-        .. code-block:: python
+        Called by poriscope when the plugin is instantiated or reconfigured, to build
+        the settings dialog and to sanity-check whatever the user enters; the accepted
+        values are then readable through ``self.settings``. See
+        :py:meth:`~poriscope.utils.MetaEventFitter.MetaEventFitter.get_empty_settings`
+        for the structure of the dict and what ``Type``, ``Value``, ``Min``, ``Max``, ``Options`` and
+        ``Units`` mean in it, and for the reserved keys the GUI builds file pickers
+        from.
 
-          settings = {'Parameter 1': {'Type': <int, float, str, bool>,
-                                           'Value': <value> or None,
-                                           'Options': [<option_1>, <option_2>, ... ] or None,
-                                           'Min': <min_value> or None,
-                                           'Max': <max_value> or None
-                                          },
-                          ...
-                          }
+        The ``super()`` call supplies the mandatory ``"MetaEventLoader"`` key, which is how
+        this plugin is wired to its data source.
 
-        :param globally_available_plugins: a dict containing all data plugins that exist to date, keyed by metaclass. Must include "MetaReader" as a key, with explicitly set Type MetaReader.
+        The keys this plugin adds:
+
+        - ``Step Size`` (pA), ``Sensitivity``, ``Rise Time`` (us) and ``Max Sublevels``
+          - as in ``CUSUM``, which this fitter extends.
+        - ``Intraevent Threshold`` (pA) - the depth below the event's own carrier level
+          at which an intra-event excursion is recognised, as opposed to a sublevel.
+        - ``Intraevent Hysteresis`` (pA) - how far the signal must come back up before
+          that excursion is considered over, so noise at the threshold does not split
+          one excursion into several.
+
+        :param globally_available_plugins: a dict containing all data plugins that exist to date, keyed by metaclass. Must include "MetaEventLoader" as a key, with explicitly set Type MetaEventLoader.
         :type globally_available_plugins: Optional[Dict[str, List[str]]]
         :param standalone: False if this is called as part of a GUI, True otherwise. Default False
         :type standalone: bool

@@ -153,20 +153,23 @@ class BesselFilter(MetaFilter):
         standalone: bool = False,
     ) -> Dict[str, Dict[str, Any]]:
         """
-        Get a dict populated with keys needed to initialize the filter if they are not set yet.
-        This dict must have the following structure, but Min, Max, and Options can be skipped or explicitly set to None if they are not used.
-        Type is required; Value may be omitted or set to None, both meaning there is no default and the user must supply one. All values provided must be consistent with Type.
+        Declare the settings this filter exposes, on top of the base contract.
 
-        .. code-block:: python
+        Called by poriscope when the plugin is instantiated or reconfigured, to build
+        the settings dialog and to sanity-check whatever the user enters; the accepted
+        values are then readable through ``self.settings``. See
+        :py:meth:`~poriscope.utils.MetaFilter.MetaFilter.get_empty_settings`
+        for the structure of the dict and what ``Type``, ``Value``, ``Min``, ``Max``, ``Options`` and
+        ``Units`` mean in it, and for the reserved keys the GUI builds file pickers
+        from.
 
-          settings = {'Parameter 1': {'Type': <int, float, str, bool>,
-                                           'Value': <value> or None,
-                                           'Options': [<option_1>, <option_2>, ... ] or None,
-                                           'Min': <min_value> or None,
-                                           'Max': <max_value> or None
-                                          },
-                          ...
-                          }
+        The keys this plugin adds:
+
+        - ``Cutoff`` (Hz) - the -3 dB corner frequency of the low-pass.
+        - ``Samplerate`` (Hz) - the rate of the data to be filtered, which sets the
+          normalised frequency the coefficients are built at.
+        - ``Poles`` - the filter order, 2 to 10 in even steps. Higher is a steeper
+          roll-off and a longer settling time on an event edge.
 
         :param globally_available_plugins: a dict containing all data plugins that exist to date, keyes by metaclass
         :type globally_available_plugins: Optional[Dict[str, List[str]]]

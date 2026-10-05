@@ -68,12 +68,11 @@ git flow release tag prefix.
 Quality Control via Pre-commit
 ------------------------------
 
-After installation, the following checks run automatically on every commit:
-
-- **Black** – automatic code formatting
-- **Ruff** – linting and safe auto-fixes
-- **Mypy** – static type checking
-- **check-added-large-files** – prevents committing large files
+After installation, the following checks run automatically on every commit: ``ruff``
+(strict, no auto-fix), ``ruff-plugin-security``, ``mypy``, ``pydoclint``,
+``plugin-module-level``, ``settings-schema``, ``text-encoding`` and
+``check-added-large-files``. **Black** and ``ruff --fix`` run only when you ask for them,
+with ``pre-commit run --all-files --hook-stage manual``.
 
 If any check fails, the commit is blocked.
 
@@ -91,7 +90,6 @@ It performs tasks such as:
 
 - Updating Python dependencies when ``requirements.txt`` changes
 - Regenerating autodoc and Sphinx documentation
-- Building native wavelet libraries when required
 
 For a detailed explanation of this automation, see:
 

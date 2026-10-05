@@ -25,14 +25,12 @@
 # Alejandra Carolina González González
 
 import copy
-import inspect
 import logging
 import sys
-import typing
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
-from PySide6.QtCore import QObject, Qt, Slot
+from PySide6.QtCore import QObject, Slot
 
 from poriscope.controllers.DataPluginController import DataPluginController
 from poriscope.models.main_model import MainModel
@@ -42,7 +40,7 @@ from poriscope.views.main_view import MainView
 
 class MainController(QObject):
     """
-    App-shell controller: owns the DataPluginController and every instantiated analysis-tab controller, wires up their signals, and acts as the central relay for the app's signal-bus dispatch pattern (see handle_global_signal/handle_data_plugin_controller_signal), by which one tab or plugin can invoke a method on another plugin instance, or on the DataPluginController itself, without holding a direct reference to it. Also drives session/plugin-history persistence and restore.
+    App-shell controller: owns the DataPluginController and every instantiated analysis-tab controller, and wires their signals together. A tab reaches a data plugin through MetaModel.call rather than through this class; what is wired here is the typed create/edit/delete trio onto the DataPluginController singleton, plus the display, progress and history signals. Also drives session/plugin-history persistence and restore.
     """
 
     logger = logging.getLogger(__name__)
@@ -51,7 +49,6 @@ class MainController(QObject):
         super().__init__()
         self.main_model = main_model
         self.main_view = main_view
-        self.config_path = Path(Path(__file__).resolve().parent, "..", "configs")
 
         # analysis tab managers
         self.analysis_tabs: Dict[str, Any] = (
@@ -158,7 +155,11 @@ class MainController(QObject):
         # view and is otherwise persisted lazily, only when some other plugin-history
         # event happens to fire. Without this, editing filters and quitting without
         # touching a data plugin or clicking Save Session would silently lose them.
-        self.save_session()
+        # Skipped when nothing is open: an empty history is either already saved (every
+        # delete autosaves) or means nothing happened since launch or Reset Session, and
+        # saving it wrote {} over the session the next Restore would have loaded.
+        if self.plugin_history:
+            self.save_session()
         for key, val in self.analysis_tabs.items():
             if val:
                 val.handle_kill_all_workers(key, exiting=True)
@@ -192,10 +193,12 @@ class MainController(QObject):
     @Slot(str)
     def update_user_plugin_location(self, user_plugin_loc: str) -> None:
         self.main_model.update_app_config("User Plugin Folder", user_plugin_loc)
+        # The folder as well as its parent - see the same loop in `main_app`, which
+        # runs at startup where this runs when the folder is changed.
         plugin_path = Path(user_plugin_loc).resolve()
-        parent_path = plugin_path.parent
-        if str(parent_path) not in sys.path:
-            sys.path.append(str(parent_path))
+        for importable in (plugin_path.parent, plugin_path):
+            if str(importable) not in sys.path:
+                sys.path.append(str(importable))
         self.refresh_available_plugins()
 
     @log(logger=logger)
@@ -373,13 +376,6 @@ class MainController(QObject):
         self.main_view.add_text_to_display(message, "MainController")
 
     @log(logger=logger)
-    @Slot(str, str, object)
-    def get_plugin_instance(
-        self, metaclass: str, key: str, callback: Callable[[object], None]
-    ) -> None:
-        callback(self.data_plugin_controller.get_plugin_instance(metaclass, key))
-
-    @log(logger=logger)
     def _lookup_historical_settings(
         self, metaclass: str, subclass: str
     ) -> Optional[Dict[str, Any]]:
@@ -405,273 +401,6 @@ class MainController(QObject):
         return None
 
     @log(logger=logger)
-    def _binding_error(self, func: Callable, args: tuple) -> Optional[str]:
-        """
-        Report why func would refuse args as its positional arguments, without calling it. Arity is checked here, up front at the dispatch boundary, so that a TypeError raised from inside a callee is never mistaken for a call-site mismatch and the callee is never invoked twice. The reason is taken from Signature.bind itself rather than reconstructed, so the caller can log which argument is missing or surplus rather than leaving the reader to diff a signature against an argument list. Callables that cannot be introspected at all (C-implemented, or otherwise opaque) report no error, so the dispatcher falls through and calls them rather than refusing to.
-
-        :param func: The callable whose signature is to be tested.
-        :type func: Callable
-        :param args: Positional arguments to test against the signature.
-        :type args: tuple
-        :return: None if the call would bind or func cannot be introspected, otherwise a description of the mismatch.
-        :rtype: Optional[str]
-        """
-        try:
-            signature = inspect.signature(func)
-        except (TypeError, ValueError):
-            return None
-        try:
-            signature.bind(*args)
-        except TypeError as e:
-            return f"{signature} cannot accept arguments {args}: {e}"
-        return None
-
-    @log(logger=logger)
-    def _return_annotation(self, func: Callable) -> Any:
-        """
-        Resolve a callable's declared return type, preferring evaluated annotations over their string spellings and reporting inspect.Signature.empty if it has none that can be read.
-
-        :param func: The callable to introspect.
-        :type func: Callable
-        :return: The resolved return annotation, or inspect.Signature.empty if it cannot be determined.
-        :rtype: Any
-        """
-        try:
-            return inspect.signature(func, eval_str=True).return_annotation
-        except (TypeError, ValueError, NameError, AttributeError) as e:
-            self.logger.debug(
-                f"Could not evaluate the annotations of {getattr(func, '__name__', func)}, "
-                f"falling back to their unevaluated form: {repr(e)}"
-            )
-        try:
-            return inspect.signature(func).return_annotation
-        except (TypeError, ValueError):
-            return inspect.Signature.empty
-
-    @log(logger=logger)
-    def _unpack_result(self, func: Callable, result: Any) -> tuple:
-        """
-        Render the result of a dispatched call as the leading positional arguments for its callback.
-
-        The signal protocol splats a tuple return across the callback's parameters and passes anything else as a single argument. Which of those applies is decided here by func's *declared* return type rather than by inspecting the value, because the two are indistinguishable at runtime: a method returning a pair and a method returning two values produce the same object, and a method with an Optional return type that returns None is not returning an empty argument list. Every function under poriscope/ is annotated and none of them defer annotation evaluation, so the declared type is always available and is an exact discriminator.
-
-        A callee that declares a tuple return and produces something else has broken its own contract; that is logged and the value is passed as a single argument rather than coerced, since tuple() would silently shred a string and raise on None.
-
-        Annotations are resolved with eval_str=True so that a plugin written with `from __future__ import annotations` - which no module under poriscope/ uses, but a user plugin dropped into the user plugin folder may - is read as the type it declares rather than as the string spelling of it. A plugin whose annotations cannot be resolved at all falls back to the unevaluated ones, and one with no usable return type is treated as returning a single value.
-
-        :param func: The callable whose result is being unpacked, consulted for its return annotation.
-        :type func: Callable
-        :param result: The value func returned.
-        :type result: Any
-        :return: The positional arguments representing that result.
-        :rtype: tuple
-        """
-        annotation = self._return_annotation(func)
-        if annotation is tuple or typing.get_origin(annotation) is tuple:
-            if isinstance(result, tuple):
-                return result
-            self.logger.error(
-                f"{getattr(func, '__name__', func)} declares a tuple return but returned "
-                f"{type(result).__name__}; passing it as a single argument"
-            )
-        return (result,)
-
-    @log(logger=logger)
-    def _call_return_function(
-        self,
-        return_function: Callable,
-        called_function: Callable,
-        result: Any,
-        ret_args: tuple,
-        context: str,
-    ) -> None:
-        """
-        Call return_function with the result of a dispatched call followed by ret_args. The result is rendered into positional arguments by _unpack_result, and the whole argument list is checked against return_function's signature before the call, so a mismatch is reported once and never guessed at. Exceptions raised by return_function itself are not caught here.
-
-        :param return_function: The callback to invoke.
-        :type return_function: Callable
-        :param called_function: The callable whose result is being relayed, consulted for its return annotation.
-        :type called_function: Callable
-        :param result: The value returned by the dispatched call.
-        :type result: Any
-        :param ret_args: Additional positional arguments appended after the result.
-        :type ret_args: tuple
-        :param context: Description of the originating call, used only in the mismatch log message.
-        :type context: str
-        """
-        call_args = self._unpack_result(called_function, result) + ret_args
-        problem = self._binding_error(return_function, call_args)
-        if problem is not None:
-            self.logger.error(
-                f"Not calling return function "
-                f"{getattr(return_function, '__name__', return_function)}, which was to "
-                f"receive the result of {context}: {problem}"
-            )
-            return
-        return_function(*call_args)
-
-    @log(logger=logger)
-    def _dispatch_to(
-        self,
-        target: object,
-        target_label: str,
-        call_function: str,
-        call_args: tuple,
-        return_function: Optional[Callable],
-        ret_args: tuple,
-    ) -> None:
-        """
-        Look call_function up on target, call it with call_args, and relay its result to return_function. This is the whole of the signal-bus dispatch mechanism; handle_global_signal and handle_data_plugin_controller_signal differ only in what they resolve as the target, and share this body so that the two paths cannot drift apart in their guards or their diagnostics.
-
-        call_args and ret_args are taken to be tuples of positional arguments, as the signals' own signatures declare; nothing here guesses at a bare value passed in their place. Arity is checked before the call (see _binding_error), so a call that could not bind is reported and never attempted, and a TypeError raised from inside call_function is reported as such rather than being mistaken for a call-site mismatch - call_function is called at most once. The result is splatted or passed whole to return_function according to call_function's declared return type (see _unpack_result). Every failure is logged and swallowed rather than raised, since the callers are Qt slots.
-
-        :param target: The object to look call_function up on.
-        :type target: object
-        :param target_label: Human-readable identifier for target, used in log messages.
-        :type target_label: str
-        :param call_function: Name of the method to call on target.
-        :type call_function: str
-        :param call_args: Positional arguments to call_function.
-        :type call_args: tuple
-        :param return_function: Optional callable to invoke with the result of call_function.
-        :type return_function: Optional[Callable]
-        :param ret_args: Additional positional arguments appended after the result when calling return_function.
-        :type ret_args: tuple
-        """
-        func = getattr(target, call_function, None)
-        if func is None:
-            self.logger.error(f"No member {target_label}.{call_function} found")
-            return
-        if not callable(func):
-            self.logger.error(f"{target_label}.{call_function} is not callable")
-            return
-        problem = self._binding_error(func, call_args)
-        if problem is not None:
-            self.logger.error(f"Not calling {target_label}.{call_function}: {problem}")
-            return
-        try:
-            result = func(*call_args)
-        except Exception:
-            self.logger.exception(
-                f"{target_label}.{call_function} raised while executing with arguments {call_args}"
-            )
-            return
-        self.logger.debug(f"{target_label}.{call_function} returned {result}")
-        if return_function is not None:
-            try:
-                self._call_return_function(
-                    return_function,
-                    func,
-                    result,
-                    ret_args,
-                    f"{target_label}.{call_function}",
-                )
-            except Exception:
-                self.logger.exception(
-                    f"Return function "
-                    f"{getattr(return_function, '__name__', return_function)} raised "
-                    f"while handling the result of {target_label}.{call_function}"
-                )
-
-    @log(logger=logger)
-    @Slot(str, str, str, tuple, object, tuple)
-    def handle_global_signal(
-        self,
-        metaclass: str,
-        subclass_key: str,
-        call_function: str,
-        call_args: tuple,
-        return_function: Optional[Callable],
-        ret_args: tuple,
-    ) -> None:
-        """
-        Resolve (metaclass, subclass_key) to a live data plugin instance and dispatch call_function to it, so a tab or plugin can invoke a method on another plugin without holding a direct reference to it. Resolution and the call itself both happen inside the error guard, because looking up an unregistered metaclass raises rather than returning None, and this is a Qt slot, which must not let an exception escape into the C++ caller. The dispatch itself is _dispatch_to, shared with handle_data_plugin_controller_signal.
-
-        :param metaclass: The metaclass of the target plugin instance.
-        :type metaclass: str
-        :param subclass_key: The unique key of the target plugin instance.
-        :type subclass_key: str
-        :param call_function: Name of the method to call on the resolved instance.
-        :type call_function: str
-        :param call_args: Positional arguments to call_function.
-        :type call_args: tuple
-        :param return_function: Optional callable to invoke with the result of call_function.
-        :type return_function: Optional[Callable]
-        :param ret_args: Additional positional arguments appended after the result when calling return_function.
-        :type ret_args: tuple
-        """
-        self.logger.debug(
-            f"received signal: {metaclass}, {subclass_key}, {call_function}, {call_args}, {return_function}, {ret_args}"
-        )
-        target_label = f"{metaclass}/{subclass_key}"
-        try:
-            instance = self.data_plugin_controller.get_plugin_instance(
-                metaclass, subclass_key
-            )
-            if instance is None:
-                self.logger.error(
-                    f"No plugin instance found for {target_label}, unable to call {call_function}"
-                )
-                return
-            self._dispatch_to(
-                instance,
-                target_label,
-                call_function,
-                call_args,
-                return_function,
-                ret_args,
-            )
-        except Exception:
-            self.logger.exception(
-                f"Unexpected error handling global signal for {target_label}.{call_function}"
-            )
-
-    @log(logger=logger)
-    @Slot(str, str, str, tuple, object, tuple)
-    def handle_data_plugin_controller_signal(
-        self,
-        metaclass: str,
-        subclass_key: str,
-        call_function: str,
-        call_args: tuple,
-        return_function: Optional[Callable],
-        ret_args: tuple,
-    ) -> None:
-        """
-        Same dispatch mechanism as handle_global_signal, and literally the same code path (see _dispatch_to), except that call_function is looked up on the DataPluginController itself rather than on a resolved plugin instance. metaclass and subclass_key are accepted for signal-signature parity with handle_global_signal and are logged, but are not used to resolve a target here and so do not appear in this path's error messages. Used when a tab needs to invoke a DataPluginController method (e.g. to instantiate or edit a plugin) rather than a method on an existing plugin instance.
-
-        :param metaclass: Not used to resolve a target here (only logged); present for signature parity with handle_global_signal.
-        :type metaclass: str
-        :param subclass_key: Not used to resolve a target here (only logged); present for signature parity with handle_global_signal.
-        :type subclass_key: str
-        :param call_function: Name of the method to call on the DataPluginController.
-        :type call_function: str
-        :param call_args: Positional arguments to call_function.
-        :type call_args: tuple
-        :param return_function: Optional callable to invoke with the result of call_function.
-        :type return_function: Optional[Callable]
-        :param ret_args: Additional positional arguments appended after the result when calling return_function.
-        :type ret_args: tuple
-        """
-        self.logger.debug(
-            f"received signal: {metaclass}, {subclass_key}, {call_function}, {call_args}, {return_function}, {ret_args}"
-        )
-        target_label = "DataPluginController"
-        try:
-            self._dispatch_to(
-                self.data_plugin_controller,
-                target_label,
-                call_function,
-                call_args,
-                return_function,
-                ret_args,
-            )
-        except Exception:
-            self.logger.exception(
-                f"Unexpected error handling data plugin controller signal for {target_label}.{call_function}"
-            )
-
-    @log(logger=logger)
     @Slot(str, list)
     def update_available_plugins(
         self, metaclass: str, available_plugins: List[str]
@@ -680,8 +409,17 @@ class MainController(QObject):
             f"Available {metaclass} plugins updates to {available_plugins}"
         )
         self.data_plugins[metaclass] = available_plugins
+        instances = self.data_plugin_controller.get_plugin_instances()
         for val in self.analysis_tabs.values():
             if val:
+                # Instances BEFORE names, and the order is load-bearing.
+                # Handing a tab the names populates its comboboxes, and populating a
+                # combobox fires a selection change *synchronously* - which is when the
+                # tab asks the selected loader for its columns. Push the names first and
+                # that call finds an empty instance map, so the tab reports a plugin it
+                # is displaying as not registered. Both come from the same registry, so
+                # they cannot disagree about what exists; only the order can be wrong.
+                val.set_plugin_instances(instances)
                 val.update_available_plugins(self.data_plugins)
 
     @log(logger=logger)
@@ -689,22 +427,59 @@ class MainController(QObject):
     def update_plugin_history(
         self, history: Optional[Dict[str, Any]], delete_key: Optional[str]
     ) -> None:
+        """
+        Record a plugin being added, removed or renamed, then persist the session.
+
+        The two arguments form a small truth table. `history` alone adds or
+        replaces an entry; `delete_key` alone removes one; both together are a
+        rename, where the entry named by `delete_key` becomes the one `history`
+        describes. Neither is not an error - it still re-syncs and saves, which
+        is how a change to a tab's own state reaches the session file without any
+        plugin having changed.
+
+        :param history: The plugin's saved state, or None when only deleting.
+        :type history: Optional[Dict[str, Any]]
+        :param delete_key: The key being removed, or renamed away from, or None.
+        :type delete_key: Optional[str]
+        """
         if history and not delete_key:
-            if history:
-                self.plugin_history[history.pop("key")] = history
+            self.plugin_history[history.pop("key")] = history
         elif not history and delete_key:
             self.plugin_history.pop(delete_key, None)
         elif history and delete_key:
-            new_history = {}
-            for key, val in self.plugin_history.items():
-                if key == delete_key:
-                    new_history[history.pop("key")] = history
-                else:
-                    new_history[key] = val
-            self.plugin_history = new_history
+            self.plugin_history = self._renamed_history(delete_key, history)
+
         self._sync_tab_session_state_into_history()
         if not self._suppress_session_save:
             self.main_model.save_session(self.plugin_history)
+
+    @log(logger=logger)
+    def _renamed_history(
+        self, delete_key: str, history: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Rebuild the plugin history with one entry renamed, keeping its position.
+
+        Rebuilt rather than popped and reinserted, because a plugin's place in
+        the history is its place in the session file and in everything restored
+        from it. Popping the old key and adding the new one would move the
+        renamed plugin to the end, so a rename would silently reorder the user's
+        workspace.
+
+        :param delete_key: The key being renamed away from.
+        :type delete_key: str
+        :param history: The renamed plugin's state, carrying its new key.
+        :type history: Dict[str, Any]
+        :return: A new history with the entry replaced where the old one sat.
+        :rtype: Dict[str, Any]
+        """
+        renamed: Dict[str, Any] = {}
+        for key, val in self.plugin_history.items():
+            if key == delete_key:
+                renamed[history.pop("key")] = history
+            else:
+                renamed[key] = val
+        return renamed
 
     @log(logger=logger)
     def _sync_tab_session_state_into_history(self) -> None:
@@ -794,21 +569,18 @@ class MainController(QObject):
             self.main_view.sync_sidebar_highlight(view_name)
 
             # Connect other necessary signals and update plugins
-            # DirectConnection is required, not cosmetic: callers on the other end of
-            # this bus (e.g. RawDataView._apply_filter) emit global_signal/
-            # data_plugin_controller_signal and then synchronously read back a result
-            # via a return_function_name callback on the very next statement. A queued
-            # connection would silently degrade that read to stale/None data with no
-            # error and no log line.
-            self.analysis_tabs[subclass].global_signal.connect(
-                self.handle_global_signal, type=Qt.ConnectionType.DirectConnection
-            )
             self.analysis_tabs[subclass].create_plugin.connect(
                 self.data_plugin_controller.validate_and_instantiate_plugin
             )
-            self.analysis_tabs[subclass].data_plugin_controller_signal.connect(
-                self.handle_data_plugin_controller_signal,
-                type=Qt.ConnectionType.DirectConnection,
+            # Straight to the singleton, as create_plugin already was. There is no
+            # return value to carry back - the old bus passed "", () as its return
+            # function for both of these - and DataPluginController is constructed
+            # once and never reassigned, so there is nothing for a relay to resolve.
+            self.analysis_tabs[subclass].edit_plugin.connect(
+                self.data_plugin_controller.edit_plugin_settings
+            )
+            self.analysis_tabs[subclass].delete_plugin.connect(
+                self.data_plugin_controller.delete_plugin
             )
             self.analysis_tabs[subclass].plugin_state_changed.connect(
                 self.handle_plugin_state_changed
@@ -821,6 +593,13 @@ class MainController(QObject):
             )
             self.analysis_tabs[subclass].save_tab_action_history.connect(
                 self.save_tab_action_history
+            )
+            # Instances before names, for the reason given in
+            # update_available_plugins. A tab created after the plugins already exist -
+            # which is what restoring a session does - would otherwise get a populated
+            # combobox and an empty instance map.
+            self.analysis_tabs[subclass].set_plugin_instances(
+                self.data_plugin_controller.get_plugin_instances()
             )
             self.analysis_tabs[subclass].update_available_plugins(self.data_plugins)
             self.logger.debug(f"New analysis tab of type {subclass} added")
@@ -838,6 +617,27 @@ class MainController(QObject):
         self, history: Any, save_file: Optional[Union[str, Path]] = None
     ) -> None:
         self.main_model.save_tab_actions(history, save_file)
+
+    def _report_unloadable_session(self, file_name: Optional[Union[str, Path]]) -> None:
+        """
+        Tell the user a session could not be loaded, at the level that fits who asked.
+
+        A file the user picked logs ERROR, so a dialog says it did not load; Restore with
+        nothing saved is routine, so it logs WARNING and says so on the status panel.
+
+        :param file_name: the file the user chose, or None for Restore Session
+        :type file_name: Optional[Union[str, Path]]
+        """
+        if file_name:
+            self.logger.error(
+                f"{file_name} is not a readable Poriscope session file, so nothing "
+                "was loaded"
+            )
+        else:
+            self.logger.warning("No saved session to restore")
+            self.main_view.add_text_to_display(
+                "There is no saved session to restore", self.__class__.__name__
+            )
 
     @log(logger=logger)
     @Slot(str)
@@ -868,11 +668,18 @@ class MainController(QObject):
         self.logger.debug(f"Loading session from file {file_name}")
         plugin_history = self.main_model.load_session(file_name)
         if plugin_history is None:
-            self.logger.info(f"Unable to recover plugin history from {file_name}")
+            # Refused before reset_session(), so the workspace and the autosave are
+            # left as they were.
+            self._report_unloadable_session(file_name)
             return
         self.reset_session()
         self.plugin_history = plugin_history
         self.main_model.save_session(self.plugin_history)
+
+        # Counted before the loop, which emits update_plugin_history and so can
+        # change the dict it is iterating a copy of.
+        entries = len(self.plugin_history)
+        unrestored: List[str] = []
         for key, plugin in list(self.plugin_history.items()):
             metaclass = plugin["metaclass"]
             subclass = plugin["subclass"]
@@ -886,6 +693,7 @@ class MainController(QObject):
                     self.logger.error(
                         f"Unable to restore Analysis Tab {key} of type {subclass} due to {str(e)}"
                     )
+                    unrestored.append(key)
                     continue
                 tab = self.analysis_tabs.get(subclass)
                 if tab is not None:
@@ -893,21 +701,49 @@ class MainController(QObject):
             else:
                 settings = plugin.get("settings")
                 try:
-                    self.data_plugin_controller.validate_and_instantiate_plugin(
+                    # No dialog can appear here - restore supplies both settings
+                    # and key - so False means a reported failure, never a
+                    # cancellation.
+                    if not self.data_plugin_controller.validate_and_instantiate_plugin(
                         metaclass=metaclass,
                         subclass=subclass,
                         settings=settings,
                         key=key,
-                    )
+                    ):
+                        unrestored.append(key)
                 except Exception as e:
                     self.logger.error(
                         f"Unable to restore plugin {key} of type {metaclass}/{subclass} due to {str(e)}"
                     )
+                    unrestored.append(key)
+
+        # Write the restored workspace back out before announcing it. Restoring a
+        # tab is two steps - instantiate_analysis_tab, then restore_session_state -
+        # and only the first of them refreshes plugin_history, via the
+        # update_plugin_history call it ends on. Each tab's entry is therefore
+        # snapshotted while its filter list is still empty, and is only corrected by
+        # the sync that the *next* tab's instantiation happens to trigger. The last
+        # tab restored has no next tab, so the session saved during this loop
+        # recorded it with no subset filters at all, and the restore after that one
+        # lost them: Metadata kept its filters and Protein did not, purely because
+        # Protein was opened second and so is restored second.
+        self._sync_tab_session_state_into_history()
+        self.main_model.save_session(self.plugin_history)
 
         if file_name:
             message = f"Loaded session from {file_name}."
         else:
             message = "Restored last saved session."
+        if unrestored:
+            # Each failure has already been reported individually, but those
+            # messages scroll and several of them are usually consequences of one
+            # or two root causes - a parent that never instantiated takes its
+            # dependents down with it. Without this the panel signed off with an
+            # unqualified success line under ten error messages.
+            message += (
+                f" {len(unrestored)} of {entries} entries could not be restored "
+                f"({', '.join(unrestored)}); see the messages above."
+            )
         self.main_view.add_text_to_display(message, "MainController")
 
     @log(logger=logger)

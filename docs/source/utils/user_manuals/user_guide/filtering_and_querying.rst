@@ -103,8 +103,14 @@ it against the SQLite database without rewriting or modifying the query content.
 
 You have full control over which columns are returned and how the query is structured.
 
-Use this mode when you need aggregations, computed columns, or simply prefer writing
-complete SQL queries directly.
+.. warning::
+
+   Raw SQL filters can be created, validated, saved and loaded, but cannot currently be
+   selected for a plot on either tab; selecting one is refused with a message on the
+   status panel.
+
+Use this mode to write and check queries that need aggregations or computed columns,
+or when you simply prefer writing complete SQL; for plotting, use Assisted SQL.
 
 **Example 1 — Same long events filter, written as Raw SQL:**
 
@@ -112,15 +118,11 @@ complete SQL queries directly.
 
    SELECT duration FROM events WHERE duration > 100
 
-Then select **Histogram**, x-axis: ``duration``.
-
-**Example 2 — Same high blockage scatterplot, written as Raw SQL:**
+**Example 2 — Same high blockage filter, written as Raw SQL:**
 
 .. code-block:: sql
 
    SELECT duration, max_blockage FROM events WHERE max_blockage > 2000
-
-Then select **Scatterplot**, x-axis: ``duration``, y-axis: ``max_blockage``.
 
 **Example 3 — Same multi-sublevel filter, written as Raw SQL:**
 
@@ -128,8 +130,6 @@ Then select **Scatterplot**, x-axis: ``duration``, y-axis: ``max_blockage``.
 
    SELECT fitted_ecd FROM events
    WHERE num_sublevels >= 3 AND max_blockage > 1500
-
-Then select **Histogram**, x-axis: ``fitted_ecd``.
 
 **Example 4 — Same cross-table filter, written as Raw SQL:**
 
@@ -140,8 +140,6 @@ Then select **Histogram**, x-axis: ``fitted_ecd``.
        SELECT event_db_id FROM sublevels
        WHERE sublevel_duration > 200
    )
-
-Then select **Histogram**, x-axis: ``duration``.
 
 **Example 5 — Aggregation: filter by sublevel count** (not possible in Assisted):
 
@@ -157,8 +155,6 @@ then keeps only events that have more than 3 sublevel rows.
        HAVING COUNT(*) > 3
    )
 
-Then select **Histogram**, x-axis: ``duration``.
-
 You can also aggregate a sublevel property per event and filter on that:
 
 .. code-block:: sql
@@ -170,12 +166,10 @@ You can also aggregate a sublevel property per event and filter on that:
        HAVING AVG(sublevel_duration) > 150
    )
 
-Then select **Histogram**, x-axis: ``duration``.
-
 **Example 6 — Computed columns** (not possible in Assisted):
 
 A computed column is derived from existing columns using arithmetic. It is defined
-in the ``SELECT`` with ``expression AS column_name`` and can then be used as a plot axis.
+in the ``SELECT`` with ``expression AS column_name``.
 
 Blockage range — difference between maximum and minimum blockage:
 
@@ -183,15 +177,11 @@ Blockage range — difference between maximum and minimum blockage:
 
    SELECT duration, max_blockage - min_blockage AS blockage_range FROM events
 
-Then select **Scatterplot**, x-axis: ``duration``, y-axis: ``blockage_range``.
-
 Fractional blockage — blockage normalised to baseline current:
 
 .. code-block:: sql
 
    SELECT duration, max_blockage / ABS(baseline_current) AS fractional_blockage FROM events
-
-Then select **Histogram**, x-axis: ``fractional_blockage``.
 
 Saved as: ``<subset_name>_raw``
 
@@ -199,28 +189,6 @@ Saved as: ``<subset_name>_raw``
 
    Raw SQL filters must begin with ``SELECT``. Entering a WHERE clause in Raw SQL mode
    (e.g., ``duration > 100``) will be rejected with an error message.
-
-.. note::
-
-   In Raw SQL mode, only the columns you explicitly include in your ``SELECT`` statement
-   will be available for plotting. For a scatterplot of ``duration`` vs ``max_blockage``,
-   both columns must appear in the SELECT:
-
-   .. code-block:: sql
-
-      SELECT duration, max_blockage FROM events WHERE max_blockage > 2000
-
-.. note::
-
-   Computed columns in Raw SQL must be aliased to an existing database column name
-   to be selectable as a plot axis. For example:
-
-   .. code-block:: sql
-
-      SELECT duration, max_blockage - min_blockage AS max_blockage FROM events
-
-   Aliases that do not match an existing column name (e.g. ``AS blockage_range``)
-   will not appear in the axis dropdown and cannot be plotted.
 
 Creating a Filter
 -----------------
@@ -266,8 +234,9 @@ Filters can be saved to a JSON file and reloaded in future sessions.
 - **Save Filter**: Exports all current filters to a ``.json`` file. Both ``_assisted``
   and ``_raw`` filters are included.
 - **Load Filter**: Imports filters from a ``.json`` file. Raw filters are restored
-  directly without re-validation. Assisted filters are re-validated against the database
-  before being added.
+  directly without re-validation. Assisted filters are re-validated against the selected
+  loader's database before being added; if no loader is selected, they are added
+  unvalidated and a warning is written to the log.
 
 The saved JSON format looks like:
 
@@ -281,7 +250,18 @@ The saved JSON format looks like:
 .. note::
 
    If any filter name in the file conflicts with an existing filter, no filters from
-   that file will be loaded.
+   that file will be loaded — the load is all or nothing, so you are never left guessing
+   which half arrived.
+
+.. note::
+
+   A file that cannot be read — missing, unreadable, not valid JSON, or holding anything
+   other than an object of filter names and filter text — is reported on the status
+   panel, and the filters you already have are left exactly as they were. That includes
+   a **session** file, which is also a JSON object: it is refused whole rather than
+   importing its plugin names as filters. A **save** that fails, on a full disk or a
+   read-only folder, is reported there too; it used to look exactly like a save that
+   worked.
 
 Common Mistakes
 ---------------
@@ -293,7 +273,7 @@ Common Mistakes
 +------------------------------------------+--------------------------------------------------+
 | Full SELECT entered in Assisted mode     | Fails validation — treated as a WHERE clause     |
 +------------------------------------------+--------------------------------------------------+
-| Raw scatterplot missing a selected column| Plot fails with "column not present" error       |
+| Raw SQL filter selected for a plot       | Refused: raw SQL filters cannot be plotted       |
 +------------------------------------------+--------------------------------------------------+
 | Typo in column name                      | Validation error                                 |
 +------------------------------------------+--------------------------------------------------+
@@ -306,10 +286,20 @@ Available Columns
 The columns available for filtering depend on the loaded database.
 Columns present in the YouTube tutorial database are listed below as a reference (see :ref:`running_software`).
 
+**Identifier columns, in every table that carries them:**
+
+- ``experiment_id`` — which experiment the row belongs to
+- ``channel_id`` — the physical channel the data came from; filter on this one
+- ``channel_db_id`` — the database's own row number for one experiment's channel, not a
+  channel number. Writing data under a new experiment name gives the same physical channel
+  a new ``channel_db_id``, so it differing between experiments is expected
+- ``event_id`` — the event's number within its channel, counted from 0 on each fitting
+  run, so it repeats across experiments and channels; ``e.id`` is unique
+
 **events table:**
 
 - ``duration`` — event duration in µs
-- ``start_time`` — event start time in µs
+- ``start_time`` — event start time in seconds
 - ``fitted_ecd``, ``raw_ecd`` — equivalent charge displacement
 - ``max_blockage``, ``min_blockage`` — maximum and minimum current blockage in pA
 - ``max_blockage_duration``, ``min_blockage_duration`` — duration of max/min blockage levels in µs

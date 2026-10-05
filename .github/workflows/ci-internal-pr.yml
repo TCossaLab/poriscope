@@ -9,7 +9,6 @@
 # - Commits and pushes any auto-fixes
 # - Runs strict pre-commit validation (must pass)
 # - Runs the full test suite (unit + integration + e2e) under Xvfb
-# - Collects and uploads coverage data
 #
 # Notes:
 # - This workflow is NOT safe for forks (write permissions required)
@@ -127,23 +126,4 @@ jobs:
       # ------------------------------------------------------------
       - name: Run full test suite (headless with GUI support)
         run: |
-          xvfb-run -a pytest -q --maxfail=1 --disable-warnings \
-            --cov=poriscope --cov-report=xml
-
-      # ------------------------------------------------------------
-      # 5. Upload coverage report
-      # ------------------------------------------------------------
-      - name: Upload coverage XML
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-xml
-          path: coverage.xml
-
-      - name: Print coverage summary
-        run: |
-          python - <<EOF
-          import xml.etree.ElementTree as ET
-          root = ET.parse('coverage.xml').getroot()
-          rate = float(root.attrib.get("line-rate", 0)) * 100
-          print(f"::notice::Line Coverage: {rate:.2f}%")
-          EOF
+          xvfb-run -a pytest -q

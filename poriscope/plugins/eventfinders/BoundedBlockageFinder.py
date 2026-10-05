@@ -29,7 +29,6 @@ from typing import Any, Dict, List, Optional, override
 
 import numpy as np
 import numpy.typing as npt
-from fast_histogram import histogram1d
 
 from poriscope.plugins.eventfinders.ClassicBlockageFinder import ClassicBlockageFinder
 from poriscope.utils.DocstringDecorator import inherit_docstrings
@@ -58,21 +57,34 @@ class BoundedBlockageFinder(ClassicBlockageFinder):
         standalone: bool = False,
     ) -> Dict[str, Dict[str, Any]]:
         """
-        Get a dict populated with keys needed to initialize the filter if they are not set yet.
-        This dict must have the following structure, but Min, Max, and Options can be skipped or explicitly set to None if they are not used.
-        Type is required; Value may be omitted or set to None, both meaning there is no default and the user must supply one. All values provided must be consistent with Type.
-        EventFinder objects MUST include a MetaReader object in settings
+        Declare the settings this event finder exposes, on top of the base contract.
 
-        .. code-block:: python
+        Called by poriscope when the plugin is instantiated or reconfigured, to build
+        the settings dialog and to sanity-check whatever the user enters; the accepted
+        values are then readable through ``self.settings``. See
+        :py:meth:`~poriscope.utils.MetaEventFinder.MetaEventFinder.get_empty_settings`
+        for the structure of the dict and what ``Type``, ``Value``, ``Min``, ``Max``, ``Options`` and
+        ``Units`` mean in it, and for the reserved keys the GUI builds file pickers
+        from.
 
-          settings = {'Parameter 1': {'Type': <int, float, str, bool>,
-                                           'Value': <value> or None,
-                                           'Options': [<option_1>, <option_2>, ... ] or None,
-                                           'Min': <min_value> or None,
-                                           'Max': <max_value> or None
-                                          },
-                          ...
-                          }
+        The ``super()`` call supplies the mandatory ``"MetaReader"`` key, which is how
+        this plugin is wired to its data source, and ``"Threshold"``, which the base
+        declares without a unit because the base loop reads it; this plugin sets
+        the unit.
+
+        The keys this plugin adds or configures:
+
+        - ``Threshold`` (pA) - how far below the fitted baseline the signal must fall
+          for an event to start.
+        - ``Min Duration`` / ``Max Duration`` (us) - events outside this range are
+          rejected.
+        - ``Min Separation`` (us) - two events closer together than this are rejected
+          rather than merged.
+        - ``Min Baseline`` / ``Max Baseline`` (pA) - the window the baseline fit is
+          restricted to. Samples outside it never reach the histogram, and a fit whose
+          mean lands outside it is refused rather than reported. This is what separates
+          this finder from ``ClassicBlockageFinder``, which takes its range from the
+          chunk's own extremes.
 
         :param globally_available_plugins: a dict containing all data plugins that exist to date, keyed by metaclass. Must include "MetaReader" as a key, with explicitly set Type MetaReader.
         :type globally_available_plugins: Optional[Dict[str, List[str]]]
@@ -108,6 +120,10 @@ class BoundedBlockageFinder(ClassicBlockageFinder):
         """
         Get the local mean and standard deviation for a chunk of data.
 
+        Unlike :ref:`ClassicBlockageFinder`, the range is the configured ``Min Baseline``
+        to ``Max Baseline`` rather than the chunk's own extremes, so samples outside it
+        never reach the fit, and a fit that lands outside it is refused rather than
+        reported.
 
         :param data: Chunk of timeseries data to compute statistics on.
         :type data: npt.NDArray[np.float64]
@@ -115,80 +131,13 @@ class BoundedBlockageFinder(ClassicBlockageFinder):
         :rtype: tuple[float, float]
         :raises ValueError: if no data is found within the configured baseline range, if a baseline histogram width cannot be estimated, or if the fitted baseline falls outside the configured Min/Max Baseline bounds
         """
-        top = self.settings["Max Baseline"]["Value"]
         bottom = self.settings["Min Baseline"]["Value"]
-        mask = (data > bottom) & (data < top)
-        data = data[mask]
+        top = self.settings["Max Baseline"]["Value"]
+        data = data[(data > bottom) & (data < top)]
         if len(data) == 0:
             raise ValueError("No data found in range")
 
-        width = 2 * (top - bottom) / len(data) ** (1 / 3)
-        if width <= 0:
-            raise ValueError(
-                "Unable to estimate a baseline histogram width for this chunk (no variation in the data)"
-            )
-        bins = int((top - bottom) / width)
-        hist = histogram1d(data, range=[bottom, top], bins=bins)
-        centers = np.linspace(bottom, top, len(hist))
-        max_index = np.argmax(hist)
-
-        maxval = hist[max_index]
-        # top_index: the first index where hist[i] <= maxval/5 starting from max_index
-        try:
-            top_index = next(
-                i for i in range(max_index, len(hist)) if hist[i] <= maxval / 5
-            )
-        except StopIteration:
-            top_index = len(hist) - 1
-
-        # bottom_index: the first index where hist[i] <= maxval/5 going backwards from max_index
-        try:
-            bottom_index = next(
-                i for i in range(max_index, -1, -1) if hist[i] <= maxval / 5
-            )
-        except StopIteration:
-            bottom_index = 0
-
-        top = centers[top_index]
-        bottom = centers[bottom_index]
-
-        hist = hist[bottom_index:top_index]
-        centers = centers[bottom_index:top_index]
-
-        max_index = np.argmax(hist)
-        maxval = hist[max_index]
-
-        # top_index: the first index where hist[i] <= 0.6*maxval starting from max_index
-        try:
-            top_index = next(
-                i for i in range(max_index, len(hist)) if hist[i] <= 0.6 * maxval
-            )
-        except StopIteration:
-            top_index = len(hist) - 1
-
-        # bottom_index: the first index where hist[i] <= 0.6*maxval going backwards from max_index
-        try:
-            bottom_index = next(
-                i for i in range(max_index, -1, -1) if hist[i] <= 0.6 * maxval
-            )
-        except StopIteration:
-            bottom_index = 0
-
-        try:
-            baseline_params = np.array(
-                self._gaussian_fit(
-                    hist,
-                    centers,
-                    centers[max_index],
-                    np.absolute(centers[top_index] - centers[bottom_index]),
-                )
-            )
-        except ValueError:
-            raise
-        mean = baseline_params[1]
-        if (
-            mean < self.settings["Min Baseline"]["Value"]
-            or mean > self.settings["Max Baseline"]["Value"]
-        ):
+        mean, std = self._fit_baseline_histogram(data, bottom, top)
+        if mean < bottom or mean > top:
             raise ValueError("Baseline out of bounds")
-        return baseline_params[1], baseline_params[2]
+        return mean, std

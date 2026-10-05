@@ -29,9 +29,9 @@ import logging
 from abc import abstractmethod
 from collections import OrderedDict
 from copy import deepcopy
-from typing import Any, Dict, Generator, List, Mapping, Optional
+from typing import Any, Dict, List, Mapping, Optional
 
-from PySide6.QtCore import QObject, Qt, Signal, Slot
+from PySide6.QtCore import QObject, Signal, Slot
 
 from poriscope.utils.LogDecorator import log
 from poriscope.utils.QObjectABCMeta import QObjectABCMeta
@@ -42,17 +42,6 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
     Base controller class that manages exactly one MetaView and MetaModel instance
     """
 
-    global_signal = Signal(
-        str, str, str, tuple, object, tuple
-    )  # metaclass type, subclass key, function to call, args for function to call, return function to call
-    # NOTE: every connection to global_signal/data_plugin_controller_signal must stay
-    # Qt.ConnectionType.DirectConnection (or otherwise guaranteed same-thread). A caller
-    # that passes a return_function_name reads the result back off an attribute the
-    # callback sets, on the very next statement after .emit() - a queued connection
-    # would silently degrade that read to stale/None data with no error and no log line.
-    data_plugin_controller_signal = Signal(
-        str, str, str, tuple, object, tuple
-    )  # metaclass type, subclass key, function to call, args for function to call, function to call with reval, added args for retval
     plugin_state_changed = Signal(str, str, str)  # metaclass, plugin_key, reason
     add_text_to_display = Signal(str, str)
     update_tab_action_history = Signal(
@@ -60,6 +49,8 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
     )  # name of tab subclass, OrderedDict of actions to take
     save_tab_action_history = Signal(object, str)  # dict of actions, save file name
     create_plugin = Signal(str, str)  # metaclass, subclass
+    edit_plugin = Signal(str, str)  # metaclass, key
+    delete_plugin = Signal(str, str)  # metaclass, key
     logger = logging.getLogger(__name__)
 
     def __init__(
@@ -85,10 +76,8 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
             setattr(self, k, v)
 
         self._init()
-        self._connect_global_signal()
         self.view.set_available_subclasses(available_subclasses)
         self.view.plugin_state_changed.connect(self.plugin_state_changed)
-        self.view.run_generators.connect(self.model.run_generators)
         self.model.update_progressbar.connect(self.view.update_progressbar)
         self.view.kill_worker.connect(self.handle_kill_worker)
         self.view.kill_all_workers.connect(self.handle_kill_all_workers)
@@ -96,10 +85,13 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
         self.model.add_text_to_display.connect(self.relay_add_text_to_display)
         self.view.save_tab_action_history.connect(self.save_tab_actions)
         self.view.update_tab_action_history.connect(self.update_tab_actions)
+        self.view.discard_last_tab_action.connect(self.discard_last_tab_action)
         self.view.cache_plot_data.connect(self.model.cache_plot_data)
         self.view.export_plot_data.connect(self.export_plot_data)
         self.view.load_actions_from_json.connect(self.load_actions_from_json)
         self.view.create_plugin.connect(self._relay_create_plugin)
+        self.view.edit_plugin.connect(self._relay_edit_plugin)
+        self.view.delete_plugin.connect(self._relay_delete_plugin)
         self._setup_connections()
         self.tab_action_history: OrderedDict[int, dict[str, Any]] = OrderedDict()
 
@@ -107,11 +99,13 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
     @abstractmethod
     def _init(self) -> None:
         """
-        Perform additional initialization specific to the algorithm being implemented.
-        Must be implemented by subclasses.
+        Build this tab's View and Model, and do any other setup the tab needs.
 
-        This function is called at the end of the class constructor to perform additional initialization specific to the algorithm being implemented.
-        kwargs provided to the base class constructor are available as class attributes.
+        Assigning both ``self.view`` and ``self.model`` is required rather than
+        conventional: the constructor calls this and then immediately connects the two to
+        each other, so leaving either unset raises ``AttributeError`` before the tab
+        exists. kwargs given to the base constructor are available as attributes by the
+        time this runs.
         """
         pass
 
@@ -128,14 +122,35 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
         self.create_plugin.emit(metaclass, subclass)
 
     @log(logger=logger)
-    def update_plot_data(self, data: Optional[Any]) -> None:
+    @Slot(str, str)
+    def _relay_edit_plugin(self, metaclass: str, key: str) -> None:
         """
-        Update the view with new plot data.
+        Pass a tab's request to edit a plugin's settings up to the app shell.
 
-        :param data: Optional data to be plotted (e.g., event traces or fitted results).
-        :type data: Optional[Any]
+        One of three identically shaped relays - create, edit, delete - which is
+        why this is a plain typed signal rather than the string-dispatched bus
+        that used to carry it. The shell connects the far end straight to
+        `DataPluginController.edit_plugin_settings`, so mypy checks the pair.
+
+        :param metaclass: the plugin family, e.g. "MetaReader"
+        :type metaclass: str
+        :param key: the plugin to edit
+        :type key: str
         """
-        self.view.update_plot_data(data)
+        self.edit_plugin.emit(metaclass, key)
+
+    @log(logger=logger)
+    @Slot(str, str)
+    def _relay_delete_plugin(self, metaclass: str, key: str) -> None:
+        """
+        Pass a tab's request to delete a plugin up to the app shell.
+
+        :param metaclass: the plugin family, e.g. "MetaReader"
+        :type metaclass: str
+        :param key: the plugin to delete
+        :type key: str
+        """
+        self.delete_plugin.emit(metaclass, key)
 
     # public API, must be implemented by sublcasses
 
@@ -157,30 +172,30 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
             df = df.fillna("")
             df.to_csv(file_name, index=False)
 
-    # private API, should generally be left alone by subclasses
+    # ------------------------------------------------------- the data plugins
+    # The instances arrive from MainController on every plugin lifecycle event and are
+    # forwarded straight to the Model, which is where the calls belong: a Controller
+    # slot reaches a plugin with self.model.call(...).
+
     @log(logger=logger)
-    def _connect_global_signal(self) -> None:
+    def set_plugin_instances(
+        self, instances: Mapping[str, Mapping[str, object]]
+    ) -> None:
         """
-        Connect global and data plugin signal relays from the view and model.
+        Receive the live data plugin instances and pass them to the Model.
 
-        This enables propagation of global signals upward to the main controller.
+        Called by ``MainController`` whenever the app's plugin set changes, on the same
+        path that refreshes the plugin *names* the View shows in its comboboxes - so a
+        rename or a re-instantiation cannot leave either of them stale.
+
+        :param instances: metaclass name -> plugin key -> live instance
+        :type instances: Mapping[str, Mapping[str, object]]
+        :return: None
+        :rtype: None
         """
-        self.view.global_signal.connect(
-            self._relay_global_signal, type=Qt.ConnectionType.DirectConnection
-        )
-        self.model.global_signal.connect(
-            self._relay_global_signal, type=Qt.ConnectionType.DirectConnection
-        )
+        self.model.set_plugin_instances(instances)
 
-        self.view.data_plugin_controller_signal.connect(
-            self._relay_data_plugin_controller_signal,
-            type=Qt.ConnectionType.DirectConnection,
-        )
-        self.model.data_plugin_controller_signal.connect(
-            self._relay_data_plugin_controller_signal,
-            type=Qt.ConnectionType.DirectConnection,
-        )
-
+    # private API, should generally be left alone by subclasses
     @log(logger=logger)
     @Slot(str)
     def load_actions_from_json(self, filename: str) -> None:
@@ -216,16 +231,6 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
             self.add_text_to_display.emit(
                 "Failed to write data", self.__class__.__name__
             )
-
-    @log(logger=logger)
-    def check_column_exists(self, table_name: str) -> None:
-        """
-        Notify the view to check if a cluster column exists in the given table.
-
-        :param table_name: Name of the table to check.
-        :type table_name: str
-        """
-        self.view.set_column_exists(table_name)
 
     @log(logger=logger)
     @Slot(str, str)
@@ -314,28 +319,6 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
             )
 
     @log(logger=logger)
-    def set_generator(
-        self,
-        generator: Generator[float, Optional[bool], None],
-        channel: int,
-        key: str,
-        metaclass: str,
-    ) -> None:
-        """
-        Assign a generator to the model for asynchronous event processing.
-
-        :param generator: Generator object for producing event data.
-        :type generator: Generator[float, Optional[bool], None]
-        :param channel: Target channel number.
-        :type channel: int
-        :param key: Identifier key for the data stream.
-        :type key: str
-        :param metaclass: Metaclass name associated with the generator.
-        :type metaclass: str
-        """
-        self.model.set_generator(generator, channel, key, metaclass)
-
-    @log(logger=logger)
     @Slot(str)
     def handle_kill_all_workers(self, subclass: str, exiting: bool = False) -> None:
         """
@@ -363,142 +346,6 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
                 "Stopping all running operations.", self.__class__.__name__
             )
         self.model.stop_workers(exiting=exiting)
-
-    @Slot(str, str, str, tuple, str, tuple)
-    def _relay_global_signal(
-        self,
-        metaclass: str,
-        subclass_key: str,
-        call_function: str,
-        call_args: tuple,
-        return_function_name: Optional[str],
-        ret_args: tuple,
-    ) -> None:
-        """
-        Push the global signal up to the main_controller, adding the identifier for the requesting plugin. This will result in a call being made with the following signature in main_controller:
-
-        .. code-block:: python
-
-          main_model.plugins['MetaController'][plugin_key].return_function(*plugins[metaclass][subclass_key].call_function(*call_args)+ret_args)
-
-        Validation is handled by main_controller
-
-        :param metaclass: A string matching the metaclass of the target plugin for the signal
-        :type metaclass: str
-        :param subclass_key: A string matching the identifier of a plugin that subclasses metaclass
-        :type subclass_key: str
-        :param call_function: A string matching the signature of a callable in the plugin identified by metaclass and subclass. This function should be a public API member of another subclass that has already been instantiated.
-        :type call_function: str
-        :param call_args: A tuple that will be passed to the callable matching call_function
-        :type call_args: tuple
-        :param return_function_name: A string matching the signature of a callable function defined in this controller with a signature that matched the return type of call_function. This function must exist in this controller.
-        :type return_function_name: Optional[str]
-        :param ret_args: A tuple that will be appended to the return value of the call_function
-        :type ret_args: tuple
-        """
-        self.logger.debug(
-            f"MetaController received signal: {metaclass}, {subclass_key}, {call_function}, {call_args}, {return_function_name}, {ret_args}"
-        )
-        if return_function_name is not None and return_function_name != "":
-            return_function = getattr(self, return_function_name, None)
-            if return_function is None:
-                self.logger.warning(
-                    f"{return_function_name} is not an attribute of {self.__class__.__name__}"
-                )
-                return
-            if not callable(return_function):
-                self.logger.warning(
-                    f"{return_function_name} is not callable on {self.__class__.__name__}"
-                )
-                return
-        else:
-            return_function = None
-
-        try:
-            self.logger.info(
-                "Emitting Global Signal from MetaController to MainController"
-            )
-            self.global_signal.emit(
-                metaclass,
-                subclass_key,
-                call_function,
-                call_args,
-                return_function,
-                ret_args,
-            )
-        except Exception:
-            self.logger.exception(
-                f"Unable to relay global signal for {metaclass}/{subclass_key}.{call_function} "
-                f"from {type(self).__name__} to MainController"
-            )
-
-    @Slot(str, str, str, tuple, str, tuple)
-    def _relay_data_plugin_controller_signal(
-        self,
-        metaclass: str,
-        subclass_key: str,
-        call_function: str,
-        call_args: tuple,
-        return_function_name: Optional[str],
-        ret_args: tuple,
-    ) -> None:
-        """
-        Push the data plugin controller signal up to the main_controller, adding the identifier for the requesting plugin. This will result in a call being made with the following signature in main_controller:
-
-        .. code-block:: python
-
-          main_model.plugins['MetaController'][plugin_key].return_function(*plugins[metaclass][subclass_key].call_function(*call_args))
-
-        Validation is handled by main_controller
-
-        :param metaclass: A string matching the metaclass of the target plugin for the signal
-        :type metaclass: str
-        :param subclass_key: A string matching the identifier of a plugin that subclasses metaclass
-        :type subclass_key: str
-        :param call_function: A string matching the signature of a callable in the data plugin controller. (NOT in the data plugin itself).
-        :type call_function: str
-        :param call_args: A tuple that will be passed to the callable matching call_function
-        :type call_args: tuple
-        :param return_function_name: A string matching the signature of a callable function defined in this controller with a signature that matched the return type of call_function. This function must exist in this controller.
-        :type return_function_name: Optional[str]
-        :param ret_args: A tuple that will be appended to the return value of the call_function
-        :type ret_args: tuple
-        """
-        self.logger.debug(
-            f"MetaController received signal: {metaclass}, {subclass_key}, {call_function}, {call_args}, {return_function_name}, {ret_args}"
-        )
-        if return_function_name is not None and return_function_name != "":
-            return_function = getattr(self, return_function_name, None)
-            if return_function is None:
-                self.logger.warning(
-                    f"{return_function_name} is not an attribute of {self.__class__.__name__}"
-                )
-                return
-            if not callable(return_function):
-                self.logger.warning(
-                    f"{return_function_name} is not callable on {self.__class__.__name__}"
-                )
-                return
-        else:
-            return_function = None
-
-        try:
-            self.logger.info(
-                "Emitting Data Plugin from MetaController to MainController"
-            )
-            self.data_plugin_controller_signal.emit(
-                metaclass,
-                subclass_key,
-                call_function,
-                call_args,
-                return_function,
-                ret_args,
-            )
-        except Exception:
-            self.logger.exception(
-                f"Unable to relay data plugin controller signal for {call_function} "
-                f"from {type(self).__name__} to MainController"
-            )
 
     # public API, should generally be left alone by subclasses
 
@@ -562,19 +409,42 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
                         ]
                     except StopIteration:
                         break
-            history = deepcopy(self.tab_action_history)
-            self.tab_action_history = OrderedDict()
-            self.view.update_actions_from_json(history)
+            # Replay from the last reset only. Everything before it was cleared off the
+            # figure by that reset, so replaying it re-queried the database on the GUI
+            # thread for nothing. It is kept, not truncated, so a later Undo past the
+            # reset still has it to redraw from.
+            entries = list(deepcopy(self.tab_action_history).items())
+            start = max(
+                (
+                    position
+                    for position, (_, entry) in enumerate(entries)
+                    if entry.get("function") == "_reset_actions"
+                ),
+                default=0,
+            )
+            self.tab_action_history = OrderedDict(entries[:start])
+            self.view.update_actions_from_json(OrderedDict(entries[start:]))
         self.update_tab_action_history.emit(
             self.__class__.__name__, self.tab_action_history
         )
 
     @log(logger=logger)
-    def ignore(self) -> None:
+    @Slot()
+    def discard_last_tab_action(self) -> None:
         """
-        Placeholder method that does nothing. Can be overridden if needed.
+        Drop the most recently recorded action without replaying anything.
+
+        For an action that was refused and left the figure unchanged - a plot of what is
+        already shown, say. Undoing it instead cleared the figure and replayed the whole
+        history, which redrew it with the current selection rather than the recorded one.
         """
-        pass
+        try:
+            self.tab_action_history.popitem()
+        except KeyError:
+            return
+        self.update_tab_action_history.emit(
+            self.__class__.__name__, self.tab_action_history
+        )
 
     @log(logger=logger)
     def get_session_state(self) -> Dict[str, Any]:

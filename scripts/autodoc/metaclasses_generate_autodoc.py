@@ -27,13 +27,16 @@ import ast
 import os
 import shutil
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Set, Tuple
 
 # Resolve base paths
 SCRIPT_DIR = Path(__file__).resolve().parent
 
 # Folder where plugin source code lives
 PROJECT_ROOT = SCRIPT_DIR.parent.parent  # up from scripts/autodoc
+
+#: Where the Meta* base classes live; read to find the published private contract.
+UTILS_DIR = PROJECT_ROOT / "poriscope" / "utils"
 FOLDER_ORIGIN = PROJECT_ROOT / "poriscope" / "utils"
 
 # Where generated .rst documentation should be written
@@ -59,7 +62,55 @@ EXTERNAL_BASES = {
     "ABCMeta": "abc.ABCMeta",
     "QObject": "PySide6.QtCore.QObject",
     "QWidget": "PySide6.QtWidgets.QWidget",
+    "logging.Handler": "logging.Handler",
 }
+
+# Bases documented on a hand-written page rather than a generated one, by that page's
+# label.
+HANDWRITTEN_BASES = {
+    "WalkthroughMixin": "walkthrough_mixin",
+}
+
+
+def abstract_private_names() -> Set[str]:
+    """
+    Collect every private method name that some base class declares abstract.
+
+    A leading underscore means "internal" almost everywhere, but not on the ``Meta*``
+    bases: there it marks the methods a *subclass author* has to write, which is the
+    published contract rather than an implementation detail. ``_apply_filter``,
+    ``_map_data`` and ``_locate_sublevel_transitions`` are the plugin author's whole job.
+
+    So the rule is by name rather than by decorator. The base declares
+    ``@abstractmethod`` and a concrete plugin's override does not, but the override is
+    the substance of that plugin's page - dropping it would gut exactly the page someone
+    reads to learn how a shipped plugin works. Matching on the name keeps both ends.
+
+    ``__init__`` is included for the same reason: it is public API however it is
+    spelled, and its parameter documentation is published nowhere else.
+
+    :return: the private method names that count as published contract
+    :rtype: Set[str]
+    """
+    names: Set[str] = set()
+    for source in UTILS_DIR.glob("*.py"):
+        tree = ast.parse(source.read_text(encoding="utf-8"))
+        for class_node in [n for n in tree.body if isinstance(n, ast.ClassDef)]:
+            for item in class_node.body:
+                if not isinstance(item, ast.FunctionDef):
+                    continue
+                if not item.name.startswith("_"):
+                    continue
+                if any(
+                    isinstance(decorator, ast.Name) and decorator.id == "abstractmethod"
+                    for decorator in item.decorator_list
+                ):
+                    names.add(item.name)
+    # The constructor is public API however it is spelled. Its signature already
+    # appears on the class line, but the ``:param:`` fields documenting what each
+    # argument means live in its docstring and are published nowhere else.
+    names.add("__init__")
+    return names
 
 
 def classify_method(method_node: ast.FunctionDef) -> Tuple[str, str]:
@@ -72,6 +123,80 @@ def classify_method(method_node: ast.FunctionDef) -> Tuple[str, str]:
         "private" if is_private else "public",
         "abstract" if is_abstract else "concrete",
     )
+
+
+def is_property(method_node: ast.FunctionDef) -> bool:
+    """
+    Report whether a ``def`` is really a property.
+
+    ``.. automethod::`` on a property makes Sphinx warn that the object "is not a
+    callable object", and both docs workflows build with ``-W``, so one property
+    documented as a method turns the docs job red. ``MetaSubsetTabView``'s
+    ``_subset_controls`` did exactly that when it was first added.
+
+    Only the bare ``@property`` form is recognised, which is every property under
+    ``poriscope/utils/`` today; a setter is written ``@<name>.setter`` and is
+    deliberately not documented separately.
+
+    :param method_node: the function definition to classify
+    :type method_node: ast.FunctionDef
+    :return: True if the definition carries a ``@property`` decorator
+    :rtype: bool
+    """
+    return any(
+        isinstance(decorator, ast.Name) and decorator.id == "property"
+        for decorator in method_node.decorator_list
+    )
+
+
+def documented_class_names() -> Set[str]:
+    """
+    Name every class this generator will write a page for, before it writes any.
+
+    A base is linked by its page label only if that page exists, and the pages are
+    written in directory order - so checking for the file while writing linked a base
+    only when it happened to sort first. Collecting the names up front makes the link
+    independent of that order.
+
+    :return: the names of the documented classes under ``FOLDER_ORIGIN``
+    :rtype: Set[str]
+    """
+    names: Set[str] = set()
+    for source in FOLDER_ORIGIN.glob("*.py"):
+        if source.name.startswith("__"):
+            continue
+        tree = ast.parse(source.read_text(encoding="utf-8"))
+        names.update(
+            node.name
+            for node in tree.body
+            if isinstance(node, ast.ClassDef) and ast.get_docstring(node)
+        )
+    return names
+
+
+def base_reference(base: str, documented: Set[str]) -> str:
+    """
+    Write the reference for one base class on a generated page.
+
+    A base with a generated or hand-written page is linked by its label, a known
+    external base by its intersphinx target, and anything else is shown as a literal:
+    a guessed ``:class:`` path into ``poriscope`` resolves to nothing, because no
+    page documents classes at those paths.
+
+    :param base: the base class name, dotted if it was written dotted
+    :type base: str
+    :param documented: the classes this generator writes pages for
+    :type documented: Set[str]
+    :return: the reStructuredText for the reference
+    :rtype: str
+    """
+    if base in EXTERNAL_BASES:
+        return f":class:`~{EXTERNAL_BASES[base]}`"
+    if base in HANDWRITTEN_BASES:
+        return f":ref:`{base} <{HANDWRITTEN_BASES[base]}>`"
+    if base in documented:
+        return f":ref:`{base}`"
+    return f"``{base}``"
 
 
 def parse_base_classes(base_nodes):
@@ -91,6 +216,8 @@ def parse_base_classes(base_nodes):
             bases.append(ast.unparse(base))
     return bases
 
+
+DOCUMENTED = documented_class_names()
 
 # Loop through all Python files
 for filename in os.listdir(FOLDER_ORIGIN):
@@ -129,23 +256,17 @@ for filename in os.listdir(FOLDER_ORIGIN):
                 ("private", "abstract"): [],
                 ("private", "concrete"): [],
             }
+            properties: Set[str] = set()
             for item in node.body:
                 if isinstance(item, ast.FunctionDef):
                     visibility, abstractness = classify_method(item)
                     methods[(visibility, abstractness)].append(item.name)
+                    if is_property(item):
+                        properties.add(item.name)
 
             # Base class references
             base_classes = parse_base_classes(node.bases)
-            base_refs = []
-            for base in base_classes:
-                if base in EXTERNAL_BASES:
-                    base_refs.append(f":class:`~{EXTERNAL_BASES[base]}`")
-                else:
-                    ref_path = OUTPUT_DIR / f"{base.lower()}.rst"
-                    if ref_path.exists():
-                        base_refs.append(f":ref:`{base}`")
-                    else:
-                        base_refs.append(f":class:`~{BASE_PACKAGE}.{base}`")
+            base_refs = [base_reference(base, DOCUMENTED) for base in base_classes]
             base_str = f"Bases: {', '.join(base_refs)}" if base_refs else ""
 
             # Init signature
@@ -159,18 +280,11 @@ for filename in os.listdir(FOLDER_ORIGIN):
                     arg_list = []
                     for arg, default in zip(args, defaults):
                         arg_str = arg.arg
+                        # ast.unparse cannot fail on a node from ast.parse.
                         if arg.annotation:
-                            try:
-                                annotation = ast.unparse(arg.annotation)
-                                arg_str += f": {annotation}"
-                            except Exception:
-                                pass
+                            arg_str += f": {ast.unparse(arg.annotation)}"
                         if default is not None:
-                            try:
-                                default_val = ast.unparse(default)
-                                arg_str += f" = {default_val}"
-                            except Exception:
-                                arg_str += " = ..."
+                            arg_str += f" = {ast.unparse(default)}"
                         arg_list.append(arg_str)
                     init_args = f"({', '.join(arg_list)})"
                     break
@@ -191,6 +305,12 @@ for filename in os.listdir(FOLDER_ORIGIN):
                     )
                     f.write(f"{vis_title}\n{'-' * len(vis_title)}\n\n")
                     for abstractness in ["abstract", "concrete"]:
+                        # A private concrete method is an internal helper, and
+                        # publishing it buried the contract that matters. Private
+                        # *abstract* methods stay: on these bases the underscore
+                        # marks a subclass author's obligation, not a detail.
+                        if (visibility, abstractness) == ("private", "concrete"):
+                            continue
                         sub_title = (
                             "Abstract Methods"
                             if abstractness == "abstract"
@@ -203,8 +323,13 @@ for filename in os.listdir(FOLDER_ORIGIN):
                             )
                         key = (visibility, abstractness)
                         for method_name in sorted(methods[key]):
+                            directive = (
+                                "autoproperty"
+                                if method_name in properties
+                                else "automethod"
+                            )
                             f.write(
-                                f".. automethod:: {full_class_path}.{method_name}\n"
+                                f".. {directive}:: {full_class_path}.{method_name}\n"
                             )
                         if not methods[key]:
                             f.write("(none)\n")

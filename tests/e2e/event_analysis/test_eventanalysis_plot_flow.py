@@ -30,8 +30,6 @@ Assertions:
 """
 
 import os
-import sys
-from pathlib import Path
 
 import pytest
 from PySide6 import QtWidgets
@@ -44,6 +42,7 @@ from poriscope.views.main_view import MainView
 from tests.e2e._helpers import (
     QT_SHORT_PAUSE_MS,
     QT_WAIT_TIMEOUT_MS,
+    ask_plugin,
     ensure_name_filled,
     find_button,
     open_menu_hybrid,
@@ -51,9 +50,6 @@ from tests.e2e._helpers import (
 )
 
 # tests/e2e/event_analysis/this_file.py -> parents[3] == repo root
-REPO_ROOT = Path(__file__).resolve().parents[3]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
 # ---- Env knobs, specific to this suite (not shared with raw_data) --------
 LOADER_NAME = os.getenv("E2E_EVENTLOADER_NAME", "SQLiteEventLoader")
@@ -168,7 +164,7 @@ def test_event_analysis_nav_and_plotting_matrix(
         }
     )
     view = MainView(model.get_available_plugins())
-    controller = MainController(model, view)  # noqa: F841
+    controller = MainController(model, view)
     qtbot.addWidget(view)
     view.show()
 
@@ -180,6 +176,9 @@ def test_event_analysis_nav_and_plotting_matrix(
     )
     view.switch_to_page("EventAnalysisView")
     ea_view = view.pages["EventAnalysisView"]["widget"]
+    # Held so the shell survives the fixture, and so ask_plugin can reach the
+    # tab controller to call a plugin the way the application does.
+    ea_view._test_keepalive = (model, view, controller)
     controls = ea_view.eventAnalysisControls
 
     def fill_loader_dialog(dlg) -> bool:
@@ -284,9 +283,19 @@ def test_event_analysis_nav_and_plotting_matrix(
 
     schedule_dialog_autofill(fill_filter_dialog)
     QTest.mouseClick(controls.filters_add_button, Qt.MouseButton.LeftButton)
+    # "No Filter" is a permanent option on filter dropdowns, so the new filter takes the
+    # count to 2 rather than replacing a placeholder, and it has to be selected the way a
+    # user selects it. This step used to rely on the placeholder vanishing and the
+    # selection-restore logic falling through to index 0.
     qtbot.waitUntil(
-        lambda: controls.filters_comboBox.count() > 0, timeout=QT_WAIT_TIMEOUT_MS
+        lambda: controls.filters_comboBox.count() > 1, timeout=QT_WAIT_TIMEOUT_MS
     )
+    new_filter = next(
+        controls.filters_comboBox.itemText(i)
+        for i in range(controls.filters_comboBox.count())
+        if controls.filters_comboBox.itemText(i) != "No Filter"
+    )
+    controls.filters_comboBox.setCurrentText(new_filter)
     assert controls.filters_comboBox.currentText() != "No Filter"
 
     lines_with_filter_raw_off = _replot_and_count(qtbot, controls, ea_view)
@@ -342,15 +351,17 @@ def test_event_analysis_nav_and_plotting_matrix(
     def fitting_complete():
         try:
             fitter_key = controls.eventfitters_comboBox.currentText()
-            ea_view.global_signal.emit(
-                "MetaEventFitter",
-                fitter_key,
-                "get_eventfitting_status",
-                (0,),
-                "set_eventfitting_status",
-                (),
+            return (
+                ask_plugin(
+                    ea_view,
+                    "EventAnalysisController",
+                    "MetaEventFitter",
+                    fitter_key,
+                    "get_eventfitting_status",
+                    0,
+                )
+                is True
             )
-            return getattr(ea_view, "eventfitting_status", False) is True
         except Exception:
             return False
 

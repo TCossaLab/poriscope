@@ -1,0 +1,62 @@
+{
+  "*Controller.py": {
+    "files": 5,
+    "functions": 69,
+    "identical_bodies": 0,
+    "removable_lines": 0
+  },
+  "*Model.py": {
+    "files": 5,
+    "functions": 53,
+    "identical_bodies": 1,
+    "removable_lines": 8
+  },
+  "*View.py": {
+    "files": 5,
+    "functions": 177,
+    "identical_bodies": 0,
+    "removable_lines": 0
+  },
+  "*controls.py": {
+    "files": 5,
+    "functions": 55,
+    "identical_bodies": 0,
+    "removable_lines": 0
+  },
+  "SQLite plugins": {
+    "files": 5,
+    "functions": 62,
+    "identical_bodies": 0,
+    "removable_lines": 0
+  },
+  "datareaders": {
+    "files": 8,
+    "functions": 99,
+    "identical_bodies": 14,
+    "removable_lines": 404
+  },
+  "eventfinders": {
+    "files": 3,
+    "functions": 12,
+    "identical_bodies": 0,
+    "removable_lines": 0
+  },
+  "eventfitters": {
+    "files": 4,
+    "functions": 35,
+    "identical_bodies": 10,
+    "removable_lines": 193
+  },
+  "filters": {
+    "files": 2,
+    "functions": 14,
+    "identical_bodies": 2,
+    "removable_lines": 16
+  },
+  "views/widgets": {
+    "files": 16,
+    "functions": 155,
+    "identical_bodies": 1,
+    "removable_lines": 3
+  }
+}

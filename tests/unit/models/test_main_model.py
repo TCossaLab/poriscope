@@ -108,62 +108,77 @@ def test_populate_available_plugins(main_model):
         assert "MetaFilter" in available_plugins_list
 
 
-def test_get_plugin_data_existing(main_model, tmp_path, monkeypatch):
-    # Ensure MainModel looks under temp user_data_dir
-    monkeypatch.setattr(
-        "poriscope.models.main_model.user_data_dir",
-        lambda *a, **k: str(tmp_path),
-        raising=False,
-    )
-
-    plugin_key = "MetaReader"
-    mock_data = {plugin_key: {"Value": "SomeData"}}
-
-    # Create the exact directory tree MainModel expects:
-    # <user_data_dir>/Poriscope/session/plugin_history.json
-    session_dir = tmp_path / "Poriscope" / "session"
-    session_dir.mkdir(parents=True, exist_ok=True)
-
-    plugin_history = session_dir / "plugin_history.json"
-    plugin_history.write_text(json.dumps(mock_data))
-
-    got = main_model.get_plugin_data(plugin_key)
-    assert got == {"Value": "SomeData"}
+SESSION = {"reader": {"metaclass": "MetaReader", "subclass": "SomeReader"}}
 
 
-def test_get_plugin_data_nonexistent(main_model):
-    """
-    Test the fetching of plugin data when the session file does not exist.
-    """
-    plugin_key = "MetaReader"
+def test_save_session(main_model, tmp_path):
+    """A saved session reads back as what was saved."""
+    path = tmp_path / "session.json"
 
-    with patch("builtins.open", MagicMock(side_effect=FileNotFoundError)):
-        plugin_data = main_model.get_plugin_data(plugin_key)
+    main_model.save_session(SESSION, path)
 
-    assert plugin_data == {}
-
-
-def test_save_session(main_model):
-    """
-    Test saving the session to a JSON file.
-    """
-    plugin_history = {"plugin": "MetaReader"}
-
-    with patch("builtins.open", new_callable=MagicMock) as mock_open:
-        main_model.save_session(plugin_history)
-
-    mock_open.assert_called_once()
+    assert json.loads(path.read_text()) == SESSION
 
 
 def test_load_session_default_path(main_model):
-    mock_data = {"plugin": "MetaReader"}
-    m = mock_open(read_data=json.dumps(mock_data))
+    """Restore reads the default session file."""
+    default = Path(main_model.session_path, "plugin_history.json")
+    default.write_text(json.dumps(SESSION))
 
-    with patch("builtins.open", m):
-        with patch("pathlib.Path.exists", return_value=True):
-            result = main_model.load_session()
+    assert main_model.load_session() == SESSION
 
-    assert result == mock_data
+
+def test_load_session_refuses_a_file_that_is_not_a_session(main_model, tmp_path):
+    """
+    A tab action history sits beside the session file under the same *.json filter.
+
+    Loading one as a session used to come back as a dict, and the controller then
+    reset the workspace and overwrote the autosave with it before failing on the first
+    entry, so the next Restore failed the same way.
+    """
+    path = tmp_path / "tab_action_history.json"
+    path.write_text(
+        json.dumps({"MetadataController": {"0": {"function": "_reset_actions"}}})
+    )
+
+    assert main_model.load_session(path) is None
+
+
+def test_load_session_accepts_an_empty_session(main_model, tmp_path):
+    """Nothing open is a valid session, and restores as nothing."""
+    path = tmp_path / "empty.json"
+    path.write_text("{}")
+
+    assert main_model.load_session(path) == {}
+
+
+def test_a_failed_session_save_keeps_the_previous_file(main_model, tmp_path):
+    """
+    A save that fails partway leaves the last good file, not a truncated one.
+
+    The file was opened for writing before the data was serialised, so a value that
+    could not be serialised left it cut off mid-entry.
+    """
+    path = tmp_path / "session.json"
+    main_model.save_session(SESSION, path)
+    before = path.read_text()
+
+    main_model.save_session({"reader": {"metaclass": object()}}, path)
+
+    assert path.read_text() == before
+    assert not list(tmp_path.glob("*.tmp")), "the failed save left its temp file"
+
+
+def test_a_failed_tab_action_save_keeps_the_previous_file(main_model, tmp_path):
+    """The tab action history is written the same way, for the same reason."""
+    path = tmp_path / "actions.json"
+    main_model.save_tab_actions({"Tab": {"0": {"function": "f"}}}, path)
+    before = path.read_text()
+
+    main_model.save_tab_actions({"Tab": {"0": {"function": object()}}}, path)
+
+    assert path.read_text() == before
+    assert not list(tmp_path.glob("*.tmp")), "the failed save left its temp file"
 
 
 def test_load_session_nonexistent(main_model):
@@ -179,39 +194,43 @@ def test_load_session_nonexistent(main_model):
 
 
 def test_replace_classes_with_class_names_all_paths(main_model):
+    """
+    Every type in a settings tree becomes its name, however deeply nested.
+
+    This used to hand the walker a list directly to reach its
+    list branch; that branch was unreachable from every real caller and is now
+    gone. A settings tree is dicts inside dicts, which is what this walks.
+    """
+
     class DummyA:
         pass
 
     class DummyB:
         pass
 
-    data = {"a": DummyA, "b": {"nested": DummyB}, "c": [DummyA, {"deep": DummyB}]}
+    data = {"Threshold": {"Type": DummyA}, "Group": {"Inner": {"Type": DummyB}}}
 
     main_model.replace_classes_with_class_names(data)
-    main_model.replace_classes_with_class_names(
-        data["c"]
-    )  # Ensure list is also processed
 
-    assert data["a"] == "DummyA"
-    assert data["b"]["nested"] == "DummyB"
-    assert data["c"][0] == "DummyA"
-    assert data["c"][1]["deep"] == "DummyB"
+    assert data["Threshold"]["Type"] == "DummyA"
+    assert data["Group"]["Inner"]["Type"] == "DummyB"
 
 
 def test_replace_class_names_with_classes_all_paths(main_model):
-    data = {"a": "int", "b": {"nested": "float"}, "c": ["str", {"deep": "bool"}]}
+    """
+    Type names become types again, however deeply nested, under the keys that hold types.
 
+    Rewritten on both counts: the conversion is gated on the key now, so
+    the names sit under ``Type`` rather than arbitrary keys, and the list branch
+    this used to exercise is gone.
+    """
+    data = {"Threshold": {"Type": "int"}, "Group": {"Inner": {"Type": "float"}}}
     class_dict = {"int": int, "float": float, "str": str, "bool": bool}
 
     main_model.replace_class_names_with_classes(data, class_dict)
-    main_model.replace_class_names_with_classes(
-        data["c"], class_dict
-    )  # Ensure list is processed
 
-    assert data["a"] is int
-    assert data["b"]["nested"] is float
-    assert data["c"][0] is str
-    assert data["c"][1]["deep"] is bool
+    assert data["Threshold"]["Type"] is int
+    assert data["Group"]["Inner"]["Type"] is float
 
 
 def test_update_app_config(main_model):
@@ -250,22 +269,63 @@ def test_update_logging_level_handlers(main_model):
         mock_qt_handler.setLevel.assert_not_called()
 
 
-def test_save_tab_actions(main_model):
-    plugin_history = {"plugin": "MetaReader"}
+def test_a_save_retries_a_briefly_locked_target(main_model, tmp_path, mocker):
+    """
+    A rename refused for a moment is retried, not reported as a failed autosave.
 
-    with patch("builtins.open", new_callable=MagicMock) as mock_open:
-        main_model.save_tab_actions(plugin_history)
+    On Windows a file just written is briefly held open by scanners such as Defender, and
+    ``os.replace`` onto it fails with "Access is denied" - measured at 14 of 300 rapid
+    saves in the temp folder. Reporting that as a failure tells the user autosave has
+    stopped when it has not.
+    """
+    path = tmp_path / "session.json"
+    real_replace = os.replace
+    attempts = []
 
-    mock_open.assert_called_once()
+    def locked_twice(src, dst):
+        attempts.append(src)
+        if len(attempts) <= 2:
+            raise PermissionError(13, "Access is denied")
+        return real_replace(src, dst)
+
+    mocker.patch("poriscope.models.main_model.os.replace", side_effect=locked_twice)
+    mocker.patch("poriscope.models.main_model.time.sleep")
+    reported = mocker.patch.object(main_model, "add_text_to_display")
+
+    main_model.save_session(SESSION, path)
+
+    assert json.loads(path.read_text()) == SESSION
+    assert len(attempts) == 3
+    reported.emit.assert_not_called()
 
 
-def test_get_plugin_existing(main_model):
-    class Dummy:
-        pass
+def test_a_target_that_stays_locked_is_reported_and_left_intact(
+    main_model, tmp_path, mocker
+):
+    """If the rename never succeeds, the old file stays and the temp file goes."""
+    path = tmp_path / "session.json"
+    main_model.save_session(SESSION, path)
+    before = path.read_text()
+    mocker.patch(
+        "poriscope.models.main_model.os.replace",
+        side_effect=PermissionError(13, "Access is denied"),
+    )
+    mocker.patch("poriscope.models.main_model.time.sleep")
 
-    main_model.available_plugin_classes = {"MetaReader": {"MyReader": Dummy}}
-    result = main_model.get_plugin("MetaReader", "MyReader")
-    assert result == Dummy
+    main_model.save_session({"other": {"metaclass": "M", "subclass": "S"}}, path)
+
+    assert path.read_text() == before
+    assert not list(tmp_path.glob("*.tmp"))
+
+
+def test_save_tab_actions(main_model, tmp_path):
+    """A saved tab action history reads back as what was saved."""
+    history = {"Tab": {"0": {"function": "f", "parameters": {}}}}
+    path = tmp_path / "actions.json"
+
+    main_model.save_tab_actions(history, path)
+
+    assert json.loads(path.read_text()) == history
 
 
 def test_get_available_plugins(main_model):
@@ -278,30 +338,6 @@ def test_get_plugin_classes(main_model):
     main_model.available_plugin_classes = {"MetaReader": {"MyReader": object}}
 
     assert main_model.get_plugin_classes("MetaReader") == {"MyReader": object}
-
-
-def test_get_plugin_success(main_model):
-    class Dummy:
-        pass
-
-    main_model.available_plugin_classes = {"MetaReader": {"MyReader": Dummy}}
-    assert main_model.get_plugin("MetaReader", "MyReader") == Dummy
-
-
-def test_get_plugin_failure(main_model, caplog):
-    with caplog.at_level(logging.ERROR):
-        main_model.available_plugin_classes = {}
-        result = main_model.get_plugin("MetaReader", "DoesNotExist")
-        assert result is None
-        assert "unable to load class MetaReader DoesNotExist" in caplog.text
-
-
-def test_get_plugin_data_file_missing(main_model, caplog):
-    plugin_key = "MetaReader"
-    with patch("pathlib.Path.exists", return_value=False):
-        result = main_model.get_plugin_data(plugin_key)
-        assert result == {}
-        assert "Plugin data file does not exist" in caplog.text
 
 
 def test_get_data_server_location(main_model):
@@ -406,3 +442,267 @@ class TestResetAppConfig:
         main_model.reset_app_config()
 
         assert session_file.exists(), "resetting settings must not touch the session"
+
+
+# ------------- plugin discovery's extracted helpers -----------------------
+#
+# Each is driven directly as well as through populate_available_plugins.
+
+
+class TestPythonFiles:
+    """Which files in a directory listing are worth importing."""
+
+    def test_keeps_modules_and_drops_the_package_marker(self, main_model):
+        """``__init__.py`` defines the package, never a plugin."""
+        kept = main_model._python_files(
+            "/somewhere", ["Reader.py", "__init__.py", "notes.txt", "Finder.py"]
+        )
+
+        assert kept == ["Reader.py", "Finder.py"]
+
+    def test_an_unreadable_listing_yields_nothing_rather_than_raising(
+        self, main_model, caplog
+    ):
+        """
+        One bad directory must not stop discovery, since the user's folder is walked too.
+
+        The listing is passed as something that raises on iteration, which is the
+        only way this inherited guard can fire.
+        """
+
+        class _Hostile(list):
+            def __iter__(self):
+                raise OSError("listing exploded")
+
+        with caplog.at_level(logging.WARNING):
+            assert main_model._python_files("/bad", _Hostile()) == []
+        assert "Error reading files in /bad" in caplog.text
+
+
+class TestMetaclassFor:
+    """Naming the family a plugin class belongs to."""
+
+    def test_names_the_family_a_class_subclasses(self, main_model):
+        """The mapping is the definition of what counts as a plugin."""
+        real_base = MainModel.ALLOWED_BASE_CLASSES["MetaReader"]
+
+        class MyReader(real_base):
+            pass
+
+        assert main_model._metaclass_for(MyReader) == "MetaReader"
+
+    def test_gives_none_for_a_class_that_is_not_a_plugin(self, main_model):
+        """A file can define a class without defining a plugin."""
+
+        class Unrelated:
+            pass
+
+        assert main_model._metaclass_for(Unrelated) is None
+
+    def test_the_eleven_families_are_the_recognised_set(self, main_model):
+        """
+        Pinned because this mapping *is* the definition of a plugin family.
+
+        Adding one is a deliberate act; losing one silently would make every
+        plugin of that family vanish from the app with no error anywhere.
+        """
+        assert set(MainModel.ALLOWED_BASE_CLASSES) == {
+            "MetaFilter",
+            "MetaReader",
+            "MetaWriter",
+            "MetaEventLoader",
+            "MetaEventFinder",
+            "MetaEventFitter",
+            "MetaDatabaseWriter",
+            "MetaDatabaseLoader",
+            "MetaController",
+            "MetaView",
+            "MetaModel",
+        }
+
+
+class TestLoadPluginClass:
+    """Importing one candidate file, which executes it."""
+
+    def test_returns_what_load_plugin_gives(self, main_model):
+        """The ordinary case."""
+        sentinel = type("Sentinel", (), {})
+        with patch.object(main_model, "load_plugin", return_value=sentinel):
+            assert (
+                main_model._load_plugin_class("Sentinel", Path("/plugins")) is sentinel
+            )
+
+    def test_a_file_that_explodes_on_import_yields_none(self, main_model, caplog):
+        """
+        Discovery executes every file it walks, including the user's, so one bad
+        file must not stop the rest of the plugins loading.
+        """
+        with patch.object(main_model, "load_plugin", side_effect=RuntimeError("boom")):
+            with caplog.at_level(logging.WARNING):
+                assert main_model._load_plugin_class("Bad", Path("/plugins")) is None
+        assert "Failed to load plugin Bad" in caplog.text
+
+
+class TestClassifyPluginFile:
+    """Import a file and decide what, if anything, it contributes."""
+
+    def test_gives_the_family_name_and_class(self, main_model):
+        """The name comes off the filename, not out of the module."""
+        real_base = MainModel.ALLOWED_BASE_CLASSES["MetaReader"]
+
+        class MyReader(real_base):
+            pass
+
+        with patch.object(main_model, "load_plugin", return_value=MyReader):
+            assert main_model._classify_plugin_file(Path("/p"), "MyReader.py") == (
+                "MetaReader",
+                "MyReader",
+                MyReader,
+            )
+
+    def test_a_failed_import_is_not_a_plugin(self, main_model):
+        """``load_plugin`` returning None must not reach ``issubclass``."""
+        with patch.object(main_model, "load_plugin", return_value=None):
+            assert main_model._classify_plugin_file(Path("/p"), "Broken.py") is None
+
+    def test_something_that_is_not_a_class_is_not_a_plugin(self, main_model):
+        """
+        The ``isinstance(..., type)`` guard, which the original spelled out inline.
+
+        A file can define a name that is not a class at all, and ``issubclass``
+        raises on a non-class rather than returning False.
+        """
+        with patch.object(main_model, "load_plugin", return_value="not a class"):
+            assert main_model._classify_plugin_file(Path("/p"), "Odd.py") is None
+
+    def test_a_class_of_no_known_family_is_not_a_plugin(self, main_model):
+        """A plain class in the plugin tree is ignored rather than mis-filed."""
+
+        class Unrelated:
+            pass
+
+        with patch.object(main_model, "load_plugin", return_value=Unrelated):
+            assert main_model._classify_plugin_file(Path("/p"), "Unrelated.py") is None
+
+
+class TestPluginFiles:
+    """Where discovery looks, and in what order."""
+
+    def test_skips_a_directory_that_is_not_there(self, main_model, caplog, tmp_path):
+        """
+        A missing plugin directory is warned about and stepped over, not fatal.
+
+        The user's folder is routinely absent - a fresh install has nothing in it -
+        so this is the common path rather than an edge case. Both directories are
+        pointed at paths that do not exist, since the fixture leaves
+        ``plugin_path`` aimed at the real shipped tree.
+        """
+        main_model.plugin_path = Path(tmp_path, "no-such-shipped-tree")
+        main_model.app_config["User Plugin Folder"] = str(
+            Path(tmp_path, "no-such-user")
+        )
+
+        with caplog.at_level(logging.WARNING):
+            assert list(main_model._plugin_files()) == []
+
+        assert caplog.text.count("not a valid directory") == 2
+
+    def test_walks_the_shipped_tree_before_the_user_folder(self, main_model, tmp_path):
+        """
+        Order is load-bearing: the caller rejects the *second* file of a given
+        name, so walking shipped plugins first is what makes a user file lose a
+        collision rather than win it.
+        """
+        shipped = Path(tmp_path, "shipped")
+        user = Path(tmp_path, "user")
+        for folder in (shipped, user):
+            folder.mkdir()
+            Path(folder, "Clash.py").write_text("", encoding="utf-8")
+
+        main_model.plugin_path = shipped
+        main_model.app_config["User Plugin Folder"] = str(user)
+
+        found = list(main_model._plugin_files())
+
+        assert [str(folder) for folder, _ in found] == [str(shipped), str(user)]
+        assert {name for _, name in found} == {"Clash.py"}
+
+
+# ------------- the session-restore type round trip -----------------------
+#
+# Plugin settings carry a real type under "Type". JSON cannot hold one, so it is
+# written as its name on save and turned back into the type on load. The bug was
+# that the load side converted *any* string matching a type name, whatever key it
+# sat under.
+
+
+class TestTypeRoundTrip:
+    """Saving and restoring the one key that legitimately holds a type."""
+
+    def test_a_type_survives_the_round_trip(self, main_model):
+        """The feature these two walkers exist for."""
+        settings = {"Threshold": {"Type": float, "Value": 3.0}}
+
+        main_model.replace_classes_with_class_names(settings)
+        assert settings["Threshold"]["Type"] == "float"
+
+        main_model.replace_class_names_with_classes(settings)
+        assert settings["Threshold"]["Type"] is float
+
+    def test_a_value_that_reads_like_a_type_name_is_left_alone(self, main_model):
+        """
+        The corruption: a setting whose value is the string "float" came back as
+        ``<class 'float'>``, because the walker matched on the string and ignored
+        which key it sat under. Reproduced before the fix.
+        """
+        restored = {"Event Type": {"Type": str, "Value": "float"}}
+
+        main_model.replace_class_names_with_classes(restored)
+
+        assert restored["Event Type"]["Value"] == "float"
+        assert isinstance(restored["Event Type"]["Value"], str)
+
+    def test_every_type_name_is_safe_as_a_value(self, main_model):
+        """All four names the map knows, since any of them could be a real setting."""
+        restored = {
+            "P": {"Value": "str"},
+            "Q": {"Value": "int"},
+            "R": {"Value": "bool"},
+        }
+
+        main_model.replace_class_names_with_classes(restored)
+
+        assert [v["Value"] for v in restored.values()] == ["str", "int", "bool"]
+
+    def test_an_unknown_type_name_is_left_as_written(self, main_model):
+        """A Type the map does not know stays a string rather than vanishing."""
+        restored = {"Odd": {"Type": "SomeClass"}}
+
+        main_model.replace_class_names_with_classes(restored)
+
+        assert restored["Odd"]["Type"] == "SomeClass"
+
+    def test_nested_settings_are_still_walked(self, main_model):
+        """Plugin history nests settings two deep, so the recursion is load-bearing."""
+        history = {"reader_0": {"settings": {"Threshold": {"Type": "int"}}}}
+
+        main_model.replace_class_names_with_classes(history)
+
+        assert history["reader_0"]["settings"]["Threshold"]["Type"] is int
+
+    def test_saving_a_type_under_an_unexpected_key_is_reported(
+        self, main_model, caplog
+    ):
+        """
+        The save side still converts any type, so no existing save can break - but
+        it says so, because the load side will not convert that key back. Without
+        the warning the asymmetry would be silent and the setting would come back
+        as a string.
+        """
+        settings = {"Surprise": {"Codec": bool}}
+
+        with caplog.at_level(logging.WARNING):
+            main_model.replace_classes_with_class_names(settings)
+
+        assert settings["Surprise"]["Codec"] == "bool"
+        assert "Codec" in caplog.text

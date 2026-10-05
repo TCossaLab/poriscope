@@ -3,7 +3,7 @@
 Ready to Build Your Own Data Plugin?
 ====================================
 
-In many ways data plugins are simpler than frontend plugins, in that they are standalone python elements that exist outside of the MVC context and can be used without the GUI as part of custom workflows. Unlike frontend plughins, data plugins are pure python objects, and are intended to be usable both as part of the poriscope gui and as standalone scripting elements. To make this possible, each type of data plugin has a well-defined common API that must be respected by any user-created plugin, enforced through the use of base classes and tests applied to contributions to the code base, as already explained in :ref:`understanding base classes <understanding_base_classes>`.
+In many ways data plugins are simpler than frontend plugins, in that they are standalone python elements that exist outside of the MVC context and can be used without the GUI as part of custom workflows. Unlike frontend plugins, data plugins are pure python objects, and are intended to be usable both as part of the poriscope gui and as standalone scripting elements. To make this possible, each type of data plugin has a well-defined common API that must be respected by any user-created plugin, enforced through the use of base classes and tests applied to contributions to the code base, as already explained in :ref:`understanding base classes <understanding_base_classes>`.
 
 To build a data plugin, you must:
 
@@ -20,9 +20,13 @@ Start From a Generated Skeleton
 You do not have to do any of the four steps above by hand. ``scripts/new_plugin.py``
 writes a skeleton that already satisfies all four, and which passes ``ruff``, ``mypy``,
 ``pydoclint``, the plugin compliance suite and the settings-schema check *before you have
-filled in a single method*. Every failure you see after that is one you introduced, which
-is a much easier position to work from than discovering a signature mismatch when a
-reviewer runs the suite on your pull request.
+filled in a single method* — a much easier position to work from than discovering a
+signature mismatch when a reviewer runs the suite on your pull request.
+
+Two things a fresh skeleton does **not** pass, by design, so do not read that list as a
+green test run: its unfilled methods raise ``NotImplementedError``, and the behavioural
+conformance suite has no recipe for a plugin it has never seen. Both are expected, and
+both say what they want — see :ref:`plugin_conformance_testing`.
 
 Run it with no arguments and it will ask what you are building:
 
@@ -76,6 +80,12 @@ you can confirm the plumbing works before writing any of the algorithm.
    ``MetaReader`` an event finder depends on, the ``Output File`` a writer needs — and an
    override that forgets the ``super()`` call silently drops them. Nothing checks for it.
 
+   The stub then seeds one example parameter, ``"My Parameter"``, marked ``# TODO`` and
+   carrying no default. Replace it with the parameters your plugin actually needs, or
+   delete it if it needs none. Until you do, conformance correctly reports it as a
+   required parameter left unset — and that applies even in the families that otherwise
+   need no recipe work at all, so it is the one step no generated plugin can skip.
+
 .. warning::
 
    Plugin names must be unique across **every** family, not just within one, because the
@@ -83,9 +93,8 @@ you can confirm the plumbing works before writing any of the algorithm.
    is already taken; without it, the first sign of a clash is an error dialog at app
    startup telling you your file was ignored.
 
-The generator covers data plugins only. Analysis tab plugins are a
-Controller/Model/View triad rather than a single file — see
-:ref:`build_frontend_plugin` for those.
+The generator also writes analysis tabs, which are a Controller/Model/View triad rather
+than a single file — pass ``AnalysisTab`` as the base. See :ref:`new_tab_script`.
 
 .. important::
 
@@ -96,19 +105,25 @@ Controller/Model/View triad rather than a single file — see
 
 .. note::
 
-	Implementation of a data plugin will feel incomplete - it is! Much of the functionality is held together in the base class itself. All you are doing is filling in the blanks where the poriscope developers cannot reasonable predict how a particular piece of information can be extracted without knowing the specific thing you are trying to build. While not strictly required, we encourage plugin developers to familiarize themselves with all of the functinality in the base class - it may help with your implementation to know how the functions you are filling in are being used, and if you're lucky, you may find a bug that we missed.
+	Implementation of a data plugin will feel incomplete - it is! Much of the functionality is held together in the base class itself. All you are doing is filling in the blanks where the poriscope developers cannot reasonably predict how a particular piece of information can be extracted without knowing the specific thing you are trying to build. While not strictly required, we encourage plugin developers to familiarize themselves with all of the functionality in the base class - it may help with your implementation to know how the functions you are filling in are being used, and if you're lucky, you may find a bug that we missed.
 
-As long as the API is respected (order and type of arguments, return type, and any limits on the circumstances in which your plugin should `Raise`), it is sometimes acceptable to override functions that are implemented in the base class. That being said, while we have done our best to predict common behaviors, it is possible that overrides of non-anstract classes will be necessary. If you do, however, be sure that you understand the base class implementation. In many cases, it is strongly suggested that you call ``super().[function_name](...)`` and extend the implementation from there, rather than overriding completely or duplicating code, and never, ever change the arguments, argument types, or return types of public functions.
+As long as the API is respected (order and type of arguments, return type, and any limits on the circumstances in which your plugin should `Raise`), it is sometimes acceptable to override functions that are implemented in the base class. That being said, while we have done our best to predict common behaviors, it is possible that overrides of non-abstract methods will be necessary. If you do, however, be sure that you understand the base class implementation. In many cases, it is strongly suggested that you call ``super().[function_name](...)`` and extend the implementation from there, rather than overriding completely or duplicating code, and never, ever change the arguments, argument types, or return types of public functions.
 
-To assist with quality control, any contributions to the poriscope repository will need to pass our tests and type checks. To assist with this, functions should be decorated with the ``@override`` tag to tell our type checker what to expect, and should have detailed docstrings that explain the you are doing in your function. Plugins will only be added to the repository when fully compliant, but we are happy to help if you get stuck in the process.
+To assist with quality control, any contributions to the poriscope repository will need to pass our tests and type checks. To assist with this, functions should be decorated with the ``@override`` tag to tell our type checker what to expect, and should have detailed docstrings that explain what you are doing in your function. Plugins will only be added to the repository when fully compliant, but we are happy to help if you get stuck in the process.
 
 .. tip::
 
    "Our tests and type checks" means something specific and checkable, not a vague
    standard a reviewer applies by eye. See :ref:`quality_control` for exactly what
-   runs (formatting, typing, docstring consistency, and plugin interface compliance
-   testing), and work through :ref:`pre_pr_checklist` before you open your pull
-   request — it will save you a review round-trip.
+   runs (formatting, typing, docstring consistency, plugin interface compliance
+   testing, and the behavioural conformance suite, which actually runs your plugin
+   against synthetic data), and work through :ref:`pre_pr_checklist` before you open
+   your pull request — it will save you a review round-trip.
+
+   Budget for that last one: most new plugins have to add a settings recipe so the
+   conformance suite can drive them, and a reader for a format not already covered
+   has to add a synthetic writer for it. See :ref:`plugin_conformance_testing` for
+   which families need what.
 
 .. toctree::
    :maxdepth: 1

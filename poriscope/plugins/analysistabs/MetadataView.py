@@ -25,16 +25,13 @@
 # Kyle Briggs
 
 import bisect
-import itertools
-import json
+import copy
 import logging
-import os
 import re
 import warnings
 from typing import (
     Any,
     Dict,
-    Iterator,
     List,
     Optional,
     Sequence,
@@ -52,32 +49,20 @@ from matplotlib.axes import Axes
 from matplotlib.colorbar import Colorbar
 from matplotlib.lines import Line2D
 from mpl_toolkits.mplot3d import Axes3D
-from PySide6.QtCore import Slot
+from PySide6.QtCore import Signal, Slot
 from PySide6.QtWidgets import (
-    QBoxLayout,
-    QCheckBox,
-    QDialog,
-    QFileDialog,
-    QHBoxLayout,
     QMessageBox,
 )
-from scipy import stats
-from scipy.optimize import curve_fit
-from scipy.stats import iqr, t
 
 from poriscope.plugins.analysistabs.utils.metadatacontrols import MetadataControls
-from poriscope.plugins.analysistabs.utils.walkthrough_mixin import (
-    WalkthroughMixin,
-    WalkthroughStep,
-)
 from poriscope.utils.DocstringDecorator import inherit_docstrings
 from poriscope.utils.LogDecorator import log, register_action
-from poriscope.utils.MetaView import MetaView
-from poriscope.views.widgets.add_subset_filter_dialog import AddSubsetFilterDialog
+from poriscope.utils.MetaSubsetTabControls import MetaSubsetTabControls
+from poriscope.utils.MetaSubsetTabView import MetaSubsetTabView
 from poriscope.views.widgets.dict_dialog_widget import DictDialog
-from poriscope.views.widgets.edit_subset_filter_dialog import EditSubsetFilterDialog
-from poriscope.views.widgets.multiselect import MultiSelectComboBox
-from poriscope.views.widgets.SelectionTree import SelectionTree
+from poriscope.views.widgets.walkthrough_mixin import (
+    WalkthroughStep,
+)
 
 warnings.filterwarnings(
     "ignore",
@@ -86,9 +71,9 @@ warnings.filterwarnings(
 
 
 @inherit_docstrings
-class MetadataView(MetaView, WalkthroughMixin):
+class MetadataView(MetaSubsetTabView):
     """
-    Subclass of MetaView for visualizing and interacting with metadata plots.
+    Subclass of MetaSubsetTabView for visualizing and interacting with metadata plots.
 
     This view supports a wide variety of statistical visualizations, including:
     1D histograms, KDEs, capture rates, scatterplots, heatmaps, and event overlays.
@@ -102,12 +87,124 @@ class MetadataView(MetaView, WalkthroughMixin):
         no_cached_data (bool): True if data is not cached due to size.
     """
 
-    logger = logging.getLogger(__name__)
+    #: Asks the Controller for one column's units, for one axis label. The axis is
+    #: carried so the answer can be applied to the right label, which is what the bus
+    #: used its ``ret_args`` for. This tab is the only caller, which is why
+    #: ``update_units`` moved down here from ``MetaSubsetTabView``.
+    column_units_requested = Signal(str, str, str)
 
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        super().__init__(*args, **kwargs)
-        self._init()
-        self._init_walkthrough()
+    #: Asks the Controller for one metadata subset, ready to plot: the loader's key,
+    #: the columns this plot type needs, the filter, and the experiment/channel scope.
+    #: The Controller builds the query, loads the rows and looks up each column's
+    #: units, then hands all three back through ``set_query``, ``update_plot_data``
+    #: and ``set_column_units`` - or hands back nothing and reports why.
+    #:
+    #: One request rather than three, because the answers are only useful together:
+    #: asking separately meant parking each on an attribute and reading it back, and a
+    #: failure that went unnoticed left the *previous* subset's query or the previous
+    #: column's units in place - a plot drawn and labelled for a subset it did not come
+    #: from.
+    metadata_subset_requested = Signal(str, list, str, object)
+
+    #: Asks for one event-data subset to be tallied into an all-points histogram: the
+    #: loader's key, the filter, the scope, the plot type, the bin request, the shared
+    #: limits so far, and the label the result is drawn under. Answered through
+    #: ``set_all_points_histogram``.
+    #:
+    #: The events are tallied where they are loaded and only the histogram comes back.
+    #: Nothing outside the histogram reads them, so handing the widget a generator to walk
+    #: would put the whole subset in the View to produce one array.
+    all_points_histogram_requested = Signal(
+        str, str, object, str, object, bool, object, object, str
+    )
+
+    #: Asks for one event-data subset to be put on a shared normalised axis: the
+    #: loader's key, the filter, the scope and the plot type. Answered through
+    #: ``set_event_overlay``.
+    #:
+    #: Same reasoning as ``all_points_histogram_requested``: the events are reduced where
+    #: they are loaded. The alpha each trace is drawn at stays here, because it is read by
+    #: nothing outside the axes it is drawn on.
+    event_overlay_requested = Signal(str, str, object, str)
+
+    #: Asks for one column's declared type, which the categorical-histogram guard
+    #: needs before it will let the plot proceed. The answer arrives through
+    #: ``set_column_type``, and stays ``None`` when the lookup failed.
+    column_type_requested = Signal(str, str)
+
+    #: Asks for one event's plot features - the lines, points and labels a fitter left
+    #: behind. Emitted once per event on the plot path, and answered through
+    #: ``update_plot_features``, which the Controller calls only when the lookup
+    #: succeeded and the labels it returned match their features.
+    plot_features_requested = Signal(str, int, int, int)
+
+    #: Asks for a filtered subset to be written to CSV in a worker thread: the loader's
+    #: key, the destination folder, the export's name, the single selected filter (or
+    #: None for the whole dataset), the experiment/channel scope, and the index this
+    #: export is keyed under. ``on_subset_export_started`` comes back if it was staged.
+    csv_subset_export_requested = Signal(str, str, str, object, object, int)
+
+    #: Asks for the heatmap's 2-D binning: the raw columns, their log flags, the bin
+    #: request, and the drawing context handed back unchanged. Answered through
+    #: ``set_heatmap``.
+    #:
+    #: The columns leave raw: the NaN mask, the log filter and the binning are one
+    #: calculation and splitting them would compute the surviving row set twice. The
+    #: imshow, the colourbar and the cache entry stay here - they are drawing, and the
+    #: values they use never leave the View.
+    heatmap_requested = Signal(
+        object, object, object, object, bool, object, str, str, str
+    )
+
+    #: The same for the three columns of a 3-D scatterplot. Answered through
+    #: ``set_3d_scatterplot``, which is separate because the 3-D axes and the z label
+    #: are not a special case of the 2-D drawing.
+    scatterplot_3d_requested = Signal(object, object, object, object, str)
+
+    #: Asks for every overlaid dataset's kernel density: the raw columns, the log
+    #: flag, the bin request, the shared limits so far, and the drawing context
+    #: handed back unchanged. Answered through ``set_kernel_densities``.
+    #:
+    #: One request for every overlaid dataset rather than one each, so no intermediate
+    #: answer is parked on the widget between them. The columns leave raw because the
+    #: filtering and the shared limits are computed from the same surviving rows the
+    #: density is.
+    density_requested = Signal(
+        object, bool, object, bool, object, object, object, str, str, str
+    )
+
+    #: Asks for the shared bin edges every overlaid histogram dataset is drawn on,
+    #: and the counts against them: the raw columns, the log flag, the bin request
+    #: and the limits so far. Answered through ``set_histogram_bins``.
+    #:
+    #: The counts come back with the edges rather than being tallied here: tallying
+    #: values into bins is aggregation, and its result is exported with the plot rather
+    #: than only drawn. The filtering and the shared limits travel with them because this
+    #: and ``density_requested`` write the same accumulated limits and must agree.
+    histogram_bins_requested = Signal(
+        object, bool, object, bool, object, object, bool, object, str, str, str
+    )
+
+    #: Asks for the capture-rate binning and its exponential fit: the event times
+    #: as they came out of the column, the bin request, and the drawing context.
+    #: Answered through ``set_capture_rate``.
+    #:
+    #: The bin edges come back with the fit, so the histogram is drawn on exactly the
+    #: edges the fit was made against - computing them twice would let the two disagree.
+    #: This carries the event-time column rather than the log inter-event times, because
+    #: the gaps are derived from it wherever the fit is.
+    capture_rate_requested = Signal(object, object, bool, object, str, str, str)
+
+    #: Asks for the per-category counts of every overlaid dataset at once, with the
+    #: drawing context handed back unchanged. Answered through
+    #: ``set_categorical_counts``.
+    #:
+    #: Counting occurrences is aggregation and the answer is exported with the plot, so
+    #: it does not belong in the widget. One request for all the datasets, like
+    #: ``density_requested``, so no answer is parked between them.
+    categorical_counts_requested = Signal(object, object, object, str, str)
+
+    logger = logging.getLogger(__name__)
 
     @log(logger=logger)
     @override
@@ -139,31 +236,28 @@ class MetadataView(MetaView, WalkthroughMixin):
         ]
         self.hist_min: Optional[float] = None
         self.hist_max: Optional[float] = None
-        # Bus results, written by relay_experiment_id/relay_query_result and read
-        # back by the emitter on the next statement. Declared here so the type is
-        # stated once and the callers' cleared-before-emit assignment type-checks.
-        self.relayed_experiment_id: Optional[int] = None
-        self.relayed_query_result: Optional[pd.DataFrame] = None
-        # Heterogeneous by design: the histogram paths append 1-D arrays, the
-        # density path appends whole DataFrames, and the all-points path appends
-        # (x, y) tuples. Flagged for review.
+        # Set by set_event_plot_data_generator once the whole event-plot chain has
+        # succeeded. None means it has not been fetched.
+        self.plot_events_generator = None
+        # One units string per plotted column, set by set_column_units once the
+        # whole subset has been fetched. None means it has not been.
+        self.column_units: Optional[List[Optional[str]]] = None
+        # Heterogeneous by design: the three 1-D paths - histogram, density and
+        # categorical - append the raw column as a 1-D array, and the all-points
+        # path appends an (x, y) tuple. Two shapes, not one: flagged for review,
+        # since a single element type is the fix and it is a change of its own.
         self.hist_data: List[Any] = []
         self.hist_labels: List[Any] = []
-        self.subset_filters: Dict[str, str] = {}
+        self.subset_filters = {}
         self.available_experiment_and_channels_by_loader: Dict[
             str, Dict[str, List[str]]
         ] = {}
-        self.selected_experiment_and_channels_by_loader: Dict[
-            str, Dict[str, List[str]]
-        ] = {}
+        self.selected_experiment_and_channels_by_loader = {}
         self.allowed_plot_type: Optional[str] = None
         self.allowed_columns: List[str] = []
         self.allowed_logs: List[bool] = []
         self.allowed_bins: Optional[Union[int, float]] = None
         self.allowed_sizes: Optional[bool] = None
-
-        self._show_sql_in_display: bool = False
-        self._show_event_sql_in_display: bool = False
 
         self.plotted_datasets: Set[
             Tuple[
@@ -181,62 +275,41 @@ class MetadataView(MetaView, WalkthroughMixin):
         self.hlabels: Optional[List[str]] = None
         self.plabels: Optional[List[str]] = None
         self._heatmap_colorbar: Optional[Colorbar] = None
-        self._pending_filter_name: Optional[str] = None
-        self._pending_filter_text: Optional[str] = None
-        self._pending_old_filter_name: Optional[str] = None
         # list of tuples of things already plotted: (loader, experiment, channel, filter, subset name), which can be None
 
         # Cache for filter-aware event navigation — rebuilt only when filter/scope changes
-        self.filtered_event_ids: List[int] = []
-        self.current_sql_filter: Optional[str] = None
-        self.current_experiment: Optional[str] = None
-        self.current_channel: Optional[int] = None
+        self.filtered_event_ids = []
+        self.current_sql_filter = None
+        self.current_experiment = None
+        self.current_channel = None
+
+    @property
+    def _subset_controls(self) -> MetaSubsetTabControls:
+        """
+        The controls panel, under the name ``MetaSubsetTabView``'s shared methods use.
+
+        Annotated with the base's type rather than ``MetadataControls`` so the override
+        matches the declaration verbatim, which is what the plugin compliance test
+        compares. Tab-specific code keeps using ``self.metadatacontrols``.
+
+        :return: the panel built by ``_build_controls``
+        :rtype: MetaSubsetTabControls
+        """
+        return self.metadatacontrols
 
     @log(logger=logger)
-    @override
-    def _set_control_area(self, layout: QBoxLayout) -> None:
+    def _build_controls(self) -> MetadataControls:
         """
-        Set up the control area layout by inserting metadata controls.
+        Build the tab's controls panel and keep it under this tab's own name.
 
-        :param layout: The layout to which the controls will be added.
-        :type layout: QBoxLayout
+        ``MetaView._set_control_area`` connects it and places it in the layout; the
+        named attribute is kept because it is used throughout this tab.
+
+        :return: the controls panel
+        :rtype: MetadataControls
         """
         self.metadatacontrols = MetadataControls()
-        self.metadatacontrols.actionTriggered.connect(self.handle_parameter_change)
-        self.metadatacontrols.edit_processed.connect(self.handle_edit_triggered)
-        self.metadatacontrols.add_processed.connect(self.handle_add_triggered)
-        self.metadatacontrols.delete_processed.connect(self.handle_delete_triggered)
-        self.metadatacontrols.edit_filter_requested.connect(
-            self.show_edit_filter_dialog
-        )
-        self.metadatacontrols.delete_filter_requested.connect(
-            self._delete_filter_by_name
-        )
-
-        controlsAndAnalysisLayout = QHBoxLayout()
-        controlsAndAnalysisLayout.setContentsMargins(0, 0, 0, 0)
-
-        # Add the rawdatacontrols directly to the main layout
-        controlsAndAnalysisLayout.addWidget(self.metadatacontrols, stretch=1)
-
-        layout.setSpacing(0)
-        layout.addLayout(controlsAndAnalysisLayout, stretch=1)
-
-    @log(logger=logger)
-    def get_save_filename(self) -> str:
-        """
-        Open a file dialog for the user to choose a save location.
-
-        :return: Selected filename.
-        :rtype: str
-        """
-        file_name, _ = QFileDialog.getSaveFileName(
-            self,
-            "Save CSV File",
-            os.path.expanduser("~"),
-            "CSV Files (*.csv);;All Files (*)",
-        )
-        return file_name
+        return self.metadatacontrols
 
     @log(logger=logger)
     def _clear_figure_state(
@@ -362,7 +435,7 @@ class MetadataView(MetaView, WalkthroughMixin):
         :type sizes: bool
         :raises ValueError: If bins is an empty list.
 
-        Calculate a plot a 1d kernel density with optional logscaling before binning
+        Ask for a 1d kernel density, with optional logscaling before binning
         """
 
         if bins is not None:
@@ -371,64 +444,83 @@ class MetadataView(MetaView, WalkthroughMixin):
             else:
                 raise ValueError(f"Invalid bins entry {bins}")
 
-        if self.hist_min is None or min(data) < self.hist_min:
-            self.hist_min = min(data)
-        if self.hist_max is None or max(data) > self.hist_max:
-            self.hist_max = max(data)
+        (column,) = cols
+        (x_units,) = units
+        (logx,) = logscales
+
+        x_label = self.format_axis_label(column, x_units)
+        if logx:
+            x_label = f"log10({x_label})"
+
+        # The newest dataset travels alongside the ones already accumulated rather
+        # than being appended first: the Model decides whether anything survives the
+        # filter, and a subset that loses every point must not leave a label behind.
+        # ``set_kernel_densities`` does the appending, once there is something to
+        # draw.
+        self.density_requested.emit(
+            list(self.hist_data) + [data[column].values],
+            logx,
+            bins,
+            sizes,
+            self.hist_min,
+            self.hist_max,
+            ax,
+            x_label,
+            column,
+            dataset_label,
+        )
+
+    @log(logger=logger)
+    def set_kernel_densities(
+        self,
+        values: npt.NDArray[np.float64],
+        dataset_label: str,
+        densities: Sequence[Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]],
+        hist_min: float,
+        hist_max: float,
+        ax: Axes,
+        x_label: str,
+    ) -> None:
+        """
+        Draw one filled density curve per overlaid dataset.
+
+        The answering half of ``density_requested``. The curve arrives already
+        evaluated, so it is computed once rather than the three times drawing it would
+        otherwise need. The newest dataset joins the overlay here as its **raw** column,
+        because the Model re-filters every accumulated dataset on each update and a
+        pre-filtered one would be filtered twice.
+
+        :param values: the newest dataset's raw column values, to accumulate
+        :type values: npt.NDArray[np.float64]
+        :param dataset_label: the newest dataset's label
+        :type dataset_label: str
+        :param densities: one (positions, density) pair per dataset
+        :type densities: Sequence[Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]]
+        :param hist_min: the shared lower limit, widened by this dataset
+        :type hist_min: float
+        :param hist_max: the shared upper limit, widened by this dataset
+        :type hist_max: float
+        :param ax: the axis object on which to plot
+        :type ax: Axes
+        :param x_label: the x axis label, already formatted
+        :type x_label: str
+        :return: None
+        :rtype: None
+        """
+        self.hist_data.append(values)
+        self.hist_labels.append(dataset_label)
+        self.hist_min = hist_min
+        self.hist_max = hist_max
+
         ax.clear()
         self._clear_cache()
-        self.hist_data.append(data)
-        self.hist_labels.append(dataset_label)
 
-        for data, dataset_label in zip(self.hist_data, self.hist_labels):
-            (x_label,) = cols
-            (x_units,) = units
-            (logx,) = logscales
-            data = data[x_label].values
-            x_label = self.format_axis_label(x_label, x_units)
-            y_label = "Probability Density"
+        y_label = "Probability Density"
 
-            if logx:
-                x_label = f"log10({x_label})"
-
-            logx = logscales[0]
-
-            (data,) = self._logscale_and_filter_multiple_columns(data, log_flags=[logx])
-
-            if bins is not None:
-                if sizes is False:
-                    numbins = bins
-                else:
-                    try:
-                        if self.hist_max is not None and self.hist_min is not None:
-                            numbins = int((self.hist_max - self.hist_min) / bins)
-                        else:
-                            bins = None
-                            numbins = 0
-                    except TypeError:
-                        bins = None
-                        numbins = 0
-                    if numbins <= 1:
-                        bins = None
-            if bins is None:
-                try:
-                    if iqr(data) > 0:
-                        numbins = int(
-                            (np.max(data) - np.min(data))
-                            * len(data) ** (1.0 / 3.0)
-                            / (iqr(data))
-                        )
-                    else:
-                        numbins = int(3.332 * np.log10(len(data)))
-                except OverflowError:
-                    numbins = 100
-
-            density = stats.kde.gaussian_kde(data.T)
-            x = np.linspace(np.min(data), np.max(data), numbins)
-            ax.plot(x, density(x), label=dataset_label)
-            ax.fill_between(x, density(x), alpha=0.3)
-
-            self._update_cache((x, x_label), (density(x), y_label))
+        for (x, y), label in zip(densities, self.hist_labels, strict=True):
+            ax.plot(x, y, label=label)
+            ax.fill_between(x, y, alpha=0.3)
+            self._update_cache((x, x_label), (y, y_label))
 
         ax.set_xlabel(x_label)
         ax.set_ylabel(y_label)
@@ -468,36 +560,22 @@ class MetadataView(MetaView, WalkthroughMixin):
         Calculate the capture rate for the given subset
         """
 
-        def log_exp_pdf(
-            logt: npt.NDArray[np.float64], rate: float, amplitude: float
-        ) -> npt.NDArray[np.float64]:
-            x = amplitude * np.exp(-rate * 10.0**logt) * 10.0**logt * np.log(10)
-            return x
-
         if bins is not None:
             if isinstance(bins, list) and len(bins) >= 1:
                 bins = bins[0]
             else:
                 raise ValueError(f"Invalid bins entry {bins}")
 
-        initial_length = len(data)
         (x_label,) = cols
         (x_units,) = units
         (logx,) = logscales
+        # The column goes out as it stands. Turning event times into log10 inter-event
+        # times is the measurement rather than the drawing, so the Model does it, and
+        # the two conditions that used to be judged here - too little surviving data,
+        # and how much the log filter dropped - are judged by the Controller on the
+        # answer. The ValueError this method can still raise is the bins one above,
+        # which is why update_plot's handler stays live.
         data = data[x_label].values
-        data = np.diff(np.sort(data))
-        data = np.log10(data[data > 0])
-
-        if len(data) < 10:
-            raise ValueError(
-                f"Not enough data passes the log filter: {len(data)} is not enough to estimate capture rate - skipping"
-            )
-
-        if len(data) < initial_length:
-            self.add_text_to_display.emit(
-                f"{initial_length - len(data)} rows dropped by log filter",
-                self.__class__.__name__,
-            )
 
         x_label = f"Interevent Time ({x_units})"
         y_label = "Count"
@@ -505,44 +583,71 @@ class MetadataView(MetaView, WalkthroughMixin):
         if logx:
             x_label = f"log10({x_label})"
 
-        if bins is None:
-            try:
-                if iqr(data) > 0:
-                    numbins = int(
-                        (np.max(data) - np.min(data))
-                        * len(data) ** (1.0 / 3.0)
-                        / (iqr(data))
-                    )
-                else:
-                    numbins = int(3.332 * np.log10(len(data)))
-            except OverflowError:
-                numbins = int(3.332 * np.log10(len(data)))
-        else:
-            numbins = bins
+        self.capture_rate_requested.emit(
+            data, bins, sizes, ax, x_label, y_label, dataset_label
+        )
 
-        val, bins, patches = ax.hist(
+    @log(logger=logger)
+    def set_capture_rate(
+        self,
+        bin_edges: npt.NDArray[np.float64],
+        bincenters: npt.NDArray[np.float64],
+        val: npt.NDArray[np.float64],
+        fit: npt.NDArray[np.float64],
+        rate: float,
+        error: float,
+        data: npt.NDArray[np.float64],
+        ax: Axes,
+        x_label: str,
+        y_label: str,
+        dataset_label: str,
+    ) -> None:
+        """
+        Draw the inter-event time histogram and the exponential fitted to it.
+
+        The answering half of ``capture_rate_requested``. The binning and the fit are
+        made together below, so both describe the same intervals.
+
+        The histogram is drawn on the **edges the fit was made against**, rather than
+        on this widget's own binning of the same request. Handing matplotlib a bin
+        count instead would let it bin independently, and the counts the fit used and
+        the bars the user sees could then differ with nothing to say so.
+
+        :param bin_edges: the edges the counts and the fit were computed on
+        :type bin_edges: npt.NDArray[np.float64]
+        :param bincenters: the center of each bin
+        :type bincenters: npt.NDArray[np.float64]
+        :param val: the counts in each bin
+        :type val: npt.NDArray[np.float64]
+        :param fit: the fitted curve evaluated at the bin centers
+        :type fit: npt.NDArray[np.float64]
+        :param rate: the fitted capture rate in Hz
+        :type rate: float
+        :param error: the 95% confidence half-width on the rate
+        :type error: float
+        :param data: the log inter-event times the histogram is built from
+        :type data: npt.NDArray[np.float64]
+        :param ax: the axis object on which to plot
+        :type ax: Axes
+        :param x_label: the x axis label, already formatted
+        :type x_label: str
+        :param y_label: the y axis label
+        :type y_label: str
+        :param dataset_label: string to label the dataset
+        :type dataset_label: str
+        :return: None
+        :rtype: None
+        """
+        ax.hist(
             data,
-            bins=numbins,
+            bins=bin_edges,
             histtype="step",
             stacked=False,
             fill=False,
             label=dataset_label,
         )
 
-        bincenters = bins[:-1] + np.diff(bins) / 2.0
-
-        rate_guess = 1.0 / (10 ** bincenters[np.argmax(val)])
-        amp_guess = np.max(val) / (np.log(10) / (rate_guess * np.exp(1)))
-        p0 = [rate_guess, amp_guess]
-
-        popt, pcov = curve_fit(log_exp_pdf, bincenters, val, p0=p0)
-        rate = popt[0]
-        amp = popt[1]
-        error = -t.isf(0.975, len(val)) * np.sqrt(np.diag(pcov))[0]
-
-        fit = log_exp_pdf(bincenters, rate, amp)
-
-        ax.plot(bincenters, fit, label=f"{rate:.3g} \u00b1 {error:.1g} Hz")
+        ax.plot(bincenters, fit, label=f"{rate:.3g} ± {error:.1g} Hz")
 
         self._update_cache((bincenters, x_label), (val, y_label))
 
@@ -584,7 +689,7 @@ class MetadataView(MetaView, WalkthroughMixin):
         :type norm: bool
         :raises ValueError: If bins is an empty list.
 
-        Calculate a plot a 1d histogram with optional logscaling and normalization
+        Ask for a 1d histogram, with optional logscaling and normalization
         """
         if bins is not None:
             if isinstance(bins, list) and len(bins) >= 1:
@@ -592,87 +697,92 @@ class MetadataView(MetaView, WalkthroughMixin):
             else:
                 raise ValueError(f"Invalid bins entry {bins}")
 
-        (x_label,) = cols
+        (column,) = cols
         (x_units,) = units
         (logx,) = logscales
-        data = data[x_label].values
 
-        (data,) = self._logscale_and_filter_multiple_columns(data, log_flags=[logx])
+        # Every overlaid dataset goes down together: the filter, the shared limits
+        # and the edges are all decided from all of them at once, which is what
+        # makes the bars comparable, and the counts come back one array per dataset.
+        # The newest travels alongside rather than being accumulated first, for the
+        # reason ``_plot_1d_density`` records - the two share this accumulator and
+        # this pair of limits, which is why they converted together.
+        self.histogram_bins_requested.emit(
+            list(self.hist_data) + [data[column].values],
+            logx,
+            bins,
+            sizes,
+            self.hist_min,
+            self.hist_max,
+            norm,
+            ax,
+            self.format_axis_label(column, x_units),
+            column,
+            dataset_label,
+        )
 
-        # Update global min/max
-        if self.hist_min is None or np.min(data) < self.hist_min:
-            self.hist_min = float(np.min(data))
-        if self.hist_max is None or np.max(data) > self.hist_max:
-            self.hist_max = float(np.max(data))
+    @log(logger=logger)
+    def set_histogram_bins(
+        self,
+        values: npt.NDArray[np.float64],
+        dataset_label: str,
+        bincenters: npt.NDArray[np.float64],
+        widths: npt.NDArray[np.float64],
+        counts: Sequence[npt.NDArray[np.float64]],
+        hist_min: float,
+        hist_max: float,
+        ax: Axes,
+        x_label: str,
+        logx: bool,
+        norm: bool,
+    ) -> None:
+        """
+        Draw every overlaid dataset onto one shared set of bin edges.
+
+        The answering half of ``histogram_bins_requested``. This is handed each
+        dataset's tallies rather than the edges to tally against, and the edges
+        themselves do not come back: nothing here draws with them once the counting is
+        done elsewhere, and returning them would invite a second tally against them.
+
+        :param values: the newest dataset's raw column values, to accumulate
+        :type values: npt.NDArray[np.float64]
+        :param dataset_label: the newest dataset's label
+        :type dataset_label: str
+        :param bincenters: the center of each bin, which the bars are drawn at
+        :type bincenters: npt.NDArray[np.float64]
+        :param widths: the width of each bin
+        :type widths: npt.NDArray[np.float64]
+        :param counts: one array of per-bin counts per overlaid dataset, index-aligned with the accumulated labels
+        :type counts: Sequence[npt.NDArray[np.float64]]
+        :param hist_min: the shared lower limit, widened by this dataset
+        :type hist_min: float
+        :param hist_max: the shared upper limit, widened by this dataset
+        :type hist_max: float
+        :param ax: the axis object on which to plot
+        :type ax: Axes
+        :param x_label: the x axis label, already formatted but not yet log-marked
+        :type x_label: str
+        :param logx: was the data log-scaled, and so should the label say so
+        :type logx: bool
+        :param norm: normalise each dataset to a fraction rather than a count
+        :type norm: bool
+        :return: None
+        :rtype: None
+        """
+        self.hist_data.append(values)
+        self.hist_labels.append(dataset_label)
+        self.hist_min = hist_min
+        self.hist_max = hist_max
 
         ax.clear()
         self._clear_cache()
 
-        # Store processed data for overlay
-        self.hist_data.append(data)
-        self.hist_labels.append(dataset_label)
-
-        # Compute shared bin edges once
-        # Use ALL currently overlaid data to decide numbins when bins is None (auto)
-        all_data = (
-            np.concatenate(self.hist_data)
-            if len(self.hist_data) > 1
-            else self.hist_data[0]
-        )
-
-        # Decide numbins once
-        numbins: int
-        if bins is not None:
-            if sizes is False:
-                numbins = int(bins)
-            else:
-                # bins is interpreted as a bin *size*
-                try:
-                    if self.hist_max is not None and self.hist_min is not None:
-                        numbins = int((self.hist_max - self.hist_min) / float(bins))
-                    else:
-                        numbins = 0
-                except Exception:
-                    numbins = 0
-                if numbins <= 1:
-                    # fall back to auto
-                    bins = None
-
-        if bins is None:
-            try:
-                if iqr(all_data) > 0:
-                    numbins = int(
-                        (np.max(all_data) - np.min(all_data))
-                        * len(all_data) ** (1.0 / 3.0)
-                        / iqr(all_data)
-                    )
-                else:
-                    numbins = int(3.332 * np.log10(len(all_data)))
-            except OverflowError:
-                numbins = 100
-
-        # Guardrail
-        if numbins < 2:
-            numbins = 2
-
-        # Shared bin edges for every dataset
-        bin_edges = np.linspace(self.hist_min, self.hist_max, numbins + 1)
-        bincenters = bin_edges[:-1] + np.diff(bin_edges) / 2.0
-        widths = np.diff(bin_edges)
-
-        # Plot all datasets using the same bin_edges
-        for d, lab in zip(self.hist_data, self.hist_labels):
-            x_lab = self.format_axis_label(x_label, x_units)
+        # Every accumulated dataset is redrawn, against the tallies the Model made.
+        for val, lab in zip(counts, self.hist_labels, strict=True):
+            x_lab = x_label
             y_lab = "Count" if not norm else "Fraction"
             if logx:
                 x_lab = f"log10({x_lab})"
-
-            val, _ = np.histogram(d, bins=bin_edges)
-            val = val.astype(float)
-            if norm:
-                s = np.sum(val)
-                if s > 0:
-                    val /= s
 
             ax.bar(
                 bincenters,
@@ -719,8 +829,9 @@ class MetadataView(MetaView, WalkthroughMixin):
         # Extract the specific column's values
         data_vals = data[x_label].values
 
-        # Note: If your categories are strings, ensure this method doesn't attempt mathematical log-scaling on them.
-        # (data_vals,) = self._logscale_and_filter_multiple_columns(data_vals)
+        # Deliberately not filtered or log-scaled, unlike every other 1-D path: the
+        # values here are category names, which have no NaN mask and no logarithm.
+        # A commented-out call to the numeric filter used to stand here saying so.
 
         ax.clear()
         self._clear_cache()
@@ -729,19 +840,44 @@ class MetadataView(MetaView, WalkthroughMixin):
         self.hist_data.append(data_vals)
         self.hist_labels.append(dataset_label)
 
-        # Plot all datasets
-        for d, lab in zip(self.hist_data, self.hist_labels):
-            x_lab = self.format_axis_label(x_label, x_units)
-            y_lab = "Count"
+        self.categorical_counts_requested.emit(
+            list(self.hist_data),
+            list(self.hist_labels),
+            ax,
+            self.format_axis_label(x_label, x_units),
+            "Count",
+        )
 
-            # Extract unique categorical values and their respective counts
-            unique_vals, counts = np.unique(d, return_counts=True)
+    @log(logger=logger)
+    def set_categorical_counts(
+        self,
+        counts: Sequence[Tuple[Sequence[str], npt.NDArray[np.float64]]],
+        labels: Sequence[str],
+        ax: Axes,
+        x_label: str,
+        y_label: str,
+    ) -> None:
+        """
+        Draw one bar series per overlaid dataset.
 
-            val = counts.astype(float)
+        The answering half of ``categorical_counts_requested``. The tallies are made by
+        :meth:`MetadataModel.categorical_counts`, because counting occurrences is
+        aggregation rather than drawing and the tallies are exported with the plot.
 
-            # Convert unique values to strings so matplotlib natively aligns them as discrete categories
-            categories = [str(uv) for uv in unique_vals]
-
+        :param counts: per dataset, its category names and their counts, index-aligned with labels
+        :type counts: Sequence[Tuple[Sequence[str], npt.NDArray[np.float64]]]
+        :param labels: one label per overlaid dataset
+        :type labels: Sequence[str]
+        :param ax: the axis object to draw on
+        :type ax: Axes
+        :param x_label: the x axis label, already formatted
+        :type x_label: str
+        :param y_label: the y axis label
+        :type y_label: str
+        :return: None
+        :rtype: None
+        """
+        for (categories, val), lab in zip(counts, labels, strict=True):
             ax.bar(
                 categories,
                 val,
@@ -750,10 +886,10 @@ class MetadataView(MetaView, WalkthroughMixin):
                 align="center",
             )
 
-            self._update_cache((categories, x_lab), (val, y_lab))
+            self._update_cache((categories, x_label), (val, y_label))
 
-            ax.set_xlabel(x_lab)
-            ax.set_ylabel(y_lab)
+            ax.set_xlabel(x_label)
+            ax.set_ylabel(y_label)
         ax.tick_params(axis="x", rotation=45)
         ax.legend(loc="best")
 
@@ -804,9 +940,45 @@ class MetadataView(MetaView, WalkthroughMixin):
         if logy:
             y_label = f"log10({y_label})"
 
-        x, y, z = self._calculate_heatmap(
-            x, y, logx=logx, logy=logy, bins=bins, sizes=sizes
+        self.heatmap_requested.emit(
+            x, y, [logx, logy], bins, sizes, ax, x_label, y_label, dataset_label
         )
+
+    @log(logger=logger)
+    def set_heatmap(
+        self,
+        x: npt.NDArray[np.float64],
+        y: npt.NDArray[np.float64],
+        z: npt.NDArray[np.float64],
+        ax: Axes,
+        x_label: str,
+        y_label: str,
+        dataset_label: str,
+    ) -> None:
+        """
+        Draw the binned heatmap, its colourbar and its cache entry.
+
+        The answering half of ``heatmap_requested``. The binning is made by
+        ``MetadataModel``; everything here is matplotlib configuration, which stays
+        because none of it leaves the View.
+
+        :param x: bin-center x values
+        :type x: npt.NDArray[np.float64]
+        :param y: bin-center y values
+        :type y: npt.NDArray[np.float64]
+        :param z: the log2-scaled 2-D histogram counts
+        :type z: npt.NDArray[np.float64]
+        :param ax: the axis object on which to plot
+        :type ax: Axes
+        :param x_label: the x axis label, already formatted
+        :type x_label: str
+        :param y_label: the y axis label, already formatted
+        :type y_label: str
+        :param dataset_label: string to label the dataset
+        :type dataset_label: str
+        :return: None
+        :rtype: None
+        """
         im = ax.imshow(
             z,
             origin="lower",
@@ -864,7 +1036,7 @@ class MetadataView(MetaView, WalkthroughMixin):
         dataset_label: str = "",
     ) -> None:
         """
-        Create a scatterplot of two metadata columns.
+        Ask for a scatterplot's two columns, filtered and log-scaled.
 
         :param ax: Matplotlib axes object.
         :type ax: Axes
@@ -883,8 +1055,7 @@ class MetadataView(MetaView, WalkthroughMixin):
         x_units, y_units = units
         logx, logy = logscales
 
-        x = data[x_label].values
-        y = data[y_label].values
+        columns = [data[x_label].values, data[y_label].values]
 
         x_label = self.format_axis_label(x_label, x_units)
         y_label = self.format_axis_label(y_label, y_units)
@@ -894,15 +1065,9 @@ class MetadataView(MetaView, WalkthroughMixin):
         if logy:
             y_label = f"log10({y_label})"
 
-        xdata, ydata = self._logscale_and_filter_multiple_columns(
-            x, y, log_flags=[logx, logy]
+        self.scatterplot_requested.emit(
+            columns, [logx, logy], ax, [x_label, y_label], dataset_label
         )
-        ax.scatter(xdata, ydata, s=3, alpha=0.5, label=dataset_label)
-        ax.set_xlabel(x_label)
-        ax.set_ylabel(y_label)
-
-        self._update_cache((xdata, x_label), (ydata, y_label))
-        ax.legend(loc="best")
 
     @log(logger=logger)
     def _plot_3d_scatterplot(
@@ -915,7 +1080,7 @@ class MetadataView(MetaView, WalkthroughMixin):
         dataset_label: str = "",
     ) -> None:
         """
-        Create a 3D scatterplot of three metadata columns.
+        Ask for a 3-D scatterplot's three columns, filtered and log-scaled.
 
         :param ax: A 3D Matplotlib axes object.
         :type ax: Axes3D
@@ -934,9 +1099,11 @@ class MetadataView(MetaView, WalkthroughMixin):
         x_units, y_units, z_units = units
         logx, logy, logz = logscales
 
-        x = data[x_label].values
-        y = data[y_label].values
-        z = data[z_label].values
+        columns = [
+            data[x_label].values,
+            data[y_label].values,
+            data[z_label].values,
+        ]
 
         x_label = self.format_axis_label(x_label, x_units)
         y_label = self.format_axis_label(y_label, y_units)
@@ -949,9 +1116,42 @@ class MetadataView(MetaView, WalkthroughMixin):
         if logz:
             z_label = f"log10({z_label})"
 
-        xdata, ydata, zdata = self._logscale_and_filter_multiple_columns(
-            x, y, z, log_flags=[logx, logy, logz]
+        self.scatterplot_3d_requested.emit(
+            columns,
+            [logx, logy, logz],
+            ax,
+            [x_label, y_label, z_label],
+            dataset_label,
         )
+
+    @log(logger=logger)
+    def set_3d_scatterplot(
+        self,
+        columns: Sequence[npt.NDArray[np.float64]],
+        ax: Axes3D,
+        axis_labels: Sequence[str],
+        dataset_label: str,
+    ) -> None:
+        """
+        Draw a 3-D scatterplot of three filtered columns.
+
+        The answering half of ``scatterplot_3d_requested``, and the same reasoning as
+        :meth:`set_scatterplot`. The axes are rebuilt here if what arrived is a 2-D
+        pair, which a change of plot type can leave behind.
+
+        :param columns: the filtered x, y and z values
+        :type columns: Sequence[npt.NDArray[np.float64]]
+        :param ax: the axis object on which to plot
+        :type ax: Axes3D
+        :param axis_labels: the x, y and z axis labels, already formatted
+        :type axis_labels: Sequence[str]
+        :param dataset_label: Label to apply to the scatter points.
+        :type dataset_label: str
+        :return: None
+        :rtype: None
+        """
+        xdata, ydata, zdata = columns
+        x_label, y_label, z_label = axis_labels
 
         if not isinstance(ax, Axes3D):
             self._reset_actions(axis_type="3d")
@@ -969,7 +1169,8 @@ class MetadataView(MetaView, WalkthroughMixin):
     def _plot_all_points_histogram(
         self,
         ax: Axes,
-        data: pd.DataFrame,
+        x: npt.NDArray[np.float64],
+        y: npt.NDArray[np.float64],
         cols: Sequence[str],
         units: Sequence[Optional[str]],
         dataset_label: str = "",
@@ -980,9 +1181,11 @@ class MetadataView(MetaView, WalkthroughMixin):
 
         :param ax: Matplotlib axes to draw the histogram on.
         :type ax: Axes
-        :param data: DataFrame containing time and current values.
-        :type data: pd.DataFrame
-        :param cols: Column names for x and y axes.
+        :param x: the current level at the middle of each bin
+        :type x: npt.NDArray[np.float64]
+        :param y: how many samples fell in each bin
+        :type y: npt.NDArray[np.float64]
+        :param cols: Names for x and y axes.
         :type cols: Sequence[str]
         :param units: Units corresponding to the axes.
         :type units: Sequence[Optional[str]]
@@ -993,9 +1196,6 @@ class MetadataView(MetaView, WalkthroughMixin):
         """
         x_label, y_label = cols
         x_units, y_units = units
-
-        x = data[x_label].values
-        y = data[y_label].values
 
         x_label = self.format_axis_label(x_label, x_units)
         y_label = self.format_axis_label(y_label, y_units)
@@ -1122,24 +1322,6 @@ class MetadataView(MetaView, WalkthroughMixin):
             self._plot_3d_scatterplot(
                 ax, data, cols, units, logscales, dataset_label=dataset_label
             )
-        elif plot_type in [
-            "Raw All Points Histogram",
-            "Filtered All Points Histogram",
-            "Normalized Raw All Points Histogram",
-            "Normalized Filtered All Points Histogram",
-        ]:
-            norm = (
-                False
-                if plot_type
-                not in [
-                    "Normalized Raw All Points Histogram",
-                    "Normalized Filtered All Points Histogram",
-                ]
-                else True
-            )
-            self._plot_all_points_histogram(
-                ax, data, cols, units, dataset_label=dataset_label, norm=norm
-            )
         else:
             raise NotImplementedError(f"Plot type {plot_type} is not yet supported")
 
@@ -1210,27 +1392,6 @@ class MetadataView(MetaView, WalkthroughMixin):
             )
 
     @log(logger=logger)
-    def set_experiment_id(self, experiment_id: Optional[int]) -> None:
-        """
-        A global signal callback that provides an experiment id for a given filter.
-
-        :param experiment_id: the integer id of the experiment in a MetaEventLoader object
-        :type experiment_id: Optional[int]
-        """
-        self.experiment_id = experiment_id
-
-    @log(logger=logger)
-    def set_table_by_column(self, table: Optional[str]) -> None:
-        """
-        Get a list of tables affected by an SQL query.
-
-        :param table: the name of a table that is implicated in an SQL query to a MetaDatabaseLoader object
-        :type table: Optional[str]
-        """
-        if table is not None:
-            self.involved_tables.append(table)
-
-    @log(logger=logger)
     @register_action()
     def _overlay_plot(self, parameters: Dict[str, Any]) -> bool:
         """
@@ -1241,15 +1402,17 @@ class MetadataView(MetaView, WalkthroughMixin):
         :return: True if at least one dataset was plotted, False otherwise - including when every requested dataset was skipped as already plotted, so that the caller can roll the recorded action back rather than leave an undo step that would restore an identical figure.
         :rtype: bool
         """
-        self._show_sql_in_display = False
-        self._show_event_sql_in_display = False
 
-        selected_filters = self.get_selected_filters()
+        # The selection comes from the parameters, not the widgets, so a replay draws
+        # what was recorded; see _record_selection.
+        selected_filters = dict(parameters["selected_filters"])
+        if self._refuse_raw_filters(selected_filters):
+            return False
         loader = parameters["db_loader"]
         plot_type = parameters["plot_type"]
         experiments_and_channels: Optional[
             Union[Dict[str, List[str]], Dict[Any, Any]]
-        ] = self.selected_experiment_and_channels_by_loader.get(loader)
+        ] = copy.deepcopy(parameters["experiments_and_channels"])
 
         self.plot_initialized = True
 
@@ -1415,31 +1578,20 @@ class MetadataView(MetaView, WalkthroughMixin):
                         ):  # do not overlay the same thing twice
                             continue
 
-                        self.global_signal.emit(
-                            "MetaDatabaseLoader",
-                            loader,
-                            "construct_metadata_query",
-                            (columns, sql_filter, exp_and_ch_arg),
-                            "relay_query",
-                            (),
+                        # All three cleared before asking, not just plot_data: the
+                        # Controller sets them only once the whole subset has been
+                        # fetched, so a partial failure leaves them empty rather than
+                        # holding the previous subset's query, rows or units. Clear
+                        # all three or none: clearing one and reading three back is how
+                        # a stale value gets drawn under a new label.
+                        self.query = ""
+                        self.plot_data = None
+                        self.column_units = None
+                        self.metadata_subset_requested.emit(
+                            loader, columns, sql_filter, exp_and_ch_arg
                         )
                         if self.query == "":
                             return False
-
-                        # Cleared first: a dispatch that fails never calls
-                        # update_plot_data, so without this the guard below would
-                        # read the previous subset's rows and plot them under this
-                        # subset's label. .empty as well as None because the loader
-                        # returns an empty frame for a query that matched nothing.
-                        self.plot_data = None
-                        self.global_signal.emit(
-                            "MetaDatabaseLoader",
-                            loader,
-                            "load_metadata",
-                            (columns, sql_filter, exp_and_ch_arg),
-                            "update_plot_data",
-                            (),
-                        )
 
                         if self.plot_data is None or self.plot_data.empty:
                             self.add_text_to_display.emit(
@@ -1453,17 +1605,13 @@ class MetadataView(MetaView, WalkthroughMixin):
                                 self.__class__.__name__,
                             )
 
-                        units = []
-                        for column in columns:
-                            self.global_signal.emit(
-                                "MetaDatabaseLoader",
-                                loader,
-                                "get_column_units",
-                                (column,),
-                                "relay_units",
-                                (),
+                        units = self.column_units
+                        if units is None:
+                            self.add_text_to_display.emit(
+                                f"Could not read the units of {columns} from {loader}",
+                                self.__class__.__name__,
                             )
-                            units.append(self.units)
+                            return False
 
                         if len(columns) != len(units):
                             self.add_text_to_display.emit(
@@ -1490,80 +1638,85 @@ class MetadataView(MetaView, WalkthroughMixin):
                         )
 
                     elif plot_type in self.event_data_plots:
-                        self.global_signal.emit(
-                            "MetaDatabaseLoader",
-                            loader,
-                            "construct_event_data_query",
-                            (sql_filter, exp_and_ch_arg),
-                            "relay_event_query",
-                            (),
-                        )
+                        # Cleared for the same reason as the metadata group above.
+                        # The Controller sets it only once the subset has been
+                        # fetched *and* reduced, so a failure at either step leaves
+                        # it empty and the guard below rolls the action back.
+                        self.event_query = ""
+
+                        if plot_type in [
+                            "Raw All Points Histogram",
+                            "Normalized Raw All Points Histogram",
+                            "Filtered All Points Histogram",
+                            "Normalized Filtered All Points Histogram",
+                        ]:
+                            bins = parameters["bins"]
+                            sizes = parameters["sizes"]
+
+                            bin_sensitive = True
+                            bins_changed = getattr(self, "allowed_bins", None) != bins
+                            sizes_changed = (
+                                getattr(self, "allowed_sizes", None) != sizes
+                            )
+                            # A change of plot type resets here as it does for
+                            # the metadata plots above. Without it, `hist_data`
+                            # kept whatever the previous type left in it, and the
+                            # shapes are not interchangeable: the 1-D paths store
+                            # a column and this one stores an (x, y) pair, so
+                            # drawing a histogram and then an all-points
+                            # histogram unpacked a bare array as a pair and
+                            # raised "too many values to unpack".
+                            plot_type_changed = (
+                                self.allowed_plot_type is not None
+                                and plot_type != self.allowed_plot_type
+                            )
+                            if plot_type_changed or (
+                                bin_sensitive and (bins_changed or sizes_changed)
+                            ):
+                                axis_type = (
+                                    "3d"
+                                    if isinstance(getattr(self, "axes", None), Axes3D)
+                                    else "2d"
+                                )
+                                self._reset_actions(axis_type=axis_type)
+
+                            # After the reset, so the limits handed down are the ones
+                            # this plot is actually accumulating against.
+                            self.all_points_histogram_requested.emit(
+                                loader,
+                                sql_filter,
+                                exp_and_ch_arg,
+                                plot_type,
+                                bins,
+                                sizes,
+                                self.hist_min,
+                                self.hist_max,
+                                dataset_label,
+                            )
+
+                        elif plot_type in [
+                            "Raw Event Overlay",
+                            "Filtered Event Overlay",
+                        ]:
+                            # A change of plot type resets here as it does
+                            # everywhere else in this method. Checking only that
+                            # the axes are *valid* is not enough: a 2-D axes still
+                            # carrying an all-points histogram's line is perfectly
+                            # valid, so the overlay drew straight over it and two
+                            # unrelated pictures ended up superimposed.
+                            plot_type_changed = (
+                                self.allowed_plot_type is not None
+                                and plot_type != self.allowed_plot_type
+                            )
+                            if plot_type_changed or not self._axes_valid(
+                                axis_type="2d"
+                            ):
+                                self._reset_actions(axis_type="2d")
+                            self.event_overlay_requested.emit(
+                                loader, sql_filter, exp_and_ch_arg, plot_type
+                            )
+
                         if self.event_query == "":
-                            return False
-                        self.global_signal.emit(
-                            "MetaDatabaseLoader",
-                            loader,
-                            "load_event_data",
-                            (sql_filter, exp_and_ch_arg),
-                            "relay_event_data_generator",
-                            (),
-                        )
-                        if self.event_data_generator:
-                            if plot_type in [
-                                "Raw All Points Histogram",
-                                "Normalized Raw All Points Histogram",
-                                "Filtered All Points Histogram",
-                                "Normalized Filtered All Points Histogram",
-                            ]:
-                                bins = parameters["bins"]
-                                sizes = parameters["sizes"]
-
-                                bin_sensitive = True
-                                bins_changed = (
-                                    getattr(self, "allowed_bins", None) != bins
-                                )
-                                sizes_changed = (
-                                    getattr(self, "allowed_sizes", None) != sizes
-                                )
-                                if bin_sensitive and (bins_changed or sizes_changed):
-                                    axis_type = (
-                                        "3d"
-                                        if isinstance(
-                                            getattr(self, "axes", None), Axes3D
-                                        )
-                                        else "2d"
-                                    )
-                                    self._reset_actions(axis_type=axis_type)
-
-                                plot_data = self._construct_all_points_histogram(
-                                    self.event_data_generator,
-                                    plot_type,
-                                    bins=bins,
-                                    sizes=sizes,
-                                )
-
-                                if plot_data is not None:
-                                    self.update_plot(
-                                        plot_type,
-                                        plot_data,
-                                        plot_data.columns,
-                                        ["pA", ""],
-                                        logscales=[False, False],
-                                        dataset_label=dataset_label,
-                                    )
-                                else:
-                                    return False
-
-                            elif plot_type in [
-                                "Raw Event Overlay",
-                                "Filtered Event Overlay",
-                            ]:
-                                if not self._axes_valid(axis_type="2d"):
-                                    self._reset_actions(axis_type="2d")
-                                self._construct_event_overlay(
-                                    self.event_data_generator, plot_type, loader
-                                )
-                        else:
                             return False
 
                     self.allowed_plot_type = plot_type
@@ -1586,122 +1739,72 @@ class MetadataView(MetaView, WalkthroughMixin):
         return plotted_any
 
     @log(logger=logger)
-    def _construct_all_points_histogram(
+    def set_all_points_histogram(
         self,
-        event_generator: Iterator[Dict[str, Any]],
+        bincenters: npt.NDArray[np.float64],
+        counts: npt.NDArray[np.float64],
+        hist_min: float,
+        hist_max: float,
         plot_type: str,
-        bins: Any = None,
-        sizes: bool = False,
-    ) -> pd.DataFrame:
+        dataset_label: str,
+    ) -> None:
         """
-        Build a combined histogram across all event current values.
+        Draw one subset's all-points histogram, and take the limits it widened.
 
-        :param event_generator: Generator yielding individual event data.
-        :type event_generator: Iterator[Dict[str, Any]]
-        :param plot_type: Type of histogram to create (raw or filtered).
+        The answering half of ``all_points_histogram_requested``. The tally is made by
+        :meth:`MetadataModel.build_all_points_histogram`, because walking a subset's
+        events and binning every sample of them is aggregation rather than drawing, and
+        the result is exported with the plot.
+
+        :param bincenters: the current level at the middle of each bin
+        :type bincenters: npt.NDArray[np.float64]
+        :param counts: how many samples fell in each bin
+        :type counts: npt.NDArray[np.float64]
+        :param hist_min: the shared lower limit, widened by this subset
+        :type hist_min: float
+        :param hist_max: the shared upper limit, widened by this subset
+        :type hist_max: float
+        :param plot_type: the all-points histogram variant being drawn
         :type plot_type: str
-        :param bins: Number of histogram bins. Arrives as a single-element list from the controls and is rebound to a scalar (or None) in the body, hence the loose annotation.
-        :type bins: Any
-        :param sizes: does the bins parameter refer to bin sizes (True) or widths (False)
-        :type sizes: bool
-        :return: DataFrame with histogram values and corresponding current levels.
-        :rtype: pd.DataFrame
-        :raises ValueError: If plot_type is not a recognized all-points-histogram variant.
+        :param dataset_label: the label this subset is drawn under
+        :type dataset_label: str
+        :return: None
+        :rtype: None
         """
-        # get global stats from the first event, don't forget to use this one later
-        egen1, egen2 = itertools.tee(event_generator)
+        # The axes check first, then the limits: a reset clears the accumulated
+        # limits, so taking them before it would throw away the ones this subset
+        # just widened. The old arrangement set them inside the tally and then let
+        # ``update_plot`` reset underneath it.
+        if not self._axes_valid(axis_type="2d"):
+            self._reset_actions(axis_type="2d")
+        ax = self.axes
 
-        min_current = float("inf")
-        max_current = float("-inf")
-        for event in egen1:
+        self.hist_min = hist_min
+        self.hist_max = hist_max
 
-            if plot_type in [
-                "Raw All Points Histogram",
-                "Normalized Raw All Points Histogram",
-            ]:
-                timeseries = event["raw_data"]
-            elif plot_type in [
-                "Filtered All Points Histogram",
-                "Normalized Filtered All Points Histogram",
-            ]:
-                timeseries = event["filtered_data"]
-            else:
-                raise ValueError(f"Unknown plot_type {plot_type!r}")
-
-            padding_before = int(event["padding_before"] * event["samplerate"] * 1e-6)
-            baseline = np.median(timeseries[:padding_before])
-
-            min_curr = np.min(
-                np.sign(baseline) * timeseries - np.sign(baseline) * baseline
-            )
-            max_curr = np.max(
-                np.sign(baseline) * timeseries - np.sign(baseline) * baseline
-            )
-            if min_curr < min_current:
-                min_current = min_curr
-            if max_curr > max_current:
-                max_current = max_curr
-
-        if self.hist_min is None or min_current < self.hist_min:
-            self.hist_min = min_current
-        if self.hist_max is None or max_current > self.hist_max:
-            self.hist_max = max_current
-
-        if bins is not None:
-            if sizes is False:
-                if isinstance(bins, list) and len(bins) >= 1:
-                    bins = bins[0]
-                else:
-                    raise ValueError(f"Invalid bins entry {bins}")
-            else:
-                try:
-                    bins = int((self.hist_max - self.hist_min) / bins[0])
-                except Exception as e:
-                    raise ValueError(
-                        f"Unable to calculate bins given sizes {bins}: {str(e)}"
-                    ) from e
-        else:
-            bins = 100
-
-        bin_edges = np.linspace(self.hist_min, self.hist_max, bins + 1)
-        hist = np.zeros(bins)
-        for event in egen2:
-            if plot_type in [
-                "Raw All Points Histogram",
-                "Normalized Raw All Points Histogram",
-            ]:
-                timeseries = event["raw_data"]
-            elif plot_type in [
-                "Filtered All Points Histogram",
-                "Normalized Filtered All Points Histogram",
-            ]:
-                timeseries = event["filtered_data"]
-            else:
-                raise ValueError(f"Unknown plot_type {plot_type!r}")
-            padding_before = int(event["padding_before"] * event["samplerate"] * 1e-6)
-            baseline = np.median(timeseries[:padding_before])
-            event_hist, _ = np.histogram(
-                np.sign(baseline) * timeseries - np.sign(baseline) * baseline,
-                bins=bin_edges,
-            )
-            hist += event_hist
-        bincenters = bin_edges[:-1] + np.diff(bin_edges) / 2.0
-        return pd.DataFrame({"Current": bincenters, "Count": hist})
-
-    @log(logger=logger)
-    def set_baseline_duration(self, duration: Optional[float]) -> None:
-        """
-        a callback from a global_signal call that sets the baseline_duration variable for further processing
-
-        :param duration: total duration of baseline data in the scoped subset, or None if it could not be resolved.
-        :type duration: Optional[float]
-        """
-        self.baseline_duration = duration
+        norm = plot_type in [
+            "Normalized Raw All Points Histogram",
+            "Normalized Filtered All Points Histogram",
+        ]
+        self._plot_all_points_histogram(
+            ax,
+            bincenters,
+            counts,
+            ("Current", "Count"),
+            ("pA", ""),
+            dataset_label=dataset_label,
+            norm=norm,
+        )
+        self.canvas.draw()
+        self._commit_cache()
 
     @log(logger=logger)
     def set_column_type(self, column_type: Optional[str]) -> None:
         """
-        a callback from a global_signal call that sets the column type of a specified variable
+        Receive the type asked for by ``column_type_requested``.
+
+        Set only when the lookup succeeded, so the ``None`` the caller cleared it to
+        survives a failure and the categorical guard refuses the plot.
 
         :param column_type: SQL type name of the queried column, or None on failure.
         :type column_type: Optional[str]
@@ -1709,56 +1812,33 @@ class MetadataView(MetaView, WalkthroughMixin):
         self.column_type = column_type
 
     @log(logger=logger)
-    def _construct_event_overlay(
+    def set_event_overlay(
         self,
-        event_generator: Iterator[Dict[str, Any]],
-        plot_type: str,
-        loader: str,
+        traces: Sequence[Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]],
     ) -> None:
         """
-        Overlay multiple event traces in a normalized time plot.
+        Overlay one subset's event traces on a shared normalised time axis.
 
-        :param event_generator: Generator of events to overlay.
-        :type event_generator: Iterator[Dict[str, Any]]
-        :param plot_type: Either 'Raw Event Overlay' or 'Filtered Event Overlay'.
-        :type plot_type: str
-        :param loader: Identifier of the database loader plugin providing the events.
-        :type loader: str
+        The answering half of ``event_overlay_requested``. The baseline subtraction and
+        the per-event time base are made by :meth:`MetadataModel.build_event_overlay` -
+        both are exported with the plot; what is left here is the drawing,
+        including the alpha each trace is given - a shorter event is drawn more
+        opaquely than a longer one so the short ones are not lost under the crowd, and
+        that number is read by nothing outside these axes.
+
+        :param traces: one (normalised time, rectified current) pair per event
+        :type traces: Sequence[Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]]
+        :return: None
+        :rtype: None
         """
         ax = self.axes
 
-        egen1, egen2 = itertools.tee(event_generator)
-        min_duration = float("inf")
-        max_duration = float("-inf")
+        num_events = len(traces)
+        durations = [len(data) for _, data in traces]
+        min_duration = min(durations, default=float("inf"))
+        max_duration = max(durations, default=float("-inf"))
 
-        num_events = 0
-        for event in egen1:
-            num_events += 1
-            if plot_type == "Raw Event Overlay":
-                data = event["raw_data"]
-            elif plot_type == "Filtered Event Overlay":
-                data = event["filtered_data"]
-            duration = len(data)
-            if duration < min_duration:
-                min_duration = duration
-            if duration > max_duration:
-                max_duration = duration
-
-        for event in egen2:
-            if plot_type == "Raw Event Overlay":
-                data = event["raw_data"]
-            elif plot_type == "Filtered Event Overlay":
-                data = event["filtered_data"]
-
-            padding_before = int(event["padding_before"] * event["samplerate"] * 1e-6)
-            padding_after = int(event["padding_after"] * event["samplerate"] * 1e-6)
-            baseline = np.median(data[:padding_before])
-
-            data = np.sign(baseline) * data - np.sign(baseline) * baseline
-            time = np.array(range(len(data)), dtype=np.float64)
-            time -= padding_before
-            time /= len(data) - padding_after - padding_before
-
+        for time, data in traces:
             duration = len(data)
             if max_duration > min_duration:
                 alpha = (
@@ -1773,7 +1853,7 @@ class MetadataView(MetaView, WalkthroughMixin):
                 )
             else:
                 alpha = 15 / num_events
-            alpha = np.min((alpha, 0.5))
+            alpha = min(alpha, 0.5)
             ax.plot(time, data, alpha=alpha, color="b")
 
         ax.set_xlim(left=-0.333, right=1.333)
@@ -1784,146 +1864,11 @@ class MetadataView(MetaView, WalkthroughMixin):
         self.no_cached_data = True
 
     @log(logger=logger)
-    def set_event_data_generator(self, generator: Iterator[Dict[str, Any]]) -> None:
-        """
-        Set the event data generator for event-based plots.
-
-        :param generator: A generator that yields event data.
-        :type generator: Iterator[Dict[str, Any]]
-        """
-        self.event_data_generator = generator
-
-    @log(logger=logger)
     def _undo_plot(self) -> None:
         """
         Undo the last plotted action and update the action history.
         """
         self.update_tab_action_history.emit(None, True)
-
-    @log(logger=logger)
-    def _save_filter(self) -> None:
-        """
-        Save the current filters to a JSON file.
-
-        """
-        if not self.subset_filters:
-            self.logger.info("There are no filters to save.")
-            return
-
-        path, _ = QFileDialog.getSaveFileName(
-            self, "Save Filters", os.path.expanduser("~"), "JSON Files (*.json)"
-        )
-        if not path:
-            return
-
-        try:
-            with open(path, "w") as f:
-                json.dump(self.subset_filters, f, indent=4)
-            self.logger.info(f"Filters saved to {path}")
-        except Exception as e:
-            self.logger.error(f"Failed to save filters: {e}")
-
-    @log(logger=logger)
-    def _load_filter(self, parameters: Dict[str, Any]) -> None:
-        """
-        Append filters from a JSON file, warn if duplicates are found,
-        and apply all new filters only if none conflict with existing ones.
-
-        :param parameters: Dictionary with 'db_loader'.
-        :type parameters: Dict[str, Any]
-        """
-        path, _ = QFileDialog.getOpenFileName(
-            self, "Load Filters", os.path.expanduser("~"), "JSON Files (*.json)"
-        )
-        if not path:
-            return
-
-        try:
-            with open(path, "r") as f:
-                new_filters = json.load(f)
-        except (OSError, json.JSONDecodeError) as e:
-            message = f"Failed to load filters from {path}: {e}"
-            self.logger.error(message)
-            self.add_text_to_display.emit(message, self.__class__.__name__)
-            return
-
-        if not isinstance(new_filters, dict):
-            message = (
-                f"Invalid filter file format in {path}: expected a dictionary, "
-                f"got {type(new_filters).__name__}."
-            )
-            self.logger.error(message)
-            self.add_text_to_display.emit(message, self.__class__.__name__)
-            return
-
-        # Check for name conflicts
-        existing_names = set(self.subset_filters.keys())
-        new_names = set(new_filters.keys())
-        duplicate_names = existing_names & new_names
-
-        if duplicate_names:
-            message = (
-                f"Duplicate filter names found when loading from {path}: "
-                f"{', '.join(duplicate_names)}. No filters were loaded."
-            )
-            self.logger.warning(message)
-            self.add_text_to_display.emit(message, self.__class__.__name__)
-            return
-
-        combo = self.metadatacontrols.filter_comboBox
-        loader = parameters.get("db_loader")
-
-        if not loader:
-            self.logger.warning("No loader found – filters loaded but not validated.")
-
-        for name, filter_text in new_filters.items():
-            if loader:
-                # Temporarily store to validate
-                self._pending_filter_name = name
-                self._pending_filter_text = filter_text
-
-                self.global_signal.emit(
-                    "MetaDatabaseLoader",
-                    loader,
-                    "construct_metadata_query",
-                    (
-                        ["sublevel_current", "voltage", "duration"],
-                        filter_text,
-                        None,
-                    ),
-                    "relay_query",
-                    ("validate_new_filter",),
-                )
-            else:
-                self.subset_filters[name] = filter_text
-                combo.addItem(name)
-                combo.selectItem(name, select=True)
-
-        combo.refreshDisplayText()
-        self.logger.info(f"Filters loaded from {path}")
-
-    @log(logger=logger)
-    def restore_subset_filters(self, filters: Dict[str, str]) -> None:
-        """
-        Restore subset filters captured in a saved session.
-
-        Unlike :meth:`_load_filter`, this does not re-validate the filters against a
-        database loader, since they were already valid when the session was saved.
-
-        :param filters: Mapping of filter name to filter expression to restore.
-        :type filters: Dict[str, str]
-        """
-        combo = self.metadatacontrols.filter_comboBox
-        for name, filter_text in filters.items():
-            if name in self.subset_filters:
-                self.logger.warning(
-                    f"Filter '{name}' already exists; skipping restore of duplicate."
-                )
-                continue
-            self.subset_filters[name] = filter_text
-            combo.addItem(name)
-            combo.selectItem(name, select=True)
-        combo.refreshDisplayText()
 
     @log(logger=logger)
     @Slot(str, str, tuple)
@@ -1956,6 +1901,9 @@ class MetadataView(MetaView, WalkthroughMixin):
             self.update_available_columns(loader)
         elif action_name == "select_experiment_and_channel":
             loader = parameters.get("db_loader")
+            # Asked again each time, so experiments written into the loaded database
+            # since it was chosen appear; the Controller answers synchronously.
+            self.request_experiment_structure(loader)
             structure = self.available_experiment_and_channels_by_loader.get(loader, {})
             selection = self.selected_experiment_and_channels_by_loader.get(loader, {})
             self.show_selection_tree(structure, loader, selection)
@@ -1982,15 +1930,11 @@ class MetadataView(MetaView, WalkthroughMixin):
                 loader = parameters["db_loader"]
                 x_axis_col = parameters["x_axis"]
 
+                # Cleared first: the Controller sets it only when the lookup
+                # succeeded, so a failure reads as "not a categorical column"
+                # rather than as the previous column's type.
                 self.column_type = None
-                self.global_signal.emit(
-                    "MetaDatabaseLoader",
-                    loader,
-                    "get_column_type",
-                    (x_axis_col,),
-                    "relay_column_type",
-                    (),
-                )
+                self.column_type_requested.emit(loader, x_axis_col)
 
                 if not self.is_categorical_type(self.column_type):
                     self.add_text_to_display.emit(
@@ -2000,17 +1944,24 @@ class MetadataView(MetaView, WalkthroughMixin):
                     # Exit immediately out of handle_parameter_change.
                     # This prevents _overlay_plot from running and avoids the history rollback entirely.
                     return
+            self._record_selection(parameters)
+            before = set(self.plotted_datasets)
             success = self._overlay_plot(parameters)
             if success is False:
-                self.update_tab_action_history.emit(None, True)
+                # The call was recorded whatever it returned. If the figure is as it
+                # was - everything already plotted, or refused before drawing - drop
+                # that record; if the refusal changed the figure (it reset it, or drew
+                # part of the request), undo it, which redraws from the history.
+                if self.plotted_datasets == before:
+                    self.discard_last_tab_action.emit()
+                else:
+                    self.update_tab_action_history.emit(None, True)
         elif action_name == "reset_plot":
             self._reset_actions()
         elif action_name == "load_plot":
-            loader = parameters["db_loader"]
-            actions = self._load_actions_from_json()
-            if not actions:
-                return
-            self._update_actions_from_json(actions)
+            # The file is read and replayed through load_actions_from_json and the
+            # Controller; there is nothing to return here.
+            self._load_actions_from_json()
         elif action_name == "save_plot_config":
             self._save_actions_to_json()
         elif action_name == "undo_plot":
@@ -2034,98 +1985,6 @@ class MetadataView(MetaView, WalkthroughMixin):
             self._export_csv_subset(loader, selected_filters, selection)
         else:
             self._handle_other_actions(action_name, parameters)
-
-    @log(logger=logger)
-    def _rebuild_event_id_cache(
-        self,
-        loader: str,
-        sql_filter: str,
-        exp: Optional[str],
-        channel: Optional[int],
-    ) -> bool:
-        """
-        Rebuild the filtered event_id cache when filter or scope changes.
-        Also emits the display panel message (first plot or filter change only).
-
-        Goes through ``load_metadata`` rather than querying the events table
-        directly, so that the filter is evaluated against the same joins the
-        subset and scatter paths give it. A filter on a sublevels column -
-        ``filtered = 5``, meaning every event with at least one sublevel that
-        matches - is only meaningful against ``events JOIN sublevels``, and the
-        hand-built ``SELECT event_id FROM events`` this replaces made every such
-        filter fail as an unknown column and then report itself as an empty
-        subset.
-
-        :param loader: Name of the active database loader.
-        :type loader: str
-        :param sql_filter: Current SQL filter string.
-        :type sql_filter: str
-        :param exp: Current experiment name.
-        :type exp: Optional[str]
-        :param channel: Current channel identifier.
-        :type channel: Optional[int]
-        :return: True if cache was rebuilt successfully, False otherwise.
-        :rtype: bool
-        """
-        # event_id is only unique within an experiment/channel, so without this
-        # scoping the cache mixes duplicate ids from every channel and navigation
-        # jumps to ids the active channel does not have.
-        exp_and_ch: Optional[Dict[str, Optional[List[int]]]] = None
-        if exp is not None:
-            exp_and_ch = {exp: [channel] if channel is not None else None}
-
-        # Cleared first: a dispatch that fails never calls the return
-        # function, so without this the read below sees the previous call's
-        # value and treats it as this call's answer.
-        self.relayed_query_result = None
-        self.global_signal.emit(
-            "MetaDatabaseLoader",
-            loader,
-            "load_metadata",
-            (["event_id"], sql_filter or None, exp_and_ch),
-            "relay_query_result",
-            (),
-        )
-        cache_result = getattr(self, "relayed_query_result", None)
-        if cache_result is None:
-            # None means the query could not be built or run at all, which is a
-            # real problem and not an empty subset. Logged at ERROR so QtHandler
-            # raises its dialog from the place that can tell the two apart.
-            self.logger.error(
-                f"Could not query event ids for filter {sql_filter!r} - check that "
-                "the columns it names exist in the database"
-            )
-            return False
-        if cache_result.empty:
-            self.add_text_to_display.emit(
-                "No filtered events found",
-                self.__class__.__name__,
-            )
-            return False
-
-        # load_metadata applies no ORDER BY of its own, and the navigation that
-        # reads this list bisects it.
-        self.filtered_event_ids = sorted(cache_result["event_id"].tolist())
-        self.current_sql_filter = sql_filter
-        self.current_experiment = exp
-        self.current_channel = channel
-
-        # Display panel — only on cache rebuild (filter change or first plot)
-        total = len(self.filtered_event_ids)
-        first_id = self.filtered_event_ids[0]
-        last_id = self.filtered_event_ids[-1]
-        if sql_filter:
-            # Get the filter name from the current selected filters
-            selected_filters = self.get_selected_filters()
-            filter_name = next(iter(selected_filters.keys()), "Filter")
-            label = f'"{filter_name}" subset'
-        else:
-            label = "All events"
-        self.add_text_to_display.emit(
-            f"{label}: {total} total | first event_id: {first_id} | last event_id: {last_id}",
-            self.__class__.__name__,
-        )
-        return True
 
     @log(logger=logger)
     def _shift_range_and_update_plot(
@@ -2200,28 +2059,6 @@ class MetadataView(MetaView, WalkthroughMixin):
         self._handle_plot_events(new_params)
 
     @log(logger=logger)
-    def _get_event_id(self) -> Optional[int]:  # Since params expanded
-        """
-        Get the current event_id from the event_id input field.
-
-        :return: Integer event_id, or None if the field is empty.
-        :rtype: Optional[int]
-        """
-        text = self.metadatacontrols.event_id_lineEdit.text().strip()
-        return int(text) if text else None
-
-    @log(logger=logger)
-    def _get_n_events(self) -> int:
-        """
-        Get the number of events to plot from the n_events input field.
-
-        :return: Number of events, defaulting to 1 if the field is empty.
-        :rtype: int
-        """
-        text = self.metadatacontrols.n_events_lineEdit.text().strip()
-        return int(text) if text else 1
-
-    @log(logger=logger)
     def _handle_plot_events(self, parameters: Dict[str, Any]) -> None:
         """
         Handle loading and plotting of selected events based on provided parameters.
@@ -2230,6 +2067,8 @@ class MetadataView(MetaView, WalkthroughMixin):
         :type parameters: Dict[str, Any]
         """
         selected_filters = self.get_selected_filters()
+        if self._refuse_raw_filters(selected_filters):
+            return
         loader_name = parameters["db_loader"]
         experiments_and_channels = self.selected_experiment_and_channels_by_loader.get(
             loader_name
@@ -2298,8 +2137,11 @@ class MetadataView(MetaView, WalkthroughMixin):
             if not self._rebuild_event_id_cache(loader, sql_filter, exp, channel):
                 return
         elif not self.filtered_event_ids:
+            # Worded exactly as _rebuild_event_id_cache words it, since the two are
+            # the same finding reached by different routes: the cache is current and
+            # empty here, rather than having just been rebuilt and come back empty.
             self.add_text_to_display.emit(
-                "No filtered events found",
+                "No filtered events found for the current scope.",
                 self.__class__.__name__,
             )
             return
@@ -2315,77 +2157,21 @@ class MetadataView(MetaView, WalkthroughMixin):
         # Update the event_id field to reflect the snapped position
         self.metadatacontrols.set_event_id_input(snapped_start_id)
 
-        # Resolve snapped event_ids to event_db_ids for load_event_data, scoped
-        # to the current experiment/channel — event_id is only unique within a
-        # channel, not across the whole events table, so without this scoping
-        # the query can silently match rows from other channels that happen to
-        # share the same event_id.
-
-        # NOTE: id-resolution + fetch logic is kept inline here rather than
-        # factored into a shared helper (unlike ProteinView, which extracts
-        # this into _resolve_event_db_ids/_fetch_event_data) because this is
-        # currently the only caller in this view. If a second consumer shows
-        # up, port ProteinView's extracted pattern instead of duplicating
-        # this block.
-        id_tuple = f"({','.join(str(eid) for eid in snapped_event_ids)})"
-        where_parts = [f"event_id IN {id_tuple}"]
-
-        # Cleared first: a dispatch that fails never calls the return
-        # function, so without this the read below sees the previous call's
-        # value and treats it as this call's answer.
-        self.relayed_experiment_id = None
-        self.global_signal.emit(
-            "MetaDatabaseLoader",
-            loader,
-            "get_experiment_id_by_name",
-            (exp,),
-            "relay_experiment_id",
-            (),
+        # Ask for exactly these events' data. Resolving the snapped event_ids to
+        # database ids is part of that request rather than something done here: the
+        # ids have to be scoped to the current experiment and channel, because
+        # event_id is only unique within a channel and an unscoped match silently
+        # picks up rows from other channels that happen to share one.
+        #
+        # Cleared first: the Controller sets the generator only once the whole chain
+        # has succeeded, and reports which part did not, so a failure here is not
+        # mistaken for the previous plot's events.
+        self.plot_events_generator = None
+        self.event_plot_data_requested.emit(
+            loader, snapped_event_ids, exp, channel, exp_and_ch, "events"
         )
-        exp_id = getattr(self, "relayed_experiment_id", None)
-        if exp_id is not None:
-            where_parts.append(f"experiment_id = {exp_id}")
-            if channel is not None:
-                where_parts.append(f"channel_id = {channel}")
-
-        db_id_query = f"SELECT id FROM events WHERE {' AND '.join(where_parts)}"
-        # Cleared first: a dispatch that fails never calls the return
-        # function, so without this the read below sees the previous call's
-        # value and treats it as this call's answer.
-        self.relayed_query_result = None
-        self.global_signal.emit(
-            "MetaDatabaseLoader",
-            loader,
-            "query_database_directly",
-            (db_id_query,),
-            "relay_query_result",
-            (),
-        )
-        db_id_result = getattr(self, "relayed_query_result", None)
-        if db_id_result is None or db_id_result.empty:
-            self.add_text_to_display.emit(
-                f"No data available for plotting with indices in the specified range {snapped_event_ids}",
-                self.__class__.__name__,
-            )
-            return
-        db_ids = db_id_result["id"].tolist()
-        db_id_tuple = f"({','.join(str(i) for i in db_ids)})"
-        event_db_id_filter = f"e.id IN {db_id_tuple}"
-
-        self.global_signal.emit(
-            "MetaDatabaseLoader",
-            loader,
-            "load_event_data",
-            (event_db_id_filter, exp_and_ch),
-            "relay_event_plot_data_generator",
-            (),
-        )
-        event_generator = getattr(self, "plot_events_generator", None)
+        event_generator = self.plot_events_generator
         if event_generator is None:
-            self.add_text_to_display.emit(
-                f"No data available for plotting with indices in the specified range {snapped_event_ids}",
-                self.__class__.__name__,
-            )
             return
 
         data_list = []
@@ -2409,44 +2195,34 @@ class MetadataView(MetaView, WalkthroughMixin):
             experiment_id = event["experiment_id"]
             channel_id = event["channel_id"]
             event_id_val = event["event_id"]
-            try:
-                load_feature_args = (experiment_id, channel_id, event_id_val)
-                self.global_signal.emit(
-                    "MetaDatabaseLoader",
-                    loader,
-                    "get_plot_features",
-                    load_feature_args,
-                    "update_features",
-                    (),
-                )
-            except RuntimeError as e:
-                self.logger.error(
-                    f"Features for event {event} could not be loaded in channel {channel}, skipping: {e}"
-                )
-            except KeyError as e:
-                self.logger.info(
-                    f"Event {event} not found in channel {channel} to get features, skipping: {e}"
-                )
-            except Exception as e:
-                self.logger.error(
-                    f"An unexpected error occured while trying to overlay features on the event: {e}"
-                )
-            else:
-                if self.vertical is not None:
-                    vertical_lines[-1] = self.vertical
-                    vertical_labels[-1] = self.vlabels
-                    self.vertical = None
-                    self.vlabels = None
-                if self.horizontal is not None:
-                    horizontal_lines[-1] = self.horizontal
-                    horizontal_labels[-1] = self.hlabels
-                    self.horizontal = None
-                    self.hlabels = None
-                if self.points is not None:
-                    points[-1] = self.points
-                    plabels[-1] = self.plabels
-                    self.points = None
-                    self.plabels = None
+            # Called with no arguments to clear all six before asking, for the same
+            # reason the generator is cleared above: a lookup that fails leaves them
+            # unset, and this event gets no features rather than the last one's.
+            #
+            # The try/except that used to wrap this emit is gone with it. It could
+            # never fire: the bus swallowed every exception a plugin raised, and a
+            # Qt slot's exception does not propagate back to the emitter either
+            # (measured on PySide6 6.9.0 - emit returns normally and the traceback
+            # goes to sys.excepthook), so the Controller reports failures itself.
+            self.update_plot_features()
+            self.plot_features_requested.emit(
+                loader, experiment_id, channel_id, event_id_val
+            )
+            if self.vertical is not None:
+                vertical_lines[-1] = self.vertical
+                vertical_labels[-1] = self.vlabels
+                self.vertical = None
+                self.vlabels = None
+            if self.horizontal is not None:
+                horizontal_lines[-1] = self.horizontal
+                horizontal_labels[-1] = self.hlabels
+                self.horizontal = None
+                self.hlabels = None
+            if self.points is not None:
+                points[-1] = self.points
+                plabels[-1] = self.plabels
+                self.points = None
+                self.plabels = None
 
         if data_list:
             self._update_event_plot(
@@ -2467,42 +2243,6 @@ class MetadataView(MetaView, WalkthroughMixin):
             self.logger.info(
                 f"No data available for plotting with indices in the specified range {snapped_event_ids}"
             )
-
-    @log(logger=logger)
-    def set_event_plot_data_generator(
-        self, generator: Iterator[Dict[str, Any]]
-    ) -> None:
-        """
-        A callback from a global signal call that sets the generator to be used to construct event plots and overlays.
-
-        :param generator: a generator of event data
-        :type generator: Iterator[Dict[str, Any]]
-        """
-        self.plot_events_generator = generator
-
-    @log(logger=logger)
-    def relay_query_result(self, result: Optional[pd.DataFrame]) -> None:
-        """
-        A callback from a global_signal call that stores the result of a DB query.
-
-        Shared by the ``query_database_directly`` and ``load_metadata`` dispatches,
-        which return the same thing: the rows, an empty frame if none matched, or
-        None if the query could not be built or run.
-
-        :param result: DataFrame returned by the query, or None if it failed.
-        :type result: Optional[pd.DataFrame]
-        """
-        self.relayed_query_result = result
-
-    @log(logger=logger)
-    def relay_experiment_id(self, exp_id: Optional[int]) -> None:
-        """
-        A callback from a global_signal call that stores a resolved experiment id.
-
-        :param exp_id: Integer experiment id.
-        :type exp_id: Optional[int]
-        """
-        self.relayed_experiment_id = exp_id
 
     @log(logger=logger)
     def update_plot_features(
@@ -2781,163 +2521,44 @@ class MetadataView(MetaView, WalkthroughMixin):
 
         folder = result["Folder"]["Value"]
 
-        export_subset_args = (folder, name, filters, selection)
-        ret_args = (self.subset_export_count, loader, "MetaDatabaseLoader")
-        try:
-            self.global_signal.emit(
-                "MetaDatabaseLoader",
-                loader,
-                "export_subset_to_csv",
-                export_subset_args,
-                "set_generator",
-                ret_args,
-            )
-        except Exception as e:
-            self.logger.error(f"Failed to export subset: {repr(e)}")
-        else:
-            self.run_generators.emit(loader)
-            self.subset_export_count += 1
-
-    @log(logger=logger)
-    def set_exported_event_count(self, written: int) -> None:
-        """
-        A global signal callback that provides the number of events written in a call to export events to csv format.
-
-        :param written: number of events successfully written
-        :type written: int
-        """
-        self.exported_event_count = written
-
-    @log(logger=logger)
-    def set_query(self, query: str, table_name: str) -> None:
-        """
-        Set the SQL query and table name used in plotting.
-
-        :param query: SQL query string.
-        :type query: str
-        :param table_name: Name of the database table.
-        :type table_name: str
-        """
-        self.query = query
-        self.table_name = table_name
-        if not query:
-            return
-
-        # Only display SQL for filter creation/edit validation
-        if self._show_sql_in_display:
-            self.add_text_to_display.emit(
-                f"SQL ({table_name}):\n{query.strip()}",
-                self.__class__.__name__,
-            )
-            # one-shot so normal plot queries never show
-            self._show_sql_in_display = False
-
-    @log(logger=logger)
-    def set_event_query(self, query: str) -> None:
-        """
-        A global signal callback that provides a valid SQL query for fetching event data.
-
-        :param query: SQL query string for fetching event data.
-        :type query: str
-        """
-        self.event_query = query
-        if not query:
-            return
-
-        if self._show_event_sql_in_display:
-            self.add_text_to_display.emit(
-                f"Event SQL:\n{query.strip()}",
-                self.__class__.__name__,
-            )
-            self._show_event_sql_in_display = False
-
-    @log(logger=logger)
-    def set_units(self, units: Any) -> None:
-        """
-        Set the units returned from the database for use in axis labels.
-
-        :param units: List or string representing units.
-        :type units: Any
-        """
-        self.units = units
-
-    @log(logger=logger)
-    def update_available_columns(self, loader: str) -> None:
-        """
-        Request available columns from the database loader.
-
-        :param loader: Name of the active database loader.
-        :type loader: str
-        """
-        if not loader or loader == "No Event Database":
-            return
-        try:
-            self.global_signal.emit(
-                "MetaDatabaseLoader",
-                loader,
-                "get_column_names_by_table",
-                (),
-                "update_column_names",
-                (),
-            )
-        except Exception as e:
-            self.logger.error(f"Failed to request column data: {repr(e)}")
-
-    @log(logger=logger)
-    def request_experiment_structure(self, loader_name: str) -> None:
-        """
-        Get a dict of all experiments and channels available in a specified MetaDatabaseLoader object.
-
-        :param loader_name: the key of the loader
-        :type loader_name: str
-        """
-        if not loader_name or loader_name == "No Event Database":
-            return
-
-        self.logger.debug(
-            f"Requesting experiment-channel structure from loader: {loader_name}"
-        )
-
-        self.global_signal.emit(
-            "MetaDatabaseLoader",
-            loader_name,
-            "get_experiments_and_channels",
-            (),
-            "get_experiment_structure_ready",
-            (loader_name,),
+        # The export runs in a worker thread, so there is no answer to read back
+        # here: the Controller stages the generator, starts it, and calls
+        # on_subset_export_started only if it got that far. The try/except that used
+        # to wrap this emit went with it - it could not catch a plugin failure, which
+        # the bus swallowed before it, and cannot catch one now either, since a Qt
+        # slot's exception does not propagate back to the emitter.
+        self.csv_subset_export_requested.emit(
+            loader, folder, name, filters, selection, self.subset_export_count
         )
 
     @log(logger=logger)
-    def show_selection_tree(
-        self,
-        structure: dict[str, list[str]],
-        loader_name: str,
-        selection: Optional[dict[str, list[str]]] = None,
-    ) -> None:
+    def on_subset_export_started(self) -> None:
         """
-        Displays the selection tree for a given loader using the full structure and current selection.
+        Move to the next export index, now that this one is running.
+
+        The index names the export in the dialog and keys its worker, so it advances
+        only for an export that was actually staged - which is what the Controller
+        calling this says. The Controller counts the subset before staging anything,
+        so an export refused for being empty never reaches here and the next dialog
+        offers the same name again. Kept here rather than counted in the Controller
+        because the dialog needs it before the request goes out, and one owner cannot
+        drift from itself.
+
+        :return: None
+        :rtype: None
         """
-        self.logger.debug(
-            f"Displaying selection tree with structure: {structure} for loader: {loader_name}"
-        )
-
-        if not hasattr(self, "selection_tree"):
-            self.selection_tree = SelectionTree()
-
-        selected = self.selection_tree.show_dialog(
-            structure,
-            loader_name,
-            title="Select Experiment and Channels",
-            selected=selection,
-        )
-
-        self.selected_experiment_and_channels_by_loader[loader_name] = selected
-        self.logger.debug(f"Updated selection for {loader_name}: {selected}")
+        self.subset_export_count += 1
 
     @log(logger=logger)
     def update_units(self, loader: str, column: str, axis: str) -> None:
         """
-        Request units for a specific column from the loader.
+        Ask the Controller for a column's units, for this tab's axis unit labels.
+
+        On this tab rather than on ``MetaSubsetTabView``, although both subset tabs
+        inherit that base: the protein tab has no units label, keeps no units cache and
+        labels its axes with hardcoded literals, so it has nothing to do with the answer.
+        Putting it back on the base would give that tab an inherited request nothing
+        answers.
 
         :param loader: Name of the database loader.
         :type loader: str
@@ -2945,22 +2566,32 @@ class MetadataView(MetaView, WalkthroughMixin):
         :type column: str
         :param axis: Axis being updated ('x_axis', 'y_axis', etc.).
         :type axis: str
+        :return: None
+        :rtype: None
         """
         # "No Event Database" is the combobox's placeholder, i.e. a normal empty state
         # rather than an error, so do not dispatch it as a plugin key.
         if not loader or loader == "No Event Database":
             return
-        try:
-            self.global_signal.emit(
-                "MetaDatabaseLoader",
-                loader,
-                "get_column_units",
-                (column,),
-                "update_column_units",
-                (axis,),
-            )
-        except Exception as e:
-            self.logger.error(f"Failed to request units for column {column}: {repr(e)}")
+        self.column_units_requested.emit(loader, column, axis)
+
+    @log(logger=logger)
+    def set_column_units(self, units: List[Optional[str]]) -> None:
+        """
+        Receive one units string per plotted column, in the columns' own order.
+
+        One list in one call, rather than one string per round trip accumulated here.
+        Accumulating them meant a lookup that failed appended the *previous* column's
+        units instead of nothing, and the axis was labelled with the wrong unit; handed
+        over together, the count either matches the columns or the answer is missing
+        entirely.
+
+        :param units: one units string per column, None where the loader has none
+        :type units: List[Optional[str]]
+        :return: None
+        :rtype: None
+        """
+        self.column_units = units
 
     @log(logger=logger)
     def update_column_names(self, column_names: List[str]) -> None:
@@ -3000,298 +2631,6 @@ class MetadataView(MetaView, WalkthroughMixin):
         raise NotImplementedError(f"{action_name} handler not implemented")
 
     @log(logger=logger)
-    def _calculate_heatmap(
-        self,
-        xdata: npt.NDArray[np.float64],
-        ydata: npt.NDArray[np.float64],
-        logx: bool = False,
-        logy: bool = False,
-        bins: Any = None,
-        sizes: bool = False,
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """
-        :param xdata: the data on the x axis
-        :type xdata: npt.NDArray[np.float64]
-        :param ydata: the data on the y axis
-        :type ydata: npt.NDArray[np.float64]
-        :param logx: logscale the x data before building the heatmap?
-        :type logx: bool
-        :param logy: logscale the y data before building the heatmap?
-        :type logy: bool
-        :param bins: number of bins (if sizes==False) or size of bins (if sizes==True) for use when binning. Arrives as a list from the controls and may be rebound to None in the body, hence the loose annotation.
-        :type bins: Any
-        :param sizes: does the bins parameter refer to bin sizes (True) or widths (False)
-        :type sizes: bool
-        :return: Bin-center x values, bin-center y values, and the log2-scaled 2D histogram counts.
-        :rtype: tuple[np.ndarray, np.ndarray, np.ndarray]
-        :raises ValueError: If bins is an invalid entry when sizes is False.
-
-        Build a heatmap of the provided data
-        """
-        xdata, ydata = self._logscale_and_filter_multiple_columns(
-            xdata, ydata, log_flags=[logx, logy]
-        )
-
-        if bins is not None:
-            if sizes is False:
-                if isinstance(bins, list) and len(bins) >= 2:
-                    xbins = bins[0]
-                    ybins = bins[1]
-                elif isinstance(bins, list) and len(bins) == 1:
-                    xbins = bins[0]
-                    ybins = bins[0]
-                else:
-                    raise ValueError(f"Invalid bin entry: {bins}")
-            elif sizes is True:
-                if isinstance(bins, list) and len(bins) >= 2:
-                    xbins = int((max(xdata) - min(xdata)) / bins[0])
-                    ybins = int((max(ydata) - min(ydata)) / bins[1])
-                elif isinstance(bins, list) and len(bins) == 1:
-                    xbins = int((max(xdata) - min(xdata)) / bins[0])
-                    ybins = int((max(ydata) - min(ydata)) / bins[0])
-                else:
-                    self.logger.info(
-                        f"Invalid entry in bins: {bins}, defaulting to iqr"
-                    )
-                    bins = None
-                if xbins <= 1 or ybins <= 1:
-                    self.logger.info(
-                        f"Invalid entry in bins: {bins}, defaulting to iqr"
-                    )
-                    bins = None
-        if bins is None:
-            try:
-                if iqr(xdata) > 0:
-                    xbins = int(
-                        (max(xdata) - min(xdata))
-                        * len(xdata) ** (1.0 / 4.0)
-                        / (iqr(xdata))
-                    )
-                else:
-                    xbins = int(np.sqrt(len(xdata)))
-            except OverflowError:
-                xbins = int(np.sqrt(len(xdata)))
-            try:
-                if iqr(ydata) > 0:
-                    ybins = int(
-                        (max(ydata) - min(ydata))
-                        * len(xdata) ** (1.0 / 4.0)
-                        / (iqr(ydata))
-                    )
-                else:
-                    ybins = int(np.sqrt(len(ydata)))
-            except OverflowError:
-                ybins = int(np.sqrt(len(ydata)))
-
-        z, x, y = np.histogram2d(xdata, ydata, bins=[int(xbins), int(ybins)])
-        logged_z = np.empty_like(z)
-        for i in range(z.shape[0]):
-            for j in range(z.shape[1]):
-                logged_z[i, j] = np.log2(z[i, j]) if z[i, j] > 0 else -1
-
-        x = x[:-1] + np.diff(x) / 2.0
-        y = y[:-1] + np.diff(y) / 2.0
-
-        return x, y, logged_z.T
-
-    @log(logger=logger)
-    def _show_add_filter_dialog(self, parameters: dict) -> None:
-        """
-        Displays the dialog for adding a new subset filter. Validates filter syntax
-        before actually saving the filter.
-
-        :param parameters: Dictionary with 'db_loader'.
-        :type parameters: dict
-        """
-        self._show_sql_in_display = True
-
-        dialog = AddSubsetFilterDialog(
-            self, existing_names=list(self.subset_filters.keys())
-        )
-
-        if self._walkthrough_active:
-            self.logger.info("Launching walkthrough from _show_add_filter_dialog()")
-            dialog._init_walkthrough()
-            dialog.launch_walkthrough()
-            if dialog.walkthrough_dialog:
-                dialog.finished.connect(
-                    lambda _: dialog.walkthrough_dialog.force_close()
-                )
-
-        if dialog.exec() == QDialog.Accepted:
-            # These are Optional[str] until the dialog's try_accept/accept
-            # fills them, and exec() cannot return Accepted without that
-            # having run - but the guarantee travels through a signal
-            # connection mypy cannot follow, so it is asserted here once
-            # rather than guarded at each of the six downstream uses.
-            name: str = dialog.name  # type: ignore[assignment]
-            filter_text: str = dialog.filter_text  # type: ignore[assignment]
-            loader = parameters["db_loader"]
-
-            if not loader:
-                self.add_text_to_display.emit(
-                    "No event database selected", self.__class__.__name__
-                )
-                return
-
-            # Store pending data for use in relay_query
-            self._pending_filter_name = name
-            self._pending_filter_text = filter_text
-            self._pending_old_filter_name = None
-
-            if dialog.is_raw:
-                # Raw SQL path — validate via validate_filter_query, not construct_metadata_query
-                if not filter_text.strip().upper().startswith("SELECT"):
-                    QMessageBox.warning(
-                        self,
-                        "Invalid Raw SQL Filter",
-                        "Raw SQL filters must be complete SELECT statements, e.g. SELECT duration FROM events WHERE duration > 1000",
-                    )
-                    return
-                name = f"{name}_raw" if not name.endswith("_raw") else name
-                self._pending_filter_name = name
-                self.global_signal.emit(
-                    "MetaDatabaseLoader",
-                    loader,
-                    "validate_filter_query",
-                    (filter_text.strip().rstrip(";") + " LIMIT 0",),
-                    "on_raw_filter_validated",
-                    (),
-                )
-                return
-
-            self._show_sql_in_display = True
-
-            # Validate assisted filter via construct_metadata_query
-            self.global_signal.emit(
-                "MetaDatabaseLoader",
-                loader,
-                "construct_metadata_query",
-                (
-                    ["sublevel_current", "voltage", "duration"],
-                    filter_text,
-                    None,
-                ),
-                "relay_query",
-                ("validate_new_filter",),
-            )
-
-    @log(logger=logger)
-    def show_edit_filter_dialog(self, name: str, loader: str) -> None:
-        """
-        Displays the dialog to edit an existing filter, and validates the updated
-        SQL filter syntax via construct_metadata_query before saving it.
-
-        :param name: The name of the filter to edit.
-        :type name: str
-        :param loader: Name of the active database loader.
-        :type loader: str
-        """
-        self._show_sql_in_display = True
-
-        self.logger.debug(f"Editing filter: {name}")
-        self.logger.debug(f"Filters available: {self.subset_filters}")
-
-        dialog = EditSubsetFilterDialog(self, name, self.subset_filters)
-
-        if dialog.exec():
-            # These are Optional[str] until the dialog's try_accept/accept
-            # fills them, and exec() cannot return Accepted without that
-            # having run - but the guarantee travels through a signal
-            # connection mypy cannot follow, so it is asserted here once
-            # rather than guarded at each of the six downstream uses.
-            new_name: str = dialog.new_name  # type: ignore[assignment]
-            new_filter: str = dialog.new_filter  # type: ignore[assignment]
-
-            self.logger.debug(f"Updated filter: {name} -> {new_name}: {new_filter}")
-
-            if not loader:
-                self.add_text_to_display.emit(
-                    "No event database selected", self.__class__.__name__
-                )
-                return
-
-            # Store pending update info to be committed in relay_query after validation
-            self._pending_filter_name = new_name
-            self._pending_filter_text = new_filter
-            self._pending_old_filter_name = name  # important for replacing key
-
-            if dialog.is_raw:
-                # Raw SQL path — validate via validate_filter_query, not construct_metadata_query
-                if not new_filter.strip().upper().startswith("SELECT"):
-                    QMessageBox.warning(
-                        self,
-                        "Invalid Raw SQL Filter",
-                        "Raw SQL filters must be complete SELECT statements, e.g. SELECT duration FROM events WHERE duration > 1000",
-                    )
-                    return
-                new_name = (
-                    f"{new_name}_raw" if not new_name.endswith("_raw") else new_name
-                )
-                self._pending_filter_name = new_name
-                self.global_signal.emit(
-                    "MetaDatabaseLoader",
-                    loader,
-                    "validate_filter_query",
-                    (new_filter.strip().rstrip(";") + " LIMIT 0",),
-                    "on_raw_filter_validated",
-                    (),
-                )
-                return
-
-            self._show_sql_in_display = True
-            # Emit signal to validate the updated assisted filter
-            self.global_signal.emit(
-                "MetaDatabaseLoader",
-                loader,
-                "construct_metadata_query",
-                (["sublevel_current", "voltage", "duration"], new_filter, None),
-                "relay_query",
-                ("validate_edited_filter",),
-            )
-
-    @log(logger=logger)
-    def clear_pending_filter_state(self) -> None:
-        """
-        reset all filters to factory settings
-        """
-        self._pending_filter_name = None
-        self._pending_filter_text = None
-        self._pending_old_filter_name = None
-
-    @log(logger=logger)
-    def _show_filter_info_dialog(
-        self, comboBox: MultiSelectComboBox, parameters: Dict[str, Any]
-    ) -> None:
-        """
-        Called when clicking the edit button for filters with multiple selection.
-
-        Validates that exactly one filter is selected and delegates to the edit dialog.
-
-        :param comboBox: The combo box containing the list of selectable filters.
-        :type comboBox: MultiSelectComboBox
-        :param parameters: Dictionary with 'db_loader'.
-        :type parameters: Dict[str, Any]
-        """
-        loader = parameters["db_loader"]
-        selected = comboBox.getSelectedItems()
-        if len(selected) != 1:
-            self.logger.warning("Please select exactly one filter to edit.")
-            return
-
-        self.show_edit_filter_dialog(selected[0], loader)
-
-    @log(logger=logger)
-    def _delete_filter_by_name(self, name: str) -> None:
-        """
-        Deletes a single filter by name.
-
-        :param name: The name of the filter to delete.
-        :type name: str
-        """
-        self._delete_filter(name)
-
-    @log(logger=logger)
     def _delete_all_selected_filters(self) -> None:
         """
         Deletes multiple selected filters.
@@ -3304,155 +2643,6 @@ class MetadataView(MetaView, WalkthroughMixin):
 
         for name in selected_items:
             self._delete_filter(name)
-
-    @log(logger=logger)
-    def _delete_filter(self, name: str) -> None:
-        """
-        Internal method to remove a filter and update the UI.
-
-        :param name: The name of the filter to remove.
-        :type name: str
-        """
-        self.subset_filters.pop(name, None)
-
-        list_widget = self.metadatacontrols.filter_comboBox.listWidget
-        for i in reversed(range(list_widget.count())):
-            widget = list_widget.itemWidget(list_widget.item(i))
-            if widget:
-                checkbox = widget.findChild(QCheckBox)
-                if checkbox and checkbox.text() == name:
-                    list_widget.takeItem(i)
-                    break
-
-        self.metadatacontrols.filter_comboBox.refreshDisplayText()
-
-    @log(logger=logger)
-    def get_selected_filters(self) -> dict:
-        """
-        Get a dict of the filters that the user has indicated should be active for the current plotting task
-        """
-        return {
-            name: self.subset_filters.get(name, "")
-            for name in self.metadatacontrols.filter_comboBox.getSelectedItems()
-        }
-
-    @log(logger=logger)
-    def replace_filter_item(self, name: str) -> None:
-        """
-        Remove any existing filter item with the same name and add the new one.
-
-        :param name: The name of the filter to (re)add.
-        :type name: str
-        """
-        list_widget = self.metadatacontrols.filter_comboBox.listWidget
-        for i in range(list_widget.count()):
-            item = list_widget.item(i)
-            widget = list_widget.itemWidget(item)
-            checkbox = widget.findChild(QCheckBox)
-            if checkbox and checkbox.text() == name:
-                list_widget.takeItem(i)
-                break
-
-        self.metadatacontrols.filter_comboBox.addItem(name)
-        self.metadatacontrols.filter_comboBox.selectItem(name, select=True)
-
-    @log(logger=logger)
-    def update_filter_name(self, old_name: str, new_name: str) -> None:
-        """
-        Replace old filter name with new one in the ComboBox, removing any duplicates.
-
-        :param old_name: The filter name being replaced.
-        :type old_name: str
-        :param new_name: The filter name to display instead.
-        :type new_name: str
-        """
-        list_widget = self.metadatacontrols.filter_comboBox.listWidget
-
-        # Remove old name
-        for i in range(list_widget.count()):
-            item = list_widget.item(i)
-            widget = list_widget.itemWidget(item)
-            checkbox = widget.findChild(QCheckBox)
-            if checkbox and checkbox.text() == old_name:
-                list_widget.takeItem(i)
-                break
-
-        # Remove new name if it already exists and is different
-        if new_name != old_name:
-            for i in range(list_widget.count()):
-                item = list_widget.item(i)
-                widget = list_widget.itemWidget(item)
-                checkbox = widget.findChild(QCheckBox)
-                if checkbox and checkbox.text() == new_name:
-                    list_widget.takeItem(i)
-                    break
-
-        # Add updated name
-        self.metadatacontrols.filter_comboBox.addItem(new_name)
-        self.metadatacontrols.filter_comboBox.selectItem(new_name, select=True)
-        self.metadatacontrols.filter_comboBox.refreshDisplayText()
-
-    @log(logger=logger)
-    def set_channel_db_id(self, channel_db_id: Optional[int]) -> None:
-        """
-        a global signal callback that provides the channel_db_id for raw query scoping
-
-        :param channel_db_id: Database id of the scoped channel, or None if unresolved.
-        :type channel_db_id: Optional[int]
-        """
-        self.channel_db_id = channel_db_id
-
-    @log(logger=logger)
-    def on_raw_filter_validated(self, valid: bool, error_msg: str) -> None:
-        """
-        Relay callback from validate_filter_query for raw SQL filter validation.
-
-        :param valid: Whether the query is valid.
-        :type valid: bool
-        :param error_msg: Error message if invalid.
-        :type error_msg: str
-        """
-        if not valid:
-            QMessageBox.warning(
-                self,
-                "Invalid Raw SQL Filter",
-                f"The filter could not be validated:\n\n{error_msg}",
-            )
-            self.clear_pending_filter_state()
-            return
-
-        name = self._pending_filter_name
-        filter_text = self._pending_filter_text
-        old_name = self._pending_old_filter_name
-
-        if name is None:
-            # Mirrors the guard the assisted-filter path already applies in
-            # relay_query: with no pending name there is nothing to commit.
-            self.logger.warning(
-                "Raw filter validated with no pending filter name, ignoring."
-            )
-            self.clear_pending_filter_state()
-            return
-
-        if old_name is not None:  # edit path
-            self.subset_filters.pop(old_name, None)
-            self.subset_filters[name] = filter_text or ""
-            self.update_filter_name(old_name, name)
-            self.add_text_to_display.emit(
-                f"Filter '{old_name}' updated to '{name}'.",
-                self.__class__.__name__,
-            )
-        else:  # add path
-            self.subset_filters[name] = filter_text or ""
-            self.metadatacontrols.filter_comboBox.addItem(name)
-            self.metadatacontrols.filter_comboBox.selectItem(name, select=True)
-            self.metadatacontrols.filter_comboBox.refreshDisplayText()
-            self.add_text_to_display.emit(
-                f"Filter '{name}' added.",
-                self.__class__.__name__,
-            )
-
-        self.clear_pending_filter_state()
 
     @log(logger=logger)
     def get_walkthrough_steps(self) -> List[WalkthroughStep]:

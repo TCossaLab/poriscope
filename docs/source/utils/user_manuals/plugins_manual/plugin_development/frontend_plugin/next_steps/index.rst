@@ -9,6 +9,7 @@ Here are some suggested next steps to level up your plugin:
    :maxdepth: 1
 
    adding_walkthrough
+   walkthrough_mixin
 
 - Enable multithreaded analysis for long-running tasks.
 - Implement progress bars and dynamic status updates.

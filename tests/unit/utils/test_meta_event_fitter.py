@@ -550,6 +550,44 @@ class TestMetaEventFitter:
         with pytest.raises(RuntimeError, match="not been initialized"):
             next(gen)
 
+    @pytest.mark.parametrize("bad_value", [np.nan, np.inf, -np.inf])
+    def test_fit_events_rejects_non_finite_data_by_name(
+        self, fitter: ConcreteEventFitter, bad_value: float
+    ) -> None:
+        """
+        An event holding a NaN or infinite sample is rejected as "Non-finite Data".
+
+        One such sample poisons every statistic a fitter computes from the event, so its
+        comparisons all go false and it used to surface as some unrelated reason - "Too
+        Few Levels" for CUSUM - or be fitted into nonsense. It is rejected before the
+        fitter sees it, and the other events are fitted as usual.
+        """
+        fitter.eventloader.events[0][1]["data"][500] = bad_value
+
+        list(fitter.fit_events(0, indices=[0, 1, 2]))
+
+        assert fitter.rejected[0] == {"Non-finite Data": 1}
+        assert sorted(fitter.event_metadata[0]) == [0, 2]
+        assert sorted(fitter.sublevel_metadata[0]) == [0, 2]
+        assert fitter.eventfitting_status[0] is True
+
+    def test_fit_events_checks_the_filtered_data(
+        self, fitter: ConcreteEventFitter
+    ) -> None:
+        """A filter that produces a non-finite sample gets the event rejected too."""
+
+        def poisoning_filter(
+            data: npt.NDArray[np.float64],
+        ) -> npt.NDArray[np.float64]:
+            filtered = data.copy()
+            filtered[0] = np.nan
+            return filtered
+
+        list(fitter.fit_events(0, data_filter=poisoning_filter, indices=[0]))
+
+        assert fitter.rejected[0] == {"Non-finite Data": 1}
+        assert fitter.event_metadata[0] == {}
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

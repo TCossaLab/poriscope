@@ -27,12 +27,12 @@ from typing import Collection, List, Optional
 
 from PySide6.QtWidgets import QDialogButtonBox, QWidget
 
-from poriscope.plugins.analysistabs.utils.walkthrough_mixin import (
-    WalkthroughMixin,
-    WalkthroughStep,
-)
 from poriscope.views.widgets.base_widgets.base_subset_filter_dialog import (
     BaseSubsetFilterDialog,
+)
+from poriscope.views.widgets.walkthrough_mixin import (
+    WalkthroughMixin,
+    WalkthroughStep,
 )
 
 

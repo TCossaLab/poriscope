@@ -39,19 +39,14 @@ from PySide6.QtCore import (
 from PySide6.QtGui import QFont, QPainter, QPalette
 from PySide6.QtWidgets import (
     QApplication,
-    QCheckBox,
     QComboBox,
     QFileDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
     QLayout,
-    QLineEdit,
-    QListWidget,
-    QListWidgetItem,
     QMessageBox,
     QPushButton,
-    QSizePolicy,
     QStyle,
     QStyledItemDelegate,
     QStyleFactory,
@@ -366,85 +361,6 @@ class SettingsWindow(QWidget):
         comboBox.setItemDelegate(_NoFocusRectDelegate(comboBox))
 
         return comboBox
-
-    @log(logger=logger)
-    def create_checkable_list_widget(
-        self, parent: QWidget, items: Iterable[str]
-    ) -> QListWidget:
-        listWidget = QListWidget(parent)
-        for item in items:
-            list_item = QListWidgetItem(QCoreApplication.translate("Form", item, None))
-            list_item.setFlags(list_item.flags() | Qt.ItemIsUserCheckable)
-            list_item.setCheckState(Qt.Unchecked)
-            listWidget.addItem(list_item)
-
-        listWidget.setStyleSheet(
-            f"""
-            QListWidget {{
-                border: 1px solid {self.theme.border};
-                border-radius: 10px;
-                padding: 5px 10px;
-                background: {self.theme.surface};
-                color: {self.theme.text};
-                min-height: 30px;
-                min-width: 200px;
-            }}
-            QListWidget::item {{
-                padding: 5px 10px;
-                border-radius: 4px;
-            }}
-            QListWidget::item:hover {{
-                background: {self.theme.hover};
-            }}
-            QListWidget::item:selected {{
-                background: {self.theme.selected_bg};
-                color: {self.theme.selected_text};
-            }}
-            QListWidget::item:selected:hover {{
-                background: {self.theme.selected_bg};
-                color: {self.theme.selected_text};
-            }}
-            """
-        )
-        return listWidget
-
-    @log(logger=logger)
-    def create_check_box(self, parent: QWidget) -> QCheckBox:
-        checkBox = QCheckBox(parent)
-        checkBox.setStyleSheet(
-            """
-            QCheckBox::indicator {
-                width: 20px;
-                height: 20px;
-            }
-            """
-        )
-        return checkBox
-
-    @log(logger=logger)
-    def create_line_edit(
-        self, parent: QWidget, max_width: Optional[int] = None
-    ) -> QLineEdit:
-        lineEdit = QLineEdit(parent)
-        if max_width:
-            lineEdit.setMaximumWidth(max_width)
-        sizePolicy = QSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
-        sizePolicy.setHeightForWidth(lineEdit.sizePolicy().hasHeightForWidth())
-        lineEdit.setSizePolicy(sizePolicy)
-        lineEdit.setStyleSheet(
-            f"""
-            QLineEdit {{
-                border: 1px solid {self.theme.border};
-                border-radius: 6px;
-                padding: 5px 10px;
-                background: {self.theme.surface};
-                color: {self.theme.text};
-                min-height: 28px;
-                min-width: 200px;
-            }}
-            """
-        )
-        return lineEdit
 
     @log(logger=logger)
     def create_push_button(

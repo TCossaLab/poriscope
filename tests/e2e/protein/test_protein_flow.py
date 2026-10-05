@@ -68,8 +68,6 @@ _update_distribution_ensemble), cited inline below.
 """
 
 import os
-import sys
-from pathlib import Path
 
 import numpy as np
 import pytest
@@ -88,10 +86,6 @@ from tests.e2e._helpers import (
     open_menu_hybrid,
     schedule_dialog_autofill,
 )
-
-REPO_ROOT = Path(__file__).resolve().parents[3]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
 LOADER_SUBCLASS_NAME = os.getenv("E2E_DBLOADER_NAME", "SQLiteDBLoader")
 E2E_TIMEOUT_S = int(os.getenv("E2E_TIMEOUT", "240"))
@@ -132,12 +126,12 @@ def _fake_generate_vm_ensemble(
     cutoff_std=4,
 ):
     """
-    Drop-in replacement for ProteinView._generate_vm_ensemble that skips the
+    Drop-in replacement for ProteinModel._generate_vm_ensemble that skips the
     real rejection-sampling loop. Returns a small fixed (V, m) sample that
     satisfies the same domain constraints the real sampler enforces
     (m>1 for prolate, 0<m<1 for oblate; V>0), so downstream shape math
     (b = (3V/(4*pi*m))**(1/3), a = b*m) and DataFrame construction in
-    _update_distribution_individual/_ensemble run unmodified on real,
+    ProteinModel.sample_vm_solutions run unmodified on real,
     valid-shaped data -- only the sampling cost is removed.
     """
     n = min(N_target, 5) if N_target else 5
@@ -148,7 +142,7 @@ def _fake_generate_vm_ensemble(
 
 def _fake_fit_and_sanity_check_double_gaussian(self, bins, amplitude):
     """
-    Drop-in replacement for ProteinView._fit_and_sanity_check_double_gaussian
+    Drop-in replacement for ProteinModel._fit_and_sanity_check_double_gaussian
     that skips the real curve_fit + statistical sanity checks (p-value on
     peak separation, min(amp)/max(amp) >= 0.05 ratio). Whether an arbitrary
     synthetic dataset's aggregate current histogram is bimodal enough to
@@ -200,12 +194,13 @@ def test_protein_individual_ensemble_flow(
     # test_multiple_channels_warns_and_returns), so this fixture's
     # multi-experiment shape must be narrowed down after Scope, same as
     # test_metadata_flow.py's own Stage 2 does.
-    import poriscope.plugins.analysistabs.ProteinView as protein_view_mod
+    import poriscope.plugins.analysistabs.ProteinModel as protein_model_mod
+    from poriscope.views.widgets.SelectionTree import SelectionTree
 
     def _patched_show_dialog(
         self, structure, loader_name, title="Select Channels", selected=None
     ):
-        selection_widget = protein_view_mod.SelectionTree()
+        selection_widget = SelectionTree()
         selection_widget.populate_tree(structure, loader_name, selected)
         tree = selection_widget.tree
         first_exp_name = tree.topLevelItem(0).text(0)
@@ -224,23 +219,29 @@ def test_protein_individual_ensemble_flow(
         return result
 
     monkeypatch.setattr(
-        protein_view_mod.SelectionTree,
+        SelectionTree,
         "show_dialog",
         _patched_show_dialog,
         raising=True,
     )
 
-    # See module docstring's SPEED note.
+    # See module docstring's SPEED note. The sampler lives on ProteinModel with the
+    # rest of the geometry (it moved off the View), so this patches the one copy that
+    # now exists; `raising=True` is again what turned the View's stale target into a
+    # named failure rather than a patch that silently stopped covering anything.
     monkeypatch.setattr(
-        protein_view_mod.ProteinView,
+        protein_model_mod.ProteinModel,
         "_generate_vm_ensemble",
         _fake_generate_vm_ensemble,
         raising=True,
     )
 
-    # See module docstring's FIT DETERMINISM note.
+    # See module docstring's FIT DETERMINISM note. The fit moved off ProteinView
+    # onto ProteinModel, so this patches the one copy that now exists;
+    # `raising=True` is what turned the View's stale target into a named failure
+    # rather than a patch that silently stopped covering anything.
     monkeypatch.setattr(
-        protein_view_mod.ProteinView,
+        protein_model_mod.ProteinModel,
         "_fit_and_sanity_check_double_gaussian",
         _fake_fit_and_sanity_check_double_gaussian,
         raising=True,

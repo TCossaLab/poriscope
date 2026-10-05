@@ -23,10 +23,11 @@
 # Contributors:
 # Kyle Briggs
 
+import glob
 import logging
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union, override
+from typing import Any, Dict, List, Optional, Union, override
 
 import numpy as np
 import numpy.typing as npt
@@ -154,8 +155,9 @@ class SingleBinaryDecoder(MetaReader):
         datamaps = []
         fmt = []
         offset = self.settings["Header Bytes"]["Value"]
+        sample_dtype = self._sample_dtype()
         for channel, (_filename, _config) in enumerate(zip(datafiles, configs)):
-            fmt.append((f"data_{channel}", self.dtype))
+            fmt.append((f"data_{channel}", sample_dtype))
 
         try:
             memmaps = np.memmap(Path(datafiles[0]), dtype=fmt, offset=offset, mode="r")
@@ -247,45 +249,35 @@ class SingleBinaryDecoder(MetaReader):
         :return: Base name for matching other files.
         :rtype: str
         """
-        return file_name
+        # Escaped so that brackets in the file name are matched literally.
+        return glob.escape(file_name)
 
     @log(logger=logger)
     @override
     def _convert_data(
-        self, data: npt.NDArray[np.int16], config: dict, raw_data: bool = False
-    ) -> Union[Tuple[np.ndarray, float, float], np.ndarray]:
+        self, data: npt.NDArray[np.int16], config: dict
+    ) -> npt.NDArray[np.float64]:
         """
-        Scale or otherwise transform and return requested data.
-        Default behavior assumes data is already scaled when read.
-        if raw_data is true, return also scale and offset
+        Convert raw data from disk into rescaled current, in pA.
 
         :param data: Data to convert.
         :type data: npt.NDArray[np.int16]
         :param config: Configuration dictionary for data conversion.
         :type config: dict
-        :param raw_data: Decide whether to rescale data or return raw adc codes
-        :type raw_data: bool
-
-        :return: Converted data, and scale and offset if and only if raw_data is True
-        :rtype: Union[Tuple[np.ndarray, float, float], np.ndarray]
+        :return: The data, rescaled to pA.
+        :rtype: npt.NDArray[np.float64]
         """
         scale = self.settings["Scale"]["Value"]
         offset = self.settings["Offset"]["Value"]
         bitmask = self.settings["Bitmask"]["Value"]
-
-        conv_data = self._scale_data(
+        return self._scale_data(
             data,
             bitmask=bitmask,
             scale=scale,
             offset=offset,
             dtype=np.float64,
             copy=False,
-            raw_data=raw_data,
         )
-        if raw_data:
-            return conv_data, scale, offset
-        else:
-            return conv_data
 
     @log(logger=logger)
     @override
@@ -303,15 +295,11 @@ class SingleBinaryDecoder(MetaReader):
         return [{}] * self.settings["Number of Arrays"]["Value"]
 
     @log(logger=logger)
-    @override
-    def _set_raw_dtype(self, configs: List[dict]) -> np.dtype:
+    def _sample_dtype(self) -> np.dtype:
         """
-        Set the data type for the raw data in files of this type
+        Build the on-disk sample dtype from the Byte Order, Data Type and Data Bytes settings.
 
-        :param configs: List of configuration dictionaries corresponding to data files.
-        :type configs: List[dict]
-
-        :return: the dtype of the raw data in your data files
+        :return: the dtype of one sample in the file
         :rtype: np.dtype
 
         :raises ValueError: If the byte order symbol, data type, or data size settings are invalid.
@@ -358,30 +346,31 @@ class SingleBinaryDecoder(MetaReader):
         standalone: bool = False,
     ) -> Dict[str, Dict[str, Any]]:
         """
-        Get a dict populated with keys needed to initialize the filter if they are not set yet.
-        This dict must have the following structure, but Min, Max, and Options can be skipped or explicitly set to None if they are not used.
-        Type is required; Value may be omitted or set to None, both meaning there is no default and the user must supply one. All values provided must be consistent with Type.
+        Declare the settings this reader exposes, on top of the base contract.
 
-        .. code-block:: python
+        Called by poriscope when the plugin is instantiated or reconfigured, to build
+        the settings dialog and to sanity-check whatever the user enters; the accepted
+        values are then readable through ``self.settings``. See
+        :py:meth:`~poriscope.utils.MetaReader.MetaReader.get_empty_settings`
+        for the structure of the dict and what ``Type``, ``Value``, ``Min``, ``Max``, ``Options`` and
+        ``Units`` mean in it, and for the reserved keys the GUI builds file pickers
+        from.
 
-          settings = {'Parameter 1': {'Type': <int, float, str, bool>,
-                                           'Value': <value> or None,
-                                           'Options': [<option_1>, <option_2>, ... ] or None,
-                                           'Min': <min_value> or None,
-                                           'Max': <max_value> or None,
-                                           'Units': <unit str> or None
-                                          },
-                          ...
-                          }
+        The keys this plugin adds:
 
-
-        Several parameter keywords are reserved: these are
-
-        'Input File'
-        'Output File'
-        'Folder'
-
-        These must have Type str and will cause the GUI to generate widgets to allow selection of these elements when used
+        - ``Input File`` - the raw binary file to read. Unlike the other readers this
+          one has no header to consult, so every parameter below has to be supplied by
+          hand.
+        - ``Sampling Rate`` (Hz) - the acquisition rate the file was recorded at.
+        - ``Header Bytes`` - how many bytes to skip before the first sample.
+        - ``Number of Arrays`` - how many interleaved channels the file holds.
+        - ``Byte Order`` - ``'<'`` for little-endian, ``'>'`` for big-endian.
+        - ``Data Type`` - ``Floating Point``, ``Signed Integer`` or ``Unsigned
+          Integer``.
+        - ``Data Bytes`` - the width of one sample, 8, 4 or 2 bytes.
+        - ``Bitmask`` - applied to each integer sample before scaling, for formats that
+          pack status bits into the data word; 0 disables it.
+        - ``Scale`` and ``Offset`` - the affine conversion from raw sample to pA.
 
         :param globally_available_plugins: a dict containing all data plugins that exist to date, keyes by metaclass
         :type globally_available_plugins: Optional[Dict[str, List[str]]]

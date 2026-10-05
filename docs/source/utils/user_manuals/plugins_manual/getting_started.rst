@@ -56,9 +56,12 @@ As a developer, install Poriscope in *editable* mode:
 
    git clone https://github.com/TCossaLab/poriscope.git
    cd poriscope
-   pip install -e .
+   pip install -e ".[dev,docs]"
+   python scripts/setup_hooks.py
 
-This allows live code edits without reinstallation.
+This allows live code edits without reinstallation. ``[dev]`` adds the test and lint tools
+and ``[docs]`` adds Sphinx, which the post-merge hook uses to rebuild the documentation;
+``setup_hooks.py`` installs the Git hooks - see :doc:`development_workflow/developer_setup`.
 
 .. note::
 
@@ -80,10 +83,9 @@ From **any terminal**::
 
    poriscope
 
-Or from the local repo directly::
+Or through Python directly::
 
-   cd app
-   python main_app.py
+   python -m poriscope.main_app
 
 If the command is not found, make sure your Python environment's ``Scripts/``
 (Windows) or ``bin/`` (Linux/macOS) folder is added to your system ``PATH``.
@@ -92,10 +94,10 @@ If the command is not found, make sure your Python environment's ``Scripts/``
 
    **Installation vs PATH**
 
-   - If you **don’t install** Poriscope (skip ``python -m pip install -e .`` or the GitHub install),
+   - If you **don’t install** Poriscope (skip ``python -m pip install -e ".[dev,docs]"`` or the GitHub install),
      it won’t be importable and you can’t launch it.
    - If Python is **not on PATH**, only the convenience command ``poriscope`` will fail.
-     You can still run ``python -m poriscope`` and import Poriscope in your scripts,
+     You can still run ``python -m poriscope.main_app`` and import Poriscope in your scripts,
      as long as it’s installed in the **same Python interpreter** you use.
 
 .. tip::

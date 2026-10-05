@@ -26,22 +26,25 @@
 
 
 import logging
-from typing import Any, Dict, Generator, Optional, override
+from typing import Any, Dict, Generator, List, Optional, Sequence, Tuple, override
 
+import numpy as np
+import numpy.typing as npt
 import pandas as pd
-from PySide6.QtWidgets import QMessageBox
+from matplotlib.axes import Axes
+from PySide6.QtCore import Slot
 
 from poriscope.plugins.analysistabs.ProteinModel import ProteinModel
 from poriscope.plugins.analysistabs.ProteinView import ProteinView
 from poriscope.utils.DocstringDecorator import inherit_docstrings
 from poriscope.utils.LogDecorator import log
-from poriscope.utils.MetaController import MetaController
+from poriscope.utils.MetaSubsetTabController import MetaSubsetTabController
 
 
 @inherit_docstrings
-class ProteinController(MetaController):
+class ProteinController(MetaSubsetTabController):
     """
-    Subclass of MetaController for managing protein view-model logic.
+    Subclass of MetaSubsetTabController for managing protein view-model logic.
 
     Relays queries, event data, and filter/column metadata between the
     database backend and ProteinView.
@@ -63,340 +66,568 @@ class ProteinController(MetaController):
     def _setup_connections(self) -> None:
         """
         Connect internal view signals to their corresponding controller slots.
+
+        :return: None
+        :rtype: None
         """
-        # No view-side connections currently required.
-        pass
+        super()._setup_connections()
+        self.view.event_distribution_data_requested.connect(
+            self.load_event_distribution_data
+        )
+        self.view.fit_commit_requested.connect(self.check_for_existing_fit_columns)
+        self.view.fit_commit_confirmed.connect(self.commit_fits)
+        self.view.ensemble_fit_requested.connect(self.fit_ensemble_geometry)
+        self.view.ensemble_histogram_requested.connect(self.build_ensemble_histogram)
+        self.view.xyerr_scatterplot_requested.connect(self.filter_xyerr_scatterplot)
+        self.view.event_histogram_fits_requested.connect(self.fit_event_histograms)
+        self.view.distribution_fits_requested.connect(self.fit_distribution_events)
 
     @log(logger=logger)
-    def check_column_exists(self, table_name: Optional[str]) -> None:
+    @Slot(object, object, object, str, float, float, int)
+    def fit_ensemble_geometry(
+        self,
+        bins: npt.NDArray[np.float64],
+        amplitude: npt.NDArray[np.float64],
+        plot_data: pd.DataFrame,
+        plot_type: str,
+        d: float,
+        L: float,
+        N: int,
+    ) -> None:
         """
-        Notify the view to check if a fit-data column exists in the given table.
+        Fit the ensemble histogram, and hand the result back to the View to draw.
 
-        :param table_name: Name of the table containing the queried column, or None if the loader could not resolve one.
-        :type table_name: Optional[str]
+        A request slot, the same shape as ``ClusteringController.cluster``: the View
+        asks, this calls the Model, and the answer goes back through a setter.
+
+        The context arrives and departs unchanged rather than being held here or on
+        the View between the halves. A fit that fails its sanity checks is not an
+        error - ``(None, None)`` is a legitimate answer the View reports to the user -
+        so only an unexpected failure is caught, and it is reported rather than
+        raised, because Qt invoked this from a signal and nothing above it could
+        handle it.
+
+        :param bins: the histogram's bin centers
+        :type bins: npt.NDArray[np.float64]
+        :param amplitude: the amplitude in each bin
+        :type amplitude: npt.NDArray[np.float64]
+        :param plot_data: the frame the View will draw the fit into
+        :type plot_data: pd.DataFrame
+        :param plot_type: the plot type label to reuse when plotting the fit
+        :type plot_type: str
+        :param d: the diameter of the pore in nanometers
+        :type d: float
+        :param L: the length of the pore in nanometers
+        :type L: float
+        :param N: target number of samples to draw for each ensemble
+        :type N: int
+        :return: None
+        :rtype: None
         """
-        self.view.set_column_exists(table_name)
-
-    @log(logger=logger)
-    def alter_database_status(self, status: bool) -> None:
-        """
-        Inform the view whether database alteration was successful.
-
-        :param status: Result of the database alteration operation.
-        :type status: bool
-        """
-        self.view.set_alter_database_status(status)
-
-    @log(logger=logger)
-    def relay_table_by_column(self, table: Optional[str]) -> None:
-        """
-        Relay the name of the table a column lives in to the view.
-
-        :param table: Name of the table containing the queried column, or None if the loader could not resolve one.
-        :type table: Optional[str]
-        """
-        self.view.set_table_by_column(table)
-
-    @log(logger=logger)
-    def relay_baseline_duration(self, duration: Optional[float]) -> None:
-        """
-        Relay the computed baseline duration to the view.
-
-        :param duration: Duration of the baseline in appropriate units, or None if it could not be resolved.
-        :type duration: Optional[float]
-        """
-        self.view.set_baseline_duration(duration)
-
-    @log(logger=logger)
-    def set_exported_event_count(self, written: int) -> None:
-        """
-        Update the view with the number of events exported.
-
-        :param written: Number of events successfully written to file.
-        :type written: int
-        """
-        self.view.set_exported_event_count(written)
-
-    @log(logger=logger)
-    def relay_query(self, query: str, debug: str, table_name: str, *args: str) -> None:
-        r"""
-        Relay a query and optional debug message to the view, handling optional filter intents.
-
-        :param query: SQL query string to display or execute.
-        :type query: str
-        :param debug: Debug message to display if query is empty.
-        :type debug: str
-        :param table_name: Name of the table associated with the query.
-        :type table_name: str
-        :param \*args: Optional intent string (e.g. 'validate_new_filter', 'validate_edited_filter').
-        :type \*args: str
-        """
-        intent = args[0] if args else None
-
-        if debug and not query:
-            # Also on the display panel, not only in the modal: the dialog is
-            # dismissed before the user gets back to the filter text, and the
-            # message is often a set of instructions for correcting it.
-            self.view.add_text_to_display.emit(debug, self.__class__.__name__)
-            QMessageBox.warning(
-                self.view,
-                "Invalid Filter",
-                f"The filter could not be validated:\n\n{debug}",
+        try:
+            popt, curve = self.model.fit_histogram(bins, amplitude)
+        except (ValueError, TypeError, IndexError) as e:
+            self.logger.error(f"Unable to fit the ensemble histogram: {repr(e)}")
+            self.add_text_to_display.emit(
+                f"Unable to fit the ensemble histogram: {e}", self.__class__.__name__
             )
-            if intent in ("validate_new_filter", "validate_edited_filter"):
-                self.view.clear_pending_filter_state()
             return
 
-        self.view.set_query(query, table_name)
+        if popt is None or curve is None:
+            self.logger.info("Unable to fit a double gaussian to the histogram")
+            self.add_text_to_display.emit(
+                "Unable to fit a double gaussian to the histogram",
+                self.__class__.__name__,
+            )
+            return
 
-        if intent == "validate_new_filter":
-            name = self.view._pending_filter_name
-            filter_text = self.view._pending_filter_text
+        try:
+            df_prolate, df_oblate = self.model.sample_vm_solutions(popt, d, L, N)
+        except (ValueError, TypeError, IndexError) as e:
+            self.logger.error(f"Unable to sample the ensemble geometry: {repr(e)}")
+            self.add_text_to_display.emit(
+                f"Unable to sample the ensemble geometry: {e}",
+                self.__class__.__name__,
+            )
+            return
 
-            if name is not None:
-                suffixed_name = (
-                    f"{name}_assisted" if not name.endswith("_assisted") else name
+        if df_prolate.empty and df_oblate.empty:
+            self.logger.warning(
+                "Generative sampling bailed out: The ensemble Gaussian fit "
+                "represents an unphysical geometry."
+            )
+            self.add_text_to_display.emit(
+                "Generative sampling bailed out: The ensemble Gaussian fit "
+                "represents an unphysical geometry.",
+                self.__class__.__name__,
+            )
+        elif len(df_prolate) < N or len(df_oblate) < N:
+            self.logger.info(
+                "Sampling hit bailout limit; returning partial ensemble arrays."
+            )
+
+        # Called even when nothing was sampled: the fit itself is still worth
+        # drawing, and the two empty frames skip their own scatterplots.
+        self.view.set_ensemble_geometry_fit(
+            popt, curve, plot_data, plot_type, df_prolate, df_oblate
+        )
+
+    @log(logger=logger)
+    @Slot(object, object, object, object, str)
+    def filter_xyerr_scatterplot(
+        self,
+        columns: Sequence[npt.NDArray[np.float64]],
+        log_flags: Sequence[bool],
+        ax: Axes,
+        axis_labels: Sequence[str],
+        dataset_label: str,
+    ) -> None:
+        """
+        Filter an error-bar scatterplot's columns, and hand them back to draw.
+
+        Separate from the shared ``MetaSubsetTabController.filter_scatterplot``
+        because only this tab draws error bars. The four arrays go down together so
+        one mask covers them all:
+        a row dropped from the values has to be dropped from their error bars, or
+        the bars no longer describe the points they sit on.
+
+        :param columns: the raw x, y, x error and y error values
+        :type columns: Sequence[npt.NDArray[np.float64]]
+        :param log_flags: log-scale each column? the two error columns never are
+        :type log_flags: Sequence[bool]
+        :param ax: the axis object the View will draw on
+        :type ax: Axes
+        :param axis_labels: the axis labels, already formatted
+        :type axis_labels: Sequence[str]
+        :param dataset_label: string to label the dataset
+        :type dataset_label: str
+        :return: None
+        :rtype: None
+        """
+        try:
+            filtered = self.model.logscale_and_filter_columns(
+                *columns, log_flags=list(log_flags)
+            )
+        except (ValueError, TypeError, IndexError) as e:
+            self.logger.error(f"Unable to filter the scatterplot: {repr(e)}")
+            self.add_text_to_display.emit(
+                f"Unable to filter the scatterplot: {e}", self.__class__.__name__
+            )
+            return
+        self.view.set_xyerr_scatterplot(filtered, ax, axis_labels, dataset_label)
+
+    @log(logger=logger)
+    @Slot(str, str, object, str, object, bool, str, object, float, float, int)
+    def build_ensemble_histogram(
+        self,
+        loader: str,
+        sql_filter: str,
+        experiments_and_channels: Optional[Dict[str, List[Optional[int]]]],
+        plot_type: str,
+        bins: Any,
+        sizes: bool,
+        dataset_label: str,
+        dataset_key: Tuple[Any, ...],
+        d: float,
+        L: float,
+        N: int,
+    ) -> None:
+        """
+        Fetch one event subset and average it into a single histogram to draw.
+
+        A request slot. The aggregation happens with the fetch rather than in the
+        widget: handing the widget a generator to walk means whole events, and the
+        DataFrame built from them, live above the Model for no one's benefit.
+
+        The drawing context arrives and departs unchanged; this slot marshals and
+        does not interpret it. Nothing is handed back at all if the subset has no
+        usable event, which is what leaves the previous figure in place.
+
+        :param loader: the database loader plugin's key
+        :type loader: str
+        :param sql_filter: the subset filter's WHERE-clause body, empty for all rows
+        :type sql_filter: str
+        :param experiments_and_channels: the experiment and channel scope, or None
+        :type experiments_and_channels: Optional[Dict[str, List[Optional[int]]]]
+        :param plot_type: 'Raw Histogram' or 'Filtered Histogram'
+        :type plot_type: str
+        :param bins: a bin count, or a bin width when sizes is True, or None
+        :type bins: Any
+        :param sizes: does bins refer to a bin width (True) or a count (False)
+        :type sizes: bool
+        :param dataset_label: the label the histogram is drawn under
+        :type dataset_label: str
+        :param dataset_key: the plotted-datasets key, handed back unchanged
+        :type dataset_key: Tuple[Any, ...]
+        :param d: the diameter of the pore in nanometers
+        :type d: float
+        :param L: the length of the pore in nanometers
+        :type L: float
+        :param N: target number of samples to draw for each ensemble
+        :type N: int
+        :return: None
+        :rtype: None
+        """
+        fetched = self._fetch_event_subset(loader, sql_filter, experiments_and_channels)
+        if fetched is None:
+            return
+        query, generator = fetched
+
+        try:
+            plot_data = self.model.build_all_points_histogram(
+                generator, plot_type, bins, sizes
+            )
+        except (ValueError, TypeError, IndexError, KeyError) as e:
+            self.logger.error(f"Unable to build the ensemble histogram: {repr(e)}")
+            self.add_text_to_display.emit(
+                f"Unable to build the ensemble histogram: {e}",
+                self.__class__.__name__,
+            )
+            return
+
+        if plot_data is None:
+            self.add_text_to_display.emit(
+                "No usable events in the selected subset, so there is nothing to "
+                "plot",
+                self.__class__.__name__,
+            )
+            return
+
+        self.view.set_event_query(query)
+        self.view.set_ensemble_histogram(
+            plot_data, plot_type, bins, sizes, dataset_label, dataset_key, d, L, N
+        )
+
+    @log(logger=logger)
+    @Slot(object, str, object, bool)
+    def fit_event_histograms(
+        self,
+        event_data: Sequence[Dict[str, Any]],
+        plot_type: str,
+        bins: Any,
+        sizes: bool,
+    ) -> None:
+        """
+        Bin and fit every event in one call, and hand the results back to draw.
+
+        A request slot. One call rather than one per event keeps each answer off the
+        widget; see ``ProteinModel.fit_histograms``. The binning happens ahead of the
+        fitting in the same call, so the two describe the same bins and the widget is
+        handed the histograms rather than building them.
+
+        The events pass straight through: this slot marshals, it does not interpret
+        them. A failure is reported on the status panel rather than raised, because
+        Qt invoked this from a signal and nothing above it could handle it - and an
+        unusable bin request is now reported once here rather than logged once per
+        event and drawn as a grid of empty subplots.
+
+        :param event_data: the events being plotted, passed back to the View unchanged
+        :type event_data: Sequence[Dict[str, Any]]
+        :param plot_type: 'Raw Histogram' or 'Filtered Histogram'
+        :type plot_type: str
+        :param bins: a bin count, or a bin width when sizes is True, or None
+        :type bins: Any
+        :param sizes: does bins refer to a bin width (True) or a count (False)
+        :type sizes: bool
+        :return: None
+        :rtype: None
+        """
+        try:
+            histograms = self.model.build_event_histograms(
+                event_data, plot_type, bins, sizes
+            )
+            fits = self.model.fit_histograms(histograms)
+        except (ValueError, TypeError, IndexError) as e:
+            self.logger.error(f"Unable to fit the event histograms: {repr(e)}")
+            self.add_text_to_display.emit(
+                f"Unable to fit the event histograms: {e}", self.__class__.__name__
+            )
+            return
+        self.view.set_event_histogram_fits(fits, histograms, event_data)
+
+    @log(logger=logger)
+    @Slot(object, str, object, bool, float, float, int)
+    def fit_distribution_events(
+        self,
+        event_data: Sequence[Dict[str, Any]],
+        plot_type: str,
+        bins: Any,
+        sizes: bool,
+        d: float,
+        L: float,
+        N: int,
+    ) -> None:
+        """
+        Bin and fit every event on the individual distribution path, and hand back.
+
+        A request slot, the same shape as ``fit_event_histograms``. The
+        events and the pore geometry pass straight through; this slot marshals and
+        does not interpret them.
+
+        :param event_data: the events being plotted, passed back to the View unchanged
+        :type event_data: Sequence[Dict[str, Any]]
+        :param plot_type: 'Raw Histogram' or 'Filtered Histogram'
+        :type plot_type: str
+        :param bins: a bin count, or a bin width when sizes is True, or None
+        :type bins: Any
+        :param sizes: does bins refer to a bin width (True) or a count (False)
+        :type sizes: bool
+        :param d: the diameter of the pore in nanometers
+        :type d: float
+        :param L: the length of the pore in nanometers
+        :type L: float
+        :param N: target number of samples to draw for each ensemble
+        :type N: int
+        :return: None
+        :rtype: None
+        """
+        try:
+            histograms = self.model.build_event_histograms(
+                event_data, plot_type, bins, sizes
+            )
+            fits = self.model.fit_histograms(histograms)
+            df_prolate, df_oblate, fit_data = self.model.sample_event_geometries(
+                fits, histograms, event_data, d, L, N
+            )
+        except (ValueError, TypeError, IndexError) as e:
+            self.logger.error(f"Unable to fit the event histograms: {repr(e)}")
+            self.add_text_to_display.emit(
+                f"Unable to fit the event histograms: {e}", self.__class__.__name__
+            )
+            return
+
+        if fit_data.empty:
+            # Every event was refused, or the subset held none at all. Every guard in
+            # the drawing half tests a frame built from these events, so without this
+            # the tab drew empty axes and said nothing.
+            self.add_text_to_display.emit(
+                "No events in the selected subset could be fitted, so there is "
+                "nothing to plot",
+                self.__class__.__name__,
+            )
+            return
+
+        self.view.set_distribution_fits(df_prolate, df_oblate, fit_data)
+
+    @log(logger=logger)
+    @Slot(str)
+    def check_for_existing_fit_columns(self, loader: str) -> None:
+        """
+        Ask whether this database already holds fit columns, and tell the View.
+
+        Phase one of a two-phase commit. ``_commit_fits`` interleaved a plugin call
+        with a modal question for the user, which no single intent can express: the
+        answer to "does this already exist?" decides whether the user is asked at all.
+        ``RawDataController._start_eventfinder`` has the same shape for the same
+        reason.
+
+        The table name is the answer *and* the flag - ``None`` means no such column,
+        so nothing needs overwriting.
+
+        :param loader: the database loader plugin's key
+        :type loader: str
+        :return: None
+        :rtype: None
+        """
+        try:
+            table_name = self.model.call(
+                "MetaDatabaseLoader", loader, "get_table_by_column", "prolate_volume"
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to look for existing fit columns: {e!r}")
+            self.add_text_to_display.emit(
+                f"Could not check {loader} for existing fit data: {e}",
+                self.__class__.__name__,
+            )
+            return
+
+        self.view.confirm_fit_commit(loader, table_name)
+
+    @log(logger=logger)
+    @Slot(str, object, object, object)
+    def commit_fits(
+        self,
+        loader: str,
+        fit_data: pd.DataFrame,
+        units: List[Optional[str]],
+        overwrite_table: Optional[str],
+    ) -> None:
+        """
+        Drop any fit columns being replaced, then write the new ones.
+
+        Phase two, reached either straight away when the database holds no fit data or
+        once the user has approved the overwrite. The user's decision travels as
+        ``overwrite_table`` rather than being held on the View between the two halves,
+        which is what ``_start_eventfinder``'s filter key does.
+
+        The DROP and DELETE statements are built here rather than in the widget, for
+        the same reason as every other piece of SQL: writing it is not a widget's job.
+
+        :param loader: the database loader plugin's key
+        :type loader: str
+        :param fit_data: the fitted columns to write, keyed by event id
+        :type fit_data: pd.DataFrame
+        :param units: one unit per written column, ``None`` where dimensionless
+        :type units: List[Optional[str]]
+        :param overwrite_table: the table holding fit columns to drop first, or None
+        :type overwrite_table: Optional[str]
+        :return: None
+        :rtype: None
+        """
+        if overwrite_table is not None:
+            columns = [column for column in fit_data.columns if column != "id"]
+            try:
+                succeeded = self.model.drop_fit_columns(
+                    loader, overwrite_table, columns
                 )
-                self.view.subset_filters[suffixed_name] = filter_text or ""
-
-                if not filter_text:
-                    self.view.add_text_to_display.emit(
-                        f"Filter '{suffixed_name}' uses all rows (no WHERE clause).",
-                        self.__class__.__name__,
-                    )
-
-                self.view.add_text_to_display.emit(
-                    f"Filter '{suffixed_name}' added.", self.__class__.__name__
-                )
-
-                self.view.replace_filter_item(suffixed_name)
-
-        elif intent == "validate_edited_filter":
-            old_name = self.view._pending_old_filter_name
-            new_name = self.view._pending_filter_name
-            new_filter = self.view._pending_filter_text
-
-            if new_name is not None:
-                suffixed_new_name = (
-                    f"{new_name}_assisted"
-                    if not new_name.endswith("_assisted")
-                    else new_name
-                )
-                if old_name is not None:
-                    self.view.subset_filters.pop(old_name, None)
-                self.view.subset_filters[suffixed_new_name] = new_filter or ""
-
-                if not new_filter:
-                    self.view.add_text_to_display.emit(
-                        f"Filter '{suffixed_new_name}' uses all rows (no WHERE clause) -> FULL DATASET.",
-                        self.__class__.__name__,
-                    )
-
-                self.view.add_text_to_display.emit(
-                    f"Filter '{old_name}' updated to '{suffixed_new_name}'.",
+            except Exception as e:
+                self.logger.error(f"Failed to drop the existing fit columns: {e!r}")
+                self.add_text_to_display.emit(
+                    f"Unable to delete fit data from {loader}, you will have to clean "
+                    f"it up manually: {e}",
                     self.__class__.__name__,
                 )
+                return
+            if succeeded is not True:
+                self.add_text_to_display.emit(
+                    "Unable to delete fit data, you will have to clean it up manually",
+                    self.__class__.__name__,
+                )
+                return
 
-                # NOTE: old_name is Optional[str] on the attribute, but
-                # show_edit_filter_dialog sets it from a `str` parameter before
-                # emitting this intent, so it is never None here. The guarantee
-                # travels through a signal connection mypy cannot follow.
-                self.view.update_filter_name(old_name, suffixed_new_name)  # type: ignore[arg-type]
+        try:
+            written = self.model.call(
+                "MetaDatabaseLoader",
+                loader,
+                "add_columns_to_table",
+                fit_data,
+                units,
+                "events",
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to write the fit data: {e!r}")
+            self.add_text_to_display.emit(
+                f"Could not write the fit data to {loader}: {e}",
+                self.__class__.__name__,
+            )
+            return
 
-        self.view.clear_pending_filter_state()
+        self.display_write_status(bool(written))
+        self.view.on_fit_commit_finished(loader)
 
     @log(logger=logger)
-    def relay_event_query(self, query: str, debug: str) -> None:
+    @Slot(str, str, object)
+    def load_event_distribution_data(
+        self,
+        loader: str,
+        sql_filter: str,
+        experiments_and_channels: Optional[Dict[str, List[Optional[int]]]],
+    ) -> None:
         """
-        Relay an event-level query to the view.
+        Build the query for one subset, load its events, and hand both to the View.
 
-        :param query: SQL query string for fetching event data.
-        :type query: str
-        :param debug: Debug message to display if query is empty.
-        :type debug: str
+        Both distribution modes - individual and ensemble - run this same chain, so
+        there is one slot rather than one per mode.
+
+        **The ``_raw`` branch this replaced could never work**, which is why it is
+        gone rather than converted. It handed a complete ``SELECT`` to
+        ``load_event_data`` as its ``conditions`` argument, and that argument is a
+        WHERE-clause body: the loader spliced it in after ``WHERE``, SQLite rejected
+        the result as a syntax error, ``construct_event_data_query`` returned
+        ``("", debug)`` and the generator yielded nothing. Measured against a real
+        loader - the same filter as an ordinary WHERE body yields every event, and as
+        a raw ``SELECT`` yields none. Raw filters are refused before a plot is
+        attempted now; see ``MetaSubsetTabView._refuse_raw_filters``.
+
+        :param loader: the database loader plugin's key
+        :type loader: str
+        :param sql_filter: the subset filter's WHERE-clause body, empty for all rows
+        :type sql_filter: str
+        :param experiments_and_channels: the scope the filter is built against
+        :type experiments_and_channels: Optional[Dict[str, List[Optional[int]]]]
+        :return: None
+        :rtype: None
         """
-        if debug and not query:
-            self.add_text_to_display.emit(debug, self.__class__.__name__)
+        fetched = self._fetch_event_subset(loader, sql_filter, experiments_and_channels)
+        if fetched is None:
+            return
+        query, generator = fetched
+
+        # Set together, once the whole chain has succeeded: the View distinguishes
+        # "not fetched" from "fetched and empty" by these two being untouched.
         self.view.set_event_query(query)
-
-    @log(logger=logger)
-    def relay_event_data_generator(self, generator: Generator) -> None:
-        """
-        Relay a generator for event data overlays to the view.
-
-        :param generator: Generator yielding event data for overlay purposes.
-        :type generator: Generator
-        """
-        # for event overlays
         self.view.set_event_data_generator(generator)
 
     @log(logger=logger)
-    def relay_event_plot_data_generator(self, generator: Generator) -> None:
+    def _fetch_event_subset(
+        self,
+        loader: str,
+        sql_filter: str,
+        experiments_and_channels: Optional[Dict[str, List[Optional[int]]]],
+    ) -> Optional[Tuple[str, Generator]]:
         """
-        Relay a generator for event plotting to the view.
+        Build one event subset's query and open a generator over its events.
 
-        :param generator: Generator yielding event data for plotting.
-        :type generator: Generator
+        Shared by the two things that need a subset's events: the individual
+        distribution path, which materialises them in the widget, and the ensemble
+        path, which hands them straight to the Model. Reports its own failure and
+        answers with None, so a caller has nothing to handle beyond stopping.
+
+        :param loader: the database loader plugin's key
+        :type loader: str
+        :param sql_filter: the subset filter's WHERE-clause body, empty for all rows
+        :type sql_filter: str
+        :param experiments_and_channels: the scope the filter is built against
+        :type experiments_and_channels: Optional[Dict[str, List[Optional[int]]]]
+        :return: the query that ran and a generator over its events, or None
+        :rtype: Optional[Tuple[str, Generator]]
         """
-        # for plotting events
-        self.view.set_event_plot_data_generator(generator)
+        try:
+            # Two values: construct_event_data_query is declared
+            # -> Tuple[str, str] and reports a filter it cannot build as
+            # ("", debug). call() does not splat it the way the bus did.
+            query, debug = self.model.call(
+                "MetaDatabaseLoader",
+                loader,
+                "construct_event_data_query",
+                sql_filter,
+                experiments_and_channels,
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to build the event subset query: {e!r}")
+            self.add_text_to_display.emit(
+                f"Could not build the event query for this subset: {e}",
+                self.__class__.__name__,
+            )
+            return None
+        if not query:
+            self.add_text_to_display.emit(
+                debug or "The event query for this subset could not be built",
+                self.__class__.__name__,
+            )
+            return None
 
-    @log(logger=logger)
-    def relay_plot_data(self, data: Any) -> None:
-        """
-        Relay processed data to the view for plotting.
+        try:
+            generator = self.model.call(
+                "MetaDatabaseLoader",
+                loader,
+                "load_event_data",
+                sql_filter,
+                experiments_and_channels,
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to load the event subset: {e!r}")
+            self.add_text_to_display.emit(
+                f"Could not load this event subset from {loader}: {e}",
+                self.__class__.__name__,
+            )
+            return None
 
-        :param data: Structured plot data.
-        :type data: Any
-        """
-        self.view.set_plot_data(data)
+        if generator is None:
+            self.add_text_to_display.emit(
+                "No events in dataset or unable to create event generator",
+                self.__class__.__name__,
+            )
+            return None
 
-    @log(logger=logger)
-    def relay_units(self, units: Optional[str]) -> None:
-        """
-        Provide a column unit label to the view.
-
-        :param units: Unit string for the queried column, or None if the loader could not resolve one.
-        :type units: Optional[str]
-        """
-        self.view.set_units(units)
-
-    @log(logger=logger)
-    def update_column_names(self, column_names: list[str]) -> None:
-        """
-        Update the view with new column names.
-
-        :param column_names: List of column names retrieved from the database.
-        :type column_names: list[str]
-        """
-        # Handle the column names fetched from the database
-        if column_names:
-            self.view.update_column_names(column_names)
-            self.logger.info("Axis comboboxes updated with new column names.")
-        else:
-            self.logger.warning("No column names received to update.")
-
-    @log(logger=logger)
-    def update_column_units(self, column_units: Optional[str], axis: str) -> None:
-        """
-        Update the view with the unit label for a specific axis.
-
-        :param column_units: Unit string for the column plotted on this axis, or None if the loader could not resolve one.
-        :type column_units: Optional[str]
-        :param axis: Axis to apply the units to (e.g., 'x' or 'y').
-        :type axis: str
-        """
-        # Handle the units fetched for the columns
-        self.view.update_column_units(column_units, axis)
-
-    @log(logger=logger)
-    def get_experiment_names_for_tree(
-        self, experiments: list[str], loader_name: str
-    ) -> None:
-        """
-        Provide a list of experiment names to the view for the tree display.
-
-        :param experiments: List of experiment names fetched from the database.
-        :type experiments: list[str]
-        :param loader_name: Name of the data loader associated with the experiments.
-        :type loader_name: str
-        """
-        # Handle experiments fetched from DB
-        self.view.get_experiment_names_for_tree(experiments, loader_name)
-
-    @log(logger=logger)
-    def get_experiment_structure_ready(
-        self, structure: dict[str, list[int]], loader_name: str
-    ) -> None:
-        """
-        Pass experiment-to-channel mappings to the view in display-ready format.
-
-        :param structure: Dictionary mapping experiment names to a list of channel IDs.
-        :type structure: dict[str, list[int]]
-        :param loader_name: Name of the data loader providing the structure.
-        :type loader_name: str
-        """
-        self.logger.debug(
-            f"Received full experiment-channel structure for {loader_name}: {structure}"
-        )
-
-        # Convert all channels to strings (for display)
-        str_structure = {
-            exp: [str(ch) for ch in ch_list] for exp, ch_list in structure.items()
-        }
-
-        self.view.available_experiment_and_channels_by_loader[loader_name] = (
-            str_structure
-        )
-
-        self.view.selected_experiment_and_channels_by_loader[loader_name] = (
-            str_structure.copy()
-        )
-
-    @log(logger=logger)
-    def set_experiment_id(self, experiment_id: Optional[int]) -> None:
-        """
-        Relay the experiment ID to the view.
-
-        :param experiment_id: Integer ID of the experiment.
-        :type experiment_id: Optional[int]
-        """
-        self.view.set_experiment_id(experiment_id)
-
-    @log(logger=logger)
-    def set_channel_db_id(self, channel_db_id: Optional[int]) -> None:
-        """
-        Relay the channel database ID to the view.
-
-        :param channel_db_id: Integer database ID of the channel.
-        :type channel_db_id: Optional[int]
-        """
-        self.view.set_channel_db_id(channel_db_id)
-
-    @log(logger=logger)
-    def on_raw_filter_validated(self, valid: bool, error_msg: str) -> None:
-        """
-        Relay the result of raw filter validation to the view.
-
-        :param valid: Whether the query is valid.
-        :type valid: bool
-        :param error_msg: Error message if invalid.
-        :type error_msg: str
-        """
-        self.view.on_raw_filter_validated(valid, error_msg)
-
-    @log(logger=logger)
-    def relay_query_result(self, result: Optional[pd.DataFrame]) -> None:
-        """
-        Relay a direct database query result to the view.
-        Used by ProteinView._rebuild_event_id_cache to receive the list of filtered event_ids.
-
-        :param result: DataFrame returned by query_database_directly, or None if the query failed.
-        :type result: Optional[pd.DataFrame]
-        """
-        self.view.relay_query_result(result)
-
-    @log(logger=logger)
-    @override
-    def get_session_state(self) -> Dict[str, Any]:
-        """
-        Include the view's live subset filters in this tab's session history entry.
-
-        :return: Extra state to serialize into this tab's session history entry.
-        :rtype: Dict[str, Any]
-        """
-        return {"subset_filters": dict(self.view.subset_filters)}
-
-    @log(logger=logger)
-    @override
-    def restore_session_state(self, state: Dict[str, Any]) -> None:
-        """
-        Restore subset filters captured by :meth:`get_session_state` onto the view.
-
-        :param state: This tab's session history entry, as previously written by
-            :meth:`get_session_state`.
-        :type state: Dict[str, Any]
-        """
-        subset_filters = state.get("subset_filters")
-        if subset_filters:
-            self.view.restore_subset_filters(subset_filters)
+        return query, generator

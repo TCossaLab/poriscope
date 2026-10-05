@@ -28,6 +28,18 @@ jobs:
       - uses: actions/checkout@v4
       - name: Validate CITATION.cff
         uses: dieghernan/cff-validator@v3
+      # The validator above checks that the file *parses*, never that it says the right
+      # thing. Zenodo builds its record from CITATION.cff, so a stale version there
+      # publishes the release under the old number and reports no error at all. Runs on
+      # the runner's bare Python: the checker reads both files as text precisely so it
+      # needs no install and can gate before the build job starts.
+      - name: Check version agrees with constants.py and the tag
+        run: |
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            python scripts/check_version_consistency.py --tag "${{ github.ref_name }}"
+          else
+            python scripts/check_version_consistency.py
+          fi
         
   test-build-release:
     name: Run tests, build, and optionally release

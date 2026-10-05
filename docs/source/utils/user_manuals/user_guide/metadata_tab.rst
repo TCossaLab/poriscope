@@ -28,18 +28,40 @@ Step 2: Choose Plot Type and Configure Axes
 
 1. From the **Plot Type** dropdown, select the type of visualization you want to generate. Options include:
 
-   - Histogram
+   - Histogram / Normalized Histogram
+   - Categorical Histogram
    - Kernel Density Plot
    - Capture Rate
    - Heatmap
    - Scatterplot / 3D Scatterplot
    - Raw Event Overlay / Filtered Event Overlay
-   - Raw All Points Histogram / Filtered All Points Histogram
+   - Raw All Points Histogram / Filtered All Points Histogram, and the normalized
+     form of each
+
+.. note::
+
+   A **Categorical Histogram** is for a column holding names rather than numbers.
+   Its bars are ordered by count, tallest on the left; rows where the column is
+   empty are counted together under ``null``. When several subsets are overlaid the
+   order is taken from their combined totals, so they share one axis.
 
 2. Define the number of **bins** for your plot:
 
    - Use a single number for 1D plots (e.g., ``50``).
    - Use two comma-separated values for 2D plots (e.g., ``50,50`` for a heatmap).
+
+.. note::
+
+   Overlaid 1-D datasets share one set of plot limits, so they can be compared, and those
+   limits describe the **filtered, log-scaled** values that are actually drawn rather than
+   the raw column. A log-scaled Density plot therefore bins differently than it did before
+   2.0.0.
+
+   A plot that cannot be built is reported on the status panel instead of failing: a
+   column that is empty for the selected subset, a capture rate with too few events — which
+   says how few — a heatmap over more than one channel, and an All Points Histogram or
+   Event Overlay whose events cannot be loaded. A Density plot that comes back with nothing
+   to draw leaves the previous plot in place rather than clearing the figure.
 
 3. Choose the **X-axis** and (if applicable) **Y-axis** and **Z-axis** attributes. These correspond to metadata columns in your database such as:
 
@@ -47,7 +69,7 @@ Step 2: Choose Plot Type and Configure Axes
    - ``baseline_current``, ``max_blockage``, ``sublevel_stdev``
    - ``voltage``, ``conductivity``, and many more
 
-4. *(Optional)* Enable the **Log Scale** checkbox to apply logarithmic scaling to the selected axis.
+4. *(Optional)* Tick the **Log** checkbox beside an axis to apply logarithmic scaling to it.
 
 .. note::
 
@@ -63,30 +85,26 @@ Step 3: Apply Filters
 
 You may apply filters to visualize only a subset of events or sublevels.
 
-#. In the **Filter** box, enter a simple condition to narrow down the results using a simplified SQL-like format. 
+#. Click the **➕** next to **FILTER** to open the **Create Subset Filter** dialog. Give the
+   subset a name, choose **Assisted SQL** or **Raw SQL**, and enter the filter. In Assisted
+   SQL you write only the condition:
 
-    Examples:
+   - ``duration > 200``
+   - ``max_blockage < 600 and num_sublevels >= 3``
+   - ``voltage = -200 or sublevel_stdev > 5``
 
+   Comparison operators are ``=`` ``!=`` ``>`` ``>=`` ``<`` ``<=``, joined with ``and`` and
+   ``or``.
 
-    - ``duration > 200``
-    - ``max_blockage < 600 and num_sublevels >= 3``
-    - ``voltage = -200 or sublevel_stdev > 5``
-
-   You can use the following operators: ``=``, ``!=``, ``>``, ``<``, ``>=``, ``<=``
-
-   **Note:** No need to write full SQL — just simple expressions like ``field = value``.
-
-
-Supported operators:
-
-- Comparison: ``=`` ``!=`` ``>`` ``>=`` ``<`` ``<=``
-- Logical: ``and`` ``or``
-- Join: 
-
+#. Select one or more filters in the **FILTER** dropdown to plot them. The icons beside it
+   edit and delete a filter, and **Save Filter** / **Load Filter** write and read them as a
+   file.
 
 .. warning::
 
-   Invalid expressions or typos in field names may result in no data being displayed.
+   A filter naming a column that does not exist is refused with a message on the status
+   panel. Raw SQL filters can be saved and loaded but cannot be selected for a plot. See
+   :ref:`filtering-and-querying` for the full syntax.
 
 Step 4: Generate and Export
 ---------------------------
@@ -95,12 +113,39 @@ Step 4: Generate and Export
 
 2. You can then:
 
-   - **Save Plot**: Export the current figure to disk (`.png`, `.svg`, etc.).
+   - **Save Plot Configuration**: Save the sequence of plots you have made as a JSON file.
    - **Undo**: Revert to the previous state.
-   - **Load**: Restore a previously saved plot configuration.
+   - **Load Plot Configuration**: Replay a previously saved sequence of plots.
    - **Reset**: Return to default settings.
-   - **Export Subset**: Save the currently filtered data to a new file for external analysis.
+   - **Export Subset - CSV**: Save the currently filtered data to CSV for external analysis.
+   - **Export Plot Data**: Save the data behind the current plot.
 
 .. tip::
 
    Use “Export Subset” to isolate and save only the events that meet your filtering criteria. This is ideal for downstream machine learning or further statistical analysis.
+
+Step 5: Inspect Individual Events
+---------------------------------
+
+Beside the plot controls is a **Plot Events** button with an arrow on either side and a
+**RAW** checkbox. It draws the events themselves rather than a summary of them.
+
+1. Use **Scope** to select exactly one experiment and one channel. Events are numbered
+   within a channel, so a wider scope is refused with a message rather than guessed at.
+2. Select at most one subset filter. Raw SQL filters cannot be used here; the events
+   plotted are those of the filtered set.
+3. Enter the **EVENT INDEX** to start from and **# EVENTS TO PLOT**.
+4. Click **Plot Events**. The starting index snaps forward to the next event present in
+   the filtered set, wrapping around to the first, and the field updates to show where
+   it landed.
+5. Use the **◀** and **▶** arrows to step through the filtered set.
+6. Check **RAW** to overlay the unfiltered signal alongside the filtered and fitted
+   traces.
+
+.. note::
+
+   Every refusal is reported on the status panel: more than one experiment or channel in
+   scope, more than one filter selected, a filtered set with no events in it, an
+   experiment the database does not recognise, and a request that asks for no events at
+   all. A plot that cannot be built names what it was plotting and the event ids it was
+   asked for.

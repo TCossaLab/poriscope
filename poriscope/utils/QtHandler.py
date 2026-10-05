@@ -28,7 +28,7 @@ from collections import deque
 from typing import Deque, Optional
 
 from PySide6.QtCore import QObject, Qt, Signal, Slot
-from PySide6.QtWidgets import QMessageBox
+from PySide6.QtWidgets import QApplication, QMessageBox
 
 # How many records may wait behind an open dialog before further ones are
 # collapsed into a single "N more suppressed" notice. A cap is needed because a
@@ -108,15 +108,57 @@ class QtHandler(logging.Handler):
         text = self.format(record)
         self._current_text = text
         try:
-            # Create the message box based on the log level
-            if record.levelno >= logging.ERROR:
-                QMessageBox.critical(None, "Error", text)
-            elif record.levelno >= logging.WARNING:
-                QMessageBox.warning(None, "Warning", text)
+            self._show_dialog(record.levelno, text)
         finally:
             self._dialog_open = False
             self._current_text = None
             self._show_next_pending()
+
+    def _show_dialog(self, levelno: int, text: str) -> None:
+        """Put one message on screen, above the window the user is looking at.
+
+        Parented to the active window rather than to ``None``. A parentless
+        ``QMessageBox`` is left wherever the window manager cares to put it, and on
+        Windows that can be *behind* the main window - where an invisible modal
+        dialog still holds the input grab and is indistinguishable from a hung
+        application.
+
+        That is not hypothetical. A plugin name collision logs at ``ERROR`` during
+        startup, and the dialog it raised arrived behind a main window that had not
+        finished painting: the application looked frozen, with the real message
+        waiting out of sight.
+
+        ``raise_`` and ``activateWindow`` cover the case where there is no active
+        window to parent to - which is what startup is, since ``activeWindow()``
+        returns ``None`` until something has been shown.
+
+        Records below ``WARNING`` show nothing, as before. The handler's own level
+        is ``ERROR``, so they do not normally arrive here at all.
+
+        :param levelno: The record's level, which chooses the icon and the title.
+        :type levelno: int
+        :param text: The formatted message to show.
+        :type text: str
+        """
+        if levelno >= logging.ERROR:
+            icon, title = QMessageBox.Icon.Critical, "Error"
+        elif levelno >= logging.WARNING:
+            icon, title = QMessageBox.Icon.Warning, "Warning"
+        else:
+            return
+
+        box = QMessageBox(
+            icon,
+            title,
+            text,
+            QMessageBox.StandardButton.Ok,
+            QApplication.activeWindow(),
+        )
+        box.setWindowModality(Qt.WindowModality.ApplicationModal)
+        box.show()
+        box.raise_()
+        box.activateWindow()
+        box.exec()
 
     def _queue_record(self, record: logging.LogRecord) -> None:
         """Hold a record that arrived while a dialog was open.

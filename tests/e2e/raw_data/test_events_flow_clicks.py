@@ -23,8 +23,6 @@ number of database rows -- rather than merely that something happened.
 """
 
 import sqlite3
-import sys
-from pathlib import Path
 
 import pytest
 from PySide6 import QtWidgets
@@ -39,6 +37,7 @@ from tests.e2e._helpers import (
     QT_SHORT_PAUSE_MS,
     QT_WAIT_TIMEOUT_MS,
     READER_NAME,
+    ask_plugin,
     channels_have_loaded,
     count_plot_lines,
     ensure_name_filled,
@@ -50,11 +49,6 @@ from tests.e2e._helpers import (
     sqlite_has_tables,
     sqlite_row_count,
 )
-
-REPO_ROOT = Path(__file__).resolve().parents[2]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
-
 
 # ==========================================================================
 # Workflow stages
@@ -332,7 +326,7 @@ def eventfinder_added(qtbot, monkeypatch, trace_drawn):
 
 
 @pytest.fixture
-def events_found(qtbot, eventfinder_added):
+def events_found(qtbot, eventfinder_added, auto_dismiss_message_boxes):
     """
     Run event detection over the recording and wait for it to yield results.
 
@@ -346,15 +340,15 @@ def events_found(qtbot, eventfinder_added):
     raw_view, controls, ds, reader_key, finder_key = eventfinder_added
 
     def num_events_found() -> int:
-        raw_view.global_signal.emit(
+        return ask_plugin(
+            raw_view,
+            "RawDataController",
             "MetaEventFinder",
             finder_key,
             "get_num_events_found",
-            (ds.channel,),
-            "set_num_events_allowed",
-            (),
+            ds.channel,
+            default=0,
         )
-        return getattr(raw_view, "num_events_allowed", 0)
 
     QTest.mouseClick(controls.timer_pushButton, Qt.LeftButton)
     QTest.mouseClick(controls.find_events_pushButton, Qt.LeftButton)
@@ -399,15 +393,15 @@ def test_eventfinder_finds_exact_planted_count(qtbot, events_found):
     raw_view, controls, ds, reader_key, finder_key = events_found
 
     def num_events_found() -> int:
-        raw_view.global_signal.emit(
+        return ask_plugin(
+            raw_view,
+            "RawDataController",
             "MetaEventFinder",
             finder_key,
             "get_num_events_found",
-            (ds.channel,),
-            "set_num_events_allowed",
-            (),
+            ds.channel,
+            default=0,
         )
-        return raw_view.num_events_allowed
 
     qtbot.waitUntil(
         lambda: num_events_found() == ds.num_events, timeout=QT_WAIT_TIMEOUT_MS

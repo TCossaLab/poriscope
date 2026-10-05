@@ -1,0 +1,14 @@
+{
+  "emits": {},
+  "imports": {
+    "poriscope/plugins/analysistabs/MetadataView.py": [
+      "numpy"
+    ],
+    "poriscope/plugins/analysistabs/ProteinView.py": [
+      "numpy"
+    ]
+  },
+  "layering": {},
+  "plugin_reach": {},
+  "private_access": {}
+}

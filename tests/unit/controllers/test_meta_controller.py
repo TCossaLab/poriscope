@@ -2,20 +2,14 @@
 Tests for poriscope.utils.MetaController.MetaController.
 
 Covers:
-- update_plot_data delegation
 - export_plot_data (data present, data absent, no filename given)
-- _connect_global_signal wiring
 - load_actions_from_json (success, file error, class name key present)
 - relay_add_text_to_display delegation
 - handle_kill_worker (valid identifier, invalid format, key missing, channel missing)
-- set_generator delegation
 - handle_kill_all_workers (matching subclass, non-matching subclass)
-- _relay_global_signal (valid return function, missing return function, empty return function, emit exception)
-- _relay_data_plugin_controller_signal (valid return function, missing return function, empty return function, emit exception)
 - update_available_plugins delegation
 - save_tab_actions emits signal
 - update_tab_actions (add history, undo normal, undo empty, undo skips reset_actions)
-- ignore is a no-op
 - _relay_create_plugin emits create_plugin signal
 """
 
@@ -26,7 +20,6 @@ from collections import OrderedDict
 from unittest.mock import MagicMock, mock_open
 
 import pytest
-from PySide6.QtCore import Qt
 from pytest_mock import MockerFixture
 
 from poriscope.utils.MetaController import MetaController
@@ -44,7 +37,6 @@ def mock_view(mocker: MockerFixture) -> MagicMock:
     """
     view: MagicMock = mocker.Mock()
     for signal in [
-        "run_generators",
         "kill_worker",
         "kill_all_workers",
         "add_text_to_display",
@@ -54,8 +46,6 @@ def mock_view(mocker: MockerFixture) -> MagicMock:
         "export_plot_data",
         "load_actions_from_json",
         "create_plugin",
-        "global_signal",
-        "data_plugin_controller_signal",
     ]:
         attr = mocker.Mock()
         attr.connect = mocker.Mock()
@@ -75,8 +65,6 @@ def mock_model(mocker: MockerFixture) -> MagicMock:
     for signal in [
         "update_progressbar",
         "add_text_to_display",
-        "global_signal",
-        "data_plugin_controller_signal",
     ]:
         attr = mocker.Mock()
         attr.connect = mocker.Mock()
@@ -119,8 +107,6 @@ def controller(
 
     # Mock Qt signals on the instance
     for sig in [
-        "global_signal",
-        "data_plugin_controller_signal",
         "add_text_to_display",
         "update_tab_action_history",
         "save_tab_action_history",
@@ -146,24 +132,6 @@ def test_relay_create_plugin_emits_create_plugin_signal(
     """
     controller._relay_create_plugin("MetaReader", "MyReader")
     controller.create_plugin.emit.assert_called_once_with("MetaReader", "MyReader")
-
-
-# ----------------------- update_plot_data ----------------------------
-
-
-def test_update_plot_data_delegates_to_view(
-    controller: MetaController,
-    mock_view: MagicMock,
-) -> None:
-    """
-    Forward new plot data to the view.
-
-    :param controller: Controller under test.
-    :param mock_view: Mocked meta view.
-    """
-    data = {"x": [1, 2], "y": [3, 4]}
-    controller.update_plot_data(data)
-    mock_view.update_plot_data.assert_called_once_with(data)
 
 
 # ----------------------- export_plot_data ----------------------------
@@ -234,39 +202,6 @@ def test_export_plot_data_does_not_save_when_no_filename(
     controller.export_plot_data()
 
     mock_df.to_csv.assert_not_called()
-
-
-# ------------------- _connect_global_signal --------------------------
-
-
-def test_connect_global_signal_wires_view_and_model_signals(
-    controller: MetaController,
-    mock_view: MagicMock,
-    mock_model: MagicMock,
-) -> None:
-    """
-    Wire global and data_plugin_controller signals from both view and model.
-
-    :param controller: Controller under test.
-    :param mock_view: Mocked meta view.
-    :param mock_model: Mocked meta model.
-    """
-    controller._connect_global_signal()
-
-    mock_view.global_signal.connect.assert_called_once_with(
-        controller._relay_global_signal, type=Qt.ConnectionType.DirectConnection
-    )
-    mock_model.global_signal.connect.assert_called_once_with(
-        controller._relay_global_signal, type=Qt.ConnectionType.DirectConnection
-    )
-    mock_view.data_plugin_controller_signal.connect.assert_called_once_with(
-        controller._relay_data_plugin_controller_signal,
-        type=Qt.ConnectionType.DirectConnection,
-    )
-    mock_model.data_plugin_controller_signal.connect.assert_called_once_with(
-        controller._relay_data_plugin_controller_signal,
-        type=Qt.ConnectionType.DirectConnection,
-    )
 
 
 # ------------------- load_actions_from_json --------------------------
@@ -436,24 +371,6 @@ def test_handle_kill_worker_reports_to_panel_when_channel_missing(
     mock_model.stop_workers.assert_not_called()
 
 
-# ----------------------- set_generator ------------------------------
-
-
-def test_set_generator_delegates_to_model(
-    controller: MetaController,
-    mock_model: MagicMock,
-) -> None:
-    """
-    Forward the generator and its metadata to the model.
-
-    :param controller: Controller under test.
-    :param mock_model: Mocked meta model.
-    """
-    gen = iter([1, 2, 3])
-    controller.set_generator(gen, 0, "key1", "MetaReader")
-    mock_model.set_generator.assert_called_once_with(gen, 0, "key1", "MetaReader")
-
-
 # ------------------- handle_kill_all_workers -------------------------
 
 
@@ -497,161 +414,6 @@ def test_handle_kill_all_workers_does_nothing_when_subclass_does_not_match(
     """
     controller.handle_kill_all_workers("SomeOtherController")
     mock_model.stop_workers.assert_not_called()
-
-
-# ------------------- _relay_global_signal ----------------------------
-
-
-def test_relay_global_signal_emits_with_valid_return_function(
-    controller: MetaController,
-) -> None:
-    """
-    Resolve the return function by name and emit the global signal.
-
-    :param controller: Controller under test.
-    """
-    controller.ignore = MagicMock()  # type: ignore[method-assign]
-
-    controller._relay_global_signal(
-        "MetaReader", "key1", "my_func", ("arg",), "ignore", ("ret",)
-    )
-
-    controller.global_signal.emit.assert_called_once_with(
-        "MetaReader", "key1", "my_func", ("arg",), controller.ignore, ("ret",)
-    )
-
-
-def test_relay_global_signal_logs_warning_when_return_function_missing(
-    controller: MetaController,
-) -> None:
-    """
-    Log a warning and return early when the return function name is not an attribute.
-
-    :param controller: Controller under test.
-    """
-    controller._relay_global_signal(
-        "MetaReader", "key1", "my_func", (), "nonexistent_fn", ()
-    )
-
-    controller.logger.warning.assert_called()  # type: ignore[attr-defined]
-    controller.global_signal.emit.assert_not_called()
-
-
-def test_relay_global_signal_emits_with_none_return_function(
-    controller: MetaController,
-) -> None:
-    """
-    Emit the global signal with None as the return function when name is empty.
-
-    :param controller: Controller under test.
-    """
-    controller._relay_global_signal("MetaReader", "key1", "my_func", (), "", ())
-
-    controller.global_signal.emit.assert_called_once()
-    _, _, _, _, return_fn, _ = controller.global_signal.emit.call_args[0]
-    assert return_fn is None
-
-
-def test_relay_global_signal_logs_exception_on_emit_failure(
-    controller: MetaController,
-    mocker: MockerFixture,
-) -> None:
-    """
-    Log the failure with a traceback when the global_signal emit raises an exception.
-
-    This used to be reported at warning level as "<callback> is not a callable attribute",
-    naming a callback that had already resolved successfully two lines above and
-    discarding the stack of whatever actually failed inside emit.
-
-    :param controller: Controller under test.
-    :param mocker: Pytest-mock fixture.
-    """
-    controller.global_signal.emit.side_effect = RuntimeError("emit failed")
-    controller.ignore = MagicMock()  # type: ignore[method-assign]
-
-    controller._relay_global_signal("MetaReader", "key1", "my_func", (), "ignore", ())
-
-    controller.logger.exception.assert_called()  # type: ignore[attr-defined]
-
-
-# ----------- _relay_data_plugin_controller_signal --------------------
-
-
-def test_relay_data_plugin_controller_signal_emits_with_valid_return_function(
-    controller: MetaController,
-) -> None:
-    """
-    Resolve the return function by name and emit the data plugin controller signal.
-
-    :param controller: Controller under test.
-    """
-    controller.ignore = MagicMock()  # type: ignore[method-assign]
-
-    controller._relay_data_plugin_controller_signal(
-        "MetaReader", "key1", "my_func", ("arg",), "ignore", ("ret",)
-    )
-
-    controller.data_plugin_controller_signal.emit.assert_called_once_with(
-        "MetaReader", "key1", "my_func", ("arg",), controller.ignore, ("ret",)
-    )
-
-
-def test_relay_data_plugin_controller_signal_logs_warning_when_return_function_missing(
-    controller: MetaController,
-) -> None:
-    """
-    Log a warning and return early when the return function name is not an attribute.
-
-    :param controller: Controller under test.
-    """
-    controller._relay_data_plugin_controller_signal(
-        "MetaReader", "key1", "my_func", (), "nonexistent_fn", ()
-    )
-
-    controller.logger.warning.assert_called()  # type: ignore[attr-defined]
-    controller.data_plugin_controller_signal.emit.assert_not_called()
-
-
-def test_relay_data_plugin_controller_signal_emits_with_none_return_function(
-    controller: MetaController,
-) -> None:
-    """
-    Emit the data plugin controller signal with None when the return function name is empty.
-
-    :param controller: Controller under test.
-    """
-    controller._relay_data_plugin_controller_signal(
-        "MetaReader", "key1", "my_func", (), "", ()
-    )
-
-    controller.data_plugin_controller_signal.emit.assert_called_once()
-    _, _, _, _, return_fn, _ = controller.data_plugin_controller_signal.emit.call_args[
-        0
-    ]
-    assert return_fn is None
-
-
-def test_relay_data_plugin_controller_signal_logs_exception_on_emit_failure(
-    controller: MetaController,
-    mocker: MockerFixture,
-) -> None:
-    """
-    Log the failure with a traceback when the data_plugin_controller_signal emit raises.
-
-    Matches the global_signal relay: both report an emit failure the same way rather than
-    blaming the already-resolved callback.
-
-    :param controller: Controller under test.
-    :param mocker: Pytest-mock fixture.
-    """
-    controller.data_plugin_controller_signal.emit.side_effect = RuntimeError("fail")
-    controller.ignore = MagicMock()  # type: ignore[method-assign]
-
-    controller._relay_data_plugin_controller_signal(
-        "MetaReader", "key1", "my_func", (), "ignore", ()
-    )
-
-    controller.logger.exception.assert_called()  # type: ignore[attr-defined]
 
 
 # ------------------- update_available_plugins ------------------------
@@ -754,6 +516,71 @@ def test_update_tab_actions_undo_removes_last_entry(
     controller.update_tab_actions(undo=True)
     assert 1 not in controller.tab_action_history
     mock_view.update_actions_from_json.assert_called_once()
+
+
+def test_discarding_drops_the_last_action_without_replaying(
+    controller: MetaController,
+    mock_view: MagicMock,
+) -> None:
+    """
+    A discarded action leaves the rest of the history, and the figure, alone.
+
+    :param controller: Controller under test.
+    :param mock_view: Mocked meta view.
+    """
+    controller.tab_action_history = OrderedDict(
+        {0: {"function": "step1"}, 1: {"function": "step2"}}
+    )
+
+    controller.discard_last_tab_action()
+
+    assert controller.tab_action_history == OrderedDict({0: {"function": "step1"}})
+    mock_view.update_actions_from_json.assert_not_called()
+    controller.update_tab_action_history.emit.assert_called_once()
+
+
+def test_discarding_from_an_empty_history_does_nothing(
+    controller: MetaController,
+) -> None:
+    """
+    Nothing to drop is not an error.
+
+    :param controller: Controller under test.
+    """
+    controller.tab_action_history = OrderedDict()
+
+    controller.discard_last_tab_action()
+
+    controller.update_tab_action_history.emit.assert_not_called()
+
+
+def test_undo_replays_from_the_last_reset_and_keeps_the_rest(
+    controller: MetaController,
+    mock_view: MagicMock,
+) -> None:
+    """
+    Only what the last reset left on the figure is redrawn; the earlier history stays.
+
+    :param controller: Controller under test.
+    :param mock_view: Mocked meta view.
+    """
+    controller.tab_action_history = OrderedDict(
+        {
+            0: {"function": "plot_a"},
+            1: {"function": "_reset_actions"},
+            2: {"function": "plot_b"},
+            3: {"function": "plot_c"},
+        }
+    )
+
+    controller.update_tab_actions(undo=True)
+
+    replayed = mock_view.update_actions_from_json.call_args[0][0]
+    assert [entry["function"] for entry in replayed.values()] == [
+        "_reset_actions",
+        "plot_b",
+    ]
+    assert controller.tab_action_history == OrderedDict({0: {"function": "plot_a"}})
 
 
 def test_update_tab_actions_undo_on_empty_history_returns_early(
@@ -920,7 +747,6 @@ def test_init_kwargs_are_set_as_instance_attributes(
 
     # Patch all Qt signal connections so __init__ completes without real Qt
     mock_view.set_available_subclasses = mocker.Mock()
-    mock_view.run_generators.connect = mocker.Mock()
     mock_view.kill_worker.connect = mocker.Mock()
     mock_view.kill_all_workers.connect = mocker.Mock()
     mock_view.add_text_to_display.connect = mocker.Mock()
@@ -930,35 +756,16 @@ def test_init_kwargs_are_set_as_instance_attributes(
     mock_view.export_plot_data.connect = mocker.Mock()
     mock_view.load_actions_from_json.connect = mocker.Mock()
     mock_view.create_plugin.connect = mocker.Mock()
-    mock_view.global_signal.connect = mocker.Mock()
-    mock_view.data_plugin_controller_signal.connect = mocker.Mock()
     mock_model.update_progressbar.connect = mocker.Mock()
     mock_model.add_text_to_display.connect = mocker.Mock()
-    mock_model.global_signal.connect = mocker.Mock()
-    mock_model.data_plugin_controller_signal.connect = mocker.Mock()
     mock_model.run_generators = mocker.Mock()
     mock_model.update_progressbar = mocker.Mock()
 
-    with mocker.patch.object(
-        _ConcreteController, "_connect_global_signal", return_value=None
-    ):
-        ctrl = _ConcreteController(
-            available_subclasses=None,
-            my_custom_attr="hello",
-            another_attr=42,
-        )
+    ctrl = _ConcreteController(
+        available_subclasses=None,
+        my_custom_attr="hello",
+        another_attr=42,
+    )
 
     assert ctrl.my_custom_attr == "hello"
     assert ctrl.another_attr == 42
-
-
-# ---------------------------- ignore ---------------------------------
-
-
-def test_ignore_is_a_no_op(controller: MetaController) -> None:
-    """
-    Verify that ignore() completes without raising or producing side effects.
-
-    :param controller: Controller under test.
-    """
-    controller.ignore()  # should not raise

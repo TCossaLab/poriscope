@@ -13,10 +13,12 @@ Session Options Overview
 ------------------------
 
 - **Restore Session**  
-  Automatically reloads the last active session when you launch the application.
+  Reloads the most recently autosaved session.
 
 - **Load Session**  
-  Opens a previously saved session JSON file and restores its state.
+  Opens a previously saved session JSON file and restores its state. A file that is not a
+  saved session - a tab's saved actions, for instance - is refused with an error, and the
+  current workspace is left as it was.
 
 - **Save Session**
   Stores the current state — including datasets, filters, readers, writers, and analysis results — into a `.json` file.
@@ -79,5 +81,5 @@ Help Menu
    :alt: Help Menu
    :align: center
 
-The *Help* menu includes a link to the tutorial. Note that the help system is **not yet implemented**.
+The *Help* menu has **Help**, which opens the Help Centre - links to the tutorial series, the documentation, issue reporting, the paper and how to cite Poriscope - and **Tutorial**, which opens the guided walkthrough.
 

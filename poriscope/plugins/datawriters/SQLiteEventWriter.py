@@ -28,9 +28,6 @@ import sqlite3
 from pathlib import Path
 from typing import Any, Dict, List, Optional, override
 
-import numpy as np
-import numpy.typing as npt
-
 from poriscope.utils.DocstringDecorator import inherit_docstrings
 from poriscope.utils.LogDecorator import log
 from poriscope.utils.MetaWriter import MetaWriter
@@ -80,6 +77,9 @@ class SQLiteEventWriter(MetaWriter):
         :raises Exception: if an unexpected error occurs during initialization
         """
         table_creation_queries = [
+            # channel_id is the physical channel the events came from; channel_db_id in
+            # events is channels.id, this file's row for that channel. They are
+            # different columns, and renaming either would be a schema migration.
             """
             CREATE TABLE IF NOT EXISTS channels (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -203,23 +203,30 @@ class SQLiteEventWriter(MetaWriter):
         standalone: bool = False,
     ) -> Dict[str, Dict[str, Any]]:
         """
-        Get a dict populated with keys needed to initialize the filter if they are not set yet.
-        This dict must have the following structure, but Min, Max, and Options can be skipped or explicitly set to None if they are not used.
-        Type is required; Value may be omitted or set to None, both meaning there is no default and the user must supply one. All values provided must be consistent with Type.
-        EventFinder objects MUST include a MetaReader object in settings
+        Declare the settings this event writer exposes, on top of the base contract.
 
-        .. code-block:: python
+        Called by poriscope when the plugin is instantiated or reconfigured, to build
+        the settings dialog and to sanity-check whatever the user enters; the accepted
+        values are then readable through ``self.settings``. See
+        :py:meth:`~poriscope.utils.MetaWriter.MetaWriter.get_empty_settings`
+        for the structure of the dict and what ``Type``, ``Value``, ``Min``, ``Max``, ``Options`` and
+        ``Units`` mean in it, and for the reserved keys the GUI builds file pickers
+        from.
 
-          settings = {'Parameter 1': {'Type': <int, float, str, bool>,
-                                           'Value': <value> or None,
-                                           'Options': [<option_1>, <option_2>, ... ] or None,
-                                           'Min': <min_value> or None,
-                                           'Max': <max_value> or None
-                                          },
-                          ...
-                          }
+        The ``super()`` call supplies the mandatory ``"MetaEventFinder"`` key, which is how
+        this plugin is wired to its data source.
 
-        :param globally_available_plugins: a dict containing all data plugins that exist to date, keyed by metaclass. Must include "MetaReader" as a key, with explicitly set Type MetaReader.
+        The keys this plugin adds:
+
+        - ``Output File`` - the SQLite database to write events into.
+        - ``Experiment Name`` - the label these events are filed under, so one database
+          can hold several runs.
+        - ``Voltage`` (mV) - the applied bias, stored with the experiment.
+        - ``Membrane Thickness`` (nm) and ``Conductivity`` (S/m) - stored with the
+          experiment so that downstream analysis can convert blockage depths into pore
+          and molecule geometry.
+
+        :param globally_available_plugins: a dict containing all data plugins that exist to date, keyed by metaclass. Must include "MetaEventFinder" as a key, with explicitly set Type MetaEventFinder.
         :type globally_available_plugins: Optional[Dict[str, List[str]]]
         :param standalone: False if this is called as part of a GUI, True otherwise. Default False
         :type standalone: bool
@@ -242,11 +249,54 @@ class SQLiteEventWriter(MetaWriter):
 
     @log(logger=logger)
     @override
+    def get_committed_experiment_name(self, channel: int) -> Optional[str]:
+        """
+        Name the experiment the output already holds ``channel`` under, if it does.
+
+        ``channels.channel_id`` is unique, so a file holds at most one row per channel
+        and this reads its ``name``. A file that does not exist yet, or has no
+        ``channels`` table, holds no channel - and is not created by asking.
+
+        :param channel: the channel to look up
+        :type channel: int
+        :return: the stored experiment name, or None if the output does not hold the channel
+        :rtype: Optional[str]
+        """
+        output = (
+            self.settings.get("Output File", {}).get("Value") if self.settings else None
+        )
+        if output is None or not Path(output).exists():
+            return None
+        conn: Optional[sqlite3.Connection] = None
+        cursor: Optional[sqlite3.Cursor] = None
+        try:
+            conn = sqlite3.connect(Path(output))
+            cursor = conn.cursor()
+            has_table = cursor.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='channels'"
+            ).fetchone()
+            if has_table is None:
+                return None
+            row = cursor.execute(
+                "SELECT name FROM channels WHERE channel_id = ?", (channel,)
+            ).fetchone()
+            return None if row is None else str(row[0])
+        finally:
+            if cursor:
+                cursor.close()
+            if conn:
+                conn.close()
+
+    @log(logger=logger)
+    @override
     def reset_channel(self, channel: Optional[int] = None) -> None:
         """
         Permanently delete the given channel's row (and, via cascading foreign keys,
         its associated event rows) from the database, so a subsequent write starts
-        from a clean slate. This is destructive, not a resource-cleanup step.
+        from a clean slate. This is destructive, not a resource-cleanup step. The rows
+        written afterwards take new ``id`` values rather than the deleted ones:
+        ``AUTOINCREMENT`` never reuses a row id, and events are addressed by
+        ``(channel_id, event_id)``, whose ``event_id`` does start again.
 
         :param channel: channel ID. Note that `channel=None` does not reset all
             channels; SQL `channel_id = NULL` never matches, so no rows are deleted.
@@ -464,50 +514,28 @@ class SQLiteEventWriter(MetaWriter):
     @override
     def _write_data(
         self,
-        data: npt.NDArray[np.number],
+        event: Dict[str, Any],
         channel: int,
         index: int,
-        scale: Optional[float] = None,
-        offset: Optional[float] = None,
-        start_sample: Optional[int] = 0,
-        padding_before: Optional[int] = 0,
-        padding_after: Optional[int] = None,
-        baseline_mean: Optional[float] = None,
-        baseline_std: Optional[float] = None,
-        raw_data: bool = False,
         abort: Optional[bool] = False,
         last_call: Optional[bool] = False,
     ) -> bool:
         """
-        Append data and metadata to the active file handle.
+        Append one event's samples and metadata to the active database file.
 
-        :param data: 1D numpy array of data to write to the active file in the specified channel.
-        :type data: npt.NDArray[np.number]
+        The event's keys are the contract, and are documented on
+        ``MetaWriter._write_data``. ``data`` arrives in pA and is stored as it is.
+
+        :param event: One event, as ``get_single_event_data`` builds it.
+        :type event: Dict[str, Any]
         :param channel: Int indicating the channel from which it was acquired.
         :type channel: int
         :param index: event index
         :type index: int
-        :param scale: Float indicating scaling between provided data type and encoded form for storage, default None.
-        :type scale: Optional[float]
-        :param offset: Float indicating offset between provided data type and encoded form for storage, default None.
-        :type offset: Optional[float]
-        :param start_sample: Integer index of the starting point of the provided array relative to the start of the experimental run, default 0.
-        :type start_sample: Optional[int]
-        :param padding_before: the length of the padding before the actual event start
-        :type padding_before: Optional[int]
-        :param padding_after: the length of the padding after the actual event end
-        :type padding_after: Optional[int]
-        :param baseline_mean: The local baseline, if available
-        :type baseline_mean: Optional[float]
-        :param baseline_std: the local standard deviation, if available
-        :type baseline_std: Optional[float]
-        :param raw_data: True means to simply write data as-is to file, False indicates to first rescale it. Default False.
-        :type raw_data: bool
-        :param abort: If True, roll back and close the active connection without writing, default False.
+        :param abort: True to discard the channel's uncommitted batch and stop.
         :type abort: Optional[bool]
-        :param last_call: If True, close the shared connection after this write, default False.
+        :param last_call: True when this is the final event of the channel.
         :type last_call: Optional[bool]
-
         :return: success of the write operation.
         :rtype: bool
         :raises ValueError: if a database connection cannot be opened, or if start_sample, padding_before, or padding_after is None
@@ -527,6 +555,15 @@ class SQLiteEventWriter(MetaWriter):
                 self.conn.close()
                 self.conn = None
             return False
+
+        # Unpacked here rather than taken as thirteen parameters; the keys are the
+        # contract, documented on MetaWriter._write_data.
+        data = event["data"]
+        start_sample = event["start_sample"]
+        padding_before = event["padding_before"]
+        padding_after = event["padding_after"]
+        baseline_mean = event["baseline_mean"]
+        baseline_std = event["baseline_std"]
 
         if start_sample is None or padding_before is None or padding_after is None:
             raise ValueError(
@@ -612,6 +649,9 @@ class SQLiteEventWriter(MetaWriter):
         """
         Validate that the settings dict contains the correct information for use by the subclass.
 
+        An existing output file of another kind is refused by
+        ``_refuse_an_output_file_of_another_kind``, which raises ``ValueError``.
+
         :param settings: Parameters for event detection.
         :type settings: dict
         :raises KeyError: If the settings dict does not contain the correct information.
@@ -620,41 +660,54 @@ class SQLiteEventWriter(MetaWriter):
             raise KeyError(
                 """settings must include a 'MetaEventFinder' key with value equal to the key of the vent finder from which to pull event data"""
             )
+        value = settings.get("Output File", {}).get("Value")
+        if value:
+            self._refuse_an_output_file_of_another_kind(Path(value))
 
-    # private API continued, should implemented by subclasses, but has default behavior if it is not needed
-    @log(logger=logger)
-    def _rescale_data_to_adc(
-        self,
-        data: npt.NDArray[np.number],
-        scale: Optional[float] = None,
-        offset: Optional[float] = None,
-        raw_data: bool = False,
-        dtype: npt.DTypeLike = np.uint16,
-        adc_min: int = np.iinfo(np.int16).min,
-        adc_max: int = np.iinfo(np.int16).max,
-    ) -> tuple[npt.NDArray[np.number], Optional[float], Optional[float]]:
+    def _refuse_an_output_file_of_another_kind(self, output_file: Path) -> None:
         """
-        Not used by this writer
+        Refuse an existing output file that is not an events database.
 
-        :param data: 1D numpy array of data to write to the active file in the specified channel.
-        :type data: npt.NDArray[np.number]
-        :param scale: Scaling between provided data type and encoded form for storage. If None, scale is calculated based on the data to maximally use the available adc range.
-        :type scale: Optional[float]
-        :param offset: Offset between provided data type and encoded form for storage. If None, offset is calculated based on the data to maximally use the available adc range.
-        :type offset: Optional[float]
-        :param raw_data: True means to simply write data as-is to file, False indicates to first rescale it. Default False.
-        :type raw_data: bool
-        :param dtype: Numpy dtype to use for storage. Defaults to 16-bit unsigned int.
-        :type dtype: npt.DTypeLike
-        :param adc_min: Integer encoding the minimum adc code for the adc conversion.
-        :type adc_min: int
-        :param adc_max: Integer encoding the maximum adc code for the adc conversion.
-        :type adc_max: int
+        A new or empty file is created as one, and an existing events database is
+        accepted, since re-committing into one is intended. Anything else is refused
+        when the plugin is configured rather than when events are committed.
 
-        :return: Rescaled data as numpy array, scale factor, and offset.
-        :rtype: tuple[npt.NDArray[np.number], Optional[float], Optional[float]]
+        :param output_file: The configured output file.
+        :type output_file: Path
+        :raises ValueError: If the file exists and is not an SQLite database, or is a
+            fitted-metadata database or one of some other kind.
         """
-        return data, scale, offset
+        if not output_file.is_file() or output_file.stat().st_size == 0:
+            return
+        conn = None
+        cursor = None
+        try:
+            conn = sqlite3.connect(
+                f"{output_file.resolve().as_uri()}?mode=ro", uri=True
+            )
+            cursor = conn.cursor()
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+            tables = {row[0] for row in cursor.fetchall()}
+        except sqlite3.DatabaseError as e:
+            raise ValueError(
+                f"{output_file} is not an SQLite database, so events cannot be written "
+                f"to it ({e}). Choose an events database or a new file."
+            ) from e
+        finally:
+            if cursor is not None:
+                cursor.close()
+            if conn is not None:
+                conn.close()
+        if "experiments" in tables:
+            raise ValueError(
+                f"{output_file} is a fitted-metadata database, not an events database. "
+                "Choose an events database or a new file."
+            )
+        if tables and not {"channels", "events", "columns"} <= tables:
+            raise ValueError(
+                f"{output_file} is an SQLite database of some other kind, not an events "
+                "database. Choose an events database or a new file."
+            )
 
     @log(logger=logger)
     @override

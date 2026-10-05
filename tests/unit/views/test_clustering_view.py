@@ -10,15 +10,18 @@ View-fixture methods (setup, handle_parameter_change routing, update_plot,
 update_available_plugins) are tested through a real ClusteringView instance
 using the same pattern as test_protein_view.py.
 
-Bus-dependent methods (_commit_clusters, update_available_columns,
-update_units, _handle_clustering_settings) are covered at the boundary
-via patching.
+The commit path's Controller half is covered in
+``tests/unit/controllers/test_clustering_controller.py``.
+
+The methods that hand work to the Controller (_load_metadata_and_request_clustering,
+_handle_clustering_settings) are covered at the boundary via patching.
 
 Run with:
     pytest test_clustering_view.py -v
     pytest test_clustering_view.py --cov=poriscope --cov-report=html
 """
 
+import sys
 from unittest.mock import patch
 
 import numpy as np
@@ -27,6 +30,7 @@ import pytest
 from PySide6.QtWidgets import QApplication, QVBoxLayout, QWidget
 
 from poriscope.plugins.analysistabs.ClusteringView import ClusteringView
+from poriscope.views.widgets.clustering_settings_widget import ClusteringSettingsDialog
 
 # ===========================================================================
 # Fixtures
@@ -58,27 +62,6 @@ def view(qt_app):
 # ===========================================================================
 # Helpers
 # ===========================================================================
-
-
-def _answer_load_metadata(view, plot_data):
-    """
-    Connect a stand-in for the signal bus that answers a load_metadata call.
-
-    _load_metadata_and_cluster clears plot_data before emitting and reads it
-    back on the next statement, so that a dispatch which never returns cannot
-    be mistaken for a successful one. A test therefore has to answer the emit
-    the way main_controller._dispatch_to does - by calling the named return
-    function - rather than pre-assigning the attribute and relying on the emit
-    being a no-op.
-    """
-
-    def _dispatch(metaclass, key, call_function, call_args, return_function, ret_args):
-        if call_function == "load_metadata":
-            view.update_plot_data(plot_data)
-
-    view.global_signal.connect(_dispatch)
-    # Held so the connection outlives this call for the rest of the test.
-    view._test_bus = _dispatch
 
 
 def _make_df(*cols):
@@ -133,21 +116,6 @@ class TestSetQuery:
 
 
 # ===========================================================================
-# set_units
-# ===========================================================================
-
-
-class TestSetUnits:
-    def test_stores_units(self, view):
-        view.set_units({"duration": "ms", "current": "pA"})
-        assert view.units == {"duration": "ms", "current": "pA"}
-
-    def test_list_units(self, view):
-        view.set_units(["ms", "pA"])
-        assert view.units == ["ms", "pA"]
-
-
-# ===========================================================================
 # update_column_names
 # ===========================================================================
 
@@ -188,36 +156,6 @@ class TestUpdateColumnUnits:
         view.update_column_units("ms", "duration")
         view.update_column_units("s", "duration")
         assert view.units["duration"] == "s"
-
-
-# ===========================================================================
-# set_cluster_column_exists
-# ===========================================================================
-
-
-class TestSetClusterColumnExists:
-    def test_stores_table_name(self, view):
-        view.set_cluster_column_exists("events")
-        assert view.cluster_column_table == "events"
-
-    def test_stores_none(self, view):
-        view.set_cluster_column_exists(None)
-        assert view.cluster_column_table is None
-
-
-# ===========================================================================
-# set_alter_database_status
-# ===========================================================================
-
-
-class TestSetAlterDatabaseStatus:
-    def test_true(self, view):
-        view.set_alter_database_status(True)
-        assert view.operation_success is True
-
-    def test_false(self, view):
-        view.set_alter_database_status(False)
-        assert view.operation_success is False
 
 
 # ===========================================================================
@@ -262,93 +200,6 @@ class TestHandleOtherActions:
     def test_raises_not_implemented(self, view):
         with pytest.raises(NotImplementedError, match="unknown_action"):
             view._handle_other_actions("unknown_action", {})
-
-
-# ===========================================================================
-# _normalize_column_data
-# ===========================================================================
-
-
-class TestNormalizeColumnData:
-    def test_normalises_float_columns(self, view):
-        df = _make_df("a", "b")
-        norm = view._normalize_column_data(df, exclude_cols=["id"])
-        # Median of normalised column should be ~0
-        assert abs(norm["a"].median()) < 0.1
-
-    def test_excludes_specified_columns(self, view):
-        df = _make_df("a", "b")
-        original_a = df["a"].copy()
-        norm = view._normalize_column_data(df, exclude_cols=["a", "id"])
-        pd.testing.assert_series_equal(norm["a"], original_a)
-
-    def test_id_column_excluded(self, view):
-        df = _make_df("a")
-        norm = view._normalize_column_data(df, exclude_cols=["id"])
-        assert list(norm["id"]) == list(df["id"])
-
-    def test_zero_mad_column_unchanged(self, view):
-        df = pd.DataFrame({"a": [5.0] * 50, "id": range(50)})
-        norm = view._normalize_column_data(df, exclude_cols=["id"])
-        pd.testing.assert_series_equal(norm["a"], df["a"])
-
-    def test_does_not_modify_original(self, view):
-        df = _make_df("a")
-        original = df["a"].copy()
-        view._normalize_column_data(df, exclude_cols=["id"])
-        pd.testing.assert_series_equal(df["a"], original)
-
-    def test_int_columns_not_normalised(self, view):
-        df = pd.DataFrame({"a": np.arange(50, dtype=int), "id": range(50)})
-        norm = view._normalize_column_data(df, exclude_cols=["id"])
-        pd.testing.assert_series_equal(norm["a"], df["a"])
-
-
-# ===========================================================================
-# _update_clusters_hdbscan
-# ===========================================================================
-
-
-class TestUpdateClustersHDBSCAN:
-    def _data(self):
-        rng = np.random.default_rng(1)
-        df = pd.DataFrame(
-            {
-                "a": np.concatenate([rng.normal(0, 0.1, 100), rng.normal(2, 0.1, 100)]),
-                "b": np.concatenate([rng.normal(0, 0.1, 100), rng.normal(2, 0.1, 100)]),
-                "id": np.arange(200),
-            }
-        )
-        return df
-
-    def test_returns_labels_and_probs(self, view):
-        labels, probs = view._update_clusters_hdbscan(self._data(), min_cluster_size=5)
-        assert len(labels) == 200
-        assert len(probs) == 200
-
-    def test_labels_are_integers(self, view):
-        labels, _ = view._update_clusters_hdbscan(self._data(), min_cluster_size=5)
-        assert labels.dtype in (np.int32, np.int64, int)
-
-    def test_probs_between_0_and_1(self, view):
-        _, probs = view._update_clusters_hdbscan(self._data(), min_cluster_size=5)
-        assert np.all(probs >= 0) and np.all(probs <= 1)
-
-    def test_finds_two_clusters(self, view):
-        labels, _ = view._update_clusters_hdbscan(self._data(), min_cluster_size=5)
-        unique = set(labels)
-        # At least 2 non-noise clusters expected (-1 is noise)
-        non_noise = unique - {-1}
-        assert len(non_noise) >= 1
-
-    def test_custom_params(self, view):
-        labels, _ = view._update_clusters_hdbscan(
-            self._data(),
-            min_cluster_size=10,
-            min_samples=2,
-            cluster_selection_epsilon=0.5,
-        )
-        assert len(labels) == 200
 
 
 # ===========================================================================
@@ -402,137 +253,144 @@ class TestMergeClusters:
 
 
 # ===========================================================================
-# _load_metadata_and_cluster — config parsing (bus parts patched)
+# _load_metadata_and_request_clustering / on_metadata_loaded
 # ===========================================================================
 
 
-class TestLoadMetadataAndCluster:
+class TestColumnsBeforeAnyLoaderAnswers:
+    """
+    ``self.columns`` must exist from construction, not from the first callback.
+
+    It used to be created only by ``update_column_names``, so a loader whose columns
+    could not be read left ``_handle_clustering_settings`` raising
+    ``AttributeError: 'ClusteringView' object has no attribute 'columns'`` - a modal
+    traceback instead of a settings dialog with an empty column list. A failed column
+    fetch now stops early instead of leaving stale values, which is what surfaced it,
+    but the fragility predated that.
+    """
+
+    def test_columns_exists_on_a_fresh_view(self, view) -> None:
+        """Present and empty, so the settings dialog can open and say nothing is there."""
+        assert view.columns == []
+
+    def test_a_failed_fetch_leaves_it_usable(self, view) -> None:
+        """
+        Nothing arrives, and reading it is still safe.
+
+        This is the exact state the reported traceback was in.
+        """
+        assert isinstance(view.columns, list)
+
+    def test_a_successful_fetch_replaces_it(self, view) -> None:
+        """The normal path still populates it."""
+        view.update_column_names(["duration", "current"])
+
+        assert view.columns == ["duration", "current"]
+
+
+class TestLoadMetadataRequest:
+    """
+    The first half: validate what the user selected, then ask for the rows.
+
+    This method makes no ``global_signal`` emits, so it needs no bus stand-in at
+    all - it asks, and the rows come back as an argument. The
+    tests got simpler because the design did.
+    """
+
     def _config_hdbscan(self):
+        """A valid HDBSCAN configuration, as the settings dialog produces one."""
         return {
             "method": "HDBSCAN",
             "filter": "",
             "columns": [
                 {
                     "column": "duration",
-                    "unit": "ms",
+                    "unit": "us",
                     "log": False,
-                    "norm": False,
+                    "norm": True,
                     "plot": True,
                 },
                 {
                     "column": "current",
-                    "unit": "pA",
+                    "unit": "nA",
                     "log": False,
-                    "norm": False,
+                    "norm": True,
                     "plot": True,
                 },
             ],
             "method_params": {
                 "HDBSCAN_Cluster_Size_input": "5",
                 "HDBSCAN_Min_Points_input": "1",
-                "HDBSCAN_Sensitivity_input": "1.0",
+                "HDBSCAN_Sensitivity_input": "0.5",
             },
         }
 
-    def test_duplicate_columns_raises(self, view):
-        config = {
-            "method": "HDBSCAN",
-            "filter": "",
-            "columns": [
-                {
-                    "column": "duration",
-                    "unit": "ms",
-                    "log": False,
-                    "norm": False,
-                    "plot": True,
-                },
-                {
-                    "column": "duration",
-                    "unit": "ms",
-                    "log": False,
-                    "norm": False,
-                    "plot": True,
-                },
-            ],
-            "method_params": {},
-        }
+    def test_it_asks_the_controller_for_the_rows(self, view, qtbot):
+        """One emit now, carrying the config rather than a bus call description."""
+        config = self._config_hdbscan()
+
+        with qtbot.waitSignal(view.metadata_load_requested, timeout=5000) as caught:
+            view._load_metadata_and_request_clustering(config, "loader1")
+
+        assert caught.args == [config, "loader1"]
+
+    def test_duplicate_columns_raises_before_anything_is_loaded(self, view):
+        """
+        Validation of the user's own selection stays in the View.
+
+        And it happens before the request, so a meaningless plot costs no query.
+        """
+        config = self._config_hdbscan()
+        config["columns"][1]["column"] = "duration"
+
         with pytest.raises(KeyError, match="different"):
-            view._load_metadata_and_cluster(config, "loader1")
+            view._load_metadata_and_request_clustering(config, "loader1")
 
-    def test_empty_query_raises(self, view):
-        config = self._config_hdbscan()
-        view.query = ""
-        with pytest.raises(ValueError, match="metadata query"):
-            view._load_metadata_and_cluster(config, "loader1")
 
-    def test_none_plot_data_raises(self, view):
-        config = self._config_hdbscan()
-        view.query = "SELECT * FROM events"
-        view.plot_data = None
-        with pytest.raises(ValueError, match="No data"):
-            view._load_metadata_and_cluster(config, "loader1")
+class TestOnMetadataLoaded:
+    """
+    The second half: read the settings dialog, then ask for the rows to be clustered.
 
-    def test_missing_column_raises(self, view):
-        config = self._config_hdbscan()
-        view.query = "SELECT * FROM events"
-        _answer_load_metadata(view, pd.DataFrame({"other": [1.0], "id": [0]}))
-        with pytest.raises(KeyError):
-            view._load_metadata_and_cluster(config, "loader1")
+    The rows are a parameter, so none of this reads ``self.plot_data`` - and the
+    clear-before-emit guard that used to protect that read went with the read.
 
-    def test_hdbscan_bad_params_raises(self, view):
-        config = self._config_hdbscan()
-        config["method_params"]["HDBSCAN_Cluster_Size_input"] = "not_a_number"
-        view.query = "SELECT * FROM events"
-        rng = np.random.default_rng(0)
-        _answer_load_metadata(
-            view,
-            pd.DataFrame(
-                {"duration": rng.random(50), "current": rng.random(50), "id": range(50)}
-            ),
-        )
-        with pytest.raises(ValueError, match="parameters"):
-            view._load_metadata_and_cluster(config, "loader1")
+    **The filtering itself is no longer here.** It is
+    ``ClusteringModel.build_clustering_frame``, so the request now carries the
+    unfiltered rows plus the spec, and this class pins the parsing and the spec.
+    """
 
-    def test_hdbscan_success(self, view):
-        config = self._config_hdbscan()
-        view.query = "SELECT * FROM events"
+    def _config_hdbscan(self):
+        """A valid HDBSCAN configuration."""
+        return TestLoadMetadataRequest._config_hdbscan(self)
+
+    def _rows(self, n=100, a="duration", b="current"):
+        """Rows shaped like the loader's answer, with an id column."""
         rng = np.random.default_rng(42)
-        _answer_load_metadata(
-            view,
-            pd.DataFrame(
-                {
-                    "duration": rng.random(100),
-                    "current": rng.random(100),
-                    "id": np.arange(100),
-                }
-            ),
-        )
-        result = view._load_metadata_and_cluster(config, "loader1")
-        assert len(result) == 7
-        df, labels, probs, logs, norm, units, plot = result
-        assert len(labels) == len(df)
-        assert len(probs) == len(df)
+        return pd.DataFrame({a: rng.random(n), b: rng.random(n), "id": np.arange(n)})
 
-    def test_gaussian_mixtures_bad_params_raises(self, view):
-        config = {
-            "method": "Gaussian Mixtures",
-            "filter": "",
-            "columns": [
-                {"column": "a", "unit": "", "log": False, "norm": False, "plot": True},
-                {"column": "b", "unit": "", "log": False, "norm": False, "plot": True},
-            ],
-            "method_params": {"Gaussian Mixtures_Number_of_Clusters_input": "bad"},
-        }
-        view.query = "SELECT * FROM events"
-        rng = np.random.default_rng(1)
-        _answer_load_metadata(
-            view,
-            pd.DataFrame({"a": rng.random(50), "b": rng.random(50), "id": range(50)}),
-        )
-        with pytest.raises(ValueError, match="parameters"):
-            view._load_metadata_and_cluster(config, "loader1")
+    def test_it_emits_a_cluster_request_with_parsed_params(self, view, qtbot):
+        """
+        The parameters the user typed as strings arrive as int and float.
 
-    def test_gaussian_mixtures_success(self, view):
+        The clustering itself is ``ClusteringModel``'s and is covered in
+        ``tests/unit/models/test_clustering_model.py``.
+        """
+        config = self._config_hdbscan()
+
+        with qtbot.waitSignal(view.cluster_requested, timeout=5000) as caught:
+            view.on_metadata_loaded(config, "loader1", self._rows())
+
+        rows, frame_columns, log_flags, exclude_cols, method, params = caught.args
+        assert len(rows) == 100
+        assert frame_columns[-1] == "id"
+        assert len(log_flags) == len(frame_columns)
+        assert "id" in exclude_cols
+        assert method == "HDBSCAN"
+        assert isinstance(params["min_cluster_size"], int)
+        assert isinstance(params["cluster_selection_epsilon"], float)
+
+    def test_gaussian_mixtures_params_are_parsed_too(self, view, qtbot):
+        """The other branch, same shape."""
         config = {
             "method": "Gaussian Mixtures",
             "filter": "",
@@ -542,16 +400,172 @@ class TestLoadMetadataAndCluster:
             ],
             "method_params": {"Gaussian Mixtures_Number_of_Clusters_input": "2"},
         }
-        view.query = "SELECT * FROM events"
-        rng = np.random.default_rng(7)
-        _answer_load_metadata(
-            view,
-            pd.DataFrame({"a": rng.random(60), "b": rng.random(60), "id": range(60)}),
+
+        with qtbot.waitSignal(view.cluster_requested, timeout=5000) as caught:
+            view.on_metadata_loaded(config, "loader1", self._rows(60, "a", "b"))
+
+        _, _, _, _, method, params = caught.args
+        assert method == "Gaussian Mixtures"
+        assert params == {"n_components": 2}
+
+    def test_the_request_carries_the_rows_unfiltered(self, view, qtbot):
+        """
+        The View hands over what the loader returned, not something it has reduced.
+
+        A View that filtered first and emitted the result would pass the assertions
+        above just as happily, so the identity is checked rather than the length.
+        """
+        rows = self._rows()
+
+        with qtbot.waitSignal(view.cluster_requested, timeout=5000) as caught:
+            view.on_metadata_loaded(self._config_hdbscan(), "loader1", rows)
+
+        assert caught.args[0] is rows
+
+    def test_the_log_flags_are_aligned_with_the_columns_not_the_flag_lists(
+        self, view, qtbot
+    ):
+        """
+        ``"id"`` rides through the filter with the rest so that the row masking stays
+        joint, which means the flags must be one longer than the user's column list
+        and end in False - ``"id"`` is never log-scaled.
+        """
+        config = self._config_hdbscan()
+
+        with qtbot.waitSignal(view.cluster_requested, timeout=5000) as caught:
+            view.on_metadata_loaded(config, "loader1", self._rows())
+
+        _rows, frame_columns, log_flags, *_ = caught.args
+        assert len(log_flags) == len(config["columns"]) + 1
+        assert frame_columns[-1] == "id"
+        assert log_flags[-1] is False
+
+    def test_bad_hdbscan_params_raise(self, view):
+        """
+        Parsing stays in the View, so the message names the form the user filled in.
+
+        The Controller catches this and reports it on the status panel.
+        """
+        config = self._config_hdbscan()
+        config["method_params"]["HDBSCAN_Cluster_Size_input"] = "bad"
+
+        with pytest.raises(ValueError, match="parameters"):
+            view.on_metadata_loaded(config, "loader1", self._rows())
+
+    def test_bad_gaussian_mixtures_params_raise(self, view):
+        """The other branch's parsing failure."""
+        config = {
+            "method": "Gaussian Mixtures",
+            "filter": "",
+            "columns": [
+                {"column": "a", "unit": "", "log": False, "norm": False, "plot": True},
+                {"column": "b", "unit": "", "log": False, "norm": False, "plot": True},
+            ],
+            "method_params": {"Gaussian Mixtures_Number_of_Clusters_input": "bad"},
+        }
+
+        with pytest.raises(ValueError, match="parameters"):
+            view.on_metadata_loaded(config, "loader1", self._rows(50, "a", "b"))
+
+    def test_an_unknown_method_raises(self, view):
+        """
+        Refused before any parsing, so the message is about the method not the params.
+
+        The Model refuses it too; both sides checking means a disagreement between them
+        fails loudly rather than clustering by some default.
+        """
+        config = self._config_hdbscan()
+        config["method"] = "K Means"
+
+        with pytest.raises(ValueError, match="Unknown clustering method"):
+            view.on_metadata_loaded(config, "loader1", self._rows())
+
+
+class TestSetClusteringResult:
+    """
+    The other half of ``cluster_requested``.
+
+    ``_handle_clustering_settings`` used to do all of this inline after the clustering
+    call returned; it now happens when the Controller hands the answer back.
+    """
+
+    def _request(self, view):
+        """Put a request in flight so a result has display context to read."""
+        view._pending_cluster_display = (
+            "HDBSCAN",
+            [False, False],
+            [True, True],
+            ["s", "nA"],
+            [True, True],
         )
-        df, labels, probs, logs, norm, units, plot = view._load_metadata_and_cluster(
-            config, "loader1"
+
+    def test_it_plots_the_result(self, view, mocker):
+        """The plot is the point of the whole round trip."""
+        self._request(view)
+        update_plot = mocker.patch.object(view, "update_plot")
+        data = _make_cluster_data(20)
+
+        view.set_clustering_result(
+            data, data["cluster_label"], data["cluster_confidence"]
         )
-        assert len(labels) == 60
+
+        update_plot.assert_called_once()
+
+    def test_it_resets_the_axes_before_plotting(self, view, mocker):
+        """
+        Ordering matters: the axes are cleared, then drawn.
+
+        Reversed, the new plot would be wiped by the reset.
+        """
+        self._request(view)
+        calls = []
+        mocker.patch.object(
+            view, "_reset_actions", side_effect=lambda *a, **k: calls.append("reset")
+        )
+        mocker.patch.object(
+            view, "update_plot", side_effect=lambda *a, **k: calls.append("plot")
+        )
+        data = _make_cluster_data(20)
+
+        view.set_clustering_result(
+            data, data["cluster_label"], data["cluster_confidence"]
+        )
+
+        assert calls == ["reset", "plot"]
+
+    def test_a_result_with_no_request_outstanding_is_refused(self, view, mocker):
+        """
+        Nothing is plotted, and it is logged as an error.
+
+        The display context lives on the View between the emit and the answer, so a
+        result arriving without one means the two have got out of step - which must
+        not silently plot against another run's column flags.
+        """
+        view._pending_cluster_display = None
+        update_plot = mocker.patch.object(view, "update_plot")
+        data = _make_cluster_data(20)
+
+        view.set_clustering_result(
+            data, data["cluster_label"], data["cluster_confidence"]
+        )
+
+        update_plot.assert_not_called()
+
+    def test_the_request_context_is_consumed(self, view, mocker):
+        """
+        One answer per request.
+
+        Cleared on read, so a second result cannot reuse the first request's flags.
+        """
+        self._request(view)
+        mocker.patch.object(view, "update_plot")
+        data = _make_cluster_data(20)
+
+        view.set_clustering_result(
+            data, data["cluster_label"], data["cluster_confidence"]
+        )
+
+        assert view._pending_cluster_display is None
 
 
 # ===========================================================================
@@ -837,10 +851,12 @@ class TestCommitClusters:
                 "cluster_confidence": [1.0, 0.9],
             }
         )
-        view.table_name = "events"
-        view.cluster_column_table = None  # no existing columns → skip overwrite dialog
-        # global_signal.emit is a Qt signal with no connected slots — no crash expected
+        asked = []
+        view.cluster_column_check_requested.connect(asked.append)
+
         view._commit_clusters("loader1")
+
+        assert asked == ["loader1"]
 
 
 # ===========================================================================
@@ -857,14 +873,42 @@ class TestResetActions:
         with patch.object(view.canvas, "draw"):
             view._reset_actions(axis_type="3d")
 
-    def test_clears_allowed_cols(self, view):
-        view.allowed_cols = ["a"]
-        with patch.object(view.canvas, "draw"):
-            view._reset_actions()
-        assert view.allowed_cols is None
 
-    def test_clears_allowed_logs(self, view):
-        view.allowed_logs = [True]
-        with patch.object(view.canvas, "draw"):
-            view._reset_actions()
-        assert view.allowed_logs is None
+# ===========================================================================
+# the tutorial finishing inside the settings dialog
+# ===========================================================================
+
+
+def _finish_tutorial_then_cancel(dialog) -> int:
+    """
+    Stand in for ``exec``: click the dialog's tutorial through to Done, then cancel.
+
+    Finishing the tutorial runs the mixin's completion handler, which clears
+    ``walkthrough_dialog``; cancelling then emits ``finished``, which is what the
+    View's close handler listens for.
+    """
+    tutorial = dialog.walkthrough_dialog
+    for _ in range(len(tutorial.steps)):
+        tutorial.next_step()
+    dialog.done(0)
+    return 0
+
+
+def test_cancelling_after_finishing_the_tutorial_raises_nothing(view, monkeypatch):
+    """
+    Closing the clustering settings dialog after its tutorial has finished is quiet.
+
+    The View closes the tutorial when the dialog closes, but finishing the tutorial
+    had already cleared it, so the close handler used to raise ``AttributeError`` on
+    ``None``.
+    """
+    raised = []
+    monkeypatch.setattr(sys, "excepthook", lambda *exc: raised.append(exc[1]))
+    monkeypatch.setattr(ClusteringSettingsDialog, "exec", _finish_tutorial_then_cancel)
+    view._walkthrough_active = True
+    view.columns = ["a", "b"]
+    view.units = ["pA", "us"]
+
+    view._handle_clustering_settings({"db_loader": "db"})
+
+    assert raised == []

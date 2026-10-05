@@ -229,7 +229,9 @@ class MetaEventFitter(BaseDataPlugin):
             eventloader_options = None
         settings: Dict[str, Dict[str, Any]] = {
             "MetaEventLoader": {
-                "Type": str,
+                # A script holds the parent object and has no controller to resolve a
+                # name, so standalone declares the class it must be an instance of.
+                "Type": MetaEventLoader if standalone else str,
                 "Value": (
                     eventloader_options[0] if eventloader_options is not None else ""
                 ),
@@ -457,6 +459,48 @@ class MetaEventFitter(BaseDataPlugin):
         """
         return self.sublevel_metadata_units
 
+    @log(logger=logger)
+    def _reject_event(
+        self,
+        channel: int,
+        index: int,
+        reason: str,
+        message: str,
+        level: int = logging.INFO,
+    ) -> None:
+        """
+        Count one rejected event, say why, and drop the metadata already built for it.
+
+        ``fit_events`` gives up on an event from nine places, and each one owed the same
+        three pieces of bookkeeping: tally the reason, log it, and remove the two
+        half-built metadata entries the event had already accumulated. Missing either pop
+        leaves a partial event in the tables that the writer will later try to commit, so
+        this is one place rather than nine.
+
+        **The control flow stays at the call site**, deliberately, because it differs.
+        Eight of the nine decrement the running event count and ``continue`` the event
+        loop; the sublevel-count mismatch is raised from inside the loop over the
+        metadata columns, so it has to set a flag and ``break`` out of that inner loop
+        before its caller can do the same. Folding that difference in here would mean a
+        helper that sometimes means "skip this event" and sometimes means "stop looking
+        at its columns".
+
+        :param channel: the channel the rejected event belongs to
+        :type channel: int
+        :param index: the event's index within that channel, used to drop its metadata
+        :type index: int
+        :param reason: the key this rejection is tallied under, and what the status panel reports
+        :type reason: str
+        :param message: the log line explaining this particular rejection
+        :type message: str
+        :param level: the level to log ``message`` at, ``logging.INFO`` unless the rejection indicates a fitter fault
+        :type level: int
+        """
+        self.rejected[channel][reason] = self.rejected[channel].get(reason, 0) + 1
+        self.logger.log(level, message)
+        self.event_metadata[channel].pop(index)
+        self.sublevel_metadata[channel].pop(index)
+
     @serialize_channels
     @log(logger=logger)
     def fit_events(
@@ -558,6 +602,17 @@ class MetaEventFitter(BaseDataPlugin):
 
             if not hasattr(data, "__len__"):
                 raise TypeError("Event data must be sized")
+            # One NaN or infinity poisons every statistic a fitter computes from the event,
+            # so it would otherwise be rejected for an unrelated reason or fitted into nonsense.
+            if not np.all(np.isfinite(data)):
+                self._reject_event(
+                    channel,
+                    index,
+                    "Non-finite Data",
+                    f"Event {event_id} in channel {channel} contains NaN or infinite samples and will be skipped",
+                )
+                total_events -= 1
+                continue
             self.event_lengths[channel][index] = len(data)
 
             self.event_metadata[channel][index]["start_time"] = (
@@ -576,25 +631,21 @@ class MetaEventFitter(BaseDataPlugin):
                 )
 
             except ValueError as e:
-                self.rejected[channel][str(e)] = (
-                    self.rejected[channel].get(str(e), 0) + 1
+                self._reject_event(
+                    channel,
+                    index,
+                    str(e),
+                    f"Event {index} in channel {channel} was rejected from fitting: {e}. No further warnings of this type will be issue for this channel.",
                 )
-                self.logger.info(
-                    f"Event {index} in channel {channel} was rejected from fitting: {e}. No further warnings of this type will be issue for this channel."
-                )
-                self.event_metadata[channel].pop(index)
-                self.sublevel_metadata[channel].pop(index)
                 total_events -= 1
                 continue
             except Exception as e:
-                self.rejected[channel][str(e)] = (
-                    self.rejected[channel].get(str(e), 0) + 1
+                self._reject_event(
+                    channel,
+                    index,
+                    str(e),
+                    f"Unknown error locating sublevels transitions for event {event}: {str(e)}",
                 )
-                self.logger.info(
-                    f"Unknown error locating sublevels transitions for event {event}: {str(e)}"
-                )
-                self.event_metadata[channel].pop(index)
-                self.sublevel_metadata[channel].pop(index)
                 total_events -= 1
                 continue
 
@@ -611,14 +662,12 @@ class MetaEventFitter(BaseDataPlugin):
 
             # if we do not find baseline + event + baseline for a total of three sublevels, it is not a valid event and should be skipped
             if len(sublevel_starts) <= 3:
-                self.logger.info(
-                    f"Event {event_id} in channel {channel} has fewer than three sublevels and is invalid, it will be skipped"
+                self._reject_event(
+                    channel,
+                    index,
+                    "Too Few Levels",
+                    f"Event {event_id} in channel {channel} has fewer than three sublevels and is invalid, it will be skipped",
                 )
-                self.rejected[channel]["Too Few Levels"] = (
-                    self.rejected[channel].get("Too Few Levels", 0) + 1
-                )
-                self.event_metadata[channel].pop(index)
-                self.sublevel_metadata[channel].pop(index)
                 total_events -= 1
                 continue
 
@@ -629,39 +678,34 @@ class MetaEventFitter(BaseDataPlugin):
                     data, samplerate, baseline_mean, baseline_std, sublevel_starts
                 )
             except ValueError as e:
-                self.rejected[channel][str(e)] = (
-                    self.rejected[channel].get(str(e), 0) + 1
+                self._reject_event(
+                    channel,
+                    index,
+                    str(e),
+                    f"Error populating sublevel metadata for event {event}: {str(e)}",
                 )
-                self.logger.info(
-                    f"Error populating sublevel metadata for event {event}: {str(e)}"
-                )
-                self.event_metadata[channel].pop(index)
-                self.sublevel_metadata[channel].pop(index)
                 total_events -= 1
                 continue
             except Exception as e:
-                self.rejected[channel][str(e)] = (
-                    self.rejected[channel].get(str(e), 0) + 1
+                self._reject_event(
+                    channel,
+                    index,
+                    str(e),
+                    f"Unknown error populating sublevel metadata for event {event}: {str(e)}",
                 )
-                self.logger.info(
-                    f"Unknown error populating sublevel metadata for event {event}: {str(e)}"
-                )
-                self.event_metadata[channel].pop(index)
-                self.sublevel_metadata[channel].pop(index)
                 total_events -= 1
                 continue
 
             invalid_sublevel_metadata = False
             for key, val in sublevel_metadata.items():
                 if len(val) != len(sublevel_starts) - 1:
-                    self.rejected[channel]["Level Count Mismatch"] = (
-                        self.rejected[channel].get("Level Count Mismatch", 0) + 1
+                    self._reject_event(
+                        channel,
+                        index,
+                        "Level Count Mismatch",
+                        f"Event {event_id} has in channel {channel} fewer entries for {key} ({len(val)} than sublevels ({len(sublevel_starts)} and is invalid",
+                        level=logging.ERROR,
                     )
-                    self.logger.error(
-                        f"Event {event_id} has in channel {channel} fewer entries for {key} ({len(val)} than sublevels ({len(sublevel_starts)} and is invalid"
-                    )
-                    self.event_metadata[channel].pop(index)
-                    self.sublevel_metadata[channel].pop(index)
                     invalid_sublevel_metadata = True
                     break
                 else:
@@ -695,25 +739,21 @@ class MetaEventFitter(BaseDataPlugin):
                     data, samplerate, baseline_mean, baseline_std, sublevel_metadata
                 )
             except ValueError as e:
-                self.rejected[channel][str(e)] = (
-                    self.rejected[channel].get(str(e), 0) + 1
+                self._reject_event(
+                    channel,
+                    index,
+                    str(e),
+                    f"Error populating sublevel metadata for event {event}: {str(e)}",
                 )
-                self.logger.info(
-                    f"Error populating sublevel metadata for event {event}: {str(e)}"
-                )
-                self.event_metadata[channel].pop(index)
-                self.sublevel_metadata[channel].pop(index)
                 total_events -= 1
                 continue
             except Exception as e:
-                self.rejected[channel][str(e)] = (
-                    self.rejected[channel].get(str(e), 0) + 1
+                self._reject_event(
+                    channel,
+                    index,
+                    str(e),
+                    f"Unknown error populating sublevel metadata for event {event}: {str(e)}",
                 )
-                self.logger.info(
-                    f"Unknown error populating sublevel metadata for event {event}: {str(e)}"
-                )
-                self.event_metadata[channel].pop(index)
-                self.sublevel_metadata[channel].pop(index)
                 total_events -= 1
                 continue
 
@@ -883,7 +923,7 @@ class MetaEventFitter(BaseDataPlugin):
         baseline_std: Optional[float],
     ) -> Optional[List[Any]]:
         """
-        :param data: an array of data from which to extract the locations of sublevel transitions
+        :param data: an array of data from which to extract the locations of sublevel transitions. Always finite: ``fit_events`` rejects an event holding a NaN or infinite sample before calling this
         :type data: npt.NDArray[np.float64]
         :param samplerate: the sampling rate
         :type samplerate: float
@@ -904,11 +944,12 @@ class MetaEventFitter(BaseDataPlugin):
 
         **Purpose:** Get a list of indices and optionally other metadata corresponding to the starting point of all sublevels within an event.
 
-        In this function, you must locate and return all features that qualify as "sublevels" for downstream processing and return a list of information that identifies the starting point of those sublevevels. The first element in the list must correspond to the start of the event (e.g. the level that corresponds to the padding before the event). This list can take any form at all and will be passed verbatim to :py:meth:`~poriscope.utils.MetaeventFitter.MetaeventFitter._populate_event_metadata` and :py:meth:`~poriscope.utils.MetaeventFitter.MetaeventFitter._populate_sublevel_metadata`, meaning that you can encode extra information about the sublevels that you need in order to implement those functions. For example, if you have two different kinds of sublevels, you might pass a list of tuples that encode the index of the start of each sublevel along with a string representing its type, as in ``[(0, 'padding_before'), (100,'normal_blockage'), (200, 'padding_after')]``, or equivalently a dict that encodes the same information, for example ``[{'index': 0, 'type': 'padding_before'},{'index': 100, 'type': 'normal_blockage'},{'index': 200, 'type': 'padding_after'},]``. The only restrictions are that
+        In this function, you must locate and return all features that qualify as "sublevels" for downstream processing and return a list of information that identifies the starting point of those sublevevels. The first element in the list must correspond to the start of the event (e.g. the level that corresponds to the padding before the event). This list can take any form at all and will be passed verbatim to :py:meth:`~poriscope.utils.MetaEventFitter.MetaEventFitter._populate_event_metadata` and :py:meth:`~poriscope.utils.MetaEventFitter.MetaEventFitter._populate_sublevel_metadata`, meaning that you can encode extra information about the sublevels that you need in order to implement those functions. For example, if you have two different kinds of sublevels, you might pass a list of tuples that encode the index of the start of each sublevel along with a string representing its type, as in ``[(0, 'padding_before'), (100, 'normal_blockage'), (200, 'padding_after'), (300, 'end')]`` for a 300-sample event, or equivalently a dict that encodes the same information, for example ``[{'index': 0, 'type': 'padding_before'}, {'index': 100, 'type': 'normal_blockage'}, {'index': 200, 'type': 'padding_after'}, {'index': 300, 'type': 'end'}]``. The only restrictions are that
 
         1. The top-level structure must be a 1D iterable
         2. Each entry must contain the index of the start of the sublevel
-        3. The first entry must correspond to the start of the event
+        3. The first entry must correspond to the start of the event, index 0 - the start of the padding-before sublevel
+        4. The last entry must be the terminal boundary ``len(data)``, which closes the last sublevel rather than starting one, so N sublevels take N+1 entries. An event needs at least three sublevels - padding before, the event, padding after - so at least four entries; fewer is rejected as "Too Few Levels"
 
         Plugin must handle gracefully the case where any of the arguments except data are None, as not all event loaders are guaranteed to return these values.
         Raising an an acceptable handler, as it will be handled, and the event simply skipped as not fitted, in the event that this function Raises.
@@ -927,9 +968,9 @@ class MetaEventFitter(BaseDataPlugin):
         """
         **Purpose:** Extract metadata for each sublevel within the event
 
-        The ``sublevel_starts`` list corresponds verbatim to the return value of :py:meth:`~poriscope.utils.MetaeventFitter.MetaeventFitter._locate_sublevel_transitions`. Using this information, provide values for all of the sublevle metadata required by the fitter.  This should be returned as a dict with keys that match exactly those defined in :py:meth:`~poriscope.utils.MetaeventFitter.MetaeventFitter._define_sublevel_metadata_types` and :py:meth:`~poriscope.utils.MetaeventFitter.MetaeventFitter._define_sublevel_metadata_units`. Values for each key should be a list of data with length exactly equal to that of ``sublevel_starts`` and types consistent with :py:meth:`~poriscope.utils.MetaeventFitter.MetaeventFitter._define_sublevel_metadata_units`. Do not provide values for any reserved keys.
+        The ``sublevel_starts`` list corresponds verbatim to the return value of :py:meth:`~poriscope.utils.MetaEventFitter.MetaEventFitter._locate_sublevel_transitions`. Using this information, provide values for all of the sublevle metadata required by the fitter.  This should be returned as a dict with keys that match exactly those defined in :py:meth:`~poriscope.utils.MetaEventFitter.MetaEventFitter._define_sublevel_metadata_types` and :py:meth:`~poriscope.utils.MetaEventFitter.MetaEventFitter._define_sublevel_metadata_units`. Values for each key should be a list with one value per sublevel - one fewer than the entries in ``sublevel_starts``, whose last entry is the terminal boundary - and types consistent with :py:meth:`~poriscope.utils.MetaEventFitter.MetaEventFitter._define_sublevel_metadata_units`. Do not provide values for any reserved keys.
 
-        :param data: an array of data from which to extract the locations of sublevel transitions
+        :param data: an array of data from which to extract the locations of sublevel transitions. Always finite: ``fit_events`` rejects an event holding a NaN or infinite sample before calling this
         :type data: npt.NDArray[np.float64]
         :param samplerate: the sampling rate
         :type samplerate: float
@@ -952,7 +993,7 @@ class MetaEventFitter(BaseDataPlugin):
         """
         **Purpose**: Tell downstream operations what datatypes correspond to event metadata provided by this plugin
 
-        This data plugin divides event metadata into two types: event metadata, and sublevel metadata. Event metadata refers to numbers that apply to the event as a whole (for example, its duration, its maximal blockage state, etc. - things that have a single number per event). In this function, you must supply a dictionary in which they keys are the names of the event metadata you want to fit, and the values are the primitive datatype of that piece of metadata. All of this metadata must be populated during fitting. This dict must have ths same keys as that supplied in :py:meth:`~poriscope.utils.MetaeventFitter.MetaeventFitter._define_event_metadata_units`. Options for dtypes are int, float, str, bool - basic datatypes compatible with any downstream :ref:`MetaDatabaseWriter` subclass. For example:
+        This data plugin divides event metadata into two types: event metadata, and sublevel metadata. Event metadata refers to numbers that apply to the event as a whole (for example, its duration, its maximal blockage state, etc. - things that have a single number per event). In this function, you must supply a dictionary in which they keys are the names of the event metadata you want to fit, and the values are the primitive datatype of that piece of metadata. All of this metadata must be populated during fitting. This dict must have ths same keys as that supplied in :py:meth:`~poriscope.utils.MetaEventFitter.MetaEventFitter._define_event_metadata_units`. Options for dtypes are int, float, str, bool - basic datatypes compatible with any downstream :ref:`MetaDatabaseWriter` subclass. For example:
 
         .. code:: python
 
@@ -980,7 +1021,7 @@ class MetaEventFitter(BaseDataPlugin):
         """
         **Purpose**: Tell downstream operations what units apply to event metadata provided by this plugin
 
-        This data plugin divides event metadata into two types: event metadata, and sublevel metadata. Event metadata refers to numbers that apply to the event as a whole (for example, its duration, its maximal blockage state, etc. - things that have a single number per event). In this function, you must supply a dictionary in which they keys are the names of the event metadata you want to fit, and the values are a string representing the units for that key. All of this metadata must be populated during fitting. This dict must have ths same keys as that supplied in :py:meth:`~poriscope.utils.MetaeventFitter.MetaeventFitter._define_event_metadata_types`. Units can be None. For example:
+        This data plugin divides event metadata into two types: event metadata, and sublevel metadata. Event metadata refers to numbers that apply to the event as a whole (for example, its duration, its maximal blockage state, etc. - things that have a single number per event). In this function, you must supply a dictionary in which they keys are the names of the event metadata you want to fit, and the values are a string representing the units for that key. All of this metadata must be populated during fitting. This dict must have ths same keys as that supplied in :py:meth:`~poriscope.utils.MetaEventFitter.MetaEventFitter._define_event_metadata_types`. Units can be None. For example:
 
         .. code:: python
 
@@ -1012,7 +1053,7 @@ class MetaEventFitter(BaseDataPlugin):
         """
         **Purpose**: Tell downstream operations what datatypes correspond to sublevel metadata provided by this plugin
 
-        This data plugin divides event metadata into two types: event metadata, and sublevel metadata. Sublevel metadata refers to numbers that apply individual sublevels within an event (for example, the duration or blockage state of a single sublevel) as as such may have an arbitrary number of entries per event. In this function, you must supply a dictionary in which they keys are the names of the sublevel metadata you want to fit, and the values are the primitive datatype of that piece of metadata. All of this metadata must be populated during fitting. This dict must have ths same keys as that supplied in :py:meth:`~poriscope.utils.MetaeventFitter.MetaeventFitter._define_sublevel_metadata_units`. Options for dtypes are int, float, str, bool - basic datatypes compatible with any downstream :ref:`MetaDatabaseWriter` subclass. For example:
+        This data plugin divides event metadata into two types: event metadata, and sublevel metadata. Sublevel metadata refers to numbers that apply individual sublevels within an event (for example, the duration or blockage state of a single sublevel) as as such may have an arbitrary number of entries per event. In this function, you must supply a dictionary in which they keys are the names of the sublevel metadata you want to fit, and the values are the primitive datatype of that piece of metadata. All of this metadata must be populated during fitting. This dict must have ths same keys as that supplied in :py:meth:`~poriscope.utils.MetaEventFitter.MetaEventFitter._define_sublevel_metadata_units`. Options for dtypes are int, float, str, bool - basic datatypes compatible with any downstream :ref:`MetaDatabaseWriter` subclass. For example:
 
         .. code:: python
 
@@ -1038,7 +1079,7 @@ class MetaEventFitter(BaseDataPlugin):
         """
         **Purpose**: Tell downstream operations what units apply to sublevel metadata provided by this plugin
 
-        This data plugin divides event metadata into two types: event metadata, and sublevel metadata. Sublevel metadata refers to numbers that apply individual sublevels within an event (for example, the duration or blockage state of a single sublevel) as as such may have an arbitrary number of entries per event. In this function, you must supply a dictionary in which they keys are the names of the event metadata you want to fit, and the values are a string representing the units for that key. All of this metadata must be populated during fitting. This dict must have ths same keys as that supplied in :py:meth:`~poriscope.utils.MetaeventFitter.MetaeventFitter._define_sublevel_metadata_types`. Unites can be None. For example:
+        This data plugin divides event metadata into two types: event metadata, and sublevel metadata. Sublevel metadata refers to numbers that apply individual sublevels within an event (for example, the duration or blockage state of a single sublevel) as as such may have an arbitrary number of entries per event. In this function, you must supply a dictionary in which they keys are the names of the event metadata you want to fit, and the values are a string representing the units for that key. All of this metadata must be populated during fitting. This dict must have ths same keys as that supplied in :py:meth:`~poriscope.utils.MetaEventFitter.MetaEventFitter._define_sublevel_metadata_types`. Unites can be None. For example:
 
         .. code:: python
 
@@ -1084,9 +1125,9 @@ class MetaEventFitter(BaseDataPlugin):
 
         **Purpose:** Extract metadata for each sublevel within the event
 
-        The ``sublevel_metadata`` list corresponds  to the return value of :py:meth:`~poriscope.utils.MetaeventFitter.MetaeventFitter._populate_sublevel_metadata`. Using this information, provide values for all of the event metadata required by the fitter.  This should be returned as a dict with keys that match exactly those defined in :py:meth:`~poriscope.utils.MetaeventFitter.MetaeventFitter._define_event_metadata_types` and :py:meth:`~poriscope.utils.MetaeventFitter.MetaeventFitter._define_event_metadata_units`. Values for each key should be a single value with type consistent with :py:meth:`~poriscope.utils.MetaeventFitter.MetaeventFitter._define_sublevel_metadata_units`. Do not provide values for any reserved keys.
+        The ``sublevel_metadata`` list corresponds  to the return value of :py:meth:`~poriscope.utils.MetaEventFitter.MetaEventFitter._populate_sublevel_metadata`. Using this information, provide values for all of the event metadata required by the fitter.  This should be returned as a dict with keys that match exactly those defined in :py:meth:`~poriscope.utils.MetaEventFitter.MetaEventFitter._define_event_metadata_types` and :py:meth:`~poriscope.utils.MetaEventFitter.MetaEventFitter._define_event_metadata_units`. Values for each key should be a single value with type consistent with :py:meth:`~poriscope.utils.MetaEventFitter.MetaEventFitter._define_sublevel_metadata_units`. Do not provide values for any reserved keys.
 
-        :param data: an array of data from which to extract the locations of sublevel transitions
+        :param data: an array of data from which to extract the locations of sublevel transitions. Always finite: ``fit_events`` rejects an event holding a NaN or infinite sample before calling this
         :type data: npt.NDArray[np.float64]
         :param samplerate: the sampling rate
         :type samplerate: float

@@ -87,7 +87,7 @@ class BaseDataPlugin(ABC):
 
     Attributes:
         logger (logging.Logger): Logger instance for logging messages.
-        lock (threading.RLock): Per-instance reentrant lock, used by :py:meth:`serialize_channel_operations` to serialize this plugin's own operations across channels when it declares that it must not run concurrently. One lock per plugin instance, so two different plugins never contend with each other. A plugin needing *process-wide* serialization (a non-reentrant native library, say) must declare its own class-level lock rather than reusing this one - see ``WaveletFilter``.
+        lock (threading.RLock): Per-instance reentrant lock, used by :py:meth:`serialize_channel_operations` to serialize this plugin's own operations across channels when it declares that it must not run concurrently. One lock per plugin instance, so two different plugins never contend with each other. A plugin needing *process-wide* serialization (a non-reentrant native library, say) must declare its own class-level lock rather than reusing this one.
     """
 
     logger = logging.getLogger(__name__)

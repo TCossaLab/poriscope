@@ -67,10 +67,10 @@ The **Advanced Settings** section provides power users and developers with the f
   :ref:`scripting`.
 
 - **Clear Cache**:  
-  Click this red button to remove temporary files and cached analysis results.
+  Click this red button to empty the application log file. Past diagnostic output cannot be recovered.
 
 - **Reset Settings**:  
-  Click this to revert all settings back to factory defaults. Use this if you encounter configuration issues or want to start fresh.
+  Restores the data server location, user plugin folder and logging level to their defaults. Configured plugins and saved sessions are not affected, and a changed plugin folder takes effect at the next start.
 
 About Tab
 ---------

@@ -2,37 +2,30 @@
 Tests for poriscope.controllers.main_controller.MainController.
 
 Covers:
-- instantiate_analysis_tab (new tab, existing tab, instantiation error)
-- handle_global_signal dispatch (success, instance None, missing member,
-  non-callable member, unbindable call args, body TypeError not retried, func
-  raises, None result reaching the callback, tuple return splatted by annotation,
-  callback other exception)
-- update_plugin_history CRUD (add, delete, rename, save_session called)
+- instantiate_analysis_tab (new tab, existing tab, sidebar highlight, instantiation error)
+- update_plugin_history CRUD (add, delete, rename, save_session called, tab state synced)
 - update_tab_action_history stores and saves
 - setup_connections signal wiring
-- handle_about_to_quit stops workers and calls handle_exit
+- handle_about_to_quit flushes session state, stops workers and calls handle_exit
 - send_curent_data_server delegates to model and view
 - send_curent_user_plugin_location delegates to model and view
 - update_data_server_location delegates to model and data_plugin_controller
-- update_user_plugin_location adds parent to sys.path and saves config
-- get_plugin_instance retrieves instance and invokes callback
+- update_user_plugin_location adds the folder and its parent to sys.path, once
 - _lookup_historical_settings (found in current, found in previous, not found)
-- handle_data_plugin_controller_signal (success with callback, func missing raises,
-  non-callable raises, callback exception logged with traceback) - it shares
-  _dispatch_to with handle_global_signal, so the cases above cover both paths
 - update_available_plugins caches and pushes to tabs
-- save_session (with file, without file, empty history)
+- save_session (with file, without file, tab state synced first)
 - save_tab_action_history delegates to model
-- load_session (success restore tabs and plugins, None history, tab error,
-  plugin ValueError already-exists, plugin other error)
+- load_session (restore tabs, plugins and subset filters, reset first, None history,
+  tab error, plugin ValueError, plugin other error, report of unrestored entries)
 - send_analysis_tabs (tabs present, tabs empty)
+- reset_session, refresh_available_plugins and _renamed_history
 """
 
 from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Dict, List
 from unittest.mock import MagicMock
 
 import pytest
@@ -54,95 +47,6 @@ def _fake_signal(mocker: MockerFixture) -> MagicMock:
     sig.connect = mocker.Mock()
     sig.emit = mocker.Mock()
     return sig
-
-
-class _BodyTypeErrorPlugin:
-    """
-    Plugin double whose dispatched method binds cleanly but raises ``TypeError`` from its body.
-    """
-
-    def __init__(self) -> None:
-        self.calls: List[Tuple[Any, ...]] = []
-
-    def fn(self, channel: int) -> None:
-        """
-        Record the call, then raise from the body rather than at the call boundary.
-
-        :param channel: Arbitrary single argument.
-        """
-        self.calls.append((channel,))
-        raise TypeError("raised from the body, not the call boundary")
-
-
-class _NoneReturningPlugin:
-    """
-    Plugin double whose dispatched method takes one argument and returns ``None``.
-    """
-
-    def __init__(self) -> None:
-        self.calls: List[Tuple[Any, ...]] = []
-
-    def fn(self, channel: int) -> None:
-        """
-        Record the call and return nothing, as an ``Optional``-returning plugin method does on a miss.
-
-        :param channel: Arbitrary single argument.
-        """
-        self.calls.append((channel,))
-
-
-class _TupleReturningPlugin:
-    """
-    Plugin double whose dispatched method declares a ``Tuple`` return, as ``validate_filter_query`` does.
-    """
-
-    def __init__(self) -> None:
-        self.calls: List[Tuple[Any, ...]] = []
-
-    def fn(self, channel: int) -> Tuple[str, str]:
-        """
-        Record the call and return a pair for the dispatcher to splat.
-
-        :param channel: Arbitrary single argument.
-        :return: A pair of values.
-        """
-        self.calls.append((channel,))
-        return ("first", "second")
-
-
-class _Callback:
-    """
-    Callback double with exactly one required parameter.
-    """
-
-    def __init__(self) -> None:
-        self.calls: List[Tuple[Any, ...]] = []
-
-    def __call__(self, value: Any) -> None:
-        """
-        Record the single argument it was called with.
-
-        :param value: The value passed by the dispatcher.
-        """
-        self.calls.append((value,))
-
-
-class _TwoArgCallback:
-    """
-    Callback double with two required parameters, mirroring ``update_column_units(units, axis)``.
-    """
-
-    def __init__(self) -> None:
-        self.calls: List[Tuple[Any, ...]] = []
-
-    def __call__(self, value: Any, axis: Any) -> None:
-        """
-        Record both arguments it was called with.
-
-        :param value: The result of the dispatched call.
-        :param axis: The trailing ``ret_args`` entry.
-        """
-        self.calls.append((value, axis))
 
 
 # --------------------------- fixtures ---------------------------
@@ -242,9 +146,6 @@ def test_instantiate_analysis_tab_adds_new_tab(
 
     assert "RawDataController" in controller.analysis_tabs
     mock_main_view.add_page.assert_called_once()
-    controller.analysis_tabs[
-        "RawDataController"
-    ].global_signal.connect.assert_called_once()
 
 
 def test_instantiate_analysis_tab_syncs_the_sidebar_highlight(
@@ -319,278 +220,6 @@ def test_instantiate_analysis_tab_logs_error_on_instantiation_failure(
 
     controller.logger.error.assert_called_once()  # type: ignore[attr-defined]
     assert "BadTab" not in controller.analysis_tabs
-
-
-def test_handle_global_signal_invokes_plugin_function(
-    controller: MainController,
-    mocker: MockerFixture,
-) -> None:
-    """
-    Dispatch a global signal to the plugin instance and call the return callback.
-
-    :param controller: Controller under test.
-    :param mocker: Pytest-mock fixture.
-    """
-    plugin_instance: MagicMock = mocker.Mock()
-    plugin_instance.my_function.return_value = "mock_return"
-
-    controller.data_plugin_controller.get_plugin_instance = mocker.Mock(
-        return_value=plugin_instance
-    )
-    callback: MagicMock = mocker.Mock()
-
-    controller.handle_global_signal(
-        "MetaReader",
-        "MyReader",
-        "my_function",
-        ("arg1",),
-        callback,
-        ("ret_arg",),
-    )
-
-    plugin_instance.my_function.assert_called_once_with("arg1")
-    assert callback.called
-
-
-def test_handle_global_signal_instance_none(
-    controller: MainController,
-    mocker: MockerFixture,
-) -> None:
-    """
-    Return early without calling the callback when get_plugin_instance returns None.
-
-    :param controller: Controller under test.
-    :param mocker: Pytest-mock fixture.
-    """
-    controller.data_plugin_controller.get_plugin_instance = mocker.Mock(
-        return_value=None
-    )
-    cb = mocker.Mock()
-
-    controller.handle_global_signal("MetaX", "Key", "doit", ("a",), cb, ("r",))
-
-    controller.data_plugin_controller.get_plugin_instance.assert_called_once_with(
-        "MetaX", "Key"
-    )
-    cb.assert_not_called()
-
-
-def test_handle_global_signal_missing_member(
-    controller: MainController,
-    mocker: MockerFixture,
-) -> None:
-    """
-    Log an error and return early when the requested member does not exist on the instance.
-
-    :param controller: Controller under test.
-    :param mocker: Pytest-mock fixture.
-    """
-    plugin = object()
-    controller.data_plugin_controller.get_plugin_instance = mocker.Mock(
-        return_value=plugin
-    )
-    cb = mocker.Mock()
-
-    controller.handle_global_signal("MetaX", "Key", "no_such_method", (), cb, ())
-
-    cb.assert_not_called()
-
-
-def test_handle_global_signal_member_not_callable(
-    controller: MainController,
-    mocker: MockerFixture,
-) -> None:
-    """
-    Log an error and return early when the resolved attribute is not callable.
-
-    :param controller: Controller under test.
-    :param mocker: Pytest-mock fixture.
-    """
-    plugin = mocker.Mock()
-    plugin.not_callable = 42
-    controller.data_plugin_controller.get_plugin_instance = mocker.Mock(
-        return_value=plugin
-    )
-    cb = mocker.Mock()
-
-    controller.handle_global_signal("MetaX", "Key", "not_callable", (), cb, ())
-
-    cb.assert_not_called()
-
-
-def test_handle_global_signal_never_guesses_at_the_forward_call(
-    controller: MainController,
-    mocker: MockerFixture,
-) -> None:
-    """
-    Call a plugin method at most once, and only when the arguments actually bind.
-
-    The dispatcher used to catch a TypeError from the call and retry it with a single
-    None, which cannot be distinguished from a call-boundary arity mismatch and so ran
-    a method that had already run once more with different arguments. Arity is now
-    checked up front instead, which covers both halves of that: a method that raises
-    TypeError from its body is called exactly once and the error is logged, and a call
-    whose arguments cannot bind is reported without being attempted at all.
-
-    :param controller: Controller under test.
-    :param mocker: Pytest-mock fixture.
-    """
-    plugin = _BodyTypeErrorPlugin()
-    controller.data_plugin_controller.get_plugin_instance = mocker.Mock(
-        return_value=plugin
-    )
-    cb = _Callback()
-
-    controller.handle_global_signal("MetaX", "Key", "fn", ("chan",), cb, ("ret",))
-
-    assert plugin.calls == [("chan",)]
-    assert cb.calls == []
-
-    unbindable = _NoneReturningPlugin()
-    controller.data_plugin_controller.get_plugin_instance = mocker.Mock(
-        return_value=unbindable
-    )
-
-    controller.handle_global_signal(
-        "MetaX", "Key", "fn", ("one", "two", "three"), cb, ()
-    )
-
-    assert unbindable.calls == []
-    assert cb.calls == []
-
-
-def test_handle_global_signal_unpacks_the_result_by_declared_return_type(
-    controller: MainController,
-    mocker: MockerFixture,
-) -> None:
-    """
-    Decide from the callee's return annotation whether to splat its result or pass it whole.
-
-    A method returning a pair and a method returning two values produce the same object,
-    and a method with an Optional return type that returns None is not returning an empty
-    argument list, so the runtime value cannot settle this. The declared return type can,
-    and does: a non-tuple return reaches the callback as one argument, None included, with
-    ret_args still appended after it; a Tuple return is splatted across the callback's
-    parameters.
-
-    :param controller: Controller under test.
-    :param mocker: Pytest-mock fixture.
-    """
-    plugin = _NoneReturningPlugin()
-    controller.data_plugin_controller.get_plugin_instance = mocker.Mock(
-        return_value=plugin
-    )
-    cb = _TwoArgCallback()
-
-    controller.handle_global_signal("MetaX", "Key", "fn", ("chan",), cb, ("x_axis",))
-
-    assert cb.calls == [(None, "x_axis")]
-
-    pair = _TupleReturningPlugin()
-    controller.data_plugin_controller.get_plugin_instance = mocker.Mock(
-        return_value=pair
-    )
-    splatted = _TwoArgCallback()
-
-    controller.handle_global_signal("MetaX", "Key", "fn", ("chan",), splatted, ())
-
-    assert splatted.calls == [("first", "second")]
-
-
-def test_handle_global_signal_func_raises(
-    controller: MainController,
-    mocker: MockerFixture,
-) -> None:
-    """
-    Log and return early when the function raises a non-TypeError exception.
-
-    :param controller: Controller under test.
-    :param mocker: Pytest-mock fixture.
-    """
-    plugin = mocker.Mock()
-    plugin.boom = mocker.Mock(side_effect=ValueError("kaput"))
-    controller.data_plugin_controller.get_plugin_instance = mocker.Mock(
-        return_value=plugin
-    )
-    cb = mocker.Mock()
-
-    controller.handle_global_signal("MetaX", "Key", "boom", (), cb, ())
-
-    cb.assert_not_called()
-    plugin.boom.assert_called_once_with()
-
-
-def test_handle_global_signal_none_result_reaches_the_callback(
-    controller: MainController,
-    mocker: MockerFixture,
-) -> None:
-    """
-    Pass an explicit None to a callback that needs a result slot when the call returned None.
-
-    A plugin method with an Optional return type says "no result" by returning None,
-    which _ensure_tuple renders as an empty argument list. A callback expecting a
-    result must still be given a None to put in that slot, and must be called once.
-
-    :param controller: Controller under test.
-    :param mocker: Pytest-mock fixture.
-    """
-    plugin = _NoneReturningPlugin()
-    controller.data_plugin_controller.get_plugin_instance = mocker.Mock(
-        return_value=plugin
-    )
-    cb = _Callback()
-
-    controller.handle_global_signal("MetaX", "Key", "fn", ("chan",), cb, ())
-
-    assert cb.calls == [(None,)]
-
-
-def test_handle_global_signal_none_result_keeps_ret_args(
-    controller: MainController,
-    mocker: MockerFixture,
-) -> None:
-    """
-    Keep ret_args alongside the substituted None rather than dropping them.
-
-    This is the ``get_column_units`` -> ``update_column_units(units, axis)`` shape:
-    a None result used to fall back to a bare ``callback(None)``, which discarded the
-    axis and raised a second TypeError, so the callback never ran at all.
-
-    :param controller: Controller under test.
-    :param mocker: Pytest-mock fixture.
-    """
-    plugin = _NoneReturningPlugin()
-    controller.data_plugin_controller.get_plugin_instance = mocker.Mock(
-        return_value=plugin
-    )
-    cb = _TwoArgCallback()
-
-    controller.handle_global_signal("MetaX", "Key", "fn", ("chan",), cb, ("x_axis",))
-
-    assert cb.calls == [(None, "x_axis")]
-
-
-def test_handle_global_signal_callback_other_exception(
-    controller: MainController,
-    mocker: MockerFixture,
-) -> None:
-    """
-    Log and return without fallback when the callback raises a non-TypeError exception.
-
-    :param controller: Controller under test.
-    :param mocker: Pytest-mock fixture.
-    """
-    plugin = mocker.Mock()
-    plugin.fn = mocker.Mock(return_value="rv")
-    controller.data_plugin_controller.get_plugin_instance = mocker.Mock(
-        return_value=plugin
-    )
-    cb = mocker.Mock(side_effect=RuntimeError("oops"))
-
-    controller.handle_global_signal("MetaX", "Key", "fn", (), cb, ("extra",))
-
-    cb.assert_called_once()
-    assert cb.call_args.args == ("rv", "extra")
 
 
 def test_update_plugin_history_add_entry(
@@ -767,6 +396,30 @@ def test_handle_about_to_quit_flushes_session_state_first(
     )
 
 
+def test_quitting_with_nothing_open_does_not_overwrite_the_session(
+    controller: MainController,
+    mock_main_model: MagicMock,
+) -> None:
+    """
+    An empty history on quit is not saved over the last real session.
+
+    Quitting straight after launch, or after Reset Session, wrote ``{}`` over the
+    session file, so the next Restore brought back nothing - though the reset tells the
+    user saved files are untouched. An empty history is either already saved (every
+    delete autosaves) or means nothing happened, so there is nothing to flush.
+
+    :param controller: Controller under test.
+    :param mock_main_model: Mocked main model.
+    """
+    controller.plugin_history = {}
+    controller.analysis_tabs = {}
+    controller.data_plugin_controller.handle_exit = MagicMock()
+
+    controller.handle_about_to_quit()
+
+    mock_main_model.save_session.assert_not_called()
+
+
 def test_send_curent_data_server_delegates_to_model_and_view(
     controller: MainController,
     mock_main_model: MagicMock,
@@ -854,6 +507,35 @@ def test_update_user_plugin_location_adds_parent_to_syspath(
     )
 
 
+def test_update_user_plugin_location_adds_the_folder_itself_to_syspath(
+    controller: MainController,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """
+    The folder goes on sys.path too, so a multi-file plugin can import its own parts.
+
+    Pointing the app at a folder whose name is not a Python identifier - "User Plugins",
+    as a real installation had it - leaves the parent entry useless, because no import
+    can name the folder. The folder itself works whatever it is called.
+
+    :param controller: Controller under test.
+    :param monkeypatch: Pytest monkeypatch fixture.
+    :param tmp_path: Temporary directory fixture.
+    """
+    plugins_dir = tmp_path / "User Plugins"
+    plugins_dir.mkdir()
+
+    monkeypatch.setattr(sys, "path", list(sys.path))
+    folder = str(plugins_dir.resolve())
+    if folder in sys.path:
+        sys.path.remove(folder)
+
+    controller.update_user_plugin_location(str(plugins_dir))
+
+    assert folder in sys.path
+
+
 def test_update_user_plugin_location_does_not_duplicate_syspath(
     controller: MainController,
     monkeypatch: pytest.MonkeyPatch,
@@ -875,30 +557,6 @@ def test_update_user_plugin_location_does_not_duplicate_syspath(
     controller.update_user_plugin_location(str(plugins_dir))
 
     assert sys.path.count(parent) == 1
-
-
-def test_get_plugin_instance_calls_callback_with_result(
-    controller: MainController,
-    mocker: MockerFixture,
-) -> None:
-    """
-    Retrieve a plugin instance from the data plugin controller and invoke the callback.
-
-    :param controller: Controller under test.
-    :param mocker: Pytest-mock fixture.
-    """
-    plugin_instance = mocker.Mock()
-    controller.data_plugin_controller.get_plugin_instance = mocker.Mock(
-        return_value=plugin_instance
-    )
-    callback = mocker.Mock()
-
-    controller.get_plugin_instance("MetaReader", "MyReader", callback)
-
-    controller.data_plugin_controller.get_plugin_instance.assert_called_once_with(
-        "MetaReader", "MyReader"
-    )
-    callback.assert_called_once_with(plugin_instance)
 
 
 def test_lookup_historical_settings_found_in_current_history(
@@ -958,93 +616,6 @@ def test_lookup_historical_settings_not_found_returns_none(
     result = controller._lookup_historical_settings("MetaReader", "MyReader")
 
     assert result is None
-
-
-def test_handle_data_plugin_controller_signal_calls_method_and_callback(
-    controller: MainController,
-    mocker: MockerFixture,
-) -> None:
-    """
-    Call a method on the data plugin controller and invoke the return callback.
-
-    :param controller: Controller under test.
-    :param mocker: Pytest-mock fixture.
-    """
-    controller.data_plugin_controller.some_method = mocker.Mock(return_value=("ok",))
-    return_cb = mocker.Mock()
-
-    controller.handle_data_plugin_controller_signal(
-        metaclass="MetaX",
-        subclass_key="Key",
-        call_function="some_method",
-        call_args=("argA",),
-        return_function=return_cb,
-        ret_args=("extra",),
-    )
-
-    controller.data_plugin_controller.some_method.assert_called_once_with("argA")
-    assert return_cb.called
-
-
-def test_handle_data_plugin_controller_signal_missing_function_logs_and_returns(
-    controller: MainController,
-    mocker: MockerFixture,
-) -> None:
-    """
-    Log an error and return early when the requested function does not exist
-    on the data plugin controller, instead of raising out of the Qt slot.
-
-    MagicMock auto-creates attributes by default, so we must configure
-    getattr to explicitly return None for the missing function name to
-    trigger the early-return branch.
-
-    :param controller: Controller under test.
-    :param mocker: Pytest-mock fixture.
-    """
-    controller.data_plugin_controller.configure_mock(**{"nonexistent_fn": None})
-    return_cb = mocker.Mock()
-
-    controller.handle_data_plugin_controller_signal(
-        metaclass="MetaX",
-        subclass_key="Key",
-        call_function="nonexistent_fn",
-        call_args=(),
-        return_function=return_cb,
-        ret_args=(),
-    )
-
-    return_cb.assert_not_called()
-    controller.logger.error.assert_called_once()  # type: ignore[attr-defined]
-
-
-def test_handle_data_plugin_controller_signal_non_callable_logs_and_returns(
-    controller: MainController,
-    mocker: MockerFixture,
-) -> None:
-    """
-    Log an error and return early when the resolved attribute is not callable,
-    instead of raising out of the Qt slot.
-
-    We set the attribute to an integer so callable(func) is False,
-    triggering the early-return branch.
-
-    :param controller: Controller under test.
-    :param mocker: Pytest-mock fixture.
-    """
-    controller.data_plugin_controller.not_callable_attr = 42
-    return_cb = mocker.Mock()
-
-    controller.handle_data_plugin_controller_signal(
-        metaclass="MetaX",
-        subclass_key="Key",
-        call_function="not_callable_attr",
-        call_args=(),
-        return_function=return_cb,
-        ret_args=(),
-    )
-
-    return_cb.assert_not_called()
-    controller.logger.error.assert_called_once()  # type: ignore[attr-defined]
 
 
 def test_update_available_plugins_caches_and_pushes_to_tabs(
@@ -1277,9 +848,7 @@ def test_load_session_restores_tabs_and_plugins(
 
     tab_instance = mocker.Mock()
     tab_instance.view = mocker.Mock()
-    tab_instance.global_signal = mocker.Mock(connect=mocker.Mock())
     tab_instance.create_plugin = mocker.Mock(connect=mocker.Mock())
-    tab_instance.data_plugin_controller_signal = mocker.Mock(connect=mocker.Mock())
     tab_instance.add_text_to_display = mocker.Mock(connect=mocker.Mock())
     tab_instance.update_tab_action_history = mocker.Mock(connect=mocker.Mock())
     tab_instance.save_tab_action_history = mocker.Mock(connect=mocker.Mock())
@@ -1329,9 +898,7 @@ def test_load_session_restores_subset_filters_for_newly_created_tab(
 
     tab_instance = mocker.Mock()
     tab_instance.view = mocker.Mock()
-    tab_instance.global_signal = mocker.Mock(connect=mocker.Mock())
     tab_instance.create_plugin = mocker.Mock(connect=mocker.Mock())
-    tab_instance.data_plugin_controller_signal = mocker.Mock(connect=mocker.Mock())
     tab_instance.add_text_to_display = mocker.Mock(connect=mocker.Mock())
     tab_instance.update_tab_action_history = mocker.Mock(connect=mocker.Mock())
     tab_instance.save_tab_action_history = mocker.Mock(connect=mocker.Mock())
@@ -1348,6 +915,74 @@ def test_load_session_restores_subset_filters_for_newly_created_tab(
     ctrl.load_session("session.json")
 
     tab_instance.restore_session_state.assert_called_once_with(history["tab_key"])
+
+
+def test_load_session_persists_restored_tab_state_before_returning(
+    mocker: MockerFixture,
+    mock_main_model: MagicMock,
+    mock_main_view: MagicMock,
+) -> None:
+    """
+    Write the restored tabs' own state back into the saved session, not an empty copy.
+
+    Restoring a tab takes two steps, and only the first of them refreshes
+    plugin_history: instantiate_analysis_tab ends on update_plugin_history, which
+    snapshots every open tab while this one's filter list is still empty, and
+    restore_session_state fills it in afterwards. Each tab's entry was therefore
+    only corrected by the sync the *next* tab's instantiation happened to trigger,
+    so the last tab restored was saved with no subset filters and lost them on the
+    following restore - which is why Metadata kept its filters and Protein, opened
+    and so restored second, did not.
+
+    :param mocker: Pytest-mock fixture.
+    :param mock_main_model: Mocked main model.
+    :param mock_main_view: Mocked main view.
+    """
+    mocker.patch("poriscope.controllers.main_controller.DataPluginController")
+
+    ctrl = MainController(mock_main_model, mock_main_view)
+
+    history: Dict[str, dict] = {
+        "MetadataController": {
+            "metaclass": "MetaController",
+            "subclass": "MetadataController",
+            "subset_filters": {"f1": "voltage > 0"},
+        },
+    }
+    mock_main_model.load_session.return_value = history
+
+    # A tab that answers get_session_state from what it was actually restored with,
+    # the way MetaSubsetTabController does. A Mock returning a fixed dict would pass
+    # whether or not the restore had happened yet, which is the whole question here.
+    restored: Dict[str, str] = {}
+
+    tab_instance = mocker.Mock()
+    tab_instance.view = mocker.Mock()
+    for signal in (
+        "create_plugin",
+        "plugin_state_changed",
+        "add_text_to_display",
+        "update_tab_action_history",
+        "save_tab_action_history",
+    ):
+        setattr(tab_instance, signal, mocker.Mock(connect=mocker.Mock()))
+    tab_instance.update_available_plugins = mocker.Mock()
+    tab_instance.restore_session_state.side_effect = lambda state: restored.update(
+        state.get("subset_filters", {})
+    )
+    tab_instance.get_session_state.side_effect = lambda: {
+        "subset_filters": dict(restored)
+    }
+
+    mock_main_model.get_plugin_classes.return_value = {
+        "MetadataController": lambda available: tab_instance
+    }
+    mock_main_model.get_available_plugins.return_value = {}
+
+    ctrl.load_session("session.json")
+
+    saved = mock_main_model.save_session.call_args_list[-1][0][0]
+    assert saved["MetadataController"]["subset_filters"] == {"f1": "voltage > 0"}
 
 
 def test_load_session_resets_an_already_open_tab_before_restoring(
@@ -1417,6 +1052,46 @@ def test_load_session_returns_early_when_history_is_none(
 
     controller.main_model.save_session.assert_not_called()
     reset_spy.assert_not_called()
+
+
+def test_a_chosen_file_that_is_not_a_session_is_reported_as_an_error(
+    controller: MainController,
+    mocker: MockerFixture,
+) -> None:
+    """
+    The user picked this file, so failing to load it gets a dialog, not silence.
+
+    It used to log at INFO, below the default level, so nothing reached the user. ERROR
+    is what QtHandler raises a dialog for.
+
+    :param controller: Controller under test.
+    :param mocker: Pytest-mock fixture.
+    """
+    controller.main_model.load_session = mocker.Mock(return_value=None)
+
+    controller.load_session("not_a_session.json")
+
+    controller.logger.error.assert_called_once()
+    assert "not_a_session.json" in controller.logger.error.call_args[0][0]
+
+
+def test_restore_with_no_saved_session_says_so_on_the_status_panel(
+    controller: MainController,
+    mocker: MockerFixture,
+) -> None:
+    """
+    Nothing to restore is routine, so it is a warning on the panel, not a dialog.
+
+    :param controller: Controller under test.
+    :param mocker: Pytest-mock fixture.
+    """
+    controller.main_model.load_session = mocker.Mock(return_value=None)
+
+    controller.load_session(None)
+
+    controller.logger.error.assert_not_called()
+    controller.logger.warning.assert_called_once()
+    controller.main_view.add_text_to_display.assert_called_once()
 
 
 def test_load_session_resets_before_applying_the_loaded_history(
@@ -1575,62 +1250,6 @@ def test_load_session_logs_error_on_unexpected_plugin_exception(
     controller.load_session("session.json")
 
     controller.logger.error.assert_called()  # type: ignore[attr-defined]
-
-
-def test_handle_global_signal_outer_except_swallows_exception(
-    controller: MainController,
-    mocker: MockerFixture,
-) -> None:
-    """
-    Swallow and log an exception raised while resolving the target instance.
-
-    The outer bare except catches anything that escapes the inner blocks, including a
-    failure of the instance lookup itself: ``DataPluginModel.get_plugin_instance``
-    subscripts ``self.plugins[metaclass]`` and so raises KeyError for an unregistered
-    metaclass, which must not escape into the Qt caller.
-
-    :param controller: Controller under test.
-    :param mocker: Pytest-mock fixture.
-    """
-    controller.data_plugin_controller.get_plugin_instance = mocker.Mock(
-        side_effect=KeyError("MetaTypo")
-    )
-
-    # Should not raise - the outer guard catches it and logs with a traceback
-    controller.handle_global_signal("MetaX", "Key", "fn", (), None, ())
-
-    controller.logger.exception.assert_called_once()  # type: ignore[attr-defined]
-
-
-def test_handle_data_plugin_controller_signal_callback_exception_is_logged_and_swallowed(
-    controller: MainController,
-    mocker: MockerFixture,
-) -> None:
-    """
-    Log a raising return callback with its traceback and swallow it, rather than letting
-    it propagate out of the Qt slot.
-
-    This path used to use ``logger.error``, losing the stack, while the global_signal
-    path used ``logger.exception``. Both now share one dispatch body, so they cannot
-    diverge again.
-
-    :param controller: Controller under test.
-    :param mocker: Pytest-mock fixture.
-    """
-    controller.data_plugin_controller.some_method = mocker.Mock(return_value="ok")
-    return_cb = mocker.Mock(side_effect=RuntimeError("callback blew up"))
-
-    # Should not raise -- the exception is caught and logged
-    controller.handle_data_plugin_controller_signal(
-        metaclass="MetaX",
-        subclass_key="Key",
-        call_function="some_method",
-        call_args=(),
-        return_function=return_cb,
-        ret_args=(),
-    )
-
-    controller.logger.exception.assert_called_once()  # type: ignore[attr-defined]
 
 
 def test_update_plugin_history_rename_preserves_other_entries(
@@ -1869,3 +1488,132 @@ class TestRefreshAvailablePlugins:
         controller.update_user_plugin_location("/some/new/folder")
 
         assert order == ["config", "scan"]
+
+
+# ------------- the session-restore summary --------------------------------
+
+
+def test_load_session_reports_entries_that_could_not_be_restored(
+    mocker: MockerFixture,
+    mock_main_model: MagicMock,
+    mock_main_view: MagicMock,
+) -> None:
+    """
+    A partial restore says so, instead of signing off with an unqualified success line.
+
+    Loading a session written by an older Poriscope produced ten error messages
+    and then "Loaded session from ...", because validate_and_instantiate_plugin
+    reported internally and returned None, so the loop's own except never fired
+    and nothing counted the failures.
+
+    :param mocker: Pytest-mock fixture.
+    :param mock_main_model: Mocked main model.
+    :param mock_main_view: Mocked main view.
+    """
+    dpc_cls = mocker.patch("poriscope.controllers.main_controller.DataPluginController")
+    dpc_cls.return_value.validate_and_instantiate_plugin.return_value = False
+
+    ctrl = MainController(mock_main_model, mock_main_view)
+    mock_main_model.load_session.return_value = {
+        "reader_key": {
+            "metaclass": "MetaReader",
+            "subclass": "ABF2Reader",
+            "settings": {"a": 1},
+        }
+    }
+    mock_main_model.get_available_plugins.return_value = {}
+
+    ctrl.load_session("session.json")
+
+    messages = [c.args[0] for c in mock_main_view.add_text_to_display.call_args_list]
+    assert any("1 of 1 entries could not be restored" in m for m in messages), messages
+    assert any("reader_key" in m for m in messages), messages
+
+
+def test_load_session_says_nothing_extra_when_every_entry_restored(
+    mocker: MockerFixture,
+    mock_main_model: MagicMock,
+    mock_main_view: MagicMock,
+) -> None:
+    """
+    The ordinary case keeps its plain message, so the warning stays meaningful.
+
+    :param mocker: Pytest-mock fixture.
+    :param mock_main_model: Mocked main model.
+    :param mock_main_view: Mocked main view.
+    """
+    dpc_cls = mocker.patch("poriscope.controllers.main_controller.DataPluginController")
+    dpc_cls.return_value.validate_and_instantiate_plugin.return_value = True
+
+    ctrl = MainController(mock_main_model, mock_main_view)
+    mock_main_model.load_session.return_value = {
+        "reader_key": {
+            "metaclass": "MetaReader",
+            "subclass": "MyReader",
+            "settings": {"a": 1},
+        }
+    }
+    mock_main_model.get_available_plugins.return_value = {}
+
+    ctrl.load_session("session.json")
+
+    messages = [c.args[0] for c in mock_main_view.add_text_to_display.call_args_list]
+    assert "Loaded session from session.json." in messages, messages
+    assert not any("could not be restored" in m for m in messages), messages
+
+
+# ------------- renaming a plugin in the session history -------------------
+
+
+class TestRenamedHistory:
+    """Rebuilding the history with one entry renamed, in place."""
+
+    def test_keeps_the_renamed_entry_where_the_old_one_sat(
+        self,
+        mocker: MockerFixture,
+        mock_main_model: MagicMock,
+        mock_main_view: MagicMock,
+    ) -> None:
+        """
+        The reason this rebuilds rather than popping and reinserting.
+
+        A plugin's place in the history is its place in the session file and in
+        everything restored from it, so popping the old key and adding the new
+        one would move the renamed plugin to the end - a rename would silently
+        reorder the user's workspace.
+
+        :param mocker: Pytest-mock fixture.
+        :param mock_main_model: Mocked main model.
+        :param mock_main_view: Mocked main view.
+        """
+        mocker.patch("poriscope.controllers.main_controller.DataPluginController")
+        ctrl = MainController(mock_main_model, mock_main_view)
+        ctrl.plugin_history = {"first": {}, "middle": {}, "last": {}}
+
+        renamed = ctrl._renamed_history("middle", {"key": "renamed", "settings": {}})
+
+        assert list(renamed) == ["first", "renamed", "last"]
+        assert renamed["renamed"] == {"settings": {}}
+
+    def test_leaves_the_history_alone_when_the_key_is_not_there(
+        self,
+        mocker: MockerFixture,
+        mock_main_model: MagicMock,
+        mock_main_view: MagicMock,
+    ) -> None:
+        """
+        A rename away from a key that is gone drops the new entry rather than
+        appending it, which is the pre-existing behaviour and is what stops a
+        stale rename resurrecting a deleted plugin.
+
+        :param mocker: Pytest-mock fixture.
+        :param mock_main_model: Mocked main model.
+        :param mock_main_view: Mocked main view.
+        """
+        mocker.patch("poriscope.controllers.main_controller.DataPluginController")
+        ctrl = MainController(mock_main_model, mock_main_view)
+        ctrl.plugin_history = {"first": {}, "second": {}}
+
+        renamed = ctrl._renamed_history("gone", {"key": "renamed"})
+
+        assert list(renamed) == ["first", "second"]

@@ -26,7 +26,9 @@
 
 
 import logging
-from typing import Any, Dict, Generator, List, Optional, override
+from typing import Any, Dict, List, Optional, override
+
+import pandas as pd
 
 from poriscope.plugins.analysistabs.ClusteringModel import ClusteringModel
 from poriscope.plugins.analysistabs.ClusteringView import ClusteringView
@@ -55,81 +57,277 @@ class ClusteringController(MetaController):
         self.model = ClusteringModel()
 
     @log(logger=logger)
-    def check_cluster_column_exists(self, table_name: str) -> None:
-        """
-        Notify the view to check if a cluster column exists in the given table.
-
-        :param table_name: Name of the table to check.
-        :type table_name: str
-        """
-        self.view.set_cluster_column_exists(table_name)
-
-    @log(logger=logger)
-    def alter_database_status(self, status: bool) -> None:
-        """
-        Inform the view whether database alteration was successful.
-
-        :param status: Result of the database alteration operation.
-        :type status: bool
-        """
-        self.view.set_alter_database_status(status)
-
-    @log(logger=logger)
     @override
     def _setup_connections(self) -> None:
         """
         Connect internal view signals to their corresponding controller slots.
         """
-        # Implement any required connections here
-        # This function can remain empty if no additional setup is needed,
-        # but it must exist to satisfy the abstract base class requirement.
-        pass
+        self.view.cluster_requested.connect(self.cluster)
+        self.view.column_names_requested.connect(self.request_column_names)
+        self.view.column_units_requested.connect(self.request_column_units)
+        self.view.cluster_column_check_requested.connect(self.check_cluster_column)
+        self.view.cluster_commit_requested.connect(self.commit_clusters)
+        self.view.metadata_load_requested.connect(self.load_metadata_for_clustering)
 
     @log(logger=logger)
-    def relay_query(self, query: str, debug: str, table_name: str) -> None:
+    def cluster(
+        self,
+        plot_data: pd.DataFrame,
+        frame_columns: List[str],
+        log_flags: List[bool],
+        exclude_cols: List[str],
+        method: str,
+        params: Dict[str, Any],
+    ) -> None:
         """
-        Relay the SQL query and target table to the view for display or execution.
+        Cluster a frame the View has loaded, and hand the result back to it.
 
-        :param query: SQL query string to execute or preview.
-        :type query: str
-        :param debug: Optional debug message to display.
-        :type debug: str
-        :param table_name: Name of the database table being queried.
-        :type table_name: str
+        A request slot, the same shape as ``RawDataController.calculate_psd``: the
+        View asks, this calls the Model, and the result goes back through a setter.
+
+        A failure is reported on the status panel rather than raised, because nothing
+        above this slot is a call site that could handle it - Qt invoked it from a
+        signal. That covers the filtering as well, since ``build_clustering_frame``
+        does it, so a missing column is reported here rather than raised out of the
+        View.
+
+        :param plot_data: the rows the loader returned, unfiltered
+        :type plot_data: pd.DataFrame
+        :param frame_columns: the columns to carry through, ``"id"`` included
+        :type frame_columns: List[str]
+        :param log_flags: per column, whether to log-scale it, index-aligned with frame_columns
+        :type log_flags: List[bool]
+        :param exclude_cols: columns to leave un-normalized
+        :type exclude_cols: List[str]
+        :param method: the clustering method the user chose
+        :type method: str
+        :param params: that method's already-parsed parameters
+        :type params: Dict[str, Any]
+        :return: None
+        :rtype: None
         """
-        if debug and not query:
-            self.add_text_to_display.emit(debug, self.__class__.__name__)
+        try:
+            frame = self.model.build_clustering_frame(
+                plot_data, frame_columns, log_flags
+            )
+            clustered, labels, confidence = self.model.cluster(
+                frame, exclude_cols, method, params
+            )
+        except (ValueError, KeyError, TypeError) as e:
+            self.logger.error(f"Unable to cluster data: {repr(e)}")
+            self.add_text_to_display.emit(
+                f"Unable to cluster data: {e}", self.__class__.__name__
+            )
+            return
+        self.view.set_clustering_result(clustered, labels, confidence)
+
+    @log(logger=logger)
+    def load_metadata_for_clustering(self, config: Dict[str, Any], loader: str) -> None:
+        """
+        Build the metadata query, load its rows, and hand them to the View.
+
+        One request for the query and its rows, rather than two whose answers are read
+        back off the View a statement later. That pattern twice shipped a plot of the
+        *previous* subset's rows: a look-up that failed left the attribute holding the
+        last successful value, and the ``is None`` guard read it as this subset's
+        answer.
+
+        Both failure cases are reported on the status panel rather than raised, because
+        Qt invoked this from a signal.
+
+        :param config: the settings dialog's configuration
+        :type config: Dict[str, Any]
+        :param loader: the database loader's plugin key
+        :type loader: str
+        :return: None
+        :rtype: None
+        """
+        columns = [val["column"] for val in config["columns"]]
+        sql_filter = config["filter"]
+
+        try:
+            query, debug, table_name = self.model.call(
+                "MetaDatabaseLoader",
+                loader,
+                "construct_metadata_query",
+                columns,
+                sql_filter,
+            )
+        except Exception as e:
+            self.logger.error(f"Unable to build the metadata query: {repr(e)}")
+            self.add_text_to_display.emit(
+                f"Unable to build the metadata query: {e}", self.__class__.__name__
+            )
+            return
+
+        # Cleared as well as set: an empty query means the build was refused, and
+        # leaving the previous one on the View would let it be read as this
+        # subset's.
         self.view.set_query(query, table_name)
+        if not query:
+            # ``construct_metadata_query`` validates the filter it was handed - it
+            # builds the whole statement and runs it through ``validate_filter_query``
+            # - so ``debug`` names what was actually refused: an unknown column, a
+            # syntax error, or a complete SELECT where a WHERE-clause body belongs.
+            # This used to emit that *and* a second line blaming the column selection,
+            # which misattributed every filter error. Same shape as
+            # ``MetadataController.load_metadata_subset``, which has always deferred
+            # to the loader's own message.
+            self.add_text_to_display.emit(
+                debug or "The metadata query could not be built",
+                self.__class__.__name__,
+            )
+            return
+
+        try:
+            plot_data = self.model.call(
+                "MetaDatabaseLoader", loader, "load_metadata", columns, sql_filter
+            )
+        except Exception as e:
+            self.logger.error(f"Unable to load metadata: {repr(e)}")
+            self.add_text_to_display.emit(
+                f"Unable to load metadata: {e}", self.__class__.__name__
+            )
+            return
+
+        # .empty as well as None: the loader returns an empty frame for a query that
+        # matched nothing, and clustering an empty frame raises an opaque error from
+        # deep inside sklearn.
+        if plot_data is None or plot_data.empty:
+            self.add_text_to_display.emit(
+                "No data matches the given query", self.__class__.__name__
+            )
+            return
+
+        try:
+            self.view.on_metadata_loaded(config, loader, plot_data)
+        except (ValueError, KeyError, TypeError) as e:
+            self.logger.error(f"Unable to cluster data: {repr(e)}")
+            self.add_text_to_display.emit(
+                f"Unable to cluster data: {e}", self.__class__.__name__
+            )
 
     @log(logger=logger)
-    def relay_event_data_generator(self, generator: Generator) -> None:
+    def check_cluster_column(self, loader: str) -> None:
         """
-        Send an event data generator object to the view for processing.
+        Ask the database whether a clustering result is already stored.
 
-        :param generator: Generator yielding event data entries.
-        :type generator: Generator
+        First of the commit path's two round trips; the View shows the overwrite
+        confirmation when this comes back non-None.
+
+        :param loader: the database loader's plugin key
+        :type loader: str
+        :return: None
+        :rtype: None
         """
-        self.view.set_event_data_generator(generator)
+        try:
+            existing_table = self.model.find_cluster_column_table(loader)
+        except Exception as e:
+            self.logger.error(f"Unable to check for cluster columns: {repr(e)}")
+            self.add_text_to_display.emit(
+                f"Unable to check for existing clustering data: {e}",
+                self.__class__.__name__,
+            )
+            return
+        self.view.on_cluster_column_checked(loader, existing_table)
 
     @log(logger=logger)
-    def relay_plot_data(self, data: Any) -> None:
+    def commit_clusters(
+        self,
+        loader: str,
+        cluster_data: Any,
+        table_name: str,
+        drop_from_table: Optional[str],
+    ) -> None:
         """
-        Relay processed clustering data to the view for plotting.
+        Write the clustering result, dropping any existing one first.
 
-        :param data: Data structure containing plot information.
-        :type data: Any
+        Second of the commit path's two round trips. **A failed drop stops the
+        commit** - writing the new columns on top of a half-deleted old result would
+        leave the database in a state the user has to repair by hand.
+
+        :param loader: the database loader's plugin key
+        :type loader: str
+        :param cluster_data: the id, label and confidence columns to write
+        :type cluster_data: Any
+        :param table_name: the table to write them into
+        :type table_name: str
+        :param drop_from_table: the table to drop an existing result from, or None
+        :type drop_from_table: Optional[str]
+        :return: None
+        :rtype: None
         """
-        self.view.set_plot_data(data)
+        if drop_from_table is not None:
+            try:
+                dropped = self.model.drop_cluster_columns(loader, drop_from_table)
+            except Exception as e:
+                self.logger.error(f"Unable to delete clustering data: {repr(e)}")
+                dropped = False
+            if dropped is not True:
+                self.add_text_to_display.emit(
+                    "Unable to delete clustering data, you will have to clean it up manually",
+                    self.__class__.__name__,
+                )
+                return
+
+        try:
+            status = self.model.commit_cluster_columns(loader, cluster_data, table_name)
+        except Exception as e:
+            self.logger.error(f"Unable to write clustering data: {repr(e)}")
+            status = False
+
+        self.display_write_status(status)
+        self.view.on_clusters_committed(loader, bool(status))
 
     @log(logger=logger)
-    def relay_units(self, units: Dict[str, Optional[str]]) -> None:
+    def request_column_names(self, loader: str) -> None:
         """
-        Provide units associated with each column to the view.
+        Fetch the loader's column names and hand them to the View.
 
-        :param units: Dictionary mapping column names to units.
-        :type units: Dict[str, Optional[str]]
+        A failed lookup is reported on the status panel here rather than leaving the
+        View holding the previous loader's columns.
+
+        :param loader: the database loader's plugin key
+        :type loader: str
+        :return: None
+        :rtype: None
         """
-        self.view.set_units(units)
+        try:
+            column_names = self.model.call(
+                "MetaDatabaseLoader", loader, "get_column_names_by_table"
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to read column names from {loader}: {repr(e)}")
+            self.add_text_to_display.emit(
+                f"Unable to read columns from {loader}: {e}", self.__class__.__name__
+            )
+            return
+        self.update_column_names(column_names)
+
+    @log(logger=logger)
+    def request_column_units(self, loader: str, column: str) -> None:
+        """
+        Fetch one column's unit string and hand it to the View.
+
+        Same conversion as ``request_column_names``.
+
+        :param loader: the database loader's plugin key
+        :type loader: str
+        :param column: the column whose unit is wanted
+        :type column: str
+        :return: None
+        :rtype: None
+        """
+        try:
+            column_units = self.model.call(
+                "MetaDatabaseLoader", loader, "get_column_units", column
+            )
+        except Exception as e:
+            self.logger.error(
+                f"Failed to read units for {column} from {loader}: {repr(e)}"
+            )
+            return
+        self.update_column_units(column_units, column)
 
     @log(logger=logger)
     def update_column_names(self, column_names: List[str]) -> None:

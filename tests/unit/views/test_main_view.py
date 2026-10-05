@@ -6,8 +6,8 @@ from PySide6.QtCore import Signal
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QWidget
 
-from poriscope.plugins.analysistabs.utils.walkthrough_mixin import WalkthroughMixin
 from poriscope.views.main_view import MainView
+from poriscope.views.widgets.walkthrough_mixin import WalkthroughMixin
 
 
 @pytest.fixture
@@ -133,6 +133,28 @@ def test_switch_to_page_cleans_milestone(main_view, mocker, qtbot):
 
     overlay_mock.close.assert_called_once()
     overlay_mock.deleteLater.assert_called_once()
+    dialog_mock.close.assert_called_once()
+    dialog_mock.deleteLater.assert_called_once()
+    assert main_view._milestone_dialog is None
+
+
+def test_switching_to_the_milestone_target_tears_down_once_when_close_re_enters(
+    main_view,
+):
+    """
+    Closing the milestone dialog fires its ``finished`` signal, which reaches
+    ``cancel_walkthrough`` and so ``clear_milestone_dialog`` again, while the first
+    teardown is still running. The reference is cleared before ``close()`` so that
+    re-entry finds nothing to do rather than closing a second time.
+    """
+    main_view.add_page("TargetPage", QWidget())
+    dialog_mock = MagicMock()
+    dialog_mock.close.side_effect = lambda: main_view.clear_milestone_dialog()
+    main_view._milestone_dialog = dialog_mock
+    main_view._expected_next_view = "TargetPage"
+
+    main_view.switch_to_page("TargetPage")
+
     dialog_mock.close.assert_called_once()
     dialog_mock.deleteLater.assert_called_once()
     assert main_view._milestone_dialog is None
@@ -690,11 +712,6 @@ def test_get_milestone_step_returns_none_if_invalid(main_view):
     assert main_view.get_milestone_step("InvalidView") is None
 
 
-def test_on_view_switched_sets_current_view(main_view):
-    main_view.on_view_switched("RawDataView")
-    assert main_view._current_view == "RawDataView"
-
-
 class DummyWalkthroughWidget(QWidget, WalkthroughMixin):
     walkthrough_finished = Signal()
 
@@ -775,6 +792,23 @@ class TestRemovePagesExcept:
         info = main_view.pages["TabA"]
         main_view.stackedWidget.setCurrentIndex(info["index"])
         assert main_view.stackedWidget.currentWidget().objectName() == "TabA"
+
+    def test_replacing_a_page_keeps_every_other_page_on_its_own_widget(self, main_view):
+        """
+        Re-adding a page by name leaves every other page selecting its own widget.
+
+        Settings is re-added on every click, which removes its old wrapper from the
+        stack and renumbers everything after it. ``add_page`` did not re-derive the
+        cached indices, so a tab opened after Settings then showed Settings.
+        """
+        main_view.add_page("Settings", QWidget())
+        self._add_tabs(main_view, "TabA", "TabB")
+
+        main_view.add_page("Settings", QWidget())
+
+        for name, info in main_view.pages.items():
+            main_view.stackedWidget.setCurrentIndex(info["index"])
+            assert main_view.stackedWidget.currentWidget().objectName() == name
 
 
 class TestCloseSettingsPage:
@@ -1076,3 +1110,91 @@ class TestRefreshAvailablePlugins:
 
         assert len(main_view.findChildren(QAction)) <= before_actions + 3
         assert len(main_view.findChildren(QMenu)) <= before_menus + 3
+
+
+def test_add_text_to_display_stamps_each_line_with_a_time(main_view):
+    """
+    Every status line carries the time it arrived.
+
+    Without it a message repeated verbatim is indistinguishable from the panel not
+    having changed, which is how a plot refused twice read as never reported.
+    """
+    import re
+
+    main_view.add_text_to_display("Test message", "Logger")
+    text = main_view.text_display_widget.toPlainText()
+
+    assert re.search(r"\[\d{2}:\d{2}:\d{2}\] Logger: Test message", text)
+
+
+def test_add_text_to_display_keeps_repeated_messages_distinguishable(main_view):
+    """The same message twice leaves two lines, not one that may or may not be new."""
+    main_view.add_text_to_display("Only a single channel can be used", "MetadataView")
+    main_view.add_text_to_display("Only a single channel can be used", "MetadataView")
+
+    lines = [
+        line
+        for line in main_view.text_display_widget.toPlainText().splitlines()
+        if "Only a single channel" in line
+    ]
+
+    assert len(lines) == 2
+
+
+# ------------- the helpers behind page removal and milestones ------------
+
+
+class TestPagesNamed:
+    """Finding stacked widgets by page name rather than by cached index."""
+
+    def test_finds_the_named_pages_in_stack_order(self, main_view):
+        """
+        Matched on ``objectName`` because indices stop being trustworthy the
+        moment a widget is removed.
+        """
+        for name in ("Alpha", "Beta", "Gamma"):
+            page = QWidget()
+            page.setObjectName(name)
+            main_view.stackedWidget.addWidget(page)
+
+        found = main_view._pages_named({"Alpha", "Gamma"})
+
+        assert [p.objectName() for p in found] == ["Alpha", "Gamma"]
+
+    def test_gives_nothing_for_names_that_are_not_there(self, main_view):
+        """An empty result is ordinary - the caller may be keeping everything."""
+        assert main_view._pages_named({"NotAPage"}) == []
+
+
+class TestReindexPages:
+    """Re-deriving the cached indices after a removal."""
+
+    def test_rebuilds_every_index_from_the_stack(self, main_view):
+        """
+        The reason this exists: the stack renumbers whatever follows a removed
+        widget, so a stale cache switches to the wrong page rather than failing.
+        """
+        for name in ("First", "Second"):
+            page = QWidget()
+            page.setObjectName(name)
+            main_view.stackedWidget.addWidget(page)
+            main_view.pages[name] = {"index": 999}
+
+        main_view._reindex_pages()
+
+        assert main_view.pages["First"]["index"] == main_view.stackedWidget.indexOf(
+            main_view.stackedWidget.findChild(QWidget, "First")
+        )
+        assert (
+            main_view.pages["Second"]["index"] == main_view.pages["First"]["index"] + 1
+        )
+
+    def test_ignores_stack_widgets_that_are_not_registered_pages(self, main_view):
+        """The stack can hold a widget ``self.pages`` does not know about."""
+        stray = QWidget()
+        stray.setObjectName("Stray")
+        main_view.stackedWidget.addWidget(stray)
+
+        main_view._reindex_pages()
+
+        assert "Stray" not in main_view.pages

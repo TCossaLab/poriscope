@@ -82,6 +82,33 @@ repos:
         types: [python]
         files: ^poriscope/plugins/(datareaders|datawriters|db_loaders|dbwriters|eventfinders|eventfitters|eventloaders|filters)/
 
+      # Plugin settings-schema self-consistency (runs during default commit stage).
+      # Scoped to poriscope/plugins/** rather than all of poriscope/: this only needs
+      # to re-run when a plugin's get_empty_settings() could have changed, and it is
+      # meant to run ahead of the far more expensive behavioural conformance suite
+      # under tests/unit/plugins/conformance/, not duplicate what that already covers.
+      # See scripts/check_plugin_schemas.py, poriscope/utils/plugin_schemas.py and
+      # poriscope/utils/settings_schema.py.
+      - id: settings-schema
+        name: settings-schema (get_empty_settings self-consistency)
+        entry: python scripts/check_plugin_schemas.py
+        language: system
+        pass_filenames: false
+        files: ^poriscope/plugins/
+
+      # requirements.txt was UTF-16LE with a BOM from the initial commit until
+      # 2026-09-04, because PowerShell's `>` and Out-File default to UTF-16LE -
+      # so `pip freeze > requirements.txt` at a PowerShell prompt reproduces it,
+      # and git treats every revision as a binary blob. pre-commit-hooks'
+      # fix-byte-order-marker does NOT cover this: it matches the UTF-8 BOM only,
+      # and a UTF-16LE file opens with a different two-byte mark entirely.
+      # See DECISIONS.md, 2026-09-17.
+      - id: text-encoding
+        name: requirements files are UTF-8 with no BOM
+        entry: python scripts/check_text_encoding.py
+        language: system
+        files: ^requirements.*\.txt$
+
   # File Size Guard (runs during default commit stage)
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0

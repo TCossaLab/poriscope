@@ -68,9 +68,6 @@ class ABF2Header:
                 "File version is not supported, only ABF2 files are supported"
             )
 
-    def get_channel_index_by_name(self, channel_name: str) -> int:
-        return self.channel_names.index(channel_name)
-
     def get_samplerate(self) -> float:
         return self.samplerate
 

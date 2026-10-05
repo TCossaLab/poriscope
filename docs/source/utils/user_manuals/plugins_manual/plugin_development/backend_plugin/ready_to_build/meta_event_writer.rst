@@ -37,11 +37,19 @@ Required Private Methods
 .. automethod:: poriscope.utils.MetaWriter.MetaWriter._validate_settings
    :no-index:
 
+.. automethod:: poriscope.utils.MetaWriter.MetaWriter._init
+   :no-index:
+
+.. automethod:: poriscope.utils.MetaWriter.MetaWriter._finalize_initialization
+   :no-index:
+
 Optional Method Overrides
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-.. automethod:: poriscope.utils.MetaWriter.MetaWriter._rescale_data_to_adc
-   :no-index:
+Until 2.0.0 ``MetaWriter`` also offered ``_rescale_data_to_adc``, a hook for writers that
+stored unscaled ADC codes. Event data now always reaches ``_write_data`` in pA, exactly as
+the reader's ``load_data`` returns it, so there is nothing to rescale and the hook is gone;
+choose the stored numeric type with ``_set_output_dtype`` instead.
 
 .. automethod:: poriscope.utils.MetaWriter.MetaWriter.force_serial_channel_operations
    :no-index:

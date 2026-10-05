@@ -25,10 +25,9 @@
 
 import logging
 import sys
-from typing import Iterable, List, Optional
+from typing import List, Optional
 
-from PySide6.QtCore import QEvent, QObject, QRect, Qt, Signal
-from PySide6.QtGui import QMouseEvent
+from PySide6.QtCore import QEvent, QObject, Qt
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -41,9 +40,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from poriscope.views.widgets.multiselect_base import MultiSelectComboBoxBase
 
-class MultiSelectComboBox(QComboBox):
-    selectionChanged = Signal(list)  # Signal to emit when the selection changes
+
+class MultiSelectComboBox(MultiSelectComboBoxBase):
     logger = logging.getLogger(__name__)
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
@@ -126,32 +126,6 @@ class MultiSelectComboBox(QComboBox):
         item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
         item.setCheckState(Qt.Checked)
 
-    def addItems(self, texts: Iterable[str]) -> None:
-        try:
-            self.listWidget.itemChanged.disconnect(
-                self.handleItemChanged
-            )  # Disconnect to prevent multiple triggers
-            self.listWidget.clear()  # Clear all existing items
-            for text in texts:
-                self.addItem(text)
-
-            self.handleItemChanged(None)  # refresh text + signal
-        except Exception as e:
-            self.logger.exception(f"Error while adding items: {e}")
-        finally:
-            self.listWidget.itemChanged.connect(
-                self.handleItemChanged
-            )  # Reconnect the signal
-
-    def handleItemChanged(self, item: Optional[QListWidgetItem]) -> None:
-        if item is None or item.checkState() in (Qt.Checked, Qt.Unchecked):
-            selected_items = self.getSelectedItems()
-            new_text = ", ".join(selected_items)
-            self._line_edit.setText(new_text)
-            if item is None or item.checkState() in (Qt.Checked, Qt.Unchecked):
-                self.selectionChanged.emit(selected_items)
-            self.updateSelectAllButton()  # Update without affecting individual selections
-
     def updateSelectAllButton(self) -> None:
         total = self.listWidget.count()
         checked = len(
@@ -218,42 +192,6 @@ class MultiSelectComboBox(QComboBox):
                 item.setCheckState(Qt.Checked if select else Qt.Unchecked)
                 break
 
-    def showPopup(self) -> None:
-        window = self.window()  # Get the main window of the application
-        window_geom = window.geometry()  # Get the geometry of the main window
-
-        popup_width = 300  # Width of the popup
-        popup_height = 400  # Height of the popup
-
-        # Calculate the center of the window
-        window_center_x = window_geom.x() + window_geom.width() // 2
-        window_center_y = window_geom.y() + window_geom.height() // 2
-
-        # Calculate the top-left corner of the popup to center it on the window
-        popup_x = window_center_x - popup_width // 2
-        popup_y = window_center_y - popup_height // 2
-
-        # Set the container geometry and show
-        self.containerWidget.setGeometry(
-            QRect(popup_x, popup_y, popup_width, popup_height)
-        )
-        self.containerWidget.show()
-        self._set_outside_click_filter(True)
-
-    def hidePopup(self) -> None:
-        # Drop the filter before hiding: it is only meaningful while the popup
-        # is up, and this is the single path every close goes through.
-        self._set_outside_click_filter(False)
-        # Hide the container widget when it should be closed
-        self.containerWidget.hide()
-
-    def mousePressEvent(self, event: QMouseEvent) -> None:
-        if self.containerWidget.isVisible():
-            self.hidePopup()
-        else:
-            self.showPopup()
-        super().mousePressEvent(event)
-
     def _set_outside_click_filter(self, active: bool) -> None:
         """
         Install or remove the application-wide filter that closes the popup.
@@ -310,6 +248,3 @@ class MultiSelectComboBox(QComboBox):
         # be. Calling up into it requires a live C++ `self` and was the line
         # that raised "Internal C++ object already deleted" on a stale filter.
         return False
-
-    def refreshDisplayText(self) -> None:
-        self._line_edit.setText(", ".join(self.getSelectedItems()))

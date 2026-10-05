@@ -174,23 +174,31 @@ class SQLiteDBWriter(MetaDatabaseWriter):
         standalone: bool = False,
     ) -> Dict[str, Dict[str, Any]]:
         """
-        Get a dict populated with keys needed to initialize the filter if they are not set yet.
-        This dict must have the following structure, but Min, Max, and Options can be skipped or explicitly set to None if they are not used.
-        Type is required; Value may be omitted or set to None, both meaning there is no default and the user must supply one. All values provided must be consistent with Type.
-        EventFinder objects MUST include a MetaReader object in settings
+        Declare the settings this database writer exposes, on top of the base contract.
 
-        .. code-block:: python
+        Called by poriscope when the plugin is instantiated or reconfigured, to build
+        the settings dialog and to sanity-check whatever the user enters; the accepted
+        values are then readable through ``self.settings``. See
+        :py:meth:`~poriscope.utils.MetaDatabaseWriter.MetaDatabaseWriter.get_empty_settings`
+        for the structure of the dict and what ``Type``, ``Value``, ``Min``, ``Max``, ``Options`` and
+        ``Units`` mean in it, and for the reserved keys the GUI builds file pickers
+        from.
 
-          settings = {'Parameter 1': {'Type': <int, float, str, bool>,
-                                           'Value': <value> or None,
-                                           'Options': [<option_1>, <option_2>, ... ] or None,
-                                           'Min': <min_value> or None,
-                                           'Max': <max_value> or None
-                                          },
-                          ...
-                          }
+        The ``super()`` call supplies the mandatory ``"MetaEventFitter"`` key, which is how
+        this plugin is wired to its data source.
 
-        :param globally_available_plugins: a dict containing all data plugins that exist to date, keyed by metaclass. Must include "MetaReader" as a key, with explicitly set Type MetaReader.
+        The keys this plugin adds:
+
+        - ``Output File`` - the SQLite database to write fitted events and their
+          sublevels into.
+        - ``Experiment Name`` - the label these events are filed under, so one database
+          can hold several runs.
+        - ``Voltage`` (mV) - the applied bias, stored with the experiment.
+        - ``Membrane Thickness`` (nm) and ``Conductivity`` (S/m) - stored with the
+          experiment so that downstream analysis can convert blockage depths into pore
+          and molecule geometry.
+
+        :param globally_available_plugins: a dict containing all data plugins that exist to date, keyed by metaclass. Must include "MetaEventFitter" as a key, with explicitly set Type MetaEventFitter.
         :type globally_available_plugins: Optional[Dict[str, List[str]]]
         :param standalone: False if this is called as part of a GUI, True otherwise. Default False
         :type standalone: bool
@@ -501,12 +509,53 @@ class SQLiteDBWriter(MetaDatabaseWriter):
     @override
     def _validate_settings(self, settings: dict) -> None:
         """
-        Validate that the settings dict contains the correct information for use by the subclass.
+        Refuse an existing output file that is not a fitted-metadata database.
+
+        A new or empty file is created as one, and an existing metadata database is
+        appended to. Anything else is refused here, when the plugin is configured,
+        rather than failing on every channel once writing starts - an events database
+        from the Raw Data tab in particular, which also has an ``events`` table.
 
         :param settings: Parameters for event detection.
         :type settings: dict
+        :raises ValueError: If the output file exists and is not an SQLite database, or
+            is one without the fitted-metadata tables.
         """
-        pass
+        value = settings.get("Output File", {}).get("Value")
+        if not value:
+            return
+        output_file = Path(value)
+        if not output_file.is_file() or output_file.stat().st_size == 0:
+            return
+        conn = None
+        cursor = None
+        try:
+            conn = sqlite3.connect(
+                f"{output_file.resolve().as_uri()}?mode=ro", uri=True
+            )
+            cursor = conn.cursor()
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+            tables = {row[0] for row in cursor.fetchall()}
+        except sqlite3.DatabaseError as e:
+            raise ValueError(
+                f"{output_file} is not an SQLite database, so it cannot hold fitted "
+                f"metadata ({e}). Choose a metadata database or a new file."
+            ) from e
+        finally:
+            if cursor is not None:
+                cursor.close()
+            if conn is not None:
+                conn.close()
+        if tables and not {"experiments", "sublevels"} <= tables:
+            kind = (
+                "an events database, as the Raw Data tab writes"
+                if {"channels", "events"} <= tables
+                else "an SQLite database of some other kind"
+            )
+            raise ValueError(
+                f"{output_file} is {kind}, not a fitted-metadata database. Choose a "
+                "metadata database or a new file."
+            )
 
     @log(logger=logger)
     @override
@@ -535,6 +584,14 @@ class SQLiteDBWriter(MetaDatabaseWriter):
             """
             CREATE INDEX IF NOT EXISTS idx_experiment_name ON experiments(name);
             """,
+            # Two channel columns, and they are not the same thing. channel_id is the
+            # physical channel the data came from. channel_db_id, in events, sublevels
+            # and data, is channels.id - the AUTOINCREMENT row of one (experiment_id,
+            # channel_id) pair. Writing a dataset under a new experiment name adds a
+            # channels row, so channel_db_id moves while channel_id stays put; that is
+            # not a relabelling. UNIQUE (experiment_id, channel_id, event_id) on events
+            # is the rule against duplicates, and event_id restarts at 0 per fitting
+            # run. Renaming either column would be a schema migration.
             """
             CREATE TABLE IF NOT EXISTS channels (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -24,13 +24,14 @@
 # Kyle Briggs
 
 
+import glob
 import json
 import logging
 import os
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union, override
+from typing import Any, Dict, List, Optional, override
 
 import numpy as np
 import numpy.typing as npt
@@ -88,6 +89,35 @@ class ChimeraReader20240101(MetaReader):
         :type channel: Optional[int]
         """
         pass
+
+    @log(logger=logger)
+    @override
+    def report_channel_status(
+        self, channel: Optional[int] = None, init: bool = False
+    ) -> str:
+        """
+        Report what :ref:`MetaReader` reports, plus this reader's deprecation notice.
+
+        The notice goes in the text shown when the reader is created, because that is
+        where someone who opens a 2024-01 file every day will see it - the changelog
+        only reaches people who read changelogs. It is added in the per-channel arm,
+        so the all-channels report carries one notice per channel, and only when
+        ``init`` is True, so it is not repeated on every later status refresh.
+
+        :param channel: channel ID
+        :type channel: Optional[int]
+        :param init: is the function being called as part of plugin initialization? Default False
+        :type init: bool
+        :return: the status of the channel as a string
+        :rtype: str
+        """
+        report = super().report_channel_status(channel, init)
+        if channel is not None and init:
+            report += (
+                f"\nCh{channel}: ChimeraReader20240101 is deprecated and will be "
+                f"removed in a future release; use ChimeraReader20240501 for new data"
+            )
+        return report
 
     @override
     def _validate_file_type(self, filename: os.PathLike) -> None:
@@ -219,10 +249,12 @@ class ChimeraReader20240101(MetaReader):
 
         :raises ValueError: If the base naming pattern cannot be ascertained.
         """
-        # replace date and time in a file name with wildcard, keep id, extension and headstage
+        # Keep the base name and wildcard the headstage and date-time, anchored on "_HS"
+        # so that a recording whose name merely starts with this one's (exp1 and exp10)
+        # is not globbed into this set; the base is escaped so brackets stay literal.
         match = re.split(r"_HS\d+_", file_name)
         if len(match) > 1:
-            return match[0] + "*" + self.file_extension
+            return glob.escape(match[0]) + "_HS*" + self.file_extension
         else:
             raise ValueError(
                 "Unable to ascertain base naming pattern for {0}".format(file_name)
@@ -231,22 +263,17 @@ class ChimeraReader20240101(MetaReader):
     @log(logger=logger)
     @override
     def _convert_data(
-        self, data: npt.NDArray[np.int16], config: dict, raw_data: bool = False
-    ) -> Union[Tuple[np.ndarray, float, float], np.ndarray]:
+        self, data: npt.NDArray[np.int16], config: dict
+    ) -> npt.NDArray[np.float64]:
         """
-        Scale or otherwise transform and return requested data.
-        Applies the tia_gain/i_offset/filter_gain scale and offset recovered from this file's embedded header to convert raw ADC codes to pA.
-        if raw_data is true, return also scale and offset
+        Convert raw data from disk into rescaled current, in pA.
 
         :param data: Data to convert.
         :type data: npt.NDArray[np.int16]
         :param config: Configuration dictionary for data conversion.
         :type config: dict
-        :param raw_data: Decide whether to rescale data or return raw adc codes
-        :type raw_data: bool
-
-        :return: Converted data, and scale and offset if and only if raw_data is True
-        :rtype: Union[Tuple[np.ndarray, float, float], np.ndarray]
+        :return: The data, rescaled to pA.
+        :rtype: npt.NDArray[np.float64]
         """
         tia_gain = config["tia_gain"]
         i_offset = config["i_offset"]
@@ -257,18 +284,13 @@ class ChimeraReader20240101(MetaReader):
             conv_unit * ((2 * 2 * 2.048 / 2**16) / filter_gain) / tia_gain
         )  # adc conversion factor
         offset = -i_offset * conv_unit
-        conv_data = self._scale_data(
+        return self._scale_data(
             data,
             scale=scale,
             offset=offset,
             dtype=np.float64,
             copy=False,
-            raw_data=raw_data,
         )
-        if raw_data:
-            return conv_data, scale, offset
-        else:
-            return conv_data
 
     @log(logger=logger)
     @override
@@ -330,20 +352,6 @@ class ChimeraReader20240101(MetaReader):
             )
         return configs
 
-    @log(logger=logger)
-    @override
-    def _set_raw_dtype(self, configs: List[dict]) -> np.dtype:
-        """
-        Set the data type for the raw data in files of this type
-
-        :param configs: List of configuration dictionaries corresponding to data files.
-        :type configs: List[dict]
-
-        :return: the dtype of the raw data in your data files
-        :rtype: np.dtype
-        """
-        return np.int16
-
     # public API
     @log(logger=logger)
     @override
@@ -353,30 +361,21 @@ class ChimeraReader20240101(MetaReader):
         standalone: bool = False,
     ) -> Dict[str, Dict[str, Any]]:
         """
-        Get a dict populated with keys needed to initialize the filter if they are not set yet.
-        This dict must have the following structure, but Min, Max, and Options can be skipped or explicitly set to None if they are not used.
-        Type is required; Value may be omitted or set to None, both meaning there is no default and the user must supply one. All values provided must be consistent with Type.
+        Declare the settings this reader exposes, on top of the base contract.
 
-        .. code-block:: python
+        Called by poriscope when the plugin is instantiated or reconfigured, to build
+        the settings dialog and to sanity-check whatever the user enters; the accepted
+        values are then readable through ``self.settings``. See
+        :py:meth:`~poriscope.utils.MetaReader.MetaReader.get_empty_settings`
+        for the structure of the dict and what ``Type``, ``Value``, ``Min``, ``Max``, ``Options`` and
+        ``Units`` mean in it, and for the reserved keys the GUI builds file pickers
+        from.
 
-          settings = {'Parameter 1': {'Type': <int, float, str, bool>,
-                                           'Value': <value> or None,
-                                           'Options': [<option_1>, <option_2>, ... ] or None,
-                                           'Min': <min_value> or None,
-                                           'Max': <max_value> or None,
-                                           'Units': <unit str> or None
-                                          },
-                          ...
-                          }
+        The keys this plugin adds:
 
-
-        Several parameter keywords are reserved: these are
-
-        'Input File'
-        'Output File'
-        'Folder'
-
-        These must have Type str and will cause the GUI to generate widgets to allow selection of these elements when used
+        - ``Input File`` - the Chimera ``.log`` file to read. Everything else - sample
+          rate, bit depth, scaling - comes from the JSON header embedded at the start of
+          that file, ahead of its ``<END HEADER>`` marker.
 
         :param globally_available_plugins: a dict containing all data plugins that exist to date, keyes by metaclass
         :type globally_available_plugins: Optional[Dict[str, List[str]]]

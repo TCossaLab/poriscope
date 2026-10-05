@@ -38,6 +38,19 @@ Step 5: Configure Sampling and Binning
 1. Set **N**, the number of Monte Carlo samples used to estimate volume and shape factor for each population.
 2. Specify the histogram **bins** as a count (e.g., ``50``), or check **Sizes** to specify bin widths instead.
 
+.. note::
+
+   A bin count or width the tab cannot use is reported once on the status panel, rather
+   than once per event in the log.
+
+   **Each event is binned over its own range.** In Individual mode the range used to
+   accumulate across the events of a plot, so the bins an event was drawn on depended on
+   how many events preceded it; both per-event paths follow the same rule now.
+
+   An event whose baseline is zero, or which has no samples between its paddings, cannot
+   be turned into a fractional blockage. Its panel is left empty and it contributes
+   nothing to **Export Plot Data**, with the reason written to the log.
+
 Step 6: Generate the Fit
 --------------------------
 
@@ -45,6 +58,12 @@ Click **Update Plot** to run the fit for the current mode. This draws:
 
 - A ΔI/I (or volume) histogram, or a Peak Scatterplot in Individual mode.
 - The Prolate/Oblate volume vs. shape-factor solutions on the second plot.
+
+.. note::
+
+   A distribution the tab cannot draw is refused on the status panel with the reason:
+   more than one experiment or channel in scope, or an experiment with no channel
+   selected. It used to write the reason to the log only and draw nothing.
 
 Step 7a: Commit Individual Fits
 ----------------------------------
@@ -61,7 +80,7 @@ Step 8: Apply Filters
 
 You can restrict the events included in a fit to a named subset:
 
-1. Click the **➕** filter button to define a new filter, either against the full database or the currently selected experiments/channels.
+1. Click the **➕** filter button to define a new filter. Raw SQL filters can be saved and loaded but cannot be selected for a plot.
 2. Use the filter dropdown to choose which saved subset(s) are active for the current plot.
 3. Click the info/edit button next to the dropdown to view or modify the currently selected subset.
 4. Click the delete button to remove selected subsets (individual ones can also be removed directly from the dropdown).

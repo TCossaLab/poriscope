@@ -55,8 +55,6 @@ guessed at here.
 
 import os
 import sqlite3
-import sys
-from pathlib import Path
 
 import pytest
 from PySide6 import QtWidgets
@@ -69,15 +67,12 @@ from poriscope.views.main_view import MainView
 from tests.e2e._helpers import (
     QT_SHORT_PAUSE_MS,
     QT_WAIT_TIMEOUT_MS,
+    ask_plugin,
     ensure_name_filled,
     find_button,
     open_menu_hybrid,
     schedule_dialog_autofill,
 )
-
-REPO_ROOT = Path(__file__).resolve().parents[3]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
 # ---- Env knobs, specific to this suite ------------------------------------
 LOADER_NAME = os.getenv("E2E_EVENTLOADER_NAME", "SQLiteEventLoader")
@@ -163,6 +158,7 @@ def test_event_fitting_flow_clicks(
     synthetic_events_database,
     step_size,
     expected_good_fits,
+    auto_dismiss_message_boxes,
 ):
     db = synthetic_events_database
 
@@ -189,7 +185,7 @@ def test_event_fitting_flow_clicks(
         }
     )
     view = MainView(model.get_available_plugins())
-    controller = MainController(model, view)  # noqa: F841
+    controller = MainController(model, view)
     qtbot.addWidget(view)
     view.show()
 
@@ -201,6 +197,9 @@ def test_event_fitting_flow_clicks(
     )
     view.switch_to_page("EventAnalysisView")
     ea_view = view.pages["EventAnalysisView"]["widget"]
+    # Held so the shell survives the fixture, and so ask_plugin can reach the
+    # tab controller to call a plugin the way the application does.
+    ea_view._test_keepalive = (model, view, controller)
     controls = ea_view.eventAnalysisControls
 
     # --- Loader ---
@@ -223,27 +222,22 @@ def test_event_fitting_flow_clicks(
     )
 
     loader_key = controls.loaders_comboBox.currentText()
-    ea_view.global_signal.emit(
-        "MetaEventLoader",
-        loader_key,
-        "get_num_events",
-        (FIT_CHANNEL,),
-        "set_num_events_allowed",
-        (),
+    assert (
+        ask_plugin(
+            ea_view,
+            "EventAnalysisController",
+            "MetaEventLoader",
+            loader_key,
+            "get_num_events",
+            FIT_CHANNEL,
+        )
+        == db[FIT_CHANNEL].num_events
     )
-    assert getattr(ea_view, "num_events_allowed", None) == db[FIT_CHANNEL].num_events
 
-    ea_view.global_signal.emit(
-        "MetaEventLoader",
-        loader_key,
-        "get_samplerate",
-        (FIT_CHANNEL,),
-        "update_plot_samplerate",
-        (),
-    )
-    assert getattr(ea_view, "plot_samplerate", None) == pytest.approx(
-        db[FIT_CHANNEL].samplerate
-    )
+    # The samplerate used to be fetched onto the view here and read back off
+    # ``plot_samplerate``. The time axis now lives on EventAnalysisModel, which
+    # builds it from the samples and the rate together, so the view holds neither -
+    # the resolution and its fallback are pinned in test_event_analysis_controller.
 
     # --- Channel ---
     qtbot.waitUntil(
@@ -301,15 +295,17 @@ def test_event_fitting_flow_clicks(
     def fitting_complete():
         try:
             fitter_key = controls.eventfitters_comboBox.currentText()
-            ea_view.global_signal.emit(
-                "MetaEventFitter",
-                fitter_key,
-                "get_eventfitting_status",
-                (FIT_CHANNEL,),
-                "set_eventfitting_status",
-                (),
+            return (
+                ask_plugin(
+                    ea_view,
+                    "EventAnalysisController",
+                    "MetaEventFitter",
+                    fitter_key,
+                    "get_eventfitting_status",
+                    FIT_CHANNEL,
+                )
+                is True
             )
-            return getattr(ea_view, "eventfitting_status", False) is True
         except Exception:
             return False
 
@@ -317,17 +313,17 @@ def test_event_fitting_flow_clicks(
     qtbot.waitUntil(fitting_complete, timeout=QT_WAIT_TIMEOUT_MS)
 
     fitter_key = controls.eventfitters_comboBox.currentText()
-    ea_view.global_signal.emit(
+    good_fits = ask_plugin(
+        ea_view,
+        "EventAnalysisController",
         "MetaEventFitter",
         fitter_key,
         "get_num_events",
-        (FIT_CHANNEL,),
-        "set_num_events_allowed",
-        (),
+        FIT_CHANNEL,
     )
-    assert getattr(ea_view, "num_events_allowed", None) == expected_good_fits, (
+    assert good_fits == expected_good_fits, (
         f"Expected {expected_good_fits}/{db[FIT_CHANNEL].num_events} good fits at "
-        f"Step Size={step_size}, got {getattr(ea_view, 'num_events_allowed', None)}"
+        f"Step Size={step_size}, got {good_fits}"
     )
 
     if expected_good_fits == 0:

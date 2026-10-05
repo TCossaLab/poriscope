@@ -26,9 +26,10 @@
 
 import logging
 from abc import abstractmethod
-from typing import Any, Dict, Generator, List, Optional
+from typing import Any, Dict, Generator, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
+import numpy.typing as npt
 import pandas as pd
 from PySide6.QtCore import QObject, Qt, Signal, Slot
 
@@ -42,17 +43,6 @@ class MetaModel(QObject, metaclass=QObjectABCMeta):
     Abstract base class for models.
     """
 
-    global_signal = Signal(
-        str, str, str, tuple, str, tuple
-    )  # metaclass type, subclass key, function to call, args for function to call, function to call with reval (can be None), added args for retval
-    # NOTE: every connection to global_signal/data_plugin_controller_signal must stay
-    # Qt.ConnectionType.DirectConnection (or otherwise guaranteed same-thread). A caller
-    # that passes a return_function_name reads the result back off an attribute the
-    # callback sets, on the very next statement after .emit() - a queued connection
-    # would silently degrade that read to stale/None data with no error and no log line.
-    data_plugin_controller_signal = Signal(
-        str, str, str, tuple, str, tuple
-    )  # metaclass type, subclass key, function to call, args for function to call, function to call with reval (can be None), added args for retval
     update_progressbar = Signal(float, str)
     add_text_to_display = Signal(str, str)
     logger = logging.getLogger(__name__)
@@ -76,6 +66,8 @@ class MetaModel(QObject, metaclass=QObjectABCMeta):
         self.workers: Dict[str, Dict[int, Worker]] = (
             {}
         )  # Holds worker objects per key/channel
+        # Pushed by MetaController on every plugin lifecycle event.
+        self._plugin_instances: Dict[str, Dict[str, object]] = {}
         self.thread_running: Dict[str, Dict[int, bool]] = (
             {}
         )  # Track running state per key/channel
@@ -91,6 +83,101 @@ class MetaModel(QObject, metaclass=QObjectABCMeta):
         ) in kwargs.items():  # set class parameters with kwargs dict for use later
             setattr(self, k, v)
         self._init()
+
+    # ------------------------------------------------------- the data plugins
+    # Instances are *pushed* here by MetaController on every plugin lifecycle event,
+    # so nothing is resolved lazily and nothing can go stale: a rename or a
+    # re-instantiation refreshes this map through the same path that refreshes the
+    # combobox names the View sees. A cache filled on first use would need
+    # invalidating on three events, and two of them are easy to miss - a rename leaves
+    # it pointing at a live instance under a key that no longer exists, and a
+    # re-instantiation leaves it holding a dead object.
+
+    @log(logger=logger)
+    def set_plugin_instances(
+        self, instances: Mapping[str, Mapping[str, object]]
+    ) -> None:
+        """
+        Receive the live data plugin instances, keyed by metaclass then by key.
+
+        Called by ``MetaController`` whenever the app's plugin set changes. Subclasses
+        should not need to override it.
+
+        :param instances: metaclass name -> plugin key -> live instance
+        :type instances: Mapping[str, Mapping[str, object]]
+        :return: None
+        :rtype: None
+        """
+        self._plugin_instances = {k: dict(v) for k, v in instances.items()}
+
+    def _get_plugin(self, metaclass: str, key: str) -> object:
+        """
+        Return the live plugin instance registered under a metaclass and key.
+
+        :param metaclass: the plugin family, e.g. ``"MetaDatabaseLoader"``
+        :type metaclass: str
+        :param key: the instance's unique key, e.g. ``"SQLiteDBLoader_0"``
+        :type key: str
+        :return: the plugin instance
+        :rtype: object
+        :raises KeyError: if no instance is registered under that metaclass and key
+        """
+        try:
+            return self._plugin_instances[metaclass][key]
+        except KeyError:
+            raise KeyError(f"No {metaclass} plugin registered under {key!r}") from None
+
+    def call(
+        self, metaclass: str, key: str, method: str, *args: Any, **kwargs: Any
+    ) -> Any:
+        """
+        Call a method on a data plugin and return its result.
+
+        The replacement for emitting ``global_signal`` and reading the answer back off
+        an attribute. **Failures raise here**, at the call site, rather than being
+        logged and swallowed several hops away - which is the whole point of the
+        change: the old path returned silently on four separate conditions, and a
+        caller could not tell a failure from a stale value.
+
+        Keyword arguments are accepted, which the signal bus could not carry - its
+        ``call_args`` was a positional tuple. That matters because 48 methods on the
+        data-plugin bases have default parameters, several of them deep in the
+        signature: ``MetaEventFinder.get_event_data_generator`` has three and
+        ``MetaReader.continuous_read`` five. Positionally, setting the last one means
+        passing every earlier one too, and a signature that later gains a parameter in
+        the middle shifts every call site silently, so naming the argument is the
+        safer habit.
+
+        Returns ``Any``, so mypy cannot catch a renamed plugin method or a misspelled
+        keyword. That is the accepted price of keeping the plugin API string-keyed: a
+        plugin author must not have to know about app-shell internals to write one.
+
+        :param metaclass: the plugin family, e.g. ``"MetaDatabaseLoader"``
+        :type metaclass: str
+        :param key: the instance's unique key
+        :type key: str
+        :param method: the name of the method to call on it
+        :type method: str
+        :param \\*args: positional arguments for that method
+        :type \\*args: Any
+        :param \\**kwargs: keyword arguments for that method
+        :type \\**kwargs: Any
+        :return: whatever the plugin method returned
+        :rtype: Any
+        :raises AttributeError: if the instance has no such method, or it is not callable
+        """
+        # A KeyError from _get_plugin propagates: an unknown plugin is the caller's
+        # problem to see, not something to translate into a different failure here.
+        if method.startswith("_"):
+            raise AttributeError(
+                f"{method!r} is not part of {metaclass}'s public interface; "
+                f"call() reaches a plugin's public API only"
+            )
+        instance = self._get_plugin(metaclass, key)
+        func = getattr(instance, method, None)
+        if not callable(func):
+            raise AttributeError(f"{metaclass}/{key} has no callable method {method!r}")
+        return func(*args, **kwargs)
 
     # private API, must be implemented by sublcasses
     @abstractmethod
@@ -224,17 +311,30 @@ class MetaModel(QObject, metaclass=QObjectABCMeta):
     @log(logger=logger)
     @Slot(int, str)
     def generate_report(self, channel: int, key: str) -> None:
+        """
+        Put one plugin's status for one channel onto the display panel.
+
+        Runs when a worker thread finishes, over a queued connection - so it is a
+        Qt slot, and **must not raise**. `call` reports failure by raising, which
+        is right at an ordinary call site and wrong here, where there is nothing
+        above to catch it. The old bus swallowed and logged instead, several hops
+        away; this keeps the swallow but puts it where the call is.
+
+        :param channel: the channel whose status to report
+        :type channel: int
+        :param key: the plugin to ask
+        :type key: str
+        """
         metaclass = self.reporter_metaclasses[key]
-        report_channel_status_args = (channel,)
-        ret_args = (key,)
-        self.global_signal.emit(
-            metaclass,
-            key,
-            "report_channel_status",
-            report_channel_status_args,
-            "relay_add_text_to_display",
-            ret_args,
-        )
+        try:
+            status = self.call(metaclass, key, "report_channel_status", channel)
+        except Exception as e:
+            self.logger.error(
+                f"Unable to report the status of {metaclass}/{key} "
+                f"channel {channel}: {e}"
+            )
+            return
+        self.add_text_to_display.emit(status, key)
 
     @log(logger=logger)
     def update_available_plugins(self, available_plugins: Dict[str, List[str]]) -> None:
@@ -255,21 +355,32 @@ class MetaModel(QObject, metaclass=QObjectABCMeta):
 
     @log(logger=logger)
     def format_cache_data(self) -> Optional[pd.DataFrame]:
+        """
+        Lay the cached plot series out side by side, ready to be written as CSV.
+
+        The series need not be the same length - a plot may cache an x array and a
+        shorter y - so the short ones are padded to the longest.
+
+        **Padding is done with ``None`` rather than by coercing to float**, which is
+        what this used to do. ``arr.astype(float)`` assumed every cached series was a
+        numeric array, and two things broke on that: a series cached as a plain list
+        has no ``astype`` at all, and a series of text categories cannot become float
+        even as an array. The categorical histogram caches its category names, so
+        **its export raised for as long as it has existed**, on any revision. Letting
+        pandas infer each column keeps the numeric columns exactly as they were -
+        ``None`` in a numeric column is ``NaN``, which is the empty field the old
+        padding produced - while a text column now survives as text.
+
+        :return: one column per cached series, or None if nothing is cached
+        :rtype: Optional[pd.DataFrame]
+        """
         if self.cache_data and self.cache_labels:
-            max_length = max([len(arr) for arr in self.cache_data])
-            # Convert arrays to float type first to allow np.nan
-            padded_data = np.array(
-                [
-                    np.pad(
-                        arr.astype(float),
-                        pad_width=(0, max_length - len(arr)),
-                        constant_values=np.nan,
-                    )
-                    for arr in self.cache_data
-                ]
-            )
-            df = pd.DataFrame(padded_data.T, columns=self.cache_labels)
-            return df
+            max_length = max(len(arr) for arr in self.cache_data)
+            padded = {
+                label: list(arr) + [None] * (max_length - len(arr))
+                for arr, label in zip(self.cache_data, self.cache_labels, strict=True)
+            }
+            return pd.DataFrame(padded)
         return None
 
     @log(logger=logger)
@@ -361,3 +472,163 @@ class MetaModel(QObject, metaclass=QObjectABCMeta):
         :type identifier: str
         """
         self.add_text_to_display.emit(text, identifier)
+
+    @log(logger=logger)
+    def logscale_and_filter_columns(
+        self, *data: npt.NDArray[Any], log_flags: Optional[Sequence[bool]] = None
+    ) -> Tuple[npt.NDArray[Any], ...]:
+        """
+        Filters multiple data columns for NaN values and applies logarithmic scaling.
+
+        Public, because concrete Models call it, and the only copy - see
+        ``DECISIONS.md`` 2026-09-14 for why it lives here rather than on ``MetaView``.
+
+        This function takes an arbitrary number of 1D NumPy arrays as input.
+        It first removes any data points (rows) where any of the input arrays
+        contain a NaN value.
+        Then, it optionally applies a base-10 logarithmic scale to specified
+        columns. When applying log scale, it handles potentially negative data
+        by 'rectifying' it based on its average sign and filters out any
+        non-positive values after rectification. This filtering is applied
+        sequentially, meaning filtering based on one column affects all others.
+
+        :param \\*data: A variable number of 1D NumPy arrays representing the data columns.
+        :type \\*data: npt.NDArray[Any]
+        :param log_flags: A sequence of booleans, one for each data array. If True, the corresponding array will be log-scaled. If None, no log scaling is applied. Defaults to None.
+        :type log_flags: Optional[Sequence[bool]]
+        :raises ValueError: If log_flags is provided but is not a list or tuple with the same length as the number of data arguments.
+        :return: A tuple containing the processed 1D NumPy arrays. The number of arrays returned matches the number of input arrays.
+        :rtype: Tuple[npt.NDArray[Any], ...]
+        """
+        if not data:
+            return ()
+
+        num_arrays = len(data)
+        current_data = list(data)  # Work with a list
+
+        # --- Input Validation ---
+        if log_flags is None:
+            log_flags = [False] * num_arrays
+        elif not isinstance(log_flags, (list, tuple)) or len(log_flags) != num_arrays:
+            raise ValueError(
+                "log_flags must be a list or tuple with the same length as the number of data arguments."
+            )
+
+        num_points_init = len(current_data[0])
+
+        # --- NaN Filtering ---
+        # Create a combined mask to filter NaNs across all arrays
+        #
+        # Coerced first, because a column read back from the database is not always a
+        # float array. SQLite is dynamically typed and pandas infers per column, so a
+        # column that is NULL for every row *in the requested scope* comes back as an
+        # object array of ``None`` - there is nothing for pandas to infer a numeric
+        # type from - and ``np.isnan`` cannot take that. Plotting a protein fit column
+        # over a scope that was never fitted does exactly this. Coercing turns those
+        # into ``nan``, which is what the mask below already exists to drop.
+        mask = np.ones(num_points_init, dtype=bool)
+        for i, d in enumerate(current_data):
+            if np.asarray(d).dtype == object:
+                try:
+                    d = np.asarray(d, dtype=float)
+                except (TypeError, ValueError):
+                    # Genuinely non-numeric rather than merely empty. Masked out
+                    # entirely, which leaves the caller the same "no points survived"
+                    # result an all-NULL column gives it - the arity of the return is
+                    # part of this method's contract, and every caller unpacks it.
+                    self.add_text_to_display.emit(
+                        f"Column {i + 1} of this plot holds values that are not "
+                        "numeric, so none of it can be plotted",
+                        self.__class__.__name__,
+                    )
+                    d = np.full(len(d), np.nan)
+                current_data[i] = d
+            mask &= ~np.isnan(d)
+
+        # Apply the NaN mask
+        current_data = [d[mask] for d in current_data]
+
+        num_points_after_nan = len(current_data[0])
+        num_points_nan = num_points_init - num_points_after_nan
+        if num_points_nan > 0:
+            self.add_text_to_display.emit(
+                f"Removed {num_points_nan} out of {num_points_init} points that contained NaN",
+                self.__class__.__name__,
+            )
+
+        # --- Log Scaling (Sequential) ---
+        num_points_before_log = num_points_after_nan
+
+        for i in range(num_arrays):
+            if log_flags[i]:
+                d = current_data[i]
+
+                # Skip if no data left or data is already scaled
+                if len(d) == 0:
+                    continue
+
+                # Rectify: Flip data based on average sign, then filter > 0
+                avg = np.average(d)
+                sign = (
+                    np.sign(avg) if avg != 0 else 1
+                )  # Default to positive sign if avg is zero
+                rectified = sign * d
+
+                log_mask = rectified > 0
+
+                # Apply the mask to *all* current data arrays
+                current_data = [arr[log_mask] for arr in current_data]
+
+                current_data[i] = np.log10(
+                    current_data[i] * sign
+                )  # Apply log10 to the *rectified* value
+
+        num_points_final = len(current_data[0])
+        num_points_log_removed = num_points_before_log - num_points_final
+        if num_points_log_removed > 0:
+            self.add_text_to_display.emit(
+                f"Removed {num_points_log_removed} out of {num_points_before_log} points that could not be logscaled",
+                self.__class__.__name__,
+            )
+
+        return tuple(current_data)
+
+    @log(logger=logger)
+    def time_bases(
+        self,
+        traces: Sequence[npt.NDArray[np.float64]],
+        samplerate: float,
+        scale: float = 1.0,
+        offset: float = 0.0,
+    ) -> List[npt.NDArray[np.float64]]:
+        """
+        Build the time axis for each trace.
+
+        The time base is a property of the samples and the rate they were taken at,
+        both of which the Model already owns, so it is derived here rather than in the
+        widget that draws it. Pure styling stays in the View; see ``DECISIONS.md``
+        2026-09-14.
+
+        One array per trace, index-aligned with ``traces``, because the traces need not
+        be the same length - an event may contribute its filtered data, its fit and its
+        raw trace, and a PSD run may drop a channel.
+
+        ``scale`` and ``offset`` exist because the same derivation serves two axes that
+        differ only in units and origin: an event plot wants microseconds from the start
+        of the event (``scale=1e6``), and a trace plot wants seconds from the start of
+        the recording (``offset=start``). Four of the five tabs plot event traces this
+        way, which is why this sits on the common base rather than on an event-tab
+        intermediate that does not exist.
+
+        :param traces: the sample arrays to build a time axis for
+        :type traces: Sequence[npt.NDArray[np.float64]]
+        :param samplerate: the sampling rate in Hz, or 1 to fall back to sample indices
+        :type samplerate: float
+        :param scale: multiplier applied to the seconds axis, 1e6 for microseconds
+        :type scale: float
+        :param offset: added after scaling, to place the axis in the recording
+        :type offset: float
+        :return: one time array per trace
+        :rtype: List[npt.NDArray[np.float64]]
+        """
+        return [np.arange(len(trace)) / samplerate * scale + offset for trace in traces]
