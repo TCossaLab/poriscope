@@ -233,6 +233,15 @@ Run individual validation tools:
    they are a different tool configuration answering a different question.
    **The hook is the gate.**
 
+   That second configuration is still worth reading, because it sees what the hook
+   cannot: a controller calling a method its View does not have, for instance. Branch
+   CI therefore runs a bare ``mypy poriscope`` against the installed project as a
+   **non-blocking report** and prints the error count in the job log. The figure is
+   tracked in ``future_fixes.md`` (690 errors on 2026-10-05, 607 once the controller
+   bases declared ``view`` and ``model``); about a third of what remains is known noise
+   from Qt's short-form enum accesses and untyped imports, which is why it reports
+   rather than gates. See ``DECISIONS.md``, 2026-08-24.
+
    The version is pinned in two places and they are deliberately kept equal:
    ``.pre-commit-config.yaml`` runs mirrors-mypy ``rev: v1.17.1``, and
    ``pyproject.toml``'s ``[dev]`` extra and ``requirements-dev.txt`` both declare
@@ -258,10 +267,27 @@ to a ``hotfix/*`` or ``release/*`` branch, because none of them arrives through 
 request: ``git flow feature finish``, ``hotfix finish`` and ``release finish`` all merge
 locally, so a PR-only gate would never see the path most work actually takes. The
 **CI (Branches)** workflow, which runs the strict pre-commit checks and the full test
-suite, has the same push triggers plus ``feature/*`` and ``bugfix/*``. The release
-workflow runs only when a ``v*`` tag is pushed: it re-runs the suite on the tagged commit
-and publishes to PyPI and GitHub only if that passes. To run exactly what the docs check
-runs:
+suite, has the same push triggers plus ``feature/*`` and ``bugfix/*``. Since 2.1 it runs
+the suite on **both** ``ubuntu-latest`` (under Xvfb) and ``windows-latest`` (offscreen):
+Windows is the platform users run, and the platform-conditional code - including the
+wavelet DLL load - takes the other branch there. Lint, auto-fix and the mypy report run on
+the Linux leg only, since their results do not depend on the platform. A second job on the
+same matrix builds the wheel and sdist, checks them with ``twine check --strict``, installs
+the wheel into a fresh virtual environment constrained to ``requirements.txt`` and, from a
+directory outside the checkout, imports the package and loads the wavelet binary the way
+``WaveletFilter`` does - so what a user installs is exercised, not only the editable
+checkout the suite runs against. The release workflow runs only when a ``v*`` tag is
+pushed: it re-runs the suite on the tagged commit, checks the distributions with twine, and
+publishes to PyPI and GitHub only if that passes.
+
+Every action the workflows use is pinned to a commit SHA, with the tag it resolved from in
+a trailing comment, and Dependabot (``.github/dependabot.yml``) opens weekly pull requests
+against ``develop`` to move those pins and the exact dependency pins in
+``requirements.txt``. ``pyproject.toml`` declares compatible-release ranges for installers;
+``requirements.txt`` holds the exact versions CI tests against, and every workflow installs
+with ``-c requirements.txt`` so a run resolves those and nothing newer.
+
+To run exactly what the docs check runs:
 
 .. code-block:: bash
 

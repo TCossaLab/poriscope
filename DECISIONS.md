@@ -18,6 +18,28 @@ and deleted on 2026-09-27; it too is in git history.
 
 ---
 
+## 2026-10-05 - Ranges in the wheel metadata, exact pins in requirements.txt, `-c` in CI
+
+**Context.** `pyproject.toml` declared exact pins (`numpy==2.2.6`, `PySide6==6.9.0`, ...), so
+the published wheel refused to install beside any package needing a different patch release.
+Loosening them risks CI resolving newer versions than the goldens were captured with:
+`release.yml` and the wheel smoke install from the wheel's own metadata.
+
+**Decision** (Kyle, ruled by the 2.1 queue; executed 2026-10-05). `pyproject.toml` declares
+compatible-release ranges (`~=`) for installers. `requirements.txt` keeps the exact versions
+the suite is tested against, and every workflow installs with `-c requirements.txt`, so a CI
+run resolves those and nothing newer. Dependabot moves the exact pins and the action SHAs
+weekly against `develop`, where branch CI tests the bump on both platforms before merge.
+
+**Evidence.** The built wheel's `Requires-Dist` carries the ranges; the suite is green under
+the one pin that moved with it (`hdbscan` 0.8.40 -> 0.8.44, which removed 16 `force_all_finite`
+FutureWarnings that scikit-learn 1.8 would have turned into failures).
+
+**Revisit if** a range admits a release that breaks a golden before Dependabot's exact-pin
+PR has caught it, which would argue for upper bounds tighter than `~=`.
+
+---
+
 ## 2026-10-05 - The ABF readers' offset arithmetic is correct; the open question is pyabf
 
 **Context.** The 2.1 queue said `ABF2Header.py:199-200` "folds the offsets into the gain" instead
@@ -3395,6 +3417,18 @@ with `--ignore-missing-imports`, so PySide6, numpy, pandas, scipy and sklearn al
 
 **Decision.** Do not add stubs to the hook, and do not treat this as a blocker for the
 type-policy flags.
+
+**Revisited 2026-10-05** (2.1 step 0). The hook stays the gate, but the project-venv run now
+reports: `ci-branches.yml` runs `mypy poriscope` against the installed project with
+`continue-on-error` and prints the count. Figures that day, mypy 2.3.1: 690 errors in 70
+files, 79 of them `self.view`/`self.model` on attributes `MetaController` never declared.
+Declaring the pair on the base alone raised the count to 751 by exposing 148 subclass-only
+calls; redeclaring them with each tab's own types on the five controllers and the two
+intermediate bases settled it at 607. The hook then saw three real contract mismatches it
+could not before (`update_available_plugins`'s `Mapping` vs `Dict`, `update_actions_from_json`
+typed for str keys but handed int keys, `available_experiment_and_channels_by_loader`
+undeclared on the base), fixed in `c3b71161`. Still not gating, for the reason above: roughly
+a third of the 607 is enum and untyped-import noise.
 
 **Evidence.** The genuine signal was 11 `union-attr` findings, all one narrow class (a Qt
 getter that can return `None`), three of which were the `button_mapping` bug and eight of

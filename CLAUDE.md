@@ -41,10 +41,11 @@ runs ruff (strict, no fix), mypy, and pydoclint.
 disagree wildly and are blind in opposite directions. The hook runs in an isolated
 virtualenv with no project dependencies, so PySide6/numpy/pandas types are all `Any` to
 it; the project venv's `mypy poriscope` sees real types but is a different version and
-reports several hundred errors (684 with mypy 2.3.1 on 2026-09-24). About half are known
-noise - 343 PySide6 short-form enum accesses and 41 untyped imports, see `DECISIONS.md` - but
-the rest include real gaps the hook cannot see, such as 81 uses of `self.view`/`self.model`
-that the controller bases never declare. **Always measure with the hook.**
+reports several hundred errors (607 with mypy 2.3.1 on 2026-10-05, down from 690 once the
+controller bases declared `view` and `model`). About a third is known noise - PySide6
+short-form enum accesses and 41 untyped imports, see `DECISIONS.md` - but the rest are real
+gaps the hook cannot see; branch CI prints this count as a non-blocking report.
+**Always measure with the hook.**
 The hook is scoped `files: ^poriscope/` because `mypy.ini`'s `exclude = ^tests/` governs
 directory discovery only and does not apply to explicitly listed paths.
 
