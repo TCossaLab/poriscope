@@ -27,7 +27,7 @@
 import logging
 import threading
 from abc import abstractmethod
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple, Union
 
 from matplotlib.backends.backend_qt5agg import (
     FigureCanvasQTAgg as FigureCanvas,
@@ -386,7 +386,11 @@ class MetaView(QWidget, WalkthroughMixin, metaclass=QObjectABCMeta):
             progress_bar.setValue(value)
 
     @log(logger=logger)
-    def update_actions_from_json(self, actions: Dict[str, Dict[str, Any]]) -> None:
+    def update_actions_from_json(
+        self, actions: Mapping[Union[int, str], Dict[str, Any]]
+    ) -> None:
+        # Keys are ignored: the controller's in-memory history is keyed by int and a
+        # history read back from a JSON file by str, and both are replayed through here.
         for _, val in actions.items():
             function = val.get("function")
             # Pre-existing gap: if a stored action dict is missing the "function"

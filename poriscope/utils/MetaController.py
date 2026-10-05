@@ -34,6 +34,8 @@ from typing import Any, Dict, List, Mapping, Optional
 from PySide6.QtCore import QObject, Signal, Slot
 
 from poriscope.utils.LogDecorator import log
+from poriscope.utils.MetaModel import MetaModel
+from poriscope.utils.MetaView import MetaView
 from poriscope.utils.QObjectABCMeta import QObjectABCMeta
 
 
@@ -52,6 +54,15 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
     edit_plugin = Signal(str, str)  # metaclass, key
     delete_plugin = Signal(str, str)  # metaclass, key
     logger = logging.getLogger(__name__)
+
+    #: The View and Model this controller owns. Both are created by the subclass's
+    #: ``_init()`` before ``__init__`` wires them, so they are declared here rather
+    #: than assigned: without the declarations every ``self.view``/``self.model``
+    #: use across the controllers was invisible to the type checker (79 errors in the
+    #: project-venv run of 2026-10-05). A subclass that needs the narrower type of its
+    #: own View or Model redeclares the attribute with it.
+    view: MetaView
+    model: MetaModel
 
     def __init__(
         self,
@@ -350,14 +361,12 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
     # public API, should generally be left alone by subclasses
 
     @log(logger=logger)
-    def update_available_plugins(
-        self, available_plugins: Mapping[str, list[str]]
-    ) -> None:
+    def update_available_plugins(self, available_plugins: Dict[str, List[str]]) -> None:
         """
         Called whenever a new plugin is instantiated elsewhere in the app, to keep an up to date list of possible data sources for use by this plugin
 
         :param available_plugins: dict of lists keyed by MetaClass, listing the identifiers of all instantiated plugins throughout the app
-        :type available_plugins: Mapping[str, list[str]]
+        :type available_plugins: Dict[str, List[str]]
         """
         self.view.update_available_plugins(available_plugins)
         self.model.update_available_plugins(available_plugins)

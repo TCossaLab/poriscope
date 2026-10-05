@@ -52,6 +52,11 @@ class ProteinController(MetaSubsetTabController):
 
     logger = logging.getLogger(__name__)
 
+    #: Redeclared with this tab's own types, so the type checker sees the methods
+    #: the base View and Model do not have (see MetaController.view).
+    view: ProteinView
+    model: ProteinModel
+
     @log(logger=logger)
     @override
     def _init(self) -> None:

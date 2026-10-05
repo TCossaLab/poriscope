@@ -6,6 +6,8 @@
 
 * Release branches now get the branch CI and the documentation render check on every push, so a release is tested before `git flow release finish` rather than after it has merged into `main`
 
+* `MetaController` now declares the `view` and `model` attributes every controller uses, so a type checker run against the installed project sees them; branch CI prints that checker's error count as a non-blocking report
+
 ### User-Facing Behaviour:
 
 #### General:

@@ -50,6 +50,11 @@ class MetadataController(MetaSubsetTabController):
 
     logger = logging.getLogger(__name__)
 
+    #: Redeclared with this tab's own types, so the type checker sees the methods
+    #: the base View and Model do not have (see MetaController.view).
+    view: MetadataView
+    model: MetadataModel
+
     #: The last SQL echoed to the status panel, so that replotting the same subset
     #: does not repeat it. Not persisted: it is display state, and a fresh session
     #: showing the query once more is the right behaviour.

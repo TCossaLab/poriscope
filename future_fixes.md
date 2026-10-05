@@ -274,6 +274,15 @@ slip to 2.2 if the PeakFinder owner does not engage; runtime pins loosen to comp
   `MetadataView.py:2022` and `:2127`. The producer at `MetaSubsetTabView.py:796` builds
   `{exp: [channel] or None}`, so the loader's form is correct and the 9 are transposed; invisible to
   mypy because the value passes through `call()`.
+- **The column-names chain lives on the subset-tab bases but only Metadata runs it.**
+  `MetaSubsetTabView.update_available_columns:1013` emits `column_names_requested` (`:115`),
+  `MetaSubsetTabController.request_column_names` (`:98` connect) answers it by calling
+  `self.view.update_column_names`, which only `MetadataView.py:2597` defines; `ProteinView`
+  never calls `update_available_columns` (its callers are `MetadataView.py:1388`/`:1901`), so
+  on Protein the slot would raise `AttributeError`. Found by mypy once `view` was declared
+  (2026-10-05). Move the method, the signal and the slot to the Metadata pair, as
+  `update_column_units` was in 2.0.0; `test_protein_view.py:1031`/`:1188-1220` and
+  `test_plugin_state_notifications.py` pin the inherited method and go with it.
 - **`_shift_range_and_update_plot` is four copies in two drifted pairs.** Subset tabs
   (`MetadataView.py:1990`, `ProteinView.py:1160`): Metadata clamps to `n-1`, Protein wraps to 0;
   only Metadata reports no scope; Protein dispatches on `_last_event_action`. Event tabs

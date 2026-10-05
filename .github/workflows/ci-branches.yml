@@ -129,6 +129,20 @@ jobs:
           pre-commit run --all-files
 
       # ---------------------------------------------------------------------
+      # Project-environment mypy report (non-blocking)
+      # ---------------------------------------------------------------------
+      # The pre-commit mypy hook runs in an isolated environment with no project
+      # dependencies, so PySide6, numpy and pandas are all `Any` to it and it cannot
+      # see, for instance, a controller calling a method its View does not have. This
+      # run uses the installed project and reports the real count. It does not gate:
+      # the figure is tracked in future_fixes.md and DECISIONS.md (2026-08-24), and the
+      # known noise (Qt short-form enum accesses, untyped imports) would fail every run.
+      - name: Project-environment mypy report
+        continue-on-error: true
+        run: |
+          python -m mypy poriscope | tail -n 1
+
+      # ---------------------------------------------------------------------
       # Tests
       # ---------------------------------------------------------------------
       # Runs the whole suite, e2e included - no marker filter. At ~6 minutes the

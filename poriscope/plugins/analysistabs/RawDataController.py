@@ -46,6 +46,11 @@ class RawDataController(MetaEventTabController):
 
     logger = logging.getLogger(__name__)
 
+    #: Redeclared with this tab's own types, so the type checker sees the methods
+    #: the base View and Model do not have (see MetaController.view).
+    view: RawDataView
+    model: RawDataModel
+
     @log(logger=logger)
     @override
     def _init(self) -> None:
