@@ -78,7 +78,7 @@ fi
 # probe exists to prevent.
 echo "post-merge hook: no Python found that can import poriscope." >&2
 echo "  Tried: python3, python, py -3" >&2
-echo "  Skipped: autodoc regeneration, requirements refresh, wavelet DLL build." >&2
+echo "  Skipped: autodoc regeneration and requirements refresh." >&2
 echo "  Install the project first ('pip install -e \".[dev]\"'), then run" >&2
 echo "  'python scripts/hooks/post-merge.py' by hand to catch up." >&2
 exit 0

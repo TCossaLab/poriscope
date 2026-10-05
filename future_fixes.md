@@ -15,7 +15,7 @@ default, but tests for a mechanism you add are yours, and editing an existing te
 relevant to a production change is expected.
 
 **This file is the authoritative record of work to be done on the repository.** Entries sit
-under the release they target - 2.0.0, 2.1, 2.2, Later, and Owner-held - grouped within each
+under the release they target - 2.1, 2.2, Later, and Owner-held - grouped within each
 by topic or by the review that found them. Move an entry between releases rather than
 re-labelling it in place.
 
@@ -25,13 +25,6 @@ execution (SWOT and roadmap: <https://claude.ai/artifact/NsZSdFtsenMyANLEDLWvKq>
 (<https://claude.ai/code/artifact/0886d408-06de-488d-8a8e-7f6a68206651>); and the 2026-08-25
 structural audit (<https://claude.ai/code/artifact/a1bec2cd-a157-4299-acb3-a135738fee41>).
 Line numbers were re-verified 2026-09-24.
-
-## 2.0.0 - before the release ships
-
-Silent data corruption, wrong science in the docs, user data loss, and release hygiene. Mostly small, local fixes.
-
-Phase 1 (release prep) landed 2026-09-27; its plan is at
-<https://claude.ai/artifact/NAGuHCf6pisqD47S9kmyDp>. Nothing else is queued against 2.0.0.
 
 ## 2.1 - trust the numbers
 

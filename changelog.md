@@ -1,4 +1,4 @@
-## Poriscope 2.0.0: in progress
+## Poriscope 2.0.0: 2026-10-05
 
 ### Breaking Changes:
 
@@ -461,6 +461,8 @@
 * Fixed two links in the "Adding a walkthrough" tutorial that had never resolved, and gave `WalkthroughMixin` an API reference page for them to point at
 
 ### Developer Tooling:
+
+* The post-merge hook's notice that no usable Python was found no longer lists a wavelet DLL build among the steps it skipped, since the hook no longer performs one
 
 * The post-merge hook no longer tries to build the wavelet library, so a merge can no longer run an MSYS2 system upgrade or open a folder dialog; CI rebuilds the library on `develop` when its source changes, byte-for-byte reproducibly
 
