@@ -39,6 +39,8 @@ existed anywhere in the repository.
 
 from __future__ import annotations
 
+import logging
+
 import numpy as np
 import pytest
 
@@ -82,7 +84,9 @@ def view(mocker, mock_logging):
     v = RawDataView.__new__(RawDataView)
 
     # --- Core infrastructure mocks ---
-    v.logger = mocker.Mock()
+    # The logger is deliberately NOT mocked: it is a class attribute
+    # (logging.getLogger(__name__)), so it resolves on its own, and tests assert
+    # on what reaches a handler through caplog. See _qt_mocks.py.
     v.figure = mocker.Mock()
     v.canvas = mocker.Mock()
     v.add_text_to_display = mocker.Mock()
@@ -190,9 +194,10 @@ def test_update_channels_delegates_to_controls(view):
     view.rawdatacontrols.update_channels.assert_called_once_with([0, 1])
 
 
-def test_update_channels_logs_info(view):
-    view.update_channels([0])
-    view.logger.info.assert_called()
+def test_update_channels_logs_info(view, caplog):
+    with caplog.at_level(logging.INFO):
+        view.update_channels([0])
+    assert "Updated channels in RawDataControls" in caplog.text
 
 
 # ---------------------------------------------------------------------------
@@ -356,19 +361,21 @@ def test_filter_key_collapses_every_no_filter_spelling(view, parameters):
 # ---------------------------------------------------------------------------
 
 
-def test_handle_load_data_parameter_extraction_failure(view, mocker):
+def test_handle_load_data_parameter_extraction_failure(view, mocker, caplog):
     view._extract_plot_parameters = mocker.Mock(side_effect=ValueError("bad"))
-    view._handle_load_data_and_update_plot({"channel": []})
-    view.logger.error.assert_called()
+    with caplog.at_level(logging.ERROR):
+        view._handle_load_data_and_update_plot({"channel": []})
+    assert "Parameter extraction failed" in caplog.text
     view.trace_data_requested.emit.assert_not_called()
 
 
-def test_handle_load_data_invalid_params_requests_nothing(view, mocker):
+def test_handle_load_data_invalid_params_requests_nothing(view, mocker, caplog):
     view._extract_plot_parameters = mocker.Mock(return_value=("R", [0], 0.0, 100.0))
     view._validate_plot_parameters = mocker.Mock(return_value=False)
-    view._handle_load_data_and_update_plot({})
+    with caplog.at_level(logging.ERROR):
+        view._handle_load_data_and_update_plot({})
     view.trace_data_requested.emit.assert_not_called()
-    view.logger.error.assert_called()
+    assert "Invalid parameters for plotting data" in caplog.text
 
 
 def test_handle_load_data_emits_a_typed_intent(view, mocker):
@@ -588,12 +595,13 @@ def test_update_available_plugins_success(view, mocker):
     view.rawdatacontrols.update_writers.assert_called_once_with(["W1"])
 
 
-def test_update_available_plugins_exception_is_caught(view, mocker):
+def test_update_available_plugins_exception_is_caught(view, mocker, caplog):
     mocker.patch.object(MetaView, "update_available_plugins", return_value=None)
     view.rawdatacontrols.update_readers.side_effect = Exception("boom")
     # Should not raise
-    view.update_available_plugins({"MetaReader": ["R1"]})
-    view.logger.info.assert_called()
+    with caplog.at_level(logging.INFO):
+        view.update_available_plugins({"MetaReader": ["R1"]})
+    assert "Updating ComboBoxes failed" in caplog.text
 
 
 def test_update_available_plugins_makes_no_plugin_call_of_its_own(view, mocker):
@@ -628,12 +636,13 @@ def test_handle_find_events_valid_params(view, mocker):
     view._start_eventfinder.assert_called_once_with("EF1", "No Filter", [0])
 
 
-def test_handle_find_events_extraction_failure(view, mocker):
+def test_handle_find_events_extraction_failure(view, mocker, caplog):
     view._extract_event_parameters = mocker.Mock(side_effect=ValueError("bad"))
     view._start_eventfinder = mocker.Mock()
-    view._handle_find_events({})
+    with caplog.at_level(logging.ERROR):
+        view._handle_find_events({})
     view._start_eventfinder.assert_not_called()
-    view.logger.error.assert_called()
+    assert "Parameter extraction failed" in caplog.text
 
 
 def test_handle_find_events_none_params_aborts(view, mocker):
@@ -662,11 +671,12 @@ def test_handle_commit_events_normalises_a_bare_channel(view, mocker):
     view.commit_statuses_requested.emit.assert_called_once_with("W1", [0])
 
 
-def test_handle_commit_events_extraction_failure(view, mocker):
+def test_handle_commit_events_extraction_failure(view, mocker, caplog):
     view._extract_commit_event_parameters = mocker.Mock(side_effect=ValueError("bad"))
-    view._handle_commit_events({})
+    with caplog.at_level(logging.ERROR):
+        view._handle_commit_events({})
     view.commit_statuses_requested.emit.assert_not_called()
-    view.logger.error.assert_called()
+    assert "Parameter extraction failed" in caplog.text
 
 
 # ---------------------------------------------------------------------------
@@ -709,21 +719,23 @@ def test_shift_range_and_update_trace_negative_start_clamped(view, mocker):
     view.rawdatacontrols.set_range_inputs.assert_called_once_with(0.0, 5.0)
 
 
-def test_shift_range_and_update_trace_invalid_direction(view, mocker):
+def test_shift_range_and_update_trace_invalid_direction(view, mocker, caplog):
     view._extract_plot_parameters = mocker.Mock(return_value=("R", [0], 0.0, 5.0))
     view._handle_load_data_and_update_plot = mocker.Mock()
     params = {"reader": "R", "channel": ["0"], "start_time": "0", "length": "5"}
-    view._shift_range_and_update_trace(params, "sideways")
+    with caplog.at_level(logging.ERROR):
+        view._shift_range_and_update_trace(params, "sideways")
     view._handle_load_data_and_update_plot.assert_not_called()
-    view.logger.error.assert_called()
+    assert "Invalid direction: sideways" in caplog.text
 
 
-def test_shift_range_and_update_trace_extraction_failure(view, mocker):
+def test_shift_range_and_update_trace_extraction_failure(view, mocker, caplog):
     view._extract_plot_parameters = mocker.Mock(side_effect=ValueError("bad"))
     view._handle_load_data_and_update_plot = mocker.Mock()
-    view._shift_range_and_update_trace({}, "left")
+    with caplog.at_level(logging.ERROR):
+        view._shift_range_and_update_trace({}, "left")
     view._handle_load_data_and_update_plot.assert_not_called()
-    view.logger.error.assert_called()
+    assert "Failed to extract plot parameters" in caplog.text
 
 
 # ---------------------------------------------------------------------------

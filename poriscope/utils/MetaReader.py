@@ -814,7 +814,7 @@ class MetaReader(BaseDataPlugin):
         data: npt.NDArray[Any],
         copy: Optional[bool] = True,
         bitmask: Optional[np.uint64] = None,
-        dtype: Optional[str] = None,
+        dtype: Optional[npt.DTypeLike] = None,
         scale: Optional[float] = None,
         offset: Optional[float] = None,
     ) -> npt.NDArray[Any]:
@@ -829,7 +829,7 @@ class MetaReader(BaseDataPlugin):
         :param bitmask: Bitmask to apply to data, defaults to None.
         :type bitmask: Optional[np.uint64]
         :param dtype: Desired data type after scaling, defaults to None.
-        :type dtype: Optional[str]
+        :type dtype: Optional[npt.DTypeLike]
         :param scale: Scaling factor, defaults to None.
         :type scale: Optional[float]
         :param offset: Offset to add to scaled data, defaults to None.

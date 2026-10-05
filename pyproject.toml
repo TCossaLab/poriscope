@@ -18,17 +18,21 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: Microsoft :: Windows",
 ]
+# Compatible-release ranges, not exact pins: an exact pin in the wheel metadata
+# conflicts with any other package in a user's environment that needs a different
+# patch release. The exact versions CI tests against live in requirements.txt, which
+# every workflow installs with -c so a run resolves those and nothing newer.
 dependencies = [
-    "PySide6==6.9.0",
-    "numpy==2.2.6",
-    "matplotlib==3.10.3",
-    "pandas==2.2.3",
-    "platformdirs==4.3.8",
-    "scipy==1.15.3",
-    "kneed==0.8.5",
-    "fast-histogram==0.14",
-    "scikit-learn==1.6.1",
-    "hdbscan==0.8.40",
+    "PySide6~=6.9",
+    "numpy~=2.2",
+    "matplotlib~=3.10",
+    "pandas~=2.2",
+    "platformdirs~=4.3",
+    "scipy~=1.15",
+    "kneed~=0.8",
+    "fast-histogram~=0.14",
+    "scikit-learn~=1.6",
+    "hdbscan~=0.8.44",
 ]
 
 [project.optional-dependencies]

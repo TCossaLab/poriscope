@@ -31,6 +31,7 @@ from PySide6.QtCore import Slot
 
 from poriscope.utils.LogDecorator import log
 from poriscope.utils.MetaController import MetaController
+from poriscope.utils.MetaEventTabView import MetaEventTabView
 
 
 class MetaEventTabController(MetaController):
@@ -62,6 +63,10 @@ class MetaEventTabController(MetaController):
     """
 
     logger = logging.getLogger(__name__)
+
+    #: Redeclared with this tab's own types, so the type checker sees the methods
+    #: the base View and Model do not have (see MetaController.view).
+    view: MetaEventTabView
 
     @log(logger=logger)
     @Slot(dict)

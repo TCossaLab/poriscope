@@ -25,9 +25,10 @@
 # Alejandra Carolina González González
 
 import logging
+import os
 import threading
 from abc import abstractmethod
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple, Union
 
 from matplotlib.backends.backend_qt5agg import (
     FigureCanvasQTAgg as FigureCanvas,
@@ -386,7 +387,11 @@ class MetaView(QWidget, WalkthroughMixin, metaclass=QObjectABCMeta):
             progress_bar.setValue(value)
 
     @log(logger=logger)
-    def update_actions_from_json(self, actions: Dict[str, Dict[str, Any]]) -> None:
+    def update_actions_from_json(
+        self, actions: Mapping[Union[int, str], Dict[str, Any]]
+    ) -> None:
+        # Keys are ignored: the controller's in-memory history is keyed by int and a
+        # history read back from a JSON file by str, and both are replayed through here.
         for _, val in actions.items():
             function = val.get("function")
             # Pre-existing gap: if a stored action dict is missing the "function"
@@ -399,6 +404,25 @@ class MetaView(QWidget, WalkthroughMixin, metaclass=QObjectABCMeta):
                     args = val.get("args")
                     kwargs = val.get("kwargs")
                     function(*args, **kwargs)
+
+    @log(logger=logger)
+    def get_save_filename(self) -> str:
+        """
+        Open a file dialog for the user to choose where to save a CSV export.
+
+        Called by ``MetaController.export_plot_data`` on every tab, so it lives here;
+        it was four byte-identical copies on the Views before 2.1.
+
+        :return: the selected path, or an empty string if the dialog was cancelled
+        :rtype: str
+        """
+        file_name, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save CSV File",
+            os.path.expanduser("~"),
+            "CSV Files (*.csv);;All Files (*)",
+        )
+        return file_name
 
     @log(logger=logger)
     def _save_actions_to_json(self) -> None:

@@ -524,6 +524,24 @@ class TestGeneratedAnalysisTabs:
         assert "self.view = WiredView()" in text
         assert "self.model = WiredModel()" in text
 
+    def test_the_controller_redeclares_view_and_model_with_its_own_types(
+        self, script, tmp_path
+    ):
+        """
+        ``MetaController`` declares ``view: MetaView`` and ``model: MetaModel``. A tab's
+        controller calls methods only its own View and Model have, so without the
+        redeclaration every such call is an attribute error to the type checker - the
+        shape the shipped tabs had until 2.1, found as 148 errors once the base declared
+        the pair. The generated controller starts out redeclared.
+        """
+        text = generate_tab(script, "Typed", tmp_path)["Controller"].read_text(
+            encoding="utf-8"
+        )
+        assert "    view: TypedView\n" in text
+        assert "    model: TypedModel\n" in text
+        # Declared in the class body, ahead of the first method section.
+        assert text.index("    view: TypedView") < text.index("    def _init(")
+
     def test_update_available_plugins_calls_super(self, script, tmp_path):
         """
         The only abstract method on any of the eleven bases that carries a real body.

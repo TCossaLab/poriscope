@@ -1135,7 +1135,7 @@ class TestUpdateEventPlotExtended:
 class TestGetSaveFilename:
     def test_returns_selected_path(self, mock_view):
         with patch(
-            "poriscope.plugins.analysistabs.EventAnalysisView.QFileDialog.getSaveFileName",
+            "poriscope.utils.MetaView.QFileDialog.getSaveFileName",
             return_value=("/path/to/file.csv", "CSV Files (*.csv)"),
         ):
             result = mock_view.get_save_filename()
@@ -1143,7 +1143,7 @@ class TestGetSaveFilename:
 
     def test_returns_empty_on_cancel(self, mock_view):
         with patch(
-            "poriscope.plugins.analysistabs.EventAnalysisView.QFileDialog.getSaveFileName",
+            "poriscope.utils.MetaView.QFileDialog.getSaveFileName",
             return_value=("", ""),
         ):
             result = mock_view.get_save_filename()

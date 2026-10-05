@@ -30,398 +30,307 @@ Line numbers were re-verified 2026-09-24.
 
 Accuracy tests against ground truth, reader and database correctness, type checking that sees the MVC layer, a Windows CI leg.
 
-### The two filters share 16 byte-identical lines (2026-09-27)
+**Plan:** <https://claude.ai/artifact/W9G3cHAQvSopQsRrJH6s3z> (order, rulings, live gate figures,
+per-step commit series; updated as steps land). Items below sit under the plan's step; each step is
+re-measured at HEAD when it comes up. Anchors re-verified 2026-10-05 at `90ad82e9`. Rulings so far
+(Kyle, 2026-10-05): the ground-truth harness is ours to build; one release, with step 8 allowed to
+slip to 2.2 if the PeakFinder owner does not engage; runtime pins loosen to compatible ranges while
+`requirements.txt` stays exact; the ABF offset arithmetic is correct (`DECISIONS.md` 2026-10-05).
 
-`close_resources` and `reset_channel` are identical in `BesselFilter` and `WaveletFilter`,
-8 lines each (the `filters` duplication family, measured on entry). Promote them to
-`MetaFilter`.
+### Step 0 - baseline and tooling
 
-### The API reference has no dead-link gate (2026-09-27)
-
-`-W` passes while references are unresolved, because `conf.py` has no `nitpicky`. With `-n`
-the build reports 1,463 warnings (1,503 before the 2026-09-27 base-link fix): about 1,350 are
-numpy, pandas, Qt and typing names, which intersphinx plus `nitpick_ignore_regex` would clear,
-and about 117 are ours across ~25 files - wrong-owner `:meth:` targets such as
-`MetaFilter.apply_settings`, unqualified short names, and undocumented internal classes. Fix
-ours, then turn `nitpicky` on so CI catches a dead link.
-
-### A milestone blocks the page switch but not what caused it (2026-09-21)
-
-Found during a manual pass; **pre-existing**. `MainView.switch_to_page:895` refuses to change
-page (`:912`) while `_milestone_dialog` is up and the target is not `_expected_next_view` - but
-every caller does its work *before* calling it, so the refusal comes too late to prevent
-anything:
-
-- `on_raw_data_view_click:611` and its twins `on_event_analysis_click:617` and
-  `on_metadata_click:623` call `on_load_analysis_tab_button_click` first, which emits
-  `instantiate_analysis_tab` - the tab is created and starts its own walkthrough - then
-  `sync_sidebar_highlight`, and only then `switch_to_page`.
-- `handle_menu_click:692` highlights before switching.
-- `on_load_analysis_tab_button_click:714` highlights as well (`:722`), so the highlight moves
-  twice.
-
-Observed: during a milestone, clicking any sidebar button opens that tab and starts its
-tutorial, and every menu stays live under the dimming overlay. The gate is in the wrong
-layer - it guards the last step of an action whose earlier steps have already run. Fixing
-it means asking "is this navigation allowed?" before the handler acts, not inside the
-final call; the walkthrough and milestone guards at `switch_to_page:899-925` are that
-predicate's body, so move them rather than copy them.
-
-### The capture-rate plot always reports one row dropped (2026-09-14)
-
-`MetadataController.fit_capture_rate:420` (`:472`) compares the surviving interval count against the
-**event** count, so a column with no repeated timestamps still reports "1 rows dropped by
-log filter" - n events make n-1 intervals by construction. Cosmetic, and preserved exactly
-when the calculation moved from `MetadataView` to the Model so that the move changed
-nothing the user sees; a test pins it as current behaviour. The fix is to compare against
-`initial_length - 1`, and to delete that test with it.
-
-### `MetadataModel.kernel_density` uses a deprecated SciPy namespace (2026-09-14)
-
-`MetadataModel.py:297` calls `stats.kde.gaussian_kde`, which warns
-"the `scipy.stats.kde` namespace is deprecated and will be removed in SciPy 2.0.0" on
-every density plot. The fix is one line - import `gaussian_kde` from `scipy.stats` - and
-the only reason it is queued rather than done is that it belongs with a test run that
-exercises the density path rather than with an unrelated branch.
-
-### The experiment/channel scope has three annotations for one value (2026-09-14)
-
-The analysis-tab layer declares it `Optional[Dict[str, List[Optional[int]]]]` in **9**
-signatures (`MetadataController.py:513/603/674/742`, `ProteinController.py:225/524/566`,
-`MetaSubsetTabController.py:111`, `MetaSubsetTabModel.py:114`); `MetaDatabaseLoader` and its
-neighbours declare `Optional[Dict[str, Optional[List[int]]]]` in **10**; and the selection
-tree stores `Dict[str, Dict[str, List[str]]]` (`MetaSubsetTabView.py:203`), converted with
-`int(selected_channel)` at `MetadataView.py:2009` and `:2114`. The producer at
-`MetaSubsetTabView.py:789` builds `{exp: [channel] or None}`, so the loader's form is the
-correct one and the tab layer's 9 are transposed. Invisible to mypy because the value is
-passed through `call()`, which returns `Any`. Found writing tests against the loader's real
-signature; not fixed with them, because it is a layer-wide annotation change rather than
-part of pinning two methods.
-
-### `SQLiteDBLoader` opens a fresh connection per schema lookup (2026-09-08)
-
-`get_table_by_column:454` and `get_column_names_by_table:382` each call
-`sqlite3.connect(self.db_path)` per invocation, with no cache. Measured: **10 connections
-per `construct_metadata_query`** with a WHERE body, 4 without. Cheap on a local file
-(1.5 ms/call, so 0.08 s to validate 50 filters) and not the cause of the filter-loading
-pause, but the schema cannot change while a loader is open, so a dict cache built in
-`_finalize_initialization` would remove all of them. Re-measure on a network-mounted
-database before deciding it does not matter.
-
-### Action history: record a declared action name, not a method name
-
-**Deferred out of 2.0.0 on 2026-09-22** as its own feature design step rather than release
-mechanics. `DECISIONS.md` 2026-09-17 settled *what* to do; what moved is *when*.
-
-**5** `@register_action` sites over **3** names, all private, replayed off the View:
-`_reset_actions` on `ClusteringView`, `MetadataView` and `ProteinView`, plus
-`MetadataView._overlay_plot:1396` and `ProteinView._update_distribution_ensemble:1857`. Replay is
-`getattr(self, name)` on the View via `MetaView.update_actions_from_json:389` (`:396`), so renaming a
-decorated method breaks saved `.json` files today.
-
-Saved action files carry **no compatibility obligation** (Kyle's ruling - the feature is
-barely used), so the design is free:
-
-- `@register_action("overlay_plot")` records a declared name instead of `func.__name__`.
-- Replay dispatches through the registry those declarations build, not `getattr`, so an
-  unknown action name is reported rather than called.
-- Recorded arguments stay small and JSON-round-trippable - user intent, not bulk data.
-- `register_action` (`LogDecorator.py:177`) has no docstring at all. Write the contract on it:
-  the declared name, small recorded arguments, a body that is a pure function of them, and
-  replay self-contained to its own tab.
-
-Breaking, and to be called out as such whenever it lands.
-
-
-### Other queued items
-
-- [2.1] **Raw SQL subset filters can be saved but never plotted.** Six call sites refuse them
-  (`MetaSubsetTabView._refuse_raw_filters:234`, called at `MetadataView.py:1409`/`:2067` and
-  `ProteinView.py:1356`/`:1451`/`:1710`/`:1871`), because every plot path splices the filter in as a
-  WHERE body. The design is settled (`DECISIONS.md` 2026-09-14): a raw filter goes to
-  `query_database_directly` (`MetaDatabaseLoader.py:1416`) exactly as written, ignores the
-  experiment/channel selection, and the user owns its projection - so a plot missing a column it
-  needs must say which, not draw nothing. Clustering only gets this through the shared filter
-  base queued under Later.
-- **`format_axis_label` truncates a column name containing parentheses.** The pattern
-  `\s*\(.*?\)$` is anchored at `$`, so the leftmost match wins and the lazy `.*?` expands
-  across every intervening `)`: the strip reaches back to the **first** parenthesis, not the
-  last. A column named `Rate (per pore)` plotted with unit `Hz` is labelled `Rate (Hz)`,
-  silently losing `per pore`; `a (b) (c) (d)` collapses to `a`. Two copies,
-  `ProteinView.py:2357` and `MetadataView.py:2822`; `ClusteringView.py:719-730`'s inline
-  builder is unaffected because it never receives a label with a parenthetical. Behaviour is
-  pinned in `tests/unit/views/test_duplicated_helpers.py:273-309`, so a fix must update those tests.
-- **Two view test modules mock the view's `logger`**, which `tests/unit/views/_qt_mocks.py`'s
-  module docstring explicitly warns against: `test_raw_data_view.py:85` and
-  `test_metadata_view.py:152` (`logger = mocker.Mock()`). Their log assertions (8 and 2 sites)
-  check calls on the mock, not what reaches a handler.
-
-### Data integrity and scientific correctness
-
-- **No test checks fitted values against ground truth.** Conformance asserts level
-  counts only (`test_eventfitters.py:295`); there is no `CUSUM` unit test file, the
-  ClassicCUSUM tests mock `_calculate_threshold`, and nothing pins the variance-reset fix.
-  Plant levels in `synthetic_events_db` and assert current, blockage and duration within
-  tolerance for CUSUM, ClassicCUSUM and NoFitter across SNRs and short events.
-- **Conformance recipes never leave the happy path**: add multi-file sets.
-- **`NoFitter` places event edges asymmetrically** (`NoFitter.py:226`): the start walks
-  back to the baseline crossing, the end sits `rise_time` before the threshold crossing (838
-  against 860 on a 40-sample ramp), so the overlay and `raw_ecd` shift left.
-- **ABF conversion folds the offsets into the gain** (`ABF2Header.py:199-200`) instead of
-  `raw*gain + (instOffset - sigOffset)`, and `TCossaLabABFReader:253` hardcodes offset 0.0.
-  Latent: the synthetic ABF writer uses 0.0 offsets.
-- **`MetaReader._set_sample_rate` checks only each channel's first file**, so a set whose
-  files disagree on sample rate is read at the first file's rate.
-- **`SQLiteDBLoader._load_event_data` drops an event on a NULL `padding_before`** via
-  `try … continue`, logging only at INFO.
-- **`IntraCUSUM` defaults make it count noise**: threshold and hysteresis both 0.0
-  (`:89`, `:95`) scored 499 crossings on a clean single level (2 at T=200, H=20); nothing
-  checks hysteresis < threshold.
-- **`ClassicCUSUM` merges short levels on a median but reports them on CUSUM's
-  single-sample fallback**, so the merge decision and the reported current use different
-  estimators.
-
-### Session and settings persistence
-
-- **`apply_settings` assigns `raw_settings` before validating** (`BaseDataPlugin.py:422`),
-  so a rejected edit leaves the rejected values on the plugin.
-- **`MetaModel.run_generators` indexes `self.generators[key]` unguarded** (a `KeyError`
-  in a slot if nothing was staged), and `set_generator` silently drops a generator for a
-  running (key, channel) without closing it.
-
-### Analysis tabs
-
-- **`_shift_range_and_update_plot` is four copies in two drifted pairs.** Subset tabs
-  (`MetadataView.py:1987`, `ProteinView.py:1157`): past the end, Metadata clamps and wraps to 0
-  while Protein lands on `n_events`, and only Metadata says when no scope is selected. Event
-  tabs (`RawDataView.py:461`, `EventAnalysisView.py:194`): only RawData tells the user it cannot
-  shift below 0, and they catch different exceptions. Promote each pair to
-  `MetaSubsetTabView`/`MetaEventTabView`, with `_get_event_index_text` (`RawDataView.py:528`,
-  `EventAnalysisView.py:252`, differing only in the panel attribute).
-- **`set_heatmap` passes bin centres as the `imshow` extent** (`MetadataView.py:985`),
-  compressing the image by a bin width; its export cache (`:990-995`) is built in the View.
-
-### Fitter performance and logging
-
-- **`fit_events` logs noisily**: INFO `index/total_events` per event (`:557`), wrong for
-  index subsets; the generic-exception branch interpolates the whole event dict, data included
-  (`:636`); "No further warnings of this type" (`:627`) then warns every time.
-- **`get_single_event_metadata` loads each event twice** (`MetaEventFitter.py:859-860`).
-
-### Database
-
-- **No indexes on the foreign-key columns** `data.event_db_id`, `sublevels.event_db_id`
-  and `events.channel_db_id`: `construct_event_data_query` plans `SCAN d` + `SCAN s`, 0.16 s for
-  5 events in a 16k-event, 203 MB database, linear in file size. `CREATE INDEX IF NOT EXISTS`
-  needs no migration.
-
-### Plugin contract
-
-- **The compliance test checks only `__abstractmethods__`** (`test_plugin_compliance.py:43`),
-  so overrides of concrete methods such as `load_data` go unchecked, and an
-  `except (ValueError, TypeError): pass` skips a comparison silently.
-- **Coordinate a run-wide "all channels finished" hook on `MetaEventFitter`** with the
-  PeakFinder owner, so the barrier below is built by the base rather than raced in a
-  per-channel hook. Breaking on a `Meta*` base.
-
-### Types, tests and CI
-
-- **The mypy hook's blindness hides real errors**: the project-venv run (mypy 2.3.1)
-  reports 684, of which ~384 are Qt enum and untyped-import noise; the rest include 81 uses of
-  `self.view`/`self.model` the controller bases never declare (`MetaController.py:81-92`), and
-  `MetaReader._scale_data(dtype: Optional[str])` (`:955`) receives `np.float64` at all six
-  reader call sites. Declare the attributes, fix the annotations, add a non-blocking
-  project-venv report, and revisit `DECISIONS.md` 2026-08-24 with these figures.
-- **Add a wheel smoke job**: build, install into a fresh venv, `import poriscope.exposed`,
-  load the platform's wavelet binary. Pairs with the Windows CI entry.
-- **Exact runtime pins in the wheel metadata** (`PySide6==6.9.0`, `numpy==2.2.6`, …)
-  conflict with any other package in a user's environment; loosen to compatible ranges, add
-  Dependabot for Actions and pip, and pin `pre-commit` in the workflows. The sklearn
-  `force_all_finite` FutureWarning in `test_clustering_model` will fail on the next upgrade.
-
-### From the 2026-09-03 review - high
-
-- **`test_plugin_compliance` parametrizes from `__subclasses__()` at import time**, so which
-  test doubles it audits depends on module import order. `pytest tests/unit/utils
-  tests/unit/plugins` (inverted; `test_plugin_compliance.py:135-145`, `:268-273`) picks up `ConcreteDatabaseLoader`, `ConcreteEventFitter`
-  and `MockEventLoader` and reports 4 failures that natural order never sees. Skip classes
-  defined under `tests/`.
-- **`INSERT OR IGNORE` turns a schema mismatch into a misleading rejection reason.**
-  `SQLiteDBWriter._insert_event:787`/`_insert_sublevels:820` infer failure from `cursor.rowcount`
-  (`:815`, `:873`),
-  so a `NOT NULL` violation surfaces as `IOError("Cannot Overwrite Existing Event")`. Hit
-  twice while building the writer-fix harnesses (metadata missing `channel_id`, sublevel
-  missing `levels_left`). `OR IGNORE` is there to make a genuine re-write a no-op, so
-  distinguish the two: check required columns up front, or use `ON CONFLICT ... DO NOTHING`
-  on the uniqueness constraint only.
-- **The writers have no tests of their failure paths.** `tests/unit/plugins/conformance/test_writers.py`
-  (7 tests) drives both families through real chains on the happy path; nothing covers
-  duplicate rows, a schema mismatch, abort, or the `rejected` bookkeeping.
-- **`channel: Optional[int] = None` meaning "every channel" - deferred out of 2.0.0** (Kyle,
-  2026-09-22). `MetaEventFitter.reset_channel:325-359` ignores `None` and writes
-  `eventfitting_status[None]` behind four `type: ignore`s, each inside a `try/except KeyError`
-  that `dict.pop(channel, None)` replaces (`:343-358`); `MetaEventFinder.reset_channel:172-195`
-  writes the same ten resets twice, once per branch. `close_resources` is `pass` in 15 of
-  18 overriding plugin files and the two SQLite writers ignore the argument. Scope, as designed 2026-09-22:
-  - `close_resources`, `reset_channel`, `report_channel_status` take a required `channel: int`
-    on the six channelled families, every `if channel is None` arm deleted; callers loop, as
-    for `get_channel_length`. `MetaFilter` and `MetaDatabaseLoader` take no channel at all.
-  - `MetaWriter`/`MetaDatabaseWriter` gain `get_channels()` from their finder/fitter;
-    `BaseDataPlugin` stops declaring the three, since the signatures differ by family.
-  - Whole-plugin callers - `DataPluginModel.unregister_plugin`/`handle_exit`,
-    `DataPluginController:285`/`:828`, `PeakFinder:4786` - loop `get_channels()` or call bare
-    by declared base. `BaseDataPlugin.__enter__`/`__exit__` have no users; delete.
-  - `MetaDatabaseWriter._initialize_database`/`_write_experiment_metadata` go
-    `Optional[int]` -> `int`; always called with a channel.
-  - All 21 overrides change verbatim, including the three owner-held fitters (signature and
-    docstring only). Breaking. Not in scope: `get_event_counts_by_experiment_and_channel`
-    (SQL aggregate, no loop), `MetaModel.stop_workers` (app layer).
-- **`ThresholdBlockageFinder`'s σ threshold is compared against a pA mean in the base loop.**
-  `MetaEventFinder.find_events:453` skips a chunk when `mean < Threshold`, which is right for
-  `ClassicBlockageFinder`'s pA threshold; at 8σ it skips only chunks with a baseline under 8 pA.
-  A behaviour question, not a contract one - the key is declared on the base since 2.0.0.
-- **`MetaEventFinder._fit_baseline_histogram:964` picks, windows and bins the baseline peak
-  on rules nobody chose.** One piece of work, since each answer depends on the one before it;
-  every σ threshold in every finder comes from this fit. Needs synthetic-data evidence, not a
-  quiet edit.
-  - *Peak:* `np.argmax(hist)` (`:1004`) follows the tallest bin, but the baseline is the fitted
-    peak farthest from zero (Kyle, 2026-09-20). Baseline 1000 with a second population at 850:
-    correct up to 49% occupancy of the lower one, then reports **852** from 55%. Needs a stated
-    rule first - prominence floor, fraction of the tallest bin, or minimum separation.
-  - *Window:* `hist[peak - half_width : peak + half_width]` (`:1028`) keeps one more bin below the
-    peak. It helps only when the contaminant sits *above* the baseline; below it, σ is 1-4% worse
-    in six configurations of 40 trials. Settle it after the peak rule (`DECISIONS.md` 2026-09-20).
-  - *Bins:* `int(len(data)**(1/3)/2)` (`:994`) is 10 on a 10k-sample chunk, ~6 surviving the two
-    windowing passes; the log-linearised fit is biased high at that few points, +2.3% at 10k
-    falling to +0.2% at 1M. Rice's rule gives four times as many.
-- **No schema version, and the compatibility check has a dead branch.** No
-  `PRAGMA user_version` anywhere. `SQLiteDBLoader._finalize_initialization:1034-1039` guards
-  `extra_tables` against `"event_counts"`, already in `expected_tables` (`:1004`) and so
-  never present - net effect, any table a newer writer adds makes the loader refuse the
-  file. `_ensure_event_counts:1089` uses `executescript` (`:1114`), which commits pending work and
-  runs each statement unwrapped, so a failure leaves the table created but empty and the
-  `table exists` guard (`:1105-1108`) never retries - every count reads 0 forever. It also runs a
-  full-table aggregate on the GUI thread at plugin load.
-  Store provenance (reader, filter and finder settings as JSON) alongside `user_version`, so a
-  database says how its events were produced.
-
-### From the 2026-09-03 review - moderate
-
-- **`BesselFilter` uses the wrong filter form and guards it with a magic constant.** `:214`
-  builds `(b, a)` and `:123` runs `filtfilt`, guarded by `if any(np.absolute(p) >= 0.975)`
-  at `:95`. Measured against `sosfiltfilt`: at the allowed limit (Wn=0.02) `filtfilt(b,a)`
-  already deviates by 6.3e-4 σ, and just past it by 22.6%. `output="sos"` + `sosfiltfilt`
-  makes the guard unnecessary *and* unblocks the low cutoffs it rejects today (25 kHz at
-  4.17 MHz is refused). Also `:188` makes the user re-enter `Samplerate` the reader already
-  knows, so a mismatch silently mis-designs the filter.
+- **`test_plugin_compliance` parametrizes from `__subclasses__()` at import time**
+  (`test_plugin_compliance.py:136-150`, `:269-278`), so which test doubles it audits depends on
+  module import order; `pytest tests/unit/utils tests/unit/plugins` (inverted) picks up
+  `ConcreteDatabaseLoader`, `ConcreteEventFitter` and `MockEventLoader` and reports 4 failures
+  natural order never sees. Skip classes defined under `tests/`. The `except (ValueError, TypeError):
+  pass` at `:382` skips a comparison silently; name the skipped method.
+- **The mypy hook's blindness hides real errors**: the project-venv run (mypy 2.3.1, 2026-10-05)
+  reports 690 in 70 files, 79 of them `self.view`/`self.model` on attributes the controller bases
+  never declare (`MetaController.py:72-76` sets them from kwargs), 41 untyped imports, the rest
+  mostly Qt enum noise; `MetaReader._scale_data(dtype: Optional[str])` (`:812`) receives
+  `np.float64` at all six reader call sites. Declare the attributes, fix the annotation, add a
+  non-blocking project-venv report, revisit `DECISIONS.md` 2026-08-24 with the figures.
+- **No Windows CI job.** All 7 workflows run only `ubuntu-latest` on Python 3.12.10, so Linux
+  takes the opposite branch at the 10 platform-conditional sites, including
+  `WaveletFilter.py:181-182`'s `os.add_dll_directory` in the one module that loads a native binary.
+- **Add a wheel smoke job**: build, `twine check`, install into a fresh venv with
+  `-c requirements.txt`, `import poriscope.exposed`, load the platform's wavelet binary.
+- **Exact runtime pins in the wheel metadata** (`PySide6==6.9.0`, `numpy==2.2.6`, ...) conflict
+  with any other package in a user's environment; loosen to `~=` ranges, keep `requirements.txt`
+  exact, add Dependabot for Actions and pip, pin `pre-commit` in the three workflows that install
+  it. The 16 `force_all_finite` FutureWarnings in `test_clustering_model` come from `hdbscan`
+  0.8.40 and fail on scikit-learn 1.8; PyPI has hdbscan 0.8.44.
+- **`release.yml` holds `contents: write` plus a PyPI OIDC token (`:16-18`) while calling floating
+  action tags** - seven distinct actions across the workflows, three third-party, none SHA-pinned.
+  It installs `mingw-w64` (`:105`) that nothing uses and runs no `twine check`.
+- **`ci-internal-pr.yml:109-114` pushes from a detached HEAD**: the checkout at `:44-46` has no
+  `ref`, so `git push` has no branch; guarded by `if ! git diff --quiet`, so it only fires when the
+  manual hooks change a file.
+- **Two view test modules mock the view's `logger`**, which `_qt_mocks.py:12-14` warns against:
+  `test_raw_data_view.py:85` (8 assertions) and `test_metadata_view.py:180` (2). They check calls
+  on the mock, not what reaches a handler.
 - **Windows logging drops any record containing `μ`.** `main_app.py:226` constructs
-  `logging.FileHandler` with no `encoding=`, so cp1252 cannot encode U+03BC and the record
-  is discarded with `--- Logging error ---` on stderr (reproduced). Six sites write `"μs"`,
-  including `metadata_units["duration"]` in both PeakFinders, which reaches the database,
-  against 53 writing ASCII `"us"` - one physical unit with two spellings in the database.
+  `logging.FileHandler` with no `encoding=`, so cp1252 cannot encode U+03BC and the record is
+  discarded with `--- Logging error ---` (reproduced). Six sites write `"μs"`, including
+  `metadata_units["duration"]` in both PeakFinders, against 53 writing `"us"` - one unit, two
+  spellings in the database.
+- **`MetadataModel.kernel_density` uses a deprecated SciPy namespace** (`:297`,
+  `stats.kde.gaussian_kde`); import `gaussian_kde` from `scipy.stats`.
+
+### Step 1 - ground-truth safety net (gate)
+
+- **No test checks fitted values against ground truth.** Conformance asserts level counts only
+  (`test_eventfitters.py:322-347`); there is no `CUSUM` unit-test file, the ClassicCUSUM tests mock
+  `_calculate_threshold`, and nothing pins the variance-reset fix. `generate_events_database`
+  already plants staircases (`sublevel_amplitudes_pA`) and dips (`sublevel_dip_pA`) but the
+  conformance fixtures drop the ground-truth object. Assert current, blockage and duration within
+  tolerance for CUSUM, ClassicCUSUM, IntraCUSUM and NoFitter across SNRs and short events.
+- **Baseline sigma is pinned only on N(1000, 25)** (`test_meta_event_finder.py`
+  `TestFitBaselineHistogram`, rel 2%; shipped window pinned at 38.29). Plant sigma on 10k / 100k /
+  1M chunks and a two-population case; pin planted values only, since step 4 changes the fit.
+- **Conformance recipes never leave the happy path**: add multi-file sets and mismatched
+  sample rates; the synthetic ABF writer (`synthetic_abf2.py`) uses zero offsets and unit gains, so
+  add a recipe with non-zero ones that pins the current conversion.
+- **The writers have no tests of their failure paths.** `test_writers.py` (17 tests) drives both
+  families on the happy path; nothing covers duplicate rows, a schema mismatch, abort, or the
+  `rejected` bookkeeping. Nothing drives `SQLiteDBLoader` with a NULL `padding_before`.
+- **Bessel reference**: a golden against `sosfiltfilt` for step 3.
+
+### Step 2 - readers
+
+- **Migrate the ABF readers to `pyabf`?** `TCossaLabABFReader` and `LegacyElementsReader` carry a
+  hand-written ABF2 parser (`helpers/ABF2Header.py`). Spike first, read-only: pyabf against our
+  conversion on real lab files, agreement in pA. Migrate in 2.1 if they agree; otherwise file under
+  Later with the number. The offset arithmetic itself is correct (`DECISIONS.md` 2026-10-05).
+- **`MetaReader._set_sample_rate` (`:566`) checks only each channel's first file**, so a set
+  whose files disagree on sample rate is read at the first file's rate.
 - **Chunk boundaries can duplicate a sample through a float round-trip.**
   `MetaReader.continuous_read:386` converts an integer sample index to seconds (`:421-422`) and
-  `load_data` truncates it back (`:159-160`, also `_read_bounds:369-371`); measured,
+  `load_data` truncates it back (`_slice_request:159-160`, `_read_bounds:369-371`); measured,
   `int((i/sr)*sr) != i` for 7.7% of the first 2M indices at 100 kHz, and when it slips low
-  `i += len(data)` (`:428`) compounds it. Pass sample counts, or `round()`; name the unnamed
-  tail-chunk test (`:416-417`) in the same change.
-- **`SQLiteEventLoader` opens one connection per event** (`:126`, from
-  `MetaEventLoader.get_event_generator:320` per index); `construct_metadata_query` opens ten
-  connections for a single call, measured. No connection reuse and no `PRAGMA journal_mode`
-  anywhere.
-- **`columns.name` is globally `UNIQUE`** (`SQLiteDBWriter.py:616`) with `INSERT OR IGNORE`
-  (`:721-729`), so a metric named identically in event and sublevel metadata registers once
-  and `get_table_by_column` routes every query for it to the wrong table. Separately
-  `level_id`/`levels_left`/sublevel `channel_id` are attached at runtime
-  (`MetaEventFitter.py:710-717`) and never registered, so
+  `i += len(data)` (`:428`) compounds it. `MetaEventFinder.find_events:442-443` does the same
+  seconds round-trip. Pass sample counts at both ends; name the tail-chunk test (`:415-418`).
+
+### Step 3 - Bessel filter
+
+- **`BesselFilter` uses the wrong filter form and guards it with a magic constant.** `:214`
+  builds `(b, a)` and `:123` runs `filtfilt`, guarded by `if any(np.absolute(p) >= 0.975)` at
+  `:95`. Against `sosfiltfilt`: at the allowed limit (Wn=0.02) `filtfilt(b,a)` already deviates by
+  6.3e-4 sigma, and just past it by 22.6%. `output="sos"` + `sosfiltfilt` removes the guard and
+  unblocks the low cutoffs it rejects (25 kHz at 4.17 MHz is refused). `:187` makes the user
+  re-enter `Samplerate` the reader already knows.
+
+### Step 4 - event finders
+
+- **`MetaEventFinder._fit_baseline_histogram:965` picks, windows and bins the baseline peak on
+  rules nobody chose.** One ruling, since each answer depends on the one before; every sigma
+  threshold in every finder comes from this fit. Needs synthetic evidence (step 1), not a quiet edit.
+  - *Peak:* `np.argmax(hist)` (`:1005`) follows the tallest bin, but the baseline is the fitted
+    peak farthest from zero (Kyle, 2026-09-20). Baseline 1000 with a second population at 850:
+    correct up to 49% occupancy of the lower one, then reports **852** from 55%.
+  - *Window:* `hist[peak - half_width : peak + half_width]` (`:1029`) keeps one more bin below
+    the peak; helps only when the contaminant sits above the baseline, 1-4% worse below
+    (`DECISIONS.md` 2026-09-20).
+  - *Bins:* `int(len(data)**(1/3)/2)` (`:995`) is 10 on a 10k chunk, ~6 after windowing; the
+    log-linearised fit is biased high, +2.3% at 10k falling to +0.2% at 1M. Rice's rule gives
+    four times as many.
+- **`ThresholdBlockageFinder`'s sigma threshold is compared against a pA mean in the base loop.**
+  `MetaEventFinder.find_events:453` skips a chunk when `mean < Threshold`; right for Classic's pA
+  threshold, at 8 sigma it skips only chunks with a baseline under 8 pA.
+
+### Step 5 - event fitters and the fit loop
+
+- **`IntraCUSUM` defaults make it count noise**: threshold and hysteresis both 0.0 (`:89`,
+  `:95`) scored 499 crossings on a clean single level (2 at T=200, H=20); nothing checks
+  hysteresis < threshold.
+- **Silent scientific fallbacks with no metadata flag, in `CUSUM.py`.** For a sublevel shorter
+  than `rise_time`: `sublevel_current` becomes the single last sample (`:439`), `sublevel_stdev`
+  becomes `baseline_std` (`:467`), `sublevel_blockage` an unsigned max-absolute (`:494-503`). The
+  retry loop at `:371-373` fits different events at 1.5^0 to 1.5^4 times the step size and records
+  which nowhere. `:216`'s `np.std(data[-padding_after:])` returns the whole event when
+  `padding_after == 0` and its sibling returns `nan` when `padding_before == 0`, poisoning
+  `step_size` at `:222`. `Step Size` has no default (`:92`) and `_validate_settings` is `pass`
+  (`:658-665`), so `None`/`0.0` reach the division.
+- **CUSUM resets only on an accepted jump** (`CUSUM.py:316`); the C resets on any threshold
+  crossing, so a crossing rejected by the `rise_time` guard still accumulates `varS` and leaves
+  `gpos`/`gneg` above threshold to re-detect the same jump. Validate against reference data first.
+- **The `length - jump > rise_time` half of the C's edge guard is missing** (`CUSUM.py:302-303`).
+- **`ClassicCUSUM` merges short levels on a median but reports them on CUSUM's single-sample
+  fallback**, so merge decision and reported current use different estimators.
+- **`NoFitter` places event edges asymmetrically** (`:228-229`): the start walks back to the
+  baseline crossing, the end sits `rise_time` before the threshold crossing (838 against 860 on a
+  40-sample ramp), so the overlay and `raw_ecd` shift left.
+- **`fit_events` turns plugin bugs into scientific rejection reasons.** Three
+  `except ValueError`/`except Exception` pairs (`:633/642`, `:680/689`, `:741/750`) route through
+  `_reject_event:463` keyed on `str(e)`, so a `TypeError` lands in the rejection table beside
+  "Too Few Levels" and the channel finishes with `eventfitting_status = True` (`:775`). `:652`
+  checks `Iterable` then `:657` calls `len()`; `fit_events(indices=[])` marks the channel fitted
+  while the docstring at `:524` says it fits everything.
+- **`fit_events` logs noisily**: INFO `index/total_events` per event (`:557`), wrong for index
+  subsets; the generic branch interpolates the whole event dict (`:647`); "No further warnings of
+  this type" (`:638`) then warns every time. **`get_single_event_metadata` loads each event twice**
+  (`:870-871`).
+
+### Step 6 - database and the event-data contract
+
+- **No schema version, and the compatibility check has a dead branch.** No `PRAGMA user_version`
+  anywhere. `SQLiteDBLoader._finalize_initialization:1034-1039` guards `extra_tables` against
+  `"event_counts"`, already in `expected_tables` (`:1004`), so any table a newer writer adds makes
+  the loader refuse the file. `_ensure_event_counts:1089` uses `executescript` (`:1114`), which
+  commits pending work and runs unwrapped, so a failure leaves the table created but empty and
+  the guard (`:1105-1108`) never retries; it also aggregates on the GUI thread at load. Store
+  provenance (reader, filter, finder settings as JSON) with `user_version`; rule how the stamp
+  meets `overwrite` in `_initialize_database` and `SQLitePeakDBLoader`'s per-column
+  `OPTIONAL_EVENT_COLUMNS`.
+- **No indexes on the foreign-key columns** `data.event_db_id`, `sublevels.event_db_id`,
+  `events.channel_db_id` (four indexes exist, on other columns): `construct_event_data_query` plans
+  `SCAN d` + `SCAN s`, 0.16 s for 5 events in a 16k-event, 203 MB database. `CREATE INDEX IF NOT
+  EXISTS` needs no migration.
+- **`SQLiteDBLoader` opens a fresh connection per schema lookup** (`get_table_by_column:467`,
+  `get_column_names_by_table:400`): 10 connections per `construct_metadata_query` with a WHERE
+  body. **`SQLiteEventLoader` opens one connection per event** (`:126`, from
+  `MetaEventLoader.get_event_generator:320`). No `PRAGMA journal_mode` anywhere. A schema cache in
+  `_finalize_initialization` removes the first; re-measure on a network mount before dismissing.
+- **`INSERT OR IGNORE` turns a schema mismatch into a misleading rejection.**
+  `SQLiteDBWriter._insert_event:828`/`_insert_sublevels:861` infer failure from `rowcount`
+  (`:856`, `:914`), so a `NOT NULL` violation surfaces as `IOError("Cannot Overwrite Existing
+  Event")` (`MetaDatabaseWriter.py:230`). Check required columns up front.
+- **`columns.name` is globally `UNIQUE`** (`SQLiteDBWriter.py:657`) under `INSERT OR IGNORE`
+  (`:762-780`), so a metric named identically in event and sublevel metadata registers once and
+  `get_table_by_column` routes it to the wrong table. `level_id`/`levels_left`/sublevel
+  `channel_id` are attached at runtime (`MetaEventFitter.py:718-729`) and never registered, so
   `construct_metadata_query(["level_id"])` raises.
-- **`fit_events` turns plugin bugs into scientific rejection reasons.**
-  `MetaEventFitter.py` has three `except ValueError`/`except Exception` pairs (`:622/631`,
-  `:669/678`, `:730/739`) that route through `_reject_event:499`, keying on `str(e)`, so a `TypeError` from a plugin defect lands in the
-  user-facing rejection table beside "Too Few Levels" and the channel still finishes with
-  `eventfitting_status = True` (`:764`). Also `:641` checks `isinstance(..., Iterable)` then
-  `:646` calls `len()` - a generator passes and dies on the call - and `fit_events(indices=[])`
-  marks the channel fully fitted while the docstring at `:524` says it fits everything.
-- **`get_single_event_data` returns `None` on a bad index** (`MetaEventFinder.py:815`) and
-  `get_event_data_generator` yields it into the writer (`:728`), which then fails on it as a
-  swallowed rejection. It should raise. The two methods also guard "are events ready" with
-  different chains in a different order (`:711-724`, `:768-778`); only the generator checks
-  `eventfinding_finished`. One shared guard, keeping which exception fires.
-- **Silent scientific fallbacks with no metadata flag, in `CUSUM.py`.** For a sublevel
-  shorter than `rise_time`: `sublevel_current` becomes the single last sample before the next
-  level's onset instead of a median (`:439`), `sublevel_stdev` becomes `baseline_std` (`:467`), and
-  `sublevel_blockage` becomes an unsigned max-absolute instead of a signed mean deviation
-  (`:494-503`). The retry loop at `:371-373` fits different events in one channel at 1.5^0
-  to 1.5^4 times the user's step size and records which nowhere. `:216`'s
-  `np.std(data[-padding_after:])` returns the whole event when `padding_after == 0` and its
-  sibling returns `nan` when `padding_before == 0`, poisoning `step_size` at `:222` (both
-  verified). `Step Size` has no default and `_validate_settings` is `pass`, so `None`/`0.0`
-  reach the division and every event is rejected with an opaque key.
-- **`replace_raw_settings_option` is dead in practice.** `BaseDataPlugin.py:356-387` exists
-  to track a parent rename into a dependency's `Options`, but both paths reaching
-  `apply_settings` blank it first (`_swap_plugin_names_for_instances`, `DataPluginController.py:420`,
-  from both `_resolve_plugin_references:385` and `_resolve_new_plugin_references:1009`), so it always
-  returns at `if options is None`. Its covering test mocks the instance and asserts only
-  that it was called, with fixture data production never produces.
-- **`BaseDataPlugin.__init__` registers dependencies under an empty key.** `apply_settings`
-  runs at `:114` before any `set_key`, so the scripted `Plugin(settings)` path records `""`.
-  The GUI is safe (`DataPluginController.py:900`/`:914` sets the key first); the documented
-  standalone path is not.
+- **`SQLiteDBLoader._load_event_data:886` drops an event on a NULL `padding_before`**
+  (`:962-966`, `except Exception` + INFO + `continue`).
+- **`MetaDatabaseLoader.export_subset_to_csv:557` assumes one `data` row per event id, in
+  order**: `data["filename"] = filenames` (`:682`) raises on a partial `data` table and the
+  `IN (...)` query at `:656` has no `ORDER BY`.
+- **`SQLitePeakDBLoader.get_plot_features` indexes `result.iloc[1]`** (`:178`) but the guard at
+  `:155` rules out only zero rows.
+- **`SQLiteDBLoader._load_metadata_generator:848` returns on `sqlite3.Error`** (`:875-877`),
+  which inside a generator is `StopIteration` and so looks like exhaustion.
+- **`get_single_event_data` returns `None` on a bad index** (`MetaEventFinder.py:816`) and
+  `get_event_data_generator` yields it (`:729`) into `MetaWriter.write_events:463`, which fails on
+  it as a swallowed rejection. Raise instead, and share one readiness guard (`:710-725` vs
+  `:769-780` today); the writer decides whether that is a rejected event or an aborted channel.
+
+### Step 7 - plugin lifecycle
+
+- **`apply_settings` assigns `raw_settings` before validating** (`BaseDataPlugin.py:422`,
+  `_validate_settings` at `:425`), so a rejected edit leaves the rejected values on the plugin.
+- **`apply_settings` aliases the settings dict, and session history holds the same object.** Do
+  **not** fix by copying at the assignment - the alias is load-bearing: `DictDialog.__init__`
+  (`dict_dialog_widget.py:61`) aliases and `get_result` (`:400`) returns the same object, so
+  `history["settings"]` is `app_settings`; `edit_plugin` swaps plugin-typed `Value`s for live
+  instances and it is `apply_settings` writing back through the alias that repairs the history
+  dict. **Fix the ordering first, then the alias.**
+- **`BaseDataPlugin.__init__` registers dependencies under an empty key**: `apply_settings` runs at
+  `:114` before any `set_key`, so the scripted `Plugin(settings)` path records `""`. The GUI sets
+  the key first (`DataPluginController.py:887`/`:901`).
+- **`replace_raw_settings_option` is dead in practice** (`BaseDataPlugin.py:356-387`): both paths
+  into `apply_settings` blank the options first (`DataPluginController.py:420`, from
+  `_resolve_plugin_references:385` and `_resolve_new_plugin_references:996`), so it returns at
+  `:382`. Its test mocks the instance and asserts only that it was called.
 - **`edit_plugin` mutates the dependency graph partway through with a hand-rolled undo.**
-  `DataPluginController._rename_plugin:221` re-points dependents one at a time
-  (`_update_dependents_after_rename:299`) and calls `instance.set_key` (`:269`) only *after* the loop, so a mid-loop failure leaves some dependents
-  pointing at a key that does not exist, logged per-dependent while the method continues.
-  Wants validate-then-commit rather than compensating undo.
+  `_rename_plugin:221` re-points dependents one at a time (`_update_dependents_after_rename:299`)
+  and calls `set_key` (`:269`) after the loop, so a mid-loop failure leaves dependents on a key
+  that does not exist. Validate-then-commit.
+- **`MetaModel.run_generators` indexes `self.generators[key]` unguarded** (`:233`) and
+  `set_generator` (`:197`) drops a generator for a running (key, channel) without closing it.
+- **Four app-layer callers pass `channel=None`** (`DataPluginController.py:285`, `:815`;
+  `DataPluginModel.py:217`, `:239`); convert them to loop `get_channels()` here so step 8 is
+  signatures and overrides only.
 
-### From the 2026-09-03 review - CI, packaging and tooling (not logic changes - no plan needed)
+### Step 8 - data-plugin API break (breaking; may slip to 2.2)
 
-- **`ci-internal-pr.yml:109-114` pushes from a detached HEAD.** `git add -A && git commit
-  && git push` on a `pull_request` event, where `actions/checkout` leaves no branch to push -
-  guarded by `if ! git diff --quiet`, so it only fires when the manual hooks change a file.
-- **No Windows CI job.** Every matrix is single-entry and none runs `windows-latest`, so
-  Linux takes the opposite branch from the shipped platform at the platform-conditional sites
-  (10 of them) - including `WaveletFilter.py:181-182`'s `os.add_dll_directory`, in the one module
-  that loads a native binary.
-- **`release.yml` holds `contents: write` plus a PyPI OIDC token (`:12-14`) while calling five
-  floating action tags**, three of them third-party, none SHA-pinned. It installs `mingw-w64`
-  (`:101`) that nothing in the job uses, and runs no lint gate and no `twine check`.
+- **`channel: Optional[int] = None` meaning "every channel"** - scope as designed 2026-09-22
+  (`DECISIONS.md`). `MetaEventFitter.reset_channel:325-358` ignores `None` and writes
+  `eventfitting_status[None]` behind four `type: ignore`s (`:343-357`);
+  `MetaEventFinder.reset_channel:172-194` writes its ten resets twice. `close_resources` is `pass`
+  in 15 of 18 overriding plugin files. Scope: the three methods take a required `channel: int` on
+  the six channelled families, every `None` arm deleted; `MetaFilter` and `MetaDatabaseLoader` take
+  no channel; `MetaWriter`/`MetaDatabaseWriter` gain `get_channels()`; `BaseDataPlugin` stops
+  declaring the three and loses the unused `__enter__`/`__exit__` (`:116`/`:122`, with
+  `test_base_data_plugin_context_manager.py`); `MetaDatabaseWriter._initialize_database:379` and
+  `_write_experiment_metadata:355` go `Optional[int]` -> `int` (`MetaWriter`'s already is). All 21
+  overrides change verbatim. **`PeakFinder.py:2591-2593` and `:5143` pass `None` in the body** -
+  owner's, named in the ask.
+- **Coordinate a run-wide "all channels finished" hook on `MetaEventFitter`** with the PeakFinder
+  owner, so the barrier in `_post_process_events:2133-2178` is built by the base rather than raced.
+- **The two filters share 16 byte-identical lines**: `close_resources` and `reset_channel` in
+  `BesselFilter` (`:128`/`:139`) and `WaveletFilter` (`:92`/`:103`). Both are `@abstractmethod` on
+  `MetaFilter` (`:104-126`), so promotion is a contract change; it rides this step.
+- **The compliance test checks only `__abstractmethods__`** (`test_plugin_compliance.py:43`), so
+  overrides of concrete methods such as `load_data` go unchecked. Measured in step 0, widened here.
 
-### From the 2026-09-03 review - Found while verifying the 2.0.0 plan (2026-09-04)
+### Step 9a - analysis-tab views
 
-- **`MetaDatabaseLoader.export_subset_to_csv:557` assumes one `data` row per event id, in order.**
-  `data["filename"] = filenames` (`:682`) raises a length mismatch if the `data` table holds rows for
-  only some of the selected events. An empty `data` table is now rejected explicitly; a
-  partially-populated one is not, and the `IN (...)` query at `:655` has no `ORDER BY`.
-- **`SQLitePeakDBLoader.get_plot_features:177` indexes `result.iloc[1]`** but the guard at
-  `:154` only rules out zero rows, so a single-row result raises `IndexError`.
-- **`SQLiteDBLoader._load_metadata_generator:848` returns bare on `sqlite3.Error`** (`:875-877`),
-  which inside a generator is an ordinary `StopIteration` and so is indistinguishable from
-  exhaustion. Same conflation the `None`-sentinel split fixed for `_load_metadata`
-  (2026-09-04), but a generator needs its own contract.
+- **The experiment/channel scope has three annotations for one value.** The tab layer declares
+  `Optional[Dict[str, List[Optional[int]]]]` in 9 signatures (`MetadataController.py:513/603/674/742`,
+  `ProteinController.py:225/524/566`, `MetaSubsetTabController.py:111`, `MetaSubsetTabModel.py:114`);
+  `MetaDatabaseLoader` and neighbours declare `Optional[Dict[str, Optional[List[int]]]]` in 14; the
+  selection tree stores `Dict[str, Dict[str, List[str]]]` (`MetaSubsetTabView.py:204`), converted at
+  `MetadataView.py:2022` and `:2127`. The producer at `MetaSubsetTabView.py:796` builds
+  `{exp: [channel] or None}`, so the loader's form is correct and the 9 are transposed; invisible to
+  mypy because the value passes through `call()`.
+- **The column-names chain lives on the subset-tab bases but only Metadata runs it.**
+  `MetaSubsetTabView.update_available_columns:1013` emits `column_names_requested` (`:115`),
+  `MetaSubsetTabController.request_column_names` (`:98` connect) answers it by calling
+  `self.view.update_column_names`, which only `MetadataView.py:2597` defines; `ProteinView`
+  never calls `update_available_columns` (its callers are `MetadataView.py:1388`/`:1901`), so
+  on Protein the slot would raise `AttributeError`. Found by mypy once `view` was declared
+  (2026-10-05). Move the method, the signal and the slot to the Metadata pair, as
+  `update_column_units` was in 2.0.0; `test_protein_view.py:1031`/`:1188-1220` and
+  `test_plugin_state_notifications.py` pin the inherited method and go with it.
+- **`_shift_range_and_update_plot` is four copies in two drifted pairs.** Subset tabs
+  (`MetadataView.py:1990`, `ProteinView.py:1160`): Metadata clamps to `n-1`, Protein wraps to 0;
+  only Metadata reports no scope; Protein dispatches on `_last_event_action`. Event tabs
+  (`RawDataView.py:461`, `EventAnalysisView.py:194`): different exceptions, only RawData reports
+  underflow. Neither base has the hooks the bodies call, so: add hooks to
+  `MetaEventTabView`/`MetaSubsetTabView`, rule the differences, then promote, with
+  `_get_event_index_text` (`RawDataView.py:528`, `EventAnalysisView.py:252`).
+- **The capture-rate plot always reports one row dropped.** `MetadataController.fit_capture_rate:420`
+  (`:472`) compares surviving intervals against the **event** count; n events make n-1 intervals.
+  Compare against `initial_length - 1` and delete the test pinning the current behaviour.
+- **`set_heatmap` passes bin centres as the `imshow` extent** (`MetadataView.py:986`), compressing
+  the image by a bin width.
+- **`format_axis_label` truncates a column name containing parentheses.** `\s*\(.*?\)$` anchored at
+  `$` lets the lazy `.*?` expand across every `)`, so `Rate (per pore)` with unit `Hz` becomes
+  `Rate (Hz)`. Two copies, `ProteinView.py:2337` and `MetadataView.py:2840`; pinned in
+  `test_duplicated_helpers.py:273-316`, so the fix updates those tests.
 
-### From the 2026-09-03 review - CUSUM follow-ons (the variance-reset fix landed 2026-09-03)
+### Step 9b - breaking tab designs and the milestone guard
 
-- **The C resets the counters on any threshold crossing; this implementation resets only on
-  an accepted jump**, (`CUSUM.py:316`), so a crossing rejected by the `rise_time` guard still accumulates
-  `varS` across the rejected boundary - the same bias the landed fix removed, just rarer. It
-  also leaves `gpos`/`gneg` above threshold, so the next iteration re-detects and re-rejects
-  the same jump. Moving to the unconditional form changes detection behaviour and needs
-  validating against reference data first.
-- **The `length - jump > rise_time` half of the C's edge guard is still missing**, already
-  flagged by a comment in the loop (`CUSUM.py:302-303`). Adding it would suppress a transition detected too close
-  to the end of an event, which the C refuses.
+- **Raw SQL subset filters can be saved but never plotted.** Six call sites refuse them
+  (`MetaSubsetTabView._refuse_raw_filters:234`, from `MetadataView.py:1409`/`:2070` and
+  `ProteinView.py:1359`/`:1454`/`:1713`/`:1874`). Design settled (`DECISIONS.md` 2026-09-14): a raw
+  filter goes to `query_database_directly` (`MetaDatabaseLoader.py:1416`) as written, ignores the
+  experiment/channel selection, and a plot missing a column it needs says which. Clustering only
+  gets this through the shared filter base queued under Later.
+- **Action history: record a declared action name, not a method name.** `DECISIONS.md`
+  2026-09-17 settled the design. 5 `@register_action` sites over 3 names, all private
+  (`_reset_actions` on Clustering/Metadata/Protein views, `MetadataView._overlay_plot:1396`,
+  `ProteinView._update_distribution_ensemble:1860`); replay is `getattr(self, name)` via
+  `MetaView.update_actions_from_json:389` (`:396`). Saved action files carry no compatibility
+  obligation (Kyle). Declared names, registry dispatch, small JSON-round-trippable arguments, and a
+  docstring on `register_action` (`LogDecorator.py:177`, none today). Breaking.
+- **A milestone blocks the page switch but not what caused it.** `MainView.switch_to_page:895`
+  refuses (`:912`) while `_milestone_dialog` is up, but every caller does its work first:
+  `on_raw_data_view_click:611`/`on_event_analysis_click:617`/`on_metadata_click:623` emit
+  `instantiate_analysis_tab` then `sync_sidebar_highlight` then `switch_to_page`;
+  `handle_menu_click:692` and `on_load_analysis_tab_button_click:714` (`:722`) highlight first.
+  Move the guards at `:899-924` into a predicate asked before the handlers act.
 
-### From the 2026-08-25 structural audit
+### Step 10 - docs dead-link gate and release prep
 
-- **`apply_settings` aliases the settings dict it is handed, and session history holds the
-  same object.** Do **not** fix this by copying at `self.raw_settings = settings` - measured,
-  the alias is load-bearing. `DictDialog.__init__` aliases the dict it is handed and
-  `get_result` returns that same object, so in `edit_plugin` `new_settings is app_settings`;
-  `history["settings"]` therefore holds `app_settings`, filed into `plugin_history` by
-  reference. `edit_plugin` then swaps plugin-typed `Value`s for live plugin instances, and it
-  is `apply_settings` writing back *through the alias* that repairs the dict history holds.
-  Copy there without first fixing that ordering and session history holds live `QObject`s for
-  `save_session` to serialise. **Fix the ordering first, then the alias.**
+- **The API reference has no dead-link gate.** `-W` passes while references are unresolved
+  because `conf.py` has no `nitpicky`. With `-n` the build reports 1,463 warnings: about 1,350 are
+  numpy, pandas, Qt and typing names (intersphinx + `nitpick_ignore_regex`), about 117 ours across
+  ~25 files - wrong-owner `:meth:` targets, unqualified short names, undocumented internal classes.
+  Fix ours, then turn `nitpicky` on.
+- **The standing-policy text at the end of this file** says "all three owner-held fitters"; only the
+  two PeakFinders are owner-held and NanoTrees is a deprecation candidate. Correct it.
 
 ## 2.2 - responsiveness and state
 

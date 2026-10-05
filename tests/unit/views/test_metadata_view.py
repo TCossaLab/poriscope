@@ -17,6 +17,7 @@ Comprehensive test coverage for:
 from __future__ import annotations
 
 import ast
+import logging
 import sys
 from pathlib import Path
 from typing import Any, Callable
@@ -177,7 +178,8 @@ def view(mocker: MockerFixture, mock_qt_dependencies: None) -> MetadataView:
 
     # Additional mocks needed before _init()
     view_instance._commit_cache = mocker.Mock()
-    view_instance.logger = mocker.Mock()
+    # The logger is deliberately NOT mocked: it is a class attribute, so it
+    # resolves on its own, and tests assert through caplog. See _qt_mocks.py.
     view_instance.metadatacontrols = mocker.Mock()
 
     # Initialize the view - this sets up all attributes with correct types
@@ -355,7 +357,7 @@ def test_get_save_filename_opens_dialog(
 ) -> None:
     """Verify QFileDialog.getSaveFileName is called."""
     mock_dialog: MagicMock = mocker.patch(
-        "poriscope.utils.MetaSubsetTabView.QFileDialog.getSaveFileName",
+        "poriscope.utils.MetaView.QFileDialog.getSaveFileName",
         return_value=("/path/to/file.csv", "CSV Files (*.csv)"),
     )
 
@@ -370,7 +372,7 @@ def test_get_save_filename_returns_empty_on_cancel(
 ) -> None:
     """Verify empty string is returned when user cancels."""
     mocker.patch(
-        "poriscope.utils.MetaSubsetTabView.QFileDialog.getSaveFileName",
+        "poriscope.utils.MetaView.QFileDialog.getSaveFileName",
         return_value=("", ""),
     )
 
@@ -4343,27 +4345,29 @@ def test_show_add_filter_dialog_returns_when_no_loader(
 
 
 def test_show_filter_info_dialog_warns_when_no_selection(
-    view: MetadataView, mocker: MockerFixture
+    view: MetadataView, mocker: MockerFixture, caplog: pytest.LogCaptureFixture
 ) -> None:
     """Verify warning when no filter is selected."""
     mock_combobox = mocker.Mock()
     mock_combobox.getSelectedItems.return_value = []
 
-    view._show_filter_info_dialog(mock_combobox, {"db_loader": "test"})
+    with caplog.at_level(logging.WARNING):
+        view._show_filter_info_dialog(mock_combobox, {"db_loader": "test"})
 
-    view.logger.warning.assert_called()
+    assert "Please select exactly one filter to edit" in caplog.text
 
 
 def test_show_filter_info_dialog_warns_when_multiple_selected(
-    view: MetadataView, mocker: MockerFixture
+    view: MetadataView, mocker: MockerFixture, caplog: pytest.LogCaptureFixture
 ) -> None:
     """Verify warning when multiple filters are selected."""
     mock_combobox = mocker.Mock()
     mock_combobox.getSelectedItems.return_value = ["Filter1", "Filter2"]
 
-    view._show_filter_info_dialog(mock_combobox, {"db_loader": "test"})
+    with caplog.at_level(logging.WARNING):
+        view._show_filter_info_dialog(mock_combobox, {"db_loader": "test"})
 
-    view.logger.warning.assert_called()
+    assert "Please select exactly one filter to edit" in caplog.text
 
 
 def test_show_filter_info_dialog_calls_edit_dialog(

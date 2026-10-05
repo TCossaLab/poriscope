@@ -6,6 +6,32 @@
 
 * Release branches now get the branch CI and the documentation render check on every push, so a release is tested before `git flow release finish` rather than after it has merged into `main`
 
+* `MetaController` now declares the `view` and `model` attributes every controller uses, so a type checker run against the installed project sees them; branch CI prints that checker's error count as a non-blocking report
+
+* `python scripts/new_plugin.py AnalysisTab` now writes a controller that redeclares `view` and `model` with the tab's own types, as the shipped tabs do; the HelloWorld tutorial files are regenerated from it
+
+* **Breaking for anyone pinning on Poriscope's own metadata: the wheel now declares compatible-release ranges** (`numpy~=2.2`, `PySide6~=6.9`, ...) instead of exact pins, so it installs beside other packages; the exact versions CI tests against stay in `requirements.txt`
+
+* `hdbscan` 0.8.44 replaces 0.8.40, which warned on every clustering run that scikit-learn 1.8 will remove `force_all_finite`
+
+* GitHub Actions and the pinned Python dependencies are now kept current by Dependabot, weekly, against `develop`
+
+### Analysis Tabs:
+
+* `get_save_filename`, the CSV export's file picker that `MetaController.export_plot_data` calls on every tab, now lives once on `MetaView` instead of as four identical copies on the Views
+
+### User-Facing Behaviour:
+
+#### General:
+
+* **Fixed the log file on Windows dropping any line containing `μ`** - such as a fitter's `μs` duration unit - with `--- Logging error ---` on the console; `app.log` is now written as UTF-8
+
+* The Metadata tab's Kernel Density Plot no longer warns about a deprecated SciPy namespace on every plot
+
+### Documentation:
+
+* The API reference no longer publishes `NanoTrees`' four module helpers (`P6Flags`, `SingleSublevel`, `HackyList`, `Sublevels`) as event fitters; a page under a data-plugin family now goes only to a class that descends from that family's `Meta*` base
+
 ## Poriscope 2.0.0: 2026-10-05
 
 ### Breaking Changes:

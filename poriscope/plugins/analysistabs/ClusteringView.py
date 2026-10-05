@@ -40,7 +40,6 @@ from mpl_toolkits.mplot3d import Axes3D
 from PySide6.QtCore import Signal, Slot
 from PySide6.QtWidgets import (
     QDialog,
-    QFileDialog,
     QMessageBox,
 )
 
@@ -138,22 +137,6 @@ class ClusteringView(MetaView):
         """
         self.clusteringcontrols = ClusteringControls()
         return self.clusteringcontrols
-
-    @log(logger=logger)
-    def get_save_filename(self) -> str:
-        """
-        Opens a file dialog to select a location for saving a CSV file.
-
-        :return: The selected file path.
-        :rtype: str
-        """
-        file_name, _ = QFileDialog.getSaveFileName(
-            self,
-            "Save CSV File",
-            os.path.expanduser("~"),
-            "CSV Files (*.csv);;All Files (*)",
-        )
-        return file_name
 
     @log(logger=logger)
     @register_action()

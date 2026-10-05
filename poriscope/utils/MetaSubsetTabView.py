@@ -201,6 +201,10 @@ class MetaSubsetTabView(MetaView):
     current_experiment: Optional[str]
     current_sql_filter: Optional[str]
     filtered_event_ids: List[int]
+    #: Every experiment and channel each loader holds, as the selection tree shows
+    #: them; filled by the controller's experiment-structure answer. Both subset tabs
+    #: create it in ``_init``; declared here because the shared controller writes it.
+    available_experiment_and_channels_by_loader: Dict[str, Dict[str, List[str]]]
     selected_experiment_and_channels_by_loader: Dict[str, Dict[str, List[str]]]
     subset_filters: Dict[str, str]
 
@@ -894,22 +898,6 @@ class MetaSubsetTabView(MetaView):
         :return: the panel built by ``_build_controls``
         :rtype: MetaSubsetTabControls
         """
-
-    @log(logger=logger)
-    def get_save_filename(self) -> str:
-        """
-        Open a file dialog for the user to choose a save location.
-
-        :return: Selected filename.
-        :rtype: str
-        """
-        file_name, _ = QFileDialog.getSaveFileName(
-            self,
-            "Save CSV File",
-            os.path.expanduser("~"),
-            "CSV Files (*.csv);;All Files (*)",
-        )
-        return file_name
 
     @log(logger=logger)
     def set_event_data_generator(self, generator: Iterator[Dict[str, Any]]) -> None:

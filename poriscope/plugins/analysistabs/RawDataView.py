@@ -27,7 +27,6 @@
 import bisect
 import logging
 import math
-import os
 import warnings
 from typing import (
     Any,
@@ -44,7 +43,7 @@ from typing import (
 import numpy as np
 import numpy.typing as npt
 from PySide6.QtCore import Signal, Slot
-from PySide6.QtWidgets import QFileDialog, QMessageBox
+from PySide6.QtWidgets import QMessageBox
 
 from poriscope.plugins.analysistabs.utils.rawdatacontrols import RawDataControls
 from poriscope.utils.DocstringDecorator import inherit_docstrings
@@ -136,22 +135,6 @@ class RawDataView(MetaEventTabView):
         """
         self.rawdatacontrols = RawDataControls()
         return self.rawdatacontrols
-
-    @log(logger=logger)
-    def get_save_filename(self) -> str:
-        """
-        Open a dialog to save a CSV file.
-
-        :return: Selected file path, or an empty string if cancelled.
-        :rtype: str
-        """
-        file_name, _ = QFileDialog.getSaveFileName(
-            self,
-            "Save CSV File",
-            os.path.expanduser("~"),
-            "CSV Files (*.csv);;All Files (*)",
-        )
-        return file_name
 
     @log(logger=logger)
     def update_plot(

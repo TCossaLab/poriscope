@@ -150,6 +150,73 @@ def test_the_walkthrough_modules_live_in_the_app_shell() -> None:
 # ===========================================================================
 
 
+def plugin_classes_by_family() -> dict[str, Set[str]]:
+    """
+    Name, per plugin family, every class that descends from a ``Meta*`` base.
+
+    Derived from the source with a rule independent of the generator's: a class is a
+    plugin when one of its bases is a ``Meta*`` name, or is another plugin class in
+    the same family (``ClassicCUSUM(CUSUM)``, ``LegacyElementsReader(TCossaLabABFReader)``).
+    Helper classes that happen to share a plugin's module - ``NanoTrees.py`` carries
+    four - have no such ancestor and so are not plugins.
+
+    :return: family directory name -> set of plugin class names
+    :rtype: dict[str, Set[str]]
+    """
+    families: dict[str, Set[str]] = {}
+    plugins_root = REPO_ROOT / "poriscope" / "plugins"
+    for family_dir in plugins_root.iterdir():
+        if not family_dir.is_dir() or family_dir.name.startswith("__"):
+            continue
+        bases_of: dict[str, Set[str]] = {}
+        for py_file in family_dir.glob("*.py"):
+            if py_file.name.startswith("__"):
+                continue
+            tree = ast.parse(py_file.read_text(encoding="utf-8"))
+            for node in tree.body:
+                if isinstance(node, ast.ClassDef) and not node.name.startswith("_"):
+                    bases_of[node.name] = {
+                        ast.unparse(base).split(".")[-1] for base in node.bases
+                    }
+        plugins: Set[str] = set()
+        changed = True
+        while changed:
+            changed = False
+            for name, bases in bases_of.items():
+                if name in plugins:
+                    continue
+                if any(b.startswith("Meta") or b in plugins for b in bases):
+                    plugins.add(name)
+                    changed = True
+        families[family_dir.name] = plugins
+    return families
+
+
+@needs_autodoc
+def test_every_plugin_family_page_documents_a_meta_subclass() -> None:
+    """
+    A page under ``autodoc/plugins/<family>/`` is a plugin, never a module helper.
+
+    ``NanoTrees.py`` defines ``P6Flags``, ``SingleSublevel``, ``HackyList`` and
+    ``Sublevels`` beside the fitter; they used to get pages under *Eventfitters* as if
+    they were fitters. The published set is compared exactly, in both directions, with
+    the set derived from the source, so a plugin losing its page fails here too.
+    """
+    for family, expected in plugin_classes_by_family().items():
+        family_dir = AUTODOC / "plugins" / family
+        if not family_dir.is_dir():
+            continue
+        published = {
+            page.stem
+            for page in family_dir.glob("*.rst")
+            if page.stem != family  # the family's own index page
+        }
+        assert published == {name.lower() for name in expected}, (
+            f"{family}: published {sorted(published)}, "
+            f"plugins in source {sorted(n.lower() for n in expected)}"
+        )
+
+
 @needs_autodoc
 def test_the_three_dialog_classes_have_no_generated_page() -> None:
     """

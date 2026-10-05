@@ -1,0 +1,28 @@
+# Dependabot keeps two things current that are otherwise pinned by hand:
+#
+# - The GitHub Actions in .github/workflows/, which are pinned to commit SHAs with the
+#   tag in a trailing comment. A SHA pin never moves on its own, so without this the
+#   pins would age silently; Dependabot bumps the SHA and the comment together.
+# - The exact runtime pins in requirements.txt (and the dev pins in requirements-dev.txt),
+#   which CI installs with -c so every run resolves the same versions. pyproject.toml
+#   declares compatible ranges for installers and is left to the ranges.
+#
+# Weekly, one PR per update, against develop: that is where branch CI runs the full
+# suite on both platforms, so a bump is tested before it is merged.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    target-branch: develop
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "ci(deps)"
+
+  - package-ecosystem: pip
+    directory: /
+    target-branch: develop
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "build(deps)"
