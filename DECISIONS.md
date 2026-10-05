@@ -18,6 +18,28 @@ and deleted on 2026-09-27; it too is in git history.
 
 ---
 
+## 2026-10-05 - The ABF readers' offset arithmetic is correct; the open question is pyabf
+
+**Context.** The 2.1 queue said `ABF2Header.py:199-200` "folds the offsets into the gain" instead
+of applying `raw*gain + (instOffset - sigOffset)`, and that `TCossaLabABFReader:265` hardcodes an
+offset of 0.0, and filed both as a latent reader defect.
+
+**Decision** (Kyle, 2026-10-05). Not a defect. ABF2 is a deliberately obfuscated format and the
+folded form is its own convention; the arithmetic stays as it is and is pinned by a conformance
+recipe with non-zero offsets and gains. What is worth considering instead is replacing the
+hand-written ABF2 parser behind `TCossaLabABFReader` and `LegacyElementsReader` with thin wrappers
+over the `pyabf` package, which is better maintained. That is decided after a read-only spike in
+2.1 step 2: pyabf against our conversion on the lab's real ABF files, agreement measured in pA.
+
+**Evidence.** The queue entry was derived from the arithmetic alone, with no reference
+implementation; the format's owner knew the convention. The synthetic ABF writer uses zero
+offsets and unit gains, so nothing in the suite could have distinguished the two forms.
+
+**Revisit if** the spike shows pyabf and our conversion disagreeing on real files, which would
+reopen the question of which one is right rather than settle it in pyabf's favour.
+
+---
+
 ## 2026-10-05 - The release workflow runs on the tag only; release branches get branch CI
 
 **Context.** `release.yml` ran on every push to `main` as well as on `v*` tags: the same job,
