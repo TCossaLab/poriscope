@@ -16,6 +16,12 @@ least 24 of 25 at 50 pA, the missing event named. A median over low-pass noise h
 fewer effective samples than the step is wide, which is why the bounds are wider than the
 white-noise intuition and narrower at wider steps.
 
+These tests name their plugins. They are parametrised over an explicit list - the CUSUM
+family and NoFitter - and never over ``discover_concrete(MetaEventFitter)``: a planted
+staircase is a statement about step-detection fitters, and a future fitter that models
+events differently is not wrong for failing it. A new plugin opts in by being added to the
+list; contract and failure-path tests stay family-wide (``DECISIONS.md``, 2026-10-06).
+
 Bands a fitter was never meant for are recorded as strict expected failures rather than
 left out: ClassicCUSUM on 40-sample steps at 15 pA (it resolves fewer levels at *higher*
 SNR - queued under step 5) and at 100 pA (its 10 σ threshold exceeds the 150 pA step);

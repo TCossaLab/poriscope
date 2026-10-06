@@ -18,6 +18,97 @@ and deleted on 2026-09-27; it too is in git history.
 
 ---
 
+## 2026-10-06 - Ruling H: the ABF readers move onto pyabf, as their own step
+
+**Context.** `TCossaLabABFReader` and `LegacyElementsReader` share a hand-written ABF2 header
+parser (`helpers/ABF2Header.py`), correct for the files the lab records (the 2026-10-05 entry)
+but specific to them; the lab also holds a third ABF subformat today, and `pyabf` is a
+maintained, general ABF reader.
+
+**Decision** (Kyle, 2026-10-06). The ABF readers become wrappers over `pyabf`, with the aim of
+one more general ABF plugin rather than one reader per subformat. It needs careful testing,
+so it is its own step in the 2.1 plan, placed after step 2 and gated by a spike: `pyabf`
+against the shipped conversion, sample by sample and header field by header field, on every
+real ABF recording in the local `real_data` tier (three subformats, two of them multi-file
+sets). The S1.4 int16 recipe pins the arithmetic a wrapper must reproduce. `pyabf` enters as
+a runtime dependency only when the wrapper lands.
+
+**Revisit if** the spike finds a recording the shipped parser reads and `pyabf` does not, or
+reads differently; that would be the thing to understand before any wrapper ships.
+
+---
+
+## 2026-10-06 - Ruling E: a file-level schema version, provenance per write, columns stay optional per loader
+
+**Context.** No `PRAGMA user_version` anywhere; `SQLiteDBLoader._finalize_initialization`
+refuses any table a newer writer adds through a dead `extra_tables` guard; `SQLitePeakDBLoader`
+already carries a per-column compatibility scheme (`OPTIONAL_EVENT_COLUMNS`); nothing records
+which plugins and settings produced a database's events.
+
+**Decision** (Kyle, 2026-10-06, as recommended). `PRAGMA user_version = 1` is written only
+when a writer creates the file, never on an existing one, so `overwrite=True` into a pre-2.1
+database leaves it at 0, which loaders accept as pre-2.1; a loader refuses a version it does
+not know rather than guessing. Provenance is a `provenance` table - plugin class, its settings
+as JSON, the Poriscope version, a timestamp - appended on every write, so a database says how
+its events were produced. The Peak loader's column list stays as the column-level mechanism,
+orthogonal to the file-level version. Executed in 2.1 step 6.
+
+**Revisit if** a schema change ever needs an in-place migration; version 1 carries none, and
+the refusal-on-unknown rule is what makes adding one later safe.
+
+---
+
+## 2026-10-06 - Ruling D: how the baseline histogram picks its peak, window and bins
+
+**Context.** `MetaEventFinder._fit_baseline_histogram` (`:965`) follows the tallest bin
+(`np.argmax`, `:1005`), windows it asymmetrically (`:1029`) and bins by `int(len(data)**(1/3)/2)`
+(`:995`), rules nobody chose; every sigma-denominated finder threshold comes from this fit.
+Measured 2026-10-05 (S1.3 pins): sigma bias +2.0% at 10k samples, +0.6% at 100k; a second
+population at 850 pA beside a 1000 pA baseline wins the fit from 55% occupancy; a second
+population widens the fitted sigma by about 2.5% through the window.
+
+**Decision** (Kyle, 2026-10-06). *Peak:* the baseline is the local maximum of the histogram
+farthest from zero among those at least 10% of the tallest, so occupancy alone never promotes
+a shallower level and noise bumps never qualify. *Window:* not symmetric. It runs from the
+3 σ tail above the rectified largest peak down to whichever is nearer below it - the 3 σ tail
+or the local minimum between that peak and its neighbour - so when two populations sit close
+together the window stops at the valley and the neighbour's edge never enters the fit.
+*Bins:* Rice's rule, `2 * n ** (1/3)`, four times today's count. Executed in 2.1 step 4,
+against the S1.3 pins, which are red exactly where the old rules fail.
+
+**Revisit if** a recording's baseline is genuinely the population nearest zero (a rectified
+trace with its open-pore level below an occupied one), which the farthest-from-zero rule
+would misread; no shipped reader produces that today.
+
+---
+
+## 2026-10-06 - Ground-truth tests name their plugins; contract tests cover the family
+
+**Context.** The conformance suite discovers every concrete plugin of a `Meta*` family with
+`discover_concrete()` and checks the contract: signatures, settings schema, happy-path
+behaviour. The 2.1 ground-truth tests (`test_fitter_accuracy.py`, `test_baseline_sigma_planted.py`)
+plant a staircase or a Gaussian baseline and assert what a fitter or finder recovers from it.
+The question was whether those, too, should be parametrised over the family.
+
+**Decision** (Kyle, 2026-10-06). No. A planted staircase is a statement about step-detection
+fitters and a planted Gaussian about histogram-fit finders; a future fitter need not model
+events as steps at all, and would not be wrong for failing a staircase. Ground-truth tests
+parametrise over an explicit list of plugin classes and say so in their docstring; a new
+plugin opts in by being added. Contract and failure-path tests (a writer's `rejected`, a
+reader's bounds, the compliance and schema checks) stay family-wide, because every member
+owes those regardless of how it models the data.
+
+**Evidence.** `test_fitter_accuracy.py` already lists `CUSUM`, `ClassicCUSUM`, `IntraCUSUM` and
+`NoFitter` by name; under a family-wide parametrisation `PeakFinder` and `Basic_PeakFinder`,
+which look for peaks rather than levels, would have failed every staircase band for reasons
+that are not defects.
+
+**Revisit if** a family gains a shared, model-free invariant worth planting - for instance
+that every fitter's event duration matches the planted blockage length - which would be a
+family-wide ground-truth test by construction.
+
+---
+
 ## 2026-10-05 - Ranges in the wheel metadata, exact pins in requirements.txt, `-c` in CI
 
 **Context.** `pyproject.toml` declared exact pins (`numpy==2.2.6`, `PySide6==6.9.0`, ...), so

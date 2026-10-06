@@ -1125,6 +1125,32 @@ carry the class name, so ``-k`` matches it:
    detects nothing. Read the parameter's ``Units`` entry rather than the sibling's
    number. Declaring ``Units`` on your own parameters is what makes this checkable.
 
+.. _real_recordings_tier:
+
+Real Recordings on a Developer's Machine
+----------------------------------------
+
+Synthetic recordings are deterministic and small, which is what the gates need; they are
+also idealised. A second tier of tests reads real lab recordings, which are gigabytes each
+and never enter the repository. Such a test carries the ``real_data`` marker and takes the
+``real_data_dir`` fixture, which resolves the directory the environment variable
+``PORISCOPE_REAL_DATA_DIR`` names and **skips** the test wherever the variable is unset or
+points nowhere. CI has no such directory, so the whole tier skips there without a failure;
+a developer with the recordings runs it by setting one variable:
+
+.. code-block:: bash
+
+   PORISCOPE_REAL_DATA_DIR="/path/to/data" pytest -m real_data
+
+The directory holds one subfolder per format (a Binary 1X recording, the two Chimera
+formats, the ABF variants), and each test names the subfolder and the reader it expects.
+A recording that is missing skips its test rather than failing it, so a partial copy of
+the data is still useful.
+
+Keep two things apart when reading these results: a synthetic test that fails is a defect
+or a wrong expectation; a real-recording test that fails may also be a property of that one
+recording, which is why the tier reports and the synthetic tiers gate.
+
 .. _reader_fuzz_testing:
 
 Fuzz Testing for Data Readers

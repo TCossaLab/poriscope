@@ -13,6 +13,7 @@ on the specific layout it builds. The ``main_model`` fixture in
 ``tests/unit/models/test_main_model.py`` relies on this one alone.
 """
 
+import os
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -74,6 +75,35 @@ def sandbox_user_data_dir(monkeypatch, tmp_path):
             _fake_user_data_dir,
             raising=True,
         )
+
+
+# ===========================================================================
+# Real recordings on a developer's machine
+# ===========================================================================
+#
+# Real lab recordings are gigabytes each and never enter the repository. A test
+# that needs one is marked ``real_data`` and takes this fixture, which resolves
+# the directory ``PORISCOPE_REAL_DATA_DIR`` names and skips the test wherever the
+# variable is unset or points nowhere - so CI, which has no such directory, skips
+# the whole tier without a failure, and a developer with the recordings runs it
+# by setting one variable.
+
+
+@pytest.fixture(scope="session")
+def real_data_dir() -> Path:
+    """
+    Return the directory of real recordings, or skip when none is configured.
+
+    :return: the directory ``PORISCOPE_REAL_DATA_DIR`` names
+    :rtype: pathlib.Path
+    """
+    configured = os.environ.get("PORISCOPE_REAL_DATA_DIR")
+    if not configured:
+        pytest.skip("PORISCOPE_REAL_DATA_DIR is not set; real-recording tests need it")
+    directory = Path(configured)
+    if not directory.is_dir():
+        pytest.skip(f"PORISCOPE_REAL_DATA_DIR={configured!r} is not a directory")
+    return directory
 
 
 # ===========================================================================
