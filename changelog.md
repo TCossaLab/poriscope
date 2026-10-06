@@ -4,6 +4,8 @@
 
 #### Results that change:
 
+* **Every event finder's baseline sigma, and so every sigma-denominated threshold, moves slightly:** the baseline histogram now uses Rice's rule for its bin count, four times as many bins as before, which removes a bias that inflated sigma by about 2% on 10,000-sample chunks and 0.6% on 100,000, and lets short, clean chunks be fitted at all instead of being skipped
+
 * **The Bessel filter now accepts low cutoffs it used to refuse as numerically unstable** (25 kHz on a 4.17 MHz recording, for one): it is built as second-order sections, which are stable at any cutoff below half the sample rate; filtered values at previously accepted cutoffs move by less than a thousandth of the noise
 
 * **Results can move by one sample at a chunk boundary:** a reader now rounds a seconds request to the nearest sample instead of truncating it, so chunked reads (the Raw Data trace, event finding, loading an event's padded window) no longer duplicate one sample and drop another where a chunk boundary fell on an index whose time did not convert back exactly

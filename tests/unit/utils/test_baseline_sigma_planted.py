@@ -5,16 +5,16 @@ Every sigma-denominated event-finder threshold comes from ``MetaEventFinder._fit
 and the existing tests pin it on one chunk size at a 2% tolerance. These tests state what
 the fit *should* recover from a planted Gaussian - mean within a tenth of a sigma, sigma
 within 1% - at the three chunk sizes a finder actually sees, and from a two-population chunk
-where a shallower occupied level sits beside the baseline. Where the shipped fit cannot
-meet the bound today the test is a strict expected failure naming the rule at fault; 2.1
-step 4 chooses those rules (ruling D) and turns the failures green.
+where a shallower occupied level sits beside the baseline. Where the fit cannot meet the
+bound today the test is a strict expected failure naming the rule at fault; 2.1 step 4
+replaces those rules (ruling D) and turns the failures green one by one.
 
-Measured on 2026-10-05 at `64d8719c`: sigma bias +2.0% (max 3.4%) at 10k samples, +0.6%
-(max 1.1%) at 100k, +0.1% at 1M; the two-population mean is right to 0.2 pA up to 45%
-occupancy and reports the lower level at 55%; the two-population sigma is +2.5% at every
-occupancy. The bins rule (``int(len(data)**(1/3)/2)``, ``:995``) is behind the small-chunk
-bias, the ``np.argmax(hist)`` peak rule (``:1005``) behind the flip, and the off-centre
-window (``:1029``) behind the two-population sigma.
+Measured on 2026-10-05 at `64d8719c`, before step 4: sigma bias +2.0% (max 3.4%) at 10k
+samples, +0.6% (max 1.1%) at 100k, +0.1% at 1M; the two-population mean right to 0.2 pA
+up to 45% occupancy and the lower level reported at 55%; the two-population sigma +2.5%
+at every occupancy. Rice's rule for the bins (step 4, first commit) took the 10k bias to
++0.03% and the two-population sigma to +0.15% at seed 0, so those two pins are plain
+assertions now; the ``np.argmax(hist)`` peak rule is still behind the 55% flip.
 """
 
 import numpy as np
@@ -32,28 +32,12 @@ SIGMA_REL_BOUND = 0.01
 MEAN_ABS_BOUND = 0.1 * PLANTED_SIGMA
 SEED = 0
 
-BINS_RULE = pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "sigma bias from the bin-count rule int(len(data)**(1/3)/2) at "
-        "MetaEventFinder._fit_baseline_histogram:995 (+2.0% at 10k samples, "
-        "+0.6% at 100k); ruling D, 2.1 step 4"
-    ),
-)
 PEAK_RULE = pytest.mark.xfail(
     strict=True,
     reason=(
         "np.argmax(hist) at MetaEventFinder._fit_baseline_histogram:1005 follows the "
         "tallest bin, so past 50% occupancy the occupied level is reported as the "
         "baseline; ruling D, 2.1 step 4"
-    ),
-)
-WINDOW_RULE = pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "the asymmetric fit window at MetaEventFinder._fit_baseline_histogram:1029 "
-        "widens the fitted sigma by about 2.5% beside a second population; ruling D, "
-        "2.1 step 4"
     ),
 )
 
@@ -99,7 +83,7 @@ def fit(finder, data: np.ndarray):
 @pytest.mark.parametrize(
     "n",
     [
-        pytest.param(10_000, marks=BINS_RULE, id="10k"),
+        pytest.param(10_000, id="10k"),
         pytest.param(100_000, id="100k"),
         pytest.param(1_000_000, id="1M"),
     ],
@@ -165,7 +149,6 @@ def test_the_baseline_is_the_planted_level_beside_an_occupied_one(
     assert abs(mean - PLANTED_MEAN) <= 1.0, (occupancy, mean)
 
 
-@WINDOW_RULE
 def test_the_fitted_sigma_beside_an_occupied_level_is_within_one_percent(
     finder,
 ) -> None:

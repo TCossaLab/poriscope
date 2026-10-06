@@ -1272,14 +1272,15 @@ class TestTheShippedFitWindow:
         """
         Sigma on a fixed bimodal sample is what the asymmetric window produces.
 
-        A symmetric window gives 35.06 on this exact sample against the 38.29 asserted
-        here, so this fails if the slice is changed in either direction.
+        The number is what the asymmetric window produces on this exact sample at the
+        current bin count; it was 38.29 (symmetric: 35.06) on the pre-2.1 bins and is
+        30.29 on Rice's, so this fails if the slice is changed in either direction.
         """
         data = self.bimodal()
         _, std = finder._fit_baseline_histogram(
             data, float(np.min(data)), float(np.max(data))
         )
-        assert std == pytest.approx(38.29, rel=0.02)
+        assert std == pytest.approx(30.29, rel=0.02)
 
 
 if __name__ == "__main__":
