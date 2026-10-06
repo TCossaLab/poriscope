@@ -1125,6 +1125,39 @@ carry the class name, so ``-k`` matches it:
    detects nothing. Read the parameter's ``Units`` entry rather than the sibling's
    number. Declaring ``Units`` on your own parameters is what makes this checkable.
 
+.. _real_recordings_tier:
+
+Real Recordings on a Developer's Machine
+----------------------------------------
+
+Synthetic recordings are deterministic and small, which is what the gates need; they are
+also idealised. A second tier of tests reads real lab recordings, which are gigabytes each
+and never enter the repository. Such a test carries the ``real_data`` marker and takes the
+``real_data_dir`` fixture, which resolves the directory the environment variable
+``PORISCOPE_REAL_DATA_DIR`` names and **skips** the test wherever the variable is unset or
+points nowhere. CI has no such directory, so the whole tier skips there without a failure;
+a developer with the recordings runs it by setting one variable:
+
+.. code-block:: bash
+
+   PORISCOPE_REAL_DATA_DIR="/path/to/data" pytest -m real_data
+
+``tests/unit/plugins/conformance/test_real_recordings.py`` is the tier's first module. It
+lists six recordings - a Binary 1X file, a Chimera 2024-05 set, a multi-file Chimera
+2024-01 set, two TCossaLab ABF sets and a Legacy Elements ABF file - each with the
+subfolder it lives in, the reader that opens it, and what that reader reported on
+2026-10-06: the sample rate, the channels, every channel's length and file count, and the
+median of the first second, the last second and a second across the first file boundary,
+in picoamps. Those medians are goldens for the shipped conversion, which is what a
+replacement parser (the pyabf wrapper the ABF readers are moving to) has to reproduce. A
+recording whose subfolder is missing skips its tests rather than failing them, so a
+partial copy of the data is still useful. ``pyabf`` is a ``dev`` extra for that comparison
+and not a runtime dependency until the wrapper lands.
+
+Keep two things apart when reading these results: a synthetic test that fails is a defect
+or a wrong expectation; a real-recording test that fails may also be a property of that one
+recording, which is why the tier reports and the synthetic tiers gate.
+
 .. _reader_fuzz_testing:
 
 Fuzz Testing for Data Readers

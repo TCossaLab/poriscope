@@ -18,6 +18,8 @@
 
 * GitHub Actions and the pinned Python dependencies are now kept current by Dependabot, weekly, against `develop`
 
+* A `real_data` test tier reads the lab's real recordings from a directory named by `PORISCOPE_REAL_DATA_DIR` and skips wherever it is unset, so every shipped reader is checked against an instrument's own files on a developer's machine without any recording entering the repository; `pyabf` joins the `dev` extras for the ABF comparison
+
 ### Analysis Tabs:
 
 * `get_save_filename`, the CSV export's file picker that `MetaController.export_plot_data` calls on every tab, now lives once on `MetaView` instead of as four identical copies on the Views
@@ -29,6 +31,12 @@
 * **Fixed the log file on Windows dropping any line containing `μ`** - such as a fitter's `μs` duration unit - with `--- Logging error ---` on the console; `app.log` is now written as UTF-8
 
 * The Metadata tab's Kernel Density Plot no longer warns about a deprecated SciPy namespace on every plot
+
+* A recording whose files disagree on sample rate is now refused with a message naming the file, where before only each channel's first file was checked and the rest were read at its rate
+
+* Event finding with a chunk length under one sample (reachable through the plugin API; the Raw Data tab always passes one second) now reads one-second chunks instead of looping forever
+
+* **Results can move by one sample at a chunk boundary:** a reader now rounds a seconds request to the nearest sample instead of truncating it, so chunked reads (the Raw Data trace, event finding, loading an event's padded window) no longer duplicate one sample and drop another where a chunk boundary fell on an index whose time did not convert back exactly
 
 ### Documentation:
 

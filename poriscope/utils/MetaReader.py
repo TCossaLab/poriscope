@@ -143,6 +143,15 @@ class MetaReader(BaseDataPlugin):
         Every bounds check and every index calculation for :meth:`load_data` lives here,
         apart from the conversion of what it hands back.
 
+        ``start`` and ``length`` are rounded to the nearest sample, not truncated: every
+        chunked caller (:meth:`continuous_read` and the event finder's read paths) builds
+        its seconds from an integer sample index divided by the sample rate, and that
+        division is not exact in floating point, so truncation landed one sample early
+        for about one index in nineteen and a chunk walk duplicated a sample at the
+        boundary. Rounding lands every such request back on its own sample. The end is
+        rounded as its own time rather than as start plus a rounded length, so a request
+        that ends exactly at the channel's end lands on it whatever its start.
+
         :param start: Start time of the data to load, in seconds.
         :type start: float
         :param length: Length of data to load, in seconds.
@@ -156,8 +165,10 @@ class MetaReader(BaseDataPlugin):
         """
         try:
             channel = int(channel)
-            start_sample = int(start * self.samplerate)
-            length_samples = int(length * self.samplerate)
+            start_sample = int(round(start * self.samplerate))
+            length_samples = (
+                int(round((start + length) * self.samplerate)) - start_sample
+            )
         except ValueError as e:
             raise ValueError(
                 "channel, start, and length must all be a type that can be coerced to int"
@@ -567,18 +578,26 @@ class MetaReader(BaseDataPlugin):
         """
         Set the sampling rate for the reader.
 
-        :raises ValueError: If the channels in the dataset do not all share the same samplerate, or if no samplerate could be determined.
+        Every file of every channel is checked, not only each channel's first: the sample
+        rate is a per-file header field, and a set whose later files disagree would
+        otherwise be read at the first file's rate with every time in it wrong.
+
+        :raises ValueError: If the files in the dataset do not all share the same samplerate, or if no samplerate could be determined.
         :return: the sampling rate that is applicable to the reader
         :rtype: float
         """
         samplerate = 0
         for key, val in self.configs.items():
-            if samplerate == 0:
-                samplerate = val[0]["samplerate"]
-            else:
-                if samplerate != val[0]["samplerate"]:
+            for file_index, config in enumerate(val):
+                file_samplerate = config["samplerate"]
+                if samplerate == 0:
+                    samplerate = file_samplerate
+                elif samplerate != file_samplerate:
                     raise ValueError(
-                        f"All channels must have the same samplerate, but channel {key} has samplerate {val[0]['samplerate']} while all previous channels have samplerate {samplerate}"
+                        f"All files in a dataset must have the same samplerate, but "
+                        f"{self.datafiles[key][file_index]} in channel {key} has "
+                        f"samplerate {file_samplerate} while the files before it have "
+                        f"samplerate {samplerate}"
                     )
         if samplerate == 0:
             raise ValueError('Unable to set samplerate"')
