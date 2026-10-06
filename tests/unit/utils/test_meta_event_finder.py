@@ -316,6 +316,13 @@ class TestInitAndSettings:
 
 
 class TestShippedFinderThresholdUnits:
+    def test_the_sigma_finder_scales_its_threshold_by_the_chunks_sigma(self):
+        # ThresholdBlockageFinder's Threshold is in sigma, so the chunk skip's pA
+        # comparison needs it scaled by the fitted sigma of the chunk at hand.
+        finder = ThresholdBlockageFinder()
+        finder.settings = {"Threshold": {"Value": 8.0}}
+        assert finder._threshold_in_pa(0.5) == pytest.approx(4.0)
+
     """Each shipped finder sets the unit of the Threshold the base declares."""
 
     def test_classic_blockage_finder_threshold_is_in_pA(self):
@@ -538,6 +545,25 @@ class TestFindEventsHappyPath:
         progress = list(finder.find_events(0, [(0, 0)], chunk_length=0.001))
         assert len(progress) > 1  # more than one chunk, so not the whole channel
         assert progress[-1] == pytest.approx(1.0)
+
+    def test_the_chunk_skip_uses_the_finders_threshold_in_pa(self, finder):
+        # find_events skips a chunk whose baseline mean sits below the threshold, as
+        # no blockage could then be told from a voltage that is off. It asks the
+        # finder for that threshold in pA rather than reading the Threshold setting,
+        # because a sigma-denominated finder's setting is not in pA. A hook that
+        # answers above the 100 pA baseline skips the whole channel; one that
+        # answers zero lets both planted events through.
+        finder._threshold_in_pa = lambda std: 1_000.0
+        list(finder.find_events(0, [(0, 0)], chunk_length=10.0))
+        assert finder.num_events_found[0] == 0
+
+        finder.reset_channel(0)
+        finder._threshold_in_pa = lambda std: 0.0
+        list(finder.find_events(0, [(0, 0)], chunk_length=10.0))
+        assert finder.num_events_found[0] == 2
+
+    def test_the_default_threshold_in_pa_is_the_threshold_setting(self, finder):
+        assert finder._threshold_in_pa(0.5) == 20.0
 
     def test_small_chunk_length_straddles_event(self, finder):
         # chunk_length smaller than the channel forces multiple chunks,
@@ -1211,10 +1237,11 @@ class TestFitBaselineHistogram:
         """
         Events on one side do not drag the window out to that side.
 
-        ``half_width`` takes the narrower of the two sides both ways, which is the one
-        place the two finders' copies disagreed before this method existed, so it is
-        pinned rather than left to the finders. This is not the same thing as the
-        window being centred on the peak - see ``TestBimodalBaseline``.
+        The window is sized from the baseline peak's own width and stops, toward zero,
+        at the valley before a neighbouring peak, so a population of events below the
+        baseline cannot widen it. This was the one place the two finders' copies
+        disagreed before this method existed, so it is pinned rather than left to the
+        finders.
         """
         clean = self.noise()
         skewed = np.concatenate([clean, self.noise(n=40_000, mean=930.0, sigma=8.0)])
@@ -1231,56 +1258,5 @@ class TestFitBaselineHistogram:
 # ---------------------------------------------------------------------------
 # The shipped fit window, pinned rather than justified
 # ---------------------------------------------------------------------------
-class TestTheShippedFitWindow:
-    """
-    Characterization of the asymmetric fit window, which is unchanged shipped behaviour.
-
-    ``_fit_baseline_histogram`` slices ``hist[peak - h : peak + h]``, keeping ``h`` bins
-    below the histogram peak and ``h - 1`` above it. On unimodal noise that is worth 0.13
-    percentage points of sigma, inside the run-to-run scatter, which is why it reads as an
-    off-by-one; on a bimodal baseline it is worth several percent, which is why it is not
-    safe to remove as one. It was removed on that basis on 2026-09-20 and restored the same
-    day.
-
-    Whether the direction it trims is the right one is **not** settled here, and the test
-    deliberately asserts no rationale: the population the baseline fit should follow is the
-    fitted peak farthest from zero, and this window trims the side nearer that peak.
-    ``future_fixes.md`` carries that question and the peak-selection gap beside it. This
-    test exists so neither can change without someone noticing.
-    """
-
-    MU = 1000.0
-    SIGMA = 25.0
-
-    def bimodal(self):
-        """
-        A dominant population with a smaller one below it, as a blockage would be.
-
-        :return: 100,000 samples, 35% of them in the lower population 3 sigma down.
-        :rtype: numpy.ndarray
-        """
-        rng = np.random.default_rng(9)
-        minor = 35_000
-        return np.concatenate(
-            [
-                rng.normal(self.MU, self.SIGMA, 100_000 - minor),
-                rng.normal(self.MU - 3.0 * self.SIGMA, self.SIGMA, minor),
-            ]
-        )
-
-    def test_the_window_is_the_shipped_asymmetric_one(self, finder):
-        """
-        Sigma on a fixed bimodal sample is what the asymmetric window produces.
-
-        A symmetric window gives 35.06 on this exact sample against the 38.29 asserted
-        here, so this fails if the slice is changed in either direction.
-        """
-        data = self.bimodal()
-        _, std = finder._fit_baseline_histogram(
-            data, float(np.min(data)), float(np.max(data))
-        )
-        assert std == pytest.approx(38.29, rel=0.02)
-
-
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

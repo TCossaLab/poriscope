@@ -47,71 +47,6 @@ promotion updates `.duplication-baseline.json` in the same commit; each track ed
 step sections here and its own changelog lines, and rebases onto `develop` before `feature finish`.
 Step 10 waits for both tracks.
 
-### Step 0 - baseline and tooling
-
-- **`test_plugin_compliance` parametrizes from `__subclasses__()` at import time**
-  (`test_plugin_compliance.py:136-150`, `:269-278`), so which test doubles it audits depends on
-  module import order; `pytest tests/unit/utils tests/unit/plugins` (inverted) picks up
-  `ConcreteDatabaseLoader`, `ConcreteEventFitter` and `MockEventLoader` and reports 4 failures
-  natural order never sees. Skip classes defined under `tests/`. The `except (ValueError, TypeError):
-  pass` at `:382` skips a comparison silently; name the skipped method.
-- **The mypy hook's blindness hides real errors**: the project-venv run (mypy 2.3.1, 2026-10-05)
-  reports 690 in 70 files, 79 of them `self.view`/`self.model` on attributes the controller bases
-  never declare (`MetaController.py:72-76` sets them from kwargs), 41 untyped imports, the rest
-  mostly Qt enum noise; `MetaReader._scale_data(dtype: Optional[str])` (`:812`) receives
-  `np.float64` at all six reader call sites. Declare the attributes, fix the annotation, add a
-  non-blocking project-venv report, revisit `DECISIONS.md` 2026-08-24 with the figures.
-- **No Windows CI job.** All 7 workflows run only `ubuntu-latest` on Python 3.12.10, so Linux
-  takes the opposite branch at the 10 platform-conditional sites, including
-  `WaveletFilter.py:181-182`'s `os.add_dll_directory` in the one module that loads a native binary.
-- **Add a wheel smoke job**: build, `twine check`, install into a fresh venv with
-  `-c requirements.txt`, `import poriscope.exposed`, load the platform's wavelet binary.
-- **Exact runtime pins in the wheel metadata** (`PySide6==6.9.0`, `numpy==2.2.6`, ...) conflict
-  with any other package in a user's environment; loosen to `~=` ranges, keep `requirements.txt`
-  exact, add Dependabot for Actions and pip, pin `pre-commit` in the three workflows that install
-  it. The 16 `force_all_finite` FutureWarnings in `test_clustering_model` come from `hdbscan`
-  0.8.40 and fail on scikit-learn 1.8; PyPI has hdbscan 0.8.44.
-- **`release.yml` holds `contents: write` plus a PyPI OIDC token (`:16-18`) while calling floating
-  action tags** - seven distinct actions across the workflows, three third-party, none SHA-pinned.
-  It installs `mingw-w64` (`:105`) that nothing uses and runs no `twine check`.
-- **`ci-internal-pr.yml:109-114` pushes from a detached HEAD**: the checkout at `:44-46` has no
-  `ref`, so `git push` has no branch; guarded by `if ! git diff --quiet`, so it only fires when the
-  manual hooks change a file.
-- **Two view test modules mock the view's `logger`**, which `_qt_mocks.py:12-14` warns against:
-  `test_raw_data_view.py:85` (8 assertions) and `test_metadata_view.py:180` (2). They check calls
-  on the mock, not what reaches a handler.
-- **Windows logging drops any record containing `μ`.** `main_app.py:226` constructs
-  `logging.FileHandler` with no `encoding=`, so cp1252 cannot encode U+03BC and the record is
-  discarded with `--- Logging error ---` (reproduced). Six sites write `"μs"`, including
-  `metadata_units["duration"]` in both PeakFinders, against 53 writing `"us"` - one unit, two
-  spellings in the database.
-- **`MetadataModel.kernel_density` uses a deprecated SciPy namespace** (`:297`,
-  `stats.kde.gaussian_kde`); import `gaussian_kde` from `scipy.stats`.
-
-### Step 4 - event finders
-
-- **`MetaEventFinder._fit_baseline_histogram:965` picks, windows and bins the baseline peak on
-  rules nobody chose.** One ruling, since each answer depends on the one before; every sigma
-  threshold in every finder comes from this fit. Needs synthetic evidence (step 1), not a quiet edit.
-  - *Peak:* `np.argmax(hist)` (`:1005`) follows the tallest bin, but the baseline is the fitted
-    peak farthest from zero (Kyle, 2026-09-20). Baseline 1000 with a second population at 850:
-    correct up to 49% occupancy of the lower one, then reports **852** from 55%.
-  - *Window:* `hist[peak - half_width : peak + half_width]` (`:1029`) keeps one more bin below
-    the peak; helps only when the contaminant sits above the baseline, 1-4% worse below
-    (`DECISIONS.md` 2026-09-20).
-  - *Bins:* `int(len(data)**(1/3)/2)` (`:995`) is 10 on a 10k chunk, ~6 after windowing; the
-    log-linearised fit is biased high, +2.3% at 10k falling to +0.2% at 1M. Rice's rule gives
-    four times as many.
-- **`MetaEventFinder._gaussian_fit:1133` goes singular on short chunks of clean data.** On a
-  synthetic Binary 1X recording (100 kHz, 2000 pA baseline, 15 pA float64 noise)
-  `_get_baseline_stats` raises `LinAlgError` for every chunk up to 80k samples and works from
-  90k, so `find_events` rejects those chunks at INFO: 0.7 s chunks lost 4 of 12 planted events,
-  0.19 s chunks found none, 1 s chunks found all 12. S1.3's 10k-sample planted chunks fit, so it
-  is the window and bins rule on this data; re-measure under ruling D.
-- **`ThresholdBlockageFinder`'s sigma threshold is compared against a pA mean in the base loop.**
-  `MetaEventFinder.find_events:453` skips a chunk when `mean < Threshold`; right for Classic's pA
-  threshold, at 8 sigma it skips only chunks with a baseline under 8 pA.
-
 ### Step 5 - event fitters and the fit loop
 
 - **`IntraCUSUM` defaults make it count noise**: threshold and hysteresis both 0.0 (`:89`,
@@ -253,6 +188,9 @@ Step 10 waits for both tracks.
   `MetaFilter` (`:104-126`), so promotion is a contract change; it rides this step.
 - **The compliance test checks only `__abstractmethods__`** (`test_plugin_compliance.py:43`), so
   overrides of concrete methods such as `load_data` go unchecked. Measured in step 0, widened here.
+- **The PeakFinders write the duration unit as `"μs"`** (`Basic_PeakFinder.py:1197`,
+  `PeakFinder.py:2068`) where the other 53 unit sites write `"us"`: one unit, two spellings in
+  the database. Settle on `"us"` while the PeakFinder signatures are open.
 
 ### Step 9a - analysis-tab views (Carolina's track)
 
@@ -285,6 +223,10 @@ Step 10 waits for both tracks.
   Compare against `initial_length - 1` and delete the test pinning the current behaviour.
 - **`set_heatmap` passes bin centres as the `imshow` extent** (`MetadataView.py:986`), compressing
   the image by a bin width.
+- **`RawDataModel.get_baseline_stats:117` is a pre-2026-09-20 copy of the finders' baseline fit**
+  (linspace bin centres, so sigma comes back × bins/(bins−1); `argmax` peak; the old window and
+  bin count), feeding the tab's baseline readout. After 2.1 step 4 (ruling D) it disagrees with
+  the finders' fit; share the base fit instead of keeping a second one.
 - **`format_axis_label` truncates a column name containing parentheses.** `\s*\(.*?\)$` anchored at
   `$` lets the lazy `.*?` expand across every `)`, so `Rate (per pore)` with unit `Hz` becomes
   `Rate (Hz)`. Two copies, `ProteinView.py:2337` and `MetadataView.py:2840`; pinned in

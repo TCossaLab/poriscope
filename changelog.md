@@ -4,6 +4,12 @@
 
 #### Results that change:
 
+* **Every event finder's baseline sigma, and so every sigma-denominated threshold, moves slightly:** the baseline histogram now uses Rice's rule for its bin count, four times as many bins as before, which removes a bias that inflated sigma by about 2% on 10,000-sample chunks and 0.6% on 100,000, and lets short, clean chunks be fitted at all instead of being skipped
+
+* **A chunk that spends more than half its time in an occupied state now reports the open-pore level as its baseline:** the baseline histogram's peak is the one farthest from zero among the real peaks, where before it was simply the tallest bin, so thresholds in such chunks no longer hang off the occupied level
+
+* **A second population close below the baseline no longer widens the fitted baseline sigma:** the baseline histogram's fit window now runs three sigma above the baseline peak and, below it, stops at the valley before the next peak, where before it took the narrower of two fixed-height walks on both sides
+
 * **The Bessel filter now accepts low cutoffs it used to refuse as numerically unstable** (25 kHz on a 4.17 MHz recording, for one): it is built as second-order sections, which are stable at any cutoff below half the sample rate; filtered values at previously accepted cutoffs move by less than a thousandth of the noise
 
 * **Results can move by one sample at a chunk boundary:** a reader now rounds a seconds request to the nearest sample instead of truncating it, so chunked reads (the Raw Data trace, event finding, loading an event's padded window) no longer duplicate one sample and drop another where a chunk boundary fell on an index whose time did not convert back exactly
@@ -43,6 +49,8 @@
 * **Fixed the log file on Windows dropping any line containing `μ`** - such as a fitter's `μs` duration unit - with `--- Logging error ---` on the console; `app.log` is now written as UTF-8
 
 * The Metadata tab's Kernel Density Plot no longer warns about a deprecated SciPy namespace on every plot
+
+* Event finding's no-voltage chunk skip now compares `ThresholdBlockageFinder`'s sigma threshold in picoamps, scaled by the chunk's fitted sigma; before, the sigma value was compared with the picoamp mean directly, so the skip only ever triggered on baselines under a few picoamps
 
 * A Bessel filter built for one sample rate is now refused, with both rates named, when applied to data at another - the Raw Data trace and event plots, event finding, and event plotting and fitting in Event Analysis; before, it was applied silently at the wrong cutoff
 

@@ -131,9 +131,43 @@ together the window stops at the valley and the neighbour's edge never enters th
 *Bins:* Rice's rule, `2 * n ** (1/3)`, four times today's count. Executed in 2.1 step 4,
 against the S1.3 pins, which are red exactly where the old rules fail.
 
+**Evidence (step 4, 2026-10-06; synthetic rows re-derived at `df639eba`).** Four versions of
+the fit on the same samples, sigma bias against a planted 15 pA, the mean reported where the
+fit followed the wrong level; the neighbour sits below a 1000 pA baseline, 100k samples,
+seed 9 unless stated:
+
+| Case | shipped | Rice's bins | bins + peak | bins + peak + window (ruled) |
+| --- | --- | --- | --- | --- |
+| N(1000, 15) seed 0, 10k / 100k / 1M | +2.12% / +0.25% / +0.26% | +0.03% / −0.06% / +0.11% | same | +0.48% / 0.00% / +0.08%; 5-seed max at 10k 0.98% |
+| 850 (10 σ) at 30% / 55% / 70% | +2.84% / mean 850 / mean 850 | +0.90% / mean 850 / mean 850 | +0.90% / +0.59% / +2.08% | +0.61% / +0.26% / +0.49% |
+| 880 (8 σ) at 60% | mean 880 | mean 880 | +1.03% | +0.22% |
+| 910 (6 σ) at 45% | +2.70% | +0.79% | +0.79% | +0.89% |
+| 940 (4 σ) at 30% / 50% | +12.0% / mean 941 | +3.7% / mean 940 | +3.7% / +11.4% | +6.7% / +5.4% |
+| 3 σ apart, 35%, planted 25 (the old 38.29 characterisation) | 38.29 | 30.29 | 30.29 | 29.61 |
+| −1000 beside −850 at 55% | mean −850 | mean −850 | mean −1000, +0.59% | mean −1000, +0.26% |
+| Planted 100 kHz recording, 12 events, 0.19 / 0.7 / 1.0 s chunks | 0 / 8 / 12 found, short chunks skipped on a singular fit | 12 / 12 / 12 found, nothing rejected, under all three | | |
+
+Real Chimera 2024-05, first second of channel 1 through `ClassicBlockageFinder`: mean −4315.1 pA,
+sigma 572.7, against −4323.6 / 571.3 shipped. Rice's bins carry most of the win and end the
+short-chunk singular fit; the peak rule makes the baseline right past 50% occupancy; the window
+earns its keep at high occupancy and wide separation and is neutral at 6 σ. Three details the
+ruling left to the code: peaks qualify by *prominence* ≥ 10% of the tallest bin
+(`scipy.signal.find_peaks`), not by height, because on Rice's finer bins a height rule admits
+flank bumps and the valley walk stops at the first noise dip - the first draft biased unimodal
+sigma −1.7% and the mean 1.3 pA that way; the window's sigma comes from the peak's width at 60%
+of its height; the chosen peak is kept by position through the windowing, never re-found by
+`argmax`, which could hand the fit a taller neighbour inside the window.
+
+**Known limit.** Below about 4 σ separation no window helps: `_gaussian_fit`'s own 3 σ mask
+takes in the neighbour's shoulder. At 4 σ the ruled window reads +6.7% at 30% occupancy against
++3.7% without it and +5.4% at 50% against +11.4%; at 3 σ both read about +20%. A symmetric
+window capped at the valley distance, tried as a cure for truncation bias, was no better
+anywhere. Recorded, not pinned.
+
 **Revisit if** a recording's baseline is genuinely the population nearest zero (a rectified
 trace with its open-pore level below an occupied one), which the farthest-from-zero rule
-would misread; no shipped reader produces that today.
+would misread; no shipped reader produces that today. Or if populations closer than 4 σ
+matter in practice, which needs a two-Gaussian fit rather than a window.
 
 ---
 

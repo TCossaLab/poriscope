@@ -5,16 +5,23 @@ Every sigma-denominated event-finder threshold comes from ``MetaEventFinder._fit
 and the existing tests pin it on one chunk size at a 2% tolerance. These tests state what
 the fit *should* recover from a planted Gaussian - mean within a tenth of a sigma, sigma
 within 1% - at the three chunk sizes a finder actually sees, and from a two-population chunk
-where a shallower occupied level sits beside the baseline. Where the shipped fit cannot
-meet the bound today the test is a strict expected failure naming the rule at fault; 2.1
-step 4 chooses those rules (ruling D) and turns the failures green.
+where a shallower occupied level sits beside the baseline. Where the fit cannot meet the
+bound today the test is a strict expected failure naming the rule at fault; 2.1 step 4
+replaces those rules (ruling D) and turns the failures green one by one.
 
-Measured on 2026-10-05 at `64d8719c`: sigma bias +2.0% (max 3.4%) at 10k samples, +0.6%
-(max 1.1%) at 100k, +0.1% at 1M; the two-population mean is right to 0.2 pA up to 45%
-occupancy and reports the lower level at 55%; the two-population sigma is +2.5% at every
-occupancy. The bins rule (``int(len(data)**(1/3)/2)``, ``:995``) is behind the small-chunk
-bias, the ``np.argmax(hist)`` peak rule (``:1005``) behind the flip, and the off-centre
-window (``:1029``) behind the two-population sigma.
+Measured on 2026-10-05 at `64d8719c`, before step 4: sigma bias +2.0% (max 3.4%) at 10k
+samples, +0.6% (max 1.1%) at 100k, +0.1% at 1M; the two-population mean right to 0.2 pA
+up to 45% occupancy and the lower level reported at 55%; the two-population sigma +2.5%
+at every occupancy. Rice's rule for the bins (step 4, first commit) took the 10k bias to
++0.03% and the two-population sigma to +0.15% at seed 0, so those two pins are plain
+assertions now. The peak rule (second commit) - the local maximum farthest from zero
+among those with prominence at least a tenth of the tallest bin - made the 55% and a
+70% case report the planted baseline, on signed data as well. The window (third
+commit) - a 3 sigma tail above the peak, and below it the nearer of the 3 sigma tail
+and the valley before a neighbouring peak - took the sigma at 70% occupancy from
++2.1% to +0.5% and at 8 sigma separation from +1.0% to +0.2%. Below about 4 sigma
+separation no window helps, because the fit's own 3 sigma mask takes in the
+neighbour's shoulder; that limit is recorded in DECISIONS.md, not pinned.
 """
 
 import numpy as np
@@ -31,31 +38,6 @@ PLANTED_SIGMA = 15.0
 SIGMA_REL_BOUND = 0.01
 MEAN_ABS_BOUND = 0.1 * PLANTED_SIGMA
 SEED = 0
-
-BINS_RULE = pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "sigma bias from the bin-count rule int(len(data)**(1/3)/2) at "
-        "MetaEventFinder._fit_baseline_histogram:995 (+2.0% at 10k samples, "
-        "+0.6% at 100k); ruling D, 2.1 step 4"
-    ),
-)
-PEAK_RULE = pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "np.argmax(hist) at MetaEventFinder._fit_baseline_histogram:1005 follows the "
-        "tallest bin, so past 50% occupancy the occupied level is reported as the "
-        "baseline; ruling D, 2.1 step 4"
-    ),
-)
-WINDOW_RULE = pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "the asymmetric fit window at MetaEventFinder._fit_baseline_histogram:1029 "
-        "widens the fitted sigma by about 2.5% beside a second population; ruling D, "
-        "2.1 step 4"
-    ),
-)
 
 
 @pytest.fixture(scope="module")
@@ -99,7 +81,7 @@ def fit(finder, data: np.ndarray):
 @pytest.mark.parametrize(
     "n",
     [
-        pytest.param(10_000, marks=BINS_RULE, id="10k"),
+        pytest.param(10_000, id="10k"),
         pytest.param(100_000, id="100k"),
         pytest.param(1_000_000, id="1M"),
     ],
@@ -151,7 +133,8 @@ def two_populations(occupancy: float, n: int = 100_000, seed: int = SEED) -> np.
         pytest.param(0.10, id="10pct"),
         pytest.param(0.30, id="30pct"),
         pytest.param(0.45, id="45pct"),
-        pytest.param(0.55, marks=PEAK_RULE, id="55pct"),
+        pytest.param(0.55, id="55pct"),
+        pytest.param(0.70, id="70pct"),
     ],
 )
 def test_the_baseline_is_the_planted_level_beside_an_occupied_one(
@@ -165,12 +148,60 @@ def test_the_baseline_is_the_planted_level_beside_an_occupied_one(
     assert abs(mean - PLANTED_MEAN) <= 1.0, (occupancy, mean)
 
 
-@WINDOW_RULE
+def test_a_negative_baseline_is_the_level_farthest_from_zero(finder) -> None:
+    """
+    The fit sees signed data, so farthest from zero means most negative here: a −1000 pA
+    baseline beside a −850 pA level occupied 55% of the time is still the baseline.
+    """
+    mean, _sigma = fit(finder, -two_populations(0.55))
+    assert abs(mean + PLANTED_MEAN) <= 1.0, mean
+
+
+def neighbour(
+    level: float, occupancy: float, n: int = 100_000, seed: int = 9
+) -> np.ndarray:
+    """
+    A baseline at 1000 pA beside an occupied level at ``level``, both at the planted sigma.
+
+    :param level: the occupied level, in pA
+    :type level: float
+    :param occupancy: the fraction of samples on the occupied level
+    :type occupancy: float
+    :param n: total samples
+    :type n: int
+    :param seed: the generator seed
+    :type seed: int
+    :return: the chunk
+    :rtype: numpy.ndarray
+    """
+    rng = np.random.default_rng(seed)
+    occupied = int(n * occupancy)
+    return np.concatenate(
+        [
+            rng.normal(PLANTED_MEAN, PLANTED_SIGMA, n - occupied),
+            rng.normal(level, PLANTED_SIGMA, occupied),
+        ]
+    )
+
+
+@pytest.mark.parametrize(
+    "level, occupancy",
+    [
+        pytest.param(850.0, 0.30, id="10sigma-30pct"),
+        pytest.param(850.0, 0.70, id="10sigma-70pct"),
+        pytest.param(880.0, 0.60, id="8sigma-60pct"),
+    ],
+)
 def test_the_fitted_sigma_beside_an_occupied_level_is_within_one_percent(
-    finder,
+    finder, level: float, occupancy: float
 ) -> None:
-    """A second population below the baseline must not widen the baseline's sigma."""
-    _mean, sigma = fit(finder, two_populations(0.30))
+    """
+    A second population below the baseline must not widen the baseline's sigma.
+
+    The 30% case was met by Rice's bins alone; the 70% and 8 sigma cases are what the
+    valley-capped window earns (bins and peak alone: +2.1% and +1.0% on these samples).
+    """
+    _mean, sigma = fit(finder, neighbour(level, occupancy))
     assert sigma == pytest.approx(
         PLANTED_SIGMA, rel=SIGMA_REL_BOUND
     ), f"sigma {sigma:.3f}, bias {(sigma / PLANTED_SIGMA - 1) * 100:+.2f}%"
