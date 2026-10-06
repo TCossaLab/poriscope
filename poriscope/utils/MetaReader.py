@@ -143,6 +143,15 @@ class MetaReader(BaseDataPlugin):
         Every bounds check and every index calculation for :meth:`load_data` lives here,
         apart from the conversion of what it hands back.
 
+        ``start`` and ``length`` are rounded to the nearest sample, not truncated: every
+        chunked caller (:meth:`continuous_read` and the event finder's read paths) builds
+        its seconds from an integer sample index divided by the sample rate, and that
+        division is not exact in floating point, so truncation landed one sample early
+        for about one index in nineteen and a chunk walk duplicated a sample at the
+        boundary. Rounding lands every such request back on its own sample. The end is
+        rounded as its own time rather than as start plus a rounded length, so a request
+        that ends exactly at the channel's end lands on it whatever its start.
+
         :param start: Start time of the data to load, in seconds.
         :type start: float
         :param length: Length of data to load, in seconds.
@@ -156,8 +165,10 @@ class MetaReader(BaseDataPlugin):
         """
         try:
             channel = int(channel)
-            start_sample = int(start * self.samplerate)
-            length_samples = int(length * self.samplerate)
+            start_sample = int(round(start * self.samplerate))
+            length_samples = (
+                int(round((start + length) * self.samplerate)) - start_sample
+            )
         except ValueError as e:
             raise ValueError(
                 "channel, start, and length must all be a type that can be coerced to int"

@@ -6,23 +6,23 @@ chunk's start and length to seconds, and hands them to ``load_data``, which conv
 back. Both event-finder read paths (``MetaEventFinder.find_events`` and
 ``get_single_event_data``) build their seconds the same way, from integer sample counts
 divided by the sample rate. The round trip is only exact if the conversion back rounds:
-``_slice_request`` truncates, so ``int((i / sr) * sr)`` lands on ``i - 1`` for about one
-index in nineteen at 100 kHz, the chunk that should start at ``i`` starts a sample early,
-and the concatenation of the chunks duplicates one sample and loses another at that
-boundary.
+until 2.1 ``_slice_request`` truncated, so ``int((i / sr) * sr)`` landed on ``i - 1`` for
+about one index in nineteen at 100 kHz, the chunk that should have started at ``i``
+started a sample early, and the concatenation of the chunks duplicated one sample and
+lost another at that boundary (191 of 3,052 one-sample requests, and 38,000 samples of
+a 0.19 s chunk walk, measured on 2026-10-06 before the fix).
 
-What is pinned, and why each is red or green today (2026-10-06):
+What is pinned:
 
 - A one-sample request at ``i / sr`` returns sample ``i``, for every index in the first
-  thousand and a stride across the rest. Red: ``_slice_request`` truncates. Strict expected
-  failure until the request rounds (2.1 step 2).
-- The chunks ``continuous_read`` yields concatenate to the whole recording exactly. Red for
-  a chunk length whose boundary falls on a truncating index, which the test chooses on
-  purpose; green for one whose boundaries happen to convert exactly, which is why a
-  boundary that looks right is no evidence. Strict expected failure on the red case.
+  thousand and a stride across the rest.
+- The chunks ``continuous_read`` yields concatenate to the whole recording exactly, both
+  for a chunk length whose boundary fell on a truncating index and for one whose
+  boundaries always converted exactly - which is why a boundary that looks right was
+  never evidence.
 - The tail-chunk rule: a remainder shorter than half a chunk is absorbed into the last
-  chunk rather than yielded on its own, and a longer one is its own chunk. Green; named
-  here so the rule has a test that would fail if it moved.
+  chunk rather than yielded on its own, and a longer one is its own chunk. Named here so
+  the rule has a test that would fail if it moved.
 
 The ground truth is read straight from the ``.bin`` file ``generate_binary_1x_dataset``
 wrote, not through the reader: the format is big-endian float64 of the planted trace with
@@ -67,12 +67,6 @@ SWEEP_STRIDE = 97
 TRUNCATING_CHUNK_S = 0.19
 EXACT_CHUNK_S = 0.3
 
-TRUNCATION_DEFECT = (
-    "MetaReader._slice_request truncates a seconds request to samples, so a chunk "
-    "starting at an index whose seconds form rounds down starts one sample early "
-    "(2.1 step 2)"
-)
-
 
 @pytest.fixture(scope="module")
 def recording(tmp_path_factory) -> Tuple[MetaReader, np.ndarray]:
@@ -115,7 +109,6 @@ def indices_to_try() -> List[int]:
     )
 
 
-@pytest.mark.xfail(strict=True, reason=TRUNCATION_DEFECT)
 def test_a_one_sample_request_returns_that_sample(recording) -> None:
     """
     ``load_data(i / sr, 1 / sr)`` returns exactly sample ``i``.
@@ -142,11 +135,7 @@ def test_a_one_sample_request_returns_that_sample(recording) -> None:
 @pytest.mark.parametrize(
     "chunk_length_s",
     [
-        pytest.param(
-            TRUNCATING_CHUNK_S,
-            marks=pytest.mark.xfail(strict=True, reason=TRUNCATION_DEFECT),
-            id="boundary-truncates",
-        ),
+        pytest.param(TRUNCATING_CHUNK_S, id="boundary-truncated-before-rounding"),
         pytest.param(EXACT_CHUNK_S, id="boundaries-exact"),
     ],
 )
