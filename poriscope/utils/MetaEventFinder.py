@@ -31,6 +31,7 @@ from typing import Any, Callable, Dict, Generator, List, Optional, Tuple, Union
 import numpy as np
 import numpy.typing as npt
 from fast_histogram import histogram1d
+from scipy.signal import find_peaks
 
 from poriscope.utils.BaseDataPlugin import BaseDataPlugin
 from poriscope.utils.DocstringDecorator import inherit_docstrings
@@ -970,7 +971,13 @@ class MetaEventFinder(BaseDataPlugin):
         self, data: npt.NDArray[np.float64], bottom: float, top: float
     ) -> tuple[float, float]:
         """
-        Histogram ``data`` over ``[bottom, top]`` and fit a Gaussian to the peak.
+        Histogram ``data`` over ``[bottom, top]`` and fit a Gaussian to the baseline peak.
+
+        The baseline peak is the local maximum farthest from zero among those whose
+        prominence is at least a tenth of the tallest bin - not the tallest bin itself,
+        which a chunk spends more than half its time in an occupied state would put on
+        the occupied level. The prominence rule keeps flank bumps and bin noise from
+        qualifying while a real second population always does.
 
         The histogram is narrowed twice before the fit: once to the symmetric window
         around the peak where counts stay above a fifth of the maximum, which is what
@@ -1009,7 +1016,10 @@ class MetaEventFinder(BaseDataPlugin):
         width = (top - bottom) / bins
         centers = bottom + width * (np.arange(bins) + 0.5)
 
-        max_index = int(np.argmax(hist))
+        peaks, _ = find_peaks(hist, prominence=0.1 * float(np.max(hist)))
+        if len(peaks) == 0:
+            peaks = np.array([int(np.argmax(hist))])
+        max_index = int(max(peaks, key=lambda i: abs(centers[i])))
         maxval = hist[max_index]
         # The first bin at or below a fifth of the peak, walking out each way.
         top_index = next(
@@ -1036,7 +1046,10 @@ class MetaEventFinder(BaseDataPlugin):
         hist = hist[max_index - half_width : max_index + half_width]
         centers = centers[max_index - half_width : max_index + half_width]
 
-        max_index = int(np.argmax(hist))
+        # The chosen peak sits ``half_width`` in from the slice's start; it is kept by
+        # position rather than re-found by ``argmax``, which could hand the fit a taller
+        # neighbour that the window reached.
+        max_index = half_width
         maxval = hist[max_index]
         top_index = next(
             (i for i in range(max_index, len(hist)) if hist[i] <= 0.6 * maxval),

@@ -14,7 +14,9 @@ samples, +0.6% (max 1.1%) at 100k, +0.1% at 1M; the two-population mean right to
 up to 45% occupancy and the lower level reported at 55%; the two-population sigma +2.5%
 at every occupancy. Rice's rule for the bins (step 4, first commit) took the 10k bias to
 +0.03% and the two-population sigma to +0.15% at seed 0, so those two pins are plain
-assertions now; the ``np.argmax(hist)`` peak rule is still behind the 55% flip.
+assertions now. The peak rule (second commit) - the local maximum farthest from zero
+among those with prominence at least a tenth of the tallest bin - made the 55% and a
+70% case report the planted baseline, on signed data as well.
 """
 
 import numpy as np
@@ -31,15 +33,6 @@ PLANTED_SIGMA = 15.0
 SIGMA_REL_BOUND = 0.01
 MEAN_ABS_BOUND = 0.1 * PLANTED_SIGMA
 SEED = 0
-
-PEAK_RULE = pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "np.argmax(hist) at MetaEventFinder._fit_baseline_histogram:1005 follows the "
-        "tallest bin, so past 50% occupancy the occupied level is reported as the "
-        "baseline; ruling D, 2.1 step 4"
-    ),
-)
 
 
 @pytest.fixture(scope="module")
@@ -135,7 +128,8 @@ def two_populations(occupancy: float, n: int = 100_000, seed: int = SEED) -> np.
         pytest.param(0.10, id="10pct"),
         pytest.param(0.30, id="30pct"),
         pytest.param(0.45, id="45pct"),
-        pytest.param(0.55, marks=PEAK_RULE, id="55pct"),
+        pytest.param(0.55, id="55pct"),
+        pytest.param(0.70, id="70pct"),
     ],
 )
 def test_the_baseline_is_the_planted_level_beside_an_occupied_one(
@@ -147,6 +141,15 @@ def test_the_baseline_is_the_planted_level_beside_an_occupied_one(
     """
     mean, _sigma = fit(finder, two_populations(occupancy))
     assert abs(mean - PLANTED_MEAN) <= 1.0, (occupancy, mean)
+
+
+def test_a_negative_baseline_is_the_level_farthest_from_zero(finder) -> None:
+    """
+    The fit sees signed data, so farthest from zero means most negative here: a −1000 pA
+    baseline beside a −850 pA level occupied 55% of the time is still the baseline.
+    """
+    mean, _sigma = fit(finder, -two_populations(0.55))
+    assert abs(mean + PLANTED_MEAN) <= 1.0, mean
 
 
 def test_the_fitted_sigma_beside_an_occupied_level_is_within_one_percent(
