@@ -182,3 +182,33 @@ def test_at_least_one_filter_was_discovered() -> None:
     make the whole file pass without running a single filter.
     """
     assert FILTERS, "no concrete MetaFilter subclasses were discovered"
+
+
+@pytest.mark.conformance
+@filter_cases
+def test_data_requirements_name_only_the_filters_own_settings(
+    filter_cls: Type[MetaFilter],
+) -> None:
+    """
+    ``get_data_requirements()`` names settings the filter has, at the values applied.
+
+    A filter declares which of its settings the data must match so the caller can
+    refuse a mismatch; a declaration naming a setting the filter does not have, or a
+    value other than the one applied, would make that check compare the wrong thing.
+    Empty is a valid declaration (``WaveletFilter`` makes it).
+
+    :param filter_cls: The filter class under test.
+    :type filter_cls: Type[MetaFilter]
+    """
+    plugin = build_filter(filter_cls)
+    try:
+        requirements = plugin.get_data_requirements()
+        settings = plugin.get_raw_settings()
+        assert isinstance(requirements, dict)
+        for key, value in requirements.items():
+            assert key in settings, f"{key} is not a setting of {filter_cls.__name__}"
+            assert (
+                value == settings[key]["Value"]
+            ), f"{key} differs from the applied value"
+    finally:
+        plugin.close_resources()

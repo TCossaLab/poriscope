@@ -28,7 +28,7 @@ from typing import Any, Dict, List, Optional, override
 
 import numpy as np
 import numpy.typing as npt
-from scipy.signal import bessel, filtfilt
+from scipy.signal import bessel, sosfiltfilt
 
 from poriscope.utils.DocstringDecorator import inherit_docstrings
 from poriscope.utils.LogDecorator import log
@@ -39,6 +39,11 @@ from poriscope.utils.MetaFilter import MetaFilter
 class BesselFilter(MetaFilter):
     """
     Subclass for defining a low-pass Bessel filter to be applied to a dataset
+
+    The filter is built as second-order sections and applied forward and backward
+    (``sosfiltfilt``), so it is zero-phase and numerically stable at any cutoff the
+    settings accept. Until 2.1 it was built as a single transfer function, which goes
+    unstable at low normalised cutoffs, and a guard refused those cutoffs outright.
     """
 
     logger = logging.getLogger(__name__)
@@ -87,15 +92,6 @@ class BesselFilter(MetaFilter):
             )
         if settings["Poles"]["Value"] > 10 or settings["Poles"]["Value"] <= 0:
             raise ValueError("Poles must be a positive integer between 1 and 10")
-        z, p, k = bessel(
-            settings["Poles"]["Value"],
-            2.0 * settings["Cutoff"]["Value"] / settings["Samplerate"]["Value"],
-            output="zpk",
-        )
-        if any(np.absolute(p) >= 0.975):
-            raise ValueError(
-                "This filter is likely to be numerically unstable. Reduce the number of poles and/or increase the cutoff frequency and try again."
-            )
 
     @log(logger=logger)
     @override
@@ -120,7 +116,18 @@ class BesselFilter(MetaFilter):
         before = np.median(data[: 3 * self.order])
         after = np.median(data[-3 * self.order :])
         data = np.pad(data, padlen, mode="constant", constant_values=(before, after))
-        return filtfilt(self.b, self.a, data)[padlen:-padlen]
+        return sosfiltfilt(self.sos, data)[padlen:-padlen]
+
+    @log(logger=logger)
+    @override
+    def get_data_requirements(self) -> Dict[str, float]:
+        """
+        The data must be at the sample rate the coefficients were built for.
+
+        :return: ``{"Samplerate": <Hz>}``, the rate this filter was built for
+        :rtype: Dict[str, float]
+        """
+        return {"Samplerate": float(self.settings["Samplerate"]["Value"])}
 
     # public API, must be implemented by subclasses
     @log(logger=logger)
@@ -211,4 +218,4 @@ class BesselFilter(MetaFilter):
         order = self.settings["Poles"]["Value"]
         Wn = 2 * cutoff / samplerate
         self.order = order
-        self.b, self.a = bessel(order, Wn)
+        self.sos = bessel(order, Wn, output="sos")

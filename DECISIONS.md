@@ -18,6 +18,35 @@ and deleted on 2026-09-27; it too is in git history.
 
 ---
 
+## 2026-10-06 - A filter declares the settings its data must match; the caller verifies
+
+**Context.** `BesselFilter` takes `Samplerate` as a setting the user types, and nothing checks
+it against the data the filter is then applied to: a wrong rate is a silently wrong cutoff.
+The data's rate is known only at the call - the selected reader in the Raw Data tab, the
+finder's reader, or the event loader during fitting - and the selection can change after the
+filter was made. Not every filter needs a rate (`WaveletFilter` declares none).
+
+**Decision** (Kyle, 2026-10-06). A filter declares which of its settings the data must match,
+through an additive method on `MetaFilter` with an empty default that `BesselFilter` overrides
+to name `Samplerate`; `get_callable_filter` is unchanged. The caller verifies at the one
+resolution point the tabs share (`MetaEventTabController._resolve_callable_filter`, which the
+Raw Data trace path must also go through) against the rate it is about to filter at, within
+a relative tolerance of 0.1% so a hand-typed 3333333 passes against a header's
+3333333.2008785727, and refuses with both rates named on a mismatch rather than filtering
+anyway. Lands in step 3 with the sos change; the controller side with a heads-up to Carolina.
+
+**Alternatives rejected.** Prefilling the dialog from a reader: the selection changes later.
+Returning `(callable, requirements)` from `get_callable_filter`: a public-method return type
+on a `Meta*` ABC is a breaking change and belongs in step 8, and the forgetting risk it guards
+against is already contained by the single resolution point. Locking filters to readers as
+child plugins: filters are also applied to loader data in fitting, the lock still needs an
+identity check at the call, and standalone filters in saved sessions and scripts would need
+migration. Passing the rate per call (`filter_data(data, samplerate)`): correct by
+construction, but an ABC change for step 8; it is where this ends up if verification leaks.
+
+**Revisit if** a filter needs a setting matched that no caller can supply, or a second
+resolution point appears that bypasses the shared helper.
+
 ## 2026-10-06 - Ruling H: the ABF readers move onto pyabf, as their own step
 
 **Context.** `TCossaLabABFReader` and `LegacyElementsReader` share a hand-written ABF2 header
@@ -45,6 +74,19 @@ and `pyabf` applies the offsets additively (`raw * gain + instOffset - sigOffset
 `ABF2Header` folds them into the scale (the 2026-10-05 entry) - no real file has a non-zero
 offset, so the spike cannot tell the two forms apart, and which one the wrapper keeps is a
 step 2b ruling, with the S1.4 recipe re-pinned to whichever is chosen.
+
+**Amended (Kyle, 2026-10-06).** Step 2b waits and moves to the end of 2.1, after step 9 and
+before step 10. Its goal is one general `ABFReader` plugin that takes its header from `pyabf`
+(`ABF(path, loadData=False)`, which the released 2.3.8 supports) and memmaps the data itself,
+usable on its own with one file as the dataset; it carries `_get_configs`, `_map_data` and
+`_convert_data` for every ABF variant - rate from the protocol section's
+`fADCSequenceInterval`, never the integer `dataRate` or the `dataSecPerPoint` derived from it -
+and the existing readers become an ABF family of subclasses adding only the three file-set
+abstracts (`_get_file_pattern`, `_get_file_time_stamps`, `_get_file_channel_stamps`) that
+recognise and order a dataset's files for stitched reading. `pyabf`'s `main` has
+`ABF.getOnlySweep` from Kyle's request (swharden/pyabf#138, closed 2024-10-15) but no release
+carries it, and as written it reads per call into float32 with the integer rate in its time
+arithmetic, so it is not on this path either way.
 
 **Revisit if** a recording turns up that the shipped parser reads and `pyabf` does not, or
 reads differently; that would be the thing to understand before any wrapper ships.

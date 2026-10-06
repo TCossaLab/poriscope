@@ -88,25 +88,6 @@ Step 10 waits for both tracks.
 - **`MetadataModel.kernel_density` uses a deprecated SciPy namespace** (`:297`,
   `stats.kde.gaussian_kde`); import `gaussian_kde` from `scipy.stats`.
 
-### Step 2b - ABF readers on pyabf (ruling H, `DECISIONS.md` 2026-10-06)
-
-- **Wrap `TCossaLabABFReader` and `LegacyElementsReader` over `pyabf`** (a `dev` extra today, a
-  runtime dependency when this lands), aiming at one general ABF plugin; retire
-  `helpers/ABF2Header.py` and its tests. Spike (2026-10-06, 13 real files): headers and
-  conversions agree to 3.6e-12 pA. Take the header from `pyabf` and memmap the data (`abf.data`
-  is float32 and whole-file), derive the rate from `dataSecPerPoint` not the `int` `dataRate`,
-  and rule the offset form (`pyabf` adds offsets, `ABF2Header` folds them; no real file has a
-  non-zero one). Goldens: S1.4's int16 recipe and `test_real_recordings.py`'s medians.
-
-### Step 3 - Bessel filter
-
-- **`BesselFilter` uses the wrong filter form and guards it with a magic constant.** `:214`
-  builds `(b, a)` and `:123` runs `filtfilt`, guarded by `if any(np.absolute(p) >= 0.975)` at
-  `:95`. Against `sosfiltfilt`: at the allowed limit (Wn=0.02) `filtfilt(b,a)` already deviates by
-  6.3e-4 sigma, and just past it by 22.6%. `output="sos"` + `sosfiltfilt` removes the guard and
-  unblocks the low cutoffs it rejects (25 kHz at 4.17 MHz is refused). `:187` makes the user
-  re-enter `Samplerate` the reader already knows.
-
 ### Step 4 - event finders
 
 - **`MetaEventFinder._fit_baseline_histogram:965` picks, windows and bins the baseline peak on
@@ -330,6 +311,18 @@ Step 10 waits for both tracks.
   `instantiate_analysis_tab` then `sync_sidebar_highlight` then `switch_to_page`;
   `handle_menu_click:692` and `on_load_analysis_tab_button_click:714` (`:722`) highlight first.
   Move the guards at `:899-924` into a predicate asked before the handlers act.
+
+### Step 2b - ABF readers on pyabf (deferred to here; ruling H, `DECISIONS.md` 2026-10-06)
+
+- **One general `ABFReader` plugin, header from `pyabf` (`ABF(path, loadData=False)`, 2.3.8
+  suffices), memmap by the plugin**, usable alone with one file as the dataset; the shipped
+  readers become subclasses adding only `_get_file_pattern`, `_get_file_time_stamps` and
+  `_get_file_channel_stamps` (set recognition and ordering); `LegacyElementsReader` may collapse
+  into the base; retire `helpers/ABF2Header.py` and its tests; `pyabf` moves from `dev` extra to
+  runtime dependency. Spike (2026-10-06, 13 real files): headers and conversions agree to
+  3.6e-12 pA. Rate from the protocol section's `fADCSequenceInterval` (not the `int` `dataRate`
+  nor `dataSecPerPoint`); rule the offset form (`pyabf` adds offsets, `ABF2Header` folds them;
+  no real file has a non-zero one). Goldens: S1.4's int16 recipe and `test_real_recordings.py`.
 
 ### Step 10 - docs dead-link gate and release prep
 

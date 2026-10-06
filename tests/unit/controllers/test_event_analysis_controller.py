@@ -92,6 +92,7 @@ class TestLoadEventPlot:
             "get_num_events": 99,
             "get_samplerate": 250000.0,
             "get_callable_filter": "a-callable",
+            "get_data_requirements": {},
             "get_eventfitting_status": False,
             "load_event": {"data": "samples"},
             "get_fitted_event": "fit",
@@ -378,6 +379,25 @@ class TestLoadEventPlot:
         assert labels == ["Event 0 Data", "Event 0 Raw"]
         assert num_events == 1
         assert len(vlines) == len(hlines) == len(points) == 1
+
+    def test_a_filter_built_for_another_rate_plots_nothing(
+        self, controller: EventAnalysisController, mock_view: MagicMock
+    ) -> None:
+        """
+        The loader reads at 250 kHz; a filter declaring 100 kHz is refused with both
+        rates named and no event is loaded.
+
+        :param controller: Controller under test.
+        :param mock_view: Mocked event analysis view.
+        """
+        self.answers(controller, get_data_requirements={"Samplerate": 100000.0})
+
+        controller.load_event_plot("ldr", "No Event Fitter", 0, [0], "F1", False)
+
+        assert self.asked(controller, "load_event") == []
+        message = controller.add_text_to_display.emit.call_args.args[0]
+        assert "100000" in message and "250000" in message
+        mock_view.set_event_plot_data.assert_not_called()
 
     # -- the fit overlay --------------------------------------------------
 
@@ -810,11 +830,20 @@ class TestFittingLaunch:
         self, controller: EventAnalysisController
     ) -> None:
         """
-        One fetch for the batch, through the helper now shared with RawData.
+        Each channel's fit gets the callable, resolved per channel through the helper
+        shared with RawData so each channel's rate can be checked; this filter
+        declares nothing, so no rate is asked for.
 
         :param controller: Controller under test.
         """
-        controller.model.call.side_effect = ["a-callable", "gen0", "gen1"]
+        controller.model.call.side_effect = [
+            "a-callable",
+            {},
+            "gen0",
+            "a-callable",
+            {},
+            "gen1",
+        ]
 
         controller.start_fitting("ef1", [0, 1], "MyFilter")
 
@@ -826,6 +855,35 @@ class TestFittingLaunch:
         assert len(fit_calls) == 2
         for args in fit_calls:
             assert args[5] == "a-callable"
+
+    def test_a_channel_whose_rate_the_filter_does_not_match_is_skipped(
+        self, controller: EventAnalysisController
+    ) -> None:
+        """
+        Channel 0 reads at 250 kHz against a 100 kHz filter and is refused with both
+        rates named; channel 1's declaration is empty and it fits.
+
+        :param controller: Controller under test.
+        """
+        controller.model.call.side_effect = [
+            "a-callable",
+            {"Samplerate": 100000.0},
+            250000.0,
+            "a-callable",
+            {},
+            "gen1",
+        ]
+
+        controller.start_fitting("ef1", [0, 1], "MyFilter")
+
+        fit_calls = [
+            call.args
+            for call in controller.model.call.call_args_list
+            if call.args[2] == "fit_events"
+        ]
+        assert [args[3] for args in fit_calls] == [1]
+        message = controller.add_text_to_display.emit.call_args.args[0]
+        assert "100000" in message and "250000" in message
 
     def test_an_empty_filter_key_fetches_no_callable(
         self, controller: EventAnalysisController

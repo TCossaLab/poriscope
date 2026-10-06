@@ -1,14 +1,14 @@
 """
 The Bessel filter against a reference implementation.
 
-``BesselFilter`` builds its filter in the ``(b, a)`` form and runs ``filtfilt``, guarded by
-a magic constant (``_validate_settings:95`` refuses any pole with modulus at or above
-0.975) because that form goes numerically unstable at low normalised cutoffs. scipy's
-second-order-sections form, ``bessel(..., output="sos")`` with ``sosfiltfilt``, is the
-reference here: at the conformance settings the two must agree, and the low cutoffs the
-guard refuses today must be accepted and agree too once 2.1 step 3 moves the plugin to the
-sos form. No filter golden existed before; the reference is computed in the test rather
-than stored, so there is nothing to regenerate.
+Until 2.1 ``BesselFilter`` built its filter in the ``(b, a)`` form and ran ``filtfilt``,
+guarded by a magic constant (any pole with modulus at or above 0.975 was refused) because
+that form goes numerically unstable at low normalised cutoffs. It now builds second-order
+sections and runs ``sosfiltfilt``; scipy's own ``bessel(..., output="sos")`` with
+``sosfiltfilt`` is the reference here, computed in the test rather than stored. At the
+conformance settings the plugin must match it, and a low cutoff the old guard refused
+(25 kHz at 4.17 MHz) must be accepted and match it too. The plugin keeps its own median
+padding, so its ends differ from the reference's odd extension as before.
 
 Both filters are zero-phase and both pad: the plugin pads with the medians of its first
 and last ``3 * order`` samples over ``10 * order`` samples, ``sosfiltfilt`` with scipy's
@@ -31,8 +31,12 @@ NOISE_STD_PA = 15.0
 EVENT_AMPLITUDE_PA = -400.0
 TRACE_SAMPLES = 40_000
 #: Samples at each end excluded from the tight comparison: both implementations pad, but
-#: not identically, and the difference decays within a few hundred samples.
-EDGE = 400
+#: not identically, and the difference decays over a few cutoff periods - about six, measured
+#: 2026-10-06 at 25 kHz over 4.17 MHz (167 samples per period: 1.7e-4 pA still at 400
+#: samples, 7e-9 pA from 1,000). The exclusion therefore scales with the cutoff and never
+#: drops below the 400 samples that cover the conformance settings.
+EDGE_MIN = 400
+EDGE_CUTOFF_PERIODS = 6
 #: Interior agreement bound, in picoamps. Measured 2026-10-05 at the conformance settings:
 #: the two forms agree to better than 1e-6 pA away from the ends, so a drift shows as a
 #: number rather than a surprise.
@@ -77,7 +81,23 @@ def sos_reference(
     return sosfiltfilt(bessel(poles, 2.0 * cutoff / samplerate, output="sos"), data)
 
 
-def assert_matches_reference(filtered: np.ndarray, reference: np.ndarray) -> None:
+def edge_samples(samplerate: float, cutoff: float) -> int:
+    """
+    How many samples at each end the padding transient can occupy.
+
+    :param samplerate: in hertz
+    :type samplerate: float
+    :param cutoff: in hertz
+    :type cutoff: float
+    :return: the exclusion, in samples
+    :rtype: int
+    """
+    return max(EDGE_MIN, int(EDGE_CUTOFF_PERIODS * samplerate / cutoff))
+
+
+def assert_matches_reference(
+    filtered: np.ndarray, reference: np.ndarray, edge: int
+) -> None:
     """
     Compare a plugin output with the reference, interior tightly and edges loosely.
 
@@ -85,13 +105,15 @@ def assert_matches_reference(filtered: np.ndarray, reference: np.ndarray) -> Non
     :type filtered: numpy.ndarray
     :param reference: the sos reference
     :type reference: numpy.ndarray
+    :param edge: samples at each end compared loosely, from :func:`edge_samples`
+    :type edge: int
     """
-    interior = slice(EDGE, -EDGE)
+    interior = slice(edge, -edge)
     worst = float(np.max(np.abs(filtered[interior] - reference[interior])))
     assert worst <= INTERIOR_ATOL_PA, f"interior disagreement {worst:.3g} pA"
     edges = np.r_[
-        np.abs(filtered[:EDGE] - reference[:EDGE]),
-        np.abs(filtered[-EDGE:] - reference[-EDGE:]),
+        np.abs(filtered[:edge] - reference[:edge]),
+        np.abs(filtered[-edge:] - reference[-edge:]),
     ]
     assert (
         float(np.max(edges)) <= EDGE_ATOL_PA
@@ -111,18 +133,12 @@ def test_the_shipped_filter_matches_the_sos_reference_at_the_conformance_setting
     reference = sos_reference(
         trace, settings["Samplerate"], settings["Cutoff"], settings["Poles"]
     )
-    assert_matches_reference(filtered, reference)
+    assert_matches_reference(
+        filtered, reference, edge_samples(settings["Samplerate"], settings["Cutoff"])
+    )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "BesselFilter._validate_settings:95 refuses any cutoff whose (b, a) poles reach "
-        "0.975 in modulus - 25 kHz at 4.17 MHz among them - because that form is "
-        "unstable there; the sos form is not, and step 3 adopts it"
-    ),
-)
-def test_a_low_cutoff_the_guard_refuses_is_accepted_and_matches_the_reference(
+def test_a_low_cutoff_the_old_guard_refused_is_accepted_and_matches_the_reference(
     trace: np.ndarray,
 ) -> None:
     """A 25 kHz Bessel over a 4.17 MHz recording is an ordinary request and must work."""
@@ -132,4 +148,19 @@ def test_a_low_cutoff_the_guard_refuses_is_accepted_and_matches_the_reference(
         filtered = plugin.filter_data(trace.copy())
     finally:
         plugin.close_resources()
-    assert_matches_reference(filtered, sos_reference(trace, samplerate, cutoff, poles))
+    assert_matches_reference(
+        filtered,
+        sos_reference(trace, samplerate, cutoff, poles),
+        edge_samples(samplerate, cutoff),
+    )
+
+
+def test_bessel_declares_the_samplerate_it_was_built_for() -> None:
+    """The one setting the data must match is the rate the coefficients assume."""
+    plugin = build_filter(BesselFilter)
+    try:
+        assert plugin.get_data_requirements() == {
+            "Samplerate": FILTER_SETTINGS["BesselFilter"]["Samplerate"]
+        }
+    finally:
+        plugin.close_resources()
