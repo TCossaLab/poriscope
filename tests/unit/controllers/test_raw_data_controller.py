@@ -380,11 +380,12 @@ class TestEventfindingLaunch:
         self, controller: RawDataController
     ) -> None:
         """
-        One fetch for the batch, reusing the helper the event-plot path uses.
+        One fetch for the batch, reusing the helper the event-plot path uses. The
+        filter declares nothing to match, so the finder's rate is never asked for.
 
         :param controller: Controller under test.
         """
-        controller.model.call.side_effect = ["a-callable", "gen0", "gen1"]
+        controller.model.call.side_effect = ["a-callable", {}, "gen0", "gen1"]
 
         controller.start_eventfinding(
             "finder", [(0, [(0.0, 0.0)]), (1, [(0.0, 0.0)])], "F1"
@@ -398,6 +399,57 @@ class TestEventfindingLaunch:
         assert len(find_calls) == 2
         for args in find_calls:
             assert args[6] == "a-callable"
+
+    def test_a_filter_built_for_another_rate_is_refused_before_any_channel_runs(
+        self, controller: RawDataController
+    ) -> None:
+        """
+        The filter declares 100 kHz, the finder reads at 250 kHz: nothing is launched
+        and the user is told both rates.
+
+        :param controller: Controller under test.
+        """
+        controller.model.call.side_effect = [
+            "a-callable",
+            {"Samplerate": 100000.0},
+            250000.0,
+        ]
+
+        controller.start_eventfinding(
+            "finder", [(0, [(0.0, 0.0)]), (1, [(0.0, 0.0)])], "F1"
+        )
+
+        assert not [
+            call
+            for call in controller.model.call.call_args_list
+            if call.args[2] == "find_events"
+        ]
+        message = controller.add_text_to_display.emit.call_args.args[0]
+        assert "100000" in message and "250000" in message
+
+    def test_a_filter_within_a_tenth_of_a_percent_of_the_rate_is_accepted(
+        self, controller: RawDataController
+    ) -> None:
+        """
+        A hand-typed rate a few hertz off a header's is the same filter.
+
+        :param controller: Controller under test.
+        """
+        controller.model.call.side_effect = [
+            "a-callable",
+            {"Samplerate": 250100.0},
+            250000.0,
+            "gen0",
+        ]
+
+        controller.start_eventfinding("finder", [(0, [(0.0, 0.0)])], "F1")
+
+        find_calls = [
+            call.args
+            for call in controller.model.call.call_args_list
+            if call.args[2] == "find_events"
+        ]
+        assert len(find_calls) == 1 and find_calls[0][6] == "a-callable"
 
     def test_an_empty_filter_key_fetches_no_callable(
         self, controller: RawDataController
@@ -682,19 +734,44 @@ def test_load_and_filter_filters_each_channel_when_asked(
     :param controller: Controller under test.
     :param mocker: Pytest-mock fixture.
     """
+    # The filter is resolved once, through the shared helper, and applied as a
+    # callable rather than through a call() per channel.
     controller.model.call.side_effect = [
         250000.0,
+        lambda data: f"filtered:{data}",
+        {},
         LONG_CHANNEL,
         "raw0",
-        "filtered0",
     ]
 
     data, kept, _rate = controller._load_and_filter("R", [0], 0.0, 1.0, "F1")
 
-    assert (data, kept) == (["filtered0"], [0])
-    assert controller.model.call.call_args_list[-1] == mocker.call(
-        "MetaFilter", "F1", "filter_data", "raw0"
+    assert (data, kept) == (["filtered:raw0"], [0])
+    assert controller.model.call.call_args_list[1] == mocker.call(
+        "MetaFilter", "F1", "get_callable_filter"
     )
+
+
+def test_load_and_filter_refuses_a_filter_built_for_another_rate(
+    controller: RawDataController,
+) -> None:
+    """
+    A 1 MHz filter on a 250 kHz trace plots nothing and says why, instead of
+    drawing a trace filtered at the wrong cutoff.
+
+    :param controller: Controller under test.
+    """
+    controller.model.call.side_effect = [
+        250000.0,
+        "a-callable",
+        {"Samplerate": 1_000_000.0},
+    ]
+
+    data, kept, rate = controller._load_and_filter("R", [0], 0.0, 1.0, "F1")
+
+    assert (data, kept, rate) == ([], [], 250000.0)
+    message = controller.add_text_to_display.emit.call_args.args[0]
+    assert "1000000" in message and "250000" in message
 
 
 def test_load_and_filter_keeps_the_unfiltered_channel_when_the_filter_fails(
@@ -709,14 +786,20 @@ def test_load_and_filter_keeps_the_unfiltered_channel_when_the_filter_fails(
 
     :param controller: Controller under test.
     """
+
+    def filter_that_fails_on_channel_one(data: str) -> str:
+        if data == "raw1":
+            raise Exception("boom")
+        return "filtered0"
+
     controller.model.call.side_effect = [
         250000.0,
+        filter_that_fails_on_channel_one,
+        {},
         LONG_CHANNEL,
         "raw0",
-        "filtered0",
         LONG_CHANNEL,
         "raw1",
-        Exception("boom"),
     ]
 
     data, kept, _rate = controller._load_and_filter("R", [0, 1], 0.0, 1.0, "F1")
@@ -898,6 +981,7 @@ class TestLoadEventPlotData:
             "get_eventfinding_status": True,
             "get_num_events_found": 10,
             "get_callable_filter": "a-callable",
+            "get_data_requirements": {},
             "get_samplerate": 250000.0,
             "get_single_event_data": {"data": "samples"},
         }

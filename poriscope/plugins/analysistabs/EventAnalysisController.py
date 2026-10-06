@@ -25,6 +25,7 @@
 # Kyle Briggs
 
 
+import functools
 import logging
 from typing import Any, Callable, List, Optional, Tuple, override
 
@@ -152,11 +153,16 @@ class EventAnalysisController(MetaEventTabController):
         if not events:
             return
 
-        callable_filter = self._resolve_callable_filter(data_filter)
         # The View no longer holds a samplerate: the time axis is a property of the
         # samples and the rate they were taken at, so the Model builds it and the
         # traces arrive already paired with it.
         samplerate = self._loader_samplerate(loader, channel)
+        try:
+            callable_filter = self._resolve_callable_filter(
+                data_filter, lambda: samplerate
+            )
+        except ValueError:
+            return
 
         fitting_done = False
         if eventfitter != "No Event Fitter":
@@ -252,6 +258,33 @@ class EventAnalysisController(MetaEventTabController):
         except Exception:
             self.logger.warning(
                 "Unable to get samplerate, time axis will indicate raw data index"
+            )
+            return 1
+        return samplerate
+
+    @log(logger=logger)
+    def _fitter_samplerate(self, eventfitter: str, channel: int) -> float:
+        """
+        The fitter's samplerate for a channel, or 1 if it could not be read.
+
+        The fitter reads events through its loader, so this is the rate of the data a
+        filter handed to ``fit_events`` will see.
+
+        :param eventfitter: the event fitter plugin's key
+        :type eventfitter: str
+        :param channel: the channel being fitted
+        :type channel: int
+        :return: the samplerate in Hz, or 1 if it could not be read
+        :rtype: float
+        """
+        try:
+            samplerate: float = self.model.call(
+                "MetaEventFitter", eventfitter, "get_samplerate", channel
+            )
+        except Exception:
+            self.logger.warning(
+                f"Unable to read the samplerate of {eventfitter} channel {channel}; "
+                "a filter is applied unchecked"
             )
             return 1
         return samplerate
@@ -454,8 +487,14 @@ class EventAnalysisController(MetaEventTabController):
         :return: None
         :rtype: None
         """
-        callable_filter = self._resolve_callable_filter(data_filter)
         for channel in channels:
+            try:
+                callable_filter = self._resolve_callable_filter(
+                    data_filter,
+                    functools.partial(self._fitter_samplerate, eventfitter, channel),
+                )
+            except ValueError:
+                continue
             try:
                 generator = self.model.call(
                     "MetaEventFitter",

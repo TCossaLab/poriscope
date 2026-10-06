@@ -153,3 +153,14 @@ def test_a_low_cutoff_the_old_guard_refused_is_accepted_and_matches_the_referenc
         sos_reference(trace, samplerate, cutoff, poles),
         edge_samples(samplerate, cutoff),
     )
+
+
+def test_bessel_declares_the_samplerate_it_was_built_for() -> None:
+    """The one setting the data must match is the rate the coefficients assume."""
+    plugin = build_filter(BesselFilter)
+    try:
+        assert plugin.get_data_requirements() == {
+            "Samplerate": FILTER_SETTINGS["BesselFilter"]["Samplerate"]
+        }
+    finally:
+        plugin.close_resources()

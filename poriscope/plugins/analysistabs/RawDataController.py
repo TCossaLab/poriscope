@@ -145,7 +145,12 @@ class RawDataController(MetaEventTabController):
         :return: None
         :rtype: None
         """
-        callable_filter = self._resolve_callable_filter(data_filter)
+        try:
+            callable_filter = self._resolve_callable_filter(
+                data_filter, lambda: self._event_samplerate(eventfinder)
+            )
+        except ValueError:
+            return
         for channel, ranges in channel_ranges:
             self.logger.info(
                 f"Launching find_events for channel {channel} over {len(ranges)} range(s)"
@@ -437,10 +442,15 @@ class RawDataController(MetaEventTabController):
         if not events:
             return
 
-        callable_filter = self._resolve_callable_filter(data_filter)
         # Held as well as pushed: the View still needs it for the PSD request, and the
         # Model needs it to build each event's time axis.
         samplerate = self._event_samplerate(eventfinder)
+        try:
+            callable_filter = self._resolve_callable_filter(
+                data_filter, lambda: samplerate
+            )
+        except ValueError:
+            return
         self.view.update_plot_samplerate(samplerate)
 
         event_data: List[Any] = []
@@ -615,6 +625,13 @@ class RawDataController(MetaEventTabController):
             )
         self.view.update_plot_samplerate(samplerate)
 
+        try:
+            callable_filter = self._resolve_callable_filter(
+                data_filter, lambda: samplerate
+            )
+        except ValueError:
+            return [], [], samplerate
+
         data_list: List[Any] = []
         kept: List[int] = []
         for channel in channels:
@@ -637,11 +654,9 @@ class RawDataController(MetaEventTabController):
             if channel_data is None:
                 self.logger.debug(f"No data loaded for channel {channel}, skipping")
                 continue
-            if data_filter:
+            if callable_filter is not None:
                 try:
-                    channel_data = self.model.call(
-                        "MetaFilter", data_filter, "filter_data", channel_data
-                    )
+                    channel_data = callable_filter(channel_data)
                 except Exception as e:
                     self.logger.error(
                         f"Unable to filter data with {data_filter}: {repr(e)}"

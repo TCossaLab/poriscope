@@ -118,6 +118,17 @@ class BesselFilter(MetaFilter):
         data = np.pad(data, padlen, mode="constant", constant_values=(before, after))
         return sosfiltfilt(self.sos, data)[padlen:-padlen]
 
+    @log(logger=logger)
+    @override
+    def get_data_requirements(self) -> Dict[str, float]:
+        """
+        The data must be at the sample rate the coefficients were built for.
+
+        :return: ``{"Samplerate": <Hz>}``, the rate this filter was built for
+        :rtype: Dict[str, float]
+        """
+        return {"Samplerate": float(self.settings["Samplerate"]["Value"])}
+
     # public API, must be implemented by subclasses
     @log(logger=logger)
     @override

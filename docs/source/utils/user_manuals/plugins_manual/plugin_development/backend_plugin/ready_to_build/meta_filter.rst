@@ -41,3 +41,12 @@ Methods in this section have an implementation in either :ref:`BaseDataPlugin` o
 
 .. automethod:: poriscope.utils.MetaFilter.MetaFilter.force_serial_channel_operations
    :no-index:
+
+.. automethod:: poriscope.utils.MetaFilter.MetaFilter.get_data_requirements
+   :no-index:
+
+Override this when your filter's coefficients depend on a property of the data, as
+``BesselFilter`` does with ``Samplerate``: return the settings the data must match, keyed
+as in your own settings, and the analysis tabs refuse to apply the filter to data at
+another rate, naming both. Leave it alone when any array will do, as ``WaveletFilter``
+does.

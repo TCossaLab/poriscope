@@ -101,6 +101,23 @@ class MetaFilter(BaseDataPlugin):
         """
         return self.filter_data
 
+    @log(logger=logger)
+    def get_data_requirements(self) -> Dict[str, float]:
+        """
+        Return the settings the data handed to :meth:`filter_data` must match.
+
+        Empty by default: most filters take any array. A filter whose coefficients were
+        built from a property of the data overrides this to name that property, keyed as
+        in its own settings - ``BesselFilter`` returns ``{"Samplerate": ...}`` - so the
+        caller, which alone knows what it is about to filter, can refuse a mismatch
+        instead of filtering at the wrong rate. :meth:`get_callable_filter` is unchanged;
+        this is the declaration beside it.
+
+        :return: setting name to the value the data must match
+        :rtype: Dict[str, float]
+        """
+        return {}
+
     @abstractmethod
     def close_resources(self, channel: Optional[int] = None) -> None:
         """
