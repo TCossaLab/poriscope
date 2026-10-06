@@ -33,7 +33,20 @@ real ABF recording in the local `real_data` tier (three subformats, two of them 
 sets). The S1.4 int16 recipe pins the arithmetic a wrapper must reproduce. `pyabf` enters as
 a runtime dependency only when the wrapper lands.
 
-**Revisit if** the spike finds a recording the shipped parser reads and `pyabf` does not, or
+**Evidence (spike, 2026-10-06).** On all 13 real ABF files compared (the 4 TCossaLab e4x10
+files, 8 of the 84-file Elements set, the Legacy Elements file) `pyabf` 2.3.8 reads the same
+gain, data start, channel names and units as `ABF2Header`, every offset is zero, and the
+first second converts identically to 3.6e-12 pA. Three things the wrapper must handle:
+`pyabf.ABF.dataRate` is an `int` (3333333 where the header's float32 interval gives
+3333333.2008785727; `dataSecPerPoint` keeps the float); its own data path (`abf.data`) is
+float32 and loads the whole file (1.8e-3 pA off at 14 nA, and 3.2 GB for the Legacy file),
+so the wrapper takes the header from `pyabf` and memmaps the data as the readers do today;
+and `pyabf` applies the offsets additively (`raw * gain + instOffset - sigOffset`) where
+`ABF2Header` folds them into the scale (the 2026-10-05 entry) - no real file has a non-zero
+offset, so the spike cannot tell the two forms apart, and which one the wrapper keeps is a
+step 2b ruling, with the S1.4 recipe re-pinned to whichever is chosen.
+
+**Revisit if** a recording turns up that the shipped parser reads and `pyabf` does not, or
 reads differently; that would be the thing to understand before any wrapper ships.
 
 ---

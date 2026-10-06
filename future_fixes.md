@@ -88,20 +88,15 @@ Step 10 waits for both tracks.
 - **`MetadataModel.kernel_density` uses a deprecated SciPy namespace** (`:297`,
   `stats.kde.gaussian_kde`); import `gaussian_kde` from `scipy.stats`.
 
-### Step 2 - readers
+### Step 2b - ABF readers on pyabf (ruling H, `DECISIONS.md` 2026-10-06)
 
-- **Migrate the ABF readers to `pyabf`?** `TCossaLabABFReader` and `LegacyElementsReader` carry a
-  hand-written ABF2 parser (`helpers/ABF2Header.py`). Spike first, read-only: pyabf against our
-  conversion on real lab files, agreement in pA. Migrate in 2.1 if they agree; otherwise file under
-  Later with the number. The offset arithmetic itself is correct (`DECISIONS.md` 2026-10-05).
-- **`MetaReader._set_sample_rate` (`:566`) checks only each channel's first file**, so a set
-  whose files disagree on sample rate is read at the first file's rate.
-- **Chunk boundaries can duplicate a sample through a float round-trip.**
-  `MetaReader.continuous_read:386` converts an integer sample index to seconds (`:421-422`) and
-  `load_data` truncates it back (`_slice_request:159-160`, `_read_bounds:369-371`); measured,
-  `int((i/sr)*sr) != i` for 7.7% of the first 2M indices at 100 kHz, and when it slips low
-  `i += len(data)` (`:428`) compounds it. `MetaEventFinder.find_events:442-443` does the same
-  seconds round-trip. Pass sample counts at both ends; name the tail-chunk test (`:415-418`).
+- **Wrap `TCossaLabABFReader` and `LegacyElementsReader` over `pyabf`** (a `dev` extra today, a
+  runtime dependency when this lands), aiming at one general ABF plugin; retire
+  `helpers/ABF2Header.py` and its tests. Spike (2026-10-06, 13 real files): headers and
+  conversions agree to 3.6e-12 pA. Take the header from `pyabf` and memmap the data (`abf.data`
+  is float32 and whole-file), derive the rate from `dataSecPerPoint` not the `int` `dataRate`,
+  and rule the offset form (`pyabf` adds offsets, `ABF2Header` folds them; no real file has a
+  non-zero one). Goldens: S1.4's int16 recipe and `test_real_recordings.py`'s medians.
 
 ### Step 3 - Bessel filter
 
@@ -126,6 +121,12 @@ Step 10 waits for both tracks.
   - *Bins:* `int(len(data)**(1/3)/2)` (`:995`) is 10 on a 10k chunk, ~6 after windowing; the
     log-linearised fit is biased high, +2.3% at 10k falling to +0.2% at 1M. Rice's rule gives
     four times as many.
+- **`MetaEventFinder._gaussian_fit:1133` goes singular on short chunks of clean data.** On a
+  synthetic Binary 1X recording (100 kHz, 2000 pA baseline, 15 pA float64 noise)
+  `_get_baseline_stats` raises `LinAlgError` for every chunk up to 80k samples and works from
+  90k, so `find_events` rejects those chunks at INFO: 0.7 s chunks lost 4 of 12 planted events,
+  0.19 s chunks found none, 1 s chunks found all 12. S1.3's 10k-sample planted chunks fit, so it
+  is the window and bins rule on this data; re-measure under ruling D.
 - **`ThresholdBlockageFinder`'s sigma threshold is compared against a pA mean in the base loop.**
   `MetaEventFinder.find_events:453` skips a chunk when `mean < Threshold`; right for Classic's pA
   threshold, at 8 sigma it skips only chunks with a baseline under 8 pA.
