@@ -18,6 +18,8 @@
 
 * GitHub Actions and the pinned Python dependencies are now kept current by Dependabot, weekly, against `develop`
 
+* A `real_data` test tier reads the lab's real recordings from a directory named by `PORISCOPE_REAL_DATA_DIR` and skips wherever it is unset, so every shipped reader is checked against an instrument's own files on a developer's machine without any recording entering the repository; `pyabf` joins the `dev` extras for the ABF comparison
+
 ### Analysis Tabs:
 
 * `get_save_filename`, the CSV export's file picker that `MetaController.export_plot_data` calls on every tab, now lives once on `MetaView` instead of as four identical copies on the Views
