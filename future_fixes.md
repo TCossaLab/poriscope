@@ -88,25 +88,6 @@ Step 10 waits for both tracks.
 - **`MetadataModel.kernel_density` uses a deprecated SciPy namespace** (`:297`,
   `stats.kde.gaussian_kde`); import `gaussian_kde` from `scipy.stats`.
 
-### Step 1 - ground-truth safety net (gate)
-
-- **No test checks fitted values against ground truth.** Conformance asserts level counts only
-  (`test_eventfitters.py:322-347`); there is no `CUSUM` unit-test file, the ClassicCUSUM tests mock
-  `_calculate_threshold`, and nothing pins the variance-reset fix. `generate_events_database`
-  already plants staircases (`sublevel_amplitudes_pA`) and dips (`sublevel_dip_pA`) but the
-  conformance fixtures drop the ground-truth object. Assert current, blockage and duration within
-  tolerance for CUSUM, ClassicCUSUM, IntraCUSUM and NoFitter across SNRs and short events.
-- **Baseline sigma is pinned only on N(1000, 25)** (`test_meta_event_finder.py`
-  `TestFitBaselineHistogram`, rel 2%; shipped window pinned at 38.29). Plant sigma on 10k / 100k /
-  1M chunks and a two-population case; pin planted values only, since step 4 changes the fit.
-- **Conformance recipes never leave the happy path**: add multi-file sets and mismatched
-  sample rates; the synthetic ABF writer (`synthetic_abf2.py`) uses zero offsets and unit gains, so
-  add a recipe with non-zero ones that pins the current conversion.
-- **The writers have no tests of their failure paths.** `test_writers.py` (17 tests) drives both
-  families on the happy path; nothing covers duplicate rows, a schema mismatch, abort, or the
-  `rejected` bookkeeping. Nothing drives `SQLiteDBLoader` with a NULL `padding_before`.
-- **Bessel reference**: a golden against `sosfiltfilt` for step 3.
-
 ### Step 2 - readers
 
 - **Migrate the ABF readers to `pyabf`?** `TCossaLabABFReader` and `LegacyElementsReader` carry a
