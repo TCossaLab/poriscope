@@ -1,5 +1,13 @@
 ## Poriscope 2.1.0: in progress
 
+### Breaking Changes:
+
+#### Results that change:
+
+* **The Bessel filter now accepts low cutoffs it used to refuse as numerically unstable** (25 kHz on a 4.17 MHz recording, for one): it is built as second-order sections, which are stable at any cutoff below half the sample rate; filtered values at previously accepted cutoffs move by less than a thousandth of the noise
+
+* **Results can move by one sample at a chunk boundary:** a reader now rounds a seconds request to the nearest sample instead of truncating it, so chunked reads (the Raw Data trace, event finding, loading an event's padded window) no longer duplicate one sample and drop another where a chunk boundary fell on an index whose time did not convert back exactly
+
 ### Developer Tooling:
 
 * The release workflow now runs only when a version tag is pushed; a push to `main` no longer runs the test suite a second time on the same commit
@@ -35,8 +43,6 @@
 * A recording whose files disagree on sample rate is now refused with a message naming the file, where before only each channel's first file was checked and the rest were read at its rate
 
 * Event finding with a chunk length under one sample (reachable through the plugin API; the Raw Data tab always passes one second) now reads one-second chunks instead of looping forever
-
-* **Results can move by one sample at a chunk boundary:** a reader now rounds a seconds request to the nearest sample instead of truncating it, so chunked reads (the Raw Data trace, event finding, loading an event's padded window) no longer duplicate one sample and drop another where a chunk boundary fell on an index whose time did not convert back exactly
 
 ### Documentation:
 
