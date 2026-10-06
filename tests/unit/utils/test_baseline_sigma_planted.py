@@ -16,7 +16,12 @@ at every occupancy. Rice's rule for the bins (step 4, first commit) took the 10k
 +0.03% and the two-population sigma to +0.15% at seed 0, so those two pins are plain
 assertions now. The peak rule (second commit) - the local maximum farthest from zero
 among those with prominence at least a tenth of the tallest bin - made the 55% and a
-70% case report the planted baseline, on signed data as well.
+70% case report the planted baseline, on signed data as well. The window (third
+commit) - a 3 sigma tail above the peak, and below it the nearer of the 3 sigma tail
+and the valley before a neighbouring peak - took the sigma at 70% occupancy from
++2.1% to +0.5% and at 8 sigma separation from +1.0% to +0.2%. Below about 4 sigma
+separation no window helps, because the fit's own 3 sigma mask takes in the
+neighbour's shoulder; that limit is recorded in DECISIONS.md, not pinned.
 """
 
 import numpy as np
@@ -152,11 +157,51 @@ def test_a_negative_baseline_is_the_level_farthest_from_zero(finder) -> None:
     assert abs(mean + PLANTED_MEAN) <= 1.0, mean
 
 
+def neighbour(
+    level: float, occupancy: float, n: int = 100_000, seed: int = 9
+) -> np.ndarray:
+    """
+    A baseline at 1000 pA beside an occupied level at ``level``, both at the planted sigma.
+
+    :param level: the occupied level, in pA
+    :type level: float
+    :param occupancy: the fraction of samples on the occupied level
+    :type occupancy: float
+    :param n: total samples
+    :type n: int
+    :param seed: the generator seed
+    :type seed: int
+    :return: the chunk
+    :rtype: numpy.ndarray
+    """
+    rng = np.random.default_rng(seed)
+    occupied = int(n * occupancy)
+    return np.concatenate(
+        [
+            rng.normal(PLANTED_MEAN, PLANTED_SIGMA, n - occupied),
+            rng.normal(level, PLANTED_SIGMA, occupied),
+        ]
+    )
+
+
+@pytest.mark.parametrize(
+    "level, occupancy",
+    [
+        pytest.param(850.0, 0.30, id="10sigma-30pct"),
+        pytest.param(850.0, 0.70, id="10sigma-70pct"),
+        pytest.param(880.0, 0.60, id="8sigma-60pct"),
+    ],
+)
 def test_the_fitted_sigma_beside_an_occupied_level_is_within_one_percent(
-    finder,
+    finder, level: float, occupancy: float
 ) -> None:
-    """A second population below the baseline must not widen the baseline's sigma."""
-    _mean, sigma = fit(finder, two_populations(0.30))
+    """
+    A second population below the baseline must not widen the baseline's sigma.
+
+    The 30% case was met by Rice's bins alone; the 70% and 8 sigma cases are what the
+    valley-capped window earns (bins and peak alone: +2.1% and +1.0% on these samples).
+    """
+    _mean, sigma = fit(finder, neighbour(level, occupancy))
     assert sigma == pytest.approx(
         PLANTED_SIGMA, rel=SIGMA_REL_BOUND
     ), f"sigma {sigma:.3f}, bias {(sigma / PLANTED_SIGMA - 1) * 100:+.2f}%"

@@ -1211,10 +1211,11 @@ class TestFitBaselineHistogram:
         """
         Events on one side do not drag the window out to that side.
 
-        ``half_width`` takes the narrower of the two sides both ways, which is the one
-        place the two finders' copies disagreed before this method existed, so it is
-        pinned rather than left to the finders. This is not the same thing as the
-        window being centred on the peak - see ``TestBimodalBaseline``.
+        The window is sized from the baseline peak's own width and stops, toward zero,
+        at the valley before a neighbouring peak, so a population of events below the
+        baseline cannot widen it. This was the one place the two finders' copies
+        disagreed before this method existed, so it is pinned rather than left to the
+        finders.
         """
         clean = self.noise()
         skewed = np.concatenate([clean, self.noise(n=40_000, mean=930.0, sigma=8.0)])
@@ -1231,57 +1232,5 @@ class TestFitBaselineHistogram:
 # ---------------------------------------------------------------------------
 # The shipped fit window, pinned rather than justified
 # ---------------------------------------------------------------------------
-class TestTheShippedFitWindow:
-    """
-    Characterization of the asymmetric fit window, which is unchanged shipped behaviour.
-
-    ``_fit_baseline_histogram`` slices ``hist[peak - h : peak + h]``, keeping ``h`` bins
-    below the histogram peak and ``h - 1`` above it. On unimodal noise that is worth 0.13
-    percentage points of sigma, inside the run-to-run scatter, which is why it reads as an
-    off-by-one; on a bimodal baseline it is worth several percent, which is why it is not
-    safe to remove as one. It was removed on that basis on 2026-09-20 and restored the same
-    day.
-
-    Whether the direction it trims is the right one is **not** settled here, and the test
-    deliberately asserts no rationale: the population the baseline fit should follow is the
-    fitted peak farthest from zero, and this window trims the side nearer that peak.
-    ``future_fixes.md`` carries that question and the peak-selection gap beside it. This
-    test exists so neither can change without someone noticing.
-    """
-
-    MU = 1000.0
-    SIGMA = 25.0
-
-    def bimodal(self):
-        """
-        A dominant population with a smaller one below it, as a blockage would be.
-
-        :return: 100,000 samples, 35% of them in the lower population 3 sigma down.
-        :rtype: numpy.ndarray
-        """
-        rng = np.random.default_rng(9)
-        minor = 35_000
-        return np.concatenate(
-            [
-                rng.normal(self.MU, self.SIGMA, 100_000 - minor),
-                rng.normal(self.MU - 3.0 * self.SIGMA, self.SIGMA, minor),
-            ]
-        )
-
-    def test_the_window_is_the_shipped_asymmetric_one(self, finder):
-        """
-        Sigma on a fixed bimodal sample is what the asymmetric window produces.
-
-        The number is what the asymmetric window produces on this exact sample at the
-        current bin count; it was 38.29 (symmetric: 35.06) on the pre-2.1 bins and is
-        30.29 on Rice's, so this fails if the slice is changed in either direction.
-        """
-        data = self.bimodal()
-        _, std = finder._fit_baseline_histogram(
-            data, float(np.min(data)), float(np.max(data))
-        )
-        assert std == pytest.approx(30.29, rel=0.02)
-
-
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

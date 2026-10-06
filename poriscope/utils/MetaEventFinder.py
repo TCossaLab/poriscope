@@ -39,6 +39,10 @@ from poriscope.utils.LogDecorator import log
 from poriscope.utils.MetaReader import MetaReader
 from poriscope.utils.SerializeDecorator import serialize_channels
 
+#: A Gaussian is this many standard deviations wide at 60% of its height, which is
+#: where the baseline fit measures the peak to size its window.
+WIDTH_AT_60_PERCENT_PER_SIGMA = 2.0 * np.sqrt(2.0 * np.log(1.0 / 0.6))
+
 
 @inherit_docstrings
 class MetaEventFinder(BaseDataPlugin):
@@ -979,10 +983,11 @@ class MetaEventFinder(BaseDataPlugin):
         the occupied level. The prominence rule keeps flank bumps and bin noise from
         qualifying while a real second population always does.
 
-        The histogram is narrowed twice before the fit: once to the symmetric window
-        around the peak where counts stay above a fifth of the maximum, which is what
-        keeps events and drift out of the fit, and once more at 60% of the maximum,
-        whose width serves as the fit's initial guess for the standard deviation.
+        The histogram is then windowed around that peak: three sigma above it, sigma
+        taken from the peak's width at 60% of its height, and below it the nearer of
+        the three-sigma tail and the valley before the next peak toward zero, so a close
+        second population's edge never enters the fit. The width at 60% of the maximum
+        inside that window is the fit's initial guess for the standard deviation.
 
         The fit runs against true bin centres, so the standard deviation it returns is in
         the data's own units. The bin count is Rice's rule, ``int(2 * len(data) ** (1/3))``:
@@ -1021,35 +1026,45 @@ class MetaEventFinder(BaseDataPlugin):
             peaks = np.array([int(np.argmax(hist))])
         max_index = int(max(peaks, key=lambda i: abs(centers[i])))
         maxval = hist[max_index]
-        # The first bin at or below a fifth of the peak, walking out each way.
-        top_index = next(
-            (i for i in range(max_index, len(hist)) if hist[i] <= maxval / 5),
+        # Size the window from the peak's own width at 60% of its height.
+        top_60 = next(
+            (i for i in range(max_index, len(hist)) if hist[i] <= 0.6 * maxval),
             len(hist) - 1,
         )
-        bottom_index = next(
-            (i for i in range(max_index, -1, -1) if hist[i] <= maxval / 5), 0
+        bottom_60 = next(
+            (i for i in range(max_index, -1, -1) if hist[i] <= 0.6 * maxval), 0
         )
+        sigma_estimate = max(
+            abs(centers[top_60] - centers[bottom_60]) / WIDTH_AT_60_PERCENT_PER_SIGMA,
+            width,
+        )
+        reach = int(np.ceil(3.0 * sigma_estimate / width))
+        lower = max(0, max_index - reach)
+        upper = min(len(hist) - 1, max_index + reach)
 
-        # Take the narrower of the two sides both ways, so the window the fit sees is not
-        # dragged out by whichever side the events are on.
-        #
-        # The slice is right-exclusive, so the window holds ``half_width`` bins below the
-        # peak and ``half_width - 1`` above it rather than a symmetric
-        # ``2 * half_width + 1``. This is shipped behaviour, left exactly as it was found.
-        # Do not "correct" it to a symmetric window on the strength of a measurement over
-        # unimodal noise, where it is worth 0.13 percentage points of sigma and reads as an
-        # off-by-one: on a bimodal baseline it is worth several percent. Whether the
-        # direction it trims is the right one is an open question, filed in
-        # `future_fixes.md` together with the peak-selection gap beside it, and pinned by
-        # ``TestTheShippedFitWindow`` so it cannot be changed silently either way.
-        half_width = min(top_index - max_index, max_index - bottom_index)
-        hist = hist[max_index - half_width : max_index + half_width]
-        centers = centers[max_index - half_width : max_index + half_width]
+        # Toward zero the window stops at the valley before a neighbouring peak, so a
+        # close second population's edge never enters the fit. Away from zero nothing
+        # lies beyond the baseline, and the three-sigma tail stands.
+        if centers[max_index] >= 0:
+            below = peaks[peaks < max_index]
+            if below.size:
+                nearest = int(below.max())
+                lower = max(
+                    lower, nearest + int(np.argmin(hist[nearest : max_index + 1]))
+                )
+        else:
+            above = peaks[peaks > max_index]
+            if above.size:
+                nearest = int(above.min())
+                upper = min(
+                    upper, max_index + int(np.argmin(hist[max_index : nearest + 1]))
+                )
+        hist = hist[lower : upper + 1]
+        centers = centers[lower : upper + 1]
 
-        # The chosen peak sits ``half_width`` in from the slice's start; it is kept by
-        # position rather than re-found by ``argmax``, which could hand the fit a taller
-        # neighbour that the window reached.
-        max_index = half_width
+        # The chosen peak is kept by position rather than re-found by ``argmax``, which
+        # could hand the fit a taller neighbour inside the window.
+        max_index = max_index - lower
         maxval = hist[max_index]
         top_index = next(
             (i for i in range(max_index, len(hist)) if hist[i] <= 0.6 * maxval),

@@ -8,6 +8,8 @@
 
 * **A chunk that spends more than half its time in an occupied state now reports the open-pore level as its baseline:** the baseline histogram's peak is the one farthest from zero among the real peaks, where before it was simply the tallest bin, so thresholds in such chunks no longer hang off the occupied level
 
+* **A second population close below the baseline no longer widens the fitted baseline sigma:** the baseline histogram's fit window now runs three sigma above the baseline peak and, below it, stops at the valley before the next peak, where before it took the narrower of two fixed-height walks on both sides
+
 * **The Bessel filter now accepts low cutoffs it used to refuse as numerically unstable** (25 kHz on a 4.17 MHz recording, for one): it is built as second-order sections, which are stable at any cutoff below half the sample rate; filtered values at previously accepted cutoffs move by less than a thousandth of the noise
 
 * **Results can move by one sample at a chunk boundary:** a reader now rounds a seconds request to the nearest sample instead of truncating it, so chunked reads (the Raw Data trace, event finding, loading an event's padded window) no longer duplicate one sample and drop another where a chunk boundary fell on an index whose time did not convert back exactly
