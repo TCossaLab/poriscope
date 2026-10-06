@@ -88,19 +88,6 @@ Step 10 waits for both tracks.
 - **`MetadataModel.kernel_density` uses a deprecated SciPy namespace** (`:297`,
   `stats.kde.gaussian_kde`); import `gaussian_kde` from `scipy.stats`.
 
-### Step 3 - Bessel filter
-
-- **`BesselFilter` uses the wrong filter form and guards it with a magic constant.** `:214`
-  builds `(b, a)` and `:123` runs `filtfilt`, guarded by `if any(np.absolute(p) >= 0.975)` at
-  `:95`. Against `sosfiltfilt`: at the allowed limit (Wn=0.02) `filtfilt(b,a)` already deviates by
-  6.3e-4 sigma, and just past it by 22.6%. `output="sos"` + `sosfiltfilt` removes the guard and
-  unblocks the low cutoffs it rejects (25 kHz at 4.17 MHz is refused).
-- **Nothing checks a filter's `Samplerate` against the data it filters** (`BesselFilter:187` has
-  the user type it; `MetaEventTabController._resolve_callable_filter` and the Raw Data trace path
-  at `RawDataController:643` apply it blind). Design in `DECISIONS.md` 2026-10-06: an additive
-  declaration method on `MetaFilter`, Bessel names `Samplerate`, the shared resolution point
-  verifies within 0.1% and refuses naming both rates; the trace path routes through it.
-
 ### Step 4 - event finders
 
 - **`MetaEventFinder._fit_baseline_histogram:965` picks, windows and bins the baseline peak on
