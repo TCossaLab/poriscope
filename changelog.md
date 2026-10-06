@@ -32,6 +32,8 @@
 
 * A recording whose files disagree on sample rate is now refused with a message naming the file, where before only each channel's first file was checked and the rest were read at its rate
 
+* Event finding with a chunk length under one sample (reachable through the plugin API; the Raw Data tab always passes one second) now reads one-second chunks instead of looping forever
+
 * **Results can move by one sample at a chunk boundary:** a reader now rounds a seconds request to the nearest sample instead of truncating it, so chunked reads (the Raw Data trace, event finding, loading an event's padded window) no longer duplicate one sample and drop another where a chunk boundary fell on an index whose time did not convert back exactly
 
 ### Documentation:

@@ -527,6 +527,18 @@ class TestFindEventsHappyPath:
         list(gen)
         assert finder.eventfinding_finished[0] is True
 
+    @pytest.mark.timeout(20)
+    def test_a_chunk_length_under_one_sample_reads_one_second_chunks(self, finder):
+        # The reader runs at 100 Hz, so 0.001 s is a tenth of a sample. That used to
+        # become a zero-sample chunk: load_data returned nothing, the loop's counters
+        # never advanced, and find_events never returned - hence the timeout, which
+        # is what fails without the guard. What is pinned is the mechanism: the
+        # loop walks the whole 10 s channel in one-second chunks, reporting
+        # progress per chunk up to 1.0 (the last chunk absorbs the remainder), and returns.
+        progress = list(finder.find_events(0, [(0, 0)], chunk_length=0.001))
+        assert len(progress) > 1  # more than one chunk, so not the whole channel
+        assert progress[-1] == pytest.approx(1.0)
+
     def test_small_chunk_length_straddles_event(self, finder):
         # chunk_length smaller than the channel forces multiple chunks,
         # exercising the event-straddling-chunk-boundary stitching logic.

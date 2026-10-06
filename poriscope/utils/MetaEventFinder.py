@@ -242,7 +242,8 @@ class MetaEventFinder(BaseDataPlugin):
         :type channel: int
         :param ranges: List of (start, end) tuples in seconds.
         :type ranges: List[Tuple[float, float]]
-        :param chunk_length: Length of each chunk in seconds.
+        :param chunk_length: Length of each chunk in seconds; ``None``, or a length under
+            one sample, reads one second at a time.
         :type chunk_length: float
         :param data_filter: Optional callable filter to apply to each chunk.
         :type data_filter: Optional[Callable]
@@ -419,10 +420,13 @@ class MetaEventFinder(BaseDataPlugin):
         end = int(end * samplerate) if end > 0 else total_samples
         if end > total_samples:
             end = total_samples
-        if chunk_length is not None:
-            chunk_length = int(chunk_length * samplerate)
-        else:
+        if chunk_length is None or int(chunk_length * samplerate) < 1:
+            # A chunk of zero samples would load nothing and never advance the loop
+            # below, so a length under one sample means one second, as 0 does for
+            # MetaReader.continuous_read.
             chunk_length = int(samplerate)
+        else:
+            chunk_length = int(chunk_length * samplerate)
         total_samples = end - start
         last_sample = total_samples + start
         if chunk_length > total_samples:
