@@ -30,6 +30,8 @@
 
 * The Metadata tab's Kernel Density Plot no longer warns about a deprecated SciPy namespace on every plot
 
+* A recording whose files disagree on sample rate is now refused with a message naming the file, where before only each channel's first file was checked and the rest were read at its rate
+
 * **Results can move by one sample at a chunk boundary:** a reader now rounds a seconds request to the nearest sample instead of truncating it, so chunked reads (the Raw Data trace, event finding, loading an event's padded window) no longer duplicate one sample and drop another where a chunk boundary fell on an index whose time did not convert back exactly
 
 ### Documentation:

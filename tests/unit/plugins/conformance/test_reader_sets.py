@@ -10,9 +10,10 @@ What is pinned, and why each is red or green today (2026-10-05):
 
 - A two-file Chimera set concatenates in timestamp order and reads across the file
   boundary at the planted baseline. Green.
-- A second file in the same channel at a different sample rate must be refused.
-  ``MetaReader._set_sample_rate:566-585`` compares only each channel's first file, so it
-  is accepted and read at the first file's rate: strict expected failure, 2.1 step 2.
+- A second file in the same channel at a different sample rate is refused, and the
+  message names the file. Green since ``MetaReader._set_sample_rate`` checks every file
+  of every channel; until then it compared only each channel's first file, and the set
+  was read at that file's rate.
 - An int16 ABF file with non-trivial gains and both offsets reads back the planted
   picoamps through the shipped parser. Green, and it pins the arithmetic ruling H
   declares correct, including the ABF2 convention that folds both offsets into the scale
@@ -121,13 +122,6 @@ def test_a_two_file_set_is_read_as_one_recording(two_file_set) -> None:
         reader.close_resources()
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "MetaReader._set_sample_rate:566-585 compares only each channel's first file, "
-        "so a second file at another rate is read at the first file's rate; 2.1 step 2"
-    ),
-)
 def test_a_file_at_a_different_sample_rate_is_refused(tmp_path: Path) -> None:
     """Two files of one channel that disagree on sample rate cannot be one recording."""
     first = generate_chimera_dataset(
@@ -139,9 +133,10 @@ def test_a_file_at_a_different_sample_rate_is_refused(tmp_path: Path) -> None:
         channel=CHIMERA_CHANNEL,
         seed=2,
     )
-    with pytest.raises(ValueError, match="samplerate"):
+    with pytest.raises(ValueError, match="120001") as refused:
         reader = build_any_reader(ChimeraReader20240501, first)
         reader.close_resources()
+    assert "samplerate" in str(refused.value)
 
 
 #: Gains chosen so 2000 pA of baseline and a -400 pA event fit comfortably in int16 at

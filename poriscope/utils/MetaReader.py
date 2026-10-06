@@ -578,18 +578,26 @@ class MetaReader(BaseDataPlugin):
         """
         Set the sampling rate for the reader.
 
-        :raises ValueError: If the channels in the dataset do not all share the same samplerate, or if no samplerate could be determined.
+        Every file of every channel is checked, not only each channel's first: the sample
+        rate is a per-file header field, and a set whose later files disagree would
+        otherwise be read at the first file's rate with every time in it wrong.
+
+        :raises ValueError: If the files in the dataset do not all share the same samplerate, or if no samplerate could be determined.
         :return: the sampling rate that is applicable to the reader
         :rtype: float
         """
         samplerate = 0
         for key, val in self.configs.items():
-            if samplerate == 0:
-                samplerate = val[0]["samplerate"]
-            else:
-                if samplerate != val[0]["samplerate"]:
+            for file_index, config in enumerate(val):
+                file_samplerate = config["samplerate"]
+                if samplerate == 0:
+                    samplerate = file_samplerate
+                elif samplerate != file_samplerate:
                     raise ValueError(
-                        f"All channels must have the same samplerate, but channel {key} has samplerate {val[0]['samplerate']} while all previous channels have samplerate {samplerate}"
+                        f"All files in a dataset must have the same samplerate, but "
+                        f"{self.datafiles[key][file_index]} in channel {key} has "
+                        f"samplerate {file_samplerate} while the files before it have "
+                        f"samplerate {samplerate}"
                     )
         if samplerate == 0:
             raise ValueError('Unable to set samplerate"')
