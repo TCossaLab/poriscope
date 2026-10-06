@@ -316,6 +316,13 @@ class TestInitAndSettings:
 
 
 class TestShippedFinderThresholdUnits:
+    def test_the_sigma_finder_scales_its_threshold_by_the_chunks_sigma(self):
+        # ThresholdBlockageFinder's Threshold is in sigma, so the chunk skip's pA
+        # comparison needs it scaled by the fitted sigma of the chunk at hand.
+        finder = ThresholdBlockageFinder()
+        finder.settings = {"Threshold": {"Value": 8.0}}
+        assert finder._threshold_in_pa(0.5) == pytest.approx(4.0)
+
     """Each shipped finder sets the unit of the Threshold the base declares."""
 
     def test_classic_blockage_finder_threshold_is_in_pA(self):
@@ -538,6 +545,25 @@ class TestFindEventsHappyPath:
         progress = list(finder.find_events(0, [(0, 0)], chunk_length=0.001))
         assert len(progress) > 1  # more than one chunk, so not the whole channel
         assert progress[-1] == pytest.approx(1.0)
+
+    def test_the_chunk_skip_uses_the_finders_threshold_in_pa(self, finder):
+        # find_events skips a chunk whose baseline mean sits below the threshold, as
+        # no blockage could then be told from a voltage that is off. It asks the
+        # finder for that threshold in pA rather than reading the Threshold setting,
+        # because a sigma-denominated finder's setting is not in pA. A hook that
+        # answers above the 100 pA baseline skips the whole channel; one that
+        # answers zero lets both planted events through.
+        finder._threshold_in_pa = lambda std: 1_000.0
+        list(finder.find_events(0, [(0, 0)], chunk_length=10.0))
+        assert finder.num_events_found[0] == 0
+
+        finder.reset_channel(0)
+        finder._threshold_in_pa = lambda std: 0.0
+        list(finder.find_events(0, [(0, 0)], chunk_length=10.0))
+        assert finder.num_events_found[0] == 2
+
+    def test_the_default_threshold_in_pa_is_the_threshold_setting(self, finder):
+        assert finder._threshold_in_pa(0.5) == 20.0
 
     def test_small_chunk_length_straddles_event(self, finder):
         # chunk_length smaller than the channel forces multiple chunks,

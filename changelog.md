@@ -50,6 +50,8 @@
 
 * The Metadata tab's Kernel Density Plot no longer warns about a deprecated SciPy namespace on every plot
 
+* Event finding's no-voltage chunk skip now compares `ThresholdBlockageFinder`'s sigma threshold in picoamps, scaled by the chunk's fitted sigma; before, the sigma value was compared with the picoamp mean directly, so the skip only ever triggered on baselines under a few picoamps
+
 * A Bessel filter built for one sample rate is now refused, with both rates named, when applied to data at another - the Raw Data trace and event plots, event finding, and event plotting and fitting in Event Analysis; before, it was applied silently at the wrong cutoff
 
 * A recording whose files disagree on sample rate is now refused with a message naming the file, where before only each channel's first file was checked and the rest were read at its rate

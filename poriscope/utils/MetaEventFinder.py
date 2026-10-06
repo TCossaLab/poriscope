@@ -457,10 +457,9 @@ class MetaEventFinder(BaseDataPlugin):
             is_first_chunk = first_chunk
             try:
                 mean, std = self._get_baseline_stats(data)
-                if (
-                    mean * np.sign(mean) < 3 * std
-                    or mean * np.sign(mean) < self.settings["Threshold"]["Value"]
-                ):
+                if mean * np.sign(mean) < 3 * std or mean * np.sign(
+                    mean
+                ) < self._threshold_in_pa(std):
                     # do not attempt to fit when no voltage is applied
                     self.rejected_data[channel] += len(data) / samplerate
                     self.logger.info(
@@ -963,6 +962,24 @@ class MetaEventFinder(BaseDataPlugin):
         :rtype: tuple[float, float]
         """
         pass
+
+    @log(logger=logger)
+    def _threshold_in_pa(self, std: float) -> float:
+        """
+        The event threshold in picoamps, for comparing with a chunk's baseline mean.
+
+        ``find_events`` skips a chunk whose baseline sits below the threshold, since no
+        blockage could then be told from a voltage that is simply off. A finder whose
+        ``Threshold`` setting is already in picoamps returns it unchanged, which is this
+        default; one whose threshold is in sigma overrides this to scale it by the
+        chunk's fitted sigma, so the comparison is made in one unit.
+
+        :param std: the chunk's fitted baseline standard deviation, in pA
+        :type std: float
+        :return: the threshold in pA
+        :rtype: float
+        """
+        return float(self.settings["Threshold"]["Value"])
 
     # Shared implementation offered to subclasses, not part of the API a plugin author
     # must supply. ``_get_baseline_stats`` above stays abstract so every finder still

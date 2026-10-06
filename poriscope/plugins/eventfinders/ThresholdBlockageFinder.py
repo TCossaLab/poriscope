@@ -95,6 +95,19 @@ class ThresholdBlockageFinder(ClassicBlockageFinder):
     # private API, MUST be implemented by subclasses
     @log(logger=logger)
     @override
+    def _threshold_in_pa(self, std: float) -> float:
+        """
+        The sigma threshold scaled by the chunk's fitted sigma.
+
+        :param std: the chunk's fitted baseline standard deviation, in pA
+        :type std: float
+        :return: the threshold in pA
+        :rtype: float
+        """
+        return float(self.settings["Threshold"]["Value"]) * std
+
+    @log(logger=logger)
+    @override
     def _find_events_in_chunk(
         self,
         data: npt.NDArray[np.float64],
