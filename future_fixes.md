@@ -88,25 +88,6 @@ Step 10 waits for both tracks.
 - **`MetadataModel.kernel_density` uses a deprecated SciPy namespace** (`:297`,
   `stats.kde.gaussian_kde`); import `gaussian_kde` from `scipy.stats`.
 
-### Step 1 - ground-truth safety net (gate)
-
-- **No test checks fitted values against ground truth.** Conformance asserts level counts only
-  (`test_eventfitters.py:322-347`); there is no `CUSUM` unit-test file, the ClassicCUSUM tests mock
-  `_calculate_threshold`, and nothing pins the variance-reset fix. `generate_events_database`
-  already plants staircases (`sublevel_amplitudes_pA`) and dips (`sublevel_dip_pA`) but the
-  conformance fixtures drop the ground-truth object. Assert current, blockage and duration within
-  tolerance for CUSUM, ClassicCUSUM, IntraCUSUM and NoFitter across SNRs and short events.
-- **Baseline sigma is pinned only on N(1000, 25)** (`test_meta_event_finder.py`
-  `TestFitBaselineHistogram`, rel 2%; shipped window pinned at 38.29). Plant sigma on 10k / 100k /
-  1M chunks and a two-population case; pin planted values only, since step 4 changes the fit.
-- **Conformance recipes never leave the happy path**: add multi-file sets and mismatched
-  sample rates; the synthetic ABF writer (`synthetic_abf2.py`) uses zero offsets and unit gains, so
-  add a recipe with non-zero ones that pins the current conversion.
-- **The writers have no tests of their failure paths.** `test_writers.py` (17 tests) drives both
-  families on the happy path; nothing covers duplicate rows, a schema mismatch, abort, or the
-  `rejected` bookkeeping. Nothing drives `SQLiteDBLoader` with a NULL `padding_before`.
-- **Bessel reference**: a golden against `sosfiltfilt` for step 3.
-
 ### Step 2 - readers
 
 - **Migrate the ABF readers to `pyabf`?** `TCossaLabABFReader` and `LegacyElementsReader` carry a
@@ -168,6 +149,13 @@ Step 10 waits for both tracks.
 - **The `length - jump > rise_time` half of the C's edge guard is missing** (`CUSUM.py:302-303`).
 - **`ClassicCUSUM` merges short levels on a median but reports them on CUSUM's single-sample
   fallback**, so merge decision and reported current use different estimators.
+- **`ClassicCUSUM` resolves fewer planted levels at *higher* SNR.** On Bessel-filtered synthetic
+  staircases (100 kHz, 8 poles, 500 kHz sampling; steps 150 pA, 40 samples; Step Size 10 σ,
+  Rise Time 16 µs) it found the planted three levels on 0 of 25 events at drawn noise 15 pA
+  (stored σ 6.2) but 25 of 25 at 50 pA (σ 20.8), and 22 of 25 against CUSUM's 25 of 25 at
+  83-sample steps and 15 pA. CUSUM and IntraCUSUM on the same data: 25 of 25 at both noise
+  levels. Measured 2026-10-05 while re-measuring ruling A; the σ-normalised step and the
+  median merge in `_locate_sublevel_transitions` are the suspects. Pinned by a step 1 `xfail`.
 - **`NoFitter` places event edges asymmetrically** (`:228-229`): the start walks back to the
   baseline crossing, the end sits `rise_time` before the threshold crossing (838 against 860 on a
   40-sample ramp), so the overlay and `raw_ecd` shift left.
@@ -224,6 +212,15 @@ Step 10 waits for both tracks.
   `get_event_data_generator` yields it (`:729`) into `MetaWriter.write_events:463`, which fails on
   it as a swallowed rejection. Raise instead, and share one readiness guard (`:710-725` vs
   `:769-780` today); the writer decides whether that is a rejected event or an aborted channel.
+
+- **`MetaWriter.write_events` writes the next event under a rejected event's index.** The
+  rejection branch (`:470-503`) records `rejected[channel][str(e)]` and `continue`s past
+  `index += 1`, so the event after a rejected one is written with the rejected one's index.
+  Found mapping the writer harness, 2026-10-05; pinned by a step 1 `xfail`.
+- **`MetaDatabaseWriter.write_events` skips an event with a `None` component silently.** A tuple
+  with `None` in any of event metadata, sublevel metadata, raw, filtered or fit data is skipped at
+  `:197-237` with no yield and no `rejected` entry, while `index` still advances. Same provenance
+  and pin as above.
 
 ### Step 7 - plugin lifecycle
 

@@ -80,6 +80,7 @@ from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
+from poriscope.plugins.filters.BesselFilter import BesselFilter
 from tests.synthetic_data.base_synthetic_recording import build_noisy_segment
 
 RAW_DATA_DTYPE = "<f8"  # matches SQLiteEventWriter._set_output_dtype()'s real value
@@ -112,6 +113,13 @@ class SyntheticDbEvent:
     :param amplitude: Signed current change during the blockage, in
         picoamps. Negative for a blockage.
     :type amplitude: float
+    :param sublevel_offsets_pA: The staircase planted inside the blockage,
+        as the signed offset of each step from ``amplitude``, in planting
+        order; None for a flat blockage. See :meth:`planted_sublevels`.
+    :type sublevel_offsets_pA: Optional[List[float]]
+    :param bessel_cutoff_hz: Cutoff of the Bessel filter the stored trace
+        was passed through, in hertz; None if the edges are sharp.
+    :type bessel_cutoff_hz: Optional[float]
     """
 
     event_id: int
@@ -122,6 +130,8 @@ class SyntheticDbEvent:
     baseline_mean: float
     baseline_std: float
     amplitude: float
+    sublevel_offsets_pA: Optional[List[float]] = None
+    bessel_cutoff_hz: Optional[float] = None
 
     @property
     def total_length(self) -> int:
@@ -132,6 +142,43 @@ class SyntheticDbEvent:
         :rtype: int
         """
         return self.padding_before + self.event_length + self.padding_after
+
+    def planted_sublevels(self) -> List[Tuple[int, int, float]]:
+        """
+        Describe the blockage's planted sublevels as the fitters should report them.
+
+        One entry per inner sublevel (the baseline paddings are not listed), in
+        trace order: the sample index where it starts within the stored trace,
+        its width in samples, and its level in picoamps. A flat blockage is one
+        sublevel at ``baseline_mean + amplitude``. A staircase follows the rule
+        ``_build_event_trace`` plants it with: ``event_length // n`` samples per
+        step, the last step absorbing the remainder, each held at
+        ``baseline_mean + amplitude + offset``. Filtering does not move these
+        boundaries: the Bessel pass is zero-phase, so the 50% crossing of each
+        edge stays at the planted sample.
+
+        :return: ``(start_sample, width_samples, level_pA)`` per inner sublevel
+        :rtype: List[Tuple[int, int, float]]
+        """
+        if not self.sublevel_offsets_pA:
+            return [
+                (
+                    self.padding_before,
+                    self.event_length,
+                    self.baseline_mean + self.amplitude,
+                )
+            ]
+        n = len(self.sublevel_offsets_pA)
+        step_width = self.event_length // n
+        out: List[Tuple[int, int, float]] = []
+        pos = self.padding_before
+        for i, offset in enumerate(self.sublevel_offsets_pA):
+            width = (
+                step_width if i < n - 1 else self.event_length - step_width * (n - 1)
+            )
+            out.append((pos, width, self.baseline_mean + self.amplitude + offset))
+            pos += width
+        return out
 
 
 @dataclass
@@ -394,6 +441,62 @@ def _create_schema(cursor: sqlite3.Cursor) -> None:
     )
 
 
+#: Samples of pure noise used to measure the sigma a Bessel pass leaves behind.
+_FILTERED_NOISE_SAMPLES = 200_000
+
+
+def build_bessel_filter(
+    samplerate: float, cutoff_hz: float, poles: int
+) -> BesselFilter:
+    """
+    Build the shipped Bessel filter plugin standalone, as the app would configure it.
+
+    The synthetic traces are passed through the real plugin rather than a scipy
+    stand-in so the rise time they carry is exactly the one a recording filtered in
+    Poriscope would have.
+
+    :param samplerate: Sample rate of the data the filter will see, in hertz.
+    :type samplerate: float
+    :param cutoff_hz: Low-pass cutoff, in hertz.
+    :type cutoff_hz: float
+    :param poles: Filter order; one of the plugin's allowed pole counts.
+    :type poles: int
+    :return: A configured filter whose ``filter_data`` is ready to call.
+    :rtype: BesselFilter
+    """
+    plugin = BesselFilter()
+    settings = plugin.get_empty_settings(standalone=True)
+    settings["Cutoff"]["Value"] = float(cutoff_hz)
+    settings["Samplerate"]["Value"] = float(samplerate)
+    settings["Poles"]["Value"] = int(poles)
+    plugin.apply_settings(settings)
+    return plugin
+
+
+def filtered_noise_std(
+    bessel: BesselFilter, rng: np.random.Generator, baseline_std: float
+) -> float:
+    """
+    Measure the standard deviation a Bessel pass leaves of white noise at ``baseline_std``.
+
+    A low-pass removes the noise power above its cutoff, so the sigma a fitter sees -
+    and the one the database should record as ``baseline_std`` - is smaller than the
+    sigma drawn. It is measured rather than derived from the filter's noise bandwidth
+    so it tracks the plugin's actual implementation.
+
+    :param bessel: The configured filter.
+    :type bessel: BesselFilter
+    :param rng: Generator to draw the noise from; consumes ``_FILTERED_NOISE_SAMPLES`` draws.
+    :type rng: numpy.random.Generator
+    :param baseline_std: Standard deviation of the white noise before filtering, in picoamps.
+    :type baseline_std: float
+    :return: Standard deviation of the filtered noise, in picoamps.
+    :rtype: float
+    """
+    noise = rng.normal(0.0, baseline_std, _FILTERED_NOISE_SAMPLES)
+    return float(np.std(bessel.filter_data(noise)))
+
+
 def _write_channel(
     cursor: sqlite3.Cursor,
     rng: np.random.Generator,
@@ -416,6 +519,8 @@ def _write_channel(
     sublevel_dip_pA: Optional[float] = None,
     sublevel_dip_width_samples: Optional[int] = None,
     sublevel_amplitudes_pA: Optional[List[float]] = None,
+    bessel_cutoff_hz: Optional[float] = None,
+    bessel_poles: int = 8,
 ) -> SyntheticEventsChannel:
     """
     Insert one channel's row and all of its planted events into an
@@ -497,6 +602,15 @@ def _write_channel(
         fitter (the CUSUM family) a known number of discrete, resolvable
         levels within the blockage instead of a single flat one.
     :type sublevel_amplitudes_pA: Optional[List[float]]
+    :param bessel_cutoff_hz: If given, every event trace - noise, blockage and
+        staircase or dip together - is passed through the shipped BesselFilter
+        plugin at this cutoff, so its edges carry a real rise time instead of
+        being perfect steps, and the ``baseline_std`` recorded for the channel
+        is the sigma measured after filtering rather than the one drawn. The
+        pass is zero-phase, so planted boundaries do not move.
+    :type bessel_cutoff_hz: Optional[float]
+    :param bessel_poles: Order of that filter; ignored without a cutoff.
+    :type bessel_poles: int
 
     :return: Ground truth for the channel just written.
     :rtype: SyntheticEventsChannel
@@ -524,6 +638,17 @@ def _write_channel(
     channel_db_id = cursor.lastrowid
 
     channel = SyntheticEventsChannel(channel_id=channel_id, samplerate=samplerate)
+
+    bessel = (
+        build_bessel_filter(samplerate, bessel_cutoff_hz, bessel_poles)
+        if bessel_cutoff_hz is not None
+        else None
+    )
+    stored_std = (
+        filtered_noise_std(bessel, rng, baseline_std_pA)
+        if bessel is not None
+        else baseline_std_pA
+    )
 
     absolute_start = padding_samples
     for event_id in range(num_events):
@@ -553,6 +678,8 @@ def _write_channel(
             sublevel_dip_width_samples=sublevel_dip_width_samples,
             sublevel_amplitudes_pA=sublevel_amplitudes_pA,
         )
+        if bessel is not None:
+            trace = bessel.filter_data(trace)
         raw_data = trace.astype(RAW_DATA_DTYPE).tobytes()
 
         cursor.execute(
@@ -569,7 +696,7 @@ def _write_channel(
                 padding_samples,
                 padding_samples,
                 baseline_mean_pA,
-                baseline_std_pA,
+                stored_std,
                 raw_data,
             ),
         )
@@ -582,8 +709,14 @@ def _write_channel(
                 padding_after=padding_samples,
                 event_length=this_event_length,
                 baseline_mean=baseline_mean_pA,
-                baseline_std=baseline_std_pA,
+                baseline_std=stored_std,
                 amplitude=this_amplitude,
+                sublevel_offsets_pA=(
+                    list(sublevel_amplitudes_pA)
+                    if sublevel_amplitudes_pA is not None
+                    else None
+                ),
+                bessel_cutoff_hz=bessel_cutoff_hz,
             )
         )
         absolute_start += (
@@ -615,6 +748,8 @@ def generate_events_database(
     sublevel_dip_pA: Optional[float] = None,
     sublevel_dip_width_samples: Optional[int] = None,
     sublevel_amplitudes_pA: Optional[List[float]] = None,
+    bessel_cutoff_hz: Optional[float] = None,
+    bessel_poles: int = 8,
 ) -> SyntheticEventsDatabase:
     """
     Write a single-channel synthetic events database with known events.
@@ -688,6 +823,13 @@ def generate_events_database(
         fitter (the CUSUM family) a known number of discrete, resolvable
         levels within the blockage instead of a single flat one.
     :type sublevel_amplitudes_pA: Optional[List[float]]
+    :param bessel_cutoff_hz: If given, every trace is passed through the shipped
+        BesselFilter plugin at this cutoff for a realistic rise time, and the
+        recorded ``baseline_std`` is the sigma measured after filtering. See
+        _write_channel.
+    :type bessel_cutoff_hz: Optional[float]
+    :param bessel_poles: Order of that filter, defaults to 8; ignored without a cutoff.
+    :type bessel_poles: int
 
     :return: A SyntheticEventsDatabase describing the file and its
         planted events.
@@ -723,6 +865,8 @@ def generate_events_database(
             sublevel_dip_pA=sublevel_dip_pA,
             sublevel_dip_width_samples=sublevel_dip_width_samples,
             sublevel_amplitudes_pA=sublevel_amplitudes_pA,
+            bessel_cutoff_hz=bessel_cutoff_hz,
+            bessel_poles=bessel_poles,
         )
         conn.commit()
     finally:

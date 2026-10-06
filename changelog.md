@@ -10,6 +10,8 @@
 
 * `python scripts/new_plugin.py AnalysisTab` now writes a controller that redeclares `view` and `model` with the tab's own types, as the shipped tabs do; the HelloWorld tutorial files are regenerated from it
 
+* The test suite now checks fitted sublevel currents, blockages and durations, the baseline sigma fit, multi-file and integer-coded ABF reader recipes, the writers' failure paths and the Bessel filter against planted values and a reference implementation, with the synthetic events given a realistic Bessel rise time; the defects this exposes are recorded as expected failures that name the fix they wait for
+
 * **Breaking for anyone pinning on Poriscope's own metadata: the wheel now declares compatible-release ranges** (`numpy~=2.2`, `PySide6~=6.9`, ...) instead of exact pins, so it installs beside other packages; the exact versions CI tests against stay in `requirements.txt`
 
 * `hdbscan` 0.8.44 replaces 0.8.40, which warned on every clustering run that scikit-learn 1.8 will remove `force_all_finite`
