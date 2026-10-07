@@ -635,10 +635,18 @@ class CUSUM(MetaEventFitter):
         """
         Validate that the settings dict contains the correct information for use by the subclass.
 
+        ``Step Size`` must be strictly positive. The detector divides by it when it
+        chooses its threshold, so a zero step used to reach that division as a
+        ``ZeroDivisionError`` counted against every event rather than being refused
+        once here; the base class's range check admits zero because the setting's
+        minimum is zero.
+
         :param settings: Parameters for event detection.
         :type settings: dict
+        :raises ValueError: if ``Step Size`` is not larger than zero
         """
-        pass
+        if settings["Step Size"]["Value"] <= 0:
+            raise ValueError("Step Size must be larger than 0")
 
     @log(logger=logger)
     @override

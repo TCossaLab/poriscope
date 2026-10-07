@@ -80,7 +80,10 @@ class TestGetEmptySettings(unittest.TestCase):
 
         threshold_setting = settings["Intraevent Threshold"]
         self.assertIs(threshold_setting["Type"], float)
-        self.assertEqual(threshold_setting["Value"], 0)
+        # No default: a threshold of zero counts every noise crossing of the carrier
+        # level, so the user must choose one (omitting "Value" is the codebase's
+        # encoding for a required setting).
+        self.assertNotIn("Value", threshold_setting)
         self.assertEqual(threshold_setting["Min"], 0)
         self.assertEqual(threshold_setting["Units"], "pA")
 
@@ -103,6 +106,40 @@ class TestGetEmptySettings(unittest.TestCase):
             )
 
         mock_super.assert_called_once_with({"foo": ["bar"]}, True)
+
+
+# ---------------------------------------------------------------------------
+# _validate_settings
+# ---------------------------------------------------------------------------
+
+
+def _full_settings(threshold, hysteresis, step_size=100.0):
+    return {
+        "Step Size": {"Value": step_size},
+        "Rise Time": {"Value": 10.0},
+        "Max Sublevels": {"Value": 0},
+        "Sensitivity": {"Value": 1.0},
+        "Intraevent Threshold": {"Value": threshold},
+        "Intraevent Hysteresis": {"Value": hysteresis},
+    }
+
+
+class TestValidateSettings(unittest.TestCase):
+    def test_hysteresis_above_threshold_is_refused(self):
+        # The excursion ends when the signal comes back up to threshold - hysteresis;
+        # above the threshold that level sits above the carrier, where it never returns.
+        pf = object.__new__(IntraCUSUM)
+        with self.assertRaisesRegex(ValueError, "Hysteresis"):
+            pf._validate_settings(_full_settings(threshold=20.0, hysteresis=25.0))
+
+    def test_hysteresis_equal_to_threshold_is_accepted(self):
+        pf = object.__new__(IntraCUSUM)
+        self.assertIsNone(pf._validate_settings(_full_settings(20.0, 20.0)))
+
+    def test_the_inherited_step_size_check_still_applies(self):
+        pf = object.__new__(IntraCUSUM)
+        with self.assertRaisesRegex(ValueError, "Step Size"):
+            pf._validate_settings(_full_settings(20.0, 10.0, step_size=0.0))
 
 
 # ---------------------------------------------------------------------------

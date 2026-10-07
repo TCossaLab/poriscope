@@ -18,6 +18,31 @@ and deleted on 2026-09-27; it too is in git history.
 
 ---
 
+## 2026-10-07 - CUSUM-family settings: no defaults for the physical ones, zero refused
+
+**Context.** `Step Size` and `Rise Time` ship without a default; `IntraCUSUM`'s
+`Intraevent Threshold` and `Intraevent Hysteresis` defaulted to 0.0. A zero threshold
+counts every noise crossing of the carrier level (1,006 crossings on a clean σ 10 pA
+level), and a zero `Step Size` passes the base range check (`Min: 0.0`) and reaches
+`ARL`'s `h / s` as a `ZeroDivisionError` that `fit_events` tallies as a rejection reason
+on every event. `_validate_settings` was `pass` in every fitter.
+
+**Decision** (Kyle, 2026-10-07). `Step Size` and `Rise Time` stay required: no value is
+right across instruments and filters, and the dialog already shows an empty field for a
+required setting. `Intraevent Threshold` becomes required for the same reason;
+`Intraevent Hysteresis` keeps 0.0. `CUSUM._validate_settings` refuses a step size that is
+not larger than zero and `IntraCUSUM._validate_settings` a hysteresis above its threshold,
+both as `ValueError` at `apply_settings`, where the dialog reports them.
+
+**Evidence.** The probes above; no shipped flow or test instantiates `IntraCUSUM` from
+its defaults (the conformance and ground-truth recipes set the threshold explicitly), so
+nothing else moves.
+
+**Revisit if** a default step size can be derived from the data the fitter is attached
+to - the loader's reported baseline sigma would make a σ-denominated default possible.
+
+---
+
 ## 2026-10-07 - NoFitter's edges are where each edge begins, found by its slope
 
 **Context.** NoFitter walked back from the finder's start estimate to the first sample at

@@ -70,10 +70,12 @@ class IntraCUSUM(CUSUM):
         - ``Step Size`` (pA), ``Sensitivity``, ``Rise Time`` (us) and ``Max Sublevels``
           - as in ``CUSUM``, which this fitter extends.
         - ``Intraevent Threshold`` (pA) - the depth below the event's own carrier level
-          at which an intra-event excursion is recognised, as opposed to a sublevel.
+          at which an intra-event excursion is recognised, as opposed to a sublevel. No
+          default: at zero every noise crossing of the carrier level would count.
         - ``Intraevent Hysteresis`` (pA) - how far the signal must come back up before
           that excursion is considered over, so noise at the threshold does not split
-          one excursion into several.
+          one excursion into several. Must not exceed the threshold, or an excursion
+          could never end.
 
         :param globally_available_plugins: a dict containing all data plugins that exist to date, keyed by metaclass. Must include "MetaEventLoader" as a key, with explicitly set Type MetaEventLoader.
         :type globally_available_plugins: Optional[Dict[str, List[str]]]
@@ -84,12 +86,7 @@ class IntraCUSUM(CUSUM):
         """
         settings = super().get_empty_settings(globally_available_plugins, standalone)
 
-        settings["Intraevent Threshold"] = {
-            "Type": float,
-            "Value": 0.0,
-            "Min": 0.0,
-            "Units": "pA",
-        }
+        settings["Intraevent Threshold"] = {"Type": float, "Min": 0.0, "Units": "pA"}
         settings["Intraevent Hysteresis"] = {
             "Type": float,
             "Value": 0.0,
@@ -158,6 +155,30 @@ class IntraCUSUM(CUSUM):
         event_metadata["threshold_crossings"] = threshold_crossings
 
         return event_metadata
+
+    @log(logger=logger)
+    @override
+    def _validate_settings(self, settings: dict) -> None:
+        """
+        Validate that the settings dict contains the correct information for use by the subclass.
+
+        On top of ``CUSUM``'s check that ``Step Size`` is positive, the hysteresis must
+        not exceed the threshold: the excursion ends when the signal comes back up to
+        the threshold less the hysteresis, and a hysteresis above the threshold would
+        put that level above the carrier, where the signal never returns.
+
+        :param settings: Parameters for event detection.
+        :type settings: dict
+        :raises ValueError: if ``Step Size`` is not larger than zero, or if ``Intraevent Hysteresis`` exceeds ``Intraevent Threshold``
+        """
+        super()._validate_settings(settings)
+        if (
+            settings["Intraevent Hysteresis"]["Value"]
+            > settings["Intraevent Threshold"]["Value"]
+        ):
+            raise ValueError(
+                "Intraevent Hysteresis must not exceed Intraevent Threshold"
+            )
 
     @log(logger=logger)
     @override

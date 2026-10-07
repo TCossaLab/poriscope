@@ -43,9 +43,9 @@
   },
   "eventfitters": {
     "files": 4,
-    "functions": 37,
-    "identical_bodies": 10,
-    "removable_lines": 193
+    "functions": 38,
+    "identical_bodies": 9,
+    "removable_lines": 185
   },
   "filters": {
     "files": 2,

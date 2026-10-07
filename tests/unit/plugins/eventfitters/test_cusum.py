@@ -217,5 +217,28 @@ class TestEdgeGuard(unittest.TestCase):
         np.testing.assert_array_equal(edges, [0, 100, 200, 300])
 
 
+# ---------------------------------------------------------------------------
+# Settings validation
+# ---------------------------------------------------------------------------
+
+
+class TestValidateSettings(unittest.TestCase):
+    def test_a_zero_step_size_is_refused(self):
+        # Zero passes the base class's range check (the minimum is zero) and used to
+        # reach the threshold calculation as a division by zero, tallied as a rejection
+        # reason on every event.
+        for cls in (CUSUM, ClassicCUSUM):
+            with self.subTest(cls=cls.__name__):
+                pf = _make(cls, step_size=0.0)
+                with self.assertRaisesRegex(ValueError, "Step Size"):
+                    pf._validate_settings(pf.settings)
+
+    def test_a_positive_step_size_is_accepted(self):
+        for cls in (CUSUM, ClassicCUSUM):
+            with self.subTest(cls=cls.__name__):
+                pf = _make(cls, step_size=0.5)
+                self.assertIsNone(pf._validate_settings(pf.settings))
+
+
 if __name__ == "__main__":
     unittest.main()

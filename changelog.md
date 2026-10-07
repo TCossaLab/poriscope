@@ -62,6 +62,8 @@
 
 * Event finding with a chunk length under one sample (reachable through the plugin API; the Raw Data tab always passes one second) now reads one-second chunks instead of looping forever
 
+* **A CUSUM-family fitter now refuses a `Step Size` of 0 when its settings are applied**, where before the zero reached the detector as a division by zero and was counted as a rejection of every event; `IntraCUSUM` likewise refuses an `Intraevent Hysteresis` above its `Intraevent Threshold`, and its threshold no longer defaults to 0 pA (which counted noise crossings) but must be set, as `Step Size` and `Rise Time` already must
+
 * A CUSUM-family fitter handed an event with no reported baseline sigma and an empty padding on the only side it had now rejects that event for that reason, where before it ran the detector against a `nan` or whole-event sigma and reported "Too Few Levels"
 
 ### Documentation:

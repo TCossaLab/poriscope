@@ -64,16 +64,16 @@ Step 3: Fit Events
 **CUSUM Settings:**
 
 - ``Name``: Custom name for the fitter instance.
-- ``Step Size`` (pA): Minimum change in current to detect (in σ for ``ClassicCUSUM``).
+- ``Step Size`` (pA): Minimum change in current to detect (in σ for ``ClassicCUSUM``); must be set, and must be larger than zero.
 - ``Sensitivity``: Divides the detection threshold CUSUM picks from the event length and step size; 1 (the default and minimum) is the most conservative, and higher values detect smaller or shorter steps at the cost of more false transitions.
-- ``Rise Time`` (µs): Expected duration of a step change.
+- ``Rise Time`` (µs): Expected duration of a step change; must be set.
 - ``Max Sublevels``: Maximum number of levels to detect per event.
 
 **IntraCUSUM Settings:**
 
 - All fields from ``CUSUM``.
-- ``Intraevent Threshold`` (pA): Threshold for substructure detection.
-- ``Intraevent Hysteresis`` (pA): Prevents minor fluctuations from being misclassified.
+- ``Intraevent Threshold`` (pA): Threshold for substructure detection; must be set, since at zero every noise crossing would count.
+- ``Intraevent Hysteresis`` (pA): Prevents minor fluctuations from being misclassified; must not exceed the threshold.
 
 **PeakFinder Settings:**
 
