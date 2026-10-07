@@ -288,40 +288,46 @@ class CUSUM(MetaEventFitter):
                     gneg[k - 1] + logn, 0
                 )  # accumulate or reset negative decision function
                 if gpos[k] > threshold or gneg[k] > threshold:
-                    jump_accepted = False
-
+                    # A jump becomes an edge only if the sublevel it opens and the one it
+                    # closes are both longer than the rise time, so that each has samples
+                    # to average once its edge is excluded. Guarding the end of the data
+                    # as well as the previous edge is what makes every sublevel at least
+                    # rise_time + 1 samples long, which _populate_sublevel_metadata relies on.
                     if gpos[k] > threshold:  # significant positive jump detected
                         jump = 1 + anchor + np.argmin(cpos[anchor : k + 1])
-                        # Note: C also checks `length - jump > rise_time` here,
-                        # you may want to add that to match C perfectly!
-                        if jump - edges[num_states] > rise_time:
+                        if (
+                            jump - edges[num_states] > rise_time
+                            and length - jump > rise_time
+                        ):
                             edges = np.append(edges, jump)
                             num_states += 1
-                            jump_accepted = True
 
                     if gneg[k] > threshold:  # significant negative jump detected
                         jump = 1 + anchor + np.argmin(cneg[anchor : k + 1])
-                        if jump - edges[num_states] > rise_time:
+                        if (
+                            jump - edges[num_states] > rise_time
+                            and length - jump > rise_time
+                        ):
                             edges = np.append(edges, jump)
                             num_states += 1
-                            jump_accepted = True
 
-                    if jump_accepted:
-                        anchor = k
-                        cpos[0 : len(cpos)] = 0
-                        cneg[0 : len(cneg)] = 0
-                        gpos[0 : len(gpos)] = 0
-                        gneg[0 : len(gneg)] = 0
-                        mean = data[anchor]
-                        varM = data[anchor]
-                        # Welford's accumulator restarts with the new anchor, the
-                        # same way varM does. Carrying varS over from the previous
-                        # anchor while the divisor (k - anchor) restarts at 1
-                        # inflates the variance estimate, and logp/logn scale as
-                        # 1/variance, so the decision functions are suppressed
-                        # across exactly the window where the next transition is
-                        # most likely.
-                        varS = 0
+                    # The statistics restart at every crossing, accepted or not. A
+                    # crossing the rise-time guard rejects is fired by the tail of the
+                    # edge just taken; leaving the anchor mid-edge lets Welford's variance
+                    # swallow the rest of that edge - hundreds of sigma squared after a
+                    # 60 sigma step - and logp/logn scale as 1/variance, so the detector
+                    # went blind to the next transitions for as long as that variance
+                    # took to decay. Resetting only on an accepted jump (2026-05 to
+                    # 2026-10) was meant to cure the same inflation and instead caused
+                    # this form of it; the varS reset below cures the accepted-jump form.
+                    anchor = k
+                    cpos[0 : len(cpos)] = 0
+                    cneg[0 : len(cneg)] = 0
+                    gpos[0 : len(gpos)] = 0
+                    gneg[0 : len(gneg)] = 0
+                    mean = data[anchor]
+                    varM = data[anchor]
+                    varS = 0
             edges = np.append(edges, length)  # mark the end of the event as an edge
             num_states += 1
 
@@ -336,11 +342,7 @@ class CUSUM(MetaEventFitter):
             while not minstepflag:
                 minstepflag = True
                 sublevel_means = [
-                    (
-                        np.median(data[int(edges[i] + rise_time) : int(edges[i + 1])])
-                        if edges[i] + rise_time < edges[i + 1]
-                        else data[int(edges[i + 1]) - 1]
-                    )
+                    np.median(data[int(edges[i] + rise_time) : int(edges[i + 1])])
                     for i in range(num_states)
                 ]
 
@@ -415,21 +417,19 @@ class CUSUM(MetaEventFitter):
         dt_us = 1.0 / samplerate * 1e6
         aC_pC = 1e-6
 
-        # average the current over the sublevel, ignoring the rise time
+        # Average the current over the sublevel, ignoring the rise time. Every sublevel
+        # the detector returns is longer than the rise time (it guards both the previous
+        # edge and the end of the data), so these slices are never empty.
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", category=RuntimeWarning)
             sublevel_metadata["sublevel_current"] = np.array(
                 [
-                    (
-                        np.median(
-                            data[
-                                int(sublevel_starts[i] + rise_time) : int(
-                                    sublevel_starts[i + 1]
-                                )
-                            ]
-                        )
-                        if sublevel_starts[i] + rise_time < sublevel_starts[i + 1]
-                        else data[int(sublevel_starts[i + 1]) - 1]
+                    np.median(
+                        data[
+                            int(sublevel_starts[i] + rise_time) : int(
+                                sublevel_starts[i + 1]
+                            )
+                        ]
                     )
                     for i in range(num_states)
                 ],
@@ -448,16 +448,12 @@ class CUSUM(MetaEventFitter):
             # get the standard deviation over the sublevel, ignoring the rise time
             sublevel_metadata["sublevel_stdev"] = np.array(
                 [
-                    (
-                        np.std(
-                            data[
-                                int(sublevel_starts[i] + rise_time) : int(
-                                    sublevel_starts[i + 1]
-                                )
-                            ]
-                        )
-                        if sublevel_starts[i] + rise_time < sublevel_starts[i + 1]
-                        else baseline_std
+                    np.std(
+                        data[
+                            int(sublevel_starts[i] + rise_time) : int(
+                                sublevel_starts[i + 1]
+                            )
+                        ]
                     )
                     for i in range(num_states)
                 ],
@@ -472,29 +468,16 @@ class CUSUM(MetaEventFitter):
             sublevel_metadata["sublevel_blockage"] = np.array(
                 [
                     (
-                        (
-                            event_baseline
-                            - np.median(
-                                data[
-                                    int(sublevel_starts[i] + rise_time) : int(
-                                        sublevel_starts[i + 1]
-                                    )
-                                ]
-                            )
-                        )
-                        * np.sign(event_baseline)
-                        if sublevel_starts[i] + rise_time < sublevel_starts[i + 1]
-                        else np.max(
-                            np.absolute(
-                                data[
-                                    int(sublevel_starts[i]) : int(
-                                        sublevel_starts[i + 1]
-                                    )
-                                ]
-                                - event_baseline
-                            )
+                        event_baseline
+                        - np.median(
+                            data[
+                                int(sublevel_starts[i] + rise_time) : int(
+                                    sublevel_starts[i + 1]
+                                )
+                            ]
                         )
                     )
+                    * np.sign(event_baseline)
                     for i in range(num_states)
                 ],
                 dtype=np.float64,

@@ -13,11 +13,13 @@ sibling modules do, so these tests see the algorithms and not the plugin lifecyc
 """
 
 import unittest
+from unittest.mock import patch
 
 import numpy as np
 
 from poriscope.plugins.eventfitters.ClassicCUSUM import ClassicCUSUM
 from poriscope.plugins.eventfitters.CUSUM import CUSUM
+from tests.synthetic_data.synthetic_events_db import build_bessel_filter
 
 
 def _make(cls, step_size=5.0, rise_time_us=0.0, max_sublevels=0):
@@ -121,6 +123,98 @@ class TestStepSizeInSigma(unittest.TestCase):
         # The subclass overrides only the step-size hook; the loop is CUSUM's.
         self.assertNotIn("_locate_sublevel_transitions", ClassicCUSUM.__dict__)
         self.assertIn("_step_size_in_sigma", ClassicCUSUM.__dict__)
+
+
+# ---------------------------------------------------------------------------
+# The detector's reset rule and its edge guard, against a planted staircase
+# ---------------------------------------------------------------------------
+
+SAMPLERATE_HZ = 500_000.0
+#: A 400 pA blockage carrying three 40-sample steps 150 pA apart, 100 baseline samples
+#: either side, white noise of 15 pA, Bessel-filtered at 100 kHz exactly as the
+#: ground-truth fixtures are. After the filter the noise sigma is about 6.2 pA, so the
+#: leading edge is about 64 sigma and each internal step about 24 sigma.
+BASELINE_PA = 2000.0
+STAIRCASE_PA = [1600.0, 1450.0, 1300.0]
+STEP_SAMPLES = 40
+PADDING_SAMPLES = 100
+
+
+def _filtered_staircase(seed: int = 0) -> np.ndarray:
+    """
+    Build one Bessel-filtered staircase event the way the ground-truth fixtures do.
+
+    :param seed: the noise seed
+    :type seed: int
+    :return: the event trace, paddings included
+    :rtype: numpy.ndarray
+    """
+    rng = np.random.RandomState(seed)
+    levels = np.concatenate(
+        [np.full(PADDING_SAMPLES, BASELINE_PA)]
+        + [np.full(STEP_SAMPLES, level) for level in STAIRCASE_PA]
+        + [np.full(PADDING_SAMPLES, BASELINE_PA)]
+    )
+    trace = levels + rng.normal(0.0, 15.0, levels.size)
+    return build_bessel_filter(SAMPLERATE_HZ, 100_000.0, 8).filter_data(trace)
+
+
+def _filtered_sigma(seed: int = 1) -> float:
+    rng = np.random.RandomState(seed)
+    noise = rng.normal(0.0, 15.0, 200_000)
+    return float(np.std(build_bessel_filter(SAMPLERATE_HZ, 100_000.0, 8).filter_data(noise)))
+
+
+class TestResetOnEveryCrossing(unittest.TestCase):
+    """
+    After a large edge the detector must still see the steps that follow it.
+
+    A threshold crossing the rise-time guard rejects used to leave the anchor where the
+    accepted edge put it, mid-ramp, so Welford's variance from that anchor swallowed the
+    rest of the ramp (hundreds of sigma squared) and the log-likelihoods, which scale as
+    one over the variance, went blind to the 24 sigma steps that followed. Resetting on
+    every crossing, as the reference C detector does, moves the anchor past the ramp.
+    """
+
+    def setUp(self):
+        self.data = _filtered_staircase()
+        self.sigma = _filtered_sigma()
+        # planted boundaries: 100, 140, 180, 220
+        self.planted = [PADDING_SAMPLES + STEP_SAMPLES * i for i in range(len(STAIRCASE_PA) + 1)]
+
+    def _assert_three_inner_levels(self, edges):
+        self.assertEqual(len(edges), len(STAIRCASE_PA) + 3, list(edges))
+        for found, planted in zip(edges[1:-1], self.planted):
+            self.assertLessEqual(abs(int(found) - planted), 3, list(edges))
+
+    def test_classic_cusum_resolves_the_steps_after_a_large_edge(self):
+        pf = _make(ClassicCUSUM, step_size=10.0, rise_time_us=16.0, max_sublevels=10)
+        edges = pf._locate_sublevel_transitions(
+            self.data, SAMPLERATE_HZ, PADDING_SAMPLES, PADDING_SAMPLES, BASELINE_PA, self.sigma
+        )
+        self._assert_three_inner_levels(edges)
+
+    def test_cusum_resolves_the_steps_after_a_large_edge(self):
+        pf = _make(CUSUM, step_size=10.0 * self.sigma, rise_time_us=16.0, max_sublevels=10)
+        edges = pf._locate_sublevel_transitions(
+            self.data, SAMPLERATE_HZ, PADDING_SAMPLES, PADDING_SAMPLES, BASELINE_PA, self.sigma
+        )
+        self._assert_three_inner_levels(edges)
+
+
+class TestEdgeGuard(unittest.TestCase):
+    def test_a_jump_within_a_rise_time_of_the_end_is_not_an_edge(self):
+        # Three clean plateaus, then a step three samples before the end. With a rise
+        # time of eight samples the final step cannot start a sublevel long enough to
+        # average, so it is refused the way a step within a rise time of the previous
+        # edge is; the C detector guards both ends.
+        pf = _make(ClassicCUSUM, step_size=5.0, rise_time_us=8.0)
+        data = np.concatenate(
+            [np.zeros(100), np.full(100, 50.0), np.zeros(97), np.full(3, 50.0)]
+        )
+        with patch.object(CUSUM, "_calculate_threshold", return_value=10.0):
+            edges = pf._locate_sublevel_transitions(data, 1e6, None, None, 0.0, 5.0)
+        np.testing.assert_array_equal(edges, [0, 100, 200, 300])
 
 
 if __name__ == "__main__":

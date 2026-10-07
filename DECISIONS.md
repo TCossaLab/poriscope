@@ -18,6 +18,42 @@ and deleted on 2026-09-27; it too is in git history.
 
 ---
 
+## 2026-10-07 - The CUSUM detector resets on every threshold crossing
+
+**Context.** `3c755291` (2026-05-01) gated the detector's reset behind an accepted jump,
+departing from the C reference, to cure variance inflation after a transition; `f7b97900`
+(2026-09-03) then reset `varS` inside that block. The step 1 harness showed `ClassicCUSUM`
+finding one inner level on 25/25 planted events at 15 pA / 40-sample steps and 22/25 at
+83, while finding 25/25 at 50 pA.
+
+**Decision** (Kyle, 2026-10-07). Reset on every crossing, accepted or not, and guard the end
+of the data as the C does (`length - jump > rise_time`). The fix lands once in `CUSUM.py`
+and reaches `ClassicCUSUM` and `IntraCUSUM` by inheritance; `PeakFinder.py:1019-1045`
+(gated reset, `varS` reset outside the loop) waits for Kyle's step 8 PeakFinder work. The
+C reference is public (<https://github.com/shadowk29/CUSUM>, `detector.c`); its core maths
+is the Python's, its wrapping logic is not a target.
+
+**Evidence.** Trace of one event (Classic, 10 σ, threshold 0.4): the 64 σ leading edge is
+accepted at k = 98 mid-ramp; at k = 100 the still-falling signal crosses again, the jump
+lands at 99 and the rise-time guard rejects it; with no reset the anchor stays at 98 and
+Welford's variance from it swallows the rest of the ramp (195 to 442 σ² over k = 100-104,
+decaying as 1/(k − anchor)); `logp`/`logn` scale as 1/variance, so 145 consecutive
+crossings re-locate the same rejected jump and the 24 σ steps at 140 and 180 never
+register - edges `[0, 98, 219]`. With the C reset the anchor moves at 100 and 102, the
+variance returns to 2-4 σ², edges `[0, 98, 139, 179, 217]` against planted 100/140/180/220.
+The inflation scales with (edge/σ)², which is why it showed at *higher* SNR. Planted bands:
+Classic 22/25 → 25/25 and 0/25 → 25/25 at 15 pA; CUSUM/IntraCUSUM 24/25 → 25/25 at 50 pA;
+every variant resolves the 20-sample band (0/25 → 25/25, current ≤ 1.78 σ); the 100 pA
+informative band 9/25 → 11/25; currents and durations elsewhere unchanged; no retries and
+no trailing sublevel ≤ rise time with or without the guard. The guard is neutral on these
+bands and makes the sublevel-shorter-than-rise-time fallbacks unreachable (0 of ~1,900
+sublevels hit them before), so they are deleted rather than flagged in metadata.
+
+**Revisit if** a recording shows the reset on a rejected crossing discarding evidence of a
+true transition that the gated form would have kept.
+
+---
+
 ## 2026-10-06 - A filter declares the settings its data must match; the caller verifies
 
 **Context.** `BesselFilter` takes `Samplerate` as a setting the user types, and nothing checks

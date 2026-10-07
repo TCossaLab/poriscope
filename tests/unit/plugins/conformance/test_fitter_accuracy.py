@@ -23,11 +23,13 @@ events differently is not wrong for failing it. A new plugin opts in by being ad
 list; contract and failure-path tests stay family-wide (``DECISIONS.md``, 2026-10-06).
 
 Bands a fitter was never meant for are recorded as strict expected failures rather than
-left out: ClassicCUSUM on 40-sample steps at 15 pA (it resolves fewer levels at *higher*
-SNR - queued under step 5) and at 100 pA (its 10 σ threshold exceeds the 150 pA step);
-every CUSUM variant on 20-sample steps behind a 3-sample rise; and NoFitter's edge
-placement, which walks the start back to the baseline crossing but sets the end a rise
-time early (``NoFitter.py:228-229``, step 5).
+left out: ClassicCUSUM at 100 pA (its 10 σ threshold exceeds the 150 pA step), the rest
+of the CUSUM family at 100 pA (an informative band), and NoFitter's edge placement, which
+walks the start back to the baseline crossing but sets the end a rise time early
+(``NoFitter.py:228-229``, step 5). Two marks this file used to carry are gone: ClassicCUSUM
+resolving fewer levels at *higher* SNR, and every CUSUM variant failing 20-sample steps,
+were one defect - the detector did not restart its statistics after a crossing the
+rise-time guard rejected, so a large edge left it blind to the steps behind it.
 """
 
 from typing import Dict, List, Tuple, Type
@@ -82,10 +84,17 @@ CUSUM_FAMILY: List[Type[MetaEventFitter]] = [CUSUM, ClassicCUSUM, IntraCUSUM]
 
 # --- bands ------------------------------------------------------------------------------
 #: (drawn noise in pA, event length in samples). 250 -> 83/83/84-sample steps,
-#: 120 -> 40/40/40, 60 -> 20/20/20.
+#: 120 -> 40/40/40, 60 -> 20/20/20. The 20-sample band is required since the detector
+#: learned to restart after a rejected crossing: every CUSUM variant resolves it.
 Band = Tuple[float, int]
-REQUIRED_BANDS: List[Band] = [(15.0, 250), (50.0, 250), (15.0, 120), (50.0, 120)]
-INFORMATIVE_BANDS: List[Band] = [(100.0, 250), (15.0, 60)]
+REQUIRED_BANDS: List[Band] = [
+    (15.0, 250),
+    (50.0, 250),
+    (15.0, 120),
+    (50.0, 120),
+    (15.0, 60),
+]
+INFORMATIVE_BANDS: List[Band] = [(100.0, 250)]
 
 
 def step_width(length: int) -> int:
@@ -277,17 +286,8 @@ def _xfail(reason: str) -> pytest.MarkDecorator:
     return pytest.mark.xfail(strict=True, reason=reason)
 
 
-CLASSIC_HIGH_SNR = _xfail(
-    "ClassicCUSUM resolves fewer planted levels at higher SNR (22/25 on 83-sample steps "
-    "and 0/25 on 40-sample steps at 15 pA, against 25/25 on both at 50 pA); queued under "
-    "2.1 step 5"
-)
 CLASSIC_THRESHOLD_ABOVE_STEP = _xfail(
     "ClassicCUSUM at Step Size 10 sigma: 416 pA threshold exceeds the 150 pA planted step"
-)
-TWENTY_SAMPLE_STEPS = _xfail(
-    "20-sample steps behind a 3-sample rise with a 16 us rise-time setting are not "
-    "resolvable by any CUSUM variant; informative band"
 )
 
 
@@ -303,16 +303,12 @@ def cusum_cases() -> List[object]:
         for band in REQUIRED_BANDS + INFORMATIVE_BANDS:
             noise, length = band
             marks: List[pytest.MarkDecorator] = []
-            if length == 60:
-                marks.append(TWENTY_SAMPLE_STEPS)
-            elif fitter_cls is ClassicCUSUM and noise == 15.0:
-                marks.append(CLASSIC_HIGH_SNR)
-            elif fitter_cls is ClassicCUSUM and noise == 100.0:
+            if fitter_cls is ClassicCUSUM and noise == 100.0:
                 marks.append(CLASSIC_THRESHOLD_ABOVE_STEP)
             elif noise == 100.0:
                 marks.append(
                     _xfail(
-                        "100 pA drawn noise is an informative band: 9/25 level counts"
+                        "100 pA drawn noise is an informative band: 11/25 level counts"
                     )
                 )
             cases.append(
@@ -458,6 +454,9 @@ NOFITTER_EDGE_DEFECT = _xfail(
 def nofitter_cases() -> List[object]:
     """
     Build NoFitter's band parameters: 83-sample steps required, shorter ones expected to fail.
+
+    The 20-sample band is required for the CUSUM family but still an expected failure
+    here, under the same edge defect as the 40-sample band.
 
     :return: ``pytest.param`` entries
     :rtype: List[object]

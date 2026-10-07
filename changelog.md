@@ -12,6 +12,8 @@
 
 * **The Bessel filter now accepts low cutoffs it used to refuse as numerically unstable** (25 kHz on a 4.17 MHz recording, for one): it is built as second-order sections, which are stable at any cutoff below half the sample rate; filtered values at previously accepted cutoffs move by less than a thousandth of the noise
 
+* **The CUSUM family (`CUSUM`, `ClassicCUSUM`, `IntraCUSUM`) now resolves the sublevels that follow a large edge:** the detector restarts its statistics at every threshold crossing, as the reference C implementation does, and refuses a transition within a rise time of the end of the event; on planted staircases `ClassicCUSUM` went from one level found on every event to the three planted at high signal-to-noise, so fits of real data will report more sublevels than before
+
 * **Results can move by one sample at a chunk boundary:** a reader now rounds a seconds request to the nearest sample instead of truncating it, so chunked reads (the Raw Data trace, event finding, loading an event's padded window) no longer duplicate one sample and drop another where a chunk boundary fell on an index whose time did not convert back exactly
 
 ### Developer Tooling:
