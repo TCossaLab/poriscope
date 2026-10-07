@@ -57,9 +57,9 @@ def _entries(indices):
     statistics span its whole extent, which is what a flat, edge-free event gives.
     """
     bounds = list(indices)
-    return [
-        (edge, edge, nxt) for edge, nxt in zip(bounds[:-1], bounds[1:])
-    ] + [(bounds[-1], bounds[-1], bounds[-1])]
+    return [(edge, edge, nxt) for edge, nxt in zip(bounds[:-1], bounds[1:])] + [
+        (bounds[-1], bounds[-1], bounds[-1])
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -246,7 +246,9 @@ class TestLocateSublevelTransitions(unittest.TestCase):
         data[85:87] = 170.0
         data[90:94] = 180.0
         edges = pf._locate_sublevel_transitions(data, 1e6, 20, 20, 200.0, 5.0)
-        self.assertEqual(edges, [(0, 0, 30), (30, 33, 70), (70, 73, 120), (120, 120, 120)])
+        self.assertEqual(
+            edges, [(0, 0, 30), (30, 33, 70), (70, 73, 120), (120, 120, 120)]
+        )
 
     def test_an_estimate_on_the_edge_itself_gives_the_same_edges(self):
         pf = object.__new__(NoFitter)
@@ -255,7 +257,9 @@ class TestLocateSublevelTransitions(unittest.TestCase):
         data[34:70] = 100.0
         data[70:74] = [125.0, 150.0, 175.0, 200.0]
         edges = pf._locate_sublevel_transitions(data, 1e6, 32, 48, 200.0, 5.0)
-        self.assertEqual(edges, [(0, 0, 30), (30, 33, 70), (70, 73, 120), (120, 120, 120)])
+        self.assertEqual(
+            edges, [(0, 0, 30), (30, 33, 70), (70, 73, 120), (120, 120, 120)]
+        )
 
     def test_first_and_last_edges_match_data_bounds(self):
         pf = object.__new__(NoFitter)
@@ -276,7 +280,9 @@ class TestLocateSublevelTransitions(unittest.TestCase):
         for before, after in ((0, 5), (10, 0), (None, 5), (10, None)):
             with self.subTest(before=before, after=after):
                 with self.assertRaises(ValueError):
-                    pf._locate_sublevel_transitions(data, 1e6, before, after, 200.0, 5.0)
+                    pf._locate_sublevel_transitions(
+                        data, 1e6, before, after, 200.0, 5.0
+                    )
 
 
 # ---------------------------------------------------------------------------
@@ -349,7 +355,12 @@ class TestPopulateSublevelMetadata(unittest.TestCase):
         # average of the blocked stretch (120), not the longer state a median would give.
         pf = _make_pf()
         data = np.concatenate(
-            [np.full(20, 200.0), np.full(60, 100.0), np.full(40, 150.0), np.full(20, 200.0)]
+            [
+                np.full(20, 200.0),
+                np.full(60, 100.0),
+                np.full(40, 150.0),
+                np.full(20, 200.0),
+            ]
         )
         edges = pf._locate_sublevel_transitions(data, 1e6, 20, 20, 200.0, 5.0)
         meta = pf._populate_sublevel_metadata(data, 1e6, 200.0, 5.0, edges)

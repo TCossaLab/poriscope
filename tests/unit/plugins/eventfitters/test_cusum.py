@@ -97,7 +97,9 @@ class TestResolveBaselineStd(unittest.TestCase):
         # nan into the step size and surface as "Too Few Levels" instead of the real
         # reason; a zero padding_after used to take the whole event as "baseline".
         for padding_before, padding_after in ((0, None), (None, 0)):
-            with self.subTest(padding_before=padding_before, padding_after=padding_after):
+            with self.subTest(
+                padding_before=padding_before, padding_after=padding_after
+            ):
                 pf = _make(ClassicCUSUM)
                 with self.assertRaisesRegex(ValueError, "standard deviation"):
                     pf._locate_sublevel_transitions(
@@ -162,7 +164,9 @@ def _filtered_staircase(seed: int = 0) -> np.ndarray:
 def _filtered_sigma(seed: int = 1) -> float:
     rng = np.random.RandomState(seed)
     noise = rng.normal(0.0, 15.0, 200_000)
-    return float(np.std(build_bessel_filter(SAMPLERATE_HZ, 100_000.0, 8).filter_data(noise)))
+    return float(
+        np.std(build_bessel_filter(SAMPLERATE_HZ, 100_000.0, 8).filter_data(noise))
+    )
 
 
 class TestResetOnEveryCrossing(unittest.TestCase):
@@ -180,7 +184,9 @@ class TestResetOnEveryCrossing(unittest.TestCase):
         self.data = _filtered_staircase()
         self.sigma = _filtered_sigma()
         # planted boundaries: 100, 140, 180, 220
-        self.planted = [PADDING_SAMPLES + STEP_SAMPLES * i for i in range(len(STAIRCASE_PA) + 1)]
+        self.planted = [
+            PADDING_SAMPLES + STEP_SAMPLES * i for i in range(len(STAIRCASE_PA) + 1)
+        ]
 
     def _assert_three_inner_levels(self, edges):
         self.assertEqual(len(edges), len(STAIRCASE_PA) + 3, list(edges))
@@ -190,14 +196,26 @@ class TestResetOnEveryCrossing(unittest.TestCase):
     def test_classic_cusum_resolves_the_steps_after_a_large_edge(self):
         pf = _make(ClassicCUSUM, step_size=10.0, rise_time_us=16.0, max_sublevels=10)
         edges = pf._locate_sublevel_transitions(
-            self.data, SAMPLERATE_HZ, PADDING_SAMPLES, PADDING_SAMPLES, BASELINE_PA, self.sigma
+            self.data,
+            SAMPLERATE_HZ,
+            PADDING_SAMPLES,
+            PADDING_SAMPLES,
+            BASELINE_PA,
+            self.sigma,
         )
         self._assert_three_inner_levels(edges)
 
     def test_cusum_resolves_the_steps_after_a_large_edge(self):
-        pf = _make(CUSUM, step_size=10.0 * self.sigma, rise_time_us=16.0, max_sublevels=10)
+        pf = _make(
+            CUSUM, step_size=10.0 * self.sigma, rise_time_us=16.0, max_sublevels=10
+        )
         edges = pf._locate_sublevel_transitions(
-            self.data, SAMPLERATE_HZ, PADDING_SAMPLES, PADDING_SAMPLES, BASELINE_PA, self.sigma
+            self.data,
+            SAMPLERATE_HZ,
+            PADDING_SAMPLES,
+            PADDING_SAMPLES,
+            BASELINE_PA,
+            self.sigma,
         )
         self._assert_three_inner_levels(edges)
 

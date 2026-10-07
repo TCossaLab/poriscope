@@ -650,7 +650,9 @@ class TestMetaEventFitter:
         original = loader.load_event
         calls: List[Optional[Callable]] = []
 
-        def counting(channel: int, index: int, data_filter: Optional[Callable] = None) -> dict:
+        def counting(
+            channel: int, index: int, data_filter: Optional[Callable] = None
+        ) -> dict:
             calls.append(data_filter)
             return original(channel, index, data_filter)
 

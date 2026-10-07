@@ -466,7 +466,10 @@ def nofitter_cases() -> List[object]:
     :return: ``pytest.param`` entries
     :rtype: List[object]
     """
-    return [pytest.param(band, id=_band_id(band)) for band in REQUIRED_BANDS + INFORMATIVE_BANDS]
+    return [
+        pytest.param(band, id=_band_id(band))
+        for band in REQUIRED_BANDS + INFORMATIVE_BANDS
+    ]
 
 
 @pytest.mark.parametrize("band", nofitter_cases())
@@ -639,12 +642,16 @@ def test_nofitter_edges_do_not_depend_on_where_the_finder_put_its_boundaries(
             window_start = int(event["absolute_start"])
             planted = min(
                 dataset.events,
-                key=lambda p: abs(p.start_index - (window_start + event["padding_before"])),
+                key=lambda p: abs(
+                    p.start_index - (window_start + event["padding_before"])
+                ),
             )
             planted_start = planted.start_index - window_start
             planted_end = planted_start + planted.length_samples
             finder_offsets.append(event["padding_before"] - planted_start)
-            finder_offsets.append(len(event["data"]) - event["padding_after"] - planted_end)
+            finder_offsets.append(
+                len(event["data"]) - event["padding_after"] - planted_end
+            )
             _event_meta, sublevel_meta, _f, _r, _fit = fitter.get_single_event_metadata(
                 3, index
             )
@@ -654,9 +661,15 @@ def test_nofitter_edges_do_not_depend_on_where_the_finder_put_its_boundaries(
             end_offset = end - planted_end
             assert -30 <= start_offset <= 0, (index, start_offset)
             assert -30 <= end_offset <= 0, (index, end_offset)
-            assert abs(start_offset - end_offset) <= 6, (index, start_offset, end_offset)
+            assert abs(start_offset - end_offset) <= 6, (
+                index,
+                start_offset,
+                end_offset,
+            )
             current = sublevel_meta["sublevel_current"][1]
-            assert abs(current - (BASELINE_PA + AMPLITUDE_PA)) <= event["baseline_std"], (
+            assert (
+                abs(current - (BASELINE_PA + AMPLITUDE_PA)) <= event["baseline_std"]
+            ), (
                 index,
                 current,
             )
@@ -686,7 +699,9 @@ def test_the_finder_places_its_boundaries_where_the_signal_leaves_and_rejoins_th
             window_start = int(event["absolute_start"])
             planted = min(
                 dataset.events,
-                key=lambda p: abs(p.start_index - (window_start + event["padding_before"])),
+                key=lambda p: abs(
+                    p.start_index - (window_start + event["padding_before"])
+                ),
             )
             planted_start = planted.start_index - window_start
             planted_end = planted_start + planted.length_samples

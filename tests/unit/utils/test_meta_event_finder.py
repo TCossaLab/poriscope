@@ -359,7 +359,12 @@ class TestEventBoundariesFromTheBaseline:
         data = np.zeros(120)
         data[20:24] = [-5.0, -10.0, -15.0, -20.0]  # the leading edge
         data[24:60] = -20.0
-        data[60:64] = [-15.0, -10.0, -5.0, -0.5]  # the trailing edge, back to within the band
+        data[60:64] = [
+            -15.0,
+            -10.0,
+            -5.0,
+            -0.5,
+        ]  # the trailing edge, back to within the band
         return data
 
     def test_the_start_is_the_first_sample_off_the_baseline(self, bare_finder):
@@ -398,12 +403,16 @@ class TestEventBoundariesFromTheBaseline:
         data[65:67] = 4.0
         assert bare_finder._event_end_from_the_baseline(data, 61) == 67
 
-    def test_an_excursion_a_run_or_more_after_the_edge_leaves_the_end_alone(self, bare_finder):
+    def test_an_excursion_a_run_or_more_after_the_edge_leaves_the_end_alone(
+        self, bare_finder
+    ):
         data = self._chunk()
         data[70:72] = 4.0
         assert bare_finder._event_end_from_the_baseline(data, 61) == 63
 
-    def test_no_baseline_before_the_chunk_ends_means_the_event_straddles_it(self, bare_finder):
+    def test_no_baseline_before_the_chunk_ends_means_the_event_straddles_it(
+        self, bare_finder
+    ):
         data = self._chunk()
         data[60:] = -20.0
         assert bare_finder._event_end_from_the_baseline(data, 61) is None
@@ -426,7 +435,9 @@ class TestShippedFindersPlaceBoundariesAtTheEdges:
         # the chunk method normalises by the mean and sigma it is given; mean 0 and sigma 1
         # leave the planted values as they are, and a positive mean passes the rectification check
         data = self._normalised_event() + 1000.0
-        starts, ends, state = finder._find_events_in_chunk(data, 1000.0, 1.0, 0, False, True)
+        starts, ends, state = finder._find_events_in_chunk(
+            data, 1000.0, 1.0, 0, False, True
+        )
         return starts, ends, state
 
     def test_classic_blockage_finder(self):
