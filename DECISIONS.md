@@ -18,6 +18,35 @@ and deleted on 2026-09-27; it too is in git history.
 
 ---
 
+## 2026-10-07 - A fitter fault on an event is a rejection of that event, never an abort
+
+**Context.** `MetaEventFitter.fit_events` wrapped each fitter hook in `except ValueError`
+and `except Exception`, both routed through `_reject_event` keyed on `str(e)`, so a
+`TypeError` in a plugin landed in the rejection table beside "Too Few Levels" under its
+message text, at INFO, and the channel finished as fitted; a hook returning something
+that was not a sequence raised out of the generator and left the channel "fitting
+incomplete". The question was whether a plugin exception should abort the channel.
+
+**Decision** (Kyle, 2026-10-07). Never abort on a per-event fault and make no judgment
+about whether it is systematic: tally it as `Plugin Error (<exception type>)`, log it at
+ERROR with the traceback, skip the event and finish the channel, so a fault that hits
+every event shows as "0 of N good fits" with its reason and the user decides. A `None`
+or empty return is tallied as "No Sublevels" the same way. What still stops the channel
+is malformed loader data (the declared `TypeError`/`ValueError`) and a fitter whose
+declared columns omit `sublevel_duration`, which is wrong for every event by
+construction and is the plugin's declaration, not its data.
+
+**Evidence.** The alternative, aborting after the first N consecutive faults, needs a
+threshold nobody can justify and turns a bad event near the start of a channel into a
+lost channel; the report already carries counts per reason. `Worker.process_generator`
+shows an escaping exception on the status panel, so the abort path stays usable for the
+contract failures that keep it.
+
+**Revisit if** a fitter needs to signal "stop this channel" deliberately - that would
+be a declared exception type on the base, not `except Exception`.
+
+---
+
 ## 2026-10-07 - CUSUM-family settings: no defaults for the physical ones, zero refused
 
 **Context.** `Step Size` and `Rise Time` ship without a default; `IntraCUSUM`'s

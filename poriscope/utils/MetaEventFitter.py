@@ -27,7 +27,7 @@
 import gc
 import logging
 from abc import abstractmethod
-from collections.abc import Iterable
+from collections.abc import Sized
 from typing import Any, Callable, Dict, Generator, List, Optional, Tuple, Type, Union
 
 import numpy as np
@@ -467,18 +467,19 @@ class MetaEventFitter(BaseDataPlugin):
         reason: str,
         message: str,
         level: int = logging.INFO,
+        exc_info: bool = False,
     ) -> None:
         """
         Count one rejected event, say why, and drop the metadata already built for it.
 
-        ``fit_events`` gives up on an event from nine places, and each one owed the same
+        ``fit_events`` gives up on an event from ten places, and each one owed the same
         three pieces of bookkeeping: tally the reason, log it, and remove the two
         half-built metadata entries the event had already accumulated. Missing either pop
         leaves a partial event in the tables that the writer will later try to commit, so
-        this is one place rather than nine.
+        this is one place rather than ten.
 
         **The control flow stays at the call site**, deliberately, because it differs.
-        Eight of the nine decrement the running event count and ``continue`` the event
+        Nine of the ten decrement the running event count and ``continue`` the event
         loop; the sublevel-count mismatch is raised from inside the loop over the
         metadata columns, so it has to set a flag and ``break`` out of that inner loop
         before its caller can do the same. Folding that difference in here would mean a
@@ -495,9 +496,11 @@ class MetaEventFitter(BaseDataPlugin):
         :type message: str
         :param level: the level to log ``message`` at, ``logging.INFO`` unless the rejection indicates a fitter fault
         :type level: int
+        :param exc_info: whether to log the active exception's traceback with the message, for a fitter fault
+        :type exc_info: bool
         """
         self.rejected[channel][reason] = self.rejected[channel].get(reason, 0) + 1
-        self.logger.log(level, message)
+        self.logger.log(level, message, exc_info=exc_info)
         self.event_metadata[channel].pop(index)
         self.sublevel_metadata[channel].pop(index)
 
@@ -515,6 +518,16 @@ class MetaEventFitter(BaseDataPlugin):
         If silent flag is set, run through without yielding progress reports on the first call to next(). Once StopIteration is reached, internal
         lists of event metadata will be populated as entries in a dict keyed by event id.
 
+        An event the fitter cannot fit is rejected, never fatal to the channel: a
+        ``ValueError`` from a fitter hook is a scientific rejection tallied under its
+        message ("Too Few Levels"), any other exception from a hook is a fault in the
+        fitter tallied under ``Plugin Error (<type>)`` and logged at ERROR with its
+        traceback, and a hook returning no sublevel boundaries is tallied as "No
+        Sublevels". The channel finishes either way and the report shows the tallies, so
+        a fault that hits every event reads as "0 of N good fits" with its reason. What
+        does stop the channel is malformed loader data, or a fitter whose declared
+        columns omit ``sublevel_duration``, which is wrong for every event by construction.
+
         :param channel: analyze only events from this channel
         :type channel: int
         :param silent: indicate whether or not to report progress, default false
@@ -523,6 +536,7 @@ class MetaEventFitter(BaseDataPlugin):
         :type data_filter: Optional[Callable]
         :param indices: a list of indices to fit, ignoring the rest. Empty list fits all available indices.
         :type indices: Optional[List[int]]
+
         :raises RuntimeError: If no event loader has been attached to this eventfitter.
         :raises KeyError: If a subclass fails to populate the required "sublevel_duration" column.
         :raises TypeError: If event data returned by the event loader has an unexpected type.
@@ -534,7 +548,7 @@ class MetaEventFitter(BaseDataPlugin):
             raise RuntimeError("Event loader has not been initialized.")
 
         total_events = self.eventloader.get_num_events(channel)
-        if indices is None:
+        if not indices:
             indices = list(range(total_events))
         else:
             total_events = len(indices)
@@ -553,8 +567,6 @@ class MetaEventFitter(BaseDataPlugin):
 
         abort = False
         for index in indices:
-            if total_events:
-                self.logger.info(index / total_events)
             self.event_metadata[channel][index] = {}
             self.sublevel_metadata[channel][index] = {}
 
@@ -635,7 +647,7 @@ class MetaEventFitter(BaseDataPlugin):
                     channel,
                     index,
                     str(e),
-                    f"Event {index} in channel {channel} was rejected from fitting: {e}. No further warnings of this type will be issue for this channel.",
+                    f"Event {index} in channel {channel} was rejected from fitting: {e}",
                 )
                 total_events -= 1
                 continue
@@ -643,19 +655,24 @@ class MetaEventFitter(BaseDataPlugin):
                 self._reject_event(
                     channel,
                     index,
-                    str(e),
-                    f"Unknown error locating sublevels transitions for event {event}: {str(e)}",
+                    f"Plugin Error ({type(e).__name__})",
+                    f"Event {index} in channel {channel}: {type(e).__name__} while locating sublevel transitions: {e}",
+                    level=logging.ERROR,
+                    exc_info=True,
                 )
                 total_events -= 1
                 continue
 
-            if not isinstance(sublevel_starts, Iterable):
-                raise ValueError(
-                    "Sublevels is not an iterable. Please return a list of sublevel start points."
+            if not isinstance(sublevel_starts, Sized) or len(sublevel_starts) == 0:
+                self._reject_event(
+                    channel,
+                    index,
+                    "No Sublevels",
+                    f"Event {index} in channel {channel}: the fitter returned no sublevel boundaries",
+                    level=logging.ERROR,
                 )
-
-            if len(sublevel_starts) <= 0:
-                raise ValueError("Sublevels are empty.")
+                total_events -= 1
+                continue
 
             # if isinstance(sublevel_starts[0], int) and sublevel_starts[0] != 0:
             #    raise ValueError('Sublevels must include the start of the data block as the start of a sublevel') #must start counting at the start of the event, crash if not since things will break downstream otherwise
@@ -682,7 +699,7 @@ class MetaEventFitter(BaseDataPlugin):
                     channel,
                     index,
                     str(e),
-                    f"Error populating sublevel metadata for event {event}: {str(e)}",
+                    f"Event {index} in channel {channel} was rejected while populating sublevel metadata: {e}",
                 )
                 total_events -= 1
                 continue
@@ -690,8 +707,10 @@ class MetaEventFitter(BaseDataPlugin):
                 self._reject_event(
                     channel,
                     index,
-                    str(e),
-                    f"Unknown error populating sublevel metadata for event {event}: {str(e)}",
+                    f"Plugin Error ({type(e).__name__})",
+                    f"Event {index} in channel {channel}: {type(e).__name__} while populating sublevel metadata: {e}",
+                    level=logging.ERROR,
+                    exc_info=True,
                 )
                 total_events -= 1
                 continue
@@ -743,7 +762,7 @@ class MetaEventFitter(BaseDataPlugin):
                     channel,
                     index,
                     str(e),
-                    f"Error populating sublevel metadata for event {event}: {str(e)}",
+                    f"Event {index} in channel {channel} was rejected while populating event metadata: {e}",
                 )
                 total_events -= 1
                 continue
@@ -751,8 +770,10 @@ class MetaEventFitter(BaseDataPlugin):
                 self._reject_event(
                     channel,
                     index,
-                    str(e),
-                    f"Unknown error populating sublevel metadata for event {event}: {str(e)}",
+                    f"Plugin Error ({type(e).__name__})",
+                    f"Event {index} in channel {channel}: {type(e).__name__} while populating event metadata: {e}",
+                    level=logging.ERROR,
+                    exc_info=True,
                 )
                 total_events -= 1
                 continue
@@ -864,11 +885,16 @@ class MetaEventFitter(BaseDataPlugin):
 
         try:
             data_filter = self.applied_filters.get(channel)
+            # One load: the loader applies a filter to the array it has just read, so
+            # applying the same filter to the raw array here is the same computation
+            # without reading the event twice.
+            raw = self.eventloader.load_event(channel, index, None)["data"]
+            filtered = data_filter(raw) if data_filter is not None else raw
             return (
                 self.event_metadata[channel][index],
                 self.sublevel_metadata[channel][index],
-                self.eventloader.load_event(channel, index, data_filter)["data"],
-                self.eventloader.load_event(channel, index, None)["data"],
+                filtered,
+                raw,
                 self.construct_fitted_event(channel, index),
             )
         except KeyError as e:
