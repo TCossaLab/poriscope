@@ -46,6 +46,13 @@ class NoFitter(MetaEventFitter):
 
     logger = logging.getLogger(__name__)
 
+    #: The band, in local baseline sigmas, that decides where an edge is. Walking an edge,
+    #: a sample that differs from its neighbour by more than this is still on the edge,
+    #: and a sample within this of the baseline mean is baseline. Three sigma keeps a
+    #: noise excursion from extending a walk (0.13% of samples per side on Gaussian
+    #: noise) while every edge a finder would report moves far more than this per sample.
+    EDGE_BAND_SIGMA: float = 3.0
+
     # public API, must be overridden by subclasses:
     @log(logger=logger)
     @override
@@ -123,7 +130,8 @@ class NoFitter(MetaEventFitter):
                 raise AttributeError(
                     "NoFitter cannot operate without a linked MetaEventLoader"
                 )
-            # Each stored entry is (index, rise_time); only the index matters here.
+            # Each stored entry is (edge, statistics start, statistics end); only the
+            # edge matters here.
             sublevel_start_indices = [
                 entry[0] for entry in self.sublevel_starts[channel][index]
             ]
@@ -179,7 +187,20 @@ class NoFitter(MetaEventFitter):
         baseline_std: Optional[float],
     ) -> Optional[List[Any]]:
         """
-        Performs no changepoint search: locates a single baseline crossing by walking backward from padding_before until the signal crosses baseline_mean, and returns that point as the event's only sublevel edge. Returned indices are pre-pended with 0 if 0 is not already the first entry.
+        Performs no changepoint search: the event is one level between the two edges the finder estimated, and each edge is walked to where it begins. Returned indices are pre-pended with 0 if 0 is not already the first entry.
+
+        The start of the event is where the signal first leaves the baseline: from the
+        finder's start estimate, which sits somewhere on the leading edge, walk back
+        while each sample is further from baseline than its predecessor by more than
+        ``EDGE_BAND_SIGMA`` local sigmas. The end of the event is where the return to
+        baseline begins: from the end estimate, walk back while the previous sample is
+        deeper by more than the band. The two rules mirror each other, so for a
+        symmetric edge both edges sit the same distance before the finder's estimates
+        and the duration is the finder's. The statistics of each sublevel are taken
+        over its steady part only: the leading padding up to the last sample within the
+        band of the baseline mean, the blockage from where the leading edge flattens
+        out to the end edge, the trailing padding from the first sample back within the
+        band of baseline.
 
         :param data: an array of data from which to extract the locations of sublevel transitions
         :type data: npt.NDArray[np.float64]
@@ -196,7 +217,7 @@ class NoFitter(MetaEventFitter):
 
 
 
-        :return: ``(index, rise_time)`` for each sublevel boundary - 0, the baseline crossing, the end of the event proper and ``len(data)`` - where ``rise_time`` is this event's walk-back from ``padding_before`` to the crossing, carried to :meth:`_populate_sublevel_metadata` in the list rather than on the instance.
+        :return: ``(edge, statistics_start, statistics_end)`` for each sublevel boundary - 0, the start of the event, the start of its return to baseline and ``len(data)`` - where the statistics range is the steady part of the sublevel that begins at ``edge``, carried to :meth:`_populate_sublevel_metadata` in the list rather than on the instance.
         :rtype: Optional[List[Any]]
 
         :raises ValueError: if the event is rejected. Note that ValueError will skip and reject the event but will not stop processing of the rest of the dataset
@@ -212,26 +233,63 @@ class NoFitter(MetaEventFitter):
             raise ValueError(
                 "NoFitter requires that baseline_mean, baseline_std, padding_before, and padding_after be reported and is unable to locate sublevel transitions without them"
             )
+        if (
+            padding_before <= 0
+            or padding_after <= 0
+            or padding_before + padding_after >= length
+        ):
+            raise ValueError(
+                "NoFitter requires baseline padding on both sides of the event"
+            )
         sign = np.sign(baseline_mean)
-        rise_time = 0
+        # positive inside a blockage, whichever sign the baseline has
+        deviation = (baseline_mean - data) * sign
+        band = self.EDGE_BAND_SIGMA * baseline_std
+        start_estimate = padding_before
+        end_estimate = length - padding_after
 
-        edges = [0]  # first sublevel starts at the start of the data block
-
-        k = padding_before
-        while data[k] * sign < baseline_mean * sign:  # find starting point
-            if k == 0:
-                raise ValueError(
-                    "Unable to locate a baseline crossing before the estimated event start"
-                )
-            k -= 1
-            rise_time += 1
-        edges = np.append(edges, k)  # add start point as an edge
-        edges = np.append(edges, len(data) - padding_after - rise_time)
-        edges = np.append(edges, length)  # mark the end of the event as an edge
-        # The rise time travels with the event in each entry, not on the instance: one
+        # The leading padding is baseline up to the last sample still within the band.
+        baseline_end = start_estimate
+        while baseline_end > 0 and deviation[baseline_end] > band:
+            baseline_end -= 1
+        if deviation[baseline_end] > band:
+            raise ValueError(
+                "Unable to locate a baseline crossing before the estimated event start"
+            )
+        # The event starts where the leading edge begins.
+        start = start_estimate
+        while start > 0 and deviation[start] - deviation[start - 1] > band:
+            start -= 1
+        # The blockage's steady part begins where the leading edge flattens out.
+        blockage_start = start_estimate
+        while (
+            blockage_start < length - 1
+            and deviation[blockage_start + 1] - deviation[blockage_start] > band
+        ):
+            blockage_start += 1
+        # The event ends where the return to baseline begins.
+        end = end_estimate
+        while end > 0 and deviation[end - 1] - deviation[end] > band:
+            end -= 1
+        # The trailing padding is baseline from the first sample back within the band.
+        baseline_start = end_estimate
+        while baseline_start < length - 1 and deviation[baseline_start] > band:
+            baseline_start += 1
+        if deviation[baseline_start] > band:
+            raise ValueError(
+                "Unable to locate a baseline crossing after the estimated event end"
+            )
+        if not (0 < baseline_end and start <= blockage_start < end and baseline_start < length):
+            raise ValueError("Unable to resolve the edges of the event")
+        # The geometry travels with the event in its entries, not on the instance: one
         # fitter fits every channel on a thread per channel, so a stored value was
         # replaced by another channel's event before _populate_sublevel_metadata read it.
-        return [(int(edge), rise_time) for edge in edges]
+        return [
+            (0, 0, int(baseline_end)),
+            (int(start), int(blockage_start), int(end)),
+            (int(end), int(baseline_start), length),
+            (length, length, length),
+        ]
 
     @log(logger=logger)
     @override
@@ -254,7 +312,7 @@ class NoFitter(MetaEventFitter):
         :type baseline_mean: Optional[float]
         :param baseline_std: the local standard deviation of the baseline current
         :type baseline_std: Optional[float]
-        :param sublevel_starts: the list of sublevel start indices located in self._locate_sublevel_transitions()
+        :param sublevel_starts: the ``(edge, statistics_start, statistics_end)`` entries located in self._locate_sublevel_transitions()
         :type sublevel_starts: List[Any]
 
         :return: a dict of lists of sublevel metadata values, one list entry per sublevel for each piece of metadata
@@ -268,33 +326,25 @@ class NoFitter(MetaEventFitter):
 
         sublevel_metadata = {}
 
-        # Each entry is (index, rise_time), as _locate_sublevel_transitions returns it;
-        # the rise time is this event's own. Multiply it to ignore more when averaging.
-        rise_time = int(sublevel_starts[0][1])
-        sublevel_starts = [int(entry[0]) for entry in sublevel_starts]
-        num_states = len(sublevel_starts) - 1
+        # Each entry is (edge, statistics_start, statistics_end), as
+        # _locate_sublevel_transitions returns it. Durations, times, deviations and the
+        # raw charge span the whole sublevel between edges; the current, its standard
+        # deviation and the blockage are taken over the steady part only, so neither
+        # edge skews them.
+        edges = [int(entry[0]) for entry in sublevel_starts]
+        num_states = len(edges) - 1
+        steady = [
+            (int(sublevel_starts[i][1]), int(sublevel_starts[i][2]))
+            for i in range(num_states)
+        ]
+        sublevel_starts = edges
         dt_us = 1.0 / samplerate * 1e6
         aC_pC = 1e-6
 
-        # average the current over the sublevel, ignoring the rise time
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", category=RuntimeWarning)
             sublevel_metadata["sublevel_current"] = np.array(
-                [
-                    (
-                        np.median(
-                            data[
-                                int(sublevel_starts[i] + rise_time) : int(
-                                    sublevel_starts[i + 1]
-                                )
-                            ]
-                        )
-                        if sublevel_starts[i] + rise_time < sublevel_starts[i + 1]
-                        else data[int(sublevel_starts[i + 1]) - 1]
-                    )
-                    for i in range(num_states)
-                ],
-                dtype=np.float64,
+                [np.median(data[lo:hi]) for lo, hi in steady], dtype=np.float64
             )
 
             if (
@@ -306,23 +356,8 @@ class NoFitter(MetaEventFitter):
             ):
                 raise ValueError("Baseline Mismatch")
 
-            # get the standard deviation over the sublevel, ignoring the rise time
             sublevel_metadata["sublevel_stdev"] = np.array(
-                [
-                    (
-                        np.std(
-                            data[
-                                int(sublevel_starts[i] + rise_time) : int(
-                                    sublevel_starts[i + 1]
-                                )
-                            ]
-                        )
-                        if sublevel_starts[i] + rise_time < sublevel_starts[i + 1]
-                        else baseline_std
-                    )
-                    for i in range(num_states)
-                ],
-                dtype=np.float64,
+                [np.std(data[lo:hi]) for lo, hi in steady], dtype=np.float64
             )
 
             # get the difference from the local baseline
@@ -332,31 +367,8 @@ class NoFitter(MetaEventFitter):
             )
             sublevel_metadata["sublevel_blockage"] = np.array(
                 [
-                    (
-                        (
-                            event_baseline
-                            - np.median(
-                                data[
-                                    int(sublevel_starts[i] + rise_time) : int(
-                                        sublevel_starts[i + 1]
-                                    )
-                                ]
-                            )
-                        )
-                        * np.sign(event_baseline)
-                        if sublevel_starts[i] + rise_time < sublevel_starts[i + 1]
-                        else np.max(
-                            np.absolute(
-                                data[
-                                    int(sublevel_starts[i]) : int(
-                                        sublevel_starts[i + 1]
-                                    )
-                                ]
-                                - event_baseline
-                            )
-                        )
-                    )
-                    for i in range(num_states)
+                    (event_baseline - np.median(data[lo:hi])) * np.sign(event_baseline)
+                    for lo, hi in steady
                 ],
                 dtype=np.float64,
             )

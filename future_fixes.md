@@ -47,46 +47,6 @@ promotion updates `.duplication-baseline.json` in the same commit; each track ed
 step sections here and its own changelog lines, and rebases onto `develop` before `feature finish`.
 Step 10 waits for both tracks.
 
-### Step 5 - event fitters and the fit loop
-
-- **`IntraCUSUM` defaults make it count noise**: threshold and hysteresis both 0.0 (`:89`,
-  `:95`) scored 499 crossings on a clean single level (2 at T=200, H=20); nothing checks
-  hysteresis < threshold.
-- **Silent scientific fallbacks with no metadata flag, in `CUSUM.py`.** For a sublevel shorter
-  than `rise_time`: `sublevel_current` becomes the single last sample (`:439`), `sublevel_stdev`
-  becomes `baseline_std` (`:467`), `sublevel_blockage` an unsigned max-absolute (`:494-503`). The
-  retry loop at `:371-373` fits different events at 1.5^0 to 1.5^4 times the step size and records
-  which nowhere. `:216`'s `np.std(data[-padding_after:])` returns the whole event when
-  `padding_after == 0` and its sibling returns `nan` when `padding_before == 0`, poisoning
-  `step_size` at `:222`. `Step Size` has no default (`:92`) and `_validate_settings` is `pass`
-  (`:658-665`), so `None`/`0.0` reach the division.
-- **CUSUM resets only on an accepted jump** (`CUSUM.py:316`); the C resets on any threshold
-  crossing, so a crossing rejected by the `rise_time` guard still accumulates `varS` and leaves
-  `gpos`/`gneg` above threshold to re-detect the same jump. Validate against reference data first.
-- **The `length - jump > rise_time` half of the C's edge guard is missing** (`CUSUM.py:302-303`).
-- **`ClassicCUSUM` merges short levels on a median but reports them on CUSUM's single-sample
-  fallback**, so merge decision and reported current use different estimators.
-- **`ClassicCUSUM` resolves fewer planted levels at *higher* SNR.** On Bessel-filtered synthetic
-  staircases (100 kHz, 8 poles, 500 kHz sampling; steps 150 pA, 40 samples; Step Size 10 σ,
-  Rise Time 16 µs) it found the planted three levels on 0 of 25 events at drawn noise 15 pA
-  (stored σ 6.2) but 25 of 25 at 50 pA (σ 20.8), and 22 of 25 against CUSUM's 25 of 25 at
-  83-sample steps and 15 pA. CUSUM and IntraCUSUM on the same data: 25 of 25 at both noise
-  levels. Measured 2026-10-05 while re-measuring ruling A; the σ-normalised step and the
-  median merge in `_locate_sublevel_transitions` are the suspects. Pinned by a step 1 `xfail`.
-- **`NoFitter` places event edges asymmetrically** (`:228-229`): the start walks back to the
-  baseline crossing, the end sits `rise_time` before the threshold crossing (838 against 860 on a
-  40-sample ramp), so the overlay and `raw_ecd` shift left.
-- **`fit_events` turns plugin bugs into scientific rejection reasons.** Three
-  `except ValueError`/`except Exception` pairs (`:633/642`, `:680/689`, `:741/750`) route through
-  `_reject_event:463` keyed on `str(e)`, so a `TypeError` lands in the rejection table beside
-  "Too Few Levels" and the channel finishes with `eventfitting_status = True` (`:775`). `:652`
-  checks `Iterable` then `:657` calls `len()`; `fit_events(indices=[])` marks the channel fitted
-  while the docstring at `:524` says it fits everything.
-- **`fit_events` logs noisily**: INFO `index/total_events` per event (`:557`), wrong for index
-  subsets; the generic branch interpolates the whole event dict (`:647`); "No further warnings of
-  this type" (`:638`) then warns every time. **`get_single_event_metadata` loads each event twice**
-  (`:870-871`).
-
 ### Step 6 - database and the event-data contract
 
 - **No schema version, and the compatibility check has a dead branch.** No `PRAGMA user_version`
@@ -191,6 +151,14 @@ Step 10 waits for both tracks.
 - **The PeakFinders write the duration unit as `"μs"`** (`Basic_PeakFinder.py:1197`,
   `PeakFinder.py:2068`) where the other 53 unit sites write `"us"`: one unit, two spellings in
   the database. Settle on `"us"` while the PeakFinder signatures are open.
+- **`PeakFinder.py:1019-1045` carries the CUSUM detector the shipped family fixed in step 5**:
+  the reset gated on an accepted jump (variance 195-442 σ² after a rejected crossing, blind to the
+  steps behind a large edge) and `varS = 0` outside the loop (`:1045`). Kyle applies both with
+  the PeakFinder work here (2026-10-07).
+- **`_populate_event_metadata` cannot see the located edges**, so a fitter has no per-event
+  diagnostics path: CUSUM's `Max Sublevels` retry (`CUSUM.py`, step ×1.5 up to four times)
+  records which factor fitted an event nowhere. Pass `sublevel_starts` to the hook while the
+  `Meta*` signatures are open (`DECISIONS.md` 2026-10-07); CUSUM then records its scale in one line.
 
 ### Step 9a - analysis-tab views (Carolina's track)
 

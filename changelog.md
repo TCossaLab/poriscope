@@ -12,6 +12,10 @@
 
 * **The Bessel filter now accepts low cutoffs it used to refuse as numerically unstable** (25 kHz on a 4.17 MHz recording, for one): it is built as second-order sections, which are stable at any cutoff below half the sample rate; filtered values at previously accepted cutoffs move by less than a thousandth of the noise
 
+* **The CUSUM family (`CUSUM`, `ClassicCUSUM`, `IntraCUSUM`) now resolves the sublevels that follow a large edge:** the detector restarts its statistics at every threshold crossing, as the reference C implementation does, and refuses a transition within a rise time of the end of the event; on planted staircases `ClassicCUSUM` went from one level found on every event to the three planted at high signal-to-noise, so fits of real data will report more sublevels than before
+
+* **`NoFitter` now places an event's start where the signal leaves the baseline and its end where the return to baseline begins, judged by the slope of each edge rather than by a walk to the baseline mean:** on low-pass noise that walk overran the edge by a random eight samples on average, so start and end times move later by about that much, durations are unchanged, the blockage current and standard deviation are now taken over the steady part between the edges, and the reported baseline standard deviation is no longer inflated by the edge (three times the true value before)
+
 * **Results can move by one sample at a chunk boundary:** a reader now rounds a seconds request to the nearest sample instead of truncating it, so chunked reads (the Raw Data trace, event finding, loading an event's padded window) no longer duplicate one sample and drop another where a chunk boundary fell on an index whose time did not convert back exactly
 
 ### Developer Tooling:
@@ -57,6 +61,18 @@
 * A recording whose files disagree on sample rate is now refused with a message naming the file, where before only each channel's first file was checked and the rest were read at its rate
 
 * Event finding with a chunk length under one sample (reachable through the plugin API; the Raw Data tab always passes one second) now reads one-second chunks instead of looping forever
+
+* **Event fitting no longer counts a fitter's own failure on an event as a scientific rejection reason:** an exception other than a `ValueError` from the fitter is tallied as `Plugin Error (<type>)` with its traceback in the log, the event is skipped and the channel finishes, so a fault that hits every event reads as "0 of N good fits" with that reason rather than a channel left incomplete or a table of rejections named after a Python error message
+
+* A fitter that returns no sublevel boundaries for an event now has that event rejected as "No Sublevels" instead of stopping the channel
+
+* `fit_events(indices=[])` now fits every event, as its documentation always said, instead of marking the channel fitted with nothing in it; the log no longer prints a progress fraction per event, and a rejection message names the event rather than printing its whole data dictionary
+
+* Reading back an event's metadata and traces loads the event once and applies the fit's filter to it, instead of loading it twice
+
+* **A CUSUM-family fitter now refuses a `Step Size` of 0 when its settings are applied**, where before the zero reached the detector as a division by zero and was counted as a rejection of every event; `IntraCUSUM` likewise refuses an `Intraevent Hysteresis` above its `Intraevent Threshold`, and its threshold no longer defaults to 0 pA (which counted noise crossings) but must be set, as `Step Size` and `Rise Time` already must
+
+* A CUSUM-family fitter handed an event with no reported baseline sigma and an empty padding on the only side it had now rejects that event for that reason, where before it ran the detector against a `nan` or whole-event sigma and reported "Too Few Levels"
 
 ### Documentation:
 

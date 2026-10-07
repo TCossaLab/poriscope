@@ -1,5 +1,6 @@
 """Unit tests for MetaEventFitter abstract base class."""
 
+import logging
 from typing import Any, Callable, Dict, List, Optional, Type, Union
 
 import numpy as np
@@ -587,6 +588,77 @@ class TestMetaEventFitter:
 
         assert fitter.rejected[0] == {"Non-finite Data": 1}
         assert fitter.event_metadata[0] == {}
+
+    def test_fit_events_with_an_empty_index_list_fits_every_event(
+        self, fitter: ConcreteEventFitter
+    ) -> None:
+        """An empty list means every event, as the docstring says, not none of them."""
+        list(fitter.fit_events(0, indices=[]))
+
+        assert sorted(fitter.event_metadata[0]) == list(range(10))
+        assert fitter.eventfitting_status[0] is True
+
+    def test_a_plugin_fault_rejects_the_event_by_type_and_the_channel_finishes(
+        self, fitter: ConcreteEventFitter, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """
+        An exception other than ValueError from a fitter hook is the fitter's fault, not a
+        property of the event: it is tallied under the exception's type, logged at ERROR
+        with its traceback, and the other events are fitted as usual.
+        """
+        locate = fitter._locate_sublevel_transitions
+        seen: List[int] = []
+
+        def faulty(data, *args):  # type: ignore[no-untyped-def]
+            seen.append(len(seen))
+            if len(seen) == 2:
+                raise TypeError("unsupported operand")
+            return locate(data, *args)
+
+        fitter._locate_sublevel_transitions = faulty  # type: ignore[method-assign]
+        with caplog.at_level(logging.ERROR):
+            list(fitter.fit_events(0, indices=[0, 1, 2]))
+
+        assert fitter.rejected[0] == {"Plugin Error (TypeError)": 1}
+        assert sorted(fitter.event_metadata[0]) == [0, 2]
+        assert fitter.eventfitting_status[0] is True
+        faults = [r for r in caplog.records if r.levelno == logging.ERROR]
+        assert len(faults) == 1 and faults[0].exc_info is not None
+        assert "TypeError" in faults[0].getMessage()
+
+    def test_a_fitter_returning_no_sublevels_rejects_that_event(
+        self, fitter: ConcreteEventFitter
+    ) -> None:
+        """A None or empty return rejects the event as "No Sublevels" and the channel finishes."""
+        fitter._locate_sublevel_transitions = lambda *args: None  # type: ignore[method-assign]
+        list(fitter.fit_events(0, indices=[0, 1]))
+
+        assert fitter.rejected[0] == {"No Sublevels": 2}
+        assert fitter.event_metadata[0] == {}
+        assert fitter.eventfitting_status[0] is True
+
+    def test_get_single_event_metadata_loads_the_event_once(
+        self, fitter: ConcreteEventFitter
+    ) -> None:
+        """The raw event is read once and the applied filter is run on it for the filtered trace."""
+
+        def doubling(data: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
+            return data * 2
+
+        list(fitter.fit_events(0, data_filter=doubling, indices=[0]))
+        loader = fitter.eventloader
+        original = loader.load_event
+        calls: List[Optional[Callable]] = []
+
+        def counting(channel: int, index: int, data_filter: Optional[Callable] = None) -> dict:
+            calls.append(data_filter)
+            return original(channel, index, data_filter)
+
+        loader.load_event = counting  # type: ignore[method-assign]
+        _meta, _sub, filtered, raw, _fit = fitter.get_single_event_metadata(0, 0)
+
+        assert len(calls) == 1
+        np.testing.assert_allclose(filtered, raw * 2)
 
 
 if __name__ == "__main__":

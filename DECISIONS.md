@@ -18,6 +18,157 @@ and deleted on 2026-09-27; it too is in git history.
 
 ---
 
+## 2026-10-07 - CUSUM's retry factor is not recorded in 2.1; the hook gets the edges in step 8
+
+**Context.** With `Max Sublevels` set, `_locate_sublevel_transitions` retries at 1.5× the
+step size up to four times when it finds too many levels, and records which factor an
+event was finally fitted at nowhere. The 2.1 plan listed "the retry factor recorded".
+
+**Decision** (Kyle, 2026-10-07, as recommended). Dropped from step 5. The value would
+have to travel from the detector to `_populate_event_metadata`, which receives the data,
+the rates and the sublevel metadata but not the located edges or the event index, and
+instance state races across the per-channel threads; the only carriers are a sublevel
+column repeated on every row or a `Meta*` signature change. The signature change is the
+right one and is queued under step 8 with the other breaks: `_populate_event_metadata`
+receives `sublevel_starts`, giving every fitter a per-event diagnostics path.
+
+**Evidence.** No event on any planted band needed a retry (`Max Sublevels` 10). The retry
+runs only when the user sets the cap and is described on the setting.
+
+**Revisit** in step 8, where it lands.
+
+---
+
+## 2026-10-07 - A fitter fault on an event is a rejection of that event, never an abort
+
+**Context.** `MetaEventFitter.fit_events` wrapped each fitter hook in `except ValueError`
+and `except Exception`, both routed through `_reject_event` keyed on `str(e)`, so a
+`TypeError` in a plugin landed in the rejection table beside "Too Few Levels" under its
+message text, at INFO, and the channel finished as fitted; a hook returning something
+that was not a sequence raised out of the generator and left the channel "fitting
+incomplete". The question was whether a plugin exception should abort the channel.
+
+**Decision** (Kyle, 2026-10-07). Never abort on a per-event fault and make no judgment
+about whether it is systematic: tally it as `Plugin Error (<exception type>)`, log it at
+ERROR with the traceback, skip the event and finish the channel, so a fault that hits
+every event shows as "0 of N good fits" with its reason and the user decides. A `None`
+or empty return is tallied as "No Sublevels" the same way. What still stops the channel
+is malformed loader data (the declared `TypeError`/`ValueError`) and a fitter whose
+declared columns omit `sublevel_duration`, which is wrong for every event by
+construction and is the plugin's declaration, not its data.
+
+**Evidence.** The alternative, aborting after the first N consecutive faults, needs a
+threshold nobody can justify and turns a bad event near the start of a channel into a
+lost channel; the report already carries counts per reason. `Worker.process_generator`
+shows an escaping exception on the status panel, so the abort path stays usable for the
+contract failures that keep it.
+
+**Revisit if** a fitter needs to signal "stop this channel" deliberately - that would
+be a declared exception type on the base, not `except Exception`.
+
+---
+
+## 2026-10-07 - CUSUM-family settings: no defaults for the physical ones, zero refused
+
+**Context.** `Step Size` and `Rise Time` ship without a default; `IntraCUSUM`'s
+`Intraevent Threshold` and `Intraevent Hysteresis` defaulted to 0.0. A zero threshold
+counts every noise crossing of the carrier level (1,006 crossings on a clean σ 10 pA
+level), and a zero `Step Size` passes the base range check (`Min: 0.0`) and reaches
+`ARL`'s `h / s` as a `ZeroDivisionError` that `fit_events` tallies as a rejection reason
+on every event. `_validate_settings` was `pass` in every fitter.
+
+**Decision** (Kyle, 2026-10-07). `Step Size` and `Rise Time` stay required: no value is
+right across instruments and filters, and the dialog already shows an empty field for a
+required setting. `Intraevent Threshold` becomes required for the same reason;
+`Intraevent Hysteresis` keeps 0.0. `CUSUM._validate_settings` refuses a step size that is
+not larger than zero and `IntraCUSUM._validate_settings` a hysteresis above its threshold,
+both as `ValueError` at `apply_settings`, where the dialog reports them.
+
+**Evidence.** The probes above; no shipped flow or test instantiates `IntraCUSUM` from
+its defaults (the conformance and ground-truth recipes set the threshold explicitly), so
+nothing else moves.
+
+**Revisit if** a default step size can be derived from the data the fitter is attached
+to - the loader's reported baseline sigma would make a σ-denominated default possible.
+
+---
+
+## 2026-10-07 - NoFitter's edges are where each edge begins, found by its slope
+
+**Context.** NoFitter walked back from the finder's start estimate to the first sample at
+or above the baseline mean and called the count `rise_time`; the start edge went to that
+sample and the end edge to the end estimate minus the same count. The geometry was the
+intended one - the start where the signal leaves baseline, the end where the return
+begins (Kyle, 2026-10-07) - but on low-pass noise the stop rule is a coin flip per
+sample once the signal is back on baseline: the walk averaged 8 samples and reached 33
+(43 on 20 kHz edges). Both edges landed a random distance early, the blockage median
+lost the same random number of steady samples and slid onto a ramp (2.2 σ error at
+40-sample steps, 16.8 σ at 20), and the trailing padding's statistics began inside the
+blockage's own edge (`baseline_stdev` 3.05× planted at 15 pA, 10.7× on slow edges).
+
+**Decision** (Kyle, 2026-10-07). Walk each edge by its slope with a band of 3 local
+sigmas: the start is where, walking back from the start estimate, consecutive samples
+stop differing by more than the band; the end is the same rule walked back from the end
+estimate. The statistics of each sublevel cover its steady part only - the leading
+padding to the last sample within the band of baseline, the blockage from where the
+leading edge flattens out to the end edge, the trailing padding from the first sample
+back within the band. No setting: NoFitter stays the fitter that adds none, and the band
+is a class constant. Rejected without running: mirroring the walk at the end (durations
+would grow by two noise-driven walks), and edges at the estimates with untrimmed
+statistics (`baseline_stdev` 3.9× - the padding then holds the half-edge). Edges at the
+estimates with trimmed padding statistics measured as well as the chosen rule on
+everything but your definition of the edges.
+
+**Evidence** (planted bands, 25 events each; the 20 kHz slow-edge fixture, 10). Start and
+end offsets from the planted 50% points: −3.7 / −4.0 at 15 pA, −2.0 / −3.0 at 50 pA,
+0.0 / −1.9 at 100 pA (the band exceeds the per-sample step), −12.0 / −12.1 on slow edges;
+duration within 1-2 samples everywhere; blockage current 0.57 σ at 83-sample steps, 1.25
+at 40, 1.68 at 20, 0.78 on slow edges; `baseline_stdev` 0.92-0.96 of planted (0.76 on the
+57-sample slow-edge padding, a small-sample effect of heavily correlated noise). A band
+of 2 σ let noise extend the start walk (offsets to −8) with no gain elsewhere.
+
+**Revisit if** a finder reports its estimates off the edge (on the plateau or in the
+baseline): the slope walk assumes the estimate sits on the edge, and a flat stretch
+between the estimate and the edge would leave the edge at the estimate.
+
+---
+
+## 2026-10-07 - The CUSUM detector resets on every threshold crossing
+
+**Context.** `3c755291` (2026-05-01) gated the detector's reset behind an accepted jump,
+departing from the C reference, to cure variance inflation after a transition; `f7b97900`
+(2026-09-03) then reset `varS` inside that block. The step 1 harness showed `ClassicCUSUM`
+finding one inner level on 25/25 planted events at 15 pA / 40-sample steps and 22/25 at
+83, while finding 25/25 at 50 pA.
+
+**Decision** (Kyle, 2026-10-07). Reset on every crossing, accepted or not, and guard the end
+of the data as the C does (`length - jump > rise_time`). The fix lands once in `CUSUM.py`
+and reaches `ClassicCUSUM` and `IntraCUSUM` by inheritance; `PeakFinder.py:1019-1045`
+(gated reset, `varS` reset outside the loop) waits for Kyle's step 8 PeakFinder work. The
+C reference is public (<https://github.com/shadowk29/CUSUM>, `detector.c`); its core maths
+is the Python's, its wrapping logic is not a target.
+
+**Evidence.** Trace of one event (Classic, 10 σ, threshold 0.4): the 64 σ leading edge is
+accepted at k = 98 mid-ramp; at k = 100 the still-falling signal crosses again, the jump
+lands at 99 and the rise-time guard rejects it; with no reset the anchor stays at 98 and
+Welford's variance from it swallows the rest of the ramp (195 to 442 σ² over k = 100-104,
+decaying as 1/(k − anchor)); `logp`/`logn` scale as 1/variance, so 145 consecutive
+crossings re-locate the same rejected jump and the 24 σ steps at 140 and 180 never
+register - edges `[0, 98, 219]`. With the C reset the anchor moves at 100 and 102, the
+variance returns to 2-4 σ², edges `[0, 98, 139, 179, 217]` against planted 100/140/180/220.
+The inflation scales with (edge/σ)², which is why it showed at *higher* SNR. Planted bands:
+Classic 22/25 → 25/25 and 0/25 → 25/25 at 15 pA; CUSUM/IntraCUSUM 24/25 → 25/25 at 50 pA;
+every variant resolves the 20-sample band (0/25 → 25/25, current ≤ 1.78 σ); the 100 pA
+informative band 9/25 → 11/25; currents and durations elsewhere unchanged; no retries and
+no trailing sublevel ≤ rise time with or without the guard. The guard is neutral on these
+bands and makes the sublevel-shorter-than-rise-time fallbacks unreachable (0 of ~1,900
+sublevels hit them before), so they are deleted rather than flagged in metadata.
+
+**Revisit if** a recording shows the reset on a rejected crossing discarding evidence of a
+true transition that the gated form would have kept.
+
+---
+
 ## 2026-10-06 - A filter declares the settings its data must match; the caller verifies
 
 **Context.** `BesselFilter` takes `Samplerate` as a setting the user types, and nothing checks
@@ -472,7 +623,10 @@ channel on a thread per channel, so another channel's event could replace it in 
 **Decision** (Kyle, 2026-09-25). Carry it in the sublevel list the base already passes from
 one step to the next - `List[Any]` exists to carry such per-sublevel information - as
 `(index, rise_time)` entries. No contract change: serialising NoFitter would cost
-parallelism, and neither step is given the channel to key a dict by.
+parallelism, and neither step is given the channel to key a dict by. **Amended
+2026-10-07:** the entries now carry `(edge, statistics_start, statistics_end)` - the
+rise time is gone with the walk that measured it (see the entry of that date) - and the
+mechanism, per-event geometry riding in the list, stands.
 
 **Evidence.** An event located in between shifted `sublevel_stdev` by 8.5 in a
 single-threaded interleave test, which now passes; conformance is unchanged.
