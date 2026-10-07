@@ -220,17 +220,42 @@ class TestLocateSublevelTransitions(unittest.TestCase):
         edges = pf._locate_sublevel_transitions(
             self._ramped_event(), 1e6, 10, 10, 200.0, 5.0
         )
-        # start where the signal leaves baseline (7), the blockage's steady part from the
-        # foot of the leading edge (11) to where the return begins (37), the trailing
-        # padding's statistics from the first sample back at baseline (41)
-        self.assertEqual(edges, [(0, 0, 7), (7, 11, 37), (37, 41, 50), (50, 50, 50)])
+        # start at the first sample off the baseline (8), the blockage's steady part from
+        # the foot of the leading edge (11) to the last sample at the blocked level (37),
+        # so the return begins at 38; the trailing padding's statistics from the first
+        # sample back at baseline (41)
+        self.assertEqual(edges, [(0, 0, 8), (8, 11, 38), (38, 41, 50), (50, 50, 50)])
 
     def test_negative_baseline_mirrors_positive_case(self):
         pf = object.__new__(NoFitter)
         edges = pf._locate_sublevel_transitions(
             self._ramped_event(sign=-1.0), 1e6, 10, 10, -200.0, 5.0
         )
-        self.assertEqual(edges, [(0, 0, 7), (7, 11, 37), (37, 41, 50), (50, 50, 50)])
+        self.assertEqual(edges, [(0, 0, 8), (8, 11, 38), (38, 41, 50), (50, 50, 50)])
+
+    def test_estimates_in_the_baseline_and_noise_bumps_do_not_move_the_edges(self):
+        # The shipped finders put both estimates in the baseline some way out from the
+        # edges. Between the end estimate and the trailing edge sit two excursions: two
+        # samples 30 pA off (too short to be sustained) and four samples 20 pA off
+        # (sustained, but never reaching twice the 15 pA band). Neither is the edge.
+        pf = object.__new__(NoFitter)
+        data = np.full(120, 200.0)
+        data[30:34] = [175.0, 150.0, 125.0, 100.0]
+        data[34:70] = 100.0
+        data[70:74] = [125.0, 150.0, 175.0, 200.0]
+        data[85:87] = 170.0
+        data[90:94] = 180.0
+        edges = pf._locate_sublevel_transitions(data, 1e6, 20, 20, 200.0, 5.0)
+        self.assertEqual(edges, [(0, 0, 30), (30, 33, 70), (70, 73, 120), (120, 120, 120)])
+
+    def test_an_estimate_on_the_edge_itself_gives_the_same_edges(self):
+        pf = object.__new__(NoFitter)
+        data = np.full(120, 200.0)
+        data[30:34] = [175.0, 150.0, 125.0, 100.0]
+        data[34:70] = 100.0
+        data[70:74] = [125.0, 150.0, 175.0, 200.0]
+        edges = pf._locate_sublevel_transitions(data, 1e6, 32, 48, 200.0, 5.0)
+        self.assertEqual(edges, [(0, 0, 30), (30, 33, 70), (70, 73, 120), (120, 120, 120)])
 
     def test_first_and_last_edges_match_data_bounds(self):
         pf = object.__new__(NoFitter)
@@ -242,7 +267,7 @@ class TestLocateSublevelTransitions(unittest.TestCase):
     def test_no_baseline_before_the_event_is_rejected(self):
         pf = object.__new__(NoFitter)
         data = np.full(50, 100.0)  # never within the band of the 200 pA baseline
-        with self.assertRaisesRegex(ValueError, "before the estimated event start"):
+        with self.assertRaisesRegex(ValueError, "edges"):
             pf._locate_sublevel_transitions(data, 1e6, 10, 5, 200.0, 5.0)
 
     def test_a_missing_or_empty_padding_is_rejected(self):
@@ -318,6 +343,20 @@ class TestPopulateSublevelMetadata(unittest.TestCase):
         # diff = 10 = 2*5, not strictly greater -> should not raise
         meta = pf._populate_sublevel_metadata(data, 1e6, 200.0, 5.0, starts)
         self.assertIn("sublevel_current", meta)
+
+    def test_the_blocked_current_is_the_mean_of_every_blocked_state(self):
+        # Two blocked states, 60 samples at 100 pA and 40 at 150 pA: NoFitter reports the
+        # average of the blocked stretch (120), not the longer state a median would give.
+        pf = _make_pf()
+        data = np.concatenate(
+            [np.full(20, 200.0), np.full(60, 100.0), np.full(40, 150.0), np.full(20, 200.0)]
+        )
+        edges = pf._locate_sublevel_transitions(data, 1e6, 20, 20, 200.0, 5.0)
+        meta = pf._populate_sublevel_metadata(data, 1e6, 200.0, 5.0, edges)
+        self.assertEqual(edges[1][0], 20)
+        self.assertEqual(edges[2][0], 120)
+        np.testing.assert_allclose(meta["sublevel_current"], [200.0, 120.0, 200.0])
+        np.testing.assert_allclose(meta["sublevel_blockage"], [0.0, 80.0, 0.0])
 
     def test_statistics_come_from_the_steady_part_only(self):
         # Edges inside each sublevel's extent: the current, its standard deviation and
@@ -541,7 +580,7 @@ class TestGeometryTravelsWithTheEvent(unittest.TestCase):
         other_event = np.full(50, 200.0)  # flat: edges at the estimates
 
         edges = pf._locate_sublevel_transitions(this_event, 1e6, 10, 5, 200.0, 5.0)
-        self.assertEqual(edges[1][0], 7, edges)  # the walk found the edge
+        self.assertEqual(edges[1][0], 8, edges)  # the walk found the edge
         expected = pf._populate_sublevel_metadata(this_event, 1e6, 200.0, 5.0, edges)
 
         pf._locate_sublevel_transitions(other_event, 1e6, 10, 5, 200.0, 5.0)

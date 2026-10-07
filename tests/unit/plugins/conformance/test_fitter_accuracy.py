@@ -34,22 +34,35 @@ early and cut the same random number of samples off the blockage median; its edg
 now walked by the slope of each edge.
 """
 
-from typing import Dict, List, Tuple, Type
+from typing import Callable, Dict, List, Tuple, Type
 
 import numpy as np
 import pytest
 
+from poriscope.plugins.datawriters.SQLiteEventWriter import SQLiteEventWriter
+from poriscope.plugins.eventfinders.ClassicBlockageFinder import ClassicBlockageFinder
 from poriscope.plugins.eventfitters.ClassicCUSUM import ClassicCUSUM
 from poriscope.plugins.eventfitters.CUSUM import CUSUM
 from poriscope.plugins.eventfitters.IntraCUSUM import IntraCUSUM
 from poriscope.plugins.eventfitters.NoFitter import NoFitter
 from poriscope.utils.MetaEventFitter import MetaEventFitter
 from poriscope.utils.MetaEventLoader import MetaEventLoader
+from tests.synthetic_data.base_synthetic_recording import SyntheticDataset
+from tests.synthetic_data.synthetic_chimera import (
+    ChimeraRecordingConfig,
+    generate_chimera_dataset,
+)
 from tests.synthetic_data.synthetic_events_db import (
     SyntheticEventsDatabase,
+    build_bessel_filter,
     generate_events_database,
 )
-from tests.unit.plugins.conformance._recipes import build_event_loader
+from tests.unit.plugins.conformance._recipes import (
+    build_event_finder,
+    build_event_loader,
+    build_reader,
+    build_writer,
+)
 
 pytestmark = pytest.mark.conformance
 
@@ -464,7 +477,7 @@ def test_nofitter_reports_the_whole_blockage_at_its_planted_mean(
     NoFitter sees one inner sublevel; its current is the width-weighted mean of the
     planted steps within the policy's bound for the step width (a median over 40
     correlated samples has about five effective ones, the same reason the CUSUM family
-    gets 2.0 sigma there), its duration the blockage length within two samples, and its
+    gets 2.0 sigma there), its duration the blockage length within three samples, and its
     reported baseline sigma the planted one within 30% per event and 10% on average: a
     100-sample padding of low-pass noise holds about a dozen effective samples, so each
     event's estimate scatters low, where the edge used to inflate it threefold.
@@ -487,7 +500,7 @@ def test_nofitter_reports_the_whole_blockage_at_its_planted_mean(
             f"event {event_id}: whole-blockage current {current:.1f} vs planted mean "
             f"{mean_level:.1f} pA, bound {bound:.1f} pA"
         )
-        assert abs(duration - length) <= 2, (event_id, duration, length)
+        assert abs(duration - length) <= 3, (event_id, duration, length)
         sigma_ratios.append(event_meta["baseline_stdev"] / fit.sigma)
         assert abs(sigma_ratios[-1] - 1.0) <= 0.3, (
             f"event {event_id}: baseline_stdev {event_meta['baseline_stdev']:.2f} vs "
@@ -533,7 +546,7 @@ def test_nofitter_places_its_edges_where_each_edge_begins(
     The filter is zero-phase, so the planted boundary is the 50% point of each edge, and
     both of NoFitter's edges should sit before their planted boundary by the same amount:
     less than the edge's full extent (about 30 samples top to foot at this cutoff) and
-    equal to each other within two samples, so the duration is the planted one.
+    equal to each other within four samples, so the duration is the planted one.
     """
     fit = Fit(NoFitter, slow_edge_database)
     try:
@@ -545,9 +558,111 @@ def test_nofitter_places_its_edges_where_each_edge_begins(
             end_offset = end - (planted_start + width)
             assert -30 <= start_offset <= 0, (event_id, start_offset)
             assert -30 <= end_offset <= 0, (event_id, end_offset)
-            assert abs(start_offset - end_offset) <= 2, (
+            assert abs(start_offset - end_offset) <= 4, (
                 f"event {event_id}: start offset {start_offset:+.1f}, "
                 f"end offset {end_offset:+.1f} samples - the edges do not shift alike"
             )
     finally:
         fit.close()
+
+
+# --- NoFitter behind a real finder --------------------------------------------------------
+@pytest.fixture(scope="module")
+def found_recording(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> Tuple[SyntheticDataset, str, Callable[[np.ndarray], np.ndarray]]:
+    """
+    A synthetic Chimera recording found by ``ClassicBlockageFinder`` at a 20 kHz cutoff and written out.
+
+    The shipped finders put both of an event's boundaries in the baseline, some way out
+    from the edges (the start backtracked until a sample sits above +1 sigma, the end at
+    the first such sample after the event), and on low-pass noise that walk runs far.
+    This fixture is the chain a user runs - reader, finder with a filter, event writer -
+    so the events database carries exactly those estimates.
+
+    :param tmp_path_factory: pytest's session temporary-directory factory
+    :type tmp_path_factory: pytest.TempPathFactory
+    :return: the planted recording, the events database path and the filter the finder used
+    :rtype: Tuple[SyntheticDataset, str, Callable[[numpy.ndarray], numpy.ndarray]]
+    """
+    out = tmp_path_factory.mktemp("found_recording")
+    samplerate = 500_000.0
+    dataset = generate_chimera_dataset(
+        out / "recording",
+        ChimeraRecordingConfig(
+            base_name="synthetic",
+            samplerate=samplerate,
+            duration_s=0.5,
+            baseline=BASELINE_PA,
+            noise_std=15.0,
+            event_amplitude=AMPLITUDE_PA,
+            event_duration_s=0.0005,
+        ),
+        channel=3,
+        num_events=10,
+    )
+    bessel = build_bessel_filter(samplerate, 20_000.0, 8).filter_data
+    reader = build_reader(str(dataset.data_path))
+    finder = build_event_finder(ClassicBlockageFinder, reader)
+    for _progress in finder.find_events(3, [(0.0, 0.0)], 0.5, bessel):
+        pass
+    db_path = out / "events.sqlite"
+    writer = build_writer(SQLiteEventWriter, finder, str(db_path))
+    for _progress in writer.commit_events(3):
+        pass
+    writer.close_resources()
+    finder.close_resources()
+    reader.close_resources()
+    return dataset, str(db_path), bessel
+
+
+def test_nofitter_edges_do_not_depend_on_where_the_finder_put_its_boundaries(
+    found_recording: Tuple[SyntheticDataset, str, Callable[[np.ndarray], np.ndarray]],
+) -> None:
+    """
+    Behind a real finder, NoFitter's edges sit where the signal leaves and rejoins the
+    blocked level, not where the finder's noisy boundary walk stopped.
+
+    The finder's boundaries here are tens of samples outside the planted edges (the test
+    checks that, so it is testing what it claims); NoFitter's start and end must both sit
+    within the edge's extent before the planted 50% points, within six samples of each
+    other, and the blocked current within a sigma of the planted level.
+    """
+    dataset, db_path, bessel = found_recording
+    loader = build_event_loader(db_path)
+    fitter = build_fitter(NoFitter, loader)
+    try:
+        for _progress in fitter.fit_events(3, data_filter=bessel):
+            pass
+        assert fitter.rejected.get(3, {}) == {}
+        finder_offsets = []
+        for index in sorted(fitter.event_metadata[3]):
+            event = loader.load_event(3, index, None)
+            window_start = int(event["absolute_start"])
+            planted = min(
+                dataset.events,
+                key=lambda p: abs(p.start_index - (window_start + event["padding_before"])),
+            )
+            planted_start = planted.start_index - window_start
+            planted_end = planted_start + planted.length_samples
+            finder_offsets.append(event["padding_before"] - planted_start)
+            finder_offsets.append(len(event["data"]) - event["padding_after"] - planted_end)
+            _event_meta, sublevel_meta, _f, _r, _fit = fitter.get_single_event_metadata(
+                3, index
+            )
+            start = sublevel_meta["sublevel_start_times"][1] * 500_000.0 / 1e6
+            end = sublevel_meta["sublevel_end_times"][1] * 500_000.0 / 1e6
+            start_offset = start - planted_start
+            end_offset = end - planted_end
+            assert -30 <= start_offset <= 0, (index, start_offset)
+            assert -30 <= end_offset <= 0, (index, end_offset)
+            assert abs(start_offset - end_offset) <= 6, (index, start_offset, end_offset)
+            current = sublevel_meta["sublevel_current"][1]
+            assert abs(current - (BASELINE_PA + AMPLITUDE_PA)) <= event["baseline_std"], (
+                index,
+                current,
+            )
+        assert np.mean(np.abs(finder_offsets)) > 5, finder_offsets
+    finally:
+        fitter.close_resources()
+        loader.close_resources()

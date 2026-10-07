@@ -47,6 +47,20 @@ promotion updates `.duplication-baseline.json` in the same commit; each track ed
 step sections here and its own changelog lines, and rebases onto `develop` before `feature finish`.
 Step 10 waits for both tracks.
 
+### Step 4b - event boundaries on correlated noise (finders; results change)
+
+- **`ClassicBlockageFinder._find_events_in_chunk:202-215` places both boundaries by a +1 σ
+  hysteresis walk**: the start backtracks until a sample sits above +1 σ, the end is the first
+  sample back above +1 σ. On low-pass noise that walk is long and random: through the real chain
+  at 500 kHz the estimates sat −20 / +13 samples from the planted edges at a 100 kHz cutoff
+  (worst −42 / +53) and −115 / +91 at 20 kHz (worst −263 / +177), inflating every stored event
+  window and padding for every fitter (2026-10-07). Ruled by Kyle to fix in the finder as well:
+  a start at the last sample within the baseline band before the threshold crossing and an end
+  at the first sample back within it, sustained the way NoFitter now judges it
+  (`NoFitter._locate_sublevel_transitions`), so the stored boundaries are the edges. Check
+  `ThresholdBlockageFinder` and `BoundedBlockageFinder` for the same walk. Results change for
+  every fitter's `start_time` and paddings; changelog under *Results that change*.
+
 ### Step 6 - database and the event-data contract
 
 - **No schema version, and the compatibility check has a dead branch.** No `PRAGMA user_version`

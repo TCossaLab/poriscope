@@ -127,9 +127,28 @@ at 40, 1.68 at 20, 0.78 on slow edges; `baseline_stdev` 0.92-0.96 of planted (0.
 57-sample slow-edge padding, a small-sample effect of heavily correlated noise). A band
 of 2 σ let noise extend the start walk (offsets to −8) with no gain elsewhere.
 
-**Revisit if** a finder reports its estimates off the edge (on the plateau or in the
-baseline): the slope walk assumes the estimate sits on the edge, and a flat stretch
-between the estimate and the edge would leave the edge at the estimate.
+**Amended 2026-10-07, the same day, from Kyle's manual testing.** The revisit condition
+was the case: `ClassicBlockageFinder` backtracks its start until a sample sits above +1 σ
+and takes its end as the first sample back above +1 σ, so both estimates sit in the
+baseline, far out on correlated noise (through the real chain at 500 kHz: −20 / +13
+samples at a 100 kHz cutoff, −115 / +91 at 20 kHz, up to −263 / +177), and the slope
+walk from an estimate in flat baseline went nowhere: the end sat after the whole
+trailing edge. The rule now finds each edge from the baseline side - inward from the
+estimate to the nearest departure sustained for 3 samples whose run reaches twice the
+band, skipping noise excursions - and walks the edge inward with the slope threshold set
+from the noise of the data's own first differences on quiet samples, since on low-pass
+data consecutive samples differ by far less than σ. A global depth (the deepest
+sustained level) was tried and rejected by Kyle: an event may hold several blocked
+states and the deepest need not be the last. The current is the mean of the steady
+blocked stretch, not a median, so NoFitter reports the average of all blocked states.
+Measured: real chain 100 kHz start −2.9 / end −3.1, 20 kHz −17.9 / −21.9 (400 pA) and
+−12.8 / −17.8 (100 pA), current within 0.8 σ, `baseline_stdev` 0.88-0.99 of planted; the
+planted bands and both staircase orders (deepest first or last) unchanged from the table
+above; slow 20 kHz edges −18.5 / −20.7. The finder's own boundary walk is queued as a
+finder item with these numbers.
+
+**Revisit if** a finder reports an estimate on the far side of its edge (inside the
+blockage): the inward walk from there would skip the true edge for the next one.
 
 ---
 
