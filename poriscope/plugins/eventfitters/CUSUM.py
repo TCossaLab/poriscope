@@ -186,7 +186,7 @@ class CUSUM(MetaEventFitter):
         baseline_std: Optional[float],
     ) -> Optional[List[Any]]:
         """
-        Runs adaptive-threshold CUSUM log-likelihood-ratio changepoint detection on the event, with Step Size normalized by the local baseline standard deviation, retrying with adjusted parameters if too many or too few sublevels are found. Returned indices are pre-pended with 0 if 0 is not already the first entry.
+        Runs adaptive-threshold CUSUM log-likelihood-ratio changepoint detection on the event, with Step Size expressed in units of the local baseline standard deviation by :py:meth:`_step_size_in_sigma`, retrying with adjusted parameters if too many or too few sublevels are found. Returned indices are pre-pended with 0 if 0 is not already the first entry.
 
         :param data: an array of data from which to extract the locations of sublevel transitions
         :type data: npt.NDArray[np.float64]
@@ -209,17 +209,10 @@ class CUSUM(MetaEventFitter):
         :raises ValueError: if the event is rejected. Note that ValueError will skip and reject the event but will not stop processing of the rest of the dataset
         """
 
-        if baseline_std is None:  # the rest of the args can be None without issue
-            if padding_before is not None:
-                baseline_std = float(np.std(data[:padding_before]))
-            elif padding_after is not None:
-                baseline_std = float(np.std(data[-padding_after:]))
-            else:
-                raise ValueError(
-                    "CUSUM requires that the standard deviation of the local baseline be reported and is unable to calculate it for this event"
-                )
-
-        step_size = self.settings["Step Size"]["Value"] / baseline_std
+        baseline_std = self._resolve_baseline_std(
+            data, padding_before, padding_after, baseline_std
+        )
+        step_size = self._step_size_in_sigma(baseline_std)
         rise_time = int(1.0e-6 * self.settings["Rise Time"]["Value"] * samplerate)
         max_sublevels = self.settings["Max Sublevels"]["Value"]
 
@@ -823,3 +816,58 @@ class CUSUM(MetaEventFitter):
             h += 0.5
 
         return threshold / self.settings["Sensitivity"]["Value"]
+
+    @log(logger=logger)
+    def _resolve_baseline_std(
+        self,
+        data: npt.NDArray[np.float64],
+        padding_before: Optional[int],
+        padding_after: Optional[int],
+        baseline_std: Optional[float],
+    ) -> float:
+        """
+        Return the local baseline standard deviation, recovering it from the padding when the loader did not report one.
+
+        The padding before the event is preferred, then the padding after. A padding of
+        zero holds no baseline samples and is treated the same as a missing one: slicing
+        with it would give ``nan`` from an empty array on one side and the whole event
+        on the other.
+
+        :param data: the event data, padding included
+        :type data: npt.NDArray[np.float64]
+        :param padding_before: the number of baseline samples before the event start estimate, if known
+        :type padding_before: Optional[int]
+        :param padding_after: the number of baseline samples after the event end estimate, if known
+        :type padding_after: Optional[int]
+        :param baseline_std: the standard deviation the loader reported, if any
+        :type baseline_std: Optional[float]
+        :return: the baseline standard deviation to run the detector with
+        :rtype: float
+        :raises ValueError: if no standard deviation was reported and neither padding holds any samples
+        """
+        if baseline_std is not None:
+            return baseline_std
+        if padding_before:
+            return float(np.std(data[:padding_before]))
+        if padding_after:
+            return float(np.std(data[-padding_after:]))
+        raise ValueError(
+            "CUSUM requires that the standard deviation of the local baseline be reported and is unable to calculate it for this event"
+        )
+
+    @log(logger=logger)
+    def _step_size_in_sigma(self, baseline_std: float) -> float:
+        """
+        Return the ``Step Size`` setting in units of the local baseline standard deviation.
+
+        This is the one place the members of the CUSUM family differ: this fitter takes
+        ``Step Size`` in pA and divides it by the local sigma, while ``ClassicCUSUM``
+        takes it already in sigma and overrides this to return it unchanged. The detector
+        loop is shared through this hook rather than copied.
+
+        :param baseline_std: the local baseline standard deviation, in pA
+        :type baseline_std: float
+        :return: the step size in units of ``baseline_std``
+        :rtype: float
+        """
+        return float(self.settings["Step Size"]["Value"] / baseline_std)

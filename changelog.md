@@ -58,6 +58,8 @@
 
 * Event finding with a chunk length under one sample (reachable through the plugin API; the Raw Data tab always passes one second) now reads one-second chunks instead of looping forever
 
+* A CUSUM-family fitter handed an event with no reported baseline sigma and an empty padding on the only side it had now rejects that event for that reason, where before it ran the detector against a `nan` or whole-event sigma and reported "Too Few Levels"
+
 ### Documentation:
 
 * The API reference no longer publishes `NanoTrees`' four module helpers (`P6Flags`, `SingleSublevel`, `HackyList`, `Sublevels`) as event fitters; a page under a data-plugin family now goes only to a class that descends from that family's `Meta*` base

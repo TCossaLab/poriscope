@@ -26,9 +26,6 @@
 import logging
 from typing import Any, Dict, List, Optional, override
 
-import numpy as np
-import numpy.typing as npt
-
 from poriscope.plugins.eventfitters.CUSUM import CUSUM
 from poriscope.utils.DocstringDecorator import inherit_docstrings
 from poriscope.utils.LogDecorator import log
@@ -93,205 +90,17 @@ class ClassicCUSUM(CUSUM):
 
     @log(logger=logger)
     @override
-    def _locate_sublevel_transitions(
-        self,
-        data: npt.NDArray[np.float64],
-        samplerate: float,
-        padding_before: Optional[int],
-        padding_after: Optional[int],
-        baseline_mean: Optional[float],
-        baseline_std: Optional[float],
-    ) -> Optional[List[Any]]:
+    def _step_size_in_sigma(self, baseline_std: float) -> float:
         """
-        Runs the same CUSUM log-likelihood-ratio changepoint detection as CUSUM, but Step Size is already expressed in units of the local baseline standard deviation (σ) and is used directly rather than normalized against it, unlike CUSUM. Returned indices are pre-pended with 0 if 0 is not already the first entry.
+        Return the ``Step Size`` setting, which this fitter already takes in units of the local baseline standard deviation.
 
-        :param data: an array of data from which to extract the locations of sublevel transitions
-        :type data: npt.NDArray[np.float64]
-        :param samplerate: the sampling rate
-        :type samplerate: float
-        :param padding_before: the number of data points before the estimated start of the event in the chunk
-        :type padding_before: Optional[int]
-        :param padding_after: the number of data points after the estimated end of the event in the chunk
-        :type padding_after: Optional[int]
-        :param baseline_mean: the local mean value of the baseline current
-        :type baseline_mean: Optional[float]
-        :param baseline_std: the local standard deviation of the baseline current
-        :type baseline_std: Optional[float]
+        ``CUSUM`` divides a pA step by the local sigma here; ``ClassicCUSUM`` has the user
+        state the step in sigma, so the value is used as given. Everything else about the
+        detector is inherited.
 
-
-
-        :return: a list of entries that details sublevel transitions. Normally this would be as a list of ints, but can be a list of tuples or other entries if more info is needed. First entry must correspond to the start of the event.
-        :rtype: Optional[List[Any]]
-
-        :raises ValueError: if the event is rejected. Note that ValueError will skip and reject the event but will not stop processing of the rest of the dataset
+        :param baseline_std: the local baseline standard deviation, in pA (unused here)
+        :type baseline_std: float
+        :return: the step size in units of ``baseline_std``
+        :rtype: float
         """
-
-        if baseline_std is None:  # the rest of the args can be None without issue
-            if padding_before is not None:
-                baseline_std = float(np.std(data[:padding_before]))
-            elif padding_after is not None:
-                baseline_std = float(np.std(data[-padding_after:]))
-            else:
-                raise ValueError(
-                    "CUSUM requires that the standard deviation of the local baseline be reported and is unable to calculate it for this event"
-                )
-
-        step_size = self.settings["Step Size"]["Value"]
-        rise_time = int(1.0e-6 * self.settings["Rise Time"]["Value"] * samplerate)
-        max_sublevels = self.settings["Max Sublevels"]["Value"]
-
-        length = len(data)
-        attempts = 0
-        retry = True
-        while retry:
-            retry = False
-            logp = 0  # instantaneous log-likelihood for positive jumps
-            logn = 0  # instantaneous log-likelihood for negative jumps
-            cpos = np.zeros(
-                length, dtype=np.float64
-            )  # cumulative log-likelihood function for positive jumps
-            cneg = np.zeros(
-                length, dtype=np.float64
-            )  # cumulative log-likelihood function for negative jumps
-            gpos = np.zeros(
-                length, dtype=np.float64
-            )  # decision function for positive jumps
-            gneg = np.zeros(
-                length, dtype=np.float64
-            )  # decision function for negative jumps
-
-            # set up running mean and variance calculation
-            mean = data[0]
-            variance = baseline_std * baseline_std
-            num_states = 0
-            varM = data[0]
-            varS = 0
-            mean = data[0]
-
-            threshold = self._calculate_threshold(
-                length, step_size
-            )  # determine optimal sensitivity
-            edges = [0]  # first sublevel starts at the start of the data block
-
-            k = 0  # current data point index
-            anchor = 0  # the last detected change
-            num_states = 0
-
-            while k < length - 1:
-                k += 1
-                varOldM = varM  # algorithm to calculate running variance, details here: http://www.johndcook.com/blog/standard_deviation/
-                varM = varM + (data[k] - varM) / float(k + 1 - anchor)
-                varS = varS + (data[k] - varOldM) * (data[k] - varM)
-                variance = varS / float(k - anchor)
-                mean = ((k - anchor) * mean + data[k]) / float(k + 1 - anchor)
-                if (
-                    variance == 0
-                ):  # with low-precision data sets it is possible that two adjacent values are equal, in which case there is zero variance for the two-vector of sample if this occurs next to a detected jump. This is very, very rare, but it does happen.
-                    variance = (
-                        baseline_std * baseline_std
-                    )  # in that case, we default to the local baseline variance, which is a good an estimate as any.
-                logp = (
-                    step_size
-                    * baseline_std
-                    / variance
-                    * (data[k] - mean - step_size * baseline_std / 2)
-                )  # instantaneous log-likelihood for current sample assuming local baseline has jumped in the positive direction
-                logn = (
-                    -step_size
-                    * baseline_std
-                    / variance
-                    * (data[k] - mean + step_size * baseline_std / 2)
-                )  # instantaneous log-likelihood for current sample assuming local baseline has jumped in the negative direction
-                cpos[k] = cpos[k - 1] + logp  # accumulate positive log-likelihoods
-                cneg[k] = cneg[k - 1] + logn  # accumulate negative log-likelihoods
-                gpos[k] = max(
-                    gpos[k - 1] + logp, 0
-                )  # accumulate or reset positive decision function
-                gneg[k] = max(
-                    gneg[k - 1] + logn, 0
-                )  # accumulate or reset negative decision function
-                if gpos[k] > threshold or gneg[k] > threshold:
-                    jump_accepted = False
-
-                    if gpos[k] > threshold:  # significant positive jump detected
-                        jump = 1 + anchor + np.argmin(cpos[anchor : k + 1])
-                        # Note: C also checks `length - jump > rise_time` here,
-                        # you may want to add that to match C perfectly!
-                        if jump - edges[num_states] > rise_time:
-                            edges = np.append(edges, jump)
-                            num_states += 1
-                            jump_accepted = True
-
-                    if gneg[k] > threshold:  # significant negative jump detected
-                        jump = 1 + anchor + np.argmin(cneg[anchor : k + 1])
-                        if jump - edges[num_states] > rise_time:
-                            edges = np.append(edges, jump)
-                            num_states += 1
-                            jump_accepted = True
-
-                    if jump_accepted:
-                        anchor = k
-                        cpos[0 : len(cpos)] = 0
-                        cneg[0 : len(cneg)] = 0
-                        gpos[0 : len(gpos)] = 0
-                        gneg[0 : len(gneg)] = 0
-                        mean = data[anchor]
-                        varM = data[anchor]
-                        # Welford's accumulator restarts with the new anchor, the
-                        # same way varM does. Carrying varS over from the previous
-                        # anchor while the divisor (k - anchor) restarts at 1
-                        # inflates the variance estimate, and logp/logn scale as
-                        # 1/variance, so the decision functions are suppressed
-                        # across exactly the window where the next transition is
-                        # most likely.
-                        varS = 0
-            edges = np.append(edges, length)  # mark the end of the event as an edge
-            num_states += 1
-
-            if num_states < 3:
-                self.logger.info(
-                    "Unable to find at least 3 sublevels, event will be rejected"
-                )
-                raise ValueError("Too Few Levels")
-
-            # iteratively remove steps that are too small, from left to right
-            minstepflag = False
-            while not minstepflag:
-                minstepflag = True
-                sublevel_means = [
-                    (
-                        np.median(data[int(edges[i] + rise_time) : int(edges[i + 1])])
-                        if edges[i] + rise_time < edges[i + 1]
-                        else np.median(data[int(edges[i]) : int(edges[i + 1])])
-                    )
-                    for i in range(num_states)
-                ]
-
-                toosmall = (
-                    np.absolute(np.diff(sublevel_means)) < step_size * baseline_std / 2
-                )
-                for i in range(len(toosmall)):
-                    if toosmall[i]:
-                        edges = np.delete(edges, i + 1)
-                        minstepflag = False
-                        num_states -= 1
-                        break
-            if num_states < 3:
-                self.logger.info(
-                    "Unable to find at least 3 sublevels after removing small steps, event will be rejected"
-                )
-                raise ValueError("Too Few Levels")
-
-            attempts += 1
-            if max_sublevels > 0 and attempts < 5 and num_states > max_sublevels:
-                retry = True
-                step_size *= 1.5  # increase the step size used for next iteration if we found too many levels. Could also try playing with threshold, I suppose.
-
-        if (
-            max_sublevels > 0 and num_states > max_sublevels
-        ):  # still can't get sublevel count low enough
-            self.logger.info(
-                "Too many levels, unable to correct. Event will be rejected."
-            )
-            raise ValueError("Too Many Levels")
-        return edges
+        return float(self.settings["Step Size"]["Value"])
