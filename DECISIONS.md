@@ -18,6 +18,27 @@ and deleted on 2026-09-27; it too is in git history.
 
 ---
 
+## 2026-10-07 - CUSUM's retry factor is not recorded in 2.1; the hook gets the edges in step 8
+
+**Context.** With `Max Sublevels` set, `_locate_sublevel_transitions` retries at 1.5× the
+step size up to four times when it finds too many levels, and records which factor an
+event was finally fitted at nowhere. The 2.1 plan listed "the retry factor recorded".
+
+**Decision** (Kyle, 2026-10-07, as recommended). Dropped from step 5. The value would
+have to travel from the detector to `_populate_event_metadata`, which receives the data,
+the rates and the sublevel metadata but not the located edges or the event index, and
+instance state races across the per-channel threads; the only carriers are a sublevel
+column repeated on every row or a `Meta*` signature change. The signature change is the
+right one and is queued under step 8 with the other breaks: `_populate_event_metadata`
+receives `sublevel_starts`, giving every fitter a per-event diagnostics path.
+
+**Evidence.** No event on any planted band needed a retry (`Max Sublevels` 10). The retry
+runs only when the user sets the cap and is described on the setting.
+
+**Revisit** in step 8, where it lands.
+
+---
+
 ## 2026-10-07 - A fitter fault on an event is a rejection of that event, never an abort
 
 **Context.** `MetaEventFitter.fit_events` wrapped each fitter hook in `except ValueError`
