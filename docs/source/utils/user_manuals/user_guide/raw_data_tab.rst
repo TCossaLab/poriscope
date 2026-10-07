@@ -97,10 +97,14 @@ Step 3: Finding Events
 
 **Shared Parameters:**
 
-- ``Threshold``: How far below the fitted baseline the signal must fall for an event to start - in pA for ``ClassicBlockageFinder`` and ``BoundedBlockageFinder``, in σ for ``ThresholdBlockageFinder``.
+- ``Threshold``: How far below the fitted baseline the signal must fall for an event to be detected - in pA for ``ClassicBlockageFinder`` and ``BoundedBlockageFinder``, in σ for ``ThresholdBlockageFinder``. The threshold decides *whether* there is an event; where it begins and ends is judged against the baseline itself (see the note below).
 - ``Min Duration`` (µs): Minimum allowed duration for an event.
 - ``Max Duration`` (µs): Maximum allowed duration for an event.
 - ``Min Separation`` (µs): Minimum time between consecutive events to treat them as distinct.
+
+.. note::
+
+   An event's recorded start is the point where the signal leaves the baseline - the first sample of a run of at least three samples more than three baseline standard deviations from the fitted mean before the threshold crossing - and its recorded end is where the signal rejoins the baseline, the first run of three samples back within that band after the return crossing. A single noisy sample is never taken for an edge, so on heavily filtered data the boundaries sit at the tops of the edges rather than wandering into the baseline. The padding stored around each event is baseline from these points outward.
 
 **BoundedBlockageFinder-only:**
 

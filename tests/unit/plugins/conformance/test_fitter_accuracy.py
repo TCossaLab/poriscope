@@ -574,11 +574,9 @@ def found_recording(
     """
     A synthetic Chimera recording found by ``ClassicBlockageFinder`` at a 20 kHz cutoff and written out.
 
-    The shipped finders put both of an event's boundaries in the baseline, some way out
-    from the edges (the start backtracked until a sample sits above +1 sigma, the end at
-    the first such sample after the event), and on low-pass noise that walk runs far.
-    This fixture is the chain a user runs - reader, finder with a filter, event writer -
-    so the events database carries exactly those estimates.
+    This is the chain a user runs - reader, finder with a filter, event writer - so the
+    events database carries exactly the boundaries the finder reports, at the tops of
+    the edges, and the loader hands NoFitter the windows the finder cut.
 
     :param tmp_path_factory: pytest's session temporary-directory factory
     :type tmp_path_factory: pytest.TempPathFactory
@@ -662,7 +660,42 @@ def test_nofitter_edges_do_not_depend_on_where_the_finder_put_its_boundaries(
                 index,
                 current,
             )
-        assert np.mean(np.abs(finder_offsets)) > 5, finder_offsets
+        # the finder marks where the signal rejoins the baseline, after the trailing edge;
+        # NoFitter marks where the return begins, before it - the two mean different things
+        assert np.mean(finder_offsets[1::2]) > 5, finder_offsets
     finally:
         fitter.close_resources()
+        loader.close_resources()
+
+
+def test_the_finder_places_its_boundaries_where_the_signal_leaves_and_rejoins_the_baseline(
+    found_recording: Tuple[SyntheticDataset, str, Callable[[np.ndarray], np.ndarray]],
+) -> None:
+    """
+    Behind a 20 kHz filter the finder's start sits at the top of the leading edge and its
+    end at the top of the trailing edge, each within the edge's extent of the planted
+    boundary and consistent from event to event, where the +1 sigma walk used to run up to
+    hundreds of samples into the baseline.
+    """
+    dataset, db_path, _bessel = found_recording
+    loader = build_event_loader(db_path)
+    try:
+        starts, ends = [], []
+        for index in range(loader.get_num_events(3)):
+            event = loader.load_event(3, index, None)
+            window_start = int(event["absolute_start"])
+            planted = min(
+                dataset.events,
+                key=lambda p: abs(p.start_index - (window_start + event["padding_before"])),
+            )
+            planted_start = planted.start_index - window_start
+            planted_end = planted_start + planted.length_samples
+            starts.append(event["padding_before"] - planted_start)
+            ends.append(len(event["data"]) - event["padding_after"] - planted_end)
+        assert len(starts) == len(dataset.events)
+        assert all(-30 <= s <= 0 for s in starts), starts
+        assert all(0 <= e <= 30 for e in ends), ends
+        assert max(starts) - min(starts) <= 10, starts
+        assert max(ends) - min(ends) <= 10, ends
+    finally:
         loader.close_resources()

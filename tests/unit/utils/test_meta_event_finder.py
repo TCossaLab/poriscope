@@ -347,6 +347,97 @@ class TestShippedFinderThresholdUnits:
 # ---------------------------------------------------------------------------
 # report_channel_status
 # ---------------------------------------------------------------------------
+class TestEventBoundariesFromTheBaseline:
+    """
+    The two boundary helpers move an event's threshold crossings to the baseline edges.
+
+    ``data`` is the normalised chunk a finder works on: baseline at 0, unit sigma, a
+    blockage negative. The band is 3 and a run is 3 samples.
+    """
+
+    def _chunk(self):
+        data = np.zeros(120)
+        data[20:24] = [-5.0, -10.0, -15.0, -20.0]  # the leading edge
+        data[24:60] = -20.0
+        data[60:64] = [-15.0, -10.0, -5.0, -0.5]  # the trailing edge, back to within the band
+        return data
+
+    def test_the_start_is_the_first_sample_off_the_baseline(self, bare_finder):
+        data = self._chunk()
+        assert bare_finder._event_start_from_the_baseline(data, 22, 0) == 20
+
+    def test_a_short_excursion_before_the_edge_is_not_the_start(self, bare_finder):
+        # Two samples at +4 are off the band but not a run of three; the start stays at the
+        # edge. Backtracking until one sample sat above +1 sigma would have stopped at 11.
+        data = self._chunk()
+        data[10:12] = 4.0
+        assert bare_finder._event_start_from_the_baseline(data, 22, 0) == 20
+
+    def test_the_start_never_precedes_the_lower_bound(self, bare_finder):
+        data = self._chunk()
+        data[:20] = -20.0  # no baseline before the edge at all
+        assert bare_finder._event_start_from_the_baseline(data, 22, 5) == 5
+
+    def test_the_end_is_the_first_sample_back_within_the_band(self, bare_finder):
+        data = self._chunk()
+        assert bare_finder._event_end_from_the_baseline(data, 61) == 63
+
+    def test_the_end_does_not_wait_for_a_sample_above_one_sigma(self, bare_finder):
+        # After the edge the signal sits at -0.5: within the band, never above +1 sigma.
+        # The old rule waited for a +1 sigma sample, which on low-pass noise could be
+        # hundreds of samples away.
+        data = self._chunk()
+        data[63:] = -0.5
+        assert bare_finder._event_end_from_the_baseline(data, 61) == 63
+
+    def test_an_excursion_right_after_the_edge_moves_the_end_past_it(self, bare_finder):
+        # The first run of three within-band samples must begin after the two samples at
+        # +4, so the end lands after them (67) rather than at the edge top (63); a
+        # run-based judgement cannot tell a bump this close to the edge from the edge.
+        data = self._chunk()
+        data[65:67] = 4.0
+        assert bare_finder._event_end_from_the_baseline(data, 61) == 67
+
+    def test_an_excursion_a_run_or_more_after_the_edge_leaves_the_end_alone(self, bare_finder):
+        data = self._chunk()
+        data[70:72] = 4.0
+        assert bare_finder._event_end_from_the_baseline(data, 61) == 63
+
+    def test_no_baseline_before_the_chunk_ends_means_the_event_straddles_it(self, bare_finder):
+        data = self._chunk()
+        data[60:] = -20.0
+        assert bare_finder._event_end_from_the_baseline(data, 61) is None
+
+
+class TestShippedFindersPlaceBoundariesAtTheEdges:
+    """Each shipped finder's chunk method hands the base's boundary rule its crossings."""
+
+    def _normalised_event(self):
+        # baseline 0, unit sigma; an event 20 sigma deep with 4-sample edges
+        data = np.zeros(200)
+        data[50:54] = [-5.0, -10.0, -15.0, -20.0]
+        data[54:120] = -20.0
+        data[120:124] = [-15.0, -10.0, -5.0, -0.5]
+        return data
+
+    def _run(self, finder_cls, threshold):
+        finder = object.__new__(finder_cls)
+        finder.settings = {"Threshold": {"Value": threshold}}
+        # the chunk method normalises by the mean and sigma it is given; mean 0 and sigma 1
+        # leave the planted values as they are, and a positive mean passes the rectification check
+        data = self._normalised_event() + 1000.0
+        starts, ends, state = finder._find_events_in_chunk(data, 1000.0, 1.0, 0, False, True)
+        return starts, ends, state
+
+    def test_classic_blockage_finder(self):
+        starts, ends, state = self._run(ClassicBlockageFinder, 12.0)
+        assert (starts, ends, state) == ([50], [123], False)
+
+    def test_threshold_blockage_finder(self):
+        starts, ends, state = self._run(ThresholdBlockageFinder, 12.0)
+        assert (starts, ends, state) == ([50], [123], False)
+
+
 class TestReportChannelStatus:
     def test_init_true_returns_empty_string(self, finder):
         assert finder.report_channel_status(0, init=True) == ""

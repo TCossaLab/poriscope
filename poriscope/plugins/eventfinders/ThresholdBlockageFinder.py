@@ -40,7 +40,7 @@ class ThresholdBlockageFinder(ClassicBlockageFinder):
     """
     Subclass of ClassicBlockageFinder that imposes much tighter bounds on the start and end time flagged in the output.
 
-    This event finder calls the start of the event at the first threshold crossing, and the end of the event at the corresponding threshold crossing at the end through backtracking.
+    This event finder detects an event at the first threshold crossing, then places its start where the signal left the baseline band before that crossing and its end where it rejoins the band after the return crossing, each judged over a run of samples.
     """
 
     logger = logging.getLogger(__name__)
@@ -145,9 +145,9 @@ class ThresholdBlockageFinder(ClassicBlockageFinder):
         data /= std
 
         threshold = -self.settings["Threshold"]["Value"]
-        hysteresis = 0
         event_starts = []
         event_ends = []
+        last_end = 0
 
         if (
             data[0] < threshold and first_chunk and not entry_state
@@ -163,17 +163,22 @@ class ThresholdBlockageFinder(ClassicBlockageFinder):
                 if pos == 0 and not (data[index] < threshold):
                     break
                 index += pos
-                event_start = index
+                # back from the crossing to where the signal left the baseline
+                event_start = self._event_start_from_the_baseline(data, index, last_end)
                 entry_state = True
                 event_starts.append(event_start + offset)
             else:
-                pos = int(np.argmax(data[index:] > hysteresis))
-                if pos == 0 and not (data[index] > hysteresis):
+                pos = int(np.argmax(data[index:] > threshold))
+                if pos == 0 and not (data[index] > threshold):
                     break
                 index += pos
-                event_end = index
-                while data[event_end] > threshold and event_end > 0:
-                    event_end -= 1
+                # forward from the return crossing to where the signal rejoins the
+                # baseline; no such place in this chunk means the event straddles it
+                event_end = self._event_end_from_the_baseline(data, index)
+                if event_end is None:
+                    break
+                index = event_end
+                last_end = event_end
                 event_ends.append(event_end + offset)
                 entry_state = False
         return event_starts, event_ends, entry_state

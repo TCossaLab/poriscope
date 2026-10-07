@@ -981,6 +981,79 @@ class MetaEventFinder(BaseDataPlugin):
         """
         return float(self.settings["Threshold"]["Value"])
 
+    #: The band, in baseline sigmas, within which a sample counts as baseline when an
+    #: event's boundaries are placed, and how many consecutive such samples make a stretch
+    #: of baseline rather than a noise excursion. The same judgement ``NoFitter`` applies
+    #: when it walks an event's edges, so the two agree on where an event begins and ends.
+    EDGE_BAND_SIGMA: float = 3.0
+    EDGE_RUN_SAMPLES: int = 3
+
+    @log(logger=logger)
+    def _event_start_from_the_baseline(
+        self, data: npt.NDArray[np.float64], crossing: int, lower_bound: int
+    ) -> int:
+        """
+        Move an event's start from its threshold crossing back to where the signal left the baseline.
+
+        The start is the sample after the last run of ``EDGE_RUN_SAMPLES`` consecutive
+        samples within ``EDGE_BAND_SIGMA`` of the baseline that ends at or before the
+        crossing. Judging baseline over a run rather than by one sample is what keeps a
+        noise excursion from being taken for the edge: backtracking until a single sample
+        sat above +1 σ ran tens to hundreds of samples into low-pass baseline, since on
+        correlated noise such a sample can be a long time coming.
+
+        :param data: the chunk normalised to its baseline - mean subtracted, divided by sigma, rectified so a blockage is negative
+        :type data: npt.NDArray[np.float64]
+        :param crossing: the index at which the signal first crossed the threshold
+        :type crossing: int
+        :param lower_bound: the earliest index the start may take, normally the previous event's end
+        :type lower_bound: int
+        :return: the index of the first sample of the event's departure from baseline
+        :rtype: int
+        """
+        run = self.EDGE_RUN_SAMPLES
+        within = np.abs(data[: crossing + 1]) <= self.EDGE_BAND_SIGMA
+        if within.size < run:
+            return max(lower_bound, 0)
+        # window i covers [i, i + run); the start follows the last quiet window that ends
+        # at or before the crossing and begins at or after the lower bound
+        quiet = np.lib.stride_tricks.sliding_window_view(within, run).all(axis=1)
+        candidates = np.flatnonzero(quiet[max(lower_bound, 0) :])
+        if candidates.size == 0:
+            return max(lower_bound, 0)
+        return int(max(lower_bound, 0) + candidates[-1] + run)
+
+    @log(logger=logger)
+    def _event_end_from_the_baseline(
+        self, data: npt.NDArray[np.float64], crossing: int
+    ) -> Optional[int]:
+        """
+        Move an event's end from its threshold crossing forward to where the signal rejoined the baseline.
+
+        The end is the first sample of the first run of ``EDGE_RUN_SAMPLES`` consecutive
+        samples within ``EDGE_BAND_SIGMA`` of the baseline at or after the crossing, or
+        ``None`` if the chunk ends before such a run, in which case the event straddles the
+        chunk and the caller carries it into the next one. Waiting for one sample above
+        +1 σ instead left the end tens to hundreds of samples into the baseline on low-pass
+        noise, and inflated every stored event window with it.
+
+        :param data: the chunk normalised to its baseline - mean subtracted, divided by sigma, rectified so a blockage is negative
+        :type data: npt.NDArray[np.float64]
+        :param crossing: the index at which the signal first came back across the threshold
+        :type crossing: int
+        :return: the index of the first baseline sample after the event, or None if the chunk ends first
+        :rtype: Optional[int]
+        """
+        run = self.EDGE_RUN_SAMPLES
+        within = np.abs(data[crossing:]) <= self.EDGE_BAND_SIGMA
+        if within.size < run:
+            return None
+        quiet = np.lib.stride_tricks.sliding_window_view(within, run).all(axis=1)
+        candidates = np.flatnonzero(quiet)
+        if candidates.size == 0:
+            return None
+        return int(crossing + candidates[0])
+
     # Shared implementation offered to subclasses, not part of the API a plugin author
     # must supply. ``_get_baseline_stats`` above stays abstract so every finder still
     # decides for itself which part of a chunk counts as baseline; the two methods below

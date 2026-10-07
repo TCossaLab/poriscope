@@ -144,8 +144,14 @@ blocked stretch, not a median, so NoFitter reports the average of all blocked st
 Measured: real chain 100 kHz start −2.9 / end −3.1, 20 kHz −17.9 / −21.9 (400 pA) and
 −12.8 / −17.8 (100 pA), current within 0.8 σ, `baseline_stdev` 0.88-0.99 of planted; the
 planted bands and both staircase orders (deepest first or last) unchanged from the table
-above; slow 20 kHz edges −18.5 / −20.7. The finder's own boundary walk is queued as a
-finder item with these numbers.
+above; slow 20 kHz edges −18.5 / −20.7. The finders' own +1 σ boundary walk gets the
+same judgement in the same step (Kyle, 2026-10-07): `MetaEventFinder` gains
+`_event_start_from_the_baseline` and `_event_end_from_the_baseline`, a start at the
+sample after the last run of three within-band samples before the crossing and an end at
+the first run of three within-band samples after the return crossing, and the three
+shipped finders use them. Through the same chain the finder's boundaries moved from
+−115 / +91 (worst −263 / +177) to the tops of the edges, consistent to within a few
+samples across events.
 
 **Revisit if** a finder reports an estimate on the far side of its edge (inside the
 blockage): the inward walk from there would skip the true edge for the next one.
