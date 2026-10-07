@@ -46,12 +46,16 @@ class NoFitter(MetaEventFitter):
 
     logger = logging.getLogger(__name__)
 
-    #: The band, in local baseline sigmas, that decides where an edge is. Walking an edge,
-    #: a sample that differs from its neighbour by more than this is still on the edge,
-    #: and a sample within this of the baseline mean is baseline. Three sigma keeps a
-    #: noise excursion from extending a walk (0.13% of samples per side on Gaussian
-    #: noise) while every edge a finder would report moves far more than this per sample.
+    #: The band, in sigmas, that decides where an edge is: a sample more than this many
+    #: local baseline sigmas from the baseline mean is off the baseline, and a sample that
+    #: differs from its neighbour by more than this many sigmas of the data's own first
+    #: differences is still on an edge. Three keeps a noise excursion from being taken for
+    #: an edge (0.13% of samples on Gaussian noise) while every edge a finder would report
+    #: exceeds it.
     EDGE_BAND_SIGMA: float = 3.0
+    #: How many consecutive off-baseline samples make a departure sustained. One or two
+    #: samples past the band is noise; an edge stays past it until the return.
+    EDGE_RUN_SAMPLES: int = 3
 
     # public API, must be overridden by subclasses:
     @log(logger=logger)
@@ -187,20 +191,28 @@ class NoFitter(MetaEventFitter):
         baseline_std: Optional[float],
     ) -> Optional[List[Any]]:
         """
-        Performs no changepoint search: the event is one level between the two edges the finder estimated, and each edge is walked to where it begins. Returned indices are pre-pended with 0 if 0 is not already the first entry.
+        Performs no changepoint search: the event is one blocked stretch between two edges, and each edge is found from the baseline side and walked to where the blocked level begins. Returned indices are pre-pended with 0 if 0 is not already the first entry.
 
-        The start of the event is where the signal first leaves the baseline: from the
-        finder's start estimate, which sits somewhere on the leading edge, walk back
-        while each sample is further from baseline than its predecessor by more than
-        ``EDGE_BAND_SIGMA`` local sigmas. The end of the event is where the return to
-        baseline begins: from the end estimate, walk back while the previous sample is
-        deeper by more than the band. The two rules mirror each other, so for a
-        symmetric edge both edges sit the same distance before the finder's estimates
-        and the duration is the finder's. The statistics of each sublevel are taken
-        over its steady part only: the leading padding up to the last sample within the
-        band of the baseline mean, the blockage from where the leading edge flattens
-        out to the end edge, the trailing padding from the first sample back within the
-        band of baseline.
+        The finder's start and end estimates may sit anywhere near their edge - in the
+        baseline some way out, as the shipped finders report them, or on the edge
+        itself - so neither is trusted as a position. From each estimate the walk goes
+        inward to the nearest *sustained* departure from the baseline band (at least
+        ``EDGE_RUN_SAMPLES`` consecutive samples more than ``EDGE_BAND_SIGMA`` local
+        sigmas from the baseline mean) whose run reaches twice the band; a shorter or
+        shallower excursion is noise and is skipped. That departure is the edge: the
+        start of the event on the leading side, the first baseline sample after the
+        return on the trailing side. From each edge a slope walk continues inward while
+        the signal keeps moving away from baseline, by more than ``EDGE_BAND_SIGMA``
+        times the noise of the data's own first differences (measured on the samples
+        that are not on a departure, since on low-pass data consecutive samples differ
+        by far less than the sample sigma); where it stops is the foot of the edge. The
+        event ends where the return to baseline begins, the sample after the foot of
+        the trailing edge, so both edges sit the same distance before the finder's
+        boundaries on a symmetric edge and the duration is the finder's. Each
+        sublevel's statistics cover its steady part: the leading padding up to the
+        start, the blocked stretch from the foot of the leading edge to the end, the
+        trailing padding from the first baseline sample after the return. An event
+        that never leaves the band keeps the finder's estimates as its edges.
 
         :param data: an array of data from which to extract the locations of sublevel transitions
         :type data: npt.NDArray[np.float64]
@@ -237,6 +249,7 @@ class NoFitter(MetaEventFitter):
             padding_before <= 0
             or padding_after <= 0
             or padding_before + padding_after >= length
+            or length < self.EDGE_RUN_SAMPLES
         ):
             raise ValueError(
                 "NoFitter requires baseline padding on both sides of the event"
@@ -245,49 +258,104 @@ class NoFitter(MetaEventFitter):
         # positive inside a blockage, whichever sign the baseline has
         deviation = (baseline_mean - data) * sign
         band = self.EDGE_BAND_SIGMA * baseline_std
-        start_estimate = padding_before
-        end_estimate = length - padding_after
+        start_estimate = int(padding_before)
+        end_estimate = length - int(padding_after)
 
-        # The leading padding is baseline up to the last sample still within the band.
-        baseline_end = start_estimate
-        while baseline_end > 0 and deviation[baseline_end] > band:
-            baseline_end -= 1
-        if deviation[baseline_end] > band:
-            raise ValueError(
-                "Unable to locate a baseline crossing before the estimated event start"
-            )
-        # The event starts where the leading edge begins.
+        # A sample is off the baseline only as part of a run of EDGE_RUN_SAMPLES such
+        # samples, so an isolated excursion is never taken for an edge.
+        off_band = deviation > band
+        runs = np.lib.stride_tricks.sliding_window_view(
+            off_band, self.EDGE_RUN_SAMPLES
+        ).all(axis=1)
+        sustained = np.zeros(length, dtype=bool)
+        for shift in range(self.EDGE_RUN_SAMPLES):
+            sustained[shift : shift + runs.size] |= runs
+
+        # The noise of first differences, from the samples that are not on a departure.
+        differences = np.diff(data)
+        quiet = ~sustained[:-1] & ~sustained[1:]
+        quiet_differences = differences[quiet]
+        sigma_diff = (
+            float(np.std(quiet_differences))
+            if quiet_differences.size >= 8
+            else float(baseline_std) * np.sqrt(2.0)
+        )
+        slope_band = self.EDGE_BAND_SIGMA * sigma_diff
+
+        def run_reaches_depth(k: int, step: int) -> bool:
+            """Does the sustained run containing ``k`` reach twice the band? A noise bump does not."""
+            peak = deviation[k]
+            while 0 <= k + step < length and sustained[k + step]:
+                k += step
+                peak = max(peak, deviation[k])
+            return bool(peak > 2 * band)
+
+        def walk_edge(k: int, step: int, limit: int) -> int:
+            """From edge sample ``k``, walk inward while the signal keeps moving away from baseline."""
+            while k + step != limit:
+                one = deviation[k + step] - deviation[k]
+                two_ahead = k + 2 * step
+                two = (
+                    deviation[two_ahead] - deviation[k]
+                    if two_ahead != limit and 0 <= two_ahead < length
+                    else one
+                )
+                if one > slope_band or two > 2 * slope_band:
+                    k += step
+                else:
+                    break
+            return k
+
+        # The start: inward from the start estimate to the nearest departure that is an edge.
         start = start_estimate
-        while start > 0 and deviation[start] - deviation[start - 1] > band:
+        while start > 0 and sustained[start]:
             start -= 1
-        # The blockage's steady part begins where the leading edge flattens out.
-        blockage_start = start_estimate
-        while (
-            blockage_start < length - 1
-            and deviation[blockage_start + 1] - deviation[blockage_start] > band
-        ):
-            blockage_start += 1
-        # The event ends where the return to baseline begins.
-        end = end_estimate
-        while end > 0 and deviation[end - 1] - deviation[end] > band:
-            end -= 1
-        # The trailing padding is baseline from the first sample back within the band.
-        baseline_start = end_estimate
-        while baseline_start < length - 1 and deviation[baseline_start] > band:
-            baseline_start += 1
-        if deviation[baseline_start] > band:
-            raise ValueError(
-                "Unable to locate a baseline crossing after the estimated event end"
-            )
-        if not (0 < baseline_end and start <= blockage_start < end and baseline_start < length):
+        foot_in = start
+        while True:
+            while start < end_estimate and not sustained[start]:
+                start += 1
+            if start >= end_estimate:
+                break
+            if run_reaches_depth(start, +1):
+                foot_in = walk_edge(start, +1, end_estimate)
+                break
+            while start < end_estimate and sustained[start]:
+                start += 1
+        if start >= end_estimate:
+            # never leaves the band: the finder's estimates stand
+            return [
+                (0, 0, start_estimate),
+                (start_estimate, start_estimate, end_estimate),
+                (end_estimate, end_estimate, length),
+                (length, length, length),
+            ]
+        # The end: inward (back) from the end estimate to the nearest departure that is an edge.
+        after = end_estimate
+        while after < length - 1 and sustained[after]:
+            after += 1
+        foot_out = after
+        while True:
+            while after > foot_in + 1 and not sustained[after - 1]:
+                after -= 1
+            if after - 1 <= foot_in:
+                break
+            if run_reaches_depth(after - 1, -1):
+                foot_out = walk_edge(after - 1, -1, foot_in)
+                break
+            while after > foot_in + 1 and sustained[after - 1]:
+                after -= 1
+        if after - 1 <= foot_in:
+            raise ValueError("Unable to resolve the edges of the event")
+        end = foot_out + 1  # the return to baseline begins at the sample after the foot
+        if not (0 < start <= foot_in < end <= after < length):
             raise ValueError("Unable to resolve the edges of the event")
         # The geometry travels with the event in its entries, not on the instance: one
         # fitter fits every channel on a thread per channel, so a stored value was
         # replaced by another channel's event before _populate_sublevel_metadata read it.
         return [
-            (0, 0, int(baseline_end)),
-            (int(start), int(blockage_start), int(end)),
-            (int(end), int(baseline_start), length),
+            (0, 0, int(start)),
+            (int(start), int(foot_in), int(end)),
+            (int(end), int(after), length),
             (length, length, length),
         ]
 
@@ -330,7 +398,9 @@ class NoFitter(MetaEventFitter):
         # _locate_sublevel_transitions returns it. Durations, times, deviations and the
         # raw charge span the whole sublevel between edges; the current, its standard
         # deviation and the blockage are taken over the steady part only, so neither
-        # edge skews them.
+        # edge skews them. The current is the mean, not a median: NoFitter reports the
+        # average of whatever blocked states the event holds, and a median of a
+        # two-state event would report the longer state instead.
         edges = [int(entry[0]) for entry in sublevel_starts]
         num_states = len(edges) - 1
         steady = [
@@ -344,7 +414,7 @@ class NoFitter(MetaEventFitter):
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", category=RuntimeWarning)
             sublevel_metadata["sublevel_current"] = np.array(
-                [np.median(data[lo:hi]) for lo, hi in steady], dtype=np.float64
+                [np.mean(data[lo:hi]) for lo, hi in steady], dtype=np.float64
             )
 
             if (
@@ -367,7 +437,7 @@ class NoFitter(MetaEventFitter):
             )
             sublevel_metadata["sublevel_blockage"] = np.array(
                 [
-                    (event_baseline - np.median(data[lo:hi])) * np.sign(event_baseline)
+                    (event_baseline - np.mean(data[lo:hi])) * np.sign(event_baseline)
                     for lo, hi in steady
                 ],
                 dtype=np.float64,

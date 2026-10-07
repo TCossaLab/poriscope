@@ -49,6 +49,19 @@ most implementations are a few lines of policy around one call to
 .. automethod:: poriscope.utils.MetaEventFinder.MetaEventFinder._gaussian_fit
    :no-index:
 
+Where an event begins and ends is likewise shared. A finder's ``_find_events_in_chunk``
+decides *that* there is an event from its threshold crossings; it then hands those
+crossings to the two methods below, which place the recorded start where the signal left
+the baseline band and the recorded end where it rejoined it, each judged over a run of
+samples so a single noisy sample is never taken for an edge. ``NoFitter`` applies the same
+judgement when it walks an event's edges, so the two agree on where an event is.
+
+.. automethod:: poriscope.utils.MetaEventFinder.MetaEventFinder._event_start_from_the_baseline
+   :no-index:
+
+.. automethod:: poriscope.utils.MetaEventFinder.MetaEventFinder._event_end_from_the_baseline
+   :no-index:
+
 Optional Method Overrides
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 

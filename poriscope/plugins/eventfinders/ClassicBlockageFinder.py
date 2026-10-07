@@ -41,8 +41,9 @@ class ClassicBlockageFinder(MetaEventFinder):
     Event finder plugin for detecting transient blockages in nanopore signals using a threshold-based approach.
 
     This subclass of MetaEventFinder implements a classic event detection strategy, where events are identified
-    by thresholding rectified signal traces. The start and end of events are determined using hysteresis and
-    configurable settings such as threshold, minimum/maximum duration, and minimum separation.
+    by thresholding rectified signal traces. An event begins where the signal leaves the baseline band and
+    ends where it rejoins it, each judged over a run of samples; configurable settings such as threshold,
+    minimum/maximum duration, and minimum separation then filter the events found.
 
     Core features:
     - Event detection based on baseline-normalized threshold crossings.
@@ -184,7 +185,6 @@ class ClassicBlockageFinder(MetaEventFinder):
         data /= std
 
         threshold = -self.settings["Threshold"]["Value"] / std
-        hysteresis = 1
         event_starts = []
         event_ends = []
 
@@ -203,19 +203,20 @@ class ClassicBlockageFinder(MetaEventFinder):
                 if pos == 0 and not (data[index] < threshold):
                     break
                 index += pos
-                event_start = index
-                while (
-                    data[event_start] < hysteresis and event_start > prev_index
-                ):  # backtrack from the threshold crossing into the baseline to estimate event start point
-                    event_start -= 1
+                # back from the crossing to where the signal left the baseline
+                event_start = self._event_start_from_the_baseline(
+                    data, index, prev_index
+                )
                 entry_state = True
                 event_starts.append(event_start + offset)
             else:
-                pos = int(np.argmax(data[index:] > hysteresis))
-                if pos == 0 and not (data[index] > hysteresis):
+                # forward from here to where the signal rejoins the baseline; no such
+                # place in this chunk means the event straddles it
+                event_end = self._event_end_from_the_baseline(data, index)
+                if event_end is None:
                     break
-                index += pos  # no backtracking needed here
-                event_ends.append(index + offset)
+                index = event_end
+                event_ends.append(event_end + offset)
                 entry_state = False
             prev_index = index
         return event_starts, event_ends, entry_state
