@@ -5,12 +5,12 @@ Instantiate NoFitter via object.__new__ to bypass __init__. Settings and
 metadata are injected directly onto the instance.
 
 NoFitter uses a different sublevel-detection strategy than Basic_PeakFinder:
-it assumes exactly one blockage level per event and walks backward from
-padding_before to absorb any "rise time" baseline already inside the nominal
-padding window, rather than running a peak-finding algorithm. Several of its
-formulas were verified by actually running the real source against
-hand-picked synthetic data before writing assertions (see comments below for
-two behaviors worth flagging):
+it assumes exactly one blockage level per event between the two edges the finder
+estimated, and walks each edge to where it begins - the start to where the signal
+leaves the baseline, the end to where the return to baseline begins - rather than
+running a peak-finding algorithm. Several of its formulas were verified by actually
+running the real source against hand-picked synthetic data before writing assertions
+(see comments below for two behaviors worth flagging):
 
 - get_empty_settings makes NO additions of its own; it returns whatever the
   superclass produced, completely unchanged.
@@ -25,8 +25,8 @@ Coverage targets:
 - get_empty_settings (pure passthrough)
 - close_resources / _init / _pre_process_events / _post_process_events / _validate_settings
 - construct_fitted_event (None paths, AttributeError propagation, happy path)
-- _locate_sublevel_transitions (no rise time, with rise time, sign handling)
-- _populate_sublevel_metadata (happy path, Baseline Mismatch, degenerate slice branch)
+- _locate_sublevel_transitions (flat padding, edges walked, sign handling, no crossing)
+- _populate_sublevel_metadata (happy path, Baseline Mismatch, the steady-part statistics)
 - _populate_event_metadata (including the documented index-alignment quirk)
 - _define_event_metadata_types / _define_sublevel_metadata_types
 - _define_event_metadata_units / _define_sublevel_metadata_units
@@ -49,14 +49,17 @@ def _make_pf():
     return object.__new__(NoFitter)
 
 
-def _entries(indices, rise_time=0):
+def _entries(indices):
     """
     Build a sublevel list the way ``_locate_sublevel_transitions`` returns it.
 
-    Each entry is ``(index, rise_time)``: the rise time is the event's own, carried in
-    the list from one step to the next rather than kept on the shared instance.
+    Each entry is ``(edge, statistics_start, statistics_end)``; here every sublevel's
+    statistics span its whole extent, which is what a flat, edge-free event gives.
     """
-    return [(index, rise_time) for index in indices]
+    bounds = list(indices)
+    return [
+        (edge, edge, nxt) for edge, nxt in zip(bounds[:-1], bounds[1:])
+    ] + [(bounds[-1], bounds[-1], bounds[-1])]
 
 
 # ---------------------------------------------------------------------------
@@ -191,24 +194,43 @@ class TestConstructFittedEvent(unittest.TestCase):
 
 
 class TestLocateSublevelTransitions(unittest.TestCase):
-    def test_no_rise_time(self):
-        pf = object.__new__(NoFitter)
-        data = np.full(50, 200.0)
-        edges = pf._locate_sublevel_transitions(data, 1e6, 10, 5, 200.0, 5.0)
-        self.assertEqual(edges, _entries([0, 10, 45, 50], 0))
+    """
+    Clean data, sigma 5, so the edge band is 15 pA: a sample is on an edge when it moves
+    more than 15 pA from its neighbour, and is baseline when within 15 pA of the mean.
+    """
 
-    def test_with_rise_time(self):
+    def _ramped_event(self, sign=1.0):
+        # baseline 200 for 0-7, a 25-per-sample edge over 8-11 down to a 100 pA plateau,
+        # the mirror edge over 38-41 back to 200. The finder's estimates (padding 10 and
+        # 10) sit mid-edge at 10 and 40.
+        data = np.full(50, 200.0)
+        data[8:12] = [175.0, 150.0, 125.0, 100.0]
+        data[12:38] = 100.0
+        data[38:42] = [125.0, 150.0, 175.0, 200.0]
+        return data * sign
+
+    def test_flat_padding_puts_the_edges_at_the_estimates(self):
         pf = object.__new__(NoFitter)
         data = np.full(50, 200.0)
-        data[6:11] = 150.0  # samples below baseline, inside the nominal padding
         edges = pf._locate_sublevel_transitions(data, 1e6, 10, 5, 200.0, 5.0)
-        self.assertEqual(edges, _entries([0, 5, 40, 50], 5))
+        self.assertEqual(edges, [(0, 0, 10), (10, 10, 45), (45, 45, 50), (50, 50, 50)])
+
+    def test_the_edges_are_walked_to_where_each_begins(self):
+        pf = object.__new__(NoFitter)
+        edges = pf._locate_sublevel_transitions(
+            self._ramped_event(), 1e6, 10, 10, 200.0, 5.0
+        )
+        # start where the signal leaves baseline (7), the blockage's steady part from the
+        # foot of the leading edge (11) to where the return begins (37), the trailing
+        # padding's statistics from the first sample back at baseline (41)
+        self.assertEqual(edges, [(0, 0, 7), (7, 11, 37), (37, 41, 50), (50, 50, 50)])
 
     def test_negative_baseline_mirrors_positive_case(self):
         pf = object.__new__(NoFitter)
-        data = np.full(50, -200.0)
-        edges = pf._locate_sublevel_transitions(data, 1e6, 10, 5, -200.0, 5.0)
-        self.assertEqual(edges, _entries([0, 10, 45, 50], 0))
+        edges = pf._locate_sublevel_transitions(
+            self._ramped_event(sign=-1.0), 1e6, 10, 10, -200.0, 5.0
+        )
+        self.assertEqual(edges, [(0, 0, 7), (7, 11, 37), (37, 41, 50), (50, 50, 50)])
 
     def test_first_and_last_edges_match_data_bounds(self):
         pf = object.__new__(NoFitter)
@@ -216,6 +238,20 @@ class TestLocateSublevelTransitions(unittest.TestCase):
         edges = pf._locate_sublevel_transitions(data, 1e6, 20, 10, 200.0, 5.0)
         self.assertEqual(edges[0][0], 0)
         self.assertEqual(edges[-1][0], len(data))
+
+    def test_no_baseline_before_the_event_is_rejected(self):
+        pf = object.__new__(NoFitter)
+        data = np.full(50, 100.0)  # never within the band of the 200 pA baseline
+        with self.assertRaisesRegex(ValueError, "before the estimated event start"):
+            pf._locate_sublevel_transitions(data, 1e6, 10, 5, 200.0, 5.0)
+
+    def test_a_missing_or_empty_padding_is_rejected(self):
+        pf = object.__new__(NoFitter)
+        data = np.full(50, 200.0)
+        for before, after in ((0, 5), (10, 0), (None, 5), (10, None)):
+            with self.subTest(before=before, after=after):
+                with self.assertRaises(ValueError):
+                    pf._locate_sublevel_transitions(data, 1e6, before, after, 200.0, 5.0)
 
 
 # ---------------------------------------------------------------------------
@@ -229,7 +265,7 @@ class TestPopulateSublevelMetadata(unittest.TestCase):
         data = np.concatenate(
             [np.full(20, 200.0), np.full(60, 150.0), np.full(20, 200.0)]
         )
-        starts = _entries([0, 20, 80, 100], 0)
+        starts = _entries([0, 20, 80, 100])
         meta = pf._populate_sublevel_metadata(data, 1e6, 200.0, 5.0, starts)
 
         np.testing.assert_allclose(meta["sublevel_current"], [200.0, 150.0, 200.0])
@@ -247,7 +283,7 @@ class TestPopulateSublevelMetadata(unittest.TestCase):
         data = np.concatenate(
             [np.full(20, 200.0), np.full(60, 150.0), np.full(20, 200.0)]
         )
-        starts = _entries([0, 20, 80, 100], 0)
+        starts = _entries([0, 20, 80, 100])
         meta = pf._populate_sublevel_metadata(data, 1e6, 200.0, 5.0, starts)
         for key in [
             "sublevel_current",
@@ -267,7 +303,7 @@ class TestPopulateSublevelMetadata(unittest.TestCase):
         data = np.concatenate(
             [np.full(20, 200.0), np.full(60, 150.0), np.full(20, 250.0)]
         )
-        starts = _entries([0, 20, 80, 100], 0)
+        starts = _entries([0, 20, 80, 100])
         with self.assertRaises(ValueError):
             pf._populate_sublevel_metadata(data, 1e6, 200.0, 5.0, starts)
 
@@ -278,31 +314,34 @@ class TestPopulateSublevelMetadata(unittest.TestCase):
         data = np.concatenate(
             [np.full(20, 200.0), np.full(60, 150.0), np.full(20, 210.0)]
         )
-        starts = _entries([0, 20, 80, 100], 0)
+        starts = _entries([0, 20, 80, 100])
         # diff = 10 = 2*5, not strictly greater -> should not raise
         meta = pf._populate_sublevel_metadata(data, 1e6, 200.0, 5.0, starts)
         self.assertIn("sublevel_current", meta)
 
-    def test_degenerate_slice_branch_for_first_sublevel(self):
-        # Asymmetric widths (first=10, last=30) with rise_time=10 makes only
-        # the first sublevel's window fully consumed by rise_time, isolating
-        # the "else" branch to that one sublevel.
+    def test_statistics_come_from_the_steady_part_only(self):
+        # Edges inside each sublevel's extent: the current, its standard deviation and
+        # the blockage ignore them, while the duration and the raw charge span the
+        # whole sublevel between edges.
         pf = _make_pf()
         data = np.concatenate(
-            [np.full(10, 200.0), np.full(60, 150.0), np.full(30, 200.0)]
+            [
+                np.full(18, 200.0),
+                [175.0, 150.0],  # the leading edge, inside the blockage's extent
+                np.full(58, 100.0),
+                [125.0, 150.0, 175.0],  # the trailing edge, inside the trailing padding
+                np.full(19, 200.0),
+            ]
         )
-        starts = _entries([0, 10, 70, 100], 10)
+        starts = [(0, 0, 18), (18, 20, 78), (78, 81, 100), (100, 100, 100)]
         meta = pf._populate_sublevel_metadata(data, 1e6, 200.0, 5.0, starts)
 
-        # Degenerate branch: sublevel_current falls back to data[end - 1].
-        self.assertEqual(meta["sublevel_current"][0], data[9])
-        # Degenerate branch: sublevel_stdev falls back to baseline_std.
-        self.assertEqual(meta["sublevel_stdev"][0], 5.0)
-        # Non-degenerate sublevels are unaffected.
-        self.assertEqual(meta["sublevel_current"][1], 150.0)
-        self.assertEqual(meta["sublevel_stdev"][1], 0.0)
-        self.assertEqual(meta["sublevel_current"][2], 200.0)
-        self.assertEqual(meta["sublevel_stdev"][2], 0.0)
+        np.testing.assert_allclose(meta["sublevel_current"], [200.0, 100.0, 200.0])
+        np.testing.assert_allclose(meta["sublevel_stdev"], [0.0, 0.0, 0.0])
+        np.testing.assert_allclose(meta["sublevel_blockage"], [0.0, 100.0, 0.0])
+        np.testing.assert_allclose(meta["sublevel_duration"], [18.0, 60.0, 22.0])
+        # the raw charge still integrates the edge samples inside the extent
+        self.assertGreater(meta["sublevel_raw_ecd"][1], 58 * 100.0 * 1e-6)
 
 
 # ---------------------------------------------------------------------------
@@ -480,27 +519,29 @@ if __name__ == "__main__":
 
 
 # ---------------------------------------------------------------------------
-# the rise time travels with its event
+# the event's geometry travels with its event
 # ---------------------------------------------------------------------------
 
 
-class TestRiseTimeTravelsWithTheEvent(unittest.TestCase):
+class TestGeometryTravelsWithTheEvent(unittest.TestCase):
     """
     One fitter instance fits every channel, on one thread per channel.
 
-    The rise time found for an event in ``_locate_sublevel_transitions`` used to be
-    stored on the instance and read back in ``_populate_sublevel_metadata``, so another
-    channel's event located in between replaced it, and this event's levels were
-    averaged with the other event's rise time.
+    What ``_locate_sublevel_transitions`` finds about an event - once a rise time, now
+    the edges and the steady ranges - used to be stored on the instance and read back in
+    ``_populate_sublevel_metadata``, so another channel's event located in between
+    replaced it, and this event's levels were averaged with the other event's geometry.
     """
 
     def test_an_event_located_in_between_does_not_change_this_events_metadata(self):
         pf = object.__new__(NoFitter)
         this_event = np.full(50, 200.0)
-        this_event[6:11] = 150.0  # a rise time of 5
-        other_event = np.full(50, 200.0)  # a rise time of 0
+        this_event[8:12] = [175.0, 150.0, 125.0, 100.0]  # an edge the walk finds
+        this_event[12:45] = 100.0
+        other_event = np.full(50, 200.0)  # flat: edges at the estimates
 
         edges = pf._locate_sublevel_transitions(this_event, 1e6, 10, 5, 200.0, 5.0)
+        self.assertEqual(edges[1][0], 7, edges)  # the walk found the edge
         expected = pf._populate_sublevel_metadata(this_event, 1e6, 200.0, 5.0, edges)
 
         pf._locate_sublevel_transitions(other_event, 1e6, 10, 5, 200.0, 5.0)

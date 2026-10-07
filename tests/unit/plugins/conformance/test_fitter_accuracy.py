@@ -23,13 +23,15 @@ events differently is not wrong for failing it. A new plugin opts in by being ad
 list; contract and failure-path tests stay family-wide (``DECISIONS.md``, 2026-10-06).
 
 Bands a fitter was never meant for are recorded as strict expected failures rather than
-left out: ClassicCUSUM at 100 pA (its 10 σ threshold exceeds the 150 pA step), the rest
-of the CUSUM family at 100 pA (an informative band), and NoFitter's edge placement, which
-walks the start back to the baseline crossing but sets the end a rise time early
-(``NoFitter.py:228-229``, step 5). Two marks this file used to carry are gone: ClassicCUSUM
-resolving fewer levels at *higher* SNR, and every CUSUM variant failing 20-sample steps,
-were one defect - the detector did not restart its statistics after a crossing the
-rise-time guard rejected, so a large edge left it blind to the steps behind it.
+left out: ClassicCUSUM at 100 pA (its 10 σ threshold exceeds the 150 pA step) and the
+rest of the CUSUM family at 100 pA (an informative band). Three marks this file used to
+carry are gone. ClassicCUSUM resolving fewer levels at *higher* SNR and every CUSUM
+variant failing 20-sample steps were one defect: the detector did not restart its
+statistics after a crossing the rise-time guard rejected, so a large edge left it blind
+to the steps behind it. NoFitter's short-event failures were its walk to the baseline
+*mean*, a coin flip per sample on low-pass noise that put both edges a random distance
+early and cut the same random number of samples off the blockage median; its edges are
+now walked by the slope of each edge.
 """
 
 from typing import Dict, List, Tuple, Type
@@ -444,29 +446,14 @@ def test_sublevel_durations_match_the_planted_widths(
 
 
 # --- NoFitter ---------------------------------------------------------------------------
-NOFITTER_EDGE_DEFECT = _xfail(
-    "NoFitter walks the start back to the baseline crossing but sets the end a rise time "
-    "early (NoFitter.py:228-229), so a short filtered blockage's mean and edges are off; "
-    "fixed in 2.1 step 5"
-)
-
-
 def nofitter_cases() -> List[object]:
     """
-    Build NoFitter's band parameters: 83-sample steps required, shorter ones expected to fail.
-
-    The 20-sample band is required for the CUSUM family but still an expected failure
-    here, under the same edge defect as the 40-sample band.
+    Build NoFitter's band parameters: every band, none expected to fail.
 
     :return: ``pytest.param`` entries
     :rtype: List[object]
     """
-    cases: List[object] = []
-    for band in REQUIRED_BANDS + INFORMATIVE_BANDS:
-        _noise, length = band
-        marks = [NOFITTER_EDGE_DEFECT] if length < 250 else []
-        cases.append(pytest.param(band, marks=marks, id=_band_id(band)))
-    return cases
+    return [pytest.param(band, id=_band_id(band)) for band in REQUIRED_BANDS + INFORMATIVE_BANDS]
 
 
 @pytest.mark.parametrize("band", nofitter_cases())
@@ -475,22 +462,38 @@ def test_nofitter_reports_the_whole_blockage_at_its_planted_mean(
 ) -> None:
     """
     NoFitter sees one inner sublevel; its current is the width-weighted mean of the
-    planted steps within 1.0 sigma, and its duration the blockage length within a sample.
+    planted steps within the policy's bound for the step width (a median over 40
+    correlated samples has about five effective ones, the same reason the CUSUM family
+    gets 2.0 sigma there), its duration the blockage length within two samples, and its
+    reported baseline sigma the planted one within 30% per event and 10% on average: a
+    100-sample padding of low-pass noise holds about a dozen effective samples, so each
+    event's estimate scatters low, where the edge used to inflate it threefold.
     """
     _noise, length = band
     fit = fit_for(fits, filtered_staircase, NoFitter, band)
     assert fit.fitter.rejected.get(CHANNEL, {}) == {}
     assert fit.miscounted(1) == []
+    bound = current_bound_sigma(length) * fit.sigma
+    sigma_ratios = []
     for event_id in fit.fitted_ids():
         planted = fit.events[event_id].planted_sublevels()
         mean_level = sum(width * level for _s, width, level in planted) / length
         current = fit.inner(event_id, "sublevel_current")[0]
         duration = fit.inner(event_id, "sublevel_duration")[0] / DT_US
-        assert abs(current - mean_level) <= 1.0 * fit.sigma, (
-            f"event {event_id}: whole-blockage current {current:.1f} vs planted mean "
-            f"{mean_level:.1f} pA, sigma {fit.sigma:.2f}"
+        event_meta, _s, _f, _r, _fit = fit.fitter.get_single_event_metadata(
+            CHANNEL, event_id
         )
-        assert abs(duration - length) <= 1, (event_id, duration, length)
+        assert abs(current - mean_level) <= bound, (
+            f"event {event_id}: whole-blockage current {current:.1f} vs planted mean "
+            f"{mean_level:.1f} pA, bound {bound:.1f} pA"
+        )
+        assert abs(duration - length) <= 2, (event_id, duration, length)
+        sigma_ratios.append(event_meta["baseline_stdev"] / fit.sigma)
+        assert abs(sigma_ratios[-1] - 1.0) <= 0.3, (
+            f"event {event_id}: baseline_stdev {event_meta['baseline_stdev']:.2f} vs "
+            f"planted sigma {fit.sigma:.2f}"
+        )
+    assert abs(float(np.mean(sigma_ratios)) - 1.0) <= 0.1, sigma_ratios
 
 
 @pytest.fixture(scope="module")
@@ -521,17 +524,16 @@ def slow_edge_database(
     )
 
 
-@NOFITTER_EDGE_DEFECT
-def test_nofitter_places_its_two_edges_symmetrically(
+def test_nofitter_places_its_edges_where_each_edge_begins(
     slow_edge_database: SyntheticEventsDatabase,
 ) -> None:
     """
-    The start and end NoFitter reports sit symmetrically about the planted boundaries.
+    The start sits where the signal leaves baseline and the end where the return begins.
 
-    The filter is zero-phase, so the planted boundary is the 50% point of each edge. A
-    fitter may place its edges earlier or later along the rise, but whatever offset it
-    applies at the start it should apply, mirrored, at the end; today the end is shifted
-    the same way as the start rather than mirrored, so the whole blockage reads early.
+    The filter is zero-phase, so the planted boundary is the 50% point of each edge, and
+    both of NoFitter's edges should sit before their planted boundary by the same amount:
+    less than the edge's full extent (about 30 samples top to foot at this cutoff) and
+    equal to each other within two samples, so the duration is the planted one.
     """
     fit = Fit(NoFitter, slow_edge_database)
     try:
@@ -541,9 +543,11 @@ def test_nofitter_places_its_two_edges_symmetrically(
             end = fit.inner(event_id, "sublevel_end_times")[0] / DT_US
             start_offset = start - planted_start
             end_offset = end - (planted_start + width)
-            assert abs(start_offset + end_offset) <= 2, (
+            assert -30 <= start_offset <= 0, (event_id, start_offset)
+            assert -30 <= end_offset <= 0, (event_id, end_offset)
+            assert abs(start_offset - end_offset) <= 2, (
                 f"event {event_id}: start offset {start_offset:+.1f}, "
-                f"end offset {end_offset:+.1f} samples - not mirrored"
+                f"end offset {end_offset:+.1f} samples - the edges do not shift alike"
             )
     finally:
         fit.close()

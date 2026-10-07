@@ -57,7 +57,7 @@ Step 3: Fit Events
    - ``PeakFinder`` – classifies peaks riding on the event, for barcode and similar events.
    - ``Basic_PeakFinder`` – fits prominent peaks using window-based criteria.
    - ``NanoTrees`` – identifies nested sublevels using time-scaling and statistical analysis.
-   - ``NoFitter`` – fits nothing; records each event's basic metadata only.
+   - ``NoFitter`` – fits nothing; records each event as one level between the edges the finder found, each edge walked to where it begins.
 
 3. A plugin settings dialog will appear depending on the selected fitter:
 

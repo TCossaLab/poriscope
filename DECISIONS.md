@@ -18,6 +18,46 @@ and deleted on 2026-09-27; it too is in git history.
 
 ---
 
+## 2026-10-07 - NoFitter's edges are where each edge begins, found by its slope
+
+**Context.** NoFitter walked back from the finder's start estimate to the first sample at
+or above the baseline mean and called the count `rise_time`; the start edge went to that
+sample and the end edge to the end estimate minus the same count. The geometry was the
+intended one - the start where the signal leaves baseline, the end where the return
+begins (Kyle, 2026-10-07) - but on low-pass noise the stop rule is a coin flip per
+sample once the signal is back on baseline: the walk averaged 8 samples and reached 33
+(43 on 20 kHz edges). Both edges landed a random distance early, the blockage median
+lost the same random number of steady samples and slid onto a ramp (2.2 σ error at
+40-sample steps, 16.8 σ at 20), and the trailing padding's statistics began inside the
+blockage's own edge (`baseline_stdev` 3.05× planted at 15 pA, 10.7× on slow edges).
+
+**Decision** (Kyle, 2026-10-07). Walk each edge by its slope with a band of 3 local
+sigmas: the start is where, walking back from the start estimate, consecutive samples
+stop differing by more than the band; the end is the same rule walked back from the end
+estimate. The statistics of each sublevel cover its steady part only - the leading
+padding to the last sample within the band of baseline, the blockage from where the
+leading edge flattens out to the end edge, the trailing padding from the first sample
+back within the band. No setting: NoFitter stays the fitter that adds none, and the band
+is a class constant. Rejected without running: mirroring the walk at the end (durations
+would grow by two noise-driven walks), and edges at the estimates with untrimmed
+statistics (`baseline_stdev` 3.9× - the padding then holds the half-edge). Edges at the
+estimates with trimmed padding statistics measured as well as the chosen rule on
+everything but your definition of the edges.
+
+**Evidence** (planted bands, 25 events each; the 20 kHz slow-edge fixture, 10). Start and
+end offsets from the planted 50% points: −3.7 / −4.0 at 15 pA, −2.0 / −3.0 at 50 pA,
+0.0 / −1.9 at 100 pA (the band exceeds the per-sample step), −12.0 / −12.1 on slow edges;
+duration within 1-2 samples everywhere; blockage current 0.57 σ at 83-sample steps, 1.25
+at 40, 1.68 at 20, 0.78 on slow edges; `baseline_stdev` 0.92-0.96 of planted (0.76 on the
+57-sample slow-edge padding, a small-sample effect of heavily correlated noise). A band
+of 2 σ let noise extend the start walk (offsets to −8) with no gain elsewhere.
+
+**Revisit if** a finder reports its estimates off the edge (on the plateau or in the
+baseline): the slope walk assumes the estimate sits on the edge, and a flat stretch
+between the estimate and the edge would leave the edge at the estimate.
+
+---
+
 ## 2026-10-07 - The CUSUM detector resets on every threshold crossing
 
 **Context.** `3c755291` (2026-05-01) gated the detector's reset behind an accepted jump,
@@ -508,7 +548,10 @@ channel on a thread per channel, so another channel's event could replace it in 
 **Decision** (Kyle, 2026-09-25). Carry it in the sublevel list the base already passes from
 one step to the next - `List[Any]` exists to carry such per-sublevel information - as
 `(index, rise_time)` entries. No contract change: serialising NoFitter would cost
-parallelism, and neither step is given the channel to key a dict by.
+parallelism, and neither step is given the channel to key a dict by. **Amended
+2026-10-07:** the entries now carry `(edge, statistics_start, statistics_end)` - the
+rise time is gone with the walk that measured it (see the entry of that date) - and the
+mechanism, per-event geometry riding in the list, stands.
 
 **Evidence.** An event located in between shifted `sublevel_stdev` by 8.5 in a
 single-threaded interleave test, which now passes; conformance is unchanged.
