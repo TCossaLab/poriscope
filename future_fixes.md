@@ -49,43 +49,54 @@ Step 10 waits for both tracks.
 
 ### Step 5 - event fitters and the fit loop
 
-- **`IntraCUSUM` defaults make it count noise**: threshold and hysteresis both 0.0 (`:89`,
-  `:95`) scored 499 crossings on a clean single level (2 at T=200, H=20); nothing checks
-  hysteresis < threshold.
-- **Silent scientific fallbacks with no metadata flag, in `CUSUM.py`.** For a sublevel shorter
-  than `rise_time`: `sublevel_current` becomes the single last sample (`:439`), `sublevel_stdev`
-  becomes `baseline_std` (`:467`), `sublevel_blockage` an unsigned max-absolute (`:494-503`). The
-  retry loop at `:371-373` fits different events at 1.5^0 to 1.5^4 times the step size and records
-  which nowhere. `:216`'s `np.std(data[-padding_after:])` returns the whole event when
-  `padding_after == 0` and its sibling returns `nan` when `padding_before == 0`, poisoning
-  `step_size` at `:222`. `Step Size` has no default (`:92`) and `_validate_settings` is `pass`
-  (`:658-665`), so `None`/`0.0` reach the division.
-- **CUSUM resets only on an accepted jump** (`CUSUM.py:316`); the C resets on any threshold
-  crossing, so a crossing rejected by the `rise_time` guard still accumulates `varS` and leaves
-  `gpos`/`gneg` above threshold to re-detect the same jump. Validate against reference data first.
-- **The `length - jump > rise_time` half of the C's edge guard is missing** (`CUSUM.py:302-303`).
-- **`ClassicCUSUM` merges short levels on a median but reports them on CUSUM's single-sample
-  fallback**, so merge decision and reported current use different estimators.
-- **`ClassicCUSUM` resolves fewer planted levels at *higher* SNR.** On Bessel-filtered synthetic
-  staircases (100 kHz, 8 poles, 500 kHz sampling; steps 150 pA, 40 samples; Step Size 10 σ,
-  Rise Time 16 µs) it found the planted three levels on 0 of 25 events at drawn noise 15 pA
-  (stored σ 6.2) but 25 of 25 at 50 pA (σ 20.8), and 22 of 25 against CUSUM's 25 of 25 at
-  83-sample steps and 15 pA. CUSUM and IntraCUSUM on the same data: 25 of 25 at both noise
-  levels. Measured 2026-10-05 while re-measuring ruling A; the σ-normalised step and the
-  median merge in `_locate_sublevel_transitions` are the suspects. Pinned by a step 1 `xfail`.
-- **`NoFitter` places event edges asymmetrically** (`:228-229`): the start walks back to the
-  baseline crossing, the end sits `rise_time` before the threshold crossing (838 against 860 on a
-  40-sample ramp), so the overlay and `raw_ecd` shift left.
+Series on the plan page (2026-10-07, `e3f6cb0b`); anchors re-verified there. The C reference is
+Kyle's public <https://github.com/shadowk29/CUSUM> (`detector.c`); its core maths is the Python's,
+its wrapping logic is not and is not a target (Kyle, 2026-10-07).
+
+- **The CUSUM detector resets only on an accepted jump** (`CUSUM.py:316`, `ClassicCUSUM.py:232`;
+  `IntraCUSUM` inherits; the owner-held `PeakFinder.py:1037` copy the same). A crossing rejected by
+  the `rise_time` guard leaves the anchor mid-edge and the Welford variance swallows the rest of the
+  edge: 195-442 σ² for 145 samples after a 64 σ edge, so the 24 σ internal steps go unseen (one
+  inner level on 25/25 events at 15 pA / 40-sample steps; 22/25 at 83). The C resets on every
+  crossing; so did the Python until `3c755291` (2026-05-01, "fixing tricky numerical bug") gated
+  it. With the C reset the planted bands read 25/25 everywhere required, the 20-sample band
+  resolves too, and nothing else moves. Pinned: `CLASSIC_HIGH_SNR`, `TWENTY_SAMPLE_STEPS`.
+- **The `length - jump > rise_time` half of the C's edge guard is missing** (`CUSUM.py:302-303`,
+  `ClassicCUSUM.py:218-219`, `PeakFinder.py:1023`). Neutral on the planted bands; with it, the
+  sublevel-shorter-than-rise-time fallbacks at `CUSUM.py:438-439`, `:466-467`, `:493-503` and
+  Classic's merge estimator `:265` are unreachable (0 of ~1,900 sublevels hit them today) and go.
+- **`ClassicCUSUM._locate_sublevel_transitions` is a 200-line copy of CUSUM's** differing at
+  `:139` (step already in σ) and the dead `:265` branch; the padding-std recovery is copied at
+  `:129-133` / `CUSUM.py:212-216`, where `padding_after == 0` reads the whole event and
+  `padding_before == 0` gives `nan`, poisoning `:222`.
+- **`Step Size` 0.0 passes `Min: 0.0`** and reaches `ARL`'s `h / s` (`CUSUM.py:798-799`); the
+  `ZeroDivisionError` is tallied as a rejection reason. `_validate_settings` is `pass` in all four
+  fitters; `Step Size` and `Rise Time` have no default (`:92`, `:94`).
+- **`IntraCUSUM` defaults make it count noise**: threshold and hysteresis both 0.0 (`:89`, `:95`)
+  scored 499 crossings on a clean single level; nothing checks hysteresis <= threshold.
+- **The retry loop** (`CUSUM.py:371-373`, 1.5^k x step, up to 4 times) records which factor
+  fitted an event nowhere; the detector's output cannot carry a per-event value to
+  `_populate_event_metadata` without riding in `sublevel_starts`.
+- **`NoFitter` sets both edges early by its noise-driven walk-back** (`:228-229`): start and end
+  offsets both -7.9 samples mean (-42.7 on 20 kHz edges), so durations are the finder's but the
+  blockage median's region slides onto a ramp (2.22 σ at 40-sample steps, 16.8 σ at 20) and the
+  trailing padding's statistics start inside the edge (`baseline_stdev` 3.05x planted at 15 pA,
+  10.7x on slow edges). Measured fix: edges at the finder's estimates, each padding's statistics
+  trimmed at its baseline crossing (mirrored edges, `baseline_stdev` 0.94x, current within
+  policy). Pinned: `NOFITTER_EDGE_DEFECT`.
 - **`fit_events` turns plugin bugs into scientific rejection reasons.** Three
   `except ValueError`/`except Exception` pairs (`:633/642`, `:680/689`, `:741/750`) route through
-  `_reject_event:463` keyed on `str(e)`, so a `TypeError` lands in the rejection table beside
-  "Too Few Levels" and the channel finishes with `eventfitting_status = True` (`:775`). `:652`
-  checks `Iterable` then `:657` calls `len()`; `fit_events(indices=[])` marks the channel fitted
-  while the docstring at `:524` says it fits everything.
-- **`fit_events` logs noisily**: INFO `index/total_events` per event (`:557`), wrong for index
-  subsets; the generic branch interpolates the whole event dict (`:647`); "No further warnings of
-  this type" (`:638`) then warns every time. **`get_single_event_metadata` loads each event twice**
-  (`:870-871`).
+  `_reject_event:463` keyed on `str(e)`, so a `TypeError` lands beside "Too Few Levels" and the
+  channel finishes `eventfitting_status = True` (`:775`). An exception that escapes instead reaches
+  `Worker.process_generator`, which puts the message on the status panel and leaves the channel
+  "fitting incomplete". `:652` checks `Iterable` then `:657` calls `len()`.
+- **`fit_events(indices=[])` marks the channel fitted** while the docstring at `:524` says it
+  fits everything; no caller in the app passes `indices`.
+- **`fit_events` logs noisily**: INFO `index/total_events` per event (`:557`); the generic
+  branches interpolate the whole event dict (`:647`, `:685`, `:694`, `:746`, `:755`); "No further
+  warnings of this type" (`:638`) then warns every time. **`get_single_event_metadata` loads each
+  event twice** (`:870-871`); the loader applies the filter to a read-only `frombuffer` array, so
+  applying it to one raw load is equivalent.
 
 ### Step 6 - database and the event-data contract
 
