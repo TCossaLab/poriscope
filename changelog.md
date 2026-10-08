@@ -98,6 +98,10 @@
 
 * Committing found events now rejects an event that cannot be read under the reader's own reason and carries on
 
+* An event the metadata database cannot read back is now reported by name instead of silently left out of plots and exports, and a CSV export says how many trace files are missing
+
+* A metadata query that fails partway now reports the error instead of stopping as if it had finished
+
 ### Documentation:
 
 * The API reference no longer lists `NanoTrees`' helper classes as event fitters

@@ -15,8 +15,8 @@ has a red test to turn green where today's behaviour differs:
 - An abort leaves the channel empty and ``written`` at zero. Green today.
 - A rejected event does not shift the indices of the events after it.
 - A stored event row the loader cannot interpret (a NULL ``padding_before``) is reported,
-  not dropped at INFO (``SQLiteDBLoader._load_event_data``). Strict expected
-  failure.
+  not dropped at INFO; a failed query raises rather than looking exhausted; an export says
+  how many events it could not write.
 """
 
 import logging
@@ -25,10 +25,10 @@ from pathlib import Path
 from typing import Iterator, List, Type
 from unittest.mock import patch
 
-import numpy as np
 import pytest
 
 from poriscope.plugins.db_loaders.SQLiteDBLoader import SQLiteDBLoader
+from poriscope.plugins.dbwriters.SQLiteDBWriter import SQLiteDBWriter
 from poriscope.plugins.eventfinders.ClassicBlockageFinder import ClassicBlockageFinder
 from poriscope.plugins.eventfitters.CUSUM import CUSUM
 from poriscope.utils.MetaDatabaseWriter import MetaDatabaseWriter
@@ -37,6 +37,7 @@ from tests.unit.plugins.conformance._recipes import (
     CHIMERA_CHANNEL,
     EVENTS_CHANNEL,
     EVENTS_COUNT,
+    build_db_loader,
     build_db_writer,
     build_event_finder,
     build_event_fitter,
@@ -44,6 +45,7 @@ from tests.unit.plugins.conformance._recipes import (
     build_reader,
     build_writer,
     discover_concrete,
+    write_metadata_database,
 )
 from tests.unit.plugins.conformance.test_writers import describe_database, identity
 
@@ -302,87 +304,110 @@ def test_an_aborted_commit_leaves_the_channel_empty(
 
 
 # --- SQLiteDBLoader ---------------------------------------------------------------------
-EVENT_DATA_QUERY = (
-    "SELECT e.id, e.event_id, e.channel_id, e.experiment_id, d.data_format, "
-    "d.samplerate, d.padding_before, d.padding_after, d.raw_data, d.filtered_data, "
-    "d.fit_data FROM events e JOIN data d ON e.id = d.event_id"
-)
-
-
-def _database_with_a_null_padding(path: Path) -> None:
+@pytest.fixture
+def null_padding_db(events_db_path, tmp_path: Path) -> Path:
     """
-    Write a two-event metadata database whose second data row has a NULL padding_before.
+    A database from the shipped writer in which one event's leading padding is NULL.
 
-    The hand-built loader fixture declares the column NOT NULL, which is why this one
-    exists: the production writer can be bypassed by any tool that edits the file.
+    ``padding_before`` is the level-0 sublevel's ``sublevel_duration``, a nullable
+    column, so the shipped writer stores a NULL there when a fitter hands it one; this
+    sets it on the event with ``event_id`` 1 after the fact.
 
-    :param path: where to write it
-    :type path: Path
+    :param events_db_path: the conformance events database
+    :param tmp_path: per-test scratch directory
+    :type tmp_path: Path
+    :return: the database
+    :rtype: Path
     """
-    blob = np.array([1.0, 2.0, 3.0], dtype=np.float64).tobytes()
-    connection = sqlite3.connect(str(path))
+    out = write_metadata_database(
+        events_db_path, tmp_path / "metadata.sqlite3", CUSUM, SQLiteDBWriter
+    )
+    connection = sqlite3.connect(str(out))
     try:
-        connection.executescript(
-            """
-            CREATE TABLE events (
-                id INTEGER PRIMARY KEY, event_id INTEGER NOT NULL,
-                experiment_id INTEGER NOT NULL, channel_id INTEGER NOT NULL
-            );
-            CREATE TABLE data (
-                id INTEGER PRIMARY KEY, event_id INTEGER NOT NULL,
-                data_format TEXT NOT NULL, samplerate REAL NOT NULL,
-                padding_before INTEGER, padding_after INTEGER NOT NULL,
-                raw_data BLOB, filtered_data BLOB, fit_data BLOB
-            );
-            INSERT INTO events (id, event_id, experiment_id, channel_id) VALUES (1, 0, 1, 0);
-            INSERT INTO events (id, event_id, experiment_id, channel_id) VALUES (2, 1, 1, 0);
-            """
-        )
         connection.execute(
-            "INSERT INTO data (event_id, data_format, samplerate, padding_before, "
-            "padding_after, raw_data, filtered_data, fit_data) "
-            "VALUES (1, 'float64', 10000.0, 10, 10, ?, ?, ?)",
-            (blob, blob, blob),
-        )
-        connection.execute(
-            "INSERT INTO data (event_id, data_format, samplerate, padding_before, "
-            "padding_after, raw_data, filtered_data, fit_data) "
-            "VALUES (2, 'float64', 10000.0, NULL, 10, ?, ?, ?)",
-            (blob, blob, blob),
+            "UPDATE sublevels SET sublevel_duration = NULL WHERE level_id = 0 "
+            "AND event_db_id = (SELECT id FROM events WHERE event_id = 1)"
         )
         connection.commit()
     finally:
         connection.close()
+    return out
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "SQLiteDBLoader._load_event_data wraps the whole yield in `except "
-        "Exception: log INFO; continue`, so a row it cannot interpret is dropped with "
-        "nothing above INFO to say so"
-    ),
-)
 def test_a_null_padding_before_is_reported_not_dropped(
-    tmp_path: Path, caplog: pytest.LogCaptureFixture
+    null_padding_db: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     """
-    A stored row the loader cannot interpret yields nothing for that event and says so
-    at WARNING or above, naming the event; the rows around it still come through.
+    A stored row the loader cannot read yields nothing for that event and says so at
+    WARNING or above, naming the event; the rows around it still come through.
     """
-    db_path = tmp_path / "broken.sqlite3"
-    _database_with_a_null_padding(db_path)
-    settings = {"Input File": {"Type": str, "Value": str(db_path)}}
-    with patch.object(SQLiteDBLoader, "_init"):
-        loader = SQLiteDBLoader(settings=settings)
-    loader.db_path = db_path
+    loader = build_db_loader(SQLiteDBLoader, str(null_padding_db))
+    try:
+        with caplog.at_level(logging.INFO):
+            events = list(loader.load_event_data())
+    finally:
+        loader.close_resources()
 
-    with caplog.at_level(logging.INFO):
-        rows = list(loader._load_event_data(EVENT_DATA_QUERY))
-
-    assert len(rows) == 1 and rows[0][3] == 0  # the good event came through
-    reports = [r for r in caplog.records if r.levelno >= logging.WARNING]
-    assert reports, "the dropped row was not reported above INFO"
-    assert any("1" in r.getMessage() for r in reports), [
-        r.getMessage() for r in reports
+    assert [event["event_id"] for event in events] == [
+        i for i in range(EVENTS_COUNT) if i != 1
     ]
+    reports = [r.getMessage() for r in caplog.records if r.levelno >= logging.WARNING]
+    assert any("event 1 " in message for message in reports), reports
+
+
+def test_an_exception_thrown_into_the_event_reader_is_not_swallowed(
+    null_padding_db: Path,
+) -> None:
+    """
+    The reader's handling of an unreadable row covers that row, not whatever a caller
+    throws into the generator while it is suspended.
+    """
+    loader = build_db_loader(SQLiteDBLoader, str(null_padding_db))
+    query, debug = loader.construct_event_data_query()
+    assert query, debug
+    generator = loader._load_event_data(query)
+    try:
+        next(generator)
+        with pytest.raises(RuntimeError, match="thrown in"):
+            generator.throw(RuntimeError("thrown in"))
+    finally:
+        generator.close()
+        loader.close_resources()
+
+
+@pytest.mark.parametrize("method", ["_load_event_data", "_load_metadata_generator"])
+def test_a_query_that_fails_says_so_rather_than_looking_exhausted(
+    method: str, null_padding_db: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """
+    A database error ends the iteration with that error, logged at ERROR so the user
+    is told, instead of ending it as if every row had been read.
+    """
+    loader = build_db_loader(SQLiteDBLoader, str(null_padding_db))
+    try:
+        with caplog.at_level(logging.ERROR), pytest.raises(sqlite3.Error):
+            list(getattr(loader, method)("SELECT * FROM no_such_table"))
+    finally:
+        loader.close_resources()
+    assert any(r.levelno >= logging.ERROR for r in caplog.records)
+
+
+def test_an_export_says_how_many_events_it_could_not_write(
+    null_padding_db: Path, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """
+    ``data.csv`` lists every selected event, so one without a trace file is said to be
+    missing rather than left for the reader of the export to find.
+    """
+    out = tmp_path / "export"
+    out.mkdir()
+    loader = build_db_loader(SQLiteDBLoader, str(null_padding_db))
+    try:
+        with caplog.at_level(logging.WARNING):
+            drain(loader.export_subset_to_csv(str(out), "s"))
+    finally:
+        loader.close_resources()
+
+    assert len(list(out.glob("s_event_*.csv"))) == EVENTS_COUNT - 1
+    reports = [r.getMessage() for r in caplog.records if r.levelno >= logging.WARNING]
+    assert any(f"1 of {EVENTS_COUNT}" in message for message in reports), reports
