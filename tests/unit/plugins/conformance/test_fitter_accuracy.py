@@ -298,7 +298,10 @@ def _band_id(band: Band) -> str:
 
 
 def _xfail(reason: str) -> pytest.MarkDecorator:
-    return pytest.mark.xfail(strict=True, reason=reason)
+    # raises=AssertionError: a strict xfail otherwise accepts any exception, so a test that
+    # cannot even run - a typo, a fixture that fails to build - would pass as the
+    # accuracy limit it names.
+    return pytest.mark.xfail(strict=True, raises=AssertionError, reason=reason)
 
 
 CLASSIC_THRESHOLD_ABOVE_STEP = _xfail(
