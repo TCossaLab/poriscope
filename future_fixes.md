@@ -49,30 +49,32 @@ Step 10 waits for both tracks.
 
 ### Step 7 - plugin lifecycle
 
-- **`apply_settings` assigns `raw_settings` before validating** (`BaseDataPlugin.py:422`,
-  `_validate_settings` at `:425`), so a rejected edit leaves the rejected values on the plugin.
-- **`apply_settings` aliases the settings dict, and session history holds the same object.** Do
-  **not** fix by copying at the assignment - the alias is load-bearing: `DictDialog.__init__`
-  (`dict_dialog_widget.py:61`) aliases and `get_result` (`:400`) returns the same object, so
-  `history["settings"]` is `app_settings`; `edit_plugin` swaps plugin-typed `Value`s for live
-  instances and it is `apply_settings` writing back through the alias that repairs the history
-  dict. **Fix the ordering first, then the alias.**
-- **`BaseDataPlugin.__init__` registers dependencies under an empty key**: `apply_settings` runs at
-  `:114` before any `set_key`, so the scripted `Plugin(settings)` path records `""`. The GUI sets
-  the key first (`DataPluginController.py:887`/`:901`).
-- **`replace_raw_settings_option` is dead in practice** (`BaseDataPlugin.py:356-387`): both paths
-  into `apply_settings` blank the options first (`DataPluginController.py:420`, from
-  `_resolve_plugin_references:385` and `_resolve_new_plugin_references:996`), so it returns at
-  `:382`. Its test mocks the instance and asserts only that it was called.
-- **`edit_plugin` mutates the dependency graph partway through with a hand-rolled undo.**
-  `_rename_plugin:221` re-points dependents one at a time (`_update_dependents_after_rename:299`)
-  and calls `set_key` (`:269`) after the loop, so a mid-loop failure leaves dependents on a key
-  that does not exist. Validate-then-commit.
-- **`MetaModel.run_generators` indexes `self.generators[key]` unguarded** (`:233`) and
-  `set_generator` (`:197`) drops a generator for a running (key, channel) without closing it.
-- **Four app-layer callers pass `channel=None`** (`DataPluginController.py:285`, `:815`;
-  `DataPluginModel.py:217`, `:239`); convert them to loop `get_channels()` here so step 8 is
-  signatures and overrides only.
+Re-measured 2026-10-08 at `aaa09664`, driving the real controller, model and plugins offscreen.
+
+- **A refused edit poisons the plugin.** `apply_settings` stores the dict (`BaseDataPlugin.py:422`)
+  before validating (`:423-425`): after a refused CUSUM edit (Step Size 0) the fitter runs at the
+  old value, but `get_raw_settings()` reports 0.0 and holds the live loader, so the next
+  `edit_plugin` deepcopy (`DataPluginController.py:95`) raises `cannot pickle '_thread.RLock'` -
+  the plugin can be neither edited nor deleted until restart. Provenance records the refused value.
+- **`apply_settings` stores and rewrites the caller's dict.** In an edit, the dialog's dict
+  (`dict_dialog_widget.py:385`) is the one applied and the one emitted as history (`:463`); history
+  is serialisable only because `apply_settings` turns live plugins back into keys inside it. A
+  script reusing one settings dict for a second plugin is refused (`TypeError`), its loader having
+  become a key. Fix (ruled 2026-10-08): the plugin stores its own copy, plugins as keys, never a
+  deepcopy; history comes from `get_raw_settings()` after a successful apply.
+- **An edit renames before it applies.** `_rename_plugin:221` re-points dependents, saves their
+  history, sets the key and records the rename (`:287`) before `apply_settings` (`:452`), so a
+  rename with a refused value keeps the new name and saves refused settings under it.
+- **A re-pointed plugin keeps its old parent**: `parents` is only added to (`BaseDataPlugin.py:268`).
+- **A scripted plugin's key is `""`**: `__init__` applies settings (`:114`) with the key unset
+  (`:112`), so two finders on one reader merge into one dependent and provenance records `key: ""`.
+  Fix (ruled): optional `key=`, default `<ClassName>_<n>`.
+- **`MetaModel.run_generators`** raises `KeyError` when nothing was staged (`:233`); `set_generator`
+  (`:197`) silently discards a second request for a running (key, channel) - say so on the status
+  panel (ruled).
+- **`DataPluginModel.handle_exit`** (`:233-239`) stops at the first `close_resources` that raises;
+  `DataPluginModel.apply_settings` (`:242`) has no production caller.
+- **No test runs the scripting guide's pipeline, or checks a session saved after an edit.**
 
 ### Step 8 - data-plugin API break (breaking; Kyle takes the PeakFinder side)
 
@@ -89,6 +91,16 @@ Step 10 waits for both tracks.
   overrides change verbatim. **`PeakFinder.py:2591-2593` and `:5143` pass `None` in the body** -
   Kyle makes these two changes himself (2026-10-05), with both PeakFinders' signature and
   docstring updates, so step 8 has no owner gate; Nada gets a heads-up.
+- **Four app-layer callers pass `channel=None`** (`DataPluginController.py:285`, `:815`;
+  `DataPluginModel.py:217`, `:239`), each on a plugin of any family; only readers, finders, fitters
+  and event loaders have `get_channels()`, so convert them with this step's signatures (moved from
+  step 7, 2026-10-08).
+- **`MetaModel.generate_report:330` passes the export index as a loader's channel.**
+- **Remove `BaseDataPlugin.replace_raw_settings_option`** (`:356-387`, breaking; ruled 2026-10-08).
+  It never acts: create, edit and session restore all set a plugin reference's `Options` to `None`
+  first (`DataPluginController.py:419-420`), and validation checks `Options` only when present.
+  Its one caller is `DataPluginController.py:343`; correct `get_raw_settings`'s docstring. Pin with
+  a real-controller test: rename a parent, then edit the dependent.
 - **Add a run-wide "all channels finished" hook on `MetaEventFitter`**; Kyle wires it into PeakFinder
   (`_post_process_events:2133-2178`), so the barrier is built by the base rather than raced.
 - **The two filters share 16 byte-identical lines**: `close_resources` and `reset_channel` in
