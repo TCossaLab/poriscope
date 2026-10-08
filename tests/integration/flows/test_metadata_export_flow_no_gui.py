@@ -18,15 +18,18 @@ the tab still learns about the loader through the notification it normally learn
 from, and the export still runs the same generator with the same arguments.
 """
 
+import sqlite3
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
+import numpy as np
 import pandas as pd
 import pytest
 
 from poriscope.plugins.db_loaders.SQLiteDBLoader import SQLiteDBLoader
 from tests.integration.flows._triad import Triad, build_triad
+from tests.synthetic_data.synthetic_metadata_db import generate_metadata_database
 
 LOADER_KEY = "loader"
 
@@ -66,6 +69,38 @@ class _StubDictDialog:
         return ({"Folder": {"Value": type(self).folder}}, type(self).subset_name)
 
 
+def open_loader(db_path: str) -> SQLiteDBLoader:
+    """
+    A real loader over a database file, configured as the settings dialog would.
+
+    :param db_path: the metadata database to read
+    :type db_path: str
+    :return: the configured loader
+    :rtype: SQLiteDBLoader
+    """
+    loader = SQLiteDBLoader()
+    settings = loader.get_empty_settings(standalone=True)
+    settings["Input File"]["Value"] = db_path
+    loader.apply_settings(settings)
+    return loader
+
+
+def build_metadata_tab(tmp_path: Path, db_path: str) -> Triad:
+    """
+    A metadata tab with a real loader registered over a database file.
+
+    :param tmp_path: per-test scratch directory
+    :type tmp_path: Path
+    :param db_path: the metadata database the loader reads
+    :type db_path: str
+    :return: the assembled triad
+    :rtype: Triad
+    """
+    triad = build_triad("MetadataController", tmp_path)
+    triad.register(open_loader(db_path), "MetaDatabaseLoader", LOADER_KEY)
+    return triad
+
+
 @pytest.fixture
 def metadata_tab(qapp, tmp_path: Path, sample_metadata_db: str) -> Triad:
     """
@@ -80,17 +115,84 @@ def metadata_tab(qapp, tmp_path: Path, sample_metadata_db: str) -> Triad:
     :return: the assembled triad
     :rtype: Triad
     """
-    triad = build_triad("MetadataController", tmp_path)
-
-    loader = SQLiteDBLoader()
-    settings = loader.get_empty_settings(standalone=True)
-    settings["Input File"]["Value"] = sample_metadata_db
-    loader.apply_settings(settings)
-    triad.register(loader, "MetaDatabaseLoader", LOADER_KEY)
+    triad = build_metadata_tab(tmp_path, sample_metadata_db)
 
     yield triad
 
     triad.close()
+
+
+@pytest.fixture
+def channels_written_out_of_order(tmp_path: Path) -> str:
+    """
+    A database whose channel 1 was written before its channel 0.
+
+    The events query of a scoped export walks the ``(experiment_id, channel_id,
+    event_id)`` index, so it returns channel 0's events first, while the ``data``
+    table holds channel 1's rows first. The default synthetic database writes its
+    channels in id order, where the two orders agree and a positional pairing of
+    them goes unnoticed. The channels get different seeds because the generator's
+    default seed would give channel 1's event *k* exactly channel 0's event *k*
+    samples, and a trace swapped between those two would look right.
+
+    :param tmp_path: per-test scratch directory
+    :type tmp_path: Path
+    :return: path to the written database
+    :rtype: str
+    """
+    database = generate_metadata_database(
+        tmp_path / "out_of_order.sqlite3",
+        experiments=[
+            {
+                "name": "exp_a",
+                "channels": [
+                    {"channel_id": 1, "num_events": 6, "seed": 1},
+                    {"channel_id": 0, "num_events": 6, "seed": 2},
+                ],
+            }
+        ],
+    )
+    return str(database.db_path)
+
+
+@pytest.fixture
+def out_of_order_tab(qapp, tmp_path: Path, channels_written_out_of_order: str) -> Triad:
+    """
+    A metadata tab over the database whose channels were written out of order.
+
+    :param qapp: pytest-qt's application fixture; MainView is a real widget
+    :type qapp: Any
+    :param tmp_path: per-test scratch directory
+    :type tmp_path: Path
+    :param channels_written_out_of_order: path to that database
+    :type channels_written_out_of_order: str
+    :return: the assembled triad
+    :rtype: Triad
+    """
+    triad = build_metadata_tab(tmp_path, channels_written_out_of_order)
+
+    yield triad
+
+    triad.close()
+
+
+def stored_raw_data(db_path: str, event_db_id: int) -> np.ndarray:
+    """
+    Read one event's raw trace straight out of the database file.
+
+    :param db_path: the metadata database
+    :type db_path: str
+    :param event_db_id: the event's ``events.id``
+    :type event_db_id: int
+    :return: the stored raw trace
+    :rtype: np.ndarray
+    """
+    with sqlite3.connect(db_path) as conn:
+        data_format, blob = conn.execute(
+            "SELECT data_format, raw_data FROM data WHERE event_db_id = ?",
+            (event_db_id,),
+        ).fetchone()
+    return np.frombuffer(blob, dtype=data_format)
 
 
 def export(
@@ -297,6 +399,82 @@ def test_selecting_both_channels_exports_both(
     assert rows["events"] == 40
     assert rows["sublevels"] == 120
     assert rows["channels"] == 2
+
+
+@pytest.mark.timeout(90)
+def test_every_exported_trace_belongs_to_the_event_it_is_named_for(
+    out_of_order_tab: Triad,
+    qtbot,
+    tmp_path: Path,
+    channels_written_out_of_order: str,
+) -> None:
+    """
+    Each trace file holds its own event's samples, and ``data.csv`` names it.
+
+    The export used to name its trace files in the events query's order and fill
+    them in the event-data query's order, and to label the ``data`` rows the same
+    way, pairing all three by position. Neither query is ordered, and on a database
+    written channel 1 first they disagree, so every file went to another event.
+    The first assertion is the guard that this database really reorders them.
+    """
+    out = tmp_path / "export_out_of_order"
+    out.mkdir()
+
+    export(out_of_order_tab, qtbot, out, "pairs", {"exp_a": [0, 1]})
+
+    event_ids = pd.read_csv(out / "pairs_events.csv")["id"].tolist()
+    assert event_ids != sorted(event_ids), "the events query came back in id order"
+
+    data = pd.read_csv(out / "pairs_data.csv")
+    assert len(data) == 12
+    for _, row in data.iterrows():
+        assert row["filename"] == f"pairs_event_{row['event_db_id']}.csv"
+
+    traces = sorted(out.glob("pairs_event_*.csv"))
+    assert len(traces) == 12
+    for path in traces:
+        event_db_id = int(path.stem.rsplit("_", 1)[-1])
+        exported = pd.read_csv(path)["raw_data"].to_numpy()
+        stored = stored_raw_data(channels_written_out_of_order, event_db_id)
+        # CSV text keeps about 15 significant figures, not every bit; two events
+        # differ by picoamps of noise, far outside this tolerance.
+        assert len(exported) == len(stored), f"{path.name} holds another event"
+        assert np.allclose(
+            exported, stored, rtol=1e-9, atol=0
+        ), f"{path.name} holds another event"
+
+
+@pytest.mark.timeout(90)
+def test_event_data_carries_the_events_table_id(
+    qapp, tmp_path: Path, sample_metadata_db: str
+) -> None:
+    """
+    ``load_event_data`` reports each event by its ``events.id``.
+
+    The export names trace files by that id and the Protein tab writes its fits
+    back to ``events`` by it. The ``data`` table numbers its rows separately, and
+    the two sequences agree only while every event was written whole - a writer
+    before 1.8.0 could commit an event without its data row, after which they
+    differ for the rest of the file. Shifting the ``data`` ids here is that file.
+    """
+    with sqlite3.connect(sample_metadata_db) as conn:
+        conn.execute("UPDATE data SET id = id + 1000")
+        expected = {
+            (channel_id, event_id): db_id
+            for db_id, channel_id, event_id in conn.execute(
+                "SELECT id, channel_id, event_id FROM events"
+            )
+        }
+
+    loader = open_loader(sample_metadata_db)
+    try:
+        events = list(loader.load_event_data(None, {"exp_a": None}))
+    finally:
+        loader.close_resources()
+
+    assert len(events) == len(expected) == 40
+    for event in events:
+        assert event["id"] == expected[(event["channel_id"], event["event_id"])]
 
 
 @pytest.mark.timeout(90)
