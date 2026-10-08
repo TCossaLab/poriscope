@@ -1265,20 +1265,6 @@ class TestLoadEventPlotData:
         event_data, _time_bases, kept = mock_view.set_event_plot_data.call_args.args
         assert (event_data, kept) == (["first", "second"], [0, 1])
 
-    def test_an_event_with_no_data_is_dropped_with_its_index(
-        self, controller: RawDataController, mock_view: MagicMock
-    ) -> None:
-        """A None payload skips that event; the surviving indices stay aligned."""
-        self.answers(
-            controller,
-            get_single_event_data=[{"data": "first"}, None, {"data": "third"}],
-        )
-
-        controller.load_event_plot_data("finder", 0, [0, 1, 2], "")
-
-        event_data, _time_bases, kept = mock_view.set_event_plot_data.call_args.args
-        assert (event_data, kept) == (["first", "third"], [0, 2])
-
     def test_an_event_that_cannot_be_read_is_dropped_with_its_index(
         self, controller: RawDataController, mock_view: MagicMock
     ) -> None:
@@ -1307,7 +1293,10 @@ class TestLoadEventPlotData:
         self, controller: RawDataController, mock_view: MagicMock
     ) -> None:
         """The View reports it; the Controller does not decide how to say so."""
-        self.answers(controller, get_single_event_data=[None, None])
+        self.answers(
+            controller,
+            get_single_event_data=[ValueError("unreadable"), ValueError("unreadable")],
+        )
 
         controller.load_event_plot_data("finder", 0, [0, 1], "")
 

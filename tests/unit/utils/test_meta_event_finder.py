@@ -1,5 +1,6 @@
 """Unit tests for MetaEventFinder abstract base class."""
 
+import logging
 from typing import List, Optional, Tuple
 from unittest.mock import patch
 
@@ -1094,8 +1095,14 @@ class TestGetPaddingLength:
 # ---------------------------------------------------------------------------
 class TestGetEventDataGenerator:
     def test_missing_channel_raises_keyerror(self, finder):
+        finder.event_starts[0] = [10]
+        finder.event_ends[0] = [20]
         with pytest.raises(KeyError, match="is not present"):
             list(finder.get_event_data_generator(99))
+
+    def test_a_finder_that_never_ran_says_so(self, finder):
+        with pytest.raises(ValueError, match="may not have run yet"):
+            list(finder.get_event_data_generator(0))
 
     def test_no_event_starts_raises_valueerror(self, finder):
         # event_ends must be non-empty here so this exercises the "no event
@@ -1120,6 +1127,37 @@ class TestGetEventDataGenerator:
         assert len(events) == finder.num_events_found[0]
         assert all("data" in e for e in events)
 
+    def test_an_event_that_cannot_be_read_yields_none_and_the_rest_follow(
+        self, finder, monkeypatch, caplog
+    ):
+        """
+        A failed read is that event's problem: the generator yields None in its place,
+        keeping position i as event i, says which event and why, and carries on.
+        """
+        list(finder.find_events(0, [(0, 0)], chunk_length=10.0))
+        n = finder.num_events_found[0]
+        assert n >= 2
+        real_load = finder.reader.load_data
+        calls = []
+
+        def refuse_the_second(*args, **kwargs):
+            calls.append(args)
+            if len(calls) == 2:
+                raise ValueError("read runs past the end of the recording")
+            return real_load(*args, **kwargs)
+
+        monkeypatch.setattr(finder.reader, "load_data", refuse_the_second)
+        with caplog.at_level(logging.WARNING):
+            events = list(finder.get_event_data_generator(0))
+
+        assert len(events) == n
+        assert events[1] is None
+        assert all(event is not None for i, event in enumerate(events) if i != 1)
+        assert any(
+            "event 1" in r.getMessage() and "past the end" in r.getMessage()
+            for r in caplog.records
+        ), [r.getMessage() for r in caplog.records]
+
 
 # ---------------------------------------------------------------------------
 # get_single_event_data
@@ -1137,7 +1175,7 @@ class TestGetSingleEventData:
 
     def test_empty_event_starts_raises(self, finder):
         finder.event_starts[0] = []
-        finder.event_ends[0] = []
+        finder.event_ends[0] = [20]
         with pytest.raises(ValueError, match="No event starts found"):
             finder.get_single_event_data(0, 0)
 
@@ -1149,10 +1187,36 @@ class TestGetSingleEventData:
         # The data is always pA, so there is no scale or offset to report with it.
         assert "scale" not in event and "offset" not in event
 
-    def test_index_out_of_bounds_returns_none(self, finder):
+    def test_an_index_past_the_last_event_raises(self, finder):
         list(finder.find_events(0, [(0, 0)], chunk_length=10.0))
-        result = finder.get_single_event_data(0, 9999)
-        assert result is None
+        n = finder.get_num_events_found(0)
+        with pytest.raises(IndexError, match=f"has {n} events"):
+            finder.get_single_event_data(0, n)
+
+    def test_a_negative_index_raises_rather_than_counting_from_the_end(self, finder):
+        list(finder.find_events(0, [(0, 0)], chunk_length=10.0))
+        with pytest.raises(IndexError):
+            finder.get_single_event_data(0, -1)
+
+    def test_a_read_the_reader_refuses_keeps_its_own_message(self, finder, monkeypatch):
+        """A reader or filter error is not relabelled as an index out of bounds."""
+        list(finder.find_events(0, [(0, 0)], chunk_length=10.0))
+
+        def refuse(*args, **kwargs):
+            raise ValueError("read runs past the end of the recording")
+
+        monkeypatch.setattr(finder.reader, "load_data", refuse)
+        with pytest.raises(ValueError, match="past the end of the recording"):
+            finder.get_single_event_data(0, 0)
+
+    def test_an_event_can_be_read_before_finding_has_finished(self, finder):
+        """
+        Only the generator requires finding to have finished; the Raw Data tab reads
+        single events through this method directly.
+        """
+        list(finder.find_events(0, [(0, 0)], chunk_length=10.0))
+        finder.eventfinding_finished[0] = False
+        assert "data" in finder.get_single_event_data(0, 0)
 
     def test_data_filter_applied(self, finder):
         list(finder.find_events(0, [(0, 0)], chunk_length=10.0))

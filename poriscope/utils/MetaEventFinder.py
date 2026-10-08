@@ -704,37 +704,32 @@ class MetaEventFinder(BaseDataPlugin):
         """
         Set up a generator that yields the data and metadata dict for each event found in the given channel, in order, via repeated calls to :meth:`get_single_event_data`.
 
+        An event that cannot be read - the reader or the filter refuses it - is logged with
+        its reason and yields None in its place, so position ``i`` is always event ``i`` and
+        one bad event does not end the iteration. A channel whose events are not ready
+        raises :meth:`_require_events_found`'s ``KeyError`` or ``ValueError`` on the first
+        ``next()``.
+
         :param channel: label for the channel from which to retrieve event data
         :type channel: int
         :param data_filter: a function that is called to preprocess the data before it is returned
         :type data_filter: Optional[Callable]
         :param rectify: should the data be returned rectified?
         :type rectify: bool
-        :raises KeyError: If the channel does not exist.
-        :raises ValueError: If events have not been found, or event finding has not finished, for this channel.
-        :yield: for each event in the channel, a dict of data and metadata as returned by :meth:`get_single_event_data`, or None if the event index is out of bounds.
+        :raises ValueError: If event finding has not finished for this channel.
+        :yield: for each event in the channel, a dict of data and metadata as returned by :meth:`get_single_event_data`, or None if that event could not be read.
         :ytype: Optional[Dict[str, Union[npt.NDArray[np.float64], float]]]
         """
-        if (
-            self.event_starts.get(channel) is None
-            or self.event_ends.get(channel) is None
-        ):
-            raise KeyError(f"Channel {channel} is not present in the eventfinder")
-        elif self.event_starts[channel] == [] and self.event_ends[channel] == []:
-            raise ValueError("Eventfinder may not have run yet")
-        elif self.event_starts.get(channel) == []:
-            raise ValueError(f"No event starts found for channel {channel}")
-        elif (
-            self.event_ends.get(channel) is not None
-            and self.event_ends.get(channel) == []
-        ):
-            raise ValueError(f"No event ends found for channel {channel}")
-        elif not self.eventfinding_finished.get(channel):
+        self._require_events_found(channel)
+        if not self.eventfinding_finished.get(channel):
             raise ValueError(f"Event finding not yet completed for channel {channel}")
 
-        else:
-            for i in range(len(self.event_starts[channel])):
+        for i in range(len(self.event_starts[channel])):
+            try:
                 yield self.get_single_event_data(channel, i, data_filter, rectify)
+            except (IndexError, ValueError) as e:
+                self.logger.error(f"Could not read event {i} in channel {channel}: {e}")
+                yield None
 
     @log(logger=logger)
     def get_channels(self) -> List[int]:
@@ -750,15 +745,48 @@ class MetaEventFinder(BaseDataPlugin):
         return self.reader.get_channels()
 
     @log(logger=logger)
+    def _require_events_found(self, channel: int) -> None:
+        """
+        Raise unless event finding has located events in this channel.
+
+        The one readiness check :meth:`get_event_data_generator` and
+        :meth:`get_single_event_data` share, so the two cannot disagree about when a
+        channel's events can be read.
+
+        :param channel: the channel whose events are about to be read
+        :type channel: int
+        :raises KeyError: If the channel does not exist.
+        :raises ValueError: If event finding has not run at all, or no events, or no event starts or ends, have been found in the channel.
+        """
+        if not self.event_starts and not self.event_ends:
+            raise ValueError("Eventfinder may not have run yet")
+        if (
+            self.event_starts.get(channel) is None
+            or self.event_ends.get(channel) is None
+        ):
+            raise KeyError(f"Channel {channel} is not present in the eventfinder")
+        if self.event_starts[channel] == [] and self.event_ends[channel] == []:
+            raise ValueError("Eventfinder may not have run yet")
+        if self.event_starts[channel] == []:
+            raise ValueError(f"No event starts found for channel {channel}")
+        if self.event_ends[channel] == []:
+            raise ValueError(f"No event ends found for channel {channel}")
+
+    @log(logger=logger)
     def get_single_event_data(
         self,
         channel: int,
         index: int,
         data_filter: Optional[Callable] = None,
         rectify: bool = False,
-    ) -> Optional[Dict[str, Union[npt.NDArray[np.float64], float]]]:
+    ) -> Dict[str, Union[npt.NDArray[np.float64], float]]:
         """
         Return a dictionary of data and metadata for the requested event
+
+        Event finding need not have finished: the Raw Data tab reads events while a run is
+        still going. A channel whose events are not ready raises
+        :meth:`_require_events_found`'s ``KeyError`` or ``ValueError``, and a ``ValueError``
+        from the reader or the filter propagates with its own message.
 
         :param channel: label for the channel from which to retrieve event indices
         :type channel: int
@@ -769,59 +797,45 @@ class MetaEventFinder(BaseDataPlugin):
         :param rectify: should the data be returned rectified?
         :type rectify: bool
         :raises AttributeError: If no :ref:`MetaReader` instance is attached to this eventfinder.
-        :raises KeyError: If the channel does not exist
-        :raises ValueError: if no events have been found in the channel
-        :return: A dictionary of data and metadata for the specified event, or None if index is out of bounds
-        :rtype: Optional[Dict[str, Union[npt.NDArray[np.float64], float]]]
+        :raises IndexError: if ``index`` is not the index of an event found in the channel
+        :return: A dictionary of data and metadata for the specified event
+        :rtype: Dict[str, Union[npt.NDArray[np.float64], float]]
         """
-        if self.event_starts == {} or self.event_ends == {}:
-            raise ValueError("Eventfinder may not have run yet")
-        elif self.event_starts.get(channel) is None:
-            raise KeyError(f"Channel {channel} is not present in the eventfinder")
-        elif self.event_starts.get(channel) == []:
-            raise ValueError(f"No event starts found for channel {channel}")
-        elif (
-            self.event_ends.get(channel) is not None
-            and self.event_ends.get(channel) == []
-        ):
-            raise ValueError(f"No event ends found for channel {channel}")
-        else:
-            if self.reader is None:
-                raise AttributeError(
-                    "Event finders need an attached MetaEventReader instance to function"
-                )
-            try:
-                start = (
-                    self.event_starts[channel][index]
-                    - self.padding_before[channel][index]
-                ) / self.reader.get_samplerate()
-                length = (
-                    self.event_ends[channel][index]
-                    - self.event_starts[channel][index]
-                    + self.padding_before[channel][index]
-                    + self.padding_after[channel][index]
-                ) / self.reader.get_samplerate()
-                data = self.reader.load_data(start, length, channel)
-                if data_filter:
-                    data = data_filter(data)
-                if rectify:
-                    data *= np.sign(data[0])
+        self._require_events_found(channel)
+        if self.reader is None:
+            raise AttributeError(
+                "Event finders need an attached MetaEventReader instance to function"
+            )
+        num_events = len(self.event_starts[channel])
+        if not 0 <= index < num_events:
+            raise IndexError(
+                f"Event {index} is out of range: channel {channel} has {num_events} events"
+            )
+        start = (
+            self.event_starts[channel][index] - self.padding_before[channel][index]
+        ) / self.reader.get_samplerate()
+        length = (
+            self.event_ends[channel][index]
+            - self.event_starts[channel][index]
+            + self.padding_before[channel][index]
+            + self.padding_after[channel][index]
+        ) / self.reader.get_samplerate()
+        data = self.reader.load_data(start, length, channel)
+        if data_filter:
+            data = data_filter(data)
+        if rectify:
+            data *= np.sign(data[0])
 
-                event = {
-                    "data": data,
-                    "start_sample": self.event_starts[channel][index]
-                    - self.padding_before[channel][index],
-                    "padding_before": self.padding_before[channel][index],
-                    "padding_after": self.padding_after[channel][index],
-                    "baseline_mean": self.baseline_means[channel][index],
-                    "baseline_std": self.baseline_stds[channel][index],
-                }
-                return event
-            except (IndexError, ValueError) as e:
-                self.logger.error(
-                    f"Event index {index} out of bounds for channel {channel}: {e}"
-                )
-                return None
+        event = {
+            "data": data,
+            "start_sample": self.event_starts[channel][index]
+            - self.padding_before[channel][index],
+            "padding_before": self.padding_before[channel][index],
+            "padding_after": self.padding_after[channel][index],
+            "baseline_mean": self.baseline_means[channel][index],
+            "baseline_std": self.baseline_stds[channel][index],
+        }
+        return event
 
     @log(logger=logger)
     def get_event_indices(

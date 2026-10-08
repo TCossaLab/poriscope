@@ -257,25 +257,29 @@ def test_a_rejected_event_does_not_shift_the_indices_after_it(
     writer_cls: Type[MetaWriter], found, tmp_path: Path
 ) -> None:
     """
-    When event 2 cannot be written, the stored events keep their own indices: every index
-    but 2, rather than 0..n-2 with every later event renumbered.
+    When event 2 cannot be read, it is rejected under the reader's own reason and the
+    stored events keep their own indices: every index but 2, rather than 0..n-2 with
+    every later event renumbered, and the commit carries on past it.
     """
     total = found.get_num_events_found(CHIMERA_CHANNEL)
     assert total >= 4
-    real = found.get_event_data_generator
+    real = found.get_single_event_data
 
-    def with_event_two_missing(channel, data_filter=None, rectify=False):
-        for position, event in enumerate(real(channel, data_filter, rectify)):
-            yield None if position == 2 else event
+    def event_two_unreadable(channel, index, data_filter=None, rectify=False):
+        if index == 2:
+            raise ValueError("read runs past the end of the recording")
+        return real(channel, index, data_filter, rectify)
 
     out = tmp_path / "events.sqlite3"
     writer = build_writer(writer_cls, found, str(out))
-    with patch.object(found, "get_event_data_generator", with_event_two_missing):
+    with patch.object(found, "get_single_event_data", event_two_unreadable):
         drain(writer.commit_events(CHIMERA_CHANNEL))
     writer.close_resources()
 
     assert writer.written[CHIMERA_CHANNEL] == total - 1
-    assert sum(writer.rejected[CHIMERA_CHANNEL].values()) == 1, writer.rejected
+    assert writer.rejected[CHIMERA_CHANNEL] == {
+        "read runs past the end of the recording": 1
+    }, writer.rejected
     assert event_ids(out, CHIMERA_CHANNEL) == [i for i in range(total) if i != 2]
 
 

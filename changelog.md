@@ -20,6 +20,10 @@
 
 * **Results can move by one sample at a chunk boundary:** reads now round to the nearest sample, so a chunk boundary no longer duplicates one sample and drops another
 
+#### Data plugin API:
+
+* **`MetaEventFinder.get_single_event_data` now raises `IndexError` for an index with no event (negative included) instead of returning `None`, and a reader or filter error keeps its own message**; `get_event_data_generator` still yields `None` for an event it cannot read
+
 ### Developer Tooling:
 
 * The release workflow now runs only when a version tag is pushed
@@ -91,6 +95,8 @@
 * **Fixed committing found events renumbering every event after one that could not be written**; each event now keeps its own number
 
 * An event the fitter cannot fully supply is now counted as rejected ("Incomplete Event Data") instead of silently going missing from a database write
+
+* Committing found events now rejects an event that cannot be read under the reader's own reason and carries on
 
 ### Documentation:
 
