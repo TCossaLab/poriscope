@@ -415,14 +415,17 @@ class BaseDataPlugin(ABC):
         """
         Validate that settings are correct and reasonable, and set params if the check passes
 
+        All three checks run before anything is stored, so settings they refuse never
+        reach the plugin: it keeps running with, and reporting, the settings it had.
+
         :param settings: a dict containing the information needed
         :type settings: dict
         """
         if settings:
-            self.raw_settings = settings
             self._validate_param_types(settings)
             self._validate_param_ranges(settings)
             self._validate_settings(settings)
+            self.raw_settings = settings
             self.settings = {}
             for key, val in settings.items():
                 self.settings[key] = {}

@@ -108,6 +108,8 @@
 
 * **Fixed CSV subset exports failing on a filter that names a sublevel or experiment column**; the export now selects the same events as the plots, so a bare `id` in such a filter must now be written `e.id` there too
 
+* **Fixed a plugin whose settings edit was refused becoming impossible to edit or delete until restart**; a refused edit now leaves the plugin exactly as it was
+
 ### Documentation:
 
 * The API reference no longer lists `NanoTrees`' helper classes as event fitters

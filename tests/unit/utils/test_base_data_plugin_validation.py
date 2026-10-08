@@ -152,3 +152,36 @@ class TestAcceptedShapes:
     def test_empty_settings_are_accepted(self, plugin):
         plugin._validate_param_types({})
         plugin._validate_param_ranges({})
+
+
+class RefusingPlugin(ConcretePlugin):
+    """Refuses an odd threshold in its own check, as a plugin's ``_validate_settings`` would."""
+
+    def _validate_settings(self, settings: dict) -> None:
+        if settings["Threshold"]["Value"] % 2:
+            raise ValueError("Threshold must be even")
+
+
+class TestARefusedApplyChangesNothing:
+    """
+    Settings that any of the three checks refuses never reach the plugin: it keeps the
+    settings it runs with, and reports those, not the refused ones.
+    """
+
+    @staticmethod
+    def threshold(value: Any) -> Dict[str, Dict[str, Any]]:
+        return {"Threshold": {"Type": int, "Value": value, "Min": 0, "Max": 10}}
+
+    @pytest.mark.parametrize(
+        "refused, error",
+        [("four", TypeError), (12, ValueError), (3, ValueError)],
+        ids=["type", "range", "plugin's own check"],
+    )
+    def test_the_plugin_keeps_its_settings(self, refused, error):
+        plugin = RefusingPlugin(self.threshold(4))
+
+        with pytest.raises(error):
+            plugin.apply_settings(self.threshold(refused))
+
+        assert plugin.get_raw_settings() == self.threshold(4)
+        assert plugin.settings == {"Threshold": {"Value": 4}}
