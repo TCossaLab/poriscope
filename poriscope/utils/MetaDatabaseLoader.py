@@ -470,7 +470,7 @@ class MetaDatabaseLoader(BaseDataPlugin):
         :return: the validated ``SELECT * FROM events ...`` query
         :rtype: str
         :raises KeyError: if any of the requested experiment names cannot be found in the database
-        :raises ValueError: if the SQL string constructed from the given conditions is invalid
+        :raises ValueError: if the SQL string constructed from the given conditions is invalid, or a condition uses a bare ``id``, which the joined tables each have
         """
         # Normalize experiment names to IDs if necessary
         experiment_ids = None
@@ -490,7 +490,21 @@ class MetaDatabaseLoader(BaseDataPlugin):
         base_conditions = []
 
         if conditions:
-            base_conditions.append(conditions)
+            # Run against events joined to their sublevels and experiment, qualified as
+            # the plots qualify it, so a filter means the same thing in an export as in
+            # a plot: an event is selected when any of its sublevels matches, and the
+            # export then writes all of that event's sublevels.
+            aliases = {"events": "e", "sublevels": "s", "experiments": "exp"}
+            qualified = self._qualify_conditions(conditions, aliases)
+            ambiguous_id = self._find_ambiguous_id(qualified, aliases)
+            if ambiguous_id is not None:
+                raise ValueError(ambiguous_id)
+            base_conditions.append(
+                "id IN (SELECT DISTINCT e.id FROM events e "
+                "JOIN sublevels s ON e.id = s.event_db_id "
+                "JOIN experiments exp ON exp.id = e.experiment_id "
+                f"WHERE {qualified})"
+            )
 
         experiment_conditions = []
         if experiment_ids is not None:

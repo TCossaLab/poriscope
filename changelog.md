@@ -106,6 +106,8 @@
 
 * `level_id` and `levels_left` can now be used in metadata queries and filters
 
+* **Fixed CSV subset exports failing on a filter that names a sublevel or experiment column**; the export now selects the same events as the plots, so a bare `id` in such a filter must now be written `e.id` there too
+
 ### Documentation:
 
 * The API reference no longer lists `NanoTrees`' helper classes as event fitters
