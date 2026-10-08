@@ -49,55 +49,43 @@ Step 10 waits for both tracks.
 
 ### Step 6 - database and the event-data contract
 
-- **No schema version, and the compatibility check has a dead branch.** No `PRAGMA user_version`
-  anywhere. `SQLiteDBLoader._finalize_initialization:1034-1039` guards `extra_tables` against
-  `"event_counts"`, already in `expected_tables` (`:1004`), so any table a newer writer adds makes
-  the loader refuse the file. `_ensure_event_counts:1089` uses `executescript` (`:1114`), which
-  commits pending work and runs unwrapped, so a failure leaves the table created but empty and
-  the guard (`:1105-1108`) never retries; it also aggregates on the GUI thread at load. Store
-  provenance (reader, filter, finder settings as JSON) with `user_version`; rule how the stamp
-  meets `overwrite` in `_initialize_database` and `SQLitePeakDBLoader`'s per-column
-  `OPTIONAL_EVENT_COLUMNS`.
-- **No indexes on the foreign-key columns** `data.event_db_id`, `sublevels.event_db_id`,
-  `events.channel_db_id` (four indexes exist, on other columns): `construct_event_data_query` plans
-  `SCAN d` + `SCAN s`, 0.16 s for 5 events in a 16k-event, 203 MB database. `CREATE INDEX IF NOT
-  EXISTS` needs no migration.
-- **`SQLiteDBLoader` opens a fresh connection per schema lookup** (`get_table_by_column:467`,
-  `get_column_names_by_table:400`): 10 connections per `construct_metadata_query` with a WHERE
-  body. **`SQLiteEventLoader` opens one connection per event** (`:126`, from
-  `MetaEventLoader.get_event_generator:320`). No `PRAGMA journal_mode` anywhere. A schema cache in
-  `_finalize_initialization` removes the first; re-measure on a network mount before dismissing.
-- **`INSERT OR IGNORE` turns a schema mismatch into a misleading rejection.**
-  `SQLiteDBWriter._insert_event:828`/`_insert_sublevels:861` infer failure from `rowcount`
-  (`:856`, `:914`), so a `NOT NULL` violation surfaces as `IOError("Cannot Overwrite Existing
-  Event")` (`MetaDatabaseWriter.py:230`). Check required columns up front.
-- **`columns.name` is globally `UNIQUE`** (`SQLiteDBWriter.py:657`) under `INSERT OR IGNORE`
-  (`:762-780`), so a metric named identically in event and sublevel metadata registers once and
-  `get_table_by_column` routes it to the wrong table. `level_id`/`levels_left`/sublevel
-  `channel_id` are attached at runtime (`MetaEventFitter.py:718-729`) and never registered, so
-  `construct_metadata_query(["level_id"])` raises.
-- **`SQLiteDBLoader._load_event_data:886` drops an event on a NULL `padding_before`**
-  (`:962-966`, `except Exception` + INFO + `continue`).
-- **`MetaDatabaseLoader.export_subset_to_csv:557` assumes one `data` row per event id, in
-  order**: `data["filename"] = filenames` (`:682`) raises on a partial `data` table and the
-  `IN (...)` query at `:656` has no `ORDER BY`.
-- **`SQLitePeakDBLoader.get_plot_features` indexes `result.iloc[1]`** (`:178`) but the guard at
-  `:155` rules out only zero rows.
-- **`SQLiteDBLoader._load_metadata_generator:848` returns on `sqlite3.Error`** (`:875-877`),
-  which inside a generator is `StopIteration` and so looks like exhaustion.
-- **`get_single_event_data` returns `None` on a bad index** (`MetaEventFinder.py:816`) and
-  `get_event_data_generator` yields it (`:729`) into `MetaWriter.write_events:463`, which fails on
-  it as a swallowed rejection. Raise instead, and share one readiness guard (`:710-725` vs
-  `:769-780` today); the writer decides whether that is a rejected event or an aborted channel.
+Series S6.0-S6.11 and Kyle's rulings of 2026-10-08 on the plan page. Re-measured 2026-10-08 at
+`e1906e02`; database files unchanged since `90ad82e9`.
 
-- **`MetaWriter.write_events` writes the next event under a rejected event's index.** The
-  rejection branch (`:470-503`) records `rejected[channel][str(e)]` and `continue`s past
-  `index += 1`, so the event after a rejected one is written with the rejected one's index.
-  Found mapping the writer harness, 2026-10-05; pinned by a step 1 `xfail`.
-- **`MetaDatabaseWriter.write_events` skips an event with a `None` component silently.** A tuple
-  with `None` in any of event metadata, sublevel metadata, raw, filtered or fit data is skipped at
-  `:197-237` with no yield and no `rejected` entry, while `index` still advances. Same provenance
-  and pin as above.
+- **No indexes on the foreign keys** `data.event_db_id`, `sublevels.event_db_id`,
+  `events.channel_db_id`; the three named indexes duplicate `UNIQUE` autoindexes. At 5k / 20k
+  events a scoped event-column query with a sublevel filter takes 871 ms / 31.1 s and
+  `reset_channel` (every aborted database write) 19.8 s / 333 s; with the indexes 5.5 / 7.0 ms
+  and 44 / 250 ms. The writer creates them; the loader adds them to any file it opens, best-effort.
+- **The schema check refuses any table it does not know** (`SQLiteDBLoader._finalize_initialization:1034-1039`,
+  its `event_counts` arm dead), `sqlite_stat1` from `ANALYZE` included; pinned by
+  `test_init_with_extra_tables`.
+- **No schema version or provenance**: `user_version = 1` in the writer's schema transaction when
+  `experiments` is absent; provenance as a `channels.provenance` column (ruling E as amended,
+  `DECISIONS.md`).
+- **`_ensure_event_counts:1089` runs `executescript`** (`:1114`), which commits each statement: an
+  INSERT that fails leaves an empty table and both triggers, and the file reports "No experiments
+  found." from then on.
+- **`INSERT OR IGNORE` reports a NOT NULL violation as "Cannot Overwrite Existing Event"**
+  (`SQLiteDBWriter.py:853/911/964`, `MetaDatabaseWriter.py:230`); `sublevels` and `data` have no
+  `UNIQUE`, so there the message is always wrong.
+- **`MetaWriter._commit_events:373` writes the next event under a rejected event's index** (the
+  `continue` at `:491` skips `index += 1`); **`MetaDatabaseWriter.write_events` skips an event with a
+  `None` component** with no `rejected` entry (`:204-210`).
+- **`get_single_event_data` returns `None` on a bad index** (`MetaEventFinder.py:820-824`), files
+  reader and filter `ValueError`s as "out of bounds", and guards readiness differently from
+  `get_event_data_generator` (`:780-797` vs `:718-734`); the `None` reaches
+  `SQLiteEventWriter._write_data:561` as a `TypeError` rejection. Raise instead; stays in step 6
+  although it narrows a `Meta*` return (Kyle, 2026-10-08).
+- **`SQLiteDBLoader._load_event_data:886` drops a row it cannot read at INFO** (`:962-966`); reachable
+  through the shipped writer, since `padding_before` is a nullable level-0 `sublevel_duration`
+  (24 of 25 events yielded). Its `except Exception` wraps the `yield`; it and
+  `_load_metadata_generator:848` end silently on `sqlite3.Error` (`:973-975`, `:875-877`).
+- **Two fitters in one database collide in the column registry** (`columns.name` globally `UNIQUE`,
+  `SQLiteDBWriter.py:657`): `max_blockage` is an event column in the CUSUM family and a sublevel
+  column in the PeakFinders. One fitter per database (`DECISIONS.md`). `level_id` and `levels_left`
+  are never registered (`MetaEventFitter.py:737-748`), so `construct_metadata_query(["level_id"])`
+  raises (`MetaDatabaseLoader.py:1033`).
 
 ### Step 7 - plugin lifecycle
 
@@ -159,6 +147,9 @@ Step 10 waits for both tracks.
   diagnostics path: CUSUM's `Max Sublevels` retry (`CUSUM.py`, step ×1.5 up to four times)
   records which factor fitted an event nowhere. Pass `sublevel_starts` to the hook while the
   `Meta*` signatures are open (`DECISIONS.md` 2026-10-07); CUSUM then records its scale in one line.
+- **`_load_event_data` yields `padding_before` as `int()` of a duration in µs** (`SQLiteDBLoader.py:947`),
+  truncating up to 1 µs (4 samples at 4 MHz) before `MetadataModel:741` converts it to samples for
+  the rectification median. Keep it float; that changes the declared tuple on the `Meta*` base.
 
 ### Step 9a - analysis-tab views (Carolina's track)
 
@@ -349,6 +340,13 @@ Tab state onto the Models, heavy work off the GUI thread, event-finder and CUSUM
   a comment; unifying the last two is a real refactor.
 
 ## Later - worth doing, not scheduled
+
+### Provenance stops at the fitter (2026-10-08)
+
+A database's `channels.provenance` records the writer, the fitter and the event loader, which is
+all the database writer can reach. The reader, finder and filter that produced the events are not
+stored in the events file (`SQLiteEventWriter.py:84-118`), and a filter is a callable, never a
+setting. Carrying them needs the events writer to record them and the event loader to expose them.
 
 ### Controller-side `call()` is a convention, not a checked invariant (2026-09-17)
 

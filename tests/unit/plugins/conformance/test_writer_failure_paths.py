@@ -4,22 +4,22 @@ Writers and the event-data loader on their failure paths.
 The conformance writer tests drive both writer families through real chains on the happy
 path and read back ``written``. Nothing read a writer's ``rejected`` or exercised a
 duplicate row, a schema violation, an abort, or an event the upstream plugin could not
-supply. These tests do, against the behaviour 2.1 declares for each, so that step 6 has a
-red test to turn green where today's behaviour differs:
+supply. These tests do, against the behaviour each failure is declared to have, so a fix
+has a red test to turn green where today's behaviour differs:
 
 - A duplicate row is one rejected event under one reason. Green today.
 - A row the schema refuses (a NOT NULL column handed ``None``) is rejected under a reason
   that names the column. Today ``INSERT OR IGNORE`` swallows the violation and the writer
   infers failure from ``rowcount``, so it reports ``Cannot Overwrite Existing Event``
-  (``SQLiteDBWriter._insert_event:828``). Strict expected failure.
+  (``SQLiteDBWriter._insert_event``). Strict expected failure.
 - An event the fitter hands over with a missing component is a rejected event, not a
-  silent skip (``MetaDatabaseWriter.write_events:197-237``). Strict expected failure.
+  silent skip (``MetaDatabaseWriter.write_events``). Strict expected failure.
 - An abort leaves the channel empty and ``written`` at zero. Green today.
 - A rejected event does not shift the indices of the events after it
-  (``MetaWriter.write_events:470-503`` continues past ``index += 1``). Strict expected
+  (``MetaWriter._commit_events`` continues past ``index += 1``). Strict expected
   failure.
 - A stored event row the loader cannot interpret (a NULL ``padding_before``) is reported,
-  not dropped at INFO (``SQLiteDBLoader._load_event_data:886-980``). Strict expected
+  not dropped at INFO (``SQLiteDBLoader._load_event_data``). Strict expected
   failure.
 """
 
@@ -167,9 +167,9 @@ def _with_event_zero_mutated(fitter, mutate):
 @pytest.mark.xfail(
     strict=True,
     reason=(
-        "SQLiteDBWriter._insert_event:828 infers failure from rowcount under INSERT OR "
+        "SQLiteDBWriter._insert_event infers failure from rowcount under INSERT OR "
         "IGNORE, so a NOT NULL violation is reported as 'Cannot Overwrite Existing "
-        "Event' instead of naming the column; 2.1 step 6"
+        "Event' instead of naming the column"
     ),
 )
 @pytest.mark.parametrize("writer_cls", DB_WRITERS, ids=[c.__name__ for c in DB_WRITERS])
@@ -200,8 +200,8 @@ def test_a_schema_violation_is_reported_by_column_not_as_a_duplicate(
 @pytest.mark.xfail(
     strict=True,
     reason=(
-        "MetaDatabaseWriter.write_events:197-237 skips an event whose tuple holds a None "
-        "with no yield and no rejected entry; 2.1 step 6"
+        "MetaDatabaseWriter.write_events skips an event whose tuple holds a None "
+        "with no yield and no rejected entry"
     ),
 )
 @pytest.mark.parametrize("writer_cls", DB_WRITERS, ids=[c.__name__ for c in DB_WRITERS])
@@ -246,9 +246,8 @@ def test_an_aborted_write_leaves_the_channel_empty(
 @pytest.mark.xfail(
     strict=True,
     reason=(
-        "MetaWriter.write_events:470-503 records a rejection and `continue`s past "
-        "`index += 1`, so the next event is written under the rejected event's index; "
-        "2.1 step 6"
+        "MetaWriter._commit_events records a rejection and `continue`s past "
+        "`index += 1`, so the next event is written under the rejected event's index"
     ),
 )
 @pytest.mark.parametrize("writer_cls", WRITERS, ids=[c.__name__ for c in WRITERS])
@@ -353,9 +352,9 @@ def _database_with_a_null_padding(path: Path) -> None:
 @pytest.mark.xfail(
     strict=True,
     reason=(
-        "SQLiteDBLoader._load_event_data:886-980 wraps the whole yield in `except "
+        "SQLiteDBLoader._load_event_data wraps the whole yield in `except "
         "Exception: log INFO; continue`, so a row it cannot interpret is dropped with "
-        "nothing above INFO to say so; 2.1 step 6"
+        "nothing above INFO to say so"
     ),
 )
 def test_a_null_padding_before_is_reported_not_dropped(

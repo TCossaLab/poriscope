@@ -18,6 +18,66 @@ and deleted on 2026-09-27; it too is in git history.
 
 ---
 
+## 2026-10-08 - A database holds one fitter's results
+
+**Context.** `columns.name` is `UNIQUE` across tables and registered with `INSERT OR IGNORE`, so a
+metric name lands in whichever table registered it first. No single fitter declares a name in
+both tables, but `max_blockage` is an event column in the CUSUM family, NanoTrees and NoFitter and
+a sublevel column in both PeakFinders: writing two of them into one file sends the second's values
+to a column the loader never reads.
+
+**Decision** (Kyle, 2026-10-08). The database writer refuses, at `_validate_settings`, to write a
+fitter into a file that holds another fitter's results. "Another" means another plugin class, so
+CUSUM with different settings is accepted and ClassicCUSUM after CUSUM is refused. A 2.1 file
+names its fitter in each channel's provenance; a pre-2.1 file is accepted only if its registered
+event and sublevel metric columns equal the new fitter's declared set. Breaking.
+
+**Rejected.** Refusing only the colliding name (the narrow fix) and a per-table namespace
+(`UNIQUE(name, table_name)`), which changes how every query maps a column to its table. Refusing
+every append to a pre-2.1 file, or letting the first 2.1 write claim it.
+
+**Revisit if** comparing fitters in one database becomes a workflow; the per-table namespace is
+then the change to make.
+
+---
+
+## 2026-10-08 - Database loaders keep one connection per call
+
+**Context.** Every `SQLiteDBLoader` method opens and closes its own connection in a
+`try/finally` (18 sites), and `SQLiteEventLoader.load_event` one per event, so nothing stays
+open after a call whatever fails; the generators hold theirs only while iterated. 2.1 queued
+connection reuse and a `journal_mode`.
+
+**Decision** (Kyle, 2026-10-08). Keep the design. The guarantee against a leaked connection, and
+a file Windows will not let the user move while Poriscope runs, is worth more than the cost. No
+schema cache: it saves a few milliseconds and risks a stale column list when a writer or the
+Clustering and Protein tabs add columns. No WAL.
+
+**Evidence** (local NVMe, 2026-10-08). A connect and close takes 76 µs; a schema lookup 192 µs
+fresh against 20 µs on a held connection. One metadata plot opens 23 connections (about 4 ms), a
+CSV export 25 (under 1% of 2.7 s), a fit of 500 events 502 (about 85 ms of 623 ms). The loaders
+run on the GUI thread and on workers at once, so a held connection would need one per thread. The
+lab does not work from network storage, where an open costs milliseconds.
+
+**Revisit if** a per-connect cost measured on the storage people actually use shows in a plot or
+a fit; a schema cache is the first step then, before any held connection.
+
+---
+
+## 2026-10-08 - `get_plot_features` reads the second sublevel on purpose
+
+**Context.** `SQLitePeakDBLoader.get_plot_features` reads `result.iloc[1]` (`:178`) behind a guard
+that rules out only an empty result (`:155`), which the 2.1 queue listed as a defect.
+
+**Decision.** Leave it. Row 0 is the padding, so row 1's start time is where the event begins,
+matching `PeakFinder`'s own `start_times[1]`. The fitter rejects any event with three or fewer
+boundaries, so a shipped writer always stores three or more sublevel rows; one row comes only from
+an edited or foreign file, and `MetadataController` reports the `IndexError` at ERROR.
+
+**Revisit if** a writer can store an event with fewer than three sublevels.
+
+---
+
 ## 2026-10-07 - CUSUM's retry factor is not recorded in 2.1; the hook gets the edges in step 8
 
 **Context.** With `Max Sublevels` set, `_locate_sublevel_transitions` retries at 1.5× the
@@ -286,6 +346,18 @@ orthogonal to the file-level version. Executed in 2.1 step 6.
 
 **Revisit if** a schema change ever needs an in-place migration; version 1 carries none, and
 the refusal-on-unknown rule is what makes adding one later safe.
+
+**Amended** (Kyle, 2026-10-08, as recommended), after step 6 re-measured it. The database writer
+has no `overwrite`: it always appends, and nothing marks a file as new. The stamp is therefore
+written inside the transaction that creates the schema, when `experiments` is absent;
+`user_version` rolls back with it, so a file is 1 only if 2.1 created it. Provenance is a nullable
+`provenance` column on `channels`, not a table: a database write is one channel, so it stays per
+write, and the loader of every release from 1.5.0 refuses an unknown table (read in each tag);
+run against both forms, v1.7.0's refused a `provenance` table and opened a file with the column,
+the new indexes and the stamp. The
+column records what the writer can reach: itself, the fitter and the event loader (class and
+settings), the Poriscope version and a timestamp. The loader's schema check requires the core
+tables and ignores any others, so the version decides whether a file can be read.
 
 ---
 
