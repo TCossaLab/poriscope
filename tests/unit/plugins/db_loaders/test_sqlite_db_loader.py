@@ -1,5 +1,6 @@
 """Unit tests for SQLiteDBLoader class."""
 
+import gc
 import os
 import sqlite3
 import tempfile
@@ -838,8 +839,6 @@ class TestSQLiteDBLoader:
             assert result[3] == 2  # event_count should be 2
         finally:
             # Clean up
-            import gc
-
             gc.collect()
             for _ in range(5):
                 try:
@@ -848,6 +847,90 @@ class TestSQLiteDBLoader:
                     break
                 except PermissionError:
                     time.sleep(0.1)
+
+    def test_ensure_event_counts_leaves_nothing_behind_when_it_fails(
+        self,
+        loader: SQLiteDBLoader,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """
+        A build that fails part-way leaves no ``event_counts``, so the next one runs.
+
+        ``executescript`` commits each statement as it goes, so an INSERT that failed
+        after the CREATE used to leave an empty table and both triggers behind; the
+        existence check then never rebuilt it, and the file reported no experiments
+        from then on.
+        """
+        db = tmp_path / "no_counts.db"
+        conn = sqlite3.connect(db)
+        conn.executescript(
+            """
+            CREATE TABLE experiments (id INTEGER PRIMARY KEY, name TEXT);
+            CREATE TABLE events (
+                id INTEGER PRIMARY KEY,
+                experiment_id INTEGER,
+                channel_id INTEGER,
+                event_id INTEGER
+            );
+            INSERT INTO experiments (id, name) VALUES (1, 'test');
+            INSERT INTO events (id, experiment_id, channel_id, event_id)
+            VALUES (1, 1, 0, 0), (2, 1, 0, 1);
+            """
+        )
+        conn.close()
+        loader.db_path = db
+
+        real_connect = sqlite3.connect
+
+        def connect_refusing_the_count(*args: Any, **kwargs: Any) -> sqlite3.Connection:
+            """
+            Open a real connection that may not insert into ``event_counts``.
+
+            :param args: positional arguments for ``sqlite3.connect``
+            :type args: Any
+            :param kwargs: keyword arguments for ``sqlite3.connect``
+            :type kwargs: Any
+            :return: the connection
+            :rtype: sqlite3.Connection
+            """
+            connection = real_connect(*args, **kwargs)
+            connection.set_authorizer(
+                lambda action, table, *_: (
+                    sqlite3.SQLITE_DENY
+                    if action == sqlite3.SQLITE_INSERT and table == "event_counts"
+                    else sqlite3.SQLITE_OK
+                )
+            )
+            return connection
+
+        monkeypatch.setattr(sqlite3, "connect", connect_refusing_the_count)
+        with pytest.raises(sqlite3.DatabaseError):
+            loader._ensure_event_counts()
+        monkeypatch.undo()
+
+        conn = sqlite3.connect(db)
+        try:
+            left = {
+                row[0]
+                for row in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE name LIKE '%event_counts%'"
+                )
+            }
+        finally:
+            conn.close()
+        assert left == set()
+
+        loader._ensure_event_counts()
+
+        conn = sqlite3.connect(db)
+        try:
+            counted = conn.execute(
+                "SELECT event_count FROM event_counts WHERE experiment_id = 1 AND channel_id = 0"
+            ).fetchone()
+        finally:
+            conn.close()
+        assert counted == (2,)
 
     def test_ensure_event_counts_existing_table(
         self, loader: SQLiteDBLoader, mock_db: Path

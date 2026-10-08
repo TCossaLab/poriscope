@@ -84,6 +84,8 @@
 
 * Each channel of a metadata database now records the plugins and settings that produced it, and the Poriscope version
 
+* Fixed an older metadata database whose event-count upgrade failed part-way reporting no experiments from then on; the upgrade now retries on the next open
+
 ### Documentation:
 
 * The API reference no longer lists `NanoTrees`' helper classes as event fitters

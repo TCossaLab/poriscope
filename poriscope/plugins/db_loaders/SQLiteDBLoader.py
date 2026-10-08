@@ -58,6 +58,54 @@ class SQLiteDBLoader(MetaDatabaseLoader):
         ("idx_events_channel_db_id", "events", "channel_db_id"),
     )
 
+    #: What :meth:`_ensure_event_counts` builds in a file written before
+    #: ``event_counts`` existed - the table, its index and triggers, and the counts of
+    #: the events already there - one statement each, so they can share a transaction.
+    _EVENT_COUNTS_SCHEMA = (
+        """
+        CREATE TABLE IF NOT EXISTS event_counts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            experiment_id INTEGER NOT NULL,
+            channel_id INTEGER NOT NULL,
+            event_count INTEGER NOT NULL DEFAULT 0,
+            UNIQUE (experiment_id, channel_id),
+            FOREIGN KEY (experiment_id) REFERENCES experiments(id) ON DELETE CASCADE
+        );
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS idx_event_counts_exp_channel
+            ON event_counts(experiment_id, channel_id);
+        """,
+        """
+        CREATE TRIGGER IF NOT EXISTS increment_event_counts
+        AFTER INSERT ON events
+        BEGIN
+            INSERT INTO event_counts (experiment_id, channel_id, event_count)
+            VALUES (NEW.experiment_id, NEW.channel_id, 1)
+            ON CONFLICT(experiment_id, channel_id)
+            DO UPDATE SET event_count = event_count + 1;
+        END;
+        """,
+        """
+        CREATE TRIGGER IF NOT EXISTS decrement_event_counts
+        AFTER DELETE ON events
+        BEGIN
+            UPDATE event_counts
+            SET event_count = event_count - 1
+            WHERE experiment_id = OLD.experiment_id
+            AND channel_id = OLD.channel_id;
+        END;
+        """,
+        """
+        INSERT INTO event_counts (experiment_id, channel_id, event_count)
+        SELECT experiment_id, channel_id, COUNT(*)
+        FROM events
+        GROUP BY experiment_id, channel_id
+        ON CONFLICT(experiment_id, channel_id)
+        DO UPDATE SET event_count = excluded.event_count;
+        """,
+    )
+
     #: The newest schema version this loader reads, from ``PRAGMA user_version``. 0 is a
     #: file created before 2.1; SQLiteDBWriter stamps the version it creates a file at,
     #: and a file stamped above this is refused.
@@ -1164,46 +1212,12 @@ class SQLiteDBLoader(MetaDatabaseLoader):
                     self.logger.info(
                         "event_counts table not found, creating and populating from existing events."
                     )
-                    conn.executescript(
-                        """
-                        CREATE TABLE IF NOT EXISTS event_counts (
-                            id INTEGER PRIMARY KEY AUTOINCREMENT,
-                            experiment_id INTEGER NOT NULL,
-                            channel_id INTEGER NOT NULL,
-                            event_count INTEGER NOT NULL DEFAULT 0,
-                            UNIQUE (experiment_id, channel_id),
-                            FOREIGN KEY (experiment_id) REFERENCES experiments(id) ON DELETE CASCADE
-                        );
-
-                        CREATE INDEX IF NOT EXISTS idx_event_counts_exp_channel
-                            ON event_counts(experiment_id, channel_id);
-
-                        CREATE TRIGGER IF NOT EXISTS increment_event_counts
-                        AFTER INSERT ON events
-                        BEGIN
-                            INSERT INTO event_counts (experiment_id, channel_id, event_count)
-                            VALUES (NEW.experiment_id, NEW.channel_id, 1)
-                            ON CONFLICT(experiment_id, channel_id)
-                            DO UPDATE SET event_count = event_count + 1;
-                        END;
-
-                        CREATE TRIGGER IF NOT EXISTS decrement_event_counts
-                        AFTER DELETE ON events
-                        BEGIN
-                            UPDATE event_counts
-                            SET event_count = event_count - 1
-                            WHERE experiment_id = OLD.experiment_id
-                            AND channel_id = OLD.channel_id;
-                        END;
-
-                        INSERT INTO event_counts (experiment_id, channel_id, event_count)
-                        SELECT experiment_id, channel_id, COUNT(*)
-                        FROM events
-                        GROUP BY experiment_id, channel_id
-                        ON CONFLICT(experiment_id, channel_id)
-                        DO UPDATE SET event_count = excluded.event_count;
-                    """
-                    )
+                    # One transaction, not executescript, which commits each
+                    # statement as it runs: a failure part-way used to leave an empty
+                    # table and its triggers, and the check above never rebuilt it.
+                    conn.execute("BEGIN")
+                    for statement in self._EVENT_COUNTS_SCHEMA:
+                        conn.execute(statement)
                     conn.commit()
                     self.logger.info(
                         "event_counts table created and populated successfully."
