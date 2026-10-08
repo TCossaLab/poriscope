@@ -56,6 +56,8 @@
 
 * `MetaFilter.get_data_requirements()` lets a filter declare settings the data must match; `BesselFilter` declares its `Samplerate`
 
+* A plugin re-applied with settings naming a different parent no longer keeps the old one in `get_parents()`
+
 * Data plugin constructors take an optional `key=`; a plugin made without one, as in a script, is named `<ClassName>_<n>` instead of `""`, so a metadata database's provenance can follow scripted plugins
 
 ### Analysis Tabs:
@@ -123,8 +125,6 @@
 * **Fixed renaming a plugin in an edit it refuses keeping the new name** and saving the refused settings to the session; the rename now happens only with an accepted edit
 
 * A plugin that cannot report its status is still created or renamed, and the status panel says why
-
-* Fixed a plugin moved onto a different parent keeping the old one as a parent, which could leave the old parent impossible to delete
 
 * Asking a plugin to run on a channel it is already running on now says on the status panel that the request was ignored, instead of ignoring it silently
 

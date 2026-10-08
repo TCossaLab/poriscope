@@ -10,6 +10,8 @@ with it.
 import copy
 from typing import Any, Dict
 
+import pytest
+
 from tests.unit.utils.test_base_data_plugin_validation import ConcretePlugin
 
 
@@ -86,8 +88,23 @@ def test_the_plugin_shares_no_dict_or_list_with_the_caller() -> None:
 
 
 def test_a_plugin_moved_to_another_parent_forgets_the_old_one() -> None:
+    """
+    Reachable from a script that re-applies settings naming a different parent; the
+    app's edit dialog locks a plugin's parents.
+    """
     plugin = ConcretePlugin(settings_with(parent_plugin("first")))
 
     plugin.apply_settings(settings_with(parent_plugin("second")))
 
     assert plugin.get_parents() == {("ConcretePlugin", "second")}
+
+
+def test_a_refused_move_keeps_the_parent_it_had() -> None:
+    plugin = ConcretePlugin(settings_with(parent_plugin("first")))
+    refused = settings_with(parent_plugin("second"))
+    refused["Threshold"]["Value"] = "four"
+
+    with pytest.raises(TypeError):
+        plugin.apply_settings(refused)
+
+    assert plugin.get_parents() == {("ConcretePlugin", "first")}

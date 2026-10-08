@@ -116,9 +116,7 @@ def test_the_scripting_guide_runs_from_raw_data_to_loaded_metadata(
     assert metadata_rows(metadata_db, "SELECT name FROM experiments") == [
         ("script_demo",)
     ]
-    assert metadata_rows(metadata_db, "SELECT COUNT(*) FROM events") == [
-        (NUM_EVENTS,)
-    ]
+    assert metadata_rows(metadata_db, "SELECT COUNT(*) FROM events") == [(NUM_EVENTS,)]
     ((stored,),) = metadata_rows(metadata_db, "SELECT provenance FROM channels")
     provenance = json.loads(stored)
     keys = [provenance[role]["key"] for role in ("writer", "fitter", "event_loader")]
