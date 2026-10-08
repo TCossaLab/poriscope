@@ -25,7 +25,7 @@
 # Alejandra Carolina González González
 
 import logging
-from typing import Any, Dict, List, Mapping, Optional, Type
+from typing import Dict, List, Mapping, Optional, Type
 
 from PySide6.QtCore import QObject
 
@@ -233,24 +233,18 @@ class DataPluginModel(QObject):
     def handle_exit(self) -> None:
         """
         Perform any actions necessary to gracefully close resources before app exit
+
+        Every plugin is closed even when one fails to close, which is reported as a
+        warning rather than an error so that shutdown raises no dialog.
         """
         for plugins in self.plugins.values():
-            for plugin in plugins.values():
-                plugin.close_resources()
-
-    @log(logger=logger)
-    def apply_settings(
-        self, instance: Any, settings: Mapping[str, Mapping[str, Any]]
-    ) -> None:
-        """
-        If the plugin needs settings dict to work, call the appropriate method in an instance to apply it
-
-        :param instance: the object to apply the settings to
-        :type instance: Any
-        :param settings: a nested dict of settings to apply
-        :type settings: Mapping[str, Mapping[str, Any]]
-        """
-        instance.apply_settings(settings)
+            for key, plugin in plugins.items():
+                try:
+                    plugin.close_resources()
+                except Exception as e:
+                    self.logger.warning(
+                        f"Error closing resources for plugin {key}: {e}"
+                    )
 
     @log(logger=logger)
     def get_plugin_instance(self, metaclass: str, key: str) -> Optional[BaseDataPlugin]:

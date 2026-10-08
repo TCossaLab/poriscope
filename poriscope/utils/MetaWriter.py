@@ -54,11 +54,18 @@ class MetaWriter(BaseDataPlugin):
 
     logger = logging.getLogger(__name__)
 
-    def __init__(self, settings: Optional[dict] = None) -> None:
+    def __init__(
+        self, settings: Optional[dict] = None, key: Optional[str] = None
+    ) -> None:
         """
         Initialize and set up output environment, save metadata for subclasses.
+
+        :param settings: a dict conforming to that which is required by the self.get_empty_settings() function
+        :type settings: Optional[dict]
+        :param key: The name this plugin is known by; see :py:meth:`~poriscope.utils.BaseDataPlugin.BaseDataPlugin.__init__`.
+        :type key: Optional[str]
         """
-        super().__init__(settings)
+        super().__init__(settings, key)
         self.written: Dict[int, int] = {}
         self.output_dtype = self._set_output_dtype()
         self.rejected: Dict[int, Dict[str, int]] = {}

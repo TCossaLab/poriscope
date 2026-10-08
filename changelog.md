@@ -26,6 +26,10 @@
 
 * **A metadata database now holds results from one type of fitter:** any number of runs of that fitter can still be written to it, but writing a different type of fitter into it is refused; use a new file per fitter type
 
+#### Application internals:
+
+* **`DataPluginModel.apply_settings` is removed**; call `apply_settings` on the plugin itself
+
 ### Developer Tooling:
 
 * The release workflow now runs only when a version tag is pushed
@@ -46,9 +50,15 @@
 
 * A `real_data` test tier checks the readers against real recordings in `PORISCOPE_REAL_DATA_DIR`, skipped where it is unset
 
+* The test suite now runs the scripting guide's code end to end
+
 ### Data Plugin API:
 
 * `MetaFilter.get_data_requirements()` lets a filter declare settings the data must match; `BesselFilter` declares its `Samplerate`
+
+* A plugin re-applied with settings naming a different parent no longer keeps the old one in `get_parents()`
+
+* Data plugin constructors take an optional `key=`; a plugin made without one, as in a script, is named `<ClassName>_<n>` instead of `""`, so a metadata database's provenance can follow scripted plugins
 
 ### Analysis Tabs:
 
@@ -107,6 +117,20 @@
 * `level_id` and `levels_left` can now be used in metadata queries and filters
 
 * **Fixed CSV subset exports failing on a filter that names a sublevel or experiment column**; the export now selects the same events as the plots, so a bare `id` in such a filter must now be written `e.id` there too
+
+* **Fixed a plugin whose settings edit was refused becoming impossible to edit or delete until restart**; a refused edit now leaves the plugin exactly as it was
+
+* A plugin built in a script no longer changes the settings dict it was given, so one dict can build several plugins
+
+* **Fixed renaming a plugin in an edit it refuses keeping the new name** and saving the refused settings to the session; the rename now happens only with an accepted edit
+
+* A plugin that cannot report its status is still created or renamed, and the status panel says why
+
+* Asking a plugin to run on a channel it is already running on now says on the status panel that the request was ignored, instead of ignoring it silently
+
+* Fixed an error when every channel was skipped before fitting or writing started
+
+* Quitting now closes every plugin even when one fails to close
 
 ### Documentation:
 

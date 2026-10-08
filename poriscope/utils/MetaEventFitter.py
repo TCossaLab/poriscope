@@ -58,15 +58,19 @@ class MetaEventFitter(BaseDataPlugin):
 
     logger = logging.getLogger(__name__)
 
-    def __init__(self, settings: Optional[dict] = None) -> None:
+    def __init__(
+        self, settings: Optional[dict] = None, key: Optional[str] = None
+    ) -> None:
         """
         Initialize the MetaEventFitter instance.
 
         :param settings: A dict specifying the parameters of the fitter to be created. Required keys depend on subclass.
         :type settings: Optional[dict]
+        :param key: The name this plugin is known by; see :py:meth:`~poriscope.utils.BaseDataPlugin.BaseDataPlugin.__init__`.
+        :type key: Optional[str]
         """
 
-        super().__init__(settings)
+        super().__init__(settings, key)
         self.event_metadata: Dict[int, Dict[int, dict[str, Any]]] = {}
         self.sublevel_metadata: Dict[int, Dict[int, dict[str, Any]]] = {}
         self.sublevel_starts: Dict[int, Dict[int, Any]] = {}

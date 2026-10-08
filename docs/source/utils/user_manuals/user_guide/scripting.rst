@@ -104,7 +104,7 @@ We will print out the settings for the first plugin to illustrate how it is done
 
 .. code:: python
 
-    raw_data = TCossaLabABFReader()
+    raw_data = TCossaLabABFReader(key="reader")
 
     data_settings = raw_data.get_empty_settings(standalone=True) #standalone=True tells our plugin  that it is not part of a GUI
 
@@ -127,7 +127,11 @@ We will print out the settings for the first plugin to illustrate how it is done
 
 .. note::
 
-    It is possible to supple the settings dict directly to the class constructor if you prefer, in which case you can skip step 2. This just requires that you have your settings dict ready to go and properly formatted. Doing it in two steps gives you the option to print out the required settings in cases where you are using a new plugin type and are unsure of the settings (and haven't read the docs for that plugin, in which case this note probably won't help you either).
+    It is possible to supply the settings dict directly to the class constructor if you prefer, in which case you can skip step 2. This just requires that you have your settings dict ready to go and properly formatted. Doing it in two steps gives you the option to print out the required settings in cases where you are using a new plugin type and are unsure of the settings (and haven't read the docs for that plugin, in which case this note probably won't help you either).
+
+.. note::
+
+    Every plugin has a name, its *key*, which other plugins and saved results use to refer to it - a metadata database records the keys of the plugins that wrote it. Pass ``key=`` to the constructor to choose one, as above. A plugin made without one is named after its class, ``TCossaLabABFReader_0``, ``TCossaLabABFReader_1`` and so on, so no two plugins in a script share a name.
 
 Create a filter
 ---------------

@@ -82,6 +82,12 @@ class DataPluginController(QObject):
         past the dialog has already unregistered the plugin from its parents, so
         each one either completes or calls `_report_and_restore` to put them back.
 
+        A rename is part of the edit and happens only once the plugin has accepted
+        the new settings, so a refused value leaves the name, the plugins that
+        refer to it and the saved session exactly as they were. Nothing before
+        `apply_settings` changes anything a refusal would have to undo beyond the
+        parent links.
+
         The helpers return False to mean "give up, the user has been told", which
         keeps the decision to stop here rather than scattered through them.
 
@@ -128,22 +134,68 @@ class DataPluginController(QObject):
             return
 
         self._unregister_parent_dependent_links(metaclass, key, parents)
-        old_key = instance.get_key()
-        settings, key = new_settings, new_key
 
-        if key != old_key:
-            if not self._rename_plugin(
-                metaclass, key, old_key, instance, parents, dependents, settings
-            ):
-                return
+        if new_key != key and not self._key_is_unused(new_key):
+            self._restore_parent_dependent_links(metaclass, key, parents)
+            return
 
         if not self._resolve_plugin_references(
-            app_settings, metaclass, key, instance, parents
+            new_settings, metaclass, key, instance, parents
         ):
             return
 
-        self._apply_edited_settings(
-            app_settings, metaclass, key, instance, parents, settings
+        if not self._apply_edited_settings(
+            new_settings, metaclass, key, instance, parents
+        ):
+            return
+
+        self._finish_edit(metaclass, key, new_key, instance, dependents)
+
+    @log(logger=logger)
+    def _finish_edit(
+        self,
+        metaclass: str,
+        key: str,
+        new_key: str,
+        instance: Any,
+        dependents: Set[Tuple[str, str]],
+    ) -> None:
+        """
+        Rename the plugin if asked, then record the edit in the session.
+
+        Reached only once the plugin has accepted its new settings. The history entry
+        is what the plugin reports holding, under the name it ended up with, recorded
+        against its old name when the rename happened.
+
+        :param metaclass: The metaclass of the plugin.
+        :type metaclass: str
+        :param key: The key the plugin had when the edit began.
+        :type key: str
+        :param new_key: The key chosen in the dialog.
+        :type new_key: str
+        :param instance: The live plugin instance.
+        :type instance: Any
+        :param dependents: The (metaclass, key) pairs that depend on this plugin.
+        :type dependents: Set[Tuple[str, str]]
+        """
+        renamed_from = ""
+        if new_key != key and self._rename_plugin(
+            metaclass, new_key, key, instance, dependents
+        ):
+            renamed_from = key
+
+        self.update_plugin_history.emit(
+            {
+                "key": instance.get_key(),
+                "metaclass": metaclass,
+                "subclass": instance.__class__.__name__,
+                "settings": instance.get_raw_settings(),
+            },
+            renamed_from,
+        )
+        self.add_text_to_display.emit(
+            f"Settings updated successfully for {instance.get_key()}",
+            self.__class__.__name__,
         )
 
     @log(logger=logger)
@@ -224,15 +276,15 @@ class DataPluginController(QObject):
         key: str,
         old_key: str,
         instance: Any,
-        parents: Set[Tuple[str, str]],
         dependents: Set[Tuple[str, str]],
-        settings: dict,
     ) -> bool:
         """
-        Give the plugin its new key, refusing a name that is already taken.
+        Give the plugin its new key, and carry it to every plugin that refers to it.
 
-        Plugin names are unique across *every* metaclass, not just within one, so
-        the collision check walks the whole instantiated list.
+        Runs only once the plugin has accepted the edit's settings and the new name
+        has been checked free, so the only step that can refuse is `set_key`, and it
+        runs first: if it refuses, the plugin keeps its old name with nothing else
+        changed, and the settings it accepted stand.
 
         :param metaclass: The metaclass of the plugin.
         :type metaclass: str
@@ -242,58 +294,56 @@ class DataPluginController(QObject):
         :type old_key: str
         :param instance: The live plugin instance.
         :type instance: Any
-        :param parents: The (metaclass, key) pairs of the plugin's parents.
-        :type parents: Set[Tuple[str, str]]
         :param dependents: The (metaclass, key) pairs that depend on this plugin.
         :type dependents: Set[Tuple[str, str]]
-        :param settings: The settings to record against the renamed plugin.
-        :type settings: dict
-        :return: True if the rename completed, False if the caller should give up.
+        :return: True if the plugin was renamed, False if it kept its old name.
         :rtype: bool
         """
-        for meta, keys in self.model.get_instantiated_plugins_list().items():
-            if key in keys:
-                self._report_and_restore(
-                    self.logger.warning,
-                    f"Cannot rename plugin to '{key}' because it already exists under metaclass '{meta}'.",
-                    metaclass,
-                    instance.get_key(),
-                    parents,
-                    display_message=f"Plugin name '{key}' already exists under metaclass '{meta}'. Please choose a different name.",
-                )
-                return False
-
-        self._update_dependents_after_rename(metaclass, old_key, key, dependents)
-
         try:
             instance.set_key(key)
         except Exception as e:
-            self._report_and_restore(
+            self._report(
                 self.logger.exception,
-                f"Unable to edit plugin {key} of type {metaclass} : {str(e)}",
-                metaclass,
-                instance.get_key(),
-                parents,
+                f"Settings for {old_key} were applied, but it could not be renamed to {key}: {str(e)}",
             )
             return False
 
+        for pmetaclass, pkey in instance.get_parents():
+            pinstance = self.model.get_plugin_instance(pmetaclass, pkey)
+            if pinstance and (metaclass, old_key) in pinstance.get_dependents():
+                pinstance.unregister_dependent(metaclass, old_key)
+                pinstance.register_dependent(metaclass, key)
+        self._update_dependents_after_rename(metaclass, old_key, key, dependents)
         self.model.update_plugin_key(metaclass, key, old_key)
         self.update_available_plugins.emit(
             metaclass, self.model.get_instantiated_plugins_list()[metaclass]
         )
-        self.add_text_to_display.emit(
-            instance.report_channel_status(channel=None, init=True), key
-        )
-        self.update_plugin_history.emit(
-            {
-                "key": key,
-                "metaclass": metaclass,
-                "subclass": instance.__class__.__name__,
-                "settings": settings,
-            },
-            old_key,
-        )
+        self._report_status(instance, key)
         return True
+
+    @log(logger=logger)
+    def _report_status(self, instance: Any, key: str) -> None:
+        """
+        Show a plugin's status on the panel, or say that it could not give one.
+
+        Called once a plugin has been created or renamed, when everything that
+        matters has already happened, so a plugin that fails to describe itself is
+        reported rather than allowed to abandon the steps still to come - recording
+        it in the session among them.
+
+        :param instance: The live plugin instance.
+        :type instance: Any
+        :param key: The plugin's name.
+        :type key: str
+        """
+        try:
+            status = instance.report_channel_status(channel=None, init=True)
+        except Exception as e:
+            self._report(
+                self.logger.warning, f"Unable to report the status of {key}: {str(e)}"
+            )
+        else:
+            self.add_text_to_display.emit(status, key)
 
     @log(logger=logger)
     def _update_dependents_after_rename(
@@ -427,13 +477,13 @@ class DataPluginController(QObject):
         key: str,
         instance: Any,
         parents: Set[Tuple[str, str]],
-        settings: dict,
-    ) -> None:
+    ) -> bool:
         """
         Hand the resolved settings to the plugin, which is what makes the edit real.
 
-        The last step, and the only one that touches the plugin's own state, so a
-        failure here is the one that most needs the parent links put back.
+        The step that can refuse the edit, and the first that touches the plugin's
+        own state, so a failure here puts the parent links back and stops the edit
+        before any rename.
 
         :param app_settings: The settings with plugin references resolved to objects.
         :type app_settings: dict
@@ -445,8 +495,8 @@ class DataPluginController(QObject):
         :type instance: Any
         :param parents: The (metaclass, key) pairs of the plugin's parents.
         :type parents: Set[Tuple[str, str]]
-        :param settings: The raw settings to record in history, references unresolved.
-        :type settings: dict
+        :return: True if the plugin accepted the settings, False if the caller should give up.
+        :rtype: bool
         """
         try:
             instance.apply_settings(app_settings)
@@ -458,21 +508,8 @@ class DataPluginController(QObject):
                 instance.get_key(),
                 parents,
             )
-            return
-
-        self.update_plugin_history.emit(
-            {
-                "key": key,
-                "metaclass": metaclass,
-                "subclass": instance.__class__.__name__,
-                "settings": settings,
-            },
-            "",
-        )
-        self.add_text_to_display.emit(
-            f"Settings updated successfully for {key}",
-            self.__class__.__name__,
-        )
+            return False
+        return True
 
     @log(logger=logger)
     def _report_and_restore(
@@ -811,15 +848,13 @@ class DataPluginController(QObject):
         self.update_available_plugins.emit(
             metaclass, self.model.get_instantiated_plugins_list()[metaclass]
         )
-        self.add_text_to_display.emit(
-            temp_instance.report_channel_status(channel=None, init=True), key
-        )
+        self._report_status(temp_instance, key)
         self.update_plugin_history.emit(
             {
                 "key": key,
                 "metaclass": metaclass,
                 "subclass": subclass,
-                "settings": settings,
+                "settings": temp_instance.get_raw_settings(),
             },
             "",
         )

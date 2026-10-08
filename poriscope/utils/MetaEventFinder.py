@@ -60,12 +60,19 @@ class MetaEventFinder(BaseDataPlugin):
 
     logger = logging.getLogger(__name__)
 
-    def __init__(self, settings: Optional[dict] = None) -> None:
+    def __init__(
+        self, settings: Optional[dict] = None, key: Optional[str] = None
+    ) -> None:
         """
         Initialize the MetaEventFinder instance.
+
+        :param settings: a dict conforming to that which is required by the self.get_empty_settings() function
+        :type settings: Optional[dict]
+        :param key: The name this plugin is known by; see :py:meth:`~poriscope.utils.BaseDataPlugin.BaseDataPlugin.__init__`.
+        :type key: Optional[str]
         """
         self.reader: Optional[MetaReader] = None
-        super().__init__(settings)
+        super().__init__(settings, key)
         self.num_events_found: Dict[int, int] = {}
         self.event_starts: Dict[int, List[int]] = {}
         self.event_ends: Dict[int, List[int]] = {}

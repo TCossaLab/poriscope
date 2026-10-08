@@ -159,3 +159,22 @@ def test_an_older_database_gains_provenance_for_the_channels_written_to_it(
     stored = channel_provenance(written)
     assert len(stored) == 1 and stored[0] is not None
     assert json.loads(stored[0])["fitter"]["class"] == "CUSUM"
+
+
+def test_plugins_made_in_a_script_are_recorded_by_their_own_keys(
+    events_db_path, tmp_path: Path
+) -> None:
+    """
+    Plugins built in a script without names still get distinct keys, so the record's
+    chain from writer to fitter to loader can be followed.
+    """
+    out = write_metadata_database(
+        events_db_path, tmp_path / "scripted.sqlite3", CUSUM, SQLiteDBWriter
+    )
+
+    provenance = json.loads(channel_provenance(out)[0])
+
+    keys = [provenance[role]["key"] for role in ("writer", "fitter", "event_loader")]
+    assert all(keys) and len(set(keys)) == 3
+    assert provenance["writer"]["settings"]["MetaEventFitter"] == keys[1]
+    assert provenance["fitter"]["settings"]["MetaEventLoader"] == keys[2]

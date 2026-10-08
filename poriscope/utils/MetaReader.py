@@ -53,7 +53,9 @@ class MetaReader(BaseDataPlugin):
 
     logger = logging.getLogger(__name__)
 
-    def __init__(self, settings: Optional[dict] = None) -> None:
+    def __init__(
+        self, settings: Optional[dict] = None, key: Optional[str] = None
+    ) -> None:
         """
         Initialize the MetaReader instance.
 
@@ -61,8 +63,10 @@ class MetaReader(BaseDataPlugin):
 
         :param settings: a dict conforming to that which is required by the self.get_empty_settings() function
         :type settings: Optional[dict]
+        :param key: The name this plugin is known by; see :py:meth:`~poriscope.utils.BaseDataPlugin.BaseDataPlugin.__init__`.
+        :type key: Optional[str]
         """
-        super().__init__(settings)
+        super().__init__(settings, key)
 
     # Public API, probably usable as-is in most cases
     @log(logger=logger)

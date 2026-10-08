@@ -18,6 +18,29 @@ and deleted on 2026-09-27; it too is in git history.
 
 ---
 
+## 2026-10-08 - A plugin keeps its own copy of its settings; history comes from the plugin
+
+**Context.** `apply_settings` stored the caller's dict and wrote plugin keys back into it. The
+edit flow depended on that: the dialog's dict was both what was applied and what was emitted as
+history, and only the write-back made it saveable. A refused edit left that dict - holding the
+live parent - on the plugin, and the next edit's `deepcopy` crashed on its `RLock`.
+
+**Decision** (Kyle, 2026-10-08). `apply_settings` validates first, then keeps its own copy: each
+parameter's dict and lists copied, a plugin it depends on stored by key. It never writes into the
+caller's dict. The controller records history from `get_raw_settings()` after an accepted edit, and
+an edit renames only after the plugin accepts its settings. A plugin made without `key=` is named
+`<ClassName>_<n>` before its settings are applied; an explicit key is taken as given.
+
+**Rejected.** A `deepcopy` of the settings: it holds live plugins, so it is the crash itself.
+Keeping the alias and documenting it: every caller would have to know the plugin rewrites its dict,
+and a script reusing one dict for a second plugin was refused. Checking explicit keys for
+duplicates: a script has no registry to check against.
+
+**Revisit if** settings ever hold something other than plain values and plugins - a nested dict
+or a mutable object in `Value` would be shared, since the copy stops at lists.
+
+---
+
 ## 2026-10-08 - A database holds results from one type of fitter
 
 **Context.** `columns.name` is `UNIQUE` across tables and registered with `INSERT OR IGNORE`, so a
