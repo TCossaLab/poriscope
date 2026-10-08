@@ -23,14 +23,18 @@
 # Contributors:
 # Kyle Briggs
 
+import json
 import logging
 import sqlite3
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union, override
 
 import numpy as np
 import numpy.typing as npt
 
+from poriscope.constants import __VERSION__
+from poriscope.utils.BaseDataPlugin import BaseDataPlugin
 from poriscope.utils.DocstringDecorator import inherit_docstrings
 from poriscope.utils.LogDecorator import log
 from poriscope.utils.MetaDatabaseWriter import MetaDatabaseWriter
@@ -487,11 +491,12 @@ class SQLiteDBWriter(MetaDatabaseWriter):
 
             # Directly attempt to insert the channel
             cursor.execute(
-                """INSERT OR IGNORE INTO channels (experiment_id, channel_id, samplerate) VALUES (?, ?, ?);""",
+                """INSERT OR IGNORE INTO channels (experiment_id, channel_id, samplerate, provenance) VALUES (?, ?, ?, ?);""",
                 (
                     experiment_id,
                     channel,
                     samplerate,
+                    self._provenance_json(),
                 ),
             )
         except sqlite3.Error as e:
@@ -831,6 +836,11 @@ class SQLiteDBWriter(MetaDatabaseWriter):
                         f"ALTER TABLE sublevels ADD COLUMN {column_name} {pytype_to_sql_type[column_type]};"
                     )
 
+            # A file created before 2.1 has no provenance column; it gains one here, and
+            # its existing channels read NULL.
+            if not self._column_exists(cursor, "channels", "provenance"):
+                cursor.execute("ALTER TABLE channels ADD COLUMN provenance TEXT;")
+
         except (sqlite3.Error, RuntimeError, ValueError) as e:
             if conn is not None:
                 conn.rollback()  # Rollback all changes if any operation fails
@@ -1005,6 +1015,53 @@ class SQLiteDBWriter(MetaDatabaseWriter):
         if cursor.rowcount == 0:  # Check if the insert was ignored
             return False
         return True
+
+    @log(logger=logger)
+    def _provenance_json(self) -> str:
+        """
+        Describe, as JSON, the plugins that produced the events this writer is writing.
+
+        Stored in ``channels.provenance`` with the channel's row: this writer, its event
+        fitter and the fitter's event loader, each by class, key and setting values,
+        with the Poriscope version and the time of the write in UTC.
+
+        :return: the provenance record as a JSON object
+        :rtype: str
+        """
+        record: Dict[str, Any] = {
+            "poriscope_version": __VERSION__,
+            "written_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "writer": self._describe_plugin(self),
+            "fitter": self._describe_plugin(self.eventfitter),
+            "event_loader": (
+                self._describe_plugin(self.eventfitter.eventloader)
+                if self.eventfitter.eventloader is not None
+                else None
+            ),
+        }
+        # Applied settings hold a plugin they refer to by its key, so every value is
+        # already JSON; str() is the fallback for a type no plugin uses today, so that a
+        # setting this record did not foresee never stops a write.
+        return json.dumps(record, default=str)
+
+    @log(logger=logger)
+    def _describe_plugin(self, plugin: BaseDataPlugin) -> Dict[str, Any]:
+        """
+        Name a plugin and the values of its settings, for the provenance record.
+
+        :param plugin: the plugin to describe
+        :type plugin: BaseDataPlugin
+        :return: its class, key and setting values
+        :rtype: Dict[str, Any]
+        """
+        return {
+            "class": type(plugin).__name__,
+            "key": plugin.get_key(),
+            "settings": {
+                name: setting.get("Value")
+                for name, setting in plugin.get_raw_settings().items()
+            },
+        }
 
     @log(logger=logger)
     def _column_exists(

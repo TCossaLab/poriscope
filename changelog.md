@@ -82,6 +82,8 @@
 
 * Metadata databases now record their schema version, and one created by a newer Poriscope is refused with a message instead of being misread
 
+* Each channel of a metadata database now records the plugins and settings that produced it, and the Poriscope version
+
 ### Documentation:
 
 * The API reference no longer lists `NanoTrees`' helper classes as event fitters
