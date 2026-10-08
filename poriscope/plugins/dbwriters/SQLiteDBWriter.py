@@ -352,24 +352,23 @@ class SQLiteDBWriter(MetaDatabaseWriter):
                         f"Event insert for experiment '{experiment_name}' reported "
                         "success but produced no row id."
                     )
-                success = self._insert_sublevels(
+                self._insert_sublevels(
                     self.cursor,
                     sublevel_metadata,
                     experiment_id,
                     channel_db_id,
                     event_db_id,
                 )
-                if success:
-                    success = self._insert_event_data(
-                        self.cursor,
-                        event_metadata,
-                        event_data,
-                        raw_data,
-                        fit_data,
-                        experiment_id,
-                        channel_db_id,
-                        event_db_id,
-                    )
+                self._insert_event_data(
+                    self.cursor,
+                    event_metadata,
+                    event_data,
+                    raw_data,
+                    fit_data,
+                    experiment_id,
+                    channel_db_id,
+                    event_db_id,
+                )
 
         except sqlite3.Error as e:
             # Undo only this event. Deliberately no conn.rollback() here - the
@@ -391,11 +390,8 @@ class SQLiteDBWriter(MetaDatabaseWriter):
                 if success:
                     self.conn.execute("RELEASE SAVEPOINT write_event")
                 else:
-                    # An event can fail without raising: _insert_sublevels and
-                    # _insert_event_data return False, and the earlier steps are
-                    # skipped rather than undone. Rolling back to the savepoint
-                    # makes the event all-or-nothing instead of committing the
-                    # orphaned events/sublevels rows it managed to write.
+                    # The event is already stored, so nothing was inserted; the
+                    # savepoint is closed without keeping anything.
                     self.conn.execute("ROLLBACK TO SAVEPOINT write_event")
                     self.conn.execute("RELEASE SAVEPOINT write_event")
             if self.conn and last_call is True:
@@ -871,7 +867,11 @@ class SQLiteDBWriter(MetaDatabaseWriter):
         channel_db_id: int,
     ) -> bool:
         """
-        Insert event metadata into the 'events' table. Return True on success, False on failure.
+        Insert event metadata into the 'events' table.
+
+        A plain INSERT, not INSERT OR IGNORE: OR IGNORE also swallows a NOT NULL
+        violation, which then read as a duplicate. Only a UNIQUE violation - the event
+        is already stored - returns False; any other refusal raises, naming the column.
 
         :param cursor: The SQLite cursor to execute the query.
         :type cursor: sqlite3.Cursor
@@ -882,17 +882,21 @@ class SQLiteDBWriter(MetaDatabaseWriter):
         :param channel_db_id: The database ID of the channel to associate with the event.
         :type channel_db_id: int
 
-        :return: True on success, False on failure
+        :return: True if the event was inserted, False if it is already stored
         :rtype: bool
+        :raises sqlite3.IntegrityError: if the schema refuses the row for any other reason
         """
         columns = ", ".join(event_metadata.keys()) + ", experiment_id, channel_db_id"
         values = ", ".join("? " for _ in event_metadata) + ", ?, ?"
-        cursor.execute(
-            f"INSERT OR IGNORE INTO events ({columns}) VALUES ({values});",
-            (*event_metadata.values(), experiment_id, channel_db_id),
-        )
-        if cursor.rowcount == 0:  # Check if the insert was ignored
-            return False
+        try:
+            cursor.execute(
+                f"INSERT INTO events ({columns}) VALUES ({values});",
+                (*event_metadata.values(), experiment_id, channel_db_id),
+            )
+        except sqlite3.IntegrityError as e:
+            if e.sqlite_errorname == "SQLITE_CONSTRAINT_UNIQUE":
+                return False
+            raise
         return True
 
     @log(logger=logger)
@@ -903,9 +907,13 @@ class SQLiteDBWriter(MetaDatabaseWriter):
         experiment_id: int,
         channel_db_id: int,
         event_db_id: int,
-    ) -> bool:
+    ) -> None:
         """
         Insert sublevel metadata into the 'sublevels' table.
+
+        A plain INSERT: the table has no UNIQUE constraint, so a refused row can only be
+        one the schema rejects, and the error that says which column is what the user
+        should see.
 
         :param cursor: The SQLite cursor to execute the query.
         :type cursor: sqlite3.Cursor
@@ -918,8 +926,6 @@ class SQLiteDBWriter(MetaDatabaseWriter):
         :param event_db_id: The database ID of the event to associate with the sublevels.
         :type event_db_id: int
 
-        :return: True on success, False on failure
-        :rtype: bool
         """
 
         def convert_value(value: Any) -> Any:  # helper function
@@ -946,14 +952,9 @@ class SQLiteDBWriter(MetaDatabaseWriter):
             strict=True,
         )
         cursor.executemany(
-            f"INSERT OR IGNORE INTO sublevels ({columns}) VALUES ({values});",
+            f"INSERT INTO sublevels ({columns}) VALUES ({values});",
             [(*row, experiment_id, channel_db_id, event_db_id) for row in rows],
         )
-        if cursor.rowcount < len(
-            sublevel_metadata["event_id"]
-        ):  # Check if any inserts were ignored
-            return False
-        return True
 
     @log(logger=logger)
     def _insert_event_data(
@@ -966,9 +967,12 @@ class SQLiteDBWriter(MetaDatabaseWriter):
         experiment_id: int,
         channel_db_id: int,
         event_db_id: int,
-    ) -> bool:
+    ) -> None:
         """
         Insert the event data into the 'data' table after converting it to the appropriate binary format.
+
+        A plain INSERT: the table has no UNIQUE constraint, so a refused row is one the
+        schema rejects, and its error names the column.
 
         :param cursor: The SQLite cursor to execute the query.
         :type cursor: sqlite3.Cursor
@@ -987,8 +991,6 @@ class SQLiteDBWriter(MetaDatabaseWriter):
         :param event_db_id: The database ID of the event this data belongs to.
         :type event_db_id: int
 
-        :return: True on success, False on failure
-        :rtype: bool
         :raises ValueError: if event_data is not a numpy array of dtype np.float64
         """
         if not isinstance(event_data, np.ndarray) or event_data.dtype != np.float64:
@@ -999,7 +1001,7 @@ class SQLiteDBWriter(MetaDatabaseWriter):
         fit_data_blob = fit_data.astype("<f8").tobytes()
         data_format = "<f8"
         cursor.execute(
-            """INSERT OR IGNORE INTO data (experiment_id, channel_id, channel_db_id, event_id, event_db_id, data_format, filtered_data, raw_data, fit_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);""",
+            """INSERT INTO data (experiment_id, channel_id, channel_db_id, event_id, event_db_id, data_format, filtered_data, raw_data, fit_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);""",
             (
                 experiment_id,
                 event_metadata["channel_id"],
@@ -1012,9 +1014,6 @@ class SQLiteDBWriter(MetaDatabaseWriter):
                 fit_data_blob,
             ),
         )
-        if cursor.rowcount == 0:  # Check if the insert was ignored
-            return False
-        return True
 
     @log(logger=logger)
     def _provenance_json(self) -> str:

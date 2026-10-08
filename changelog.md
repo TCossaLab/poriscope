@@ -86,6 +86,8 @@
 
 * Fixed an older metadata database whose event-count upgrade failed part-way reporting no experiments from then on; the upgrade now retries on the next open
 
+* An event the metadata database cannot store now reports the column at fault, where before it was counted as "Cannot Overwrite Existing Event"
+
 ### Documentation:
 
 * The API reference no longer lists `NanoTrees`' helper classes as event fitters

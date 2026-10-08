@@ -9,9 +9,7 @@ has a red test to turn green where today's behaviour differs:
 
 - A duplicate row is one rejected event under one reason. Green today.
 - A row the schema refuses (a NOT NULL column handed ``None``) is rejected under a reason
-  that names the column. Today ``INSERT OR IGNORE`` swallows the violation and the writer
-  infers failure from ``rowcount``, so it reports ``Cannot Overwrite Existing Event``
-  (``SQLiteDBWriter._insert_event``). Strict expected failure.
+  that names the column, not as ``Cannot Overwrite Existing Event``.
 - An event the fitter hands over with a missing component is a rejected event, not a
   silent skip (``MetaDatabaseWriter.write_events``). Strict expected failure.
 - An abort leaves the channel empty and ``written`` at zero. Green today.
@@ -164,14 +162,6 @@ def _with_event_zero_mutated(fitter, mutate):
     return patch.object(fitter, "get_event_metadata_generator", wrapped)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "SQLiteDBWriter._insert_event infers failure from rowcount under INSERT OR "
-        "IGNORE, so a NOT NULL violation is reported as 'Cannot Overwrite Existing "
-        "Event' instead of naming the column"
-    ),
-)
 @pytest.mark.parametrize("writer_cls", DB_WRITERS, ids=[c.__name__ for c in DB_WRITERS])
 def test_a_schema_violation_is_reported_by_column_not_as_a_duplicate(
     writer_cls: Type[MetaDatabaseWriter], fitted, tmp_path: Path
@@ -195,6 +185,34 @@ def test_a_schema_violation_is_reported_by_column_not_as_a_duplicate(
     assert sum(rejected.values()) == 1, rejected
     assert "Cannot Overwrite Existing Event" not in rejected, rejected
     assert any("start_time" in reason for reason in rejected), rejected
+
+
+@pytest.mark.parametrize("writer_cls", DB_WRITERS, ids=[c.__name__ for c in DB_WRITERS])
+def test_a_sublevel_the_schema_refuses_names_its_column_and_stores_nothing(
+    writer_cls: Type[MetaDatabaseWriter], fitted, tmp_path: Path
+) -> None:
+    """
+    A sublevel row the schema refuses is reported by its column, and its event's
+    row - already inserted when the sublevels fail - is rolled back with it.
+    """
+
+    def null_level_ids(item):
+        event_metadata, sublevels, filtered, raw, fit = item
+        broken = dict(sublevels)
+        broken["level_id"] = [None] * len(sublevels["level_id"])  # NOT NULL
+        return event_metadata, broken, filtered, raw, fit
+
+    out = tmp_path / "metadata.sqlite3"
+    writer = build_db_writer(writer_cls, fitted, str(out))
+    with _with_event_zero_mutated(fitted, null_level_ids):
+        drain(writer.write_events(EVENTS_CHANNEL))
+    writer.close_resources()
+
+    rejected = writer.rejected[EVENTS_CHANNEL]
+    assert writer.written[EVENTS_CHANNEL] == EVENTS_COUNT - 1
+    assert sum(rejected.values()) == 1, rejected
+    assert any("level_id" in reason for reason in rejected), rejected
+    assert describe_database(out)["events"] == EVENTS_COUNT - 1
 
 
 @pytest.mark.xfail(
