@@ -18,7 +18,7 @@ and deleted on 2026-09-27; it too is in git history.
 
 ---
 
-## 2026-10-08 - A database holds one fitter's results
+## 2026-10-08 - A database holds results from one type of fitter
 
 **Context.** `columns.name` is `UNIQUE` across tables and registered with `INSERT OR IGNORE`, so a
 metric name lands in whichever table registered it first. No single fitter declares a name in
@@ -27,10 +27,14 @@ a sublevel column in both PeakFinders: writing two of them into one file sends t
 to a column the loader never reads.
 
 **Decision** (Kyle, 2026-10-08). The database writer refuses, at `_validate_settings`, to write a
-fitter into a file that holds another fitter's results. "Another" means another plugin class, so
-CUSUM with different settings is accepted and ClassicCUSUM after CUSUM is refused. A 2.1 file
-names its fitter in each channel's provenance; a pre-2.1 file is accepted only if its registered
-event and sublevel metric columns equal the new fitter's declared set. Breaking.
+fitter into a file that holds another type's results. Type means plugin class: any number of runs
+of one fitter - other channels, recordings or settings - aggregate in one file, and ClassicCUSUM
+after CUSUM is refused. A 2.1 file names its fitter in each channel's provenance. A pre-2.1 file
+is accepted if every column the new fitter declares is already registered on the table it declares
+it for; amended from "registered columns equal the declared set" because the Clustering and
+Protein tabs register their own columns, so equality would refuse even the original fitter. A
+fitter whose columns are a subset of the file's is therefore not told apart; its values still land
+in the right columns. Breaking.
 
 **Rejected.** Refusing only the colliding name (the narrow fix) and a per-table namespace
 (`UNIQUE(name, table_name)`), which changes how every query maps a column to its table. Refusing

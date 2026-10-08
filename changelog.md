@@ -24,6 +24,8 @@
 
 * **`MetaEventFinder.get_single_event_data` now raises `IndexError` for an index with no event (negative included) instead of returning `None`, and a reader or filter error keeps its own message**; `get_event_data_generator` still yields `None` for an event it cannot read
 
+* **A metadata database now holds results from one type of fitter:** any number of runs of that fitter can still be written to it, but writing a different type of fitter into it is refused; use a new file per fitter type
+
 ### Developer Tooling:
 
 * The release workflow now runs only when a version tag is pushed
@@ -101,6 +103,8 @@
 * An event the metadata database cannot read back is now reported by name instead of silently left out of plots and exports, and a CSV export says how many trace files are missing
 
 * A metadata query that fails partway now reports the error instead of stopping as if it had finished
+
+* `level_id` and `levels_left` can now be used in metadata queries and filters
 
 ### Documentation:
 

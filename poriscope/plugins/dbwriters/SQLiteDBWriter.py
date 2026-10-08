@@ -38,6 +38,7 @@ from poriscope.utils.BaseDataPlugin import BaseDataPlugin
 from poriscope.utils.DocstringDecorator import inherit_docstrings
 from poriscope.utils.LogDecorator import log
 from poriscope.utils.MetaDatabaseWriter import MetaDatabaseWriter
+from poriscope.utils.MetaEventFitter import MetaEventFitter
 
 
 @inherit_docstrings
@@ -521,10 +522,13 @@ class SQLiteDBWriter(MetaDatabaseWriter):
         rather than failing on every channel once writing starts - an events database
         from the Raw Data tab in particular, which also has an ``events`` table.
 
+        A metadata database holds results from one type of fitter, from any number of runs,
+        so one holding another type's is refused here too; see :meth:`_other_fitter_reason`.
+
         :param settings: Parameters for event detection.
         :type settings: dict
-        :raises ValueError: If the output file exists and is not an SQLite database, or
-            is one without the fitted-metadata tables.
+        :raises ValueError: If the output file exists and is not an SQLite database, is
+            one without the fitted-metadata tables, or holds another fitter's results.
         """
         value = settings.get("Output File", {}).get("Value")
         if not value:
@@ -541,6 +545,13 @@ class SQLiteDBWriter(MetaDatabaseWriter):
             cursor = conn.cursor()
             cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
             tables = {row[0] for row in cursor.fetchall()}
+            fitter = settings.get("MetaEventFitter", {}).get("Value")
+            other_fitter = (
+                self._other_fitter_reason(cursor, fitter)
+                if isinstance(fitter, MetaEventFitter)
+                and {"channels", "columns"} <= tables
+                else None
+            )
         except sqlite3.DatabaseError as e:
             raise ValueError(
                 f"{output_file} is not an SQLite database, so it cannot hold fitted "
@@ -560,6 +571,11 @@ class SQLiteDBWriter(MetaDatabaseWriter):
             raise ValueError(
                 f"{output_file} is {kind}, not a fitted-metadata database. Choose a "
                 "metadata database or a new file."
+            )
+        if other_fitter is not None:
+            raise ValueError(
+                f"{output_file} {other_fitter}. A database holds results from one type of "
+                "fitter, from any number of runs; write this one to a new file."
             )
 
     @log(logger=logger)
@@ -796,6 +812,13 @@ class SQLiteDBWriter(MetaDatabaseWriter):
                     "INSERT OR IGNORE INTO columns (name, table_name, units) VALUES (?, ?, ?);",
                     (name, "sublevels", units),
                 )
+            # Attached to every sublevel by MetaEventFitter rather than declared by the
+            # fitter, so registered here, or no query could name them.
+            for name in ("level_id", "levels_left"):
+                cursor.execute(
+                    "INSERT OR IGNORE INTO columns (name, table_name, units) VALUES (?, ?, NULL);",
+                    (name, "sublevels"),
+                )
 
             base_settings = self.get_empty_settings()
             experimental_metadata = {
@@ -1014,6 +1037,74 @@ class SQLiteDBWriter(MetaDatabaseWriter):
                 fit_data_blob,
             ),
         )
+
+    @log(logger=logger)
+    def _other_fitter_reason(
+        self, cursor: sqlite3.Cursor, fitter: MetaEventFitter
+    ) -> Optional[str]:
+        """
+        Say why a metadata database holds another fitter's results, or None if it does not.
+
+        A file written by 2.1 records each channel's fitter in ``channels.provenance``,
+        and any recorded class other than this fitter's is another fitter. A file from
+        before 2.1 records none, so it is judged by its columns: every column this fitter
+        declares must already be registered, on the table it declares it for. Columns the
+        file has beyond those - an analysis tab's cluster labels, say - are not counted
+        against it, so a fitter whose columns are a subset of another's is not told apart.
+
+        :param cursor: a read-only cursor on the existing database
+        :type cursor: sqlite3.Cursor
+        :param fitter: the fitter this writer would write from
+        :type fitter: MetaEventFitter
+        :return: the reason, worded to follow the file's name, or None
+        :rtype: Optional[str]
+        """
+        fitter_class = type(fitter).__name__
+        channel_columns = {
+            row[1] for row in cursor.execute("PRAGMA table_info(channels);")
+        }
+        if "provenance" in channel_columns:
+            recorded = set()
+            for (text,) in cursor.execute(
+                "SELECT provenance FROM channels WHERE provenance IS NOT NULL;"
+            ):
+                try:
+                    recorded.add(json.loads(text)["fitter"]["class"])
+                except (ValueError, KeyError, TypeError):
+                    continue
+            others = recorded - {fitter_class}
+            if others:
+                return (
+                    f"holds results from {', '.join(sorted(others))}, not from "
+                    f"{fitter_class}"
+                )
+            if recorded:
+                return None
+        registered = dict(
+            cursor.execute(
+                "SELECT name, table_name FROM columns "
+                "WHERE table_name IN ('events', 'sublevels');"
+            ).fetchall()
+        )
+        if not registered:
+            return None
+        declared = [(name, "events") for name in fitter.get_event_metadata_units()] + [
+            (name, "sublevels") for name in fitter.get_sublevel_metadata_units()
+        ]
+        misplaced = [
+            f"{name} is a {registered[name]} column here, where {fitter_class} writes it to {table}"
+            for name, table in declared
+            if name in registered and registered[name] != table
+        ]
+        missing = [name for name, _table in declared if name not in registered]
+        if not misplaced and not missing:
+            return None
+        details = misplaced + (
+            [f"it has no {', '.join(missing)} column(s), which {fitter_class} writes"]
+            if missing
+            else []
+        )
+        return f"holds another fitter's results: {'; '.join(details)}"
 
     @log(logger=logger)
     def _provenance_json(self) -> str:

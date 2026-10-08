@@ -123,3 +123,11 @@ Step 4: Write to Database
 
 3. **Click** the **Commit Events** button to write the results into the specified database.
 
+.. note::
+
+   A database holds the results of one type of fitter. Any number of runs of that fitter -
+   other channels, other recordings, other settings - can be written into the same database
+   and analysed together. Writing a different type of fitter (``ClassicCUSUM`` into a
+   ``CUSUM`` database, say) is refused when the writer is configured; choose a new
+   ``Output File`` for each type of fitter you want to compare.
+
