@@ -112,6 +112,10 @@
 
 * A plugin built in a script no longer changes the settings dict it was given, so one dict can build several plugins
 
+* **Fixed renaming a plugin in an edit it refuses keeping the new name** and saving the refused settings to the session; the rename now happens only with an accepted edit
+
+* A plugin that cannot report its status is still created or renamed, and the status panel says why
+
 ### Documentation:
 
 * The API reference no longer lists `NanoTrees`' helper classes as event fitters

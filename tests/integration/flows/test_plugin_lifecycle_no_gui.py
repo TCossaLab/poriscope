@@ -13,17 +13,20 @@ object - so the controller sees exactly what it would see from the real dialog.
 """
 
 import copy
+from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 import pytest
 
 from poriscope.controllers.DataPluginController import DataPluginController
+from poriscope.plugins.dbwriters.SQLiteDBWriter import SQLiteDBWriter
 from poriscope.plugins.eventfitters.CUSUM import CUSUM
 from poriscope.plugins.eventloaders.SQLiteEventLoader import SQLiteEventLoader
 from tests.unit.plugins.conformance._recipes import EVENT_FITTER_SETTINGS
 
 LOADER = "loader"
 FITTER = "fitter"
+WRITER = "writer"
 STEP_SIZE = EVENT_FITTER_SETTINGS["CUSUM"]["Step Size"]
 
 
@@ -123,6 +126,30 @@ def fitter_settings(loader_key: str) -> Dict[str, Dict[str, Any]]:
     return settings
 
 
+def writer_settings(fitter_key: str, out: Path) -> Dict[str, Dict[str, Any]]:
+    """
+    A metadata database writer's settings as session history records them.
+
+    :param fitter_key: the name of the fitter whose results it writes
+    :type fitter_key: str
+    :param out: the database to write
+    :type out: Path
+    :return: the settings
+    :rtype: Dict[str, Dict[str, Any]]
+    """
+    settings = SQLiteDBWriter().get_empty_settings(standalone=True)
+    for parameter, value in {
+        "Experiment Name": "lifecycle",
+        "Voltage": 200.0,
+        "Membrane Thickness": 10.0,
+        "Conductivity": 1.0,
+        "Output File": str(out),
+    }.items():
+        settings[parameter]["Value"] = value
+    settings["MetaEventFitter"] = {"Type": None, "Value": fitter_key, "Options": None}
+    return settings
+
+
 @pytest.fixture
 def controller(qapp, sample_events_db: str) -> Iterator[DataPluginController]:
     """
@@ -138,6 +165,7 @@ def controller(qapp, sample_events_db: str) -> Iterator[DataPluginController]:
         {
             "MetaEventLoader": {"SQLiteEventLoader": SQLiteEventLoader},
             "MetaEventFitter": {"CUSUM": CUSUM},
+            "MetaDatabaseWriter": {"SQLiteDBWriter": SQLiteDBWriter},
         },
         "",
         lambda metaclass, subclass: None,
@@ -172,6 +200,22 @@ def edit(
     """
     ctrl.view.get_user_settings = dialog
     ctrl.edit_plugin_settings(metaclass, key)
+
+
+def plugin(ctrl: DataPluginController, metaclass: str, key: str) -> Any:
+    """
+    :param ctrl: the controller
+    :type ctrl: DataPluginController
+    :param metaclass: the plugin's metaclass
+    :type metaclass: str
+    :param key: the plugin's name
+    :type key: str
+    :return: the live plugin
+    :rtype: Any
+    """
+    instance = ctrl.model.get_plugin_instance(metaclass, key)
+    assert instance is not None, f"no {metaclass} named {key}"
+    return instance
 
 
 def fitter(ctrl: DataPluginController) -> CUSUM:
@@ -283,3 +327,164 @@ class TestTheSessionRecordsWhatThePluginHolds:
         assert second is not None
         assert entry["settings"] == second.get_raw_settings()
         copy.deepcopy(entry)
+
+
+@pytest.fixture
+def with_writer(
+    controller: DataPluginController, tmp_path: Path
+) -> DataPluginController:
+    """
+    The controller with a metadata database writer depending on the fitter.
+
+    :param controller: the controller holding the loader and the fitter
+    :type controller: DataPluginController
+    :param tmp_path: per-test scratch directory
+    :type tmp_path: Path
+    :return: the controller
+    :rtype: DataPluginController
+    """
+    assert controller.validate_and_instantiate_plugin(
+        "MetaDatabaseWriter",
+        "SQLiteDBWriter",
+        writer_settings(FITTER, tmp_path / "metadata.sqlite3"),
+        WRITER,
+    )
+    return controller
+
+
+def assert_fitter_named(ctrl: DataPluginController, name: str) -> None:
+    """
+    The fitter answers to ``name`` everywhere the graph records it, and nowhere to
+    another name.
+
+    :param ctrl: the controller
+    :type ctrl: DataPluginController
+    :param name: the name it should have
+    :type name: str
+    """
+    assert ctrl.model.get_instantiated_plugins_list()["MetaEventFitter"] == [name]
+    assert plugin(ctrl, "MetaEventFitter", name).get_key() == name
+    assert plugin(ctrl, "MetaEventLoader", LOADER).get_dependents() == {
+        ("MetaEventFitter", name)
+    }
+    writer = plugin(ctrl, "MetaDatabaseWriter", WRITER)
+    assert writer.get_parents() == {("MetaEventFitter", name)}
+    assert writer.get_raw_settings()["MetaEventFitter"]["Value"] == name
+
+
+class TestARenameHappensOnlyWithTheEdit:
+    """
+    Renaming a plugin and changing its settings are one edit. A refused value must
+    leave the name, every plugin that refers to it, and the saved session as they
+    were; an accepted one carries the new name through all of them.
+    """
+
+    def test_a_refused_edit_keeps_the_old_name(
+        self, with_writer: DataPluginController
+    ) -> None:
+        record = Recorder(with_writer)
+
+        edit(
+            with_writer,
+            "MetaEventFitter",
+            FITTER,
+            EditDialog({"Step Size": 0.0}, key="renamed"),
+        )
+
+        assert_fitter_named(with_writer, FITTER)
+        assert fitter(with_writer).settings["Step Size"]["Value"] == STEP_SIZE
+        assert record.history == []
+
+    def test_an_accepted_edit_carries_the_new_name_everywhere(
+        self, with_writer: DataPluginController
+    ) -> None:
+        record = Recorder(with_writer)
+
+        edit(
+            with_writer,
+            "MetaEventFitter",
+            FITTER,
+            EditDialog({"Step Size": 50.0}, key="renamed"),
+        )
+
+        assert_fitter_named(with_writer, "renamed")
+        renamed = plugin(with_writer, "MetaEventFitter", "renamed")
+        assert renamed.settings["Step Size"]["Value"] == 50.0
+        assert renamed.get_parents() == {("MetaEventLoader", LOADER)}
+        assert renamed.get_dependents() == {("MetaDatabaseWriter", WRITER)}
+        entries = {(entry["key"], old_key): entry for entry, old_key in record.history}
+        assert entries[("renamed", FITTER)]["settings"] == renamed.get_raw_settings()
+        writer = plugin(with_writer, "MetaDatabaseWriter", WRITER)
+        assert entries[(WRITER, "")]["settings"] == writer.get_raw_settings()
+
+    def test_a_taken_name_is_refused_with_the_edit(
+        self, with_writer: DataPluginController
+    ) -> None:
+        record = Recorder(with_writer)
+
+        edit(
+            with_writer,
+            "MetaEventFitter",
+            FITTER,
+            EditDialog({"Step Size": 50.0}, key=LOADER),
+        )
+
+        assert_fitter_named(with_writer, FITTER)
+        assert fitter(with_writer).settings["Step Size"]["Value"] == STEP_SIZE
+        assert record.history == []
+        assert any("already exists" in text for text in record.text)
+
+
+class TestAPluginThatCannotReportItsStatus:
+    """
+    A plugin's status is shown once it has been created or renamed. One that fails
+    to describe itself is said to have failed, and is still created or renamed, and
+    still saved with the session.
+    """
+
+    @pytest.fixture
+    def silent(
+        self, controller: DataPluginController, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """
+        Make CUSUM fail to report its status, once the controller holds one.
+
+        :param controller: the controller, built before CUSUM is broken
+        :type controller: DataPluginController
+        :param monkeypatch: pytest's monkeypatch
+        :type monkeypatch: pytest.MonkeyPatch
+        """
+
+        def refuse(*args: Any, **kwargs: Any) -> str:
+            raise RuntimeError("no status")
+
+        monkeypatch.setattr(CUSUM, "report_channel_status", refuse)
+
+    def test_it_is_still_created(
+        self, controller: DataPluginController, silent: None
+    ) -> None:
+        record = Recorder(controller)
+
+        assert controller.validate_and_instantiate_plugin(
+            "MetaEventFitter", "CUSUM", fitter_settings(LOADER), "second"
+        )
+
+        assert [entry["key"] for entry, _ in record.history] == ["second"]
+        assert any("Unable to report the status of second" in t for t in record.text)
+
+    def test_it_is_still_renamed(
+        self, controller: DataPluginController, silent: None
+    ) -> None:
+        record = Recorder(controller)
+
+        edit(
+            controller,
+            "MetaEventFitter",
+            FITTER,
+            EditDialog({"Step Size": 50.0}, key="renamed"),
+        )
+
+        assert [(entry["key"], old) for entry, old in record.history] == [
+            ("renamed", FITTER)
+        ]
+        assert any("Unable to report the status of renamed" in t for t in record.text)

@@ -967,11 +967,8 @@ def test_edit_plugin_rename_key_updates_dependents_and_emits(
     mocker: MockerFixture,
 ) -> None:
     """
-    Cover the key-rename path: update dependents, set new key, emit signals.
-
-    Lines covered: collision check loop, dependent re-registration loop,
-    instance.set_key, model.update_plugin_key, update_available_plugins.emit,
-    add_text_to_display.emit, update_plugin_history.emit(history, old_key).
+    A rename applies the settings, then renames, then records one history entry
+    under the new key against the old one.
 
     :param mock_model: Mocked data plugin model.
     :param mock_view: Mocked data plugin view.
@@ -980,6 +977,9 @@ def test_edit_plugin_rename_key_updates_dependents_and_emits(
     ctrl = _make_edit_plugin_controller(mock_model, mock_view, mocker)
     instance = mocker.Mock()
     instance.get_key.return_value = "r1"
+    instance.set_key.side_effect = lambda key: instance.get_key.configure_mock(
+        return_value=key
+    )
     instance.get_parents.return_value = []
     instance.get_dependents.return_value = []
     instance.report_channel_status.return_value = "ok"
@@ -990,10 +990,13 @@ def test_edit_plugin_rename_key_updates_dependents_and_emits(
 
     ctrl.edit_plugin("MetaReader", "r1", {"param": {"Value": 1}})
 
+    instance.apply_settings.assert_called_once_with({"param": {"Value": 2}})
     instance.set_key.assert_called_once_with("r2")
     mock_model.update_plugin_key.assert_called_once_with("MetaReader", "r2", "r1")
     ctrl.update_available_plugins.emit.assert_called_once()
-    assert ctrl.update_plugin_history.emit.call_count == 2
+    emitted, previous = ctrl.update_plugin_history.emit.call_args[0]
+    assert ctrl.update_plugin_history.emit.call_count == 1
+    assert previous == "r1" and emitted["key"] == "r2"
 
 
 def test_edit_plugin_rename_collision_logs_warning_and_returns(
@@ -1074,7 +1077,8 @@ def test_edit_plugin_set_key_exception_logs_and_returns(
     mocker: MockerFixture,
 ) -> None:
     """
-    Cover the except Exception block around instance.set_key and the loop.
+    A plugin that refuses its new name keeps the old one and the settings it
+    accepted, which are recorded under the old name.
 
     :param mock_model: Mocked data plugin model.
     :param mock_view: Mocked data plugin view.
@@ -1093,9 +1097,11 @@ def test_edit_plugin_set_key_exception_logs_and_returns(
 
     ctrl.edit_plugin("MetaReader", "r1", {"param": {"Value": 1}})
 
+    instance.apply_settings.assert_called_once_with({"param": {"Value": 2}})
     ctrl.logger.exception.assert_called_once()  # type: ignore[attr-defined]
-    ctrl.add_text_to_display.emit.assert_called_once()
     mock_model.update_plugin_key.assert_not_called()  # type: ignore[attr-defined]
+    emitted, previous = ctrl.update_plugin_history.emit.call_args[0]
+    assert previous == "" and emitted["key"] == "r1"
 
 
 # ---- validate_and_instantiate_plugin: _prepare_new_plugin_settings's except handler ----
@@ -1698,40 +1704,13 @@ class TestCompleteRequestedDeletion:
 
 
 class TestRenamePlugin:
-    """The rename, its collision guard, and its failure path."""
-
-    def test_refuses_a_name_taken_under_any_metaclass(
-        self, mock_model: MagicMock, mock_view: MagicMock, mocker: MockerFixture
-    ) -> None:
-        """
-        Plugin names are unique across every metaclass, not just within one.
-
-        :param mock_model: Mocked data plugin model.
-        :param mock_view: Mocked data plugin view.
-        :param mocker: Pytest-mock fixture.
-        """
-        ctrl = _make_edit_plugin_controller(mock_model, mock_view, mocker)
-        instance = mocker.Mock()
-        instance.get_key.return_value = "r1"
-        mock_model.get_plugin_instance.return_value = None
-        # The clash is under a *different* metaclass than the plugin being renamed.
-        mock_model.get_instantiated_plugins_list.return_value = {
-            "MetaReader": ["r1"],
-            "MetaWriter": ["taken"],
-        }
-
-        assert (
-            ctrl._rename_plugin("MetaReader", "taken", "r1", instance, set(), [], {})
-            is False
-        )
-        instance.set_key.assert_not_called()
-        ctrl.logger.warning.assert_called_once()
+    """The rename that follows an accepted edit, and its one failure path."""
 
     def test_reports_and_gives_up_when_set_key_fails(
         self, mock_model: MagicMock, mock_view: MagicMock, mocker: MockerFixture
     ) -> None:
         """
-        A plugin that refuses its new key leaves the rename abandoned, not half-done.
+        A plugin that refuses its new key keeps its old one, with nothing else moved.
 
         :param mock_model: Mocked data plugin model.
         :param mock_view: Mocked data plugin view.
@@ -1739,23 +1718,19 @@ class TestRenamePlugin:
         """
         ctrl = _make_edit_plugin_controller(mock_model, mock_view, mocker)
         instance = mocker.Mock()
-        instance.get_key.return_value = "r1"
         instance.set_key.side_effect = ValueError("no")
-        mock_model.get_plugin_instance.return_value = None
-        mock_model.get_instantiated_plugins_list.return_value = {"MetaReader": ["r1"]}
 
-        assert (
-            ctrl._rename_plugin("MetaReader", "r2", "r1", instance, set(), [], {})
-            is False
-        )
+        assert ctrl._rename_plugin("MetaReader", "r2", "r1", instance, set()) is False
         mock_model.update_plugin_key.assert_not_called()
+        instance.get_parents.assert_not_called()
         ctrl.logger.exception.assert_called_once()
 
-    def test_records_the_new_key_against_the_old_one_on_success(
+    def test_carries_the_new_key_to_the_model_and_its_parents(
         self, mock_model: MagicMock, mock_view: MagicMock, mocker: MockerFixture
     ) -> None:
         """
-        History is emitted with the *old* key, which is how the rename is recorded.
+        A parent that lists the plugin under its old key lists it under the new one;
+        a parent that does not list it is left alone.
 
         :param mock_model: Mocked data plugin model.
         :param mock_view: Mocked data plugin view.
@@ -1763,20 +1738,27 @@ class TestRenamePlugin:
         """
         ctrl = _make_edit_plugin_controller(mock_model, mock_view, mocker)
         instance = mocker.Mock()
-        instance.get_key.return_value = "r1"
+        instance.get_parents.return_value = {
+            ("MetaFilter", "f1"),
+            ("MetaFilter", "f2"),
+        }
         instance.report_channel_status.return_value = "ok"
-        mock_model.get_plugin_instance.return_value = None
-        mock_model.get_instantiated_plugins_list.return_value = {"MetaReader": ["r1"]}
+        listing, stale = mocker.Mock(), mocker.Mock()
+        listing.get_dependents.return_value = {("MetaReader", "r1")}
+        stale.get_dependents.return_value = set()
+        mock_model.get_plugin_instance.side_effect = lambda meta, key: {
+            "f1": listing,
+            "f2": stale,
+        }[key]
+        mock_model.get_instantiated_plugins_list.return_value = {"MetaReader": ["r2"]}
 
-        assert (
-            ctrl._rename_plugin("MetaReader", "r2", "r1", instance, set(), [], {"p": 1})
-            is True
-        )
+        assert ctrl._rename_plugin("MetaReader", "r2", "r1", instance, set()) is True
         instance.set_key.assert_called_once_with("r2")
         mock_model.update_plugin_key.assert_called_once_with("MetaReader", "r2", "r1")
-        emitted, previous = ctrl.update_plugin_history.emit.call_args[0]
-        assert previous == "r1"
-        assert emitted["key"] == "r2" and emitted["settings"] == {"p": 1}
+        listing.unregister_dependent.assert_called_once_with("MetaReader", "r1")
+        listing.register_dependent.assert_called_once_with("MetaReader", "r2")
+        stale.register_dependent.assert_not_called()
+        ctrl.update_plugin_history.emit.assert_not_called()
 
 
 class TestUpdateDependentsAfterRename:
@@ -1905,11 +1887,12 @@ class TestResolvePluginReferences:
 class TestApplyEditedSettings:
     """The step that makes the edit real."""
 
-    def test_records_history_and_confirms_on_success(
+    def test_accepts_without_recording_anything(
         self, mock_model: MagicMock, mock_view: MagicMock, mocker: MockerFixture
     ) -> None:
         """
-        History carries what the plugin reports holding, not the dict it was handed.
+        Applying is not the end of the edit - a rename may follow - so recording the
+        edit is left to the caller.
 
         :param mock_model: Mocked data plugin model.
         :param mock_view: Mocked data plugin view.
@@ -1917,19 +1900,16 @@ class TestApplyEditedSettings:
         """
         ctrl = _make_edit_plugin_controller(mock_model, mock_view, mocker)
         instance = mocker.Mock()
-        instance.get_raw_settings.return_value = {"held": True}
 
-        ctrl._apply_edited_settings(
-            {"resolved": True}, "MetaReader", "r1", instance, set()
+        assert (
+            ctrl._apply_edited_settings(
+                {"resolved": True}, "MetaReader", "r1", instance, set()
+            )
+            is True
         )
 
         instance.apply_settings.assert_called_once_with({"resolved": True})
-        emitted, previous = ctrl.update_plugin_history.emit.call_args[0]
-        assert previous == "" and emitted["settings"] == {"held": True}
-        assert any(
-            "Settings updated successfully for r1" in call.args[0]
-            for call in ctrl.add_text_to_display.emit.call_args_list
-        )
+        ctrl.update_plugin_history.emit.assert_not_called()
 
     def test_reports_restores_and_records_nothing_on_failure(
         self, mock_model: MagicMock, mock_view: MagicMock, mocker: MockerFixture
@@ -1948,12 +1928,15 @@ class TestApplyEditedSettings:
         parent = mocker.Mock()
         mock_model.get_plugin_instance.return_value = parent
 
-        ctrl._apply_edited_settings(
-            {"resolved": True},
-            "MetaReader",
-            "r1",
-            instance,
-            {("MetaWriter", "w1")},
+        assert (
+            ctrl._apply_edited_settings(
+                {"resolved": True},
+                "MetaReader",
+                "r1",
+                instance,
+                {("MetaWriter", "w1")},
+            )
+            is False
         )
 
         ctrl.update_plugin_history.emit.assert_not_called()
