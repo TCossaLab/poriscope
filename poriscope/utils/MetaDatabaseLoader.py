@@ -55,11 +55,18 @@ class MetaDatabaseLoader(BaseDataPlugin):
 
     logger = logging.getLogger(__name__)
 
-    def __init__(self, settings: Optional[dict] = None) -> None:
+    def __init__(
+        self, settings: Optional[dict] = None, key: Optional[str] = None
+    ) -> None:
         """
         Initialize and set up the plugin, if settings are available at this stage
+
+        :param settings: a dict conforming to that which is required by the self.get_empty_settings() function
+        :type settings: Optional[dict]
+        :param key: The name this plugin is known by; see :py:meth:`~poriscope.utils.BaseDataPlugin.BaseDataPlugin.__init__`.
+        :type key: Optional[str]
         """
-        super().__init__(settings)
+        super().__init__(settings, key)
 
     # public API, MUST be implemented by subclasses
     @abstractmethod

@@ -56,11 +56,18 @@ class MetaDatabaseWriter(BaseDataPlugin):
 
     logger = logging.getLogger(__name__)
 
-    def __init__(self, settings: Optional[dict] = None) -> None:
+    def __init__(
+        self, settings: Optional[dict] = None, key: Optional[str] = None
+    ) -> None:
         """
         Initialize and set up output environment, save metadata for subclasses.
+
+        :param settings: a dict conforming to that which is required by the self.get_empty_settings() function
+        :type settings: Optional[dict]
+        :param key: The name this plugin is known by; see :py:meth:`~poriscope.utils.BaseDataPlugin.BaseDataPlugin.__init__`.
+        :type key: Optional[str]
         """
-        super().__init__(settings)
+        super().__init__(settings, key)
         self.database_initialized = False
         self.written: Dict[int, int] = {}
         self.rejected: Dict[int, Dict[str, int]] = {}

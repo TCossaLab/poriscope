@@ -25,12 +25,14 @@
 # Alejandra Carolina González González
 
 import contextlib
+import itertools
 import logging
 import threading
 from abc import ABC, abstractmethod
 from types import TracebackType
 from typing import (
     Any,
+    ClassVar,
     Dict,
     Iterator,
     List,
@@ -49,31 +51,6 @@ from poriscope.utils.settings_schema import FILE_DIALOG_PARAMS
 class Setting(TypedDict):
     Type: Type[Any]
     Value: Any
-
-
-def _copy_settings(settings: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
-    """
-    Copy a settings dict down to the lists inside each parameter, and no further.
-
-    The outer dict, each parameter's dict and any list-valued entry within one -
-    notably ``Options`` - are copied, so the copy shares nothing a caller could change
-    with the original. Below that it is shallow rather than a :py:func:`copy.deepcopy`:
-    ``Type`` entries hold classes, and ``Value`` can hold a live plugin instance, which
-    holds a lock and open resources and cannot be deep-copied.
-
-    :param settings: the settings to copy
-    :type settings: Dict[str, Dict[str, Any]]
-    :return: the copy
-    :rtype: Dict[str, Dict[str, Any]]
-    """
-    copied = {}
-    for key, setting in settings.items():
-        entry = dict(setting)
-        for field, val in entry.items():
-            if isinstance(val, list):
-                entry[field] = list(val)
-        copied[key] = entry
-    return copied
 
 
 class BaseDataPlugin(ABC):
@@ -117,12 +94,24 @@ class BaseDataPlugin(ABC):
 
     logger = logging.getLogger(__name__)
 
-    def __init__(self, settings: Optional[dict] = None) -> None:
+    #: One counter per plugin class name, shared by every plugin class, so that plugins
+    #: made without a key are named ``<ClassName>_0``, ``<ClassName>_1`` and so on,
+    #: uniquely within the process.
+    _default_key_counters: ClassVar[Dict[str, Iterator[int]]] = {}
+
+    def __init__(
+        self, settings: Optional[dict] = None, key: Optional[str] = None
+    ) -> None:
         """
         Construct the plugin and, if settings are provided, apply them immediately.
 
+        The key is set before the settings are applied, so a plugin named in them
+        records this one as a dependent under the key it keeps.
+
         :param settings: A dict specifying the parameters of the plugin to be created. Required keys depend on subclass. If None, the plugin is left unconfigured until :py:meth:`~poriscope.utils.BaseDataPlugin.BaseDataPlugin.apply_settings` is called.
         :type settings: Optional[dict]
+        :param key: The name this plugin is known by. If None, it is named ``<ClassName>_<n>``, unique among the plugins of its class made in this process. The GUI names its plugins with :py:meth:`set_key`.
+        :type key: Optional[str]
         """
         # Created before _init() so that subclass hooks and apply_settings can rely on
         # it. Reentrant on purpose: this guard goes into base classes that plugin authors
@@ -134,9 +123,50 @@ class BaseDataPlugin(ABC):
         self.dependents: Set[Tuple[str, str]] = set()
         self.parents: Set[Tuple[str, str]] = set()
         self.raw_settings: dict[str, dict[str, Any]] = {}
-        self.key: str = ""
+        self.key: str = key if key is not None else self._default_key()
         if settings:
             self.apply_settings(settings)
+
+    def _default_key(self) -> str:
+        """
+        Name a plugin that was made without a key: ``<ClassName>_<n>``.
+
+        ``n`` counts the plugins of this class named this way in this process, so no two
+        share a name; the GUI names its plugins the same way, and renames them anyway.
+
+        :return: the key
+        :rtype: str
+        """
+        class_name = type(self).__name__
+        counter = self._default_key_counters.setdefault(class_name, itertools.count())
+        return f"{class_name}_{next(counter)}"
+
+    def _copy_settings(
+        self, settings: Dict[str, Dict[str, Any]]
+    ) -> Dict[str, Dict[str, Any]]:
+        """
+        Copy a settings dict down to the lists inside each parameter, and no further.
+
+        The outer dict, each parameter's dict and any list-valued entry within one -
+        notably ``Options`` - are copied, so the copy shares nothing a caller could
+        change with the original. Below that it is shallow rather than a
+        :py:func:`copy.deepcopy`: ``Type`` entries hold classes, and ``Value`` can hold a
+        live plugin instance, which holds a lock and open resources and cannot be
+        deep-copied.
+
+        :param settings: the settings to copy
+        :type settings: Dict[str, Dict[str, Any]]
+        :return: the copy
+        :rtype: Dict[str, Dict[str, Any]]
+        """
+        copied = {}
+        for key, setting in settings.items():
+            entry = dict(setting)
+            for field, val in entry.items():
+                if isinstance(val, list):
+                    entry[field] = list(val)
+            copied[key] = entry
+        return copied
 
     def __enter__(self) -> "BaseDataPlugin":
         """
@@ -353,7 +383,7 @@ class BaseDataPlugin(ABC):
         :return: a copy of the dict that must be filled in to initialize the plugin
         :rtype: dict
         """
-        return _copy_settings(self.raw_settings)
+        return self._copy_settings(self.raw_settings)
 
     @log(logger=logger)
     def update_raw_settings(self, key: str, val: Any) -> None:
@@ -449,7 +479,7 @@ class BaseDataPlugin(ABC):
             self._validate_param_types(settings)
             self._validate_param_ranges(settings)
             self._validate_settings(settings)
-            self.raw_settings = _copy_settings(settings)
+            self.raw_settings = self._copy_settings(settings)
             self.parents = set()
             self.settings = {}
             for key, val in settings.items():

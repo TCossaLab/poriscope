@@ -50,6 +50,8 @@
 
 * `MetaFilter.get_data_requirements()` lets a filter declare settings the data must match; `BesselFilter` declares its `Samplerate`
 
+* Data plugin constructors take an optional `key=`; a plugin made without one, as in a script, is named `<ClassName>_<n>` instead of `""`, so a metadata database's provenance can follow scripted plugins
+
 ### Analysis Tabs:
 
 * `get_save_filename` now lives once on `MetaView` instead of in four Views

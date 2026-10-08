@@ -53,14 +53,18 @@ class MetaFilter(BaseDataPlugin):
 
     logger = logging.getLogger(__name__)
 
-    def __init__(self, settings: Optional[dict] = None) -> None:
+    def __init__(
+        self, settings: Optional[dict] = None, key: Optional[str] = None
+    ) -> None:
         """
         Initialize the MetaFilter instance.
 
         :param settings: A dict specifying the parameters of the filter to be created. Required keys depend on subclass.
         :type settings: Optional[dict]
+        :param key: The name this plugin is known by; see :py:meth:`~poriscope.utils.BaseDataPlugin.BaseDataPlugin.__init__`.
+        :type key: Optional[str]
         """
-        super().__init__(settings)
+        super().__init__(settings, key)
 
     # public API, should usually be left alone by subclasses
     @log(logger=logger)
