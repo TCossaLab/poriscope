@@ -589,6 +589,49 @@ def build_db_writer(
 # ===========================================================================
 
 
+def write_metadata_database(
+    events_db_path: str,
+    out_path: Path,
+    fitter_cls: Type[MetaEventFitter],
+    writer_cls: Type[MetaDatabaseWriter],
+    channel: int = EVENTS_CHANNEL,
+) -> Path:
+    """
+    Fit one channel of an events database and write the result as a metadata database.
+
+    Every plugin in the chain is created here and closed before returning, so the file
+    is complete and nothing holds it open.
+
+    :param events_db_path: The events database to fit.
+    :type events_db_path: str
+    :param out_path: Where to write the metadata database.
+    :type out_path: Path
+    :param fitter_cls: The event fitter to fit with.
+    :type fitter_cls: Type[MetaEventFitter]
+    :param writer_cls: The database writer to write with.
+    :type writer_cls: Type[MetaDatabaseWriter]
+    :param channel: The channel to fit and write.
+    :type channel: int
+    :return: ``out_path``, written.
+    :rtype: Path
+    """
+    loader = build_event_loader(events_db_path)
+    fitter = build_event_fitter(fitter_cls, loader)
+    try:
+        for _progress in fitter.fit_events(channel):
+            pass
+        writer = build_db_writer(writer_cls, fitter, str(out_path))
+        try:
+            for _progress in writer.write_events(channel):
+                pass
+        finally:
+            writer.close_resources()
+    finally:
+        fitter.close_resources()
+        loader.close_resources()
+    return out_path
+
+
 def build_db_loader(
     loader_cls: Type[MetaDatabaseLoader], db_path: str
 ) -> MetaDatabaseLoader:

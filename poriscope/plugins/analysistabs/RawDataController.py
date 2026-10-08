@@ -471,9 +471,6 @@ class RawDataController(MetaEventTabController):
                     f"Unable to retrieve requested data for event {event}: {repr(e)}"
                 )
                 continue
-            if payload is None:
-                self.logger.warning(f"No data loaded for event {event}, skipping")
-                continue
             event_data.append(payload["data"])
             kept.append(event)
         self.view.set_event_plot_data(

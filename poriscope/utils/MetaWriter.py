@@ -27,7 +27,7 @@
 import logging
 from abc import abstractmethod
 from pathlib import Path
-from typing import Any, Dict, Generator, List, Optional, Tuple
+from typing import Any, Dict, Generator, List, Optional
 
 from poriscope.utils.BaseDataPlugin import BaseDataPlugin
 from poriscope.utils.DocstringDecorator import inherit_docstrings
@@ -377,6 +377,10 @@ class MetaWriter(BaseDataPlugin):
         Create a generator that will loop through events in self.eventfinder in channel
         and call self._write_data() to commit it to file
 
+        Each event is read by its index, inside the same per-event handler as the write,
+        so an event the finder cannot read is rejected under its own reason and the commit
+        carries on; its ``event_id`` is its index whether or not earlier events failed.
+
         :param channel: the index of the channel to commit
         :type channel: int
         :param overwrite: replace the channel's events if the output already holds it
@@ -386,23 +390,6 @@ class MetaWriter(BaseDataPlugin):
         :yield: the progress of the interator, normalized to [0,1]
         :ytype: float
         """
-
-        def lookahead_generator(
-            gen: Generator[Any, None, None],
-        ) -> Generator[Tuple[Any, bool], None, None]:
-            try:
-                current = next(gen)
-            except StopIteration:
-                return
-            while True:
-                try:
-                    next_item = next(gen)
-                    yield current, False  # False means there's more
-                    current = next_item
-                except StopIteration:
-                    yield current, True  # True means this is the last item
-                    break
-
         # Reset before anything can raise, so a refused commit reports what it wrote
         # (nothing) rather than the previous commit's tally.
         self.written[channel] = 0
@@ -460,36 +447,31 @@ class MetaWriter(BaseDataPlugin):
                 )
                 yield 1.0
                 return
-            event_generator = self.eventfinder.get_event_data_generator(
-                channel, data_filter=None, rectify=False
-            )
-
-            index = 0
             abort = False
             try:
-                for event, last_call in lookahead_generator(event_generator):
+                for index in range(num_events):
+                    abort_opt = yield index / num_events
+                    abort = bool(abort_opt)
                     try:
-                        abort_opt = yield index / num_events
-                        abort = bool(abort_opt)
-                        try:
-                            success = self._write_data(
-                                event,
-                                channel,
-                                index,
-                                abort=abort,
-                                last_call=last_call,
-                            )
-                            if abort is True:
-                                break
-                        except Exception as e:
-                            self.rejected[channel][str(e)] = (
-                                self.rejected[channel].get(str(e), 0) + 1
-                            )
-                            self.logger.info(
-                                f"Unable to write event data in channel {channel}: {str(e)}. Attempting to continue but data may be incomplete and will require manual verification or an overwrite"
-                            )
-                            continue
-                        else:
+                        event = self.eventfinder.get_single_event_data(
+                            channel, index, data_filter=None, rectify=False
+                        )
+                        success = self._write_data(
+                            event,
+                            channel,
+                            index,
+                            abort=abort,
+                            last_call=index == num_events - 1,
+                        )
+                    except Exception as e:
+                        self.rejected[channel][str(e)] = (
+                            self.rejected[channel].get(str(e), 0) + 1
+                        )
+                        self.logger.info(
+                            f"Unable to write event data in channel {channel}: {str(e)}. Attempting to continue but data may be incomplete and will require manual verification or an overwrite"
+                        )
+                    else:
+                        if abort is False:
                             if success:
                                 self.written[channel] += 1
                             else:
@@ -497,12 +479,8 @@ class MetaWriter(BaseDataPlugin):
                                 self.rejected[channel][reason] = (
                                     self.rejected[channel].get(reason, 0) + 1
                                 )
-
-                    except StopIteration:
+                    if abort is True:
                         break
-                    index += 1
-            except Exception:
-                raise
             finally:
                 if abort is True:
                     # Guarded because reset_channel now raises on failure and this

@@ -232,6 +232,13 @@ class MetaDatabaseWriter(BaseDataPlugin):
                         self.rejected[channel][str(e)] = (
                             self.rejected[channel].get(str(e), 0) + 1
                         )
+                else:
+                    # The fitter could not supply the whole event; it is a rejected
+                    # event like any other, not one that silently goes missing.
+                    reason = "Incomplete Event Data"
+                    self.rejected[channel][reason] = (
+                        self.rejected[channel].get(reason, 0) + 1
+                    )
                 index += 1
         except StopIteration:
             pass

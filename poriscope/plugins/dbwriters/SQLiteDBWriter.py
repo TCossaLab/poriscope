@@ -23,17 +23,22 @@
 # Contributors:
 # Kyle Briggs
 
+import json
 import logging
 import sqlite3
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union, override
 
 import numpy as np
 import numpy.typing as npt
 
+from poriscope.constants import __VERSION__
+from poriscope.utils.BaseDataPlugin import BaseDataPlugin
 from poriscope.utils.DocstringDecorator import inherit_docstrings
 from poriscope.utils.LogDecorator import log
 from poriscope.utils.MetaDatabaseWriter import MetaDatabaseWriter
+from poriscope.utils.MetaEventFitter import MetaEventFitter
 
 
 @inherit_docstrings
@@ -43,6 +48,10 @@ class SQLiteDBWriter(MetaDatabaseWriter):
     """
 
     logger = logging.getLogger(__name__)
+    #: The schema version stamped, as ``PRAGMA user_version``, on a file this writer
+    #: creates. SQLiteDBLoader reads up to its own ``SCHEMA_VERSION`` and refuses
+    #: anything newer, so the two move together.
+    SCHEMA_VERSION = 1
     conn: Optional[sqlite3.Connection]
     cursor: Optional[sqlite3.Cursor]
 
@@ -344,24 +353,23 @@ class SQLiteDBWriter(MetaDatabaseWriter):
                         f"Event insert for experiment '{experiment_name}' reported "
                         "success but produced no row id."
                     )
-                success = self._insert_sublevels(
+                self._insert_sublevels(
                     self.cursor,
                     sublevel_metadata,
                     experiment_id,
                     channel_db_id,
                     event_db_id,
                 )
-                if success:
-                    success = self._insert_event_data(
-                        self.cursor,
-                        event_metadata,
-                        event_data,
-                        raw_data,
-                        fit_data,
-                        experiment_id,
-                        channel_db_id,
-                        event_db_id,
-                    )
+                self._insert_event_data(
+                    self.cursor,
+                    event_metadata,
+                    event_data,
+                    raw_data,
+                    fit_data,
+                    experiment_id,
+                    channel_db_id,
+                    event_db_id,
+                )
 
         except sqlite3.Error as e:
             # Undo only this event. Deliberately no conn.rollback() here - the
@@ -383,11 +391,8 @@ class SQLiteDBWriter(MetaDatabaseWriter):
                 if success:
                     self.conn.execute("RELEASE SAVEPOINT write_event")
                 else:
-                    # An event can fail without raising: _insert_sublevels and
-                    # _insert_event_data return False, and the earlier steps are
-                    # skipped rather than undone. Rolling back to the savepoint
-                    # makes the event all-or-nothing instead of committing the
-                    # orphaned events/sublevels rows it managed to write.
+                    # The event is already stored, so nothing was inserted; the
+                    # savepoint is closed without keeping anything.
                     self.conn.execute("ROLLBACK TO SAVEPOINT write_event")
                     self.conn.execute("RELEASE SAVEPOINT write_event")
             if self.conn and last_call is True:
@@ -483,11 +488,12 @@ class SQLiteDBWriter(MetaDatabaseWriter):
 
             # Directly attempt to insert the channel
             cursor.execute(
-                """INSERT OR IGNORE INTO channels (experiment_id, channel_id, samplerate) VALUES (?, ?, ?);""",
+                """INSERT OR IGNORE INTO channels (experiment_id, channel_id, samplerate, provenance) VALUES (?, ?, ?, ?);""",
                 (
                     experiment_id,
                     channel,
                     samplerate,
+                    self._provenance_json(),
                 ),
             )
         except sqlite3.Error as e:
@@ -516,10 +522,13 @@ class SQLiteDBWriter(MetaDatabaseWriter):
         rather than failing on every channel once writing starts - an events database
         from the Raw Data tab in particular, which also has an ``events`` table.
 
+        A metadata database holds results from one type of fitter, from any number of runs,
+        so one holding another type's is refused here too; see :meth:`_other_fitter_reason`.
+
         :param settings: Parameters for event detection.
         :type settings: dict
-        :raises ValueError: If the output file exists and is not an SQLite database, or
-            is one without the fitted-metadata tables.
+        :raises ValueError: If the output file exists and is not an SQLite database, is
+            one without the fitted-metadata tables, or holds another fitter's results.
         """
         value = settings.get("Output File", {}).get("Value")
         if not value:
@@ -536,6 +545,13 @@ class SQLiteDBWriter(MetaDatabaseWriter):
             cursor = conn.cursor()
             cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
             tables = {row[0] for row in cursor.fetchall()}
+            fitter = settings.get("MetaEventFitter", {}).get("Value")
+            other_fitter = (
+                self._other_fitter_reason(cursor, fitter)
+                if isinstance(fitter, MetaEventFitter)
+                and {"channels", "columns"} <= tables
+                else None
+            )
         except sqlite3.DatabaseError as e:
             raise ValueError(
                 f"{output_file} is not an SQLite database, so it cannot hold fitted "
@@ -555,6 +571,11 @@ class SQLiteDBWriter(MetaDatabaseWriter):
             raise ValueError(
                 f"{output_file} is {kind}, not a fitted-metadata database. Choose a "
                 "metadata database or a new file."
+            )
+        if other_fitter is not None:
+            raise ValueError(
+                f"{output_file} {other_fitter}. A database holds results from one type of "
+                "fitter, from any number of runs; write this one to a new file."
             )
 
     @log(logger=logger)
@@ -732,6 +753,19 @@ class SQLiteDBWriter(MetaDatabaseWriter):
                 WHERE experiment_id = OLD.experiment_id AND channel_id = OLD.channel_id;
             END;
             """,
+            # The foreign keys the event-data query, an events-to-sublevels join and the
+            # cascade from deleting a channel all search on; without them each is a
+            # nested scan. SQLiteDBLoader adds the same three, by the same names, to
+            # any file it opens that lacks them.
+            """
+            CREATE INDEX IF NOT EXISTS idx_data_event_db_id ON data(event_db_id);
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS idx_sublevels_event_db_id ON sublevels(event_db_id);
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS idx_events_channel_db_id ON events(channel_db_id);
+            """,
         ]
 
         # Connect to the SQLite database (creates the file if it doesn't exist)
@@ -741,9 +775,20 @@ class SQLiteDBWriter(MetaDatabaseWriter):
             conn = sqlite3.connect(Path(self.settings["Output File"]["Value"]))
             cursor = conn.cursor()
             conn.execute("BEGIN TRANSACTION")  # Start a transaction
+            # The schema version is stamped only by the transaction that creates the
+            # schema, and rolls back with it, so a file reads it exactly when this
+            # version created it; an older file this writer appends to keeps its own.
+            creating = (
+                cursor.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'experiments';"
+                ).fetchone()
+                is None
+            )
             # Create tables if they do not exist
             for query in table_creation_queries:
                 cursor.execute(query)
+            if creating:
+                cursor.execute(f"PRAGMA user_version = {self.SCHEMA_VERSION};")
 
             event_metadata = self.eventfitter.get_event_metadata_types()
             sublevel_metadata = self.eventfitter.get_sublevel_metadata_types()
@@ -766,6 +811,13 @@ class SQLiteDBWriter(MetaDatabaseWriter):
                 cursor.execute(
                     "INSERT OR IGNORE INTO columns (name, table_name, units) VALUES (?, ?, ?);",
                     (name, "sublevels", units),
+                )
+            # Attached to every sublevel by MetaEventFitter rather than declared by the
+            # fitter, so registered here, or no query could name them.
+            for name in ("level_id", "levels_left"):
+                cursor.execute(
+                    "INSERT OR IGNORE INTO columns (name, table_name, units) VALUES (?, ?, NULL);",
+                    (name, "sublevels"),
                 )
 
             base_settings = self.get_empty_settings()
@@ -803,6 +855,11 @@ class SQLiteDBWriter(MetaDatabaseWriter):
                         f"ALTER TABLE sublevels ADD COLUMN {column_name} {pytype_to_sql_type[column_type]};"
                     )
 
+            # A file created before 2.1 has no provenance column; it gains one here, and
+            # its existing channels read NULL.
+            if not self._column_exists(cursor, "channels", "provenance"):
+                cursor.execute("ALTER TABLE channels ADD COLUMN provenance TEXT;")
+
         except (sqlite3.Error, RuntimeError, ValueError) as e:
             if conn is not None:
                 conn.rollback()  # Rollback all changes if any operation fails
@@ -833,7 +890,11 @@ class SQLiteDBWriter(MetaDatabaseWriter):
         channel_db_id: int,
     ) -> bool:
         """
-        Insert event metadata into the 'events' table. Return True on success, False on failure.
+        Insert event metadata into the 'events' table.
+
+        A plain INSERT, not INSERT OR IGNORE: OR IGNORE also swallows a NOT NULL
+        violation, which then read as a duplicate. Only a UNIQUE violation - the event
+        is already stored - returns False; any other refusal raises, naming the column.
 
         :param cursor: The SQLite cursor to execute the query.
         :type cursor: sqlite3.Cursor
@@ -844,17 +905,21 @@ class SQLiteDBWriter(MetaDatabaseWriter):
         :param channel_db_id: The database ID of the channel to associate with the event.
         :type channel_db_id: int
 
-        :return: True on success, False on failure
+        :return: True if the event was inserted, False if it is already stored
         :rtype: bool
+        :raises sqlite3.IntegrityError: if the schema refuses the row for any other reason
         """
         columns = ", ".join(event_metadata.keys()) + ", experiment_id, channel_db_id"
         values = ", ".join("? " for _ in event_metadata) + ", ?, ?"
-        cursor.execute(
-            f"INSERT OR IGNORE INTO events ({columns}) VALUES ({values});",
-            (*event_metadata.values(), experiment_id, channel_db_id),
-        )
-        if cursor.rowcount == 0:  # Check if the insert was ignored
-            return False
+        try:
+            cursor.execute(
+                f"INSERT INTO events ({columns}) VALUES ({values});",
+                (*event_metadata.values(), experiment_id, channel_db_id),
+            )
+        except sqlite3.IntegrityError as e:
+            if e.sqlite_errorname == "SQLITE_CONSTRAINT_UNIQUE":
+                return False
+            raise
         return True
 
     @log(logger=logger)
@@ -865,9 +930,13 @@ class SQLiteDBWriter(MetaDatabaseWriter):
         experiment_id: int,
         channel_db_id: int,
         event_db_id: int,
-    ) -> bool:
+    ) -> None:
         """
         Insert sublevel metadata into the 'sublevels' table.
+
+        A plain INSERT: the table has no UNIQUE constraint, so a refused row can only be
+        one the schema rejects, and the error that says which column is what the user
+        should see.
 
         :param cursor: The SQLite cursor to execute the query.
         :type cursor: sqlite3.Cursor
@@ -880,8 +949,6 @@ class SQLiteDBWriter(MetaDatabaseWriter):
         :param event_db_id: The database ID of the event to associate with the sublevels.
         :type event_db_id: int
 
-        :return: True on success, False on failure
-        :rtype: bool
         """
 
         def convert_value(value: Any) -> Any:  # helper function
@@ -908,14 +975,9 @@ class SQLiteDBWriter(MetaDatabaseWriter):
             strict=True,
         )
         cursor.executemany(
-            f"INSERT OR IGNORE INTO sublevels ({columns}) VALUES ({values});",
+            f"INSERT INTO sublevels ({columns}) VALUES ({values});",
             [(*row, experiment_id, channel_db_id, event_db_id) for row in rows],
         )
-        if cursor.rowcount < len(
-            sublevel_metadata["event_id"]
-        ):  # Check if any inserts were ignored
-            return False
-        return True
 
     @log(logger=logger)
     def _insert_event_data(
@@ -928,9 +990,12 @@ class SQLiteDBWriter(MetaDatabaseWriter):
         experiment_id: int,
         channel_db_id: int,
         event_db_id: int,
-    ) -> bool:
+    ) -> None:
         """
         Insert the event data into the 'data' table after converting it to the appropriate binary format.
+
+        A plain INSERT: the table has no UNIQUE constraint, so a refused row is one the
+        schema rejects, and its error names the column.
 
         :param cursor: The SQLite cursor to execute the query.
         :type cursor: sqlite3.Cursor
@@ -949,8 +1014,6 @@ class SQLiteDBWriter(MetaDatabaseWriter):
         :param event_db_id: The database ID of the event this data belongs to.
         :type event_db_id: int
 
-        :return: True on success, False on failure
-        :rtype: bool
         :raises ValueError: if event_data is not a numpy array of dtype np.float64
         """
         if not isinstance(event_data, np.ndarray) or event_data.dtype != np.float64:
@@ -961,7 +1024,7 @@ class SQLiteDBWriter(MetaDatabaseWriter):
         fit_data_blob = fit_data.astype("<f8").tobytes()
         data_format = "<f8"
         cursor.execute(
-            """INSERT OR IGNORE INTO data (experiment_id, channel_id, channel_db_id, event_id, event_db_id, data_format, filtered_data, raw_data, fit_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);""",
+            """INSERT INTO data (experiment_id, channel_id, channel_db_id, event_id, event_db_id, data_format, filtered_data, raw_data, fit_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);""",
             (
                 experiment_id,
                 event_metadata["channel_id"],
@@ -974,9 +1037,121 @@ class SQLiteDBWriter(MetaDatabaseWriter):
                 fit_data_blob,
             ),
         )
-        if cursor.rowcount == 0:  # Check if the insert was ignored
-            return False
-        return True
+
+    @log(logger=logger)
+    def _other_fitter_reason(
+        self, cursor: sqlite3.Cursor, fitter: MetaEventFitter
+    ) -> Optional[str]:
+        """
+        Say why a metadata database holds another fitter's results, or None if it does not.
+
+        A file written by 2.1 records each channel's fitter in ``channels.provenance``,
+        and any recorded class other than this fitter's is another fitter. A file from
+        before 2.1 records none, so it is judged by its columns: every column this fitter
+        declares must already be registered, on the table it declares it for. Columns the
+        file has beyond those - an analysis tab's cluster labels, say - are not counted
+        against it, so a fitter whose columns are a subset of another's is not told apart.
+
+        :param cursor: a read-only cursor on the existing database
+        :type cursor: sqlite3.Cursor
+        :param fitter: the fitter this writer would write from
+        :type fitter: MetaEventFitter
+        :return: the reason, worded to follow the file's name, or None
+        :rtype: Optional[str]
+        """
+        fitter_class = type(fitter).__name__
+        channel_columns = {
+            row[1] for row in cursor.execute("PRAGMA table_info(channels);")
+        }
+        if "provenance" in channel_columns:
+            recorded = set()
+            for (text,) in cursor.execute(
+                "SELECT provenance FROM channels WHERE provenance IS NOT NULL;"
+            ):
+                try:
+                    recorded.add(json.loads(text)["fitter"]["class"])
+                except (ValueError, KeyError, TypeError):
+                    continue
+            others = recorded - {fitter_class}
+            if others:
+                return (
+                    f"holds results from {', '.join(sorted(others))}, not from "
+                    f"{fitter_class}"
+                )
+            if recorded:
+                return None
+        registered = dict(
+            cursor.execute(
+                "SELECT name, table_name FROM columns "
+                "WHERE table_name IN ('events', 'sublevels');"
+            ).fetchall()
+        )
+        if not registered:
+            return None
+        declared = [(name, "events") for name in fitter.get_event_metadata_units()] + [
+            (name, "sublevels") for name in fitter.get_sublevel_metadata_units()
+        ]
+        misplaced = [
+            f"{name} is a {registered[name]} column here, where {fitter_class} writes it to {table}"
+            for name, table in declared
+            if name in registered and registered[name] != table
+        ]
+        missing = [name for name, _table in declared if name not in registered]
+        if not misplaced and not missing:
+            return None
+        details = misplaced + (
+            [f"it has no {', '.join(missing)} column(s), which {fitter_class} writes"]
+            if missing
+            else []
+        )
+        return f"holds another fitter's results: {'; '.join(details)}"
+
+    @log(logger=logger)
+    def _provenance_json(self) -> str:
+        """
+        Describe, as JSON, the plugins that produced the events this writer is writing.
+
+        Stored in ``channels.provenance`` with the channel's row: this writer, its event
+        fitter and the fitter's event loader, each by class, key and setting values,
+        with the Poriscope version and the time of the write in UTC.
+
+        :return: the provenance record as a JSON object
+        :rtype: str
+        """
+        record: Dict[str, Any] = {
+            "poriscope_version": __VERSION__,
+            "written_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "writer": self._describe_plugin(self),
+            "fitter": self._describe_plugin(self.eventfitter),
+            "event_loader": (
+                self._describe_plugin(self.eventfitter.eventloader)
+                if self.eventfitter.eventloader is not None
+                else None
+            ),
+        }
+        # Applied settings hold a plugin they refer to by its key, so every value is
+        # already JSON; str() is the fallback for a type no plugin uses today, so that a
+        # setting this record did not foresee never stops a write.
+        return json.dumps(record, default=str)
+
+    @log(logger=logger)
+    def _describe_plugin(self, plugin: BaseDataPlugin) -> Dict[str, Any]:
+        """
+        Name a plugin and the values of its settings, for the provenance record.
+
+        :param plugin: the plugin to describe
+        :type plugin: BaseDataPlugin
+        :return: its class, key and setting values
+        :rtype: Dict[str, Any]
+        """
+        return {
+            "class": type(plugin).__name__,
+            "key": plugin.get_key(),
+            "settings": {
+                name: setting.get("Value")
+                for name, setting in plugin.get_raw_settings().items()
+            },
+        }
 
     @log(logger=logger)
     def _column_exists(

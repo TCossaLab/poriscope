@@ -4,23 +4,19 @@ Writers and the event-data loader on their failure paths.
 The conformance writer tests drive both writer families through real chains on the happy
 path and read back ``written``. Nothing read a writer's ``rejected`` or exercised a
 duplicate row, a schema violation, an abort, or an event the upstream plugin could not
-supply. These tests do, against the behaviour 2.1 declares for each, so that step 6 has a
-red test to turn green where today's behaviour differs:
+supply. These tests do, against the behaviour each failure is declared to have, so a fix
+has a red test to turn green where today's behaviour differs:
 
 - A duplicate row is one rejected event under one reason. Green today.
 - A row the schema refuses (a NOT NULL column handed ``None``) is rejected under a reason
-  that names the column. Today ``INSERT OR IGNORE`` swallows the violation and the writer
-  infers failure from ``rowcount``, so it reports ``Cannot Overwrite Existing Event``
-  (``SQLiteDBWriter._insert_event:828``). Strict expected failure.
+  that names the column, not as ``Cannot Overwrite Existing Event``.
 - An event the fitter hands over with a missing component is a rejected event, not a
-  silent skip (``MetaDatabaseWriter.write_events:197-237``). Strict expected failure.
+  silent skip.
 - An abort leaves the channel empty and ``written`` at zero. Green today.
-- A rejected event does not shift the indices of the events after it
-  (``MetaWriter.write_events:470-503`` continues past ``index += 1``). Strict expected
-  failure.
+- A rejected event does not shift the indices of the events after it.
 - A stored event row the loader cannot interpret (a NULL ``padding_before``) is reported,
-  not dropped at INFO (``SQLiteDBLoader._load_event_data:886-980``). Strict expected
-  failure.
+  not dropped at INFO; a failed query raises rather than looking exhausted; an export says
+  how many events it could not write.
 """
 
 import logging
@@ -29,10 +25,10 @@ from pathlib import Path
 from typing import Iterator, List, Type
 from unittest.mock import patch
 
-import numpy as np
 import pytest
 
 from poriscope.plugins.db_loaders.SQLiteDBLoader import SQLiteDBLoader
+from poriscope.plugins.dbwriters.SQLiteDBWriter import SQLiteDBWriter
 from poriscope.plugins.eventfinders.ClassicBlockageFinder import ClassicBlockageFinder
 from poriscope.plugins.eventfitters.CUSUM import CUSUM
 from poriscope.utils.MetaDatabaseWriter import MetaDatabaseWriter
@@ -41,6 +37,7 @@ from tests.unit.plugins.conformance._recipes import (
     CHIMERA_CHANNEL,
     EVENTS_CHANNEL,
     EVENTS_COUNT,
+    build_db_loader,
     build_db_writer,
     build_event_finder,
     build_event_fitter,
@@ -48,6 +45,7 @@ from tests.unit.plugins.conformance._recipes import (
     build_reader,
     build_writer,
     discover_concrete,
+    write_metadata_database,
 )
 from tests.unit.plugins.conformance.test_writers import describe_database, identity
 
@@ -164,14 +162,6 @@ def _with_event_zero_mutated(fitter, mutate):
     return patch.object(fitter, "get_event_metadata_generator", wrapped)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "SQLiteDBWriter._insert_event:828 infers failure from rowcount under INSERT OR "
-        "IGNORE, so a NOT NULL violation is reported as 'Cannot Overwrite Existing "
-        "Event' instead of naming the column; 2.1 step 6"
-    ),
-)
 @pytest.mark.parametrize("writer_cls", DB_WRITERS, ids=[c.__name__ for c in DB_WRITERS])
 def test_a_schema_violation_is_reported_by_column_not_as_a_duplicate(
     writer_cls: Type[MetaDatabaseWriter], fitted, tmp_path: Path
@@ -197,13 +187,34 @@ def test_a_schema_violation_is_reported_by_column_not_as_a_duplicate(
     assert any("start_time" in reason for reason in rejected), rejected
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "MetaDatabaseWriter.write_events:197-237 skips an event whose tuple holds a None "
-        "with no yield and no rejected entry; 2.1 step 6"
-    ),
-)
+@pytest.mark.parametrize("writer_cls", DB_WRITERS, ids=[c.__name__ for c in DB_WRITERS])
+def test_a_sublevel_the_schema_refuses_names_its_column_and_stores_nothing(
+    writer_cls: Type[MetaDatabaseWriter], fitted, tmp_path: Path
+) -> None:
+    """
+    A sublevel row the schema refuses is reported by its column, and its event's
+    row - already inserted when the sublevels fail - is rolled back with it.
+    """
+
+    def null_level_ids(item):
+        event_metadata, sublevels, filtered, raw, fit = item
+        broken = dict(sublevels)
+        broken["level_id"] = [None] * len(sublevels["level_id"])  # NOT NULL
+        return event_metadata, broken, filtered, raw, fit
+
+    out = tmp_path / "metadata.sqlite3"
+    writer = build_db_writer(writer_cls, fitted, str(out))
+    with _with_event_zero_mutated(fitted, null_level_ids):
+        drain(writer.write_events(EVENTS_CHANNEL))
+    writer.close_resources()
+
+    rejected = writer.rejected[EVENTS_CHANNEL]
+    assert writer.written[EVENTS_CHANNEL] == EVENTS_COUNT - 1
+    assert sum(rejected.values()) == 1, rejected
+    assert any("level_id" in reason for reason in rejected), rejected
+    assert describe_database(out)["events"] == EVENTS_COUNT - 1
+
+
 @pytest.mark.parametrize("writer_cls", DB_WRITERS, ids=[c.__name__ for c in DB_WRITERS])
 def test_an_event_with_a_missing_component_is_rejected_not_skipped(
     writer_cls: Type[MetaDatabaseWriter], fitted, tmp_path: Path
@@ -243,38 +254,34 @@ def test_an_aborted_write_leaves_the_channel_empty(
 
 
 # --- MetaWriter ----------------------------------------------------------------------------
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "MetaWriter.write_events:470-503 records a rejection and `continue`s past "
-        "`index += 1`, so the next event is written under the rejected event's index; "
-        "2.1 step 6"
-    ),
-)
 @pytest.mark.parametrize("writer_cls", WRITERS, ids=[c.__name__ for c in WRITERS])
 def test_a_rejected_event_does_not_shift_the_indices_after_it(
     writer_cls: Type[MetaWriter], found, tmp_path: Path
 ) -> None:
     """
-    When event 2 cannot be written, the stored events keep their own indices: every index
-    but 2, rather than 0..n-2 with every later event renumbered.
+    When event 2 cannot be read, it is rejected under the reader's own reason and the
+    stored events keep their own indices: every index but 2, rather than 0..n-2 with
+    every later event renumbered, and the commit carries on past it.
     """
-    total = found.get_num_events(CHIMERA_CHANNEL)
+    total = found.get_num_events_found(CHIMERA_CHANNEL)
     assert total >= 4
-    real = found.get_event_data_generator
+    real = found.get_single_event_data
 
-    def with_event_two_missing(channel, data_filter=None, rectify=False):
-        for position, event in enumerate(real(channel, data_filter, rectify)):
-            yield None if position == 2 else event
+    def event_two_unreadable(channel, index, data_filter=None, rectify=False):
+        if index == 2:
+            raise ValueError("read runs past the end of the recording")
+        return real(channel, index, data_filter, rectify)
 
     out = tmp_path / "events.sqlite3"
     writer = build_writer(writer_cls, found, str(out))
-    with patch.object(found, "get_event_data_generator", with_event_two_missing):
+    with patch.object(found, "get_single_event_data", event_two_unreadable):
         drain(writer.commit_events(CHIMERA_CHANNEL))
     writer.close_resources()
 
     assert writer.written[CHIMERA_CHANNEL] == total - 1
-    assert sum(writer.rejected[CHIMERA_CHANNEL].values()) == 1, writer.rejected
+    assert writer.rejected[CHIMERA_CHANNEL] == {
+        "read runs past the end of the recording": 1
+    }, writer.rejected
     assert event_ids(out, CHIMERA_CHANNEL) == [i for i in range(total) if i != 2]
 
 
@@ -297,87 +304,110 @@ def test_an_aborted_commit_leaves_the_channel_empty(
 
 
 # --- SQLiteDBLoader ---------------------------------------------------------------------
-EVENT_DATA_QUERY = (
-    "SELECT e.id, e.event_id, e.channel_id, e.experiment_id, d.data_format, "
-    "d.samplerate, d.padding_before, d.padding_after, d.raw_data, d.filtered_data, "
-    "d.fit_data FROM events e JOIN data d ON e.id = d.event_id"
-)
-
-
-def _database_with_a_null_padding(path: Path) -> None:
+@pytest.fixture
+def null_padding_db(events_db_path, tmp_path: Path) -> Path:
     """
-    Write a two-event metadata database whose second data row has a NULL padding_before.
+    A database from the shipped writer in which one event's leading padding is NULL.
 
-    The hand-built loader fixture declares the column NOT NULL, which is why this one
-    exists: the production writer can be bypassed by any tool that edits the file.
+    ``padding_before`` is the level-0 sublevel's ``sublevel_duration``, a nullable
+    column, so the shipped writer stores a NULL there when a fitter hands it one; this
+    sets it on the event with ``event_id`` 1 after the fact.
 
-    :param path: where to write it
-    :type path: Path
+    :param events_db_path: the conformance events database
+    :param tmp_path: per-test scratch directory
+    :type tmp_path: Path
+    :return: the database
+    :rtype: Path
     """
-    blob = np.array([1.0, 2.0, 3.0], dtype=np.float64).tobytes()
-    connection = sqlite3.connect(str(path))
+    out = write_metadata_database(
+        events_db_path, tmp_path / "metadata.sqlite3", CUSUM, SQLiteDBWriter
+    )
+    connection = sqlite3.connect(str(out))
     try:
-        connection.executescript(
-            """
-            CREATE TABLE events (
-                id INTEGER PRIMARY KEY, event_id INTEGER NOT NULL,
-                experiment_id INTEGER NOT NULL, channel_id INTEGER NOT NULL
-            );
-            CREATE TABLE data (
-                id INTEGER PRIMARY KEY, event_id INTEGER NOT NULL,
-                data_format TEXT NOT NULL, samplerate REAL NOT NULL,
-                padding_before INTEGER, padding_after INTEGER NOT NULL,
-                raw_data BLOB, filtered_data BLOB, fit_data BLOB
-            );
-            INSERT INTO events (id, event_id, experiment_id, channel_id) VALUES (1, 0, 1, 0);
-            INSERT INTO events (id, event_id, experiment_id, channel_id) VALUES (2, 1, 1, 0);
-            """
-        )
         connection.execute(
-            "INSERT INTO data (event_id, data_format, samplerate, padding_before, "
-            "padding_after, raw_data, filtered_data, fit_data) "
-            "VALUES (1, 'float64', 10000.0, 10, 10, ?, ?, ?)",
-            (blob, blob, blob),
-        )
-        connection.execute(
-            "INSERT INTO data (event_id, data_format, samplerate, padding_before, "
-            "padding_after, raw_data, filtered_data, fit_data) "
-            "VALUES (2, 'float64', 10000.0, NULL, 10, ?, ?, ?)",
-            (blob, blob, blob),
+            "UPDATE sublevels SET sublevel_duration = NULL WHERE level_id = 0 "
+            "AND event_db_id = (SELECT id FROM events WHERE event_id = 1)"
         )
         connection.commit()
     finally:
         connection.close()
+    return out
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "SQLiteDBLoader._load_event_data:886-980 wraps the whole yield in `except "
-        "Exception: log INFO; continue`, so a row it cannot interpret is dropped with "
-        "nothing above INFO to say so; 2.1 step 6"
-    ),
-)
 def test_a_null_padding_before_is_reported_not_dropped(
-    tmp_path: Path, caplog: pytest.LogCaptureFixture
+    null_padding_db: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     """
-    A stored row the loader cannot interpret yields nothing for that event and says so
-    at WARNING or above, naming the event; the rows around it still come through.
+    A stored row the loader cannot read yields nothing for that event and says so at
+    WARNING or above, naming the event; the rows around it still come through.
     """
-    db_path = tmp_path / "broken.sqlite3"
-    _database_with_a_null_padding(db_path)
-    settings = {"Input File": {"Type": str, "Value": str(db_path)}}
-    with patch.object(SQLiteDBLoader, "_init"):
-        loader = SQLiteDBLoader(settings=settings)
-    loader.db_path = db_path
+    loader = build_db_loader(SQLiteDBLoader, str(null_padding_db))
+    try:
+        with caplog.at_level(logging.INFO):
+            events = list(loader.load_event_data())
+    finally:
+        loader.close_resources()
 
-    with caplog.at_level(logging.INFO):
-        rows = list(loader._load_event_data(EVENT_DATA_QUERY))
-
-    assert len(rows) == 1 and rows[0][3] == 0  # the good event came through
-    reports = [r for r in caplog.records if r.levelno >= logging.WARNING]
-    assert reports, "the dropped row was not reported above INFO"
-    assert any("1" in r.getMessage() for r in reports), [
-        r.getMessage() for r in reports
+    assert [event["event_id"] for event in events] == [
+        i for i in range(EVENTS_COUNT) if i != 1
     ]
+    reports = [r.getMessage() for r in caplog.records if r.levelno >= logging.WARNING]
+    assert any("event 1 " in message for message in reports), reports
+
+
+def test_an_exception_thrown_into_the_event_reader_is_not_swallowed(
+    null_padding_db: Path,
+) -> None:
+    """
+    The reader's handling of an unreadable row covers that row, not whatever a caller
+    throws into the generator while it is suspended.
+    """
+    loader = build_db_loader(SQLiteDBLoader, str(null_padding_db))
+    query, debug = loader.construct_event_data_query()
+    assert query, debug
+    generator = loader._load_event_data(query)
+    try:
+        next(generator)
+        with pytest.raises(RuntimeError, match="thrown in"):
+            generator.throw(RuntimeError("thrown in"))
+    finally:
+        generator.close()
+        loader.close_resources()
+
+
+@pytest.mark.parametrize("method", ["_load_event_data", "_load_metadata_generator"])
+def test_a_query_that_fails_says_so_rather_than_looking_exhausted(
+    method: str, null_padding_db: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """
+    A database error ends the iteration with that error, logged at ERROR so the user
+    is told, instead of ending it as if every row had been read.
+    """
+    loader = build_db_loader(SQLiteDBLoader, str(null_padding_db))
+    try:
+        with caplog.at_level(logging.ERROR), pytest.raises(sqlite3.Error):
+            list(getattr(loader, method)("SELECT * FROM no_such_table"))
+    finally:
+        loader.close_resources()
+    assert any(r.levelno >= logging.ERROR for r in caplog.records)
+
+
+def test_an_export_says_how_many_events_it_could_not_write(
+    null_padding_db: Path, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """
+    ``data.csv`` lists every selected event, so one without a trace file is said to be
+    missing rather than left for the reader of the export to find.
+    """
+    out = tmp_path / "export"
+    out.mkdir()
+    loader = build_db_loader(SQLiteDBLoader, str(null_padding_db))
+    try:
+        with caplog.at_level(logging.WARNING):
+            drain(loader.export_subset_to_csv(str(out), "s"))
+    finally:
+        loader.close_resources()
+
+    assert len(list(out.glob("s_event_*.csv"))) == EVENTS_COUNT - 1
+    reports = [r.getMessage() for r in caplog.records if r.levelno >= logging.WARNING]
+    assert any(f"1 of {EVENTS_COUNT}" in message for message in reports), reports
