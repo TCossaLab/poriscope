@@ -80,6 +80,15 @@
 
 * The API reference no longer publishes `NanoTrees`' four module helpers (`P6Flags`, `SingleSublevel`, `HackyList`, `Sublevels`) as event fitters; a page under a data-plugin family now goes only to a class that descends from that family's `Meta*` base
 
+## Poriscope 2.0.1: 2026-10-08
+
+### User-Facing Behaviour:
+
+* **Fixed the Metadata tab's CSV subset export attaching data to the wrong events**: when a database's channels had not been written in channel order, exporting a selection of channels gave every event's trace file another event's samples and labelled the rows of `data.csv` with the wrong file names, while reporting success; every release from 1.5.0 to 2.0.0 is affected, so redo any CSV subset export taken from a multi-channel database - the database itself was never changed
+
+* Event data read from a metadata database now carries each event's own database id, which is what the Protein tab writes its fit results back against; the two ids could differ only in a file written before 1.8.0 that stored an event without its data
+
+
 ## Poriscope 2.0.0: 2026-10-05
 
 ### Breaking Changes:
