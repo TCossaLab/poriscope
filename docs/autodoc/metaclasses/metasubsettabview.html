@@ -1,0 +1,1007 @@
+<!doctype html>
+<html class="no-js" lang="en" data-content_root="../../">
+  <head><meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width,initial-scale=1"/>
+    <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="index" title="Index" href="../../genindex.html" /><link rel="search" title="Search" href="../../search.html" /><link rel="next" title="MetaView" href="metaview.html" /><link rel="prev" title="MetaSubsetTabModel" href="metasubsettabmodel.html" />
+
+    <!-- Generated with Sphinx 8.2.3 and Furo 2024.08.06 -->
+        <title>MetaSubsetTabView - Poriscope 2.0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=8f2a1f02" />
+    <link rel="stylesheet" type="text/css" href="../../_static/styles/furo.css?v=354aac6f" />
+    <link rel="stylesheet" type="text/css" href="../../_static/styles/furo-extensions.css?v=302659d7" />
+    
+    
+
+
+<style>
+  body {
+    --color-code-background: #f8f8f8;
+  --color-code-foreground: black;
+  
+  }
+  @media not print {
+    body[data-theme="dark"] {
+      --color-code-background: #202020;
+  --color-code-foreground: #d0d0d0;
+  
+    }
+    @media (prefers-color-scheme: dark) {
+      body:not([data-theme="light"]) {
+        --color-code-background: #202020;
+  --color-code-foreground: #d0d0d0;
+  
+      }
+    }
+  }
+</style></head>
+  <body>
+    
+    <script>
+      document.body.dataset.theme = localStorage.getItem("theme") || "auto";
+    </script>
+    
+
+<svg xmlns="http://www.w3.org/2000/svg" style="display: none;">
+  <symbol id="svg-toc" viewBox="0 0 24 24">
+    <title>Contents</title>
+    <svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 1024 1024">
+      <path d="M408 442h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8zm-8 204c0 4.4 3.6 8 8 8h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56zm504-486H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zm0 632H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zM115.4 518.9L271.7 642c5.8 4.6 14.4.5 14.4-6.9V388.9c0-7.4-8.5-11.5-14.4-6.9L115.4 505.1a8.74 8.74 0 0 0 0 13.8z"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-menu" viewBox="0 0 24 24">
+    <title>Menu</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather-menu">
+      <line x1="3" y1="12" x2="21" y2="12"></line>
+      <line x1="3" y1="6" x2="21" y2="6"></line>
+      <line x1="3" y1="18" x2="21" y2="18"></line>
+    </svg>
+  </symbol>
+  <symbol id="svg-arrow-right" viewBox="0 0 24 24">
+    <title>Expand</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather-chevron-right">
+      <polyline points="9 18 15 12 9 6"></polyline>
+    </svg>
+  </symbol>
+  <symbol id="svg-sun" viewBox="0 0 24 24">
+    <title>Light mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="feather-sun">
+      <circle cx="12" cy="12" r="5"></circle>
+      <line x1="12" y1="1" x2="12" y2="3"></line>
+      <line x1="12" y1="21" x2="12" y2="23"></line>
+      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+      <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+      <line x1="1" y1="12" x2="3" y2="12"></line>
+      <line x1="21" y1="12" x2="23" y2="12"></line>
+      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+      <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+    </svg>
+  </symbol>
+  <symbol id="svg-moon" viewBox="0 0 24 24">
+    <title>Dark mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-moon">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M12 3c.132 0 .263 0 .393 0a7.5 7.5 0 0 0 7.92 12.446a9 9 0 1 1 -8.313 -12.454z" />
+    </svg>
+  </symbol>
+  <symbol id="svg-sun-with-moon" viewBox="0 0 24 24">
+    <title>Auto light/dark, in light mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+      class="icon-custom-derived-from-feather-sun-and-tabler-moon">
+      <path style="opacity: 50%" d="M 5.411 14.504 C 5.471 14.504 5.532 14.504 5.591 14.504 C 3.639 16.319 4.383 19.569 6.931 20.352 C 7.693 20.586 8.512 20.551 9.25 20.252 C 8.023 23.207 4.056 23.725 2.11 21.184 C 0.166 18.642 1.702 14.949 4.874 14.536 C 5.051 14.512 5.231 14.5 5.411 14.5 L 5.411 14.504 Z"/>
+      <line x1="14.5" y1="3.25" x2="14.5" y2="1.25"/>
+      <line x1="14.5" y1="15.85" x2="14.5" y2="17.85"/>
+      <line x1="10.044" y1="5.094" x2="8.63" y2="3.68"/>
+      <line x1="19" y1="14.05" x2="20.414" y2="15.464"/>
+      <line x1="8.2" y1="9.55" x2="6.2" y2="9.55"/>
+      <line x1="20.8" y1="9.55" x2="22.8" y2="9.55"/>
+      <line x1="10.044" y1="14.006" x2="8.63" y2="15.42"/>
+      <line x1="19" y1="5.05" x2="20.414" y2="3.636"/>
+      <circle cx="14.5" cy="9.55" r="3.6"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-moon-with-sun" viewBox="0 0 24 24">
+    <title>Auto light/dark, in dark mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+      class="icon-custom-derived-from-feather-sun-and-tabler-moon">
+      <path d="M 8.282 7.007 C 8.385 7.007 8.494 7.007 8.595 7.007 C 5.18 10.184 6.481 15.869 10.942 17.24 C 12.275 17.648 13.706 17.589 15 17.066 C 12.851 22.236 5.91 23.143 2.505 18.696 C -0.897 14.249 1.791 7.786 7.342 7.063 C 7.652 7.021 7.965 7 8.282 7 L 8.282 7.007 Z"/>
+      <line style="opacity: 50%" x1="18" y1="3.705" x2="18" y2="2.5"/>
+      <line style="opacity: 50%" x1="18" y1="11.295" x2="18" y2="12.5"/>
+      <line style="opacity: 50%" x1="15.316" y1="4.816" x2="14.464" y2="3.964"/>
+      <line style="opacity: 50%" x1="20.711" y1="10.212" x2="21.563" y2="11.063"/>
+      <line style="opacity: 50%" x1="14.205" y1="7.5" x2="13.001" y2="7.5"/>
+      <line style="opacity: 50%" x1="21.795" y1="7.5" x2="23" y2="7.5"/>
+      <line style="opacity: 50%" x1="15.316" y1="10.184" x2="14.464" y2="11.036"/>
+      <line style="opacity: 50%" x1="20.711" y1="4.789" x2="21.563" y2="3.937"/>
+      <circle style="opacity: 50%" cx="18" cy="7.5" r="2.169"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-pencil" viewBox="0 0 24 24">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-pencil-code">
+      <path d="M4 20h4l10.5 -10.5a2.828 2.828 0 1 0 -4 -4l-10.5 10.5v4" />
+      <path d="M13.5 6.5l4 4" />
+      <path d="M20 21l2 -2l-2 -2" />
+      <path d="M17 17l-2 2l2 2" />
+    </svg>
+  </symbol>
+  <symbol id="svg-eye" viewBox="0 0 24 24">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-eye-code">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M10 12a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" />
+      <path
+        d="M11.11 17.958c-3.209 -.307 -5.91 -2.293 -8.11 -5.958c2.4 -4 5.4 -6 9 -6c3.6 0 6.6 2 9 6c-.21 .352 -.427 .688 -.647 1.008" />
+      <path d="M20 21l2 -2l-2 -2" />
+      <path d="M17 17l-2 2l2 2" />
+    </svg>
+  </symbol>
+</svg>
+
+<input type="checkbox" class="sidebar-toggle" name="__navigation" id="__navigation">
+<input type="checkbox" class="sidebar-toggle" name="__toc" id="__toc">
+<label class="overlay sidebar-overlay" for="__navigation">
+  <div class="visually-hidden">Hide navigation sidebar</div>
+</label>
+<label class="overlay toc-overlay" for="__toc">
+  <div class="visually-hidden">Hide table of contents sidebar</div>
+</label>
+
+<a class="skip-to-content muted-link" href="#furo-main-content">Skip to content</a>
+
+
+
+<div class="page">
+  <header class="mobile-header">
+    <div class="header-left">
+      <label class="nav-overlay-icon" for="__navigation">
+        <div class="visually-hidden">Toggle site navigation sidebar</div>
+        <i class="icon"><svg><use href="#svg-menu"></use></svg></i>
+      </label>
+    </div>
+    <div class="header-center">
+      <a href="../../index.html"><div class="brand">Poriscope 2.0.1 documentation</div></a>
+    </div>
+    <div class="header-right">
+      <div class="theme-toggle-container theme-toggle-header">
+        <button class="theme-toggle">
+          <div class="visually-hidden">Toggle Light / Dark / Auto color theme</div>
+          <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+          <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+          <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+          <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+        </button>
+      </div>
+      <label class="toc-overlay-icon toc-header-icon" for="__toc">
+        <div class="visually-hidden">Toggle table of contents sidebar</div>
+        <i class="icon"><svg><use href="#svg-toc"></use></svg></i>
+      </label>
+    </div>
+  </header>
+  <aside class="sidebar-drawer">
+    <div class="sidebar-container">
+      
+      <div class="sidebar-sticky"><a class="sidebar-brand" href="../../index.html">
+  
+  
+  <span class="sidebar-brand-text">Poriscope 2.0.1 documentation</span>
+  
+</a><form class="sidebar-search-container" method="get" action="../../search.html" role="search">
+  <input class="sidebar-search" placeholder="Search" name="q" aria-label="Search">
+  <input type="hidden" name="check_keywords" value="yes">
+  <input type="hidden" name="area" value="default">
+</form>
+<div id="searchbox"></div><div class="sidebar-scroll"><div class="sidebar-tree">
+  <p class="caption" role="heading"><span class="caption-text">User Manuals:</span></p>
+<ul>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../utils/user_manuals/user_guide/index.html">User Guide</a><input class="toctree-checkbox" id="toctree-checkbox-1" name="toctree-checkbox-1" role="switch" type="checkbox"/><label for="toctree-checkbox-1"><div class="visually-hidden">Toggle navigation of User Guide</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../utils/user_manuals/user_guide/getting_started.html">Getting Started</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../utils/user_manuals/user_guide/user_installation.html">User Installation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../utils/user_manuals/user_guide/workflow_overview.html">Workflow Overview</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../utils/user_manuals/user_guide/tutorial.html">Tutorial and Documentation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../utils/user_manuals/user_guide/raw_data_tab.html">Raw Data Tab</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../utils/user_manuals/user_guide/event_analysis_tab.html">Event Analysis Tab</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../utils/user_manuals/user_guide/metadata_tab.html">MetaData Tab</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../utils/user_manuals/user_guide/clustering_tab.html">Clustering Tab</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../utils/user_manuals/user_guide/protein_tab.html">Protein Tab</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../utils/user_manuals/user_guide/settings.html">Settings Tab</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../utils/user_manuals/user_guide/menus_and_sessions.html">Menus and Session Management</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../utils/user_manuals/user_guide/scripting.html">Scripting with Poriscope</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../utils/user_manuals/user_guide/filtering_and_querying.html">Filtering and Querying</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../utils/user_manuals/user_guide/running_software.html">Running the Software</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../utils/user_manuals/user_guide/faq.html">FAQ</a></li>
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../utils/user_manuals/plugins_manual/plugin_manual_index.html">Developer Guide</a><input class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" role="switch" type="checkbox"/><label for="toctree-checkbox-2"><div class="visually-hidden">Toggle navigation of Developer Guide</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../utils/user_manuals/plugins_manual/getting_started.html">Getting Started</a></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../utils/user_manuals/plugins_manual/system_architecture/index.html">System Architecture</a><input class="toctree-checkbox" id="toctree-checkbox-3" name="toctree-checkbox-3" role="switch" type="checkbox"/><label for="toctree-checkbox-3"><div class="visually-hidden">Toggle navigation of System Architecture</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../utils/user_manuals/plugins_manual/system_architecture/mainview_overview.html">MainView Overview</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../utils/user_manuals/plugins_manual/system_architecture/mainmodel_overview.html">MainModel Overview</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../utils/user_manuals/plugins_manual/system_architecture/maincontroller_overview.html">MainController Overview</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../utils/MainMVC/MainView.html">MainView</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../utils/MainMVC/MainModel.html">MainModel</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../utils/MainMVC/MainController.html">MainController</a></li>
+</ul>
+</li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../utils/user_manuals/plugins_manual/development_workflow/index.html">Development Workflow</a><input class="toctree-checkbox" id="toctree-checkbox-4" name="toctree-checkbox-4" role="switch" type="checkbox"/><label for="toctree-checkbox-4"><div class="visually-hidden">Toggle navigation of Development Workflow</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../utils/user_manuals/plugins_manual/development_workflow/developer_setup.html">Developer Setup and Hook Installation</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../utils/user_manuals/plugins_manual/development_workflow/quality_control.html">Quality Control and Developer Workflow</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../utils/user_manuals/plugins_manual/development_workflow/post_merge_automation.html">Post-merge Automation</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../utils/user_manuals/plugins_manual/development_workflow/code_ownership.html">Code Ownership</a></li>
+</ul>
+</li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../utils/user_manuals/plugins_manual/plugin_development/index.html">Plugin Development</a><input class="toctree-checkbox" id="toctree-checkbox-5" name="toctree-checkbox-5" role="switch" type="checkbox"/><label for="toctree-checkbox-5"><div class="visually-hidden">Toggle navigation of Plugin Development</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l3 has-children"><a class="reference internal" href="../../utils/user_manuals/plugins_manual/plugin_development/where_to_begin/index.html">Where to Begin</a><input class="toctree-checkbox" id="toctree-checkbox-6" name="toctree-checkbox-6" role="switch" type="checkbox"/><label for="toctree-checkbox-6"><div class="visually-hidden">Toggle navigation of Where to Begin</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l4"><a class="reference internal" href="../../utils/user_manuals/plugins_manual/plugin_development/where_to_begin/where_to_begin.html">Where to Begin</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../utils/user_manuals/plugins_manual/plugin_development/where_to_begin/understanding_base_classes.html">Understanding Base Classes</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../utils/user_manuals/plugins_manual/plugin_development/where_to_begin/understanding_signals.html">Understanding Signals</a></li>
+</ul>
+</li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="../../utils/user_manuals/plugins_manual/plugin_development/frontend_plugin/frontend_plugin_manual_index.html">Frontend Plugin Development</a><input class="toctree-checkbox" id="toctree-checkbox-7" name="toctree-checkbox-7" role="switch" type="checkbox"/><label for="toctree-checkbox-7"><div class="visually-hidden">Toggle navigation of Frontend Plugin Development</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l4 has-children"><a class="reference internal" href="../../utils/user_manuals/plugins_manual/plugin_development/frontend_plugin/ready_to_build/index.html">Ready to Build Your Own Plugin?</a><input class="toctree-checkbox" id="toctree-checkbox-8" name="toctree-checkbox-8" role="switch" type="checkbox"/><label for="toctree-checkbox-8"><div class="visually-hidden">Toggle navigation of Ready to Build Your Own Plugin?</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l5"><a class="reference internal" href="../../utils/user_manuals/plugins_manual/plugin_development/frontend_plugin/ready_to_build/choosing_a_base.html">Choosing What to Inherit From</a></li>
+<li class="toctree-l5"><a class="reference internal" href="../../utils/user_manuals/plugins_manual/plugin_development/frontend_plugin/ready_to_build/metaview_base.html">MetaView as a Base Class</a></li>
+<li class="toctree-l5"><a class="reference internal" href="../../utils/user_manuals/plugins_manual/plugin_development/frontend_plugin/ready_to_build/metamodel_base.html">MetaModel as a Base Class</a></li>
+<li class="toctree-l5"><a class="reference internal" href="../../utils/user_manuals/plugins_manual/plugin_development/frontend_plugin/ready_to_build/metacontroller_base.html">MetaController as a Base Class</a></li>
+</ul>
+</li>
+<li class="toctree-l4"><a class="reference internal" href="../../utils/user_manuals/plugins_manual/plugin_development/frontend_plugin/hello_world_tutorial.html">Keeping It Minimal: HelloWorld Tutorial</a></li>
+<li class="toctree-l4 has-children"><a class="reference internal" href="../../utils/user_manuals/plugins_manual/plugin_development/frontend_plugin/simpleCalc/from_helloworld_to_full_mvc.html">From HelloWorld to a Full MVC Analysis Tab</a><input class="toctree-checkbox" id="toctree-checkbox-9" name="toctree-checkbox-9" role="switch" type="checkbox"/><label for="toctree-checkbox-9"><div class="visually-hidden">Toggle navigation of From HelloWorld to a Full MVC Analysis Tab</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l5"><a class="reference internal" href="../../utils/user_manuals/plugins_manual/plugin_development/frontend_plugin/simpleCalc/simpleCalc_code.html">SimpleCalc Full Code Example</a></li>
+</ul>
+</li>
+<li class="toctree-l4 has-children"><a class="reference internal" href="../../utils/user_manuals/plugins_manual/plugin_development/frontend_plugin/next_steps/index.html">What’s next ?</a><input class="toctree-checkbox" id="toctree-checkbox-10" name="toctree-checkbox-10" role="switch" type="checkbox"/><label for="toctree-checkbox-10"><div class="visually-hidden">Toggle navigation of What’s next ?</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l5"><a class="reference internal" href="../../utils/user_manuals/plugins_manual/plugin_development/frontend_plugin/next_steps/adding_walkthrough.html">Adding a Walkthrough to Your Custom MVC Plugin</a></li>
+<li class="toctree-l5"><a class="reference internal" href="../../utils/user_manuals/plugins_manual/plugin_development/frontend_plugin/next_steps/walkthrough_mixin.html">WalkthroughMixin</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="../../utils/user_manuals/plugins_manual/plugin_development/backend_plugin/backend_plugin_manual_index.html">Backend Plugin Development</a><input class="toctree-checkbox" id="toctree-checkbox-11" name="toctree-checkbox-11" role="switch" type="checkbox"/><label for="toctree-checkbox-11"><div class="visually-hidden">Toggle navigation of Backend Plugin Development</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l4 has-children"><a class="reference internal" href="../../utils/user_manuals/plugins_manual/plugin_development/backend_plugin/ready_to_build/index.html">Ready to Build Your Own Data Plugin?</a><input class="toctree-checkbox" id="toctree-checkbox-12" name="toctree-checkbox-12" role="switch" type="checkbox"/><label for="toctree-checkbox-12"><div class="visually-hidden">Toggle navigation of Ready to Build Your Own Data Plugin?</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l5"><a class="reference internal" href="../../utils/user_manuals/plugins_manual/plugin_development/backend_plugin/ready_to_build/base_data_plugin.html">Base Data Plugin</a></li>
+<li class="toctree-l5"><a class="reference internal" href="../../utils/user_manuals/plugins_manual/plugin_development/backend_plugin/ready_to_build/meta_reader.html">Build a MetaReader subclass</a></li>
+<li class="toctree-l5"><a class="reference internal" href="../../utils/user_manuals/plugins_manual/plugin_development/backend_plugin/ready_to_build/meta_filter.html">Building a MetaFilter subclass</a></li>
+<li class="toctree-l5"><a class="reference internal" href="../../utils/user_manuals/plugins_manual/plugin_development/backend_plugin/ready_to_build/meta_event_finder.html">Building a MetaEventFinder subclass</a></li>
+<li class="toctree-l5"><a class="reference internal" href="../../utils/user_manuals/plugins_manual/plugin_development/backend_plugin/ready_to_build/meta_event_writer.html">Building a MetaWriter subclass</a></li>
+<li class="toctree-l5"><a class="reference internal" href="../../utils/user_manuals/plugins_manual/plugin_development/backend_plugin/ready_to_build/meta_event_loader.html">Build a MetaEventLoader subclass</a></li>
+<li class="toctree-l5"><a class="reference internal" href="../../utils/user_manuals/plugins_manual/plugin_development/backend_plugin/ready_to_build/meta_event_fitter.html">Build a MetaEventFitter subclass</a></li>
+<li class="toctree-l5"><a class="reference internal" href="../../utils/user_manuals/plugins_manual/plugin_development/backend_plugin/ready_to_build/meta_database_writer.html">Build a MetaDatabaseWriter subclass</a></li>
+<li class="toctree-l5"><a class="reference internal" href="../../utils/user_manuals/plugins_manual/plugin_development/backend_plugin/ready_to_build/meta_database_loader.html">Build a MetaDatabaseLoader subclass</a></li>
+<li class="toctree-l5"><a class="reference internal" href="../../utils/user_manuals/plugins_manual/plugin_development/backend_plugin/ready_to_build/serial_channel_operations.html">Thread Safety and Serial Channel Operations</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Base Classes:</span></p>
+<ul class="current">
+<li class="toctree-l1 current has-children"><a class="reference internal" href="metaclasses_index.html">Abstract Base Classes</a><input checked="" class="toctree-checkbox" id="toctree-checkbox-13" name="toctree-checkbox-13" role="switch" type="checkbox"/><label for="toctree-checkbox-13"><div class="visually-hidden">Toggle navigation of Abstract Base Classes</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="basedataplugin.html">BaseDataPlugin</a></li>
+<li class="toctree-l2"><a class="reference internal" href="metacontroller.html">MetaController</a></li>
+<li class="toctree-l2"><a class="reference internal" href="metacontrols.html">MetaControls</a></li>
+<li class="toctree-l2"><a class="reference internal" href="metadatabaseloader.html">MetaDatabaseLoader</a></li>
+<li class="toctree-l2"><a class="reference internal" href="metadatabasewriter.html">MetaDatabaseWriter</a></li>
+<li class="toctree-l2"><a class="reference internal" href="metaeventfinder.html">MetaEventFinder</a></li>
+<li class="toctree-l2"><a class="reference internal" href="metaeventfitter.html">MetaEventFitter</a></li>
+<li class="toctree-l2"><a class="reference internal" href="metaeventloader.html">MetaEventLoader</a></li>
+<li class="toctree-l2"><a class="reference internal" href="metaeventtabcontroller.html">MetaEventTabController</a></li>
+<li class="toctree-l2"><a class="reference internal" href="metaeventtabcontrols.html">MetaEventTabControls</a></li>
+<li class="toctree-l2"><a class="reference internal" href="metaeventtabview.html">MetaEventTabView</a></li>
+<li class="toctree-l2"><a class="reference internal" href="metafilter.html">MetaFilter</a></li>
+<li class="toctree-l2"><a class="reference internal" href="metamodel.html">MetaModel</a></li>
+<li class="toctree-l2"><a class="reference internal" href="metareader.html">MetaReader</a></li>
+<li class="toctree-l2"><a class="reference internal" href="metasubsettabcontroller.html">MetaSubsetTabController</a></li>
+<li class="toctree-l2"><a class="reference internal" href="metasubsettabcontrols.html">MetaSubsetTabControls</a></li>
+<li class="toctree-l2"><a class="reference internal" href="metasubsettabmodel.html">MetaSubsetTabModel</a></li>
+<li class="toctree-l2 current current-page"><a class="current reference internal" href="#">MetaSubsetTabView</a></li>
+<li class="toctree-l2"><a class="reference internal" href="metaview.html">MetaView</a></li>
+<li class="toctree-l2"><a class="reference internal" href="metawriter.html">MetaWriter</a></li>
+<li class="toctree-l2"><a class="reference internal" href="qthandler.html">QtHandler</a></li>
+</ul>
+</li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Plugins:</span></p>
+<ul>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../plugins/plugins_index.html">Plugins</a><input class="toctree-checkbox" id="toctree-checkbox-14" name="toctree-checkbox-14" role="switch" type="checkbox"/><label for="toctree-checkbox-14"><div class="visually-hidden">Toggle navigation of Plugins</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../plugins/analysistabs/analysistabs.html">Analysistabs</a><input class="toctree-checkbox" id="toctree-checkbox-15" name="toctree-checkbox-15" role="switch" type="checkbox"/><label for="toctree-checkbox-15"><div class="visually-hidden">Toggle navigation of Analysistabs</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../plugins/analysistabs/clusteringview.html">ClusteringView</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../plugins/analysistabs/eventanalysisview.html">EventAnalysisView</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../plugins/analysistabs/clusteringmodel.html">ClusteringModel</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../plugins/analysistabs/metadatacontroller.html">MetadataController</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../plugins/analysistabs/rawdatacontroller.html">RawDataController</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../plugins/analysistabs/metadataview.html">MetadataView</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../plugins/analysistabs/proteinview.html">ProteinView</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../plugins/analysistabs/metadatamodel.html">MetadataModel</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../plugins/analysistabs/proteinmodel.html">ProteinModel</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../plugins/analysistabs/eventanalysiscontroller.html">EventAnalysisController</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../plugins/analysistabs/rawdataview.html">RawDataView</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../plugins/analysistabs/eventanalysismodel.html">EventAnalysisModel</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../plugins/analysistabs/clusteringcontroller.html">ClusteringController</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../plugins/analysistabs/proteincontroller.html">ProteinController</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../plugins/analysistabs/rawdatamodel.html">RawDataModel</a></li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="../plugins/analysistabs/utils/utils_index.html">Utils</a><input class="toctree-checkbox" id="toctree-checkbox-16" name="toctree-checkbox-16" role="switch" type="checkbox"/><label for="toctree-checkbox-16"><div class="visually-hidden">Toggle navigation of Utils</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l4"><a class="reference internal" href="../plugins/analysistabs/utils/eventanalysiscontrols.html">EventAnalysisControls</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../plugins/analysistabs/utils/rawdatacontrols.html">RawDataControls</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../plugins/analysistabs/utils/clusteringcontrols.html">ClusteringControls</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../plugins/analysistabs/utils/metadatacontrols.html">MetadataControls</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../plugins/analysistabs/utils/proteincontrols.html">ProteinControls</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../plugins/datareaders/datareaders.html">Datareaders</a><input class="toctree-checkbox" id="toctree-checkbox-17" name="toctree-checkbox-17" role="switch" type="checkbox"/><label for="toctree-checkbox-17"><div class="visually-hidden">Toggle navigation of Datareaders</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../plugins/datareaders/binaryreader1x.html">BinaryReader1X</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../plugins/datareaders/chimerareader20240101.html">ChimeraReader20240101</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../plugins/datareaders/chimerareader20240501.html">ChimeraReader20240501</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../plugins/datareaders/tcossalababfreader.html">TCossaLabABFReader</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../plugins/datareaders/legacyelementsreader.html">LegacyElementsReader</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../plugins/datareaders/chimerareadervc100.html">ChimeraReaderVC100</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../plugins/datareaders/singlebinarydecoder.html">SingleBinaryDecoder</a></li>
+</ul>
+</li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../plugins/datawriters/datawriters.html">Datawriters</a><input class="toctree-checkbox" id="toctree-checkbox-18" name="toctree-checkbox-18" role="switch" type="checkbox"/><label for="toctree-checkbox-18"><div class="visually-hidden">Toggle navigation of Datawriters</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../plugins/datawriters/sqliteeventwriter.html">SQLiteEventWriter</a></li>
+</ul>
+</li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../plugins/db_loaders/db_loaders.html">Db Loaders</a><input class="toctree-checkbox" id="toctree-checkbox-19" name="toctree-checkbox-19" role="switch" type="checkbox"/><label for="toctree-checkbox-19"><div class="visually-hidden">Toggle navigation of Db Loaders</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../plugins/db_loaders/sqlitedbloader.html">SQLiteDBLoader</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../plugins/db_loaders/sqlitepeakdbloader.html">SQLitePeakDBLoader</a></li>
+</ul>
+</li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../plugins/dbwriters/dbwriters.html">Dbwriters</a><input class="toctree-checkbox" id="toctree-checkbox-20" name="toctree-checkbox-20" role="switch" type="checkbox"/><label for="toctree-checkbox-20"><div class="visually-hidden">Toggle navigation of Dbwriters</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../plugins/dbwriters/sqlitedbwriter.html">SQLiteDBWriter</a></li>
+</ul>
+</li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../plugins/eventfinders/eventfinders.html">Eventfinders</a><input class="toctree-checkbox" id="toctree-checkbox-21" name="toctree-checkbox-21" role="switch" type="checkbox"/><label for="toctree-checkbox-21"><div class="visually-hidden">Toggle navigation of Eventfinders</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../plugins/eventfinders/thresholdblockagefinder.html">ThresholdBlockageFinder</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../plugins/eventfinders/classicblockagefinder.html">ClassicBlockageFinder</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../plugins/eventfinders/boundedblockagefinder.html">BoundedBlockageFinder</a></li>
+</ul>
+</li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../plugins/eventfitters/eventfitters.html">Eventfitters</a><input class="toctree-checkbox" id="toctree-checkbox-22" name="toctree-checkbox-22" role="switch" type="checkbox"/><label for="toctree-checkbox-22"><div class="visually-hidden">Toggle navigation of Eventfitters</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../plugins/eventfitters/nofitter.html">NoFitter</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../plugins/eventfitters/classiccusum.html">ClassicCUSUM</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../plugins/eventfitters/peakfinder.html">PeakFinder</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../plugins/eventfitters/basic_peakfinder.html">Basic_PeakFinder</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../plugins/eventfitters/p6flags.html">P6Flags</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../plugins/eventfitters/singlesublevel.html">SingleSublevel</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../plugins/eventfitters/hackylist.html">HackyList</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../plugins/eventfitters/sublevels.html">Sublevels</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../plugins/eventfitters/nanotrees.html">NanoTrees</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../plugins/eventfitters/intracusum.html">IntraCUSUM</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../plugins/eventfitters/cusum.html">CUSUM</a></li>
+</ul>
+</li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../plugins/eventloaders/eventloaders.html">Eventloaders</a><input class="toctree-checkbox" id="toctree-checkbox-23" name="toctree-checkbox-23" role="switch" type="checkbox"/><label for="toctree-checkbox-23"><div class="visually-hidden">Toggle navigation of Eventloaders</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../plugins/eventloaders/sqliteeventloader.html">SQLiteEventLoader</a></li>
+</ul>
+</li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../plugins/filters/filters.html">Filters</a><input class="toctree-checkbox" id="toctree-checkbox-24" name="toctree-checkbox-24" role="switch" type="checkbox"/><label for="toctree-checkbox-24"><div class="visually-hidden">Toggle navigation of Filters</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../plugins/filters/besselfilter.html">BesselFilter</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../plugins/filters/waveletfilter.html">WaveletFilter</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Signals:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../signals/calling_a_plugin/calling_a_plugin.html">Calling a Data Plugin</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../signals/global_signal/global_signal.html">Global Signal (removed)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../signals/data_plugin_controller_signal/data_plugin_controller_signal.html">Data Plugin Controller Signal (replaced)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../signals/which_one_to_use/which_one_to_use.html">Which to use</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Logging Decorators:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../utils/loggers_index.html">Logging</a></li>
+</ul>
+
+</div>
+</div>
+
+      </div>
+      
+    </div>
+  </aside>
+  <div class="main">
+    <div class="content">
+      <div class="article-container">
+        <a href="#" class="back-to-top muted-link">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+            <path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8v12z"></path>
+          </svg>
+          <span>Back to top</span>
+        </a>
+        <div class="content-icon-container">
+          <div class="view-this-page">
+  <a class="muted-link" href="../../_sources/autodoc/metaclasses/metasubsettabview.rst.txt" title="View this page">
+    <svg><use href="#svg-eye"></use></svg>
+    <span class="visually-hidden">View this page</span>
+  </a>
+</div>
+<div class="theme-toggle-container theme-toggle-content">
+            <button class="theme-toggle">
+              <div class="visually-hidden">Toggle Light / Dark / Auto color theme</div>
+              <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+              <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+              <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+              <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+            </button>
+          </div>
+          <label class="toc-overlay-icon toc-content-icon" for="__toc">
+            <div class="visually-hidden">Toggle table of contents sidebar</div>
+            <i class="icon"><svg><use href="#svg-toc"></use></svg></i>
+          </label>
+        </div>
+        <article role="main" id="furo-main-content">
+          <section id="metasubsettabview">
+<span id="id1"></span><h1>MetaSubsetTabView<a class="headerlink" href="#metasubsettabview" title="Link to this heading">¶</a></h1>
+<p><strong>class MetaSubsetTabView()</strong></p>
+<p>Bases: <a class="reference internal" href="metaview.html#metaview"><span class="std std-ref">MetaView</span></a></p>
+<p>Shared base for the Views of the two subset-filtering analysis tabs.</p>
+<p><code class="docutils literal notranslate"><span class="pre">MetadataView</span></code> and <code class="docutils literal notranslate"><span class="pre">ProteinView</span></code> both drive a tab whose data comes from a
+<code class="docutils literal notranslate"><span class="pre">MetaDatabaseLoader</span></code>: the user picks an experiment and channels from a
+selection tree, builds a named subset filter over the queried columns, and plots
+or exports the rows that come back. The two were written by copy-paste and
+carried fifteen methods verbatim between them; this base holds that shared half
+so there is one copy to fix.</p>
+<p>What a subclass inherits:</p>
+<ul class="simple">
+<li><p><strong>Query state.</strong> <code class="docutils literal notranslate"><span class="pre">set_query</span></code>, <code class="docutils literal notranslate"><span class="pre">set_event_query</span></code> and <code class="docutils literal notranslate"><span class="pre">set_experiment_id</span></code>
+receive the SQL and the scope the Controller
+resolved, and optionally echo it to the status panel.</p></li>
+<li><p><strong>Column and experiment state.</strong> <code class="docutils literal notranslate"><span class="pre">update_available_columns</span></code> and
+<code class="docutils literal notranslate"><span class="pre">set_units</span></code> keep the tab’s column comboboxes and axis labels in step with the
+loader’s description of the database.</p></li>
+<li><p><strong>Subset filters.</strong> <code class="docutils literal notranslate"><span class="pre">subset_filters</span></code> is the store, and
+<code class="docutils literal notranslate"><span class="pre">commit_filter</span></code>/<code class="docutils literal notranslate"><span class="pre">get_subset_filters</span></code> are how the Controller reaches it -
+it asks rather than assigning into the dict (<code class="docutils literal notranslate"><span class="pre">DECISIONS.md</span></code>, 2026-09-13).
+<code class="docutils literal notranslate"><span class="pre">_delete_filter</span></code>, <code class="docutils literal notranslate"><span class="pre">replace_filter_item</span></code>, <code class="docutils literal notranslate"><span class="pre">update_filter_name</span></code>,
+<code class="docutils literal notranslate"><span class="pre">restore_subset_filters</span></code> and <code class="docutils literal notranslate"><span class="pre">on_raw_filter_validated</span></code> keep the filter
+combobox in step with it, reaching the combobox through <code class="docutils literal notranslate"><span class="pre">_subset_controls</span></code>,
+and <code class="docutils literal notranslate"><span class="pre">_delete_filter_by_name</span></code> and <code class="docutils literal notranslate"><span class="pre">_show_filter_info_dialog</span></code> are the
+combobox’s own entry points into that set. <code class="docutils literal notranslate"><span class="pre">_show_add_filter_dialog</span></code> and
+<code class="docutils literal notranslate"><span class="pre">show_edit_filter_dialog</span></code> open the two filter dialogs and validate what they
+return, through <code class="docutils literal notranslate"><span class="pre">_reject_non_select_raw_filter</span></code> and the Controller;
+<code class="docutils literal notranslate"><span class="pre">_save_filter</span></code> and <code class="docutils literal notranslate"><span class="pre">_load_filter</span></code> write the filters to and read them back
+from a JSON file.</p></li>
+<li><p><strong>Experiment selection.</strong> <code class="docutils literal notranslate"><span class="pre">show_selection_tree</span></code> and
+<code class="docutils literal notranslate"><span class="pre">request_experiment_structure</span></code> drive the <code class="docutils literal notranslate"><span class="pre">SelectionTree</span></code> dialog and remember
+what was chosen per loader.</p></li>
+<li><p><strong>The selected filters.</strong> <code class="docutils literal notranslate"><span class="pre">get_selected_filters</span></code> reads the filter combobox
+through <code class="docutils literal notranslate"><span class="pre">_subset_controls</span></code>, the property each tab implements below.</p></li>
+<li><p><strong>The filtered event_id cache.</strong> <code class="docutils literal notranslate"><span class="pre">_rebuild_event_id_cache</span></code> queries every
+event_id matching the current filter and scope, sorted, and keeps the four
+<code class="docutils literal notranslate"><span class="pre">current_*</span></code>/<code class="docutils literal notranslate"><span class="pre">filtered_event_ids</span></code> values the staleness checks compare.</p></li>
+</ul>
+<p>What a subclass owes it:</p>
+<ul class="simple">
+<li><p><strong>Its own</strong> <code class="docutils literal notranslate"><span class="pre">logger</span> <span class="pre">=</span> <span class="pre">logging.getLogger(__name__)</span></code>, so that records made by
+the methods it defines itself stay attributed to its own module. Methods defined
+<em>here</em> log under this module, which is the convention <code class="docutils literal notranslate"><span class="pre">MetaView</span></code> already
+follows for its shared code.</p></li>
+<li><p><strong>``_subset_controls``</strong>, a one-line property returning whatever name the tab
+holds its controls panel under, so the shared methods here can reach it.</p></li>
+<li><p><strong>The five abstract methods ``MetaView`` declares</strong>, unchanged - this base
+implements none of them.</p></li>
+</ul>
+<p><code class="docutils literal notranslate"><span class="pre">subset_filters</span></code> lives here rather than on a Model, and the test is who reads it:
+no Model does - query construction takes a single filter’s <em>text</em> as an argument -
+while sixteen reads on this side need it inside the same call, the eleven
+<code class="docutils literal notranslate"><span class="pre">get_selected_filters</span></code> on the plot paths among them. Moving it would install a
+field nothing below reads and turn those sixteen into round trips. See
+<code class="docutils literal notranslate"><span class="pre">DECISIONS.md</span></code>, 2026-09-13, which also records what was rejected.</p>
+<dl class="field-list simple">
+<dt class="field-odd">ivar logger<span class="colon">:</span></dt>
+<dd class="field-odd"><p>the module logger the shared methods below log under</p>
+</dd>
+<dt class="field-even">ivar subset_filters<span class="colon">:</span></dt>
+<dd class="field-even"><p>named subset filters, filter name to SQL WHERE clause</p>
+</dd>
+<dt class="field-odd">ivar selected_experiment_and_channels_by_loader<span class="colon">:</span></dt>
+<dd class="field-odd"><p>per-loader selection tree state</p>
+</dd>
+</dl>
+<section id="public-methods">
+<h2>Public Methods<a class="headerlink" href="#public-methods" title="Link to this heading">¶</a></h2>
+<section id="abstract-methods">
+<h3>Abstract Methods<a class="headerlink" href="#abstract-methods" title="Link to this heading">¶</a></h3>
+<p>These methods must be implemented by subclasses.</p>
+<p>(none)</p>
+</section>
+<section id="concrete-methods">
+<h3>Concrete Methods<a class="headerlink" href="#concrete-methods" title="Link to this heading">¶</a></h3>
+<dl class="py method">
+<dt class="sig sig-object py" id="poriscope.utils.MetaSubsetTabView.MetaSubsetTabView.commit_filter">
+<span class="sig-prename descclassname"><span class="pre">MetaSubsetTabView.</span></span><span class="sig-name descname"><span class="pre">commit_filter</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">filter_text</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">old_name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/builtins/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span></span><a class="headerlink" href="#poriscope.utils.MetaSubsetTabView.MetaSubsetTabView.commit_filter" title="Link to this definition">¶</a></dt>
+<dd><p>Store a validated subset filter under <code class="docutils literal notranslate"><span class="pre">name</span></code>, replacing <code class="docutils literal notranslate"><span class="pre">old_name</span></code> if given.</p>
+<p>The Controller used to do this by assigning into <code class="docutils literal notranslate"><span class="pre">subset_filters</span></code>
+directly - three sites in <code class="docutils literal notranslate"><span class="pre">relay_query</span></code>, plus a fourth reading the dict
+back in <code class="docutils literal notranslate"><span class="pre">get_session_state</span></code>. The dict stays here, because nothing in the
+Model reads it and sixteen reads on this side need it synchronously
+(<code class="docutils literal notranslate"><span class="pre">DECISIONS.md</span></code>, 2026-09-13); what changes is that the Controller asks
+rather than mutates.</p>
+<p>Only the dict is touched. The combobox is a separate step, because the two
+commit paths update it differently - an added filter goes through
+<code class="docutils literal notranslate"><span class="pre">replace_filter_item</span></code> and an edited one through <code class="docutils literal notranslate"><span class="pre">update_filter_name</span></code>.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>name</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a>) – the name to store the filter under, suffix already applied</p></li>
+<li><p><strong>filter_text</strong> (<em>Optional</em><em>[</em><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a><em>]</em>) – the filter expression; None and “” both store “”</p></li>
+<li><p><strong>old_name</strong> (<em>Optional</em><em>[</em><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a><em>]</em>) – on an edit, the name being replaced; None when adding</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>None</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="poriscope.utils.MetaSubsetTabView.MetaSubsetTabView.get_save_filename">
+<span class="sig-prename descclassname"><span class="pre">MetaSubsetTabView.</span></span><span class="sig-name descname"><span class="pre">get_save_filename</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></span></span><a class="headerlink" href="#poriscope.utils.MetaSubsetTabView.MetaSubsetTabView.get_save_filename" title="Link to this definition">¶</a></dt>
+<dd><p>Open a file dialog for the user to choose a save location.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Selected filename.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.14)">str</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="poriscope.utils.MetaSubsetTabView.MetaSubsetTabView.get_selected_filters">
+<span class="sig-prename descclassname"><span class="pre">MetaSubsetTabView.</span></span><span class="sig-name descname"><span class="pre">get_selected_filters</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#dict" title="(in Python v3.14)"><span class="pre">dict</span></a></span></span><a class="headerlink" href="#poriscope.utils.MetaSubsetTabView.MetaSubsetTabView.get_selected_filters" title="Link to this definition">¶</a></dt>
+<dd><p>The filters the user has selected for the current plotting or export task.</p>
+<p>Promoted from both subset tabs, whose copies differed only in the name each
+held its controls panel under, and otherwise verbatim - including reaching
+past the panel to its combobox.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>selected filter names mapped to their SQL WHERE clauses</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#dict" title="(in Python v3.14)">dict</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="poriscope.utils.MetaSubsetTabView.MetaSubsetTabView.get_subset_filters">
+<span class="sig-prename descclassname"><span class="pre">MetaSubsetTabView.</span></span><span class="sig-name descname"><span class="pre">get_subset_filters</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Dict" title="(in Python v3.14)"><span class="pre">Dict</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a><span class="p"><span class="pre">]</span></span></span></span><a class="headerlink" href="#poriscope.utils.MetaSubsetTabView.MetaSubsetTabView.get_subset_filters" title="Link to this definition">¶</a></dt>
+<dd><p>A copy of this tab’s named subset filters.</p>
+<p>A copy rather than the live dict, because the caller is the session-state
+serializer and the filters go on changing after it has taken its snapshot.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>filter name to SQL WHERE clause</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>Dict[<a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.14)">str</a>, <a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.14)">str</a>]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="poriscope.utils.MetaSubsetTabView.MetaSubsetTabView.on_raw_filter_validated">
+<span class="sig-prename descclassname"><span class="pre">MetaSubsetTabView.</span></span><span class="sig-name descname"><span class="pre">on_raw_filter_validated</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">valid</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#bool" title="(in Python v3.14)"><span class="pre">bool</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">error_msg</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">old_name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">filter_text</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/builtins/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span></span><a class="headerlink" href="#poriscope.utils.MetaSubsetTabView.MetaSubsetTabView.on_raw_filter_validated" title="Link to this definition">¶</a></dt>
+<dd><p>Commit a raw SQL filter once the loader has said the query is valid.</p>
+<p>Promoted from both subset tabs. Beyond the controls-panel name they
+diverged in one place, the same one the two filter dialogs diverged in and
+settled the same way: an invalid filter is reported in a <strong>modal</strong>, which
+was Metadata’s behaviour, rather than on the status panel.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>valid</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a>) – Whether the query is valid.</p></li>
+<li><p><strong>error_msg</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a>) – Error message if invalid.</p></li>
+<li><p><strong>name</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a>) – the name to commit the filter under, carried from the request</p></li>
+<li><p><strong>old_name</strong> (<em>Optional</em><em>[</em><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a><em>]</em>) – on an edit, the name being replaced; None when adding</p></li>
+<li><p><strong>filter_text</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a>) – the raw SQL to commit under <code class="docutils literal notranslate"><span class="pre">name</span></code></p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>None</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="poriscope.utils.MetaSubsetTabView.MetaSubsetTabView.replace_filter_item">
+<span class="sig-prename descclassname"><span class="pre">MetaSubsetTabView.</span></span><span class="sig-name descname"><span class="pre">replace_filter_item</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/builtins/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span></span><a class="headerlink" href="#poriscope.utils.MetaSubsetTabView.MetaSubsetTabView.replace_filter_item" title="Link to this definition">¶</a></dt>
+<dd><p>Remove any existing filter item with the same name and add the new one.</p>
+<p>Promoted from both subset tabs, whose copies differed only in the name each
+held its controls panel under.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>name</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a>) – The name of the filter to (re)add.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>None</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="poriscope.utils.MetaSubsetTabView.MetaSubsetTabView.request_experiment_structure">
+<span class="sig-prename descclassname"><span class="pre">MetaSubsetTabView.</span></span><span class="sig-name descname"><span class="pre">request_experiment_structure</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">loader_name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/builtins/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span></span><a class="headerlink" href="#poriscope.utils.MetaSubsetTabView.MetaSubsetTabView.request_experiment_structure" title="Link to this definition">¶</a></dt>
+<dd><p>Get a dict of all experiments and channels available in a specified MetaDatabaseLoader object.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>loader_name</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a>) – the key of the loader</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="poriscope.utils.MetaSubsetTabView.MetaSubsetTabView.restore_subset_filters">
+<span class="sig-prename descclassname"><span class="pre">MetaSubsetTabView.</span></span><span class="sig-name descname"><span class="pre">restore_subset_filters</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">filters</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Dict" title="(in Python v3.14)"><span class="pre">Dict</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/builtins/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span></span><a class="headerlink" href="#poriscope.utils.MetaSubsetTabView.MetaSubsetTabView.restore_subset_filters" title="Link to this definition">¶</a></dt>
+<dd><p>Restore subset filters captured in a saved session.</p>
+<p>Unlike <code class="xref py py-meth docutils literal notranslate"><span class="pre">_load_filter()</span></code>, this does not re-validate the filters against a
+database loader, since they were already valid when the session was saved.</p>
+<p>One copy for both subset tabs, reached through <code class="docutils literal notranslate"><span class="pre">_subset_controls</span></code> rather than
+each tab’s own name for its panel - which is the whole of what the two copies
+used to differ by.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>filters</strong> (<em>Dict</em><em>[</em><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a><em>, </em><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a><em>]</em>) – Mapping of filter name to filter expression to restore.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>None</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="poriscope.utils.MetaSubsetTabView.MetaSubsetTabView.set_event_data_generator">
+<span class="sig-prename descclassname"><span class="pre">MetaSubsetTabView.</span></span><span class="sig-name descname"><span class="pre">set_event_data_generator</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">generator</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Iterator" title="(in Python v3.14)"><span class="pre">Iterator</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Dict" title="(in Python v3.14)"><span class="pre">Dict</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.14)"><span class="pre">Any</span></a><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/builtins/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span></span><a class="headerlink" href="#poriscope.utils.MetaSubsetTabView.MetaSubsetTabView.set_event_data_generator" title="Link to this definition">¶</a></dt>
+<dd><p>Set the event data generator for event-based plots.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>generator</strong> (<em>Iterator</em><em>[</em><em>Dict</em><em>[</em><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a><em>, </em><em>Any</em><em>]</em><em>]</em>) – A generator that yields event data.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="poriscope.utils.MetaSubsetTabView.MetaSubsetTabView.set_event_id_rows">
+<span class="sig-prename descclassname"><span class="pre">MetaSubsetTabView.</span></span><span class="sig-name descname"><span class="pre">set_event_id_rows</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">rows</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/builtins/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span></span><a class="headerlink" href="#poriscope.utils.MetaSubsetTabView.MetaSubsetTabView.set_event_id_rows" title="Link to this definition">¶</a></dt>
+<dd><p>Receive the <code class="docutils literal notranslate"><span class="pre">event_id</span></code> rows the filtered-event cache asked for.</p>
+<p>Called by <code class="docutils literal notranslate"><span class="pre">MetaSubsetTabController.load_event_id_cache</span></code> only once the query
+has run, so <code class="docutils literal notranslate"><span class="pre">None</span></code> means “that did not happen” rather than “the previous
+answer still stands”.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>rows</strong> (<em>Optional</em><em>[</em><em>pd.DataFrame</em><em>]</em>) – the rows the loader returned, or None if the query failed</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>None</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="poriscope.utils.MetaSubsetTabView.MetaSubsetTabView.set_event_plot_data_generator">
+<span class="sig-prename descclassname"><span class="pre">MetaSubsetTabView.</span></span><span class="sig-name descname"><span class="pre">set_event_plot_data_generator</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">generator</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Iterator" title="(in Python v3.14)"><span class="pre">Iterator</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Dict" title="(in Python v3.14)"><span class="pre">Dict</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Any" title="(in Python v3.14)"><span class="pre">Any</span></a><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/builtins/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span></span><a class="headerlink" href="#poriscope.utils.MetaSubsetTabView.MetaSubsetTabView.set_event_plot_data_generator" title="Link to this definition">¶</a></dt>
+<dd><p>Receive the generator over the events an event plot asked for.</p>
+<p>Called by <code class="docutils literal notranslate"><span class="pre">MetaSubsetTabController.load_event_plot_data</span></code> only once the whole
+resolve-and-load chain has succeeded, so the caller reading it back on the next
+statement can treat <code class="docutils literal notranslate"><span class="pre">None</span></code> as “that chain did not finish” rather than as “the
+previous plot’s events are still good”.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>generator</strong> (<em>Iterator</em><em>[</em><em>Dict</em><em>[</em><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a><em>, </em><em>Any</em><em>]</em><em>]</em>) – a generator over the events the loader returned</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>None</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="poriscope.utils.MetaSubsetTabView.MetaSubsetTabView.set_event_query">
+<span class="sig-prename descclassname"><span class="pre">MetaSubsetTabView.</span></span><span class="sig-name descname"><span class="pre">set_event_query</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">query</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/builtins/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span></span><a class="headerlink" href="#poriscope.utils.MetaSubsetTabView.MetaSubsetTabView.set_event_query" title="Link to this definition">¶</a></dt>
+<dd><p>Store the SQL query used to fetch event data for this tab’s subset.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>query</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a>) – SQL query string for fetching event data.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="poriscope.utils.MetaSubsetTabView.MetaSubsetTabView.set_loaded_filters">
+<span class="sig-prename descclassname"><span class="pre">MetaSubsetTabView.</span></span><span class="sig-name descname"><span class="pre">set_loaded_filters</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">new_filters</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Dict" title="(in Python v3.14)"><span class="pre">Dict</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">loader</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/builtins/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span></span><a class="headerlink" href="#poriscope.utils.MetaSubsetTabView.MetaSubsetTabView.set_loaded_filters" title="Link to this definition">¶</a></dt>
+<dd><p>Append filters read from a file, rejecting the whole file on a name clash.</p>
+<p>A filter whose name ends in <code class="docutils literal notranslate"><span class="pre">_raw</span></code> is stored as it is instead of being sent
+through <code class="docutils literal notranslate"><span class="pre">construct_metadata_query</span></code>, which builds a WHERE clause and so
+cannot validate a complete SELECT. Measured consequence of not bypassing it:
+the query is built anyway, with the raw SELECT spliced in after <code class="docutils literal notranslate"><span class="pre">WHERE</span></code> and
+an empty debug message, so the validation <em>succeeds</em> and the filter is
+committed as <code class="docutils literal notranslate"><span class="pre">&lt;name&gt;_raw_assisted</span></code> - renamed, and reclassified as an
+assisted filter.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>new_filters</strong> (<em>Dict</em><em>[</em><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a><em>, </em><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a><em>]</em>) – the filters the file held, keyed by name</p></li>
+<li><p><strong>loader</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a>) – the loader to validate against, empty if none is selected</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>None</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="poriscope.utils.MetaSubsetTabView.MetaSubsetTabView.set_query">
+<span class="sig-prename descclassname"><span class="pre">MetaSubsetTabView.</span></span><span class="sig-name descname"><span class="pre">set_query</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">query</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">table_name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/builtins/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span></span><a class="headerlink" href="#poriscope.utils.MetaSubsetTabView.MetaSubsetTabView.set_query" title="Link to this definition">¶</a></dt>
+<dd><p>Set the SQL query and table name used in plotting.</p>
+<p>This does not echo the query to the status panel. What it received
+at filter-creation time was the <em>validation</em> query, which is not the query
+that pulls the subset - <code class="docutils literal notranslate"><span class="pre">MetadataController._echo_applied_query</span></code> shows that
+one instead, when the filter is actually applied.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>query</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a>) – SQL query string.</p></li>
+<li><p><strong>table_name</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a>) – Name of the database table.</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="poriscope.utils.MetaSubsetTabView.MetaSubsetTabView.set_scatterplot">
+<span class="sig-prename descclassname"><span class="pre">MetaSubsetTabView.</span></span><span class="sig-name descname"><span class="pre">set_scatterplot</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">columns</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Sequence" title="(in Python v3.14)"><span class="pre">Sequence</span></a><span class="p"><span class="pre">[</span></span><span class="pre">ndarray</span><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#tuple" title="(in Python v3.14)"><span class="pre">tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.14)"><span class="pre">int</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="p"><span class="pre">...</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">dtype</span><span class="p"><span class="pre">[</span></span><span class="pre">float64</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ax</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Axes</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">axis_labels</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Sequence" title="(in Python v3.14)"><span class="pre">Sequence</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dataset_label</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/builtins/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span></span><a class="headerlink" href="#poriscope.utils.MetaSubsetTabView.MetaSubsetTabView.set_scatterplot" title="Link to this definition">¶</a></dt>
+<dd><p>Draw a scatterplot of two filtered columns.</p>
+<p>The answering half of <code class="docutils literal notranslate"><span class="pre">scatterplot_requested</span></code>. The NaN and log filtering
+belongs to the Model: the values it drops never reach the axes, and the ones
+it keeps are exported with the plot.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>columns</strong> (<em>Sequence</em><em>[</em><em>npt.NDArray</em><em>[</em><em>np.float64</em><em>]</em><em>]</em>) – the filtered x and y values</p></li>
+<li><p><strong>ax</strong> (<em>Axes</em>) – the axis object on which to plot</p></li>
+<li><p><strong>axis_labels</strong> (<em>Sequence</em><em>[</em><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a><em>]</em>) – the x and y axis labels, already formatted</p></li>
+<li><p><strong>dataset_label</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a>) – Label for the dataset.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>None</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="poriscope.utils.MetaSubsetTabView.MetaSubsetTabView.show_edit_filter_dialog">
+<span class="sig-prename descclassname"><span class="pre">MetaSubsetTabView.</span></span><span class="sig-name descname"><span class="pre">show_edit_filter_dialog</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">loader</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/builtins/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span></span><a class="headerlink" href="#poriscope.utils.MetaSubsetTabView.MetaSubsetTabView.show_edit_filter_dialog" title="Link to this definition">¶</a></dt>
+<dd><p>Open the dialog that edits a subset filter, and validate what it returns.</p>
+<p>One copy for both subset tabs, and not abstract. The
+reason recorded for its being abstract - that each tab rebuilds its own
+filter widgets afterwards - was <code class="docutils literal notranslate"><span class="pre">_delete_filter</span></code>’s, not this method’s:
+neither copy touched a filter widget. They diverged in the same two places
+as <code class="docutils literal notranslate"><span class="pre">_show_add_filter_dialog</span></code>, resolved the same way.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>name</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a>) – the filter to edit</p></li>
+<li><p><strong>loader</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a>) – the database loader the filter applies to</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="poriscope.utils.MetaSubsetTabView.MetaSubsetTabView.show_selection_tree">
+<span class="sig-prename descclassname"><span class="pre">MetaSubsetTabView.</span></span><span class="sig-name descname"><span class="pre">show_selection_tree</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">structure</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#dict" title="(in Python v3.14)"><span class="pre">dict</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#list" title="(in Python v3.14)"><span class="pre">list</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">loader_name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">selection</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#dict" title="(in Python v3.14)"><span class="pre">dict</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#list" title="(in Python v3.14)"><span class="pre">list</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/builtins/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span></span><a class="headerlink" href="#poriscope.utils.MetaSubsetTabView.MetaSubsetTabView.show_selection_tree" title="Link to this definition">¶</a></dt>
+<dd><p>Displays the selection tree for a given loader using the full structure and current selection.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="poriscope.utils.MetaSubsetTabView.MetaSubsetTabView.update_available_columns">
+<span class="sig-prename descclassname"><span class="pre">MetaSubsetTabView.</span></span><span class="sig-name descname"><span class="pre">update_available_columns</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">loader</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/builtins/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span></span><a class="headerlink" href="#poriscope.utils.MetaSubsetTabView.MetaSubsetTabView.update_available_columns" title="Link to this definition">¶</a></dt>
+<dd><p>Request available columns from the database loader.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>loader</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a>) – Name of the active database loader.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="poriscope.utils.MetaSubsetTabView.MetaSubsetTabView.update_filter_name">
+<span class="sig-prename descclassname"><span class="pre">MetaSubsetTabView.</span></span><span class="sig-name descname"><span class="pre">update_filter_name</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">old_name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">new_name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/builtins/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span></span><a class="headerlink" href="#poriscope.utils.MetaSubsetTabView.MetaSubsetTabView.update_filter_name" title="Link to this definition">¶</a></dt>
+<dd><p>Replace old filter name with new one in the ComboBox, removing any duplicates.</p>
+<p>Promoted from both subset tabs, whose copies differed only in the name each
+held its controls panel under.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>old_name</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a>) – The filter name being replaced.</p></li>
+<li><p><strong>new_name</strong> (<a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a>) – The filter name to display instead.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>None</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+</section>
+<section id="private-methods">
+<h2>Private Methods<a class="headerlink" href="#private-methods" title="Link to this heading">¶</a></h2>
+<section id="id2">
+<h3>Abstract Methods<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h3>
+<p>These methods must be implemented by subclasses.</p>
+<dl class="py property">
+<dt class="sig sig-object py" id="poriscope.utils.MetaSubsetTabView.MetaSubsetTabView._subset_controls">
+<em class="property"><span class="k"><span class="pre">abstract</span></span><span class="w"> </span><span class="k"><span class="pre">property</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">MetaSubsetTabView.</span></span><span class="sig-name descname"><span class="pre">_subset_controls</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">MetaSubsetTabControls</span></em><a class="headerlink" href="#poriscope.utils.MetaSubsetTabView.MetaSubsetTabView._subset_controls" title="Link to this definition">¶</a></dt>
+<dd><p>This tab’s controls panel, under a name the shared methods here can use.</p>
+<p>Each tab stores the panel under a name of its own inside <code class="docutils literal notranslate"><span class="pre">_build_controls</span></code>
+and uses that name throughout, which is fine for tab-specific code; a method
+promoted up to this base cannot know it. A property rather than a second
+attribute assigned alongside, so there is still exactly one place the panel
+is held and no chance of the two names drifting apart.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>the panel built by <code class="docutils literal notranslate"><span class="pre">_build_controls</span></code></p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>MetaSubsetTabControls</p>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+</section>
+</section>
+
+        </article>
+      </div>
+      <footer>
+        
+        <div class="related-pages">
+          <a class="next-page" href="metaview.html">
+              <div class="page-info">
+                <div class="context">
+                  <span>Next</span>
+                </div>
+                <div class="title">MetaView</div>
+              </div>
+              <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
+            </a>
+          <a class="prev-page" href="metasubsettabmodel.html">
+              <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
+              <div class="page-info">
+                <div class="context">
+                  <span>Previous</span>
+                </div>
+                
+                <div class="title">MetaSubsetTabModel</div>
+                
+              </div>
+            </a>
+        </div>
+        <div class="bottom-of-page">
+          <div class="left-details">
+            <div class="copyright">
+                Copyright &#169; 2024, Kyle Briggs, Carolina González G.
+            </div>
+            Made with <a href="https://www.sphinx-doc.org/">Sphinx</a> and <a class="muted-link" href="https://pradyunsg.me">@pradyunsg</a>'s
+            
+            <a href="https://github.com/pradyunsg/furo">Furo</a>
+            
+          </div>
+          <div class="right-details">
+            
+          </div>
+        </div>
+        
+      </footer>
+    </div>
+    <aside class="toc-drawer">
+      
+      
+      <div class="toc-sticky toc-scroll">
+        <div class="toc-title-container">
+          <span class="toc-title">
+            On this page
+          </span>
+        </div>
+        <div class="toc-tree-container">
+          <div class="toc-tree">
+            <ul>
+<li><a class="reference internal" href="#">MetaSubsetTabView</a><ul>
+<li><a class="reference internal" href="#public-methods">Public Methods</a><ul>
+<li><a class="reference internal" href="#abstract-methods">Abstract Methods</a></li>
+<li><a class="reference internal" href="#concrete-methods">Concrete Methods</a><ul>
+<li><a class="reference internal" href="#poriscope.utils.MetaSubsetTabView.MetaSubsetTabView.commit_filter"><code class="docutils literal notranslate"><span class="pre">MetaSubsetTabView.commit_filter()</span></code></a></li>
+<li><a class="reference internal" href="#poriscope.utils.MetaSubsetTabView.MetaSubsetTabView.get_save_filename"><code class="docutils literal notranslate"><span class="pre">MetaSubsetTabView.get_save_filename()</span></code></a></li>
+<li><a class="reference internal" href="#poriscope.utils.MetaSubsetTabView.MetaSubsetTabView.get_selected_filters"><code class="docutils literal notranslate"><span class="pre">MetaSubsetTabView.get_selected_filters()</span></code></a></li>
+<li><a class="reference internal" href="#poriscope.utils.MetaSubsetTabView.MetaSubsetTabView.get_subset_filters"><code class="docutils literal notranslate"><span class="pre">MetaSubsetTabView.get_subset_filters()</span></code></a></li>
+<li><a class="reference internal" href="#poriscope.utils.MetaSubsetTabView.MetaSubsetTabView.on_raw_filter_validated"><code class="docutils literal notranslate"><span class="pre">MetaSubsetTabView.on_raw_filter_validated()</span></code></a></li>
+<li><a class="reference internal" href="#poriscope.utils.MetaSubsetTabView.MetaSubsetTabView.replace_filter_item"><code class="docutils literal notranslate"><span class="pre">MetaSubsetTabView.replace_filter_item()</span></code></a></li>
+<li><a class="reference internal" href="#poriscope.utils.MetaSubsetTabView.MetaSubsetTabView.request_experiment_structure"><code class="docutils literal notranslate"><span class="pre">MetaSubsetTabView.request_experiment_structure()</span></code></a></li>
+<li><a class="reference internal" href="#poriscope.utils.MetaSubsetTabView.MetaSubsetTabView.restore_subset_filters"><code class="docutils literal notranslate"><span class="pre">MetaSubsetTabView.restore_subset_filters()</span></code></a></li>
+<li><a class="reference internal" href="#poriscope.utils.MetaSubsetTabView.MetaSubsetTabView.set_event_data_generator"><code class="docutils literal notranslate"><span class="pre">MetaSubsetTabView.set_event_data_generator()</span></code></a></li>
+<li><a class="reference internal" href="#poriscope.utils.MetaSubsetTabView.MetaSubsetTabView.set_event_id_rows"><code class="docutils literal notranslate"><span class="pre">MetaSubsetTabView.set_event_id_rows()</span></code></a></li>
+<li><a class="reference internal" href="#poriscope.utils.MetaSubsetTabView.MetaSubsetTabView.set_event_plot_data_generator"><code class="docutils literal notranslate"><span class="pre">MetaSubsetTabView.set_event_plot_data_generator()</span></code></a></li>
+<li><a class="reference internal" href="#poriscope.utils.MetaSubsetTabView.MetaSubsetTabView.set_event_query"><code class="docutils literal notranslate"><span class="pre">MetaSubsetTabView.set_event_query()</span></code></a></li>
+<li><a class="reference internal" href="#poriscope.utils.MetaSubsetTabView.MetaSubsetTabView.set_loaded_filters"><code class="docutils literal notranslate"><span class="pre">MetaSubsetTabView.set_loaded_filters()</span></code></a></li>
+<li><a class="reference internal" href="#poriscope.utils.MetaSubsetTabView.MetaSubsetTabView.set_query"><code class="docutils literal notranslate"><span class="pre">MetaSubsetTabView.set_query()</span></code></a></li>
+<li><a class="reference internal" href="#poriscope.utils.MetaSubsetTabView.MetaSubsetTabView.set_scatterplot"><code class="docutils literal notranslate"><span class="pre">MetaSubsetTabView.set_scatterplot()</span></code></a></li>
+<li><a class="reference internal" href="#poriscope.utils.MetaSubsetTabView.MetaSubsetTabView.show_edit_filter_dialog"><code class="docutils literal notranslate"><span class="pre">MetaSubsetTabView.show_edit_filter_dialog()</span></code></a></li>
+<li><a class="reference internal" href="#poriscope.utils.MetaSubsetTabView.MetaSubsetTabView.show_selection_tree"><code class="docutils literal notranslate"><span class="pre">MetaSubsetTabView.show_selection_tree()</span></code></a></li>
+<li><a class="reference internal" href="#poriscope.utils.MetaSubsetTabView.MetaSubsetTabView.update_available_columns"><code class="docutils literal notranslate"><span class="pre">MetaSubsetTabView.update_available_columns()</span></code></a></li>
+<li><a class="reference internal" href="#poriscope.utils.MetaSubsetTabView.MetaSubsetTabView.update_filter_name"><code class="docutils literal notranslate"><span class="pre">MetaSubsetTabView.update_filter_name()</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li><a class="reference internal" href="#private-methods">Private Methods</a><ul>
+<li><a class="reference internal" href="#id2">Abstract Methods</a><ul>
+<li><a class="reference internal" href="#poriscope.utils.MetaSubsetTabView.MetaSubsetTabView._subset_controls"><code class="docutils literal notranslate"><span class="pre">MetaSubsetTabView._subset_controls</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+
+          </div>
+        </div>
+      </div>
+      
+      
+    </aside>
+  </div>
+</div><script src="../../_static/documentation_options.js?v=f5cff4aa"></script>
+    <script src="../../_static/doctools.js?v=9bcbadda"></script>
+    <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../_static/scripts/furo.js?v=5fa4622c"></script>
+    </body>
+</html>

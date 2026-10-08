@@ -1,0 +1,37 @@
+.. _Basic_PeakFinder:
+
+Basic_PeakFinder
+================
+
+**class Basic_PeakFinder(settings: Optional[dict] = None)**
+
+Bases: :ref:`MetaEventFitter`
+
+Abstract base class to analyze and flag the start and end times of regions
+of interest in a timeseries for further analysis.
+
+Public Methods
+--------------
+
+.. automethod:: poriscope.plugins.eventfitters.Basic_PeakFinder.Basic_PeakFinder.close_resources
+.. automethod:: poriscope.plugins.eventfitters.Basic_PeakFinder.Basic_PeakFinder.construct_fitted_event
+.. automethod:: poriscope.plugins.eventfitters.Basic_PeakFinder.Basic_PeakFinder.enumerate_peaks
+.. automethod:: poriscope.plugins.eventfitters.Basic_PeakFinder.Basic_PeakFinder.find_mode_blockage_level
+.. automethod:: poriscope.plugins.eventfitters.Basic_PeakFinder.Basic_PeakFinder.get_empty_settings
+.. automethod:: poriscope.plugins.eventfitters.Basic_PeakFinder.Basic_PeakFinder.get_plot_features
+
+Private Methods
+---------------
+
+.. automethod:: poriscope.plugins.eventfitters.Basic_PeakFinder.Basic_PeakFinder._define_event_metadata_types
+.. automethod:: poriscope.plugins.eventfitters.Basic_PeakFinder.Basic_PeakFinder._define_event_metadata_units
+.. automethod:: poriscope.plugins.eventfitters.Basic_PeakFinder.Basic_PeakFinder._define_sublevel_metadata_types
+.. automethod:: poriscope.plugins.eventfitters.Basic_PeakFinder.Basic_PeakFinder._define_sublevel_metadata_units
+.. automethod:: poriscope.plugins.eventfitters.Basic_PeakFinder.Basic_PeakFinder._init
+.. automethod:: poriscope.plugins.eventfitters.Basic_PeakFinder.Basic_PeakFinder._locate_sublevel_transitions
+.. automethod:: poriscope.plugins.eventfitters.Basic_PeakFinder.Basic_PeakFinder._populate_event_metadata
+.. automethod:: poriscope.plugins.eventfitters.Basic_PeakFinder.Basic_PeakFinder._populate_sublevel_metadata
+.. automethod:: poriscope.plugins.eventfitters.Basic_PeakFinder.Basic_PeakFinder._post_process_events
+.. automethod:: poriscope.plugins.eventfitters.Basic_PeakFinder.Basic_PeakFinder._pre_process_events
+.. automethod:: poriscope.plugins.eventfitters.Basic_PeakFinder.Basic_PeakFinder._validate_settings
+

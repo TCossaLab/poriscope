@@ -1,0 +1,47 @@
+.. _ProteinView:
+
+ProteinView
+===========
+
+**class ProteinView()**
+
+Bases: :ref:`MetaSubsetTabView`
+
+Subclass of MetaSubsetTabView for estimating translocating protein size and shape from nanopore blockage events.
+
+Given pore diameter/length, fits a two-population (prolate/oblate) volume-and-shape-factor model via Monte Carlo rejection sampling, either per event (Individual mode) or across the aggregate distribution (Ensemble mode). Also supports subset filtering, per-event trace/histogram inspection, and committing or reporting fit results.
+
+Public Methods
+--------------
+
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView.confirm_fit_commit
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView.get_current_view
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView.get_walkthrough_steps
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView.handle_parameter_change
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView.notify_plugin_state_changed
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView.on_fit_commit_finished
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView.set_distribution_fits
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView.set_ensemble_geometry_fit
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView.set_ensemble_histogram
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView.set_event_histogram_fits
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView.set_xyerr_scatterplot
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView.update_available_plugins
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView.update_plot
+
+Private Methods
+---------------
+
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView._init
+.. automethod:: poriscope.plugins.analysistabs.ProteinView.ProteinView._reset_actions
+
+Properties
+----------
+
+.. autoattribute:: poriscope.plugins.analysistabs.ProteinView.ProteinView._subset_controls
+.. autoattribute:: poriscope.plugins.analysistabs.ProteinView.ProteinView.ax_hist
+.. autoattribute:: poriscope.plugins.analysistabs.ProteinView.ProteinView.ax_vm
+.. autoattribute:: poriscope.plugins.analysistabs.ProteinView.ProteinView.canvas_hist
+.. autoattribute:: poriscope.plugins.analysistabs.ProteinView.ProteinView.canvas_vm
+.. autoattribute:: poriscope.plugins.analysistabs.ProteinView.ProteinView.fig_hist
+.. autoattribute:: poriscope.plugins.analysistabs.ProteinView.ProteinView.fig_vm
+

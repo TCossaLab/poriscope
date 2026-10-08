@@ -1,0 +1,21 @@
+.. _EventAnalysisModel:
+
+EventAnalysisModel
+==================
+
+**class EventAnalysisModel(**kwargs)**
+
+Bases: :ref:`MetaModel`
+
+Subclass of MetaModel for handling event analysis data.
+
+Public Methods
+--------------
+
+(none)
+
+Private Methods
+---------------
+
+.. automethod:: poriscope.plugins.analysistabs.EventAnalysisModel.EventAnalysisModel._init
+

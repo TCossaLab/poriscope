@@ -1,0 +1,38 @@
+.. _RawDataView:
+
+RawDataView
+===========
+
+**class RawDataView()**
+
+Bases: :ref:`MetaEventTabView`
+
+Subclass of MetaEventTabView for visualizing raw signal data and PSD plots.
+
+Handles plot rendering, signal responses, and interactions with readers, filters, and event finders.
+
+Public Methods
+--------------
+
+.. automethod:: poriscope.plugins.analysistabs.RawDataView.RawDataView.get_current_view
+.. automethod:: poriscope.plugins.analysistabs.RawDataView.RawDataView.get_save_filename
+.. automethod:: poriscope.plugins.analysistabs.RawDataView.RawDataView.get_walkthrough_steps
+.. automethod:: poriscope.plugins.analysistabs.RawDataView.RawDataView.handle_parameter_change
+.. automethod:: poriscope.plugins.analysistabs.RawDataView.RawDataView.register_eventfinder_channels
+.. automethod:: poriscope.plugins.analysistabs.RawDataView.RawDataView.set_commit_statuses
+.. automethod:: poriscope.plugins.analysistabs.RawDataView.RawDataView.set_event_plot_data
+.. automethod:: poriscope.plugins.analysistabs.RawDataView.RawDataView.set_eventfinding_statuses
+.. automethod:: poriscope.plugins.analysistabs.RawDataView.RawDataView.set_psd
+.. automethod:: poriscope.plugins.analysistabs.RawDataView.RawDataView.set_trace_data
+.. automethod:: poriscope.plugins.analysistabs.RawDataView.RawDataView.set_trace_for_psd
+.. automethod:: poriscope.plugins.analysistabs.RawDataView.RawDataView.update_available_plugins
+.. automethod:: poriscope.plugins.analysistabs.RawDataView.RawDataView.update_channels
+.. automethod:: poriscope.plugins.analysistabs.RawDataView.RawDataView.update_plot
+.. automethod:: poriscope.plugins.analysistabs.RawDataView.RawDataView.update_plot_samplerate
+.. automethod:: poriscope.plugins.analysistabs.RawDataView.RawDataView.update_psd
+
+Private Methods
+---------------
+
+.. automethod:: poriscope.plugins.analysistabs.RawDataView.RawDataView._init
+

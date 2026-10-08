@@ -1,0 +1,37 @@
+.. _MetadataController:
+
+MetadataController
+==================
+
+**class MetadataController(available_subclasses: Optional[Mapping[str, List[str]]] = None, **kwargs)**
+
+Bases: :ref:`MetaSubsetTabController`
+
+Subclass of MetaSubsetTabController for managing metadata view-model logic.
+
+Relays plot data, query results, and column/unit updates to the view.
+
+Public Methods
+--------------
+
+.. automethod:: poriscope.plugins.analysistabs.MetadataController.MetadataController.build_all_points_histogram
+.. automethod:: poriscope.plugins.analysistabs.MetadataController.MetadataController.build_event_overlay
+.. automethod:: poriscope.plugins.analysistabs.MetadataController.MetadataController.calculate_heatmap
+.. automethod:: poriscope.plugins.analysistabs.MetadataController.MetadataController.calculate_histogram_bins
+.. automethod:: poriscope.plugins.analysistabs.MetadataController.MetadataController.count_categories
+.. automethod:: poriscope.plugins.analysistabs.MetadataController.MetadataController.estimate_kernel_densities
+.. automethod:: poriscope.plugins.analysistabs.MetadataController.MetadataController.export_csv_subset
+.. automethod:: poriscope.plugins.analysistabs.MetadataController.MetadataController.filter_3d_scatterplot
+.. automethod:: poriscope.plugins.analysistabs.MetadataController.MetadataController.fit_capture_rate
+.. automethod:: poriscope.plugins.analysistabs.MetadataController.MetadataController.load_metadata_subset
+.. automethod:: poriscope.plugins.analysistabs.MetadataController.MetadataController.request_column_type
+.. automethod:: poriscope.plugins.analysistabs.MetadataController.MetadataController.request_column_units
+.. automethod:: poriscope.plugins.analysistabs.MetadataController.MetadataController.request_plot_features
+.. automethod:: poriscope.plugins.analysistabs.MetadataController.MetadataController.update_features
+
+Private Methods
+---------------
+
+.. automethod:: poriscope.plugins.analysistabs.MetadataController.MetadataController._init
+.. automethod:: poriscope.plugins.analysistabs.MetadataController.MetadataController._setup_connections
+

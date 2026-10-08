@@ -1,0 +1,34 @@
+.. _RawDataController:
+
+RawDataController
+=================
+
+**class RawDataController(available_subclasses: Optional[Mapping[str, List[str]]] = None, **kwargs)**
+
+Bases: :ref:`MetaEventTabController`
+
+Subclass of MetaEventTabController for managing raw data view-model logic.
+
+Handles raw data plotting and PSD logic.
+
+Public Methods
+--------------
+
+.. automethod:: poriscope.plugins.analysistabs.RawDataController.RawDataController.calculate_psd
+.. automethod:: poriscope.plugins.analysistabs.RawDataController.RawDataController.commit_events
+.. automethod:: poriscope.plugins.analysistabs.RawDataController.RawDataController.compute_baseline_stats
+.. automethod:: poriscope.plugins.analysistabs.RawDataController.RawDataController.load_event_plot_data
+.. automethod:: poriscope.plugins.analysistabs.RawDataController.RawDataController.load_psd_data
+.. automethod:: poriscope.plugins.analysistabs.RawDataController.RawDataController.load_trace_data
+.. automethod:: poriscope.plugins.analysistabs.RawDataController.RawDataController.request_commit_statuses
+.. automethod:: poriscope.plugins.analysistabs.RawDataController.RawDataController.request_eventfinding_statuses
+.. automethod:: poriscope.plugins.analysistabs.RawDataController.RawDataController.request_reader_channels
+.. automethod:: poriscope.plugins.analysistabs.RawDataController.RawDataController.start_eventfinding
+.. automethod:: poriscope.plugins.analysistabs.RawDataController.RawDataController.update_available_plugins
+
+Private Methods
+---------------
+
+.. automethod:: poriscope.plugins.analysistabs.RawDataController.RawDataController._init
+.. automethod:: poriscope.plugins.analysistabs.RawDataController.RawDataController._setup_connections
+

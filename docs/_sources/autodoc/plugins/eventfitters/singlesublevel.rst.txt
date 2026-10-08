@@ -1,0 +1,23 @@
+.. _SingleSublevel:
+
+SingleSublevel
+==============
+
+**class SingleSublevel(start: int, end: Optional[int] = None, height: Optional[float] = None)**
+
+Public Methods
+--------------
+
+.. automethod:: poriscope.plugins.eventfitters.NanoTrees.SingleSublevel.fetchData
+.. automethod:: poriscope.plugins.eventfitters.NanoTrees.SingleSublevel.update
+
+Private Methods
+---------------
+
+.. automethod:: poriscope.plugins.eventfitters.NanoTrees.SingleSublevel.__init__
+
+Properties
+----------
+
+.. autoattribute:: poriscope.plugins.eventfitters.NanoTrees.SingleSublevel.width
+

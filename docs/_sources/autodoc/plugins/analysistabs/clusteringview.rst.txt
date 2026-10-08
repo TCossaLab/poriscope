@@ -1,0 +1,39 @@
+.. _ClusteringView:
+
+ClusteringView
+==============
+
+**class ClusteringView()**
+
+Bases: :ref:`MetaView`
+
+Subclass of MetaView for displaying and interacting with clustering analysis.
+
+Handles plotting, user input, and signal exchanges.
+
+Public Methods
+--------------
+
+.. automethod:: poriscope.plugins.analysistabs.ClusteringView.ClusteringView.get_current_view
+.. automethod:: poriscope.plugins.analysistabs.ClusteringView.ClusteringView.get_save_filename
+.. automethod:: poriscope.plugins.analysistabs.ClusteringView.ClusteringView.get_walkthrough_steps
+.. automethod:: poriscope.plugins.analysistabs.ClusteringView.ClusteringView.handle_parameter_change
+.. automethod:: poriscope.plugins.analysistabs.ClusteringView.ClusteringView.notify_plugin_state_changed
+.. automethod:: poriscope.plugins.analysistabs.ClusteringView.ClusteringView.on_cluster_column_checked
+.. automethod:: poriscope.plugins.analysistabs.ClusteringView.ClusteringView.on_clusters_committed
+.. automethod:: poriscope.plugins.analysistabs.ClusteringView.ClusteringView.on_metadata_loaded
+.. automethod:: poriscope.plugins.analysistabs.ClusteringView.ClusteringView.set_clustering_result
+.. automethod:: poriscope.plugins.analysistabs.ClusteringView.ClusteringView.set_query
+.. automethod:: poriscope.plugins.analysistabs.ClusteringView.ClusteringView.update_available_columns
+.. automethod:: poriscope.plugins.analysistabs.ClusteringView.ClusteringView.update_available_plugins
+.. automethod:: poriscope.plugins.analysistabs.ClusteringView.ClusteringView.update_column_names
+.. automethod:: poriscope.plugins.analysistabs.ClusteringView.ClusteringView.update_column_units
+.. automethod:: poriscope.plugins.analysistabs.ClusteringView.ClusteringView.update_plot
+.. automethod:: poriscope.plugins.analysistabs.ClusteringView.ClusteringView.update_units
+
+Private Methods
+---------------
+
+.. automethod:: poriscope.plugins.analysistabs.ClusteringView.ClusteringView._init
+.. automethod:: poriscope.plugins.analysistabs.ClusteringView.ClusteringView._reset_actions
+

@@ -1,0 +1,112 @@
+.. _MetaSubsetTabView:
+
+MetaSubsetTabView
+=================
+
+**class MetaSubsetTabView()**
+
+Bases: :ref:`MetaView`
+
+Shared base for the Views of the two subset-filtering analysis tabs.
+
+``MetadataView`` and ``ProteinView`` both drive a tab whose data comes from a
+``MetaDatabaseLoader``: the user picks an experiment and channels from a
+selection tree, builds a named subset filter over the queried columns, and plots
+or exports the rows that come back. The two were written by copy-paste and
+carried fifteen methods verbatim between them; this base holds that shared half
+so there is one copy to fix.
+
+What a subclass inherits:
+
+- **Query state.** ``set_query``, ``set_event_query`` and ``set_experiment_id``
+  receive the SQL and the scope the Controller
+  resolved, and optionally echo it to the status panel.
+- **Column and experiment state.** ``update_available_columns`` and
+  ``set_units`` keep the tab's column comboboxes and axis labels in step with the
+  loader's description of the database.
+- **Subset filters.** ``subset_filters`` is the store, and
+  ``commit_filter``/``get_subset_filters`` are how the Controller reaches it -
+  it asks rather than assigning into the dict (``DECISIONS.md``, 2026-09-13).
+  ``_delete_filter``, ``replace_filter_item``, ``update_filter_name``,
+  ``restore_subset_filters`` and ``on_raw_filter_validated`` keep the filter
+  combobox in step with it, reaching the combobox through ``_subset_controls``,
+  and ``_delete_filter_by_name`` and ``_show_filter_info_dialog`` are the
+  combobox's own entry points into that set. ``_show_add_filter_dialog`` and
+  ``show_edit_filter_dialog`` open the two filter dialogs and validate what they
+  return, through ``_reject_non_select_raw_filter`` and the Controller;
+  ``_save_filter`` and ``_load_filter`` write the filters to and read them back
+  from a JSON file.
+- **Experiment selection.** ``show_selection_tree`` and
+  ``request_experiment_structure`` drive the ``SelectionTree`` dialog and remember
+  what was chosen per loader.
+- **The selected filters.** ``get_selected_filters`` reads the filter combobox
+  through ``_subset_controls``, the property each tab implements below.
+- **The filtered event_id cache.** ``_rebuild_event_id_cache`` queries every
+  event_id matching the current filter and scope, sorted, and keeps the four
+  ``current_*``/``filtered_event_ids`` values the staleness checks compare.
+
+What a subclass owes it:
+
+- **Its own** ``logger = logging.getLogger(__name__)``, so that records made by
+  the methods it defines itself stay attributed to its own module. Methods defined
+  *here* log under this module, which is the convention ``MetaView`` already
+  follows for its shared code.
+- **``_subset_controls``**, a one-line property returning whatever name the tab
+  holds its controls panel under, so the shared methods here can reach it.
+- **The five abstract methods ``MetaView`` declares**, unchanged - this base
+  implements none of them.
+
+``subset_filters`` lives here rather than on a Model, and the test is who reads it:
+no Model does - query construction takes a single filter's *text* as an argument -
+while sixteen reads on this side need it inside the same call, the eleven
+``get_selected_filters`` on the plot paths among them. Moving it would install a
+field nothing below reads and turn those sixteen into round trips. See
+``DECISIONS.md``, 2026-09-13, which also records what was rejected.
+
+:ivar logger: the module logger the shared methods below log under
+:ivar subset_filters: named subset filters, filter name to SQL WHERE clause
+:ivar selected_experiment_and_channels_by_loader: per-loader selection tree state
+
+Public Methods
+--------------
+
+Abstract Methods
+~~~~~~~~~~~~~~~~
+
+These methods must be implemented by subclasses.
+
+(none)
+
+Concrete Methods
+~~~~~~~~~~~~~~~~
+
+.. automethod:: poriscope.utils.MetaSubsetTabView.MetaSubsetTabView.commit_filter
+.. automethod:: poriscope.utils.MetaSubsetTabView.MetaSubsetTabView.get_save_filename
+.. automethod:: poriscope.utils.MetaSubsetTabView.MetaSubsetTabView.get_selected_filters
+.. automethod:: poriscope.utils.MetaSubsetTabView.MetaSubsetTabView.get_subset_filters
+.. automethod:: poriscope.utils.MetaSubsetTabView.MetaSubsetTabView.on_raw_filter_validated
+.. automethod:: poriscope.utils.MetaSubsetTabView.MetaSubsetTabView.replace_filter_item
+.. automethod:: poriscope.utils.MetaSubsetTabView.MetaSubsetTabView.request_experiment_structure
+.. automethod:: poriscope.utils.MetaSubsetTabView.MetaSubsetTabView.restore_subset_filters
+.. automethod:: poriscope.utils.MetaSubsetTabView.MetaSubsetTabView.set_event_data_generator
+.. automethod:: poriscope.utils.MetaSubsetTabView.MetaSubsetTabView.set_event_id_rows
+.. automethod:: poriscope.utils.MetaSubsetTabView.MetaSubsetTabView.set_event_plot_data_generator
+.. automethod:: poriscope.utils.MetaSubsetTabView.MetaSubsetTabView.set_event_query
+.. automethod:: poriscope.utils.MetaSubsetTabView.MetaSubsetTabView.set_loaded_filters
+.. automethod:: poriscope.utils.MetaSubsetTabView.MetaSubsetTabView.set_query
+.. automethod:: poriscope.utils.MetaSubsetTabView.MetaSubsetTabView.set_scatterplot
+.. automethod:: poriscope.utils.MetaSubsetTabView.MetaSubsetTabView.show_edit_filter_dialog
+.. automethod:: poriscope.utils.MetaSubsetTabView.MetaSubsetTabView.show_selection_tree
+.. automethod:: poriscope.utils.MetaSubsetTabView.MetaSubsetTabView.update_available_columns
+.. automethod:: poriscope.utils.MetaSubsetTabView.MetaSubsetTabView.update_filter_name
+
+Private Methods
+---------------
+
+Abstract Methods
+~~~~~~~~~~~~~~~~
+
+These methods must be implemented by subclasses.
+
+.. autoproperty:: poriscope.utils.MetaSubsetTabView.MetaSubsetTabView._subset_controls
+

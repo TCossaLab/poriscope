@@ -1,0 +1,73 @@
+.. _MetaEventTabView:
+
+MetaEventTabView
+================
+
+**class MetaEventTabView()**
+
+Bases: :ref:`MetaView`
+
+Shared base for the Views of the two event-oriented analysis tabs.
+
+``RawDataView`` and ``EventAnalysisView`` both drive a tab that works from a
+reader and a time-series channel rather than from a database of results: the user
+picks a reader, a filter and a channel, and the tab finds or fits events in the
+raw signal. The two carried five methods verbatim between them; this base holds
+that shared half so there is one copy to fix.
+
+What a subclass inherits:
+
+- **Two of ``MetaView``'s abstract hooks, made concrete.**
+  ``notify_plugin_state_changed`` is a deliberate no-op for both tabs - neither
+  shows a database column list, so a plugin-state change elsewhere in the app is
+  not their business - and ``_reset_actions`` clears the figure identically in
+  each. ``MetaView`` still declares both abstract; satisfying them here is what
+  keeps both subclasses instantiable without a per-tab copy.
+- ``_channels_from``, which reads the channel selection out of a parameter dict
+  and reports a missing one as ``ValueError``, which every caller already guards.
+- **Commit-time helpers.** ``_extract_commit_event_parameters`` and
+  ``validate_single_channel`` read the controls panel's channel selection and
+  reject anything that is not exactly one channel.
+- **The event-index range helpers.** ``_parse_event_indices``, ``_expand_event_indices``,
+  ``_shift_ranges``, ``_merge_ranges`` and ``_format_ranges`` turn the event-index
+  field's text into ranges and back. Only these two tabs call them, which is why
+  they are here rather than on ``MetaView``; they are pure apart from one logger
+  call.
+
+What a subclass owes it:
+
+- **Its own** ``logger = logging.getLogger(__name__)``, so records made by the
+  methods it defines itself stay attributed to its own module.
+- **``MetaView``'s remaining abstract methods** - ``_init``,
+  ``handle_parameter_change`` and ``update_available_plugins`` - which this base does
+  not implement.
+
+:ivar logger: the module logger the shared methods below log under
+
+Public Methods
+--------------
+
+Abstract Methods
+~~~~~~~~~~~~~~~~
+
+These methods must be implemented by subclasses.
+
+(none)
+
+Concrete Methods
+~~~~~~~~~~~~~~~~
+
+.. automethod:: poriscope.utils.MetaEventTabView.MetaEventTabView.confirm_unfiltered_run
+.. automethod:: poriscope.utils.MetaEventTabView.MetaEventTabView.notify_plugin_state_changed
+.. automethod:: poriscope.utils.MetaEventTabView.MetaEventTabView.validate_single_channel
+
+Private Methods
+---------------
+
+Abstract Methods
+~~~~~~~~~~~~~~~~
+
+These methods must be implemented by subclasses.
+
+(none)
+

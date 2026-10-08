@@ -1,0 +1,808 @@
+<!doctype html>
+<html class="no-js" lang="en" data-content_root="../../../../../">
+  <head><meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width,initial-scale=1"/>
+    <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="index" title="Index" href="../../../../../genindex.html" /><link rel="search" title="Search" href="../../../../../search.html" /><link rel="next" title="From HelloWorld to a Full MVC Analysis Tab" href="simpleCalc/from_helloworld_to_full_mvc.html" /><link rel="prev" title="MetaController as a Base Class" href="ready_to_build/metacontroller_base.html" />
+
+    <!-- Generated with Sphinx 8.2.3 and Furo 2024.08.06 -->
+        <title>Keeping It Minimal: HelloWorld Tutorial - Poriscope 2.0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/pygments.css?v=8f2a1f02" />
+    <link rel="stylesheet" type="text/css" href="../../../../../_static/styles/furo.css?v=354aac6f" />
+    <link rel="stylesheet" type="text/css" href="../../../../../_static/styles/furo-extensions.css?v=302659d7" />
+    
+    
+
+
+<style>
+  body {
+    --color-code-background: #f8f8f8;
+  --color-code-foreground: black;
+  
+  }
+  @media not print {
+    body[data-theme="dark"] {
+      --color-code-background: #202020;
+  --color-code-foreground: #d0d0d0;
+  
+    }
+    @media (prefers-color-scheme: dark) {
+      body:not([data-theme="light"]) {
+        --color-code-background: #202020;
+  --color-code-foreground: #d0d0d0;
+  
+      }
+    }
+  }
+</style></head>
+  <body>
+    
+    <script>
+      document.body.dataset.theme = localStorage.getItem("theme") || "auto";
+    </script>
+    
+
+<svg xmlns="http://www.w3.org/2000/svg" style="display: none;">
+  <symbol id="svg-toc" viewBox="0 0 24 24">
+    <title>Contents</title>
+    <svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 1024 1024">
+      <path d="M408 442h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8zm-8 204c0 4.4 3.6 8 8 8h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56zm504-486H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zm0 632H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zM115.4 518.9L271.7 642c5.8 4.6 14.4.5 14.4-6.9V388.9c0-7.4-8.5-11.5-14.4-6.9L115.4 505.1a8.74 8.74 0 0 0 0 13.8z"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-menu" viewBox="0 0 24 24">
+    <title>Menu</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather-menu">
+      <line x1="3" y1="12" x2="21" y2="12"></line>
+      <line x1="3" y1="6" x2="21" y2="6"></line>
+      <line x1="3" y1="18" x2="21" y2="18"></line>
+    </svg>
+  </symbol>
+  <symbol id="svg-arrow-right" viewBox="0 0 24 24">
+    <title>Expand</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather-chevron-right">
+      <polyline points="9 18 15 12 9 6"></polyline>
+    </svg>
+  </symbol>
+  <symbol id="svg-sun" viewBox="0 0 24 24">
+    <title>Light mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="feather-sun">
+      <circle cx="12" cy="12" r="5"></circle>
+      <line x1="12" y1="1" x2="12" y2="3"></line>
+      <line x1="12" y1="21" x2="12" y2="23"></line>
+      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+      <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+      <line x1="1" y1="12" x2="3" y2="12"></line>
+      <line x1="21" y1="12" x2="23" y2="12"></line>
+      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+      <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+    </svg>
+  </symbol>
+  <symbol id="svg-moon" viewBox="0 0 24 24">
+    <title>Dark mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-moon">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M12 3c.132 0 .263 0 .393 0a7.5 7.5 0 0 0 7.92 12.446a9 9 0 1 1 -8.313 -12.454z" />
+    </svg>
+  </symbol>
+  <symbol id="svg-sun-with-moon" viewBox="0 0 24 24">
+    <title>Auto light/dark, in light mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+      class="icon-custom-derived-from-feather-sun-and-tabler-moon">
+      <path style="opacity: 50%" d="M 5.411 14.504 C 5.471 14.504 5.532 14.504 5.591 14.504 C 3.639 16.319 4.383 19.569 6.931 20.352 C 7.693 20.586 8.512 20.551 9.25 20.252 C 8.023 23.207 4.056 23.725 2.11 21.184 C 0.166 18.642 1.702 14.949 4.874 14.536 C 5.051 14.512 5.231 14.5 5.411 14.5 L 5.411 14.504 Z"/>
+      <line x1="14.5" y1="3.25" x2="14.5" y2="1.25"/>
+      <line x1="14.5" y1="15.85" x2="14.5" y2="17.85"/>
+      <line x1="10.044" y1="5.094" x2="8.63" y2="3.68"/>
+      <line x1="19" y1="14.05" x2="20.414" y2="15.464"/>
+      <line x1="8.2" y1="9.55" x2="6.2" y2="9.55"/>
+      <line x1="20.8" y1="9.55" x2="22.8" y2="9.55"/>
+      <line x1="10.044" y1="14.006" x2="8.63" y2="15.42"/>
+      <line x1="19" y1="5.05" x2="20.414" y2="3.636"/>
+      <circle cx="14.5" cy="9.55" r="3.6"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-moon-with-sun" viewBox="0 0 24 24">
+    <title>Auto light/dark, in dark mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+      class="icon-custom-derived-from-feather-sun-and-tabler-moon">
+      <path d="M 8.282 7.007 C 8.385 7.007 8.494 7.007 8.595 7.007 C 5.18 10.184 6.481 15.869 10.942 17.24 C 12.275 17.648 13.706 17.589 15 17.066 C 12.851 22.236 5.91 23.143 2.505 18.696 C -0.897 14.249 1.791 7.786 7.342 7.063 C 7.652 7.021 7.965 7 8.282 7 L 8.282 7.007 Z"/>
+      <line style="opacity: 50%" x1="18" y1="3.705" x2="18" y2="2.5"/>
+      <line style="opacity: 50%" x1="18" y1="11.295" x2="18" y2="12.5"/>
+      <line style="opacity: 50%" x1="15.316" y1="4.816" x2="14.464" y2="3.964"/>
+      <line style="opacity: 50%" x1="20.711" y1="10.212" x2="21.563" y2="11.063"/>
+      <line style="opacity: 50%" x1="14.205" y1="7.5" x2="13.001" y2="7.5"/>
+      <line style="opacity: 50%" x1="21.795" y1="7.5" x2="23" y2="7.5"/>
+      <line style="opacity: 50%" x1="15.316" y1="10.184" x2="14.464" y2="11.036"/>
+      <line style="opacity: 50%" x1="20.711" y1="4.789" x2="21.563" y2="3.937"/>
+      <circle style="opacity: 50%" cx="18" cy="7.5" r="2.169"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-pencil" viewBox="0 0 24 24">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-pencil-code">
+      <path d="M4 20h4l10.5 -10.5a2.828 2.828 0 1 0 -4 -4l-10.5 10.5v4" />
+      <path d="M13.5 6.5l4 4" />
+      <path d="M20 21l2 -2l-2 -2" />
+      <path d="M17 17l-2 2l2 2" />
+    </svg>
+  </symbol>
+  <symbol id="svg-eye" viewBox="0 0 24 24">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-eye-code">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M10 12a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" />
+      <path
+        d="M11.11 17.958c-3.209 -.307 -5.91 -2.293 -8.11 -5.958c2.4 -4 5.4 -6 9 -6c3.6 0 6.6 2 9 6c-.21 .352 -.427 .688 -.647 1.008" />
+      <path d="M20 21l2 -2l-2 -2" />
+      <path d="M17 17l-2 2l2 2" />
+    </svg>
+  </symbol>
+</svg>
+
+<input type="checkbox" class="sidebar-toggle" name="__navigation" id="__navigation">
+<input type="checkbox" class="sidebar-toggle" name="__toc" id="__toc">
+<label class="overlay sidebar-overlay" for="__navigation">
+  <div class="visually-hidden">Hide navigation sidebar</div>
+</label>
+<label class="overlay toc-overlay" for="__toc">
+  <div class="visually-hidden">Hide table of contents sidebar</div>
+</label>
+
+<a class="skip-to-content muted-link" href="#furo-main-content">Skip to content</a>
+
+
+
+<div class="page">
+  <header class="mobile-header">
+    <div class="header-left">
+      <label class="nav-overlay-icon" for="__navigation">
+        <div class="visually-hidden">Toggle site navigation sidebar</div>
+        <i class="icon"><svg><use href="#svg-menu"></use></svg></i>
+      </label>
+    </div>
+    <div class="header-center">
+      <a href="../../../../../index.html"><div class="brand">Poriscope 2.0.1 documentation</div></a>
+    </div>
+    <div class="header-right">
+      <div class="theme-toggle-container theme-toggle-header">
+        <button class="theme-toggle">
+          <div class="visually-hidden">Toggle Light / Dark / Auto color theme</div>
+          <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+          <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+          <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+          <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+        </button>
+      </div>
+      <label class="toc-overlay-icon toc-header-icon" for="__toc">
+        <div class="visually-hidden">Toggle table of contents sidebar</div>
+        <i class="icon"><svg><use href="#svg-toc"></use></svg></i>
+      </label>
+    </div>
+  </header>
+  <aside class="sidebar-drawer">
+    <div class="sidebar-container">
+      
+      <div class="sidebar-sticky"><a class="sidebar-brand" href="../../../../../index.html">
+  
+  
+  <span class="sidebar-brand-text">Poriscope 2.0.1 documentation</span>
+  
+</a><form class="sidebar-search-container" method="get" action="../../../../../search.html" role="search">
+  <input class="sidebar-search" placeholder="Search" name="q" aria-label="Search">
+  <input type="hidden" name="check_keywords" value="yes">
+  <input type="hidden" name="area" value="default">
+</form>
+<div id="searchbox"></div><div class="sidebar-scroll"><div class="sidebar-tree">
+  <p class="caption" role="heading"><span class="caption-text">User Manuals:</span></p>
+<ul class="current">
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../user_guide/index.html">User Guide</a><input class="toctree-checkbox" id="toctree-checkbox-1" name="toctree-checkbox-1" role="switch" type="checkbox"/><label for="toctree-checkbox-1"><div class="visually-hidden">Toggle navigation of User Guide</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../user_guide/getting_started.html">Getting Started</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../user_guide/user_installation.html">User Installation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../user_guide/workflow_overview.html">Workflow Overview</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../user_guide/tutorial.html">Tutorial and Documentation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../user_guide/raw_data_tab.html">Raw Data Tab</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../user_guide/event_analysis_tab.html">Event Analysis Tab</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../user_guide/metadata_tab.html">MetaData Tab</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../user_guide/clustering_tab.html">Clustering Tab</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../user_guide/protein_tab.html">Protein Tab</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../user_guide/settings.html">Settings Tab</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../user_guide/menus_and_sessions.html">Menus and Session Management</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../user_guide/scripting.html">Scripting with Poriscope</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../user_guide/filtering_and_querying.html">Filtering and Querying</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../user_guide/running_software.html">Running the Software</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../user_guide/faq.html">FAQ</a></li>
+</ul>
+</li>
+<li class="toctree-l1 current has-children"><a class="reference internal" href="../../plugin_manual_index.html">Developer Guide</a><input checked="" class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" role="switch" type="checkbox"/><label for="toctree-checkbox-2"><div class="visually-hidden">Toggle navigation of Developer Guide</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="../../getting_started.html">Getting Started</a></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../system_architecture/index.html">System Architecture</a><input class="toctree-checkbox" id="toctree-checkbox-3" name="toctree-checkbox-3" role="switch" type="checkbox"/><label for="toctree-checkbox-3"><div class="visually-hidden">Toggle navigation of System Architecture</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../system_architecture/mainview_overview.html">MainView Overview</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../system_architecture/mainmodel_overview.html">MainModel Overview</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../system_architecture/maincontroller_overview.html">MainController Overview</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../MainMVC/MainView.html">MainView</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../MainMVC/MainModel.html">MainModel</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../MainMVC/MainController.html">MainController</a></li>
+</ul>
+</li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../development_workflow/index.html">Development Workflow</a><input class="toctree-checkbox" id="toctree-checkbox-4" name="toctree-checkbox-4" role="switch" type="checkbox"/><label for="toctree-checkbox-4"><div class="visually-hidden">Toggle navigation of Development Workflow</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../development_workflow/developer_setup.html">Developer Setup and Hook Installation</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../development_workflow/quality_control.html">Quality Control and Developer Workflow</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../development_workflow/post_merge_automation.html">Post-merge Automation</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../development_workflow/code_ownership.html">Code Ownership</a></li>
+</ul>
+</li>
+<li class="toctree-l2 current has-children"><a class="reference internal" href="../index.html">Plugin Development</a><input checked="" class="toctree-checkbox" id="toctree-checkbox-5" name="toctree-checkbox-5" role="switch" type="checkbox"/><label for="toctree-checkbox-5"><div class="visually-hidden">Toggle navigation of Plugin Development</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul class="current">
+<li class="toctree-l3 has-children"><a class="reference internal" href="../where_to_begin/index.html">Where to Begin</a><input class="toctree-checkbox" id="toctree-checkbox-6" name="toctree-checkbox-6" role="switch" type="checkbox"/><label for="toctree-checkbox-6"><div class="visually-hidden">Toggle navigation of Where to Begin</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l4"><a class="reference internal" href="../where_to_begin/where_to_begin.html">Where to Begin</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../where_to_begin/understanding_base_classes.html">Understanding Base Classes</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../where_to_begin/understanding_signals.html">Understanding Signals</a></li>
+</ul>
+</li>
+<li class="toctree-l3 current has-children"><a class="reference internal" href="frontend_plugin_manual_index.html">Frontend Plugin Development</a><input checked="" class="toctree-checkbox" id="toctree-checkbox-7" name="toctree-checkbox-7" role="switch" type="checkbox"/><label for="toctree-checkbox-7"><div class="visually-hidden">Toggle navigation of Frontend Plugin Development</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul class="current">
+<li class="toctree-l4 has-children"><a class="reference internal" href="ready_to_build/index.html">Ready to Build Your Own Plugin?</a><input class="toctree-checkbox" id="toctree-checkbox-8" name="toctree-checkbox-8" role="switch" type="checkbox"/><label for="toctree-checkbox-8"><div class="visually-hidden">Toggle navigation of Ready to Build Your Own Plugin?</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l5"><a class="reference internal" href="ready_to_build/choosing_a_base.html">Choosing What to Inherit From</a></li>
+<li class="toctree-l5"><a class="reference internal" href="ready_to_build/metaview_base.html">MetaView as a Base Class</a></li>
+<li class="toctree-l5"><a class="reference internal" href="ready_to_build/metamodel_base.html">MetaModel as a Base Class</a></li>
+<li class="toctree-l5"><a class="reference internal" href="ready_to_build/metacontroller_base.html">MetaController as a Base Class</a></li>
+</ul>
+</li>
+<li class="toctree-l4 current current-page"><a class="current reference internal" href="#">Keeping It Minimal: HelloWorld Tutorial</a></li>
+<li class="toctree-l4 has-children"><a class="reference internal" href="simpleCalc/from_helloworld_to_full_mvc.html">From HelloWorld to a Full MVC Analysis Tab</a><input class="toctree-checkbox" id="toctree-checkbox-9" name="toctree-checkbox-9" role="switch" type="checkbox"/><label for="toctree-checkbox-9"><div class="visually-hidden">Toggle navigation of From HelloWorld to a Full MVC Analysis Tab</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l5"><a class="reference internal" href="simpleCalc/simpleCalc_code.html">SimpleCalc Full Code Example</a></li>
+</ul>
+</li>
+<li class="toctree-l4 has-children"><a class="reference internal" href="next_steps/index.html">What’s next ?</a><input class="toctree-checkbox" id="toctree-checkbox-10" name="toctree-checkbox-10" role="switch" type="checkbox"/><label for="toctree-checkbox-10"><div class="visually-hidden">Toggle navigation of What’s next ?</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l5"><a class="reference internal" href="next_steps/adding_walkthrough.html">Adding a Walkthrough to Your Custom MVC Plugin</a></li>
+<li class="toctree-l5"><a class="reference internal" href="next_steps/walkthrough_mixin.html">WalkthroughMixin</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="../backend_plugin/backend_plugin_manual_index.html">Backend Plugin Development</a><input class="toctree-checkbox" id="toctree-checkbox-11" name="toctree-checkbox-11" role="switch" type="checkbox"/><label for="toctree-checkbox-11"><div class="visually-hidden">Toggle navigation of Backend Plugin Development</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l4 has-children"><a class="reference internal" href="../backend_plugin/ready_to_build/index.html">Ready to Build Your Own Data Plugin?</a><input class="toctree-checkbox" id="toctree-checkbox-12" name="toctree-checkbox-12" role="switch" type="checkbox"/><label for="toctree-checkbox-12"><div class="visually-hidden">Toggle navigation of Ready to Build Your Own Data Plugin?</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l5"><a class="reference internal" href="../backend_plugin/ready_to_build/base_data_plugin.html">Base Data Plugin</a></li>
+<li class="toctree-l5"><a class="reference internal" href="../backend_plugin/ready_to_build/meta_reader.html">Build a MetaReader subclass</a></li>
+<li class="toctree-l5"><a class="reference internal" href="../backend_plugin/ready_to_build/meta_filter.html">Building a MetaFilter subclass</a></li>
+<li class="toctree-l5"><a class="reference internal" href="../backend_plugin/ready_to_build/meta_event_finder.html">Building a MetaEventFinder subclass</a></li>
+<li class="toctree-l5"><a class="reference internal" href="../backend_plugin/ready_to_build/meta_event_writer.html">Building a MetaWriter subclass</a></li>
+<li class="toctree-l5"><a class="reference internal" href="../backend_plugin/ready_to_build/meta_event_loader.html">Build a MetaEventLoader subclass</a></li>
+<li class="toctree-l5"><a class="reference internal" href="../backend_plugin/ready_to_build/meta_event_fitter.html">Build a MetaEventFitter subclass</a></li>
+<li class="toctree-l5"><a class="reference internal" href="../backend_plugin/ready_to_build/meta_database_writer.html">Build a MetaDatabaseWriter subclass</a></li>
+<li class="toctree-l5"><a class="reference internal" href="../backend_plugin/ready_to_build/meta_database_loader.html">Build a MetaDatabaseLoader subclass</a></li>
+<li class="toctree-l5"><a class="reference internal" href="../backend_plugin/ready_to_build/serial_channel_operations.html">Thread Safety and Serial Channel Operations</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Base Classes:</span></p>
+<ul>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../../../autodoc/metaclasses/metaclasses_index.html">Abstract Base Classes</a><input class="toctree-checkbox" id="toctree-checkbox-13" name="toctree-checkbox-13" role="switch" type="checkbox"/><label for="toctree-checkbox-13"><div class="visually-hidden">Toggle navigation of Abstract Base Classes</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../../../../autodoc/metaclasses/basedataplugin.html">BaseDataPlugin</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../../../autodoc/metaclasses/metacontroller.html">MetaController</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../../../autodoc/metaclasses/metacontrols.html">MetaControls</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../../../autodoc/metaclasses/metadatabaseloader.html">MetaDatabaseLoader</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../../../autodoc/metaclasses/metadatabasewriter.html">MetaDatabaseWriter</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../../../autodoc/metaclasses/metaeventfinder.html">MetaEventFinder</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../../../autodoc/metaclasses/metaeventfitter.html">MetaEventFitter</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../../../autodoc/metaclasses/metaeventloader.html">MetaEventLoader</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../../../autodoc/metaclasses/metaeventtabcontroller.html">MetaEventTabController</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../../../autodoc/metaclasses/metaeventtabcontrols.html">MetaEventTabControls</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../../../autodoc/metaclasses/metaeventtabview.html">MetaEventTabView</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../../../autodoc/metaclasses/metafilter.html">MetaFilter</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../../../autodoc/metaclasses/metamodel.html">MetaModel</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../../../autodoc/metaclasses/metareader.html">MetaReader</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../../../autodoc/metaclasses/metasubsettabcontroller.html">MetaSubsetTabController</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../../../autodoc/metaclasses/metasubsettabcontrols.html">MetaSubsetTabControls</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../../../autodoc/metaclasses/metasubsettabmodel.html">MetaSubsetTabModel</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../../../autodoc/metaclasses/metasubsettabview.html">MetaSubsetTabView</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../../../autodoc/metaclasses/metaview.html">MetaView</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../../../autodoc/metaclasses/metawriter.html">MetaWriter</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../../../autodoc/metaclasses/qthandler.html">QtHandler</a></li>
+</ul>
+</li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Plugins:</span></p>
+<ul>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../../../../autodoc/plugins/plugins_index.html">Plugins</a><input class="toctree-checkbox" id="toctree-checkbox-14" name="toctree-checkbox-14" role="switch" type="checkbox"/><label for="toctree-checkbox-14"><div class="visually-hidden">Toggle navigation of Plugins</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../../../autodoc/plugins/analysistabs/analysistabs.html">Analysistabs</a><input class="toctree-checkbox" id="toctree-checkbox-15" name="toctree-checkbox-15" role="switch" type="checkbox"/><label for="toctree-checkbox-15"><div class="visually-hidden">Toggle navigation of Analysistabs</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../../../autodoc/plugins/analysistabs/clusteringview.html">ClusteringView</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../../autodoc/plugins/analysistabs/eventanalysisview.html">EventAnalysisView</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../../autodoc/plugins/analysistabs/clusteringmodel.html">ClusteringModel</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../../autodoc/plugins/analysistabs/metadatacontroller.html">MetadataController</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../../autodoc/plugins/analysistabs/rawdatacontroller.html">RawDataController</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../../autodoc/plugins/analysistabs/metadataview.html">MetadataView</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../../autodoc/plugins/analysistabs/proteinview.html">ProteinView</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../../autodoc/plugins/analysistabs/metadatamodel.html">MetadataModel</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../../autodoc/plugins/analysistabs/proteinmodel.html">ProteinModel</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../../autodoc/plugins/analysistabs/eventanalysiscontroller.html">EventAnalysisController</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../../autodoc/plugins/analysistabs/rawdataview.html">RawDataView</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../../autodoc/plugins/analysistabs/eventanalysismodel.html">EventAnalysisModel</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../../autodoc/plugins/analysistabs/clusteringcontroller.html">ClusteringController</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../../autodoc/plugins/analysistabs/proteincontroller.html">ProteinController</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../../autodoc/plugins/analysistabs/rawdatamodel.html">RawDataModel</a></li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="../../../../../autodoc/plugins/analysistabs/utils/utils_index.html">Utils</a><input class="toctree-checkbox" id="toctree-checkbox-16" name="toctree-checkbox-16" role="switch" type="checkbox"/><label for="toctree-checkbox-16"><div class="visually-hidden">Toggle navigation of Utils</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l4"><a class="reference internal" href="../../../../../autodoc/plugins/analysistabs/utils/eventanalysiscontrols.html">EventAnalysisControls</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../../../autodoc/plugins/analysistabs/utils/rawdatacontrols.html">RawDataControls</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../../../autodoc/plugins/analysistabs/utils/clusteringcontrols.html">ClusteringControls</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../../../autodoc/plugins/analysistabs/utils/metadatacontrols.html">MetadataControls</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../../../../autodoc/plugins/analysistabs/utils/proteincontrols.html">ProteinControls</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../../../autodoc/plugins/datareaders/datareaders.html">Datareaders</a><input class="toctree-checkbox" id="toctree-checkbox-17" name="toctree-checkbox-17" role="switch" type="checkbox"/><label for="toctree-checkbox-17"><div class="visually-hidden">Toggle navigation of Datareaders</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../../../autodoc/plugins/datareaders/binaryreader1x.html">BinaryReader1X</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../../autodoc/plugins/datareaders/chimerareader20240101.html">ChimeraReader20240101</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../../autodoc/plugins/datareaders/chimerareader20240501.html">ChimeraReader20240501</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../../autodoc/plugins/datareaders/tcossalababfreader.html">TCossaLabABFReader</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../../autodoc/plugins/datareaders/legacyelementsreader.html">LegacyElementsReader</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../../autodoc/plugins/datareaders/chimerareadervc100.html">ChimeraReaderVC100</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../../autodoc/plugins/datareaders/singlebinarydecoder.html">SingleBinaryDecoder</a></li>
+</ul>
+</li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../../../autodoc/plugins/datawriters/datawriters.html">Datawriters</a><input class="toctree-checkbox" id="toctree-checkbox-18" name="toctree-checkbox-18" role="switch" type="checkbox"/><label for="toctree-checkbox-18"><div class="visually-hidden">Toggle navigation of Datawriters</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../../../autodoc/plugins/datawriters/sqliteeventwriter.html">SQLiteEventWriter</a></li>
+</ul>
+</li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../../../autodoc/plugins/db_loaders/db_loaders.html">Db Loaders</a><input class="toctree-checkbox" id="toctree-checkbox-19" name="toctree-checkbox-19" role="switch" type="checkbox"/><label for="toctree-checkbox-19"><div class="visually-hidden">Toggle navigation of Db Loaders</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../../../autodoc/plugins/db_loaders/sqlitedbloader.html">SQLiteDBLoader</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../../autodoc/plugins/db_loaders/sqlitepeakdbloader.html">SQLitePeakDBLoader</a></li>
+</ul>
+</li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../../../autodoc/plugins/dbwriters/dbwriters.html">Dbwriters</a><input class="toctree-checkbox" id="toctree-checkbox-20" name="toctree-checkbox-20" role="switch" type="checkbox"/><label for="toctree-checkbox-20"><div class="visually-hidden">Toggle navigation of Dbwriters</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../../../autodoc/plugins/dbwriters/sqlitedbwriter.html">SQLiteDBWriter</a></li>
+</ul>
+</li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../../../autodoc/plugins/eventfinders/eventfinders.html">Eventfinders</a><input class="toctree-checkbox" id="toctree-checkbox-21" name="toctree-checkbox-21" role="switch" type="checkbox"/><label for="toctree-checkbox-21"><div class="visually-hidden">Toggle navigation of Eventfinders</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../../../autodoc/plugins/eventfinders/thresholdblockagefinder.html">ThresholdBlockageFinder</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../../autodoc/plugins/eventfinders/classicblockagefinder.html">ClassicBlockageFinder</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../../autodoc/plugins/eventfinders/boundedblockagefinder.html">BoundedBlockageFinder</a></li>
+</ul>
+</li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../../../autodoc/plugins/eventfitters/eventfitters.html">Eventfitters</a><input class="toctree-checkbox" id="toctree-checkbox-22" name="toctree-checkbox-22" role="switch" type="checkbox"/><label for="toctree-checkbox-22"><div class="visually-hidden">Toggle navigation of Eventfitters</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../../../autodoc/plugins/eventfitters/nofitter.html">NoFitter</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../../autodoc/plugins/eventfitters/classiccusum.html">ClassicCUSUM</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../../autodoc/plugins/eventfitters/peakfinder.html">PeakFinder</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../../autodoc/plugins/eventfitters/basic_peakfinder.html">Basic_PeakFinder</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../../autodoc/plugins/eventfitters/p6flags.html">P6Flags</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../../autodoc/plugins/eventfitters/singlesublevel.html">SingleSublevel</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../../autodoc/plugins/eventfitters/hackylist.html">HackyList</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../../autodoc/plugins/eventfitters/sublevels.html">Sublevels</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../../autodoc/plugins/eventfitters/nanotrees.html">NanoTrees</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../../autodoc/plugins/eventfitters/intracusum.html">IntraCUSUM</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../../autodoc/plugins/eventfitters/cusum.html">CUSUM</a></li>
+</ul>
+</li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../../../autodoc/plugins/eventloaders/eventloaders.html">Eventloaders</a><input class="toctree-checkbox" id="toctree-checkbox-23" name="toctree-checkbox-23" role="switch" type="checkbox"/><label for="toctree-checkbox-23"><div class="visually-hidden">Toggle navigation of Eventloaders</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../../../autodoc/plugins/eventloaders/sqliteeventloader.html">SQLiteEventLoader</a></li>
+</ul>
+</li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../../../../autodoc/plugins/filters/filters.html">Filters</a><input class="toctree-checkbox" id="toctree-checkbox-24" name="toctree-checkbox-24" role="switch" type="checkbox"/><label for="toctree-checkbox-24"><div class="visually-hidden">Toggle navigation of Filters</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../../../../autodoc/plugins/filters/besselfilter.html">BesselFilter</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../../../../autodoc/plugins/filters/waveletfilter.html">WaveletFilter</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Signals:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../signals/calling_a_plugin/calling_a_plugin.html">Calling a Data Plugin</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../signals/global_signal/global_signal.html">Global Signal (removed)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../signals/data_plugin_controller_signal/data_plugin_controller_signal.html">Data Plugin Controller Signal (replaced)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../signals/which_one_to_use/which_one_to_use.html">Which to use</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Logging Decorators:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../loggers_index.html">Logging</a></li>
+</ul>
+
+</div>
+</div>
+
+      </div>
+      
+    </div>
+  </aside>
+  <div class="main">
+    <div class="content">
+      <div class="article-container">
+        <a href="#" class="back-to-top muted-link">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+            <path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8v12z"></path>
+          </svg>
+          <span>Back to top</span>
+        </a>
+        <div class="content-icon-container">
+          <div class="view-this-page">
+  <a class="muted-link" href="../../../../../_sources/utils/user_manuals/plugins_manual/plugin_development/frontend_plugin/hello_world_tutorial.rst.txt" title="View this page">
+    <svg><use href="#svg-eye"></use></svg>
+    <span class="visually-hidden">View this page</span>
+  </a>
+</div>
+<div class="theme-toggle-container theme-toggle-content">
+            <button class="theme-toggle">
+              <div class="visually-hidden">Toggle Light / Dark / Auto color theme</div>
+              <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+              <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+              <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+              <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+            </button>
+          </div>
+          <label class="toc-overlay-icon toc-content-icon" for="__toc">
+            <div class="visually-hidden">Toggle table of contents sidebar</div>
+            <i class="icon"><svg><use href="#svg-toc"></use></svg></i>
+          </label>
+        </div>
+        <article role="main" id="furo-main-content">
+          <section id="keeping-it-minimal-helloworld-tutorial">
+<span id="helloworld"></span><h1>Keeping It Minimal: HelloWorld Tutorial<a class="headerlink" href="#keeping-it-minimal-helloworld-tutorial" title="Link to this heading">¶</a></h1>
+<p>If you just want to get started and make sure everything works, the <a class="reference internal" href="#helloworld"><span class="std std-ref">Keeping It Minimal: HelloWorld Tutorial</span></a> tab is
+a good place to begin. It is the smallest analysis tab that is still a <em>real</em> one: it loads,
+it appears in the Analysis menu, it draws a plot canvas, and its single button travels the
+whole path a real control takes and reports that it got there.</p>
+<p>You do not write it. <code class="docutils literal notranslate"><span class="pre">scripts/new_plugin.py</span></code> does:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>python<span class="w"> </span>scripts/new_plugin.py<span class="w"> </span>AnalysisTab<span class="w"> </span>HelloWorld<span class="w"> </span>--user
+</pre></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">--user</span></code> writes into your user plugin folder, so nothing lands in the repository and you
+can delete it afterwards by deleting four files. Restart Poriscope and
+<code class="docutils literal notranslate"><span class="pre">HelloWorldController</span></code> is in the Analysis menu.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Every code block on this page is included directly from the files the generator writes,
+which live at <code class="docutils literal notranslate"><span class="pre">docs/source/_static/examples/analysis_tabs/</span></code>. They are the real output,
+checked by the same <code class="docutils literal notranslate"><span class="pre">black</span></code> and <code class="docutils literal notranslate"><span class="pre">ruff</span></code> runs as the rest of the repository. Nothing
+regenerates them automatically, so when the generator changes, rewrite them with
+<code class="docutils literal notranslate"><span class="pre">python</span> <span class="pre">scripts/new_plugin.py</span> <span class="pre">AnalysisTab</span> <span class="pre">HelloWorld</span> <span class="pre">--output-dir</span>
+<span class="pre">docs/source/_static/examples/analysis_tabs</span> <span class="pre">--author</span> <span class="pre">&quot;Poriscope</span> <span class="pre">contributors&quot;</span></code>.</p>
+</div>
+<section id="what-you-get">
+<h2>What You Get<a class="headerlink" href="#what-you-get" title="Link to this heading">¶</a></h2>
+<p>Four files. The first three are the MVC triad described in <a class="reference internal" href="ready_to_build/index.html#build-frontend-plugin"><span class="std std-ref">Ready to Build Your Own Plugin?</span></a>; the
+fourth is the panel of controls that sits under the plot.</p>
+<div class="table-wrapper colwidths-given docutils container">
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 30.0%" />
+<col style="width: 70.0%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>File</p></th>
+<th class="head"><p>What it is for</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">HelloWorldController.py</span></code></p></td>
+<td><p>Owns the tab. The only one of the four Poriscope instantiates directly.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">HelloWorldModel.py</span></code></p></td>
+<td><p>Holds the tab’s data and does its computation. Empty here — there is none yet.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">HelloWorldView.py</span></code></p></td>
+<td><p>Lays out the widgets and draws the plot.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">HelloWorldControls.py</span></code></p></td>
+<td><p>The controls panel: the widgets a user actually operates.</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Every method carries the docstring copied out of the base class that declares it, so the
+contract you have to satisfy is in front of you rather than in another file.</p>
+</section>
+<section id="the-controller">
+<h2>The Controller<a class="headerlink" href="#the-controller" title="Link to this heading">¶</a></h2>
+<p>The Controller is the file to open first, because it names the other two thirds of the
+triad. <code class="docutils literal notranslate"><span class="pre">_init</span></code> is written for you rather than left as a <code class="docutils literal notranslate"><span class="pre">#</span> <span class="pre">TODO</span></code>: <code class="docutils literal notranslate"><span class="pre">MetaController</span></code>
+connects the View and the Model to each other the instant <code class="docutils literal notranslate"><span class="pre">_init</span></code> returns, so a tab that
+does not build them both cannot be constructed at all.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="nd">@inherit_docstrings</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">HelloWorldController</span><span class="p">(</span><span class="n">MetaController</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    TODO: describe what the HelloWorld tab does.</span>
+
+<span class="sd">    This is its Controller, which owns the tab's logic and connects its View to its Model.</span>
+<span class="sd">    """</span>
+
+    <span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span>
+
+    <span class="c1"># private API, must be implemented by subclasses</span>
+    <span class="nd">@log</span><span class="p">(</span><span class="n">logger</span><span class="o">=</span><span class="n">logger</span><span class="p">)</span>
+    <span class="nd">@override</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_init</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Build this tab's View and Model, and do any other setup the tab needs.</span>
+
+<span class="sd">        Assigning both ``self.view`` and ``self.model`` is required rather than</span>
+<span class="sd">        conventional: the constructor calls this and then immediately connects the two to</span>
+<span class="sd">        each other, so leaving either unset raises ``AttributeError`` before the tab</span>
+<span class="sd">        exists. kwargs given to the base constructor are available as attributes by the</span>
+<span class="sd">        time this runs.</span>
+<span class="sd">        """</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">view</span> <span class="o">=</span> <span class="n">HelloWorldView</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">model</span> <span class="o">=</span> <span class="n">HelloWorldModel</span><span class="p">()</span>
+
+    <span class="nd">@log</span><span class="p">(</span><span class="n">logger</span><span class="o">=</span><span class="n">logger</span><span class="p">)</span>
+    <span class="nd">@override</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_setup_connections</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Set up any local connections between the subordinate view and model</span>
+<span class="sd">        """</span>
+        <span class="c1"># TODO: implement _setup_connections</span>
+        <span class="k">pass</span>
+</pre></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">_setup_connections</span></code> is where your View’s own signals meet your Controller’s slots. It is
+empty here because this tab has no logic to connect yet.</p>
+</section>
+<section id="the-view">
+<h2>The View<a class="headerlink" href="#the-view" title="Link to this heading">¶</a></h2>
+<p>Two of the View’s methods are written out rather than stubbed. The first is
+<code class="docutils literal notranslate"><span class="pre">_build_controls</span></code>, which hands your controls panel back to the base — the base then wires
+its four signals and places it for you:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span>    <span class="nd">@log</span><span class="p">(</span><span class="n">logger</span><span class="o">=</span><span class="n">logger</span><span class="p">)</span>
+    <span class="nd">@override</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_build_controls</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">MetaControls</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Build this tab's controls panel and return it.</span>
+
+<span class="sd">        The subclass also stores it under whatever name the rest of that tab uses -</span>
+<span class="sd">        ``self.metadatacontrols``, ``self.rawdatacontrols`` and so on - because those</span>
+<span class="sd">        names appear throughout each tab and in its saved action history. This hook</span>
+<span class="sd">        only has to hand the widget back, so the base can wire it and place it.</span>
+
+<span class="sd">        Concrete rather than abstract, returning an empty panel, so that a tab which</span>
+<span class="sd">        lays out its own control area can override ``_set_control_area`` instead and</span>
+<span class="sd">        never implement this. Making it abstract would leave such a tab uninstantiable.</span>
+
+<span class="sd">        Being concrete is also why ``scripts/new_plugin.py`` writes an override rather</span>
+<span class="sd">        than leaving it to be discovered: the default is legal and constructs fine, so a</span>
+<span class="sd">        tab that does not override it simply shows an empty strip under its plot with</span>
+<span class="sd">        nothing to say which method fills it.</span>
+
+<span class="sd">        :return: the tab's controls panel</span>
+<span class="sd">        :rtype: MetaControls</span>
+<span class="sd">        """</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">helloworldcontrols</span> <span class="o">=</span> <span class="n">HelloWorldControls</span><span class="p">()</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">helloworldcontrols</span>
+</pre></div>
+</div>
+<p>The second is <code class="docutils literal notranslate"><span class="pre">handle_parameter_change</span></code>, which is where a control action arrives. Every
+shipped tab writes it the same way — read <code class="docutils literal notranslate"><span class="pre">args[0]</span></code> into <code class="docutils literal notranslate"><span class="pre">parameters</span></code>, then branch on
+<code class="docutils literal notranslate"><span class="pre">action_name</span></code> — and the generated one has a single branch matching the single action the
+panel emits:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span>    <span class="nd">@log</span><span class="p">(</span><span class="n">logger</span><span class="o">=</span><span class="n">logger</span><span class="p">)</span>
+    <span class="nd">@override</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">handle_parameter_change</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">submodel_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">action_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">args</span><span class="p">:</span> <span class="nb">tuple</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        React to an action the tab's controls panel has emitted.</span>
+
+<span class="sd">        Abstract because ``_set_control_area`` connects the panel's ``actionTriggered``</span>
+<span class="sd">        signal straight to it while the View is still being constructed, so a tab that</span>
+<span class="sd">        does not provide it raises ``AttributeError`` out of ``__init__`` before it can</span>
+<span class="sd">        ever be shown. Declaring it here is what turns that into a refusal to define the</span>
+<span class="sd">        class at all, which is the only form of the failure that names the cause. The</span>
+<span class="sd">        three sibling handlers ``_set_control_area`` connects beside it -</span>
+<span class="sd">        ``handle_edit_triggered``, ``handle_add_triggered`` and ``handle_delete_triggered``</span>
+<span class="sd">        - are concrete on this class and need no implementation.</span>
+
+<span class="sd">        A tab that lays out its own control area by overriding ``_set_control_area``</span>
+<span class="sd">        never has this connected, and may implement it as a no-op.</span>
+
+<span class="sd">        :param submodel_name: Name of the controls submodel the action came from.</span>
+<span class="sd">        :type submodel_name: str</span>
+<span class="sd">        :param action_name: Identifier of the action to perform.</span>
+<span class="sd">        :type action_name: str</span>
+<span class="sd">        :param args: The action's arguments, as the controls panel packed them.</span>
+<span class="sd">        :type args: tuple</span>
+<span class="sd">        :return: None</span>
+<span class="sd">        :rtype: None</span>
+<span class="sd">        """</span>
+        <span class="n">parameters</span> <span class="o">=</span> <span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="c1"># TODO: one branch per action name your controls panel emits</span>
+        <span class="k">if</span> <span class="n">action_name</span> <span class="o">==</span> <span class="s2">"do_something"</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">add_text_to_display</span><span class="o">.</span><span class="n">emit</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">"HelloWorld received </span><span class="si">{</span><span class="n">action_name</span><span class="si">}</span><span class="s2"> carrying </span><span class="si">{</span><span class="n">parameters</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__name__</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">"HelloWorldView has no handler for the action </span><span class="si">{</span><span class="n">action_name</span><span class="si">!r}</span><span class="s2">"</span>
+            <span class="p">)</span>
+</pre></div>
+</div>
+<p>The <code class="docutils literal notranslate"><span class="pre">else</span></code> matters more than it looks. Renaming an action in the panel and forgetting to
+rename it here is the one mistake this dispatch shape invites, and without the <code class="docutils literal notranslate"><span class="pre">else</span></code> the
+press would simply do nothing.</p>
+<p>The remaining View methods — <code class="docutils literal notranslate"><span class="pre">_init</span></code>, <code class="docutils literal notranslate"><span class="pre">_reset_actions</span></code>, <code class="docutils literal notranslate"><span class="pre">update_available_plugins</span></code> and
+<code class="docutils literal notranslate"><span class="pre">notify_plugin_state_changed</span></code> — are stubs marked <code class="docutils literal notranslate"><span class="pre">#</span> <span class="pre">TODO</span></code>, each carrying the contract it
+has to satisfy. See <a class="reference internal" href="ready_to_build/metaview_base.html"><span class="doc">MetaView as a Base Class</span></a> for what each one is for.</p>
+</section>
+<section id="the-controls-panel">
+<h2>The controls panel<a class="headerlink" href="#the-controls-panel" title="Link to this heading">¶</a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">HelloWorldControls</span></code> is the one generated file that is not copied out of a base class.
+<code class="docutils literal notranslate"><span class="pre">MetaControls</span></code> is a plain <code class="docutils literal notranslate"><span class="pre">QWidget</span></code> that gives you widget factories and signals but
+declares none of the methods it expects you to write, so the generator writes them out:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span>    <span class="k">def</span><span class="w"> </span><span class="nf">setupUi</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Lay out this panel's widgets.</span>
+
+<span class="sd">        The base builds the plain ones for you with the font and sizing already applied:</span>
+<span class="sd">        ``createLabel``, ``create_comboBox`` and ``createButton``, plus</span>
+<span class="sd">        ``create_info_button``, ``create_add_button`` and ``create_delete_button`` for the</span>
+<span class="sd">        pencil, plus and trash buttons that sit beside a plugin combobox.</span>
+<span class="sd">        """</span>
+        <span class="c1"># TODO: replace this button with the controls your tab needs</span>
+        <span class="n">layout</span> <span class="o">=</span> <span class="n">QVBoxLayout</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">helloworld_button</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">createButton</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">"DO SOMETHING"</span><span class="p">)</span>
+        <span class="n">layout</span><span class="o">.</span><span class="n">addWidget</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">helloworld_button</span><span class="p">)</span>
+</pre></div>
+</div>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span>    <span class="k">def</span><span class="w"> </span><span class="nf">_on_action_requested</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Turn a button press into a request for the tab's Controller.</span>
+
+<span class="sd">        ``actionTriggered`` is the signal that carries work out of this panel.</span>
+<span class="sd">        ``MetaView._set_control_area`` connects it to the View's</span>
+<span class="sd">        ``handle_parameter_change``, so the action name given here is the string that</span>
+<span class="sd">        method has to recognise.</span>
+<span class="sd">        """</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">actionTriggered</span><span class="o">.</span><span class="n">emit</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__name__</span><span class="p">,</span> <span class="s2">"do_something"</span><span class="p">,</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">collect_parameters</span><span class="p">(),)</span>
+        <span class="p">)</span>
+</pre></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">actionTriggered</span></code> is the signal that carries work out of the panel, and
+<code class="docutils literal notranslate"><span class="pre">MetaView._set_control_area</span></code> has already connected it to your View’s
+<code class="docutils literal notranslate"><span class="pre">handle_parameter_change</span></code>. That connection is the one link in the chain you do not write.</p>
+</section>
+<section id="what-you-ll-see">
+<h2>What You’ll See<a class="headerlink" href="#what-you-ll-see" title="Link to this heading">¶</a></h2>
+<figure class="align-center" id="id1">
+<a class="reference internal image-reference" href="../../../../../_images/HelloWorldInAnalysisMenu.png"><img alt="Hello World Tab appears as an option in the analysis menu" src="../../../../../_images/HelloWorldInAnalysisMenu.png" style="width: 1000px;" />
+</a>
+<figcaption>
+<p><span class="caption-text"><strong>HelloWorld in the Analysis Menu</strong> — once the plugin is loaded, it appears as a
+selectable tab in the analysis menu.</span><a class="headerlink" href="#id1" title="Link to this image">¶</a></p>
+</figcaption>
+</figure>
+<p>Open it and you get this:</p>
+<figure class="align-center" id="id2">
+<a class="reference internal image-reference" href="../../../../../_images/HelloWorldShowing.png"><img alt="The generated HelloWorld tab, showing an empty plot canvas above a single button" src="../../../../../_images/HelloWorldShowing.png" style="width: 1000px;" />
+</a>
+<figcaption>
+<p><span class="caption-text"><strong>The generated tab, before you have edited anything</strong> — an empty plot canvas with its
+navigation toolbar, and the controls panel beneath holding the one generated button.</span><a class="headerlink" href="#id2" title="Link to this image">¶</a></p>
+</figcaption>
+</figure>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>The Analysis menu lists the <strong>Controller</strong> name, <code class="docutils literal notranslate"><span class="pre">HelloWorldController</span></code>, because that
+is the class Poriscope instantiates. The tab’s own header reads <code class="docutils literal notranslate"><span class="pre">HelloWorldView</span></code>,
+because the header is the name of the widget the Controller built. Same tab, two names,
+and it is worth knowing which is which before you go looking for one of them.</p>
+</div>
+<p>Now press <strong>DO SOMETHING</strong>. A line appears on the status panel naming the action and the
+(empty) parameters that came with it.</p>
+<p>That message is the point of the whole example. It means the panel was built, the base
+connected it, the signal carried, your View’s handler ran, and the message it emitted was
+relayed all the way back to the shell. Every one of those links is working before you have
+edited a line.</p>
+</section>
+<section id="what-to-change-first">
+<h2>What to Change First<a class="headerlink" href="#what-to-change-first" title="Link to this heading">¶</a></h2>
+<p>In order, because each step depends on the one before it:</p>
+<ol class="arabic simple">
+<li><p><strong>Put your own controls in</strong> <code class="docutils literal notranslate"><span class="pre">HelloWorldControls.setupUi</span></code>, replacing the button. The
+base’s <code class="docutils literal notranslate"><span class="pre">createLabel</span></code>, <code class="docutils literal notranslate"><span class="pre">create_comboBox</span></code> and <code class="docutils literal notranslate"><span class="pre">createButton</span></code> build the plain widgets
+with the font and sizing already applied.</p></li>
+<li><p><strong>Read them in</strong> <code class="docutils literal notranslate"><span class="pre">collect_parameters</span></code>, which is called as the action is emitted — a
+request has to carry what was on screen when it was made, not what is there by the time
+it is handled.</p></li>
+<li><p><strong>Add a branch per action</strong> in <code class="docutils literal notranslate"><span class="pre">HelloWorldView.handle_parameter_change</span></code>.</p></li>
+<li><p><strong>Give the Model something to do</strong>, and connect the two in
+<code class="docutils literal notranslate"><span class="pre">HelloWorldController._setup_connections</span></code>. Computation belongs in the Model, not the
+View — see <a class="reference internal" href="ready_to_build/metamodel_base.html"><span class="doc">MetaModel as a Base Class</span></a>.</p></li>
+</ol>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>If you are new to PySide6 widgets and layouts,
+<a class="reference external" href="https://www.pythonguis.com/pyside6/">pythonguis.com</a> is a good place to start.</p>
+</div>
+<p>When your tab outgrows this, <a class="reference internal" href="simpleCalc/from_helloworld_to_full_mvc.html"><span class="doc">From HelloWorld to a Full MVC Analysis Tab</span></a> walks through a
+complete tab with real logic in all three layers.</p>
+</section>
+</section>
+
+        </article>
+      </div>
+      <footer>
+        
+        <div class="related-pages">
+          <a class="next-page" href="simpleCalc/from_helloworld_to_full_mvc.html">
+              <div class="page-info">
+                <div class="context">
+                  <span>Next</span>
+                </div>
+                <div class="title">From HelloWorld to a Full MVC Analysis Tab</div>
+              </div>
+              <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
+            </a>
+          <a class="prev-page" href="ready_to_build/metacontroller_base.html">
+              <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
+              <div class="page-info">
+                <div class="context">
+                  <span>Previous</span>
+                </div>
+                
+                <div class="title">MetaController as a Base Class</div>
+                
+              </div>
+            </a>
+        </div>
+        <div class="bottom-of-page">
+          <div class="left-details">
+            <div class="copyright">
+                Copyright &#169; 2024, Kyle Briggs, Carolina González G.
+            </div>
+            Made with <a href="https://www.sphinx-doc.org/">Sphinx</a> and <a class="muted-link" href="https://pradyunsg.me">@pradyunsg</a>'s
+            
+            <a href="https://github.com/pradyunsg/furo">Furo</a>
+            
+          </div>
+          <div class="right-details">
+            
+          </div>
+        </div>
+        
+      </footer>
+    </div>
+    <aside class="toc-drawer">
+      
+      
+      <div class="toc-sticky toc-scroll">
+        <div class="toc-title-container">
+          <span class="toc-title">
+            On this page
+          </span>
+        </div>
+        <div class="toc-tree-container">
+          <div class="toc-tree">
+            <ul>
+<li><a class="reference internal" href="#">Keeping It Minimal: HelloWorld Tutorial</a><ul>
+<li><a class="reference internal" href="#what-you-get">What You Get</a></li>
+<li><a class="reference internal" href="#the-controller">The Controller</a></li>
+<li><a class="reference internal" href="#the-view">The View</a></li>
+<li><a class="reference internal" href="#the-controls-panel">The controls panel</a></li>
+<li><a class="reference internal" href="#what-you-ll-see">What You’ll See</a></li>
+<li><a class="reference internal" href="#what-to-change-first">What to Change First</a></li>
+</ul>
+</li>
+</ul>
+
+          </div>
+        </div>
+      </div>
+      
+      
+    </aside>
+  </div>
+</div><script src="../../../../../_static/documentation_options.js?v=f5cff4aa"></script>
+    <script src="../../../../../_static/doctools.js?v=9bcbadda"></script>
+    <script src="../../../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../../../_static/scripts/furo.js?v=5fa4622c"></script>
+    </body>
+</html>

@@ -1,0 +1,38 @@
+.. _ClusteringModel:
+
+ClusteringModel
+===============
+
+**class ClusteringModel(**kwargs)**
+
+Bases: :ref:`MetaModel`
+
+Subclass of MetaModel for handling clustering-related data processing.
+
+Owns the clustering computation itself, rather than
+``ClusteringView``, which had been importing ``hdbscan``,
+``sklearn.mixture.GaussianMixture`` and ``pandas.api.types.is_float_dtype`` into a
+``QWidget``; none of those names appears in the View any more.
+
+The View asks for a result by emitting ``cluster_requested``;
+``ClusteringController`` calls :meth:`cluster` and hands what comes back to
+``ClusteringView.set_clustering_result``; ``RawDataController.calculate_psd`` is
+the same shape.
+
+Public Methods
+--------------
+
+.. automethod:: poriscope.plugins.analysistabs.ClusteringModel.ClusteringModel.build_clustering_frame
+.. automethod:: poriscope.plugins.analysistabs.ClusteringModel.ClusteringModel.cluster
+.. automethod:: poriscope.plugins.analysistabs.ClusteringModel.ClusteringModel.cluster_gaussian_mixture
+.. automethod:: poriscope.plugins.analysistabs.ClusteringModel.ClusteringModel.cluster_hdbscan
+.. automethod:: poriscope.plugins.analysistabs.ClusteringModel.ClusteringModel.commit_cluster_columns
+.. automethod:: poriscope.plugins.analysistabs.ClusteringModel.ClusteringModel.drop_cluster_columns
+.. automethod:: poriscope.plugins.analysistabs.ClusteringModel.ClusteringModel.find_cluster_column_table
+.. automethod:: poriscope.plugins.analysistabs.ClusteringModel.ClusteringModel.normalize_column_data
+
+Private Methods
+---------------
+
+.. automethod:: poriscope.plugins.analysistabs.ClusteringModel.ClusteringModel._init
+
