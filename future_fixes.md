@@ -47,35 +47,6 @@ promotion updates `.duplication-baseline.json` in the same commit; each track ed
 step sections here and its own changelog lines, and rebases onto `develop` before `feature finish`.
 Step 10 waits for both tracks.
 
-### Step 7 - plugin lifecycle
-
-Re-measured 2026-10-08 at `aaa09664`, driving the real controller, model and plugins offscreen.
-
-- **A refused edit poisons the plugin.** `apply_settings` stores the dict (`BaseDataPlugin.py:422`)
-  before validating (`:423-425`): after a refused CUSUM edit (Step Size 0) the fitter runs at the
-  old value, but `get_raw_settings()` reports 0.0 and holds the live loader, so the next
-  `edit_plugin` deepcopy (`DataPluginController.py:95`) raises `cannot pickle '_thread.RLock'` -
-  the plugin can be neither edited nor deleted until restart. Provenance records the refused value.
-- **`apply_settings` stores and rewrites the caller's dict.** In an edit, the dialog's dict
-  (`dict_dialog_widget.py:385`) is the one applied and the one emitted as history (`:463`); history
-  is serialisable only because `apply_settings` turns live plugins back into keys inside it. A
-  script reusing one settings dict for a second plugin is refused (`TypeError`), its loader having
-  become a key. Fix (ruled 2026-10-08): the plugin stores its own copy, plugins as keys, never a
-  deepcopy; history comes from `get_raw_settings()` after a successful apply.
-- **An edit renames before it applies.** `_rename_plugin:221` re-points dependents, saves their
-  history, sets the key and records the rename (`:287`) before `apply_settings` (`:452`), so a
-  rename with a refused value keeps the new name and saves refused settings under it.
-- **A re-pointed plugin keeps its old parent**: `parents` is only added to (`BaseDataPlugin.py:268`).
-- **A scripted plugin's key is `""`**: `__init__` applies settings (`:114`) with the key unset
-  (`:112`), so two finders on one reader merge into one dependent and provenance records `key: ""`.
-  Fix (ruled): optional `key=`, default `<ClassName>_<n>`.
-- **`MetaModel.run_generators`** raises `KeyError` when nothing was staged (`:233`); `set_generator`
-  (`:197`) silently discards a second request for a running (key, channel) - say so on the status
-  panel (ruled).
-- **`DataPluginModel.handle_exit`** (`:233-239`) stops at the first `close_resources` that raises;
-  `DataPluginModel.apply_settings` (`:242`) has no production caller.
-- **No test runs the scripting guide's pipeline, or checks a session saved after an edit.**
-
 ### Step 8 - data-plugin API break (breaking; Kyle takes the PeakFinder side)
 
 - **`channel: Optional[int] = None` meaning "every channel"** - scope as designed 2026-09-22
