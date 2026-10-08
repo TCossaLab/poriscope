@@ -83,3 +83,11 @@ def test_the_plugin_shares_no_dict_or_list_with_the_caller() -> None:
         "Value": 4,
         "Options": [2, 4, 6],
     }
+
+
+def test_a_plugin_moved_to_another_parent_forgets_the_old_one() -> None:
+    plugin = ConcretePlugin(settings_with(parent_plugin("first")))
+
+    plugin.apply_settings(settings_with(parent_plugin("second")))
+
+    assert plugin.get_parents() == {("ConcretePlugin", "second")}

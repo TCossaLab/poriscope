@@ -116,6 +116,8 @@
 
 * A plugin that cannot report its status is still created or renamed, and the status panel says why
 
+* Fixed a plugin moved onto a different parent keeping the old one as a parent, which could leave the old parent impossible to delete
+
 ### Documentation:
 
 * The API reference no longer lists `NanoTrees`' helper classes as event fitters

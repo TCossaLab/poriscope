@@ -439,6 +439,9 @@ class BaseDataPlugin(ABC):
         build several plugins from one dict, and history is taken from
         :py:meth:`get_raw_settings` rather than from the caller's dict.
 
+        The plugin's parents are rebuilt from the plugins named in ``settings``, so a
+        plugin moved onto a different parent no longer counts the old one as a parent.
+
         :param settings: a dict containing the information needed
         :type settings: dict
         """
@@ -447,6 +450,7 @@ class BaseDataPlugin(ABC):
             self._validate_param_ranges(settings)
             self._validate_settings(settings)
             self.raw_settings = _copy_settings(settings)
+            self.parents = set()
             self.settings = {}
             for key, val in settings.items():
                 self.settings[key] = {}
