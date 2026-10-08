@@ -1,4 +1,4 @@
-## Poriscope 2.0.1: in progress
+## Poriscope 2.0.1: 2026-10-08
 
 ### User-Facing Behaviour:
 
