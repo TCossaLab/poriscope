@@ -48,6 +48,21 @@ class SQLiteDBLoader(MetaDatabaseLoader):
 
     logger = logging.getLogger(__name__)
 
+    #: (index name, table, column) for each foreign key the event-data query, an
+    #: events-to-sublevels join and the cascade from deleting a channel search on.
+    #: SQLiteDBWriter creates the same three in every file it writes; a file written
+    #: before them gets them the first time a loader can write to it.
+    FOREIGN_KEY_INDEXES = (
+        ("idx_data_event_db_id", "data", "event_db_id"),
+        ("idx_sublevels_event_db_id", "sublevels", "event_db_id"),
+        ("idx_events_channel_db_id", "events", "channel_db_id"),
+    )
+
+    #: How long, in seconds, adding the indexes waits for another connection's write
+    #: lock before giving up until the next open. Short, because it runs while the
+    #: plugin is being created.
+    INDEX_LOCK_TIMEOUT_S = 0.25
+
     # public API, MUST be implemented by subclasses
     @log(logger=logger)
     @override
@@ -1058,6 +1073,8 @@ class SQLiteDBLoader(MetaDatabaseLoader):
             if conn:
                 conn.close()
 
+        self._ensure_foreign_key_indexes()
+
     # private API continued, should implemented by subclasses, but has default behavior if it is not needed
 
     # Utility functions, specific to subclasses as needed
@@ -1084,6 +1101,45 @@ class SQLiteDBLoader(MetaDatabaseLoader):
             return "TEXT"  # Store datetimes as ISO 8601 strings
         else:
             return "TEXT"  # Default for other or unknown types
+
+    @log(logger=logger)
+    def _ensure_foreign_key_indexes(self) -> None:
+        """
+        Add any of :attr:`FOREIGN_KEY_INDEXES` the database lacks, without letting that
+        stop it opening.
+
+        Best-effort by design. A file that cannot be written - read-only, or held under
+        another connection's write lock for longer than :attr:`INDEX_LOCK_TIMEOUT_S` -
+        is left as it is with one warning, opens as it always did, and is tried again on
+        the next open. Each index is its own statement, so one that fails leaves those
+        before it in place.
+
+        :return: None
+        :rtype: None
+        """
+        conn = None
+        try:
+            conn = sqlite3.connect(self.db_path, timeout=self.INDEX_LOCK_TIMEOUT_S)
+            existing = {
+                row[0]
+                for row in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type = 'index';"
+                )
+            }
+            for name, table, column in self.FOREIGN_KEY_INDEXES:
+                if name not in existing:
+                    conn.execute(
+                        f"CREATE INDEX IF NOT EXISTS {name} ON {table}({column});"
+                    )
+            conn.commit()
+        except sqlite3.Error as e:
+            self.logger.warning(
+                f"Could not index {Path(self.db_path).name} ({e}); it opens as before, "
+                "and queries on it stay slower until it can be written to"
+            )
+        finally:
+            if conn:
+                conn.close()
 
     @log(logger=logger)
     def _ensure_event_counts(self) -> None:

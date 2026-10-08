@@ -76,6 +76,8 @@
 
 * A CUSUM-family fitter handed an event with no reported baseline sigma and an empty padding on the only side it had now rejects that event for that reason, where before it ran the detector against a `nan` or whole-event sigma and reported "Too Few Levels"
 
+* Metadata databases are now indexed, making filtered metadata plots and clearing a channel much faster; existing databases are indexed when first opened
+
 ### Documentation:
 
 * The API reference no longer publishes `NanoTrees`' four module helpers (`P6Flags`, `SingleSublevel`, `HackyList`, `Sublevels`) as event fitters; a page under a data-plugin family now goes only to a class that descends from that family's `Meta*` base

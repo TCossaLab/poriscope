@@ -732,6 +732,19 @@ class SQLiteDBWriter(MetaDatabaseWriter):
                 WHERE experiment_id = OLD.experiment_id AND channel_id = OLD.channel_id;
             END;
             """,
+            # The foreign keys the event-data query, an events-to-sublevels join and the
+            # cascade from deleting a channel all search on; without them each is a
+            # nested scan. SQLiteDBLoader adds the same three, by the same names, to
+            # any file it opens that lacks them.
+            """
+            CREATE INDEX IF NOT EXISTS idx_data_event_db_id ON data(event_db_id);
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS idx_sublevels_event_db_id ON sublevels(event_db_id);
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS idx_events_channel_db_id ON events(channel_db_id);
+            """,
         ]
 
         # Connect to the SQLite database (creates the file if it doesn't exist)
