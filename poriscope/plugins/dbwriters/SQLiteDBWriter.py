@@ -43,6 +43,10 @@ class SQLiteDBWriter(MetaDatabaseWriter):
     """
 
     logger = logging.getLogger(__name__)
+    #: The schema version stamped, as ``PRAGMA user_version``, on a file this writer
+    #: creates. SQLiteDBLoader reads up to its own ``SCHEMA_VERSION`` and refuses
+    #: anything newer, so the two move together.
+    SCHEMA_VERSION = 1
     conn: Optional[sqlite3.Connection]
     cursor: Optional[sqlite3.Cursor]
 
@@ -754,9 +758,20 @@ class SQLiteDBWriter(MetaDatabaseWriter):
             conn = sqlite3.connect(Path(self.settings["Output File"]["Value"]))
             cursor = conn.cursor()
             conn.execute("BEGIN TRANSACTION")  # Start a transaction
+            # The schema version is stamped only by the transaction that creates the
+            # schema, and rolls back with it, so a file reads it exactly when this
+            # version created it; an older file this writer appends to keeps its own.
+            creating = (
+                cursor.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'experiments';"
+                ).fetchone()
+                is None
+            )
             # Create tables if they do not exist
             for query in table_creation_queries:
                 cursor.execute(query)
+            if creating:
+                cursor.execute(f"PRAGMA user_version = {self.SCHEMA_VERSION};")
 
             event_metadata = self.eventfitter.get_event_metadata_types()
             sublevel_metadata = self.eventfitter.get_sublevel_metadata_types()

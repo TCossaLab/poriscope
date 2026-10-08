@@ -80,6 +80,8 @@
 
 * A metadata database containing tables Poriscope does not know (for example after running `ANALYZE` on it) now opens instead of being refused
 
+* Metadata databases now record their schema version, and one created by a newer Poriscope is refused with a message instead of being misread
+
 ### Documentation:
 
 * The API reference no longer lists `NanoTrees`' helper classes as event fitters

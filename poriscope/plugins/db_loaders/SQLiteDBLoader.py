@@ -58,6 +58,11 @@ class SQLiteDBLoader(MetaDatabaseLoader):
         ("idx_events_channel_db_id", "events", "channel_db_id"),
     )
 
+    #: The newest schema version this loader reads, from ``PRAGMA user_version``. 0 is a
+    #: file created before 2.1; SQLiteDBWriter stamps the version it creates a file at,
+    #: and a file stamped above this is refused.
+    SCHEMA_VERSION = 1
+
     #: How long, in seconds, adding the indexes waits for another connection's write
     #: lock before giving up until the next open. Short, because it runs while the
     #: plugin is being created.
@@ -1018,6 +1023,14 @@ class SQLiteDBLoader(MetaDatabaseLoader):
 
             # Fetch all tables from the database
             existing_tables = [row[0] for row in cursor.fetchall()]
+
+            version = cursor.execute("PRAGMA user_version;").fetchone()[0]
+            if version > self.SCHEMA_VERSION:
+                raise ValueError(
+                    f"{Path(self.db_path).name} was created with metadata schema version "
+                    f"{version}; this version of Poriscope reads up to {self.SCHEMA_VERSION}. "
+                    "Open it with a newer Poriscope."
+                )
 
             # Only the core tables are required. event_counts is rebuilt by
             # _ensure_event_counts when an older file lacks it, and any other table -

@@ -27,9 +27,7 @@ from tests.unit.plugins.conformance._recipes import (
     _EXPERIMENT_METADATA,
     EVENTS_CHANNEL,
     build_db_loader,
-    build_db_writer,
-    build_event_fitter,
-    build_event_loader,
+    write_metadata_database,
 )
 
 pytestmark = pytest.mark.conformance
@@ -43,7 +41,7 @@ FOREIGN_KEYS = {
 
 
 @pytest.fixture
-def written(events_db_path, tmp_path: Path) -> Iterator[Path]:
+def written(events_db_path, tmp_path: Path) -> Path:
     """
     A metadata database written by the shipped writer from a CUSUM fit.
 
@@ -51,20 +49,11 @@ def written(events_db_path, tmp_path: Path) -> Iterator[Path]:
     :param tmp_path: per-test scratch directory
     :type tmp_path: Path
     :return: the written database
-    :rtype: Iterator[Path]
+    :rtype: Path
     """
-    loader = build_event_loader(events_db_path)
-    fitter = build_event_fitter(CUSUM, loader)
-    for _progress in fitter.fit_events(EVENTS_CHANNEL):
-        pass
-    out = tmp_path / "metadata.sqlite3"
-    writer = build_db_writer(SQLiteDBWriter, fitter, str(out))
-    for _progress in writer.write_events(EVENTS_CHANNEL):
-        pass
-    writer.close_resources()
-    fitter.close_resources()
-    loader.close_resources()
-    yield out
+    return write_metadata_database(
+        events_db_path, tmp_path / "metadata.sqlite3", CUSUM, SQLiteDBWriter
+    )
 
 
 def indexes(path: Path) -> Set[Tuple[str, str, str]]:
