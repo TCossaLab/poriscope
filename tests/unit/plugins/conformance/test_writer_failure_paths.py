@@ -11,11 +11,9 @@ has a red test to turn green where today's behaviour differs:
 - A row the schema refuses (a NOT NULL column handed ``None``) is rejected under a reason
   that names the column, not as ``Cannot Overwrite Existing Event``.
 - An event the fitter hands over with a missing component is a rejected event, not a
-  silent skip (``MetaDatabaseWriter.write_events``). Strict expected failure.
+  silent skip.
 - An abort leaves the channel empty and ``written`` at zero. Green today.
-- A rejected event does not shift the indices of the events after it
-  (``MetaWriter._commit_events`` continues past ``index += 1``). Strict expected
-  failure.
+- A rejected event does not shift the indices of the events after it.
 - A stored event row the loader cannot interpret (a NULL ``padding_before``) is reported,
   not dropped at INFO (``SQLiteDBLoader._load_event_data``). Strict expected
   failure.
@@ -215,13 +213,6 @@ def test_a_sublevel_the_schema_refuses_names_its_column_and_stores_nothing(
     assert describe_database(out)["events"] == EVENTS_COUNT - 1
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "MetaDatabaseWriter.write_events skips an event whose tuple holds a None "
-        "with no yield and no rejected entry"
-    ),
-)
 @pytest.mark.parametrize("writer_cls", DB_WRITERS, ids=[c.__name__ for c in DB_WRITERS])
 def test_an_event_with_a_missing_component_is_rejected_not_skipped(
     writer_cls: Type[MetaDatabaseWriter], fitted, tmp_path: Path
@@ -261,13 +252,6 @@ def test_an_aborted_write_leaves_the_channel_empty(
 
 
 # --- MetaWriter ----------------------------------------------------------------------------
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "MetaWriter._commit_events records a rejection and `continue`s past "
-        "`index += 1`, so the next event is written under the rejected event's index"
-    ),
-)
 @pytest.mark.parametrize("writer_cls", WRITERS, ids=[c.__name__ for c in WRITERS])
 def test_a_rejected_event_does_not_shift_the_indices_after_it(
     writer_cls: Type[MetaWriter], found, tmp_path: Path
@@ -276,7 +260,7 @@ def test_a_rejected_event_does_not_shift_the_indices_after_it(
     When event 2 cannot be written, the stored events keep their own indices: every index
     but 2, rather than 0..n-2 with every later event renumbered.
     """
-    total = found.get_num_events(CHIMERA_CHANNEL)
+    total = found.get_num_events_found(CHIMERA_CHANNEL)
     assert total >= 4
     real = found.get_event_data_generator
 

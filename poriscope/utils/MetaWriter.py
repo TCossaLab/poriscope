@@ -488,7 +488,6 @@ class MetaWriter(BaseDataPlugin):
                             self.logger.info(
                                 f"Unable to write event data in channel {channel}: {str(e)}. Attempting to continue but data may be incomplete and will require manual verification or an overwrite"
                             )
-                            continue
                         else:
                             if success:
                                 self.written[channel] += 1

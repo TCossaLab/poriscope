@@ -88,6 +88,10 @@
 
 * An event the metadata database cannot store now reports the column at fault, where before it was counted as "Cannot Overwrite Existing Event"
 
+* **Fixed committing found events renumbering every event after one that could not be written**; each event now keeps its own number
+
+* An event the fitter cannot fully supply is now counted as rejected ("Incomplete Event Data") instead of silently going missing from a database write
+
 ### Documentation:
 
 * The API reference no longer lists `NanoTrees`' helper classes as event fitters
