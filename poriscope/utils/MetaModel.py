@@ -201,15 +201,35 @@ class MetaModel(QObject, metaclass=QObjectABCMeta):
         key: str,
         metaclass: str,
     ) -> None:
-        """Add generator and set it to be run by a QThread."""
+        """
+        Stage a generator to be run on a worker thread by :py:meth:`run_generators`.
+
+        A generator for a (key, channel) whose worker is still running is refused: the
+        running one carries on, the new one is closed before it ever starts, and the
+        status panel says the request was ignored.
+
+        :param generator: the plugin's generator, not yet started
+        :type generator: Generator[float, Optional[bool], None]
+        :param channel: the channel it works on
+        :type channel: int
+        :param key: the plugin's key
+        :type key: str
+        :param metaclass: the plugin's metaclass
+        :type metaclass: str
+        """
         if key not in self.thread_running.keys():
             self.thread_running[key] = {}
-        thread_running = self.thread_running[key].get(channel)
-        if not thread_running:
-            if key not in self.generators.keys():
-                self.generators[key] = {}
-            self.reporter_metaclasses[key] = metaclass
-            self.generators[key][channel] = generator
+        if self.thread_running[key].get(channel):
+            generator.close()
+            self.add_text_to_display.emit(
+                f"{key} is already running on channel {channel}; this request was ignored",
+                f"{key}/{channel}",
+            )
+            return
+        if key not in self.generators.keys():
+            self.generators[key] = {}
+        self.reporter_metaclasses[key] = metaclass
+        self.generators[key][channel] = generator
 
     @log(logger=logger)
     def run_generators(self, key: str) -> None:
@@ -227,10 +247,13 @@ class MetaModel(QObject, metaclass=QObjectABCMeta):
         one ``Qt.QueuedConnection`` anywhere in it would have silently degraded the lock
         to ``None``, with no error and no log line.
 
+        Nothing is staged under a key whose every channel was skipped before staging,
+        and then this does nothing.
+
         :param key: the plugin key whose staged generators should be run
         :type key: str
         """
-        for channel, generator in self.generators[key].items():
+        for channel, generator in self.generators.get(key, {}).items():
             thread_running = self.thread_running[key].get(channel)
             if not thread_running:
                 self.thread_running[key][channel] = True

@@ -122,6 +122,21 @@ def test_handle_exit_closes_all_resources(plugin_model, dummy_plugin):
     dummy_plugin.close_resources.assert_called_once()
 
 
+def test_handle_exit_closes_every_plugin_when_one_fails(plugin_model, caplog):
+    """
+    A plugin whose close_resources raises is reported, and the rest are still closed.
+    """
+    failing, other = MagicMock(), MagicMock()
+    failing.close_resources.side_effect = OSError("file busy")
+    plugin_model.register_plugin(failing, "MetaExample", "failing")
+    plugin_model.register_plugin(other, "MetaExample", "other")
+
+    plugin_model.handle_exit()
+
+    other.close_resources.assert_called_once()
+    assert "Error closing resources for plugin failing: file busy" in caplog.text
+
+
 def test_get_plugin_instance(plugin_model, dummy_plugin):
     """
     Test retrieving a previously registered plugin instance.

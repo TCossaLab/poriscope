@@ -124,6 +124,12 @@
 
 * Fixed a plugin moved onto a different parent keeping the old one as a parent, which could leave the old parent impossible to delete
 
+* Asking a plugin to run on a channel it is already running on now says on the status panel that the request was ignored, instead of ignoring it silently
+
+* Fixed an error when every channel was skipped before fitting or writing started
+
+* Quitting now closes every plugin even when one fails to close
+
 ### Documentation:
 
 * The API reference no longer lists `NanoTrees`' helper classes as event fitters

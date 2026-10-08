@@ -233,10 +233,18 @@ class DataPluginModel(QObject):
     def handle_exit(self) -> None:
         """
         Perform any actions necessary to gracefully close resources before app exit
+
+        Every plugin is closed even when one fails to close, which is reported as a
+        warning rather than an error so that shutdown raises no dialog.
         """
         for plugins in self.plugins.values():
-            for plugin in plugins.values():
-                plugin.close_resources()
+            for key, plugin in plugins.items():
+                try:
+                    plugin.close_resources()
+                except Exception as e:
+                    self.logger.warning(
+                        f"Error closing resources for plugin {key}: {e}"
+                    )
 
     @log(logger=logger)
     def get_plugin_instance(self, metaclass: str, key: str) -> Optional[BaseDataPlugin]:
