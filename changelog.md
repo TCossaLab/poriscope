@@ -78,6 +78,8 @@
 
 * Metadata databases are now indexed, making filtered metadata plots and clearing a channel much faster; existing databases are indexed when first opened
 
+* A metadata database containing tables Poriscope does not know (for example after running `ANALYZE` on it) now opens instead of being refused
+
 ### Documentation:
 
 * The API reference no longer lists `NanoTrees`' helper classes as event fitters

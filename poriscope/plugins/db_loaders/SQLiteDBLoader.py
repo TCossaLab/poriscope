@@ -1009,15 +1009,6 @@ class SQLiteDBLoader(MetaDatabaseLoader):
 
         conn = None
         cursor = None
-        expected_tables = [
-            "events",
-            "channels",
-            "experiments",
-            "data",
-            "sublevels",
-            "columns",
-            "event_counts",
-        ]
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
@@ -1028,10 +1019,10 @@ class SQLiteDBLoader(MetaDatabaseLoader):
             # Fetch all tables from the database
             existing_tables = [row[0] for row in cursor.fetchall()]
 
-            if "sqlite_sequence" in existing_tables:
-                existing_tables.remove("sqlite_sequence")
-
-            # Check if the existing tables match the expected ones (except for event_counts, which is optional to acocunt for old DB versions)
+            # Only the core tables are required. event_counts is rebuilt by
+            # _ensure_event_counts when an older file lacks it, and any other table -
+            # one a later version adds, one a user adds, or sqlite_stat1 from ANALYZE -
+            # is left alone rather than refusing the file.
             core_tables = {
                 "events",
                 "channels",
@@ -1045,13 +1036,6 @@ class SQLiteDBLoader(MetaDatabaseLoader):
                 raise ValueError(
                     f"Missing tables: {', '.join(missing_core)}. Double check that you are loading a database of fitted metadata."
                 )
-
-            extra_tables = [t for t in existing_tables if t not in expected_tables]
-            if extra_tables:
-                if len(extra_tables) > 1 or extra_tables[0] != "event_counts":
-                    raise ValueError(
-                        f"Extra tables found: {', '.join(extra_tables)}. Double check that you are loading a database of fitted metadata."
-                    )
 
             # If there are no issues, log success
             self.logger.info("Database schema is valid.")

@@ -193,17 +193,35 @@ class TestSQLiteDBLoader:
         with pytest.raises(ValueError, match="Missing tables"):
             SQLiteDBLoader(settings=settings)
 
-    def test_init_with_extra_tables(self, mock_db: Path) -> None:
-        """Test initialization with extra tables in database."""
+    def test_init_opens_a_database_with_tables_it_does_not_know(
+        self, mock_db: Path
+    ) -> None:
+        """
+        A table the loader does not know about does not stop the file opening.
+
+        Only the core tables are required. A table a later version adds, one a user
+        adds, and ``sqlite_stat1`` - which ``ANALYZE`` and ``PRAGMA optimize`` create
+        - used to make the loader refuse the whole file.
+        """
         conn = sqlite3.connect(mock_db)
-        cursor = conn.cursor()
-        cursor.execute("CREATE TABLE extra_table (id INTEGER PRIMARY KEY);")
-        conn.commit()
-        conn.close()
+        try:
+            conn.execute("CREATE TABLE extra_table (id INTEGER PRIMARY KEY);")
+            conn.execute("ANALYZE;")
+            conn.commit()
+            tables = {
+                row[0]
+                for row in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type = 'table'"
+                )
+            }
+        finally:
+            conn.close()
+        assert {"extra_table", "sqlite_stat1"} <= tables
 
         settings = {"Input File": {"Type": str, "Value": str(mock_db)}}
-        with pytest.raises(ValueError, match="Extra tables found"):
-            SQLiteDBLoader(settings=settings)
+        loader = SQLiteDBLoader(settings=settings)
+
+        assert loader.db_path == mock_db
 
     def test_get_llm_prompt(self, loader: SQLiteDBLoader, mock_db: Path) -> None:
         """Test LLM prompt generation."""
