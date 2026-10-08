@@ -1909,7 +1909,7 @@ class TestApplyEditedSettings:
         self, mock_model: MagicMock, mock_view: MagicMock, mocker: MockerFixture
     ) -> None:
         """
-        History carries the *raw* settings, with plugin references still as names.
+        History carries what the plugin reports holding, not the dict it was handed.
 
         :param mock_model: Mocked data plugin model.
         :param mock_view: Mocked data plugin view.
@@ -1917,14 +1917,15 @@ class TestApplyEditedSettings:
         """
         ctrl = _make_edit_plugin_controller(mock_model, mock_view, mocker)
         instance = mocker.Mock()
+        instance.get_raw_settings.return_value = {"held": True}
 
         ctrl._apply_edited_settings(
-            {"resolved": True}, "MetaReader", "r1", instance, set(), {"raw": True}
+            {"resolved": True}, "MetaReader", "r1", instance, set()
         )
 
         instance.apply_settings.assert_called_once_with({"resolved": True})
         emitted, previous = ctrl.update_plugin_history.emit.call_args[0]
-        assert previous == "" and emitted["settings"] == {"raw": True}
+        assert previous == "" and emitted["settings"] == {"held": True}
         assert any(
             "Settings updated successfully for r1" in call.args[0]
             for call in ctrl.add_text_to_display.emit.call_args_list
@@ -1953,7 +1954,6 @@ class TestApplyEditedSettings:
             "r1",
             instance,
             {("MetaWriter", "w1")},
-            {"raw": True},
         )
 
         ctrl.update_plugin_history.emit.assert_not_called()

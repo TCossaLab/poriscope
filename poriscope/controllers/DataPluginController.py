@@ -142,9 +142,7 @@ class DataPluginController(QObject):
         ):
             return
 
-        self._apply_edited_settings(
-            app_settings, metaclass, key, instance, parents, settings
-        )
+        self._apply_edited_settings(app_settings, metaclass, key, instance, parents)
 
     @log(logger=logger)
     def _coerce_plugin_references_to_keys(self, app_settings: dict) -> None:
@@ -427,13 +425,15 @@ class DataPluginController(QObject):
         key: str,
         instance: Any,
         parents: Set[Tuple[str, str]],
-        settings: dict,
     ) -> None:
         """
         Hand the resolved settings to the plugin, which is what makes the edit real.
 
         The last step, and the only one that touches the plugin's own state, so a
         failure here is the one that most needs the parent links put back.
+
+        History records what the plugin reports holding, not `app_settings`: those
+        are the dialog's dict, which holds live plugins that a session cannot save.
 
         :param app_settings: The settings with plugin references resolved to objects.
         :type app_settings: dict
@@ -445,8 +445,6 @@ class DataPluginController(QObject):
         :type instance: Any
         :param parents: The (metaclass, key) pairs of the plugin's parents.
         :type parents: Set[Tuple[str, str]]
-        :param settings: The raw settings to record in history, references unresolved.
-        :type settings: dict
         """
         try:
             instance.apply_settings(app_settings)
@@ -465,7 +463,7 @@ class DataPluginController(QObject):
                 "key": key,
                 "metaclass": metaclass,
                 "subclass": instance.__class__.__name__,
-                "settings": settings,
+                "settings": instance.get_raw_settings(),
             },
             "",
         )
@@ -819,7 +817,7 @@ class DataPluginController(QObject):
                 "key": key,
                 "metaclass": metaclass,
                 "subclass": subclass,
-                "settings": settings,
+                "settings": temp_instance.get_raw_settings(),
             },
             "",
         )

@@ -51,6 +51,31 @@ class Setting(TypedDict):
     Value: Any
 
 
+def _copy_settings(settings: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+    """
+    Copy a settings dict down to the lists inside each parameter, and no further.
+
+    The outer dict, each parameter's dict and any list-valued entry within one -
+    notably ``Options`` - are copied, so the copy shares nothing a caller could change
+    with the original. Below that it is shallow rather than a :py:func:`copy.deepcopy`:
+    ``Type`` entries hold classes, and ``Value`` can hold a live plugin instance, which
+    holds a lock and open resources and cannot be deep-copied.
+
+    :param settings: the settings to copy
+    :type settings: Dict[str, Dict[str, Any]]
+    :return: the copy
+    :rtype: Dict[str, Dict[str, Any]]
+    """
+    copied = {}
+    for key, setting in settings.items():
+        entry = dict(setting)
+        for field, val in entry.items():
+            if isinstance(val, list):
+                entry[field] = list(val)
+        copied[key] = entry
+    return copied
+
+
 class BaseDataPlugin(ABC):
     """
     This class, :ref:`BaseDataPlugin`, is an abstraction of the functionality and interface that is common to all data plugins. What this means practically is that there is a chain of inheritance: all data plugins inherits from their respective base class, all of which inherit from :ref:`BaseDataPlugin`.
@@ -322,22 +347,13 @@ class BaseDataPlugin(ABC):
         into this plugin's internal state. :py:meth:`update_raw_settings` and
         :py:meth:`replace_raw_settings_option` are the only supported writers.
 
-        The copy is deliberately shallow below that level rather than a
-        :py:func:`copy.deepcopy`: ``Type`` entries hold classes, and ``Value`` can
-        transiently hold a live plugin instance while settings are being applied,
-        neither of which is safe or meaningful to deep-copy.
+        A plugin this one depends on appears by its key, never as the live plugin, so
+        the snapshot can be deep-copied and saved with the session.
 
         :return: a copy of the dict that must be filled in to initialize the plugin
         :rtype: dict
         """
-        snapshot = {}
-        for key, setting in self.raw_settings.items():
-            entry = dict(setting)
-            for field, val in entry.items():
-                if isinstance(val, list):
-                    entry[field] = list(val)
-            snapshot[key] = entry
-        return snapshot
+        return _copy_settings(self.raw_settings)
 
     @log(logger=logger)
     def update_raw_settings(self, key: str, val: Any) -> None:
@@ -418,6 +434,11 @@ class BaseDataPlugin(ABC):
         All three checks run before anything is stored, so settings they refuse never
         reach the plugin: it keeps running with, and reporting, the settings it had.
 
+        The plugin keeps its own copy of ``settings``, with each plugin it depends on
+        recorded by key, and never writes into the dict it was given - so a script can
+        build several plugins from one dict, and history is taken from
+        :py:meth:`get_raw_settings` rather than from the caller's dict.
+
         :param settings: a dict containing the information needed
         :type settings: dict
         """
@@ -425,7 +446,7 @@ class BaseDataPlugin(ABC):
             self._validate_param_types(settings)
             self._validate_param_ranges(settings)
             self._validate_settings(settings)
-            self.raw_settings = settings
+            self.raw_settings = _copy_settings(settings)
             self.settings = {}
             for key, val in settings.items():
                 self.settings[key] = {}

@@ -110,6 +110,8 @@
 
 * **Fixed a plugin whose settings edit was refused becoming impossible to edit or delete until restart**; a refused edit now leaves the plugin exactly as it was
 
+* A plugin built in a script no longer changes the settings dict it was given, so one dict can build several plugins
+
 ### Documentation:
 
 * The API reference no longer lists `NanoTrees`' helper classes as event fitters

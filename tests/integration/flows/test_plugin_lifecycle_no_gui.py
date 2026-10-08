@@ -143,7 +143,10 @@ def controller(qapp, sample_events_db: str) -> Iterator[DataPluginController]:
         lambda metaclass, subclass: None,
     )
     assert ctrl.validate_and_instantiate_plugin(
-        "MetaEventLoader", "SQLiteEventLoader", loader_settings(sample_events_db), LOADER
+        "MetaEventLoader",
+        "SQLiteEventLoader",
+        loader_settings(sample_events_db),
+        LOADER,
     )
     assert ctrl.validate_and_instantiate_plugin(
         "MetaEventFitter", "CUSUM", fitter_settings(LOADER), FITTER
@@ -239,3 +242,44 @@ class TestARefusedEditChangesNothing:
 
         copy.deepcopy(fitter(controller).get_raw_settings())
 
+
+class TestTheSessionRecordsWhatThePluginHolds:
+    """
+    The history entry the controller emits is what the session file saves, and saving
+    starts by deep-copying it. It must be the settings the plugin holds, with its
+    parent by name - never the dialog's dict, which holds the live parent.
+    """
+
+    def test_an_edit_records_the_plugins_own_settings(
+        self, controller: DataPluginController
+    ) -> None:
+        record = Recorder(controller)
+
+        edit(controller, "MetaEventFitter", FITTER, EditDialog({"Step Size": 50.0}))
+
+        (entry, old_key), *_ = record.history
+        assert old_key == ""
+        assert entry["settings"] == fitter(controller).get_raw_settings()
+        assert entry["settings"]["MetaEventLoader"]["Value"] == LOADER
+        copy.deepcopy(entry)
+
+    def test_a_new_plugin_records_its_own_settings(
+        self, controller: DataPluginController
+    ) -> None:
+        """
+        Given its loader as the creation dialog offers it - a name among options -
+        the new plugin records the loader as it holds it, by name alone.
+        """
+        record = Recorder(controller)
+        offered = fitter_settings(LOADER)
+        offered["MetaEventLoader"].update(Type=str, Options=[LOADER])
+
+        assert controller.validate_and_instantiate_plugin(
+            "MetaEventFitter", "CUSUM", offered, "second"
+        )
+
+        (entry, _), *_ = record.history
+        second = controller.model.get_plugin_instance("MetaEventFitter", "second")
+        assert second is not None
+        assert entry["settings"] == second.get_raw_settings()
+        copy.deepcopy(entry)
