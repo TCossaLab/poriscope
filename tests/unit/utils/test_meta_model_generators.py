@@ -26,9 +26,9 @@ class Model(MetaModel):
         pass
 
 
-def gated(gate: threading.Event, started: List[str], tag: str) -> Generator[
-    float, Optional[bool], None
-]:
+def gated(
+    gate: threading.Event, started: List[str], tag: str
+) -> Generator[float, Optional[bool], None]:
     """
     A plugin generator that reports it started, then waits to be let go.
 
