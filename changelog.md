@@ -4,91 +4,91 @@
 
 #### Results that change:
 
-* **Every event finder's baseline sigma, and so every sigma-denominated threshold, moves slightly:** the baseline histogram now uses Rice's rule for its bin count, four times as many bins as before, which removes a bias that inflated sigma by about 2% on 10,000-sample chunks and 0.6% on 100,000, and lets short, clean chunks be fitted at all instead of being skipped
+* **Baseline sigma, and every sigma-denominated threshold, moves slightly:** the baseline histogram uses Rice's rule for its bins, removing a bias that inflated sigma on short chunks, and short clean chunks are no longer skipped
 
-* **A chunk that spends more than half its time in an occupied state now reports the open-pore level as its baseline:** the baseline histogram's peak is the one farthest from zero among the real peaks, where before it was simply the tallest bin, so thresholds in such chunks no longer hang off the occupied level
+* **A chunk mostly in an occupied state now reports the open-pore level as its baseline**, not the occupied level
 
-* **A second population close below the baseline no longer widens the fitted baseline sigma:** the baseline histogram's fit window now runs three sigma above the baseline peak and, below it, stops at the valley before the next peak, where before it took the narrower of two fixed-height walks on both sides
+* **A second population just below the baseline no longer widens the fitted baseline sigma**
 
-* **The Bessel filter now accepts low cutoffs it used to refuse as numerically unstable** (25 kHz on a 4.17 MHz recording, for one): it is built as second-order sections, which are stable at any cutoff below half the sample rate; filtered values at previously accepted cutoffs move by less than a thousandth of the noise
+* **The Bessel filter now accepts low cutoffs it used to refuse;** filtered values at other cutoffs are unchanged to within a thousandth of the noise
 
-* **The CUSUM family (`CUSUM`, `ClassicCUSUM`, `IntraCUSUM`) now resolves the sublevels that follow a large edge:** the detector restarts its statistics at every threshold crossing, as the reference C implementation does, and refuses a transition within a rise time of the end of the event; on planted staircases `ClassicCUSUM` went from one level found on every event to the three planted at high signal-to-noise, so fits of real data will report more sublevels than before
+* **The CUSUM family (`CUSUM`, `ClassicCUSUM`, `IntraCUSUM`) now resolves sublevels that follow a large edge**, so fits will report more sublevels than before
 
-* **Event finders now place an event's boundaries where the signal leaves and rejoins the baseline band, judged over three samples, instead of at single-sample +1 σ crossings:** on low-pass noise the old walk ran tens to hundreds of samples into the baseline, so every stored event window, start time and padding moves to the edges, and `ThresholdBlockageFinder`'s start moves from the threshold crossing back to the edge
+* **Event finders now place an event's boundaries where the signal leaves and rejoins the baseline**, so stored event windows, start times and paddings move to the edges
 
-* **`NoFitter` now places an event's start where the signal leaves the baseline and its end where the return to baseline begins, found from the baseline side of each edge, and reports the mean of the blocked stretch between them:** the finder's start and end estimates are no longer taken as positions (the shipped finders put them in the baseline some way out, and the old walk to the baseline mean overran the edge by a random eight samples on average), durations are the finder's, the blockage current and standard deviation are taken over the steady part between the edges, the current is the average of all blocked states rather than the most common one, and the reported baseline standard deviation is no longer inflated by the edge (three times the true value before)
+* **`NoFitter` now places an event's edges where the signal leaves and returns to baseline and reports the mean of the blocked stretch**, and its baseline standard deviation is no longer inflated by the edge
 
-* **Results can move by one sample at a chunk boundary:** a reader now rounds a seconds request to the nearest sample instead of truncating it, so chunked reads (the Raw Data trace, event finding, loading an event's padded window) no longer duplicate one sample and drop another where a chunk boundary fell on an index whose time did not convert back exactly
+* **Results can move by one sample at a chunk boundary:** reads now round to the nearest sample, so a chunk boundary no longer duplicates one sample and drops another
 
 ### Developer Tooling:
 
-* The release workflow now runs only when a version tag is pushed; a push to `main` no longer runs the test suite a second time on the same commit
+* The release workflow now runs only when a version tag is pushed
 
-* Release branches now get the branch CI and the documentation render check on every push, so a release is tested before `git flow release finish` rather than after it has merged into `main`
+* Release branches now get branch CI and the docs render check on every push
 
-* `MetaController` now declares the `view` and `model` attributes every controller uses, so a type checker run against the installed project sees them; branch CI prints that checker's error count as a non-blocking report
+* `MetaController` declares the `view` and `model` attributes, and branch CI reports the project's mypy error count (non-blocking)
 
-* `python scripts/new_plugin.py AnalysisTab` now writes a controller that redeclares `view` and `model` with the tab's own types, as the shipped tabs do; the HelloWorld tutorial files are regenerated from it
+* `python scripts/new_plugin.py AnalysisTab` now writes a controller that redeclares `view` and `model` with the tab's own types
 
-* The test suite now checks fitted sublevel currents, blockages and durations, the baseline sigma fit, multi-file and integer-coded ABF reader recipes, the writers' failure paths and the Bessel filter against planted values and a reference implementation, with the synthetic events given a realistic Bessel rise time; the defects this exposes are recorded as expected failures that name the fix they wait for
+* The test suite now checks fitted values, the baseline sigma fit, reader recipes, writer failure paths and the Bessel filter against planted ground truth
 
-* **Breaking for anyone pinning on Poriscope's own metadata: the wheel now declares compatible-release ranges** (`numpy~=2.2`, `PySide6~=6.9`, ...) instead of exact pins, so it installs beside other packages; the exact versions CI tests against stay in `requirements.txt`
+* **Breaking for anyone pinning on Poriscope's metadata: the wheel declares compatible-release ranges** instead of exact pins; `requirements.txt` keeps the exact versions CI tests
 
-* `hdbscan` 0.8.44 replaces 0.8.40, which warned on every clustering run that scikit-learn 1.8 will remove `force_all_finite`
+* `hdbscan` 0.8.44 replaces 0.8.40, which warned on every clustering run
 
-* GitHub Actions and the pinned Python dependencies are now kept current by Dependabot, weekly, against `develop`
+* Dependabot now keeps GitHub Actions and the pinned Python dependencies current
 
-* A `real_data` test tier reads the lab's real recordings from a directory named by `PORISCOPE_REAL_DATA_DIR` and skips wherever it is unset, so every shipped reader is checked against an instrument's own files on a developer's machine without any recording entering the repository; `pyabf` joins the `dev` extras for the ABF comparison
+* A `real_data` test tier checks the readers against real recordings in `PORISCOPE_REAL_DATA_DIR`, skipped where it is unset
 
 ### Data Plugin API:
 
-* `MetaFilter.get_data_requirements()` lets a filter declare which of its settings the data must match (empty by default); `BesselFilter` declares its `Samplerate`, and the tabs check it before applying the filter
+* `MetaFilter.get_data_requirements()` lets a filter declare settings the data must match; `BesselFilter` declares its `Samplerate`
 
 ### Analysis Tabs:
 
-* `get_save_filename`, the CSV export's file picker that `MetaController.export_plot_data` calls on every tab, now lives once on `MetaView` instead of as four identical copies on the Views
+* `get_save_filename` now lives once on `MetaView` instead of in four Views
 
 ### User-Facing Behaviour:
 
 #### General:
 
-* **Fixed the log file on Windows dropping any line containing `μ`** - such as a fitter's `μs` duration unit - with `--- Logging error ---` on the console; `app.log` is now written as UTF-8
+* **Fixed the Windows log file dropping any line containing `μ`**
 
-* The Metadata tab's Kernel Density Plot no longer warns about a deprecated SciPy namespace on every plot
+* The Kernel Density Plot no longer warns about a deprecated SciPy namespace
 
-* Event finding's no-voltage chunk skip now compares `ThresholdBlockageFinder`'s sigma threshold in picoamps, scaled by the chunk's fitted sigma; before, the sigma value was compared with the picoamp mean directly, so the skip only ever triggered on baselines under a few picoamps
+* Event finding's no-voltage chunk skip now works with `ThresholdBlockageFinder`'s sigma threshold
 
-* A Bessel filter built for one sample rate is now refused, with both rates named, when applied to data at another - the Raw Data trace and event plots, event finding, and event plotting and fitting in Event Analysis; before, it was applied silently at the wrong cutoff
+* A Bessel filter is now refused, naming both rates, when applied to data at a sample rate other than its own
 
-* A recording whose files disagree on sample rate is now refused with a message naming the file, where before only each channel's first file was checked and the rest were read at its rate
+* A recording whose files disagree on sample rate is now refused, naming the file
 
-* Event finding with a chunk length under one sample (reachable through the plugin API; the Raw Data tab always passes one second) now reads one-second chunks instead of looping forever
+* Event finding with a chunk length under one sample no longer loops forever
 
-* **Event fitting no longer counts a fitter's own failure on an event as a scientific rejection reason:** an exception other than a `ValueError` from the fitter is tallied as `Plugin Error (<type>)` with its traceback in the log, the event is skipped and the channel finishes, so a fault that hits every event reads as "0 of N good fits" with that reason rather than a channel left incomplete or a table of rejections named after a Python error message
+* **A fitter's own error on an event is now reported as `Plugin Error (<type>)`** with the traceback in the log, and the channel still finishes
 
-* A fitter that returns no sublevel boundaries for an event now has that event rejected as "No Sublevels" instead of stopping the channel
+* A fitter that returns no sublevel boundaries for an event now rejects that event as "No Sublevels" instead of stopping the channel
 
-* `fit_events(indices=[])` now fits every event, as its documentation always said, instead of marking the channel fitted with nothing in it; the log no longer prints a progress fraction per event, and a rejection message names the event rather than printing its whole data dictionary
+* `fit_events(indices=[])` now fits every event, and fitting logs less
 
-* Reading back an event's metadata and traces loads the event once and applies the fit's filter to it, instead of loading it twice
+* Reading back an event's metadata loads the event once instead of twice
 
-* **A CUSUM-family fitter now refuses a `Step Size` of 0 when its settings are applied**, where before the zero reached the detector as a division by zero and was counted as a rejection of every event; `IntraCUSUM` likewise refuses an `Intraevent Hysteresis` above its `Intraevent Threshold`, and its threshold no longer defaults to 0 pA (which counted noise crossings) but must be set, as `Step Size` and `Rise Time` already must
+* **CUSUM-family fitters now refuse a `Step Size` of 0**, and `IntraCUSUM` a hysteresis above its threshold; `Intraevent Threshold` must now be set
 
-* A CUSUM-family fitter handed an event with no reported baseline sigma and an empty padding on the only side it had now rejects that event for that reason, where before it ran the detector against a `nan` or whole-event sigma and reported "Too Few Levels"
+* A CUSUM-family fitter now rejects an event it has no baseline sigma for, instead of reporting "Too Few Levels"
 
 * Metadata databases are now indexed, making filtered metadata plots and clearing a channel much faster; existing databases are indexed when first opened
 
 ### Documentation:
 
-* The API reference no longer publishes `NanoTrees`' four module helpers (`P6Flags`, `SingleSublevel`, `HackyList`, `Sublevels`) as event fitters; a page under a data-plugin family now goes only to a class that descends from that family's `Meta*` base
+* The API reference no longer lists `NanoTrees`' helper classes as event fitters
 
 ## Poriscope 2.0.1: 2026-10-08
 
 ### User-Facing Behaviour:
 
-* **Fixed the Metadata tab's CSV subset export attaching data to the wrong events**: when a database's channels had not been written in channel order, exporting a selection of channels gave every event's trace file another event's samples and labelled the rows of `data.csv` with the wrong file names, while reporting success; every release from 1.5.0 to 2.0.0 is affected, so redo any CSV subset export taken from a multi-channel database - the database itself was never changed
+* **Fixed the Metadata tab's CSV subset export attaching traces and file names to the wrong events** for databases whose channels were not written in channel order; affects every release from 1.5.0, so redo CSV subset exports of multi-channel databases (the databases themselves are unaffected)
 
-* Event data read from a metadata database now carries each event's own database id, which is what the Protein tab writes its fit results back against; the two ids could differ only in a file written before 1.8.0 that stored an event without its data
+* Event data now carries each event's own database id, which the Protein tab writes its fits back against
 
 
 ## Poriscope 2.0.0: 2026-10-05
