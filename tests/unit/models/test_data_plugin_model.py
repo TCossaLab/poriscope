@@ -122,14 +122,6 @@ def test_handle_exit_closes_all_resources(plugin_model, dummy_plugin):
     dummy_plugin.close_resources.assert_called_once()
 
 
-def test_apply_settings_delegates_correctly(plugin_model, dummy_plugin):
-    """
-    Test that apply_settings correctly delegates to the plugin's method.
-    """
-    plugin_model.apply_settings(dummy_plugin, {"param": "value"})
-    dummy_plugin.apply_settings.assert_called_once_with({"param": "value"})
-
-
 def test_get_plugin_instance(plugin_model, dummy_plugin):
     """
     Test retrieving a previously registered plugin instance.

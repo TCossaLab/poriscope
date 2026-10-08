@@ -26,6 +26,10 @@
 
 * **A metadata database now holds results from one type of fitter:** any number of runs of that fitter can still be written to it, but writing a different type of fitter into it is refused; use a new file per fitter type
 
+#### Application internals:
+
+* **`DataPluginModel.apply_settings` is removed**; call `apply_settings` on the plugin itself
+
 ### Developer Tooling:
 
 * The release workflow now runs only when a version tag is pushed
