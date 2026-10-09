@@ -67,17 +67,6 @@ class ClassicBlockageFinder(MetaEventFinder):
 
     @log(logger=logger)
     @override
-    def close_resources(self, channel: Optional[int] = None) -> None:
-        """
-        Perform any actions necessary to gracefully close resources before app exit
-
-        :param channel: the channel identifier
-        :type channel: Optional[int]
-        """
-        pass
-
-    @log(logger=logger)
-    @override
     def get_empty_settings(
         self,
         globally_available_plugins: Optional[Dict[str, List[str]]] = None,

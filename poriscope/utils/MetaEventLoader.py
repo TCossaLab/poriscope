@@ -81,28 +81,26 @@ class MetaEventLoader(BaseDataPlugin):
         return False
 
     @log(logger=logger)
-    def report_channel_status(
-        self, channel: Optional[int] = None, init: bool = False
-    ) -> str:
+    def report_status(self, channel: Optional[int] = None, init: bool = False) -> str:
         """
-        Return a string detailing any pertinent information about the status of analysis conducted on a given channel
+        Describe one channel's events, or every channel's when no channel is given.
 
-        :param channel: channel ID
+        :param channel: the channel to report on, or None for every channel
         :type channel: Optional[int]
         :param init: is the function being called as part of plugin initialization? Default False
         :type init: bool
 
-        :return: the status of the channel as a string
+        :return: the status report
         :rtype: str
         """
 
-        channels = self.get_channels()
-        num_events = [
-            (self.get_num_events(ch), self.get_samplerate(ch)) for ch in channels
-        ]
+        channels = self.get_channels() if channel is None else [channel]
         report = " \n"
-        for channel, (num, samplerate) in zip(channels, num_events):
-            report += f"Ch: {channel}: {num} events at {samplerate:.2f}Hz\n"
+        for ch in channels:
+            report += (
+                f"Ch: {ch}: {self.get_num_events(ch)} events at "
+                f"{self.get_samplerate(ch):.2f}Hz\n"
+            )
         return report.rstrip("\n")
 
     @log(logger=logger)
@@ -190,14 +188,14 @@ class MetaEventLoader(BaseDataPlugin):
         self.datafile = Path(self.settings["Input File"]["Value"])
 
     @log(logger=logger)
-    def reset_channel(self, channel: Optional[int] = None) -> None:
+    def reset_channel(self, channel: int) -> None:
         """
         **Purpose:** Reset the state of a specific channel for a new operation or run.
 
-        This is called any time an operation on a channel needs to be cleaned up or reset for a new run. If channel is not None, handle only that channel, else reset all of them. In most cases for MetaEventLoaders there is no need to reset and you can simplt ``pass``.
+        This is called any time an operation on a channel needs to be cleaned up or reset for a new run. In most cases for MetaEventLoaders there is no need to reset and you can simplt ``pass``.
 
         :param channel: channel ID
-        :type channel: Optional[int]
+        :type channel: int
         """
         pass
 
@@ -333,18 +331,6 @@ class MetaEventLoader(BaseDataPlugin):
 
         :return: keys of valid channels in the reader
         :rtype: List[int]
-        """
-        pass
-
-    @abstractmethod
-    def close_resources(self, channel: Optional[int] = None) -> None:
-        """
-        **Purpose:** Clean up any open file handles or memory on app exit.
-
-        This is called during app exit or plugin deletion to ensure proper cleanup of resources that could otherwise leak. Do this for all channels if no channel is specified, otherwise limit your closure to the specified channel. If no such operation is needed, it suffices to ``pass``.
-
-        :param channel: channel ID
-        :type channel: Optional[int]
         """
         pass
 

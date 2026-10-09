@@ -35,6 +35,7 @@ from tests.unit.plugins.conformance._recipes import (
     NOISE_STD_PA,
     PEAKED_EVENTS_DIP_PA,
     STAIRCASE_LEVEL_AMPLITUDES_PA,
+    assert_reports_whole_and_each_channel,
     build_event_fitter,
     build_event_loader,
     discover_concrete,
@@ -172,10 +173,10 @@ def test_fits_every_planted_event(fitter: MetaEventFitter) -> None:
 
     assert (
         fitter.get_eventfitting_status(EVENTS_CHANNEL) is True
-    ), f"fitting did not complete:\n{fitter.report_channel_status()}"
+    ), f"fitting did not complete:\n{fitter.report_status()}"
     assert fitter.get_num_events(EVENTS_CHANNEL) == EVENTS_COUNT, (
         f"fitted {fitter.get_num_events(EVENTS_CHANNEL)} of {EVENTS_COUNT} planted events:"
-        f"\n{fitter.report_channel_status()}"
+        f"\n{fitter.report_status()}"
     )
 
 
@@ -202,7 +203,7 @@ def test_non_finite_data_is_rejected_by_name(fitter: MetaEventFitter) -> None:
 
     assert fitter.rejected[EVENTS_CHANNEL] == {"Non-finite Data": EVENTS_COUNT}, (
         f"expected all {EVENTS_COUNT} events rejected as non-finite:"
-        f"\n{fitter.report_channel_status()}"
+        f"\n{fitter.report_status()}"
     )
 
 
@@ -345,7 +346,7 @@ def test_sublevel_count_matches_the_planted_staircase(
     }
     assert not wrong, (
         f"expected num_sublevels=={expected} for every event, got {wrong}:"
-        f"\n{staircase_fitter.report_channel_status()}"
+        f"\n{staircase_fitter.report_status()}"
     )
 
 
@@ -429,3 +430,18 @@ def test_fitter_fixture_shapes_are_known() -> None:
         f"unknown fixture shapes in FITTER_FIXTURES: {unknown}. Known shapes are "
         f"{sorted(FITTER_FIXTURE_SHAPES)}."
     )
+
+
+@pytest.mark.conformance
+def test_the_status_report_covers_the_fitter_and_each_channel(
+    fitter: MetaEventFitter,
+) -> None:
+    """
+    A fitter reports on itself as a whole and on any one channel.
+
+    :param fitter: The configured fitter under test.
+    :type fitter: MetaEventFitter
+    """
+    for _progress in fitter.fit_events(EVENTS_CHANNEL):
+        pass
+    assert_reports_whole_and_each_channel(fitter, EVENTS_CHANNEL)

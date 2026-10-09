@@ -80,26 +80,14 @@ class MetaDatabaseLoader(BaseDataPlugin):
         pass
 
     @abstractmethod
-    def reset_channel(self, channel: Optional[int] = None) -> None:
+    def reset_channel(self, channel: int) -> None:
         """
         **Purpose:** Reset the state of a specific channel for a new operation or run.
 
-        This is called any time an operation on a channel needs to be cleaned up or reset for a new run. If channel is not None, handle only that channel, else reset all of them. In most cases for MetaDatabaseLoaders there is no need to reset and you can simplt ``pass``.
+        This is called any time an operation on a channel needs to be cleaned up or reset for a new run. In most cases for MetaDatabaseLoaders there is no need to reset and you can simplt ``pass``.
 
         :param channel: channel ID
-        :type channel: Optional[int]
-        """
-        pass
-
-    @abstractmethod
-    def close_resources(self, channel: Optional[int] = None) -> None:
-        """
-        **Purpose:** Clean up any open file handles or memory on app exit.
-
-        This is called during app exit or plugin deletion to ensure proper cleanup of resources that could otherwise leak. Do this for all channels if no channel is specified, otherwise limit your closure to the specified channel. If no such operation is needed, it suffices to ``pass``.
-
-        :param channel: channel ID
-        :type channel: Optional[int]
+        :type channel: int
         """
         pass
 
@@ -745,14 +733,12 @@ class MetaDatabaseLoader(BaseDataPlugin):
         yield 1.0
 
     @log(logger=logger)
-    def report_channel_status(
-        self, channel: Optional[int] = None, init: bool = False
-    ) -> str:
+    def report_status(self, channel: Optional[int] = None, init: bool = False) -> str:
         """
         Return a string detailing event counts per experiment and channel.
 
-        :param channel: channel ID. Currently unused at the base class level but
-            retained for API compatibility with subclasses that may filter by channel.
+        :param channel: ignored: the report covers every experiment and channel in
+            the database, since a channel number alone names no experiment's channel
         :type channel: Optional[int]
         :param init: True if the function is being called as part of plugin
             initialization. Default False.
@@ -1400,7 +1386,7 @@ class MetaDatabaseLoader(BaseDataPlugin):
         :param experiments_and_channels: a dict of experiment names as keys as lists of channels to include as values. Can be None, and individual channel lists can be None to include all channels for that experiment
         :type experiments_and_channels: Optional[Dict[str, Optional[List[int]]]]
 
-        :return: a generator of dicts keyed id (the event's ``events.id``), event_id, channel_id, experiment_id, samplerate, padding_before, padding_after, raw_data, filtered_data and fit_data, the last three numpy arrays
+        :return: a generator of dicts keyed id (the event's ``events.id``), event_id, channel_id, experiment_id, samplerate, padding_before, padding_after, raw_data, filtered_data and fit_data, the paddings in microseconds and the last three numpy arrays
         :rtype: Generator[Dict[str, Any], bool, None]
         """
         query, debug = self.construct_event_data_query(

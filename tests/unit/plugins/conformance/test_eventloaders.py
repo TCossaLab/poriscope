@@ -19,11 +19,16 @@ import numpy as np
 import pytest
 
 from poriscope.utils.MetaEventLoader import MetaEventLoader
+from tests.synthetic_data.synthetic_events_db import (
+    generate_multichannel_events_database,
+)
 from tests.unit.plugins.conformance._recipes import (
     EVENTS_CHANNEL,
     EVENTS_COUNT,
     EVENTS_SAMPLERATE_HZ,
+    assert_reports_whole_and_each_channel,
     build_any_event_loader,
+    build_event_loader,
     discover_concrete,
 )
 
@@ -214,3 +219,38 @@ def test_loader_releases_its_input_file(loader_over_own_copy) -> None:
 def test_at_least_one_loader_was_discovered() -> None:
     """Guard against the discovery walk silently finding nothing."""
     assert LOADERS, "no concrete MetaEventLoader subclasses were discovered"
+
+
+@pytest.mark.conformance
+def test_the_status_report_covers_the_loader_and_each_channel(
+    loader: MetaEventLoader,
+) -> None:
+    """
+    An event loader reports on itself as a whole and on any one channel.
+
+    :param loader: The configured loader under test.
+    :type loader: MetaEventLoader
+    """
+    assert_reports_whole_and_each_channel(loader, EVENTS_CHANNEL)
+
+
+@pytest.mark.conformance
+def test_a_channel_report_describes_that_channel_alone(tmp_path) -> None:
+    """
+    Asked about one channel of a two-channel file, the report names only that one.
+
+    :param tmp_path: Per-test temporary directory for the events file.
+    :type tmp_path: pathlib.Path
+    """
+    database = generate_multichannel_events_database(
+        tmp_path / "two_channels.sqlite3",
+        channels=[0, 1],
+        num_events_per_channel={0: 5, 1: 7},
+    )
+    loader = build_event_loader(str(database.db_path))
+    try:
+        report = loader.report_status(1)
+        assert "Ch: 1:" in report and "7 events" in report, report
+        assert "Ch: 0:" not in report, report
+    finally:
+        loader.close_resources()

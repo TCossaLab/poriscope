@@ -20,10 +20,12 @@ import pandas as pd
 import pytest
 
 from poriscope.utils.MetaDatabaseLoader import MetaDatabaseLoader
+from tests.synthetic_data.synthetic_metadata_db import generate_metadata_database
 from tests.unit.plugins.conformance._recipes import (
     METADATA_CHANNELS,
     METADATA_EVENT_COUNTS,
     METADATA_EXPERIMENT,
+    assert_report_ignores_channel,
     build_db_loader,
     discover_concrete,
 )
@@ -195,7 +197,7 @@ def test_reset_and_close_are_safe(db_loader: MetaDatabaseLoader) -> None:
     :param db_loader: The configured database loader under test.
     :type db_loader: MetaDatabaseLoader
     """
-    db_loader.reset_channel()
+    db_loader.reset_channel(0)
     assert db_loader.get_experiment_names(), "reset_channel left the loader unusable"
     db_loader.close_resources()
     db_loader.close_resources()
@@ -227,3 +229,51 @@ def test_db_loader_releases_its_input_file(db_loader_over_own_copy) -> None:
 def test_at_least_one_db_loader_was_discovered() -> None:
     """Guard against the discovery walk silently finding nothing."""
     assert DB_LOADERS, "no concrete MetaDatabaseLoader subclasses were discovered"
+
+
+@pytest.mark.conformance
+def test_the_status_report_ignores_a_channel(db_loader: MetaDatabaseLoader) -> None:
+    """
+    A database loader reports every experiment and channel, whichever it is given.
+
+    :param db_loader: The configured database loader under test.
+    :type db_loader: MetaDatabaseLoader
+    """
+    assert_report_ignores_channel(db_loader)
+
+
+@pytest.mark.conformance
+@pytest.mark.parametrize("loader_cls", DB_LOADERS, ids=lambda c: c.__name__)
+def test_event_paddings_keep_their_fraction_of_a_microsecond(
+    loader_cls: Type[MetaDatabaseLoader], tmp_path
+) -> None:
+    """
+    An event's paddings are durations in microseconds, read from its first and last
+    sublevel; a 100-sample padding at 3 MHz is 33.33 us and must not come back as 33.
+
+    :param loader_cls: The database loader class under test.
+    :type loader_cls: Type[MetaDatabaseLoader]
+    :param tmp_path: Per-test temporary directory for the database.
+    :type tmp_path: pathlib.Path
+    """
+    out = tmp_path / "three_megahertz.sqlite3"
+    generate_metadata_database(
+        out,
+        experiments=[
+            {
+                "name": "padding",
+                "channels": [
+                    {"channel_id": 0, "num_events": 3, "samplerate": 3_000_000.0}
+                ],
+            }
+        ],
+    )
+    loader = build_db_loader(loader_cls, str(out))
+    try:
+        events = list(loader.load_event_data("", None))
+        assert events, "the loader yielded no events"
+        for event in events:
+            assert event["padding_before"] == pytest.approx(100 / 3)
+            assert event["padding_after"] == pytest.approx(100 / 3)
+    finally:
+        loader.close_resources()

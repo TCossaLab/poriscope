@@ -29,6 +29,7 @@ import pytest
 from pytest_mock import MockerFixture
 
 from poriscope.plugins.analysistabs.MetadataView import MetadataView
+from poriscope.plugins.analysistabs.utils.metadatacontrols import MetadataControls
 from poriscope.views.widgets.add_subset_filter_dialog import AddSubsetFilterDialog
 
 # ----------------------------- Fixtures ------------------------------
@@ -63,7 +64,12 @@ def mock_qt_dependencies(mocker: MockerFixture) -> None:
     """Mock all Qt and external dependencies to prevent GUI initialization."""
     mocker.patch("poriscope.utils.MetaSubsetTabView.QFileDialog")
     mocker.patch("poriscope.utils.MetaView.QHBoxLayout")
-    mocker.patch("poriscope.plugins.analysistabs.MetadataView.MetadataControls")
+    # Specced so the panel is a MetaSubsetTabControls, as the real one is; the
+    # subset view refuses any other panel when it wires the filter signals.
+    mocker.patch(
+        "poriscope.plugins.analysistabs.MetadataView.MetadataControls",
+        return_value=MagicMock(spec=MetadataControls),
+    )
     mocker.patch("poriscope.plugins.analysistabs.MetadataView.QMessageBox")
     mocker.patch(
         "poriscope.utils.MetaView.MetaView.__init__",
@@ -310,7 +316,8 @@ def test_set_control_area_creates_metadata_controls(
     """
     mock_layout: MagicMock = mocker.Mock()
     mock_controls_cls: MagicMock = mocker.patch(
-        "poriscope.plugins.analysistabs.MetadataView.MetadataControls"
+        "poriscope.plugins.analysistabs.MetadataView.MetadataControls",
+        return_value=MagicMock(spec=MetadataControls),
     )
 
     view._set_control_area(mock_layout)
@@ -347,6 +354,25 @@ def test_set_control_area_adds_controls_to_layout(
     view._set_control_area(mock_layout)
 
     mock_layout.addLayout.assert_called_once()
+
+
+def test_set_control_area_refuses_a_panel_that_is_not_a_subset_panel(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """
+    A subset tab wires two filter signals only ``MetaSubsetTabControls`` declares.
+
+    ``_connect_control_signals`` keeps ``MetaView``'s parameter type, so a panel of
+    any other kind reaches it typed correctly and must be refused by name rather
+    than left without its filter signals.
+    """
+    mocker.patch(
+        "poriscope.plugins.analysistabs.MetadataView.MetadataControls",
+        return_value=MagicMock(),
+    )
+
+    with pytest.raises(TypeError, match="MetaSubsetTabControls"):
+        view._set_control_area(mocker.Mock())
 
 
 # ----------------------------- File Dialog Tests ------------------------------

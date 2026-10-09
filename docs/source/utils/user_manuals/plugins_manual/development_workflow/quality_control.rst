@@ -663,7 +663,10 @@ Concretely, this test:
 3. checks that each one implements every method its base class marks as
    ``@abstractmethod``,
 4. checks that overridden methods keep the same argument names, the same argument
-   order, and (where type hints are present) a compatible type signature.
+   order, and (where type hints are present) a compatible type signature - both the
+   abstract ones and any method you override that the base already implements, such
+   as ``get_empty_settings`` or ``load_data``, since the app calls those through the
+   base's contract too.
 
 Run it locally with:
 
@@ -800,12 +803,15 @@ written for what that family's output is actually used for:
        invalid one.
 
 Every family is also asked that ``reset_channel`` and ``close_resources`` are safe
-after use, including twice. Readers, loaders and writers are further asked to actually
+after use, including twice, and that its status report holds together: a plugin with
+channels answers ``report_status(channel)`` with a non-empty report that is part of what
+``report_status()`` gives for the whole plugin, and a filter or database loader, which has
+no channels, gives the same report either way. Readers, loaders and writers are further asked to actually
 release their file(s) once nothing references the plugin anymore, which on Windows is a
 genuine handle-leak check because an open handle blocks ``os.unlink``. The check differs
 by family because the contract does: a writer closes its connection explicitly inside
-``close_resources``, while a reader's own docstring permits leaving a memmap for the
-garbage collector to reclaim — so the reader/loader version of the check drops its only
+``close_resources``, while ``close_resources``'s docstring permits a reader to leave a
+memmap for the garbage collector to reclaim — so the reader/loader version of the check drops its only
 reference and runs ``gc.collect()`` before checking, rather than asserting on
 ``close_resources`` alone.
 

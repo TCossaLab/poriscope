@@ -38,6 +38,7 @@ from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QCheckBox, QDialog, QFileDialog, QMessageBox
 
 from poriscope.utils.LogDecorator import log
+from poriscope.utils.MetaControls import MetaControls
 from poriscope.utils.MetaSubsetTabControls import MetaSubsetTabControls
 from poriscope.utils.MetaView import MetaView
 from poriscope.views.widgets.add_subset_filter_dialog import AddSubsetFilterDialog
@@ -221,16 +222,25 @@ class MetaSubsetTabView(MetaView):
     table_name: str
     units: Dict[str, str]
 
-    def _connect_control_signals(self, controls: MetaSubsetTabControls) -> None:
+    def _connect_control_signals(self, controls: MetaControls) -> None:
         """
         Connect the two filter signals only a subset tab's controls panel carries.
 
         ``MetaView._set_control_area`` wires the four every panel has; these two are
         declared on ``MetaSubsetTabControls`` and so belong to the subset tabs alone.
+        The parameter keeps ``MetaView``'s type, as an override must; a subset tab's
+        ``_build_controls`` always returns a ``MetaSubsetTabControls``, and anything
+        else is refused rather than left without its filter signals.
 
         :param controls: the panel just built by ``_build_controls``
-        :type controls: MetaSubsetTabControls
+        :type controls: MetaControls
+        :raises TypeError: if the panel is not a ``MetaSubsetTabControls``
         """
+        if not isinstance(controls, MetaSubsetTabControls):
+            raise TypeError(
+                f"{type(self).__name__} needs a MetaSubsetTabControls panel, "
+                f"got {type(controls).__name__}"
+            )
         controls.edit_filter_requested.connect(self.show_edit_filter_dialog)
         controls.delete_filter_requested.connect(self._delete_filter_by_name)
 

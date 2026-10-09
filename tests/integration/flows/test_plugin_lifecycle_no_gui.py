@@ -434,6 +434,27 @@ class TestARenameHappensOnlyWithTheEdit:
         assert record.history == []
         assert any("already exists" in text for text in record.text)
 
+    def test_a_plugin_depending_on_a_renamed_one_can_still_be_edited(
+        self, with_writer: DataPluginController
+    ) -> None:
+        """
+        After its fitter is renamed, the writer's own edit applies and keeps the new name.
+
+        The rename rewrites the writer's reference to its fitter; the writer's next
+        edit opens on those settings and validates them, so a reference the rename
+        left inconsistent would refuse the edit.
+        """
+        edit(with_writer, "MetaEventFitter", FITTER, EditDialog(key="renamed"))
+        record = Recorder(with_writer)
+
+        edit(with_writer, "MetaDatabaseWriter", WRITER, EditDialog({"Voltage": 150.0}))
+
+        writer = plugin(with_writer, "MetaDatabaseWriter", WRITER)
+        assert writer.settings["Voltage"]["Value"] == 150.0
+        assert writer.get_parents() == {("MetaEventFitter", "renamed")}
+        assert writer.get_raw_settings()["MetaEventFitter"]["Value"] == "renamed"
+        assert [entry["key"] for entry, _old_key in record.history] == [WRITER]
+
 
 class TestAPluginThatCannotReportItsStatus:
     """
@@ -458,7 +479,7 @@ class TestAPluginThatCannotReportItsStatus:
         def refuse(*args: Any, **kwargs: Any) -> str:
             raise RuntimeError("no status")
 
-        monkeypatch.setattr(CUSUM, "report_channel_status", refuse)
+        monkeypatch.setattr(CUSUM, "report_status", refuse)
 
     def test_it_is_still_created(
         self, controller: DataPluginController, silent: None

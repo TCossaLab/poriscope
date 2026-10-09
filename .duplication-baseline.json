@@ -25,33 +25,33 @@
   },
   "SQLite plugins": {
     "files": 5,
-    "functions": 66,
+    "functions": 64,
     "identical_bodies": 0,
     "removable_lines": 0
   },
   "datareaders": {
     "files": 8,
-    "functions": 99,
-    "identical_bodies": 14,
-    "removable_lines": 404
+    "functions": 93,
+    "identical_bodies": 13,
+    "removable_lines": 364
   },
   "eventfinders": {
     "files": 3,
-    "functions": 13,
+    "functions": 12,
     "identical_bodies": 0,
     "removable_lines": 0
   },
   "eventfitters": {
     "files": 4,
-    "functions": 38,
-    "identical_bodies": 9,
-    "removable_lines": 185
+    "functions": 34,
+    "identical_bodies": 7,
+    "removable_lines": 171
   },
   "filters": {
     "files": 2,
-    "functions": 15,
-    "identical_bodies": 2,
-    "removable_lines": 16
+    "functions": 11,
+    "identical_bodies": 0,
+    "removable_lines": 0
   },
   "views/widgets": {
     "files": 16,

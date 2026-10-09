@@ -92,7 +92,7 @@ class _StubReader:
         """Record the channel every status request asks about."""
         self.asked_for: List[int] = []
 
-    def report_channel_status(self, channel: int, init: bool = False) -> str:
+    def report_status(self, channel: int, init: bool = False) -> str:
         """
         Report a fixed status, and remember which channel was asked about.
 
@@ -115,7 +115,7 @@ class _StubReader:
         """
         return READER
 
-    def close_resources(self, channel: int = None) -> None:
+    def close_resources(self) -> None:
         """
         Release nothing, because this stub holds nothing.
 
@@ -123,9 +123,6 @@ class _StubReader:
         ``DataPluginModel.handle_exit``, which calls this on every registered
         plugin, so a stub without it fails the test in teardown having already
         passed.
-
-        :param channel: the channel to close, or None for all of them
-        :type channel: int
         """
         return None
 

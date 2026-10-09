@@ -98,17 +98,6 @@ class NoFitter(MetaEventFitter):
 
     @log(logger=logger)
     @override
-    def close_resources(self, channel: Optional[int] = None) -> None:
-        """
-        Perform any actions necessary to gracefully close resources before app exit
-
-        :param channel: the channel identifier
-        :type channel: Optional[int]
-        """
-        pass
-
-    @log(logger=logger)
-    @override
     def construct_fitted_event(  ##TODO
         self, channel: int, index: int
     ) -> Optional[npt.NDArray[np.float64]]:
@@ -579,15 +568,6 @@ class NoFitter(MetaEventFitter):
         )
 
         return event_metadata
-
-    @log(logger=logger)
-    @override
-    def _post_process_events(self, channel: int) -> None:
-        """
-        :param channel: the index of the channel to postprocess
-        :type channel: int
-        """
-        pass
 
     @log(logger=logger)
     @override

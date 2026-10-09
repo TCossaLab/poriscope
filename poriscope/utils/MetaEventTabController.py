@@ -26,7 +26,7 @@
 
 import logging
 import math
-from typing import Callable, Dict, Optional
+from typing import Callable, Dict, List, Optional
 
 from PySide6.QtCore import Slot
 
@@ -76,12 +76,12 @@ class MetaEventTabController(MetaController):
 
     @log(logger=logger)
     @Slot(dict)
-    def update_available_plugins(self, available_plugins: dict) -> None:
+    def update_available_plugins(self, available_plugins: Dict[str, List[str]]) -> None:
         """
         Relay an updated dict of available plugin keys, keyed by metaclass, to both the model and the view.
 
         :param available_plugins: dict of lists keyed by MetaClass, listing the identifiers of all instantiated plugins throughout the app.
-        :type available_plugins: dict
+        :type available_plugins: Dict[str, List[str]]
         """
         self.logger.debug(
             f"Controller received available plugins update: {available_plugins}"

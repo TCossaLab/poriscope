@@ -33,8 +33,8 @@ Accuracy tests against ground truth, reader and database correctness, type check
 **Plan:** <https://claude.ai/artifact/W9G3cHAQvSopQsRrJH6s3z> (order, rulings, live gate figures,
 per-step commit series; updated as steps land). Items below sit under the plan's step; each step is
 re-measured at HEAD when it comes up. Anchors re-verified 2026-10-05 at `90ad82e9`. Rulings so far
-(Kyle, 2026-10-05): the ground-truth harness is ours to build; one release, with step 8 allowed to
-slip to 2.2 if the PeakFinder owner does not engage; runtime pins loosen to compatible ranges while
+(Kyle, 2026-10-05): the ground-truth harness is ours to build; one release, step 8 included (the
+PeakFinder owner approved its changes 2026-10-09); runtime pins loosen to compatible ranges while
 `requirements.txt` stays exact; the ABF offset arithmetic is correct (`DECISIONS.md` 2026-10-05).
 
 **Two tracks** (Kyle, 2026-10-05). Steps 1-8 and 10 are Kyle's track, in order. **Step 9 (9a, 9b) is
@@ -46,53 +46,6 @@ and wheel runs are green on `develop`; one feature branch per sub-step, in the o
 promotion updates `.duplication-baseline.json` in the same commit; each track edits only its own
 step sections here and its own changelog lines, and rebases onto `develop` before `feature finish`.
 Step 10 waits for both tracks.
-
-### Step 8 - data-plugin API break (breaking; Kyle takes the PeakFinder side)
-
-- **`channel: Optional[int] = None` meaning "every channel"** - scope as designed 2026-09-22
-  (`DECISIONS.md`). `MetaEventFitter.reset_channel:325-358` ignores `None` and writes
-  `eventfitting_status[None]` behind four `type: ignore`s (`:343-357`);
-  `MetaEventFinder.reset_channel:172-194` writes its ten resets twice. `close_resources` is `pass`
-  in 15 of 18 overriding plugin files. Scope: the three methods take a required `channel: int` on
-  the six channelled families, every `None` arm deleted; `MetaFilter` and `MetaDatabaseLoader` take
-  no channel; `MetaWriter`/`MetaDatabaseWriter` gain `get_channels()`; `BaseDataPlugin` stops
-  declaring the three and loses the unused `__enter__`/`__exit__` (`:116`/`:122`, with
-  `test_base_data_plugin_context_manager.py`); `MetaDatabaseWriter._initialize_database:379` and
-  `_write_experiment_metadata:355` go `Optional[int]` -> `int` (`MetaWriter`'s already is). All 21
-  overrides change verbatim. **`PeakFinder.py:2591-2593` and `:5143` pass `None` in the body** -
-  Kyle makes these two changes himself (2026-10-05), with both PeakFinders' signature and
-  docstring updates, so step 8 has no owner gate; Nada gets a heads-up.
-- **Four app-layer callers pass `channel=None`** (`DataPluginController.py:285`, `:815`;
-  `DataPluginModel.py:217`, `:239`), each on a plugin of any family; only readers, finders, fitters
-  and event loaders have `get_channels()`, so convert them with this step's signatures (moved from
-  step 7, 2026-10-08).
-- **`MetaModel.generate_report:330` passes the export index as a loader's channel.**
-- **Remove `BaseDataPlugin.replace_raw_settings_option`** (`:356-387`, breaking; ruled 2026-10-08).
-  It never acts: create, edit and session restore all set a plugin reference's `Options` to `None`
-  first (`DataPluginController.py:419-420`), and validation checks `Options` only when present.
-  Its one caller is `DataPluginController.py:343`; correct `get_raw_settings`'s docstring. Pin with
-  a real-controller test: rename a parent, then edit the dependent.
-- **Add a run-wide "all channels finished" hook on `MetaEventFitter`**; Kyle wires it into PeakFinder
-  (`_post_process_events:2133-2178`), so the barrier is built by the base rather than raced.
-- **The two filters share 16 byte-identical lines**: `close_resources` and `reset_channel` in
-  `BesselFilter` (`:128`/`:139`) and `WaveletFilter` (`:92`/`:103`). Both are `@abstractmethod` on
-  `MetaFilter` (`:104-126`), so promotion is a contract change; it rides this step.
-- **The compliance test checks only `__abstractmethods__`** (`test_plugin_compliance.py:43`), so
-  overrides of concrete methods such as `load_data` go unchecked. Measured in step 0, widened here.
-- **The PeakFinders write the duration unit as `"μs"`** (`Basic_PeakFinder.py:1197`,
-  `PeakFinder.py:2068`) where the other 53 unit sites write `"us"`: one unit, two spellings in
-  the database. Settle on `"us"` while the PeakFinder signatures are open.
-- **`PeakFinder.py:1019-1045` carries the CUSUM detector the shipped family fixed in step 5**:
-  the reset gated on an accepted jump (variance 195-442 σ² after a rejected crossing, blind to the
-  steps behind a large edge) and `varS = 0` outside the loop (`:1045`). Kyle applies both with
-  the PeakFinder work here (2026-10-07).
-- **`_populate_event_metadata` cannot see the located edges**, so a fitter has no per-event
-  diagnostics path: CUSUM's `Max Sublevels` retry (`CUSUM.py`, step ×1.5 up to four times)
-  records which factor fitted an event nowhere. Pass `sublevel_starts` to the hook while the
-  `Meta*` signatures are open (`DECISIONS.md` 2026-10-07); CUSUM then records its scale in one line.
-- **`_load_event_data` yields `padding_before` as `int()` of a duration in µs** (`SQLiteDBLoader.py:947`),
-  truncating up to 1 µs (4 samples at 4 MHz) before `MetadataModel:741` converts it to samples for
-  the rectification median. Keep it float; that changes the declared tuple on the `Meta*` base.
 
 ### Step 9a - analysis-tab views (Carolina's track)
 
@@ -133,6 +86,19 @@ Step 10 waits for both tracks.
   `$` lets the lazy `.*?` expand across every `)`, so `Rate (per pore)` with unit `Hz` becomes
   `Rate (Hz)`. Two copies, `ProteinView.py:2337` and `MetadataView.py:2840`; pinned in
   `test_duplicated_helpers.py:273-316`, so the fix updates those tests.
+- **Event Analysis overlays one fitter's fits on another loader's events** (Kyle, 2026-10-09).
+  `EventAnalysisController.load_event_plot:73` loads traces from the selected loader
+  (`_load_one_event:320`) and fits and features from the selected fitter (`_load_one_fit:359`,
+  `_load_one_feature_set:388`, gated by `_fitting_is_done:293`), never comparing them; the
+  controls do not filter the fitter list by loader. `eventfitter_1` (on `eventloader_1`) with
+  `eventloader_2` selected draws fit *n* over the other file's event *n*. Display only: a
+  database write uses the fitter's own loader. Check `("MetaEventLoader", loader)` against the
+  fitter's `get_parents()` (`BaseDataPlugin.py:377`) before loading fits. On a mismatch, to
+  rule: plot the traces without fits and say why on the status panel (recommended), refuse the
+  plot, or filter the fitter dropdown by loader (View work, needs a no-fit option). Test first:
+  two loaders, two fitters, crossed selection, no fit drawn. Also measure `start_fitting:468`,
+  which takes its channels from the selected loader but fits on the fitter's own loader
+  (`:502`), so a crossed selection may fit channels that loader lacks (not yet measured).
 
 ### Step 9b - breaking tab designs and the milestone guard (Carolina's track)
 
@@ -250,7 +216,7 @@ Tab state onto the Models, heavy work off the GUI thread, event-finder and CUSUM
   moving a slot to a worker would queue the call and the read would get `None` - silently
   "no data" rather than loudly wrong.
 - **Oversized units, measured 2026-09-24.** 13 functions exceed 300 lines, led by
-  `metadatacontrols.setupUi` (523), `PeakFinder.report_channel_status` (472),
+  `metadatacontrols.setupUi` (523), `PeakFinder.report_status` (472),
   `_classify_peak_prominences` (467), `proteincontrols.setupUi` (438) and
   `MetadataView._overlay_plot` (342); nine of the 13 are in the two PeakFinders.
   `ProteinView.py` is 2,363 lines across 51 methods; `MetadataView.py` 2,828 across 45.
@@ -776,15 +742,14 @@ Logic in `PeakFinder.py`, `Basic_PeakFinder.py` and `NanoTrees.py`; see the stan
 
 ### Plugin contract
 
-- **PeakFinder's cross-channel barrier can be skipped** *(by reading)*:
-  `_post_process_events:2133-2178` runs global classification only when every other channel's
-  `eventfitting_status` is already True, but the base sets it after the hook returns
-  (`MetaEventFitter.py:763-764`), so two channels finishing together both skip it.
 - **PeakFinder switches `matplotlib.use("Agg")` process-wide from a worker thread**
   (`:3182`, `:3694`, `:4128`); harmless today because the views only read `pl.rcParams`.
 
 ### Fitter plugin defects
 
+- **`PeakFinder.py:1889` truncates a microsecond time to a sample index** (`int(start_us * samplerate * 1e-6)`),
+  which floating point can put one sample early: 7 samples at 3 MHz multiply back to 6.9999 (2026-10-09).
+  The tabs' identical conversions round since 2.1.
 - **`find_mode_blockage_level` guards two of its three Optional parameters.** The body
   handles `data is None` and `baseline_std is None`, then computes
   `abs(data_min - baseline_mean)` with no guard on `baseline_mean`, equally `Optional[float]`
@@ -811,13 +776,6 @@ Logic in `PeakFinder.py`, `Basic_PeakFinder.py` and `NanoTrees.py`; see the stan
   `baseline_std`/`baseline_mean` from `data[:padding_before]` and discarding what the loader
   passed. Possibly deliberate, but the two parameters are inert and the docstring's promise to
   handle `None` arguments is met by accident.
-- **`PeakFinder` carries a third copy of the CUSUM variance-reset bug.**
-  `PeakFinder.py:1008`'s `varS = 0` sits after the `while` loop rather than inside the
-  jump-accepted block (`:1000-1007`), so the Welford accumulator is never reset at a detected changepoint
-  and the variance estimate is inflated (~586x one sample after a transition, ~5x after a
-  hundred). Fixed in `CUSUM.py`/`ClassicCUSUM.py` on 2026-09-03 against the C reference; this
-  copy is left for its owner. Note `PeakFinder` uses `threshold = step_size` directly rather
-  than `_calculate_threshold`, so the magnitude above is indicative, not transferred.
 - **Both PeakFinders' `sublevel_starts` really holds dicts, not indices.** Now consistent
   rather than broken - the `MetaEventFitter` contract was widened to `List[Any]` to match what
   it has always produced - but the parameter name still says "starts" while the payload is

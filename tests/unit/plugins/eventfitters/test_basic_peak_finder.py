@@ -587,7 +587,7 @@ class TestDefineMetadataTypesAndUnits(unittest.TestCase):
     def test_event_units(self):
         u = self.pf._define_event_metadata_units()
         self.assertEqual(u["number_peaks"], " ")
-        self.assertEqual(u["duration"], "μs")
+        self.assertEqual(u["duration"], "us")
         self.assertEqual(u["raw_ecd"], "pC")
         self.assertEqual(u["max_deviation"], "pA")
         self.assertEqual(u["baseline_current"], "pA")
@@ -945,7 +945,7 @@ class TestNoopOverrides(unittest.TestCase):
         self.assertIsNone(self.pf._pre_process_events(0))
 
     def test_post_process_noop(self):
-        self.assertIsNone(self.pf._post_process_events(0))
+        self.assertIsNone(self.pf._post_process_events([0]))
 
     def test_validate_settings_noop(self):
         self.assertIsNone(self.pf._validate_settings({}))

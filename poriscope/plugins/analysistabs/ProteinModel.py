@@ -417,8 +417,8 @@ class ProteinModel(MetaSubsetTabModel):
         else:
             raise ValueError(f"Unknown plot_type {plot_type!r}")
 
-        padding_before = int(event["padding_before"] * event["samplerate"] * 1e-6)
-        padding_after = int(event["padding_after"] * event["samplerate"] * 1e-6)
+        padding_before = round(event["padding_before"] * event["samplerate"] * 1e-6)
+        padding_after = round(event["padding_after"] * event["samplerate"] * 1e-6)
         baseline = 0.5 * (
             np.median(timeseries[:padding_before])
             + np.median(timeseries[-padding_after:])

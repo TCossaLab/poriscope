@@ -29,7 +29,7 @@ from abc import abstractmethod
 from pathlib import Path
 from typing import Any, Dict, Generator, List, Optional
 
-from poriscope.utils.BaseDataPlugin import BaseDataPlugin
+from poriscope.utils.BaseDataPlugin import BaseDataPlugin, Setting
 from poriscope.utils.DocstringDecorator import inherit_docstrings
 from poriscope.utils.LogDecorator import log
 from poriscope.utils.MetaEventFinder import MetaEventFinder
@@ -74,27 +74,16 @@ class MetaWriter(BaseDataPlugin):
         self.output_file_name: Path
 
     # public API, MUST be implemented by subclasses
-    @abstractmethod
-    def close_resources(self, channel: Optional[int] = None) -> None:
-        """
-        **Purpose:** Clean up any open file handles or memory.
-
-        This is called during app exit or plugin deletion, as well as at the end of any batch write operation, to ensure proper cleanup of resources that could otherwise leak. Do this for all channels if no channel is specified, otherwise limit your closure to the specified channel. Your files should be closed here, if they are not in your writing step. If no such operation is needed, it suffices to ``pass``. In the case of writers, this method is also called with a specific channel identifier at the end of any batch write operation (a call to :py:meth:`~poriscope.utils.MetaWriter.MetaWriter.commit_events`), and so should be used to ensure atomic write operations if possible.
-
-        :param channel: channel ID
-        :type channel: Optional[int]
-        """
-        pass
 
     @abstractmethod
-    def reset_channel(self, channel: Optional[int] = None) -> None:
+    def reset_channel(self, channel: int) -> None:
         """
         **Purpose:** Reset the state of a specific channel for a new operation or run.
 
-        This is called any time an operation on a channel needs to be cleaned up or reset for a new run. If channel is not None, handle only that channel, else close all of them. Most writers will create permanent state changes in the form of data written to the output file, that should be deleted or otherwise set up for subsequent overwrite when this function is called.
+        This is called any time an operation on a channel needs to be cleaned up or reset for a new run. Most writers will create permanent state changes in the form of data written to the output file, that should be deleted or otherwise set up for subsequent overwrite when this function is called.
 
         :param channel: channel ID
-        :type channel: Optional[int]
+        :type channel: int
         """
         pass
 
@@ -227,24 +216,22 @@ class MetaWriter(BaseDataPlugin):
         return True
 
     @log(logger=logger)
-    def report_channel_status(
-        self, channel: Optional[int] = None, init: bool = False
-    ) -> str:
+    def report_status(self, channel: Optional[int] = None, init: bool = False) -> str:
         """
-        Return a string detailing any pertinent information about the status of analysis conducted on a given channel
+        Describe one channel's status, or every channel's when no channel is given.
 
-        :param channel: channel ID
+        :param channel: the channel to report on, or None for every channel
         :type channel: Optional[int]
         :param init: is the function being called as part of plugin initialization? Default False
         :type init: bool
 
-        :return: the status of the channel as a string
+        :return: the status report
         :rtype: str
         """
         if channel is None:
             report = ""
             for ch in self.eventfinder.get_channels():
-                report += self.report_channel_status(ch, init)
+                report += self.report_status(ch, init)
             return report
         else:
             if init:
@@ -416,14 +403,14 @@ class MetaWriter(BaseDataPlugin):
             self.logger.error(
                 f"Unable to open output file for channel {channel}", exc_info=True
             )
-            self.close_resources(channel)
+            self.close_resources()
             raise
 
         # After _initialize_database, which migrates an existing file's triggers before
         # anything is deleted from it.
         if self.get_committed_experiment_name(channel) is not None:
             if not overwrite:
-                self.close_resources(channel)
+                self.close_resources()
                 raise ValueError(
                     f"Channel {channel} already holds events in "
                     f"{self.get_output_file_name()}; commit it with overwrite=True to "
@@ -438,7 +425,7 @@ class MetaWriter(BaseDataPlugin):
                 f"Unexpected error writing channel metadata for channel {channel}: {e}",
                 exc_info=True,
             )
-            self.close_resources(channel)
+            self.close_resources()
             raise
         try:
             num_events = self.eventfinder.get_num_events_found(channel)
@@ -510,7 +497,7 @@ class MetaWriter(BaseDataPlugin):
             # here, so the failure must be reported without masking an in-flight
             # exception.
             try:
-                self.close_resources(channel)
+                self.close_resources()
             except Exception:
                 self.logger.error(
                     f"Failed to finalize the output for channel {channel}; events "
@@ -519,12 +506,12 @@ class MetaWriter(BaseDataPlugin):
                 )
 
     @log(logger=logger)
-    def _validate_param_types(self, settings: dict) -> None:
+    def _validate_param_types(self, settings: Dict[str, Setting]) -> None:
         """
         Validate that the filter_params dict contains correct data types
 
         :param settings: A dict specifying the parameters of the filter to be created. Required keys depend on subclass.
-        :type settings: dict
+        :type settings: Dict[str, Setting]
         :raises TypeError: If the filter_params parameters are of the wrong type
         """
         super()._validate_param_types(settings)

@@ -66,10 +66,7 @@ class MockEventLoader(MetaEventLoader):
     def _finalize_initialization(self) -> None:
         pass
 
-    def reset_channel(self, channel: Optional[int] = None) -> None:
-        pass
-
-    def close_resources(self, channel: Optional[int] = None) -> None:
+    def reset_channel(self, channel: int) -> None:
         pass
 
     def get_empty_settings(
@@ -79,9 +76,7 @@ class MockEventLoader(MetaEventLoader):
     ) -> Dict[str, Dict[str, Any]]:
         return {}
 
-    def report_channel_status(
-        self, channel: Optional[int] = None, init: bool = False
-    ) -> str:
+    def report_status(self, channel: Optional[int] = None, init: bool = False) -> str:
         return ""
 
     def get_valid_indices(self, channel: int) -> List[int]:
@@ -95,10 +90,6 @@ class ConcreteEventFitter(MetaEventFitter):
     def __init__(self, settings: Optional[Dict[str, Any]] = None):
         """Initialize concrete event fitter."""
         super().__init__(settings)
-
-    def close_resources(self, channel: Optional[int] = None) -> None:
-        """Close resources."""
-        pass
 
     def _init(self) -> None:
         """Initialize."""
@@ -250,7 +241,7 @@ class ConcreteEventFitter(MetaEventFitter):
             "min_blockage": float(np.min(sublevel_metadata["sublevel_current"])),
         }
 
-    def _post_process_events(self, channel: int) -> None:
+    def _post_process_events(self, channels: List[int]) -> None:
         """Post-process events."""
         pass
 
@@ -297,7 +288,7 @@ class TestMetaEventFitter:
     def test_close_resources(self, fitter: ConcreteEventFitter) -> None:
         """Test closing resources."""
         fitter.close_resources()
-        fitter.close_resources(channel=0)
+        fitter.close_resources()
 
     def test_force_serial_channel_operations(self, fitter: ConcreteEventFitter) -> None:
         """Test force serial channel operations."""
@@ -469,30 +460,28 @@ class TestMetaEventFitter:
         events = list(metadata_gen)
         assert len(events) > 0
 
-    def test_report_channel_status_not_fitted(
-        self, fitter: ConcreteEventFitter
-    ) -> None:
+    def test_report_status_not_fitted(self, fitter: ConcreteEventFitter) -> None:
         """Test reporting channel status before fitting."""
-        status = fitter.report_channel_status(0)
+        status = fitter.report_status(0)
         assert "incomplete" in status
 
-    def test_report_channel_status_fitted(self, fitter: ConcreteEventFitter) -> None:
+    def test_report_status_fitted(self, fitter: ConcreteEventFitter) -> None:
         """Test reporting channel status after fitting."""
         gen = fitter.fit_events(0, indices=[0, 1])
         list(gen)
-        status = fitter.report_channel_status(0)
+        status = fitter.report_status(0)
         assert "good fits" in status
 
-    def test_report_channel_status_init(self, fitter: ConcreteEventFitter) -> None:
+    def test_report_status_init(self, fitter: ConcreteEventFitter) -> None:
         """Test reporting channel status during init."""
-        status = fitter.report_channel_status(0, init=True)
+        status = fitter.report_status(0, init=True)
         assert status == ""
 
-    def test_report_channel_status_all(self, fitter: ConcreteEventFitter) -> None:
+    def test_report_status_all(self, fitter: ConcreteEventFitter) -> None:
         """Test reporting all channel statuses."""
         gen = fitter.fit_events(0, indices=[0])
         list(gen)
-        status = fitter.report_channel_status()
+        status = fitter.report_status()
         assert "Ch0" in status
 
     def test_get_plot_features(self, fitter: ConcreteEventFitter) -> None:
@@ -544,8 +533,8 @@ class TestMetaEventFitter:
 
     def test_fit_events_no_loader(self) -> None:
         """Test fitting events without loader."""
-        fitter = ConcreteEventFitter.__new__(ConcreteEventFitter)
-        fitter.eventloader = None
+        fitter = ConcreteEventFitter()
+        assert fitter.eventloader is None
 
         gen = fitter.fit_events(0)
         with pytest.raises(RuntimeError, match="not been initialized"):

@@ -1296,3 +1296,27 @@ class TestSampleVmSolutions:
         )
 
         assert df_prolate.empty and df_oblate.empty
+
+
+#: Seven samples at 3 MHz is 2.333... us; multiplied back it is 6.9999..., which a
+#: truncating conversion turns into 6.
+SAMPLERATE_3MHZ = 3_000_000.0
+SEVEN_SAMPLES_US = 7 / SAMPLERATE_3MHZ * 1e6
+
+
+def test_the_blockage_excludes_exactly_the_paddings(model):
+    """
+    A padding stored in microseconds is taken off as the samples it was written from.
+    """
+    event = {
+        "event_id": 0,
+        "raw_data": np.full(30, 1000.0),
+        "filtered_data": np.full(30, 1000.0),
+        "samplerate": SAMPLERATE_3MHZ,
+        "padding_before": SEVEN_SAMPLES_US,
+        "padding_after": SEVEN_SAMPLES_US,
+    }
+
+    blockage = model._blockage_fraction(event, "Raw Histogram")
+
+    assert len(blockage) == 30 - 7 - 7

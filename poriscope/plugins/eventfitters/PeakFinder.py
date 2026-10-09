@@ -63,7 +63,7 @@ class _ClassificationWarningCollector(logging.Handler):
 
     Attached to ``PeakFinder.logger`` for the duration of the classifier
     stages in ``_post_process_events`` and nowhere else - see that method for
-    where it starts and stops listening. ``report_channel_status`` reads
+    where it starts and stops listening. ``report_status`` reads
     ``self._classification_warnings`` afterward; this handler has no effect
     on what actually gets logged, since the root/module logging setup is
     untouched.
@@ -461,20 +461,6 @@ class PeakFinder(MetaEventFitter):
             "Units": "pA",
         }
         return settings
-
-    @log(logger=logger)
-    @override
-    def close_resources(self, channel: Optional[int] = None) -> None:
-        """
-        Release per-channel resources. Nothing here holds any, so this is a
-        no-op.
-
-        Called by the base class on channel reset and on application exit,
-        either for one channel or for all of them.
-
-        :param channel: the index of the channel to close resources for, or None to close resources for every channel
-        :type channel: Optional[int]
-        """
 
     @log(logger=logger)
     @override
@@ -895,18 +881,15 @@ class PeakFinder(MetaEventFitter):
     @override
     def _pre_process_events(self, channel: int) -> None:
         """
-        Arm the run-wide post-processing pass for a channel about to be fitted.
+        Nothing to prepare per channel.
 
-        Called by ``MetaEventFitter.fit_events()`` once per channel, before any
-        of that channel's events are fitted. Clearing
-        ``_global_postprocessing_done`` here is what lets the classifiers run
-        again on a second fitting session in the same app instance;
-        ``_post_process_events`` sets the flag when they have run.
+        The run-wide classifiers need no arming: ``MetaEventFitter`` calls
+        ``_post_process_events`` once per run.
 
         :param channel: the channel to preprocess
         :type channel: int
         """
-        self._global_postprocessing_done = False
+        pass
 
     @log(logger=logger)
     def redefine_padding(
@@ -1016,33 +999,37 @@ class PeakFinder(MetaEventFitter):
                     gneg[k - 1] + logn, 0
                 )  # accumulate or reset negative decision function
                 if gpos[k] > threshold or gneg[k] > threshold:
-                    jump_accepted = False
-
+                    # The same detector as CUSUM._locate_sublevel_transitions, which
+                    # explains both rules: a jump must leave a sublevel longer than the
+                    # rise time on either side, and the statistics restart at every
+                    # crossing, accepted or not, so that the variance never absorbs an
+                    # edge and blinds the detector to the steps after it.
                     if gpos[k] > threshold:  # significant positive jump detected
                         jump = 1 + anchor + np.argmin(cpos[anchor : k + 1])
-                        # Note: C also checks `length - jump > rise_time` here,
-                        # you may want to add that to match C perfectly!
-                        if jump - edges[num_states] > rise_time:
+                        if (
+                            jump - edges[num_states] > rise_time
+                            and length - jump > rise_time
+                        ):
                             edges = np.append(edges, jump)
                             num_states += 1
-                            jump_accepted = True
 
                     if gneg[k] > threshold:  # significant negative jump detected
                         jump = 1 + anchor + np.argmin(cneg[anchor : k + 1])
-                        if jump - edges[num_states] > rise_time:
+                        if (
+                            jump - edges[num_states] > rise_time
+                            and length - jump > rise_time
+                        ):
                             edges = np.append(edges, jump)
                             num_states += 1
-                            jump_accepted = True
 
-                    if jump_accepted:
-                        anchor = k
-                        cpos[0 : len(cpos)] = 0
-                        cneg[0 : len(cneg)] = 0
-                        gpos[0 : len(gpos)] = 0
-                        gneg[0 : len(gneg)] = 0
-                        mean = data[anchor]
-                        varM = data[anchor]
-            varS = 0
+                    anchor = k
+                    cpos[0 : len(cpos)] = 0
+                    cneg[0 : len(cneg)] = 0
+                    gpos[0 : len(gpos)] = 0
+                    gneg[0 : len(gneg)] = 0
+                    mean = data[anchor]
+                    varM = data[anchor]
+                    varS = 0
             edges = np.append(edges, length)  # mark the end of the event as an edge
             num_states += 1
 
@@ -2065,7 +2052,7 @@ class PeakFinder(MetaEventFitter):
         metadata_units: Dict[str, Optional[str]] = {}
 
         metadata_units["number_peaks"] = None
-        metadata_units["duration"] = "μs"
+        metadata_units["duration"] = "us"
         metadata_units["raw_ecd"] = "pC"
         metadata_units["max_deviation"] = "pA"
         metadata_units["baseline_current"] = "pA"
@@ -2123,17 +2110,16 @@ class PeakFinder(MetaEventFitter):
 
     @log(logger=logger)
     @override
-    def _post_process_events(self, channel: int) -> None:
+    def _post_process_events(self, channels: List[int]) -> None:
         """
-        Run every dataset-wide classifier, once the last channel is fitted.
+        Run every dataset-wide classifier, once every channel of the run has finished fitting.
 
-        Called by ``MetaEventFitter.fit_events()`` once per channel, after that
-        channel's last event. Each classifier below fits a distribution built
-        from every event in the run, so all but the final call return early:
-        the guard is ``_global_postprocessing_done``, armed for a new fitting
-        session by ``_pre_process_events``.
+        Called by ``MetaEventFitter`` once per run, after the last of its channels
+        finishes, and not at all if one of them was aborted or failed. Each
+        classifier below fits a distribution built from every event, so it needs
+        them all at once.
 
-        On the final call, in order:
+        In order:
 
         1. Pool one ``primary_level`` per event across all channels, dropping
            events with no primary level or with a non-positive ECD.
@@ -2153,66 +2139,21 @@ class PeakFinder(MetaEventFitter):
            it needs both the direction, to put the star's position into the
            molecule's frame, and the sequences, to break its report down.
         7. ``_save_classification_report`` writes the run's report to disk.
+           The channels are marked fitted just before it, since the report's
+           good-fit counts are given only for a fitted channel; until then no
+           channel of the run can be written to a database or plotted.
 
         Steps 1-6 run with a ``_ClassificationWarningCollector`` attached to
         ``self.logger``, so every ``WARNING``-level message any of them logs -
         a degraded fit, a declined classifier, a fitted mean off its peak -
         is captured into ``self._classification_warnings`` and surfaced in the
-        report ``report_channel_status`` builds for step 7, rather than living
+        report ``report_status`` builds for step 7, rather than living
         only in the log file.
 
-        :param channel: the index of the channel to postprocess
-        :type channel: int
+        :param channels: the channels fitted in this run
+        :type channels: List[int]
         """
-        self.logger.info(f"_post_process_events called for channel {channel}")
-
-        if not hasattr(self, "_global_postprocessing_done"):
-            self._global_postprocessing_done = False
-
-        if self._global_postprocessing_done:
-            self.logger.info("Global post-processing already completed, skipping")
-            return
-
-        # This hook fires once per channel, as each one finishes, but the
-        # classifiers below fit distributions over the whole run - so every
-        # call but the last returns here.
-        if not hasattr(self, "eventfitting_status"):
-            self.logger.warning("eventfitting_status attribute not found")
-            return
-
-        if not self.eventfitting_status:
-            self.logger.warning("eventfitting_status is empty")
-            return
-
-        all_channels = list(self.event_metadata.keys())
-        if not all_channels:
-            self.logger.warning("No channels in event_metadata")
-            return
-
-        self.logger.info(f"All channels: {all_channels}")
-        self.logger.info(f"Current eventfitting_status: {self.eventfitting_status}")
-
-        # eventfitting_status[channel] is set by the base class AFTER this
-        # returns, so the channel now being post-processed counts as done.
-        all_fitted = all(
-            (ch == channel) or self.eventfitting_status.get(ch, False)
-            for ch in all_channels
-        )
-
-        self.logger.info(f"All channels fitted: {all_fitted}")
-
-        if not all_fitted:
-            self.logger.info(
-                f"Channel {channel} fitting complete, but waiting for all channels to finish before global post-processing"
-            )
-            for ch in all_channels:
-                is_done = (ch == channel) or self.eventfitting_status.get(ch, False)
-                self.logger.info(
-                    f"  Channel {ch}: fitted={is_done} (current={ch == channel}, status={self.eventfitting_status.get(ch, False)})"
-                )
-            return
-
-        self._global_postprocessing_done = True
+        self.logger.info(f"Run-wide post-processing for channels {channels}")
 
         warning_collector = _ClassificationWarningCollector()
         self.logger.addHandler(warning_collector)
@@ -2221,6 +2162,8 @@ class PeakFinder(MetaEventFitter):
                 "Starting global post-processing analysis with classification utilities"
             )
 
+            # The classifiers pool every channel this fitter holds results for,
+            # including ones fitted in an earlier run, as they always have.
             channels = list(self.event_metadata.keys())
 
             if not channels:
@@ -2294,9 +2237,6 @@ class PeakFinder(MetaEventFitter):
             self._classify_peak_prominences(channels)
             self._classify_translocation_direction(channels)
 
-            for channel in channels:
-                self.eventfitting_status[channel] = True
-
             # An event's sequence is the prominence class of each of its barcode
             # (type-3) peaks, read in trace order, then reversed for a backward
             # event so every sequence is written in the molecule's own frame.
@@ -2336,6 +2276,12 @@ class PeakFinder(MetaEventFitter):
         finally:
             self.logger.removeHandler(warning_collector)
             self._classification_warnings = warning_collector.records
+
+        # The base marks the run's channels fitted only after this step returns, but
+        # the report below is report_status(), which counts a channel's good fits only
+        # once it is marked. Every stage that writes event metadata is done here.
+        for channel in channels:
+            self.eventfitting_status[channel] = True
 
         self._save_classification_report()
 
@@ -2547,9 +2493,7 @@ class PeakFinder(MetaEventFitter):
 
     @log(logger=logger)
     @override
-    def report_channel_status(
-        self, channel: Optional[int] = None, init: bool = False
-    ) -> str:
+    def report_status(self, channel: Optional[int] = None, init: bool = False) -> str:
         """
         Return the fitting report plus the run's full classification section.
 
@@ -2576,42 +2520,23 @@ class PeakFinder(MetaEventFitter):
         :type init: bool
         :return: the status report as a string
         :rtype: str
-        :raises RuntimeError: if the channel's peak statistics cannot be assembled
         """
         # The per-channel base text is built here with explicit super() calls
         # rather than by delegating the channel=None case to the base class.
-        # MetaEventFitter.report_channel_status() handles that case by looping
-        # over the channels and calling `self.report_channel_status(ch, init)`,
+        # MetaEventFitter.report_status() handles that case by looping
+        # over the channels and calling `self.report_status(ch, init)`,
         # which dispatches straight back into this override - so the
         # classification section below would be appended once per channel and
         # once more here, duplicating the report N+1 times for N channels.
         if channel is None:
             base_report = ""
             for ch in self.get_channels():
-                base_report += super().report_channel_status(ch, init)
+                base_report += super().report_status(ch, init)
         else:
-            base_report = super().report_channel_status(channel, init)
+            base_report = super().report_status(channel, init)
 
         if init or not hasattr(self, "_classification_results"):
             return base_report
-
-        # During the final post-processing pass the classification results
-        # exist before the base class flips eventfitting_status[channel], so a
-        # channel that is in fact finished still reports as incomplete.
-        #
-        # NOTE: this branch does nothing about that. It checks that an event
-        # loader is present and raises if not, and the report text is left
-        # saying "fitting incomplete" either way.
-        if channel is not None and "fitting incomplete" in base_report:
-            if (
-                self._classification_results
-                and "error" not in self._classification_results
-            ):
-                loader = getattr(self, "eventloader", None)
-                if loader is None:
-                    raise RuntimeError(
-                        "Event loader is not initialized; cannot determine total events"
-                    )
 
         classification_report = (
             "\n\nClassification Results:\n\nFolding Classification Results:"
@@ -4668,9 +4593,8 @@ class PeakFinder(MetaEventFitter):
         a star whose arm could be resolved: a candidate on an event with no
         translocation direction keeps its -1. This is why the pass runs after
         the two that select on labels; it also makes the pass non-idempotent,
-        since a re-run would no longer find that peak among the -1s, which
-        ``_post_process_events`` prevents by way of
-        ``_global_postprocessing_done``.
+        since a re-run would no longer find that peak among the -1s, which is
+        why ``_post_process_events`` runs once per run.
 
         A candidate must also be *deeper than a fold*: its modal blockage has
         to clear the folded level - twice that event's unfolded level - by the
@@ -5012,8 +4936,8 @@ class PeakFinder(MetaEventFitter):
                 # the `filter_peaks` re-run that would overwrite the label
                 # happens in _classify_folded_unfolded, earlier still. It does
                 # mean the pass is not idempotent - a second run would not
-                # find this peak in the -1 pool - which `_post_process_events`
-                # prevents with `_global_postprocessing_done`.
+                # find this peak in the -1 pool - which is why
+                # `_post_process_events` runs once per run.
                 sublevel_data["filtered"][star_index] = 5 if star_on_long_arm else 4
 
                 if bucket is not None:
@@ -5045,7 +4969,7 @@ class PeakFinder(MetaEventFitter):
 
         Called by ``_classify_folded_unfolded`` - on every exit path, so the
         counts exist even when the folding fit declines - and again by
-        ``report_channel_status``, which renders them as the report's peak
+        ``report_status``, which renders them as the report's peak
         filtering breakdown.
 
         Counts are taken over peak sublevels only, identified by ``peak_id``,
@@ -5122,7 +5046,7 @@ class PeakFinder(MetaEventFitter):
         Write the run's classification report next to the event file.
 
         Called by ``_post_process_events`` as its last step. The body of the
-        report is ``report_channel_status()`` with no channel, so the file and
+        report is ``report_status()`` with no channel, so the file and
         the status pane always say the same thing; this method adds the header,
         the settings the run used, and the footer, and writes the result to
         ``<event file stem>_classification_report.txt``.
@@ -5140,7 +5064,7 @@ class PeakFinder(MetaEventFitter):
                 f"{base_file.stem}_classification_report.txt"
             )
 
-            report_text = self.report_channel_status(channel=None, init=False)
+            report_text = self.report_status(channel=None, init=False)
 
             settings_section = "\n\nFITTING SETTINGS\n" + "-" * 80 + "\n"
             if self.settings:

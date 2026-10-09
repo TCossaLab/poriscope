@@ -33,7 +33,7 @@ import numpy.typing as npt
 from fast_histogram import histogram1d
 from scipy.signal import find_peaks
 
-from poriscope.utils.BaseDataPlugin import BaseDataPlugin
+from poriscope.utils.BaseDataPlugin import BaseDataPlugin, Setting
 from poriscope.utils.DocstringDecorator import inherit_docstrings
 from poriscope.utils.LogDecorator import log
 from poriscope.utils.MetaReader import MetaReader
@@ -86,38 +86,25 @@ class MetaEventFinder(BaseDataPlugin):
         self.eventfinding_finished: Dict[int, bool] = {}
 
     # public API, must be overridden by subclasses
-    @abstractmethod
-    def close_resources(self, channel: Optional[int] = None) -> None:
-        """
-        **Purpose:** Clean up any open file handles or memory.
-
-        This is called during app exit or plugin deletion to ensure proper cleanup of resources that could otherwise leak. Perform any actions necessary to gracefully close resources before app exit. If channel is not None, handle only that channel, else close all of them (taking care to respect thread safety if necessary). If no such operation is needed, it suffices to ``pass``.
-
-        :param channel: the channel identifier
-        :type channel: Optional[int]
-        """
-        pass
 
     # public API, should generally be left alone by subclasses
     @log(logger=logger)
-    def report_channel_status(
-        self, channel: Optional[int] = None, init: bool = False
-    ) -> str:
+    def report_status(self, channel: Optional[int] = None, init: bool = False) -> str:
         """
-        Return a string detailing any pertinent information about the status of analysis conducted on a given channel
+        Describe one channel's status, or every channel's when no channel is given.
 
-        :param channel: channel ID
+        :param channel: the channel to report on, or None for every channel
         :type channel: Optional[int]
         :param init: is the function being called as part of plugin initialization? Default False
         :type init: bool
 
-        :return: the status of the channel as a string
+        :return: the status report
         :rtype: str
         """
         if channel is None:
             report = ""
             for ch in self.get_channels():
-                report += self.report_channel_status(ch, init)
+                report += self.report_status(ch, init)
             return report
         else:
             if init:
@@ -168,9 +155,9 @@ class MetaEventFinder(BaseDataPlugin):
         return serial
 
     @log(logger=logger)
-    def reset_channel(self, channel: Optional[int] = None) -> None:
+    def reset_channel(self, channel: int) -> None:
         """
-        **Purpose:** Reset the state of a specific channel for a new operation or run, or all of them if no channel is specified.
+        **Purpose:** Reset the state of a specific channel for a new operation or run.
 
         :ref:`MetaEventFinder` already has an implementation of this function, but you may override it is you need to do further resetting beyond what is included in :py:meth:`~poriscope.utils.MetaEventFinder.MetaEventFinder.reset_channel` already.
 
@@ -179,31 +166,18 @@ class MetaEventFinder(BaseDataPlugin):
             This function implements core functionality required for broader plugin integration into Poriscope. If you do need to override it, you **MUST** call ``super().reset_channel(channel)`` **before** any additional code that you add and it is on you to ensure that your additional code does not conflict with the implementation in :ref:`MetaEventFinder`.
 
         :param channel: the channel identifier
-        :type channel: Optional[int]
+        :type channel: int
         """
-        if channel is not None:
-            self.event_starts[channel] = []
-            self.event_ends[channel] = []
-            self.padding_before[channel] = []
-            self.padding_after[channel] = []
-            self.baseline_means[channel] = []
-            self.baseline_stds[channel] = []
-            self.rejected_events[channel] = {}
-            self.rejected_data[channel] = 0
-            self.accepted_data[channel] = 0
-            self.eventfinding_finished[channel] = False
-        else:
-            for channel in self.get_channels():
-                self.event_starts[channel] = []
-                self.event_ends[channel] = []
-                self.padding_before[channel] = []
-                self.padding_after[channel] = []
-                self.baseline_means[channel] = []
-                self.baseline_stds[channel] = []
-                self.rejected_events[channel] = {}
-                self.rejected_data[channel] = 0
-                self.accepted_data[channel] = 0
-                self.eventfinding_finished[channel] = False
+        self.event_starts[channel] = []
+        self.event_ends[channel] = []
+        self.padding_before[channel] = []
+        self.padding_after[channel] = []
+        self.baseline_means[channel] = []
+        self.baseline_stds[channel] = []
+        self.rejected_events[channel] = {}
+        self.rejected_data[channel] = 0
+        self.accepted_data[channel] = 0
+        self.eventfinding_finished[channel] = False
 
     @log(logger=logger)
     def get_samplerate(self) -> float:
@@ -1393,12 +1367,12 @@ class MetaEventFinder(BaseDataPlugin):
         self.reader = self.settings["MetaReader"]["Value"]
 
     @log(logger=logger)
-    def _validate_param_types(self, settings: dict) -> None:
+    def _validate_param_types(self, settings: Dict[str, Setting]) -> None:
         """
         Validate that the filter_params dict contains correct data types
 
         :param settings: A dict specifying the parameters of the filter to be created. Required keys depend on subclass.
-        :type settings: dict
+        :type settings: Dict[str, Setting]
         :raises TypeError: If the filter_params parameters are of the wrong type
         """
         super()._validate_param_types(settings)

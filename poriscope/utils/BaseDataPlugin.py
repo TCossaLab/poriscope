@@ -186,23 +186,18 @@ class BaseDataPlugin(ABC):
         self.close_resources()
 
     # public API, must be implemented by subclasses
-    @abstractmethod
-    def close_resources(self, channel: Optional[int] = None) -> None:
-        """
-        Perform any actions necessary to gracefully close resources before app exit. If channel is not None, handle only that channel, else close all of them.
-
-        :param channel: channel ID
-        :type channel: Optional[int]
-        """
-        pass
 
     @abstractmethod
-    def reset_channel(self, channel: Optional[int] = None) -> None:
+    def reset_channel(self, channel: int) -> None:
         """
-        Perform any actions necessary to reset a channel to its starting state. If channel is not None, handle only that channel, else reset all of them.
+        Return one channel to its starting state, ready for a new run.
 
-        :param channel: channel ID
-        :type channel: Optional[int]
+        Called whenever a channel is re-analysed and when a write to it is aborted;
+        the caller always names the channel. A plugin with no channels - a filter, a
+        database loader - has nothing to reset and ignores it.
+
+        :param channel: the channel to reset
+        :type channel: int
         """
         pass
 
@@ -247,23 +242,45 @@ class BaseDataPlugin(ABC):
         pass
 
     @abstractmethod
-    def report_channel_status(
-        self, channel: Optional[int] = None, init: bool = False
-    ) -> str:
+    def report_status(self, channel: Optional[int] = None, init: bool = False) -> str:
         """
-        Return a string detailing any pertinent information about the status of analysis conducted on a given channel
+        Describe this plugin's state, for the status panel and for scripts.
 
-        :param channel: channel ID
+        This is the one status report every data plugin offers. With no channel it
+        describes the whole plugin; with a channel, that channel alone. Each ``Meta*``
+        base supplies a default, which a plugin overrides to say more, calling
+        ``super()``. A plugin with no channels - a filter, a database loader - reports
+        on itself whichever channel it is given.
+
+        :param channel: the channel to report on, or None for the whole plugin
         :type channel: Optional[int]
         :param init: is the function being called as part of plugin initialization? Default False
         :type init: bool
 
-        :return: the status of the channel as a string
+        :return: the status report
         :rtype: str
         """
         pass
 
     # Public API with default behavior, if you modify these, call super() at an appropriate point in your override
+    @log(logger=logger)
+    def close_resources(self) -> None:
+        """
+        Release whatever this plugin holds - open files, database connections - before it goes away.
+
+        Runs when the app quits, when the plugin is deleted, and when a script's
+        ``with`` block holding the plugin ends, and in each case releases the whole
+        plugin. Does nothing by default; override it only if your plugin holds a
+        resource that must be released explicitly, and make it safe to call more than
+        once.
+
+        Readers need not close memmaps, which the garbage collector reclaims, but should
+        close any file handle left open after a read. :ref:`MetaWriter` and
+        :ref:`MetaDatabaseWriter` also call it at the end of every batch write
+        (``commit_events``, ``write_events``), so a writer that holds its output open
+        should flush and close it here, which is what makes each batch atomic.
+        """
+
     @log(logger=logger)
     def force_serial_channel_operations(self) -> bool:
         """
@@ -374,11 +391,12 @@ class BaseDataPlugin(ABC):
         The returned dict is a snapshot rather than a view: the outer dict, each
         parameter's dict, and any list-valued entry within one - notably ``Options`` -
         are all copied. A caller that mutates what it gets back therefore cannot write
-        into this plugin's internal state. :py:meth:`update_raw_settings` and
-        :py:meth:`replace_raw_settings_option` are the only supported writers.
+        into this plugin's internal state. :py:meth:`update_raw_settings` is the only
+        supported writer.
 
         A plugin this one depends on appears by its key, never as the live plugin, so
-        the snapshot can be deep-copied and saved with the session.
+        the snapshot can be deep-copied and saved with the session. Its setting holds no
+        ``Options``, so when that plugin is renamed only the key needs replacing.
 
         :return: a copy of the dict that must be filled in to initialize the plugin
         :rtype: dict
@@ -397,40 +415,6 @@ class BaseDataPlugin(ABC):
         """
         if self.raw_settings and key in self.raw_settings:
             self.raw_settings[key]["Value"] = val
-
-    @log(logger=logger)
-    def replace_raw_settings_option(
-        self, key: str, old_value: Any, new_value: Any
-    ) -> None:
-        """
-        Replace one entry in a setting's list of allowed options
-
-        Needed when a parent plugin is renamed: a dependent carries the parent's key
-        both as the ``Value`` and in the ``Options`` list of the setting named after
-        the parent's metaclass, and the list must track the rename or
-        :py:meth:`_validate_param_ranges` will later reject the new key as not being
-        an allowed option. This exists as a method because :py:meth:`get_raw_settings`
-        hands out a copy, so a caller cannot maintain the list by mutating what it
-        gets back.
-
-        Does nothing if the setting is absent or declares no options.
-
-        :param key: the settings key whose options should be updated
-        :type key: str
-        :param old_value: the option to remove, if it is present
-        :type old_value: Any
-        :param new_value: the option to add, if it is not already present
-        :type new_value: Any
-        """
-        if not self.raw_settings or key not in self.raw_settings:
-            return
-        options = self.raw_settings[key].get("Options")
-        if options is None:
-            return
-        if old_value in options:
-            options.remove(old_value)
-        if new_value not in options:
-            options.append(new_value)
 
     def _resolve_metaclass_name(self, cls: type) -> str:
         """

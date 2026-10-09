@@ -289,7 +289,7 @@ class SQLiteEventWriter(MetaWriter):
 
     @log(logger=logger)
     @override
-    def reset_channel(self, channel: Optional[int] = None) -> None:
+    def reset_channel(self, channel: int) -> None:
         """
         Permanently delete the given channel's row (and, via cascading foreign keys,
         its associated event rows) from the database, so a subsequent write starts
@@ -298,9 +298,8 @@ class SQLiteEventWriter(MetaWriter):
         ``AUTOINCREMENT`` never reuses a row id, and events are addressed by
         ``(channel_id, event_id)``, whose ``event_id`` does start again.
 
-        :param channel: channel ID. Note that `channel=None` does not reset all
-            channels; SQL `channel_id = NULL` never matches, so no rows are deleted.
-        :type channel: Optional[int]
+        :param channel: the channel whose rows to delete
+        :type channel: int
         :raises ValueError: if settings have not been initialized or the output
             file path is not set in settings
         :raises sqlite3.Error: if the delete fails, so that the caller cannot treat an
@@ -359,12 +358,12 @@ class SQLiteEventWriter(MetaWriter):
 
     @log(logger=logger)
     @override
-    def close_resources(self, channel: Optional[int] = None) -> None:
+    def close_resources(self) -> None:
         """
-        Do whatever needs doing to gracefully shut down on app exit
+        Commit and close the output connection and cursor, if open.
 
-        :param channel: channel ID
-        :type channel: Optional[int]
+        One connection serves every channel this writer writes, so closing it
+        releases the whole plugin.
         """
         if self.cursor:
             try:
@@ -395,7 +394,7 @@ class SQLiteEventWriter(MetaWriter):
                 # user can see, since the ERROR dialog already says the data was
                 # not saved.
                 self.logger.error(
-                    f"Failed to commit and close the output for channel {channel}; "
+                    f"Failed to commit and close {self.get_output_file_name()}; "
                     "events written in this batch may not have been saved.",
                     exc_info=True,
                 )

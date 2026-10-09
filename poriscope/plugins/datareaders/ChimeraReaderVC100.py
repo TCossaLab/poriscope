@@ -58,23 +58,12 @@ class ChimeraReaderVC100(MetaReader):
 
     @log(logger=logger)
     @override
-    def close_resources(self, channel: Optional[int] = None) -> None:
+    def reset_channel(self, channel: int) -> None:
         """
-        Perform any actions necessary to gracefully close resources before app exit
+        Reset a channel for a new run; this reader keeps no per-channel state, so there is nothing to do.
 
         :param channel: channel ID
-        :type channel: Optional[int]
-        """
-        pass
-
-    @log(logger=logger)
-    @override
-    def reset_channel(self, channel: Optional[int] = None) -> None:
-        """
-        Perform any actions necessary to gracefully close resources before app exit. If channel is not None, handle only that channel, else close all of them.
-
-        :param channel: channel ID
-        :type channel: Optional[int]
+        :type channel: int
         """
         pass
 

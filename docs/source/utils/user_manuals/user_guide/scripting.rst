@@ -123,7 +123,7 @@ We will print out the settings for the first plugin to illustrate how it is done
 
 
     # we can print out a brief report on the channels to check that everything worked well:
-    print(raw_data.report_channel_status(init=True))
+    print(raw_data.report_status(init=True))
 
 .. note::
 
@@ -197,7 +197,7 @@ We now have everything we need to find events in our dataset. To actually find e
             except StopIteration:
                 # once we run out of data to process, generators raise StopIteration, so you can catch that and move on to the next channel
                 break
-    print(event_finder.report_channel_status())
+    print(event_finder.report_status())
 
 .. note::
 
@@ -246,7 +246,7 @@ Once this loop is complete, our eventfinder will have flagged and built an inter
             except StopIteration:
                 # once we run out of data to process, generators raise StopIteration, so you can catch that and move on to the next channel
                 break
-        print(writer.report_channel_status())
+        print(writer.report_status())
 
 .. note::
     The plugin above writes to an sqlite3 format. You can view the resulting file structure using the :mod:`sqlite3` module in python, or you can open it directly using a program like the `DB Browser for SQLite <https://sqlitebrowser.org/>`_. We encourage you to familiarize yourself with the structure of this database, as it will be useful in your own scripting work in case you want to do custom analysis from here.
@@ -265,7 +265,7 @@ To proceed further takes us into the realm of the :ref:`EventAnalysisView` plugi
     loader_settings = event_loader.get_empty_settings(standalone=True)
     loader_settings["Input File"]["Value"] = "<<Your output file path>>/<<your database name>>.sqlite3"
     event_loader.apply_settings(loader_settings)
-    print(event_loader.report_channel_status(init=True))
+    print(event_loader.report_status(init=True))
 
 You should see printed a message reporting the number of events in each channel that is consistent with what was written in the previous step.
 
@@ -304,7 +304,7 @@ Now we get to the main challenge: given our nanopore events, how do we extract p
             except StopIteration:
                 # once we run out of data to process, generators raise StopIteration, so you can catch that and move on to the next channel
                 break
-        print(fitter.report_channel_status())
+        print(fitter.report_status())
 
 In the event that fits fail or events are rejected for any reason, the report printed at the end will detail why it happened, assuming the person who built the plugin complied with the appropriate guidelines when doing so.
 
@@ -338,7 +338,7 @@ Of particular note here is that it is possible to write many experiments to a si
             except StopIteration:
                 # once we run out of data to process, generators raise StopIteration, so you can catch that and move on to the next channel
                 break
-        print(metadata_writer.report_channel_status())
+        print(metadata_writer.report_status())
 
 The printed report at the end will detail any problems that occurred. This brings us to the end of the tasks that are covered by the :ref:`EventAnalysisView` tab in the :mod:`poriscope` GUI
 
@@ -353,7 +353,7 @@ Having written our metadata, we now need to interact with it. For this final tas
     metadata_loader_settings = metadata_loader.get_empty_settings(standalone=True)
     metadata_loader_settings["Input File"]["Value"] = "<<your output path>>/<<your database name>>.sqlite3"
     metadata_loader.apply_settings(metadata_loader_settings)
-    print(metadata_loader.report_channel_status(init=True))
+    print(metadata_loader.report_status(init=True))
 
 From here, we have at our disposal the full :ref:`MetaDatabaseLoader` API with which to interact with the database. You can also use :mod:`sqlite3` or the `DB Browser for SQLite <https://sqlitebrowser.org/>`_ to interact more directly with the database if you prefer. Poriscope is quite flexible with respect to operations performed on this database, and will allow creation of new columns within existing tables as long as the relationships between the various tables are respected. The tables themselves are created in ``_initialize_database`` in the :ref:`SQLiteDBWriter` source code.
 

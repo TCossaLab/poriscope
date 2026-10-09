@@ -752,7 +752,7 @@ class RawDataController(MetaEventTabController):
     @log(logger=logger)
     @override
     @Slot(dict)
-    def update_available_plugins(self, available_plugins: dict) -> None:
+    def update_available_plugins(self, available_plugins: Dict[str, List[str]]) -> None:
         """
         Resolve every event finder's channels, then push the registry down as usual.
 
@@ -771,7 +771,7 @@ class RawDataController(MetaEventTabController):
         if a future handler does read that state.
 
         :param available_plugins: dict of lists keyed by MetaClass, listing the identifiers of all instantiated plugins throughout the app.
-        :type available_plugins: dict
+        :type available_plugins: Dict[str, List[str]]
         :return: None
         :rtype: None
         """

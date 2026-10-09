@@ -70,24 +70,22 @@ class MetaReader(BaseDataPlugin):
 
     # Public API, probably usable as-is in most cases
     @log(logger=logger)
-    def report_channel_status(
-        self, channel: Optional[int] = None, init: bool = False
-    ) -> str:
+    def report_status(self, channel: Optional[int] = None, init: bool = False) -> str:
         """
-        Return a string detailing any pertinent information about the status of analysis conducted on a given channel
+        Describe one channel's status, or every channel's when no channel is given.
 
-        :param channel: channel ID
+        :param channel: the channel to report on, or None for every channel
         :type channel: Optional[int]
         :param init: is the function being called as part of plugin initialization? Default False
         :type init: bool
 
-        :return: the status of the channel as a string
+        :return: the status report
         :rtype: str
         """
         if channel is None:
             report = ""
             for ch in self.get_channels():  # Changed to use get_channels()
-                report += self.report_channel_status(ch, init)
+                report += self.report_status(ch, init)
             return report
         else:
             if init:
@@ -113,27 +111,14 @@ class MetaReader(BaseDataPlugin):
         pass
 
     @abstractmethod
-    def close_resources(self, channel: Optional[int] = None) -> None:
+    def reset_channel(self, channel: int) -> None:
         """
-        **Purpose:** Clean up any open file handles or memory.
-
-        This is called during app exit or plugin deletion to ensure proper cleanup of resources that could otherwise leak. If channel is not None, handle only that channel, else close all of them. If no such operation is needed, it suffices to ``pass``. Note that readers that operate based on memmaps need not explicitly close those memmaps, as they will be handled by the garbage collector, but it does no harm to do so. Any open file handles should be closed explicitly if not closed at  the end of read operations.
-
-        :param channel: channel ID
-        :type channel: Optional[int]
-        """
-        pass
-
-    @abstractmethod
-    def reset_channel(self, channel: Optional[int] = None) -> None:
-        """
-        Perform any actions necessary to gracefully close resources before app exit.
         **Purpose:** Reset the state of a specific channel for a new operation or run.
 
-        This is called any time an operation on a channel needs to be cleaned up or reset for a new run. If channel is not None, handle only that channel, else close all of them. If reading through a channel does not create any persistent state changes in your plugin, you can simply ``pass`` this function.
+        This is called any time an operation on a channel needs to be cleaned up or reset for a new run. If reading through a channel does not create any persistent state changes in your plugin, you can simply ``pass`` this function.
 
         :param channel: channel ID
-        :type channel: Optional[int]
+        :type channel: int
         """
         pass
 

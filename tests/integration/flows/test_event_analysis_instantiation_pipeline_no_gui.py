@@ -94,7 +94,7 @@ def test_event_analysis_instantiation_pipeline_no_gui(sample_events_db, tmp_path
     loader_settings[key]["Value"] = sample_events_db
     events_loader.apply_settings(loader_settings)
 
-    _ = events_loader.report_channel_status(init=True)
+    _ = events_loader.report_status(init=True)
 
     # ---- Fitter
     fitter = CUSUM()
@@ -136,7 +136,7 @@ def test_event_analysis_instantiation_pipeline_no_gui(sample_events_db, tmp_path
             pass
 
     # exact-number assertions for the fitter report
-    fit_report = fitter.report_channel_status()
+    fit_report = fitter.report_status()
     assert re.search(
         rf"Ch{ch0}:\s*25/25\s+good fits", fit_report
     ), f"Unexpected CUSUM report:\n{fit_report}"
@@ -172,7 +172,7 @@ def test_event_analysis_instantiation_pipeline_no_gui(sample_events_db, tmp_path
     _assert_db_schema_sqlite_dbwriter(out_db, expected_channels=channels)
 
     # exact-number assertions for the writer report
-    write_report = writer.report_channel_status()
+    write_report = writer.report_status()
     assert re.search(
         rf"Ch{ch0}:\s*Wrote\s*25/25\s+events", write_report
     ), f"Unexpected writer report:\n{write_report}"

@@ -193,24 +193,12 @@ class SQLiteDBLoader(MetaDatabaseLoader):
 
     @log(logger=logger)
     @override
-    def close_resources(self, channel: Optional[int] = None) -> None:
+    def reset_channel(self, channel: int) -> None:
         """
-        Close resources gracefully before application exit.
-
-        :param channel: Channel ID to close. If None, close all resources.
-        :type channel: Optional[int]
-        """
-        # database connection is not persistent between calls so no action needed on final closing
-        pass
-
-    @log(logger=logger)
-    @override
-    def reset_channel(self, channel: Optional[int] = None) -> None:
-        """
-        Perform any actions necessary to reset a channel to its starting state. If channel is not None, handle only that channel, else reset all of them.
+        Perform any actions necessary to reset a channel to its starting state.
 
         :param channel: channel ID
-        :type channel: Optional[int]
+        :type channel: int
         """
         # database connection is not persistent between calls so no action needed here closing
         pass
@@ -959,8 +947,8 @@ class SQLiteDBLoader(MetaDatabaseLoader):
             int,
             int,
             float,
-            int,
-            int,
+            float,
+            float,
             npt.NDArray[np.float64],
             npt.NDArray[np.float64],
             npt.NDArray[np.float64],
@@ -980,8 +968,8 @@ class SQLiteDBLoader(MetaDatabaseLoader):
         :param query: a valid SQL query, checked in the calling function for validity
         :type query: str
 
-        :return: a generator that yields tuples of (the event's ``events.id``, experiment_id, channel_id, event_id, samplerate, padding_before, padding_after, raw event data, filtered event data, and fitted event data), and accepts an abort boolean sent back via generator.send()
-        :rtype: Generator[Tuple[int, int, int, int, float, int, int, npt.NDArray[np.float64], npt.NDArray[np.float64], npt.NDArray[np.float64]], bool, None]
+        :return: a generator that yields tuples of (the event's ``events.id``, experiment_id, channel_id, event_id, samplerate, padding_before and padding_after in microseconds, raw event data, filtered event data, and fitted event data), and accepts an abort boolean sent back via generator.send()
+        :rtype: Generator[Tuple[int, int, int, int, float, float, float, npt.NDArray[np.float64], npt.NDArray[np.float64], npt.NDArray[np.float64]], bool, None]
         :raises sqlite3.Error: if the query fails, logged at ERROR first
         """
         conn = None
@@ -1018,8 +1006,8 @@ class SQLiteDBLoader(MetaDatabaseLoader):
                             int(channel_id),
                             int(event_id),
                             float(samplerate),
-                            int(padding_before),
-                            int(padding_after),
+                            float(padding_before),
+                            float(padding_after),
                             cast(
                                 npt.NDArray[np.float64],
                                 np.frombuffer(raw_data, dtype=data_format),

@@ -31,7 +31,7 @@ from typing import Any, Dict, Generator, List, Optional, Tuple, Union
 import numpy as np
 import numpy.typing as npt
 
-from poriscope.utils.BaseDataPlugin import BaseDataPlugin
+from poriscope.utils.BaseDataPlugin import BaseDataPlugin, Setting
 from poriscope.utils.DocstringDecorator import inherit_docstrings
 from poriscope.utils.LogDecorator import log
 from poriscope.utils.MetaEventFitter import MetaEventFitter
@@ -73,27 +73,16 @@ class MetaDatabaseWriter(BaseDataPlugin):
         self.rejected: Dict[int, Dict[str, int]] = {}
 
     # public API, MUST be implemented by subclasses
-    @abstractmethod
-    def close_resources(self, channel: Optional[int] = None) -> None:
-        """
-        **Purpose:** Clean up any open file handles or memory.
-
-        This is called during app exit or plugin deletion, as well as at the end of any batch write operation, to ensure proper cleanup of resources that could otherwise leak. Do this for all channels if no channel is specified, otherwise limit your closure to the specified channel. Your files should be flushed and closed here, if they are not in your writing step. If no such operation is needed, it suffices to ``pass``. In the case of writers, this method is also called with a specific channel identifier at the end of any batch write operation (a call to :py:meth:`~poriscope.utils.MetaDatabaseWriter.MetaDatabaseWriter.write_events`), and so can be used to ensure atomic write operations if possible.
-
-        :param channel: channel ID
-        :type channel: Optional[int]
-        """
-        pass
 
     @abstractmethod
-    def reset_channel(self, channel: Optional[int] = None) -> None:
+    def reset_channel(self, channel: int) -> None:
         """
         **Purpose:** Reset the state of a specific channel for a new operation or run.
 
-        This is called any time an operation on a channel needs to be cleaned up or reset for a new run. If channel is not None, handle only that channel, else close all of them. Most database writers will create permanent state changes in the form of data written to the output file, that should be deleted or otherwise set up for subsequent overwrite when this function is called.
+        This is called any time an operation on a channel needs to be cleaned up or reset for a new run. Most database writers will create permanent state changes in the form of data written to the output file, that should be deleted or otherwise set up for subsequent overwrite when this function is called.
 
         :param channel: channel ID
-        :type channel: Optional[int]
+        :type channel: int
         """
         pass
 
@@ -154,7 +143,7 @@ class MetaDatabaseWriter(BaseDataPlugin):
             # always raised; EventWorker's own `except Exception` arm reports a
             # raised failure with a traceback and still emits the progress-bar
             # completion value.
-            self.close_resources(channel)
+            self.close_resources()
             self.logger.error(
                 f"Unable to open output file for channel {channel}", exc_info=True
             )
@@ -163,7 +152,7 @@ class MetaDatabaseWriter(BaseDataPlugin):
         try:
             self._write_experiment_metadata(channel)
         except Exception as e:
-            self.close_resources(channel)
+            self.close_resources()
             self.logger.error(
                 f"Unexpected error writing experimental metadata for channel {channel}: {e}",
                 exc_info=True,
@@ -173,7 +162,7 @@ class MetaDatabaseWriter(BaseDataPlugin):
         try:
             self._write_channel_metadata(channel)
         except Exception as e:
-            self.close_resources(channel)
+            self.close_resources()
             self.logger.error(
                 f"Unexpected error writing channel metadata for channel {channel}: {e}",
                 exc_info=True,
@@ -181,7 +170,7 @@ class MetaDatabaseWriter(BaseDataPlugin):
             raise
 
         if not self.eventfitter.get_eventfitting_status(channel):
-            self.close_resources(channel)
+            self.close_resources()
             raise ValueError(
                 f"Eventfitting has not completed in channel {channel} unable to write events"
             )
@@ -189,7 +178,7 @@ class MetaDatabaseWriter(BaseDataPlugin):
         index = 0
         num_events = self.eventfitter.get_num_events(channel)
         if num_events == 0:
-            self.close_resources(channel)
+            self.close_resources()
             self.logger.warning(
                 f"No events found for channel {channel}. Nothing to write."
             )
@@ -269,7 +258,7 @@ class MetaDatabaseWriter(BaseDataPlugin):
             # that ends here that is the only commit, so a failure must be reported
             # without masking an in-flight exception.
             try:
-                self.close_resources(channel)
+                self.close_resources()
             except Exception:
                 self.logger.error(
                     f"Failed to finalize the database for channel {channel}; events "
@@ -279,24 +268,22 @@ class MetaDatabaseWriter(BaseDataPlugin):
 
     # Public API continued, should implemented by subclasses, but has default behavior if it is not needed
     @log(logger=logger)
-    def report_channel_status(
-        self, channel: Optional[int] = None, init: bool = False
-    ) -> str:
+    def report_status(self, channel: Optional[int] = None, init: bool = False) -> str:
         """
-        Return a string detailing any pertinent information about the status of analysis conducted on a given channel
+        Describe one channel's status, or every channel's when no channel is given.
 
-        :param channel: channel ID
+        :param channel: the channel to report on, or None for every channel
         :type channel: Optional[int]
         :param init: is the function being called as part of plugin initialization? Default False
         :type init: bool
 
-        :return: the status of the channel as a string
+        :return: the status report
         :rtype: str
         """
         if channel is None:
             report = ""
             for ch in self.eventfitter.get_channels():
-                report += self.report_channel_status(ch, init)
+                report += self.report_status(ch, init)
             return report
         else:
             if init:
@@ -366,14 +353,14 @@ class MetaDatabaseWriter(BaseDataPlugin):
         pass
 
     @abstractmethod
-    def _write_experiment_metadata(self, channel: Optional[int] = None) -> None:
+    def _write_experiment_metadata(self, channel: int) -> None:
         """
         **Purpose:** Write any information you need to save about the experiment itself.
 
         Given an optional channel argument, write any experiment level information (for example, as provided by the user in the settings dict) to the database files you created in :py:meth:`~poriscope.utils.BaseDataPlugin.BaseDataPlugin._initialize_database`.
 
         :param channel: int indicating which output to flush
-        :type channel: Optional[int]
+        :type channel: int
         """
         pass
 
@@ -390,14 +377,14 @@ class MetaDatabaseWriter(BaseDataPlugin):
         pass
 
     @abstractmethod
-    def _initialize_database(self, channel: Optional[int] = None) -> None:
+    def _initialize_database(self, channel: int) -> None:
         """
         **Purpose:** initialize your database for writing
 
         In this function, do whatever you need to do in order to prepare your database for writing data to it. This is called at the start of a batch write operation, with an optional channel argument. In the case of a single database file you can ignore channel and simply create the file and database schema. In the case of a single file per channel, you might open a file handle associated to each channel and write any top-level metadata required. We strongly encourage atomic operations, so that file handles are closed in the same function they are opened wherever possible to avoid trailing file handles in the event of an unrecoverable exception.
 
         :param channel: int indicating which output to flush
-        :type channel: Optional[int]
+        :type channel: int
         """
         pass
 
@@ -414,12 +401,12 @@ class MetaDatabaseWriter(BaseDataPlugin):
         self.eventfitter = self.settings["MetaEventFitter"]["Value"]
 
     @log(logger=logger)
-    def _validate_param_types(self, settings: dict) -> None:
+    def _validate_param_types(self, settings: Dict[str, Setting]) -> None:
         """
         Validate that the filter_params dict contains correct data types
 
         :param settings: A dict specifying the parameters of the filter to be created. Required keys depend on subclass.
-        :type settings: dict
+        :type settings: Dict[str, Setting]
         :raises TypeError: If the filter_params parameters are of the wrong type
         """
         super()._validate_param_types(settings)

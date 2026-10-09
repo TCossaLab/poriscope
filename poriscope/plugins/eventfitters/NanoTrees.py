@@ -432,17 +432,6 @@ class NanoTrees(MetaEventFitter):
 
     @log(logger=logger)
     @override
-    def close_resources(self, channel: Optional[int] = None) -> None:
-        """
-        Perform any actions necessary to gracefully close resources before app exit. If channel is not None, handle only that channel, else close all of them.
-
-        :param channel: channel ID
-        :type channel: Optional[int]
-        """
-        pass
-
-    @log(logger=logger)
-    @override
     def construct_fitted_event(
         self, channel: int, index: int
     ) -> Optional[NDArray[np.float64]]:
@@ -1378,15 +1367,6 @@ class NanoTrees(MetaEventFitter):
             "sublevel_duration"
         ][1:-1][np.argmax(sublevel_metadata["sublevel_max_deviation"][1:-1])]
         return event_metadata
-
-    @log(logger=logger)
-    @override
-    def _post_process_events(self, channel: int) -> None:
-        """
-        :param channel: the index of the channel to postprocess
-        :type channel: int
-        """
-        pass
 
     @log(logger=logger)
     @override

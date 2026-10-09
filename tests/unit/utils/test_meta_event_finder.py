@@ -105,9 +105,6 @@ class ConcreteEventFinder(MetaEventFinder):
     def _init(self) -> None:
         pass
 
-    def close_resources(self, channel: Optional[int] = None) -> None:
-        pass
-
     def _validate_settings(self, settings: dict) -> None:
         if "MetaReader" not in settings:
             raise ValueError("MetaReader is required")
@@ -346,7 +343,7 @@ class TestShippedFinderThresholdUnits:
 
 
 # ---------------------------------------------------------------------------
-# report_channel_status
+# report_status
 # ---------------------------------------------------------------------------
 class TestEventBoundariesFromTheBaseline:
     """
@@ -452,10 +449,10 @@ class TestShippedFindersPlaceBoundariesAtTheEdges:
 
 class TestReportChannelStatus:
     def test_init_true_returns_empty_string(self, finder):
-        assert finder.report_channel_status(0, init=True) == ""
+        assert finder.report_status(0, init=True) == ""
 
     def test_unfinished_channel(self, finder):
-        assert finder.report_channel_status(0) == "\nCh0: event finding incomplete"
+        assert finder.report_status(0) == "\nCh0: event finding incomplete"
 
     def test_finished_channel_with_rejected_and_accepted_data(self, finder):
         finder.eventfinding_finished[0] = True
@@ -463,7 +460,7 @@ class TestReportChannelStatus:
         finder.accepted_data[0] = 5.0
         finder.rejected_data[0] = 1.5
         finder.rejected_events[0] = {"too short": 2}
-        report = finder.report_channel_status(0)
+        report = finder.report_status(0)
         assert "Found 3 events" in report
         assert "Accepted 5.0s of data" in report
         assert "Rejected 1.5s of data" in report
@@ -474,7 +471,7 @@ class TestReportChannelStatus:
         finder.num_events_found[0] = 1
         finder.accepted_data[0] = 5.0
         finder.rejected_data[0] = 0
-        report = finder.report_channel_status(0)
+        report = finder.report_status(0)
         assert "Accepted 5.0s of data" in report
         assert "Rejected" not in report
 
@@ -483,7 +480,7 @@ class TestReportChannelStatus:
         finder.num_events_found[0] = 1
         finder.accepted_data[0] = 1.0
         finder.rejected_data[0] = 0
-        report = finder.report_channel_status(None)
+        report = finder.report_status(None)
         assert "Ch0" in report
         assert "Ch1" in report
 
@@ -525,15 +522,15 @@ class TestResetChannel:
         assert finder.rejected_data[0] == 0
         assert finder.eventfinding_finished[0] is False
 
-    def test_reset_all_channels(self, finder):
+    def test_reset_leaves_other_channels_alone(self, finder):
         for ch in (0, 1):
             finder.event_starts[ch] = [1, 2]
             finder.eventfinding_finished[ch] = True
-        finder.reset_channel(None)
-        assert finder.event_starts[0] == []
+        finder.reset_channel(1)
         assert finder.event_starts[1] == []
-        assert finder.eventfinding_finished[0] is False
         assert finder.eventfinding_finished[1] is False
+        assert finder.event_starts[0] == [1, 2]
+        assert finder.eventfinding_finished[0] is True
 
 
 # ---------------------------------------------------------------------------
@@ -1254,9 +1251,6 @@ class TestGetEventIndices:
 # Abstract method stub bodies
 # ---------------------------------------------------------------------------
 class TestAbstractStubs:
-    def test_public_abstract_stub(self, finder):
-        assert MetaEventFinder.close_resources(finder) is None
-
     def test_private_abstract_stubs(self, finder):
         assert MetaEventFinder._init(finder) is None
         assert (

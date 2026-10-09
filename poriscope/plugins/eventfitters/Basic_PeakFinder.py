@@ -77,11 +77,11 @@ class Basic_PeakFinder(MetaEventFitter):
           signal, which is what separates a real peak from a ripple on a broader one.
         - ``Relative Height`` - the fraction of the prominence at which each peak's
           width is measured.
-        - ``Window Length`` (μs) - the span ``scipy.signal.find_peaks`` searches when
+        - ``Window Length`` (us) - the span ``scipy.signal.find_peaks`` searches when
           computing prominence.
-        - ``Width`` (μs) - the narrowest peak that will be accepted.
-        - ``Min Distance`` (μs) - the closest two accepted peaks may be.
-        - ``Plateau Size`` (μs) - the flat top a peak must have to be accepted; 0
+        - ``Width`` (us) - the narrowest peak that will be accepted.
+        - ``Min Distance`` (us) - the closest two accepted peaks may be.
+        - ``Plateau Size`` (us) - the flat top a peak must have to be accepted; 0
           accepts any.
 
         :param globally_available_plugins: a dict containing all data plugins that exist to date, keyed by metaclass. Must include "MetaEventLoader" as a key, with explicitly set Type MetaEventLoader.
@@ -124,30 +124,22 @@ class Basic_PeakFinder(MetaEventFitter):
             "Type": float,
             "Value": 25.0,
             "Min": 0.0,
-            "Units": "μs",
+            "Units": "us",
         }
-        settings["Width"] = {"Type": float, "Value": 0.0, "Min": 0.0, "Units": "μs"}
+        settings["Width"] = {"Type": float, "Value": 0.0, "Min": 0.0, "Units": "us"}
         settings["Min Distance"] = {
             "Type": float,
             "Value": 1.0,
             "Min": 0.0,
-            "Units": "μs",
+            "Units": "us",
         }
         settings["Plateau Size"] = {
             "Type": float,
             "Value": 0.0,
             "Min": 0.0,
-            "Units": "μs",
+            "Units": "us",
         }
         return settings
-
-    @log(logger=logger)
-    @override
-    def close_resources(self, channel: Optional[int] = None) -> None:
-        """
-        Perform any actions necessary to gracefully close resources before app exit
-        """
-        pass
 
     @log(logger=logger)
     @override
@@ -1094,15 +1086,6 @@ class Basic_PeakFinder(MetaEventFitter):
 
     @log(logger=logger)
     @override
-    def _post_process_events(self, channel: int) -> None:
-        """
-        :param channel: the index of the channel to postprocess
-        :type channel: int
-        """
-        pass
-
-    @log(logger=logger)
-    @override
     def _validate_settings(self, settings: dict) -> None:
         """
         Validate that the settings dict contains the correct information for use by the subclass.
@@ -1194,7 +1177,7 @@ class Basic_PeakFinder(MetaEventFitter):
         metadata_units: Dict[str, Optional[str]] = {}
 
         metadata_units["number_peaks"] = " "
-        metadata_units["duration"] = "μs"
+        metadata_units["duration"] = "us"
         metadata_units["raw_ecd"] = "pC"
         metadata_units["max_deviation"] = "pA"
         metadata_units["unfolded_level"] = "pA"

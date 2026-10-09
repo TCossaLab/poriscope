@@ -24,6 +24,18 @@
 
 * **`MetaEventFinder.get_single_event_data` now raises `IndexError` for an index with no event (negative included) instead of returning `None`, and a reader or filter error keeps its own message**; `get_event_data_generator` still yields `None` for an event it cannot read
 
+* **`report_channel_status` is renamed `report_status` on every data plugin**, with the same arguments: no channel reports on the whole plugin, and a filter or database loader ignores the channel
+
+* **`close_resources` takes no channel and releases the whole plugin**; it does nothing by default, so a plugin holding nothing need not define it, and an override taking a channel must drop it
+
+* **`reset_channel` now requires a channel on every data plugin**, as do `MetaDatabaseWriter._initialize_database` and `_write_experiment_metadata`; a filter inherits a do-nothing reset from `MetaFilter` and need not define one
+
+* **`BaseDataPlugin.replace_raw_settings_option` is removed**; it never changed anything, since a setting naming another plugin holds no `Options`
+
+* **`MetaEventFitter._post_process_events` now runs once per run, with the run's channels, after every channel has finished**, rather than once per channel; it does nothing by default, and an override must take `channels`
+
+* **`MetaDatabaseLoader.load_event_data` yields `padding_before` and `padding_after` as floats in microseconds**, no longer truncated to whole microseconds
+
 * **A metadata database now holds results from one type of fitter:** any number of runs of that fitter can still be written to it, but writing a different type of fitter into it is refused; use a new file per fitter type
 
 #### Application internals:
@@ -52,6 +64,8 @@
 
 * The test suite now runs the scripting guide's code end to end
 
+* The plugin compliance test now also checks every override of a concrete base method against the base's signature
+
 ### Data Plugin API:
 
 * `MetaFilter.get_data_requirements()` lets a filter declare settings the data must match; `BesselFilter` declares its `Samplerate`
@@ -59,6 +73,10 @@
 * A plugin re-applied with settings naming a different parent no longer keeps the old one in `get_parents()`
 
 * Data plugin constructors take an optional `key=`; a plugin made without one, as in a script, is named `<ClassName>_<n>` instead of `""`, so a metadata database's provenance can follow scripted plugins
+
+* An event loader's status report for one channel now describes that channel only
+
+* `PeakFinder.redefine_padding` now finds edges by the CUSUM family's rules, so it sees the steps after a large edge
 
 ### Analysis Tabs:
 
@@ -69,6 +87,14 @@
 #### General:
 
 * **Fixed the Windows log file dropping any line containing `μ`**
+
+* **Fixed PeakFinder sometimes skipping its classification** when two channels finished fitting at the same time
+
+* **Fixed a fit's last progress bar disappearing while PeakFinder was still classifying**, and its channels' results being writable before classification finished; a channel of a multi-channel fit is now ready to write once every channel of the fit has finished, and one that finishes early says it is waiting, then reports its results when the fit ends
+
+* PeakFinder and Basic_PeakFinder now give durations, and Basic_PeakFinder its time settings, in `us` like every other plugin; a database written before keeps `μs`
+
+* The Metadata tab's overlays and all-points histograms and the Protein tab's blockage now use every padding sample; a padding could lose up to a few samples at MHz sample rates
 
 * The Kernel Density Plot no longer warns about a deprecated SciPy namespace
 

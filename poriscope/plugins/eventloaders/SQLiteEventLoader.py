@@ -50,19 +50,12 @@ class SQLiteEventLoader(MetaEventLoader):
     logger = logging.getLogger(__name__)
 
     # Public API, probably usable as-is in most cases
-    @log(logger=logger)
-    @override
-    def close_resources(self, channel: Optional[int] = None) -> None:
-        """
-        Perform any actions necessary to gracefully close resources before app exit
-        """
-        pass
 
     @log(logger=logger)
     @override
-    def reset_channel(self, channel: Optional[int] = None) -> None:
+    def reset_channel(self, channel: int) -> None:
         """
-        Perform any actions necessary to gracefully close resources before app exit
+        Reset a channel for a new run; this loader keeps no per-channel state, so there is nothing to do.
         """
         pass
 

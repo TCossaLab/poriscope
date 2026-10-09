@@ -18,6 +18,85 @@ and deleted on 2026-09-27; it too is in git history.
 
 ---
 
+## 2026-10-09 - The CUSUM reset does not pause on a rejected crossing
+
+**Context.** Kyle asked whether a crossing the rise-time guard rejects should *pause* the
+running mean and variance (leaving that sample out) while the accumulators keep running,
+instead of restarting everything as the C does: (a) paused until the next accepted edge;
+(b) a temporary pause, ended by an accepted edge or, failing one within a rise time, by the
+full reset.
+
+**Decision** (Kyle, 2026-10-09). Keep the reset on every crossing (entry below).
+
+**Evidence.** Prototypes patched into `CUSUM._locate_sublevel_transitions` and run through the
+step 1 harness, 50 events per band (seeds 42 and 7), plus flat blockages and a 5 pA band; the
+reimplementation of the shipped rule matched it on all 1,650 fits. (a) locks up: with no
+accumulator restart the argmin stays on the ramp sample past the accepted edge, so every later
+sample is a rejected crossing (124 in a row on the staircase below, edges `[0, 98, 222]`);
+0/50 on every 15 pA and 5 pA staircase, every fitter. (b) passes every required pin but a pause
+almost never ends in an accepted edge (2 of 3,021 at one rise time, 28 of 2,983 at two): the
+frozen statistics still hold the ramp, so the argmin stays on it, and the pause is a reset
+delayed by the window that loses a step arriving inside it. CUSUM/IntraCUSUM at 50 pA with
+20-sample steps 37/50 → 25 (one rise time) and 3 (two), ClassicCUSUM 40 → 38 and 35; one extra
+level at 50 pA with 40-sample steps; identical elsewhere. Also measured: paused statistics with
+the accumulators restarted - 37 → 50 on that band, but a duration 29 samples off at 50 pA with
+40-sample steps (bound 12) and more over-detection at 100 pA (28 → 31 events).
+
+**Revisit if** the ramp is kept out of the statistics another way, such as restarting them at
+`jump + rise_time` after an accepted edge (not measured).
+
+---
+
+## 2026-10-09 - A fitter's run is the channels fitted together; a partial run is not post-processed
+
+**Context.** `_post_process_events` was documented as the whole-dataset step but ran once per
+channel, before that channel was marked done. PeakFinder guessed whether it was last from the
+other channels' flags, so two channels finishing together could both skip its classification.
+`fit_events` returns a generator, so a channel used to register only when its worker first ran
+it, and could finish before another channel of the same run had registered.
+
+**Decision** (Kyle, 2026-10-09). `_post_process_events(channels)` is repurposed rather than a
+`_post_process_run` added: its docstring always described the run-wide step, and four fitters
+left it empty. A run is the channels whose fits are in flight together: a channel joins when
+`fit_events` is *called* and leaves however its generator ends; the last one out runs the hook
+once with the run's channels, and only if every one finished - an aborted, failed or closed
+channel cancels it for that run.
+
+**Rejected** (Kyle). An explicit run-boundary API: it keeps the API simple not to add one when
+existing machinery fits the purpose - the tab already creates every channel's generator before
+starting any worker (`EventAnalysisController.py:490-518`), so calling `fit_events` is the
+boundary. Running the step on a partial run: the default follows PeakFinder's existing
+behaviour, since it was the only fitter using the hook; its barrier ran the classification only
+when every channel in `event_metadata` had finished, so an aborted run never classified.
+
+**Evidence.** Test-first on a real CUSUM over two channels, requested together, in parallel
+threads, one after another, aborted and failed; four mutations of the run logic killed
+(`d447555d`). Consequences accepted: a script fitting channels one after another gets one pass
+per channel; a generator never iterated keeps its run open.
+
+**Amended 2026-10-09: the last channel is done only after the step** (Kyle). As landed, a
+channel reported 1.0 and was marked fitted before the step ran; 1.0 is 100% to the worker and
+the tab then drops the channel's progress bar, the only "done" a user sees, and the database
+writer (`MetaDatabaseWriter.py:172`) and event plots gate on the mark, so a write could read
+PeakFinder's metadata mid-classification. A channel is now marked fitted only when everything
+that applies to it is done (Kyle, reversing a first ruling that marked early channels as they
+ended): PeakFinder's step rewrites every channel it holds (`PeakFinder.py:2164`), so every
+finished channel of a run is marked when the run is over - after the step, or as the run ends
+if the step is skipped; none if it raises. This holds for every fitter, so an early channel of
+a CUSUM run waits too, which costs only a write attempted mid-run. Progress stays below 1.0
+while fitting and the last channel reports 1.0 after the step, so its bar stays up; earlier
+channels' bars drop as they end (accepted), and their status reads "waiting for the other
+channels of its run" rather than "fitting incomplete". PeakFinder marks its channels after its
+last classifier, just before its report, which reads the mark. On 40 comb events (5-10 teeth
+each) PeakFinder's metadata and classification are identical before and after, every tooth
+found. **Open** (with Nada): channels from an earlier run that a later run's step re-classifies
+stay marked while it does.
+
+**Revisit if** a caller needs one run over fits started separately, or a user wants the
+run-wide step after aborting a channel.
+
+---
+
 ## 2026-10-08 - A plugin keeps its own copy of its settings; history comes from the plugin
 
 **Context.** `apply_settings` stored the caller's dict and wrote plugin keys back into it. The
@@ -123,6 +202,12 @@ receives `sublevel_starts`, giving every fitter a per-event diagnostics path.
 runs only when the user sets the cap and is described on the setting.
 
 **Revisit** in step 8, where it lands.
+
+**Amended 2026-10-09: not recorded at all** (Kyle). Only CUSUM would have used the edges in
+`_populate_event_metadata`; asked whether the value could stay inside CUSUM instead (a
+per-thread value, or the edges carried through a sublevel column), Kyle ruled the information
+is not needed. The hook keeps its signature. Revisit only if a user asks which step size fitted
+an event.
 
 ---
 
@@ -278,6 +363,13 @@ sublevels hit them before), so they are deleted rather than flagged in metadata.
 
 **Revisit if** a recording shows the reset on a rejected crossing discarding evidence of a
 true transition that the gated form would have kept.
+
+**Landed in PeakFinder 2026-10-09** (Kyle: fix it although it is uncalled). `redefine_padding`
+takes the same reset, `varS` reset and end guard; no results move, its one call site being
+commented out. Its threshold is still the bare step size, not `_calculate_threshold`, so on the
+staircase above it fires at the start of the 64 σ ramp, the variance takes the rest of it, and
+the step at 140 is missed with either reset (edges `[0, 98, 178, 217]`; `[0, 98, 219]` before).
+Left as it is while the method is uncalled; revisit if it is ever wired back in.
 
 ---
 
@@ -943,6 +1035,18 @@ is in `future_fixes.md`. Decision C closes at 3 of 5 taken (`raw_data`, `_write_
 
 **Revisit if** a later audit finds a taken break not called out in `changelog.md`, or when the
 deferred channel work is picked up - it breaks every plugin, so it wants a major version.
+
+**Landed in 2.1, step 8, with a different design** (Kyle, 2026-10-09; shipped in a minor
+version regardless, each break marked in `changelog.md`). One `report_status(channel=None,
+init=False)` on `BaseDataPlugin` for every plugin, `report_channel_status` removed with no
+alias ("I do not want multiple paths to getting plugin reports"); `close_resources()` takes no
+channel and is a concrete no-op, overridden only by the two SQLite writers; `reset_channel
+(channel: int)` required on every plugin, a no-op on `MetaFilter`; no `get_channels()` on
+writers; `__enter__`/`__exit__` kept for scripts - the queue's removal of them (`707ff95d`)
+followed from dropping the no-argument close, not from a reason of its own. Measured at
+`70230b39`: 16 of 18 close overrides were empty and the two that acted closed one shared
+connection, so a per-channel close never existed; `None` was wrong in three of the four
+`reset_channel` bodies that did work.
 
 ---
 

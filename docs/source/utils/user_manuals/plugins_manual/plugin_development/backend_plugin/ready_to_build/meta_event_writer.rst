@@ -13,9 +13,6 @@ Required Public API Methods
 .. automethod:: poriscope.utils.MetaWriter.MetaWriter.get_empty_settings
    :no-index:
 
-.. automethod:: poriscope.utils.MetaWriter.MetaWriter.close_resources
-   :no-index:
-
 .. automethod:: poriscope.utils.MetaWriter.MetaWriter.reset_channel
    :no-index:
 
@@ -50,6 +47,9 @@ Until 2.0.0 ``MetaWriter`` also offered ``_rescale_data_to_adc``, a hook for wri
 stored unscaled ADC codes. Event data now always reaches ``_write_data`` in pA, exactly as
 the reader's ``load_data`` returns it, so there is nothing to rescale and the hook is gone;
 choose the stored numeric type with ``_set_output_dtype`` instead.
+
+.. automethod:: poriscope.utils.MetaWriter.MetaWriter.close_resources
+   :no-index:
 
 .. automethod:: poriscope.utils.MetaWriter.MetaWriter.force_serial_channel_operations
    :no-index:
