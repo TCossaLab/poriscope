@@ -1386,7 +1386,7 @@ class MetaDatabaseLoader(BaseDataPlugin):
         :param experiments_and_channels: a dict of experiment names as keys as lists of channels to include as values. Can be None, and individual channel lists can be None to include all channels for that experiment
         :type experiments_and_channels: Optional[Dict[str, Optional[List[int]]]]
 
-        :return: a generator of dicts keyed id (the event's ``events.id``), event_id, channel_id, experiment_id, samplerate, padding_before, padding_after, raw_data, filtered_data and fit_data, the last three numpy arrays
+        :return: a generator of dicts keyed id (the event's ``events.id``), event_id, channel_id, experiment_id, samplerate, padding_before, padding_after, raw_data, filtered_data and fit_data, the paddings in microseconds and the last three numpy arrays
         :rtype: Generator[Dict[str, Any], bool, None]
         """
         query, debug = self.construct_event_data_query(

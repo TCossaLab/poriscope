@@ -738,7 +738,7 @@ class MetadataModel(MetaSubsetTabModel):
         else:
             raise ValueError(f"Unknown plot_type {plot_type!r}")
 
-        padding_before = int(event["padding_before"] * event["samplerate"] * 1e-6)
+        padding_before = round(event["padding_before"] * event["samplerate"] * 1e-6)
         return timeseries, padding_before
 
     @log(logger=logger)
@@ -845,7 +845,7 @@ class MetadataModel(MetaSubsetTabModel):
         traces: List[Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]] = []
         for event in event_generator:
             timeseries, padding_before = self._event_timeseries(event, plot_type)
-            padding_after = int(event["padding_after"] * event["samplerate"] * 1e-6)
+            padding_after = round(event["padding_after"] * event["samplerate"] * 1e-6)
 
             data = self._rectify_event_current(timeseries, padding_before)
             time = np.array(range(len(data)), dtype=np.float64)

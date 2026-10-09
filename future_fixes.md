@@ -56,9 +56,6 @@ PeakFinder changes below are approved by Nada (2026-10-09).
   jump and `varS = 0` outside the reset (`:1045`). Apply `CUSUM.py:315-330`'s form.
 - **`"μs"` where every other plugin writes `"us"`**: `PeakFinder.py:2068`, `Basic_PeakFinder.py:1197`
   and four settings labels at `Basic_PeakFinder.py:127-140`.
-- **Event paddings truncated to whole µs**: `SQLiteDBLoader.py:1021-1022` `int()`s both paddings (up
-  to 4 samples at 4 MHz). Keep them float; the declared tuple on `MetaDatabaseLoader._load_event_data`
-  changes.
 
 ### Step 9a - analysis-tab views (Carolina's track)
 
@@ -747,6 +744,9 @@ Logic in `PeakFinder.py`, `Basic_PeakFinder.py` and `NanoTrees.py`; see the stan
 
 ### Fitter plugin defects
 
+- **`PeakFinder.py:1889` truncates a microsecond time to a sample index** (`int(start_us * samplerate * 1e-6)`),
+  which floating point can put one sample early: 7 samples at 3 MHz multiply back to 6.9999 (2026-10-09).
+  The tabs' identical conversions round since 2.1.
 - **`find_mode_blockage_level` guards two of its three Optional parameters.** The body
   handles `data is None` and `baseline_std is None`, then computes
   `abs(data_min - baseline_mean)` with no guard on `baseline_mean`, equally `Optional[float]`

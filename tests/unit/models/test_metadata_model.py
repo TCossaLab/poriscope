@@ -1196,3 +1196,43 @@ class TestBuildEventOverlay:
         """
         with pytest.raises(ValueError, match="Unknown plot_type"):
             model.build_event_overlay(iter([_event()]), "Sideways Event Overlay")
+
+
+#: Seven samples at 3 MHz is 2.333... us; multiplied back it is 6.9999..., which a
+#: truncating conversion turns into 6.
+SAMPLERATE_3MHZ = 3_000_000.0
+SEVEN_SAMPLES_US = 7 / SAMPLERATE_3MHZ * 1e6
+
+
+class TestPaddingInSamples:
+    """
+    A metadata database stores each padding as a duration in microseconds, the first
+    and last sublevel's ``sublevel_duration``; the tab turns it back into samples.
+    """
+
+    def test_the_rectification_baseline_uses_every_padding_sample(self, model):
+        event = _event(
+            raw_data=np.arange(20.0),
+            padding_before=SEVEN_SAMPLES_US,
+            padding_after=SEVEN_SAMPLES_US,
+            samplerate=SAMPLERATE_3MHZ,
+        )
+
+        _timeseries, padding = model._event_timeseries(
+            event, "Raw All Points Histogram"
+        )
+
+        assert padding == 7
+
+    def test_the_overlay_ends_each_event_at_one(self, model):
+        event = _event(
+            raw_data=np.arange(20.0),
+            padding_before=SEVEN_SAMPLES_US,
+            padding_after=SEVEN_SAMPLES_US,
+            samplerate=SAMPLERATE_3MHZ,
+        )
+
+        ((time, _),) = model.build_event_overlay(iter([event]), "Raw Event Overlay")
+
+        assert time[7] == 0.0
+        assert time[13] == 1.0
