@@ -804,6 +804,22 @@ def test_shift_below_zero_is_reported_on_the_status_panel(view, mocker):
     assert "below 0" in view.add_text_to_display.emit.call_args[0][0]
 
 
+def test_shift_with_no_channel_selected_aborts(view, mocker):
+    """
+    An empty channel selection is refused like any other bad selection, not raised.
+
+    ``validate_single_channel`` rejects only more than one channel, so it is reading
+    the first channel that refuses an empty selection, as an ``IndexError``.
+    """
+    _setup_shift_plot(view, mocker)
+    view._extract_plot_event_parameters = mocker.Mock(return_value=("EF", "F", [], []))
+    params = {"eventfinder": "EF", "filter": "F", "channel": [], "event_index": [5]}
+
+    view._shift_range_and_update_plot(params, "right")
+
+    view._handle_plot_events.assert_not_called()
+
+
 def test_shift_range_and_update_plot_empty_text_aborts(view, mocker):
     view.rawdatacontrols.event_index_lineEdit.text.return_value = ""
     view._extract_plot_event_parameters = mocker.Mock(return_value=("EF", "F", [0], []))

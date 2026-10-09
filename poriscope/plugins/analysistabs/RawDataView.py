@@ -461,7 +461,7 @@ class RawDataView(MetaEventTabView):
             )
             self.validate_single_channel(selected_channels)
             selected_channels[0]
-        except ValueError as e:
+        except (IndexError, ValueError) as e:
             self.logger.error(f"Parameter extraction failed: {repr(e)}")
             return
 

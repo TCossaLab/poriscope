@@ -184,6 +184,10 @@
 
 * **Fixed the Metadata and Protein tabs' event navigation arrows skipping an event when the Event ID is past the last filtered event**; right now goes to the first filtered event and left to the last, and the status panel says the Event ID had no match
 
+* The Event Analysis tab's event navigation arrows now say on the status panel when a shift would go below event 0, as the Raw Data tab's do
+
+* A Raw Data event shift replayed from an action history with no channel selected is now refused instead of raising
+
 ### Documentation:
 
 * The API reference no longer lists `NanoTrees`' helper classes as event fitters

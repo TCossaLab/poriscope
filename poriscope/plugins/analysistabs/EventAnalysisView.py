@@ -219,6 +219,10 @@ class EventAnalysisView(MetaEventTabView):
 
         if not expanded:
             self.logger.warning("Indices must be positive")
+            self.add_text_to_display.emit(
+                "Cannot shift further: event indices cannot go below 0",
+                self.__class__.__name__,
+            )
             return
 
         # Proceed with valid shift
