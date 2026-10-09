@@ -330,6 +330,13 @@ absorbs what it needs and stands alone, leaving 20240101 a clean deletion.
 
 ### Analysis tabs
 
+- **Event-tab arrows stop at 0 but run past the last event; consider wrapping (or declining)
+  at both ends.** `MetaEventTabView._shift_range_and_update_plot:220` declines below 0 (`:274`); past
+  the end it moves the field and the Controller reports the overflow (`RawDataController.py:439`,
+  `EventAnalysisController.py:150`). Pros: matches the subset tabs' wrap, symmetric ends. Cons:
+  positions 0..N-1 are not a browsed set, and a multi-range field (`3, 7-9, 15-19`) has no clean
+  wrap. Feasibility: the View has no event count (only the Controller reads it), so either needs
+  the count pushed to the View or the shift moved to the Controller - a contract change.
 - **`new_plugin.py` cannot generate a `MetaSubsetTab*` tab**, the likely shape of any
   new database-analysis tab; add `--base subset`.
 - **`update_available_plugins` is hand-written in all five Views** (`ClusteringView.py:813`,
