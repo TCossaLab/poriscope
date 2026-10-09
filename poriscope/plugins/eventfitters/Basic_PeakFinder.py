@@ -143,14 +143,6 @@ class Basic_PeakFinder(MetaEventFitter):
 
     @log(logger=logger)
     @override
-    def close_resources(self, channel: Optional[int] = None) -> None:
-        """
-        Perform any actions necessary to gracefully close resources before app exit
-        """
-        pass
-
-    @log(logger=logger)
-    @override
     def construct_fitted_event(
         self, channel: int, index: int
     ) -> Optional[npt.NDArray[np.float64]]:

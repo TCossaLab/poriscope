@@ -73,17 +73,6 @@ class MetaDatabaseWriter(BaseDataPlugin):
         self.rejected: Dict[int, Dict[str, int]] = {}
 
     # public API, MUST be implemented by subclasses
-    @abstractmethod
-    def close_resources(self, channel: Optional[int] = None) -> None:
-        """
-        **Purpose:** Clean up any open file handles or memory.
-
-        This is called during app exit or plugin deletion, as well as at the end of any batch write operation, to ensure proper cleanup of resources that could otherwise leak. Do this for all channels if no channel is specified, otherwise limit your closure to the specified channel. Your files should be flushed and closed here, if they are not in your writing step. If no such operation is needed, it suffices to ``pass``. In the case of writers, this method is also called with a specific channel identifier at the end of any batch write operation (a call to :py:meth:`~poriscope.utils.MetaDatabaseWriter.MetaDatabaseWriter.write_events`), and so can be used to ensure atomic write operations if possible.
-
-        :param channel: channel ID
-        :type channel: Optional[int]
-        """
-        pass
 
     @abstractmethod
     def reset_channel(self, channel: Optional[int] = None) -> None:
@@ -154,7 +143,7 @@ class MetaDatabaseWriter(BaseDataPlugin):
             # always raised; EventWorker's own `except Exception` arm reports a
             # raised failure with a traceback and still emits the progress-bar
             # completion value.
-            self.close_resources(channel)
+            self.close_resources()
             self.logger.error(
                 f"Unable to open output file for channel {channel}", exc_info=True
             )
@@ -163,7 +152,7 @@ class MetaDatabaseWriter(BaseDataPlugin):
         try:
             self._write_experiment_metadata(channel)
         except Exception as e:
-            self.close_resources(channel)
+            self.close_resources()
             self.logger.error(
                 f"Unexpected error writing experimental metadata for channel {channel}: {e}",
                 exc_info=True,
@@ -173,7 +162,7 @@ class MetaDatabaseWriter(BaseDataPlugin):
         try:
             self._write_channel_metadata(channel)
         except Exception as e:
-            self.close_resources(channel)
+            self.close_resources()
             self.logger.error(
                 f"Unexpected error writing channel metadata for channel {channel}: {e}",
                 exc_info=True,
@@ -181,7 +170,7 @@ class MetaDatabaseWriter(BaseDataPlugin):
             raise
 
         if not self.eventfitter.get_eventfitting_status(channel):
-            self.close_resources(channel)
+            self.close_resources()
             raise ValueError(
                 f"Eventfitting has not completed in channel {channel} unable to write events"
             )
@@ -189,7 +178,7 @@ class MetaDatabaseWriter(BaseDataPlugin):
         index = 0
         num_events = self.eventfitter.get_num_events(channel)
         if num_events == 0:
-            self.close_resources(channel)
+            self.close_resources()
             self.logger.warning(
                 f"No events found for channel {channel}. Nothing to write."
             )
@@ -269,7 +258,7 @@ class MetaDatabaseWriter(BaseDataPlugin):
             # that ends here that is the only commit, so a failure must be reported
             # without masking an in-flight exception.
             try:
-                self.close_resources(channel)
+                self.close_resources()
             except Exception:
                 self.logger.error(
                     f"Failed to finalize the database for channel {channel}; events "

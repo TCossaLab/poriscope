@@ -74,17 +74,6 @@ class MetaWriter(BaseDataPlugin):
         self.output_file_name: Path
 
     # public API, MUST be implemented by subclasses
-    @abstractmethod
-    def close_resources(self, channel: Optional[int] = None) -> None:
-        """
-        **Purpose:** Clean up any open file handles or memory.
-
-        This is called during app exit or plugin deletion, as well as at the end of any batch write operation, to ensure proper cleanup of resources that could otherwise leak. Do this for all channels if no channel is specified, otherwise limit your closure to the specified channel. Your files should be closed here, if they are not in your writing step. If no such operation is needed, it suffices to ``pass``. In the case of writers, this method is also called with a specific channel identifier at the end of any batch write operation (a call to :py:meth:`~poriscope.utils.MetaWriter.MetaWriter.commit_events`), and so should be used to ensure atomic write operations if possible.
-
-        :param channel: channel ID
-        :type channel: Optional[int]
-        """
-        pass
 
     @abstractmethod
     def reset_channel(self, channel: Optional[int] = None) -> None:
@@ -414,14 +403,14 @@ class MetaWriter(BaseDataPlugin):
             self.logger.error(
                 f"Unable to open output file for channel {channel}", exc_info=True
             )
-            self.close_resources(channel)
+            self.close_resources()
             raise
 
         # After _initialize_database, which migrates an existing file's triggers before
         # anything is deleted from it.
         if self.get_committed_experiment_name(channel) is not None:
             if not overwrite:
-                self.close_resources(channel)
+                self.close_resources()
                 raise ValueError(
                     f"Channel {channel} already holds events in "
                     f"{self.get_output_file_name()}; commit it with overwrite=True to "
@@ -436,7 +425,7 @@ class MetaWriter(BaseDataPlugin):
                 f"Unexpected error writing channel metadata for channel {channel}: {e}",
                 exc_info=True,
             )
-            self.close_resources(channel)
+            self.close_resources()
             raise
         try:
             num_events = self.eventfinder.get_num_events_found(channel)
@@ -508,7 +497,7 @@ class MetaWriter(BaseDataPlugin):
             # here, so the failure must be reported without masking an in-flight
             # exception.
             try:
-                self.close_resources(channel)
+                self.close_resources()
             except Exception:
                 self.logger.error(
                     f"Failed to finalize the output for channel {channel}; events "

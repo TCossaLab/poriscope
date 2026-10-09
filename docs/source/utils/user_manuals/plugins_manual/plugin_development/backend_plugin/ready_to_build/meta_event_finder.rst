@@ -13,9 +13,6 @@ Required Public API Methods
 .. automethod:: poriscope.utils.MetaEventFinder.MetaEventFinder.get_empty_settings
    :no-index:
    
-.. automethod:: poriscope.utils.MetaEventFinder.MetaEventFinder.close_resources
-   :no-index:
-
 Required Private Methods
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -64,6 +61,9 @@ judgement when it walks an event's edges, so the two agree on where an event is.
 
 Optional Method Overrides
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. automethod:: poriscope.utils.MetaEventFinder.MetaEventFinder.close_resources
+   :no-index:
 
 .. automethod:: poriscope.utils.MetaEventFinder.MetaEventFinder.force_serial_channel_operations
    :no-index:

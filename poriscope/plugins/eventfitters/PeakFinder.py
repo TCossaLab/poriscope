@@ -464,20 +464,6 @@ class PeakFinder(MetaEventFitter):
 
     @log(logger=logger)
     @override
-    def close_resources(self, channel: Optional[int] = None) -> None:
-        """
-        Release per-channel resources. Nothing here holds any, so this is a
-        no-op.
-
-        Called by the base class on channel reset and on application exit,
-        either for one channel or for all of them.
-
-        :param channel: the index of the channel to close resources for, or None to close resources for every channel
-        :type channel: Optional[int]
-        """
-
-    @log(logger=logger)
-    @override
     def construct_fitted_event(
         self, channel: int, index: int
     ) -> Optional[npt.NDArray[np.float64]]:

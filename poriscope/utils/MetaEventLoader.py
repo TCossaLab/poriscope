@@ -335,18 +335,6 @@ class MetaEventLoader(BaseDataPlugin):
         pass
 
     @abstractmethod
-    def close_resources(self, channel: Optional[int] = None) -> None:
-        """
-        **Purpose:** Clean up any open file handles or memory on app exit.
-
-        This is called during app exit or plugin deletion to ensure proper cleanup of resources that could otherwise leak. Do this for all channels if no channel is specified, otherwise limit your closure to the specified channel. If no such operation is needed, it suffices to ``pass``.
-
-        :param channel: channel ID
-        :type channel: Optional[int]
-        """
-        pass
-
-    @abstractmethod
     def _validate_settings(self, settings: dict) -> None:
         """
         Validate that the settings dict contains the correct information for use by the subclass.

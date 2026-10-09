@@ -807,8 +807,8 @@ after use, including twice. Readers, loaders and writers are further asked to ac
 release their file(s) once nothing references the plugin anymore, which on Windows is a
 genuine handle-leak check because an open handle blocks ``os.unlink``. The check differs
 by family because the contract does: a writer closes its connection explicitly inside
-``close_resources``, while a reader's own docstring permits leaving a memmap for the
-garbage collector to reclaim — so the reader/loader version of the check drops its only
+``close_resources``, while ``close_resources``'s docstring permits a reader to leave a
+memmap for the garbage collector to reclaim — so the reader/loader version of the check drops its only
 reference and runs ``gc.collect()`` before checking, rather than asserting on
 ``close_resources`` alone.
 

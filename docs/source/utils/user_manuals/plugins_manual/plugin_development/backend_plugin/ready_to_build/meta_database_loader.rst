@@ -13,9 +13,6 @@ Required Public API Methods
 .. automethod:: poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader.get_empty_settings
    :no-index:
 
-.. automethod:: poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader.close_resources
-   :no-index:
-
 .. automethod:: poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader.reset_channel
    :no-index:
 
@@ -83,6 +80,9 @@ Optional Method Overrides
 ~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Methods in this section have an implementation in either :ref:`BaseDataPlugin` or :ref:`MetaDatabaseLoader`, but they can be overridden if necessary to tweak the behavior of your plugin.
+
+.. automethod:: poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader.close_resources
+   :no-index:
 
 .. automethod:: poriscope.utils.MetaDatabaseLoader.MetaDatabaseLoader.force_serial_channel_operations
    :no-index:

@@ -359,12 +359,12 @@ class SQLiteEventWriter(MetaWriter):
 
     @log(logger=logger)
     @override
-    def close_resources(self, channel: Optional[int] = None) -> None:
+    def close_resources(self) -> None:
         """
-        Do whatever needs doing to gracefully shut down on app exit
+        Commit and close the output connection and cursor, if open.
 
-        :param channel: channel ID
-        :type channel: Optional[int]
+        One connection serves every channel this writer writes, so closing it
+        releases the whole plugin.
         """
         if self.cursor:
             try:
@@ -395,7 +395,7 @@ class SQLiteEventWriter(MetaWriter):
                 # user can see, since the ERROR dialog already says the data was
                 # not saved.
                 self.logger.error(
-                    f"Failed to commit and close the output for channel {channel}; "
+                    f"Failed to commit and close {self.get_output_file_name()}; "
                     "events written in this batch may not have been saved.",
                     exc_info=True,
                 )

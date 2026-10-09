@@ -69,9 +69,6 @@ class MockEventLoader(MetaEventLoader):
     def reset_channel(self, channel: Optional[int] = None) -> None:
         pass
 
-    def close_resources(self, channel: Optional[int] = None) -> None:
-        pass
-
     def get_empty_settings(
         self,
         globally_available_plugins: Optional[Dict[str, List[str]]] = None,
@@ -93,10 +90,6 @@ class ConcreteEventFitter(MetaEventFitter):
     def __init__(self, settings: Optional[Dict[str, Any]] = None):
         """Initialize concrete event fitter."""
         super().__init__(settings)
-
-    def close_resources(self, channel: Optional[int] = None) -> None:
-        """Close resources."""
-        pass
 
     def _init(self) -> None:
         """Initialize."""
@@ -295,7 +288,7 @@ class TestMetaEventFitter:
     def test_close_resources(self, fitter: ConcreteEventFitter) -> None:
         """Test closing resources."""
         fitter.close_resources()
-        fitter.close_resources(channel=0)
+        fitter.close_resources()
 
     def test_force_serial_channel_operations(self, fitter: ConcreteEventFitter) -> None:
         """Test force serial channel operations."""

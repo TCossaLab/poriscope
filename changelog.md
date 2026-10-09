@@ -26,6 +26,8 @@
 
 * **`report_channel_status` is renamed `report_status` on every data plugin**, with the same arguments: no channel reports on the whole plugin, and a filter or database loader ignores the channel
 
+* **`close_resources` takes no channel and releases the whole plugin**; it does nothing by default, so a plugin holding nothing need not define it, and an override taking a channel must drop it
+
 * **A metadata database now holds results from one type of fitter:** any number of runs of that fitter can still be written to it, but writing a different type of fitter into it is refused; use a new file per fitter type
 
 #### Application internals:

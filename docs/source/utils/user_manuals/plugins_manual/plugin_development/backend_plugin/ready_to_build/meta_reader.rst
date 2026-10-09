@@ -55,9 +55,6 @@ Required Public API Methods
 .. automethod:: poriscope.utils.MetaReader.MetaReader.get_empty_settings
    :no-index:
 
-.. automethod:: poriscope.utils.MetaReader.MetaReader.close_resources
-   :no-index:
-
 .. automethod:: poriscope.utils.MetaReader.MetaReader.reset_channel
    :no-index:
 
@@ -104,6 +101,9 @@ Optional Method Overrides
 ~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Methods in this section have an implementation in either :ref:`BaseDataPlugin` or :ref:`MetaReader`, but they can be overridden if necessary to tweak the behavior of your plugin.
+
+.. automethod:: poriscope.utils.MetaReader.MetaReader.close_resources
+   :no-index:
 
 .. automethod:: poriscope.utils.MetaReader.MetaReader.force_serial_channel_operations
    :no-index:

@@ -13,9 +13,6 @@ Required Public API Methods
 .. automethod:: poriscope.utils.MetaEventFitter.MetaEventFitter.get_empty_settings
    :no-index:
 
-.. automethod:: poriscope.utils.MetaEventFitter.MetaEventFitter.close_resources
-   :no-index:
-
 .. automethod:: poriscope.utils.MetaEventFitter.MetaEventFitter.construct_fitted_event
    :no-index:
 
@@ -59,6 +56,9 @@ Optional Method Overrides
 ~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Methods in this section have an implementation in either :ref:`BaseDataPlugin` or :ref:`MetaEventFitter`, but they can be overridden if necessary to tweak the behavior of your plugin.
+
+.. automethod:: poriscope.utils.MetaEventFitter.MetaEventFitter.close_resources
+   :no-index:
 
 .. automethod:: poriscope.utils.MetaEventFitter.MetaEventFitter.force_serial_channel_operations
    :no-index:

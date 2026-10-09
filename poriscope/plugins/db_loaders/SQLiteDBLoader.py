@@ -193,18 +193,6 @@ class SQLiteDBLoader(MetaDatabaseLoader):
 
     @log(logger=logger)
     @override
-    def close_resources(self, channel: Optional[int] = None) -> None:
-        """
-        Close resources gracefully before application exit.
-
-        :param channel: Channel ID to close. If None, close all resources.
-        :type channel: Optional[int]
-        """
-        # database connection is not persistent between calls so no action needed on final closing
-        pass
-
-    @log(logger=logger)
-    @override
     def reset_channel(self, channel: Optional[int] = None) -> None:
         """
         Perform any actions necessary to reset a channel to its starting state. If channel is not None, handle only that channel, else reset all of them.

@@ -29,9 +29,6 @@ class ConcreteDatabaseLoader(MetaDatabaseLoader):
     def reset_channel(self, channel: Optional[int] = None) -> None:
         pass
 
-    def close_resources(self, channel: Optional[int] = None) -> None:
-        pass
-
     def get_experiment_names(
         self, experiment_id: Optional[int] = None
     ) -> Optional[List[str]]:
@@ -700,8 +697,6 @@ class TestAbstractStubs:
         assert MetaDatabaseLoader.get_llm_prompt(loader) is None
         assert MetaDatabaseLoader.reset_channel(loader) is None
         assert MetaDatabaseLoader.reset_channel(loader, channel=1) is None
-        assert MetaDatabaseLoader.close_resources(loader) is None
-        assert MetaDatabaseLoader.close_resources(loader, channel=1) is None
         assert MetaDatabaseLoader.get_experiment_names(loader) is None
         assert MetaDatabaseLoader.get_experiment_names(loader, experiment_id=1) is None
         assert MetaDatabaseLoader.get_channels_by_experiment(loader, "exp1") is None

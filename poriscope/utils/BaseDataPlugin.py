@@ -186,15 +186,6 @@ class BaseDataPlugin(ABC):
         self.close_resources()
 
     # public API, must be implemented by subclasses
-    @abstractmethod
-    def close_resources(self, channel: Optional[int] = None) -> None:
-        """
-        Perform any actions necessary to gracefully close resources before app exit. If channel is not None, handle only that channel, else close all of them.
-
-        :param channel: channel ID
-        :type channel: Optional[int]
-        """
-        pass
 
     @abstractmethod
     def reset_channel(self, channel: Optional[int] = None) -> None:
@@ -268,6 +259,24 @@ class BaseDataPlugin(ABC):
         pass
 
     # Public API with default behavior, if you modify these, call super() at an appropriate point in your override
+    @log(logger=logger)
+    def close_resources(self) -> None:
+        """
+        Release whatever this plugin holds - open files, database connections - before it goes away.
+
+        Runs when the app quits, when the plugin is deleted, and when a script's
+        ``with`` block holding the plugin ends, and in each case releases the whole
+        plugin. Does nothing by default; override it only if your plugin holds a
+        resource that must be released explicitly, and make it safe to call more than
+        once.
+
+        Readers need not close memmaps, which the garbage collector reclaims, but should
+        close any file handle left open after a read. :ref:`MetaWriter` and
+        :ref:`MetaDatabaseWriter` also call it at the end of every batch write
+        (``commit_events``, ``write_events``), so a writer that holds its output open
+        should flush and close it here, which is what makes each batch atomic.
+        """
+
     @log(logger=logger)
     def force_serial_channel_operations(self) -> bool:
         """

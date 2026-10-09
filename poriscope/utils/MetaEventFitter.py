@@ -92,17 +92,6 @@ class MetaEventFitter(BaseDataPlugin):
         self._define_metadata_units()
 
     # public API, must be overridden by subclasses:
-    @abstractmethod
-    def close_resources(self, channel: Optional[int] = None) -> None:
-        """
-        **Purpose:** Clean up any open file handles or memory.
-
-        This is called during app exit or plugin deletion to ensure proper cleanup of resources that could otherwise leak. Perform any actions necessary to gracefully close resources before app exit. If channel is not None, handle only that channel, else close all of them (taking care to respect thread safety if necessary). If no such operation is needed, it suffices to ``pass``.
-
-        :param channel: the channel identifier
-        :type channel: Optional[int]
-        """
-        pass
 
     def get_fitted_event(
         self, channel: int, index: int

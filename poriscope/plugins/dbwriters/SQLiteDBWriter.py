@@ -127,13 +127,12 @@ class SQLiteDBWriter(MetaDatabaseWriter):
 
     @log(logger=logger)
     @override
-    def close_resources(self, channel: Optional[int] = None) -> None:
+    def close_resources(self) -> None:
         """
-        Commit and close the shared database connection/cursor, if open.
+        Commit and close the shared database connection and cursor, if open.
 
-        :param channel: unused; this writer shares a single connection across all
-            channels, so there is no per-channel resource to close independently.
-        :type channel: Optional[int]
+        One connection serves every channel this writer writes, so closing it
+        releases the whole plugin.
         """
         if self.cursor:
             # Guarded like the commit below, and for the same reason: closing a
@@ -143,9 +142,7 @@ class SQLiteDBWriter(MetaDatabaseWriter):
             try:
                 self.cursor.close()
             except Exception:
-                self.logger.info(
-                    f"Failed to close cursor cleanly for channel {channel}"
-                )
+                self.logger.info("Failed to close cursor cleanly")
             self.cursor = None
         if self.conn:
             self.logger.debug("Closing database connection.")
@@ -167,7 +164,7 @@ class SQLiteDBWriter(MetaDatabaseWriter):
                 # ProgrammingError in place of the ValueError explaining that
                 # eventfitting had not completed.
                 self.logger.error(
-                    f"Failed to commit and close the database for channel {channel}; "
+                    f"Failed to commit and close {self.settings['Output File']['Value']}; "
                     "events written in this batch may not have been saved.",
                     exc_info=True,
                 )

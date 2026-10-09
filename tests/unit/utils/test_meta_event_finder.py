@@ -105,9 +105,6 @@ class ConcreteEventFinder(MetaEventFinder):
     def _init(self) -> None:
         pass
 
-    def close_resources(self, channel: Optional[int] = None) -> None:
-        pass
-
     def _validate_settings(self, settings: dict) -> None:
         if "MetaReader" not in settings:
             raise ValueError("MetaReader is required")
@@ -1254,9 +1251,6 @@ class TestGetEventIndices:
 # Abstract method stub bodies
 # ---------------------------------------------------------------------------
 class TestAbstractStubs:
-    def test_public_abstract_stub(self, finder):
-        assert MetaEventFinder.close_resources(finder) is None
-
     def test_private_abstract_stubs(self, finder):
         assert MetaEventFinder._init(finder) is None
         assert (

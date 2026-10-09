@@ -121,18 +121,6 @@ class MetaFilter(BaseDataPlugin):
         return {}
 
     @abstractmethod
-    def close_resources(self, channel: Optional[int] = None) -> None:
-        """
-        **Purpose:** Clean up any open file handles or memory.
-
-        This is called during app exit or plugin deletion to ensure proper cleanup of resources that could otherwise leak. Perform any actions necessary to gracefully close resources before app exit. If channel is not None, handle only that channel, else close all of them (taking care to respect thread safety if necessary). If no such operation is needed, it suffices to ``pass``, which will be the case for most :ref:`MetaFilter` instances.
-
-        :param channel: channel ID
-        :type channel: Optional[int]
-        """
-        pass
-
-    @abstractmethod
     def reset_channel(self, channel: Optional[int] = None) -> None:
         """
         **Purpose:** Reset the state of a specific channel for a new operation or run.

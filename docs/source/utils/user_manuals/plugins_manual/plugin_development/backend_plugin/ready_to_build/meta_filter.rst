@@ -13,9 +13,6 @@ Required Public API Methods
 .. automethod:: poriscope.utils.MetaFilter.MetaFilter.get_empty_settings
    :no-index:
 
-.. automethod:: poriscope.utils.MetaFilter.MetaFilter.close_resources
-   :no-index:
-
 .. automethod:: poriscope.utils.MetaFilter.MetaFilter.reset_channel
    :no-index:
 
@@ -38,6 +35,9 @@ Optional Method Overrides
 ~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Methods in this section have an implementation in either :ref:`BaseDataPlugin` or :ref:`MetaFilter`, but they can be overridden if necessary to tweak the behavior of your plugin.
+
+.. automethod:: poriscope.utils.MetaFilter.MetaFilter.close_resources
+   :no-index:
 
 .. automethod:: poriscope.utils.MetaFilter.MetaFilter.force_serial_channel_operations
    :no-index:

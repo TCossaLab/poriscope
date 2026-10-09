@@ -130,16 +130,6 @@ class BesselFilter(MetaFilter):
         return {"Samplerate": float(self.settings["Samplerate"]["Value"])}
 
     # public API, must be implemented by subclasses
-    @log(logger=logger)
-    @override
-    def close_resources(self, channel: Optional[int] = None) -> None:
-        """
-        Perform any actions necessary to gracefully close resources before app exit. If channel is not None, handle only that channel, else close all of them.
-
-        :param channel: channel ID
-        :type channel: Optional[int]
-        """
-        pass
 
     @log(logger=logger)
     @override
