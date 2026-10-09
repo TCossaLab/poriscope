@@ -1037,7 +1037,7 @@ def test_edit_plugin_rename_with_dependents_updates_them(
     Cover the dependent re-registration loop during a key rename.
 
     Lines: dinstance.unregister_parent, register_parent, update_raw_settings,
-    replace_raw_settings_option, update_plugin_history.emit(dhistory).
+    update_plugin_history.emit(dhistory).
 
     :param mock_model: Mocked data plugin model.
     :param mock_view: Mocked data plugin view.
@@ -1790,9 +1790,6 @@ class TestUpdateDependentsAfterRename:
         dependent.unregister_parent.assert_called_once_with("MetaReader", "r1")
         dependent.register_parent.assert_called_once_with("MetaReader", "r2")
         dependent.update_raw_settings.assert_called_once_with("MetaReader", "r2")
-        dependent.replace_raw_settings_option.assert_called_once_with(
-            "MetaReader", "r1", "r2"
-        )
         emitted, previous = ctrl.update_plugin_history.emit.call_args[0]
         assert previous == "" and emitted["settings"] == {"after": True}
 

@@ -391,11 +391,12 @@ class BaseDataPlugin(ABC):
         The returned dict is a snapshot rather than a view: the outer dict, each
         parameter's dict, and any list-valued entry within one - notably ``Options`` -
         are all copied. A caller that mutates what it gets back therefore cannot write
-        into this plugin's internal state. :py:meth:`update_raw_settings` and
-        :py:meth:`replace_raw_settings_option` are the only supported writers.
+        into this plugin's internal state. :py:meth:`update_raw_settings` is the only
+        supported writer.
 
         A plugin this one depends on appears by its key, never as the live plugin, so
-        the snapshot can be deep-copied and saved with the session.
+        the snapshot can be deep-copied and saved with the session. Its setting holds no
+        ``Options``, so when that plugin is renamed only the key needs replacing.
 
         :return: a copy of the dict that must be filled in to initialize the plugin
         :rtype: dict
@@ -414,40 +415,6 @@ class BaseDataPlugin(ABC):
         """
         if self.raw_settings and key in self.raw_settings:
             self.raw_settings[key]["Value"] = val
-
-    @log(logger=logger)
-    def replace_raw_settings_option(
-        self, key: str, old_value: Any, new_value: Any
-    ) -> None:
-        """
-        Replace one entry in a setting's list of allowed options
-
-        Needed when a parent plugin is renamed: a dependent carries the parent's key
-        both as the ``Value`` and in the ``Options`` list of the setting named after
-        the parent's metaclass, and the list must track the rename or
-        :py:meth:`_validate_param_ranges` will later reject the new key as not being
-        an allowed option. This exists as a method because :py:meth:`get_raw_settings`
-        hands out a copy, so a caller cannot maintain the list by mutating what it
-        gets back.
-
-        Does nothing if the setting is absent or declares no options.
-
-        :param key: the settings key whose options should be updated
-        :type key: str
-        :param old_value: the option to remove, if it is present
-        :type old_value: Any
-        :param new_value: the option to add, if it is not already present
-        :type new_value: Any
-        """
-        if not self.raw_settings or key not in self.raw_settings:
-            return
-        options = self.raw_settings[key].get("Options")
-        if options is None:
-            return
-        if old_value in options:
-            options.remove(old_value)
-        if new_value not in options:
-            options.append(new_value)
 
     def _resolve_metaclass_name(self, cls: type) -> str:
         """

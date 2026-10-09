@@ -390,7 +390,6 @@ class DataPluginController(QObject):
                 # through what it hands back would update history while
                 # leaving the plugin's own Value and Options untouched.
                 dinstance.update_raw_settings(metaclass, key)
-                dinstance.replace_raw_settings_option(metaclass, old_key, key)
                 dhistory["settings"] = dinstance.get_raw_settings()
                 self.update_plugin_history.emit(dhistory, "")
             except Exception as e:

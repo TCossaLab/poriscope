@@ -52,31 +52,10 @@ Step 10 waits for both tracks.
 Design ruled by Kyle 2026-10-09 (plan page, step 8 Q1-Q6), replacing the 2026-09-22 scope. The
 PeakFinder changes below are approved by Nada (2026-10-09).
 
-- **One status report for every plugin**: `report_status(channel: Optional[int] = None, init: bool
-  = False)` on `BaseDataPlugin` replaces `report_channel_status`, no alias. No channel = the whole
-  plugin; filters and `MetaDatabaseLoader` ignore the channel, which settles
-  `MetaModel.generate_report:353` handing the loader the export index (`MetadataController.py:974`).
-  Callers: `DataPluginController.py:340`, `ChimeraReader20240101.py:114`, `PeakFinder.py:2591-2593`
-  and `:5143`, `scripting.rst` (6), `scripts/workflow_script.py` (6), `scripts/new_plugin.py:327`.
-- **`close_resources()` takes no channel**; concrete no-op on `BaseDataPlugin`. Only
-  `SQLiteEventWriter:362` and `SQLiteDBWriter:130` act, each closing one shared connection; the
-  16 empty overrides go. `__enter__`/`__exit__` stay (`DECISIONS.md` 2026-09-22).
-- **`reset_channel(channel: int)` required, on every plugin.** `None` is wrong in 3 of 4 real
-  bodies: `MetaEventFitter:329-358` writes `status[None]` behind four `type: ignore`s, both SQLite
-  writers delete nothing; `MetaEventFinder:171-206` writes its ten resets twice. The filters'
-  identical `close_resources`/`reset_channel` (`BesselFilter:135`/`:146`, `WaveletFilter:92`/`:103`,
-  16 duplicated lines) leave the filters. `MetaDatabaseWriter._initialize_database:393` and
-  `_write_experiment_metadata:369` take `int`.
-- **Remove `BaseDataPlugin.replace_raw_settings_option`** (`:402`; ruled 2026-10-08). It never acts:
-  create, edit and restore set a plugin reference's `Options` to `None` first. Caller
-  `DataPluginController.py:393`; mock test `test_data_plugin_controller.py:1793`; correct
-  `get_raw_settings`'s docstring (`:378`). Pin: rename a parent, then edit the dependent.
 - **Run-wide hook `MetaEventFitter._post_process_run(channels)`**, once when every channel of a run
   has finished. `fit_events` is a lazy generator, so membership must be fixed before the workers
   start. PeakFinder's barrier (`_post_process_events:2186-2213`) moves onto it; today it races,
   since the base sets the status (`MetaEventFitter.py:800`) after the hook returns (`:799`).
-- **The compliance test checks only `__abstractmethods__`** (`test_plugin_compliance.py:43`); 37
-  concrete overrides, 0 differing from their base.
 - **`PeakFinder.py:1019-1045` carries the CUSUM detector step 5 fixed**: reset only on an accepted
   jump and `varS = 0` outside the reset (`:1045`). Apply `CUSUM.py:315-330`'s form.
 - **`"μs"` where every other plugin writes `"us"`**: `PeakFinder.py:2068`, `Basic_PeakFinder.py:1197`

@@ -30,6 +30,8 @@
 
 * **`reset_channel` now requires a channel on every data plugin**, as do `MetaDatabaseWriter._initialize_database` and `_write_experiment_metadata`; a filter inherits a do-nothing reset from `MetaFilter` and need not define one
 
+* **`BaseDataPlugin.replace_raw_settings_option` is removed**; it never changed anything, since a setting naming another plugin holds no `Options`
+
 * **A metadata database now holds results from one type of fitter:** any number of runs of that fitter can still be written to it, but writing a different type of fitter into it is refused; use a new file per fitter type
 
 #### Application internals:
