@@ -52,6 +52,8 @@
 
 * The test suite now runs the scripting guide's code end to end
 
+* The plugin compliance test now also checks every override of a concrete base method against the base's signature
+
 ### Data Plugin API:
 
 * `MetaFilter.get_data_requirements()` lets a filter declare settings the data must match; `BesselFilter` declares its `Samplerate`

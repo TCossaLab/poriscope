@@ -29,7 +29,7 @@ from abc import abstractmethod
 from pathlib import Path
 from typing import Any, Dict, Generator, List, Optional
 
-from poriscope.utils.BaseDataPlugin import BaseDataPlugin
+from poriscope.utils.BaseDataPlugin import BaseDataPlugin, Setting
 from poriscope.utils.DocstringDecorator import inherit_docstrings
 from poriscope.utils.LogDecorator import log
 from poriscope.utils.MetaEventFinder import MetaEventFinder
@@ -519,12 +519,12 @@ class MetaWriter(BaseDataPlugin):
                 )
 
     @log(logger=logger)
-    def _validate_param_types(self, settings: dict) -> None:
+    def _validate_param_types(self, settings: Dict[str, Setting]) -> None:
         """
         Validate that the filter_params dict contains correct data types
 
         :param settings: A dict specifying the parameters of the filter to be created. Required keys depend on subclass.
-        :type settings: dict
+        :type settings: Dict[str, Setting]
         :raises TypeError: If the filter_params parameters are of the wrong type
         """
         super()._validate_param_types(settings)

@@ -33,7 +33,7 @@ from typing import Any, Callable, Dict, Generator, List, Optional, Tuple, Type, 
 import numpy as np
 import numpy.typing as npt
 
-from poriscope.utils.BaseDataPlugin import BaseDataPlugin
+from poriscope.utils.BaseDataPlugin import BaseDataPlugin, Setting
 from poriscope.utils.DocstringDecorator import inherit_docstrings
 from poriscope.utils.LogDecorator import log
 from poriscope.utils.MetaEventLoader import MetaEventLoader
@@ -1200,12 +1200,12 @@ class MetaEventFitter(BaseDataPlugin):
         self.eventloader = self.settings["MetaEventLoader"]["Value"]
 
     @log(logger=logger)
-    def _validate_param_types(self, settings: dict) -> None:
+    def _validate_param_types(self, settings: Dict[str, Setting]) -> None:
         """
         Validate that the filter_params dict contains correct data types
 
         :param settings: A dict specifying the parameters of the filter to be created. Required keys depend on subclass.
-        :type settings: dict
+        :type settings: Dict[str, Setting]
         :raises TypeError: If the filter_params parameters are of the wrong type
         """
         super()._validate_param_types(settings)

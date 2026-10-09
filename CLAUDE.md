@@ -106,7 +106,8 @@ Three rules apply regardless:
   covers only the `utils/` helpers.
 - `tests/unit/plugins/test_plugin_compliance.py` recursively imports every module
   under `poriscope.plugins` and asserts each plugin subclass implements all abstract
-  methods of its `Meta*`/`BaseDataPlugin` base — this is the guardrail that keeps the
+  methods of its `Meta*`/`BaseDataPlugin` base, and that every override of a concrete
+  base method keeps the base's signature — this is the guardrail that keeps the
   plugin contract intact; run it after touching any `Meta*` base or plugin signature.
   Note it compares generic annotations (`List[str]` and friends) by **equality**, using
   `issubclass()` only when both sides are plain classes — so widening or correcting a

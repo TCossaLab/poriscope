@@ -663,7 +663,10 @@ Concretely, this test:
 3. checks that each one implements every method its base class marks as
    ``@abstractmethod``,
 4. checks that overridden methods keep the same argument names, the same argument
-   order, and (where type hints are present) a compatible type signature.
+   order, and (where type hints are present) a compatible type signature - both the
+   abstract ones and any method you override that the base already implements, such
+   as ``get_empty_settings`` or ``load_data``, since the app calls those through the
+   base's contract too.
 
 Run it locally with:
 

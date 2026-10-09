@@ -43,6 +43,29 @@ def get_required_methods(cls: Type) -> List[str]:
     return list(getattr(cls, "__abstractmethods__", []))
 
 
+def get_concrete_overrides(base_cls: Type, plugin_cls: Type) -> List[str]:
+    """
+    Name the methods a class defines itself that replace a concrete method of the base.
+
+    An override of a method the base implements - ``load_data``, ``get_channels``,
+    ``force_serial_channel_operations`` - is called through the base's contract exactly
+    as an abstract one is, so it owes the base the same signature.
+
+    :param base_cls: the base class whose contract applies
+    :param plugin_cls: the class whose own methods are checked
+    :return: names of the overriding methods, abstract ones excluded
+    """
+    abstract = set(getattr(base_cls, "__abstractmethods__", ()))
+    return sorted(
+        name
+        for name, member in vars(plugin_cls).items()
+        if not (name.startswith("__") and name.endswith("__"))
+        and name not in abstract
+        and inspect.isfunction(member)
+        and inspect.isfunction(getattr(base_cls, name, None))
+    )
+
+
 # Explicit allowlist of framework interface/meta bases that must remain abstract.
 # (Keeping this list prevents false positives/negatives that dynamic scans—
 # e.g., for names starting with 'Meta' or ABC subclasses—could cause if the
@@ -309,9 +332,11 @@ def test_plugin_subclass_compliance(base_class_name: str, plugin_cls: Type) -> N
     This test validates that every discovered subclass of the given base class meets
     the following requirements:
 
-    1. **Implements all required abstract methods**
+    1. **Implements all required abstract methods, and overrides concrete ones faithfully**
        - Names, parameter order, parameter kinds, and default values must match exactly.
        - Type annotations are ignored for structural comparison.
+       - The same checks apply to every method the class defines that replaces a
+         concrete method of the base (see :func:`get_concrete_overrides`).
 
     2. **Optional annotation compatibility**
        - If a subclass **does not** provide type annotations, it passes automatically.
@@ -347,8 +372,8 @@ def test_plugin_subclass_compliance(base_class_name: str, plugin_cls: Type) -> N
     errors: List[str] = []
     unimplemented_abstracts: Set[str] = set()
 
-    # 1) Check each required abstract method
-    for method_name in required_methods:
+    # 1) Check each required abstract method, and each override of a concrete one
+    for method_name in required_methods + get_concrete_overrides(base_cls, plugin_cls):
         if not hasattr(plugin_cls, method_name):
             # Method missing entirely
             missing_methods.append(method_name)
