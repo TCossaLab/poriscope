@@ -48,6 +48,7 @@ from PySide6.QtWidgets import QMessageBox
 from poriscope.plugins.analysistabs.utils.rawdatacontrols import RawDataControls
 from poriscope.utils.DocstringDecorator import inherit_docstrings
 from poriscope.utils.LogDecorator import log
+from poriscope.utils.MetaEventTabControls import MetaEventTabControls
 from poriscope.utils.MetaEventTabView import MetaEventTabView
 from poriscope.views.widgets.time_widget import TimeWidget
 from poriscope.views.widgets.walkthrough_mixin import (
@@ -440,82 +441,19 @@ class RawDataView(MetaEventTabView):
             if result is not None:
                 self.analysis_time_limits[finder] = result
 
-    @log(logger=logger)
-    def _shift_range_and_update_plot(
-        self, parameters: Dict[str, Any], direction: str
-    ) -> None:
+    @property
+    def _event_controls(self) -> MetaEventTabControls:
         """
-        Shift selected event index ranges left or right and update the plot accordingly.
+        The controls panel, under the name ``MetaEventTabView``'s shared methods use.
 
-        :param parameters: Dictionary containing current event plotting parameters.
-        :type parameters: Dict[str, Any]
-        :param direction: Direction to shift ('left' or 'right').
-        :type direction: str
+        Annotated with the base's type rather than ``RawDataControls`` so the override
+        matches the declaration verbatim, which is what the plugin compliance test
+        compares. Tab-specific code keeps using ``self.rawdatacontrols``.
+
+        :return: the panel built by ``_build_controls``
+        :rtype: MetaEventTabControls
         """
-        try:
-            eventfinder, filter_name, selected_channels, event_indices = (
-                self._extract_plot_event_parameters(parameters)
-            )
-            self.logger.debug(
-                f"Channels received before validation: {selected_channels}"
-            )
-            self.validate_single_channel(selected_channels)
-            selected_channels[0]
-        except (IndexError, ValueError) as e:
-            self.logger.error(f"Parameter extraction failed: {repr(e)}")
-            return
-
-        original_str = self._get_event_index_text()
-        self.logger.debug(f"Original GUI input string: {original_str}")
-        if not original_str:
-            self.logger.debug("Event index input is empty.")
-            return
-
-        parsed = self._parse_event_indices(original_str, False)
-        self.logger.debug(f"Parsed input into ranges: {parsed}")
-
-        shifted = self._shift_ranges(parsed, direction, 1)
-        self.logger.debug(f"Shifted ranges ({direction}): {shifted}")
-
-        merged = self._merge_ranges(shifted)
-        self.logger.debug(f"Merged shifted ranges: {merged}")
-
-        new_event_str = self._format_ranges(merged)
-        self.logger.debug(f"Formatted string for GUI: {new_event_str}")
-
-        expanded = self._expand_event_indices(new_event_str)
-        self.logger.debug(f"Expanded list for plotting: {expanded}")
-
-        if not expanded:
-            # The log line is kept verbatim: an EventAnalysis e2e test asserts on this
-            # exact text. What was missing is the user-visible half - the shift correctly
-            # declines to go below event 0, but said so only on the console.
-            self.logger.warning("Indices must be positive")
-            self.add_text_to_display.emit(
-                "Cannot shift further: event indices cannot go below 0",
-                self.__class__.__name__,
-            )
-            return
-
-        # Proceed with valid shift
-        new_params = parameters.copy()
-        new_params["event_index"] = expanded
-        self.logger.debug(f"Updated parameters for plot: {new_params}")
-
-        self._handle_plot_events(new_params)
-        self.logger.debug(
-            f"Shifting complete. Updating input field to: {new_event_str}"
-        )
-        self.rawdatacontrols.set_event_index_input(new_event_str)
-
-    def _get_event_index_text(self) -> str:
-        """
-        Get the event index input from the UI.
-
-        :return: The current text from the event index input field.
-        :rtype: str
-        """
-        return self.rawdatacontrols.event_index_lineEdit.text().strip()
+        return self.rawdatacontrols
 
     @log(logger=logger)
     def _handle_plot_events(self, parameters: Dict[str, Any]) -> None:

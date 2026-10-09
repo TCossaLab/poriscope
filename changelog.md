@@ -56,6 +56,8 @@
 
 * **Breaking:** `_shift_range_and_update_plot` has moved from `MetadataView` and `ProteinView` to `MetaSubsetTabView`, which now requires its subclasses to implement `_replot_after_shift`
 
+* **Breaking:** `_shift_range_and_update_plot` and `_get_event_index_text` have moved from `RawDataView` and `EventAnalysisView` to `MetaEventTabView`, which now requires its subclasses to implement `_event_controls` and `_handle_plot_events`
+
 ### Developer Tooling:
 
 * The release workflow now runs only when a version tag is pushed

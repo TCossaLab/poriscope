@@ -751,9 +751,6 @@ def _setup_shift_plot(view, mocker, text="5-10"):
     view._format_ranges = mocker.Mock(return_value="6-11")
     view._expand_event_indices = mocker.Mock(return_value=[6, 7, 8, 9, 10, 11])
     view._handle_plot_events = mocker.Mock()
-    view._extract_plot_event_parameters = mocker.Mock(
-        return_value=("EF", "F", [0], [5, 6, 7, 8, 9, 10])
-    )
     view.validate_single_channel = mocker.Mock()
 
 
@@ -812,7 +809,6 @@ def test_shift_with_no_channel_selected_aborts(view, mocker):
     the first channel that refuses an empty selection, as an ``IndexError``.
     """
     _setup_shift_plot(view, mocker)
-    view._extract_plot_event_parameters = mocker.Mock(return_value=("EF", "F", [], []))
     params = {"eventfinder": "EF", "filter": "F", "channel": [], "event_index": [5]}
 
     view._shift_range_and_update_plot(params, "right")
@@ -822,7 +818,6 @@ def test_shift_with_no_channel_selected_aborts(view, mocker):
 
 def test_shift_range_and_update_plot_empty_text_aborts(view, mocker):
     view.rawdatacontrols.event_index_lineEdit.text.return_value = ""
-    view._extract_plot_event_parameters = mocker.Mock(return_value=("EF", "F", [0], []))
     view.validate_single_channel = mocker.Mock()
     view._handle_plot_events = mocker.Mock()
     params = {"eventfinder": "EF", "filter": "F", "channel": ["0"], "event_index": []}
