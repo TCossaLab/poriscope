@@ -86,6 +86,19 @@ Step 10 waits for both tracks.
   `$` lets the lazy `.*?` expand across every `)`, so `Rate (per pore)` with unit `Hz` becomes
   `Rate (Hz)`. Two copies, `ProteinView.py:2337` and `MetadataView.py:2840`; pinned in
   `test_duplicated_helpers.py:273-316`, so the fix updates those tests.
+- **Event Analysis overlays one fitter's fits on another loader's events** (Kyle, 2026-10-09).
+  `EventAnalysisController.load_event_plot:73` loads traces from the selected loader
+  (`_load_one_event:320`) and fits and features from the selected fitter (`_load_one_fit:359`,
+  `_load_one_feature_set:388`, gated by `_fitting_is_done:293`), never comparing them; the
+  controls do not filter the fitter list by loader. `eventfitter_1` (on `eventloader_1`) with
+  `eventloader_2` selected draws fit *n* over the other file's event *n*. Display only: a
+  database write uses the fitter's own loader. Check `("MetaEventLoader", loader)` against the
+  fitter's `get_parents()` (`BaseDataPlugin.py:377`) before loading fits. On a mismatch, to
+  rule: plot the traces without fits and say why on the status panel (recommended), refuse the
+  plot, or filter the fitter dropdown by loader (View work, needs a no-fit option). Test first:
+  two loaders, two fitters, crossed selection, no fit drawn. Also measure `start_fitting:468`,
+  which takes its channels from the selected loader but fits on the fitter's own loader
+  (`:502`), so a crossed selection may fit channels that loader lacks (not yet measured).
 
 ### Step 9b - breaking tab designs and the milestone guard (Carolina's track)
 
