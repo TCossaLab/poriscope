@@ -42,6 +42,10 @@
 
 * **`DataPluginModel.apply_settings` is removed**; call `apply_settings` on the plugin itself
 
+#### Analysis-tab API:
+
+* **Breaking:** `update_available_columns` has moved from `MetaSubsetTabView` to `MetadataView`, `column_names_requested` with it, and `request_column_names` is no longer on `MetaSubsetTabController`; only the metadata tab reads column names, so a plugin subclassing the shared subset-tab base no longer inherits any of the three
+
 ### Developer Tooling:
 
 * The release workflow now runs only when a version tag is pushed

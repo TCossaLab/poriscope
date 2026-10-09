@@ -93,6 +93,13 @@ class MetadataView(MetaSubsetTabView):
     #: ``update_units`` moved down here from ``MetaSubsetTabView``.
     column_units_requested = Signal(str, str, str)
 
+    #: Asks the Controller for a loader's column names, answered through
+    #: ``update_column_names``. The Controller calls the loader itself, so a loader that
+    #: cannot be read is reported rather than failing silently on the way back. This tab
+    #: is the only caller, which is why ``update_available_columns`` moved down here
+    #: from ``MetaSubsetTabView``.
+    column_names_requested = Signal(str)
+
     #: Asks the Controller for one metadata subset, ready to plot: the loader's key,
     #: the columns this plot type needs, the filter, and the experiment/channel scope.
     #: The Controller builds the query, loads the rows and looks up each column's
@@ -2592,6 +2599,18 @@ class MetadataView(MetaSubsetTabView):
         :rtype: None
         """
         self.column_units = units
+
+    @log(logger=logger)
+    def update_available_columns(self, loader: str) -> None:
+        """
+        Request available columns from the database loader.
+
+        :param loader: Name of the active database loader.
+        :type loader: str
+        """
+        if not loader or loader == "No Event Database":
+            return
+        self.column_names_requested.emit(loader)
 
     @log(logger=logger)
     def update_column_names(self, column_names: List[str]) -> None:

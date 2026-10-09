@@ -51,9 +51,9 @@ class MetaSubsetTabController(MetaController):
 
     What a subclass inherits:
 
-    - **Experiment and column state.** request_column_names and
-      request_experiment_structure ask the loader and hand its answer to the View,
-      which is the Model-to-View half of the mediation this layer exists for.
+    - **Experiment state.** request_experiment_structure asks the loader and hands
+      its answer to the View, which is the Model-to-View half of the mediation this
+      layer exists for.
     - **Filter validation.** validate_filter and validate_raw_filter answer the
       View's two validation requests by calling the loader directly, so a filter the
       database refuses is reported through _refuse_filter rather than vanishing.
@@ -86,7 +86,7 @@ class MetaSubsetTabController(MetaController):
     @override
     def _setup_connections(self) -> None:
         """
-        Wire the nine requests both subset tabs share.
+        Wire the eight requests both subset tabs share.
 
         A subclass with requests of its own overrides this and calls
         ``super()._setup_connections()`` first, so the shared ones are wired once here
@@ -95,7 +95,6 @@ class MetaSubsetTabController(MetaController):
         :return: None
         :rtype: None
         """
-        self.view.column_names_requested.connect(self.request_column_names)
         self.view.experiment_structure_requested.connect(
             self.request_experiment_structure
         )
@@ -373,38 +372,6 @@ class MetaSubsetTabController(MetaController):
             return
 
         self.view.set_event_id_rows(rows)
-
-    @log(logger=logger)
-    @Slot(str)
-    def request_column_names(self, loader: str) -> None:
-        """
-        Fetch a loader's column names and hand them to the View.
-
-        The same shape as the reader and loader channel look-ups, against
-        ``MetaDatabaseLoader``. An empty answer is logged rather than pushed: clearing the
-        axis comboboxes would read as "this database has no columns" when what happened
-        is that nobody could ask it.
-
-        :param loader: the database loader plugin's key
-        :type loader: str
-        :return: None
-        :rtype: None
-        """
-        try:
-            column_names = self.model.call(
-                "MetaDatabaseLoader", loader, "get_column_names_by_table"
-            )
-        except Exception as e:
-            self.logger.error(f"Failed to request column data: {repr(e)}")
-            self.add_text_to_display.emit(
-                f"Unable to read the columns of {loader}: {e}", self.__class__.__name__
-            )
-            return
-        if column_names:
-            self.view.update_column_names(column_names)
-            self.logger.info("Axis comboboxes updated with new column names.")
-        else:
-            self.logger.warning("No column names received to update.")
 
     @log(logger=logger)
     @Slot(str)

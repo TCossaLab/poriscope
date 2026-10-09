@@ -73,13 +73,14 @@ class MetadataController(MetaSubsetTabController):
     @override
     def _setup_connections(self) -> None:
         """
-        Wire this tab's own eleven intents on top of the nine the subset base wires.
+        Wire this tab's own fourteen intents on top of the eight the subset base wires.
 
         :return: None
         :rtype: None
         """
         super()._setup_connections()
         self.view.column_units_requested.connect(self.request_column_units)
+        self.view.column_names_requested.connect(self.request_column_names)
         self.view.column_type_requested.connect(self.request_column_type)
         self.view.metadata_subset_requested.connect(self.load_metadata_subset)
         self.view.all_points_histogram_requested.connect(
@@ -1003,6 +1004,38 @@ class MetadataController(MetaSubsetTabController):
             self.logger.error(f"Failed to request units for column {column}: {repr(e)}")
             return
         self.view.update_column_units(column_units, axis)
+
+    @log(logger=logger)
+    @Slot(str)
+    def request_column_names(self, loader: str) -> None:
+        """
+        Fetch a loader's column names and hand them to the View.
+
+        The same shape as the reader and loader channel look-ups, against
+        ``MetaDatabaseLoader``. An empty answer is logged rather than pushed: clearing the
+        axis comboboxes would read as "this database has no columns" when what happened
+        is that nobody could ask it.
+
+        :param loader: the database loader plugin's key
+        :type loader: str
+        :return: None
+        :rtype: None
+        """
+        try:
+            column_names = self.model.call(
+                "MetaDatabaseLoader", loader, "get_column_names_by_table"
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to request column data: {repr(e)}")
+            self.add_text_to_display.emit(
+                f"Unable to read the columns of {loader}: {e}", self.__class__.__name__
+            )
+            return
+        if column_names:
+            self.view.update_column_names(column_names)
+            self.logger.info("Axis comboboxes updated with new column names.")
+        else:
+            self.logger.warning("No column names received to update.")
 
     @log(logger=logger)
     def update_features(

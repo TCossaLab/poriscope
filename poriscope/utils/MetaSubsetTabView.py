@@ -63,9 +63,6 @@ class MetaSubsetTabView(MetaView):
     - **Query state.** ``set_query``, ``set_event_query`` and ``set_experiment_id``
       receive the SQL and the scope the Controller
       resolved, and optionally echo it to the status panel.
-    - **Column and experiment state.** ``update_available_columns`` and
-      ``set_units`` keep the tab's column comboboxes and axis labels in step with the
-      loader's description of the database.
     - **Subset filters.** ``subset_filters`` is the store, and
       ``commit_filter``/``get_subset_filters`` are how the Controller reaches it -
       it asks rather than assigning into the dict (``DECISIONS.md``, 2026-09-13).
@@ -109,11 +106,6 @@ class MetaSubsetTabView(MetaView):
     :ivar subset_filters: named subset filters, filter name to SQL WHERE clause
     :ivar selected_experiment_and_channels_by_loader: per-loader selection tree state
     """
-
-    #: Asks the Controller for a loader's column names, answered through
-    #: ``update_column_names``. The Controller calls the loader itself, so a loader that
-    #: cannot be read is reported rather than failing silently on the way back.
-    column_names_requested = Signal(str)
 
     #: Asks the Controller for a loader's experiment-and-channel structure. The loader
     #: key is carried so the answer can be filed under it, which is what the bus used
@@ -1006,18 +998,6 @@ class MetaSubsetTabView(MetaView):
         :type query: str
         """
         self.event_query = query
-
-    @log(logger=logger)
-    def update_available_columns(self, loader: str) -> None:
-        """
-        Request available columns from the database loader.
-
-        :param loader: Name of the active database loader.
-        :type loader: str
-        """
-        if not loader or loader == "No Event Database":
-            return
-        self.column_names_requested.emit(loader)
 
     @log(logger=logger)
     def request_experiment_structure(self, loader_name: str) -> None:

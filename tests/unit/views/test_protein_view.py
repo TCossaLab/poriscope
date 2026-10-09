@@ -1028,13 +1028,11 @@ class TestMiscMethods:
     def test_request_experiment_structure_no_error(self, mock_view):
         mock_view.request_experiment_structure("my_loader")
 
-    def test_update_available_columns_no_error(self, mock_view):
-        mock_view.update_available_columns("my_loader")
-
-    # update_units is gone from this tab: it lives on MetadataView, which was its only
-    # caller. The protein tab has no units label, keeps no units cache and
-    # labels its axes with hardcoded literals, so there was nothing here for the answer
-    # to reach - which is also why ProteinView's missing update_column_units was
+    # update_units and update_available_columns are both gone from this tab: they live
+    # on MetadataView, which was their only caller. The protein tab has no units label,
+    # keeps no units cache, labels its axes with hardcoded literals and reads no column
+    # names, so there was nothing here for either answer to reach - which is also why
+    # ProteinView's missing update_column_units and update_column_names were
     # unreachable rather than merely swallowed.
 
     def test_update_available_plugins_no_error(self, mock_view):
@@ -1178,20 +1176,12 @@ class TestHandleParameterChange:
         mock_view.handle_parameter_change("p", "export_plot_data", (self._params(),))
         assert any("Export Subset as CSV" in m for m in received)
 
-    def test_loader_changed_requests_the_structure_but_no_column_names(self, mock_view):
-        """
-        A loader change asks for the experiment structure only.
-
-        The tab reads no column names, so it no longer asks the database for them.
-        """
-        with (
-            patch.object(mock_view, "update_available_columns") as mock_cols,
-            patch.object(mock_view, "request_experiment_structure") as mock_struct,
-        ):
+    def test_loader_changed_requests_the_structure(self, mock_view):
+        """A loader change asks for the experiment structure."""
+        with patch.object(mock_view, "request_experiment_structure") as mock_struct:
             mock_view.handle_parameter_change(
                 "p", "loader_changed", (self._params(db_loader="ldr1"),)
             )
-        mock_cols.assert_not_called()
         mock_struct.assert_called_once_with("ldr1")
 
     def test_loader_changed_no_loader_skips(self, mock_view):
@@ -1201,26 +1191,11 @@ class TestHandleParameterChange:
             )
         mock_struct.assert_not_called()
 
-    def test_a_column_change_elsewhere_asks_for_nothing(self, mock_view):
-        """Another tab adding columns to this tab's loader prompts no request here."""
-        asked = []
-        mock_view.column_names_requested.connect(asked.append)
-        mock_view.notify_plugin_state_changed(
-            "MetaDatabaseLoader",
-            mock_view.proteincontrols.db_loader_comboBox.currentText(),
-            "columns",
-        )
-        assert asked == []
-
-    def test_a_fit_commit_announces_new_columns_without_asking_for_them(
-        self, mock_view
-    ):
-        """Committing fits tells the other tabs, which do read columns, and asks nothing."""
-        asked, announced = [], []
-        mock_view.column_names_requested.connect(asked.append)
+    def test_a_fit_commit_announces_new_columns(self, mock_view):
+        """Committing fits tells the other tabs; there is no column-names signal here to ask with."""
+        announced = []
         mock_view.plugin_state_changed.connect(lambda *a: announced.append(a))
         mock_view.on_fit_commit_finished("ldr")
-        assert asked == []
         assert announced == [("MetaDatabaseLoader", "ldr", "columns")]
 
     def test_select_experiment_and_channel_shows_tree(self, mock_view):
