@@ -124,6 +124,12 @@ runs only when the user sets the cap and is described on the setting.
 
 **Revisit** in step 8, where it lands.
 
+**Amended 2026-10-09: not recorded at all** (Kyle). Only CUSUM would have used the edges in
+`_populate_event_metadata`; asked whether the value could stay inside CUSUM instead (a
+per-thread value, or the edges carried through a sublevel column), Kyle ruled the information
+is not needed. The hook keeps its signature. Revisit only if a user asks which step size fitted
+an event.
+
 ---
 
 ## 2026-10-07 - A fitter fault on an event is a rejection of that event, never an abort
