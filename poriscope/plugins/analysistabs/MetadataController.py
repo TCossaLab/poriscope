@@ -475,13 +475,11 @@ class MetadataController(MetaSubsetTabController):
             )
             return
 
-        if len(log_times) < initial_length:
-            # Preserved exactly, including that a clean column always reports one row
-            # dropped: the interval count is one less than the event count by
-            # construction and the original counted that as a drop. Filed rather than
-            # corrected here, so this move changes nothing the user sees.
+        if len(log_times) < initial_length - 1:
+            # n events make n-1 intervals by construction, so that is the baseline for
+            # how many the log filter dropped, not the raw event count.
             self.add_text_to_display.emit(
-                f"{initial_length - len(log_times)} rows dropped by log filter",
+                f"{initial_length - 1 - len(log_times)} rows dropped by log filter",
                 self.__class__.__name__,
             )
 
