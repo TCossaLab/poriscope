@@ -120,17 +120,17 @@ class MetaFilter(BaseDataPlugin):
         """
         return {}
 
-    @abstractmethod
-    def reset_channel(self, channel: Optional[int] = None) -> None:
+    @log(logger=logger)
+    def reset_channel(self, channel: int) -> None:
         """
-        **Purpose:** Reset the state of a specific channel for a new operation or run.
+        Do nothing: a filter has no channels, so there is no channel state to reset.
 
-        This is called any time an operation on a channel needs to be cleaned up or reset for a new run. If channel is not None, handle only that channel, else close all of them. If calling part of this plugin from different channels to do not create persistent state changes in your plugin, you can simply ``pass`` this function, which will be the case for most :ref:`MetaFilter` instances.
+        Override it only if your filter keeps state between calls that a new run must
+        clear.
 
-        :param channel: channel ID
-        :type channel: Optional[int]
+        :param channel: ignored; accepted so every plugin shares one signature
+        :type channel: int
         """
-        pass
 
     @log(logger=logger)
     def force_serial_channel_operations(self) -> bool:

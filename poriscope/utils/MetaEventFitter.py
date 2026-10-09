@@ -313,9 +313,9 @@ class MetaEventFitter(BaseDataPlugin):
                     return f"Ch{channel}: fitting incomplete"
 
     @log(logger=logger)
-    def reset_channel(self, channel: Optional[int] = None) -> None:
+    def reset_channel(self, channel: int) -> None:
         """
-        **Purpose:** Reset the state of a specific channel for a new operation or run, or all of them if no channel is specified.
+        **Purpose:** Reset the state of a specific channel for a new operation or run.
 
         :ref:`MetaEventFitter` already has an implementation of this function, but you may override it is you need to do further resetting beyond what is included in :py:meth:`~poriscope.utils.MetaEventFitter.MetaEventFitter.reset_channel` already.
 
@@ -324,27 +324,22 @@ class MetaEventFitter(BaseDataPlugin):
             This function implements core functionality required for broader plugin integration into Poriscope. If you do need to override it, you **MUST** call ``super().reset_channel(channel)`` **before** any additional code that you add and it is on you to ensure that your additional code does not conflict with the implementation in :ref:`MetaEventFinder`.
 
         :param channel: the channel identifier
-        :type channel: Optional[int]
+        :type channel: int
         """
-        # NOTE: unlike MetaEventFinder.reset_channel, this implementation does not
-        # branch on `channel is None` to reset every channel, despite the docstring
-        # above documenting that behavior. `channel=None` is accepted by the
-        # signature but not actually handled here; flagged rather than fixed as
-        # part of a pure type-hint pass (see future_fixes.md).
         try:
-            self.sublevel_metadata.pop(channel)  # type: ignore[arg-type]
+            self.sublevel_metadata.pop(channel)
         except KeyError:
             pass
         try:
-            self.event_metadata.pop(channel)  # type: ignore[arg-type]
+            self.event_metadata.pop(channel)
         except KeyError:
             pass
         try:
-            self.rejected.pop(channel)  # type: ignore[arg-type]
+            self.rejected.pop(channel)
         except KeyError:
             pass
         try:
-            self.eventfitting_status[channel] = False  # type: ignore[index]
+            self.eventfitting_status[channel] = False
         except KeyError:
             pass
         gc.collect()

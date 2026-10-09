@@ -193,12 +193,12 @@ class SQLiteDBLoader(MetaDatabaseLoader):
 
     @log(logger=logger)
     @override
-    def reset_channel(self, channel: Optional[int] = None) -> None:
+    def reset_channel(self, channel: int) -> None:
         """
-        Perform any actions necessary to reset a channel to its starting state. If channel is not None, handle only that channel, else reset all of them.
+        Perform any actions necessary to reset a channel to its starting state.
 
         :param channel: channel ID
-        :type channel: Optional[int]
+        :type channel: int
         """
         # database connection is not persistent between calls so no action needed here closing
         pass

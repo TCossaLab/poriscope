@@ -111,15 +111,14 @@ class MetaReader(BaseDataPlugin):
         pass
 
     @abstractmethod
-    def reset_channel(self, channel: Optional[int] = None) -> None:
+    def reset_channel(self, channel: int) -> None:
         """
-        Perform any actions necessary to gracefully close resources before app exit.
         **Purpose:** Reset the state of a specific channel for a new operation or run.
 
-        This is called any time an operation on a channel needs to be cleaned up or reset for a new run. If channel is not None, handle only that channel, else close all of them. If reading through a channel does not create any persistent state changes in your plugin, you can simply ``pass`` this function.
+        This is called any time an operation on a channel needs to be cleaned up or reset for a new run. If reading through a channel does not create any persistent state changes in your plugin, you can simply ``pass`` this function.
 
         :param channel: channel ID
-        :type channel: Optional[int]
+        :type channel: int
         """
         pass
 

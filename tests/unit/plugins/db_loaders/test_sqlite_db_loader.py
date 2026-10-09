@@ -250,7 +250,7 @@ class TestSQLiteDBLoader:
     def test_reset_channel(self, loader: SQLiteDBLoader) -> None:
         """Test resetting channel (should be no-op for SQLiteDBLoader)."""
         # Should not raise any exceptions
-        loader.reset_channel()
+        loader.reset_channel(0)
         loader.reset_channel(channel=0)
 
     def test_get_experiment_names_all(

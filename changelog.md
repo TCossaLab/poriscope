@@ -28,6 +28,8 @@
 
 * **`close_resources` takes no channel and releases the whole plugin**; it does nothing by default, so a plugin holding nothing need not define it, and an override taking a channel must drop it
 
+* **`reset_channel` now requires a channel on every data plugin**, as do `MetaDatabaseWriter._initialize_database` and `_write_experiment_metadata`; a filter inherits a do-nothing reset from `MetaFilter` and need not define one
+
 * **A metadata database now holds results from one type of fitter:** any number of runs of that fitter can still be written to it, but writing a different type of fitter into it is refused; use a new file per fitter type
 
 #### Application internals:

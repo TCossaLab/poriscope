@@ -188,14 +188,14 @@ class MetaEventLoader(BaseDataPlugin):
         self.datafile = Path(self.settings["Input File"]["Value"])
 
     @log(logger=logger)
-    def reset_channel(self, channel: Optional[int] = None) -> None:
+    def reset_channel(self, channel: int) -> None:
         """
         **Purpose:** Reset the state of a specific channel for a new operation or run.
 
-        This is called any time an operation on a channel needs to be cleaned up or reset for a new run. If channel is not None, handle only that channel, else reset all of them. In most cases for MetaEventLoaders there is no need to reset and you can simplt ``pass``.
+        This is called any time an operation on a channel needs to be cleaned up or reset for a new run. In most cases for MetaEventLoaders there is no need to reset and you can simplt ``pass``.
 
         :param channel: channel ID
-        :type channel: Optional[int]
+        :type channel: int
         """
         pass
 

@@ -167,7 +167,7 @@ def test_reset_and_close_are_safe(
     """
     plugin = build_filter(filter_cls)
     first = plugin.filter_data(trace.copy())
-    plugin.reset_channel()
+    plugin.reset_channel(0)
     np.testing.assert_allclose(
         plugin.filter_data(trace.copy()),
         first,

@@ -194,7 +194,8 @@ FAMILIES: Dict[str, Tuple[str, ...]] = {
         "poriscope/views/widgets/walkthrough_mixin.py",
     ),
     # Added 2026-09-27 with the completeness check. The two filters share
-    # close_resources and reset_channel byte for byte, 16 removable lines on entry.
+    # close_resources and reset_channel byte for byte, 16 removable lines on entry;
+    # 0 since both moved onto the bases in 2.1.
     "filters": (
         "poriscope/plugins/filters/BesselFilter.py",
         "poriscope/plugins/filters/WaveletFilter.py",

@@ -188,12 +188,16 @@ class BaseDataPlugin(ABC):
     # public API, must be implemented by subclasses
 
     @abstractmethod
-    def reset_channel(self, channel: Optional[int] = None) -> None:
+    def reset_channel(self, channel: int) -> None:
         """
-        Perform any actions necessary to reset a channel to its starting state. If channel is not None, handle only that channel, else reset all of them.
+        Return one channel to its starting state, ready for a new run.
 
-        :param channel: channel ID
-        :type channel: Optional[int]
+        Called whenever a channel is re-analysed and when a write to it is aborted;
+        the caller always names the channel. A plugin with no channels - a filter, a
+        database loader - has nothing to reset and ignores it.
+
+        :param channel: the channel to reset
+        :type channel: int
         """
         pass
 

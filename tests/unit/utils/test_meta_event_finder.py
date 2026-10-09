@@ -522,15 +522,15 @@ class TestResetChannel:
         assert finder.rejected_data[0] == 0
         assert finder.eventfinding_finished[0] is False
 
-    def test_reset_all_channels(self, finder):
+    def test_reset_leaves_other_channels_alone(self, finder):
         for ch in (0, 1):
             finder.event_starts[ch] = [1, 2]
             finder.eventfinding_finished[ch] = True
-        finder.reset_channel(None)
-        assert finder.event_starts[0] == []
+        finder.reset_channel(1)
         assert finder.event_starts[1] == []
-        assert finder.eventfinding_finished[0] is False
         assert finder.eventfinding_finished[1] is False
+        assert finder.event_starts[0] == [1, 2]
+        assert finder.eventfinding_finished[0] is True
 
 
 # ---------------------------------------------------------------------------

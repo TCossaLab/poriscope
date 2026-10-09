@@ -76,14 +76,14 @@ class MetaWriter(BaseDataPlugin):
     # public API, MUST be implemented by subclasses
 
     @abstractmethod
-    def reset_channel(self, channel: Optional[int] = None) -> None:
+    def reset_channel(self, channel: int) -> None:
         """
         **Purpose:** Reset the state of a specific channel for a new operation or run.
 
-        This is called any time an operation on a channel needs to be cleaned up or reset for a new run. If channel is not None, handle only that channel, else close all of them. Most writers will create permanent state changes in the form of data written to the output file, that should be deleted or otherwise set up for subsequent overwrite when this function is called.
+        This is called any time an operation on a channel needs to be cleaned up or reset for a new run. Most writers will create permanent state changes in the form of data written to the output file, that should be deleted or otherwise set up for subsequent overwrite when this function is called.
 
         :param channel: channel ID
-        :type channel: Optional[int]
+        :type channel: int
         """
         pass
 

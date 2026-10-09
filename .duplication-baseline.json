@@ -49,9 +49,9 @@
   },
   "filters": {
     "files": 2,
-    "functions": 13,
-    "identical_bodies": 1,
-    "removable_lines": 8
+    "functions": 11,
+    "identical_bodies": 0,
+    "removable_lines": 0
   },
   "views/widgets": {
     "files": 16,

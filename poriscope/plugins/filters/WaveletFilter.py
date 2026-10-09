@@ -89,17 +89,6 @@ class WaveletFilter(MetaFilter):
 
     @log(logger=logger)
     @override
-    def reset_channel(self, channel: Optional[int] = None) -> None:
-        """
-        Reset the state of a specific channel for a new operation or run. If channel is not None, handle only that channel, else reset all of them. No-op here, since this filter holds no persistent per-channel state between calls.
-
-        :param channel: channel ID
-        :type channel: Optional[int]
-        """
-        pass
-
-    @log(logger=logger)
-    @override
     def get_empty_settings(
         self,
         globally_available_plugins: Optional[Dict[str, List[str]]] = None,

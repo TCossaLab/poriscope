@@ -26,7 +26,7 @@ class ConcreteDatabaseLoader(MetaDatabaseLoader):
     def get_llm_prompt(self) -> str:
         return "Mock LLM prompt"
 
-    def reset_channel(self, channel: Optional[int] = None) -> None:
+    def reset_channel(self, channel: int) -> None:
         pass
 
     def get_experiment_names(
@@ -695,7 +695,6 @@ def loader() -> ConcreteDatabaseLoader:
 class TestAbstractStubs:
     def test_public_abstract_stub_bodies(self, loader: ConcreteDatabaseLoader) -> None:
         assert MetaDatabaseLoader.get_llm_prompt(loader) is None
-        assert MetaDatabaseLoader.reset_channel(loader) is None
         assert MetaDatabaseLoader.reset_channel(loader, channel=1) is None
         assert MetaDatabaseLoader.get_experiment_names(loader) is None
         assert MetaDatabaseLoader.get_experiment_names(loader, experiment_id=1) is None

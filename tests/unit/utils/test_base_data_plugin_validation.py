@@ -43,7 +43,7 @@ class ConcretePlugin(BaseDataPlugin):
     def report_status(self, channel: Optional[int] = None, init: bool = False) -> str:
         return ""
 
-    def reset_channel(self, channel: Optional[int] = None) -> None:
+    def reset_channel(self, channel: int) -> None:
         pass
 
 

@@ -196,7 +196,7 @@ def test_reset_and_close_are_safe(db_loader: MetaDatabaseLoader) -> None:
     :param db_loader: The configured database loader under test.
     :type db_loader: MetaDatabaseLoader
     """
-    db_loader.reset_channel()
+    db_loader.reset_channel(0)
     assert db_loader.get_experiment_names(), "reset_channel left the loader unusable"
     db_loader.close_resources()
     db_loader.close_resources()

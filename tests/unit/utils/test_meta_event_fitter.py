@@ -66,7 +66,7 @@ class MockEventLoader(MetaEventLoader):
     def _finalize_initialization(self) -> None:
         pass
 
-    def reset_channel(self, channel: Optional[int] = None) -> None:
+    def reset_channel(self, channel: int) -> None:
         pass
 
     def get_empty_settings(

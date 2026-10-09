@@ -75,14 +75,14 @@ class MetaDatabaseWriter(BaseDataPlugin):
     # public API, MUST be implemented by subclasses
 
     @abstractmethod
-    def reset_channel(self, channel: Optional[int] = None) -> None:
+    def reset_channel(self, channel: int) -> None:
         """
         **Purpose:** Reset the state of a specific channel for a new operation or run.
 
-        This is called any time an operation on a channel needs to be cleaned up or reset for a new run. If channel is not None, handle only that channel, else close all of them. Most database writers will create permanent state changes in the form of data written to the output file, that should be deleted or otherwise set up for subsequent overwrite when this function is called.
+        This is called any time an operation on a channel needs to be cleaned up or reset for a new run. Most database writers will create permanent state changes in the form of data written to the output file, that should be deleted or otherwise set up for subsequent overwrite when this function is called.
 
         :param channel: channel ID
-        :type channel: Optional[int]
+        :type channel: int
         """
         pass
 
@@ -353,14 +353,14 @@ class MetaDatabaseWriter(BaseDataPlugin):
         pass
 
     @abstractmethod
-    def _write_experiment_metadata(self, channel: Optional[int] = None) -> None:
+    def _write_experiment_metadata(self, channel: int) -> None:
         """
         **Purpose:** Write any information you need to save about the experiment itself.
 
         Given an optional channel argument, write any experiment level information (for example, as provided by the user in the settings dict) to the database files you created in :py:meth:`~poriscope.utils.BaseDataPlugin.BaseDataPlugin._initialize_database`.
 
         :param channel: int indicating which output to flush
-        :type channel: Optional[int]
+        :type channel: int
         """
         pass
 
@@ -377,14 +377,14 @@ class MetaDatabaseWriter(BaseDataPlugin):
         pass
 
     @abstractmethod
-    def _initialize_database(self, channel: Optional[int] = None) -> None:
+    def _initialize_database(self, channel: int) -> None:
         """
         **Purpose:** initialize your database for writing
 
         In this function, do whatever you need to do in order to prepare your database for writing data to it. This is called at the start of a batch write operation, with an optional channel argument. In the case of a single database file you can ignore channel and simply create the file and database schema. In the case of a single file per channel, you might open a file handle associated to each channel and write any top-level metadata required. We strongly encourage atomic operations, so that file handles are closed in the same function they are opened wherever possible to avoid trailing file handles in the event of an unrecoverable exception.
 
         :param channel: int indicating which output to flush
-        :type channel: Optional[int]
+        :type channel: int
         """
         pass
 

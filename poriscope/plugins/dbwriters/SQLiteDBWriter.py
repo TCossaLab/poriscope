@@ -58,15 +58,14 @@ class SQLiteDBWriter(MetaDatabaseWriter):
     # public API, MUST be implemented by subclasses
     @log(logger=logger)
     @override
-    def reset_channel(self, channel: Optional[int] = None) -> None:
+    def reset_channel(self, channel: int) -> None:
         """
         Permanently delete the given channel's row (and, via cascading foreign keys,
         its events/sublevels/data rows) from the database, so a subsequent write starts
         from a clean slate. This is destructive, not a resource-cleanup step.
 
-        :param channel: channel ID. Note that `channel=None` does not reset all
-            channels; SQL `channel_id = NULL` never matches, so no rows are deleted.
-        :type channel: Optional[int]
+        :param channel: the channel whose rows to delete
+        :type channel: int
         :raises RuntimeError: if the configured experiment cannot be found in the database
         :raises sqlite3.Error: if the delete fails, so that the caller cannot treat an
             unreset channel as a clean slate
@@ -405,12 +404,12 @@ class SQLiteDBWriter(MetaDatabaseWriter):
 
     @log(logger=logger)
     @override
-    def _write_experiment_metadata(self, channel: Optional[int] = None) -> None:
+    def _write_experiment_metadata(self, channel: int) -> None:
         """
         Write any information you need to save about the experiment itself
 
         :param channel: int indicating which output to flush
-        :type channel: Optional[int]
+        :type channel: int
         :raises sqlite3.Error: if a database operation fails
         """
         conn = None
@@ -577,12 +576,12 @@ class SQLiteDBWriter(MetaDatabaseWriter):
 
     @log(logger=logger)
     @override
-    def _initialize_database(self, channel: Optional[int] = None) -> None:
+    def _initialize_database(self, channel: int) -> None:
         """
         Do whatever you need to do to initialize the database file for a given channel before writing the first event
 
         :param channel: int indicating which output to flush
-        :type channel: Optional[int]
+        :type channel: int
         :raises ValueError: if event or sublevel metadata declares an unsupported datatype
         :raises RuntimeError: if database initialization fails at the SQL level
         :raises sqlite3.Error: if a database operation fails

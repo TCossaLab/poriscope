@@ -289,7 +289,7 @@ class SQLiteEventWriter(MetaWriter):
 
     @log(logger=logger)
     @override
-    def reset_channel(self, channel: Optional[int] = None) -> None:
+    def reset_channel(self, channel: int) -> None:
         """
         Permanently delete the given channel's row (and, via cascading foreign keys,
         its associated event rows) from the database, so a subsequent write starts
@@ -298,9 +298,8 @@ class SQLiteEventWriter(MetaWriter):
         ``AUTOINCREMENT`` never reuses a row id, and events are addressed by
         ``(channel_id, event_id)``, whose ``event_id`` does start again.
 
-        :param channel: channel ID. Note that `channel=None` does not reset all
-            channels; SQL `channel_id = NULL` never matches, so no rows are deleted.
-        :type channel: Optional[int]
+        :param channel: the channel whose rows to delete
+        :type channel: int
         :raises ValueError: if settings have not been initialized or the output
             file path is not set in settings
         :raises sqlite3.Error: if the delete fails, so that the caller cannot treat an
