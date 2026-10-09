@@ -6,8 +6,7 @@ fields that parser reads, so a file it wrote proved nothing about the format. Th
 open every fixture shape with ``pyabf``, an independent ABF reader, and check that it sees
 the recording the writer describes - one gap-free sweep, the configured channels, names,
 units and rate, a data section counting every value - and reads the same picoamps as the
-shipped reader. Only zero-offset configs are compared sample by sample: with a non-zero
-offset the shipped parser and pyabf apply it differently.
+shipped reader, offsets included.
 """
 
 from dataclasses import replace
@@ -36,7 +35,7 @@ FLOAT_CONFIG = Abf2RecordingConfig(
     baseline=2000.0,
     noise_std=15.0,
 )
-#: Every gain field non-trivial and both offsets zero, so the two conversions agree.
+#: Every gain field and both offsets non-trivial.
 INT16_CONFIG = replace(
     FLOAT_CONFIG,
     data_type="int16",
@@ -47,6 +46,8 @@ INT16_CONFIG = replace(
     adc_programmable_gain=4.0,
     telegraph_enable=1,
     telegraph_addit_gain=0.001,
+    instrument_offset=0.02,
+    signal_offset=0.005,
 )
 
 CASES = [

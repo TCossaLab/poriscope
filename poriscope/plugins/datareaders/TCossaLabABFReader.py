@@ -25,118 +25,69 @@
 
 import glob
 import logging
-import os
 import re
-from pathlib import Path
 from typing import Any, Dict, List, Optional, override
 
-import numpy as np
-import numpy.typing as npt
-
-from poriscope.plugins.datareaders.helpers.ABF2Header import ABF2Header
+from poriscope.plugins.datareaders.ABFReader import ABFReader
 from poriscope.utils.DocstringDecorator import inherit_docstrings
 from poriscope.utils.LogDecorator import log
-from poriscope.utils.MetaReader import MetaReader
 
 
 @inherit_docstrings
-class TCossaLabABFReader(MetaReader):
+class TCossaLabABFReader(ABFReader):
     """
-    Subclass of MetaReader for reading ABF2 files
+    Reader for the lab's multi-file ABF2 recordings, one set of files per channel.
+
+    Files are named ``<base>_<12-digit stamp>_CH<channel>_<part>.abf``; every file of a
+    recording is found from any one of them, grouped by the ``CH`` number and read in
+    ``part`` order as one continuous channel. Each file records current on its first
+    ADC channel in one gap-free sweep, so the base reader's channel and sweep settings
+    are removed.
     """
 
     logger = logging.getLogger(__name__)
-    # private API, MUST be implemented by subclasses
 
     @log(logger=logger)
     @override
-    def _init(self) -> None:
+    def get_empty_settings(
+        self,
+        globally_available_plugins: Optional[Dict[str, List[str]]] = None,
+        standalone: bool = False,
+    ) -> Dict[str, Dict[str, Any]]:
         """
-        called at the start of base class initialization
+        Declare the settings this reader exposes, on top of the base contract.
+
+        Called by poriscope when the plugin is instantiated or reconfigured, to build
+        the settings dialog and to sanity-check whatever the user enters; the accepted
+        values are then readable through ``self.settings``. See
+        :py:meth:`~poriscope.utils.MetaReader.MetaReader.get_empty_settings`
+        for the structure of the dict and what ``Type``, ``Value``, ``Min``, ``Max``, ``Options`` and
+        ``Units`` mean in it, and for the reserved keys the GUI builds file pickers
+        from.
+
+        The one key this plugin keeps:
+
+        - ``Input File`` - one ``.abf`` file of the recording; every file of the same
+          recording beside it is found and read with it. The ABF header carries the
+          sample rate and scaling.
+
+        :py:class:`~poriscope.plugins.datareaders.ABFReader.ABFReader`'s ``Current
+        Channel`` and ``Sweep`` are removed: every file of these recordings records
+        current on its first ADC channel in one gap-free sweep, so the current is read
+        from ADC channel 0 and every sweep is read.
+
+        :param globally_available_plugins: a dict containing all data plugins that exist to date, keyes by metaclass
+        :type globally_available_plugins: Optional[Dict[str, List[str]]]
+        :param standalone: False if this is called as part of a GUI, True otherwise. Default False
+        :type standalone: bool
+        :return: the dict that must be filled in to initialize the filter
+        :rtype: Dict[str, Dict[str, Any]]
         """
-        pass
+        settings = super().get_empty_settings(globally_available_plugins, standalone)
+        del settings["Current Channel"]
+        del settings["Sweep"]
+        return settings
 
-    @log(logger=logger)
-    @override
-    def reset_channel(self, channel: int) -> None:
-        """
-        Reset a channel for a new run; this reader keeps no per-channel state, so there is nothing to do.
-
-        :param channel: channel ID
-        :type channel: int
-        """
-        pass
-
-    @log(logger=logger)
-    @override
-    def _validate_settings(self, settings: dict) -> None:
-        """
-        Validate that the settings dict contains the correct information for use by the subclass.
-
-        :param settings: Parameters for event detection.
-        :type settings: dict
-        """
-        pass
-
-    @log(logger=logger)
-    @override
-    def _validate_file_type(self, filename: os.PathLike) -> None:
-        """
-        Check that the file(s) being opened are of the correct type, and raise IOError if not
-
-        :param filename: the path to one of the files to be opened
-        :type filename: os.PathLike
-        """
-        pass
-
-    @log(logger=logger)
-    @override
-    def _set_file_extension(self) -> str:
-        """
-        Set the expected file extension for files read using this reader subclass
-        """
-        return ".abf"
-
-    @log(logger=logger)
-    @override
-    def _map_data(self, datafiles: List[str], configs: List[dict]) -> List[np.ndarray]:
-        """
-        Map data files into a set of memmaps or similarly define a way to access the raw data on disk.
-        Returns a list of memmaps corresponding to each datafile/configfile pair.
-
-        :param datafiles: List of data file paths.
-        :type datafiles: List[str]
-        :param configs: List of configuration dictionaries.
-        :type configs: List[dict]
-
-        :return: List of memmaps containing raw data.
-        :rtype: List[np.ndarray]
-
-        :raises FileNotFoundError: If at least one of the input raw data files is missing or renamed.
-        :raises OSError: If the file indicated is inaccessible.
-        """
-        # get formats and offsets for all files
-        datamaps = []
-        for filename, config in zip(datafiles, configs):
-            fmt = config["columntypes"]
-            offset = int(config["header_bytes"])
-            try:
-                datamaps.append(
-                    np.memmap(Path(filename), dtype=fmt, offset=offset, mode="r")[
-                        "current"
-                    ]
-                )
-            except FileNotFoundError as e:
-                raise FileNotFoundError(
-                    "File Not Found : At least one of the input raw data files is missing or renamed"
-                ) from e
-            except OSError as e:
-                raise OSError(
-                    "Invalid Argument or Sync Issue : The file indicated is inaccessible. If it is on a remote network location or external media, move it to the local hard drive and try again"
-                ) from e
-        return datamaps
-
-    # private API, should implemented by subclasses, but has default behavior if it is not needed
     @log(logger=logger)
     @override
     def _get_file_time_stamps(
@@ -234,116 +185,3 @@ class TCossaLabABFReader(MetaReader):
             raise ValueError(
                 "Unable to ascertain base naming pattern for {0}".format(file_name)
             )
-
-    @log(logger=logger)
-    @override
-    def _convert_data(
-        self, data: npt.NDArray[np.int16], config: dict
-    ) -> npt.NDArray[np.float64]:
-        """
-        Convert raw data from disk into rescaled current, in pA.
-
-        :param data: Data to convert.
-        :type data: npt.NDArray[np.int16]
-        :param config: Configuration dictionary for data conversion.
-        :type config: dict
-        :return: The data, rescaled to pA.
-        :rtype: npt.NDArray[np.float64]
-        """
-        scale = config["scale"]
-        offset = 0.0
-        return self._scale_data(
-            data,
-            scale=scale,
-            offset=offset,
-            dtype=np.float64,
-            copy=False,
-        )
-
-    @log(logger=logger)
-    @override
-    def _get_configs(self, datafiles: List[str]) -> List[dict]:
-        """
-        Load configuration files as dictionaries, corresponding to datamaps as needed.
-        Default behavior assumes there are no config files needed.
-
-        :param datafiles: List of data file paths.
-        :type datafiles: List[str]
-        :return: List of configuration dictionaries.
-        :rtype: List[dict]
-
-        :raises NotImplementedError: If the file type is not ABF2 specifically
-        :raises TypeError: If one of the channels does not have an "I" in its header label
-        :raises ValueError: If any number of channels other than 2 is found in the data file
-        """
-        configs = []
-        for filename in datafiles:
-            config = {}
-            with open(filename, mode="rb"):
-                header = ABF2Header(filename)
-                if header.get_abf_version() != "ABF2":
-                    raise NotImplementedError(
-                        "Only ABFs files are supported by this reader, not {0}".format(
-                            header.get_abf_version()
-                        )
-                    )
-                if "I" not in header.get_channels()[0]:
-                    raise TypeError(
-                        "Unable to identify current channel in channels named {0}".format(
-                            header.get_channels()
-                        )
-                    )
-                if header.get_num_channels() != 2:
-                    raise ValueError(
-                        "Only 2 channels per file are supported, not {0}".format(
-                            header.get_num_channels()
-                        )
-                    )
-            config["samplerate"] = header.get_samplerate()
-            config["columntypes"] = np.dtype(
-                [
-                    ("current", header.get_data_format()),
-                    ("voltage", header.get_data_format()),
-                ]
-            )
-            config["scale"] = header.get_scale_factor(
-                0
-            ) * header.get_rescale_to_pA_factor(header.get_channel_units(0))
-            config["header_bytes"] = header.get_header_bytes()
-            configs.append(config)
-        return configs
-
-    # public API
-    @log(logger=logger)
-    @override
-    def get_empty_settings(
-        self,
-        globally_available_plugins: Optional[Dict[str, List[str]]] = None,
-        standalone: bool = False,
-    ) -> Dict[str, Dict[str, Any]]:
-        """
-        Declare the settings this reader exposes, on top of the base contract.
-
-        Called by poriscope when the plugin is instantiated or reconfigured, to build
-        the settings dialog and to sanity-check whatever the user enters; the accepted
-        values are then readable through ``self.settings``. See
-        :py:meth:`~poriscope.utils.MetaReader.MetaReader.get_empty_settings`
-        for the structure of the dict and what ``Type``, ``Value``, ``Min``, ``Max``, ``Options`` and
-        ``Units`` mean in it, and for the reserved keys the GUI builds file pickers
-        from.
-
-        The keys this plugin adds:
-
-        - ``Input File`` - the Axon Binary Format 2 ``.abf`` file to read. The ABF
-          header carries the sample rate and scaling.
-
-        :param globally_available_plugins: a dict containing all data plugins that exist to date, keyes by metaclass
-        :type globally_available_plugins: Optional[Dict[str, List[str]]]
-        :param standalone: False if this is called as part of a GUI, True otherwise. Default False
-        :type standalone: bool
-        :return: the dict that must be filled in to initialize the filter
-        :rtype: Dict[str, Dict[str, Any]]
-        """
-        settings = super().get_empty_settings(globally_available_plugins, standalone)
-        settings["Input File"]["Options"] = ["ABF2 Files (*.abf)"]
-        return settings

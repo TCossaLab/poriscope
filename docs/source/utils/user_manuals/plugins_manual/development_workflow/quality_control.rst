@@ -1216,8 +1216,9 @@ enough to run on their own while you are working on a parser:
    input. Measured directly: a 0-byte file alone already produces four different
    exception families depending on reader and format — ``ValueError`` (most
    readers), ``json.JSONDecodeError`` (a ``ValueError`` subclass, one format's
-   embedded-header parse), ``struct.error`` (both ABF2 readers, *not* a
-   ``ValueError`` subclass) — and a missing sidecar raises ``FileNotFoundError`` or
+   embedded-header parse), ``NotImplementedError`` (the three ABF readers, from
+   ``pyabf``'s header parse; *not* a ``ValueError`` subclass) — and a missing
+   sidecar raises ``FileNotFoundError`` or
    ``OSError`` depending on the reader. Standardizing that, and whether a reader
    should degrade gracefully when its sidecar is missing, are open questions for
    whoever owns each reader family, tracked in ``future_fixes.md`` — not something

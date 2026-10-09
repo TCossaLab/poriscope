@@ -166,7 +166,6 @@ FAMILIES: Dict[str, Tuple[str, ...]] = {
         "poriscope/plugins/eventfinders/ThresholdBlockageFinder.py",
     ),
     "datareaders": (
-        "poriscope/plugins/datareaders/helpers/ABF2Header.py",
         "poriscope/plugins/datareaders/ABFReader.py",
         "poriscope/plugins/datareaders/BinaryReader1X.py",
         "poriscope/plugins/datareaders/ChimeraReader20240101.py",

@@ -1,12 +1,11 @@
 """
 Generation of synthetic ABF2 recordings for testing.
 
-Writes a minimal but byte-exact ABF2 file that both
-``poriscope.plugins.datareaders.helpers.ABF2Header.ABF2Header`` (the real
-parser both ABF2 readers use) and ``pyabf`` can open; ``test_synthetic_abf2.py``
-checks the second. The real format carries a great deal of acquisition metadata
-this codebase never reads; this writer supplies the sections and fields either
-parser needs, zero-filling the rest of each 512-byte block.
+Writes a minimal but byte-exact ABF2 file that ``pyabf`` - the header parser
+behind ``ABFReader`` and its subclasses - can open; ``test_synthetic_abf2.py``
+checks that it does. The real format carries a great deal of acquisition
+metadata this codebase never reads; this writer supplies the sections and
+fields the readers need, zero-filling the rest of each 512-byte block.
 
 Section layout (block size 512 bytes, block N at byte offset N*512)
 ---------------------------------------------------------------------
@@ -37,47 +36,44 @@ Section layout (block size 512 bytes, block N at byte offset N*512)
     unused once data_type is float (see below).
 
 * Block 2: the ADCSection, one 128-byte record per channel (only ~82 bytes
-  of each are ever read; the header parser seeks to each record explicitly,
-  so the stride just needs to be large enough to hold them). Every field
-  ABF2Header._read_abf2_header reads, in order, is written here - most as
-  inert placeholders, since only these are load-bearing: nTelegraphEnable=0
-  (skips a division by fTelegraphAdditGain), fInstrumentScaleFactor=
-  fSignalGain=fADCProgrammableGain=1.0 (each divided into a scale factor
-  that gets discarded anyway - see below), lADCChannelNameIndex/
-  lADCUnitsIndex (indices into the StringsSection blob).
+  of each are ever read; each record is read at its own offset, so the
+  stride just needs to be large enough to hold them). Every field of the
+  record's first 82 bytes is written, in order - most as inert placeholders.
+  The load-bearing ones are the gain stack (nTelegraphEnable and
+  fTelegraphAdditGain, fInstrumentScaleFactor, fSignalGain,
+  fADCProgrammableGain, each a divisor, so nonzero), the two offsets, and
+  lADCChannelNameIndex/lADCUnitsIndex (indices into the StringsSection blob).
 
 * Block 3: the StringsSection. One blob holding every channel name and unit
-  string, in the exact layout ABF2Header expects: a leading ``\\x00\\x00``
+  string, in the exact layout pyabf expects: a leading ``\\x00\\x00``
   so ``bytes.rfind(b"\\x00\\x00")`` lands one byte before the string list,
-  then null-terminated strings. After ABF2Header's rfind/split/[1:] dance,
+  then null-terminated strings. After pyabf's rfind/split/[1:] dance,
   string index 0 is always the empty string the marker itself produces, so
   channel/unit name indices start at 1. See _build_strings_blob.
 
-* Block 4 onward: the DataSection. num_channels float32 values per sample,
-  interleaved (current, voltage, ...), num_samples records.
+* Block 4 onward: the DataSection. num_channels float32 or int16 values per
+  sample, interleaved (current, voltage, ...).
 
 Why float32
 ------------
-ABF2Header derives each channel's scale factor from a chain of gain fields
+The readers, like pyabf, derive each channel's gain from a chain of fields
 (fInstrumentScaleFactor, fSignalGain, fADCProgrammableGain, and
 fTelegraphAdditGain if telegraph is enabled) divided into fADCRange /
-lADCResolution - but only when the data on disk is int16 ADC codes. For
-float32 data it explicitly discards that computed value and hard-codes the
-scale factor to 1.0 (see the ``if self.data_type == "f":`` branch), because
-float samples are assumed to already be in physical units. That makes the
-gain chain's exact values irrelevant here (they only need to be nonzero
-where they're divisors, to avoid a ZeroDivisionError) and lets this writer
-store the picoamp trace directly with no quantisation step at all - unlike
-every int16-ADC-code format elsewhere in this package.
+lADCResolution, and add the offsets after it - but only when the data on disk
+is int16 ADC codes. Float32 samples are taken to be in physical units already
+and are not scaled. That makes the gain chain's exact values irrelevant for
+the default float32 mode (they only need to be nonzero where they're divisors,
+to avoid a ZeroDivisionError) and lets this writer store the picoamp trace
+directly with no quantisation step at all; the int16 mode exists to exercise
+the chain.
 
-Channel counts and the two readers
-------------------------------------
-TCossaLabABFReader._get_configs requires exactly 2 ADC channels (current,
-voltage) and raises otherwise; LegacyElementsReader._get_configs (its own
-override) requires exactly 1. Both also require channel 0's name to contain
-"I". num_channels is therefore a config field here, and the two convenience
-functions below fix it to what each reader needs, along with each reader's
-own filename convention:
+Channel counts and the readers
+--------------------------------
+The lab's TCossaLab recordings carry 2 ADC channels (current, voltage) and its
+Legacy Elements recordings 1; every reader reads current from ADC channel 0
+by default. num_channels is a config field here, and the two convenience
+functions below fix it to each recording family's count, along with each
+reader's own filename convention (``ABFReader`` takes either file):
 
 * TCossaLabABFReader: ``_get_file_pattern`` requires the literal substring
   ``_\\d{12}_CH\\d{3}_\\d{3}.abf`` in the filename (a 12-digit timestamp, a
@@ -120,12 +116,12 @@ class Abf2RecordingConfig(BaseRecordingConfig):
     are written directly with no quantisation - see the module docstring's
     "Why float32" section.
 
-    :param num_channels: ADC channels in the file. TCossaLabABFReader
-        requires exactly 2 (current, voltage); LegacyElementsReader requires
-        exactly 1 (current only).
+    :param num_channels: ADC channels in the file: 2 (current, voltage) as
+        the TCossaLab recordings carry, or 1 (current only) as the Legacy
+        Elements recordings do.
     :type num_channels: int
-    :param data_type: ``"float32"`` writes the trace as-is and the reader's
-        parser forces the scale factor to 1, so none of the gain fields matter;
+    :param data_type: ``"float32"`` writes the trace as-is and the reader
+        does not scale it, so none of the gain fields matter;
         ``"int16"`` writes ADC codes and the reader reconstructs picoamps
         through the full ABF2 gain stack, which is what a real acquisition
         produces and the only way to exercise that arithmetic.
@@ -145,12 +141,10 @@ class Abf2RecordingConfig(BaseRecordingConfig):
     :type telegraph_enable: int
     :param telegraph_addit_gain: fTelegraphAdditGain.
     :type telegraph_addit_gain: float
-    :param instrument_offset: fInstrumentOffset. ABF2 folds this into the
-        scale factor (it is added to it), not into an additive offset; the
-        shipped parser follows the format, and so does the encoder here.
+    :param instrument_offset: fInstrumentOffset, in pA, added to every
+        converted sample after the gain, as pyabf applies it.
     :type instrument_offset: float
-    :param signal_offset: fSignalOffset, subtracted from the scale factor
-        the same way.
+    :param signal_offset: fSignalOffset, in pA, subtracted the same way.
     :type signal_offset: float
     """
 
@@ -168,11 +162,11 @@ class Abf2RecordingConfig(BaseRecordingConfig):
 
     def pa_per_code(self) -> float:
         """
-        The picoamps one ADC code stands for, by the ABF2 convention the reader applies.
+        The picoamps one ADC code stands for: the gain the reader applies, as pyabf
+        computes it.
 
-        Mirrors ``ABF2Header.get_scale_factor`` exactly: the gains divide, the range
-        over the resolution multiplies, and both offsets are folded into the factor
-        rather than applied additively.
+        The gains divide and the range over the resolution multiplies. The offsets are
+        not part of it; see :py:meth:`pa_offset`.
 
         :return: picoamps per code
         :rtype: float
@@ -185,9 +179,16 @@ class Abf2RecordingConfig(BaseRecordingConfig):
             scale /= self.telegraph_addit_gain
         scale *= self.adc_range
         scale /= self.adc_resolution
-        scale += self.instrument_offset
-        scale -= self.signal_offset
         return scale
+
+    def pa_offset(self) -> float:
+        """
+        The picoamps added to every converted sample after the gain, as pyabf applies it.
+
+        :return: fInstrumentOffset minus fSignalOffset
+        :rtype: float
+        """
+        return self.instrument_offset - self.signal_offset
 
 
 def _build_strings_blob(num_channels: int) -> bytes:
@@ -196,13 +197,12 @@ def _build_strings_blob(num_channels: int) -> bytes:
 
     Constructs ``b"\\x00\\x00" + b"\\x00".join(entries)`` where entries starts
     with an empty placeholder followed by every channel name then every
-    channel unit. ABF2Header locates the *last* ``\\x00\\x00`` pair in the
+    channel unit. pyabf locates the *last* ``\\x00\\x00`` pair in the
     blob and splits from there, which - because the leading two null bytes
     supply two such pairs (positions 0 and 1) - lands the split one byte
     into the marker, reproducing the leading empty placeholder as string
-    index 0. Verified against the real parser in
-    tests/synthetic_data/verify scripts, not just derived on paper: string
-    index 0 is always "", so real content starts at index 1.
+    index 0, so real content starts at index 1. ``test_synthetic_abf2.py``
+    checks that pyabf reads the names and units back.
 
     :param num_channels: How many ADC channels to build strings for.
     :type num_channels: int
@@ -273,8 +273,8 @@ class Abf2RecordingWriter(BaseSyntheticRecordingWriter[Abf2RecordingConfig]):
         :return: Dataset describing the .abf file that was written.
         :rtype: SyntheticDataset
 
-        :raises ValueError: If config.num_channels is not 1 or 2 - the only
-            two counts either real reader accepts.
+        :raises ValueError: If config.num_channels is not 1 or 2 - the two
+            counts the lab's recording families carry.
         """
         if config.num_channels not in (1, 2):
             raise ValueError(
@@ -365,7 +365,7 @@ class Abf2RecordingWriter(BaseSyntheticRecordingWriter[Abf2RecordingConfig]):
 
         if is_int16:
             # Encode picoamps as the codes the reader will turn back into picoamps.
-            codes = np.round(trace / config.pa_per_code())
+            codes = np.round((trace - config.pa_offset()) / config.pa_per_code())
             if np.any(np.abs(codes) > 32767):
                 raise ValueError(
                     "the planted trace does not fit in int16 at "
@@ -374,7 +374,12 @@ class Abf2RecordingWriter(BaseSyntheticRecordingWriter[Abf2RecordingConfig]):
             data = np.empty((trace.size, n), dtype="<i2")
             data[:, 0] = codes.astype("<i2")
             for i in range(1, n):
-                data[:, i] = int(round(VOLTAGE_CHANNEL_FILL / config.pa_per_code()))
+                data[:, i] = int(
+                    round(
+                        (VOLTAGE_CHANNEL_FILL - config.pa_offset())
+                        / config.pa_per_code()
+                    )
+                )
         else:
             data = np.empty((trace.size, n), dtype="<f4")
             data[:, 0] = trace
@@ -440,10 +445,10 @@ def generate_abf2_modern_dataset(
     seed: int = 42,
 ) -> SyntheticDataset:
     """
-    Write a 2-channel ABF2 recording, for TCossaLabABFReader.
+    Write a 2-channel ABF2 recording named for TCossaLabABFReader.
 
-    Forces config.num_channels to 2 - the only count TCossaLabABFReader
-    accepts - regardless of what was passed in.
+    Forces config.num_channels to 2, the count the TCossaLab recordings carry,
+    regardless of what was passed in.
 
     :param out_dir: Directory to write the .abf file into. Created if it
         does not already exist.
@@ -472,10 +477,10 @@ def generate_abf2_legacy_dataset(
     seed: int = 42,
 ) -> SyntheticDataset:
     """
-    Write a 1-channel ABF2 recording, for LegacyElementsReader.
+    Write a 1-channel ABF2 recording named for LegacyElementsReader.
 
-    Forces config.num_channels to 1 - the only count LegacyElementsReader
-    accepts - regardless of what was passed in.
+    Forces config.num_channels to 1, the count the Legacy Elements recordings
+    carry, regardless of what was passed in.
 
     :param out_dir: Directory to write the .abf file into. Created if it
         does not already exist.

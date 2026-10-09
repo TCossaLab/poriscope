@@ -26,26 +26,65 @@
 import glob
 import logging
 import re
-from typing import List, override
+from typing import Any, Dict, List, Optional, override
 
-import numpy as np
-
-from poriscope.plugins.datareaders.helpers.ABF2Header import ABF2Header
-from poriscope.plugins.datareaders.TCossaLabABFReader import TCossaLabABFReader
+from poriscope.plugins.datareaders.ABFReader import ABFReader
 from poriscope.utils.DocstringDecorator import inherit_docstrings
 from poriscope.utils.LogDecorator import log
 
 
 @inherit_docstrings
-class LegacyElementsReader(TCossaLabABFReader):
+class LegacyElementsReader(ABFReader):
     """
-    Subclass of MetaReader for reading ABF2 files
+    Reader for single-file ABF2 recordings from the older Elements amplifiers, named
+    ``<base>_<4-digit index>.abf``.
+
+    Each file is one recording, read as channel 0, holding current alone in one
+    gap-free sweep, so the base reader's channel and sweep settings are removed.
     """
 
     logger = logging.getLogger(__name__)
-    # private API, MUST be implemented by subclasses
 
-    # private API, should implemented by subclasses, but has default behavior if it is not needed
+    @log(logger=logger)
+    @override
+    def get_empty_settings(
+        self,
+        globally_available_plugins: Optional[Dict[str, List[str]]] = None,
+        standalone: bool = False,
+    ) -> Dict[str, Dict[str, Any]]:
+        """
+        Declare the settings this reader exposes, on top of the base contract.
+
+        Called by poriscope when the plugin is instantiated or reconfigured, to build
+        the settings dialog and to sanity-check whatever the user enters; the accepted
+        values are then readable through ``self.settings``. See
+        :py:meth:`~poriscope.utils.MetaReader.MetaReader.get_empty_settings`
+        for the structure of the dict and what ``Type``, ``Value``, ``Min``, ``Max``, ``Options`` and
+        ``Units`` mean in it, and for the reserved keys the GUI builds file pickers
+        from.
+
+        The one key this plugin keeps:
+
+        - ``Input File`` - the ``.abf`` recording to read. The ABF header carries the
+          sample rate and scaling.
+
+        :py:class:`~poriscope.plugins.datareaders.ABFReader.ABFReader`'s ``Current
+        Channel`` and ``Sweep`` are removed: these recordings hold current alone, in one
+        gap-free sweep, so the current is read from ADC channel 0 and every sweep is
+        read.
+
+        :param globally_available_plugins: a dict containing all data plugins that exist to date, keyes by metaclass
+        :type globally_available_plugins: Optional[Dict[str, List[str]]]
+        :param standalone: False if this is called as part of a GUI, True otherwise. Default False
+        :type standalone: bool
+        :return: the dict that must be filled in to initialize the filter
+        :rtype: Dict[str, Dict[str, Any]]
+        """
+        settings = super().get_empty_settings(globally_available_plugins, standalone)
+        del settings["Current Channel"]
+        del settings["Sweep"]
+        return settings
+
     @log(logger=logger)
     @override
     def _get_file_time_stamps(
@@ -120,55 +159,3 @@ class LegacyElementsReader(TCossaLabABFReader):
             raise ValueError(
                 "Unable to ascertain base naming pattern for {0}".format(file_name)
             )
-
-    @log(logger=logger)
-    @override
-    def _get_configs(self, datafiles: List[str]) -> List[dict]:
-        """
-        Load configuration files as dictionaries, corresponding to datamaps as needed.
-        Default behavior assumes there are no config files needed.
-
-        :param datafiles: List of data file paths.
-        :type datafiles: List[str]
-        :return: List of configuration dictionaries.
-        :rtype: List[dict]
-
-        :raises NotImplementedError: If the file type is not ABF2 specifically
-        :raises TypeError: If one of the channels does not have an "I" in its header label
-        :raises ValueError: If any number of channels other than 2 is found in the data file
-        """
-        configs = []
-        for filename in datafiles:
-            config = {}
-            with open(filename, mode="rb"):
-                header = ABF2Header(filename)
-                if header.get_abf_version() != "ABF2":
-                    raise NotImplementedError(
-                        "Only ABFs files are supported by this reader, not {0}".format(
-                            header.get_abf_version()
-                        )
-                    )
-                if "I" not in header.get_channels()[0]:
-                    raise TypeError(
-                        "Unable to identify current channel in channels named {0}".format(
-                            header.get_channels()
-                        )
-                    )
-                if header.get_num_channels() != 1:
-                    raise ValueError(
-                        "Only 1 channel per file is  supported, not {0}".format(
-                            header.get_num_channels()
-                        )
-                    )
-            config["samplerate"] = header.get_samplerate()
-            config["columntypes"] = np.dtype(
-                [
-                    ("current", header.get_data_format()),
-                ]
-            )
-            config["scale"] = header.get_scale_factor(
-                0
-            ) * header.get_rescale_to_pA_factor(header.get_channel_units(0))
-            config["header_bytes"] = header.get_header_bytes()
-            configs.append(config)
-        return configs
