@@ -7,7 +7,7 @@ inlined instead of written as a method. That is what this file is for. Each grou
 below is a merge into a shared base, and the merge should be a decision someone
 makes about known behaviour rather than a silent change.
 
-Eight groups:
+Ten groups:
 
 - ``_factors`` used to exist three times - ``MetaView`` plus byte-identical overrides
   in ``RawDataView`` and ``EventAnalysisView`` that shadowed the base. The overrides
@@ -61,6 +61,11 @@ Eight groups:
   status-panel divergence a second time and was settled the same way. ``_delete_filter``
   was **abstract** on the base for the stated reason that each tab rebuilds its own
   filter widgets - which was only ever true because of the panel name.
+- ``set_event_id_input`` lives once, on ``MetaSubsetTabControls``, for both subset
+  panels; that base declares ``validate_inputs`` abstract because it calls it.
+- ``_shift_range_and_update_plot`` lives once, on ``MetaSubsetTabView``, for both
+  subset tabs, re-plotting through each tab's ``_replot_after_shift``; the plot
+  handlers snap an entered Event ID through the shared ``_snap_to_filtered``.
 """
 
 import json
@@ -82,6 +87,7 @@ from poriscope.plugins.analysistabs.utils.metadatacontrols import MetadataContro
 from poriscope.plugins.analysistabs.utils.proteincontrols import ProteinControls
 from poriscope.plugins.analysistabs.utils.rawdatacontrols import RawDataControls
 from poriscope.utils.MetaControls import MetaControls
+from poriscope.utils.MetaSubsetTabControls import MetaSubsetTabControls
 from poriscope.utils.MetaSubsetTabView import MetaSubsetTabView
 from poriscope.utils.MetaView import MetaView
 from tests.unit.views._qt_mocks import shadow_signals
@@ -403,6 +409,7 @@ SUBSET_TABS = (MetadataView, ProteinView)
 ABSTRACT_MEMBERS = frozenset(
     {
         "_init",
+        "_replot_after_shift",
         "_reset_actions",
         "_subset_controls",
         "handle_parameter_change",
@@ -904,3 +911,294 @@ class TestThePanelNameMethodsWerePromoted:
         assert "event_id_rows" in MetaSubsetTabView.__annotations__
         for view_cls in SUBSET_TABS:
             assert "event_id_rows" not in view_cls.__annotations__
+
+
+# ===========================================================================
+# set_event_id_input - shared by both subset panels on MetaSubsetTabControls
+# ===========================================================================
+
+
+SUBSET_CONTROLS = (MetadataControls, ProteinControls)
+
+
+class TestSetEventIdInputWasPromoted:
+    """
+    One copy, on the controls base, shared by both subset tabs' panels.
+
+    Pinned: no panel keeps its own copy, and the shared one writes the field
+    without re-emitting its edit signal, then revalidates.
+    """
+
+    def test_the_base_owns_the_only_copy(self) -> None:
+        """A copy left on a panel would shadow the shared one for that tab."""
+        assert "set_event_id_input" in MetaSubsetTabControls.__dict__
+        for cls in SUBSET_CONTROLS:
+            assert "set_event_id_input" not in cls.__dict__, cls.__name__
+
+    def test_validate_inputs_is_owed_by_every_panel(self) -> None:
+        """``set_event_id_input`` calls it, so every panel must define it."""
+        assert MetaSubsetTabControls.__abstractmethods__ == frozenset(
+            {"validate_inputs"}
+        )
+
+    @pytest.mark.parametrize("cls", SUBSET_CONTROLS, ids=lambda c: c.__name__)
+    def test_the_field_shows_the_latest_value(self, qapp: object, cls: type) -> None:
+        """Each call replaces what the field showed, rather than appending to it."""
+        panel = cls()
+
+        panel.set_event_id_input(5)
+        assert panel.event_id_lineEdit.text() == "5"
+
+        panel.set_event_id_input(12)
+        assert panel.event_id_lineEdit.text() == "12"
+
+    @pytest.mark.parametrize("cls", SUBSET_CONTROLS, ids=lambda c: c.__name__)
+    def test_writing_the_field_is_silent_and_revalidates(
+        self, qapp: object, cls: type, mocker: object
+    ) -> None:
+        """
+        Navigation writes the snapped id without re-emitting the field's edit signal.
+
+        A ``textChanged`` here would re-enter the panel's own handlers as though the
+        user had typed, which is what the signal block around ``setText`` prevents;
+        the buttons still need re-enabling for the new value, hence ``validate_inputs``.
+        """
+        panel = cls()
+        seen: List[str] = []
+        panel.event_id_lineEdit.textChanged.connect(seen.append)
+        validate = mocker.patch.object(panel, "validate_inputs")
+
+        panel.set_event_id_input(7)
+
+        assert seen == []
+        validate.assert_called_once_with()
+
+
+# ===========================================================================
+# _shift_range_and_update_plot - shared by both subset tabs on MetaSubsetTabView
+# ===========================================================================
+
+
+NO_SCOPE_MESSAGE = (
+    "No experiments or channels are in scope, select at least one to navigate events"
+)
+
+
+def build_navigable_tab(view_cls: type, mocker: object) -> object:
+    """
+    A subset tab whose cache already holds ``[0, 3, 5, 7]`` for the current scope.
+
+    The scope and filter match the cache, so navigation reads it without a rebuild,
+    and ``_replot_after_shift`` is replaced so the test sees what would be plotted.
+
+    :param view_cls: the subset tab's view class
+    :type view_cls: type
+    :param mocker: the pytest-mock fixture
+    :type mocker: object
+    :return: the view
+    :rtype: object
+    """
+    view = build_subset_tab(view_cls)
+    view.selected_experiment_and_channels_by_loader = {"l": {"exp1": ["0"]}}
+    view.filtered_event_ids = [0, 3, 5, 7]
+    view.current_sql_filter = ""
+    view.current_experiment = "exp1"
+    view.current_channel = 0
+    mocker.patch.object(view, "_replot_after_shift")
+    return view
+
+
+def navigate(view: object, event_id: int, direction: str, n_events: int = 1) -> int:
+    """
+    Press one arrow from ``event_id`` and return the event_id it moved to.
+
+    :param view: a view from ``build_navigable_tab``
+    :type view: object
+    :param event_id: the Event ID field's value before the press
+    :type event_id: int
+    :param direction: ``"left"`` or ``"right"``
+    :type direction: str
+    :param n_events: the N Events field's value
+    :type n_events: int
+    :return: the event_id passed on to be plotted
+    :rtype: int
+    """
+    view._shift_range_and_update_plot(
+        {"db_loader": "l", "event_id": event_id, "n_events": n_events}, direction
+    )
+    return view._replot_after_shift.call_args[0][0]["event_id"]
+
+
+class TestShiftRangeAndUpdatePlotIsShared:
+    """
+    One navigation body for both subset tabs, run against each tab's real panel.
+
+    Pinned: wrapping at both ends, the empty-scope message, the cache rebuild on a
+    scope change, and an entered id past every cached one sitting just past the end -
+    right goes to the first id, left to the last, silently.
+    """
+
+    def test_the_base_owns_the_only_copy(self) -> None:
+        """A copy left on a tab would shadow the shared one for that tab."""
+        assert "_shift_range_and_update_plot" in MetaSubsetTabView.__dict__
+        for view_cls in SUBSET_TABS:
+            assert (
+                "_shift_range_and_update_plot" not in view_cls.__dict__
+            ), view_cls.__name__
+
+    @pytest.mark.parametrize("view_cls", SUBSET_TABS, ids=lambda c: c.__name__)
+    @pytest.mark.parametrize(
+        ("event_id", "direction", "n_events", "expected"),
+        [
+            (3, "right", 1, 5),
+            (5, "left", 1, 3),
+            (4, "right", 1, 7),
+            (7, "right", 1, 0),
+            (0, "left", 1, 7),
+            (0, "left", 2, 5),
+            (3, "right", 3, 0),
+        ],
+        ids=[
+            "step_right",
+            "step_left",
+            "snaps_to_next_id_first",
+            "wraps_right_to_first",
+            "wraps_left_to_last",
+            "wraps_left_to_last_window",
+            "wraps_right_past_end",
+        ],
+    )
+    def test_steps_and_wraps(
+        self,
+        qapp: object,
+        mocker: object,
+        view_cls: type,
+        event_id: int,
+        direction: str,
+        n_events: int,
+        expected: int,
+    ) -> None:
+        """Each press moves ``n_events`` places through the cache, wrapping at both ends."""
+        view = build_navigable_tab(view_cls, mocker)
+
+        assert navigate(view, event_id, direction, n_events) == expected
+        assert view._subset_controls.event_id_lineEdit.text() == str(expected)
+        view.add_text_to_display.emit.assert_not_called()
+
+    @pytest.mark.parametrize("view_cls", SUBSET_TABS, ids=lambda c: c.__name__)
+    @pytest.mark.parametrize(
+        ("direction", "expected"),
+        [("right", 0), ("left", 7)],
+        ids=["right_goes_to_first", "left_goes_to_last"],
+    )
+    def test_an_id_past_every_cached_one_sits_just_past_the_end(
+        self,
+        qapp: object,
+        mocker: object,
+        view_cls: type,
+        direction: str,
+        expected: int,
+    ) -> None:
+        """
+        Neither arrow skips an event when the entered id has no match at or after it.
+
+        Arriving at the first or last event is ordinary wrap-around, so nothing is
+        reported; the report belongs to plotting, which snaps the entered id.
+        """
+        view = build_navigable_tab(view_cls, mocker)
+
+        assert navigate(view, 99, direction) == expected
+        view.add_text_to_display.emit.assert_not_called()
+
+    @pytest.mark.parametrize("view_cls", SUBSET_TABS, ids=lambda c: c.__name__)
+    @pytest.mark.parametrize(
+        "parameters",
+        [{"db_loader": "other"}, {}],
+        ids=["no_scope_for_loader", "no_loader"],
+    )
+    def test_nothing_in_scope_is_reported(
+        self, qapp: object, mocker: object, view_cls: type, parameters: dict
+    ) -> None:
+        """No experiment or channel for the loader means nothing to navigate."""
+        view = build_navigable_tab(view_cls, mocker)
+
+        view._shift_range_and_update_plot(parameters, "right")
+
+        view.add_text_to_display.emit.assert_called_once_with(
+            NO_SCOPE_MESSAGE, view_cls.__name__
+        )
+        view._replot_after_shift.assert_not_called()
+
+    @pytest.mark.parametrize("view_cls", SUBSET_TABS, ids=lambda c: c.__name__)
+    def test_a_changed_scope_rebuilds_the_cache_before_navigating(
+        self, qapp: object, mocker: object, view_cls: type
+    ) -> None:
+        """
+        A cache built for another channel is replaced before it is read.
+
+        Navigating the old cache would land on ids the selected channel may not have.
+        """
+        view = build_navigable_tab(view_cls, mocker)
+        view.current_channel = 1
+        answer_query_with(view, pd.DataFrame({"event_id": [10, 20, 30]}))
+
+        assert navigate(view, 10, "right") == 20
+        assert view.current_channel == 0
+
+    @pytest.mark.parametrize("view_cls", SUBSET_TABS, ids=lambda c: c.__name__)
+    def test_an_empty_rebuild_stops_navigation(
+        self, qapp: object, mocker: object, view_cls: type
+    ) -> None:
+        """Nothing is plotted when the rebuilt cache comes back empty."""
+        view = build_navigable_tab(view_cls, mocker)
+        view.filtered_event_ids = []
+        answer_query_with(view, pd.DataFrame({"event_id": []}))
+
+        view._shift_range_and_update_plot(
+            {"db_loader": "l", "event_id": 0, "n_events": 1}, "right"
+        )
+
+        view._replot_after_shift.assert_not_called()
+
+
+class TestSnapToFiltered:
+    """
+    Where a plot of an entered Event ID starts, for both subset tabs.
+
+    Pinned: the first cached id at or after the entered one, and an entered id past
+    every cached one snapping to the first with a status-panel message.
+    """
+
+    @pytest.mark.parametrize("view_cls", SUBSET_TABS, ids=lambda c: c.__name__)
+    @pytest.mark.parametrize(
+        ("event_id", "expected_idx"),
+        [(3, 1), (4, 2), (0, 0), (7, 3)],
+        ids=["exact", "between", "first", "last"],
+    )
+    def test_an_id_in_range_snaps_silently_at_or_after(
+        self,
+        qapp: object,
+        mocker: object,
+        view_cls: type,
+        event_id: int,
+        expected_idx: int,
+    ) -> None:
+        """An entered id with a match at or after it is no surprise, so no message."""
+        view = build_navigable_tab(view_cls, mocker)
+
+        assert view._snap_to_filtered(event_id) == expected_idx
+        view.add_text_to_display.emit.assert_not_called()
+
+    @pytest.mark.parametrize("view_cls", SUBSET_TABS, ids=lambda c: c.__name__)
+    def test_an_id_past_every_cached_one_snaps_to_the_first_and_says_so(
+        self, qapp: object, mocker: object, view_cls: type
+    ) -> None:
+        """The plot starts somewhere other than the entered id, so the panel says where."""
+        view = build_navigable_tab(view_cls, mocker)
+
+        assert view._snap_to_filtered(99) == 0
+        view.add_text_to_display.emit.assert_called_once_with(
+            "Event ID 99 is past the last filtered event (7); "
+            "wrapped around to the first filtered event (0)",
+            view_cls.__name__,
+        )

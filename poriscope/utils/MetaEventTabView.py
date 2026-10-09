@@ -25,11 +25,13 @@
 # Kyle Briggs
 
 import logging
+from abc import abstractmethod
 from typing import Any, Dict, List, Optional, Sequence, Set, Tuple, override
 
 from PySide6.QtWidgets import QMessageBox
 
 from poriscope.utils.LogDecorator import log
+from poriscope.utils.MetaEventTabControls import MetaEventTabControls
 from poriscope.utils.MetaView import MetaView
 
 
@@ -61,6 +63,9 @@ class MetaEventTabView(MetaView):
       field's text into ranges and back. Only these two tabs call them, which is why
       they are here rather than on ``MetaView``; they are pure apart from one logger
       call.
+    - **Event navigation.** ``_shift_range_and_update_plot`` shifts the event-index
+      field by one event and re-plots through ``_handle_plot_events``;
+      ``_get_event_index_text`` reads that field.
 
     What a subclass owes it:
 
@@ -69,6 +74,10 @@ class MetaEventTabView(MetaView):
     - **``MetaView``'s remaining abstract methods** - ``_init``,
       ``handle_parameter_change`` and ``update_available_plugins`` - which this base does
       not implement.
+    - **``_event_controls``**, a one-line property returning whatever name the tab
+      holds its controls panel under, so the shared methods here can reach it.
+    - **``_handle_plot_events``**, which asks the Controller for the selected events;
+      each tab asks for different data.
 
     :ivar logger: the module logger the shared methods below log under
     """
@@ -208,6 +217,85 @@ class MetaEventTabView(MetaView):
         pass
 
     @log(logger=logger)
+    def _shift_range_and_update_plot(
+        self, parameters: Dict[str, Any], direction: str
+    ) -> None:
+        """
+        Page the event-index field to the next or previous block, then re-plot.
+
+        Each range moves by its own width plus one, so ``5-9`` goes to ``10-14`` or
+        ``0-4``, and a single index moves by one. Indices are 0-based, so a shifted
+        segment below 0 is dropped; when nothing is left the shift is declined and the
+        status panel says so. Nothing happens unless exactly one channel is selected
+        and the field holds an index.
+
+        :param parameters: the controls panel's parameters; reads ``channel``
+        :type parameters: Dict[str, Any]
+        :param direction: ``"left"`` or ``"right"``
+        :type direction: str
+        """
+        try:
+            selected_channels = self._channels_from(parameters)
+            self.logger.debug(
+                f"Channels received before validation: {selected_channels}"
+            )
+            self.validate_single_channel(selected_channels)
+            # validate_single_channel refuses more than one channel; this refuses none.
+            selected_channels[0]
+        except (IndexError, ValueError) as e:
+            self.logger.error(f"Parameter extraction failed: {repr(e)}")
+            return
+
+        original_str = self._get_event_index_text()
+        self.logger.debug(f"Original GUI input string: {original_str}")
+        if not original_str:
+            self.logger.debug("Event index input is empty.")
+            return
+
+        parsed = self._parse_event_indices(original_str, False)
+        self.logger.debug(f"Parsed input into ranges: {parsed}")
+
+        shifted = self._shift_ranges(parsed, direction, 1)
+        self.logger.debug(f"Shifted ranges ({direction}): {shifted}")
+
+        merged = self._merge_ranges(shifted)
+        self.logger.debug(f"Merged shifted ranges: {merged}")
+
+        new_event_str = self._format_ranges(merged)
+        self.logger.debug(f"Formatted string for GUI: {new_event_str}")
+
+        expanded = self._expand_event_indices(new_event_str)
+        self.logger.debug(f"Expanded list for plotting: {expanded}")
+
+        if not expanded:
+            # An EventAnalysis e2e test asserts on this log line's exact text.
+            self.logger.warning("Indices must be positive")
+            self.add_text_to_display.emit(
+                "Cannot shift further: event indices cannot go below 0",
+                self.__class__.__name__,
+            )
+            return
+
+        new_params = parameters.copy()
+        new_params["event_index"] = expanded
+        self.logger.debug(f"Updated parameters for plot: {new_params}")
+
+        self._handle_plot_events(new_params)
+        self.logger.debug(
+            f"Shifting complete. Updating input field to: {new_event_str}"
+        )
+        self._event_controls.set_event_index_input(new_event_str)
+
+    def _get_event_index_text(self) -> str:
+        """
+        The event-index field's text, stripped.
+
+        :return: the current text of the event-index field
+        :rtype: str
+        """
+        return self._event_controls.event_index_lineEdit.text().strip()
+
+    @log(logger=logger)
     def _channels_from(self, parameters: Dict[str, Any]) -> List[int]:
         """
         The selected channels, as ints, from a controls-panel parameter dict.
@@ -301,3 +389,25 @@ class MetaEventTabView(MetaView):
             self.logger.info(f"{operation} cancelled: no filter selected")
             return False
         return True
+
+    @property
+    @abstractmethod
+    def _event_controls(self) -> MetaEventTabControls:
+        """
+        This tab's controls panel, under a name the shared methods here can use.
+
+        Each tab stores the panel under a name of its own inside ``_build_controls``;
+        a property rather than a second attribute, so the panel is held in one place.
+
+        :return: the panel built by ``_build_controls``
+        :rtype: MetaEventTabControls
+        """
+
+    @abstractmethod
+    def _handle_plot_events(self, parameters: Dict[str, Any]) -> None:
+        """
+        Ask the Controller for the selected events, ready to plot.
+
+        :param parameters: the plotting parameters, including ``event_index``
+        :type parameters: Dict[str, Any]
+        """

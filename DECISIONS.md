@@ -18,6 +18,26 @@ and deleted on 2026-09-27; it too is in git history.
 
 ---
 
+## 2026-10-09 - Subset-tab arrows treat an Event ID past every filtered id as just past the end
+
+**Context.** Promoting `_shift_range_and_update_plot` to `MetaSubsetTabView` forced one rule for
+an `event_id` with no cached id at or after it (`bisect_left` returns `n`). Metadata clamped the
+position to `n - 1`, Protein reset it to `0`; both then stepped, so each skipped an event on one
+arrow. With ids `[0, 3, 5, 7]` and Event ID 99: Protein right -> 3 (skips 0), Metadata left -> 5
+(skips 7).
+
+**Decision** (Carolina, 2026-10-09). The rule is that the Event ID field snaps to the nearest
+filtered event at or after the requested ID. Past every filtered event there is none, so the
+position stays at `n`, just past the end: right -> 0, left -> 7, nothing skipped, and nothing is
+reported, since reaching the first or last event is ordinary wrap-around. Both rejected rules skip
+an event. Plot Events and Plot Histogram snap the same input to the first id - they plot from a
+position rather than step from one - and say so on the status panel (`_snap_to_filtered`), since
+the plot then starts somewhere other than the entered id.
+
+**Revisit if** navigation gains a mode where "past the end" should stop instead of wrap.
+
+---
+
 ## 2026-10-09 - The ABF readers on pyabf: one general reader, offsets added after the gain
 
 **Context.** Ruling H (2026-10-06): the ABF readers move from the hand-written `ABF2Header` onto

@@ -40,6 +40,7 @@ from poriscope.plugins.analysistabs.utils.eventAnalysisControls import (
 )
 from poriscope.utils.DocstringDecorator import inherit_docstrings
 from poriscope.utils.LogDecorator import log
+from poriscope.utils.MetaEventTabControls import MetaEventTabControls
 from poriscope.utils.MetaEventTabView import MetaEventTabView
 from poriscope.views.widgets.walkthrough_mixin import (
     WalkthroughStep,
@@ -173,73 +174,19 @@ class EventAnalysisView(MetaEventTabView):
         else:
             self._handle_other_actions(action_name, parameters)
 
-    @log(logger=logger)
-    def _shift_range_and_update_plot(
-        self, parameters: Dict[str, Any], direction: str
-    ) -> None:
+    @property
+    def _event_controls(self) -> MetaEventTabControls:
         """
-        Shift ranges in the GUI and update plot and input if valid.
+        The controls panel, under the name ``MetaEventTabView``'s shared methods use.
 
-        :param parameters: Parameter dictionary collected from the control widgets.
-        :type parameters: Dict[str, Any]
-        :param direction: Either 'left' or 'right'.
-        :type direction: str
+        Annotated with the base's type rather than ``EventAnalysisControls`` so the
+        override matches the declaration verbatim, which is what the plugin compliance
+        test compares. Tab-specific code keeps using ``self.eventAnalysisControls``.
+
+        :return: the panel built by ``_build_controls``
+        :rtype: MetaEventTabControls
         """
-
-        try:
-            loader, eventfitter, data_filter, channels, _ = (
-                self._extract_plot_event_parameters(parameters)
-            )
-            self.validate_single_channel(channels)
-            channels[0]
-        except (IndexError, ValueError) as e:
-            self.logger.error(f"Parameter extraction failed: {repr(e)}")
-            return
-
-        original_str = self._get_event_index_text()
-        self.logger.debug(f"Original GUI input string: {original_str}")
-        if not original_str:
-            self.logger.debug("Event index input is empty.")
-            return
-
-        parsed = self._parse_event_indices(original_str, False)
-        self.logger.debug(f"Parsed input into ranges: {parsed}")
-
-        shifted = self._shift_ranges(parsed, direction, 1)
-        self.logger.debug(f"Shifted ranges ({direction}): {shifted}")
-
-        merged = self._merge_ranges(shifted)
-        self.logger.debug(f"Merged shifted ranges: {merged}")
-
-        new_event_str = self._format_ranges(merged)
-        self.logger.debug(f"Formatted string for GUI: {new_event_str}")
-
-        expanded = self._expand_event_indices(new_event_str)
-        self.logger.debug(f"Expanded list for plotting: {expanded}")
-
-        if not expanded:
-            self.logger.warning("Indices must be positive")
-            return
-
-        # Proceed with valid shift
-        new_params = parameters.copy()
-        new_params["event_index"] = expanded
-        self.logger.debug(f"Updated parameters for plot: {new_params}")
-
-        self._handle_plot_events(new_params)
-        self.logger.debug(
-            f"Shifting complete. Updating input field to: {new_event_str}"
-        )
-        self.eventAnalysisControls.set_event_index_input(new_event_str)
-
-    def _get_event_index_text(self) -> str:  # Since params expanded
-        """
-        Get the current text from the event index input field.
-
-        :return: Stripped text content of the event index field.
-        :rtype: str
-        """
-        return self.eventAnalysisControls.event_index_lineEdit.text().strip()
+        return self.eventAnalysisControls
 
     # Trigger the updated plot
     @log(logger=logger)

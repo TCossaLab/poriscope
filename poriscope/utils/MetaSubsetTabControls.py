@@ -25,6 +25,7 @@
 # Kyle Briggs
 
 import logging
+from abc import abstractmethod
 from typing import Any, Sequence
 
 from PySide6.QtCore import QSize, Signal
@@ -32,11 +33,13 @@ from PySide6.QtGui import QRegularExpressionValidator
 from PySide6.QtWidgets import QComboBox, QLineEdit, QToolButton, QWidget
 
 from poriscope.configs.utils import get_icon
+from poriscope.utils.LogDecorator import log
 from poriscope.utils.MetaControls import MetaControls
+from poriscope.utils.QObjectABCMeta import QObjectABCMeta
 from poriscope.views.widgets.multiselect_filter import MultiSelectFilterComboBox
 
 
-class MetaSubsetTabControls(MetaControls):
+class MetaSubsetTabControls(MetaControls, metaclass=QObjectABCMeta):
     """
     Shared base for the control panels of the two subset-filtering analysis tabs.
 
@@ -48,7 +51,10 @@ class MetaSubsetTabControls(MetaControls):
     fix.
 
     It extends ``MetaControls`` rather than replacing it - the widget factories, the
-    icon buttons and the placeholder guard all still come from there.
+    icon buttons and the placeholder guard all still come from there. It declares
+    ``QObjectABCMeta`` as its metaclass because ``MetaControls`` is a plain ``QWidget``,
+    whose metaclass computes no ``__abstractmethods__``; without it the
+    ``@abstractmethod`` below would never fire.
 
     What a subclass inherits, on top of everything ``MetaControls`` gives it:
 
@@ -60,6 +66,8 @@ class MetaSubsetTabControls(MetaControls):
       pencil, plus and trash buttons beside that combobox.
     - **The loader combobox.** ``update_loaders`` keeps it in step with the database
       loaders instantiated elsewhere in the app.
+    - **The event-id field.** ``set_event_id_input`` writes the event_id navigation
+      snapped to into it, without re-emitting its edit signal, and revalidates.
     - **Signals.** ``edit_filter_requested`` carries ``(filter_name, loader_name)``
       and ``delete_filter_requested`` carries a filter name, both into the tab's View.
     - **``placeholder_texts``**, which is ``("No Event Database",)`` for both tabs.
@@ -69,8 +77,11 @@ class MetaSubsetTabControls(MetaControls):
     - **Its own** ``logger = logging.getLogger(__name__)``, as ``MetaControls``
       already requires.
     - **A ``setupUi`` that builds** ``db_loader_comboBox``, ``filter_comboBox``,
-      ``bins_lineEdit``, ``int_validator`` and ``float_validator``. They are declared
-      below but not created here, because each tab lays its panel out differently.
+      ``event_id_lineEdit``, ``bins_lineEdit``, ``int_validator`` and
+      ``float_validator``. They are declared below but not created here, because each
+      tab lays its panel out differently.
+    - **``validate_inputs``**, declared abstract below: ``set_event_id_input`` calls
+      it after writing the field, and each tab validates a different set of fields.
 
     :ivar logger: the module logger the shared methods below log under
     """
@@ -88,9 +99,18 @@ class MetaSubsetTabControls(MetaControls):
     #: Declared here so the shared methods below have a contract to read.
     bins_lineEdit: QLineEdit
     db_loader_comboBox: QComboBox
+    event_id_lineEdit: QLineEdit
     filter_comboBox: MultiSelectFilterComboBox
     float_validator: QRegularExpressionValidator
     int_validator: QRegularExpressionValidator
+
+    @abstractmethod
+    def validate_inputs(self) -> None:
+        """
+        Re-validate the panel's input fields and enable or disable its actions.
+
+        Abstract because each tab validates a different set of fields.
+        """
 
     def _on_sizes_checkbox_toggled(self, checked: bool) -> None:
         if checked:
@@ -178,3 +198,16 @@ class MetaSubsetTabControls(MetaControls):
         for selection in current_selections:
             if selection in [str(i) for i in filters]:
                 self.filter_comboBox.selectItem(selection)
+
+    @log(logger=logger)
+    def set_event_id_input(self, value: int) -> None:
+        """
+        Update the event_id field with the snapped event_id after navigation.
+
+        :param value: The event_id to display.
+        :type value: int
+        """
+        self.event_id_lineEdit.blockSignals(True)
+        self.event_id_lineEdit.setText(str(value))
+        self.event_id_lineEdit.blockSignals(False)
+        self.validate_inputs()

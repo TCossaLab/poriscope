@@ -800,6 +800,18 @@ class TestShiftRangeAndUpdatePlot:
         mock_view._shift_range_and_update_plot(self._base_params(), direction="right")
         self._mock_plot.assert_not_called()
 
+    def test_shift_below_zero_is_reported_on_the_status_panel(self, mock_view):
+        """Shifting left past event 0 is declined, and the status panel says why."""
+        self._setup_shift(mock_view)
+        mock_view._expand_event_indices.return_value = []
+        received = []
+        mock_view.add_text_to_display.connect(lambda m, s: received.append(m))
+
+        mock_view._shift_range_and_update_plot(self._base_params(), direction="left")
+
+        assert received == ["Cannot shift further: event indices cannot go below 0"]
+        self._mock_plot.assert_not_called()
+
     def test_multiple_channels_raises_and_aborts(self, mock_view):
         self._setup_shift(mock_view)
         params = self._base_params()

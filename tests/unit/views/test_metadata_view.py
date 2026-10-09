@@ -5147,6 +5147,35 @@ def test_handle_plot_events_uses_cache_for_navigation(
     view.metadatacontrols.set_event_id_input.assert_called_with(5)
 
 
+def test_handle_plot_events_snaps_an_id_past_the_cache_to_the_first(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """Plotting an Event ID past every filtered one starts at the first, and says so."""
+    view.metadatacontrols = mocker.Mock()
+    view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
+    view.selected_experiment_and_channels_by_loader = {"test_loader": {"exp1": [1]}}
+    view.filtered_event_ids = [0, 5, 10, 15, 20]
+    view.current_sql_filter = ""
+    view.current_experiment = "exp1"
+    view.current_channel = 1
+    view._update_event_plot = mocker.Mock()
+    view.canned_plot_events_generator = iter([_FULL_EVENT])
+    parameters = {
+        "db_loader": "test_loader",
+        "event_id": 99,
+        "n_events": 1,
+        "raw": False,
+    }
+    view._handle_plot_events(parameters)
+
+    view.metadatacontrols.set_event_id_input.assert_called_with(0)
+    view.add_text_to_display.emit.assert_any_call(
+        "Event ID 99 is past the last filtered event (20); "
+        "wrapped around to the first filtered event (0)",
+        "MetadataView",
+    )
+
+
 # ----------------------------- Filtered Event ID Cache Tests ------------------------------
 
 

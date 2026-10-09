@@ -52,6 +52,12 @@
 
 * **Breaking:** `update_available_columns` has moved from `MetaSubsetTabView` to `MetadataView`, `column_names_requested` with it, and `request_column_names` is no longer on `MetaSubsetTabController`; only the metadata tab reads column names, so a plugin subclassing the shared subset-tab base no longer inherits any of the three
 
+* **Breaking:** `set_event_id_input` has moved from `MetadataControls` and `ProteinControls` to `MetaSubsetTabControls`, which now requires its subclasses to implement `validate_inputs`
+
+* **Breaking:** `_shift_range_and_update_plot` has moved from `MetadataView` and `ProteinView` to `MetaSubsetTabView`, which now requires its subclasses to implement `_replot_after_shift`
+
+* **Breaking:** `_shift_range_and_update_plot` and `_get_event_index_text` have moved from `RawDataView` and `EventAnalysisView` to `MetaEventTabView`, which now requires its subclasses to implement `_event_controls` and `_handle_plot_events`
+
 ### Developer Tooling:
 
 * The release workflow now runs only when a version tag is pushed
@@ -175,6 +181,16 @@
 * Fixed an error when every channel was skipped before fitting or writing started
 
 * Quitting now closes every plugin even when one fails to close
+
+* The Protein tab's event navigation arrows now say on the status panel when no experiment or channel is in scope, as the Metadata tab's do
+
+* **Fixed the Metadata and Protein tabs' event navigation arrows skipping an event when the Event ID is past the last filtered event**; right now goes to the first filtered event and left to the last
+
+* The Metadata and Protein tabs now say on the status panel when plotting an Event ID past the last filtered event starts from the first filtered event instead
+
+* The Event Analysis tab's event navigation arrows now say on the status panel when a shift would go below event 0, as the Raw Data tab's do
+
+* A Raw Data event shift replayed from an action history with no channel selected is now refused instead of raising
 
 ### Documentation:
 

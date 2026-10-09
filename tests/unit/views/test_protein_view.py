@@ -707,11 +707,28 @@ class TestShiftRangeAndUpdatePlot:
             )
         assert real_view.proteincontrols.event_id_lineEdit.text() == "3"
 
-    def test_empty_input_returns_early(self, mock_view):
+    @pytest.mark.parametrize(
+        "parameters", [{"db_loader": "l"}, {}], ids=["no_scope", "no_loader"]
+    )
+    def test_nothing_in_scope_is_reported(self, mock_view, parameters):
+        """
+        Navigation with no experiment or channel selected says so on the status panel.
+
+        A missing loader key reaches the same message, since no scope is filed under it.
+        """
         mock_view.selected_experiment_and_channels_by_loader = {}
-        mock_view._shift_range_and_update_plot(
-            {"db_loader": "l"}, "right"
-        )  # must not raise
+        mock_view.get_selected_filters = MagicMock(return_value={})
+        received = []
+        mock_view.add_text_to_display.connect(lambda m, s: received.append(m))
+
+        with patch.object(mock_view, "_handle_plot_events") as mock_ev:
+            mock_view._shift_range_and_update_plot(parameters, "right")
+
+        assert received == [
+            "No experiments or channels are in scope, select at least one to "
+            "navigate events"
+        ]
+        mock_ev.assert_not_called()
 
     def test_dispatches_histogram(self, mock_view):
         self._setup_cache(mock_view)
@@ -1537,6 +1554,23 @@ class TestHandlePlotEvents:
         )
         assert any("No data available" in m for m in received)
 
+    def test_an_id_past_the_cache_snaps_to_the_first_and_says_so(self, mock_view):
+        """Plotting an Event ID past every filtered one starts at the first."""
+        self._setup(mock_view)
+        mock_view._fetch_event_data = MagicMock(return_value=[])
+        received = []
+        mock_view.add_text_to_display.connect(lambda m, s: received.append(m))
+
+        mock_view._handle_plot_events(
+            {"db_loader": "ldr", "event_id": 99, "n_events": 2}
+        )
+
+        assert mock_view._fetch_event_data.call_args[0][0]["event_index"] == [1, 2]
+        assert (
+            "Event ID 99 is past the last filtered event (3); "
+            "wrapped around to the first filtered event (1)"
+        ) in received
+
 
 class TestHandlePlotHistogram:
     def _setup(self, mock_view):
@@ -1560,6 +1594,29 @@ class TestHandlePlotHistogram:
             }
         )
         assert mock_view._last_event_action == "plot_histogram"
+
+    def test_an_id_past_the_cache_snaps_to_the_first_and_says_so(self, mock_view):
+        """The histogram snaps an out-of-range Event ID exactly as Plot Events does."""
+        self._setup(mock_view)
+        mock_view._fetch_event_data = MagicMock(return_value=[])
+        received = []
+        mock_view.add_text_to_display.connect(lambda m, s: received.append(m))
+
+        mock_view._handle_plot_histogram(
+            {
+                "db_loader": "ldr",
+                "event_id": 99,
+                "n_events": 2,
+                "bins": None,
+                "sizes": False,
+            }
+        )
+
+        assert mock_view._fetch_event_data.call_args[0][0]["event_index"] == [1, 2]
+        assert (
+            "Event ID 99 is past the last filtered event (3); "
+            "wrapped around to the first filtered event (1)"
+        ) in received
 
     def test_calls_update_event_histogram_with_data(self, mock_view):
         self._setup(mock_view)

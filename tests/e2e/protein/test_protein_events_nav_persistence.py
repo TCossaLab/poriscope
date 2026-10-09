@@ -26,8 +26,7 @@ specific rejections are a real fitting outcome, not something to
 predict by inspection.
 
 This matters specifically for navigation: _shift_range_and_update_plot
-(defined directly on ProteinView -- NOT inherited from MetaView; see
-below) shifts by INDEX POSITION within the cached id list, not by
+(shared by both subset tabs on MetaSubsetTabView) shifts by INDEX POSITION within the cached id list, not by
 literal id value -- a test built on contiguous 0..N-1 ids can't
 distinguish "shift landed on the right position" from "shift landed on
 the right numeric value", since those coincide for contiguous ids. A
@@ -56,9 +55,8 @@ filter_delete_button, save_filter_button, load_filter_button,
 db_loader_add_button, db_loader_comboBox, selection_tree_button) match
 the real widget attributes exactly. Action names, dispatch behavior,
 guard clauses, and _shift_range_and_update_plot's bisect algorithm
-(including its idx-overflow wraparound, mirrored precisely in
-_simulate_shift below) are confirmed directly from ProteinView.py source
-and ProteinView's own real unit tests. If any of this were ever wrong,
+(mirrored in _simulate_shift below) are confirmed directly from the
+source and its unit tests. If any of this were ever wrong,
 this file would fail at collection/first-click with a clear
 AttributeError pointing at the exact wrong name, not silently.
 """
@@ -293,14 +291,10 @@ def test_protein_events_nav_and_filters(
     # =========================================================
     # STAGE 3: navigation over the GAPPED id set. Compute the expected
     # landing event_id by simulating the SAME bisect-based shift
-    # algorithm the app uses (_shift_range_and_update_plot, defined
-    # directly on ProteinView -- confirmed via direct source review,
-    # including its idx-overflow branch: bisect_left can return an
-    # out-of-range index when event_id exceeds every cached id, and the
-    # real code wraps that back to idx=0 rather than clamping to the
-    # last element; _simulate_shift below mirrors that exactly), rather
-    # than hardcoding a guessed target -- exact precedent from
-    # test_metadata_events_nav_persistence.py's Stage 3.
+    # algorithm the app uses (MetaSubsetTabView._shift_range_and_update_plot,
+    # which leaves an event_id past every cached id just past the end of
+    # the list, so the wrap-at-both-ends step handles it), rather than
+    # hardcoding a guessed target.
     # =========================================================
     ids = list(protein_view.filtered_event_ids)
     n = len(ids)
@@ -315,8 +309,6 @@ def test_protein_events_nav_and_filters(
 
     def _simulate_shift(event_id, direction):
         idx = bisect.bisect_left(ids, event_id)
-        if idx >= n:
-            idx = 0  # matches the real code's wraparound, not a clamp to n-1
         if direction == "right":
             next_idx = idx + n_events
             if next_idx >= n:

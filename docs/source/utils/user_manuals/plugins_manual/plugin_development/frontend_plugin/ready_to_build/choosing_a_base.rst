@@ -41,7 +41,7 @@ The View
      - Shipped tabs
    * - ``MetaEventTabView``
      - finds or fits events in a raw signal from a reader
-     - ``_init``, ``handle_parameter_change``, ``update_available_plugins``
+     - ``_init``, ``handle_parameter_change``, ``update_available_plugins``, ``_handle_plot_events``, plus the ``_event_controls`` property
      - RawDataView, EventAnalysisView
    * - ``MetaView``
      - is neither of the other two
@@ -49,17 +49,20 @@ The View
      - ClusteringView
    * - ``MetaSubsetTabView``
      - queries a results database with user-defined subset filters
-     - the five above, plus the ``_subset_controls`` property
+     - the five above, ``_replot_after_shift``, plus the ``_subset_controls`` property
      - MetadataView, ProteinView
 
 Note the ordering: **an intermediate does not always ask less of you than the base.**
-``MetaEventTabView`` asks for *three* methods rather than five, because it implements
-``_reset_actions`` and ``notify_plugin_state_changed`` on your behalf — the two event
-tabs agree on both. ``MetaSubsetTabView`` asks for *six*: the five ``MetaView`` wants,
-plus a one-line ``_subset_controls`` property returning your controls panel under a name
-its shared methods can use. Subset filtering is a contract of its own, but it is one this
-base now implements entirely - it manages the filters, the dialogs that edit them and the
-combobox that shows them, reaching your panel through that property.
+``MetaEventTabView`` implements ``_reset_actions`` and ``notify_plugin_state_changed`` on
+your behalf — the two event tabs agree on both — and asks instead for
+``_handle_plot_events``, which its event navigation re-plots through, and a one-line
+``_event_controls`` property returning your controls panel under a name its shared
+methods can use. ``MetaSubsetTabView`` asks for *seven*: the five ``MetaView`` wants, the
+same kind of one-line ``_subset_controls`` property, and ``_replot_after_shift``, which
+re-plots after event navigation in whichever display your tab is showing. Subset
+filtering is a contract of its own, but it is one this base implements entirely - it
+manages the filters, the dialogs that edit them and the combobox that shows them,
+reaching your panel through that property.
 
 What ``MetaSubsetTabView`` gives you, on top of ``MetaView``: the query setters
 (``set_query``, ``set_event_query``), subset-filter management (``_save_filter``,
@@ -70,16 +73,17 @@ What ``MetaSubsetTabView`` gives you, on top of ``MetaView``: the query setters
 ``on_raw_filter_validated``, ``restore_subset_filters``, ``commit_filter``,
 ``get_subset_filters``), the
 filtered-event cache
-(``_rebuild_event_id_cache``, ``set_event_id_rows``), the event-plot round trip
+(``_rebuild_event_id_cache``, ``set_event_id_rows``), event navigation through it
+(``_shift_range_and_update_plot``, ``_snap_to_filtered``), the event-plot round trip
 (``event_plot_data_requested``, ``set_event_plot_data_generator``,
 ``set_event_data_generator``), the scatterplot round trip (``scatterplot_requested``,
 ``set_scatterplot``), the experiment-selection tree (``show_selection_tree``,
 ``request_experiment_structure``) and ``get_save_filename``.
 
-What ``MetaEventTabView`` gives you: the event-index range helpers
-(``_parse_event_indices``, ``_expand_event_indices``, ``_shift_ranges``,
-``_merge_ranges``, ``_format_ranges``) that turn an event-index field into ranges and
-back for the navigation arrows, plus ``validate_single_channel``,
+What ``MetaEventTabView`` gives you: the navigation arrows' handler
+(``_shift_range_and_update_plot``, ``_get_event_index_text``) and the event-index range
+helpers it uses (``_parse_event_indices``, ``_expand_event_indices``, ``_shift_ranges``,
+``_merge_ranges``, ``_format_ranges``), plus ``validate_single_channel``,
 ``_extract_commit_event_parameters`` and ``confirm_unfiltered_run``, the modal that asks before a run with no filter selected.
 
 The Controller
@@ -153,8 +157,9 @@ separate widget, and it has the same three-way choice.
      - widget factories, the plugin edit/add/delete icon buttons, the placeholder guard
      - nothing
    * - ``MetaSubsetTabControls``
-     - the filter combobox and its three buttons, the loader combobox, the bins validator
-     - nothing
+     - the filter combobox and its three buttons, the loader combobox, the bins validator,
+       the event-id field's setter
+     - ``validate_inputs``
    * - ``MetaEventTabControls``
      - the channel multiselect, the filter combobox, the event-index field
      - ``validate_inputs``

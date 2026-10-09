@@ -24,7 +24,6 @@
 # Alejandra Carolina González González
 # Kyle Briggs
 
-import bisect
 import copy
 import logging
 import re
@@ -1994,76 +1993,14 @@ class MetadataView(MetaSubsetTabView):
             self._handle_other_actions(action_name, parameters)
 
     @log(logger=logger)
-    def _shift_range_and_update_plot(
-        self, parameters: Dict[str, Any], direction: str
-    ) -> None:
+    def _replot_after_shift(self, parameters: Dict[str, Any]) -> None:
         """
-        Shift the current event_id forward or backward through the cached filtered set and update the plot.
+        Re-plot the events after navigation; this tab has no other event display.
 
-        :param parameters: Dictionary of current event plotting parameters.
+        :param parameters: the navigation parameters, with ``event_id`` moved to the new event
         :type parameters: Dict[str, Any]
-        :param direction: Either 'left' or 'right'.
-        :type direction: str
         """
-
-        loader = parameters["db_loader"]
-        event_id = parameters.get("event_id") or 0
-        n_events = parameters.get("n_events", 1)
-
-        selected_filters = self.get_selected_filters()
-        if selected_filters is None or selected_filters == {}:
-            selected_filters = {"Full Dataset": ""}
-        sql_filter = next(iter(selected_filters.values()))
-
-        exp_and_ch = self.selected_experiment_and_channels_by_loader.get(loader)
-        if exp_and_ch is None:
-            self.add_text_to_display.emit(
-                "No experiments or channels are in scope, select at least one to "
-                "navigate events",
-                self.__class__.__name__,
-            )
-            return
-
-        exp = next(iter(exp_and_ch.keys()))
-        selected_channel = next(iter(exp_and_ch.values()))[0]
-        channel = int(selected_channel) if selected_channel is not None else None
-
-        # Rebuild cache if filter or scope changed
-        if (
-            sql_filter != self.current_sql_filter
-            or exp != self.current_experiment
-            or channel != self.current_channel
-            or not self.filtered_event_ids
-        ):
-            if not self._rebuild_event_id_cache(loader, sql_filter, exp, channel):
-                return
-
-        if not self.filtered_event_ids:
-            return
-
-        # Find current position in the cached list using binary search
-        ids = self.filtered_event_ids
-        n = len(ids)
-
-        current_idx = bisect.bisect_left(ids, event_id)
-        current_idx = min(current_idx, n - 1)
-
-        if direction == "right":
-            next_idx = current_idx + n_events
-            if next_idx >= n:
-                next_idx = 0  # wrap around to start
-        else:  # left
-            next_idx = current_idx - n_events
-            if next_idx < 0:
-                next_idx = max(0, n - n_events)  # wrap around to last window
-
-        new_event_id = ids[next_idx]
-
-        # Update the UI field and re-plot
-        self.metadatacontrols.set_event_id_input(new_event_id)
-        new_params = parameters.copy()
-        new_params["event_id"] = new_event_id
-        self._handle_plot_events(new_params)
+        self._handle_plot_events(parameters)
 
     @log(logger=logger)
     def _handle_plot_events(self, parameters: Dict[str, Any]) -> None:
@@ -2153,11 +2090,8 @@ class MetadataView(MetaSubsetTabView):
             )
             return
 
-        # Snap using cache — bisect into filtered_event_ids
         ids = self.filtered_event_ids
-        snap_idx = bisect.bisect_left(ids, event_id)
-        if snap_idx >= len(ids):
-            snap_idx = 0  # wrap around to first event
+        snap_idx = self._snap_to_filtered(event_id)
         snapped_event_ids = ids[snap_idx : snap_idx + n_events]
         snapped_start_id = snapped_event_ids[0]
 
