@@ -35,7 +35,8 @@ per-step commit series; updated as steps land). Items below sit under the plan's
 re-measured at HEAD when it comes up. Anchors re-verified 2026-10-05 at `90ad82e9`. Rulings so far
 (Kyle, 2026-10-05): the ground-truth harness is ours to build; one release, step 8 included (the
 PeakFinder owner approved its changes 2026-10-09); runtime pins loosen to compatible ranges while
-`requirements.txt` stays exact; the ABF offset arithmetic is correct (`DECISIONS.md` 2026-10-05).
+`requirements.txt` stays exact; ABF offsets are added after the gain, as `pyabf` does (`DECISIONS.md`
+2026-10-09).
 
 **Two tracks** (Kyle, 2026-10-05). Steps 1-8 and 10 are Kyle's track, in order. **Step 9 (9a, 9b) is
 Carolina's track**, run in parallel: its files (`plugins/analysistabs/`, `utils/Meta{View,Controller,
@@ -113,18 +114,6 @@ Step 10 waits for both tracks.
   `instantiate_analysis_tab` then `sync_sidebar_highlight` then `switch_to_page`;
   `handle_menu_click:692` and `on_load_analysis_tab_button_click:714` (`:722`) highlight first.
   Move the guards at `:899-924` into a predicate asked before the handlers act.
-
-### Step 2b - ABF readers on pyabf (deferred to here; ruling H, `DECISIONS.md` 2026-10-06)
-
-- **One general `ABFReader` plugin, header from `pyabf` (`ABF(path, loadData=False)`, 2.3.8
-  suffices), memmap by the plugin**, usable alone with one file as the dataset; the shipped
-  readers become subclasses adding only `_get_file_pattern`, `_get_file_time_stamps` and
-  `_get_file_channel_stamps` (set recognition and ordering); `LegacyElementsReader` may collapse
-  into the base; retire `helpers/ABF2Header.py` and its tests; `pyabf` moves from `dev` extra to
-  runtime dependency. Spike (2026-10-06, 13 real files): headers and conversions agree to
-  3.6e-12 pA. Rate from the protocol section's `fADCSequenceInterval` (not the `int` `dataRate`
-  nor `dataSecPerPoint`); rule the offset form (`pyabf` adds offsets, `ABF2Header` folds them;
-  no real file has a non-zero one). Goldens: S1.4's int16 recipe and `test_real_recordings.py`.
 
 ### Step 10 - docs dead-link gate and release prep
 
@@ -295,11 +284,10 @@ real difference is `_get_configs`: 2024-01 parses a JSON header embedded in the 
 2024-05 reads a companion `.json` of the same stem. Everything else - `_map_data`,
 `_get_file_pattern`, `_get_file_time_stamps`, `_get_file_channel_stamps` and `_convert_data`
 - is byte-identical, and the pair is the largest single contributor to the `datareaders`
-duplication figure (401).
+duplication figure (348 lines, 2026-10-09).
 
 **Do not give them a shared base.** `ChimeraReader20240101` is slated for deprecation in a
-future cycle (Kyle, 2026-09-22), so making the surviving reader subclass it - the
-`LegacyElementsReader(TCossaLabABFReader)` pattern this family already uses - would mean
+future cycle (Kyle, 2026-09-22), so making the surviving reader subclass it would mean
 unpicking the inheritance before anything could be deleted. Deprecating 20240101 removes the
 duplication for free, and should take `datareaders` to roughly 100.
 
@@ -670,8 +658,8 @@ included, and no fitter is exempt. Still open:
   malformed input?** `tests/unit/plugins/conformance/test_reader_fuzz.py` measured that a
   0-byte file alone already produces four different exception families depending on
   reader/format - `ValueError` (most), `json.decoder.JSONDecodeError` (`ChimeraReader20240101`,
-  a `ValueError` subclass), `struct.error` (both ABF2 readers, *not* a `ValueError`
-  subclass) - and a missing sidecar file raises `FileNotFoundError` or `OSError`
+  a `ValueError` subclass), `NotImplementedError` (the three ABF readers, from `pyabf`, *not* a
+  `ValueError` subclass) - and a missing sidecar file raises `FileNotFoundError` or `OSError`
   depending on the reader. The fuzz suite deliberately does not enforce a type, since
   that would be proposing a contract change, not testing one. Also worth confirming as
   intentional rather than just observed: neither `ChimeraReader20240501` nor
@@ -725,8 +713,8 @@ past six - are in `DECISIONS.md` (2026-09-02); the contributor-facing version is
 anything needing write access. That is `ci-internal-pr.yml`, which is not fork-safe.
 
 **Notes from scoping (2026-08-31).** Exception types vary by format on a 0-byte file
-(`ValueError` for Chimera/BinaryReader1X, `struct.error` for ABF2) - inconsistent but
-none hang.
+(`ValueError` for Chimera/BinaryReader1X, `struct.error` for ABF2, `NotImplementedError` since the
+ABF readers moved onto `pyabf` on 2026-10-09) - inconsistent but none hang.
 
 ## Owner-held - flagged for the owning developer, never fixed here
 

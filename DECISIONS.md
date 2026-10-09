@@ -18,6 +18,42 @@ and deleted on 2026-09-27; it too is in git history.
 
 ---
 
+## 2026-10-09 - The ABF readers on pyabf: one general reader, offsets added after the gain
+
+**Context.** Ruling H (2026-10-06): the ABF readers move from the hand-written `ABF2Header` onto
+`pyabf`, as one general plugin plus subclasses for the lab's file families. Taken up during step 9.
+
+**Decision** (Kyle, 2026-10-09).
+- `ABFReader` opens any file `pyabf` opens (ABF1/ABF2, int16/float32, gap-free/episodic). Settings:
+  `Current Channel` (default 0) and `Sweep` (-1, the default, reads every sweep back to back; a
+  single sweep of a variable-length event-driven file is refused). A subclass fixes a setting by
+  deleting its key, which then takes the default; there is no hidden-setting mechanism.
+- `TCossaLabABFReader` and `LegacyElementsReader` stay, as subclasses adding only the file-set
+  methods; Legacy is kept rather than collapsed so saved sessions and scripts naming it still load.
+  Their ADC-count and `"I"`-name checks are dropped for the base's check that the channel records a
+  current; an unknown unit, which `ABF2Header` read as pA, is refused.
+- Offsets are added after the gain, as `pyabf` applies them, superseding the 2026-10-05 entry.
+- The rate is 1e6 over the header's float interval (ABF2 `fADCSequenceInterval`; ABF1
+  `fADCSampleInterval` x channels). That and the gain, offset and dtype come from `pyabf`'s private
+  attributes (`_protocolSection`, `_headerV1`, `_dataGain`, `_dataOffset`, `_dtype`): the public
+  `dataRate` is an `int` (6666666 for 6666666.401757145). Held by `pyabf~=2.3`.
+- The memmap covers exactly the header's point count, and a shorter file is refused by name: an
+  over-long map raises `OSError` (WinError 8) on Windows, which the old wrapper reported as a sync
+  issue.
+
+**Evidence.** Before this step `pyabf` could not open the synthetic ABF2 fixtures (four header
+fields were missing or wrong). On all 376 ABF files on the second machine (12 sets, including the
+16-channel e16 sets in uA) `ABFReader` matches `ABF2Header`'s conversion bit for bit: rate, length,
+and the first and last 200,000 samples; every offset is zero, so the offset change moves no recorded
+file; the stitched sets read identically across file boundaries. `test_real_recordings.py` passes on
+the two recordings present there.
+
+**Revisit if** a `pyabf` release renames those private attributes, or a recording reads differently
+from what the acquisition software shows. `LegacyElementsReader` is still to be run on the real
+Legacy recording, which is only on the first machine.
+
+---
+
 ## 2026-10-09 - The CUSUM reset does not pause on a rejected crossing
 
 **Context.** Kyle asked whether a crossing the rise-time guard rejects should *pause* the
@@ -477,6 +513,8 @@ arithmetic, so it is not on this path either way.
 **Revisit if** a recording turns up that the shipped parser reads and `pyabf` does not, or
 reads differently; that would be the thing to understand before any wrapper ships.
 
+**Landed 2026-10-09** (the entry of that date).
+
 ---
 
 ## 2026-10-06 - Ruling E: a file-level schema version, provenance per write, columns stay optional per loader
@@ -637,6 +675,9 @@ offsets and unit gains, so nothing in the suite could have distinguished the two
 
 **Revisit if** the spike shows pyabf and our conversion disagreeing on real files, which would
 reopen the question of which one is right rather than settle it in pyabf's favour.
+
+**Superseded (Kyle, 2026-10-09).** The offsets are now added after the gain, as `pyabf` applies
+them; no real file has a non-zero offset (the 2026-10-09 entry).
 
 ---
 
