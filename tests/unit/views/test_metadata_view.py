@@ -5170,8 +5170,8 @@ def test_handle_plot_events_snaps_an_id_past_the_cache_to_the_first(
 
     view.metadatacontrols.set_event_id_input.assert_called_with(0)
     view.add_text_to_display.emit.assert_any_call(
-        "No filtered event at or after Event ID 99, so plotting from the first "
-        "filtered event, 0",
+        "Event ID 99 is past the last filtered event (20); "
+        "wrapped around to the first filtered event (0)",
         "MetadataView",
     )
 

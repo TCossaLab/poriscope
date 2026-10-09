@@ -1198,7 +1198,7 @@ class TestSnapToFiltered:
 
         assert view._snap_to_filtered(99) == 0
         view.add_text_to_display.emit.assert_called_once_with(
-            "No filtered event at or after Event ID 99, so plotting from the first "
-            "filtered event, 0",
+            "Event ID 99 is past the last filtered event (7); "
+            "wrapped around to the first filtered event (0)",
             view_cls.__name__,
         )

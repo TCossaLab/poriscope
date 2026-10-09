@@ -948,8 +948,8 @@ class MetaSubsetTabView(MetaView):
         if idx < len(ids):
             return idx
         self.add_text_to_display.emit(
-            f"No filtered event at or after Event ID {event_id}, so plotting from the "
-            f"first filtered event, {ids[0]}",
+            f"Event ID {event_id} is past the last filtered event ({ids[-1]}); "
+            f"wrapped around to the first filtered event ({ids[0]})",
             self.__class__.__name__,
         )
         return 0

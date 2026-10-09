@@ -1567,8 +1567,8 @@ class TestHandlePlotEvents:
 
         assert mock_view._fetch_event_data.call_args[0][0]["event_index"] == [1, 2]
         assert (
-            "No filtered event at or after Event ID 99, so plotting from the first "
-            "filtered event, 1"
+            "Event ID 99 is past the last filtered event (3); "
+            "wrapped around to the first filtered event (1)"
         ) in received
 
 
@@ -1614,8 +1614,8 @@ class TestHandlePlotHistogram:
 
         assert mock_view._fetch_event_data.call_args[0][0]["event_index"] == [1, 2]
         assert (
-            "No filtered event at or after Event ID 99, so plotting from the first "
-            "filtered event, 1"
+            "Event ID 99 is past the last filtered event (3); "
+            "wrapped around to the first filtered event (1)"
         ) in received
 
     def test_calls_update_event_histogram_with_data(self, mock_view):
