@@ -77,7 +77,30 @@ Poriscope is built from two layers that use the *same* MVC pattern recursively:
   copied verbatim from the base, which is what the compliance test's exact-equality
   comparison requires. Hand-writing one still works: pick the matching
   `plugins/<category>/` folder, subclass the matching `Meta*` base, implement its
-  `__abstractmethods__`, and drop the file in — no registration needed.
+  `__abstractmethods__`, and drop the file in. The *app* needs no registration.
+- **The repository does.** A new data plugin file is not finished until it is in each of
+  these; the first two fail the suite until it is:
+  - `scripts/measure_duplication.py`'s family list for its folder
+    (`test_every_plugin_and_widget_file_is_measured_or_excluded`), then
+    `python scripts/measure_duplication.py --update` in the same commit, the reason in the
+    commit message if the number rose;
+  - its conformance recipe in `tests/unit/plugins/conformance/_recipes.py`: each family's
+    dict raises `KeyError` naming itself for a plugin without one (`READER_DATASET_BUILDERS`,
+    `EVENT_FINDER_SETTINGS`, `EVENT_FITTER_SETTINGS`, `FILTER_SETTINGS`). A reader also takes
+    `READER_EXTRA_SETTINGS` for a setting with no default, and any format-specific fuzz
+    mutation in `MUTATIONS` (the shared ones follow `READER_DATASET_BUILDERS` automatically);
+  - `poriscope/exposed.py`'s imports and `__all__`, so scripts can import it;
+  - the user guide's list for its family (readers: `user_guide/raw_data_tab.rst`) and a
+    `changelog.md` line. The autodoc page is generated (`docs/source/autodoc/` is gitignored).
+- Draft a plugin outside the tree while a suite is running: `new_plugin.py ... --output-dir`
+  writes anywhere, and plugin discovery imports every file in the package.
+- **A general plugin with narrowing subclasses** (the ABF readers, 2026-10-09): the base is a
+  usable plugin whose settings cover every variant of its format, and a subclass for one
+  recording family fixes some of them by *deleting their keys* in `get_empty_settings`. There
+  is no hidden or read-only setting in the dialog, so the base reads each such setting through
+  a helper that falls back to a module-level defaults dict - one source for the dialog's
+  default and the deleted key's value (`ABFReader._abf_setting`, `SETTING_DEFAULTS`). The
+  subclass overrides only `get_empty_settings` and the file-set methods.
 - New analysis tab: generate it too. `python scripts/new_plugin.py AnalysisTab MyTab`
   writes the Controller/Model/View triad and its controls panel under
   `poriscope/plugins/analysistabs/`, subclassing `MetaController`/`MetaModel`/`MetaView`.
