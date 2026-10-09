@@ -15,6 +15,7 @@ Coverage targets:
 - construct_fitted_event (None paths)
 - get_plot_features (None paths + Some/All/None plot feature paths)
 - _init / _pre_process_events / _post_process_events / _validate_settings / close_resources
+- redefine_padding (the uncalled CUSUM detector: its reset rule and edge guard)
 - _gaussian_intersection
 - _fit_double_gaussian_bounded_at_valley
 - _fit_least_smoothed_spline
@@ -31,6 +32,10 @@ import numpy as np
 from poriscope.plugins.eventfitters.PeakFinder import (
     PeakFinder,
     _ClassificationWarningCollector,
+)
+from tests.unit.plugins.eventfitters.test_cusum import (
+    _filtered_sigma,
+    _filtered_staircase,
 )
 
 # ---------------------------------------------------------------------------
@@ -1081,7 +1086,7 @@ class TestDefineEventMetadata(unittest.TestCase):
 
     def test_event_units_duration(self):
         u = self.pf._define_event_metadata_units()
-        self.assertEqual(u["duration"], "μs")
+        self.assertEqual(u["duration"], "us")
         self.assertEqual(u["raw_ecd"], "pC")
         self.assertEqual(u["max_deviation"], "pA")
 
@@ -1467,6 +1472,78 @@ class TestNoopOverrides(unittest.TestCase):
         }
         for key, value in expected.items():
             self.assertEqual(settings[key]["Value"], value, key)
+
+
+# ---------------------------------------------------------------------------
+# redefine_padding - the CUSUM change-point detector, kept but not called
+# ---------------------------------------------------------------------------
+
+
+def _make_detector(min_carrier_blockage):
+    """
+    Return a PeakFinder for ``redefine_padding``, which reads one setting.
+
+    The CUSUM step size and threshold are both ``min_carrier_blockage / (2 sigma)``,
+    and steps smaller than ``min_carrier_blockage / 4`` are merged away.
+    """
+    pf = _make_pf()
+    pf.settings["Min Carrier Blockage"] = {"Value": min_carrier_blockage}
+    return pf
+
+
+class TestRedefinePaddingDetector(unittest.TestCase):
+    """
+    ``redefine_padding`` is a copy of the CUSUM detector, held to CUSUM's rules: the
+    statistics restart at every threshold crossing, the running variance with them, and
+    a jump within a rise time of either end of its sublevel is not an edge. Its rise time
+    is one microsecond, so ``samplerate`` sets it in samples.
+    """
+
+    def test_the_steps_after_an_accepted_edge_are_found(self):
+        # An instantaneous 200 sigma edge, then two 10 sigma steps 50 samples apart.
+        # If the running variance survives the reset at the first edge, it carries
+        # that edge (thousands of sigma squared) and the log-likelihoods, which scale
+        # as one over it, do not reach the threshold before the next step arrives.
+        rng = np.random.RandomState(0)
+        levels = np.concatenate(
+            [np.zeros(100), np.full(50, -200.0), np.full(50, -210.0)]
+            + [np.full(50, -220.0), np.zeros(100)]
+        )
+        data = levels + rng.normal(0.0, 1.0, levels.size)
+        edges = _make_detector(20.0).redefine_padding(data, 1e6, 1.0)
+        self.assertEqual(len(edges), 6, list(edges))
+        for found, planted in zip(edges, [0, 100, 150, 200, 250, 350]):
+            self.assertLessEqual(abs(int(found) - planted), 2, list(edges))
+
+    def test_a_rejected_crossing_restarts_the_statistics(self):
+        # The Bessel-filtered staircase CUSUM is tested against: a 64 sigma leading
+        # edge at 100, then 24 sigma steps at 140, 180 and 220. The first crossing
+        # fires on the leading edge's ramp and the next one is rejected for falling
+        # within a rise time of it; unless that rejected crossing restarts the
+        # statistics, the variance keeps the ramp and the steps at 180 and 220 are
+        # never seen. The step at 140 is missed either way, because this detector's
+        # threshold is its bare step size, which fires at the start of the ramp
+        # rather than past it.
+        sigma = _filtered_sigma()
+        data = _filtered_staircase()
+        pf = _make_detector(20.0 * sigma)
+        edges = [int(e) for e in pf.redefine_padding(data, 1e6, sigma)]
+        for planted in (100, 180, 220):
+            self.assertTrue(any(abs(e - planted) <= 3 for e in edges), edges)
+
+    def test_a_jump_within_a_rise_time_of_the_end_is_not_an_edge(self):
+        # Three clean plateaus and a step three samples before the end. At 8 MHz the
+        # rise time is eight samples, so the last step cannot open a sublevel long
+        # enough to average; the guard applies to a rise and a fall alike.
+        rng = np.random.RandomState(0)
+        for sign in (1.0, -1.0):
+            with self.subTest(sign=sign):
+                levels = sign * np.concatenate(
+                    [np.zeros(100), np.full(100, 50.0), np.zeros(97), np.full(3, 50.0)]
+                )
+                data = levels + rng.normal(0.0, 1.0, levels.size)
+                edges = _make_detector(20.0).redefine_padding(data, 8e6, 1.0)
+                np.testing.assert_array_equal(edges, [0, 100, 200, 300])
 
 
 # ---------------------------------------------------------------------------

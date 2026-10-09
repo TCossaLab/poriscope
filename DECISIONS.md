@@ -285,6 +285,13 @@ sublevels hit them before), so they are deleted rather than flagged in metadata.
 **Revisit if** a recording shows the reset on a rejected crossing discarding evidence of a
 true transition that the gated form would have kept.
 
+**Landed in PeakFinder 2026-10-09** (Kyle: fix it although it is uncalled). `redefine_padding`
+takes the same reset, `varS` reset and end guard; no results move, its one call site being
+commented out. Its threshold is still the bare step size, not `_calculate_threshold`, so on the
+staircase above it fires at the start of the 64 σ ramp, the variance takes the rest of it, and
+the step at 140 is missed with either reset (edges `[0, 98, 178, 217]`; `[0, 98, 219]` before).
+Left as it is while the method is uncalled; revisit if it is ever wired back in.
+
 ---
 
 ## 2026-10-06 - A filter declares the settings its data must match; the caller verifies

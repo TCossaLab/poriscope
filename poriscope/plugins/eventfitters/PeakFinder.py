@@ -999,33 +999,37 @@ class PeakFinder(MetaEventFitter):
                     gneg[k - 1] + logn, 0
                 )  # accumulate or reset negative decision function
                 if gpos[k] > threshold or gneg[k] > threshold:
-                    jump_accepted = False
-
+                    # The same detector as CUSUM._locate_sublevel_transitions, which
+                    # explains both rules: a jump must leave a sublevel longer than the
+                    # rise time on either side, and the statistics restart at every
+                    # crossing, accepted or not, so that the variance never absorbs an
+                    # edge and blinds the detector to the steps after it.
                     if gpos[k] > threshold:  # significant positive jump detected
                         jump = 1 + anchor + np.argmin(cpos[anchor : k + 1])
-                        # Note: C also checks `length - jump > rise_time` here,
-                        # you may want to add that to match C perfectly!
-                        if jump - edges[num_states] > rise_time:
+                        if (
+                            jump - edges[num_states] > rise_time
+                            and length - jump > rise_time
+                        ):
                             edges = np.append(edges, jump)
                             num_states += 1
-                            jump_accepted = True
 
                     if gneg[k] > threshold:  # significant negative jump detected
                         jump = 1 + anchor + np.argmin(cneg[anchor : k + 1])
-                        if jump - edges[num_states] > rise_time:
+                        if (
+                            jump - edges[num_states] > rise_time
+                            and length - jump > rise_time
+                        ):
                             edges = np.append(edges, jump)
                             num_states += 1
-                            jump_accepted = True
 
-                    if jump_accepted:
-                        anchor = k
-                        cpos[0 : len(cpos)] = 0
-                        cneg[0 : len(cneg)] = 0
-                        gpos[0 : len(gpos)] = 0
-                        gneg[0 : len(gneg)] = 0
-                        mean = data[anchor]
-                        varM = data[anchor]
-            varS = 0
+                    anchor = k
+                    cpos[0 : len(cpos)] = 0
+                    cneg[0 : len(cneg)] = 0
+                    gpos[0 : len(gpos)] = 0
+                    gneg[0 : len(gneg)] = 0
+                    mean = data[anchor]
+                    varM = data[anchor]
+                    varS = 0
             edges = np.append(edges, length)  # mark the end of the event as an edge
             num_states += 1
 
@@ -2048,7 +2052,7 @@ class PeakFinder(MetaEventFitter):
         metadata_units: Dict[str, Optional[str]] = {}
 
         metadata_units["number_peaks"] = None
-        metadata_units["duration"] = "μs"
+        metadata_units["duration"] = "us"
         metadata_units["raw_ecd"] = "pC"
         metadata_units["max_deviation"] = "pA"
         metadata_units["baseline_current"] = "pA"

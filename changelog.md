@@ -76,6 +76,8 @@
 
 * An event loader's status report for one channel now describes that channel only
 
+* `PeakFinder.redefine_padding` now finds edges by the CUSUM family's rules, so it sees the steps after a large edge
+
 ### Analysis Tabs:
 
 * `get_save_filename` now lives once on `MetaView` instead of in four Views
@@ -87,6 +89,8 @@
 * **Fixed the Windows log file dropping any line containing `μ`**
 
 * **Fixed PeakFinder sometimes skipping its classification** when two channels finished fitting at the same time
+
+* PeakFinder and Basic_PeakFinder now give durations, and Basic_PeakFinder its time settings, in `us` like every other plugin; a database written before keeps `μs`
 
 * The Metadata tab's overlays and all-points histograms and the Protein tab's blockage now use every padding sample; a padding could lose up to a few samples at MHz sample rates
 

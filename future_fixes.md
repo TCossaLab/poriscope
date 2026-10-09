@@ -47,16 +47,6 @@ promotion updates `.duplication-baseline.json` in the same commit; each track ed
 step sections here and its own changelog lines, and rebases onto `develop` before `feature finish`.
 Step 10 waits for both tracks.
 
-### Step 8 - data-plugin API break (breaking)
-
-Design ruled by Kyle 2026-10-09 (plan page, step 8 Q1-Q6), replacing the 2026-09-22 scope. The
-PeakFinder changes below are approved by Nada (2026-10-09).
-
-- **`PeakFinder.py:1019-1045` carries the CUSUM detector step 5 fixed**: reset only on an accepted
-  jump and `varS = 0` outside the reset (`:1045`). Apply `CUSUM.py:315-330`'s form.
-- **`"μs"` where every other plugin writes `"us"`**: `PeakFinder.py:2068`, `Basic_PeakFinder.py:1197`
-  and four settings labels at `Basic_PeakFinder.py:127-140`.
-
 ### Step 9a - analysis-tab views (Carolina's track)
 
 - **The experiment/channel scope has three annotations for one value.** The tab layer declares
