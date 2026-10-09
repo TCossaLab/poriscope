@@ -31,9 +31,9 @@
   },
   "datareaders": {
     "files": 8,
-    "functions": 93,
+    "functions": 85,
     "identical_bodies": 13,
-    "removable_lines": 364
+    "removable_lines": 348
   },
   "eventfinders": {
     "files": 3,

@@ -20,6 +20,10 @@
 
 * **Results can move by one sample at a chunk boundary:** reads now round to the nearest sample, so a chunk boundary no longer duplicates one sample and drops another
 
+* **An int16 ABF file with a non-zero instrument or signal offset now converts as `pyabf` does, the offset added after the gain** instead of folded into it; none of the lab's recordings has one
+
+* **`TCossaLabABFReader` and `LegacyElementsReader` now refuse a file whose current channel's units are not a current**, instead of reading it as pA, and no longer refuse a file for its ADC channel count or channel names
+
 #### Data plugin API:
 
 * **`MetaEventFinder.get_single_event_data` now raises `IndexError` for an index with no event (negative included) instead of returning `None`, and a reader or filter error keeps its own message**; `get_event_data_generator` still yields `None` for an event it cannot read
@@ -31,6 +35,8 @@
 * **`reset_channel` now requires a channel on every data plugin**, as do `MetaDatabaseWriter._initialize_database` and `_write_experiment_metadata`; a filter inherits a do-nothing reset from `MetaFilter` and need not define one
 
 * **`BaseDataPlugin.replace_raw_settings_option` is removed**; it never changed anything, since a setting naming another plugin holds no `Options`
+
+* **`TCossaLabABFReader` and `LegacyElementsReader` are now subclasses of `ABFReader`**, `LegacyElementsReader` no longer of `TCossaLabABFReader`, and `poriscope.plugins.datareaders.helpers.ABF2Header` is removed
 
 * **`MetaEventFitter._post_process_events` now runs once per run, with the run's channels, after every channel has finished**, rather than once per channel; it does nothing by default, and an override must take `channels`
 
@@ -70,6 +76,8 @@
 
 * A `real_data` test tier checks the readers against real recordings in `PORISCOPE_REAL_DATA_DIR`, skipped where it is unset
 
+* The test suite's synthetic ABF2 files are now valid ABF2 that `pyabf` opens
+
 * The test suite now runs the scripting guide's code end to end
 
 * The plugin compliance test now also checks every override of a concrete base method against the base's signature
@@ -93,6 +101,8 @@
 ### User-Facing Behaviour:
 
 #### General:
+
+* **New Data Plugin: `ABFReader`** opens any ABF1 or ABF2 file `pyabf` can open, gap-free or episodic, with settings for the ADC channel that records current and the sweep to read; `pyabf` is now a dependency
 
 * **Fixed the Windows log file dropping any line containing `μ`**
 

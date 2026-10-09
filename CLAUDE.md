@@ -86,7 +86,9 @@ Three rules apply regardless:
   `python scripts/new_plugin.py MetaEventFinder MyFinder` (`--list` shows the eight
   data-plugin families, the `AnalysisTab` keyword and every shipped plugin). Signatures and
   docstrings are copied from the base verbatim, which is what the compliance test's
-  exact-equality comparison requires.
+  exact-equality comparison requires. The generated file is only the start: the skill lists
+  the repository registrations a new plugin also needs (duplication families, conformance
+  recipes, `exposed.py`, the user guide).
 - New analysis tab: generate it too - `python scripts/new_plugin.py AnalysisTab MyTab`
   writes the Controller/Model/View triad and its controls panel under
   `poriscope/plugins/analysistabs/`, subclassing `MetaController`/`MetaModel`/`MetaView`.

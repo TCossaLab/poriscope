@@ -17,3 +17,4 @@ sphinx-tabs==3.4.7
 furo==2024.8.6
 scikit-learn==1.6.1
 hdbscan==0.8.44
+pyabf==2.3.8

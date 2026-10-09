@@ -6,8 +6,8 @@ These tests open recordings the instruments themselves produced, one per shipped
 reader and format variant, and pin what the shipped conversion reports for each: the
 sample rate, the channels, every channel's length and file count, and the median of the
 first second, the last second and (for a multi-file set) a second straddling the first
-file boundary, in picoamps. The medians are the goldens a replacement parser must
-match - the pyabf wrapper the ABF readers are moving to, in particular.
+file boundary, in picoamps. The medians are the goldens any change to a reader must
+match; the ABF readers' move onto ``ABFReader`` and ``pyabf`` reproduced them.
 
 The recordings are gigabytes each and never enter the repository. The tests carry the
 ``real_data`` marker and take the ``real_data_dir`` fixture, which resolves the directory

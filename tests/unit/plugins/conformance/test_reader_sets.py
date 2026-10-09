@@ -15,9 +15,9 @@ What is pinned, and why each is red or green today (2026-10-05):
   of every channel; until then it compared only each channel's first file, and the set
   was read at that file's rate.
 - An int16 ABF file with non-trivial gains and both offsets reads back the planted
-  picoamps through the shipped parser. Green, and it pins the arithmetic ruling H
-  declares correct, including the ABF2 convention that folds both offsets into the scale
-  factor; a parser swap (pyabf) has this to match.
+  picoamps through the shipped reader. Green, and it pins the arithmetic: codes times the
+  gain, with the offsets added after it as pyabf applies them (step 2b's ruling, which
+  replaced folding the offsets into the gain).
 """
 
 from dataclasses import replace
@@ -173,18 +173,19 @@ def test_the_int16_abf_config_exercises_every_gain_field() -> None:
     assert c.adc_programmable_gain != 1.0
     assert c.telegraph_enable and c.telegraph_addit_gain != 1.0
     assert c.instrument_offset != 0.0 and c.signal_offset != 0.0
-    # 1/(0.5*2*4*0.001) * 10/32768 + 0.02 - 0.005 = 0.0763 + 0.015 = about 0.091 pA/code,
-    # which puts a 2000 pA baseline near 22k codes and the 15 pA noise at 160 codes.
+    # 1/(0.5*2*4*0.001) * 10/32768 = about 0.0763 pA/code, which puts a 2000 pA baseline
+    # near 26k codes and the 15 pA noise at 200 codes.
     assert 0.05 < c.pa_per_code() < 0.5, c.pa_per_code()
-    # And the offsets are visible in it: without them the factor would be 0.0305.
-    neutral = replace(c, instrument_offset=0.0, signal_offset=0.0)
-    assert c.pa_per_code() != pytest.approx(neutral.pa_per_code(), rel=1e-6)
+    # And the offsets are visible: 0.02 - 0.005 = 0.015 pA is about a fifth of a code, so
+    # a reader that drops or folds them leaves samples off the whole-code grid.
+    in_codes = c.pa_offset() / c.pa_per_code()
+    assert abs(in_codes - round(in_codes)) > 0.1, in_codes
 
 
 def test_an_int16_abf_file_reads_back_the_planted_picoamps(tmp_path: Path) -> None:
     """
-    The shipped parser reconstructs picoamps from codes through the full gain stack,
-    offsets folded into the scale factor as the format has it.
+    The shipped reader reconstructs picoamps from codes through the full gain stack, the
+    offsets added after it as pyabf applies them.
     """
     dataset = generate_abf2_modern_dataset(
         tmp_path, INT16_ABF_CONFIG, num_events=5, seed=3
@@ -209,8 +210,8 @@ def test_an_int16_abf_file_reads_back_the_planted_picoamps(tmp_path: Path) -> No
         assert event_mean == pytest.approx(
             READER_BASELINE_PA + READER_EVENT_AMPLITUDE_PA, abs=MEAN_TOLERANCE_PA
         ), f"event {event_mean:.1f} pA"
-        # Quantisation shows: every sample is an integer number of codes.
-        codes = data / INT16_ABF_CONFIG.pa_per_code()
+        # Quantisation shows: every sample is a whole number of codes plus the offset.
+        codes = (data - INT16_ABF_CONFIG.pa_offset()) / INT16_ABF_CONFIG.pa_per_code()
         assert np.allclose(codes, np.round(codes), atol=1e-6)
     finally:
         reader.close_resources()
