@@ -54,6 +54,8 @@
 
 * **Breaking:** `set_event_id_input` has moved from `MetadataControls` and `ProteinControls` to `MetaSubsetTabControls`, which now requires its subclasses to implement `validate_inputs`
 
+* **Breaking:** `_shift_range_and_update_plot` has moved from `MetadataView` and `ProteinView` to `MetaSubsetTabView`, which now requires its subclasses to implement `_replot_after_shift`
+
 ### Developer Tooling:
 
 * The release workflow now runs only when a version tag is pushed
@@ -179,6 +181,8 @@
 * Quitting now closes every plugin even when one fails to close
 
 * The Protein tab's event navigation arrows now say on the status panel when no experiment or channel is in scope, as the Metadata tab's do
+
+* **Fixed the Metadata and Protein tabs' event navigation arrows skipping an event when the Event ID is past the last filtered event**; right now goes to the first filtered event and left to the last, and the status panel says the Event ID had no match
 
 ### Documentation:
 

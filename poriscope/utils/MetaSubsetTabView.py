@@ -24,6 +24,7 @@
 # Alejandra Carolina González González
 # Kyle Briggs
 
+import bisect
 import copy
 import logging
 import os
@@ -83,6 +84,9 @@ class MetaSubsetTabView(MetaView):
     - **The filtered event_id cache.** ``_rebuild_event_id_cache`` queries every
       event_id matching the current filter and scope, sorted, and keeps the four
       ``current_*``/``filtered_event_ids`` values the staleness checks compare.
+    - **Event navigation.** ``_shift_range_and_update_plot`` steps the Event ID
+      through that cache, wrapping at both ends, and re-plots through
+      ``_replot_after_shift``.
 
     What a subclass owes it:
 
@@ -92,6 +96,8 @@ class MetaSubsetTabView(MetaView):
       follows for its shared code.
     - **``_subset_controls``**, a one-line property returning whatever name the tab
       holds its controls panel under, so the shared methods here can reach it.
+    - **``_replot_after_shift``**, which re-plots after navigation in whichever
+      display the tab is showing.
     - **The five abstract methods ``MetaView`` declares**, unchanged - this base
       implements none of them.
 
@@ -850,6 +856,85 @@ class MetaSubsetTabView(MetaView):
         return True
 
     @log(logger=logger)
+    def _shift_range_and_update_plot(
+        self, parameters: Dict[str, Any], direction: str
+    ) -> None:
+        """
+        Step the Event ID through the cached filtered event_ids, then re-plot.
+
+        Navigation starts from the first cached event_id at or after the one entered,
+        and moves ``n_events`` places, wrapping at both ends: right past the last id
+        goes to the first, left past the first goes to the last ``n_events``. An
+        entered id past every cached one sits just past the end, so right goes to the
+        first id and left to the last, and the status panel says the entered id had no
+        match. Plotting that same id, rather than navigating from it, starts at the
+        first id instead. The cache is rebuilt first if the filter or the scope no
+        longer match it.
+
+        :param parameters: the controls panel's parameters; reads ``db_loader``, ``event_id`` and ``n_events``
+        :type parameters: Dict[str, Any]
+        :param direction: ``"left"`` or ``"right"``
+        :type direction: str
+        """
+        loader = parameters.get("db_loader", "")
+        event_id = parameters.get("event_id") or 0
+        n_events = parameters.get("n_events") or 1
+
+        selected_filters = self.get_selected_filters()
+        if not selected_filters:
+            selected_filters = {"Full Dataset": ""}
+        sql_filter = next(iter(selected_filters.values()))
+
+        exp_and_ch = self.selected_experiment_and_channels_by_loader.get(loader)
+        if not exp_and_ch:
+            self.add_text_to_display.emit(
+                "No experiments or channels are in scope, select at least one to "
+                "navigate events",
+                self.__class__.__name__,
+            )
+            return
+
+        exp = next(iter(exp_and_ch.keys()))
+        selected_channel = next(iter(exp_and_ch.values()))[0]
+        channel = int(selected_channel) if selected_channel is not None else None
+
+        if (
+            not self.filtered_event_ids
+            or sql_filter != self.current_sql_filter
+            or exp != self.current_experiment
+            or channel != self.current_channel
+        ):
+            if not self._rebuild_event_id_cache(loader, sql_filter, exp, channel):
+                return
+
+        ids = self.filtered_event_ids
+        n = len(ids)
+
+        current_idx = bisect.bisect_left(ids, event_id)
+        if current_idx == n:
+            self.add_text_to_display.emit(
+                f"No filtered event at or after Event ID {event_id}, so navigation "
+                "continues from the end of the filtered events",
+                self.__class__.__name__,
+            )
+
+        if direction == "right":
+            next_idx = current_idx + n_events
+            if next_idx >= n:
+                next_idx = 0
+        else:
+            next_idx = current_idx - n_events
+            if next_idx < 0:
+                next_idx = max(0, n - n_events)
+
+        new_event_id = ids[next_idx]
+        self._subset_controls.set_event_id_input(new_event_id)
+
+        new_params = parameters.copy()
+        new_params["event_id"] = new_event_id
+        self._replot_after_shift(new_params)
+
+    @log(logger=logger)
     def _record_selection(self, parameters: Dict[str, Any]) -> None:
         """
         Put the current filter and channel selection into a plot's parameters.
@@ -899,6 +984,15 @@ class MetaSubsetTabView(MetaView):
 
         :return: the panel built by ``_build_controls``
         :rtype: MetaSubsetTabControls
+        """
+
+    @abstractmethod
+    def _replot_after_shift(self, parameters: Dict[str, Any]) -> None:
+        """
+        Re-plot after event navigation, in whichever display the tab is showing.
+
+        :param parameters: the navigation parameters, with ``event_id`` moved to the new event
+        :type parameters: Dict[str, Any]
         """
 
     @log(logger=logger)

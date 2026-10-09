@@ -355,7 +355,6 @@ def test_metadata_events_and_filters(
 
     def _simulate_shift(event_id, direction):
         idx = bisect.bisect_left(ids, event_id)
-        idx = min(idx, n - 1)
         if direction == "right":
             next_idx = idx + n_events
             if next_idx >= n:

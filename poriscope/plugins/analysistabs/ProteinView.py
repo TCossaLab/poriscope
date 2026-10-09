@@ -1153,81 +1153,21 @@ class ProteinView(MetaSubsetTabView):
             self._handle_other_actions(action_name, parameters)
 
     # -------------------------------------------------------------------------
-    # Filter-aware event_id cache navigation
+    # Event navigation
     # -------------------------------------------------------------------------
 
     @log(logger=logger)
-    def _shift_range_and_update_plot(self, parameters: dict, direction: str) -> None:
+    def _replot_after_shift(self, parameters: Dict[str, Any]) -> None:
         """
-        Navigate filtered event_ids by n_events steps in the given direction
-        with wrap-around at both ends, then trigger a plot update.
+        Re-plot after navigation in the display last requested: histogram or events.
 
-        :param parameters: Action parameters from ProteinControls (must contain
-                           'db_loader', 'event_id', 'n_events').
-        :type parameters: dict
-        :param direction: 'left' (backward) or 'right' (forward).
-        :type direction: str
+        :param parameters: the navigation parameters, with ``event_id`` moved to the new event
+        :type parameters: Dict[str, Any]
         """
-        loader = parameters.get("db_loader", "")
-
-        selected_filters = self.get_selected_filters()
-        if not selected_filters:
-            selected_filters = {"Full Dataset": ""}
-
-        experiments_and_channels = self.selected_experiment_and_channels_by_loader.get(
-            loader
-        )
-        if not experiments_and_channels:
-            self.add_text_to_display.emit(
-                "No experiments or channels are in scope, select at least one to "
-                "navigate events",
-                self.__class__.__name__,
-            )
-            return
-
-        sql_filter = next(iter(selected_filters.values()))
-        exp = next(iter(experiments_and_channels.keys()))
-        selected_channel = next(iter(experiments_and_channels.values()))[0]
-        channel = int(selected_channel) if selected_channel is not None else None
-
-        # Rebuild cache if the filter/scope has changed or the cache is empty
-        if (
-            not self.filtered_event_ids
-            or sql_filter != self.current_sql_filter
-            or exp != self.current_experiment
-            or channel != self.current_channel
-        ):
-            if not self._rebuild_event_id_cache(loader, sql_filter, exp, channel):
-                return
-
-        cache = self.filtered_event_ids
-        event_id = parameters.get("event_id") or 0
-        n_events = parameters.get("n_events") or 1
-
-        # Find current position; bisect_left snaps to the first id >= event_id
-        idx = bisect.bisect_left(cache, event_id)
-        if idx >= len(cache):
-            idx = 0
-
-        if direction == "right":
-            next_idx = idx + n_events
-            if next_idx >= len(cache):
-                next_idx = 0  # wrap to beginning
-        else:
-            next_idx = idx - n_events
-            if next_idx < 0:
-                next_idx = max(0, len(cache) - n_events)  # wrap to end
-
-        new_event_id = cache[next_idx]
-        self.proteincontrols.set_event_id_input(new_event_id)
-
-        new_params = parameters.copy()
-        new_params["event_id"] = new_event_id
-
         if self._last_event_action == "plot_histogram":
-            self._handle_plot_histogram(new_params)
+            self._handle_plot_histogram(parameters)
         else:
-            self._handle_plot_events(new_params)
+            self._handle_plot_events(parameters)
 
     @log(logger=logger)
     def _fetch_event_data(
