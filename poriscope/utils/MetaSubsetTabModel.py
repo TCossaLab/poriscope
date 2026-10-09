@@ -111,7 +111,7 @@ class MetaSubsetTabModel(MetaModel):
         self,
         loader: str,
         db_ids: str,
-        experiments_and_channels: Optional[Dict[str, List[Optional[int]]]],
+        experiments_and_channels: Optional[Dict[str, Optional[List[int]]]],
     ) -> Optional[Generator]:
         """
         Load exactly the rows named by their database ids.
@@ -125,7 +125,7 @@ class MetaSubsetTabModel(MetaModel):
         :param db_ids: the comma-separated primary keys to load
         :type db_ids: str
         :param experiments_and_channels: the scope handed on to the loader
-        :type experiments_and_channels: Optional[Dict[str, List[Optional[int]]]]
+        :type experiments_and_channels: Optional[Dict[str, Optional[List[int]]]]
         :return: a generator over the matching events, or None
         :rtype: Optional[Generator]
         """

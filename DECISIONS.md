@@ -97,6 +97,37 @@ run-wide step after aborting a channel.
 
 ---
 
+## 2026-10-09 - The `experiments_and_channels` shape stays `Optional[Dict[str, Optional[List[int]]]]`; two adjacent shapes left alone
+
+**Context.** Step 9a's first item unified 10 analysis-tab-layer signatures that declared
+`experiments_and_channels` backwards (`List[Optional[int]]`) or as an unrelated third shape
+(`List[str]`), onto the form `MetaDatabaseLoader` and the real producer
+(`MetaSubsetTabView._rebuild_event_id_cache`) already use. Tracing the runtime shape
+surfaced two adjacent, pre-existing behaviors worth ruling on rather than silently leaving
+for someone to re-discover and get nervous about.
+
+**Decision** (Carolina, 2026-10-09). Both left as-is, not fixed:
+- `MetaDatabaseLoader._id_tuple` raising `ValueError` on a channel list containing only
+  `None` (e.g. `{"exp1": [None]}`) is intentional: `tests/unit/utils/test_meta_database_loader.py:1088-1092`
+  pins it as the expected refusal for a malformed per-experiment value. `None` is only
+  meaningful as the whole per-experiment value ("all channels"), never as a list member.
+- `MetadataView._overlay_plot`'s `{None: [None]}` "nothing selected" sentinel
+  (`MetadataView.py:1419-1420`) reaches `MetaDatabaseLoader.construct_metadata_query`'s
+  `KeyError(f"Could not find experiment ID(s) for: {exp_name}")` guard, but that `KeyError`
+  is already caught by `load_metadata_subset`/`_fetch_event_subset`'s own
+  `try/except Exception` and reported to the status panel. Reachable, but already a caught,
+  reported refusal - not silent wrong output, not a crash.
+
+**Rejected.** Fixing either: neither is a defect introduced or exposed by the annotation
+unification, and folding a second, unrelated logic change into a type-consistency fix risks
+conflating two different kinds of change in one commit.
+
+**Revisit if** the `{None: [None]}` sentinel's error message ("...for: None") is reported as
+confusing by a user - then it is a small, separate wording fix in `MetadataView._overlay_plot`
+and its `ProteinView` counterparts, not a behavior change.
+
+---
+
 ## 2026-10-08 - A plugin keeps its own copy of its settings; history comes from the plugin
 
 **Context.** `apply_settings` stored the caller's dict and wrote plugin keys back into it. The

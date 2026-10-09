@@ -115,7 +115,7 @@ class MetaSubsetTabController(MetaController):
         event_ids: List[int],
         exp: Optional[str],
         channel: Optional[int],
-        experiments_and_channels: Optional[Dict[str, List[Optional[int]]]],
+        experiments_and_channels: Optional[Dict[str, Optional[List[int]]]],
         action_label: str,
     ) -> None:
         """
@@ -144,7 +144,7 @@ class MetaSubsetTabController(MetaController):
         :param channel: the channel the events belong to, or None for all channels
         :type channel: Optional[int]
         :param experiments_and_channels: the scope handed on to ``load_event_data``
-        :type experiments_and_channels: Optional[Dict[str, List[Optional[int]]]]
+        :type experiments_and_channels: Optional[Dict[str, Optional[List[int]]]]
         :param action_label: what the caller is plotting, for its messages
         :type action_label: str
         :return: None
