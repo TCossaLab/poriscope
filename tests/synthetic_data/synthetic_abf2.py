@@ -1,30 +1,35 @@
 """
 Generation of synthetic ABF2 recordings for testing.
 
-Writes a minimal but byte-exact ABF2 file that
+Writes a minimal but byte-exact ABF2 file that both
 ``poriscope.plugins.datareaders.helpers.ABF2Header.ABF2Header`` (the real
-parser both ABF2 readers use) can open. The real format carries a great deal
-of acquisition metadata this codebase never reads; this writer supplies only
-the sections and fields ``ABF2Header._read_abf2_header`` actually consumes,
-zero-filling the rest of each 512-byte block.
+parser both ABF2 readers use) and ``pyabf`` can open; ``test_synthetic_abf2.py``
+checks the second. The real format carries a great deal of acquisition metadata
+this codebase never reads; this writer supplies the sections and fields either
+parser needs, zero-filling the rest of each 512-byte block.
 
 Section layout (block size 512 bytes, block N at byte offset N*512)
 ---------------------------------------------------------------------
 * Block 0: the file header. Fixed absolute offsets that matter:
 
   - bytes 0-3: the literal ``b"ABF2"`` signature.
+  - bytes 4-7: fFileVersionNumber, 2.6.0.0 stored build first. pyabf takes the
+    major version from it.
   - byte 30 (uint16): data format marker. 0 selects int16 ADC codes, any
-    other value selects float32 samples - this writer always uses float32,
-    see "Why float32" below.
+    other value selects float32 samples - see "Why float32" below for the
+    default, and ``Abf2RecordingConfig.data_type`` for the int16 mode.
   - byte 76 (3x uint32/int32, "IIl"): the ProtocolSection pointer,
     (block_index, entry_size, entry_count). Only block_index is read.
   - byte 92: the ADCSection pointer, (block_index, entry_size, num_channels).
-  - byte 220: the StringsSection pointer, (block_index, blob_length, unused).
+  - byte 220: the StringsSection pointer, (block_index, blob_length, 1): one
+    entry, the blob.
   - byte 236: the DataSection pointer, (block_index, bytes_per_value,
-    num_records). num_records is the sample count, not a byte count.
+    num_values). num_values counts every value across the channels, as the
+    lab's recordings do, not a byte count.
 
 * Block 1: the ProtocolSection.
 
+  - +0 (int16): nOperationMode, 3 for one gap-free sweep.
   - +2 (float32): fADCSequenceInterval, in microseconds between samples -
     samplerate = 1e6 / fADCSequenceInterval.
   - +110 (float32): fADCRange.
@@ -102,6 +107,8 @@ ADC_RECORD_STRIDE = 128
 CHANNEL_NAME_UNIT = "pA"
 VOLTAGE_CHANNEL_UNIT = "mV"
 VOLTAGE_CHANNEL_FILL = 200.0
+#: nOperationMode 3: one continuous sweep, as every real recording here is.
+GAP_FREE_OPERATION_MODE = 3
 
 
 @dataclass
@@ -280,6 +287,8 @@ class Abf2RecordingWriter(BaseSyntheticRecordingWriter[Abf2RecordingConfig]):
 
         header = bytearray(BLOCK_SIZE)
         header[0:4] = b"ABF2"
+        # fFileVersionNumber: 2.6.0.0, as the lab's recordings carry, stored build first.
+        header[4:8] = bytes([0, 0, 6, 2])
         is_int16 = config.data_type == "int16"
         if config.data_type not in ("float32", "int16"):
             raise ValueError(
@@ -291,13 +300,14 @@ class Abf2RecordingWriter(BaseSyntheticRecordingWriter[Abf2RecordingConfig]):
         _pack_at(header, 92, "<IIl", adc_block, ADC_RECORD_STRIDE, n)  # ADCSection
         strings_blob = _build_strings_blob(n)
         _pack_at(
-            header, 220, "<IIl", strings_block, len(strings_blob), 0
-        )  # StringsSection
+            header, 220, "<IIl", strings_block, len(strings_blob), 1
+        )  # StringsSection: one entry, the blob
         _pack_at(
-            header, 236, "<IIl", data_block, 2 if is_int16 else 4, trace.size
-        )  # DataSection: bytes per value, then trace.size records
+            header, 236, "<IIl", data_block, 2 if is_int16 else 4, trace.size * n
+        )  # DataSection: bytes per value, then every value across the channels
 
         protocol = bytearray(BLOCK_SIZE)
+        _pack_at(protocol, 0, "<h", GAP_FREE_OPERATION_MODE)  # nOperationMode
         fADCSequenceInterval = 1.0e6 / config.samplerate
         _pack_at(protocol, 2, "<f", fADCSequenceInterval)
         _pack_at(protocol, 110, "<f", config.adc_range)  # fADCRange

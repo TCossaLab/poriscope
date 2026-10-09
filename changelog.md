@@ -66,6 +66,8 @@
 
 * A `real_data` test tier checks the readers against real recordings in `PORISCOPE_REAL_DATA_DIR`, skipped where it is unset
 
+* The test suite's synthetic ABF2 files are now valid ABF2 that `pyabf` opens
+
 * The test suite now runs the scripting guide's code end to end
 
 * The plugin compliance test now also checks every override of a concrete base method against the base's signature
