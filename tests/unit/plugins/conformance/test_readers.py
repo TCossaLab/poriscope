@@ -35,6 +35,7 @@ from poriscope.utils.MetaReader import MetaReader
 from tests.unit.plugins.conformance._recipes import (
     READER_BASELINE_PA,
     READER_EVENT_AMPLITUDE_PA,
+    assert_reports_whole_and_each_channel,
     build_any_reader,
     build_reader_dataset,
     discover_concrete,
@@ -380,3 +381,15 @@ def test_files_with_tied_timestamps_sort_without_comparing_their_data(opened) ->
     ordered = reader._sort_objects_by_channel_and_time([first, second], [0, 0], [7, 7])
 
     assert ordered[0][0] is first and ordered[0][1] is second
+
+
+@pytest.mark.conformance
+def test_the_status_report_covers_the_reader_and_each_channel(opened) -> None:
+    """
+    A reader reports on itself as a whole and on any one channel.
+
+    :param opened: The reader and its dataset ground truth.
+    :type opened: tuple
+    """
+    reader, dataset = opened
+    assert_reports_whole_and_each_channel(reader, dataset.channel, init=True)

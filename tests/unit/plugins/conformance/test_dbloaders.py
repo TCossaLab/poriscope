@@ -24,6 +24,7 @@ from tests.unit.plugins.conformance._recipes import (
     METADATA_CHANNELS,
     METADATA_EVENT_COUNTS,
     METADATA_EXPERIMENT,
+    assert_report_ignores_channel,
     build_db_loader,
     discover_concrete,
 )
@@ -227,3 +228,14 @@ def test_db_loader_releases_its_input_file(db_loader_over_own_copy) -> None:
 def test_at_least_one_db_loader_was_discovered() -> None:
     """Guard against the discovery walk silently finding nothing."""
     assert DB_LOADERS, "no concrete MetaDatabaseLoader subclasses were discovered"
+
+
+@pytest.mark.conformance
+def test_the_status_report_ignores_a_channel(db_loader: MetaDatabaseLoader) -> None:
+    """
+    A database loader reports every experiment and channel, whichever it is given.
+
+    :param db_loader: The configured database loader under test.
+    :type db_loader: MetaDatabaseLoader
+    """
+    assert_report_ignores_channel(db_loader)

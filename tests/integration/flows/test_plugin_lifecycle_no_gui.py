@@ -458,7 +458,7 @@ class TestAPluginThatCannotReportItsStatus:
         def refuse(*args: Any, **kwargs: Any) -> str:
             raise RuntimeError("no status")
 
-        monkeypatch.setattr(CUSUM, "report_channel_status", refuse)
+        monkeypatch.setattr(CUSUM, "report_status", refuse)
 
     def test_it_is_still_created(
         self, controller: DataPluginController, silent: None

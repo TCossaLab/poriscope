@@ -317,7 +317,7 @@ def _make_plugin(mocker: MockerFixture, key: str = "r1") -> MagicMock:
     """
     plugin = mocker.Mock()
     plugin.get_key.return_value = key
-    plugin.report_channel_status.return_value = "ok"
+    plugin.report_status.return_value = "ok"
     return plugin
 
 
@@ -772,7 +772,7 @@ def test_edit_plugin_deletes_plugin_when_result_is_delete_and_no_dependents(
     instance.get_key.return_value = "r1"
     instance.get_parents.return_value = []
     instance.get_dependents.return_value = []
-    instance.report_channel_status.return_value = "ok"
+    instance.report_status.return_value = "ok"
     mock_model.get_plugin_instance.return_value = instance
     mock_model.get_available_metaclasses.return_value = []
     mock_model.get_instantiated_plugins_list.return_value = {"MetaReader": {}}
@@ -805,7 +805,7 @@ def test_edit_plugin_blocks_delete_when_has_dependents(
     instance.get_key.return_value = "r1"
     instance.get_parents.return_value = []
     instance.get_dependents.return_value = [("MetaWriter", "w1")]
-    instance.report_channel_status.return_value = "ok"
+    instance.report_status.return_value = "ok"
     mock_model.get_plugin_instance.return_value = instance
     mock_model.get_available_metaclasses.return_value = []
     mock_model.get_instantiated_plugins_list.return_value = {"MetaReader": ["r1"]}
@@ -834,7 +834,7 @@ def test_edit_plugin_applies_settings_and_emits_history_on_success(
     instance.get_key.return_value = "r1"
     instance.get_parents.return_value = []
     instance.get_dependents.return_value = []
-    instance.report_channel_status.return_value = "ok"
+    instance.report_status.return_value = "ok"
     mock_model.get_plugin_instance.return_value = instance
     mock_model.get_available_metaclasses.return_value = []
     mock_model.get_instantiated_plugins_list.return_value = {"MetaReader": ["r1"]}
@@ -896,7 +896,7 @@ def test_edit_plugin_updates_app_settings_for_metaclass_keys(
     instance.get_key.return_value = "r1"
     instance.get_parents.return_value = []
     instance.get_dependents.return_value = []
-    instance.report_channel_status.return_value = "ok"
+    instance.report_status.return_value = "ok"
     mock_model.get_plugin_instance.return_value = instance
     mock_model.get_available_metaclasses.return_value = ["MetaLoader"]
     mock_model.get_instantiated_plugins_list.return_value = {
@@ -944,7 +944,7 @@ def test_edit_plugin_unregisters_from_parents(
     instance.get_key.return_value = "r1"
     instance.get_parents.return_value = [("MetaLoader", "loader1")]
     instance.get_dependents.return_value = []
-    instance.report_channel_status.return_value = "ok"
+    instance.report_status.return_value = "ok"
     parent_instance = mocker.Mock()
     mock_model.get_plugin_instance.side_effect = lambda mc, k: (
         instance if k == "r1" else parent_instance
@@ -982,7 +982,7 @@ def test_edit_plugin_rename_key_updates_dependents_and_emits(
     )
     instance.get_parents.return_value = []
     instance.get_dependents.return_value = []
-    instance.report_channel_status.return_value = "ok"
+    instance.report_status.return_value = "ok"
     mock_model.get_plugin_instance.return_value = instance
     mock_model.get_available_metaclasses.return_value = []
     mock_model.get_instantiated_plugins_list.return_value = {"MetaReader": ["r1"]}
@@ -1048,7 +1048,7 @@ def test_edit_plugin_rename_with_dependents_updates_them(
     instance.get_key.return_value = "r1"
     instance.get_parents.return_value = []
     instance.get_dependents.return_value = [("MetaWriter", "w1")]
-    instance.report_channel_status.return_value = "ok"
+    instance.report_status.return_value = "ok"
 
     dinstance = mocker.Mock()
     dinstance.get_key.return_value = "w1"
@@ -1163,7 +1163,7 @@ def test_edit_plugin_rename_resolves_metaclass_references_in_app_settings(
     instance.get_key.return_value = "r1"
     instance.get_parents.return_value = []
     instance.get_dependents.return_value = []
-    instance.report_channel_status.return_value = "ok"
+    instance.report_status.return_value = "ok"
 
     loader_instance = mocker.Mock()
     mock_model.get_plugin_instance.side_effect = lambda mc, k: (
@@ -1342,7 +1342,7 @@ def test_edit_plugin_reports_a_dependent_with_no_instance_and_keeps_going(
     instance.get_key.return_value = "r1"
     instance.get_parents.return_value = set()
     instance.get_dependents.return_value = [("MetaFitter", "d1")]
-    instance.report_channel_status.return_value = "ok"
+    instance.report_status.return_value = "ok"
 
     # The dependent resolves to nothing, which is what raises inside the loop.
     mock_model.get_plugin_instance.side_effect = lambda mc, k: (
@@ -1742,7 +1742,7 @@ class TestRenamePlugin:
             ("MetaFilter", "f1"),
             ("MetaFilter", "f2"),
         }
-        instance.report_channel_status.return_value = "ok"
+        instance.report_status.return_value = "ok"
         listing, stale = mocker.Mock(), mocker.Mock()
         listing.get_dependents.return_value = {("MetaReader", "r1")}
         stale.get_dependents.return_value = set()

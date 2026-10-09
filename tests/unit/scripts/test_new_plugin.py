@@ -41,7 +41,7 @@ SCRIPT = Path(REPO_ROOT, "scripts", "new_plugin.py")
 # One variant per shape that exists today: a second-level subclass overriding an abstract
 # method of its family plus a non-abstract hook, and one overriding only a hook.
 VARIANTS = [
-    ("ClassicBlockageFinder", ["_find_events_in_chunk", "report_channel_status"]),
+    ("ClassicBlockageFinder", ["_find_events_in_chunk", "report_status"]),
     ("SQLiteDBLoader", ["get_plot_features"]),
 ]
 

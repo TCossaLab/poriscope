@@ -35,7 +35,7 @@ def test_metadata_and_clustering_instantiation_pipeline_no_gui(sample_metadata_d
     loader.apply_settings(settings)
 
     # 2) Simple smoke call (ensure no exception)
-    _ = loader.report_channel_status(init=True)
+    _ = loader.report_status(init=True)
 
     # Use MetaDatabaseLoader-style API: experiments -> channels per experiment
     experiments = loader.get_experiment_names()

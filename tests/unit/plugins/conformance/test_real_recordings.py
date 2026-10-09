@@ -181,7 +181,7 @@ def open_recording(real_data_dir: Path, recording: RealRecording) -> MetaReader:
     settings = reader.get_empty_settings(standalone=True)
     settings["Input File"]["Value"] = str(files[0])
     reader.apply_settings(settings)
-    reader.report_channel_status(init=True)
+    reader.report_status(init=True)
     return reader
 
 

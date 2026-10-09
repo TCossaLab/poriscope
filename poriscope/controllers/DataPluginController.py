@@ -337,7 +337,7 @@ class DataPluginController(QObject):
         :type key: str
         """
         try:
-            status = instance.report_channel_status(channel=None, init=True)
+            status = instance.report_status(channel=None, init=True)
         except Exception as e:
             self._report(
                 self.logger.warning, f"Unable to report the status of {key}: {str(e)}"

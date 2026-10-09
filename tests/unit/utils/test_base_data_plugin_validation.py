@@ -40,9 +40,7 @@ class ConcretePlugin(BaseDataPlugin):
     ) -> Dict[str, Dict[str, Any]]:
         return {}
 
-    def report_channel_status(
-        self, channel: Optional[int] = None, init: bool = False
-    ) -> str:
+    def report_status(self, channel: Optional[int] = None, init: bool = False) -> str:
         return ""
 
     def close_resources(self, channel: Optional[int] = None) -> None:

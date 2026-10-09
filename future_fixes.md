@@ -241,7 +241,7 @@ Tab state onto the Models, heavy work off the GUI thread, event-finder and CUSUM
   moving a slot to a worker would queue the call and the read would get `None` - silently
   "no data" rather than loudly wrong.
 - **Oversized units, measured 2026-09-24.** 13 functions exceed 300 lines, led by
-  `metadatacontrols.setupUi` (523), `PeakFinder.report_channel_status` (472),
+  `metadatacontrols.setupUi` (523), `PeakFinder.report_status` (472),
   `_classify_peak_prominences` (467), `proteincontrols.setupUi` (438) and
   `MetadataView._overlay_plot` (342); nine of the 13 are in the two PeakFinders.
   `ProteinView.py` is 2,363 lines across 51 methods; `MetadataView.py` 2,828 across 45.

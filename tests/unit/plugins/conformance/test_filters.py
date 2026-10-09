@@ -19,7 +19,11 @@ import numpy as np
 import pytest
 
 from poriscope.utils.MetaFilter import MetaFilter
-from tests.unit.plugins.conformance._recipes import build_filter, discover_concrete
+from tests.unit.plugins.conformance._recipes import (
+    assert_report_ignores_channel,
+    build_filter,
+    discover_concrete,
+)
 
 BASELINE_PA = 2000.0
 NOISE_STD_PA = 15.0
@@ -212,3 +216,15 @@ def test_data_requirements_name_only_the_filters_own_settings(
             ), f"{key} differs from the applied value"
     finally:
         plugin.close_resources()
+
+
+@pytest.mark.conformance
+@filter_cases
+def test_the_status_report_ignores_a_channel(filter_cls: Type[MetaFilter]) -> None:
+    """
+    A filter has no channels, so its report is the same with or without one.
+
+    :param filter_cls: The filter class under test.
+    :type filter_cls: Type[MetaFilter]
+    """
+    assert_report_ignores_channel(build_filter(filter_cls))

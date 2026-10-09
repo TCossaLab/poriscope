@@ -2784,10 +2784,10 @@ class TestTranslocationDirectionRatioRule(unittest.TestCase):
             "peak_type_counts": {},
         }
         with patch(
-            "poriscope.utils.MetaEventFitter.MetaEventFitter.report_channel_status",
+            "poriscope.utils.MetaEventFitter.MetaEventFitter.report_status",
             return_value="",
         ):
-            report = pf.report_channel_status(0)
+            report = pf.report_status(0)
         self.assertIn("compared with 1", report)
         self.assertIn("Threshold: log10 ECD ratio 0 (ECD ratio = 1)", report)
         self.assertNotIn("Lower center", report)
@@ -3787,10 +3787,10 @@ class TestFoldingSinglePopulationFallback(unittest.TestCase):
         pf = self._run(levels)
         pf.sublevel_metadata = {}
         with patch(
-            "poriscope.utils.MetaEventFitter.MetaEventFitter.report_channel_status",
+            "poriscope.utils.MetaEventFitter.MetaEventFitter.report_status",
             return_value="",
         ):
-            report = pf.report_channel_status(0)
+            report = pf.report_status(0)
         self.assertIn("assumed it is unfolded", report)
         self.assertIn("Folded level (assumed, 2 x unfolded)", report)
         self.assertIn("Threshold rule: max(1.5 x mu, mu + 3 sigma)", report)
@@ -3806,10 +3806,10 @@ class TestFoldingSinglePopulationFallback(unittest.TestCase):
             "peak_type_counts": {},
         }
         with patch(
-            "poriscope.utils.MetaEventFitter.MetaEventFitter.report_channel_status",
+            "poriscope.utils.MetaEventFitter.MetaEventFitter.report_status",
             return_value="",
         ):
-            report = pf.report_channel_status(0)
+            report = pf.report_status(0)
         self.assertIn("Filtered peaks: 0 (0.0%)", report)
 
 

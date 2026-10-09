@@ -346,7 +346,7 @@ class TestShippedFinderThresholdUnits:
 
 
 # ---------------------------------------------------------------------------
-# report_channel_status
+# report_status
 # ---------------------------------------------------------------------------
 class TestEventBoundariesFromTheBaseline:
     """
@@ -452,10 +452,10 @@ class TestShippedFindersPlaceBoundariesAtTheEdges:
 
 class TestReportChannelStatus:
     def test_init_true_returns_empty_string(self, finder):
-        assert finder.report_channel_status(0, init=True) == ""
+        assert finder.report_status(0, init=True) == ""
 
     def test_unfinished_channel(self, finder):
-        assert finder.report_channel_status(0) == "\nCh0: event finding incomplete"
+        assert finder.report_status(0) == "\nCh0: event finding incomplete"
 
     def test_finished_channel_with_rejected_and_accepted_data(self, finder):
         finder.eventfinding_finished[0] = True
@@ -463,7 +463,7 @@ class TestReportChannelStatus:
         finder.accepted_data[0] = 5.0
         finder.rejected_data[0] = 1.5
         finder.rejected_events[0] = {"too short": 2}
-        report = finder.report_channel_status(0)
+        report = finder.report_status(0)
         assert "Found 3 events" in report
         assert "Accepted 5.0s of data" in report
         assert "Rejected 1.5s of data" in report
@@ -474,7 +474,7 @@ class TestReportChannelStatus:
         finder.num_events_found[0] = 1
         finder.accepted_data[0] = 5.0
         finder.rejected_data[0] = 0
-        report = finder.report_channel_status(0)
+        report = finder.report_status(0)
         assert "Accepted 5.0s of data" in report
         assert "Rejected" not in report
 
@@ -483,7 +483,7 @@ class TestReportChannelStatus:
         finder.num_events_found[0] = 1
         finder.accepted_data[0] = 1.0
         finder.rejected_data[0] = 0
-        report = finder.report_channel_status(None)
+        report = finder.report_status(None)
         assert "Ch0" in report
         assert "Ch1" in report
 

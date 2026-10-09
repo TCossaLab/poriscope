@@ -247,18 +247,22 @@ class BaseDataPlugin(ABC):
         pass
 
     @abstractmethod
-    def report_channel_status(
-        self, channel: Optional[int] = None, init: bool = False
-    ) -> str:
+    def report_status(self, channel: Optional[int] = None, init: bool = False) -> str:
         """
-        Return a string detailing any pertinent information about the status of analysis conducted on a given channel
+        Describe this plugin's state, for the status panel and for scripts.
 
-        :param channel: channel ID
+        This is the one status report every data plugin offers. With no channel it
+        describes the whole plugin; with a channel, that channel alone. Each ``Meta*``
+        base supplies a default, which a plugin overrides to say more, calling
+        ``super()``. A plugin with no channels - a filter, a database loader - reports
+        on itself whichever channel it is given.
+
+        :param channel: the channel to report on, or None for the whole plugin
         :type channel: Optional[int]
         :param init: is the function being called as part of plugin initialization? Default False
         :type init: bool
 
-        :return: the status of the channel as a string
+        :return: the status report
         :rtype: str
         """
         pass

@@ -63,7 +63,7 @@ class _ClassificationWarningCollector(logging.Handler):
 
     Attached to ``PeakFinder.logger`` for the duration of the classifier
     stages in ``_post_process_events`` and nowhere else - see that method for
-    where it starts and stops listening. ``report_channel_status`` reads
+    where it starts and stops listening. ``report_status`` reads
     ``self._classification_warnings`` afterward; this handler has no effect
     on what actually gets logged, since the root/module logging setup is
     untouched.
@@ -2158,7 +2158,7 @@ class PeakFinder(MetaEventFitter):
         ``self.logger``, so every ``WARNING``-level message any of them logs -
         a degraded fit, a declined classifier, a fitted mean off its peak -
         is captured into ``self._classification_warnings`` and surfaced in the
-        report ``report_channel_status`` builds for step 7, rather than living
+        report ``report_status`` builds for step 7, rather than living
         only in the log file.
 
         :param channel: the index of the channel to postprocess
@@ -2547,9 +2547,7 @@ class PeakFinder(MetaEventFitter):
 
     @log(logger=logger)
     @override
-    def report_channel_status(
-        self, channel: Optional[int] = None, init: bool = False
-    ) -> str:
+    def report_status(self, channel: Optional[int] = None, init: bool = False) -> str:
         """
         Return the fitting report plus the run's full classification section.
 
@@ -2580,17 +2578,17 @@ class PeakFinder(MetaEventFitter):
         """
         # The per-channel base text is built here with explicit super() calls
         # rather than by delegating the channel=None case to the base class.
-        # MetaEventFitter.report_channel_status() handles that case by looping
-        # over the channels and calling `self.report_channel_status(ch, init)`,
+        # MetaEventFitter.report_status() handles that case by looping
+        # over the channels and calling `self.report_status(ch, init)`,
         # which dispatches straight back into this override - so the
         # classification section below would be appended once per channel and
         # once more here, duplicating the report N+1 times for N channels.
         if channel is None:
             base_report = ""
             for ch in self.get_channels():
-                base_report += super().report_channel_status(ch, init)
+                base_report += super().report_status(ch, init)
         else:
-            base_report = super().report_channel_status(channel, init)
+            base_report = super().report_status(channel, init)
 
         if init or not hasattr(self, "_classification_results"):
             return base_report
@@ -5045,7 +5043,7 @@ class PeakFinder(MetaEventFitter):
 
         Called by ``_classify_folded_unfolded`` - on every exit path, so the
         counts exist even when the folding fit declines - and again by
-        ``report_channel_status``, which renders them as the report's peak
+        ``report_status``, which renders them as the report's peak
         filtering breakdown.
 
         Counts are taken over peak sublevels only, identified by ``peak_id``,
@@ -5122,7 +5120,7 @@ class PeakFinder(MetaEventFitter):
         Write the run's classification report next to the event file.
 
         Called by ``_post_process_events`` as its last step. The body of the
-        report is ``report_channel_status()`` with no channel, so the file and
+        report is ``report_status()`` with no channel, so the file and
         the status pane always say the same thing; this method adds the header,
         the settings the run used, and the footer, and writes the result to
         ``<event file stem>_classification_report.txt``.
@@ -5140,7 +5138,7 @@ class PeakFinder(MetaEventFitter):
                 f"{base_file.stem}_classification_report.txt"
             )
 
-            report_text = self.report_channel_status(channel=None, init=False)
+            report_text = self.report_status(channel=None, init=False)
 
             settings_section = "\n\nFITTING SETTINGS\n" + "-" * 80 + "\n"
             if self.settings:

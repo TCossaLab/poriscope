@@ -29,6 +29,7 @@ from tests.unit.plugins.conformance._recipes import (
     CHIMERA_EVENT_DURATION_S,
     CHIMERA_EVENTS,
     CHIMERA_SAMPLERATE_HZ,
+    assert_reports_whole_and_each_channel,
     build_event_finder,
     build_reader,
     discover_concrete,
@@ -92,7 +93,7 @@ def test_finds_every_planted_event(found) -> None:
 
     assert len(starts) == CHIMERA_EVENTS, (
         f"located {len(starts)} of {CHIMERA_EVENTS} planted events:"
-        f"\n{finder.report_channel_status()}"
+        f"\n{finder.report_status()}"
     )
     assert len(ends) == len(
         starts
@@ -237,3 +238,15 @@ def test_reset_and_close_are_safe(found) -> None:
 def test_at_least_one_finder_was_discovered() -> None:
     """Guard against the discovery walk silently finding nothing."""
     assert FINDERS, "no concrete MetaEventFinder subclasses were discovered"
+
+
+@pytest.mark.conformance
+def test_the_status_report_covers_the_finder_and_each_channel(found) -> None:
+    """
+    A finder reports on itself as a whole and on any one channel.
+
+    :param found: Finder, reader and index lists from the fixture.
+    :type found: tuple
+    """
+    finder, _reader, _starts, _ends = found
+    assert_reports_whole_and_each_channel(finder, CHIMERA_CHANNEL)

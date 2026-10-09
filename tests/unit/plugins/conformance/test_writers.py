@@ -37,6 +37,7 @@ from tests.unit.plugins.conformance._recipes import (
     EVENTS_CHANNEL,
     EVENTS_COUNT,
     _fill,
+    assert_reports_whole_and_each_channel,
     build_db_loader,
     build_db_writer,
     build_event_finder,
@@ -150,7 +151,7 @@ def test_writer_produces_a_readable_database(committed) -> None:
     ), f"unexpected schema: {sorted(described['tables'])}"
     assert described["events"] == CHIMERA_EVENTS, (
         f"wrote {described['events']} of {CHIMERA_EVENTS} located events:"
-        f"\n{writer.report_channel_status()}"
+        f"\n{writer.report_status()}"
     )
 
 
@@ -359,7 +360,7 @@ def test_a_stored_trace_is_the_readers_scaled_data(writer_cls, tmp_path) -> None
         "SingleBinaryDecoder",
     )
     reader.apply_settings(settings)
-    reader.report_channel_status(init=True)
+    reader.report_status(init=True)
     channel = dataset.channel
 
     finder = build_event_finder(ClassicBlockageFinder, reader)
@@ -440,7 +441,7 @@ def test_db_writer_produces_a_readable_database(written) -> None:
     ), f"unexpected schema: {sorted(described['tables'])}"
     assert described["events"] == EVENTS_COUNT, (
         f"wrote {described['events']} of {EVENTS_COUNT} fitted events:"
-        f"\n{writer.report_channel_status()}"
+        f"\n{writer.report_status()}"
     )
 
 
@@ -610,3 +611,27 @@ def test_a_database_writer_accepts_an_existing_metadata_database(
     own = _copy(metadata_db_path, tmp_path, "metadata.sqlite3")
     writer = build_db_writer(writer_cls, fitter, str(own))
     writer.close_resources()
+
+
+@pytest.mark.conformance
+def test_the_status_report_covers_the_writer_and_each_channel(committed) -> None:
+    """
+    An event writer reports on itself as a whole and on any one channel.
+
+    :param committed: Writer and output path from the fixture.
+    :type committed: tuple
+    """
+    writer, _out_path = committed
+    assert_reports_whole_and_each_channel(writer, CHIMERA_CHANNEL)
+
+
+@pytest.mark.conformance
+def test_the_status_report_covers_the_db_writer_and_each_channel(written) -> None:
+    """
+    A database writer reports on itself as a whole and on any one channel.
+
+    :param written: Writer and output path from the fixture.
+    :type written: tuple
+    """
+    writer, _out_path = written
+    assert_reports_whole_and_each_channel(writer, EVENTS_CHANNEL)

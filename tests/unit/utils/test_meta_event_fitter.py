@@ -79,9 +79,7 @@ class MockEventLoader(MetaEventLoader):
     ) -> Dict[str, Dict[str, Any]]:
         return {}
 
-    def report_channel_status(
-        self, channel: Optional[int] = None, init: bool = False
-    ) -> str:
+    def report_status(self, channel: Optional[int] = None, init: bool = False) -> str:
         return ""
 
     def get_valid_indices(self, channel: int) -> List[int]:
@@ -469,30 +467,28 @@ class TestMetaEventFitter:
         events = list(metadata_gen)
         assert len(events) > 0
 
-    def test_report_channel_status_not_fitted(
-        self, fitter: ConcreteEventFitter
-    ) -> None:
+    def test_report_status_not_fitted(self, fitter: ConcreteEventFitter) -> None:
         """Test reporting channel status before fitting."""
-        status = fitter.report_channel_status(0)
+        status = fitter.report_status(0)
         assert "incomplete" in status
 
-    def test_report_channel_status_fitted(self, fitter: ConcreteEventFitter) -> None:
+    def test_report_status_fitted(self, fitter: ConcreteEventFitter) -> None:
         """Test reporting channel status after fitting."""
         gen = fitter.fit_events(0, indices=[0, 1])
         list(gen)
-        status = fitter.report_channel_status(0)
+        status = fitter.report_status(0)
         assert "good fits" in status
 
-    def test_report_channel_status_init(self, fitter: ConcreteEventFitter) -> None:
+    def test_report_status_init(self, fitter: ConcreteEventFitter) -> None:
         """Test reporting channel status during init."""
-        status = fitter.report_channel_status(0, init=True)
+        status = fitter.report_status(0, init=True)
         assert status == ""
 
-    def test_report_channel_status_all(self, fitter: ConcreteEventFitter) -> None:
+    def test_report_status_all(self, fitter: ConcreteEventFitter) -> None:
         """Test reporting all channel statuses."""
         gen = fitter.fit_events(0, indices=[0])
         list(gen)
-        status = fitter.report_channel_status()
+        status = fitter.report_status()
         assert "Ch0" in status
 
     def test_get_plot_features(self, fitter: ConcreteEventFitter) -> None:

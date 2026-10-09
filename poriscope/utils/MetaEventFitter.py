@@ -288,18 +288,16 @@ class MetaEventFitter(BaseDataPlugin):
         return serial
 
     @log(logger=logger)
-    def report_channel_status(
-        self, channel: Optional[int] = None, init: bool = False
-    ) -> str:
+    def report_status(self, channel: Optional[int] = None, init: bool = False) -> str:
         """
-        Return a string detailing any pertinent information about the status of analysis conducted on a given channel
+        Describe one channel's status, or every channel's when no channel is given.
 
-        :param channel: channel ID
+        :param channel: the channel to report on, or None for every channel
         :type channel: Optional[int]
         :param init: is the function being called as part of plugin initialization? Default False
         :type init: bool
         :raises RuntimeError: If no event loader has been attached to this eventfitter.
-        :return: the status of the channel as a string
+        :return: the status report
         :rtype: str
         """
         if self.eventloader is None:
@@ -307,7 +305,7 @@ class MetaEventFitter(BaseDataPlugin):
         if channel is None:
             report = ""
             for ch in self.get_channels():
-                report += self.report_channel_status(ch, init)
+                report += self.report_status(ch, init)
             return report
         else:
             if init:

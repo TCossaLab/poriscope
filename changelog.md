@@ -24,6 +24,8 @@
 
 * **`MetaEventFinder.get_single_event_data` now raises `IndexError` for an index with no event (negative included) instead of returning `None`, and a reader or filter error keeps its own message**; `get_event_data_generator` still yields `None` for an event it cannot read
 
+* **`report_channel_status` is renamed `report_status` on every data plugin**, with the same arguments: no channel reports on the whole plugin, and a filter or database loader ignores the channel
+
 * **A metadata database now holds results from one type of fitter:** any number of runs of that fitter can still be written to it, but writing a different type of fitter into it is refused; use a new file per fitter type
 
 #### Application internals:
@@ -61,6 +63,8 @@
 * A plugin re-applied with settings naming a different parent no longer keeps the old one in `get_parents()`
 
 * Data plugin constructors take an optional `key=`; a plugin made without one, as in a script, is named `<ClassName>_<n>` instead of `""`, so a metadata database's provenance can follow scripted plugins
+
+* An event loader's status report for one channel now describes that channel only
 
 ### Analysis Tabs:
 

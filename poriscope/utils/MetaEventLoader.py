@@ -81,28 +81,26 @@ class MetaEventLoader(BaseDataPlugin):
         return False
 
     @log(logger=logger)
-    def report_channel_status(
-        self, channel: Optional[int] = None, init: bool = False
-    ) -> str:
+    def report_status(self, channel: Optional[int] = None, init: bool = False) -> str:
         """
-        Return a string detailing any pertinent information about the status of analysis conducted on a given channel
+        Describe one channel's events, or every channel's when no channel is given.
 
-        :param channel: channel ID
+        :param channel: the channel to report on, or None for every channel
         :type channel: Optional[int]
         :param init: is the function being called as part of plugin initialization? Default False
         :type init: bool
 
-        :return: the status of the channel as a string
+        :return: the status report
         :rtype: str
         """
 
-        channels = self.get_channels()
-        num_events = [
-            (self.get_num_events(ch), self.get_samplerate(ch)) for ch in channels
-        ]
+        channels = self.get_channels() if channel is None else [channel]
         report = " \n"
-        for channel, (num, samplerate) in zip(channels, num_events):
-            report += f"Ch: {channel}: {num} events at {samplerate:.2f}Hz\n"
+        for ch in channels:
+            report += (
+                f"Ch: {ch}: {self.get_num_events(ch)} events at "
+                f"{self.get_samplerate(ch):.2f}Hz\n"
+            )
         return report.rstrip("\n")
 
     @log(logger=logger)

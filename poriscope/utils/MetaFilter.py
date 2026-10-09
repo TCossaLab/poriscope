@@ -68,17 +68,15 @@ class MetaFilter(BaseDataPlugin):
 
     # public API, should usually be left alone by subclasses
     @log(logger=logger)
-    def report_channel_status(
-        self, channel: Optional[int] = None, init: bool = False
-    ) -> str:
+    def report_status(self, channel: Optional[int] = None, init: bool = False) -> str:
         """
-        Return a string detailing any pertinent information about the status of analysis conducted on a given channel
+        Describe this filter's state. A filter has no channels, so ``channel`` is ignored.
 
-        :param channel: channel ID
+        :param channel: ignored; accepted so every plugin shares one signature
         :type channel: Optional[int]
         :param init: is the function being called as part of plugin initialization? Default False
         :type init: bool
-        :return: the status of the channel as a string
+        :return: the status report, empty for the shipped filters
         :rtype: str
         """
         return ""

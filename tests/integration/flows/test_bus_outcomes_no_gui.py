@@ -92,7 +92,7 @@ class _StubReader:
         """Record the channel every status request asks about."""
         self.asked_for: List[int] = []
 
-    def report_channel_status(self, channel: int, init: bool = False) -> str:
+    def report_status(self, channel: int, init: bool = False) -> str:
         """
         Report a fixed status, and remember which channel was asked about.
 

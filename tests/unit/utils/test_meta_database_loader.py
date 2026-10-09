@@ -308,7 +308,7 @@ class TestMetaDatabaseLoader:
         assert loader.get_experiment_id_by_name("exp2") == 2
         assert loader.get_experiment_id_by_name("exp3") is None
 
-    def test_report_channel_status(self, loader: ConcreteDatabaseLoader) -> None:
+    def test_report_status(self, loader: ConcreteDatabaseLoader) -> None:
         """Test reporting channel status."""
         # Mock query_database_directly
         mock_data = pd.DataFrame(
@@ -319,31 +319,27 @@ class TestMetaDatabaseLoader:
             }
         )
         with patch.object(loader, "query_database_directly", return_value=mock_data):
-            report = loader.report_channel_status()
+            report = loader.report_status()
             assert "2 experiments" in report
             assert "exp1" in report
             assert "exp2" in report
             assert "Channel: 0: 10 events" in report
 
-    def test_report_channel_status_no_experiments(
-        self, loader: ConcreteDatabaseLoader
-    ) -> None:
+    def test_report_status_no_experiments(self, loader: ConcreteDatabaseLoader) -> None:
         """Test reporting channel status with no experiments."""
         with patch.object(
             loader, "query_database_directly", return_value=pd.DataFrame()
         ):
-            report = loader.report_channel_status()
+            report = loader.report_status()
             assert report == "No experiments found."
 
-    def test_report_channel_status_one_experiment(
-        self, loader: ConcreteDatabaseLoader
-    ) -> None:
+    def test_report_status_one_experiment(self, loader: ConcreteDatabaseLoader) -> None:
         """Test reporting channel status with single experiment."""
         mock_data = pd.DataFrame(
             {"name": ["exp1"], "channel_id": [0], "event_count": [10]}
         )
         with patch.object(loader, "query_database_directly", return_value=mock_data):
-            report = loader.report_channel_status()
+            report = loader.report_status()
             assert " 1 experiment" in report
 
     def test_construct_metadata_query_events_only(

@@ -92,9 +92,7 @@ class ChimeraReader20240101(MetaReader):
 
     @log(logger=logger)
     @override
-    def report_channel_status(
-        self, channel: Optional[int] = None, init: bool = False
-    ) -> str:
+    def report_status(self, channel: Optional[int] = None, init: bool = False) -> str:
         """
         Report what :ref:`MetaReader` reports, plus this reader's deprecation notice.
 
@@ -111,7 +109,7 @@ class ChimeraReader20240101(MetaReader):
         :return: the status of the channel as a string
         :rtype: str
         """
-        report = super().report_channel_status(channel, init)
+        report = super().report_status(channel, init)
         if channel is not None and init:
             report += (
                 f"\nCh{channel}: ChimeraReader20240101 is deprecated and will be "

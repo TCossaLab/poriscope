@@ -90,7 +90,7 @@ def main():
     # We will only use the parts of it that are necessary for this tutorial script here.
     # if you wanted to plot data, you could get some by calling raw_data.load_data(), for example.
     # we can print out a brief report on the channels to check:
-    print(raw_data.report_channel_status(init=True))
+    print(raw_data.report_status(init=True))
 
     # set up a filter object that we will use to filter our data
     data_filter = BesselFilter()
@@ -163,14 +163,14 @@ def main():
                 StopIteration
             ):  # once we run out of data to process, generators raise StopIteration, so you can catch that and move on to the next channel
                 break
-        print(writer.report_channel_status())
+        print(writer.report_status())
 
     # next up, we load the event database we just wrote
     event_loader = SQLiteEventLoader()
     loader_settings = event_loader.get_empty_settings(standalone=True)
     loader_settings["Input File"]["Value"] = event_output_file_path
     event_loader.apply_settings(loader_settings)
-    print(event_loader.report_channel_status(init=True))
+    print(event_loader.report_status(init=True))
 
     # now we need to fit the events
     fitter = PeakFinder()
@@ -205,7 +205,7 @@ def main():
                 StopIteration
             ):  # once we run out of data to process, generators raise StopIteration, so you can catch that and move on to the next channel
                 break
-        print(fitter.report_channel_status())
+        print(fitter.report_status())
 
     # now we write the fits to a database
     metadata_writer = SQLiteDBWriter()
@@ -230,14 +230,14 @@ def main():
                 StopIteration
             ):  # once we run out of data to process, generators raise StopIteration, so you can catch that and move on to the next channel
                 break
-        print(metadata_writer.report_channel_status())
+        print(metadata_writer.report_status())
 
     # finally, you load your database and can then perform SQL or visualization operations at your convenience
     metadata_loader = SQLiteDBLoader()
     metadata_loader_settings = metadata_loader.get_empty_settings(standalone=True)
     metadata_loader_settings["Input File"]["Value"] = metadata_output_file_path
     metadata_loader.apply_settings(metadata_loader_settings)
-    print(metadata_loader.report_channel_status(init=True))
+    print(metadata_loader.report_status(init=True))
 
     # your analysis code goes here now
     ...

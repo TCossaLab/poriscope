@@ -289,7 +289,7 @@ def build_event_loader(db_path: str) -> SQLiteEventLoader:
     settings = loader.get_empty_settings(standalone=True)
     settings["Input File"]["Value"] = str(db_path)
     loader.apply_settings(settings)
-    loader.report_channel_status(init=True)
+    loader.report_status(init=True)
     return loader
 
 
@@ -492,7 +492,7 @@ def build_reader(log_path: str) -> MetaReader:
     settings = reader.get_empty_settings(standalone=True)
     settings["Input File"]["Value"] = str(log_path)
     reader.apply_settings(settings)
-    reader.report_channel_status(init=True)
+    reader.report_status(init=True)
     return reader
 
 
@@ -652,7 +652,7 @@ def build_db_loader(
     overrides: Dict[str, Any] = {"Input File": str(db_path)}
     _fill(settings, overrides, loader_cls.__name__)
     loader.apply_settings(settings)
-    loader.report_channel_status(init=True)
+    loader.report_status(init=True)
     return loader
 
 
@@ -680,7 +680,7 @@ def build_any_event_loader(
     overrides: Dict[str, Any] = {"Input File": str(db_path)}
     _fill(settings, overrides, loader_cls.__name__)
     loader.apply_settings(settings)
-    loader.report_channel_status(init=True)
+    loader.report_status(init=True)
     return loader
 
 
@@ -957,5 +957,49 @@ def build_any_reader(
         overrides.update(extra(dataset))
     _fill(settings, overrides, reader_cls.__name__)
     reader.apply_settings(settings)
-    reader.report_channel_status(init=True)
+    reader.report_status(init=True)
     return reader
+
+
+def assert_reports_whole_and_each_channel(
+    plugin: Any, channel: int, init: bool = False
+) -> None:
+    """
+    Check one plugin's status report in both of its forms.
+
+    ``report_status()`` with no channel describes the whole plugin, and with a
+    channel describes that channel alone, so the one channel's text is part of the
+    whole report.
+
+    :param plugin: A plugin with channels, after use.
+    :type plugin: Any
+    :param channel: A channel the plugin has data for.
+    :type channel: int
+    :param init: Ask for the report shown when the plugin is created.
+    :type init: bool
+    """
+    whole = plugin.report_status(init=init)
+    one = plugin.report_status(channel, init=init)
+    assert isinstance(whole, str) and isinstance(one, str)
+    assert one.strip(), f"no report for channel {channel}"
+    assert one.strip() in whole, (
+        f"channel {channel}'s report is not part of the whole report:\n"
+        f"{one!r}\nnot in\n{whole!r}"
+    )
+
+
+def assert_report_ignores_channel(plugin: Any, channel: int = 0) -> None:
+    """
+    Check the status report of a plugin with no channels.
+
+    Filters and database loaders take a channel only because every plugin shares
+    one ``report_status`` signature; they report on the whole plugin either way.
+
+    :param plugin: A filter or database loader.
+    :type plugin: Any
+    :param channel: Any channel number.
+    :type channel: int
+    """
+    whole = plugin.report_status()
+    assert isinstance(whole, str)
+    assert plugin.report_status(channel) == whole

@@ -50,13 +50,13 @@ class _Plugin:
         """
         Build a plugin that either answers or raises.
 
-        :param blow_up: whether ``report_channel_status`` should raise
+        :param blow_up: whether ``report_status`` should raise
         :type blow_up: bool
         """
         self.blow_up = blow_up
         self.asked_for: list = []
 
-    def report_channel_status(self, channel: int) -> str:
+    def report_status(self, channel: int) -> str:
         """
         Report a status for one channel.
 

@@ -324,7 +324,7 @@ COLLECT_SECTION = '''    def collect_parameters(self) -> Dict[str, Any]:
 # variants of another plugin falls inside this set plus the family's own abstract
 # methods, which is where the set comes from.
 OPTIONAL_HOOKS: Tuple[str, ...] = (
-    "report_channel_status",
+    "report_status",
     "force_serial_channel_operations",
     "get_plot_features",
 )

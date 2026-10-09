@@ -38,7 +38,7 @@ def test_raw_data_pipeline_instantiation_no_gui(sample_chimera, tmp_path):
     reader_settings["Input File"]["Value"] = sample_chimera["log"]
     reader.apply_settings(reader_settings)
 
-    _ = reader.report_channel_status(init=True)
+    _ = reader.report_status(init=True)
 
     # Sample rate (used only to configure the filter's settings)
     try:
@@ -115,7 +115,7 @@ def test_raw_data_pipeline_instantiation_no_gui(sample_chimera, tmp_path):
             pass
 
     # Assert expected finder status details for Ch3
-    fstatus = finder.report_channel_status()
+    fstatus = finder.report_status()
     # The fixture plants a known number of events, so the finder is checked
     # against that ground truth rather than a count observed once from a
     # recording. Nothing asserts on rejections: the planted events are clean, so
@@ -149,7 +149,7 @@ def test_raw_data_pipeline_instantiation_no_gui(sample_chimera, tmp_path):
             pass
 
     # Check writer status against the planted count
-    wstatus = writer.report_channel_status()
+    wstatus = writer.report_status()
     assert (
         f"Ch{channel}: Wrote {planted}/{planted} events" in wstatus
     ), f"Writer status didn't match expectation:\n{wstatus}"

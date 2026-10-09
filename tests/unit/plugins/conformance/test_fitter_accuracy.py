@@ -392,9 +392,7 @@ def test_the_level_count_matches_the_planted_staircase(
     noise, _length = band
     fit = fit_for(fits, filtered_staircase, fitter_cls, band)
     assert fit.fitter.get_eventfitting_status(CHANNEL) is True
-    assert fit.fitter.rejected.get(CHANNEL, {}) == {}, fit.fitter.report_channel_status(
-        CHANNEL
-    )
+    assert fit.fitter.rejected.get(CHANNEL, {}) == {}, fit.fitter.report_status(CHANNEL)
     assert len(fit.fitted_ids()) == NUM_EVENTS
     misses = fit.miscounted(len(STAIRCASE_PA))
     assert len(misses) <= allowed_count_misses(

@@ -59,7 +59,7 @@ def test_the_creation_report_names_the_deprecation_and_the_replacement(
     reader_2024_01,
 ):
     reader, channel = reader_2024_01
-    report = reader.report_channel_status(channel, init=True)
+    report = reader.report_status(channel, init=True)
     assert NOTICE in report
     assert "ChimeraReader20240501" in report
     # The ordinary duration and samplerate line is kept, not replaced.
@@ -68,15 +68,15 @@ def test_the_creation_report_names_the_deprecation_and_the_replacement(
 
 def test_a_later_status_refresh_does_not_repeat_it(reader_2024_01):
     reader, channel = reader_2024_01
-    assert reader.report_channel_status(channel, init=False) == ""
+    assert reader.report_status(channel, init=False) == ""
 
 
 def test_the_all_channels_report_carries_one_notice_per_channel(reader_2024_01):
     reader, _ = reader_2024_01
-    report = reader.report_channel_status(None, init=True)
+    report = reader.report_status(None, init=True)
     assert report.count(NOTICE) == len(reader.get_channels())
 
 
 def test_the_supported_reader_reports_no_notice(reader_2024_05):
     reader, channel = reader_2024_05
-    assert "deprecated" not in reader.report_channel_status(channel, init=True)
+    assert "deprecated" not in reader.report_status(channel, init=True)

@@ -745,14 +745,12 @@ class MetaDatabaseLoader(BaseDataPlugin):
         yield 1.0
 
     @log(logger=logger)
-    def report_channel_status(
-        self, channel: Optional[int] = None, init: bool = False
-    ) -> str:
+    def report_status(self, channel: Optional[int] = None, init: bool = False) -> str:
         """
         Return a string detailing event counts per experiment and channel.
 
-        :param channel: channel ID. Currently unused at the base class level but
-            retained for API compatibility with subclasses that may filter by channel.
+        :param channel: ignored: the report covers every experiment and channel in
+            the database, since a channel number alone names no experiment's channel
         :type channel: Optional[int]
         :param init: True if the function is being called as part of plugin
             initialization. Default False.

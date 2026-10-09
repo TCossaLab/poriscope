@@ -350,7 +350,7 @@ class MetaModel(QObject, metaclass=QObjectABCMeta):
         """
         metaclass = self.reporter_metaclasses[key]
         try:
-            status = self.call(metaclass, key, "report_channel_status", channel)
+            status = self.call(metaclass, key, "report_status", channel)
         except Exception as e:
             self.logger.error(
                 f"Unable to report the status of {metaclass}/{key} "
