@@ -774,7 +774,7 @@ def _single_binary_dataset(out_dir: Path) -> SyntheticDataset:
 
 
 def _abf2_modern_dataset(out_dir: Path) -> SyntheticDataset:
-    """Build a TCossaLabABFReader (2-channel ABF2) fixture."""
+    """Build a 2-channel ABF2 fixture, for TCossaLabABFReader and ABFReader."""
     config = Abf2RecordingConfig(
         samplerate=500_000.0,
         duration_s=0.2,
@@ -806,6 +806,7 @@ READER_DATASET_BUILDERS: Dict[str, Callable[[Path], SyntheticDataset]] = {
     "BinaryReader1X": _binary_1x_dataset,
     "SingleBinaryDecoder": _single_binary_dataset,
     "TCossaLabABFReader": _abf2_modern_dataset,
+    "ABFReader": _abf2_modern_dataset,
     "LegacyElementsReader": _abf2_legacy_dataset,
 }
 
@@ -856,7 +857,7 @@ def _zero_middle_section(dataset: SyntheticDataset) -> None:
 
 
 def _flip_abf2_signature(dataset: SyntheticDataset) -> None:
-    """Corrupt the ``ABF2`` signature (bytes 0-3) both ABF2 formats share."""
+    """Corrupt the ``ABF2`` signature (bytes 0-3) every ABF2 fixture carries."""
     data = bytearray(dataset.data_path.read_bytes())
     data[0:4] = b"\x00\x00\x00\x00"
     dataset.data_path.write_bytes(bytes(data))
@@ -888,9 +889,9 @@ _SHARED_MUTATIONS: List[Tuple[str, Callable[[SyntheticDataset], None]]] = [
 ]
 
 # Per-reader mutation lists: the shared set every format gets, plus
-# format-specific ones layered on top - not per-reader duplication. Only 3 of
-# the 7 formats have an in-band marker worth flipping (the two ABF2 readers'
-# signature, the 2024-01 Chimera embedded header); the two sidecar-based
+# format-specific ones layered on top - not per-reader duplication. Only 4 of
+# the 8 readers have an in-band marker worth flipping (the three ABF readers'
+# ABF2 signature, the 2024-01 Chimera embedded header); the two sidecar-based
 # formats (2024-05 Chimera, ChimeraVC100) get sidecar mutations instead, since
 # their "header" is the sidecar file, not anything in the data file itself.
 # BinaryReader1X and SingleBinaryDecoder have no in-band marker at all - a
@@ -899,7 +900,7 @@ _SHARED_MUTATIONS: List[Tuple[str, Callable[[SyntheticDataset], None]]] = [
 MUTATIONS: Dict[str, List[Tuple[str, Callable[[SyntheticDataset], None]]]] = {
     name: list(_SHARED_MUTATIONS) for name in READER_DATASET_BUILDERS
 }
-for _reader_name in ("TCossaLabABFReader", "LegacyElementsReader"):
+for _reader_name in ("TCossaLabABFReader", "LegacyElementsReader", "ABFReader"):
     MUTATIONS[_reader_name].append(("flip_abf2_signature", _flip_abf2_signature))
 MUTATIONS["ChimeraReader20240101"].append(("corrupt_end_header", _corrupt_end_header))
 for _reader_name in ("ChimeraReader20240501", "ChimeraReaderVC100"):

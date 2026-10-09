@@ -1166,11 +1166,10 @@ lists six recordings - a Binary 1X file, a Chimera 2024-05 set, a multi-file Chi
 subfolder it lives in, the reader that opens it, and what that reader reported on
 2026-10-06: the sample rate, the channels, every channel's length and file count, and the
 median of the first second, the last second and a second across the first file boundary,
-in picoamps. Those medians are goldens for the shipped conversion, which is what a
-replacement parser (the pyabf wrapper the ABF readers are moving to) has to reproduce. A
+in picoamps. Those medians are goldens for the conversion, which any change to a reader
+has to reproduce - the move of the ABF readers onto ``ABFReader`` and ``pyabf``, for one. A
 recording whose subfolder is missing skips its tests rather than failing them, so a
-partial copy of the data is still useful. ``pyabf`` is a ``dev`` extra for that comparison
-and not a runtime dependency until the wrapper lands.
+partial copy of the data is still useful.
 
 Keep two things apart when reading these results: a synthetic test that fails is a defect
 or a wrong expectation; a real-recording test that fails may also be a property of that one

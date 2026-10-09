@@ -30,10 +30,10 @@
     "removable_lines": 0
   },
   "datareaders": {
-    "files": 8,
-    "functions": 93,
+    "files": 9,
+    "functions": 106,
     "identical_bodies": 13,
-    "removable_lines": 364
+    "removable_lines": 377
   },
   "eventfinders": {
     "files": 3,

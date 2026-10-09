@@ -92,6 +92,8 @@
 
 #### General:
 
+* **New Data Plugin: `ABFReader`** opens any ABF1 or ABF2 file `pyabf` can open, gap-free or episodic, with settings for the ADC channel that records current and the sweep to read; `pyabf` is now a dependency
+
 * **Fixed the Windows log file dropping any line containing `μ`**
 
 * **Fixed PeakFinder sometimes skipping its classification** when two channels finished fitting at the same time
