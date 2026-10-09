@@ -803,7 +803,10 @@ written for what that family's output is actually used for:
        invalid one.
 
 Every family is also asked that ``reset_channel`` and ``close_resources`` are safe
-after use, including twice. Readers, loaders and writers are further asked to actually
+after use, including twice, and that its status report holds together: a plugin with
+channels answers ``report_status(channel)`` with a non-empty report that is part of what
+``report_status()`` gives for the whole plugin, and a filter or database loader, which has
+no channels, gives the same report either way. Readers, loaders and writers are further asked to actually
 release their file(s) once nothing references the plugin anymore, which on Windows is a
 genuine handle-leak check because an open handle blocks ``os.unlink``. The check differs
 by family because the contract does: a writer closes its connection explicitly inside
