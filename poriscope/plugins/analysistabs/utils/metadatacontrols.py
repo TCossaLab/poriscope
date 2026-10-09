@@ -1004,15 +1004,3 @@ class MetadataControls(MetaSubsetTabControls):
         button = button_mapping.get(button_type)
         if button is not None:
             button.setChecked(False)
-
-    def set_event_id_input(self, value: int) -> None:
-        """
-        Update the event_id field with the snapped event_id after navigation.
-
-        :param value: The event_id to display.
-        :type value: int
-        """
-        self.event_id_lineEdit.blockSignals(True)
-        self.event_id_lineEdit.setText(str(value))
-        self.event_id_lineEdit.blockSignals(False)
-        self.validate_inputs()

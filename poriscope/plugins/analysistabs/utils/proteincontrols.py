@@ -802,9 +802,3 @@ class ProteinControls(MetaSubsetTabControls):
             # Don't uncheck mode buttons (they should stay pushed)
             if button_type not in ("individual", "ensemble"):
                 btn.setChecked(False)
-
-    def set_event_id_input(self, value: int) -> None:
-        self.event_id_lineEdit.blockSignals(True)
-        self.event_id_lineEdit.setText(str(value))
-        self.event_id_lineEdit.blockSignals(False)
-        self.validate_inputs()

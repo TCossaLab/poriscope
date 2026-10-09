@@ -7,7 +7,7 @@ inlined instead of written as a method. That is what this file is for. Each grou
 below is a merge into a shared base, and the merge should be a decision someone
 makes about known behaviour rather than a silent change.
 
-Eight groups:
+Nine groups:
 
 - ``_factors`` used to exist three times - ``MetaView`` plus byte-identical overrides
   in ``RawDataView`` and ``EventAnalysisView`` that shadowed the base. The overrides
@@ -61,6 +61,8 @@ Eight groups:
   status-panel divergence a second time and was settled the same way. ``_delete_filter``
   was **abstract** on the base for the stated reason that each tab rebuilds its own
   filter widgets - which was only ever true because of the panel name.
+- ``set_event_id_input`` lives once, on ``MetaSubsetTabControls``, for both subset
+  panels; that base declares ``validate_inputs`` abstract because it calls it.
 """
 
 import json
@@ -82,6 +84,7 @@ from poriscope.plugins.analysistabs.utils.metadatacontrols import MetadataContro
 from poriscope.plugins.analysistabs.utils.proteincontrols import ProteinControls
 from poriscope.plugins.analysistabs.utils.rawdatacontrols import RawDataControls
 from poriscope.utils.MetaControls import MetaControls
+from poriscope.utils.MetaSubsetTabControls import MetaSubsetTabControls
 from poriscope.utils.MetaSubsetTabView import MetaSubsetTabView
 from poriscope.utils.MetaView import MetaView
 from tests.unit.views._qt_mocks import shadow_signals
@@ -904,3 +907,64 @@ class TestThePanelNameMethodsWerePromoted:
         assert "event_id_rows" in MetaSubsetTabView.__annotations__
         for view_cls in SUBSET_TABS:
             assert "event_id_rows" not in view_cls.__annotations__
+
+
+# ===========================================================================
+# set_event_id_input - shared by both subset panels on MetaSubsetTabControls
+# ===========================================================================
+
+
+SUBSET_CONTROLS = (MetadataControls, ProteinControls)
+
+
+class TestSetEventIdInputWasPromoted:
+    """
+    One copy, on the controls base, shared by both subset tabs' panels.
+
+    Pinned: no panel keeps its own copy, and the shared one writes the field
+    without re-emitting its edit signal, then revalidates.
+    """
+
+    def test_the_base_owns_the_only_copy(self) -> None:
+        """A copy left on a panel would shadow the shared one for that tab."""
+        assert "set_event_id_input" in MetaSubsetTabControls.__dict__
+        for cls in SUBSET_CONTROLS:
+            assert "set_event_id_input" not in cls.__dict__, cls.__name__
+
+    def test_validate_inputs_is_owed_by_every_panel(self) -> None:
+        """``set_event_id_input`` calls it, so every panel must define it."""
+        assert MetaSubsetTabControls.__abstractmethods__ == frozenset(
+            {"validate_inputs"}
+        )
+
+    @pytest.mark.parametrize("cls", SUBSET_CONTROLS, ids=lambda c: c.__name__)
+    def test_the_field_shows_the_latest_value(self, qapp: object, cls: type) -> None:
+        """Each call replaces what the field showed, rather than appending to it."""
+        panel = cls()
+
+        panel.set_event_id_input(5)
+        assert panel.event_id_lineEdit.text() == "5"
+
+        panel.set_event_id_input(12)
+        assert panel.event_id_lineEdit.text() == "12"
+
+    @pytest.mark.parametrize("cls", SUBSET_CONTROLS, ids=lambda c: c.__name__)
+    def test_writing_the_field_is_silent_and_revalidates(
+        self, qapp: object, cls: type, mocker: object
+    ) -> None:
+        """
+        Navigation writes the snapped id without re-emitting the field's edit signal.
+
+        A ``textChanged`` here would re-enter the panel's own handlers as though the
+        user had typed, which is what the signal block around ``setText`` prevents;
+        the buttons still need re-enabling for the new value, hence ``validate_inputs``.
+        """
+        panel = cls()
+        seen: List[str] = []
+        panel.event_id_lineEdit.textChanged.connect(seen.append)
+        validate = mocker.patch.object(panel, "validate_inputs")
+
+        panel.set_event_id_input(7)
+
+        assert seen == []
+        validate.assert_called_once_with()

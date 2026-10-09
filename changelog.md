@@ -52,6 +52,8 @@
 
 * **Breaking:** `update_available_columns` has moved from `MetaSubsetTabView` to `MetadataView`, `column_names_requested` with it, and `request_column_names` is no longer on `MetaSubsetTabController`; only the metadata tab reads column names, so a plugin subclassing the shared subset-tab base no longer inherits any of the three
 
+* **Breaking:** `set_event_id_input` has moved from `MetadataControls` and `ProteinControls` to `MetaSubsetTabControls`, which now requires its subclasses to implement `validate_inputs`
+
 ### Developer Tooling:
 
 * The release workflow now runs only when a version tag is pushed
