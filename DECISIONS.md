@@ -78,18 +78,22 @@ per channel; a generator never iterated keeps its run open.
 channel reported 1.0 and was marked fitted before the step ran; 1.0 is 100% to the worker and
 the tab then drops the channel's progress bar, the only "done" a user sees, and the database
 writer (`MetaDatabaseWriter.py:172`) and event plots gate on the mark, so a write could read
-PeakFinder's metadata mid-classification. Progress now stays below 1.0 during fitting, the
-last channel is marked fitted and reports 1.0 after the step (unfitted if it raises), and
-PeakFinder marks its channels only after its last classifier, just before its report, which
-reads the mark. On 40 comb events (5-10 teeth each) PeakFinder's metadata and classification
-are identical before and after, every tooth found. **Rejected** (Kyle): holding every channel
-of a run unfitted until the step ends. PeakFinder's step pools every channel, so a channel
-that finished early can still be written before classification reaches it; closing that
-would delay writes for every fitter, and the last bar staying up already tells the user to wait.
+PeakFinder's metadata mid-classification. A channel is now marked fitted only when everything
+that applies to it is done (Kyle, reversing a first ruling that marked early channels as they
+ended): PeakFinder's step rewrites every channel it holds (`PeakFinder.py:2164`), so every
+finished channel of a run is marked when the run is over - after the step, or as the run ends
+if the step is skipped; none if it raises. This holds for every fitter, so an early channel of
+a CUSUM run waits too, which costs only a write attempted mid-run. Progress stays below 1.0
+while fitting and the last channel reports 1.0 after the step, so its bar stays up; earlier
+channels' bars drop as they end (accepted), and their status reads "waiting for the other
+channels of its run" rather than "fitting incomplete". PeakFinder marks its channels after its
+last classifier, just before its report, which reads the mark. On 40 comb events (5-10 teeth
+each) PeakFinder's metadata and classification are identical before and after, every tooth
+found. **Open** (with Nada): channels from an earlier run that a later run's step re-classifies
+stay marked while it does.
 
-**Revisit if** a caller needs one run over fits started separately, a user wants the run-wide
-step after aborting a channel, or someone writes a channel that a running classification then
-changes.
+**Revisit if** a caller needs one run over fits started separately, or a user wants the
+run-wide step after aborting a channel.
 
 ---
 

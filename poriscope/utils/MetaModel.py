@@ -71,6 +71,9 @@ class MetaModel(QObject, metaclass=QObjectABCMeta):
         self.thread_running: Dict[str, Dict[int, bool]] = (
             {}
         )  # Track running state per key/channel
+        # The status text shown for each channel of a key's current batch of workers,
+        # so the batch's end can re-report the channels whose status has changed since.
+        self._reported_this_batch: Dict[str, Dict[int, str]] = {}
 
         # nested dicts keyed by plugin key and channel number
         self.cache_data: Optional[List[np.ndarray]] = None
@@ -335,7 +338,7 @@ class MetaModel(QObject, metaclass=QObjectABCMeta):
     @Slot(int, str)
     def generate_report(self, channel: int, key: str) -> None:
         """
-        Put one plugin's status for one channel onto the display panel.
+        Put one plugin's status for one channel onto the display panel, and when the plugin's batch of workers ends, re-report any of its channels whose status has changed.
 
         Runs when a worker thread finishes, over a queued connection - so it is a
         Qt slot, and **must not raise**. `call` reports failure by raising, which
@@ -343,21 +346,57 @@ class MetaModel(QObject, metaclass=QObjectABCMeta):
         above to catch it. The old bus swallowed and logged instead, several hops
         away; this keeps the swallow but puts it where the call is.
 
+        A channel's status can change after its own worker ends: a fitter marks the
+        channels of a run fitted only when the whole run is over, so a channel that
+        finished early first reports that it is waiting. So the text shown for each
+        channel is kept until no worker of this plugin is still running (by then
+        ``discard_generator``, connected first, has cleared this channel's flag), and
+        then every other channel shown in the batch is asked again and reported if its
+        status differs. A plugin whose reports are final as each channel ends prints
+        nothing more.
+
         :param channel: the channel whose status to report
         :type channel: int
         :param key: the plugin to ask
         :type key: str
         """
+        status = self._ask_status(key, channel)
+        if status is not None:
+            self.add_text_to_display.emit(status, key)
+            self._reported_this_batch.setdefault(key, {})[channel] = status
+        if any(self.thread_running.get(key, {}).values()):
+            return
+        shown = self._reported_this_batch.pop(key, {})
+        for other, before in sorted(shown.items()):
+            if other == channel:
+                continue
+            now = self._ask_status(key, other)
+            if now is not None and now != before:
+                self.add_text_to_display.emit(now, key)
+
+    @log(logger=logger)
+    def _ask_status(self, key: str, channel: int) -> Optional[str]:
+        """
+        Ask one plugin for one channel's status, logging a failure instead of raising.
+
+        Its caller runs as a Qt slot, so nothing may escape it.
+
+        :param key: the plugin to ask
+        :type key: str
+        :param channel: the channel whose status to ask for
+        :type channel: int
+        :return: the status text, or None if the plugin could not report it
+        :rtype: Optional[str]
+        """
         metaclass = self.reporter_metaclasses[key]
         try:
-            status = self.call(metaclass, key, "report_status", channel)
+            return str(self.call(metaclass, key, "report_status", channel))
         except Exception as e:
             self.logger.error(
                 f"Unable to report the status of {metaclass}/{key} "
                 f"channel {channel}: {e}"
             )
-            return
-        self.add_text_to_display.emit(status, key)
+            return None
 
     @log(logger=logger)
     def update_available_plugins(self, available_plugins: Dict[str, List[str]]) -> None:

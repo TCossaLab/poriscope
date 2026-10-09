@@ -2140,8 +2140,8 @@ class PeakFinder(MetaEventFitter):
            molecule's frame, and the sequences, to break its report down.
         7. ``_save_classification_report`` writes the run's report to disk.
            The channels are marked fitted just before it, since the report's
-           good-fit counts are given only for a fitted channel; until then the
-           run's last channel cannot be written to a database or plotted.
+           good-fit counts are given only for a fitted channel; until then no
+           channel of the run can be written to a database or plotted.
 
         Steps 1-6 run with a ``_ClassificationWarningCollector`` attached to
         ``self.logger``, so every ``WARNING``-level message any of them logs -
@@ -2277,9 +2277,9 @@ class PeakFinder(MetaEventFitter):
             self.logger.removeHandler(warning_collector)
             self._classification_warnings = warning_collector.records
 
-        # The base marks the run's last channel fitted only after this step returns,
-        # but the report below is report_status(), which counts a channel's good fits
-        # only once it is marked. Every stage that writes event metadata is done here.
+        # The base marks the run's channels fitted only after this step returns, but
+        # the report below is report_status(), which counts a channel's good fits only
+        # once it is marked. Every stage that writes event metadata is done here.
         for channel in channels:
             self.eventfitting_status[channel] = True
 

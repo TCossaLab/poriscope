@@ -130,3 +130,104 @@ def test_an_unregistered_plugin_is_reported_rather_than_raised(model, caplog):
 
     assert emitted == []
     assert "Unable to report the status" in caplog.text
+
+
+# A channel's status is reported when its worker finishes. A fitter marks every channel
+# of a run fitted only when the run is over, so a channel that finished early reports
+# that it is waiting - and, unless something reports it again, that is the last thing
+# the panel ever says about it.
+
+
+class _ChangingPlugin:
+    """A plugin whose per-channel report the test rewrites between calls."""
+
+    def __init__(self, reports: dict) -> None:
+        """
+        :param reports: the report text per channel, edited in place by the test
+        :type reports: dict
+        """
+        self.reports = reports
+
+    def report_status(self, channel: int) -> str:
+        """
+        :param channel: the channel being asked about
+        :type channel: int
+        :return: that channel's current report
+        :rtype: str
+        """
+        return self.reports[channel]
+
+
+def _finish(model, key, channel):
+    """
+    Finish one channel's worker as the queued slots do: running flag first, then report.
+
+    :param model: the model under test
+    :param key: the plugin key
+    :param channel: the channel whose worker finished
+    """
+    model.thread_running[key][channel] = False
+    model.generate_report(channel, key)
+
+
+@pytest.fixture
+def fitter_model():
+    """
+    A model with a two-channel run of "fitter" in flight and its emissions recorded.
+
+    :return: the model, its plugin's reports and the emitted texts
+    """
+    m = _ConcreteModel()
+    m.reporter_metaclasses["fitter"] = "MetaEventFitter"
+    reports = {0: "Ch0 waiting", 1: "Ch1 waiting"}
+    m.set_plugin_instances({"MetaEventFitter": {"fitter": _ChangingPlugin(reports)}})
+    m.thread_running["fitter"] = {0: True, 1: True}
+    emitted = []
+    m.add_text_to_display.connect(lambda text, source: emitted.append(text))
+    return m, reports, emitted
+
+
+def test_an_early_channel_is_reported_again_when_its_batch_ends(fitter_model):
+    model, reports, emitted = fitter_model
+    _finish(model, "fitter", 0)
+    reports.update({0: "Ch0 final", 1: "Ch1 final"})
+    _finish(model, "fitter", 1)
+
+    assert emitted == ["Ch0 waiting", "Ch1 final", "Ch0 final"]
+
+
+def test_a_report_that_has_not_changed_is_not_repeated(fitter_model):
+    # A finder's or writer's report is final as its channel ends.
+    model, reports, emitted = fitter_model
+    reports.update({0: "Ch0 done", 1: "Ch1 done"})
+    _finish(model, "fitter", 0)
+    _finish(model, "fitter", 1)
+
+    assert emitted == ["Ch0 done", "Ch1 done"]
+
+
+def test_the_next_batch_does_not_repeat_the_last_ones_channels(fitter_model):
+    model, reports, emitted = fitter_model
+    _finish(model, "fitter", 0)
+    reports.update({0: "Ch0 final", 1: "Ch1 final"})
+    _finish(model, "fitter", 1)
+    emitted.clear()
+
+    model.thread_running["fitter"][1] = True
+    reports.update({0: "Ch0 changed elsewhere", 1: "Ch1 refitted"})
+    _finish(model, "fitter", 1)
+
+    assert emitted == ["Ch1 refitted"]
+
+
+def test_a_report_that_fails_at_the_batch_end_does_not_raise(fitter_model, caplog):
+    model, reports, emitted = fitter_model
+    _finish(model, "fitter", 0)
+    del reports[0]
+    reports[1] = "Ch1 final"
+
+    with caplog.at_level(logging.ERROR):
+        _finish(model, "fitter", 1)
+
+    assert emitted == ["Ch0 waiting", "Ch1 final"]
+    assert "Unable to report the status" in caplog.text

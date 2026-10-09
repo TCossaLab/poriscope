@@ -90,7 +90,7 @@
 
 * **Fixed PeakFinder sometimes skipping its classification** when two channels finished fitting at the same time
 
-* **Fixed a fit's last progress bar disappearing while PeakFinder was still classifying**, and that channel's results being writable before classification finished
+* **Fixed a fit's last progress bar disappearing while PeakFinder was still classifying**, and its channels' results being writable before classification finished; a channel of a multi-channel fit is now ready to write once every channel of the fit has finished, and one that finishes early says it is waiting, then reports its results when the fit ends
 
 * PeakFinder and Basic_PeakFinder now give durations, and Basic_PeakFinder its time settings, in `us` like every other plugin; a database written before keeps `μs`
 

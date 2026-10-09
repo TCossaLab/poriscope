@@ -180,7 +180,65 @@ def test_the_last_channel_reports_complete_only_after_the_run_wide_step(fitter) 
     assert all(p < 1.0 for p, _runs in values[:-1]), values
 
 
-def test_the_last_channel_is_not_fitted_while_the_run_wide_step_runs(fitter) -> None:
+def test_a_channel_that_finishes_first_is_not_fitted_until_its_run_ends(fitter) -> None:
+    # The run-wide step may rewrite any channel of the run, so one that finished
+    # early is not done - nor readable by a database write - until the run is over.
+    first = fitter.fit_events(0)
+    second = fitter.fit_events(1)
+    drain(first)
+
+    assert fitter.get_eventfitting_status(0) is False
+    drain(second)
+    assert fitter.get_eventfitting_status(0) is True
+    assert fitter.get_eventfitting_status(1) is True
+
+
+def test_a_channel_waiting_for_its_run_reports_that_it_is_waiting(fitter) -> None:
+    # The tab shows report_status(channel) as each channel's worker ends; a channel
+    # that fitted cleanly and is only waiting for its run must not read as incomplete.
+    first = fitter.fit_events(0)
+    second = fitter.fit_events(1)
+    drain(first)
+
+    waiting = fitter.report_status(0)
+    assert "incomplete" not in waiting, waiting
+    assert "waiting" in waiting, waiting
+    drain(second)
+    assert "good fits" in fitter.report_status(0)
+
+
+def test_a_channel_refitted_and_aborted_mid_run_is_not_marked_at_its_end(
+    fitter,
+) -> None:
+    first = fitter.fit_events(0)
+    second = fitter.fit_events(1)
+    drain(first)
+    again = fitter.fit_events(0)
+    next(again)
+    again.send(True)
+    drain(second)
+
+    assert (
+        fitter.get_eventfitting_status(0) is False
+    ), "an aborted, reset channel was marked"
+    assert "incomplete" in fitter.report_status(0)
+
+
+def test_a_failed_run_reports_its_channels_as_incomplete(fitter) -> None:
+    def hook(channels: List[int]) -> None:
+        raise RuntimeError("the classifier did not converge")
+
+    fitter._post_process_events = hook
+    first = fitter.fit_events(0)
+    second = fitter.fit_events(1)
+    drain(first)
+    with pytest.raises(RuntimeError):
+        drain(second)
+
+    assert "incomplete" in fitter.report_status(0)
+
+
+def test_no_channel_of_the_run_is_fitted_while_the_run_wide_step_runs(fitter) -> None:
     seen = []
 
     def hook(channels: List[int]) -> None:
@@ -193,11 +251,11 @@ def test_the_last_channel_is_not_fitted_while_the_run_wide_step_runs(fitter) -> 
     drain(first)
     drain(second)
 
-    assert seen == [{0: True, 1: False}], "the last channel was writable mid-step"
+    assert seen == [{0: False, 1: False}], "a channel was writable mid-step"
     assert fitter.get_eventfitting_status(0) and fitter.get_eventfitting_status(1)
 
 
-def test_a_failed_run_wide_step_leaves_the_last_channel_unfitted(fitter) -> None:
+def test_a_failed_run_wide_step_leaves_the_run_unfitted(fitter) -> None:
     def hook(channels: List[int]) -> None:
         raise RuntimeError("the classifier did not converge")
 
@@ -207,6 +265,20 @@ def test_a_failed_run_wide_step_leaves_the_last_channel_unfitted(fitter) -> None
     drain(first)
     with pytest.raises(RuntimeError, match="did not converge"):
         drain(second)
+
+    assert fitter.get_eventfitting_status(0) is False
+    assert fitter.get_eventfitting_status(1) is False
+
+
+def test_a_run_with_an_aborted_channel_marks_the_finished_ones_as_it_ends(
+    fitter,
+) -> None:
+    # With the run-wide step skipped, nothing more will change the finished channels.
+    first = fitter.fit_events(0)
+    second = fitter.fit_events(1)
+    drain(first)
+    next(second)
+    second.send(True)
 
     assert fitter.get_eventfitting_status(0) is True
     assert fitter.get_eventfitting_status(1) is False
