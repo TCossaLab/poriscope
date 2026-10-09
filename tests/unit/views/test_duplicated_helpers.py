@@ -64,7 +64,8 @@ Ten groups:
 - ``set_event_id_input`` lives once, on ``MetaSubsetTabControls``, for both subset
   panels; that base declares ``validate_inputs`` abstract because it calls it.
 - ``_shift_range_and_update_plot`` lives once, on ``MetaSubsetTabView``, for both
-  subset tabs, re-plotting through each tab's ``_replot_after_shift``.
+  subset tabs, re-plotting through each tab's ``_replot_after_shift``; the plot
+  handlers snap an entered Event ID through the shared ``_snap_to_filtered``.
 """
 
 import json
@@ -1034,7 +1035,7 @@ class TestShiftRangeAndUpdatePlotIsShared:
 
     Pinned: wrapping at both ends, the empty-scope message, the cache rebuild on a
     scope change, and an entered id past every cached one sitting just past the end -
-    right goes to the first id, left to the last, and the status panel says so.
+    right goes to the first id, left to the last, silently.
     """
 
     def test_the_base_owns_the_only_copy(self) -> None:
@@ -1101,15 +1102,13 @@ class TestShiftRangeAndUpdatePlotIsShared:
         """
         Neither arrow skips an event when the entered id has no match at or after it.
 
-        The status panel says why the field jumped, since the entered id is not one
-        the filtered set holds.
+        Arriving at the first or last event is ordinary wrap-around, so nothing is
+        reported; the report belongs to plotting, which snaps the entered id.
         """
         view = build_navigable_tab(view_cls, mocker)
 
         assert navigate(view, 99, direction) == expected
-
-        message = view.add_text_to_display.emit.call_args[0][0]
-        assert message.startswith("No filtered event at or after Event ID 99")
+        view.add_text_to_display.emit.assert_not_called()
 
     @pytest.mark.parametrize("view_cls", SUBSET_TABS, ids=lambda c: c.__name__)
     @pytest.mark.parametrize(
@@ -1160,3 +1159,46 @@ class TestShiftRangeAndUpdatePlotIsShared:
         )
 
         view._replot_after_shift.assert_not_called()
+
+
+class TestSnapToFiltered:
+    """
+    Where a plot of an entered Event ID starts, for both subset tabs.
+
+    Pinned: the first cached id at or after the entered one, and an entered id past
+    every cached one snapping to the first with a status-panel message.
+    """
+
+    @pytest.mark.parametrize("view_cls", SUBSET_TABS, ids=lambda c: c.__name__)
+    @pytest.mark.parametrize(
+        ("event_id", "expected_idx"),
+        [(3, 1), (4, 2), (0, 0), (7, 3)],
+        ids=["exact", "between", "first", "last"],
+    )
+    def test_an_id_in_range_snaps_silently_at_or_after(
+        self,
+        qapp: object,
+        mocker: object,
+        view_cls: type,
+        event_id: int,
+        expected_idx: int,
+    ) -> None:
+        """An entered id with a match at or after it is no surprise, so no message."""
+        view = build_navigable_tab(view_cls, mocker)
+
+        assert view._snap_to_filtered(event_id) == expected_idx
+        view.add_text_to_display.emit.assert_not_called()
+
+    @pytest.mark.parametrize("view_cls", SUBSET_TABS, ids=lambda c: c.__name__)
+    def test_an_id_past_every_cached_one_snaps_to_the_first_and_says_so(
+        self, qapp: object, mocker: object, view_cls: type
+    ) -> None:
+        """The plot starts somewhere other than the entered id, so the panel says where."""
+        view = build_navigable_tab(view_cls, mocker)
+
+        assert view._snap_to_filtered(99) == 0
+        view.add_text_to_display.emit.assert_called_once_with(
+            "No filtered event at or after Event ID 99, so plotting from the first "
+            "filtered event, 0",
+            view_cls.__name__,
+        )

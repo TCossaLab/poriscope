@@ -184,7 +184,9 @@
 
 * The Protein tab's event navigation arrows now say on the status panel when no experiment or channel is in scope, as the Metadata tab's do
 
-* **Fixed the Metadata and Protein tabs' event navigation arrows skipping an event when the Event ID is past the last filtered event**; right now goes to the first filtered event and left to the last, and the status panel says the Event ID had no match
+* **Fixed the Metadata and Protein tabs' event navigation arrows skipping an event when the Event ID is past the last filtered event**; right now goes to the first filtered event and left to the last
+
+* The Metadata and Protein tabs now say on the status panel when plotting an Event ID past the last filtered event starts from the first filtered event instead
 
 * The Event Analysis tab's event navigation arrows now say on the status panel when a shift would go below event 0, as the Raw Data tab's do
 

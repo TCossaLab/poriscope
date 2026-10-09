@@ -86,7 +86,8 @@ class MetaSubsetTabView(MetaView):
       ``current_*``/``filtered_event_ids`` values the staleness checks compare.
     - **Event navigation.** ``_shift_range_and_update_plot`` steps the Event ID
       through that cache, wrapping at both ends, and re-plots through
-      ``_replot_after_shift``.
+      ``_replot_after_shift``; ``_snap_to_filtered`` finds where a plot of an entered
+      Event ID starts.
 
     What a subclass owes it:
 
@@ -866,10 +867,9 @@ class MetaSubsetTabView(MetaView):
         and moves ``n_events`` places, wrapping at both ends: right past the last id
         goes to the first, left past the first goes to the last ``n_events``. An
         entered id past every cached one sits just past the end, so right goes to the
-        first id and left to the last, and the status panel says the entered id had no
-        match. Plotting that same id, rather than navigating from it, starts at the
-        first id instead. The cache is rebuilt first if the filter or the scope no
-        longer match it.
+        first id and left to the last. Plotting that same id, rather than navigating
+        from it, snaps it to the first id instead (``_snap_to_filtered``). The cache is
+        rebuilt first if the filter or the scope no longer match it.
 
         :param parameters: the controls panel's parameters; reads ``db_loader``, ``event_id`` and ``n_events``
         :type parameters: Dict[str, Any]
@@ -911,12 +911,6 @@ class MetaSubsetTabView(MetaView):
         n = len(ids)
 
         current_idx = bisect.bisect_left(ids, event_id)
-        if current_idx == n:
-            self.add_text_to_display.emit(
-                f"No filtered event at or after Event ID {event_id}, so navigation "
-                "continues from the end of the filtered events",
-                self.__class__.__name__,
-            )
 
         if direction == "right":
             next_idx = current_idx + n_events
@@ -933,6 +927,32 @@ class MetaSubsetTabView(MetaView):
         new_params = parameters.copy()
         new_params["event_id"] = new_event_id
         self._replot_after_shift(new_params)
+
+    @log(logger=logger)
+    def _snap_to_filtered(self, event_id: int) -> int:
+        """
+        The cache position of the first filtered event_id at or after ``event_id``.
+
+        An ``event_id`` past every cached one has no such event, so it snaps to the
+        first, and the status panel says so, since the plot then starts somewhere other
+        than the Event ID the user entered. Reads ``filtered_event_ids``, which the
+        caller has made current and non-empty.
+
+        :param event_id: the Event ID the user entered
+        :type event_id: int
+        :return: an index into ``filtered_event_ids``
+        :rtype: int
+        """
+        ids = self.filtered_event_ids
+        idx = bisect.bisect_left(ids, event_id)
+        if idx < len(ids):
+            return idx
+        self.add_text_to_display.emit(
+            f"No filtered event at or after Event ID {event_id}, so plotting from the "
+            f"first filtered event, {ids[0]}",
+            self.__class__.__name__,
+        )
+        return 0
 
     @log(logger=logger)
     def _record_selection(self, parameters: Dict[str, Any]) -> None:

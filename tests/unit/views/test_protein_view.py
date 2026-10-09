@@ -1554,6 +1554,23 @@ class TestHandlePlotEvents:
         )
         assert any("No data available" in m for m in received)
 
+    def test_an_id_past_the_cache_snaps_to_the_first_and_says_so(self, mock_view):
+        """Plotting an Event ID past every filtered one starts at the first."""
+        self._setup(mock_view)
+        mock_view._fetch_event_data = MagicMock(return_value=[])
+        received = []
+        mock_view.add_text_to_display.connect(lambda m, s: received.append(m))
+
+        mock_view._handle_plot_events(
+            {"db_loader": "ldr", "event_id": 99, "n_events": 2}
+        )
+
+        assert mock_view._fetch_event_data.call_args[0][0]["event_index"] == [1, 2]
+        assert (
+            "No filtered event at or after Event ID 99, so plotting from the first "
+            "filtered event, 1"
+        ) in received
+
 
 class TestHandlePlotHistogram:
     def _setup(self, mock_view):
@@ -1577,6 +1594,29 @@ class TestHandlePlotHistogram:
             }
         )
         assert mock_view._last_event_action == "plot_histogram"
+
+    def test_an_id_past_the_cache_snaps_to_the_first_and_says_so(self, mock_view):
+        """The histogram snaps an out-of-range Event ID exactly as Plot Events does."""
+        self._setup(mock_view)
+        mock_view._fetch_event_data = MagicMock(return_value=[])
+        received = []
+        mock_view.add_text_to_display.connect(lambda m, s: received.append(m))
+
+        mock_view._handle_plot_histogram(
+            {
+                "db_loader": "ldr",
+                "event_id": 99,
+                "n_events": 2,
+                "bins": None,
+                "sizes": False,
+            }
+        )
+
+        assert mock_view._fetch_event_data.call_args[0][0]["event_index"] == [1, 2]
+        assert (
+            "No filtered event at or after Event ID 99, so plotting from the first "
+            "filtered event, 1"
+        ) in received
 
     def test_calls_update_event_histogram_with_data(self, mock_view):
         self._setup(mock_view)

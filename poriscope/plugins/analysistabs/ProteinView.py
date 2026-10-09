@@ -24,7 +24,6 @@
 # Alejandra Carolina González González
 # Kyle Briggs
 
-import bisect
 import copy
 import logging
 import re
@@ -1333,10 +1332,7 @@ class ProteinView(MetaSubsetTabView):
         event_id = parameters.get("event_id") or 0
         n_events = parameters.get("n_events") or 1
 
-        # Snap to nearest event_id at or after the requested id; wrap if past end
-        idx = bisect.bisect_left(cache, event_id)
-        if idx >= len(cache):
-            idx = 0
+        idx = self._snap_to_filtered(event_id)
 
         snapped_event_id = cache[idx]
         self.proteincontrols.set_event_id_input(snapped_event_id)
@@ -1428,10 +1424,7 @@ class ProteinView(MetaSubsetTabView):
         event_id = parameters.get("event_id") or 0
         n_events = parameters.get("n_events") or 1
 
-        # Snap to nearest event_id at or after the requested id; wrap if past end
-        idx = bisect.bisect_left(cache, event_id)
-        if idx >= len(cache):
-            idx = 0
+        idx = self._snap_to_filtered(event_id)
 
         snapped_event_id = cache[idx]
         self.proteincontrols.set_event_id_input(snapped_event_id)

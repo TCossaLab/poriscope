@@ -24,7 +24,6 @@
 # Alejandra Carolina González González
 # Kyle Briggs
 
-import bisect
 import copy
 import logging
 import re
@@ -2091,11 +2090,8 @@ class MetadataView(MetaSubsetTabView):
             )
             return
 
-        # Snap using cache — bisect into filtered_event_ids
         ids = self.filtered_event_ids
-        snap_idx = bisect.bisect_left(ids, event_id)
-        if snap_idx >= len(ids):
-            snap_idx = 0  # wrap around to first event
+        snap_idx = self._snap_to_filtered(event_id)
         snapped_event_ids = ids[snap_idx : snap_idx + n_events]
         snapped_start_id = snapped_event_ids[0]
 

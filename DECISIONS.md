@@ -28,10 +28,11 @@ arrow. With ids `[0, 3, 5, 7]` and Event ID 99: Protein right -> 3 (skips 0), Me
 
 **Decision** (Carolina, 2026-10-09). The rule is that the Event ID field snaps to the nearest
 filtered event at or after the requested ID. Past every filtered event there is none, so the
-position stays at `n`, just past the end: right -> 0, left -> 7, nothing skipped, and the status
-panel says the entered id had no match. Both rejected rules skip an event. Plot Events and Plot
-Histogram still start from the first id for the same input - they plot from a position rather
-than step from one.
+position stays at `n`, just past the end: right -> 0, left -> 7, nothing skipped, and nothing is
+reported, since reaching the first or last event is ordinary wrap-around. Both rejected rules skip
+an event. Plot Events and Plot Histogram snap the same input to the first id - they plot from a
+position rather than step from one - and say so on the status panel (`_snap_to_filtered`), since
+the plot then starts somewhere other than the entered id.
 
 **Revisit if** navigation gains a mode where "past the end" should stop instead of wrap.
 
