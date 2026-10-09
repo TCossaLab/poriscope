@@ -52,10 +52,6 @@ Step 10 waits for both tracks.
 Design ruled by Kyle 2026-10-09 (plan page, step 8 Q1-Q6), replacing the 2026-09-22 scope. The
 PeakFinder changes below are approved by Nada (2026-10-09).
 
-- **Run-wide hook `MetaEventFitter._post_process_run(channels)`**, once when every channel of a run
-  has finished. `fit_events` is a lazy generator, so membership must be fixed before the workers
-  start. PeakFinder's barrier (`_post_process_events:2186-2213`) moves onto it; today it races,
-  since the base sets the status (`MetaEventFitter.py:800`) after the hook returns (`:799`).
 - **`PeakFinder.py:1019-1045` carries the CUSUM detector step 5 fixed**: reset only on an accepted
   jump and `varS = 0` outside the reset (`:1045`). Apply `CUSUM.py:315-330`'s form.
 - **`"μs"` where every other plugin writes `"us"`**: `PeakFinder.py:2068`, `Basic_PeakFinder.py:1197`

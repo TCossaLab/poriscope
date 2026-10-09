@@ -46,9 +46,6 @@ Required Private Methods
 .. automethod:: poriscope.utils.MetaEventFitter.MetaEventFitter._populate_event_metadata
    :no-index:
 
-.. automethod:: poriscope.utils.MetaEventFitter.MetaEventFitter._post_process_events
-   :no-index:
-   
 .. automethod:: poriscope.utils.MetaEventFitter.MetaEventFitter._validate_settings
    :no-index:
 
@@ -56,6 +53,9 @@ Optional Method Overrides
 ~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Methods in this section have an implementation in either :ref:`BaseDataPlugin` or :ref:`MetaEventFitter`, but they can be overridden if necessary to tweak the behavior of your plugin.
+
+.. automethod:: poriscope.utils.MetaEventFitter.MetaEventFitter._post_process_events
+   :no-index:
 
 .. automethod:: poriscope.utils.MetaEventFitter.MetaEventFitter.close_resources
    :no-index:

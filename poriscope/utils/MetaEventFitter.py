@@ -26,9 +26,21 @@
 
 import gc
 import logging
+import threading
 from abc import abstractmethod
 from collections.abc import Sized
-from typing import Any, Callable, Dict, Generator, List, Optional, Tuple, Type, Union
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Generator,
+    List,
+    Optional,
+    Set,
+    Tuple,
+    Type,
+    Union,
+)
 
 import numpy as np
 import numpy.typing as npt
@@ -87,6 +99,12 @@ class MetaEventFitter(BaseDataPlugin):
         self.sublevel_metadata_units: Dict[str, Optional[str]] = {}
 
         self.eventloader: Optional[MetaEventLoader] = None
+
+        # The channels whose fits are in flight together form a run; see fit_events.
+        self._run_lock = threading.Lock()
+        self._run_in_flight: Set[int] = set()
+        self._run_finished: Set[int] = set()
+        self._run_complete = True
 
         self._define_metadata_types()
         self._define_metadata_units()
@@ -490,7 +508,6 @@ class MetaEventFitter(BaseDataPlugin):
         self.event_metadata[channel].pop(index)
         self.sublevel_metadata[channel].pop(index)
 
-    @serialize_channels
     @log(logger=logger)
     def fit_events(
         self,
@@ -500,7 +517,102 @@ class MetaEventFitter(BaseDataPlugin):
         indices: Optional[List[int]] = None,
     ) -> Generator[float, Optional[bool], None]:
         """
-        Set up a generator that will walk through all provided events and calculate metadata relating to the sublevels, yielding its percentage completion each time next() is called on it.
+        Set up a generator that fits every event of one channel, yielding its fraction complete each time next() is called on it.
+
+        The channel joins this fitter's current run when this method is *called*,
+        not when the generator first runs: a run is the channels whose fits are in
+        flight together, and the Event Analysis tab calls this for every channel it
+        is about to fit before starting any worker, so no channel can finish before
+        the others in its run have joined. When the last of them ends,
+        :py:meth:`_post_process_events` runs once, with those channels, provided
+        every one of them finished; an aborted or failed channel cancels it for that
+        run. A script that fits channels one after another therefore runs it after
+        each channel; to get one pass over several, create each channel's generator
+        before iterating any of them. A generator that is never iterated keeps its
+        channel in the run, so the run never ends; iterate or close every one.
+
+        See :py:meth:`_fit_channel` for what the generator does and what it raises.
+
+        :param channel: analyze only events from this channel
+        :type channel: int
+        :param silent: indicate whether or not to report progress, default false
+        :type silent: bool
+        :param data_filter: An optional function to call to preprocess the data before looking for events, usually a filter
+        :type data_filter: Optional[Callable]
+        :param indices: a list of indices to fit, ignoring the rest. Empty list fits all available indices.
+        :type indices: Optional[List[int]]
+        :return: the generator, yielding the fraction of events fitted and accepting True to abort
+        :rtype: Generator[float, Optional[bool], None]
+        """
+        with self._run_lock:
+            self._run_in_flight.add(channel)
+        return self._fit_in_run(
+            channel, self._fit_channel(channel, silent, data_filter, indices)
+        )
+
+    def _fit_in_run(
+        self, channel: int, fitting: Generator[float, Optional[bool], None]
+    ) -> Generator[float, Optional[bool], None]:
+        """
+        Drive one channel's fit, then take the channel out of the run however it ended.
+
+        The channel counts as finished only when the fit returned normally with its
+        status set, so an abort, an exception or a close leaves the run incomplete.
+
+        :param channel: the channel being fitted
+        :type channel: int
+        :param fitting: the generator from :py:meth:`_fit_channel`
+        :type fitting: Generator[float, Optional[bool], None]
+        :yield: the fit's fraction complete, passing an abort sent in through to it
+        :ytype: float
+        """
+        finished = False
+        try:
+            yield from fitting
+            finished = bool(self.eventfitting_status.get(channel))
+        finally:
+            self._leave_run(channel, finished)
+
+    def _leave_run(self, channel: int, finished: bool) -> None:
+        """
+        Take a channel out of the run, and post-process the run if it was the last.
+
+        :param channel: the channel whose fit has ended
+        :type channel: int
+        :param finished: whether that fit completed
+        :type finished: bool
+        """
+        with self._run_lock:
+            self._run_in_flight.discard(channel)
+            if finished:
+                self._run_finished.add(channel)
+            else:
+                self._run_complete = False
+            if self._run_in_flight:
+                return
+            channels = sorted(self._run_finished)
+            complete = self._run_complete
+            self._run_finished = set()
+            self._run_complete = True
+        if complete:
+            self._post_process_events(channels)
+        else:
+            self.logger.info(
+                f"Run-wide post-processing skipped: not every channel of the run "
+                f"finished fitting (finished: {channels})"
+            )
+
+    @serialize_channels
+    @log(logger=logger)
+    def _fit_channel(
+        self,
+        channel: int,
+        silent: bool,
+        data_filter: Optional[Callable],
+        indices: Optional[List[int]],
+    ) -> Generator[float, Optional[bool], None]:
+        """
+        Walk through all provided events and calculate metadata relating to the sublevels, yielding its percentage completion each time next() is called on it.
         If silent flag is set, run through without yielding progress reports on the first call to next(). Once StopIteration is reached, internal
         lists of event metadata will be populated as entries in a dict keyed by event id.
 
@@ -778,7 +890,6 @@ class MetaEventFitter(BaseDataPlugin):
                 if abort is True:
                     break
         if abort is False:
-            self._post_process_events(channel)
             self.eventfitting_status[channel] = True
         else:
             self.reset_channel(channel)
@@ -1155,15 +1266,21 @@ class MetaEventFitter(BaseDataPlugin):
         """
         pass
 
-    @abstractmethod
-    def _post_process_events(self, channel: int) -> None:
+    # private API with a default, overridden only as needed
+    @log(logger=logger)
+    def _post_process_events(self, channels: List[int]) -> None:
         """
-        **Purpose:** Apply any operations to the fits that need to occur after preliminary fitting is finished, for example, refining fits using information about the global dataset structure. Try to avoid computationally intensive operations here if possible. Most fitters can simple ``pass``.
+        **Purpose:** Refine the fits using the whole run, once every channel in it has been fitted.
 
-        :param channel: the index of the channel to preprocess
-        :type channel: int
+        Called once per run, after the last of its channels finishes, with all of
+        them - for work that needs every event at once, such as fitting a classifier
+        to the whole dataset. Not called if any channel of the run was aborted or
+        failed. A run is the channels whose fits are in flight together; see
+        :py:meth:`fit_events`. Does nothing by default.
+
+        :param channels: the channels fitted in this run, in ascending order
+        :type channels: List[int]
         """
-        pass
 
     # private API, should generally be left alone by subclasses
     @log(logger=logger)

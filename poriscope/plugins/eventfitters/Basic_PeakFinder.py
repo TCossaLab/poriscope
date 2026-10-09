@@ -1086,15 +1086,6 @@ class Basic_PeakFinder(MetaEventFitter):
 
     @log(logger=logger)
     @override
-    def _post_process_events(self, channel: int) -> None:
-        """
-        :param channel: the index of the channel to postprocess
-        :type channel: int
-        """
-        pass
-
-    @log(logger=logger)
-    @override
     def _validate_settings(self, settings: dict) -> None:
         """
         Validate that the settings dict contains the correct information for use by the subclass.

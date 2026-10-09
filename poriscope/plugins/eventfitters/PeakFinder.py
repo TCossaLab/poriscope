@@ -881,18 +881,15 @@ class PeakFinder(MetaEventFitter):
     @override
     def _pre_process_events(self, channel: int) -> None:
         """
-        Arm the run-wide post-processing pass for a channel about to be fitted.
+        Nothing to prepare per channel.
 
-        Called by ``MetaEventFitter.fit_events()`` once per channel, before any
-        of that channel's events are fitted. Clearing
-        ``_global_postprocessing_done`` here is what lets the classifiers run
-        again on a second fitting session in the same app instance;
-        ``_post_process_events`` sets the flag when they have run.
+        The run-wide classifiers need no arming: ``MetaEventFitter`` calls
+        ``_post_process_events`` once per run.
 
         :param channel: the channel to preprocess
         :type channel: int
         """
-        self._global_postprocessing_done = False
+        pass
 
     @log(logger=logger)
     def redefine_padding(
@@ -2109,17 +2106,16 @@ class PeakFinder(MetaEventFitter):
 
     @log(logger=logger)
     @override
-    def _post_process_events(self, channel: int) -> None:
+    def _post_process_events(self, channels: List[int]) -> None:
         """
-        Run every dataset-wide classifier, once the last channel is fitted.
+        Run every dataset-wide classifier, once every channel of the run is fitted.
 
-        Called by ``MetaEventFitter.fit_events()`` once per channel, after that
-        channel's last event. Each classifier below fits a distribution built
-        from every event in the run, so all but the final call return early:
-        the guard is ``_global_postprocessing_done``, armed for a new fitting
-        session by ``_pre_process_events``.
+        Called by ``MetaEventFitter`` once per run, after the last of its channels
+        finishes, and not at all if one of them was aborted or failed. Each
+        classifier below fits a distribution built from every event, so it needs
+        them all at once.
 
-        On the final call, in order:
+        In order:
 
         1. Pool one ``primary_level`` per event across all channels, dropping
            events with no primary level or with a non-positive ECD.
@@ -2147,58 +2143,10 @@ class PeakFinder(MetaEventFitter):
         report ``report_status`` builds for step 7, rather than living
         only in the log file.
 
-        :param channel: the index of the channel to postprocess
-        :type channel: int
+        :param channels: the channels fitted in this run
+        :type channels: List[int]
         """
-        self.logger.info(f"_post_process_events called for channel {channel}")
-
-        if not hasattr(self, "_global_postprocessing_done"):
-            self._global_postprocessing_done = False
-
-        if self._global_postprocessing_done:
-            self.logger.info("Global post-processing already completed, skipping")
-            return
-
-        # This hook fires once per channel, as each one finishes, but the
-        # classifiers below fit distributions over the whole run - so every
-        # call but the last returns here.
-        if not hasattr(self, "eventfitting_status"):
-            self.logger.warning("eventfitting_status attribute not found")
-            return
-
-        if not self.eventfitting_status:
-            self.logger.warning("eventfitting_status is empty")
-            return
-
-        all_channels = list(self.event_metadata.keys())
-        if not all_channels:
-            self.logger.warning("No channels in event_metadata")
-            return
-
-        self.logger.info(f"All channels: {all_channels}")
-        self.logger.info(f"Current eventfitting_status: {self.eventfitting_status}")
-
-        # eventfitting_status[channel] is set by the base class AFTER this
-        # returns, so the channel now being post-processed counts as done.
-        all_fitted = all(
-            (ch == channel) or self.eventfitting_status.get(ch, False)
-            for ch in all_channels
-        )
-
-        self.logger.info(f"All channels fitted: {all_fitted}")
-
-        if not all_fitted:
-            self.logger.info(
-                f"Channel {channel} fitting complete, but waiting for all channels to finish before global post-processing"
-            )
-            for ch in all_channels:
-                is_done = (ch == channel) or self.eventfitting_status.get(ch, False)
-                self.logger.info(
-                    f"  Channel {ch}: fitted={is_done} (current={ch == channel}, status={self.eventfitting_status.get(ch, False)})"
-                )
-            return
-
-        self._global_postprocessing_done = True
+        self.logger.info(f"Run-wide post-processing for channels {channels}")
 
         warning_collector = _ClassificationWarningCollector()
         self.logger.addHandler(warning_collector)
@@ -2207,6 +2155,8 @@ class PeakFinder(MetaEventFitter):
                 "Starting global post-processing analysis with classification utilities"
             )
 
+            # The classifiers pool every channel this fitter holds results for,
+            # including ones fitted in an earlier run, as they always have.
             channels = list(self.event_metadata.keys())
 
             if not channels:
@@ -2560,7 +2510,6 @@ class PeakFinder(MetaEventFitter):
         :type init: bool
         :return: the status report as a string
         :rtype: str
-        :raises RuntimeError: if the channel's peak statistics cannot be assembled
         """
         # The per-channel base text is built here with explicit super() calls
         # rather than by delegating the channel=None case to the base class.
@@ -2578,24 +2527,6 @@ class PeakFinder(MetaEventFitter):
 
         if init or not hasattr(self, "_classification_results"):
             return base_report
-
-        # During the final post-processing pass the classification results
-        # exist before the base class flips eventfitting_status[channel], so a
-        # channel that is in fact finished still reports as incomplete.
-        #
-        # NOTE: this branch does nothing about that. It checks that an event
-        # loader is present and raises if not, and the report text is left
-        # saying "fitting incomplete" either way.
-        if channel is not None and "fitting incomplete" in base_report:
-            if (
-                self._classification_results
-                and "error" not in self._classification_results
-            ):
-                loader = getattr(self, "eventloader", None)
-                if loader is None:
-                    raise RuntimeError(
-                        "Event loader is not initialized; cannot determine total events"
-                    )
 
         classification_report = (
             "\n\nClassification Results:\n\nFolding Classification Results:"
@@ -4652,9 +4583,8 @@ class PeakFinder(MetaEventFitter):
         a star whose arm could be resolved: a candidate on an event with no
         translocation direction keeps its -1. This is why the pass runs after
         the two that select on labels; it also makes the pass non-idempotent,
-        since a re-run would no longer find that peak among the -1s, which
-        ``_post_process_events`` prevents by way of
-        ``_global_postprocessing_done``.
+        since a re-run would no longer find that peak among the -1s, which is
+        why ``_post_process_events`` runs once per run.
 
         A candidate must also be *deeper than a fold*: its modal blockage has
         to clear the folded level - twice that event's unfolded level - by the
@@ -4996,8 +4926,8 @@ class PeakFinder(MetaEventFitter):
                 # the `filter_peaks` re-run that would overwrite the label
                 # happens in _classify_folded_unfolded, earlier still. It does
                 # mean the pass is not idempotent - a second run would not
-                # find this peak in the -1 pool - which `_post_process_events`
-                # prevents with `_global_postprocessing_done`.
+                # find this peak in the -1 pool - which is why
+                # `_post_process_events` runs once per run.
                 sublevel_data["filtered"][star_index] = 5 if star_on_long_arm else 4
 
                 if bucket is not None:

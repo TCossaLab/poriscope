@@ -1245,7 +1245,7 @@ class TestNoopOverrides(unittest.TestCase):
         self.assertIsNone(self.nt._pre_process_events(0))
 
     def test_post_process_returns_none(self):
-        self.assertIsNone(self.nt._post_process_events(0))
+        self.assertIsNone(self.nt._post_process_events([0]))
 
     def test_close_resources_returns_none(self):
         self.assertIsNone(self.nt.close_resources())

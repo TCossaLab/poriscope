@@ -241,7 +241,7 @@ class ConcreteEventFitter(MetaEventFitter):
             "min_blockage": float(np.min(sublevel_metadata["sublevel_current"])),
         }
 
-    def _post_process_events(self, channel: int) -> None:
+    def _post_process_events(self, channels: List[int]) -> None:
         """Post-process events."""
         pass
 
@@ -533,8 +533,8 @@ class TestMetaEventFitter:
 
     def test_fit_events_no_loader(self) -> None:
         """Test fitting events without loader."""
-        fitter = ConcreteEventFitter.__new__(ConcreteEventFitter)
-        fitter.eventloader = None
+        fitter = ConcreteEventFitter()
+        assert fitter.eventloader is None
 
         gen = fitter.fit_events(0)
         with pytest.raises(RuntimeError, match="not been initialized"):

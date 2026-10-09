@@ -1442,7 +1442,7 @@ class TestNoopOverrides(unittest.TestCase):
         self.assertIsNone(self.pf._pre_process_events(0))
 
     def test_post_process_noop(self):
-        self.assertIsNone(self.pf._post_process_events(0))
+        self.assertIsNone(self.pf._post_process_events([0]))
 
     def test_validate_settings_noop(self):
         self.assertIsNone(self.pf._validate_settings({}))
