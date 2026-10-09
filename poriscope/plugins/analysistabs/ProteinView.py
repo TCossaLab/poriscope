@@ -1168,9 +1168,7 @@ class ProteinView(MetaSubsetTabView):
         :param direction: 'left' (backward) or 'right' (forward).
         :type direction: str
         """
-        loader = parameters.get("db_loader")
-        if not loader:
-            return
+        loader = parameters.get("db_loader", "")
 
         selected_filters = self.get_selected_filters()
         if not selected_filters:
@@ -1180,6 +1178,11 @@ class ProteinView(MetaSubsetTabView):
             loader
         )
         if not experiments_and_channels:
+            self.add_text_to_display.emit(
+                "No experiments or channels are in scope, select at least one to "
+                "navigate events",
+                self.__class__.__name__,
+            )
             return
 
         sql_filter = next(iter(selected_filters.values()))

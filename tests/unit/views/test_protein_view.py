@@ -707,11 +707,28 @@ class TestShiftRangeAndUpdatePlot:
             )
         assert real_view.proteincontrols.event_id_lineEdit.text() == "3"
 
-    def test_empty_input_returns_early(self, mock_view):
+    @pytest.mark.parametrize(
+        "parameters", [{"db_loader": "l"}, {}], ids=["no_scope", "no_loader"]
+    )
+    def test_nothing_in_scope_is_reported(self, mock_view, parameters):
+        """
+        Navigation with no experiment or channel selected says so on the status panel.
+
+        A missing loader key reaches the same message, since no scope is filed under it.
+        """
         mock_view.selected_experiment_and_channels_by_loader = {}
-        mock_view._shift_range_and_update_plot(
-            {"db_loader": "l"}, "right"
-        )  # must not raise
+        mock_view.get_selected_filters = MagicMock(return_value={})
+        received = []
+        mock_view.add_text_to_display.connect(lambda m, s: received.append(m))
+
+        with patch.object(mock_view, "_handle_plot_events") as mock_ev:
+            mock_view._shift_range_and_update_plot(parameters, "right")
+
+        assert received == [
+            "No experiments or channels are in scope, select at least one to "
+            "navigate events"
+        ]
+        mock_ev.assert_not_called()
 
     def test_dispatches_histogram(self, mock_view):
         self._setup_cache(mock_view)

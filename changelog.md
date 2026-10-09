@@ -178,6 +178,8 @@
 
 * Quitting now closes every plugin even when one fails to close
 
+* The Protein tab's event navigation arrows now say on the status panel when no experiment or channel is in scope, as the Metadata tab's do
+
 ### Documentation:
 
 * The API reference no longer lists `NanoTrees`' helper classes as event fitters
