@@ -62,13 +62,12 @@ left it empty. A run is the channels whose fits are in flight together: a channe
 once with the run's channels, and only if every one finished - an aborted, failed or closed
 channel cancels it for that run.
 
-**Rejected** (reasons reconstructed from the code on 2026-10-09; the ruling is Kyle's). An
-explicit run-boundary API: every caller would have to bracket its fits - the tab
-(`EventAnalysisController.py:490-517`), `scripting.rst:298`, `workflow_script.py:198` - and a
-forgotten close would skip the step silently; the implicit form needed no caller change,
-because the tab already creates every channel's generator before starting any worker. Running
-the step on a partial run: an aborted channel's metadata is half-filled, and PeakFinder's
-classification pools every channel in `event_metadata`.
+**Rejected** (Kyle). An explicit run-boundary API: it keeps the API simple not to add one when
+existing machinery fits the purpose - the tab already creates every channel's generator before
+starting any worker (`EventAnalysisController.py:490-518`), so calling `fit_events` is the
+boundary. Running the step on a partial run: the default follows PeakFinder's existing
+behaviour, since it was the only fitter using the hook; its barrier ran the classification only
+when every channel in `event_metadata` had finished, so an aborted run never classified.
 
 **Evidence.** Test-first on a real CUSUM over two channels, requested together, in parallel
 threads, one after another, aborted and failed; four mutations of the run logic killed
