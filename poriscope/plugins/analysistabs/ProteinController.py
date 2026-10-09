@@ -227,7 +227,7 @@ class ProteinController(MetaSubsetTabController):
         self,
         loader: str,
         sql_filter: str,
-        experiments_and_channels: Optional[Dict[str, List[Optional[int]]]],
+        experiments_and_channels: Optional[Dict[str, Optional[List[int]]]],
         plot_type: str,
         bins: Any,
         sizes: bool,
@@ -253,7 +253,7 @@ class ProteinController(MetaSubsetTabController):
         :param sql_filter: the subset filter's WHERE-clause body, empty for all rows
         :type sql_filter: str
         :param experiments_and_channels: the experiment and channel scope, or None
-        :type experiments_and_channels: Optional[Dict[str, List[Optional[int]]]]
+        :type experiments_and_channels: Optional[Dict[str, Optional[List[int]]]]
         :param plot_type: 'Raw Histogram' or 'Filtered Histogram'
         :type plot_type: str
         :param bins: a bin count, or a bin width when sizes is True, or None
@@ -526,7 +526,7 @@ class ProteinController(MetaSubsetTabController):
         self,
         loader: str,
         sql_filter: str,
-        experiments_and_channels: Optional[Dict[str, List[Optional[int]]]],
+        experiments_and_channels: Optional[Dict[str, Optional[List[int]]]],
     ) -> None:
         """
         Build the query for one subset, load its events, and hand both to the View.
@@ -549,7 +549,7 @@ class ProteinController(MetaSubsetTabController):
         :param sql_filter: the subset filter's WHERE-clause body, empty for all rows
         :type sql_filter: str
         :param experiments_and_channels: the scope the filter is built against
-        :type experiments_and_channels: Optional[Dict[str, List[Optional[int]]]]
+        :type experiments_and_channels: Optional[Dict[str, Optional[List[int]]]]
         :return: None
         :rtype: None
         """
@@ -568,7 +568,7 @@ class ProteinController(MetaSubsetTabController):
         self,
         loader: str,
         sql_filter: str,
-        experiments_and_channels: Optional[Dict[str, List[Optional[int]]]],
+        experiments_and_channels: Optional[Dict[str, Optional[List[int]]]],
     ) -> Optional[Tuple[str, Generator]]:
         """
         Build one event subset's query and open a generator over its events.
@@ -583,7 +583,7 @@ class ProteinController(MetaSubsetTabController):
         :param sql_filter: the subset filter's WHERE-clause body, empty for all rows
         :type sql_filter: str
         :param experiments_and_channels: the scope the filter is built against
-        :type experiments_and_channels: Optional[Dict[str, List[Optional[int]]]]
+        :type experiments_and_channels: Optional[Dict[str, Optional[List[int]]]]
         :return: the query that ran and a generator over its events, or None
         :rtype: Optional[Tuple[str, Generator]]
         """

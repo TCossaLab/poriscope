@@ -54,6 +54,8 @@
 
 * The test suite now checks fitted values, the baseline sigma fit, reader recipes, writer failure paths and the Bessel filter against planted ground truth
 
+* The experiment/channel scope parameter's type annotation is now consistent across the analysis-tab controllers, `MetaSubsetTab*` and `MetaDatabaseLoader`
+
 * **Breaking for anyone pinning on Poriscope's metadata: the wheel declares compatible-release ranges** instead of exact pins; `requirements.txt` keeps the exact versions CI tests
 
 * `hdbscan` 0.8.44 replaces 0.8.40, which warned on every clustering run

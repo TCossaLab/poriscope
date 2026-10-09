@@ -515,7 +515,7 @@ class MetadataController(MetaSubsetTabController):
         loader: str,
         columns: List[str],
         sql_filter: str,
-        experiments_and_channels: Optional[Dict[str, List[Optional[int]]]],
+        experiments_and_channels: Optional[Dict[str, Optional[List[int]]]],
     ) -> None:
         """
         Fetch one metadata subset - query, rows and units - and hand it to the View.
@@ -539,7 +539,7 @@ class MetadataController(MetaSubsetTabController):
         :param sql_filter: the subset filter's WHERE-clause body, empty for all rows
         :type sql_filter: str
         :param experiments_and_channels: the experiment and channel scope, or None
-        :type experiments_and_channels: Optional[Dict[str, List[Optional[int]]]]
+        :type experiments_and_channels: Optional[Dict[str, Optional[List[int]]]]
         :return: None
         :rtype: None
         """
@@ -605,7 +605,7 @@ class MetadataController(MetaSubsetTabController):
         self,
         loader: str,
         sql_filter: str,
-        experiments_and_channels: Optional[Dict[str, List[Optional[int]]]],
+        experiments_and_channels: Optional[Dict[str, Optional[List[int]]]],
     ) -> Optional[Tuple[str, Generator]]:
         """
         Build one event-data subset's query and open a generator over its events.
@@ -619,7 +619,7 @@ class MetadataController(MetaSubsetTabController):
         :param sql_filter: the subset filter's WHERE-clause body, empty for all rows
         :type sql_filter: str
         :param experiments_and_channels: the experiment and channel scope, or None
-        :type experiments_and_channels: Optional[Dict[str, List[Optional[int]]]]
+        :type experiments_and_channels: Optional[Dict[str, Optional[List[int]]]]
         :return: the query that ran and a generator over its events, or None
         :rtype: Optional[Tuple[str, Generator]]
         """
@@ -676,7 +676,7 @@ class MetadataController(MetaSubsetTabController):
         self,
         loader: str,
         sql_filter: str,
-        experiments_and_channels: Optional[Dict[str, List[Optional[int]]]],
+        experiments_and_channels: Optional[Dict[str, Optional[List[int]]]],
         plot_type: str,
         bins: Any,
         sizes: bool,
@@ -697,7 +697,7 @@ class MetadataController(MetaSubsetTabController):
         :param sql_filter: the subset filter's WHERE-clause body, empty for all rows
         :type sql_filter: str
         :param experiments_and_channels: the experiment and channel scope, or None
-        :type experiments_and_channels: Optional[Dict[str, List[Optional[int]]]]
+        :type experiments_and_channels: Optional[Dict[str, Optional[List[int]]]]
         :param plot_type: the all-points histogram variant being drawn
         :type plot_type: str
         :param bins: a bin count, or a bin width when sizes is True, or None
@@ -744,7 +744,7 @@ class MetadataController(MetaSubsetTabController):
         self,
         loader: str,
         sql_filter: str,
-        experiments_and_channels: Optional[Dict[str, List[Optional[int]]]],
+        experiments_and_channels: Optional[Dict[str, Optional[List[int]]]],
         plot_type: str,
     ) -> None:
         """
@@ -757,7 +757,7 @@ class MetadataController(MetaSubsetTabController):
         :param sql_filter: the subset filter's WHERE-clause body, empty for all rows
         :type sql_filter: str
         :param experiments_and_channels: the experiment and channel scope, or None
-        :type experiments_and_channels: Optional[Dict[str, List[Optional[int]]]]
+        :type experiments_and_channels: Optional[Dict[str, Optional[List[int]]]]
         :param plot_type: either 'Raw Event Overlay' or 'Filtered Event Overlay'
         :type plot_type: str
         :return: None
@@ -892,7 +892,7 @@ class MetadataController(MetaSubsetTabController):
         folder: str,
         name: str,
         subset_filter: Optional[str],
-        experiments_and_channels: Optional[Dict[str, List[str]]],
+        experiments_and_channels: Optional[Dict[str, Optional[List[int]]]],
         export_index: int,
     ) -> None:
         """
@@ -924,7 +924,7 @@ class MetadataController(MetaSubsetTabController):
         :param subset_filter: the single selected filter, or None for the whole dataset
         :type subset_filter: Optional[str]
         :param experiments_and_channels: the experiment and channel scope
-        :type experiments_and_channels: Optional[Dict[str, List[str]]]
+        :type experiments_and_channels: Optional[Dict[str, Optional[List[int]]]]
         :param export_index: the index this export's worker is keyed under
         :type export_index: int
         :return: None

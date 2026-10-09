@@ -49,14 +49,6 @@ Step 10 waits for both tracks.
 
 ### Step 9a - analysis-tab views (Carolina's track)
 
-- **The experiment/channel scope has three annotations for one value.** The tab layer declares
-  `Optional[Dict[str, List[Optional[int]]]]` in 9 signatures (`MetadataController.py:513/603/674/742`,
-  `ProteinController.py:225/524/566`, `MetaSubsetTabController.py:111`, `MetaSubsetTabModel.py:114`);
-  `MetaDatabaseLoader` and neighbours declare `Optional[Dict[str, Optional[List[int]]]]` in 14; the
-  selection tree stores `Dict[str, Dict[str, List[str]]]` (`MetaSubsetTabView.py:204`), converted at
-  `MetadataView.py:2022` and `:2127`. The producer at `MetaSubsetTabView.py:796` builds
-  `{exp: [channel] or None}`, so the loader's form is correct and the 9 are transposed; invisible to
-  mypy because the value passes through `call()`.
 - **The column-names chain lives on the subset-tab bases but only Metadata runs it.**
   `MetaSubsetTabView.update_available_columns:1013` emits `column_names_requested` (`:115`),
   `MetaSubsetTabController.request_column_names` (`:98` connect) answers it by calling
