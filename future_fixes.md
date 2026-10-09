@@ -50,13 +50,6 @@ Step 10 waits for both tracks.
 
 ### Step 9a - analysis-tab views (Carolina's track)
 
-- **`_shift_range_and_update_plot` is four copies in two drifted pairs.** Subset tabs
-  (`MetadataView.py:1990`, `ProteinView.py:1160`): Metadata clamps to `n-1`, Protein wraps to 0;
-  only Metadata reports no scope; Protein dispatches on `_last_event_action`. Event tabs
-  (`RawDataView.py:461`, `EventAnalysisView.py:194`): different exceptions, only RawData reports
-  underflow. Neither base has the hooks the bodies call, so: add hooks to
-  `MetaEventTabView`/`MetaSubsetTabView`, rule the differences, then promote, with
-  `_get_event_index_text` (`RawDataView.py:528`, `EventAnalysisView.py:252`).
 - **The capture-rate plot always reports one row dropped.** `MetadataController.fit_capture_rate:420`
   (`:472`) compares surviving intervals against the **event** count; n events make n-1 intervals.
   Compare against `initial_length - 1` and delete the test pinning the current behaviour.
