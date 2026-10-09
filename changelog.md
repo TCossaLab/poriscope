@@ -48,6 +48,8 @@
 
 * Release branches now get branch CI and the docs render check on every push
 
+* The API docs now link numpy, pandas, matplotlib, scikit-learn and Qt types to those libraries' documentation, and a docs build no longer fails when one of those sites is unreachable
+
 * `MetaController` declares the `view` and `model` attributes, and branch CI reports the project's mypy error count (non-blocking)
 
 * `python scripts/new_plugin.py AnalysisTab` now writes a controller that redeclares `view` and `model` with the tab's own types

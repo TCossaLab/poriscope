@@ -338,6 +338,18 @@ rendering problem the moment you merge rather than when you open a pull request.
    ``libxcb-*`` packages the test workflows install are not needed, since those load with
    the xcb platform plugin and a docs build never instantiates a ``QApplication``.
 
+.. note::
+
+   **The build downloads other projects' indexes.** A type such as ``numpy.ndarray``,
+   ``pd.DataFrame`` or ``QWidget`` in a docstring becomes a link to that library's own
+   documentation through ``sphinx.ext.intersphinx``, which fetches each library's
+   ``objects.inv`` (Python, Qt for Python, numpy, pandas, matplotlib, scikit-learn) at
+   build time. ``conf.py`` also maps the import abbreviations (``np.``, ``npt.``,
+   ``pd.``) and the bare Qt and matplotlib names to the full names those indexes list.
+   A site that cannot be reached is reported as an info line and its types render as
+   plain text; it does not fail a ``-W`` build. References to Poriscope's own code that
+   point nowhere are not yet a gate: ``nitpicky`` is off until they are fixed.
+
 Running Auto-fix Hooks Manually
 -------------------------------
 

@@ -137,10 +137,10 @@ Step 10 waits for both tracks.
 ### Step 10 - docs dead-link gate and release prep
 
 - **The API reference has no dead-link gate.** `-W` passes while references are unresolved
-  because `conf.py` has no `nitpicky`. With `-n` the build reports 1,463 warnings: about 1,350 are
-  numpy, pandas, Qt and typing names (intersphinx + `nitpick_ignore_regex`), about 117 ours across
-  ~25 files - wrong-owner `:meth:` targets, unqualified short names, undocumented internal classes.
-  Fix ours, then turn `nitpicky` on.
+  because `conf.py` has no `nitpicky`. Third-party names resolve since 2026-10-09 (`-n` 1,476 → 97);
+  the 97 left are ours - wrong-owner `:meth:` targets (`MetaFilter.apply_settings` ×8), unqualified
+  short names, private methods, undocumented internal classes (`WalkthroughStep`, `SimpleCalc*`).
+  Fix them after step 9 renames things, then turn `nitpicky` on.
 - **The standing-policy text at the end of this file** says "all three owner-held fitters"; only the
   two PeakFinders are owner-held and NanoTrees is a deprecation candidate. Correct it.
 
