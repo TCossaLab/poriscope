@@ -90,6 +90,8 @@
 
 * **Fixed PeakFinder sometimes skipping its classification** when two channels finished fitting at the same time
 
+* **Fixed a fit's last progress bar disappearing while PeakFinder was still classifying**, and that channel's results being writable before classification finished
+
 * PeakFinder and Basic_PeakFinder now give durations, and Basic_PeakFinder its time settings, in `us` like every other plugin; a database written before keeps `μs`
 
 * The Metadata tab's overlays and all-points histograms and the Protein tab's blockage now use every padding sample; a padding could lose up to a few samples at MHz sample rates

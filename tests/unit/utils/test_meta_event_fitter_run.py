@@ -141,6 +141,92 @@ def test_a_failed_channel_cancels_its_runs_pass(fitter, monkeypatch) -> None:
     assert fitter.recorder.runs == [[0]], "the next run was not freed by the failure"
 
 
+# A worker turns each yielded fraction into a percentage, and the tab removes a channel's
+# progress bar when it reaches 100, which is the only "done" a user sees. So 1.0 must not
+# be reported, nor the channel marked fitted - which is what lets a database write or an
+# event plot read it - until the run-wide step that refines its results has finished.
+
+
+def progress_with_hook_state(generator: Any, fitter: MetaEventFitter) -> List[Any]:
+    """
+    Run one channel's fit to the end, noting whether the run-wide step had run at each value.
+
+    :param generator: the generator ``fit_events`` returned
+    :type generator: Any
+    :param fitter: the fitter, with ``recorder`` attached
+    :type fitter: MetaEventFitter
+    :return: ``(fraction, runs recorded so far)`` per yielded value
+    :rtype: List[Any]
+    """
+    return [(p, len(fitter.recorder.runs)) for p in generator]
+
+
+def test_no_progress_reaches_complete_until_the_fit_ends(fitter) -> None:
+    values = [p for p in fitter.fit_events(0)]
+
+    assert values[-1] == 1.0
+    assert all(p < 1.0 for p in values[:-1]), values
+    assert len(values) > 1, "the channel reported no progress while fitting"
+
+
+def test_the_last_channel_reports_complete_only_after_the_run_wide_step(fitter) -> None:
+    first = fitter.fit_events(0)
+    second = fitter.fit_events(1)
+    drain(first)
+
+    values = progress_with_hook_state(second, fitter)
+
+    assert values[-1] == (1.0, 1), "1.0 was not the last value, after the step"
+    assert all(p < 1.0 for p, _runs in values[:-1]), values
+
+
+def test_the_last_channel_is_not_fitted_while_the_run_wide_step_runs(fitter) -> None:
+    seen = []
+
+    def hook(channels: List[int]) -> None:
+        seen.append({ch: fitter.get_eventfitting_status(ch) for ch in channels})
+        fitter.recorder.runs.append(channels)
+
+    fitter._post_process_events = hook
+    first = fitter.fit_events(0)
+    second = fitter.fit_events(1)
+    drain(first)
+    drain(second)
+
+    assert seen == [{0: True, 1: False}], "the last channel was writable mid-step"
+    assert fitter.get_eventfitting_status(0) and fitter.get_eventfitting_status(1)
+
+
+def test_a_failed_run_wide_step_leaves_the_last_channel_unfitted(fitter) -> None:
+    def hook(channels: List[int]) -> None:
+        raise RuntimeError("the classifier did not converge")
+
+    fitter._post_process_events = hook
+    first = fitter.fit_events(0)
+    second = fitter.fit_events(1)
+    drain(first)
+    with pytest.raises(RuntimeError, match="did not converge"):
+        drain(second)
+
+    assert fitter.get_eventfitting_status(0) is True
+    assert fitter.get_eventfitting_status(1) is False
+
+
+def test_an_aborted_channel_still_ends_at_complete_and_is_not_fitted(fitter) -> None:
+    generator = fitter.fit_events(0)
+    next(generator)
+
+    assert generator.send(True) == 1.0
+    with pytest.raises(StopIteration):
+        next(generator)
+    assert fitter.get_eventfitting_status(0) is False
+
+
+def test_a_silent_fit_reports_only_that_it_is_complete(fitter) -> None:
+    assert list(fitter.fit_events(0, silent=True)) == [1.0]
+    assert fitter.get_eventfitting_status(0) is True
+
+
 def test_the_base_hook_does_nothing_and_needs_no_override() -> None:
     assert "_post_process_events" not in MetaEventFitter.__abstractmethods__
     assert "_post_process_events" not in vars(CUSUM)

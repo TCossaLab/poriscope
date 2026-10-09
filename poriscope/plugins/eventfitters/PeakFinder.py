@@ -2112,7 +2112,7 @@ class PeakFinder(MetaEventFitter):
     @override
     def _post_process_events(self, channels: List[int]) -> None:
         """
-        Run every dataset-wide classifier, once every channel of the run is fitted.
+        Run every dataset-wide classifier, once every channel of the run has finished fitting.
 
         Called by ``MetaEventFitter`` once per run, after the last of its channels
         finishes, and not at all if one of them was aborted or failed. Each
@@ -2139,6 +2139,9 @@ class PeakFinder(MetaEventFitter):
            it needs both the direction, to put the star's position into the
            molecule's frame, and the sequences, to break its report down.
         7. ``_save_classification_report`` writes the run's report to disk.
+           The channels are marked fitted just before it, since the report's
+           good-fit counts are given only for a fitted channel; until then the
+           run's last channel cannot be written to a database or plotted.
 
         Steps 1-6 run with a ``_ClassificationWarningCollector`` attached to
         ``self.logger``, so every ``WARNING``-level message any of them logs -
@@ -2234,9 +2237,6 @@ class PeakFinder(MetaEventFitter):
             self._classify_peak_prominences(channels)
             self._classify_translocation_direction(channels)
 
-            for channel in channels:
-                self.eventfitting_status[channel] = True
-
             # An event's sequence is the prominence class of each of its barcode
             # (type-3) peaks, read in trace order, then reversed for a backward
             # event so every sequence is written in the molecule's own frame.
@@ -2276,6 +2276,12 @@ class PeakFinder(MetaEventFitter):
         finally:
             self.logger.removeHandler(warning_collector)
             self._classification_warnings = warning_collector.records
+
+        # The base marks the run's last channel fitted only after this step returns,
+        # but the report below is report_status(), which counts a channel's good fits
+        # only once it is marked. Every stage that writes event metadata is done here.
+        for channel in channels:
+            self.eventfitting_status[channel] = True
 
         self._save_classification_report()
 

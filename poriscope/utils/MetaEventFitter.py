@@ -526,7 +526,12 @@ class MetaEventFitter(BaseDataPlugin):
         the others in its run have joined. When the last of them ends,
         :py:meth:`_post_process_events` runs once, with those channels, provided
         every one of them finished; an aborted or failed channel cancels it for that
-        run. A script that fits channels one after another therefore runs it after
+        run. The last channel's generator runs that step before it yields its final
+        1.0, and the channel is marked fitted (:py:meth:`get_eventfitting_status`)
+        only after it, so its progress bar stays up, and its results stay unreadable,
+        while the step can still change them. A channel that finishes while others in
+        its run are still fitting is marked fitted as it ends. A script that fits
+        channels one after another therefore runs it after
         each channel; to get one pass over several, create each channel's generator
         before iterating any of them. A generator that is never iterated keeps its
         channel in the run, so the run never ends; iterate or close every one.
@@ -551,31 +556,42 @@ class MetaEventFitter(BaseDataPlugin):
         )
 
     def _fit_in_run(
-        self, channel: int, fitting: Generator[float, Optional[bool], None]
+        self, channel: int, fitting: Generator[float, Optional[bool], bool]
     ) -> Generator[float, Optional[bool], None]:
         """
-        Drive one channel's fit, then take the channel out of the run however it ended.
+        Drive one channel's fit, take the channel out of the run however it ended, then report 1.0.
 
-        The channel counts as finished only when the fit returned normally with its
-        status set, so an abort, an exception or a close leaves the run incomplete.
+        The channel counts as finished only when the fit returned without being
+        aborted, so an abort, an exception or a close leaves the run incomplete. The
+        final 1.0 comes after the channel has left the run - after the run-wide step,
+        if this channel was the last - because a worker reports it as 100% and the tab
+        then removes the channel's progress bar, which a user reads as done.
 
         :param channel: the channel being fitted
         :type channel: int
         :param fitting: the generator from :py:meth:`_fit_channel`
-        :type fitting: Generator[float, Optional[bool], None]
-        :yield: the fit's fraction complete, passing an abort sent in through to it
+        :type fitting: Generator[float, Optional[bool], bool]
+        :yield: the fit's fraction complete, passing an abort sent in through to it, then 1.0
         :ytype: float
         """
-        finished = False
+        left = False
         try:
-            yield from fitting
-            finished = bool(self.eventfitting_status.get(channel))
-        finally:
+            finished = yield from fitting
+            left = True
             self._leave_run(channel, finished)
+        finally:
+            if not left:
+                self._leave_run(channel, False)
+        yield 1.0
 
     def _leave_run(self, channel: int, finished: bool) -> None:
         """
-        Take a channel out of the run, and post-process the run if it was the last.
+        Take a channel out of the run, post-process the run if it was the last, and mark the channel fitted if it finished.
+
+        A channel is marked fitted - which is what lets a database writer or an event
+        plot read it - only once nothing in its run can still change its results: as it
+        leaves if others are still fitting, otherwise after the run-wide step. A step
+        that raises leaves the last channel unfitted.
 
         :param channel: the channel whose fit has ended
         :type channel: int
@@ -588,19 +604,22 @@ class MetaEventFitter(BaseDataPlugin):
                 self._run_finished.add(channel)
             else:
                 self._run_complete = False
-            if self._run_in_flight:
-                return
-            channels = sorted(self._run_finished)
-            complete = self._run_complete
-            self._run_finished = set()
-            self._run_complete = True
-        if complete:
-            self._post_process_events(channels)
-        else:
-            self.logger.info(
-                f"Run-wide post-processing skipped: not every channel of the run "
-                f"finished fitting (finished: {channels})"
-            )
+            last = not self._run_in_flight
+            if last:
+                channels = sorted(self._run_finished)
+                complete = self._run_complete
+                self._run_finished = set()
+                self._run_complete = True
+        if last:
+            if complete:
+                self._post_process_events(channels)
+            else:
+                self.logger.info(
+                    f"Run-wide post-processing skipped: not every channel of the run "
+                    f"finished fitting (finished: {channels})"
+                )
+        if finished:
+            self.eventfitting_status[channel] = True
 
     @serialize_channels
     @log(logger=logger)
@@ -610,11 +629,16 @@ class MetaEventFitter(BaseDataPlugin):
         silent: bool,
         data_filter: Optional[Callable],
         indices: Optional[List[int]],
-    ) -> Generator[float, Optional[bool], None]:
+    ) -> Generator[float, Optional[bool], bool]:
         """
         Walk through all provided events and calculate metadata relating to the sublevels, yielding its percentage completion each time next() is called on it.
-        If silent flag is set, run through without yielding progress reports on the first call to next(). Once StopIteration is reached, internal
+        If silent flag is set, run through without yielding progress reports. Once StopIteration is reached, internal
         lists of event metadata will be populated as entries in a dict keyed by event id.
+
+        The fraction stays below 1.0 and the channel is not marked fitted here:
+        :py:meth:`_fit_in_run` does both once the channel has left its run, after the
+        run-wide step if this channel was the last, so neither the progress bar nor a
+        reader of the results sees the channel as done while that step can still change it.
 
         An event the fitter cannot fit is rejected, never fatal to the channel: a
         ``ValueError`` from a fitter hook is a scientific rejection tallied under its
@@ -639,9 +663,12 @@ class MetaEventFitter(BaseDataPlugin):
         :raises KeyError: If a subclass fails to populate the required "sublevel_duration" column.
         :raises TypeError: If event data returned by the event loader has an unexpected type.
         :raises ValueError: If event data returned by the event loader is malformed.
-        :yield: completion fraction on each iteration
-        :ytype: float
+        :return: a generator yielding the fraction of events fitted, below 1.0, accepting True to abort, and returning True if every event was attempted or False if the fit was aborted
+        :rtype: Generator[float, Optional[bool], bool]
         """
+        # The yields are described under :return: rather than :yield: because this
+        # generator's only yield is an assignment (it receives the abort), which
+        # pydoclint does not recognise as a yield and so refuses a Yields section for.
         if self.eventloader is None:
             raise RuntimeError("Event loader has not been initialized.")
 
@@ -882,18 +909,17 @@ class MetaEventFitter(BaseDataPlugin):
             for key, val in event_metadata.items():
                 self.event_metadata[channel][index][key] = val
 
-            # yield progress at each iteration
+            # yield progress at each iteration, short of 1.0: _fit_in_run reports
+            # completion once the channel has left its run
             if not silent:
                 fitted += 1
-                response = yield fitted / total_events
+                response = yield fitted / (total_events + 1)
                 abort = bool(response) if response is not None else False
                 if abort is True:
                     break
-        if abort is False:
-            self.eventfitting_status[channel] = True
-        else:
+        if abort is True:
             self.reset_channel(channel)
-        yield 1.0
+        return not abort
 
     @log(logger=logger)
     def get_event_metadata_generator(self, channel: int) -> Generator[
@@ -1276,7 +1302,9 @@ class MetaEventFitter(BaseDataPlugin):
         them - for work that needs every event at once, such as fitting a classifier
         to the whole dataset. Not called if any channel of the run was aborted or
         failed. A run is the channels whose fits are in flight together; see
-        :py:meth:`fit_events`. Does nothing by default.
+        :py:meth:`fit_events`. The last channel of the run is not marked fitted until
+        this returns, and stays unfitted if it raises, so an override need not mark
+        any channel itself. Does nothing by default.
 
         :param channels: the channels fitted in this run, in ascending order
         :type channels: List[int]

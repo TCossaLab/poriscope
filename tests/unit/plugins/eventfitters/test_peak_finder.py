@@ -33,6 +33,19 @@ from poriscope.plugins.eventfitters.PeakFinder import (
     PeakFinder,
     _ClassificationWarningCollector,
 )
+from tests.synthetic_data.synthetic_events_db import generate_events_database
+from tests.unit.plugins.conformance._recipes import (
+    BASELINE_PA,
+    EVENT_AMPLITUDE_PA,
+    EVENTS_CHANNEL,
+    EVENTS_COUNT,
+    EVENTS_SAMPLERATE_HZ,
+    NOISE_STD_PA,
+    PEAKFINDER_DIP_PA,
+    PEAKFINDER_DIP_WIDTH_SAMPLES,
+    build_event_fitter,
+    build_event_loader,
+)
 from tests.unit.plugins.eventfitters.test_cusum import (
     _filtered_sigma,
     _filtered_staircase,
@@ -3980,6 +3993,82 @@ class TestDescribeFitThreshold(unittest.TestCase):
             "valley between populations",
         )
         self.assertEqual(pf._describe_fit_threshold({}), "fitted split")
+
+
+# ---------------------------------------------------------------------------
+# The run-wide classification, driven end to end through a real fit
+# ---------------------------------------------------------------------------
+
+
+def _fit_peakfinder_run(tmp_path, collect=None):
+    """
+    Fit the conformance suite's PeakFinder events database through the real loader.
+
+    :param tmp_path: per-test scratch directory
+    :param collect: optional list to receive the progress values the fit yielded
+    :return: the fitter and the loader's base file, the loader already closed
+    """
+    database = generate_events_database(
+        tmp_path / "events.sqlite3",
+        channel_id=EVENTS_CHANNEL,
+        num_events=EVENTS_COUNT,
+        samplerate=EVENTS_SAMPLERATE_HZ,
+        baseline_mean_pA=BASELINE_PA,
+        baseline_std_pA=NOISE_STD_PA,
+        event_amplitude_pA=EVENT_AMPLITUDE_PA,
+        sublevel_dip_pA=PEAKFINDER_DIP_PA,
+        sublevel_dip_width_samples=PEAKFINDER_DIP_WIDTH_SAMPLES,
+    )
+    loader = build_event_loader(str(database.db_path))
+    try:
+        fitter = build_event_fitter(PeakFinder, loader)
+        for progress in fitter.fit_events(EVENTS_CHANNEL):
+            if collect is not None:
+                collect.append(progress)
+        base_file = loader.get_base_file()
+    finally:
+        loader.close_resources()
+    return fitter, base_file
+
+
+def test_no_channel_is_marked_fitted_until_the_classification_is_complete(
+    tmp_path, monkeypatch
+):
+    # Bound-star classification is the last stage that writes event metadata; a
+    # channel marked fitted before it can be written to a database half-classified.
+    seen = []
+    classify = PeakFinder._classify_bound_star
+
+    def spy(self, channels):
+        seen.append(self.get_eventfitting_status(EVENTS_CHANNEL))
+        return classify(self, channels)
+
+    monkeypatch.setattr(PeakFinder, "_classify_bound_star", spy)
+    fitter, _base_file = _fit_peakfinder_run(tmp_path)
+
+    assert seen == [False]
+    assert fitter.get_eventfitting_status(EVENTS_CHANNEL) is True
+
+
+def test_the_saved_classification_report_counts_each_channels_good_fits(tmp_path):
+    # The report file is report_status(), whose per-channel line counts the good
+    # fits only for a channel marked fitted, so the channels must be marked before
+    # it is written even though the base marks the last one only after the step.
+    _fitter, base_file = _fit_peakfinder_run(tmp_path)
+    report = base_file.with_name(
+        f"{base_file.stem}_classification_report.txt"
+    ).read_text(encoding="utf-8")
+
+    assert f"Ch{EVENTS_CHANNEL}: {EVENTS_COUNT}/{EVENTS_COUNT} good fits" in report
+    assert "fitting incomplete" not in report
+
+
+def test_progress_stays_short_of_complete_until_the_classification_has_run(tmp_path):
+    progress = []
+    _fit_peakfinder_run(tmp_path, collect=progress)
+
+    assert progress[-1] == 1.0
+    assert max(progress[:-1]) < 1.0
 
 
 if __name__ == "__main__":
