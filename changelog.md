@@ -192,6 +192,8 @@
 
 * A Raw Data event shift replayed from an action history with no channel selected is now refused instead of raising
 
+* **Fixed the Metadata tab's capture-rate plot always reporting at least one row dropped by the log filter, even when nothing was dropped**; the count now excludes the one fewer interval than event that n events always produce
+
 ### Documentation:
 
 * The API reference no longer lists `NanoTrees`' helper classes as event fitters

@@ -50,9 +50,6 @@ Step 10 waits for both tracks.
 
 ### Step 9a - analysis-tab views (Carolina's track)
 
-- **The capture-rate plot always reports one row dropped.** `MetadataController.fit_capture_rate:420`
-  (`:472`) compares surviving intervals against the **event** count; n events make n-1 intervals.
-  Compare against `initial_length - 1` and delete the test pinning the current behaviour.
 - **`set_heatmap` passes bin centres as the `imshow` extent** (`MetadataView.py:986`), compressing
   the image by a bin width.
 - **`RawDataModel.get_baseline_stats:117` is a pre-2026-09-20 copy of the finders' baseline fit**
