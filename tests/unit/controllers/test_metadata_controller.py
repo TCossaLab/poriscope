@@ -890,23 +890,18 @@ class TestFitCaptureRate:
         self._request(controller, list(range(20)))
 
         assert any(
-            "8 rows dropped by log filter" in m for m in self._messages(controller)
+            "7 rows dropped by log filter" in m for m in self._messages(controller)
         )
 
-    def test_a_clean_column_still_reports_one_dropped_row(self, controller) -> None:
-        """
-        Preserved, not corrected: the interval count is one less than the event count
-        by construction, and the original counted that as a drop. Pinned so the move
-        is provably behaviour-preserving; filed in ``future_fixes.md`` as the cosmetic
-        defect it is.
-        """
+    def test_a_clean_column_reports_nothing_dropped(self, controller) -> None:
+        """n events make n-1 intervals by construction; none of them were dropped."""
         controller.model.interevent_log_times.return_value = np.arange(19.0)
         controller.model.fit_capture_rate.return_value = (1, 2, 3, 4, 5.0, 6.0)
 
         self._request(controller, list(range(20)))
 
-        assert any(
-            "1 rows dropped by log filter" in m for m in self._messages(controller)
+        assert not any(
+            "rows dropped by log filter" in m for m in self._messages(controller)
         )
 
     def test_the_view_is_handed_the_log_times_not_the_raw_column(

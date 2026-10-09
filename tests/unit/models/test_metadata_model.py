@@ -746,8 +746,8 @@ class TestIntereventLogTimes:
 
     def test_there_is_one_fewer_gap_than_event(self, model):
         """
-        The property behind the message a clean column still shows: n events make
-        n-1 intervals, and the caller counts that difference as dropped rows.
+        n events make n-1 intervals; the capture-rate controller uses this count, not
+        the raw event count, as its baseline for how many the log filter dropped.
         """
         assert len(model.interevent_log_times(np.arange(20.0))) == 19
 
