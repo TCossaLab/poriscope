@@ -49,15 +49,6 @@ Step 10 waits for both tracks.
 
 ### Step 9a - analysis-tab views (Carolina's track)
 
-- **The column-names chain lives on the subset-tab bases but only Metadata runs it.**
-  `MetaSubsetTabView.update_available_columns:1013` emits `column_names_requested` (`:115`),
-  `MetaSubsetTabController.request_column_names` (`:98` connect) answers it by calling
-  `self.view.update_column_names`, which only `MetadataView.py:2597` defines; `ProteinView`
-  never calls `update_available_columns` (its callers are `MetadataView.py:1388`/`:1901`), so
-  on Protein the slot would raise `AttributeError`. Found by mypy once `view` was declared
-  (2026-10-05). Move the method, the signal and the slot to the Metadata pair, as
-  `update_column_units` was in 2.0.0; `test_protein_view.py:1031`/`:1188-1220` and
-  `test_plugin_state_notifications.py` pin the inherited method and go with it.
 - **`_shift_range_and_update_plot` is four copies in two drifted pairs.** Subset tabs
   (`MetadataView.py:1990`, `ProteinView.py:1160`): Metadata clamps to `n-1`, Protein wraps to 0;
   only Metadata reports no scope; Protein dispatches on `_last_event_action`. Event tabs
@@ -241,6 +232,17 @@ Tab state onto the Models, heavy work off the GUI thread, event-finder and CUSUM
   a comment; unifying the last two is a real refactor.
 
 ## Later - worth doing, not scheduled
+
+### The column-names/plugin-state reaction pair is near-duplicated, invisible to the ratchet (2026-10-09)
+
+`ClusteringView` and `MetadataView`'s `update_available_columns` (identical code, differing
+docstrings) and `notify_plugin_state_changed` (identical docstrings, differing only in
+`clusteringcontrols`/`metadatacontrols`) are near-identical, but `measure_duplication.py` only
+catches byte-identical bodies, so the `*View.py` family shows 0 removable. No shared base fits
+today: Clustering isn't in the `MetaSubsetTabView` family, and `MetaView` would spread the pair
+onto RawData/EventAnalysis/Protein too. Consider a mixin for just `{MetadataView,
+ClusteringView}` once a third tab needs this capability, or widen the ratchet to catch
+near-identical bodies.
 
 ### Provenance stops at the fitter (2026-10-08)
 

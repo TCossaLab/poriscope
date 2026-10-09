@@ -61,9 +61,8 @@ its shared methods can use. Subset filtering is a contract of its own, but it is
 base now implements entirely - it manages the filters, the dialogs that edit them and the
 combobox that shows them, reaching your panel through that property.
 
-What ``MetaSubsetTabView`` gives you, on top of ``MetaView``: the query and column
-setters (``set_query``, ``set_event_query``, ``update_available_columns``,
-``set_units``), subset-filter management (``_save_filter``,
+What ``MetaSubsetTabView`` gives you, on top of ``MetaView``: the query setters
+(``set_query``, ``set_event_query``), subset-filter management (``_save_filter``,
 ``_delete_filter_by_name``, ``_show_filter_info_dialog``,
 ``get_selected_filters``, ``_show_add_filter_dialog``,
 ``show_edit_filter_dialog``, ``_load_filter``, ``set_loaded_filters``,
@@ -99,7 +98,7 @@ The same split, and you normally match it to whichever View you chose.
      - ``call()`` for data plugins, the typed plugin signals, session state, worker management
      - ClusteringController
    * - ``MetaSubsetTabController``
-     - the experiment and channel scope, column names and units, filter validation and
+     - the experiment and channel scope, units, filter validation and
        query results, the event-plot chain, the scatterplot's filtering, the filter
        file's load and save, and session state
      - MetadataController, ProteinController
