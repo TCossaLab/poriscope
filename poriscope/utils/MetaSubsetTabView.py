@@ -871,6 +871,10 @@ class MetaSubsetTabView(MetaView):
         from it, snaps it to the first id instead (``_snap_to_filtered``). The cache is
         rebuilt first if the filter or the scope no longer match it.
 
+        Navigation re-plots events, so it refuses what the event plots refuse - more
+        than one filter, experiment or channel, in that order - before the cache is read
+        or the Event ID field written.
+
         :param parameters: the controls panel's parameters; reads ``db_loader``, ``event_id`` and ``n_events``
         :type parameters: Dict[str, Any]
         :param direction: ``"left"`` or ``"right"``
@@ -892,6 +896,22 @@ class MetaSubsetTabView(MetaView):
                 "navigate events",
                 self.__class__.__name__,
             )
+            return
+
+        refusal = None
+        if len(selected_filters) > 1:
+            refusal = (
+                "Unable to navigate more than one subset at a time, select only one "
+                "filter to apply"
+            )
+        elif len(exp_and_ch) > 1 or any(
+            len(channels) > 1 for channels in exp_and_ch.values()
+        ):
+            refusal = (
+                "Only a single experiment and channel can be used for navigating events"
+            )
+        if refusal is not None:
+            self.add_text_to_display.emit(refusal, self.__class__.__name__)
             return
 
         exp = next(iter(exp_and_ch.keys()))
@@ -1139,6 +1159,18 @@ class MetaSubsetTabView(MetaView):
     ) -> None:
         """
         Displays the selection tree for a given loader using the full structure and current selection.
+
+        What is ticked when the tree closes becomes the loader's scope. Closing it with
+        nothing ticked keeps the previous scope, absent included, and says so on the
+        status panel, because an empty scope can never produce anything; a database with
+        no experiments, where there was nothing to tick, says that instead.
+
+        :param structure: every experiment and its channels the loader holds
+        :type structure: dict[str, list[str]]
+        :param loader_name: the key of the loader
+        :type loader_name: str
+        :param selection: the scope to show ticked when the tree opens
+        :type selection: Optional[dict[str, list[str]]]
         """
         self.logger.debug(
             f"Displaying selection tree with structure: {structure} for loader: {loader_name}"
@@ -1153,6 +1185,18 @@ class MetaSubsetTabView(MetaView):
             title="Select Experiment and Channels",
             selected=selection,
         )
+
+        if not selected:
+            self.add_text_to_display.emit(
+                (
+                    "Scope unchanged: at least one experiment or channel must stay "
+                    "selected"
+                    if structure
+                    else "This database has no experiments to select"
+                ),
+                self.__class__.__name__,
+            )
+            return
 
         self.selected_experiment_and_channels_by_loader[loader_name] = selected
         self.logger.debug(f"Updated selection for {loader_name}: {selected}")
