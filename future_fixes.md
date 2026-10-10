@@ -50,10 +50,10 @@ Step 10 waits for both tracks.
 
 ### Step 9a - analysis-tab views (Carolina's track)
 
-- **Event Analysis fitting ignores which loader is selected** (Kyle, 2026-10-09). The channel list
-  comes from the selected loader but `start_fitting:493` fits on the fitter's own loader
-  (`fit_events`, `:520`), so a crossed selection can fit channels that loader lacks. The loader
-  never reaches the Controller: `collect_parameters` puts `"loader"` in the dict
+- **Event Analysis fitting ignores which loader is selected** (flagged by Kyle, 2026-10-09; the
+  trace below is ours). The channel list comes from the selected loader but `start_fitting:493`
+  fits on the fitter's own loader (`fit_events`, `:520`), so a crossed selection may fit channels
+  that loader lacks (not yet measured). The loader never reaches the Controller: `collect_parameters` puts `"loader"` in the dict
   (`eventAnalysisControls.py:393`) but `_extract_event_fit_parameters:637` drops it, and
   `fitting_statuses_requested:74` / `fitting_requested:83` are `Signal(str, list, str)`. Thread it
   through both signals, `_start_eventfitter:550`, `set_fitting_statuses:579`,
