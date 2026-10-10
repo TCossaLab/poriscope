@@ -90,6 +90,7 @@ def event_analysis_tab(qapp, tmp_path: Path, sample_events_db: str) -> Triad:
     triad.register(loader, "MetaEventLoader", LOADER)
 
     fitter = CUSUM()
+    fitter.set_key(FITTER)
     fitter_settings = fitter.get_empty_settings(standalone=True)
     fitter_settings["MetaEventLoader"]["Value"] = loader
     fitter_settings["MetaEventLoader"]["Type"] = None
@@ -102,6 +103,7 @@ def event_analysis_tab(qapp, tmp_path: Path, sample_events_db: str) -> Triad:
 
     out = tmp_path / "metadata.sqlite3"
     writer = SQLiteDBWriter()
+    writer.set_key(WRITER)
     writer_settings = writer.get_empty_settings(standalone=True)
     writer_settings["MetaEventFitter"]["Value"] = fitter
     writer_settings["MetaEventFitter"]["Type"] = None
@@ -154,7 +156,13 @@ def fit_events(
     )
 
 
-def commit_events(triad: Triad, qtbot: Any, channels: List[int], expected: int) -> None:
+def commit_events(
+    triad: Triad,
+    qtbot: Any,
+    channels: List[int],
+    expected: int,
+    loader: str = LOADER,
+) -> None:
     """
     Drive the tab's commit action and wait for every expected row to land.
 
@@ -166,13 +174,21 @@ def commit_events(triad: Triad, qtbot: Any, channels: List[int], expected: int) 
     :type channels: List[int]
     :param expected: the number of event rows the commit should produce
     :type expected: int
+    :param loader: the event loader selected in the tab's dropdown
+    :type loader: str
     :return: None
     :rtype: None
     """
     triad.tab_view.handle_parameter_change(
         "eventAnalysisControls",
         "commit_events",
-        ({"writer": WRITER, "channel": [str(c) for c in channels]},),
+        (
+            {
+                "loader": loader,
+                "writer": WRITER,
+                "channel": [str(c) for c in channels],
+            },
+        ),
     )
     qtbot.waitUntil(
         lambda: row_count(triad.out_db, "events") == expected, timeout=120_000
@@ -281,3 +297,53 @@ def test_fitting_with_another_loader_selected_is_refused(
     assert messages[0].startswith(
         f"Fitting not started: {FITTER} was built on {LOADER}"
     )
+
+
+@pytest.mark.timeout(300)
+def test_committing_with_another_loader_selected_is_refused(
+    event_analysis_tab: Triad, qtbot, tmp_path: Path
+) -> None:
+    """
+    **The writer reads its fitter, which reads its own loader.** With a second loader
+    selected that has the same channel number, an unguarded commit writes the fitter's
+    own loader's channel 0 and the user believes they committed the file on screen. The
+    real chain must stop before a generator is registered, leave no output file, and
+    say why; the matched commit afterwards still writes.
+    """
+    other_db = generate_events_database(
+        tmp_path / "other_events.sqlite3", channel_id=0, num_events=5, seed=3
+    )
+    other = SQLiteEventLoader()
+    other.set_key("other")
+    other_settings = other.get_empty_settings(standalone=True)
+    other_settings["Input File"]["Value"] = str(other_db.db_path)
+    other.apply_settings(other_settings)
+    event_analysis_tab.register(other, "MetaEventLoader", "other")
+
+    fit_events(event_analysis_tab, qtbot, [0])
+    controller = event_analysis_tab.tab_controller
+    messages: List[str] = []
+    controller.add_text_to_display.connect(lambda text, _source: messages.append(text))
+    staged: List[Any] = []
+    original = controller.model.set_generator
+
+    def spy(*args: Any, **kwargs: Any) -> None:
+        staged.append(args)
+        original(*args, **kwargs)
+
+    controller.model.set_generator = spy
+
+    event_analysis_tab.tab_view.handle_parameter_change(
+        "eventAnalysisControls",
+        "commit_events",
+        ({"loader": "other", "writer": WRITER, "channel": ["0"]},),
+    )
+    qtbot.wait(500)
+
+    assert staged == []
+    assert not event_analysis_tab.out_db.exists()
+    assert len(messages) == 1
+    assert messages[0].startswith(f"Commit not started: {WRITER} writes {FITTER}'s")
+
+    commit_events(event_analysis_tab, qtbot, [0], 25)
+    assert row_count(event_analysis_tab.out_db, "events") == 25

@@ -48,16 +48,6 @@ promotion updates `.duplication-baseline.json` in the same commit; each track ed
 step sections here and its own changelog lines, and rebases onto `develop` before `feature finish`.
 Step 10 waits for both tracks.
 
-### Step 9a - analysis-tab views (Carolina's track)
-
-- **Event Analysis "Commit events" ignores which loader is selected** (S9a.9 measured it, fix not
-  made). `write_events:612` takes only the writer and channels, so the writer's own fitter's loader
-  decides what is written. Probe (`Step 9/step-9a-9-probe-crossed-write.py`, fitter and writer on a
-  5-event loader): a channel only the other loader has raises `No samplerate found for channel 1`
-  and writes 0 rows; channel 0 on both writes the fitter's loader's 5 events while the selected
-  loader holds 2. Nothing is corrupted. Fix is the S9a.9 guard on the commit launch: thread
-  `loader` into `write_requested` and refuse a writer whose fitter's loader differs.
-
 ### Step 9b - breaking tab designs and the milestone guard (Carolina's track)
 
 - **Raw SQL subset filters can be saved but never plotted.** Six call sites refuse them
@@ -111,6 +101,14 @@ Tab state onto the Models, heavy work off the GUI thread, event-finder and CUSUM
   `MetaSubsetTabModel`.
 - **Plot types are bare strings repeated across View, Controls and Model** ("Heatmap"
   6 times in `MetadataView`) and persisted in saved action parameters; an enum would pin them.
+- **Event Analysis channel ticks do not follow the loader.**
+  `MetaEventTabControls.update_channels:98` ticks every channel only when the list is empty
+  (`is_first_load`, `:116`); any later load keeps just the numbers that were already ticked
+  (`:131`). Measured on the real controls: first load `[0,1,2]` -> all ticked; switching to a loader
+  holding `[5,6]` -> none ticked and Fit Events disabled, with nothing saying why. Channel numbers
+  from another recording are not the same channels, so carrying them over is wrong as well as
+  surprising. Decide the rule (tick all on every loader change, or only when nothing carries
+  over) and apply it to `RawDataView.update_channels:1152` if it shares the behaviour.
 
 ### Fitter performance and logging
 
@@ -289,6 +287,20 @@ absorbs what it needs and stands alone, leaving 20240101 a clean deletion.
 
 ### Numeric input and widgets
 
+- **A disabled OK or action button never says what to fix** (raised 2026-10-10 on creating a
+  fitter). Measured by reading the code: `DictDialog.check_validity:347` (plugin create/edit)
+  disables OK for an empty or out-of-range numeric field, an empty name, or an unchosen file or
+  folder, with no label, tooltip or field highlight, and `NumericLineEdit.isValid` carries the
+  range but never shows it; `TimeWidget._check_validity:171` likewise. The tab controls'
+  `validate_inputs` (Event Analysis `:293`, Raw Data, Metadata, Protein, Clustering) disable
+  Fit/Plot/Commit and only `logger.debug` the reason. `ClusteringSettingsDialog`'s
+  `plot_warning_label` (`clustering_settings_widget.py:570-616`) is the one that does it. Options:
+  (a) a one-line hint under the buttons naming the first problem and its constraint, one helper
+  shared by the dialogs and the tab controls (recommended); (b) a red border plus a tooltip with
+  the range on each bad field; (c) the range as placeholder text; (d) a tooltip on the disabled
+  button itself, which Qt still shows. (a)+(d) cover every case with the least code; (b) needs
+  per-widget state. Settings the plugin itself refuses (`Step Size` 0) already report on the
+  status panel, so this is only the dialog's own checks.
 - **Three validation stacks behave three ways**: `NumericLineEdit` disables OK without
   naming the field, `BaseLineEdit` traps focus (`event.ignore(); self.setFocus()`,
   `BaseLineEdit.py:82-86`), and the bare Qt validators check no range.

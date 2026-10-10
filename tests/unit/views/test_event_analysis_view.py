@@ -608,13 +608,17 @@ class TestHandleCommitEvents:
             "_extract_commit_event_parameters",
             side_effect=ValueError("bad params"),
         ):
-            mock_view._handle_commit_events({"writer": "w", "channel": ["0"]})
+            mock_view._handle_commit_events(
+                {"loader": "ldr", "writer": "w", "channel": ["0"]}
+            )
         mock_view.write_requested.emit.assert_not_called()
 
     def test_valid_params_emit_a_typed_intent(self, mock_view):
         mock_view.write_requested = MagicMock()
-        mock_view._handle_commit_events({"writer": "w", "channel": ["0"]})
-        mock_view.write_requested.emit.assert_called_once_with("w", [0])
+        mock_view._handle_commit_events(
+            {"loader": "ldr", "writer": "w", "channel": ["0"]}
+        )
+        mock_view.write_requested.emit.assert_called_once_with("ldr", "w", [0])
 
     def test_none_writer_requests_nothing(self, mock_view):
         mock_view.write_requested = MagicMock()
@@ -623,7 +627,9 @@ class TestHandleCommitEvents:
             "_extract_commit_event_parameters",
             return_value=(None, [0]),
         ):
-            mock_view._handle_commit_events({"writer": "w", "channel": ["0"]})
+            mock_view._handle_commit_events(
+                {"loader": "ldr", "writer": "w", "channel": ["0"]}
+            )
         mock_view.write_requested.emit.assert_not_called()
 
     def test_none_channels_requests_nothing(self, mock_view):
@@ -633,7 +639,9 @@ class TestHandleCommitEvents:
             "_extract_commit_event_parameters",
             return_value=("w", None),
         ):
-            mock_view._handle_commit_events({"writer": "w", "channel": ["0"]})
+            mock_view._handle_commit_events(
+                {"loader": "ldr", "writer": "w", "channel": ["0"]}
+            )
         mock_view.write_requested.emit.assert_not_called()
 
     def test_a_bare_channel_is_normalised_to_a_list(self, mock_view):
@@ -644,8 +652,24 @@ class TestHandleCommitEvents:
             "_extract_commit_event_parameters",
             return_value=("w", 0),
         ):
-            mock_view._handle_commit_events({"writer": "w", "channel": ["0"]})
-        mock_view.write_requested.emit.assert_called_once_with("w", [0])
+            mock_view._handle_commit_events(
+                {"loader": "ldr", "writer": "w", "channel": ["0"]}
+            )
+        mock_view.write_requested.emit.assert_called_once_with("ldr", "w", [0])
+
+    def test_the_selected_loader_travels_with_the_request(self, mock_view):
+        """The Controller checks it against the loader the writer's results come from."""
+        mock_view.write_requested = MagicMock()
+        mock_view._handle_commit_events(
+            {"loader": "ldr_b", "writer": "w", "channel": ["0"]}
+        )
+        mock_view.write_requested.emit.assert_called_once_with("ldr_b", "w", [0])
+
+    def test_a_missing_loader_is_sent_as_empty_not_dropped(self, mock_view):
+        """The Controller refuses it; the View must still ask rather than swallow the click."""
+        mock_view.write_requested = MagicMock()
+        mock_view._handle_commit_events({"writer": "w", "channel": ["0"]})
+        mock_view.write_requested.emit.assert_called_once_with("", "w", [0])
 
 
 # ===========================================================================
@@ -1404,13 +1428,17 @@ class TestHandleFitEventsExtended:
 class TestHandleCommitEventsExtended:
     def test_channels_passed_as_ints(self, mock_view):
         mock_view.write_requested = MagicMock()
-        mock_view._handle_commit_events({"writer": "w", "channel": ["2"]})
-        mock_view.write_requested.emit.assert_called_once_with("w", [2])
+        mock_view._handle_commit_events(
+            {"loader": "ldr", "writer": "w", "channel": ["2"]}
+        )
+        mock_view.write_requested.emit.assert_called_once_with("ldr", "w", [2])
 
     def test_multiple_channels_passed_correctly(self, mock_view):
         mock_view.write_requested = MagicMock()
-        mock_view._handle_commit_events({"writer": "w", "channel": ["0", "1"]})
-        mock_view.write_requested.emit.assert_called_once_with("w", [0, 1])
+        mock_view._handle_commit_events(
+            {"loader": "ldr", "writer": "w", "channel": ["0", "1"]}
+        )
+        mock_view.write_requested.emit.assert_called_once_with("ldr", "w", [0, 1])
 
 
 # ===========================================================================

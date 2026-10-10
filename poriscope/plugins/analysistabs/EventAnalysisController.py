@@ -173,7 +173,9 @@ class EventAnalysisController(MetaEventTabController):
 
         fitting_done = False
         if eventfitter != "No Event Fitter":
-            readable, fitter_loader = self._fitter_loader(eventfitter)
+            readable, fitter_loader = self._parent_key(
+                "MetaEventFitter", eventfitter, "MetaEventLoader"
+            )
             if readable:
                 if fitter_loader == loader:
                     fitting_done = self._fitting_is_done(eventfitter, channel)
@@ -438,25 +440,47 @@ class EventAnalysisController(MetaEventTabController):
             return None
         return supplied
 
-    def _fitter_loader(self, eventfitter: str) -> Tuple[bool, Optional[str]]:
+    def _parent_key(
+        self, metaclass: str, key: str, parent_metaclass: str
+    ) -> Tuple[bool, Optional[str]]:
         """
-        Name the event loader an event fitter was built on.
+        Name the plugin of one family that another plugin was built on.
 
-        :param eventfitter: the event fitter plugin's key
-        :type eventfitter: str
-        :return: (readable, loader key); readable is False when the fitter's parents
-            could not be read, and the key is None when they hold no event loader
+        :param metaclass: the family of the plugin whose parent is wanted
+        :type metaclass: str
+        :param key: the plugin's key
+        :type key: str
+        :param parent_metaclass: the family of the parent wanted
+        :type parent_metaclass: str
+        :return: (readable, parent key); readable is False when the plugin's parents
+            could not be read, and the key is None when they hold none of that family
         :rtype: Tuple[bool, Optional[str]]
         """
         try:
-            parents = self.model.call("MetaEventFitter", eventfitter, "get_parents")
+            parents = self.model.call(metaclass, key, "get_parents")
         except Exception as e:
             self.logger.error(
-                f"Unable to read {eventfitter}'s parent loader: {repr(e)}"
+                f"Unable to read {key}'s parent {parent_metaclass}: {repr(e)}"
             )
             return False, None
-        loader = next((key for meta, key in parents if meta == "MetaEventLoader"), None)
-        return True, loader
+        parent = next((k for meta, k in parents if meta == parent_metaclass), None)
+        return True, parent
+
+    def _writer_source(self, writer: str) -> Tuple[Optional[str], Optional[str]]:
+        """
+        Name the event fitter a database writer writes, and the event loader that fitter
+        was built on.
+
+        :param writer: the database writer plugin's key
+        :type writer: str
+        :return: (fitter, loader); each is None where it could not be established
+        :rtype: Tuple[Optional[str], Optional[str]]
+        """
+        _, fitter = self._parent_key("MetaDatabaseWriter", writer, "MetaEventFitter")
+        if fitter is None:
+            return None, None
+        _, loader = self._parent_key("MetaEventFitter", fitter, "MetaEventLoader")
+        return fitter, loader
 
     @log(logger=logger)
     @Slot(str, str, list, str)
@@ -490,7 +514,9 @@ class EventAnalysisController(MetaEventTabController):
         :return: None
         :rtype: None
         """
-        readable, fitter_loader = self._fitter_loader(eventfitter)
+        readable, fitter_loader = self._parent_key(
+            "MetaEventFitter", eventfitter, "MetaEventLoader"
+        )
         if not readable or fitter_loader is None:
             self.add_text_to_display.emit(
                 f"Fitting not started: could not establish which loader {eventfitter} "
@@ -608,8 +634,8 @@ class EventAnalysisController(MetaEventTabController):
         self.view.update_channels(channels)
 
     @log(logger=logger)
-    @Slot(str, list)
-    def write_events(self, writer: str, channels: List[int]) -> None:
+    @Slot(str, str, list)
+    def write_events(self, loader: str, writer: str, channels: List[int]) -> None:
         """
         Hand each channel's fitted events to a database writer and run the generators.
 
@@ -626,6 +652,12 @@ class EventAnalysisController(MetaEventTabController):
         reported and skipped and the rest still run, rather than an arbitrary writer
         exception escaping a Qt slot.
 
+        The commit is refused, before any generator is set up, when the selected loader is
+        not the one the writer's results were fitted on, or that cannot be established: the writer reads its fitter, which reads its own loader,
+        so committing would otherwise write a file other than the one the user selected.
+
+        :param loader: the event loader plugin's key selected in the tab
+        :type loader: str
         :param writer: the database writer plugin's key
         :type writer: str
         :param channels: the channels whose events are being written
@@ -633,6 +665,24 @@ class EventAnalysisController(MetaEventTabController):
         :return: None
         :rtype: None
         """
+        fitter, fitter_loader = self._writer_source(writer)
+        if fitter is None or fitter_loader is None:
+            self.add_text_to_display.emit(
+                f"Commit not started: could not establish which loader {writer}'s "
+                f"results come from, so it cannot be checked against the selected "
+                f"loader.",
+                self.__class__.__name__,
+            )
+            return
+        if fitter_loader != loader:
+            self.add_text_to_display.emit(
+                f"Commit not started: {writer} writes {fitter}'s results, which were "
+                f"fitted on {fitter_loader}, but {loader} is selected. Select "
+                f"{fitter_loader}, or a writer whose fitter uses {loader}.",
+                self.__class__.__name__,
+            )
+            return
+
         for channel in channels:
             try:
                 generator = self.model.call(

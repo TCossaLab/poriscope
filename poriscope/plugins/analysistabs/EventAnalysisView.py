@@ -64,7 +64,7 @@ class EventAnalysisView(MetaEventTabView):
     #: Asks the Controller to write this tab's fitted events through a database writer,
     #: one channel at a time. No answer is expected: the plugin hands back a generator,
     #: which the Controller registers with the Model and runs.
-    write_requested = Signal(str, list)
+    write_requested = Signal(str, str, list)
 
     #: Asks the Controller which of these channels the fitter has already completed.
     #: eventfitter, channels, filter key. The answer arrives as
@@ -536,9 +536,14 @@ class EventAnalysisView(MetaEventTabView):
         """
         Handle commit actions by triggering the selected writer to store events.
 
-        :param parameters: Dictionary containing selected writer and channel info.
+        The selected loader goes out with the request, which the Controller checks
+        against the loader the writer's results were fitted on; a missing one goes as
+        ``""`` and is refused there.
+
+        :param parameters: Dictionary containing selected writer, loader and channel info.
         :type parameters: Dict[str, Any]
         """
+        loader = parameters.get("loader", "")
         try:
             writer, channels = self._extract_commit_event_parameters(parameters)
         except ValueError as e:
@@ -548,7 +553,7 @@ class EventAnalysisView(MetaEventTabView):
         if writer is not None and channels is not None:
             # The write call itself is the Controller's.
             self.write_requested.emit(
-                writer, channels if isinstance(channels, list) else [channels]
+                loader, writer, channels if isinstance(channels, list) else [channels]
             )
 
     @log(logger=logger)
