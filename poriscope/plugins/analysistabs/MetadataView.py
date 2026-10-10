@@ -122,8 +122,11 @@ class MetadataView(MetaSubsetTabView):
     #: The events are tallied where they are loaded and only the histogram comes back.
     #: Nothing outside the histogram reads them, so handing the widget a generator to walk
     #: would put the whole subset in the View to produce one array.
+    #:
+    #: Also carries the filter's name, whose ``_raw`` suffix marks a raw filter: the
+    #: events its ``SELECT``'s ``id`` column names are plotted, whatever the scope.
     all_points_histogram_requested = Signal(
-        str, str, object, str, object, bool, object, object, str
+        str, str, object, str, object, bool, object, object, str, str
     )
 
     #: Asks for one event-data subset to be put on a shared normalised axis: the
@@ -133,7 +136,9 @@ class MetadataView(MetaSubsetTabView):
     #: Same reasoning as ``all_points_histogram_requested``: the events are reduced where
     #: they are loaded. The alpha each trace is drawn at stays here, because it is read by
     #: nothing outside the axes it is drawn on.
-    event_overlay_requested = Signal(str, str, object, str)
+    #:
+    #: Carries the filter's name too, for the same reason.
+    event_overlay_requested = Signal(str, str, object, str, str)
 
     #: Asks for one column's declared type, which the categorical-histogram guard
     #: needs before it will let the plot proceed. The answer arrives through
@@ -1419,10 +1424,6 @@ class MetadataView(MetaSubsetTabView):
         selected_filters = dict(parameters["selected_filters"])
         loader = parameters["db_loader"]
         plot_type = parameters["plot_type"]
-        if plot_type in self.event_data_plots and self._refuse_raw_filters(
-            selected_filters
-        ):
-            return False
         experiments_and_channels: Optional[
             Union[Dict[str, List[str]], Dict[Any, Any]]
         ] = copy.deepcopy(parameters["experiments_and_channels"])
@@ -1719,6 +1720,7 @@ class MetadataView(MetaSubsetTabView):
                                 self.hist_min,
                                 self.hist_max,
                                 dataset_label,
+                                subset_name,
                             )
 
                         elif plot_type in [
@@ -1740,7 +1742,11 @@ class MetadataView(MetaSubsetTabView):
                             ):
                                 self._reset_actions(axis_type="2d")
                             self.event_overlay_requested.emit(
-                                loader, sql_filter, exp_and_ch_arg, plot_type
+                                loader,
+                                sql_filter,
+                                exp_and_ch_arg,
+                                plot_type,
+                                subset_name,
                             )
 
                         if self.event_query == "":

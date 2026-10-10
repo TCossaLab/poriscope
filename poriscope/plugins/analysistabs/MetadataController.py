@@ -692,6 +692,7 @@ class MetadataController(MetaSubsetTabController):
         loader: str,
         sql_filter: str,
         experiments_and_channels: Optional[Dict[str, Optional[List[int]]]],
+        subset_name: str,
     ) -> Optional[Tuple[str, Generator]]:
         """
         Build one event-data subset's query and open a generator over its events.
@@ -702,13 +703,25 @@ class MetadataController(MetaSubsetTabController):
 
         :param loader: the database loader plugin's key
         :type loader: str
-        :param sql_filter: the subset filter's WHERE-clause body, empty for all rows
+        :param sql_filter: the subset filter's WHERE-clause body, empty for all rows, or a complete ``SELECT`` for a raw filter
         :type sql_filter: str
-        :param experiments_and_channels: the experiment and channel scope, or None
+        :param experiments_and_channels: the experiment and channel scope, or None; ignored by a raw filter
         :type experiments_and_channels: Optional[Dict[str, Optional[List[int]]]]
-        :return: the query that ran and a generator over its events, or None
+        :param subset_name: the selected filter's name, whose ``_raw`` suffix marks a raw filter
+        :type subset_name: str
+        :return: the query that ran (the user's own ``SELECT`` for a raw filter) and a generator over its events, or None
         :rtype: Optional[Tuple[str, Generator]]
         """
+        is_raw = subset_name.endswith("_raw")
+        shown_query = sql_filter
+        if is_raw:
+            # Run as written and unscoped: the events it names are loaded by id.
+            raw_conditions = self._raw_filter_conditions(
+                loader, sql_filter, subset_name
+            )
+            if raw_conditions is None:
+                return None
+            sql_filter, experiments_and_channels = raw_conditions, None
         try:
             # Two values, because construct_event_data_query is declared
             # -> Tuple[str, str] and reports a filter it cannot build as
@@ -754,10 +767,10 @@ class MetadataController(MetaSubsetTabController):
             )
             return None
 
-        return query, generator
+        return (shown_query if is_raw else query), generator
 
     @log(logger=logger)
-    @Slot(str, str, object, str, object, bool, object, object, str)
+    @Slot(str, str, object, str, object, bool, object, object, str, str)
     def build_all_points_histogram(
         self,
         loader: str,
@@ -769,6 +782,7 @@ class MetadataController(MetaSubsetTabController):
         hist_min: Optional[float],
         hist_max: Optional[float],
         dataset_label: str,
+        subset_name: str,
     ) -> None:
         """
         Tally one event-data subset into an all-points histogram for the View.
@@ -796,10 +810,14 @@ class MetadataController(MetaSubsetTabController):
         :type hist_max: Optional[float]
         :param dataset_label: the label this subset is drawn under
         :type dataset_label: str
+        :param subset_name: the selected filter's name, whose ``_raw`` suffix marks a raw filter
+        :type subset_name: str
         :return: None
         :rtype: None
         """
-        fetched = self._fetch_event_subset(loader, sql_filter, experiments_and_channels)
+        fetched = self._fetch_event_subset(
+            loader, sql_filter, experiments_and_channels, subset_name
+        )
         if fetched is None:
             return
         query, generator = fetched
@@ -825,13 +843,14 @@ class MetadataController(MetaSubsetTabController):
         )
 
     @log(logger=logger)
-    @Slot(str, str, object, str)
+    @Slot(str, str, object, str, str)
     def build_event_overlay(
         self,
         loader: str,
         sql_filter: str,
         experiments_and_channels: Optional[Dict[str, Optional[List[int]]]],
         plot_type: str,
+        subset_name: str,
     ) -> None:
         """
         Put one event-data subset on a shared normalised axis for the View to draw.
@@ -846,10 +865,14 @@ class MetadataController(MetaSubsetTabController):
         :type experiments_and_channels: Optional[Dict[str, Optional[List[int]]]]
         :param plot_type: either 'Raw Event Overlay' or 'Filtered Event Overlay'
         :type plot_type: str
+        :param subset_name: the selected filter's name, whose ``_raw`` suffix marks a raw filter
+        :type subset_name: str
         :return: None
         :rtype: None
         """
-        fetched = self._fetch_event_subset(loader, sql_filter, experiments_and_channels)
+        fetched = self._fetch_event_subset(
+            loader, sql_filter, experiments_and_channels, subset_name
+        )
         if fetched is None:
             return
         query, generator = fetched

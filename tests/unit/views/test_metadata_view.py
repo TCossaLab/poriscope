@@ -2772,7 +2772,7 @@ def test_overlay_plot_asks_for_a_raw_event_overlay(
     view._overlay_plot(recorded(view, parameters))
 
     view.event_overlay_requested.emit.assert_called_once_with(
-        "test_loader", "", {None: [None]}, "Raw Event Overlay"
+        "test_loader", "", {None: [None]}, "Raw Event Overlay", "Full Dataset"
     )
     view.all_points_histogram_requested.emit.assert_not_called()
 

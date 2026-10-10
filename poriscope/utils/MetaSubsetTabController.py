@@ -330,6 +330,68 @@ class MetaSubsetTabController(MetaController):
         self.logger.info(f"Filters saved to {path}")
 
     @log(logger=logger)
+    def _raw_filter_conditions(
+        self, loader: str, sql_filter: str, subset_name: str
+    ) -> Optional[str]:
+        """
+        Turn a raw ``SELECT`` into the WHERE-clause body that selects exactly its events.
+
+        An event-data plot has to load traces, which only ``load_event_data`` can do, and
+        that takes a WHERE-clause body spliced into its own fixed query. The raw filter
+        runs as written, ignoring the experiment and channel scope, and its ``id``
+        column - the ``events.id`` of each event it selects - names the events to load.
+        A ``SELECT`` that does not return ``id`` cannot name any, and is reported rather
+        than guessed at.
+
+        Reports its own failure and answers with None, so a caller has nothing to
+        handle beyond stopping.
+
+        :param loader: the database loader plugin's key
+        :type loader: str
+        :param sql_filter: the filter's complete ``SELECT``
+        :type sql_filter: str
+        :param subset_name: the filter's name, for the messages
+        :type subset_name: str
+        :return: ``e.id IN (...)`` over the ids the query returned, or None
+        :rtype: Optional[str]
+        """
+        try:
+            rows = self.model.call(
+                "MetaDatabaseLoader", loader, "query_database_directly", sql_filter
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to run the raw filter {subset_name}: {e!r}")
+            self.add_text_to_display.emit(
+                f"Could not run the raw filter {subset_name} on {loader}: {e}",
+                self.__class__.__name__,
+            )
+            return None
+        if rows is None:
+            self.add_text_to_display.emit(
+                f"Could not run the raw filter {subset_name}: see the log for the "
+                "SQL error",
+                self.__class__.__name__,
+            )
+            return None
+        if "id" not in rows.columns:
+            self.add_text_to_display.emit(
+                f"{subset_name}'s query does not return the column this plot needs "
+                "to find its events: id (the events table's id). Add it to the "
+                "SELECT, for example SELECT id, duration FROM events WHERE ...",
+                self.__class__.__name__,
+            )
+            return None
+        if rows.empty:
+            self.add_text_to_display.emit(
+                f"{subset_name}'s query returned no events, so there is nothing to "
+                "plot",
+                self.__class__.__name__,
+            )
+            return None
+        ids = ",".join(str(int(i)) for i in rows["id"].dropna().unique())
+        return f"e.id IN ({ids})"
+
+    @log(logger=logger)
     @Slot(str, object, object)
     def load_event_id_cache(
         self,

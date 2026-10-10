@@ -363,6 +363,7 @@ class TestBuildAllPointsHistogram:
             None,
             None,
             "a label",
+            "subset",
         )
 
         controller.view.set_event_query.assert_called_once_with("SELECT * FROM events")
@@ -398,6 +399,7 @@ class TestBuildAllPointsHistogram:
             -100.0,
             100.0,
             "a label",
+            "subset",
         )
 
         args = controller.view.set_all_points_histogram.call_args[0]
@@ -432,6 +434,7 @@ class TestBuildAllPointsHistogram:
             None,
             None,
             "a label",
+            "subset",
         )
 
         assert controller.model.calls_to("load_event_data") == []
@@ -463,6 +466,7 @@ class TestBuildAllPointsHistogram:
             None,
             None,
             "a label",
+            "subset",
         )
 
         controller.view.set_event_query.assert_not_called()
@@ -496,6 +500,7 @@ class TestBuildAllPointsHistogram:
             None,
             None,
             "a label",
+            "subset",
         )
 
         controller.view.set_event_query.assert_not_called()
@@ -533,7 +538,7 @@ class TestBuildEventOverlay:
             },
         )
 
-        controller.build_event_overlay("ldr", "", SCOPE, "Raw Event Overlay")
+        controller.build_event_overlay("ldr", "", SCOPE, "Raw Event Overlay", "subset")
 
         controller.view.set_event_query.assert_called_once_with("SELECT * FROM events")
         traces = controller.view.set_event_overlay.call_args[0][0]
@@ -556,7 +561,7 @@ class TestBuildEventOverlay:
             }
         )
 
-        controller.build_event_overlay("ldr", "", SCOPE, "Raw Event Overlay")
+        controller.build_event_overlay("ldr", "", SCOPE, "Raw Event Overlay", "subset")
 
         controller.view.set_event_query.assert_not_called()
         controller.view.set_event_overlay.assert_not_called()
@@ -578,7 +583,9 @@ class TestBuildEventOverlay:
             },
         )
 
-        controller.build_event_overlay("ldr", "", SCOPE, "Sideways Event Overlay")
+        controller.build_event_overlay(
+            "ldr", "", SCOPE, "Sideways Event Overlay", "subset"
+        )
 
         controller.view.set_event_overlay.assert_not_called()
         assert "Unknown plot_type" in panel_text(controller)

@@ -1,24 +1,14 @@
 """
-Raw SQL subset filters are refused before a plot is attempted.
+How raw SQL subset filters meet the event-data plots.
 
-This module used to pin ``ProteinController._scope_raw_subset_query`` - the string
-surgery that appended an experiment and channel scope to a user's raw ``SELECT`` - and
-before that, the same code as ``ProteinView._build_load_event_data_args``. All of it is
-gone, because measurement showed **the route it served could never produce a plot**:
-
-    >>> loader.load_event_data("SELECT * FROM events WHERE duration > 0", None)
-
-``load_event_data`` passes its ``conditions`` argument to
-``construct_event_data_query``, which splices it in after ``WHERE``. A complete
-``SELECT`` therefore produced ``WHERE SELECT * FROM events WHERE ...``, SQLite rejected
-it as ``near "SELECT": syntax error``, the builder reported that by returning an empty
-query, and the generator yielded nothing - silently. Measured against a real
-``SQLiteDBLoader`` over a synthetic database: the same filter as an ordinary
-WHERE-clause body yields every event, and as a raw ``SELECT`` yields none.
-
-So there was nothing to convert and nothing to fix in place. What replaces it is a
-refusal at the plot entry points, which is what these tests pin, plus the assertion
-that the dead branch has not come back.
+A raw filter is a complete ``SELECT``, which cannot be spliced where
+``load_event_data`` expects a WHERE-clause body - measured against a real
+``SQLiteDBLoader``, the same filter as an ordinary body yields every event and as a raw
+``SELECT`` yields none, silently. So the plots that load traces run the raw query as
+written, unscoped, and load the events its ``id`` column names; what these tests pin is
+that route, its failures, and the one place a raw filter is still refused: the plots
+that step through individual events by ``event_id``, which only means something within
+one experiment and channel.
 
 The projection comparison at the bottom used to assert that the two tabs' event-plot
 chains authored *different* queries. They do not any more: the chain is one body on
@@ -26,10 +16,13 @@ chains authored *different* queries. They do not any more: the chain is one body
 """
 
 import inspect
+from typing import Any
 
+import pandas as pd
 import pytest
 from pytest_mock import MockerFixture
 
+from poriscope.plugins.analysistabs.MetadataController import MetadataController
 from poriscope.plugins.analysistabs.MetadataModel import MetadataModel
 from poriscope.plugins.analysistabs.ProteinController import ProteinController
 from poriscope.plugins.analysistabs.ProteinModel import ProteinModel
@@ -72,7 +65,7 @@ def said(view: ProteinView) -> str:
 
 class TestRawFiltersAreRefused:
     """
-    The guard that replaced the branch, shared by both subset tabs.
+    The guard on the event-by-event plots, shared by both subset tabs.
     """
 
     def test_an_assisted_filter_is_allowed_through(self, view: ProteinView) -> None:
@@ -104,7 +97,7 @@ class TestRawFiltersAreRefused:
         """
         assert view._refuse_raw_filters({"mine_raw": "SELECT * FROM events"}) is True
         assert "mine_raw" in said(view)
-        assert "cannot be used for event-data plots" in said(view)
+        assert "step through individual events" in said(view)
 
     def test_one_raw_filter_among_several_refuses_the_plot(
         self, view: ProteinView
@@ -140,21 +133,16 @@ class TestEveryPlotEntryPointAsks:
     """
     The guard is only worth anything where a plot actually starts.
 
-    Derived rather than listed: every method that reads the selected filters and can
-    begin a plot must consult it, so a new plot path cannot quietly skip it. The
-    nested helpers those methods call are covered by their callers.
+    Every method that looks events up by ``event_id`` must consult it. The overlay,
+    all-points and distribution plots are not here: they run a raw filter, through
+    ``_fetch_event_subset``.
     """
 
     ENTRY_POINTS = {
-        "poriscope.plugins.analysistabs.MetadataView": [
-            "_overlay_plot",
-            "_handle_plot_events",
-        ],
+        "poriscope.plugins.analysistabs.MetadataView": ["_handle_plot_events"],
         "poriscope.plugins.analysistabs.ProteinView": [
             "_handle_plot_events",
             "_handle_plot_histogram",
-            "_update_distribution_individual",
-            "_update_distribution_ensemble",
         ],
     }
 
@@ -187,24 +175,151 @@ class TestEveryPlotEntryPointAsks:
         )
 
 
-def test_the_dead_raw_branch_has_not_come_back() -> None:
+def _controller(cls: type, mocker: MockerFixture, answers: dict) -> Any:
     """
-    The branch was removed because it could not work, not because it was untidy.
+    A bare Controller of the given class with a recording Model and a mocked View.
 
-    Re-adding an ``endswith("_raw")`` route in the distribution chain would restore a
-    path that hands a complete SELECT where a WHERE-clause body is expected - so this
-    names the measurement rather than the style rule.
-
-    :return: None
-    :rtype: None
+    :param cls: MetadataController or ProteinController
+    :type cls: type
+    :param mocker: pytest-mock's fixture
+    :type mocker: MockerFixture
+    :param answers: plugin method name to canned answer
+    :type answers: dict
+    :return: the controller under test
+    :rtype: Any
     """
-    source = inspect.getsource(ProteinController.load_event_distribution_data)
+    controller = cls.__new__(cls)
+    controller.view = mocker.Mock()
+    controller.logger = mocker.Mock()
+    controller.add_text_to_display = mocker.Mock()
+    controller.model = RecordingModel(answers)
+    return controller
 
-    assert "_raw" not in source.split('"""')[2], (
-        "load_event_distribution_data has regained a raw-filter branch; "
-        "load_event_data takes a WHERE-clause body, so a complete SELECT cannot work"
+
+def _said(controller: Any) -> str:
+    """
+    Everything the controller put on the status panel, joined.
+
+    :param controller: the controller under test
+    :type controller: Any
+    :return: the concatenated message text
+    :rtype: str
+    """
+    return "\n".join(
+        call.args[0] for call in controller.add_text_to_display.emit.call_args_list
     )
-    assert not hasattr(ProteinController, "_scope_raw_subset_query")
+
+
+RAW = "SELECT id, duration FROM events WHERE duration > 100"
+SCOPE = {"exp1": [2]}
+
+
+@pytest.mark.parametrize("cls", [MetadataController, ProteinController])
+class TestRawFilterLoadsItsOwnEvents:
+    """
+    A raw filter's events are the ones its ``id`` column names, whatever the scope.
+    """
+
+    def test_the_ids_it_returns_are_loaded_unscoped(
+        self, cls: type, mocker: MockerFixture
+    ) -> None:
+        """
+        The query runs as written, and the events are loaded by id with no scope.
+        """
+        generator = iter([])
+        controller = _controller(
+            cls,
+            mocker,
+            {
+                "query_database_directly": pd.DataFrame(
+                    {"id": [4, 9, 4], "duration": [1.0, 2.0, 1.0]}
+                ),
+                "construct_event_data_query": ("SELECT generated", ""),
+                "load_event_data": generator,
+            },
+        )
+
+        fetched = controller._fetch_event_subset("ldr", RAW, SCOPE, "mine_raw")
+
+        assert controller.model.calls_to("query_database_directly") == [(RAW,)]
+        assert controller.model.calls_to("load_event_data") == [("e.id IN (4,9)", None)]
+        assert fetched == (RAW, generator)
+
+    def test_a_query_without_an_id_column_says_how_to_fix_it(
+        self, cls: type, mocker: MockerFixture
+    ) -> None:
+        """
+        Nothing to load, so nothing is guessed: the message names the column and shows
+        the shape of the fix.
+        """
+        controller = _controller(
+            cls,
+            mocker,
+            {"query_database_directly": pd.DataFrame({"duration": [1.0]})},
+        )
+
+        assert controller._fetch_event_subset("ldr", RAW, SCOPE, "mine_raw") is None
+
+        assert "mine_raw" in _said(controller)
+        assert "SELECT id" in _said(controller)
+        assert controller.model.calls_to("load_event_data") == []
+
+    def test_a_query_that_returns_no_events_says_so(
+        self, cls: type, mocker: MockerFixture
+    ) -> None:
+        """
+        An empty result is not an ``IN ()`` clause that loads everything or errors.
+        """
+        controller = _controller(
+            cls,
+            mocker,
+            {"query_database_directly": pd.DataFrame({"id": []})},
+        )
+
+        assert controller._fetch_event_subset("ldr", RAW, SCOPE, "mine_raw") is None
+
+        assert "no events" in _said(controller)
+        assert controller.model.calls_to("load_event_data") == []
+
+    def test_a_query_that_failed_validation_reports_it(
+        self, cls: type, mocker: MockerFixture
+    ) -> None:
+        """
+        ``query_database_directly`` answers None for a query it could not run.
+        """
+        controller = _controller(cls, mocker, {"query_database_directly": None})
+
+        assert (
+            controller._fetch_event_subset("ldr", "SELECT", SCOPE, "mine_raw") is None
+        )
+
+        assert "mine_raw" in _said(controller)
+
+    def test_an_assisted_filter_still_takes_the_scoped_path(
+        self, cls: type, mocker: MockerFixture
+    ) -> None:
+        """
+        The suffix is the marker; an ordinary filter never touches the raw route.
+        """
+        generator = iter([])
+        controller = _controller(
+            cls,
+            mocker,
+            {
+                "construct_event_data_query": ("SELECT generated", ""),
+                "load_event_data": generator,
+            },
+        )
+
+        fetched = controller._fetch_event_subset(
+            "ldr", "duration < 300", SCOPE, "short events"
+        )
+
+        assert controller.model.calls_to("query_database_directly") == []
+        assert controller.model.calls_to("load_event_data") == [
+            ("duration < 300", SCOPE)
+        ]
+        assert fetched == ("SELECT generated", generator)
 
 
 def test_the_two_tabs_share_one_projection() -> None:
@@ -256,7 +371,9 @@ def test_the_distribution_chain_still_loads_an_assisted_subset(
         }
     )
 
-    controller.load_event_distribution_data("ldr", "duration < 300", {"exp1": [2]})
+    controller.load_event_distribution_data(
+        "ldr", "duration < 300", {"exp1": [2]}, "short events"
+    )
 
     assert controller.model.calls_to("load_event_data") == [
         ("duration < 300", {"exp1": [2]})

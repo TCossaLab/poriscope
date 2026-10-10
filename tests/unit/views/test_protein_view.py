@@ -2453,10 +2453,11 @@ class TestEnsembleHistogramRequest:
         mock_view._update_distribution_ensemble(recorded(mock_view, self._params()))
 
         args = mock_view.ensemble_histogram_requested.emit.call_args.args
-        dataset_label, dataset_key, d, L, N = args[6:]
+        dataset_label, dataset_key, d, L, N, subset_name = args[6:]
         assert "sub" in dataset_label
         assert dataset_key == ("ldr", "exp1", 3, "duration < 3", "sub")
         assert (d, L, N) == (20.0, 30.0, 10)
+        assert subset_name == "sub"
 
     def test_nothing_is_fetched_into_the_widget(self, mock_view):
         """

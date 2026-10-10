@@ -81,6 +81,8 @@ def metadata_tab(qapp: Any, tmp_path: Path, sample_metadata_db: str) -> Triad:
     combo = view._subset_controls.filter_comboBox
     filters = {name: query for name, query, _ in DOCUMENTED}
     filters["missing_raw"] = "SELECT id FROM events"
+    filters["events_raw"] = "SELECT id, duration FROM events WHERE channel_id = 1"
+    filters["no_id_raw"] = "SELECT duration FROM events"
     filters["short"] = "duration >= 0"
     for name, query in filters.items():
         view.subset_filters[name] = query
@@ -92,7 +94,11 @@ def metadata_tab(qapp: Any, tmp_path: Path, sample_metadata_db: str) -> Triad:
 
 
 def plot(
-    triad: Triad, filter_name: str, column: str, channels: List[str]
+    triad: Triad,
+    filter_name: str,
+    column: str,
+    channels: List[str],
+    plot_type: str = "Histogram",
 ) -> Dict[str, Any]:
     """
     Select one filter and the given channels, then press Plot, as a user would.
@@ -105,6 +111,8 @@ def plot(
     :type column: str
     :param channels: the channels to select, as the selection tree reports them
     :type channels: List[str]
+    :param plot_type: the plot to draw
+    :type plot_type: str
     :return: the parameters sent
     :rtype: Dict[str, Any]
     """
@@ -116,7 +124,7 @@ def plot(
     view.selected_experiment_and_channels_by_loader[LOADER] = {"exp_a": channels}
     parameters = {
         "db_loader": LOADER,
-        "plot_type": "Histogram",
+        "plot_type": plot_type,
         "x_axis": column,
         "y_axis": column,
         "z_axis": column,
@@ -191,5 +199,47 @@ def test_an_assisted_filter_is_still_scoped_beside_a_raw_one(
     plot(metadata_tab, "long_raw", "duration", ["0"])
     plot(metadata_tab, "short", "duration", ["0", "1"])
 
-    datasets = {(entry[2], entry[4]) for entry in metadata_tab.tab_view.plotted_datasets}
+    datasets = {
+        (entry[2], entry[4]) for entry in metadata_tab.tab_view.plotted_datasets
+    }
     assert datasets == {(None, "long_raw"), (0, "short"), (1, "short")}
+
+
+@pytest.mark.timeout(120)
+def test_a_raw_filter_plots_an_all_points_histogram_of_its_own_events(
+    metadata_tab: Triad, sample_metadata_db: str
+) -> None:
+    """
+    Event-data plots run a raw filter too: the events its ``id`` column names, loaded
+    whatever channel is selected - here channel 0, while the filter picks channel 1.
+    """
+    plot(
+        metadata_tab,
+        "events_raw",
+        "duration",
+        ["0"],
+        plot_type="Raw All Points Histogram",
+    )
+
+    view = metadata_tab.tab_view
+    assert {entry[4] for entry in view.plotted_datasets} == {"events_raw"}
+    assert view.event_query == "SELECT id, duration FROM events WHERE channel_id = 1"
+    assert view.hist_max is not None
+
+
+@pytest.mark.timeout(120)
+def test_a_raw_filter_without_an_id_column_draws_no_event_plot(
+    metadata_tab: Triad,
+) -> None:
+    """
+    Nothing names the events to load, so nothing is drawn.
+    """
+    plot(
+        metadata_tab,
+        "no_id_raw",
+        "duration",
+        ["0"],
+        plot_type="Raw All Points Histogram",
+    )
+
+    assert metadata_tab.tab_view.plotted_datasets == set()
