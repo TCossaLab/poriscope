@@ -1263,3 +1263,116 @@ class TestSnapToFiltered:
             "wrapped around to the first filtered event (0)",
             view_cls.__name__,
         )
+
+
+# ===========================================================================
+# show_selection_tree - shared by both subset tabs on MetaSubsetTabView
+# ===========================================================================
+
+
+SCOPE_UNCHANGED = (
+    "Scope unchanged: at least one experiment or channel must stay selected"
+)
+NO_EXPERIMENTS = "This database has no experiments to select"
+
+
+def close_tree_with(view: object, mocker: object, ticked: dict) -> None:
+    """
+    Make the view's selection tree close with ``ticked`` checked.
+
+    The stub returns what ``SelectionTree.show_dialog`` returns: the ticked
+    experiments mapped to their ticked channels, and ``{}`` when nothing is ticked.
+
+    :param view: a subset-tab view
+    :type view: object
+    :param mocker: the pytest-mock fixture
+    :type mocker: object
+    :param ticked: the selection the tree closes with
+    :type ticked: dict
+    """
+    view.selection_tree = mocker.Mock()
+    view.selection_tree.show_dialog.return_value = ticked
+
+
+class TestShowSelectionTree:
+    """
+    Closing the experiment and channel tree, for both subset tabs.
+
+    Pinned: a selection with something ticked becomes the scope; closing with nothing
+    ticked keeps the previous scope, absent included, and says so, since an empty
+    scope can never produce anything; a database with no experiments says that
+    instead.
+    """
+
+    def test_the_base_owns_the_only_copy(self) -> None:
+        """A copy left on a tab would shadow the shared one for that tab."""
+        assert "show_selection_tree" in MetaSubsetTabView.__dict__
+        for view_cls in SUBSET_TABS:
+            assert "show_selection_tree" not in view_cls.__dict__, view_cls.__name__
+
+    @pytest.mark.parametrize("view_cls", SUBSET_TABS, ids=lambda c: c.__name__)
+    def test_a_ticked_selection_becomes_the_scope(
+        self, qapp: object, mocker: object, view_cls: type
+    ) -> None:
+        """Whatever is ticked when the tree closes is what every plot then uses."""
+        view = build_subset_tab(view_cls)
+        view.selected_experiment_and_channels_by_loader = {"l": {"A": ["1", "2"]}}
+        close_tree_with(view, mocker, {"B": ["1"]})
+
+        view.show_selection_tree({"A": ["1", "2"], "B": ["1"]}, "l", {"A": ["1", "2"]})
+
+        assert view.selected_experiment_and_channels_by_loader["l"] == {"B": ["1"]}
+        view.add_text_to_display.emit.assert_not_called()
+
+    @pytest.mark.parametrize("view_cls", SUBSET_TABS, ids=lambda c: c.__name__)
+    def test_nothing_ticked_keeps_the_previous_scope_and_says_so(
+        self, qapp: object, mocker: object, view_cls: type
+    ) -> None:
+        """
+        An empty scope can never produce anything, so it is not stored.
+
+        The message is what tells the user the unticking was not applied; without it
+        the old ticks would simply reappear the next time the tree opens.
+        """
+        view = build_subset_tab(view_cls)
+        view.selected_experiment_and_channels_by_loader = {"l": {"A": ["1"]}}
+        close_tree_with(view, mocker, {})
+
+        view.show_selection_tree({"A": ["1", "2"]}, "l", {"A": ["1"]})
+
+        assert view.selected_experiment_and_channels_by_loader["l"] == {"A": ["1"]}
+        view.add_text_to_display.emit.assert_called_once_with(
+            SCOPE_UNCHANGED, view_cls.__name__
+        )
+
+    @pytest.mark.parametrize("view_cls", SUBSET_TABS, ids=lambda c: c.__name__)
+    def test_nothing_ticked_leaves_an_absent_scope_absent(
+        self, qapp: object, mocker: object, view_cls: type
+    ) -> None:
+        """No scope is invented: a loader with none stored still has none."""
+        view = build_subset_tab(view_cls)
+        view.selected_experiment_and_channels_by_loader = {}
+        close_tree_with(view, mocker, {})
+
+        view.show_selection_tree({"A": ["1"]}, "l", {})
+
+        assert "l" not in view.selected_experiment_and_channels_by_loader
+        view.add_text_to_display.emit.assert_called_once_with(
+            SCOPE_UNCHANGED, view_cls.__name__
+        )
+
+    @pytest.mark.parametrize("view_cls", SUBSET_TABS, ids=lambda c: c.__name__)
+    def test_a_database_with_no_experiments_says_so(
+        self, qapp: object, mocker: object, view_cls: type
+    ) -> None:
+        """There was never anything to tick, so "scope unchanged" would mislead."""
+        view = build_subset_tab(view_cls)
+        view.selected_experiment_and_channels_by_loader = {"l": {}}
+        close_tree_with(view, mocker, {})
+
+        view.show_selection_tree({}, "l", {})
+
+        assert view.selected_experiment_and_channels_by_loader["l"] == {}
+        view.add_text_to_display.emit.assert_called_once_with(
+            NO_EXPERIMENTS, view_cls.__name__
+        )
