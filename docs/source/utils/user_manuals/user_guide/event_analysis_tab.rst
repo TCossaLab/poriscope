@@ -125,6 +125,8 @@ Step 4: Write to Database
 
 3. **Click** the **Commit Events** button to write the results into the specified database.
 
+   A writer stores the results of the event fitter it was built on, which reads only the event loader that fitter was built on, so **Commit Events** is refused, with a message on the status panel, when a different loader is selected. Select the loader the writer's fitter was built on.
+
 .. note::
 
    A database holds the results of one type of fitter. Any number of runs of that fitter -

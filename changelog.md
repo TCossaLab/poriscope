@@ -425,6 +425,8 @@
 
 * **Fit Events in the Event Analysis tab now refuses to run when the selected event fitter belongs to a different event loader than the one selected**: before, it either fit the fitter's own loader's events without saying so, while another loader was shown, or failed with a "No samplerate found for channel" error that did not say the selection was the cause; the status panel now says which loader to use
 
+* **Commit Events in the Event Analysis tab now refuses to run when the selected event loader is not the one the writer's results were fitted on**: before, it either wrote the fitter's own loader's events without saying so, while another loader was shown, or failed with a "No samplerate found for channel" error that did not say the selection was the cause; the status panel now says which loader to select
+
 * An event the Event Analysis tab cannot load, or whose fit features cannot be read, no longer abandons the whole plot: the remaining events are still drawn
 
 * **Fixed `PeakFinder` fit overlays failing with "unsupported operand type(s) for *: 'float' and 'NoneType'"** when an event has no unfolded level yet (before folded/unfolded classification has run, or when it could not separate two populations): the baseline and peaks are now drawn and the unfolded-level lines are left out
