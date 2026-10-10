@@ -18,6 +18,34 @@ and deleted on 2026-09-27; it too is in git history.
 
 ---
 
+## 2026-10-10 - `format_axis_label` appends a unit; it no longer replaces a different one
+
+**Context.** Three copies (`ProteinView` function, `MetadataView` method, `ClusteringView` inline) stripped
+a trailing `(...)` before attaching the unit, which truncated a column named `Rate (per pore)` to `Rate (Hz)`.
+A tighter regex cannot fix it: `Rate (per pore)` and `Duration (us)` are both `word (word)`, and no registry of
+units exists (the `columns.units` text is free-form, including `" "`).
+
+**Decision.** One `MetaView` `@staticmethod`: append `" (unit)"`, except when the label already ends in that exact
+suffix. Replacing a *different* unit on relabel was dropped.
+
+**Evidence.** 0 of 20 call sites (12 `MetadataView`, 8 `ProteinView`) pass the function's own prior output;
+all pass a raw column name. No shipped or in-app-written column has parentheses (the Clustering and Protein writers use fixed
+names), so the truncation had no in-app trigger; `add_columns_to_table` still accepts any name.
+
+**Fixed anyway, though not user-facing.** The behaviour change is about 3 lines of logic and about 60 lines
+once its tests and records are counted; the rest of the branch (about 140 insertions, 150 deletions) is the
+merge of three copies into one, with the import and call-site changes, the whitespace-check unification, the
+new Clustering test and the baseline update. Dropping the change would have saved almost no code, and would
+have left Clustering to either keep its inline copy or gain the truncation.
+
+**Revisit if** (1) a caller starts re-labelling an already-decorated label with a different unit; carry the bare
+name and unit separately rather than re-parsing the string. (2) A column name with parentheses becomes reachable
+in the app (a user-nameable derived column, a database importer): the no-in-app-trigger premise is gone, so decide
+whether `Duration (us) (ms)` is acceptable. (3) A registry of valid units appears, which would allow a precise
+strip-and-replace.
+
+---
+
 ## 2026-10-09 - The Raw Data baseline readout shares the finders' fit through `@staticmethod`
 
 **Context.** `RawDataModel.get_baseline_stats` kept a pre-2026-09-20 copy of the baseline fit

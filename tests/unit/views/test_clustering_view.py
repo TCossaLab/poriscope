@@ -689,6 +689,27 @@ class TestUpdatePlot:
                 plot=[True, True, False],
             )
 
+    def test_axis_labels_come_from_the_shared_format_axis_label(self, view):
+        df, labels, conf = self._make_labelled_df()
+        df = df.rename(columns={"duration": "Rate (per pore)"})
+        self._setup_axes(view)
+        with (
+            patch.object(view.canvas, "draw"),
+            patch.object(view, "_update_cache"),
+            patch.object(view, "_commit_cache"),
+        ):
+            view.update_plot(
+                df,
+                labels,
+                conf,
+                logs=[True, False],
+                normalized=[False, True],
+                units=["Hz", "  "],
+                plot=[True, True],
+            )
+        assert view.axes.get_xlabel() == "Log10 Rate (per pore) (Hz)"
+        assert view.axes.get_ylabel() == "Normalized current"
+
     def test_stores_cluster_data(self, view):
         df, labels, conf = self._make_labelled_df()
         self._setup_axes(view)

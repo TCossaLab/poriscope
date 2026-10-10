@@ -979,10 +979,12 @@ def test_format_axis_label_adds_unit(view: MetadataView) -> None:
     assert result == "Duration (ms)"
 
 
-def test_format_axis_label_replaces_existing_unit(view: MetadataView) -> None:
-    """Verify existing unit is replaced."""
+def test_format_axis_label_appends_rather_than_replacing_an_existing_unit(
+    view: MetadataView,
+) -> None:
+    """Verify an existing trailing parenthetical is kept and the unit appended."""
     result: str = view.format_axis_label("Duration (s)", "ms")
-    assert result == "Duration (ms)"
+    assert result == "Duration (s) (ms)"
 
 
 def test_format_axis_label_no_unit_returns_plain(view: MetadataView) -> None:
@@ -991,10 +993,12 @@ def test_format_axis_label_no_unit_returns_plain(view: MetadataView) -> None:
     assert result == "Duration"
 
 
-def test_format_axis_label_handles_multiple_parentheses(view: MetadataView) -> None:
-    """Verify only last parenthetical is replaced."""
+def test_format_axis_label_keeps_every_existing_parenthetical(
+    view: MetadataView,
+) -> None:
+    """Verify no existing parenthetical is lost when a unit is appended."""
     result: str = view.format_axis_label("Current (baseline) (pA)", "nA")
-    assert "nA" in result
+    assert result == "Current (baseline) (pA) (nA)"
 
 
 # ----------------------------- Plot 1D Histogram Tests ------------------------------

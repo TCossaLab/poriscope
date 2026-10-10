@@ -26,7 +26,6 @@
 
 import copy
 import logging
-import re
 import warnings
 from typing import (
     Any,
@@ -2786,12 +2785,3 @@ class MetadataView(MetaSubsetTabView):
 
         # Allows INT, TEXT, BOOLEAN, BLOB, NUMERIC, DECIMAL, etc.
         return True
-
-    @log(logger=logger)
-    def format_axis_label(self, label: str, unit: Optional[str]) -> str:
-        """
-        Ensure the axis label contains the correct unit exactly once.
-        Removes any existing trailing unit in parentheses.
-        """
-        label = re.sub(r"\s*\(.*?\)$", "", label)  # Remove trailing "(...)"
-        return f"{label} ({unit})" if unit and unit.strip() else label

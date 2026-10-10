@@ -718,9 +718,7 @@ class ClusteringView(MetaView):
                 col_label = col_label + f"Log10 {col}"
             else:
                 col_label = col_label + f"{col}"
-            if unit is not None and unit != "" and unit != " ":
-                col_label = col_label + f" ({unit})"
-            col_labels[col] = col_label
+            col_labels[col] = self.format_axis_label(col_label, unit)
 
         data["cluster_label"] = labels
         data["cluster_confidence"] = confidence

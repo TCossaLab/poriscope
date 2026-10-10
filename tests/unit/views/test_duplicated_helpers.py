@@ -16,13 +16,12 @@ Ten groups:
   the divergence was pinned so the merge had to decide it. **The majority version
   was promoted to** ``MetaControls``, so what is checked now is that exactly
   one copy survives and that it behaves as the majority version did.
-- ``format_axis_label`` exists three times, and **the third one differs**.
-  ``ProteinView.py:4037`` is a module-level function, ``MetadataView.py:3645`` is
-  a byte-identical method, and ``ClusteringView.py:731-742`` is an inlined loop
-  that neither strips a pre-existing trailing parenthetical nor rejects a
-  whitespace-only unit. The two callable copies are asserted equal here, and the
-  two specific behaviours the inline copy lacks are pinned as named tests so that
-  merging all three is an explicit decision.
+- ``format_axis_label`` existed three times - a module-level function in ``ProteinView``,
+  a byte-identical method in ``MetadataView`` and an inlined loop in ``ClusteringView``.
+  **All three were merged onto** ``MetaView`` as one ``@staticmethod``, which appends
+  the unit instead of stripping a trailing parenthetical first (the strip truncated
+  any column name that itself contained parentheses), so what is checked now is that one
+  implementation.
 - ``get_selected_filters`` existed twice, in ``MetadataView`` and ``ProteinView``,
   differing only in the name each tab held its controls panel under. **It was
   promoted to** ``MetaSubsetTabView``, which reaches the panel through
@@ -77,8 +76,9 @@ import pytest
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QBoxLayout
 
+from poriscope.plugins.analysistabs.ClusteringView import ClusteringView
 from poriscope.plugins.analysistabs.MetadataView import MetadataView
-from poriscope.plugins.analysistabs.ProteinView import ProteinView, format_axis_label
+from poriscope.plugins.analysistabs.ProteinView import ProteinView
 from poriscope.plugins.analysistabs.utils.clusteringcontrols import ClusteringControls
 from poriscope.plugins.analysistabs.utils.eventAnalysisControls import (
     EventAnalysisControls,
@@ -186,7 +186,7 @@ class TestFactorsBehaviour:
 
 
 # ===========================================================================
-# format_axis_label - two identical copies and one that is not
+# format_axis_label - one implementation, inherited by every tab
 # ===========================================================================
 
 
@@ -194,132 +194,52 @@ LABEL_CASES = [
     ("Duration", "us", "Duration (us)"),
     ("Duration", None, "Duration"),
     ("Duration", "", "Duration"),
-    ("Duration (us)", "ms", "Duration (ms)"),
-    ("Duration (us)", None, "Duration"),
+    ("Duration (us)", "ms", "Duration (us) (ms)"),
+    ("Duration (ms)", "ms", "Duration (ms)"),
+    ("Duration (us)", None, "Duration (us)"),
     ("Max Amplitude", "pA", "Max Amplitude (pA)"),
-    # See TestFormatAxisLabelStripsFromTheFirstParenthesis: the strip reaches back
-    # to the *first* parenthesis, not the last, so everything after "A" is lost.
-    ("A (nested) label (us)", "pA", "A (pA)"),
+    ("Rate (per pore)", "Hz", "Rate (per pore) (Hz)"),
+    ("Rate (per pore) count", "Hz", "Rate (per pore) count (Hz)"),
+    ("a (b) (c) (d)", "X", "a (b) (c) (d) (X)"),
+    ("A (nested) label (us)", "pA", "A (nested) label (us) (pA)"),
+    ("(all)", "pA", "(all) (pA)"),
     ("", "pA", " (pA)"),
 ]
 
 
-@pytest.fixture
-def metadata_view() -> MetadataView:
-    """
-    A MetadataView carrying the method-shaped copy of ``format_axis_label``.
-
-    :return: the view
-    :rtype: MetadataView
-    """
-    return build(MetadataView)
-
-
-class TestFormatAxisLabelCopiesAgree:
-    """The ProteinView function and the MetadataView method are interchangeable."""
+class TestFormatAxisLabelBehaviour:
+    """What the shared implementation actually produces."""
 
     @pytest.mark.parametrize(("label", "unit", "expected"), LABEL_CASES)
-    def test_both_copies_produce_the_expected_text(
-        self,
-        metadata_view: MetadataView,
-        label: str,
-        unit: Optional[str],
-        expected: str,
+    def test_it_produces_the_expected_text(
+        self, label: str, unit: Optional[str], expected: str
     ) -> None:
-        """Same input, same output, and the output itself is pinned."""
-        assert format_axis_label(label, unit) == expected
-        assert metadata_view.format_axis_label(label, unit) == expected
+        """A trailing parenthetical is part of the name; the unit is appended."""
+        assert build(_BaseOnlyView).format_axis_label(label, unit) == expected
 
-
-class TestFormatAxisLabelDivergenceFromClusteringView:
-    """
-    The two behaviours ``ClusteringView``'s inlined copy does not share.
-
-    Named individually rather than folded into the table above, because these are
-    precisely the decisions to make if the three are merged. The
-    inline builder at ``ClusteringView.py:731-742`` composes its label from the
-    column name and appends the unit under ``unit is not None and unit != "" and
-    unit != " "`` - a three-way literal check rather than ``.strip()`` - and it
-    never removes an existing parenthetical because it never receives one.
-    """
-
-    def test_a_whitespace_only_unit_is_rejected(
-        self, metadata_view: MetadataView
-    ) -> None:
+    def test_a_whitespace_only_unit_is_rejected(self) -> None:
         """
-        ``.strip()`` rejects any run of spaces; the inline copy only rejects one.
+        Any run of whitespace means no unit, not just a single space.
 
         ``metadatacontrols`` manufactures the single-space unit deliberately, so a
-        two-space unit reaching the inline copy would render ``Label (  )``.
+        longer run reaching the label would render ``Label (  )``.
         """
+        view = build(_BaseOnlyView)
         for blank in (" ", "  ", "\t", "\n"):
-            assert format_axis_label("Label", blank) == "Label"
-            assert metadata_view.format_axis_label("Label", blank) == "Label"
+            assert view.format_axis_label("Label", blank) == "Label"
 
-    def test_an_existing_trailing_parenthetical_is_replaced_not_appended(
-        self, metadata_view: MetadataView
-    ) -> None:
-        """
-        Re-labelling the same axis twice must not accumulate units.
+    def test_relabelling_with_the_same_unit_does_not_stack_it(self) -> None:
+        """Re-attaching the unit already trailing the label is a no-op."""
+        view = build(_BaseOnlyView)
+        once = view.format_axis_label("Duration", "ms")
 
-        The inline copy has no equivalent, which is safe only because it always
-        builds its label from a bare column name.
-        """
-        once = format_axis_label("Duration", "us")
-        twice = format_axis_label(once, "ms")
+        assert once == "Duration (ms)"
+        assert view.format_axis_label(once, "ms") == once
 
-        assert once == "Duration (us)"
-        assert twice == "Duration (ms)"
-        assert metadata_view.format_axis_label(once, "ms") == "Duration (ms)"
-
-    def test_nothing_is_stripped_without_a_trailing_parenthesis(
-        self, metadata_view: MetadataView
-    ) -> None:
-        """The pattern is anchored at end-of-string, so a mid-label group survives."""
-        assert format_axis_label("Rate (per pore) count", "Hz") == (
-            "Rate (per pore) count (Hz)"
-        )
-        assert metadata_view.format_axis_label("Rate (per pore) count", "Hz") == (
-            "Rate (per pore) count (Hz)"
-        )
-
-
-class TestFormatAxisLabelStripsFromTheFirstParenthesis:
-    """
-    A quirk found while writing these tests, characterized rather than fixed.
-
-    The pattern is ``\\s*\\(.*?\\)$``. The ``.*?`` is lazy, but it is anchored at
-    ``$``, so the leftmost match wins and ``.*?`` expands across every intervening
-    ``)``. The strip therefore reaches back to the **first** parenthesis in the
-    label, not the last, whenever the label happens to end in ``)``.
-
-    That is a live defect for any column whose name contains parentheses: a column
-    called ``Rate (per pore)`` plotted with unit ``Hz`` is labelled ``Rate (Hz)``,
-    silently losing ``per pore``. It is queued in ``future_fixes.md`` rather than
-    fixed here - this file's job is to record what the code does today so a
-    merge of the three copies is not blamed for it later.
-    """
-
-    def test_a_label_ending_in_a_parenthetical_loses_everything_from_the_first_one(
-        self, metadata_view: MetadataView
-    ) -> None:
-        """``a (b) (c) (d)`` collapses to ``a``, not to ``a (b) (c)``."""
-        assert format_axis_label("a (b) (c) (d)", "X") == "a (X)"
-        assert metadata_view.format_axis_label("a (b) (c) (d)", "X") == "a (X)"
-
-    def test_a_meaningful_parenthetical_column_name_is_truncated(
-        self, metadata_view: MetadataView
-    ) -> None:
-        """The user-visible consequence: ``per pore`` disappears from the axis."""
-        assert format_axis_label("Rate (per pore)", "Hz") == "Rate (Hz)"
-        assert metadata_view.format_axis_label("Rate (per pore)", "Hz") == "Rate (Hz)"
-
-    def test_a_label_that_is_entirely_a_parenthetical_becomes_empty(
-        self, metadata_view: MetadataView
-    ) -> None:
-        """Leaving a leading space before the unit, which is what the axis shows."""
-        assert format_axis_label("(all)", "pA") == " (pA)"
-        assert metadata_view.format_axis_label("(all)", "pA") == " (pA)"
+    def test_every_tab_inherits_the_one_implementation(self) -> None:
+        """No tab shadows the shared method with a copy of its own."""
+        for cls in (ClusteringView, MetadataView, ProteinView):
+            assert cls.format_axis_label is MetaView.format_axis_label
 
 
 # ===========================================================================
