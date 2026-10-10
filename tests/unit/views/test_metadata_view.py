@@ -1168,7 +1168,7 @@ def test_plot_1d_histogram_overlays_multiple_datasets(
 # ----------------------------- Plot Heatmap Tests ------------------------------
 
 
-def _answer_heatmap(view, x_bins, y_bins, z_grid):
+def _answer_heatmap(view, x_bins, y_bins, z_grid, extent=None):
     """
     Answer ``heatmap_requested`` the way MetadataController does.
 
@@ -1185,11 +1185,18 @@ def _answer_heatmap(view, x_bins, y_bins, z_grid):
     :type y_bins: np.ndarray
     :param z_grid: the log2-scaled counts to answer with
     :type z_grid: np.ndarray
+    :param extent: the drawing extent to answer with; defaults to the bins' own
+        min/max, which is not what the real Model now returns (that would be the
+        bug this file's extent test exists to catch) but is good enough for the
+        tests here that only care about labels and the colorbar
+    :type extent: Optional[list]
     :return: None
     :rtype: None
     """
+    if extent is None:
+        extent = [x_bins.min(), x_bins.max(), y_bins.min(), y_bins.max()]
     context = view.heatmap_requested.emit.call_args.args[5:]
-    view.set_heatmap(x_bins, y_bins, z_grid, *context)
+    view.set_heatmap(x_bins, y_bins, z_grid, extent, *context)
 
 
 def test_plot_heatmap_requests_the_binning(
@@ -1286,6 +1293,33 @@ def test_plot_heatmap_removes_previous_colorbar(
     _answer_heatmap(view, x_bins, y_bins, z_grid)
 
     mock_old_colorbar.remove.assert_called_once()
+
+
+def test_plot_heatmap_draws_on_the_given_extent_not_the_bin_centers(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """
+    The regression pin: the image is drawn on whatever extent it is handed,
+    not recomputed from the bin centers' own min/max - which is one bin width
+    narrower than the true data and is exactly the defect this fix closes.
+    """
+    data = pd.DataFrame({"x": np.array([1.0, 2.0]), "y": np.array([3.0, 4.0])})
+
+    x_bins = np.array([1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5])
+    y_bins = np.array([3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0, 7.5])
+    z_grid = np.ones((10, 10))
+    extent = [0.5, 6.0, 2.5, 8.0]  # deliberately not x_bins/y_bins' own min/max
+
+    mock_colorbar = mocker.Mock()
+    mock_colorbar.get_ticks = mocker.Mock(
+        return_value=np.array([0.0, 0.5, 1.0, 1.5, 2.0])
+    )
+    view.figure.colorbar = mocker.Mock(return_value=mock_colorbar)
+
+    view._plot_heatmap(view.axes, data, ["x", "y"], ["u1", "u2"], [False, False])
+    _answer_heatmap(view, x_bins, y_bins, z_grid, extent=extent)
+
+    assert view.axes.imshow.call_args.kwargs["extent"] == extent
 
 
 # ----------------------------- Plot Scatterplot Tests ------------------------------

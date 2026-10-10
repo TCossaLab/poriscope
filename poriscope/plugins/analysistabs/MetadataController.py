@@ -147,14 +147,16 @@ class MetadataController(MetaSubsetTabController):
             xfiltered, yfiltered = self.model.logscale_and_filter_columns(
                 xdata, ydata, log_flags=list(log_flags)
             )
-            x, y, z = self.model.calculate_heatmap(xfiltered, yfiltered, bins, sizes)
+            x, y, z, extent = self.model.calculate_heatmap(
+                xfiltered, yfiltered, bins, sizes
+            )
         except (ValueError, TypeError, IndexError) as e:
             self.logger.error(f"Unable to build the heatmap: {repr(e)}")
             self.add_text_to_display.emit(
                 f"Unable to build the heatmap: {e}", self.__class__.__name__
             )
             return
-        self.view.set_heatmap(x, y, z, ax, x_label, y_label, dataset_label)
+        self.view.set_heatmap(x, y, z, extent, ax, x_label, y_label, dataset_label)
 
     @log(logger=logger)
     @Slot(object, object, object, object, str)
