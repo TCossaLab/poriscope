@@ -1033,9 +1033,10 @@ class TestShiftRangeAndUpdatePlotIsShared:
     """
     One navigation body for both subset tabs, run against each tab's real panel.
 
-    Pinned: wrapping at both ends, the empty-scope message, the cache rebuild on a
-    scope change, and an entered id past every cached one sitting just past the end -
-    right goes to the first id, left to the last, silently.
+    Pinned: wrapping at both ends, the empty-scope message, the refusal of a scope
+    with more than one filter, experiment or channel, the cache rebuild on a scope
+    change, and an entered id past every cached one sitting just past the end - right
+    goes to the first id, left to the last, silently.
     """
 
     def test_the_base_owns_the_only_copy(self) -> None:
@@ -1127,6 +1128,66 @@ class TestShiftRangeAndUpdatePlotIsShared:
         view.add_text_to_display.emit.assert_called_once_with(
             NO_SCOPE_MESSAGE, view_cls.__name__
         )
+        view._replot_after_shift.assert_not_called()
+
+    @pytest.mark.parametrize("view_cls", SUBSET_TABS, ids=lambda c: c.__name__)
+    @pytest.mark.parametrize(
+        ("scope", "filters", "message"),
+        [
+            (
+                {"exp2": ["0"], "exp1": ["0"]},
+                [],
+                "Only a single experiment can be used for navigating events",
+            ),
+            (
+                {"exp1": ["1", "0"]},
+                [],
+                "Only a single channel can be used for navigating events",
+            ),
+            (
+                {"exp1": ["0"]},
+                ["Short", "Long"],
+                "Unable to navigate more than one subset at a time, select only one "
+                "filter to apply",
+            ),
+        ],
+        ids=["two_experiments", "two_channels", "two_filters"],
+    )
+    def test_a_scope_plot_events_refuses_is_refused_before_anything_moves(
+        self,
+        qapp: object,
+        mocker: object,
+        view_cls: type,
+        scope: dict,
+        filters: list,
+        message: str,
+    ) -> None:
+        """
+        The arrows re-plot events, so they refuse the scopes Plot Events refuses.
+
+        The refusal comes before the cache is read or the Event ID field written: a
+        press that moved the field and then had its plot refused would leave the field
+        naming an event that was never shown.
+        """
+        view = build_navigable_tab(view_cls, mocker)
+        view.selected_experiment_and_channels_by_loader = {"l": scope}
+        view.subset_filters = {"Short": "dwell < 1", "Long": "dwell > 5"}
+        view._subset_controls.update_filters(["Short", "Long"])
+        for name in filters:
+            view._subset_controls.filter_comboBox.selectItem(name)
+        view._subset_controls.event_id_lineEdit.setText("3")
+        rebuild = mocker.patch.object(view, "_rebuild_event_id_cache")
+
+        view._shift_range_and_update_plot(
+            {"db_loader": "l", "event_id": 3, "n_events": 1}, "right"
+        )
+
+        view.add_text_to_display.emit.assert_called_once_with(
+            message, view_cls.__name__
+        )
+        assert view._subset_controls.event_id_lineEdit.text() == "3"
+        assert view.filtered_event_ids == [0, 3, 5, 7]
+        rebuild.assert_not_called()
         view._replot_after_shift.assert_not_called()
 
     @pytest.mark.parametrize("view_cls", SUBSET_TABS, ids=lambda c: c.__name__)

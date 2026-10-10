@@ -871,6 +871,10 @@ class MetaSubsetTabView(MetaView):
         from it, snaps it to the first id instead (``_snap_to_filtered``). The cache is
         rebuilt first if the filter or the scope no longer match it.
 
+        Navigation re-plots events, so it refuses what the event plots refuse - more
+        than one filter, experiment or channel, in that order - before the cache is read
+        or the Event ID field written.
+
         :param parameters: the controls panel's parameters; reads ``db_loader``, ``event_id`` and ``n_events``
         :type parameters: Dict[str, Any]
         :param direction: ``"left"`` or ``"right"``
@@ -892,6 +896,20 @@ class MetaSubsetTabView(MetaView):
                 "navigate events",
                 self.__class__.__name__,
             )
+            return
+
+        refusal = None
+        if len(selected_filters) > 1:
+            refusal = (
+                "Unable to navigate more than one subset at a time, select only one "
+                "filter to apply"
+            )
+        elif len(exp_and_ch) > 1:
+            refusal = "Only a single experiment can be used for navigating events"
+        elif any(len(channels) > 1 for channels in exp_and_ch.values()):
+            refusal = "Only a single channel can be used for navigating events"
+        if refusal is not None:
+            self.add_text_to_display.emit(refusal, self.__class__.__name__)
             return
 
         exp = next(iter(exp_and_ch.keys()))

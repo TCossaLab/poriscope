@@ -194,6 +194,8 @@
 
 * A Raw Data event shift replayed from an action history with no channel selected is now refused instead of raising
 
+* The Metadata and Protein event navigation arrows now refuse a scope with more than one experiment, channel or filter, as Plot Events does, instead of moving the Event ID without plotting
+
 * **Fixed the Metadata tab's capture-rate plot always reporting at least one row dropped by the log filter, even when nothing was dropped**; the count now excludes the one fewer interval than event that n events always produce
 
 * **Fixed the Metadata tab's heatmap being drawn one bin width narrower than its data**, which pulled every plotted point's true position inward from where it should sit on the axes
