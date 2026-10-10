@@ -1055,9 +1055,10 @@ class MetaEventFinder(BaseDataPlugin):
     # carry the half that follows from the family's own assumption of Gaussian baseline
     # noise, so a finder writes its policy around one call rather than its own histogram.
 
+    @staticmethod
     @log(logger=logger)
     def _fit_baseline_histogram(
-        self, data: npt.NDArray[np.float64], bottom: float, top: float
+        data: npt.NDArray[np.float64], bottom: float, top: float
     ) -> tuple[float, float]:
         """
         Histogram ``data`` over ``[bottom, top]`` and fit a Gaussian to the baseline peak.
@@ -1159,7 +1160,7 @@ class MetaEventFinder(BaseDataPlugin):
             (i for i in range(max_index, -1, -1) if hist[i] <= 0.6 * maxval), 0
         )
 
-        _, mean, std = self._gaussian_fit(
+        _, mean, std = MetaEventFinder._gaussian_fit(
             hist,
             centers,
             centers[max_index],
@@ -1167,9 +1168,9 @@ class MetaEventFinder(BaseDataPlugin):
         )
         return mean, std
 
+    @staticmethod
     @log(logger=logger)
     def _gaussian_fit(
-        self,
         histogram: npt.NDArray[np.float64],
         bins: npt.NDArray[np.float64],
         mean_guess: float,
