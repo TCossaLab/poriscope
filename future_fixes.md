@@ -109,6 +109,19 @@ Tab state onto the Models, heavy work off the GUI thread, event-finder and CUSUM
   from another recording are not the same channels, so carrying them over is wrong as well as
   surprising. Decide the rule (tick all on every loader change, or only when nothing carries
   over) and apply it to `RawDataView.update_channels:1152` if it shares the behaviour.
+- **Event Analysis dropdowns still allow a crossed loader/fitter/writer selection** (S9a.8-S9a.10
+  refuse it after the fact; option 3 of the S9a.8 ruling). Filter the fitter and writer lists to
+  the selected loader from the existing loader-change hook (`EventAnalysisView._handle_other_actions:683`
+  -> `request_loader_channels`), reusing `EventAnalysisController._parent_key`, and apply it again in
+  `update_available_plugins:120` or a plugin change undoes it. Estimate by reading: ~100 lines plus
+  ~15 tests, no new signal. Risks: every combobox's `currentIndexChanged` is wired to
+  `on_parameter_changed` (`eventAnalysisControls.py:87,182,224,272`), so repopulating loops without
+  signal blocking; a restored session selecting a hidden fitter silently falls back to the first
+  one; extra `parameter_changed` history entries; a loader with no fitters shows "No Event
+  Fitter". Keep the S9a.8-S9a.10 guards, since scripts and replayed actions bypass the dropdowns.
+  Needs a ruling on hiding versus greying out mismatched entries. **Not scheduled: first see how
+  the S9a.8-S9a.10 refusals are received, and revisit this if users trip over them or ask for the
+  crossing to be prevented instead.**
 
 ### Fitter performance and logging
 
