@@ -144,7 +144,7 @@ class RawDataView(MetaEventTabView):
         time_bases: Sequence[npt.NDArray[np.float64]],
         channels: Sequence[int],
         start: float = 0,
-        baseline_stats: Optional[List[Optional[Tuple[float, float, float]]]] = None,
+        baseline_stats: Optional[List[Optional[Tuple[float, float]]]] = None,
     ) -> None:
         """
         Update the plot area with the provided data across multiple channels in a grid layout.
@@ -157,8 +157,8 @@ class RawDataView(MetaEventTabView):
         :type channels: Sequence[int]
         :param start: Time offset added to the plotted time axis, in seconds.
         :type start: float
-        :param baseline_stats: Per-channel (amplitude, mean, stdev) from the Model, index-aligned with data, or None to draw no baseline overlay at all. An individual entry may be None where that channel's fit failed.
-        :type baseline_stats: Optional[List[Optional[Tuple[float, float, float]]]]
+        :param baseline_stats: Per-channel (mean, stdev) from the Model, index-aligned with data, or None to draw no baseline overlay at all. An individual entry may be None where that channel's fit failed.
+        :type baseline_stats: Optional[List[Optional[Tuple[float, float]]]]
         """
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", UserWarning)
@@ -182,7 +182,7 @@ class RawDataView(MetaEventTabView):
             # Controller has already logged - the trace is still drawn, without a band.
             stats = baseline_stats[i] if baseline_stats is not None else None
             if stats is not None:
-                amp, mean, std = stats
+                mean, std = stats
                 if True:
                     # Add green rectangle for mean ± 3*std
                     ax.axhspan(

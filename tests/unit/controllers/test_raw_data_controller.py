@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+import numpy as np
 import pytest
 from pytest_mock import MockerFixture
 
@@ -1489,3 +1490,35 @@ class TestBoundedLength:
             c for c in controller.model.call.call_args_list if c.args[2] == "load_data"
         ]
         assert [c.args[4] for c in loads] == [6.0, 4.0]
+
+
+# ----------------------- compute_baseline_stats ---------------------
+
+
+def test_compute_baseline_stats_hands_mean_and_stdev_pairs_to_the_view(
+    controller: RawDataController,
+    mock_view: MagicMock,
+) -> None:
+    """
+    A channel's fit passes through as the Model's (mean, stdev); a failed fit is None.
+
+    The data is divided by 1000 on the way in (pA to nA), and a ValueError from one
+    channel must not stop the others being plotted.
+
+    :param controller: Controller under test.
+    :param mock_view: Mocked raw data view.
+    """
+    fit = np.array((-4.2, 0.6))
+    controller.model.get_baseline_stats.side_effect = [fit, ValueError("flat")]
+    data = [np.array([1000.0, 2000.0]), np.array([5.0, 5.0])]
+    time_bases = [np.array([0.0, 1.0]), np.array([0.0, 1.0])]
+
+    controller.compute_baseline_stats(data, time_bases, [1, 2], 0.5)
+
+    first_call = controller.model.get_baseline_stats.call_args_list[0]
+    np.testing.assert_array_equal(first_call.args[0], np.array([1.0, 2.0]))
+    mock_view.update_plot.assert_called_once()
+    sent = mock_view.update_plot.call_args.args
+    assert sent[2:4] == ([1, 2], 0.5)
+    assert sent[4][0] is fit
+    assert sent[4][1] is None

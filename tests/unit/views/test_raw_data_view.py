@@ -875,3 +875,33 @@ def test_a_selected_filter_is_not_second_guessed(view, mocker):
 # _start_writer is gone: the commit call lives in
 # RawDataController.commit_events, which registers the generator with the Model itself.
 # Its per-channel and bare-channel behaviour is asserted there and just above.
+
+
+# ---------------------------------------------------------------------------
+# update_plot - baseline overlay
+# ---------------------------------------------------------------------------
+
+
+def test_update_plot_draws_the_baseline_overlay_from_a_mean_stdev_pair(view, mocker):
+    """
+    A (mean, stdev) entry draws the band, the mean line and a label carrying both.
+
+    A leftover three-way unpack of the entry would raise here, and a channel whose
+    entry is None draws no overlay at all.
+    """
+    ax_fitted = mocker.Mock()
+    ax_failed = mocker.Mock()
+    view.figure.add_subplot = mocker.Mock(side_effect=[ax_fitted, ax_failed])
+    time = np.array([0.0, 1.0, 2.0])
+    trace = np.array([-4000.0, -4200.0, -4100.0])
+
+    view.update_plot([trace, trace], [time, time], [1, 2], 0.0, [(-4.2, 0.6), None])
+
+    ax_fitted.axhspan.assert_called_once()
+    assert ax_fitted.axhspan.call_args.args == pytest.approx((-4.2 - 1.8, -4.2 + 1.8))
+    ax_fitted.axhline.assert_called_once()
+    label = ax_fitted.text.call_args.args[2]
+    assert "Mean = -4.20 nA" in label
+    assert "Std = 0.60 nA" in label
+    ax_failed.axhspan.assert_not_called()
+    ax_failed.text.assert_not_called()

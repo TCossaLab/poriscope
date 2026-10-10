@@ -50,6 +50,8 @@
 
 #### Analysis-tab API:
 
+* **Breaking:** `RawDataModel.get_baseline_stats` and `RawDataView.update_plot`'s `baseline_stats` now carry `(mean, stdev)` rather than `(amplitude, mean, stdev)`, and `RawDataModel.gaussian_fit` is removed; the amplitude was never read
+
 * **Breaking:** `update_available_columns` has moved from `MetaSubsetTabView` to `MetadataView`, `column_names_requested` with it, and `request_column_names` is no longer on `MetaSubsetTabController`; only the metadata tab reads column names, so a plugin subclassing the shared subset-tab base no longer inherits any of the three
 
 * **Breaking:** `set_event_id_input` has moved from `MetadataControls` and `ProteinControls` to `MetaSubsetTabControls`, which now requires its subclasses to implement `validate_inputs`
@@ -189,6 +191,8 @@
 * **Fixed the Metadata and Protein tabs' event navigation arrows skipping an event when the Event ID is past the last filtered event**; right now goes to the first filtered event and left to the last
 
 * The Metadata and Protein tabs now say on the status panel when plotting an Event ID past the last filtered event starts from the first filtered event instead
+
+* **The Raw Data tab's baseline readout now uses the event finders' baseline fit**, so it no longer reads high in sigma or lands on an occupied level when the trace spends over half the window there
 
 * The Event Analysis tab's event navigation arrows now say on the status panel when a shift would go below event 0, as the Raw Data tab's do
 

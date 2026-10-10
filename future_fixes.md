@@ -50,10 +50,6 @@ Step 10 waits for both tracks.
 
 ### Step 9a - analysis-tab views (Carolina's track)
 
-- **`RawDataModel.get_baseline_stats:117` is a pre-2026-09-20 copy of the finders' baseline fit**
-  (linspace bin centres, so sigma comes back × bins/(bins−1); `argmax` peak; the old window and
-  bin count), feeding the tab's baseline readout. After 2.1 step 4 (ruling D) it disagrees with
-  the finders' fit; share the base fit instead of keeping a second one.
 - **`format_axis_label` truncates a column name containing parentheses.** `\s*\(.*?\)$` anchored at
   `$` lets the lazy `.*?` expand across every `)`, so `Rate (per pore)` with unit `Hz` becomes
   `Rate (Hz)`. Two copies, `ProteinView.py:2337` and `MetadataView.py:2840`; pinned in
