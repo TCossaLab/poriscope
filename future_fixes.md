@@ -50,10 +50,6 @@ Step 10 waits for both tracks.
 
 ### Step 9a - analysis-tab views (Carolina's track)
 
-- **`format_axis_label` truncates a column name containing parentheses.** `\s*\(.*?\)$` anchored at
-  `$` lets the lazy `.*?` expand across every `)`, so `Rate (per pore)` with unit `Hz` becomes
-  `Rate (Hz)`. Two copies, `ProteinView.py:2337` and `MetadataView.py:2840`; pinned in
-  `test_duplicated_helpers.py:273-316`, so the fix updates those tests.
 - **Event Analysis overlays one fitter's fits on another loader's events** (Kyle, 2026-10-09).
   `EventAnalysisController.load_event_plot:73` loads traces from the selected loader
   (`_load_one_event:320`) and fits and features from the selected fitter (`_load_one_fit:359`,
@@ -156,9 +152,6 @@ Tab state onto the Models, heavy work off the GUI thread, event-finder and CUSUM
   of no-op stubs. `ClassicCUSUM.py:96`'s
   `_locate_sublevel_transitions` is a 202/205-line near-copy of `CUSUM.py:179`, 6 lines
   differing. It was booked as a floor with no recorded reason: rule on it or take it.
-- **`format_axis_label` still exists in three places** - a module function at `ProteinView.py:2357`,
-  a method at `MetadataView.py:2822` and inlined at `ClusteringView.py:729`. The behavioural drift is
-  gone (2026-09-04); the refactor did not merge them, and no ruling says it should not.
 
 ### From the 2026-08-25 structural audit
 

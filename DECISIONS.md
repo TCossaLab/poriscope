@@ -18,6 +18,25 @@ and deleted on 2026-09-27; it too is in git history.
 
 ---
 
+## 2026-10-10 - `format_axis_label` appends a unit; it no longer replaces a different one
+
+**Context.** Three copies (`ProteinView` function, `MetadataView` method, `ClusteringView` inline) stripped
+a trailing `(...)` before attaching the unit, which truncated a column named `Rate (per pore)` to `Rate (Hz)`.
+A tighter regex cannot fix it: `Rate (per pore)` and `Duration (us)` are both `word (word)`, and no registry of
+units exists (the `columns.units` text is free-form, including `" "`).
+
+**Decision.** One `MetaView` `@staticmethod`: append `" (unit)"`, except when the label already ends in that exact
+suffix. Replacing a *different* unit on relabel was dropped.
+
+**Evidence.** 0 of 20 call sites (12 `MetadataView`, 8 `ProteinView`) pass the function's own prior output;
+all pass a raw column name. No shipped column has parentheses, but `add_columns_to_table` accepts any
+user DataFrame column name.
+
+**Revisit if** a caller starts re-labelling an already-decorated label with a different unit; carry the bare
+name and unit separately rather than re-parsing the string.
+
+---
+
 ## 2026-10-09 - The Raw Data baseline readout shares the finders' fit through `@staticmethod`
 
 **Context.** `RawDataModel.get_baseline_stats` kept a pre-2026-09-20 copy of the baseline fit
