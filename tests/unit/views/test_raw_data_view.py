@@ -895,9 +895,7 @@ def test_update_plot_draws_the_baseline_overlay_from_a_mean_stdev_pair(view, moc
     time = np.array([0.0, 1.0, 2.0])
     trace = np.array([-4000.0, -4200.0, -4100.0])
 
-    view.update_plot(
-        [trace, trace], [time, time], [1, 2], 0.0, [(-4.2, 0.6), None]
-    )
+    view.update_plot([trace, trace], [time, time], [1, 2], 0.0, [(-4.2, 0.6), None])
 
     ax_fitted.axhspan.assert_called_once()
     assert ax_fitted.axhspan.call_args.args == pytest.approx((-4.2 - 1.8, -4.2 + 1.8))

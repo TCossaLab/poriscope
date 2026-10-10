@@ -1477,7 +1477,9 @@ class TestGaussianFitRecovery:
         """With guesses on the nose, all three parameters come back."""
         centres, values = gaussian_curve(100.0, 50.0, 5.0)
 
-        amplitude, mean, stdev = MetaEventFinder._gaussian_fit(values, centres, 50.0, 5.0)
+        amplitude, mean, stdev = MetaEventFinder._gaussian_fit(
+            values, centres, 50.0, 5.0
+        )
 
         assert amplitude == pytest.approx(100.0, rel=1e-6)
         assert mean == pytest.approx(50.0, abs=1e-6)
@@ -1495,7 +1497,9 @@ class TestGaussianFitRecovery:
         """
         centres, values = gaussian_curve(100.0, 5000.0, 250.0)
 
-        amplitude, mean, stdev = MetaEventFinder._gaussian_fit(values, centres, 4900.0, 300.0)
+        amplitude, mean, stdev = MetaEventFinder._gaussian_fit(
+            values, centres, 4900.0, 300.0
+        )
 
         assert amplitude == pytest.approx(100.0, rel=1e-5)
         assert mean == pytest.approx(5000.0, rel=1e-6)
@@ -1563,9 +1567,7 @@ class TestGaussianFitGolden:
 
         num_regression.check({k: np.asarray(v) for k, v in recorded.items()})
 
-    def test_contaminated_sweep_is_unchanged(
-        self, num_regression
-    ) -> None:
+    def test_contaminated_sweep_is_unchanged(self, num_regression) -> None:
         """
         The same fit over profiles that are *not* clean Gaussians.
 
@@ -1591,7 +1593,9 @@ class TestGaussianFitGolden:
         )
 
         for profile in (pedestal, shoulder, asymmetric):
-            amplitude, mean, stdev = MetaEventFinder._gaussian_fit(profile, centres, 500.0, 20.0)
+            amplitude, mean, stdev = MetaEventFinder._gaussian_fit(
+                profile, centres, 500.0, 20.0
+            )
             recorded["amplitude"].append(amplitude)
             recorded["mean"].append(mean)
             recorded["stdev"].append(stdev)
