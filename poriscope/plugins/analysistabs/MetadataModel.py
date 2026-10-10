@@ -136,7 +136,10 @@ class MetadataModel(MetaSubsetTabModel):
         bins: Any,
         sizes: bool,
     ) -> Tuple[
-        npt.NDArray[np.float64], npt.NDArray[np.float64], npt.NDArray[np.float64]
+        npt.NDArray[np.float64],
+        npt.NDArray[np.float64],
+        npt.NDArray[np.float64],
+        List[float],
     ]:
         """
         Bin two columns into a 2-D histogram and return it log2-scaled.
@@ -149,6 +152,11 @@ class MetadataModel(MetaSubsetTabModel):
         Empty bins come back as ``-1`` rather than ``-inf``, which is what lets the
         caller's colourbar label them as a count of zero.
 
+        The bin edges are kept alongside the bin centers: the centers are the right
+        value for a per-point export row, but an image drawn on the centers' own
+        min/max is one bin width narrower than the data, so the edges travel back as
+        the fourth value for whoever draws it.
+
         :param xdata: the filtered x values
         :type xdata: npt.NDArray[np.float64]
         :param ydata: the filtered y values
@@ -157,8 +165,8 @@ class MetadataModel(MetaSubsetTabModel):
         :type bins: Any
         :param sizes: does the bins parameter refer to bin sizes (True) or counts (False)
         :type sizes: bool
-        :return: bin-center x values, bin-center y values, and the log2-scaled 2-D histogram counts
-        :rtype: Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64], npt.NDArray[np.float64]]
+        :return: bin-center x values, bin-center y values, the log2-scaled 2-D histogram counts, and the drawing extent ``[xmin, xmax, ymin, ymax]`` in bin-edge coordinates
+        :rtype: Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64], npt.NDArray[np.float64], List[float]]
         :raises ValueError: if bins is an invalid entry when sizes is False
         """
         if bins is not None:
@@ -204,10 +212,12 @@ class MetadataModel(MetaSubsetTabModel):
             for j in range(z.shape[1]):
                 logged_z[i, j] = np.log2(z[i, j]) if z[i, j] > 0 else -1
 
+        extent = [float(x[0]), float(x[-1]), float(y[0]), float(y[-1])]
+
         x = x[:-1] + np.diff(x) / 2.0
         y = y[:-1] + np.diff(y) / 2.0
 
-        return x, y, logged_z.T
+        return x, y, logged_z.T, extent
 
     @log(logger=logger)
     def _resolve_1d_bins(

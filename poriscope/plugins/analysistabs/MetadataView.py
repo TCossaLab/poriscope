@@ -956,6 +956,7 @@ class MetadataView(MetaSubsetTabView):
         x: npt.NDArray[np.float64],
         y: npt.NDArray[np.float64],
         z: npt.NDArray[np.float64],
+        extent: Sequence[float],
         ax: Axes,
         x_label: str,
         y_label: str,
@@ -974,6 +975,8 @@ class MetadataView(MetaSubsetTabView):
         :type y: npt.NDArray[np.float64]
         :param z: the log2-scaled 2-D histogram counts
         :type z: npt.NDArray[np.float64]
+        :param extent: the image's drawing bounds in bin-edge coordinates, ``[xmin, xmax, ymin, ymax]``
+        :type extent: Sequence[float]
         :param ax: the axis object on which to plot
         :type ax: Axes
         :param x_label: the x axis label, already formatted
@@ -989,7 +992,7 @@ class MetadataView(MetaSubsetTabView):
             z,
             origin="lower",
             interpolation="gaussian",
-            extent=[np.min(x), np.max(x), np.min(y), np.max(y)],
+            extent=extent,
             aspect="auto",
         )
         proxy = Line2D([0], [0], color="none", label=dataset_label)

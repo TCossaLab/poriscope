@@ -58,6 +58,8 @@
 
 * **Breaking:** `_shift_range_and_update_plot` and `_get_event_index_text` have moved from `RawDataView` and `EventAnalysisView` to `MetaEventTabView`, which now requires its subclasses to implement `_event_controls` and `_handle_plot_events`
 
+* **Breaking:** `MetadataModel.calculate_heatmap` now returns the bin edges as a fourth value, and `MetadataView.set_heatmap` takes them as a new `extent` parameter
+
 ### Developer Tooling:
 
 * The release workflow now runs only when a version tag is pushed
@@ -193,6 +195,8 @@
 * A Raw Data event shift replayed from an action history with no channel selected is now refused instead of raising
 
 * **Fixed the Metadata tab's capture-rate plot always reporting at least one row dropped by the log filter, even when nothing was dropped**; the count now excludes the one fewer interval than event that n events always produce
+
+* **Fixed the Metadata tab's heatmap being drawn one bin width narrower than its data**, which pulled every plotted point's true position inward from where it should sit on the axes
 
 ### Documentation:
 

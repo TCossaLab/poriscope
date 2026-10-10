@@ -50,8 +50,6 @@ Step 10 waits for both tracks.
 
 ### Step 9a - analysis-tab views (Carolina's track)
 
-- **`set_heatmap` passes bin centres as the `imshow` extent** (`MetadataView.py:986`), compressing
-  the image by a bin width.
 - **`RawDataModel.get_baseline_stats:117` is a pre-2026-09-20 copy of the finders' baseline fit**
   (linspace bin centres, so sigma comes back × bins/(bins−1); `argmax` peak; the old window and
   bin count), feeding the tab's baseline readout. After 2.1 step 4 (ruling D) it disagrees with

@@ -1330,7 +1330,7 @@ class TestCalculateHeatmap(_StatusPanelMixin):
         raw_y = np.array([3.0, 4.0])
         filtered = (np.array([2.0]), np.array([4.0]))
         controller.model.logscale_and_filter_columns.return_value = filtered
-        controller.model.calculate_heatmap.return_value = ("xb", "yb", "z")
+        controller.model.calculate_heatmap.return_value = ("xb", "yb", "z", "ext")
 
         controller.calculate_heatmap(
             raw_x, raw_y, [True, False], None, False, MagicMock(), "xl", "yl", "dl"
