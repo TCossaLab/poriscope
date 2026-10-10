@@ -103,14 +103,24 @@ it against the SQLite database without rewriting or modifying the query content.
 
 You have full control over which columns are returned and how the query is structured.
 
-.. warning::
+A raw filter can be plotted like any other, with three differences:
 
-   Raw SQL filters can be created, validated, saved and loaded, but cannot currently be
-   selected for a plot on either tab; selecting one is refused with a message on the
-   status panel.
+* **The experiment and channel selection is ignored.** The query runs exactly as written
+  against the whole database, so put any scoping you want in the query itself. A raw
+  filter is drawn once, however many channels are selected, and is labelled without one.
+* **Your ``SELECT`` supplies the plot's data.** A plot needs the columns you chose on its
+  axes: if the query does not return one, the status panel names it and nothing is drawn.
+  Histograms, scatterplots and the other column plots read those columns from the result.
+  The event overlays, all-points histograms and Protein distribution plots load the
+  events themselves, so the query must return the events table's ``id``, for example
+  ``SELECT id, duration FROM events WHERE duration > 100``.
+* **Plots that step through single events cannot use one.** Plot Events, the event
+  navigation arrows and the Protein tab's Plot Histogram number events within one channel,
+  which a raw filter ignores; selecting one there is refused with a message on the status
+  panel.
 
-Use this mode to write and check queries that need aggregations or computed columns,
-or when you simply prefer writing complete SQL; for plotting, use Assisted SQL.
+Use this mode to write queries that need aggregations or computed columns, or when you
+simply prefer writing complete SQL.
 
 **Example 1 — Same long events filter, written as Raw SQL:**
 
@@ -273,7 +283,10 @@ Common Mistakes
 +------------------------------------------+--------------------------------------------------+
 | Full SELECT entered in Assisted mode     | Fails validation — treated as a WHERE clause     |
 +------------------------------------------+--------------------------------------------------+
-| Raw SQL filter selected for a plot       | Refused: raw SQL filters cannot be plotted       |
+| Raw SQL filter without ``id`` used for   | Status panel asks for the ``id`` column; nothing |
+| an event overlay or all-points histogram | is drawn                                         |
++------------------------------------------+--------------------------------------------------+
+| Raw SQL filter used for Plot Events      | Refused: events are numbered within a channel    |
 +------------------------------------------+--------------------------------------------------+
 | Typo in column name                      | Validation error                                 |
 +------------------------------------------+--------------------------------------------------+

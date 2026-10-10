@@ -62,12 +62,6 @@ Step 10 waits for both tracks.
 
 ### Step 9b - breaking tab designs and the milestone guard (Carolina's track)
 
-- **Raw SQL subset filters can be saved but never plotted.** Six call sites refuse them
-  (`MetaSubsetTabView._refuse_raw_filters:234`, from `MetadataView.py:1409`/`:2070` and
-  `ProteinView.py:1359`/`:1454`/`:1713`/`:1874`). Design settled (`DECISIONS.md` 2026-09-14): a raw
-  filter goes to `query_database_directly` (`MetaDatabaseLoader.py:1416`) as written, ignores the
-  experiment/channel selection, and a plot missing a column it needs says which. Clustering only
-  gets this through the shared filter base queued under Later.
 - **Action history: record a declared action name, not a method name.** `DECISIONS.md`
   2026-09-17 settled the design. 5 `@register_action` sites over 3 names, all private
   (`_reset_actions` on Clustering/Metadata/Protein views, `MetadataView._overlay_plot:1396`,
