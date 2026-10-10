@@ -173,17 +173,8 @@ class EventAnalysisController(MetaEventTabController):
 
         fitting_done = False
         if eventfitter != "No Event Fitter":
-            try:
-                parents = self.model.call("MetaEventFitter", eventfitter, "get_parents")
-            except Exception as e:
-                self.logger.error(
-                    f"Unable to read {eventfitter}'s parent loader: {repr(e)}"
-                )
-                parents = None
-            if parents is not None:
-                fitter_loader = next(
-                    (key for meta, key in parents if meta == "MetaEventLoader"), None
-                )
+            readable, fitter_loader = self._fitter_loader(eventfitter)
+            if readable:
                 if fitter_loader == loader:
                     fitting_done = self._fitting_is_done(eventfitter, channel)
                 else:
@@ -447,10 +438,30 @@ class EventAnalysisController(MetaEventTabController):
             return None
         return supplied
 
+    def _fitter_loader(self, eventfitter: str) -> Tuple[bool, Optional[str]]:
+        """
+        Name the event loader an event fitter was built on.
+
+        :param eventfitter: the event fitter plugin's key
+        :type eventfitter: str
+        :return: (readable, loader key); readable is False when the fitter's parents
+            could not be read, and the key is None when they hold no event loader
+        :rtype: Tuple[bool, Optional[str]]
+        """
+        try:
+            parents = self.model.call("MetaEventFitter", eventfitter, "get_parents")
+        except Exception as e:
+            self.logger.error(
+                f"Unable to read {eventfitter}'s parent loader: {repr(e)}"
+            )
+            return False, None
+        loader = next((key for meta, key in parents if meta == "MetaEventLoader"), None)
+        return True, loader
+
     @log(logger=logger)
-    @Slot(str, list, str)
+    @Slot(str, str, list, str)
     def request_fitting_statuses(
-        self, eventfitter: str, channels: List[int], data_filter: str
+        self, loader: str, eventfitter: str, channels: List[int], data_filter: str
     ) -> None:
         """
         Ask the fitter which channels it has already fitted, for the View to confirm.
@@ -462,6 +473,14 @@ class EventAnalysisController(MetaEventTabController):
         channel - a look-up that fails leaves the previous channel's fitted-ness in
         place.
 
+        The launch is refused here, before any status is read, when the selected loader
+        is not the one the fitter was built on (or that cannot be established): a fitter
+        only ever reads its own loader, so fitting would run on a file other than the one
+        the user selected. The status prompt and ``start_fitting`` are only reachable
+        through this slot, so this is the one place the check is made.
+
+        :param loader: the event loader plugin's key selected in the tab
+        :type loader: str
         :param eventfitter: the event fitter plugin's key
         :type eventfitter: str
         :param channels: the channels the user asked to fit
@@ -471,6 +490,24 @@ class EventAnalysisController(MetaEventTabController):
         :return: None
         :rtype: None
         """
+        readable, fitter_loader = self._fitter_loader(eventfitter)
+        if not readable or fitter_loader is None:
+            self.add_text_to_display.emit(
+                f"Fitting not started: could not establish which loader {eventfitter} "
+                f"was built on, so it cannot be checked against {loader}. Select "
+                f"an event fitter that uses {loader}.",
+                self.__class__.__name__,
+            )
+            return
+        if fitter_loader != loader:
+            self.add_text_to_display.emit(
+                f"Fitting not started: {eventfitter} was built on {fitter_loader}, "
+                f"but {loader} is selected. Select an event fitter that uses "
+                f"{loader}, or the loader {eventfitter} uses.",
+                self.__class__.__name__,
+            )
+            return
+
         statuses: List[Tuple[int, bool]] = []
         for channel in channels:
             try:

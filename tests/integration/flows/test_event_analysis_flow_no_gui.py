@@ -24,6 +24,7 @@ from poriscope.plugins.dbwriters.SQLiteDBWriter import SQLiteDBWriter
 from poriscope.plugins.eventfitters.CUSUM import CUSUM
 from poriscope.plugins.eventloaders.SQLiteEventLoader import SQLiteEventLoader
 from tests.integration.flows._triad import Triad, build_triad
+from tests.synthetic_data.synthetic_events_db import generate_events_database
 
 LOADER = "events"
 FITTER = "fitter"
@@ -79,7 +80,10 @@ def event_analysis_tab(qapp, tmp_path: Path, sample_events_db: str) -> Triad:
     """
     triad = build_triad("EventAnalysisController", tmp_path)
 
+    # The application names a plugin when it instantiates it, so a dependent built
+    # afterwards records that name as its parent.
     loader = SQLiteEventLoader()
+    loader.set_key(LOADER)
     loader_settings = loader.get_empty_settings(standalone=True)
     loader_settings["Input File"]["Value"] = sample_events_db
     loader.apply_settings(loader_settings)
@@ -116,7 +120,9 @@ def event_analysis_tab(qapp, tmp_path: Path, sample_events_db: str) -> Triad:
     triad.close()
 
 
-def fit_events(triad: Triad, qtbot: Any, channels: List[int]) -> None:
+def fit_events(
+    triad: Triad, qtbot: Any, channels: List[int], loader: str = LOADER
+) -> None:
     """
     Drive the tab's fit action and wait for the fitters to finish.
 
@@ -126,6 +132,8 @@ def fit_events(triad: Triad, qtbot: Any, channels: List[int]) -> None:
     :type qtbot: Any
     :param channels: the channels to fit
     :type channels: List[int]
+    :param loader: the event loader selected in the tab's dropdown
+    :type loader: str
     :return: None
     :rtype: None
     """
@@ -134,6 +142,7 @@ def fit_events(triad: Triad, qtbot: Any, channels: List[int]) -> None:
         "fit_events",
         (
             {
+                "loader": loader,
                 "eventfitter": FITTER,
                 "filter": "No Filter",
                 "channel": [str(c) for c in channels],
@@ -215,3 +224,60 @@ def test_the_committed_metadata_carries_its_experiment(
         connection.close()
 
     assert names == ["flow_test"]
+
+
+@pytest.mark.timeout(300)
+def test_fitting_with_another_loader_selected_is_refused(
+    event_analysis_tab: Triad, tmp_path: Path
+) -> None:
+    """
+    **The fitter reads only the loader it was built on.** With a second loader selected
+    that has the same channel number, an unguarded launch fits the fitter's own loader's
+    channel 0 and the user believes they fitted the file on screen. The real chain must
+    stop before a generator is registered, and say why.
+    """
+    other_db = generate_events_database(
+        tmp_path / "other_events.sqlite3", channel_id=0, num_events=5, seed=3
+    )
+    other = SQLiteEventLoader()
+    other.set_key("other")
+    other_settings = other.get_empty_settings(standalone=True)
+    other_settings["Input File"]["Value"] = str(other_db.db_path)
+    other.apply_settings(other_settings)
+    event_analysis_tab.register(other, "MetaEventLoader", "other")
+
+    controller = event_analysis_tab.tab_controller
+    messages: List[str] = []
+    controller.add_text_to_display.connect(lambda text, _source: messages.append(text))
+    staged: List[Any] = []
+    original = controller.model.set_generator
+
+    def spy(*args: Any, **kwargs: Any) -> None:
+        staged.append(args)
+        original(*args, **kwargs)
+
+    controller.model.set_generator = spy
+
+    event_analysis_tab.tab_view.handle_parameter_change(
+        "eventAnalysisControls",
+        "fit_events",
+        (
+            {
+                "loader": "other",
+                "eventfitter": FITTER,
+                "filter": "No Filter",
+                "channel": ["0"],
+            },
+        ),
+    )
+
+    assert staged == []
+    assert not controller.model.workers.get(FITTER)
+    fitter = controller.model.call(
+        "MetaEventFitter", FITTER, "get_eventfitting_status", 0
+    )
+    assert fitter is False
+    assert len(messages) == 1
+    assert messages[0].startswith(
+        f"Fitting not started: {FITTER} was built on {LOADER}"
+    )

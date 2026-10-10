@@ -71,7 +71,7 @@ class EventAnalysisView(MetaEventTabView):
     #: ``set_fitting_statuses``, because the prompt that follows it belongs to the View
     #: and the call that answers it does not - the same two-phase launch RawData's event
     #: finding uses.
-    fitting_statuses_requested = Signal(str, list, str)
+    fitting_statuses_requested = Signal(str, str, list, str)
 
     #: Asks the Controller for the selected events, their raw traces and their fits,
     #: ready to plot. loader, eventfitter, channel, event indices, filter key, raw
@@ -512,19 +512,24 @@ class EventAnalysisView(MetaEventTabView):
         :type parameters: Dict[str, Any]
         """
         try:
-            eventfitter, data_filter, channels = self._extract_event_fit_parameters(
-                parameters
+            loader, eventfitter, data_filter, channels = (
+                self._extract_event_fit_parameters(parameters)
             )
         except ValueError as e:
             self.logger.error(f"Parameter extraction failed: {repr(e)}")
             return
-        if eventfitter is not None and channels is not None and data_filter is not None:
+        if (
+            loader is not None
+            and eventfitter is not None
+            and channels is not None
+            and data_filter is not None
+        ):
             # See RawDataView._handle_find_events: asked where the click arrives.
             if data_filter == "No Filter" and not self.confirm_unfiltered_run(
                 "Event fitting"
             ):
                 return
-            self._start_eventfitter(eventfitter, data_filter, channels)
+            self._start_eventfitter(loader, eventfitter, data_filter, channels)
 
     @log(logger=logger)
     def _handle_commit_events(self, parameters: Dict[str, Any]) -> None:
@@ -548,7 +553,11 @@ class EventAnalysisView(MetaEventTabView):
 
     @log(logger=logger)
     def _start_eventfitter(
-        self, eventfitter: str, data_filter: str, channels: Union[int, List[int]]
+        self,
+        loader: str,
+        eventfitter: str,
+        data_filter: str,
+        channels: Union[int, List[int]],
     ) -> None:
         """
         Ask the Controller which of these channels the fitter has already completed.
@@ -560,6 +569,9 @@ class EventAnalysisView(MetaEventTabView):
         out, the answers come back through ``set_fitting_statuses``, and the approved
         channels go out again.
 
+        :param loader: Identifier of the event loader selected in the tab, which the
+            Controller checks against the loader the fitter was built on.
+        :type loader: str
         :param eventfitter: Identifier of the event fitter plugin.
         :type eventfitter: str
         :param data_filter: Identifier of the filter plugin to apply to the data.
@@ -573,7 +585,7 @@ class EventAnalysisView(MetaEventTabView):
             channels = [channels]
 
         filter_key = "" if data_filter in (None, "No Filter") else str(data_filter)
-        self.fitting_statuses_requested.emit(eventfitter, channels, filter_key)
+        self.fitting_statuses_requested.emit(loader, eventfitter, channels, filter_key)
 
     @log(logger=logger)
     def set_fitting_statuses(
@@ -636,19 +648,20 @@ class EventAnalysisView(MetaEventTabView):
     @log(logger=logger)
     def _extract_event_fit_parameters(
         self, parameters: Dict[str, Any]
-    ) -> Tuple[Optional[str], Optional[str], List[int]]:
+    ) -> Tuple[Optional[str], Optional[str], Optional[str], List[int]]:
         """
-        Extract parameters used for event finding.
+        Extract parameters used for event fitting.
 
         :param parameters: Dictionary of parameters.
         :type parameters: Dict[str, Any]
-        :return: (eventfitter, data_filter, channels)
-        :rtype: Tuple[Optional[str], Optional[str], List[int]]
+        :return: (loader, eventfitter, data_filter, channels)
+        :rtype: Tuple[Optional[str], Optional[str], Optional[str], List[int]]
         """
+        loader = parameters.get("loader")
         eventfitter = parameters.get("eventfitter")
         data_filter = parameters.get("filter")
         channels = self._channels_from(parameters)
-        return eventfitter, data_filter, channels
+        return loader, eventfitter, data_filter, channels
 
     @log(logger=logger)
     def update_channels(self, channels: List[int]) -> None:
