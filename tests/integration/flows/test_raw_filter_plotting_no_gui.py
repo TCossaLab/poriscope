@@ -4,8 +4,10 @@ A raw SQL subset filter, saved, is also plotted - through a real loader.
 The cases are the example queries in ``filtering_and_querying.rst``, each run as the
 Metadata tab runs a raw filter: selected in the combobox, plotted from the
 parameters the controls panel sends, against a real ``SQLiteDBLoader`` over the
-synthetic database. The assertion is on the rows that reached the plot, compared with
-the same query run straight against the database file, so it does not name any
+synthetic database. A raw filter is restricted to the experiment and channel selection
+by wrapping it as a subquery, which needs it to return ``experiment_id`` and
+``channel_id``; the assertion is on the rows that reached the plot, compared with the
+same restriction applied straight against the database file, so it does not name any
 internal method.
 """
 
@@ -25,32 +27,40 @@ LOADER = "loader"
 #: all last 500, block to about 400 and carry three sublevels - the literal queries
 #: match no row of it, and an empty subset is a different assertion from a plotted one.
 DOCUMENTED = [
-    ("long_raw", "SELECT duration FROM events WHERE duration > 100", "duration"),
+    (
+        "long_raw",
+        "SELECT experiment_id, channel_id, duration FROM events WHERE duration > 100",
+        "duration",
+    ),
     (
         "blocked_raw",
-        "SELECT duration, max_blockage FROM events WHERE max_blockage > 350",
+        "SELECT experiment_id, channel_id, duration, max_blockage FROM events "
+        "WHERE max_blockage > 350",
         "duration",
     ),
     (
         "sublevels_raw",
-        "SELECT fitted_ecd FROM events WHERE num_sublevels >= 3 AND max_blockage > 350",
+        "SELECT experiment_id, channel_id, fitted_ecd FROM events "
+        "WHERE num_sublevels >= 3 AND max_blockage > 350",
         "fitted_ecd",
     ),
     (
         "cross_table_raw",
-        "SELECT duration FROM events WHERE id IN "
+        "SELECT experiment_id, channel_id, duration FROM events WHERE id IN "
         "(SELECT event_db_id FROM sublevels WHERE sublevel_duration > 200)",
         "duration",
     ),
     (
         "aggregate_raw",
-        "SELECT duration FROM events WHERE id IN (SELECT event_db_id FROM sublevels "
+        "SELECT experiment_id, channel_id, duration FROM events WHERE id IN "
+        "(SELECT event_db_id FROM sublevels "
         "GROUP BY event_db_id HAVING COUNT(*) >= 3)",
         "duration",
     ),
     (
         "computed_raw",
-        "SELECT duration, max_blockage - min_blockage AS blockage_range FROM events",
+        "SELECT experiment_id, channel_id, duration, "
+        "max_blockage - min_blockage AS blockage_range FROM events",
         "blockage_range",
     ),
 ]
@@ -80,9 +90,10 @@ def metadata_tab(qapp: Any, tmp_path: Path, sample_metadata_db: str) -> Triad:
     view = triad.tab_view
     combo = view._subset_controls.filter_comboBox
     filters = {name: query for name, query, _ in DOCUMENTED}
-    filters["missing_raw"] = "SELECT id FROM events"
-    filters["events_raw"] = "SELECT id, duration FROM events WHERE channel_id = 1"
-    filters["no_id_raw"] = "SELECT duration FROM events"
+    filters["missing_raw"] = "SELECT experiment_id, channel_id, id FROM events"
+    filters["noscope_raw"] = "SELECT duration FROM events"
+    filters["events_raw"] = "SELECT id, experiment_id, channel_id, duration FROM events"
+    filters["no_id_raw"] = "SELECT experiment_id, channel_id, duration FROM events"
     filters["short"] = "duration >= 0"
     for name, query in filters.items():
         view.subset_filters[name] = query
@@ -155,7 +166,7 @@ def rows_in_database(db_path: str, query: str) -> int:
 
 @pytest.mark.timeout(120)
 @pytest.mark.parametrize(("name", "query", "column"), DOCUMENTED)
-def test_a_documented_raw_filter_plots_exactly_its_own_rows(
+def test_a_documented_raw_filter_plots_exactly_its_own_rows_in_the_selected_channel(
     metadata_tab: Triad,
     sample_metadata_db: str,
     name: str,
@@ -163,18 +174,29 @@ def test_a_documented_raw_filter_plots_exactly_its_own_rows(
     column: str,
 ) -> None:
     """
-    The rows on the plot are the rows the query returns, however the selection reads.
-
-    Two channels are selected on purpose: a raw filter ignores them, so it must be
-    drawn once and from the whole database.
+    The rows on the plot are the query's rows within the selection, not the whole query.
     """
-    plot(metadata_tab, name, column, ["0", "1"])
+    plot(metadata_tab, name, column, ["0"])
 
     view = metadata_tab.tab_view
-    assert {entry[4] for entry in view.plotted_datasets} == {name}
-    assert len(view.plotted_datasets) == 1
-    assert len(view.plot_data) == rows_in_database(sample_metadata_db, query)
+    assert {(entry[2], entry[4]) for entry in view.plotted_datasets} == {(0, name)}
+    scoped = f"SELECT * FROM ({query}) WHERE channel_id = 0"
+    assert len(view.plot_data) == rows_in_database(sample_metadata_db, scoped)
+    assert len(view.plot_data) < rows_in_database(sample_metadata_db, query)
     assert column in view.plot_data.columns
+
+
+@pytest.mark.timeout(120)
+def test_a_raw_filter_is_drawn_once_per_selected_channel(metadata_tab: Triad) -> None:
+    """
+    Like an assisted filter: one dataset per channel, each restricted to its own.
+    """
+    plot(metadata_tab, "long_raw", "duration", ["0", "1"])
+
+    datasets = {
+        (entry[2], entry[4]) for entry in metadata_tab.tab_view.plotted_datasets
+    }
+    assert datasets == {(0, "long_raw"), (1, "long_raw")}
 
 
 @pytest.mark.timeout(120)
@@ -190,8 +212,21 @@ def test_a_raw_filter_missing_a_plotted_column_draws_nothing(
 
 
 @pytest.mark.timeout(120)
+def test_a_raw_filter_that_cannot_be_restricted_draws_nothing(
+    metadata_tab: Triad,
+) -> None:
+    """
+    Without experiment_id and channel_id the selection cannot be applied, and the
+    query is not run over the whole database instead.
+    """
+    plot(metadata_tab, "noscope_raw", "duration", ["0"])
+
+    assert metadata_tab.tab_view.plotted_datasets == set()
+
+
+@pytest.mark.timeout(120)
 def test_an_assisted_filter_is_still_scoped_beside_a_raw_one(
-    metadata_tab: Triad, sample_metadata_db: str
+    metadata_tab: Triad,
 ) -> None:
     """
     The scoped path is unchanged: one dataset per channel, restricted to it.
@@ -202,28 +237,30 @@ def test_an_assisted_filter_is_still_scoped_beside_a_raw_one(
     datasets = {
         (entry[2], entry[4]) for entry in metadata_tab.tab_view.plotted_datasets
     }
-    assert datasets == {(None, "long_raw"), (0, "short"), (1, "short")}
+    assert datasets == {(0, "long_raw"), (0, "short"), (1, "short")}
 
 
 @pytest.mark.timeout(120)
-def test_a_raw_filter_plots_an_all_points_histogram_of_its_own_events(
-    metadata_tab: Triad, sample_metadata_db: str
+def test_a_raw_filter_plots_an_all_points_histogram_of_the_selected_events(
+    metadata_tab: Triad,
 ) -> None:
     """
-    Event-data plots run a raw filter too: the events its ``id`` column names, loaded
-    whatever channel is selected - here channel 0, while the filter picks channel 1.
+    Event-data plots restrict a raw filter too: the events its ``id`` column names,
+    within the selected channel, are the ones loaded.
     """
     plot(
         metadata_tab,
         "events_raw",
         "duration",
-        ["0"],
+        ["1"],
         plot_type="Raw All Points Histogram",
     )
 
     view = metadata_tab.tab_view
-    assert {entry[4] for entry in view.plotted_datasets} == {"events_raw"}
-    assert view.event_query == "SELECT id, duration FROM events WHERE channel_id = 1"
+    assert {(entry[2], entry[4]) for entry in view.plotted_datasets} == {
+        (1, "events_raw")
+    }
+    assert "channel_id IN (1)" in view.event_query
     assert view.hist_max is not None
 
 

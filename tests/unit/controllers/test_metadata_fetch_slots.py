@@ -223,53 +223,96 @@ class TestLoadMetadataSubset:
 
 class TestLoadRawMetadataSubset:
     """
-    A raw filter is a complete ``SELECT``: run as written, never through the builder.
+    A raw filter is a complete ``SELECT``: wrapped in the selection, never built.
     """
 
-    RAW = "SELECT duration FROM events WHERE duration > 100"
+    RAW = "SELECT experiment_id, channel_id, duration FROM events"
+    FRAME = pd.DataFrame({"experiment_id": [7], "channel_id": [1], "duration": [150.0]})
 
-    def test_it_runs_the_query_as_written_and_never_builds_one(
+    def answers(self, **overrides: object) -> dict:
+        """
+        The loader's answers for a raw filter, with any of them replaced.
+
+        :param overrides: answers to replace, by plugin method name
+        :type overrides: object
+        :return: the canned answers
+        :rtype: dict
+        """
+        return {
+            "get_experiment_id_by_name": 7,
+            "query_database_directly": self.FRAME,
+            "get_column_units": "ms",
+            **overrides,
+        }
+
+    def test_it_restricts_the_query_to_the_selection_and_never_builds_one(
         self, controller: MetadataController
     ) -> None:
         """
-        The scoped path must not run at all, and the scope is not consulted.
+        The query is wrapped as a subquery and the selection applied to its rows; the
+        scoped builder must not run at all.
         """
-        controller.model = RecordingModel(
-            {
-                "query_database_directly": pd.DataFrame({"duration": [150.0]}),
-                "get_column_units": "ms",
-            }
-        )
+        controller.model = RecordingModel(self.answers())
 
         controller.load_metadata_subset("ldr", ["duration"], self.RAW, SCOPE, "q_raw")
 
-        assert controller.model.calls_to("query_database_directly") == [(self.RAW,)]
+        probe, final = controller.model.calls_to("query_database_directly")
+        assert probe[0].endswith("LIMIT 0")
+        assert final[0].startswith("SELECT * FROM (")
+        assert self.RAW in final[0]
+        assert final[0].endswith("WHERE (experiment_id = 7 AND channel_id IN (1))")
         assert controller.model.calls_to("construct_metadata_query") == []
         assert controller.model.calls_to("load_metadata") == []
-        controller.view.set_query.assert_called_once_with(self.RAW, "raw query")
         controller.view.update_plot_data.assert_called_once()
         controller.view.set_column_units.assert_called_once_with(["ms"])
 
-    def test_a_missing_column_is_named_and_nothing_is_set(
+    def test_with_no_selection_the_query_runs_as_written(
+        self, controller: MetadataController
+    ) -> None:
+        """
+        Nothing selected restricts nothing, so the query needs no scope columns.
+        """
+        controller.model = RecordingModel(self.answers())
+
+        controller.load_metadata_subset("ldr", ["duration"], self.RAW, None, "q_raw")
+
+        assert controller.model.calls_to("query_database_directly") == [(self.RAW,)]
+        controller.view.set_query.assert_called_once_with(self.RAW, "raw query")
+
+    def test_a_query_without_the_scope_columns_is_refused_and_says_what_to_add(
+        self, controller: MetadataController
+    ) -> None:
+        """
+        It is not run over the whole database instead.
+        """
+        controller.model = RecordingModel(
+            self.answers(query_database_directly=pd.DataFrame({"duration": [1.0]}))
+        )
+
+        controller.load_metadata_subset(
+            "ldr", ["duration"], "SELECT duration FROM events", SCOPE, "q_raw"
+        )
+
+        assert "experiment_id and channel_id" in panel_text(controller)
+        assert len(controller.model.calls_to("query_database_directly")) == 1
+        controller.view.update_plot_data.assert_not_called()
+
+    def test_a_missing_plot_column_is_named_and_nothing_is_set(
         self, controller: MetadataController
     ) -> None:
         """
         The user's projection is the plot's data, so what it lacks is said, not drawn
         around.
         """
-        controller.model = RecordingModel(
-            {"query_database_directly": pd.DataFrame({"duration": [150.0]})}
-        )
+        controller.model = RecordingModel(self.answers())
 
         controller.load_metadata_subset(
             "ldr", ["duration", "max_blockage"], self.RAW, SCOPE, "q_raw"
         )
 
         assert "max_blockage" in panel_text(controller)
-        assert "does not return" in panel_text(controller)
         controller.view.set_query.assert_not_called()
         controller.view.update_plot_data.assert_not_called()
-        controller.view.set_column_units.assert_not_called()
 
     def test_a_query_that_failed_validation_reports_and_sets_nothing(
         self, controller: MetadataController
@@ -277,12 +320,24 @@ class TestLoadRawMetadataSubset:
         """
         ``query_database_directly`` answers None for a query it could not run.
         """
-        controller.model = RecordingModel({"query_database_directly": None})
+        controller.model = RecordingModel(self.answers(query_database_directly=None))
 
         controller.load_metadata_subset("ldr", ["duration"], "SELECT", SCOPE, "q_raw")
 
         assert "q_raw" in panel_text(controller)
-        controller.view.set_query.assert_not_called()
+        controller.view.update_plot_data.assert_not_called()
+
+    def test_an_unknown_experiment_reports_and_sets_nothing(
+        self, controller: MetadataController
+    ) -> None:
+        """
+        The selection names an experiment the database does not have.
+        """
+        controller.model = RecordingModel(self.answers(get_experiment_id_by_name=None))
+
+        controller.load_metadata_subset("ldr", ["duration"], self.RAW, SCOPE, "q_raw")
+
+        assert "exp1" in panel_text(controller)
         controller.view.update_plot_data.assert_not_called()
 
     def test_a_raising_loader_reports_and_sets_nothing(
@@ -292,7 +347,7 @@ class TestLoadRawMetadataSubset:
         The same guarantee as the scoped path's failed load.
         """
         controller.model = RecordingModel(
-            {"query_database_directly": RuntimeError("database is locked")}
+            self.answers(query_database_directly=RuntimeError("database is locked"))
         )
 
         controller.load_metadata_subset("ldr", ["duration"], self.RAW, SCOPE, "q_raw")

@@ -878,7 +878,7 @@ starts paying for itself.
 
 ---
 
-## 2026-09-14 - A raw SQL filter runs as written, and its scope is the user's
+## 2026-09-14 - A raw SQL filter runs as written, and its scope is the user's (superseded 2026-10-10)
 
 **Context.** A raw filter is a complete `SELECT`, but every plot path passes it where a
 WHERE body is expected, so it is refused at six call sites (2026-09-12). Making it work was
@@ -897,6 +897,15 @@ the smaller alternative before this ruling.
 
 **Revisit if** users need a raw filter restricted by the selection tree, or nobody turns out
 to have a filter only expressible as raw SQL - then withdrawing it is cheaper than building it.
+
+
+**Superseded 2026-10-10** (Carolina): a raw filter is restricted to the Scope selection, as the
+1.9.0 Protein tab intended (it appended `experiment_id`/`channel_db_id` to the `SELECT`, and
+never produced a plot). The query is wrapped, not edited: `SELECT * FROM (<query>) WHERE
+<selection>`, which needs it to return `experiment_id` and `channel_id`; without them it is
+refused naming what to add, never run unscoped. Found in the GUI pass: an ignored Scope
+selector read as a bug, and a raw event plot drew once per ticked channel. **Revisit if** the
+two required columns prove a burden - `id`-based scoping would drop them for event plots.
 
 ---
 

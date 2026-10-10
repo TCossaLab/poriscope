@@ -210,7 +210,7 @@
 
 * **Fixed the Metadata tab's heatmap being drawn one bin width narrower than its data**, which pulled every plotted point's true position inward from where it should sit on the axes
 
-* **A raw SQL subset filter can now be plotted, not only saved:** it runs exactly as written and ignores the experiment and channel selection; a plot missing a column it needs, or an event plot whose `SELECT` does not return `id`, now says so on the status panel, and single-event plots (Plot Events, the arrows, Protein's Plot Histogram) still refuse it
+* **A raw SQL subset filter can now be plotted, not only saved:** it is restricted to the experiment and channel selection as a subquery, so its `SELECT` must return `experiment_id` and `channel_id` (and `id` for event plots); a plot missing a column it needs says which on the status panel, and single-event plots (Plot Events, the arrows, Protein's Plot Histogram) still refuse it
 
 ### Documentation:
 

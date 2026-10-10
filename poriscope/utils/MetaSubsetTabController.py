@@ -25,10 +25,11 @@
 # Kyle Briggs
 
 import logging
-from typing import Any, Dict, List, Optional, Sequence, override
+from typing import Any, Dict, List, Optional, Sequence, Tuple, override
 
 import numpy as np
 import numpy.typing as npt
+import pandas as pd
 from matplotlib.axes import Axes
 from PySide6.QtCore import Slot
 from PySide6.QtWidgets import QMessageBox
@@ -330,34 +331,131 @@ class MetaSubsetTabController(MetaController):
         self.logger.info(f"Filters saved to {path}")
 
     @log(logger=logger)
-    def _raw_filter_conditions(
-        self, loader: str, sql_filter: str, subset_name: str
+    def _raw_scope_clause(
+        self,
+        loader: str,
+        experiments_and_channels: Optional[Dict[str, Optional[List[int]]]],
+        subset_name: str,
     ) -> Optional[str]:
         """
-        Turn a raw ``SELECT`` into the WHERE-clause body that selects exactly its events.
+        Express the experiment and channel selection as a condition on a raw filter's rows.
 
-        An event-data plot has to load traces, which only ``load_event_data`` can do, and
-        that takes a WHERE-clause body spliced into its own fixed query. The raw filter
-        runs as written, ignoring the experiment and channel scope, and its ``id``
-        column - the ``events.id`` of each event it selects - names the events to load.
-        A ``SELECT`` that does not return ``id`` cannot name any, and is reported rather
-        than guessed at.
+        The same restriction the generated queries apply to an assisted filter: one
+        ``(experiment_id = ... AND channel_id IN (...))`` term per selected experiment,
+        joined by ``OR``, with the experiment names resolved to their ids. An empty
+        string means nothing is selected and so nothing restricts the rows.
 
-        Reports its own failure and answers with None, so a caller has nothing to
-        handle beyond stopping.
+        Reports its own failure and answers with None.
+
+        :param loader: the database loader plugin's key
+        :type loader: str
+        :param experiments_and_channels: the experiment and channel scope, or None
+        :type experiments_and_channels: Optional[Dict[str, Optional[List[int]]]]
+        :param subset_name: the filter's name, for the messages
+        :type subset_name: str
+        :return: the condition, an empty string for no restriction, or None if an experiment could not be resolved
+        :rtype: Optional[str]
+        """
+        if not experiments_and_channels:
+            return ""
+        terms = []
+        for exp_name, channels in experiments_and_channels.items():
+            if exp_name is None:
+                continue
+            try:
+                exp_id = self.model.call(
+                    "MetaDatabaseLoader", loader, "get_experiment_id_by_name", exp_name
+                )
+            except Exception as e:
+                self.logger.error(f"Failed to resolve experiment {exp_name}: {e!r}")
+                self.add_text_to_display.emit(
+                    f"Could not look up experiment {exp_name} in {loader} to apply the "
+                    f"selection to {subset_name}: {e}",
+                    self.__class__.__name__,
+                )
+                return None
+            if exp_id is None:
+                self.add_text_to_display.emit(
+                    f"{loader} has no experiment named {exp_name}, so {subset_name} "
+                    "cannot be restricted to it",
+                    self.__class__.__name__,
+                )
+                return None
+            wanted = [int(c) for c in channels or [] if c is not None]
+            if wanted:
+                ids = ",".join(str(c) for c in wanted)
+                terms.append(
+                    f"(experiment_id = {int(exp_id)} AND channel_id IN ({ids}))"
+                )
+            else:
+                terms.append(f"(experiment_id = {int(exp_id)})")
+        return " OR ".join(terms)
+
+    @log(logger=logger)
+    def _run_raw_filter(
+        self,
+        loader: str,
+        sql_filter: str,
+        experiments_and_channels: Optional[Dict[str, Optional[List[int]]]],
+        subset_name: str,
+    ) -> Optional[Tuple[pd.DataFrame, str]]:
+        """
+        Run a raw ``SELECT`` restricted to the experiment and channel selection.
+
+        With a selection, the user's query is wrapped as a subquery and the selection
+        applied to its rows - ``SELECT * FROM (<query>) WHERE <selection>`` - which
+        leaves the query itself exactly as written but requires it to return
+        ``experiment_id`` and ``channel_id``, the only things that say which experiment
+        and channel a row belongs to. A query without them cannot be restricted, and is
+        refused naming what to add rather than being run over the whole database. With
+        no selection the query runs as written.
+
+        Reports its own failure and answers with None.
 
         :param loader: the database loader plugin's key
         :type loader: str
         :param sql_filter: the filter's complete ``SELECT``
         :type sql_filter: str
+        :param experiments_and_channels: the experiment and channel scope, or None
+        :type experiments_and_channels: Optional[Dict[str, Optional[List[int]]]]
         :param subset_name: the filter's name, for the messages
         :type subset_name: str
-        :return: ``e.id IN (...)`` over the ids the query returned, or None
-        :rtype: Optional[str]
+        :return: the rows, and the SQL that produced them, or None
+        :rtype: Optional[Tuple[pd.DataFrame, str]]
         """
+        clause = self._raw_scope_clause(loader, experiments_and_channels, subset_name)
+        if clause is None:
+            return None
+        query = sql_filter.strip().rstrip(";")
+        wrapped = f"SELECT * FROM (\n{query}\n) AS raw_subset"
         try:
+            if clause:
+                probe = self.model.call(
+                    "MetaDatabaseLoader",
+                    loader,
+                    "query_database_directly",
+                    f"{wrapped} LIMIT 0",
+                )
+                if probe is not None:
+                    missing = [
+                        c
+                        for c in ("experiment_id", "channel_id")
+                        if c not in probe.columns
+                    ]
+                    if missing:
+                        self.add_text_to_display.emit(
+                            f"{subset_name}'s query does not return "
+                            f"{' and '.join(missing)}, which the experiment and channel "
+                            "selection needs to restrict it. Add "
+                            f"{'it' if len(missing) == 1 else 'them'} to the SELECT, for "
+                            "example SELECT experiment_id, channel_id, duration FROM "
+                            "events WHERE ...",
+                            self.__class__.__name__,
+                        )
+                        return None
+                query = f"{wrapped} WHERE {clause}"
             rows = self.model.call(
-                "MetaDatabaseLoader", loader, "query_database_directly", sql_filter
+                "MetaDatabaseLoader", loader, "query_database_directly", query
             )
         except Exception as e:
             self.logger.error(f"Failed to run the raw filter {subset_name}: {e!r}")
@@ -373,23 +471,63 @@ class MetaSubsetTabController(MetaController):
                 self.__class__.__name__,
             )
             return None
+        return rows, query
+
+    @log(logger=logger)
+    def _raw_filter_conditions(
+        self,
+        loader: str,
+        sql_filter: str,
+        experiments_and_channels: Optional[Dict[str, Optional[List[int]]]],
+        subset_name: str,
+    ) -> Optional[Tuple[str, str]]:
+        """
+        Turn a raw ``SELECT`` into the WHERE-clause body that selects exactly its events.
+
+        An event-data plot has to load traces, which only ``load_event_data`` can do, and
+        that takes a WHERE-clause body spliced into its own fixed query. The raw filter
+        runs restricted to the selection by :meth:`_run_raw_filter`, and its ``id``
+        column - the ``events.id`` of each event it selects - names the events to load.
+        A ``SELECT`` that does not return ``id`` cannot name any, and is reported rather
+        than guessed at.
+
+        Reports its own failure and answers with None.
+
+        :param loader: the database loader plugin's key
+        :type loader: str
+        :param sql_filter: the filter's complete ``SELECT``
+        :type sql_filter: str
+        :param experiments_and_channels: the experiment and channel scope, or None
+        :type experiments_and_channels: Optional[Dict[str, Optional[List[int]]]]
+        :param subset_name: the filter's name, for the messages
+        :type subset_name: str
+        :return: ``e.id IN (...)`` over the ids the query returned, and the SQL that ran, or None
+        :rtype: Optional[Tuple[str, str]]
+        """
+        ran = self._run_raw_filter(
+            loader, sql_filter, experiments_and_channels, subset_name
+        )
+        if ran is None:
+            return None
+        rows, executed = ran
         if "id" not in rows.columns:
             self.add_text_to_display.emit(
                 f"{subset_name}'s query does not return the column this plot needs "
                 "to find its events: id (the events table's id). Add it to the "
-                "SELECT, for example SELECT id, duration FROM events WHERE ...",
+                "SELECT, for example SELECT id, experiment_id, channel_id FROM "
+                "events WHERE ...",
                 self.__class__.__name__,
             )
             return None
         if rows.empty:
             self.add_text_to_display.emit(
-                f"{subset_name}'s query returned no events, so there is nothing to "
-                "plot",
+                f"{subset_name}'s query returned no events in the selected "
+                "experiments and channels, so there is nothing to plot",
                 self.__class__.__name__,
             )
             return None
         ids = ",".join(str(int(i)) for i in rows["id"].dropna().unique())
-        return f"e.id IN ({ids})"
+        return f"e.id IN ({ids})", executed
 
     @log(logger=logger)
     @Slot(str, object, object)

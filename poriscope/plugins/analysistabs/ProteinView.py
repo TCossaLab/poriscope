@@ -125,7 +125,7 @@ class ProteinView(MetaSubsetTabView):
     #:
     #: One request serving both distribution modes, because they ask the same thing.
     #: Carries the filter's name, whose ``_raw`` suffix marks a raw filter: the events its
-    #: ``SELECT``'s ``id`` column names are loaded, whatever the scope.
+    #: ``SELECT``'s ``id`` column names, within the scope, are loaded.
     event_distribution_data_requested = Signal(str, str, object, str)
 
     #: Asks whether the database already holds fit columns, before any are written.
@@ -1861,11 +1861,9 @@ class ProteinView(MetaSubsetTabView):
         subset_name, sql_filter = next(iter(selected_filters.items()))
 
         bins = None
-        # A raw filter ignores the experiment and channel, so its label does not
-        # claim them.
         dataset_label = (
             f"{loader} | {exp} Ch {channel}: {subset_name}"
-            if exp is not None and not subset_name.endswith("_raw")
+            if exp is not None
             else f"{loader} | {subset_name}"
         )
         sizes = False

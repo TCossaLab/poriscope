@@ -540,8 +540,8 @@ class ProteinController(MetaSubsetTabController):
         Both distribution modes - individual and ensemble - run this same chain, so
         there is one slot rather than one per mode.
 
-        A raw filter - one whose name ends ``_raw`` - runs as written, ignoring the
-        scope, and the events its ``id`` column names are loaded; see
+        A raw filter - one whose name ends ``_raw`` - runs over the scope as a
+        subquery, and the events its ``id`` column names are loaded; see
         ``MetaSubsetTabController._raw_filter_conditions``.
 
         :param loader: the database loader plugin's key
@@ -587,23 +587,24 @@ class ProteinController(MetaSubsetTabController):
         :type loader: str
         :param sql_filter: the subset filter's WHERE-clause body, empty for all rows, or a complete ``SELECT`` for a raw filter
         :type sql_filter: str
-        :param experiments_and_channels: the scope the filter is built against; ignored by a raw filter
+        :param experiments_and_channels: the scope the filter is built against
         :type experiments_and_channels: Optional[Dict[str, Optional[List[int]]]]
         :param subset_name: the selected filter's name, whose ``_raw`` suffix marks a raw filter
         :type subset_name: str
-        :return: the query that ran (the user's own ``SELECT`` for a raw filter) and a generator over its events, or None
+        :return: the query that ran (the user's ``SELECT`` wrapped in the selection, for a raw filter) and a generator over its events, or None
         :rtype: Optional[Tuple[str, Generator]]
         """
         is_raw = subset_name.endswith("_raw")
         shown_query = sql_filter
         if is_raw:
-            # Run as written and unscoped: the events it names are loaded by id.
-            raw_conditions = self._raw_filter_conditions(
-                loader, sql_filter, subset_name
+            # The selection is applied to the query's own rows, so the events it names
+            # are final and are loaded by id with no further scope.
+            raw = self._raw_filter_conditions(
+                loader, sql_filter, experiments_and_channels, subset_name
             )
-            if raw_conditions is None:
+            if raw is None:
                 return None
-            sql_filter, experiments_and_channels = raw_conditions, None
+            (sql_filter, shown_query), experiments_and_channels = raw, None
         try:
             # Two values: construct_event_data_query is declared
             # -> Tuple[str, str] and reports a filter it cannot build as

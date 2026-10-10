@@ -111,7 +111,7 @@ class MetadataView(MetaSubsetTabView):
     #: from.
     #:
     #: Also carries the filter's name, whose ``_raw`` suffix tells the Controller the
-    #: filter is a complete ``SELECT`` to run as written, ignoring the scope.
+    #: filter is a complete ``SELECT``, run over the scope as a subquery.
     metadata_subset_requested = Signal(str, list, str, object, str)
 
     #: Asks for one event-data subset to be tallied into an all-points histogram: the
@@ -124,7 +124,7 @@ class MetadataView(MetaSubsetTabView):
     #: would put the whole subset in the View to produce one array.
     #:
     #: Also carries the filter's name, whose ``_raw`` suffix marks a raw filter: the
-    #: events its ``SELECT``'s ``id`` column names are plotted, whatever the scope.
+    #: events its ``SELECT``'s ``id`` column names, within the scope, are plotted.
     all_points_histogram_requested = Signal(
         str, str, object, str, object, bool, object, object, str, str
     )
@@ -1482,17 +1482,9 @@ class MetadataView(MetaSubsetTabView):
                 for subset_name, sql_filter in selected_filters.items():
                     bins = None
 
-                    # A raw filter ignores the experiment and channel selection, so
-                    # it is one dataset however many are selected: labelled and keyed
-                    # without them, which is what stops the loop plotting it once per
-                    # channel.
-                    is_raw = subset_name.endswith("_raw")
-                    dataset_exp = None if is_raw else exp
-                    dataset_channel = None if is_raw else channel_id
-
                     dataset_label = (
-                        f"{loader} | {dataset_exp} Ch {channel}: {subset_name}"
-                        if dataset_exp is not None
+                        f"{loader} | {exp} Ch {channel}: {subset_name}"
+                        if exp is not None
                         else f"{loader} | {subset_name}"
                     )
                     sizes = False
@@ -1597,8 +1589,8 @@ class MetadataView(MetaSubsetTabView):
                             self.plotted_datasets
                             and (
                                 loader,
-                                dataset_exp,
-                                dataset_channel,
+                                exp,
+                                channel_id,
                                 sql_filter,
                                 subset_name,
                             )
@@ -1765,7 +1757,7 @@ class MetadataView(MetaSubsetTabView):
                         self.allowed_logs = []
 
                     self.plotted_datasets.add(
-                        (loader, dataset_exp, dataset_channel, sql_filter, subset_name)
+                        (loader, exp, channel_id, sql_filter, subset_name)
                     )
                     plotted_any = True
 

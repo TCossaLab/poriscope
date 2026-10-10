@@ -1847,35 +1847,28 @@ def test_overlay_plot_sends_a_raw_filter_to_the_controller_with_its_name(
     )
 
 
-def test_overlay_plot_draws_a_raw_filter_once_however_many_channels_are_selected(
+def test_overlay_plot_asks_for_a_raw_filter_once_per_selected_channel(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """
-    A raw filter ignores the selection, so one dataset per channel would be the same
-    rows drawn again and again, each labelled as if scoped to its channel.
-    """
+    """A raw filter is restricted to each channel in turn, like an assisted one."""
     view.figure.axes = []
     view.get_selected_filters = mocker.Mock(
-        return_value={"mine_raw": "SELECT duration FROM events"}
+        return_value={
+            "mine_raw": "SELECT experiment_id, channel_id, duration FROM events"
+        }
     )
-    view.selected_experiment_and_channels_by_loader = {
-        "test_loader": {"exp1": [1, 2, 3]}
-    }
-    view.canned_query = "SELECT duration FROM events"
+    view.selected_experiment_and_channels_by_loader = {"test_loader": {"exp1": [1, 2]}}
+    view.canned_query = "SELECT 1"
     view.canned_plot_data = pd.DataFrame({"duration": [1.0, 2.0, 3.0]})
     view.canned_units = "ms"
     view.update_plot = mocker.Mock()
-    # The mocked figure never has valid axes, so every pass would reset and forget
-    # what it had plotted; stubbed as the already-plotted test does.
     view._reset_actions = mocker.Mock()
 
     view._overlay_plot(recorded(view, _raw_histogram_parameters()))
 
-    view.metadata_subset_requested.emit.assert_called_once()
-    view.update_plot.assert_called_once()
-    assert view.update_plot.call_args.kwargs["dataset_label"] == (
-        "test_loader | mine_raw"
-    )
+    calls = view.metadata_subset_requested.emit.call_args_list
+    assert [c[0][3] for c in calls] == [{"exp1": [1]}, {"exp1": [2]}]
+    assert {c[0][4] for c in calls} == {"mine_raw"}
 
 
 def test_overlay_plot_still_scopes_an_assisted_filter_per_channel(

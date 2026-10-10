@@ -535,9 +535,9 @@ class MetadataController(MetaSubsetTabController):
         filter, and it is echoed only when it differs from the last one shown.
 
         A raw filter - one whose name ends ``_raw`` - is a complete ``SELECT``, not a
-        WHERE-clause body, so it cannot go through the query builder. It is run as
-        written by :meth:`_load_raw_metadata_subset`, ignoring the experiment and
-        channel scope.
+        WHERE-clause body, so it cannot go through the query builder. It is run by
+        :meth:`_load_raw_metadata_subset`, restricted to the experiment and channel
+        scope.
 
         :param loader: the database loader plugin's key
         :type loader: str
@@ -545,7 +545,7 @@ class MetadataController(MetaSubsetTabController):
         :type columns: List[str]
         :param sql_filter: the subset filter's WHERE-clause body, empty for all rows, or a complete ``SELECT`` for a raw filter
         :type sql_filter: str
-        :param experiments_and_channels: the experiment and channel scope, or None; ignored by a raw filter
+        :param experiments_and_channels: the experiment and channel scope, or None
         :type experiments_and_channels: Optional[Dict[str, Optional[List[int]]]]
         :param subset_name: the selected filter's name, whose ``_raw`` suffix marks a raw filter
         :type subset_name: str
@@ -553,7 +553,9 @@ class MetadataController(MetaSubsetTabController):
         :rtype: None
         """
         if subset_name.endswith("_raw"):
-            self._load_raw_metadata_subset(loader, columns, sql_filter, subset_name)
+            self._load_raw_metadata_subset(
+                loader, columns, sql_filter, experiments_and_channels, subset_name
+            )
             return
 
         try:
@@ -615,16 +617,20 @@ class MetadataController(MetaSubsetTabController):
 
     @log(logger=logger)
     def _load_raw_metadata_subset(
-        self, loader: str, columns: List[str], sql_filter: str, subset_name: str
+        self,
+        loader: str,
+        columns: List[str],
+        sql_filter: str,
+        experiments_and_channels: Optional[Dict[str, Optional[List[int]]]],
+        subset_name: str,
     ) -> None:
         """
-        Run a raw ``SELECT`` as written and hand its rows to the View for a plot.
+        Run a raw ``SELECT`` over the selection and hand its rows to the View for a plot.
 
-        No scoping and no rewriting: the experiment and channel selection plays no
-        part, and the user's projection is the plot's data, so a column the plot needs
-        that the ``SELECT`` did not return is named on the status panel rather than
-        drawn around. Sets the same three things as the scoped path, and only once
-        every one of them has been fetched.
+        The user's projection is the plot's data, so a column the plot needs that the
+        ``SELECT`` did not return is named on the status panel rather than drawn around.
+        Sets the same three things as the scoped path, and only once every one of them
+        has been fetched.
 
         :param loader: the database loader plugin's key
         :type loader: str
@@ -632,30 +638,19 @@ class MetadataController(MetaSubsetTabController):
         :type columns: List[str]
         :param sql_filter: the filter's complete ``SELECT``
         :type sql_filter: str
+        :param experiments_and_channels: the experiment and channel scope, or None
+        :type experiments_and_channels: Optional[Dict[str, Optional[List[int]]]]
         :param subset_name: the filter's name, for the messages
         :type subset_name: str
         :return: None
         :rtype: None
         """
-        try:
-            plot_data = self.model.call(
-                "MetaDatabaseLoader", loader, "query_database_directly", sql_filter
-            )
-        except Exception as e:
-            self.logger.error(f"Failed to run the raw filter {subset_name}: {e!r}")
-            self.add_text_to_display.emit(
-                f"Could not run the raw filter {subset_name} on {loader}: {e}",
-                self.__class__.__name__,
-            )
+        ran = self._run_raw_filter(
+            loader, sql_filter, experiments_and_channels, subset_name
+        )
+        if ran is None:
             return
-
-        if plot_data is None:
-            self.add_text_to_display.emit(
-                f"Could not run the raw filter {subset_name}: see the log for the "
-                "SQL error",
-                self.__class__.__name__,
-            )
-            return
+        plot_data, executed = ran
 
         missing = [c for c in columns if c not in plot_data.columns]
         if missing:
@@ -681,10 +676,10 @@ class MetadataController(MetaSubsetTabController):
             )
             return
 
-        self.view.set_query(sql_filter, "raw query")
+        self.view.set_query(executed, "raw query")
         self.view.update_plot_data(plot_data)
         self.view.set_column_units(units)
-        self._echo_applied_query(sql_filter, "raw query")
+        self._echo_applied_query(executed, "raw query")
 
     @log(logger=logger)
     def _fetch_event_subset(
@@ -705,23 +700,24 @@ class MetadataController(MetaSubsetTabController):
         :type loader: str
         :param sql_filter: the subset filter's WHERE-clause body, empty for all rows, or a complete ``SELECT`` for a raw filter
         :type sql_filter: str
-        :param experiments_and_channels: the experiment and channel scope, or None; ignored by a raw filter
+        :param experiments_and_channels: the experiment and channel scope, or None
         :type experiments_and_channels: Optional[Dict[str, Optional[List[int]]]]
         :param subset_name: the selected filter's name, whose ``_raw`` suffix marks a raw filter
         :type subset_name: str
-        :return: the query that ran (the user's own ``SELECT`` for a raw filter) and a generator over its events, or None
+        :return: the query that ran (the user's ``SELECT`` wrapped in the selection, for a raw filter) and a generator over its events, or None
         :rtype: Optional[Tuple[str, Generator]]
         """
         is_raw = subset_name.endswith("_raw")
         shown_query = sql_filter
         if is_raw:
-            # Run as written and unscoped: the events it names are loaded by id.
-            raw_conditions = self._raw_filter_conditions(
-                loader, sql_filter, subset_name
+            # The selection is applied to the query's own rows, so the events it names
+            # are final and are loaded by id with no further scope.
+            raw = self._raw_filter_conditions(
+                loader, sql_filter, experiments_and_channels, subset_name
             )
-            if raw_conditions is None:
+            if raw is None:
                 return None
-            sql_filter, experiments_and_channels = raw_conditions, None
+            (sql_filter, shown_query), experiments_and_channels = raw, None
         try:
             # Two values, because construct_event_data_query is declared
             # -> Tuple[str, str] and reports a filter it cannot build as

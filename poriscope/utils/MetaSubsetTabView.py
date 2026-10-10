@@ -248,12 +248,11 @@ class MetaSubsetTabView(MetaView):
         """
         Refuse an event-by-event plot whose subset filter is a raw ``SELECT``, and say so.
 
-        The plots that step through individual events by their ``event_id`` look each
-        one up within one experiment and channel, because ``event_id`` repeats from
-        channel to channel. A raw filter ignores the experiment and channel selection
-        and says nothing about which channel an event number belongs to, so there is
-        no event to step to; every other event-data plot runs a raw filter, loading
-        the events its ``id`` column names.
+        The plots that step through individual events by their ``event_id`` build a
+        navigation cache from the filter's ``event_id`` column and look each event up
+        within one experiment and channel. A raw filter has no such cache yet, so they
+        are refused; every other event-data plot runs a raw filter, loading the events
+        its ``id`` column names.
 
         :param selected_filters: the filters selected for this plot, by name
         :type selected_filters: Dict[str, str]
@@ -264,11 +263,10 @@ class MetaSubsetTabView(MetaView):
         if not raw:
             return False
         self.add_text_to_display.emit(
-            f"Raw SQL filters cannot be used to step through individual events, so "
-            f"{', '.join(raw)} was not applied: an event number only means something "
-            "within one experiment and channel, which a raw filter ignores. Deselect "
-            "it to plot events one at a time, or use it with the overlay, "
-            "all-points histogram or distribution plots",
+            f"Raw SQL filters cannot yet be used to step through individual events, so "
+            f"{', '.join(raw)} was not applied. Deselect it and use an Assisted filter "
+            "to plot events one at a time, or use it with the overlay, all-points "
+            "histogram or distribution plots",
             self.__class__.__name__,
         )
         return True

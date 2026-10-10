@@ -103,6 +103,109 @@ it against the SQLite database without rewriting or modifying the query content.
 
 You have full control over which columns are returned and how the query is structured.
 
+A raw filter is plotted like any other, and is restricted to the **Scope** selection (the
+experiments and channels ticked in the selection tree) in the same way. Because your query
+is a complete ``SELECT``, three things are yours to provide:
+
+* **``experiment_id`` and ``channel_id``.** Poriscope applies the selection by wrapping
+  your query as a subquery - ``SELECT * FROM (your query) WHERE experiment_id = ... AND
+  channel_id IN (...)`` - which needs your query to return those two columns, as every
+  example below does. A query without them cannot be restricted, so it is refused with a
+  message on the status panel saying what to add, rather than being run over the whole
+  database. A raw filter is drawn once for each channel selected, as an Assisted one is.
+* **The plot's own columns.** A plot needs the columns you chose on its axes: if the query
+  does not return one, the status panel names it and nothing is drawn. The event overlays,
+  all-points histograms and Protein distribution plots load the events themselves, so the
+  query must also return the events table's ``id``, for example
+  ``SELECT id, experiment_id, channel_id, duration FROM events WHERE duration > 100``.
+* **No single-event plots yet.** Plot Events, the event navigation arrows and the Protein
+  tab's Plot Histogram step through individual events, which a raw filter cannot yet do;
+  selecting one there is refused with a message on the status panel. Use an Assisted
+  filter for those.
+
+Use this mode to write queries that need aggregations or computed columns, or when you
+simply prefer writing complete SQL.
+
+**Example 1 — Long events only:**
+
+Filter: ``duration > 100``
+
+Then select **Histogram**, x-axis: ``duration`` → histogram of events longer than 100 µs.
+
+**Example 2 — High blockage events:**
+
+Filter: ``max_blockage > 2000``
+
+Then select **Scatterplot**, x-axis: ``duration``, y-axis: ``max_blockage`` → scatter of high-blockage events.
+
+**Example 3 — Multi-sublevel events with significant blockage:**
+
+Filter: ``num_sublevels >= 3 and max_blockage > 1500``
+
+Then select **Histogram**, x-axis: ``fitted_ecd`` → distribution of ECD for complex events.
+
+**Example 4 — Cross-table filter** (join handled automatically by Poriscope):
+
+Filter: ``sublevel_duration > 200``
+
+Then select **Histogram**, x-axis: ``duration`` → returns the ``duration`` of events
+that contain at least one sublevel longer than 200 µs. Poriscope detects that
+``sublevel_duration`` belongs to the ``sublevels`` table and automatically joins it
+with the ``events`` table to apply the filter.
+
+**Example 5 — Filter by a property of the experiment:**
+
+Filter: ``voltage > 50``
+
+Then select **Histogram**, x-axis: ``duration`` → events from the experiments run above
+50 mV. Poriscope joins the ``experiments`` table automatically, the same way it joins
+``sublevels`` in Example 4.
+
+**Example 6 - Subquery, including aggregation:**
+
+A subquery is passed through exactly as you type it, so it can do things the filter
+itself cannot. Qualify any reference to the outer row yourself - ``e.id`` for the event.
+
+Filter: ``e.id IN (SELECT event_db_id FROM sublevels WHERE filtered = 5)``
+
+Then select **Histogram**, x-axis: ``duration`` -> events with at least one sublevel
+whose ``filtered`` value is 5. Note that the filter ``filtered = 5`` says the same thing
+more simply, because Example 4's automatic join already means "at least one sublevel
+matches".
+
+Filter: ``e.id IN (SELECT event_db_id FROM sublevels GROUP BY event_db_id HAVING COUNT(*) > 3)``
+
+Then select **Histogram**, x-axis: ``duration`` -> events with more than 3 sublevels,
+which is the aggregation the note above says the filter itself cannot express.
+
+Saved as: ``<subset_name>_assisted``
+
+.. note::
+
+   Assisted mode handles cross-table filters automatically but cannot put a
+   ``GROUP BY`` or ``HAVING`` on the query itself, and cannot return computed
+   columns (e.g., ``max_blockage - min_blockage AS blockage_range``). Use Raw SQL
+   for those cases. Aggregation *inside a subquery* does work - see Example 6.
+
+   Text compared against a column is left exactly as you type it, so
+   ``sequence = 'duration'`` matches the literal value ``duration`` and is not
+   confused with the ``duration`` column. A subquery is left alone the same way:
+   it names its own tables, so its column references are never rewritten against
+   the outer query's, and a reference to the outer row has to be qualified by you.
+
+   ``id`` on its own is rejected, because every table has one and they mean different
+   rows. Write ``e.id`` for an event, ``s.id`` for a sublevel or ``exp.id`` for an
+   experiment. ``experiment_id``, ``channel_id`` and ``event_id`` need no qualifier -
+   they mean the same thing in every table.
+
+Raw SQL
+~~~~~~~
+
+In **Raw SQL** mode, you write a **complete SELECT statement**. Poriscope executes
+it against the SQLite database without rewriting or modifying the query content.
+
+You have full control over which columns are returned and how the query is structured.
+
 A raw filter can be plotted like any other, with three differences:
 
 * **The experiment and channel selection is ignored.** The query runs exactly as written
@@ -126,26 +229,27 @@ simply prefer writing complete SQL.
 
 .. code-block:: sql
 
-   SELECT duration FROM events WHERE duration > 100
+   SELECT experiment_id, channel_id, duration FROM events WHERE duration > 100
 
 **Example 2 — Same high blockage filter, written as Raw SQL:**
 
 .. code-block:: sql
 
-   SELECT duration, max_blockage FROM events WHERE max_blockage > 2000
+   SELECT experiment_id, channel_id, duration, max_blockage FROM events
+   WHERE max_blockage > 2000
 
 **Example 3 — Same multi-sublevel filter, written as Raw SQL:**
 
 .. code-block:: sql
 
-   SELECT fitted_ecd FROM events
+   SELECT experiment_id, channel_id, fitted_ecd FROM events
    WHERE num_sublevels >= 3 AND max_blockage > 1500
 
 **Example 4 — Same cross-table filter, written as Raw SQL:**
 
 .. code-block:: sql
 
-   SELECT duration FROM events
+   SELECT experiment_id, channel_id, duration FROM events
    WHERE id IN (
        SELECT event_db_id FROM sublevels
        WHERE sublevel_duration > 200
@@ -158,7 +262,7 @@ then keeps only events that have more than 3 sublevel rows.
 
 .. code-block:: sql
 
-   SELECT duration FROM events
+   SELECT experiment_id, channel_id, duration FROM events
    WHERE id IN (
        SELECT event_db_id FROM sublevels
        GROUP BY event_db_id
@@ -169,7 +273,7 @@ You can also aggregate a sublevel property per event and filter on that:
 
 .. code-block:: sql
 
-   SELECT duration FROM events
+   SELECT experiment_id, channel_id, duration FROM events
    WHERE id IN (
        SELECT event_db_id FROM sublevels
        GROUP BY event_db_id
@@ -185,13 +289,15 @@ Blockage range — difference between maximum and minimum blockage:
 
 .. code-block:: sql
 
-   SELECT duration, max_blockage - min_blockage AS blockage_range FROM events
+   SELECT experiment_id, channel_id, duration,
+          max_blockage - min_blockage AS blockage_range FROM events
 
 Fractional blockage — blockage normalised to baseline current:
 
 .. code-block:: sql
 
-   SELECT duration, max_blockage / ABS(baseline_current) AS fractional_blockage FROM events
+   SELECT experiment_id, channel_id, duration,
+          max_blockage / ABS(baseline_current) AS fractional_blockage FROM events
 
 Saved as: ``<subset_name>_raw``
 
@@ -283,10 +389,13 @@ Common Mistakes
 +------------------------------------------+--------------------------------------------------+
 | Full SELECT entered in Assisted mode     | Fails validation — treated as a WHERE clause     |
 +------------------------------------------+--------------------------------------------------+
+| Raw SQL filter without ``experiment_id`` | Status panel asks for the missing columns;       |
+| and ``channel_id``                       | nothing is drawn                                 |
++------------------------------------------+--------------------------------------------------+
 | Raw SQL filter without ``id`` used for   | Status panel asks for the ``id`` column; nothing |
 | an event overlay or all-points histogram | is drawn                                         |
 +------------------------------------------+--------------------------------------------------+
-| Raw SQL filter used for Plot Events      | Refused: events are numbered within a channel    |
+| Raw SQL filter used for Plot Events      | Refused: not yet supported for raw filters       |
 +------------------------------------------+--------------------------------------------------+
 | Typo in column name                      | Validation error                                 |
 +------------------------------------------+--------------------------------------------------+

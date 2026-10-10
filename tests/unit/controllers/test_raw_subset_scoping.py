@@ -210,40 +210,69 @@ def _said(controller: Any) -> str:
     )
 
 
-RAW = "SELECT id, duration FROM events WHERE duration > 100"
+RAW = "SELECT id, experiment_id, channel_id FROM events WHERE duration > 100"
 SCOPE = {"exp1": [2]}
+FRAME = pd.DataFrame({"id": [4, 9, 4], "experiment_id": [7] * 3, "channel_id": [2] * 3})
 
 
 @pytest.mark.parametrize("cls", [MetadataController, ProteinController])
 class TestRawFilterLoadsItsOwnEvents:
     """
-    A raw filter's events are the ones its ``id`` column names, whatever the scope.
+    A raw filter's events are the ones its ``id`` column names within the selection.
     """
 
-    def test_the_ids_it_returns_are_loaded_unscoped(
+    @staticmethod
+    def answers(**overrides: Any) -> dict:
+        """
+        The loader's answers for a raw filter, with any of them replaced.
+
+        :param overrides: answers to replace, by plugin method name
+        :type overrides: Any
+        :return: the canned answers
+        :rtype: dict
+        """
+        return {
+            "get_experiment_id_by_name": 7,
+            "query_database_directly": FRAME,
+            "construct_event_data_query": ("SELECT generated", ""),
+            "load_event_data": iter([]),
+            **overrides,
+        }
+
+    def test_the_ids_it_returns_within_the_selection_are_loaded(
         self, cls: type, mocker: MockerFixture
     ) -> None:
         """
-        The query runs as written, and the events are loaded by id with no scope.
+        The query is wrapped in the selection, and the events it names are loaded by id
+        with no further scope.
         """
         generator = iter([])
-        controller = _controller(
-            cls,
-            mocker,
-            {
-                "query_database_directly": pd.DataFrame(
-                    {"id": [4, 9, 4], "duration": [1.0, 2.0, 1.0]}
-                ),
-                "construct_event_data_query": ("SELECT generated", ""),
-                "load_event_data": generator,
-            },
-        )
+        controller = _controller(cls, mocker, self.answers(load_event_data=generator))
 
         fetched = controller._fetch_event_subset("ldr", RAW, SCOPE, "mine_raw")
 
-        assert controller.model.calls_to("query_database_directly") == [(RAW,)]
+        _, (executed,) = controller.model.calls_to("query_database_directly")
+        assert RAW in executed
+        assert executed.endswith("WHERE (experiment_id = 7 AND channel_id IN (2))")
         assert controller.model.calls_to("load_event_data") == [("e.id IN (4,9)", None)]
-        assert fetched == (RAW, generator)
+        assert fetched == (executed, generator)
+
+    def test_a_query_without_the_scope_columns_says_what_to_add(
+        self, cls: type, mocker: MockerFixture
+    ) -> None:
+        """
+        The selection cannot be applied to it, so it is not run over everything.
+        """
+        controller = _controller(
+            cls,
+            mocker,
+            self.answers(query_database_directly=pd.DataFrame({"id": [1]})),
+        )
+
+        assert controller._fetch_event_subset("ldr", RAW, SCOPE, "mine_raw") is None
+
+        assert "experiment_id and channel_id" in _said(controller)
+        assert controller.model.calls_to("load_event_data") == []
 
     def test_a_query_without_an_id_column_says_how_to_fix_it(
         self, cls: type, mocker: MockerFixture
@@ -255,7 +284,9 @@ class TestRawFilterLoadsItsOwnEvents:
         controller = _controller(
             cls,
             mocker,
-            {"query_database_directly": pd.DataFrame({"duration": [1.0]})},
+            self.answers(
+                query_database_directly=FRAME.drop(columns=["id"]),
+            ),
         )
 
         assert controller._fetch_event_subset("ldr", RAW, SCOPE, "mine_raw") is None
@@ -273,7 +304,7 @@ class TestRawFilterLoadsItsOwnEvents:
         controller = _controller(
             cls,
             mocker,
-            {"query_database_directly": pd.DataFrame({"id": []})},
+            self.answers(query_database_directly=FRAME.iloc[0:0]),
         )
 
         assert controller._fetch_event_subset("ldr", RAW, SCOPE, "mine_raw") is None
@@ -287,7 +318,9 @@ class TestRawFilterLoadsItsOwnEvents:
         """
         ``query_database_directly`` answers None for a query it could not run.
         """
-        controller = _controller(cls, mocker, {"query_database_directly": None})
+        controller = _controller(
+            cls, mocker, self.answers(query_database_directly=None)
+        )
 
         assert (
             controller._fetch_event_subset("ldr", "SELECT", SCOPE, "mine_raw") is None
@@ -302,14 +335,7 @@ class TestRawFilterLoadsItsOwnEvents:
         The suffix is the marker; an ordinary filter never touches the raw route.
         """
         generator = iter([])
-        controller = _controller(
-            cls,
-            mocker,
-            {
-                "construct_event_data_query": ("SELECT generated", ""),
-                "load_event_data": generator,
-            },
-        )
+        controller = _controller(cls, mocker, self.answers(load_event_data=generator))
 
         fetched = controller._fetch_event_subset(
             "ldr", "duration < 300", SCOPE, "short events"

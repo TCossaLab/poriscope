@@ -103,7 +103,7 @@ You may apply filters to visualize only a subset of events or sublevels.
 .. warning::
 
    A filter naming a column that does not exist is refused with a message on the status
-   panel. A Raw SQL filter runs as written and ignores the experiment and channel selection. See
+   panel. A Raw SQL filter is restricted to the experiment and channel selection and must return ``experiment_id`` and ``channel_id``. See
    :ref:`filtering-and-querying` for the full syntax.
 
 Step 4: Generate and Export
@@ -132,8 +132,8 @@ Beside the plot controls is a **Plot Events** button with an arrow on either sid
 
 1. Use **Scope** to select exactly one experiment and one channel. Events are numbered
    within a channel, so a wider scope is refused with a message rather than guessed at.
-2. Select at most one subset filter. Raw SQL filters cannot be used here, because events
-   are numbered within a channel; the events plotted are those of the filtered set.
+2. Select at most one subset filter. Raw SQL filters cannot yet be used here; use an
+   Assisted filter. The events plotted are those of the filtered set.
 3. Enter the **EVENT INDEX** to start from and **# EVENTS TO PLOT**.
 4. Click **Plot Events**. The starting index snaps forward to the next event present in
    the filtered set, wrapping around to the first, and the field updates to show where
