@@ -38,8 +38,11 @@ merge of three copies into one, with the import and call-site changes, the white
 new Clustering test and the baseline update. Dropping the change would have saved almost no code, and would
 have left Clustering to either keep its inline copy or gain the truncation.
 
-**Revisit if** a caller starts re-labelling an already-decorated label with a different unit; carry the bare
-name and unit separately rather than re-parsing the string.
+**Revisit if** (1) a caller starts re-labelling an already-decorated label with a different unit; carry the bare
+name and unit separately rather than re-parsing the string. (2) A column name with parentheses becomes reachable
+in the app (a user-nameable derived column, a database importer): the no-in-app-trigger premise is gone, so decide
+whether `Duration (us) (ms)` is acceptable. (3) A registry of valid units appears, which would allow a precise
+strip-and-replace.
 
 ---
 
