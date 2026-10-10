@@ -188,8 +188,9 @@ class EventAnalysisController(MetaEventTabController):
                     fitting_done = self._fitting_is_done(eventfitter, channel)
                 else:
                     self.add_text_to_display.emit(
-                        f"{eventfitter} belongs to loader {fitter_loader!r}, not "
-                        f"{loader!r}; plotting its traces without fit overlays",
+                        f"Fit not shown: {eventfitter} was fitted on {fitter_loader}, "
+                        f"but {loader} is selected. Plotting {loader}'s events without "
+                        f"fits; select an event fitter that uses {loader} to see fits.",
                         self.__class__.__name__,
                     )
 

@@ -421,7 +421,7 @@
 
 * The Event Analysis tab now says which event indices were out of range and how many events the channel actually holds, instead of reporting "No data available for plotting"
 
-* **Fixed the Event Analysis tab drawing one loader's fitter's fits over another loader's events**: it now plots the traces without fit overlays and names the fitter's actual loader on the status panel
+* **Fixed the Event Analysis tab drawing one loader's fitter's fits over another loader's events**: it now plots the traces without fit overlays and says on the status panel which loader the fitter was fitted on
 
 * An event the Event Analysis tab cannot load, or whose fit features cannot be read, no longer abandons the whole plot: the remaining events are still drawn
 

@@ -479,7 +479,11 @@ class TestLoadEventPlot:
         assert self.asked(controller, "get_plot_features") == []
         controller.add_text_to_display.emit.assert_called_once()
         message = controller.add_text_to_display.emit.call_args[0][0]
-        assert "other-loader" in message and "'ldr'" in message
+        assert message == (
+            "Fit not shown: ef1 was fitted on other-loader, but ldr is selected. "
+            "Plotting ldr's events without fits; select an event fitter that uses "
+            "ldr to see fits."
+        )
 
     def test_unreadable_parents_plot_traces_without_a_fit_or_a_message(
         self, controller: EventAnalysisController, mock_view: MagicMock
