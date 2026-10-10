@@ -904,10 +904,12 @@ class MetaSubsetTabView(MetaView):
                 "Unable to navigate more than one subset at a time, select only one "
                 "filter to apply"
             )
-        elif len(exp_and_ch) > 1:
-            refusal = "Only a single experiment can be used for navigating events"
-        elif any(len(channels) > 1 for channels in exp_and_ch.values()):
-            refusal = "Only a single channel can be used for navigating events"
+        elif len(exp_and_ch) > 1 or any(
+            len(channels) > 1 for channels in exp_and_ch.values()
+        ):
+            refusal = (
+                "Only a single experiment and channel can be used for navigating events"
+            )
         if refusal is not None:
             self.add_text_to_display.emit(refusal, self.__class__.__name__)
             return

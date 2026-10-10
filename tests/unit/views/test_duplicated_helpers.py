@@ -1137,12 +1137,12 @@ class TestShiftRangeAndUpdatePlotIsShared:
             (
                 {"exp2": ["0"], "exp1": ["0"]},
                 [],
-                "Only a single experiment can be used for navigating events",
+                "Only a single experiment and channel can be used for navigating events",
             ),
             (
                 {"exp1": ["1", "0"]},
                 [],
-                "Only a single channel can be used for navigating events",
+                "Only a single experiment and channel can be used for navigating events",
             ),
             (
                 {"exp1": ["0"]},
