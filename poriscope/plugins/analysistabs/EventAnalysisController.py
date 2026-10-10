@@ -101,6 +101,13 @@ class EventAnalysisController(MetaEventTabController):
         (vertical, horizontal, points, vlabels, hlabels, plabels). All three are explicit
         here.
 
+        **A fitter's fits are only drawn over its own loader's events.** A fit is indexed
+        by event number within the loader the fitter was built on, so overlaying it on
+        another loader's events would draw fit *n* over a different event *n*. The
+        fitter's ``MetaEventLoader`` parent is compared with ``loader`` once per request;
+        on a mismatch the status panel names both loaders and the traces are still
+        plotted, since only the fit and feature overlays are invalid.
+
         **One call hoisted.** ``get_eventfitting_status`` takes only the channel, so the
         View asking it once per *event* asked the same question N times. It is asked once
         per request now, as the samplerate was on RawData's trace path.
@@ -166,7 +173,26 @@ class EventAnalysisController(MetaEventTabController):
 
         fitting_done = False
         if eventfitter != "No Event Fitter":
-            fitting_done = self._fitting_is_done(eventfitter, channel)
+            try:
+                parents = self.model.call("MetaEventFitter", eventfitter, "get_parents")
+            except Exception as e:
+                self.logger.error(
+                    f"Unable to read {eventfitter}'s parent loader: {repr(e)}"
+                )
+                parents = None
+            if parents is not None:
+                fitter_loader = next(
+                    (key for meta, key in parents if meta == "MetaEventLoader"), None
+                )
+                if fitter_loader == loader:
+                    fitting_done = self._fitting_is_done(eventfitter, channel)
+                else:
+                    self.add_text_to_display.emit(
+                        f"Fit not shown: {eventfitter} was fitted on {fitter_loader}, "
+                        f"but {loader} is selected. Plotting {loader}'s events without "
+                        f"fits; select an event fitter that uses {loader} to see fits.",
+                        self.__class__.__name__,
+                    )
 
         event_data: List[Any] = []
         labels: List[str] = []

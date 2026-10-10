@@ -93,6 +93,7 @@ class TestLoadEventPlot:
             "get_samplerate": 250000.0,
             "get_callable_filter": "a-callable",
             "get_data_requirements": {},
+            "get_parents": {("MetaEventLoader", "ldr")},
             "get_eventfitting_status": False,
             "load_event": {"data": "samples"},
             "get_fitted_event": "fit",
@@ -415,6 +416,98 @@ class TestLoadEventPlot:
 
         assert self.asked(controller, "get_eventfitting_status") == []
         assert self.asked(controller, "get_fitted_event") == []
+
+    def test_no_event_fitter_never_asks_for_its_parents(
+        self, controller: EventAnalysisController
+    ) -> None:
+        """
+        The loader check is skipped outright on the placeholder, not just harmless.
+
+        :param controller: Controller under test.
+        """
+        self.answers(controller, load_event=[{"data": "a"}])
+
+        controller.load_event_plot("ldr", "No Event Fitter", 0, [0], "", False)
+
+        assert self.asked(controller, "get_parents") == []
+
+    def test_a_fitter_on_the_selected_loader_draws_its_fit(
+        self, controller: EventAnalysisController, mock_view: MagicMock
+    ) -> None:
+        """
+        The matched selection is unchanged: the fit overlays and nothing is reported.
+
+        :param controller: Controller under test.
+        :param mock_view: Mocked event analysis view.
+        """
+        self.answers(
+            controller,
+            get_parents={("MetaEventLoader", "ldr")},
+            get_eventfitting_status=True,
+            load_event=[{"data": "samples"}],
+            get_fitted_event="the-fit",
+        )
+
+        controller.load_event_plot("ldr", "ef1", 0, [0], "", False)
+
+        assert self.plotted(mock_view)[0] == ["samples", "the-fit"]
+        controller.add_text_to_display.emit.assert_not_called()
+
+    def test_a_fitter_on_another_loader_plots_traces_without_its_fit(
+        self, controller: EventAnalysisController, mock_view: MagicMock
+    ) -> None:
+        """
+        **Fit *n* of one loader's fitter must not be drawn over another loader's event
+        *n*.** The fitter reports itself fitted, so only the loader check stops it.
+
+        :param controller: Controller under test.
+        :param mock_view: Mocked event analysis view.
+        """
+        self.answers(
+            controller,
+            get_parents={("MetaEventLoader", "other-loader")},
+            get_eventfitting_status=True,
+            load_event=[{"data": "samples"}],
+        )
+
+        controller.load_event_plot("ldr", "ef1", 0, [0], "", False)
+
+        data, labels, *_ = self.plotted(mock_view)
+        assert data == ["samples"]
+        assert labels == ["Event 0 Data"]
+        assert self.asked(controller, "get_fitted_event") == []
+        assert self.asked(controller, "get_plot_features") == []
+        controller.add_text_to_display.emit.assert_called_once()
+        message = controller.add_text_to_display.emit.call_args[0][0]
+        assert message == (
+            "Fit not shown: ef1 was fitted on other-loader, but ldr is selected. "
+            "Plotting ldr's events without fits; select an event fitter that uses "
+            "ldr to see fits."
+        )
+
+    def test_unreadable_parents_plot_traces_without_a_fit_or_a_message(
+        self, controller: EventAnalysisController, mock_view: MagicMock
+    ) -> None:
+        """
+        A failed ``get_parents`` degrades like the method's other plugin calls: logged,
+        no fit, trace still plotted, and no second misleading "belongs to None" message.
+
+        :param controller: Controller under test.
+        :param mock_view: Mocked event analysis view.
+        """
+        self.answers(
+            controller,
+            get_parents=RuntimeError("boom"),
+            get_eventfitting_status=True,
+            load_event=[{"data": "samples"}],
+        )
+
+        controller.load_event_plot("ldr", "ef1", 0, [0], "", False)
+
+        assert self.plotted(mock_view)[0] == ["samples"]
+        assert self.asked(controller, "get_fitted_event") == []
+        controller.logger.error.assert_called_once()
+        controller.add_text_to_display.emit.assert_not_called()
 
     def test_the_fitting_status_is_asked_once_not_once_per_event(
         self, controller: EventAnalysisController
