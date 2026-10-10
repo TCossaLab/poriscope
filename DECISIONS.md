@@ -29,8 +29,8 @@ units exists (the `columns.units` text is free-form, including `" "`).
 suffix. Replacing a *different* unit on relabel was dropped.
 
 **Evidence.** 0 of 20 call sites (12 `MetadataView`, 8 `ProteinView`) pass the function's own prior output;
-all pass a raw column name. No shipped column has parentheses, but `add_columns_to_table` accepts any
-user DataFrame column name.
+all pass a raw column name. No shipped or in-app-written column has parentheses (the Clustering and Protein writers use fixed
+names), so the truncation had no in-app trigger; `add_columns_to_table` still accepts any name.
 
 **Revisit if** a caller starts re-labelling an already-decorated label with a different unit; carry the bare
 name and unit separately rather than re-parsing the string.
