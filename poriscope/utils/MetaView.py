@@ -157,6 +157,30 @@ class MetaView(QWidget, WalkthroughMixin, metaclass=QObjectABCMeta):
             n += 1
         return min_diff_pair
 
+    @staticmethod
+    def format_axis_label(label: str, unit: Optional[str]) -> str:
+        """
+        Build an axis label with its unit attached, if there is one.
+
+        Appends rather than replacing any trailing parenthetical the label already
+        carries - nothing in the app re-labels a label this function has already
+        produced with a *different* unit, so there is no existing unit to tell
+        apart from a column name that happens to end in parentheses of its own.
+        Re-attaching the exact same unit is still a no-op, since that one is an
+        exact comparison rather than a guess.
+
+        :param label: the column or quantity name
+        :type label: str
+        :param unit: the unit to attach, or a falsy value for none
+        :type unit: Optional[str]
+        :return: the label with ``" (unit)"`` appended, unless it is already the trailing suffix, or the bare label if there is no unit
+        :rtype: str
+        """
+        if not (unit and unit.strip()):
+            return label
+        suffix = f" ({unit})"
+        return label if label.endswith(suffix) else f"{label}{suffix}"
+
     @log(logger=logger)
     def _update_cache(self, *data_label_pairs: Sequence[Any]) -> None:
         """

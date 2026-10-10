@@ -56,7 +56,6 @@ from poriscope.plugins.analysistabs.ProteinView import (
     FIT_COLUMN_UNITS,
     FIT_COLUMNS,
     ProteinView,
-    format_axis_label,
 )
 from tests.unit.views._qt_mocks import mock_axes, shadow_signals
 
@@ -256,36 +255,41 @@ def _all_filter_names(mock_view):
 
 
 # ===========================================================================
-# format_axis_label  (module-level function)
+# format_axis_label  (inherited from MetaView)
 # ===========================================================================
 
 
 class TestFormatAxisLabel:
     def test_adds_unit(self):
-        assert format_axis_label("Duration", "ms") == "Duration (ms)"
+        assert ProteinView.format_axis_label("Duration", "ms") == "Duration (ms)"
 
     def test_empty_unit(self):
-        assert format_axis_label("Amplitude", "") == "Amplitude"
+        assert ProteinView.format_axis_label("Amplitude", "") == "Amplitude"
 
-    def test_strips_and_replaces(self):
-        assert format_axis_label("Duration (s)", "ms") == "Duration (ms)"
+    def test_appends_rather_than_replacing_an_existing_unit(self):
+        assert (
+            ProteinView.format_axis_label("Duration (s)", "ms") == "Duration (s) (ms)"
+        )
 
-    def test_strips_when_new_unit_empty(self):
-        assert format_axis_label("Amplitude (pA)", "") == "Amplitude"
+    def test_an_empty_unit_leaves_an_existing_parenthetical_in_place(self):
+        assert ProteinView.format_axis_label("Amplitude (pA)", "") == "Amplitude (pA)"
 
     def test_latex_unit(self):
-        assert format_axis_label("Volume", r"nm$^{3}$") == r"Volume (nm$^{3}$)"
+        assert (
+            ProteinView.format_axis_label("Volume", r"nm$^{3}$") == r"Volume (nm$^{3}$)"
+        )
 
     def test_idempotent(self):
-        once = format_axis_label("Duration", "ms")
-        assert format_axis_label(once, "ms") == once
+        once = ProteinView.format_axis_label("Duration", "ms")
+        assert ProteinView.format_axis_label(once, "ms") == once
 
-    def test_inner_parens_bug_documented(self):
-        # BUG: regex r"\s*\(.*?\)$" strips "log10(Duration)" -> "log10"
-        assert format_axis_label("log10(Duration)", "s") == "log10 (s)"
+    def test_a_label_containing_its_own_parenthetical_keeps_it(self):
+        assert ProteinView.format_axis_label("log10(Duration)", "s") == (
+            "log10(Duration) (s)"
+        )
 
     def test_none_unit_equivalent(self):
-        assert format_axis_label("X", "") == "X"
+        assert ProteinView.format_axis_label("X", "") == "X"
 
 
 # ===========================================================================

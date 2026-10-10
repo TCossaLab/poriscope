@@ -26,7 +26,6 @@
 
 import copy
 import logging
-import re
 import warnings
 from typing import (
     Any,
@@ -758,8 +757,8 @@ class ProteinView(MetaSubsetTabView):
         x = data[x_label].values
         y = data[y_label].values
 
-        x_label = format_axis_label(x_label, x_units)
-        y_label = format_axis_label(y_label, y_units)
+        x_label = self.format_axis_label(x_label, x_units)
+        y_label = self.format_axis_label(y_label, y_units)
         if norm is True:
             y = y.astype(float)
             y /= sum(y)
@@ -870,8 +869,8 @@ class ProteinView(MetaSubsetTabView):
 
         columns = [data[x_label].values, data[y_label].values]
 
-        x_label = format_axis_label(x_label, x_units)
-        y_label = format_axis_label(y_label, y_units)
+        x_label = self.format_axis_label(x_label, x_units)
+        y_label = self.format_axis_label(y_label, y_units)
 
         if logx:
             x_label = f"log10({x_label})"
@@ -935,8 +934,8 @@ class ProteinView(MetaSubsetTabView):
             data[y_err_label].values,
         ]
 
-        x_label = format_axis_label(x_label, x_units)
-        y_label = format_axis_label(y_label, y_units)
+        x_label = self.format_axis_label(x_label, x_units)
+        y_label = self.format_axis_label(y_label, y_units)
 
         if logx:
             x_label = f"log10({x_label})"
@@ -1593,8 +1592,8 @@ class ProteinView(MetaSubsetTabView):
         num_events = len(event_data)
         num_rows, num_cols = self._factors(num_events)
 
-        x_label = format_axis_label("Normalized Current", "pA")
-        y_label = format_axis_label("Amplitude", "")
+        x_label = self.format_axis_label("Normalized Current", "pA")
+        y_label = self.format_axis_label("Amplitude", "")
 
         for j, event in enumerate(event_data):
             ax = self.fig_event.add_subplot(num_rows, num_cols, j + 1)
@@ -2263,12 +2262,3 @@ class ProteinView(MetaSubsetTabView):
 
     def get_current_view(self) -> str:
         return "ProteinView"
-
-
-def format_axis_label(label: str, unit: Optional[str]) -> str:
-    """
-    Ensure the axis label contains the correct unit exactly once.
-    Removes any existing trailing unit in parentheses.
-    """
-    label = re.sub(r"\s*\(.*?\)$", "", label)  # Remove trailing "(...)"
-    return f"{label} ({unit})" if unit and unit.strip() else label
