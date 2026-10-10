@@ -92,6 +92,11 @@ Tab state onto the Models, heavy work off the GUI thread, event-finder and CUSUM
 
 ### Analysis tabs
 
+- **Auto-binned histogram overlays re-bin the earlier datasets.** With bins left empty,
+  `MetadataModel.overlaid_histograms:450` estimates bins from all overlaid datasets, so each added
+  dataset changes the first one's edges (measured on `develop`: 4 bins 56 wide alone, 7 at 32 with
+  one overlay, 11 at 20 with two); a fixed bin count does not move. Decide whether to freeze the
+  edges at the first dataset.
 - **`itertools.tee` buffers the whole subset, raw arrays included**
   (`MetadataModel.py:780`, `ProteinModel.py:583`): a 16 MB peak for 200 events of 80 KB. Use
   two queries or a streaming min/max.
