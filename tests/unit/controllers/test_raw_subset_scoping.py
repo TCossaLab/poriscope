@@ -104,7 +104,7 @@ class TestRawFiltersAreRefused:
         """
         assert view._refuse_raw_filters({"mine_raw": "SELECT * FROM events"}) is True
         assert "mine_raw" in said(view)
-        assert "cannot be used for plotting" in said(view)
+        assert "cannot be used for event-data plots" in said(view)
 
     def test_one_raw_filter_among_several_refuses_the_plot(
         self, view: ProteinView

@@ -109,7 +109,10 @@ class MetadataView(MetaSubsetTabView):
     #: failure that went unnoticed left the *previous* subset's query or the previous
     #: column's units in place - a plot drawn and labelled for a subset it did not come
     #: from.
-    metadata_subset_requested = Signal(str, list, str, object)
+    #:
+    #: Also carries the filter's name, whose ``_raw`` suffix tells the Controller the
+    #: filter is a complete ``SELECT`` to run as written, ignoring the scope.
+    metadata_subset_requested = Signal(str, list, str, object, str)
 
     #: Asks for one event-data subset to be tallied into an all-points histogram: the
     #: loader's key, the filter, the scope, the plot type, the bin request, the shared
@@ -1414,10 +1417,12 @@ class MetadataView(MetaSubsetTabView):
         # The selection comes from the parameters, not the widgets, so a replay draws
         # what was recorded; see _record_selection.
         selected_filters = dict(parameters["selected_filters"])
-        if self._refuse_raw_filters(selected_filters):
-            return False
         loader = parameters["db_loader"]
         plot_type = parameters["plot_type"]
+        if plot_type in self.event_data_plots and self._refuse_raw_filters(
+            selected_filters
+        ):
+            return False
         experiments_and_channels: Optional[
             Union[Dict[str, List[str]], Dict[Any, Any]]
         ] = copy.deepcopy(parameters["experiments_and_channels"])
@@ -1476,9 +1481,17 @@ class MetadataView(MetaSubsetTabView):
                 for subset_name, sql_filter in selected_filters.items():
                     bins = None
 
+                    # A raw filter ignores the experiment and channel selection, so
+                    # it is one dataset however many are selected: labelled and keyed
+                    # without them, which is what stops the loop plotting it once per
+                    # channel.
+                    is_raw = subset_name.endswith("_raw")
+                    dataset_exp = None if is_raw else exp
+                    dataset_channel = None if is_raw else channel_id
+
                     dataset_label = (
-                        f"{loader} | {exp} Ch {channel}: {subset_name}"
-                        if exp is not None
+                        f"{loader} | {dataset_exp} Ch {channel}: {subset_name}"
+                        if dataset_exp is not None
                         else f"{loader} | {subset_name}"
                     )
                     sizes = False
@@ -1581,7 +1594,13 @@ class MetadataView(MetaSubsetTabView):
 
                         if (
                             self.plotted_datasets
-                            and (loader, exp, channel_id, sql_filter, subset_name)
+                            and (
+                                loader,
+                                dataset_exp,
+                                dataset_channel,
+                                sql_filter,
+                                subset_name,
+                            )
                             in self.plotted_datasets
                         ):  # do not overlay the same thing twice
                             continue
@@ -1596,7 +1615,7 @@ class MetadataView(MetaSubsetTabView):
                         self.plot_data = None
                         self.column_units = None
                         self.metadata_subset_requested.emit(
-                            loader, columns, sql_filter, exp_and_ch_arg
+                            loader, columns, sql_filter, exp_and_ch_arg, subset_name
                         )
                         if self.query == "":
                             return False
@@ -1740,7 +1759,7 @@ class MetadataView(MetaSubsetTabView):
                         self.allowed_logs = []
 
                     self.plotted_datasets.add(
-                        (loader, exp, channel_id, sql_filter, subset_name)
+                        (loader, dataset_exp, dataset_channel, sql_filter, subset_name)
                     )
                     plotted_any = True
 

@@ -269,8 +269,8 @@ class MetaSubsetTabView(MetaView):
         if not raw:
             return False
         self.add_text_to_display.emit(
-            f"Raw SQL filters cannot be used for plotting, so {', '.join(raw)} was "
-            "not applied - deselect it to plot this subset",
+            f"Raw SQL filters cannot be used for event-data plots, so {', '.join(raw)} "
+            "was not applied - deselect it to plot this subset",
             self.__class__.__name__,
         )
         return True

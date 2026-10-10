@@ -510,13 +510,14 @@ class MetadataController(MetaSubsetTabController):
         )
 
     @log(logger=logger)
-    @Slot(str, list, str, object)
+    @Slot(str, list, str, object, str)
     def load_metadata_subset(
         self,
         loader: str,
         columns: List[str],
         sql_filter: str,
         experiments_and_channels: Optional[Dict[str, Optional[List[int]]]],
+        subset_name: str,
     ) -> None:
         """
         Fetch one metadata subset - query, rows and units - and hand it to the View.
@@ -533,17 +534,28 @@ class MetadataController(MetaSubsetTabController):
         status panel is **the one that runs**, not the smaller one that validated the
         filter, and it is echoed only when it differs from the last one shown.
 
+        A raw filter - one whose name ends ``_raw`` - is a complete ``SELECT``, not a
+        WHERE-clause body, so it cannot go through the query builder. It is run as
+        written by :meth:`_load_raw_metadata_subset`, ignoring the experiment and
+        channel scope.
+
         :param loader: the database loader plugin's key
         :type loader: str
         :param columns: the columns this plot type needs, in axis order
         :type columns: List[str]
-        :param sql_filter: the subset filter's WHERE-clause body, empty for all rows
+        :param sql_filter: the subset filter's WHERE-clause body, empty for all rows, or a complete ``SELECT`` for a raw filter
         :type sql_filter: str
-        :param experiments_and_channels: the experiment and channel scope, or None
+        :param experiments_and_channels: the experiment and channel scope, or None; ignored by a raw filter
         :type experiments_and_channels: Optional[Dict[str, Optional[List[int]]]]
+        :param subset_name: the selected filter's name, whose ``_raw`` suffix marks a raw filter
+        :type subset_name: str
         :return: None
         :rtype: None
         """
+        if subset_name.endswith("_raw"):
+            self._load_raw_metadata_subset(loader, columns, sql_filter, subset_name)
+            return
+
         try:
             query, debug, table_name = self.model.call(
                 "MetaDatabaseLoader",
@@ -600,6 +612,79 @@ class MetadataController(MetaSubsetTabController):
         self.view.update_plot_data(plot_data)
         self.view.set_column_units(units)
         self._echo_applied_query(query, table_name)
+
+    @log(logger=logger)
+    def _load_raw_metadata_subset(
+        self, loader: str, columns: List[str], sql_filter: str, subset_name: str
+    ) -> None:
+        """
+        Run a raw ``SELECT`` as written and hand its rows to the View for a plot.
+
+        No scoping and no rewriting: the experiment and channel selection plays no
+        part, and the user's projection is the plot's data, so a column the plot needs
+        that the ``SELECT`` did not return is named on the status panel rather than
+        drawn around. Sets the same three things as the scoped path, and only once
+        every one of them has been fetched.
+
+        :param loader: the database loader plugin's key
+        :type loader: str
+        :param columns: the columns this plot type needs, in axis order
+        :type columns: List[str]
+        :param sql_filter: the filter's complete ``SELECT``
+        :type sql_filter: str
+        :param subset_name: the filter's name, for the messages
+        :type subset_name: str
+        :return: None
+        :rtype: None
+        """
+        try:
+            plot_data = self.model.call(
+                "MetaDatabaseLoader", loader, "query_database_directly", sql_filter
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to run the raw filter {subset_name}: {e!r}")
+            self.add_text_to_display.emit(
+                f"Could not run the raw filter {subset_name} on {loader}: {e}",
+                self.__class__.__name__,
+            )
+            return
+
+        if plot_data is None:
+            self.add_text_to_display.emit(
+                f"Could not run the raw filter {subset_name}: see the log for the "
+                "SQL error",
+                self.__class__.__name__,
+            )
+            return
+
+        missing = [c for c in columns if c not in plot_data.columns]
+        if missing:
+            self.add_text_to_display.emit(
+                f"{subset_name}'s query does not return the column(s) this plot "
+                f"needs: {', '.join(missing)}",
+                self.__class__.__name__,
+            )
+            return
+
+        try:
+            units = [
+                self.model.call(
+                    "MetaDatabaseLoader", loader, "get_column_units", column
+                )
+                for column in columns
+            ]
+        except Exception as e:
+            self.logger.error(f"Failed to read the units for {subset_name}: {e!r}")
+            self.add_text_to_display.emit(
+                f"Could not read the units of {columns} from {loader}: {e}",
+                self.__class__.__name__,
+            )
+            return
+
+        self.view.set_query(sql_filter, "raw query")
+        self.view.update_plot_data(plot_data)
+        self.view.set_column_units(units)
+        self._echo_applied_query(sql_filter, "raw query")
 
     @log(logger=logger)
     def _fetch_event_subset(

@@ -1805,6 +1805,101 @@ def test_overlay_plot_defaults_experiments_and_channels_when_none(
     view.metadata_subset_requested.emit.assert_called()
 
 
+def _raw_histogram_parameters() -> dict:
+    """
+    The parameters of a duration histogram, for the raw-filter tests below.
+
+    :return: the plot parameters, before the selection is recorded into them
+    :rtype: dict
+    """
+    return {
+        "db_loader": "test_loader",
+        "plot_type": "Histogram",
+        "x_axis": "duration",
+        "x_log": False,
+        "bins": [50],
+        "sizes": False,
+    }
+
+
+def test_overlay_plot_sends_a_raw_filter_to_the_controller_with_its_name(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """A raw filter is no longer refused; its name goes out so the Controller can tell."""
+    view.figure.axes = []
+    view.get_selected_filters = mocker.Mock(
+        return_value={"mine_raw": "SELECT duration FROM events"}
+    )
+    view.selected_experiment_and_channels_by_loader = {}
+    view.canned_query = "SELECT duration FROM events"
+    view.canned_plot_data = pd.DataFrame({"duration": [1.0, 2.0, 3.0]})
+    view.canned_units = "ms"
+    view.update_plot = mocker.Mock()
+
+    result = view._overlay_plot(recorded(view, _raw_histogram_parameters()))
+
+    assert result is True
+    view.metadata_subset_requested.emit.assert_called_once()
+    assert view.metadata_subset_requested.emit.call_args[0][2:] == (
+        "SELECT duration FROM events",
+        {None: [None]},
+        "mine_raw",
+    )
+
+
+def test_overlay_plot_draws_a_raw_filter_once_however_many_channels_are_selected(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """
+    A raw filter ignores the selection, so one dataset per channel would be the same
+    rows drawn again and again, each labelled as if scoped to its channel.
+    """
+    view.figure.axes = []
+    view.get_selected_filters = mocker.Mock(
+        return_value={"mine_raw": "SELECT duration FROM events"}
+    )
+    view.selected_experiment_and_channels_by_loader = {
+        "test_loader": {"exp1": [1, 2, 3]}
+    }
+    view.canned_query = "SELECT duration FROM events"
+    view.canned_plot_data = pd.DataFrame({"duration": [1.0, 2.0, 3.0]})
+    view.canned_units = "ms"
+    view.update_plot = mocker.Mock()
+    # The mocked figure never has valid axes, so every pass would reset and forget
+    # what it had plotted; stubbed as the already-plotted test does.
+    view._reset_actions = mocker.Mock()
+
+    view._overlay_plot(recorded(view, _raw_histogram_parameters()))
+
+    view.metadata_subset_requested.emit.assert_called_once()
+    view.update_plot.assert_called_once()
+    assert view.update_plot.call_args.kwargs["dataset_label"] == (
+        "test_loader | mine_raw"
+    )
+
+
+def test_overlay_plot_still_scopes_an_assisted_filter_per_channel(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """The scoped path is unchanged: one request per channel, labelled with it."""
+    view.figure.axes = []
+    view.get_selected_filters = mocker.Mock(return_value={"short": "duration < 300"})
+    view.selected_experiment_and_channels_by_loader = {"test_loader": {"exp1": [1, 2]}}
+    view.canned_query = "SELECT duration FROM events"
+    view.canned_plot_data = pd.DataFrame({"duration": [1.0, 2.0, 3.0]})
+    view.canned_units = "ms"
+    view.update_plot = mocker.Mock()
+
+    view._overlay_plot(recorded(view, _raw_histogram_parameters()))
+
+    assert view.metadata_subset_requested.emit.call_count == 2
+    labels = [c.kwargs["dataset_label"] for c in view.update_plot.call_args_list]
+    assert labels == [
+        "test_loader | exp1 Ch 1: short",
+        "test_loader | exp1 Ch 2: short",
+    ]
+
+
 def test_overlay_plot_rejects_multiple_experiments_for_event_overlay(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
@@ -1889,7 +1984,13 @@ def _subset_answers(view: MetadataView) -> Callable[..., None]:
     :rtype: Callable[..., None]
     """
 
-    def _emit(loader: str, columns: list, sql_filter: str, scope: object) -> None:
+    def _emit(
+        loader: str,
+        columns: list,
+        sql_filter: str,
+        scope: object,
+        subset_name: str,
+    ) -> None:
         view.query = getattr(view, "canned_query", "SELECT 1")
         view.plot_data = getattr(view, "canned_plot_data", None)
         units = getattr(view, "canned_units", None)
