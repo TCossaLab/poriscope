@@ -722,7 +722,7 @@ class RawDataController(MetaEventTabController):
         :return: None
         :rtype: None
         """
-        stats: List[Optional[Tuple[float, float, float]]] = []
+        stats: List[Optional[Tuple[float, float]]] = []
         for channel_data, channel in zip(data, channels, strict=True):
             try:
                 stats.append(self.model.get_baseline_stats(channel_data / 1000))

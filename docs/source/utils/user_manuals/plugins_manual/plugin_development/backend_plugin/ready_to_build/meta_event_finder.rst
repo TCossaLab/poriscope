@@ -39,6 +39,8 @@ because each finder decides for itself which part of a chunk counts as baseline,
 histogram-and-fit half that follows from assuming Gaussian baseline noise is shared, so
 most implementations are a few lines of policy around one call to
 ``_fit_baseline_histogram``.
+Both fit helpers are static methods that use no finder state, so the Raw Data tab calls
+them on the class to show the same baseline the finders see.
 
 .. automethod:: poriscope.utils.MetaEventFinder.MetaEventFinder._fit_baseline_histogram
    :no-index:
