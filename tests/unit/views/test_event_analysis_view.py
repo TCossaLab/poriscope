@@ -231,24 +231,30 @@ class TestExtractPlotEventParameters:
 class TestExtractEventFitParameters:
     def _params(self):
         return {
+            "loader": "loader_a",
             "eventfitter": "fitter_a",
             "filter": "filter_b",
             "channel": ["0", "2"],
         }
 
-    def test_returns_three_tuple(self, mock_view):
-        assert len(mock_view._extract_event_fit_parameters(self._params())) == 3
+    def test_returns_four_tuple(self, mock_view):
+        """The loader travels with the fit request so the Controller can check it."""
+        assert len(mock_view._extract_event_fit_parameters(self._params())) == 4
+
+    def test_loader(self, mock_view):
+        loader, _, _, _ = mock_view._extract_event_fit_parameters(self._params())
+        assert loader == "loader_a"
 
     def test_eventfitter(self, mock_view):
-        fitter, _, _ = mock_view._extract_event_fit_parameters(self._params())
+        _, fitter, _, _ = mock_view._extract_event_fit_parameters(self._params())
         assert fitter == "fitter_a"
 
     def test_filter(self, mock_view):
-        _, filt, _ = mock_view._extract_event_fit_parameters(self._params())
+        _, _, filt, _ = mock_view._extract_event_fit_parameters(self._params())
         assert filt == "filter_b"
 
     def test_channels_as_ints(self, mock_view):
-        _, _, channels = mock_view._extract_event_fit_parameters(self._params())
+        _, _, _, channels = mock_view._extract_event_fit_parameters(self._params())
         assert channels == [0, 2]
 
 
@@ -488,6 +494,7 @@ class TestHandleOtherActions:
 class TestHandleFitEvents:
     def _params(self):
         return {
+            "loader": "ldr",
             "eventfitter": "ef1",
             "filter": "No Filter",
             "channel": ["0"],
@@ -550,6 +557,7 @@ class TestHandleFitEvents:
         # or call_args[0] = (eventfitter, filter, channels) depending on decorator
         all_args = mock.call_args[0]
         flat = [a for a in all_args if a is not mock_view]
+        assert "ldr" in flat
         assert "ef1" in flat
         assert "No Filter" in flat
         assert [0] in flat
@@ -558,7 +566,7 @@ class TestHandleFitEvents:
         with patch.object(
             EventAnalysisView,
             "_extract_event_fit_parameters",
-            return_value=(None, "No Filter", [0]),
+            return_value=("ldr", None, "No Filter", [0]),
         ):
             with patch.object(EventAnalysisView, "_start_eventfitter") as mock:
                 mock_view._handle_fit_events(self._params())
@@ -568,7 +576,7 @@ class TestHandleFitEvents:
         with patch.object(
             EventAnalysisView,
             "_extract_event_fit_parameters",
-            return_value=("ef1", "No Filter", None),
+            return_value=("ldr", "ef1", "No Filter", None),
         ):
             with patch.object(EventAnalysisView, "_start_eventfitter") as mock:
                 mock_view._handle_fit_events(self._params())
@@ -578,7 +586,7 @@ class TestHandleFitEvents:
         with patch.object(
             EventAnalysisView,
             "_extract_event_fit_parameters",
-            return_value=("ef1", None, [0]),
+            return_value=("ldr", "ef1", None, [0]),
         ):
             with patch.object(EventAnalysisView, "_start_eventfitter") as mock:
                 mock_view._handle_fit_events(self._params())
@@ -659,23 +667,23 @@ class TestStartEventfitter:
     def test_a_bare_channel_is_coerced_to_a_list(self, mock_view):
         """Callers pass either shape, and a bare int must not be iterated as one."""
         mock_view.fitting_statuses_requested = MagicMock()
-        mock_view._start_eventfitter("ef1", "No Filter", 0)
+        mock_view._start_eventfitter("ldr", "ef1", "No Filter", 0)
         mock_view.fitting_statuses_requested.emit.assert_called_once_with(
-            "ef1", [0], ""
+            "ldr", "ef1", [0], ""
         )
 
     def test_no_filter_is_carried_as_an_empty_key(self, mock_view):
         """The Controller never has to know the placeholder's spelling."""
         mock_view.fitting_statuses_requested = MagicMock()
-        mock_view._start_eventfitter("ef1", "No Filter", [0])
-        assert mock_view.fitting_statuses_requested.emit.call_args[0][2] == ""
+        mock_view._start_eventfitter("ldr", "ef1", "No Filter", [0])
+        assert mock_view.fitting_statuses_requested.emit.call_args[0][3] == ""
 
     def test_a_named_filter_is_carried_by_key(self, mock_view):
         """Fetching the callable is the Controller's job; naming it is the View's."""
         mock_view.fitting_statuses_requested = MagicMock()
-        mock_view._start_eventfitter("ef1", "MyFilter", [0, 1])
+        mock_view._start_eventfitter("ldr", "ef1", "MyFilter", [0, 1])
         mock_view.fitting_statuses_requested.emit.assert_called_once_with(
-            "ef1", [0, 1], "MyFilter"
+            "ldr", "ef1", [0, 1], "MyFilter"
         )
 
     def test_an_unfitted_channel_is_approved_without_asking(self, mock_view):
@@ -1274,17 +1282,22 @@ class TestExtractPlotEventParametersExtended:
 class TestExtractEventFitParametersExtended:
     def test_missing_eventfitter_returns_none(self, mock_view):
         params = {"channel": ["0"]}
-        fitter, filt, channels = mock_view._extract_event_fit_parameters(params)
+        _, fitter, filt, channels = mock_view._extract_event_fit_parameters(params)
         assert fitter is None
+
+    def test_missing_loader_returns_none(self, mock_view):
+        params = {"channel": ["0"], "eventfitter": "ef"}
+        loader, _, _, _ = mock_view._extract_event_fit_parameters(params)
+        assert loader is None
 
     def test_missing_filter_returns_none(self, mock_view):
         params = {"channel": ["0"], "eventfitter": "ef"}
-        _, filt, _ = mock_view._extract_event_fit_parameters(params)
+        _, _, filt, _ = mock_view._extract_event_fit_parameters(params)
         assert filt is None
 
     def test_channels_converted_to_int(self, mock_view):
         params = {"channel": ["3", "4"], "eventfitter": "ef", "filter": "f"}
-        _, _, channels = mock_view._extract_event_fit_parameters(params)
+        _, _, _, channels = mock_view._extract_event_fit_parameters(params)
         assert channels == [3, 4]
 
 
@@ -1358,6 +1371,7 @@ class TestHandleFitEventsExtended:
         with patch.object(EventAnalysisView, "_start_eventfitter") as mock:
             mock_view._handle_fit_events(
                 {
+                    "loader": "ldr",
                     "eventfitter": "ef1",
                     "filter": "No Filter",
                     "channel": [],
@@ -1371,6 +1385,7 @@ class TestHandleFitEventsExtended:
         with patch.object(EventAnalysisView, "_start_eventfitter") as mock:
             mock_view._handle_fit_events(
                 {
+                    "loader": "ldr",
                     "eventfitter": "ef1",
                     "filter": "No Filter",
                     "channel": ["2", "3"],

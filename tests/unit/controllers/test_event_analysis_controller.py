@@ -9,6 +9,7 @@ Covers:
 
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -798,32 +799,77 @@ class TestFittingLaunch:
     the View before the conversion and moved here with the calls; two of the old ones
     would have gone on passing for the wrong reason instead of failing, since they
     asserted that something was *not* emitted.
+
+    The first slot also refuses a launch whose selected loader is not the one the fitter
+    was built on: the fitter only ever reads its own loader, so fitting would otherwise
+    run on a file other than the one on screen.
     """
+
+    @staticmethod
+    def answers(
+        controller: EventAnalysisController,
+        statuses: Any = False,
+        parents: Any = frozenset({("MetaEventLoader", "ldr")}),
+    ) -> None:
+        """
+        Install the fitter's parents and per-channel statuses, dispatched by method.
+
+        A value that is an Exception is raised; a list is consumed one per call.
+
+        :param controller: Controller under test.
+        :param statuses: answer(s) for ``get_eventfitting_status``.
+        :param parents: answer for ``get_parents``.
+        """
+        table: dict = {"get_eventfitting_status": statuses, "get_parents": parents}
+
+        def dispatch(metaclass, key, method, *args):
+            answer = table[method]
+            if isinstance(answer, list):
+                answer = answer.pop(0)
+            if isinstance(answer, Exception):
+                raise answer
+            return answer
+
+        controller.model.call.side_effect = dispatch
+
+    @staticmethod
+    def asked(controller: EventAnalysisController, method: str) -> list:
+        """
+        Every call() of one plugin method.
+
+        :param controller: Controller under test.
+        :param method: the plugin method name.
+        :return: the matching call args tuples.
+        """
+        return [
+            call.args
+            for call in controller.model.call.call_args_list
+            if call.args[2] == method
+        ]
 
     def test_the_status_is_asked_per_channel_and_handed_back_with_the_filter(
         self,
         controller: EventAnalysisController,
         mock_view: MagicMock,
-        mocker: MockerFixture,
     ) -> None:
         """
         One call per channel, and the filter key travels through untouched.
 
         :param controller: Controller under test.
         :param mock_view: Mocked event analysis view.
-        :param mocker: Pytest-mock fixture.
         """
-        controller.model.call.side_effect = [True, False]
+        self.answers(controller, statuses=[True, False])
 
-        controller.request_fitting_statuses("ef1", [0, 1], "MyFilter")
+        controller.request_fitting_statuses("ldr", "ef1", [0, 1], "MyFilter")
 
-        assert controller.model.call.call_args_list == [
-            mocker.call("MetaEventFitter", "ef1", "get_eventfitting_status", 0),
-            mocker.call("MetaEventFitter", "ef1", "get_eventfitting_status", 1),
+        assert self.asked(controller, "get_eventfitting_status") == [
+            ("MetaEventFitter", "ef1", "get_eventfitting_status", 0),
+            ("MetaEventFitter", "ef1", "get_eventfitting_status", 1),
         ]
         mock_view.set_fitting_statuses.assert_called_once_with(
             "ef1", [(0, True), (1, False)], "MyFilter"
         )
+        controller.add_text_to_display.emit.assert_not_called()
 
     def test_a_channel_whose_status_cannot_be_read_is_dropped(
         self, controller: EventAnalysisController, mock_view: MagicMock
@@ -837,9 +883,9 @@ class TestFittingLaunch:
         :param controller: Controller under test.
         :param mock_view: Mocked event analysis view.
         """
-        controller.model.call.side_effect = [True, RuntimeError("boom"), False]
+        self.answers(controller, statuses=[True, RuntimeError("boom"), False])
 
-        controller.request_fitting_statuses("ef1", [0, 1, 2], "")
+        controller.request_fitting_statuses("ldr", "ef1", [0, 1, 2], "")
 
         assert mock_view.set_fitting_statuses.call_args[0][1] == [(0, True), (2, False)]
         controller.add_text_to_display.emit.assert_called_once()
@@ -857,13 +903,84 @@ class TestFittingLaunch:
         :param controller: Controller under test.
         :param mock_view: Mocked event analysis view.
         """
-        controller.model.call.return_value = "fitted"
+        self.answers(controller, statuses="fitted")
 
-        controller.request_fitting_statuses("ef1", [0], "")
+        controller.request_fitting_statuses("ldr", "ef1", [0], "")
 
         handed_back = mock_view.set_fitting_statuses.call_args[0][1]
         assert handed_back == [(0, True)]
         assert handed_back[0][1] is True
+
+    def test_a_fitter_on_another_loader_refuses_the_launch(
+        self, controller: EventAnalysisController, mock_view: MagicMock
+    ) -> None:
+        """
+        **A fitter reads only the loader it was built on**, so with another loader
+        selected it fits that loader's same-numbered channel - or raises "No samplerate
+        found" - while the dropdown shows a different file. Nothing is asked of the
+        fitter, no prompt is raised, and the message names both loaders.
+
+        :param controller: Controller under test.
+        :param mock_view: Mocked event analysis view.
+        """
+        self.answers(
+            controller,
+            statuses=True,
+            parents=frozenset({("MetaEventLoader", "other-loader")}),
+        )
+
+        controller.request_fitting_statuses("ldr", "ef1", [0, 1], "")
+
+        assert self.asked(controller, "get_eventfitting_status") == []
+        mock_view.set_fitting_statuses.assert_not_called()
+        controller.add_text_to_display.emit.assert_called_once()
+        assert controller.add_text_to_display.emit.call_args[0][0] == (
+            "Fitting not started: ef1 was built on other-loader, but ldr is selected. "
+            "Select an event fitter that uses ldr, or the loader ef1 uses."
+        )
+
+    def test_unreadable_parents_refuse_the_launch(
+        self, controller: EventAnalysisController, mock_view: MagicMock
+    ) -> None:
+        """
+        Fail closed: a fitter whose loader cannot be read cannot be shown to match.
+
+        :param controller: Controller under test.
+        :param mock_view: Mocked event analysis view.
+        """
+        self.answers(controller, parents=RuntimeError("boom"))
+
+        controller.request_fitting_statuses("ldr", "ef1", [0], "")
+
+        assert self.asked(controller, "get_eventfitting_status") == []
+        mock_view.set_fitting_statuses.assert_not_called()
+        controller.logger.error.assert_called_once()
+        controller.add_text_to_display.emit.assert_called_once()
+        assert controller.add_text_to_display.emit.call_args[0][0] == (
+            "Fitting not started: could not establish which loader ef1 was built on, "
+            "so it cannot be checked against ldr. Select an event fitter that uses ldr."
+        )
+
+    def test_a_fitter_with_no_loader_parent_refuses_the_launch(
+        self, controller: EventAnalysisController, mock_view: MagicMock
+    ) -> None:
+        """
+        A parents set without a ``MetaEventLoader`` entry gives nothing to compare, and
+        is refused rather than waved through.
+
+        :param controller: Controller under test.
+        :param mock_view: Mocked event analysis view.
+        """
+        self.answers(controller, parents=frozenset({("MetaReader", "rdr")}))
+
+        controller.request_fitting_statuses("ldr", "ef1", [0], "")
+
+        assert self.asked(controller, "get_eventfitting_status") == []
+        mock_view.set_fitting_statuses.assert_not_called()
+        controller.add_text_to_display.emit.assert_called_once()
+        assert controller.add_text_to_display.emit.call_args[0][0].startswith(
+            "Fitting not started: could not establish which loader ef1 was built on"
+        )
 
     def test_fit_events_is_called_per_channel_with_the_real_signature(
         self, controller: EventAnalysisController, mocker: MockerFixture

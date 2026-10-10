@@ -50,15 +50,13 @@ Step 10 waits for both tracks.
 
 ### Step 9a - analysis-tab views (Carolina's track)
 
-- **Event Analysis fitting ignores which loader is selected** (flagged by Kyle, 2026-10-09; the
-  trace below is ours). The channel list comes from the selected loader but `start_fitting:493`
-  fits on the fitter's own loader (`fit_events`, `:520`), so a crossed selection may fit channels
-  that loader lacks (not yet measured). The loader never reaches the Controller: `collect_parameters` puts `"loader"` in the dict
-  (`eventAnalysisControls.py:393`) but `_extract_event_fit_parameters:637` drops it, and
-  `fitting_statuses_requested:74` / `fitting_requested:83` are `Signal(str, list, str)`. Thread it
-  through both signals, `_start_eventfitter:550`, `set_fitting_statuses:579`,
-  `request_fitting_statuses:451` and `start_fitting`, then a `get_parents()` check like
-  `load_event_plot`'s becomes possible. What a mismatch should do (refuse, warn, other) is to be ruled.
+- **Event Analysis "Commit events" ignores which loader is selected** (S9a.9 measured it, fix not
+  made). `write_events:612` takes only the writer and channels, so the writer's own fitter's loader
+  decides what is written. Probe (`Step 9/step-9a-9-probe-crossed-write.py`, fitter and writer on a
+  5-event loader): a channel only the other loader has raises `No samplerate found for channel 1`
+  and writes 0 rows; channel 0 on both writes the fitter's loader's 5 events while the selected
+  loader holds 2. Nothing is corrupted. Fix is the S9a.9 guard on the commit launch: thread
+  `loader` into `write_requested` and refuse a writer whose fitter's loader differs.
 
 ### Step 9b - breaking tab designs and the milestone guard (Carolina's track)
 
