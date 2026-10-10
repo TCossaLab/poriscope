@@ -18,6 +18,30 @@ and deleted on 2026-09-27; it too is in git history.
 
 ---
 
+## 2026-10-09 - The Raw Data baseline readout shares the finders' fit through `@staticmethod`
+
+**Context.** `RawDataModel.get_baseline_stats` kept a pre-2026-09-20 copy of the baseline fit
+(linspace bin centres, `argmax` peak, quarter-Rice bins), disagreeing with Ruling D's fit. The
+2026-09-19 "shared code goes on the family's `Meta*` base" ruling covers duplication inside the
+finder family; this is a second, unrelated consumer (an analysis-tab Model) of the same math.
+
+**Decision** (Carolina, 2026-10-09). `MetaEventFinder._fit_baseline_histogram` and `_gaussian_fit`
+are `@staticmethod`s - both touch no instance state - and `RawDataModel` calls them on the class
+over the chunk's own min/max, as `ClassicBlockageFinder` does unbounded. No helper module, and no
+plugin-call channel (`MetaModel.call()` refuses private methods). The fit returns `(mean, std)`, so
+the never-read `amplitude` was dropped from `get_baseline_stats` rather than re-growing the shared
+contract for one caller.
+
+**Evidence.** The seeded sweep's sigma moved from 15.59/5.19/20.90/1.07/2.13 to
+15.01/4.99/19.99/1.00/2.00 for true 15/5/20/1/2. A 57%-occupied window read Mean -0.11 nA, Std 1.90
+nA before (the occupied level) against a true baseline near -4.2 nA.
+
+**Revisit if** a third consumer needs more than these two helpers, at which point a shared module
+beats widening `MetaEventFinder`'s statics. A test pins `get_baseline_stats` to the shared fit
+bit for bit.
+
+---
+
 ## 2026-10-09 - Subset-tab arrows treat an Event ID past every filtered id as just past the end
 
 **Context.** Promoting `_shift_range_and_update_plot` to `MetaSubsetTabView` forced one rule for
