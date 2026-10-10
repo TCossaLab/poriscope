@@ -57,8 +57,8 @@ Step 10 waits for both tracks.
   (`eventAnalysisControls.py:393`) but `_extract_event_fit_parameters:637` drops it, and
   `fitting_statuses_requested:74` / `fitting_requested:83` are `Signal(str, list, str)`. Thread it
   through both signals, `_start_eventfitter:550`, `set_fitting_statuses:579`,
-  `request_fitting_statuses:451` and `start_fitting`, then apply the `get_parents()` check
-  `load_event_plot` uses (refuse and say why).
+  `request_fitting_statuses:451` and `start_fitting`, then a `get_parents()` check like
+  `load_event_plot`'s becomes possible. What a mismatch should do (refuse, warn, other) is to be ruled.
 
 ### Step 9b - breaking tab designs and the milestone guard (Carolina's track)
 
