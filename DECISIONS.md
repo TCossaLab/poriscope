@@ -32,6 +32,12 @@ suffix. Replacing a *different* unit on relabel was dropped.
 all pass a raw column name. No shipped or in-app-written column has parentheses (the Clustering and Protein writers use fixed
 names), so the truncation had no in-app trigger; `add_columns_to_table` still accepts any name.
 
+**Fixed anyway, though not user-facing.** The behaviour change is about 3 lines of logic and about 60 lines
+once its tests and records are counted; the rest of the branch (about 140 insertions, 150 deletions) is the
+merge of three copies into one, with the import and call-site changes, the whitespace-check unification, the
+new Clustering test and the baseline update. Dropping the change would have saved almost no code, and would
+have left Clustering to either keep its inline copy or gain the truncation.
+
 **Revisit if** a caller starts re-labelling an already-decorated label with a different unit; carry the bare
 name and unit separately rather than re-parsing the string.
 
