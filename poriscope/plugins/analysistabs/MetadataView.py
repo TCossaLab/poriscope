@@ -2030,8 +2030,6 @@ class MetadataView(MetaSubsetTabView):
         :type parameters: Dict[str, Any]
         """
         selected_filters = self.get_selected_filters()
-        if self._refuse_raw_filters(selected_filters):
-            return
         loader_name = parameters["db_loader"]
         experiments_and_channels = self.selected_experiment_and_channels_by_loader.get(
             loader_name
@@ -2097,7 +2095,10 @@ class MetadataView(MetaSubsetTabView):
             or not self.filtered_event_ids
         )
         if cache_needs_rebuild:
-            if not self._rebuild_event_id_cache(loader, sql_filter, exp, channel):
+            subset_name = next(iter(selected_filters))
+            if not self._rebuild_event_id_cache(
+                loader, sql_filter, exp, channel, subset_name
+            ):
                 return
         elif not self.filtered_event_ids:
             # Worded exactly as _rebuild_event_id_cache words it, since the two are

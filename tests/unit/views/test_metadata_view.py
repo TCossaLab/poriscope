@@ -5324,7 +5324,7 @@ def test_rebuild_event_id_cache_returns_false_when_no_events(
         view, "event_id_rows", pd.DataFrame()
     )
 
-    result = view._rebuild_event_id_cache("loader", "", None, None)
+    result = view._rebuild_event_id_cache("loader", "", None, None, "subset")
 
     assert result is False
     view.add_text_to_display.emit.assert_called()
@@ -5339,7 +5339,7 @@ def test_rebuild_event_id_cache_stores_event_ids(
         view, "event_id_rows", pd.DataFrame({"event_id": [10, 0, 5]})
     )
 
-    result = view._rebuild_event_id_cache("loader", "", None, None)
+    result = view._rebuild_event_id_cache("loader", "", None, None, "subset")
 
     assert result is True
     assert view.filtered_event_ids == [0, 5, 10]
@@ -5353,7 +5353,7 @@ def test_rebuild_event_id_cache_updates_current_trackers(
         view, "event_id_rows", pd.DataFrame({"event_id": [1, 2, 3]})
     )
 
-    view._rebuild_event_id_cache("loader", "duration > 1", "exp1", 2)
+    view._rebuild_event_id_cache("loader", "duration > 1", "exp1", 2, "subset")
 
     assert view.current_sql_filter == "duration > 1"
     assert view.current_experiment == "exp1"
@@ -5369,7 +5369,7 @@ def test_rebuild_event_id_cache_emits_all_events_when_no_filter(
         view, "event_id_rows", pd.DataFrame({"event_id": [0, 1, 2]})
     )
 
-    view._rebuild_event_id_cache("loader", "", None, None)
+    view._rebuild_event_id_cache("loader", "", None, None, "subset")
 
     msg = view.add_text_to_display.emit.call_args[0][0]
     assert "All events" in msg
@@ -5384,7 +5384,7 @@ def test_rebuild_event_id_cache_emits_filter_name_when_filter_active(
         view, "event_id_rows", pd.DataFrame({"event_id": [3, 7]})
     )
 
-    view._rebuild_event_id_cache("loader", "duration > 1", None, None)
+    view._rebuild_event_id_cache("loader", "duration > 1", None, None, "subset")
 
     msg = view.add_text_to_display.emit.call_args[0][0]
     assert "my_filter" in msg
@@ -5400,7 +5400,7 @@ def test_rebuild_event_id_cache_emits_total_and_bounds(
         view, "event_id_rows", pd.DataFrame({"event_id": [2, 5, 9]})
     )
 
-    view._rebuild_event_id_cache("loader", "", None, None)
+    view._rebuild_event_id_cache("loader", "", None, None, "subset")
 
     msg = view.add_text_to_display.emit.call_args[0][0]
     assert "3 total" in msg

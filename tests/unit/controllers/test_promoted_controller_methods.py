@@ -369,7 +369,7 @@ class TestLoadEventIdCache:
         rows = pd.DataFrame({"event_id": [1, 2, 3]})
         controller.model = RecordingModel({"load_metadata": rows})
 
-        controller.load_event_id_cache("ldr", "dwell > 1", {"exp1": [0]})
+        controller.load_event_id_cache("ldr", "dwell > 1", {"exp1": [0]}, "subset")
 
         assert controller.model.calls_to("load_metadata") == [
             (["event_id"], "dwell > 1", {"exp1": [0]})
@@ -388,7 +388,7 @@ class TestLoadEventIdCache:
         """
         controller.model = RecordingModel({"load_metadata": pd.DataFrame()})
 
-        controller.load_event_id_cache("ldr", None, None)
+        controller.load_event_id_cache("ldr", None, None, "subset")
 
         assert controller.model.calls_to("load_metadata") == [
             (["event_id"], None, None)
@@ -408,7 +408,7 @@ class TestLoadEventIdCache:
         """
         controller.model = RecordingModel({"load_metadata": RuntimeError("no column")})
 
-        controller.load_event_id_cache("ldr", "nope > 1", None)
+        controller.load_event_id_cache("ldr", "nope > 1", None, "subset")
 
         controller.view.set_event_id_rows.assert_not_called()
         messages = [
@@ -429,6 +429,6 @@ class TestLoadEventIdCache:
         rows = pd.DataFrame({"event_id": []})
         controller.model = RecordingModel({"load_metadata": rows})
 
-        controller.load_event_id_cache("ldr", "dwell > 999", None)
+        controller.load_event_id_cache("ldr", "dwell > 999", None, "subset")
 
         controller.view.set_event_id_rows.assert_called_once_with(rows)

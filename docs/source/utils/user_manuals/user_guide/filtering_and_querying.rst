@@ -105,7 +105,7 @@ You have full control over which columns are returned and how the query is struc
 
 A raw filter is plotted like any other, and is restricted to the **Scope** selection (the
 experiments and channels ticked in the selection tree) in the same way. Because your query
-is a complete ``SELECT``, three things are yours to provide:
+is a complete ``SELECT``, a few things are yours to provide:
 
 * **``experiment_id`` and ``channel_id``.** Poriscope applies the selection by wrapping
   your query as a subquery - ``SELECT * FROM (your query) WHERE experiment_id = ... AND
@@ -118,119 +118,21 @@ is a complete ``SELECT``, three things are yours to provide:
   all-points histograms and Protein distribution plots load the events themselves, so the
   query must also return the events table's ``id``, for example
   ``SELECT id, experiment_id, channel_id, duration FROM events WHERE duration > 100``.
+  Plot Events, the event navigation arrows and the Protein tab's Plot Histogram step
+  through events by number, so they need ``event_id`` instead, for example
+  ``SELECT experiment_id, channel_id, event_id FROM events WHERE duration > 100``.
 * **One column per name.** If your query joins tables, ``SELECT *`` returns both tables'
-  ``id``, and a plot cannot tell which one is the event's. A query that returns a column
-  the plot reads more than once is refused with a message saying so; name the one you mean
-  and give the other a different name, for example ``SELECT e.id AS id, s.id AS sublevel_id,
-  ...``.
-* **Your query runs first, then the selection is applied to its rows.** A ``LIMIT`` therefore
-  counts across the whole database before the selection narrows it, so ``LIMIT 5`` with one
-  channel ticked can return fewer than five rows. An aggregate without ``GROUP BY`` returns
-  a single row with an arbitrary ``experiment_id`` and ``channel_id``, exactly as it does
-  in any SQL viewer; group by ``experiment_id, channel_id`` to get one row per channel.
-* **No single-event plots yet.** Plot Events, the event navigation arrows and the Protein
-  tab's Plot Histogram step through individual events, which a raw filter cannot yet do;
-  selecting one there is refused with a message on the status panel. Use an Assisted
-  filter for those.
-
-Use this mode to write queries that need aggregations or computed columns, or when you
-simply prefer writing complete SQL.
-
-**Example 1 — Long events only:**
-
-Filter: ``duration > 100``
-
-Then select **Histogram**, x-axis: ``duration`` → histogram of events longer than 100 µs.
-
-**Example 2 — High blockage events:**
-
-Filter: ``max_blockage > 2000``
-
-Then select **Scatterplot**, x-axis: ``duration``, y-axis: ``max_blockage`` → scatter of high-blockage events.
-
-**Example 3 — Multi-sublevel events with significant blockage:**
-
-Filter: ``num_sublevels >= 3 and max_blockage > 1500``
-
-Then select **Histogram**, x-axis: ``fitted_ecd`` → distribution of ECD for complex events.
-
-**Example 4 — Cross-table filter** (join handled automatically by Poriscope):
-
-Filter: ``sublevel_duration > 200``
-
-Then select **Histogram**, x-axis: ``duration`` → returns the ``duration`` of events
-that contain at least one sublevel longer than 200 µs. Poriscope detects that
-``sublevel_duration`` belongs to the ``sublevels`` table and automatically joins it
-with the ``events`` table to apply the filter.
-
-**Example 5 — Filter by a property of the experiment:**
-
-Filter: ``voltage > 50``
-
-Then select **Histogram**, x-axis: ``duration`` → events from the experiments run above
-50 mV. Poriscope joins the ``experiments`` table automatically, the same way it joins
-``sublevels`` in Example 4.
-
-**Example 6 - Subquery, including aggregation:**
-
-A subquery is passed through exactly as you type it, so it can do things the filter
-itself cannot. Qualify any reference to the outer row yourself - ``e.id`` for the event.
-
-Filter: ``e.id IN (SELECT event_db_id FROM sublevels WHERE filtered = 5)``
-
-Then select **Histogram**, x-axis: ``duration`` -> events with at least one sublevel
-whose ``filtered`` value is 5. Note that the filter ``filtered = 5`` says the same thing
-more simply, because Example 4's automatic join already means "at least one sublevel
-matches".
-
-Filter: ``e.id IN (SELECT event_db_id FROM sublevels GROUP BY event_db_id HAVING COUNT(*) > 3)``
-
-Then select **Histogram**, x-axis: ``duration`` -> events with more than 3 sublevels,
-which is the aggregation the note above says the filter itself cannot express.
-
-Saved as: ``<subset_name>_assisted``
-
-.. note::
-
-   Assisted mode handles cross-table filters automatically but cannot put a
-   ``GROUP BY`` or ``HAVING`` on the query itself, and cannot return computed
-   columns (e.g., ``max_blockage - min_blockage AS blockage_range``). Use Raw SQL
-   for those cases. Aggregation *inside a subquery* does work - see Example 6.
-
-   Text compared against a column is left exactly as you type it, so
-   ``sequence = 'duration'`` matches the literal value ``duration`` and is not
-   confused with the ``duration`` column. A subquery is left alone the same way:
-   it names its own tables, so its column references are never rewritten against
-   the outer query's, and a reference to the outer row has to be qualified by you.
-
-   ``id`` on its own is rejected, because every table has one and they mean different
-   rows. Write ``e.id`` for an event, ``s.id`` for a sublevel or ``exp.id`` for an
-   experiment. ``experiment_id``, ``channel_id`` and ``event_id`` need no qualifier -
-   they mean the same thing in every table.
-
-Raw SQL
-~~~~~~~
-
-In **Raw SQL** mode, you write a **complete SELECT statement**. Poriscope executes
-it against the SQLite database without rewriting or modifying the query content.
-
-You have full control over which columns are returned and how the query is structured.
-
-A raw filter can be plotted like any other, with three differences:
-
-* **The experiment and channel selection is ignored.** The query runs exactly as written
-  against the whole database, so put any scoping you want in the query itself. A raw
-  filter is drawn once, however many channels are selected, and is labelled without one.
-* **Your ``SELECT`` supplies the plot's data.** A plot needs the columns you chose on its
-  axes: if the query does not return one, the status panel names it and nothing is drawn.
-  Histograms, scatterplots and the other column plots read those columns from the result.
-  The event overlays, all-points histograms and Protein distribution plots load the
-  events themselves, so the query must return the events table's ``id``, for example
-  ``SELECT id, duration FROM events WHERE duration > 100``.
-* **Plots that step through single events cannot use one.** Plot Events, the event
-  navigation arrows and the Protein tab's Plot Histogram number events within one channel,
-  which a raw filter ignores; selecting one there is refused with a message on the status
-  panel.
+  ``id`` (and ``event_id``), and a plot cannot tell which one is the event's. A query that
+  returns a column the plot reads more than once is refused with a message saying so;
+  name the one you mean and give the other a different name, for example
+  ``SELECT e.id AS id, s.id AS sublevel_id, ...``. An ``id`` or ``event_id`` that is not
+  the event's own - a sublevel's, say - is refused the same way.
+* **Your query runs first, then the selection is applied to its rows.** A ``LIMIT``
+  therefore counts across the whole database before the selection narrows it, so
+  ``LIMIT 5`` with one channel ticked can return fewer than five rows. An aggregate
+  without ``GROUP BY`` returns a single row with an arbitrary ``experiment_id`` and
+  ``channel_id``, exactly as it does in any SQL viewer; group by
+  ``experiment_id, channel_id`` to get one row per channel.
 
 Use this mode to write queries that need aggregations or computed columns, or when you
 simply prefer writing complete SQL.
@@ -405,7 +307,8 @@ Common Mistakes
 | Raw SQL filter without ``id`` used for   | Status panel asks for the ``id`` column; nothing |
 | an event overlay or all-points histogram | is drawn                                         |
 +------------------------------------------+--------------------------------------------------+
-| Raw SQL filter used for Plot Events      | Refused: not yet supported for raw filters       |
+| Raw SQL filter without ``event_id`` used | Status panel asks for the ``event_id`` column;   |
+| for Plot Events or the arrows            | nothing is plotted                               |
 +------------------------------------------+--------------------------------------------------+
 | Typo in column name                      | Validation error                                 |
 +------------------------------------------+--------------------------------------------------+

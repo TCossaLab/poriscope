@@ -145,7 +145,7 @@ class MetaSubsetTabView(MetaView):
     #: All five callers consume only the ``bool`` return and read ``filtered_event_ids``
     #: a statement later, which is what lets this be a request at all: clearing the
     #: answer, asking and reading it back leaves every one of them untouched.
-    event_id_cache_requested = Signal(str, object, object)
+    event_id_cache_requested = Signal(str, object, object, str)
 
     #: Asks for the full data of specific events, named by their ``event_id`` values:
     #: the loader's key, the ids, the experiment and channel they are scoped to, the
@@ -242,34 +242,6 @@ class MetaSubsetTabView(MetaView):
             )
         controls.edit_filter_requested.connect(self.show_edit_filter_dialog)
         controls.delete_filter_requested.connect(self._delete_filter_by_name)
-
-    @log(logger=logger)
-    def _refuse_raw_filters(self, selected_filters: Dict[str, str]) -> bool:
-        """
-        Refuse an event-by-event plot whose subset filter is a raw ``SELECT``, and say so.
-
-        The plots that step through individual events by their ``event_id`` build a
-        navigation cache from the filter's ``event_id`` column and look each event up
-        within one experiment and channel. A raw filter has no such cache yet, so they
-        are refused; every other event-data plot runs a raw filter, loading the events
-        its ``id`` column names.
-
-        :param selected_filters: the filters selected for this plot, by name
-        :type selected_filters: Dict[str, str]
-        :return: True if a raw filter was selected, in which case the caller must stop
-        :rtype: bool
-        """
-        raw = [name for name in selected_filters if name.endswith("_raw")]
-        if not raw:
-            return False
-        self.add_text_to_display.emit(
-            f"Raw SQL filters cannot yet be used to step through individual events, so "
-            f"{', '.join(raw)} was not applied. Deselect it and use an Assisted filter "
-            "to plot events one at a time, or use it with the overlay, all-points "
-            "histogram or distribution plots",
-            self.__class__.__name__,
-        )
-        return True
 
     @log(logger=logger)
     def set_event_id_rows(self, rows: Optional[pd.DataFrame]) -> None:
@@ -756,6 +728,7 @@ class MetaSubsetTabView(MetaView):
         sql_filter: str,
         exp: Optional[str],
         channel: Optional[int],
+        subset_name: str,
     ) -> bool:
         """
         Fetch every event_id matching the current filter, sorted, in one query.
@@ -793,6 +766,8 @@ class MetaSubsetTabView(MetaView):
         :type exp: Optional[str]
         :param channel: Current channel identifier.
         :type channel: Optional[int]
+        :param subset_name: the selected filter's name, whose ``_raw`` suffix marks a raw filter
+        :type subset_name: str
         :return: True if the cache was populated, False if it could not be or no events matched.
         :rtype: bool
         """
@@ -808,7 +783,9 @@ class MetaSubsetTabView(MetaView):
         # without this the read below would see the previous call's value and treat
         # it as this call's answer.
         self.event_id_rows = None
-        self.event_id_cache_requested.emit(loader, sql_filter or None, exp_and_ch)
+        self.event_id_cache_requested.emit(
+            loader, sql_filter or None, exp_and_ch, subset_name
+        )
         result = self.event_id_rows
         if result is not None and result.empty:
             self.add_text_to_display.emit(
@@ -920,7 +897,10 @@ class MetaSubsetTabView(MetaView):
             or exp != self.current_experiment
             or channel != self.current_channel
         ):
-            if not self._rebuild_event_id_cache(loader, sql_filter, exp, channel):
+            subset_name = next(iter(selected_filters))
+            if not self._rebuild_event_id_cache(
+                loader, sql_filter, exp, channel, subset_name
+            ):
                 return
 
         ids = self.filtered_event_ids

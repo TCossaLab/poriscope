@@ -1,14 +1,14 @@
 """
-How raw SQL subset filters meet the event-data plots.
+How raw SQL subset filters meet the event-data plots and the event navigation.
 
 A raw filter is a complete ``SELECT``, which cannot be spliced where
 ``load_event_data`` expects a WHERE-clause body - measured against a real
 ``SQLiteDBLoader``, the same filter as an ordinary body yields every event and as a raw
-``SELECT`` yields none, silently. So the plots that load traces run the raw query as
-written, unscoped, and load the events its ``id`` column names; what these tests pin is
-that route, its failures, and the one place a raw filter is still refused: the plots
-that step through individual events by ``event_id``, which only means something within
-one experiment and channel.
+``SELECT`` yields none, silently. So the plots that load traces run the raw query
+restricted to the experiment and channel selection, and load the events its ``id`` column
+names; the navigation (Plot Events, the arrows) takes its list of ``event_id`` values
+from the query instead of from the query builder. What these tests pin is those two
+routes and their failures.
 
 The projection comparison at the bottom used to assert that the two tabs' event-plot
 chains authored *different* queries. They do not any more: the chain is one body on
@@ -26,153 +26,10 @@ from poriscope.plugins.analysistabs.MetadataController import MetadataController
 from poriscope.plugins.analysistabs.MetadataModel import MetadataModel
 from poriscope.plugins.analysistabs.ProteinController import ProteinController
 from poriscope.plugins.analysistabs.ProteinModel import ProteinModel
-from poriscope.plugins.analysistabs.ProteinView import ProteinView
 from poriscope.utils.MetaSubsetTabModel import MetaSubsetTabModel
 from tests.unit.controllers._recording_model import RecordingModel
-from tests.unit.views._qt_mocks import shadow_signals
 
 pytestmark = pytest.mark.characterization
-
-
-@pytest.fixture
-def view(qapp: object) -> ProteinView:
-    """
-    A subset-tab View with its signals shadowed, for the refusal guard.
-
-    :param qapp: the QApplication the view fixture needs
-    :type qapp: object
-    :return: the view under test
-    :rtype: ProteinView
-    """
-    instance = ProteinView.__new__(ProteinView)
-    shadow_signals(instance, ProteinView)
-    return instance
-
-
-def said(view: ProteinView) -> str:
-    """
-    Everything the view put on the status panel, joined.
-
-    :param view: the view under test
-    :type view: ProteinView
-    :return: the concatenated message text
-    :rtype: str
-    """
-    return "\n".join(
-        call.args[0] for call in view.add_text_to_display.emit.call_args_list
-    )
-
-
-class TestRawFiltersAreRefused:
-    """
-    The guard on the event-by-event plots, shared by both subset tabs.
-    """
-
-    def test_an_assisted_filter_is_allowed_through(self, view: ProteinView) -> None:
-        """
-        The ordinary case must not pay for the guard, and must say nothing.
-
-        :param view: the view under test
-        :type view: ProteinView
-        """
-        assert view._refuse_raw_filters({"short events": "duration < 300"}) is False
-        view.add_text_to_display.emit.assert_not_called()
-
-    def test_no_filter_at_all_is_allowed_through(self, view: ProteinView) -> None:
-        """
-        Plotting the whole dataset is not a filter, raw or otherwise.
-
-        :param view: the view under test
-        :type view: ProteinView
-        """
-        assert view._refuse_raw_filters({}) is False
-
-    def test_a_raw_filter_is_refused_and_named(self, view: ProteinView) -> None:
-        """
-        Named, because the user has to know which one to deselect - the combobox can
-        hold several and only some of them are raw.
-
-        :param view: the view under test
-        :type view: ProteinView
-        """
-        assert view._refuse_raw_filters({"mine_raw": "SELECT * FROM events"}) is True
-        assert "mine_raw" in said(view)
-        assert "step through individual events" in said(view)
-
-    def test_one_raw_filter_among_several_refuses_the_plot(
-        self, view: ProteinView
-    ) -> None:
-        """
-        Refusing only the raw one and plotting the rest would silently plot something
-        other than what was selected, which is the fault class this whole step exists
-        to remove.
-
-        :param view: the view under test
-        :type view: ProteinView
-        """
-        selected = {"short events": "duration < 300", "mine_raw": "SELECT 1"}
-
-        assert view._refuse_raw_filters(selected) is True
-        assert "mine_raw" in said(view)
-
-    def test_a_name_merely_containing_raw_is_not_refused(
-        self, view: ProteinView
-    ) -> None:
-        """
-        The marker is the suffix the filter dialog appends, not the word. A filter
-        called "raw current" is an ordinary assisted filter.
-
-        :param view: the view under test
-        :type view: ProteinView
-        """
-        assert view._refuse_raw_filters({"raw current": "x > 1"}) is False
-        assert view._refuse_raw_filters({"my_raw_events": "x > 1"}) is False
-
-
-class TestEveryPlotEntryPointAsks:
-    """
-    The guard is only worth anything where a plot actually starts.
-
-    Every method that looks events up by ``event_id`` must consult it. The overlay,
-    all-points and distribution plots are not here: they run a raw filter, through
-    ``_fetch_event_subset``.
-    """
-
-    ENTRY_POINTS = {
-        "poriscope.plugins.analysistabs.MetadataView": ["_handle_plot_events"],
-        "poriscope.plugins.analysistabs.ProteinView": [
-            "_handle_plot_events",
-            "_handle_plot_histogram",
-        ],
-    }
-
-    @pytest.mark.parametrize(
-        ("module_name", "method_name"),
-        [
-            (module, method)
-            for module, methods in ENTRY_POINTS.items()
-            for method in methods
-        ],
-    )
-    def test_the_entry_point_consults_the_guard(
-        self, module_name: str, method_name: str
-    ) -> None:
-        """
-        :param module_name: the tab View module the entry point lives in
-        :type module_name: str
-        :param method_name: the entry point
-        :type method_name: str
-        """
-        import importlib
-
-        module = importlib.import_module(module_name)
-        view_cls = getattr(module, module_name.rsplit(".", 1)[-1])
-        source = inspect.getsource(getattr(view_cls, method_name))
-
-        assert "_refuse_raw_filters" in source, (
-            f"{module_name}.{method_name} starts a plot from the selected filters "
-            "without asking whether any of them is raw"
-        )
 
 
 def _controller(cls: type, mocker: MockerFixture, answers: dict) -> Any:
@@ -351,7 +208,7 @@ class TestRawFilterLoadsItsOwnEvents:
 
         assert controller._fetch_event_subset("ldr", RAW, SCOPE, "mine_raw") is None
 
-        assert "does not hold the events' ids" in _said(controller)
+        assert "column does not hold the events' id values" in _said(controller)
         assert "e.id AS id" in _said(controller)
 
     def test_an_id_with_no_event_at_all_is_refused(
@@ -368,7 +225,7 @@ class TestRawFilterLoadsItsOwnEvents:
 
         assert controller._fetch_event_subset("ldr", RAW, SCOPE, "mine_raw") is None
 
-        assert "does not hold the events' ids" in _said(controller)
+        assert "column does not hold the events' id values" in _said(controller)
 
     def test_a_query_that_returns_no_events_says_so(
         self, cls: type, mocker: MockerFixture
@@ -421,6 +278,124 @@ class TestRawFilterLoadsItsOwnEvents:
             ("duration < 300", SCOPE)
         ]
         assert fetched == ("SELECT generated", generator)
+
+
+EVENT_FRAME = pd.DataFrame(
+    {"experiment_id": [7] * 4, "channel_id": [2] * 4, "event_id": [10, 10, 11, 12]}
+)
+
+
+@pytest.mark.parametrize("cls", [MetadataController, ProteinController])
+class TestRawFilterFillsTheEventNavigation:
+    """
+    Plot Events and the arrows read a list of ``event_id`` values; a raw query supplies it.
+    """
+
+    @staticmethod
+    def answers(**overrides: Any) -> dict:
+        """
+        The loader's answers for a raw filter, with any of them replaced.
+
+        :param overrides: answers to replace, by plugin method name
+        :type overrides: Any
+        :return: the canned answers
+        :rtype: dict
+        """
+        return {
+            "get_experiment_id_by_name": 7,
+            "query_database_directly": EVENT_FRAME,
+            "load_metadata": pd.DataFrame({"event_id": [1, 2]}),
+            **overrides,
+        }
+
+    def test_the_event_ids_it_returns_within_the_selection_are_the_list(
+        self, cls: type, mocker: MockerFixture
+    ) -> None:
+        """
+        One entry per event, though a join repeats each once per sublevel, and the
+        builder is never asked.
+        """
+        controller = _controller(cls, mocker, self.answers())
+
+        controller.load_event_id_cache("ldr", RAW, SCOPE, "mine_raw")
+
+        (rows,), _ = controller.view.set_event_id_rows.call_args
+        assert rows["event_id"].tolist() == [10, 11, 12]
+        assert controller.model.calls_to("load_metadata") == []
+        _, (final,), _ = controller.model.calls_to("query_database_directly")
+        assert final.endswith("WHERE (experiment_id = 7 AND channel_id IN (2))")
+
+    def test_a_query_without_event_id_says_what_to_add(
+        self, cls: type, mocker: MockerFixture
+    ) -> None:
+        """
+        Nothing to navigate, so the View's answer stays unset and the panel says why.
+        """
+        controller = _controller(
+            cls,
+            mocker,
+            self.answers(
+                query_database_directly=EVENT_FRAME.drop(columns=["event_id"])
+            ),
+        )
+
+        controller.load_event_id_cache("ldr", RAW, SCOPE, "mine_raw")
+
+        assert "event_id" in _said(controller)
+        assert "SELECT experiment_id, channel_id, event_id" in _said(controller)
+        controller.view.set_event_id_rows.assert_not_called()
+
+    def test_an_event_id_returned_twice_is_refused(
+        self, cls: type, mocker: MockerFixture
+    ) -> None:
+        """
+        A join's ``SELECT *`` returns the sublevel's ``event_id`` beside the event's.
+        """
+        controller = _controller(
+            cls,
+            mocker,
+            self.answers(
+                query_database_directly=EVENT_FRAME.assign(**{"event_id:1": [1] * 4})
+            ),
+        )
+
+        controller.load_event_id_cache("ldr", RAW, SCOPE, "mine_raw")
+
+        assert "event_id more than once" in _said(controller)
+        controller.view.set_event_id_rows.assert_not_called()
+
+    def test_an_event_id_that_is_not_the_events_is_refused(
+        self, cls: type, mocker: MockerFixture
+    ) -> None:
+        """
+        The numbers exist, but the events table has no such event in that channel.
+        """
+        controller = _controller(cls, mocker, self.answers())
+        answers = iter([EVENT_FRAME, EVENT_FRAME, EVENT_FRAME.iloc[0:1]])
+        controller.model.call = lambda *a: (
+            next(answers) if a[2] == "query_database_directly" else 7
+        )
+
+        controller.load_event_id_cache("ldr", RAW, SCOPE, "mine_raw")
+
+        assert "event_id column does not hold the events' event_id values" in _said(
+            controller
+        )
+        controller.view.set_event_id_rows.assert_not_called()
+
+    def test_an_assisted_filter_still_asks_the_builder(
+        self, cls: type, mocker: MockerFixture
+    ) -> None:
+        """
+        The suffix is the marker; an ordinary filter never touches the raw route.
+        """
+        controller = _controller(cls, mocker, self.answers())
+
+        controller.load_event_id_cache("ldr", "duration > 1", SCOPE, "short events")
+
+        assert controller.model.calls_to("query_database_directly") == []
+        assert len(controller.model.calls_to("load_metadata")) == 1
+        controller.view.set_event_id_rows.assert_called_once()
 
 
 def test_the_two_tabs_share_one_projection() -> None:

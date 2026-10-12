@@ -62,11 +62,6 @@ Step 10 waits for both tracks.
 
 ### Step 9b - breaking tab designs and the milestone guard (Carolina's track)
 
-- **Raw SQL filters cannot drive Plot Events, the event arrows or Protein's Plot Histogram.**
-  `MetaSubsetTabView._refuse_raw_filters` refuses them: they build an `event_id` cache
-  (`_rebuild_event_id_cache`) from `load_metadata(["event_id"], conditions, scope)`. A raw
-  `SELECT` returning `experiment_id`, `channel_id` and `event_id` could fill it through
-  `MetaSubsetTabController._run_raw_filter`.
 - **Action history: record a declared action name, not a method name.** `DECISIONS.md`
   2026-09-17 settled the design. 5 `@register_action` sites over 3 names, all private
   (`_reset_actions` on Clustering/Metadata/Protein views, `MetadataView._overlay_plot:1396`,

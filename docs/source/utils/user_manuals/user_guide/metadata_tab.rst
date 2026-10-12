@@ -132,8 +132,8 @@ Beside the plot controls is a **Plot Events** button with an arrow on either sid
 
 1. Use **Scope** to select exactly one experiment and one channel. Events are numbered
    within a channel, so a wider scope is refused with a message rather than guessed at.
-2. Select at most one subset filter. Raw SQL filters cannot yet be used here; use an
-   Assisted filter. The events plotted are those of the filtered set.
+2. Select at most one subset filter. A Raw SQL filter must return ``experiment_id``, ``channel_id`` and
+   ``event_id`` to be used here. The events plotted are those of the filtered set.
 3. Enter the **EVENT INDEX** to start from and **# EVENTS TO PLOT**.
 4. Click **Plot Events**. The starting index snaps forward to the next event present in
    the filtered set, wrapping around to the first, and the field updates to show where

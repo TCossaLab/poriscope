@@ -1296,8 +1296,6 @@ class ProteinView(MetaSubsetTabView):
             return
 
         selected_filters = self.get_selected_filters()
-        if self._refuse_raw_filters(selected_filters):
-            return
         if not selected_filters:
             selected_filters = {"Full Dataset": ""}
 
@@ -1323,7 +1321,10 @@ class ProteinView(MetaSubsetTabView):
             or exp != self.current_experiment
             or channel != self.current_channel
         ):
-            if not self._rebuild_event_id_cache(loader, sql_filter, exp, channel):
+            subset_name = next(iter(selected_filters))
+            if not self._rebuild_event_id_cache(
+                loader, sql_filter, exp, channel, subset_name
+            ):
                 return
 
         cache = self.filtered_event_ids
@@ -1388,8 +1389,6 @@ class ProteinView(MetaSubsetTabView):
         plot_type = "Filtered Histogram"
 
         selected_filters = self.get_selected_filters()
-        if self._refuse_raw_filters(selected_filters):
-            return
         if not selected_filters:
             selected_filters = {"Full Dataset": ""}
 
@@ -1415,7 +1414,10 @@ class ProteinView(MetaSubsetTabView):
             or exp != self.current_experiment
             or channel != self.current_channel
         ):
-            if not self._rebuild_event_id_cache(loader, sql_filter, exp, channel):
+            subset_name = next(iter(selected_filters))
+            if not self._rebuild_event_id_cache(
+                loader, sql_filter, exp, channel, subset_name
+            ):
                 return
 
         cache = self.filtered_event_ids

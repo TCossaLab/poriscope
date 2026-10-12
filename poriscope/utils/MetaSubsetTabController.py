@@ -543,27 +543,29 @@ class MetaSubsetTabController(MetaController):
         return True
 
     @log(logger=logger)
-    def _ids_are_events(
-        self, loader: str, rows: pd.DataFrame, subset_name: str
+    def _ids_match_events(
+        self, loader: str, rows: pd.DataFrame, key: str, subset_name: str
     ) -> bool:
         """
-        Check that a raw result's ``id`` column holds events' ids, not some other table's.
+        Check that a raw result's ``key`` column holds events', not some other table's.
 
         A join can return the ``id`` of a sublevel where the plot wants the event's, and
         the numbers load real events - just not the ones the query selected. Each row
         also says which experiment and channel it belongs to, and the ``events`` table
-        says it for every id, so the two are compared: an id that names no event, or an
-        event of another experiment or channel, means the ``id`` is not the event's.
-        Nothing is compared when the result carries no experiment and channel to
-        compare with. Reports the refusal itself.
+        says it for every ``id`` and ``event_id``, so the two are compared: a value that
+        names no event, or an event of another experiment or channel, means the column
+        is not the event's. Nothing is compared when the result carries no experiment
+        and channel to compare with. Reports the refusal itself.
 
         :param loader: the database loader plugin's key
         :type loader: str
-        :param rows: the raw filter's result, which has an ``id`` column
+        :param rows: the raw filter's result, which has a ``key`` column
         :type rows: pd.DataFrame
+        :param key: ``id`` or ``event_id``, the column naming the events
+        :type key: str
         :param subset_name: the filter's name, for the message
         :type subset_name: str
-        :return: True if every id is an event of the experiment and channel its row names, or there is nothing to compare
+        :return: True if every value is an event of the experiment and channel its row names, or there is nothing to compare
         :rtype: bool
         """
         lowered = {str(c).lower(): c for c in rows.columns}
@@ -571,49 +573,51 @@ class MetaSubsetTabController(MetaController):
             return True
         claimed = pd.DataFrame(
             {
-                "id": rows["id"],
+                key: rows[key],
                 "experiment_id": rows[lowered["experiment_id"]],
                 "channel_id": rows[lowered["channel_id"]],
             }
         ).dropna()
         claimed = claimed.astype(int).drop_duplicates()
-        ids = ",".join(str(i) for i in claimed["id"].unique())
+        values = ",".join(str(i) for i in claimed[key].unique())
         try:
             real = self.model.call(
                 "MetaDatabaseLoader",
                 loader,
                 "query_database_directly",
-                f"SELECT id, experiment_id, channel_id FROM events WHERE id IN ({ids})",
+                f"SELECT {key}, experiment_id, channel_id FROM events "
+                f"WHERE {key} IN ({values})",
             )
         except Exception as e:
-            self.logger.error(f"Failed to check the ids of {subset_name}: {e!r}")
+            self.logger.error(f"Failed to check the {key} of {subset_name}: {e!r}")
             self.add_text_to_display.emit(
-                f"Could not check that {subset_name}'s id column holds event ids: {e}",
+                f"Could not check that {subset_name}'s {key} column holds events' "
+                f"{key} values: {e}",
                 self.__class__.__name__,
             )
             return False
         if real is None:
             self.add_text_to_display.emit(
-                f"Could not check that {subset_name}'s id column holds event ids: "
-                "see the log for the SQL error",
+                f"Could not check that {subset_name}'s {key} column holds events' "
+                f"{key} values: see the log for the SQL error",
                 self.__class__.__name__,
             )
             return False
         matched = claimed.merge(
             real.astype(int),
-            on=["id", "experiment_id", "channel_id"],
+            on=[key, "experiment_id", "channel_id"],
             how="left",
             indicator=True,
         )
-        wrong = matched.loc[matched["_merge"] != "both", "id"].unique()
+        wrong = matched.loc[matched["_merge"] != "both", key].unique()
         if len(wrong) == 0:
             return True
         self.add_text_to_display.emit(
-            f"{subset_name}'s id column does not hold the events' ids: {len(wrong)} of "
-            f"its {claimed['id'].nunique()} ids are not an event of the experiment and "
-            "channel their row names, so they would load the wrong events. The id the "
-            "plot needs is the events table's id, for example SELECT e.id AS id, ... "
-            "FROM events e ...",
+            f"{subset_name}'s {key} column does not hold the events' {key} values: "
+            f"{len(wrong)} of its {claimed[key].nunique()} are not an event of the "
+            "experiment and channel their row names, so they would load the wrong "
+            f"events. What the plot needs is the events table's {key}, for example "
+            f"SELECT e.{key} AS {key}, ... FROM events e ...",
             self.__class__.__name__,
         )
         return False
@@ -673,18 +677,66 @@ class MetaSubsetTabController(MetaController):
                 self.__class__.__name__,
             )
             return None
-        if not self._ids_are_events(loader, rows, subset_name):
+        if not self._ids_match_events(loader, rows, "id", subset_name):
             return None
         ids = ",".join(str(int(i)) for i in rows["id"].dropna().unique())
         return f"e.id IN ({ids})", executed
 
     @log(logger=logger)
-    @Slot(str, object, object)
+    def _load_raw_event_id_cache(
+        self,
+        loader: str,
+        sql_filter: str,
+        experiments_and_channels: Optional[Dict[str, Optional[List[int]]]],
+        subset_name: str,
+    ) -> None:
+        """
+        Fill the navigation cache from a raw ``SELECT``'s ``event_id`` column.
+
+        The query runs restricted to the selection like every other raw filter, and its
+        ``event_id`` values within it are the cache. A row per sublevel would repeat
+        each event, so the values are made unique. Anything wrong is reported here and
+        leaves the View's answer at None, which is what tells it nothing ran.
+
+        :param loader: the database loader plugin's key
+        :type loader: str
+        :param sql_filter: the filter's complete ``SELECT``
+        :type sql_filter: str
+        :param experiments_and_channels: the experiment and channel scope, or None
+        :type experiments_and_channels: Optional[Dict[str, Optional[List[int]]]]
+        :param subset_name: the filter's name, for the messages
+        :type subset_name: str
+        :return: None
+        :rtype: None
+        """
+        ran = self._run_raw_filter(
+            loader, sql_filter, experiments_and_channels, subset_name
+        )
+        if ran is None:
+            return
+        rows, _ = ran
+        if self._ambiguous_raw_columns(rows, ["event_id"], subset_name):
+            return
+        if "event_id" not in rows.columns:
+            self.add_text_to_display.emit(
+                f"{subset_name}'s query does not return the column the event "
+                "navigation needs: event_id. Add it to the SELECT, for example "
+                "SELECT experiment_id, channel_id, event_id FROM events WHERE ...",
+                self.__class__.__name__,
+            )
+            return
+        if not self._ids_match_events(loader, rows, "event_id", subset_name):
+            return
+        self.view.set_event_id_rows(rows[["event_id"]].dropna().drop_duplicates())
+
+    @log(logger=logger)
+    @Slot(str, object, object, str)
     def load_event_id_cache(
         self,
         loader: str,
         conditions: Optional[str],
         experiments_and_channels: Optional[Dict[str, Optional[List[int]]]],
+        subset_name: str,
     ) -> None:
         """
         Fetch the ``event_id`` values a subset holds, for the navigation cache.
@@ -700,9 +752,17 @@ class MetaSubsetTabController(MetaController):
         :type conditions: Optional[str]
         :param experiments_and_channels: the experiment and channel scope, or None
         :type experiments_and_channels: Optional[Dict[str, Optional[List[int]]]]
+        :param subset_name: the selected filter's name, whose ``_raw`` suffix marks a raw filter
+        :type subset_name: str
         :return: None
         :rtype: None
         """
+        if subset_name.endswith("_raw"):
+            self._load_raw_event_id_cache(
+                loader, conditions or "", experiments_and_channels, subset_name
+            )
+            return
+
         try:
             rows = self.model.call(
                 "MetaDatabaseLoader",

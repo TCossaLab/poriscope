@@ -105,6 +105,15 @@ def metadata_tab(qapp: Any, tmp_path: Path, sample_metadata_db: str) -> Triad:
     filters["sublevel_id_raw"] = (
         "SELECT s.id AS id, s.experiment_id, s.channel_id FROM sublevels s"
     )
+    filters["nav_raw"] = (
+        "SELECT experiment_id, channel_id, event_id FROM events WHERE duration > 100"
+    )
+    filters["nav_no_event_id_raw"] = (
+        "SELECT experiment_id, channel_id, duration FROM events"
+    )
+    filters["nav_join_raw"] = (
+        "SELECT * FROM sublevels s JOIN events e ON s.event_db_id = e.id"
+    )
     filters["no_id_raw"] = "SELECT experiment_id, channel_id, duration FROM events"
     filters["short"] = "duration >= 0"
     for name, query in filters.items():
@@ -346,3 +355,81 @@ def test_a_sublevel_id_where_the_event_id_is_wanted_draws_no_event_plot(
     )
 
     assert metadata_tab.tab_view.plotted_datasets == set()
+
+
+def navigate(triad: Triad, filter_name: str, action: str, channel: str = "0") -> None:
+    """
+    Select one filter and one channel, then press Plot Events or an arrow.
+
+    :param triad: the tab under test
+    :type triad: Triad
+    :param filter_name: the filter to select
+    :type filter_name: str
+    :param action: ``plot_events``, ``shift_range_forward`` or ``shift_range_backward``
+    :type action: str
+    :param channel: the channel to select, as the selection tree reports it
+    :type channel: str
+    """
+    view = triad.tab_view
+    combo = view._subset_controls.filter_comboBox
+    for name in list(combo.getSelectedItems()):
+        combo.selectItem(name, select=False)
+    combo.selectItem(filter_name, select=True)
+    view.selected_experiment_and_channels_by_loader[LOADER] = {"exp_a": [channel]}
+    view.handle_parameter_change(
+        "metadatacontrols",
+        action,
+        ({"db_loader": LOADER, "event_id": 0, "n_events": 1},),
+    )
+
+
+@pytest.mark.timeout(120)
+def test_plot_events_takes_its_event_list_from_a_raw_filter(
+    metadata_tab: Triad, sample_metadata_db: str
+) -> None:
+    """
+    The events stepped through are the raw query's, within the selected channel.
+    """
+    navigate(metadata_tab, "nav_raw", "plot_events")
+
+    view = metadata_tab.tab_view
+    with sqlite3.connect(sample_metadata_db) as conn:
+        expected = sorted(
+            r[0]
+            for r in conn.execute(
+                "SELECT event_id FROM events WHERE duration > 100 AND channel_id = 0"
+            )
+        )
+    assert view.filtered_event_ids == expected
+    assert expected
+
+
+@pytest.mark.timeout(120)
+def test_the_arrows_step_through_a_raw_filters_events(
+    metadata_tab: Triad,
+) -> None:
+    """
+    Navigation reads the same list, so an arrow moves to the next event in it.
+    """
+    navigate(metadata_tab, "nav_raw", "plot_events")
+    first = metadata_tab.tab_view.filtered_event_ids[0]
+
+    navigate(metadata_tab, "nav_raw", "shift_range_forward")
+
+    assert metadata_tab.tab_view.filtered_event_ids[0] == first
+    assert metadata_tab.tab_view.current_sql_filter == (
+        "SELECT experiment_id, channel_id, event_id FROM events WHERE duration > 100"
+    )
+
+
+@pytest.mark.timeout(120)
+@pytest.mark.parametrize("name", ["nav_no_event_id_raw", "nav_join_raw"])
+def test_plot_events_refuses_a_raw_filter_that_cannot_name_its_events(
+    metadata_tab: Triad, name: str
+) -> None:
+    """
+    No ``event_id`` column, or two of them: nothing is navigated.
+    """
+    navigate(metadata_tab, name, "plot_events")
+
+    assert not metadata_tab.tab_view.filtered_event_ids

@@ -496,7 +496,10 @@ class TestRebuildEventIdCacheWasPromoted:
 
         with caplog.at_level(logging.ERROR):
             assert (
-                view._rebuild_event_id_cache("loader", "dwell > 1", None, None) is False
+                view._rebuild_event_id_cache(
+                    "loader", "dwell > 1", None, None, "subset"
+                )
+                is False
             )
 
         assert "Could not query event ids" in caplog.text
@@ -512,7 +515,10 @@ class TestRebuildEventIdCacheWasPromoted:
 
         with caplog.at_level(logging.ERROR):
             assert (
-                view._rebuild_event_id_cache("loader", "dwell > 1", None, None) is False
+                view._rebuild_event_id_cache(
+                    "loader", "dwell > 1", None, None, "subset"
+                )
+                is False
             )
 
         assert "Could not query event ids" in caplog.text
@@ -538,7 +544,10 @@ class TestRebuildEventIdCacheWasPromoted:
         view = build_subset_tab(view_cls)
         answer_query_with(view, frame)
 
-        assert view._rebuild_event_id_cache("loader", "dwell > 1", None, None) is False
+        assert (
+            view._rebuild_event_id_cache("loader", "dwell > 1", None, None, "subset")
+            is False
+        )
 
         message = view.add_text_to_display.emit.call_args[0][0]
         assert message == "No filtered events found for the current scope."
@@ -556,7 +565,10 @@ class TestRebuildEventIdCacheWasPromoted:
         view = build_subset_tab(view_cls)
         answer_query_with(view, pd.DataFrame({"event_id": [7, 2, 5]}))
 
-        assert view._rebuild_event_id_cache("loader", "dwell > 1", None, None) is True
+        assert (
+            view._rebuild_event_id_cache("loader", "dwell > 1", None, None, "subset")
+            is True
+        )
 
         message = view.add_text_to_display.emit.call_args[0][0]
         assert message.startswith('"dwell > 1" subset: 3 total')
@@ -578,7 +590,7 @@ class TestRebuildEventIdCacheWasPromoted:
         view = build_subset_tab(view_cls)
         answer_query_with(view, pd.DataFrame({"event_id": [1, 2]}))
 
-        view._rebuild_event_id_cache("loader", "dwell > 1", "exp1", 2)
+        view._rebuild_event_id_cache("loader", "dwell > 1", "exp1", 2, "subset")
 
         assert view.current_sql_filter == "dwell > 1"
         assert view.current_experiment == "exp1"
