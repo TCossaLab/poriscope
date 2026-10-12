@@ -73,6 +73,12 @@ instantiates directly, and it names the other two thirds of the triad.
    without a role suffix — ``MyTab``, not ``MyTabView`` — and the generator appends
    ``Controller``, ``Model``, ``View`` and ``Controls`` itself.
 
+   Keep that pairing if you rename anything: the application predicts the page a tab will
+   open from the controller's name (``MyTabController`` opens ``MyTabView``) before the tab
+   exists, so a View named differently from its Controller is refused or allowed against the
+   wrong page while the guided walkthrough is running. The tabs shipped with Poriscope are
+   checked for this by a test.
+
 .. note::
 
    A tab generated into your user plugin folder imports its View and Model by their bare

@@ -68,6 +68,16 @@ Each tuple contains:
 
 Once you have followed the steps outlined above, Poriscope will automatically detect your walkthough and run it whenever you are in that view and click Help->Tutorial.
 
+.. note::
+
+   A walkthrough runs inside your tab only. Poriscope's own guided tour moves through
+   Raw Data, Event Analysis, Metadata and Clustering in a fixed order, and a tab you add
+   is not part of it, so finishing your walkthrough does not lead on to another tab.
+   While it runs, Poriscope refuses to switch to another page and does not open the
+   Settings page, the analysis-tabs list or the Help window. The walkthrough ends when
+   the user finishes its last step (the button reads Done) or clicks the ✕ on the
+   walkthrough dialog. Esc does not dismiss it.
+
 
 Best Practices
 --------------------------

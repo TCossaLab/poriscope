@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from PySide6.QtCore import Signal
-from PySide6.QtGui import QAction
+from PySide6.QtGui import QAction, QCloseEvent
 from PySide6.QtWidgets import QWidget
 
 from poriscope.views.main_view import MainView
@@ -457,6 +457,215 @@ def test_on_settings_button_click_adds_and_switches(main_view, mocker):
     main_view.on_settings_button_click()
     main_view.add_page.assert_called_once_with("Settings", main_view.settings_window)
     main_view.switch_to_page.assert_called_once_with("Settings")
+
+
+def _block_with_milestone(main_view, expected="ExpectedPage"):
+    main_view._milestone_dialog = MagicMock()
+    main_view._expected_next_view = expected
+
+
+def test_check_page_switch_allows_when_nothing_active(main_view):
+    assert main_view._check_page_switch("AnyPage") == (True, None)
+
+
+def test_check_page_switch_refuses_milestone_mismatch(main_view):
+    _block_with_milestone(main_view)
+    allowed, reason = main_view._check_page_switch("WrongPage")
+    assert allowed is False
+    assert "WrongPage" in reason and "ExpectedPage" in reason
+
+
+def test_check_page_switch_refuses_walkthrough_mismatch(main_view):
+    main_view._walkthrough_active = True
+    main_view._expected_next_view = "ExpectedPage"
+    allowed, reason = main_view._check_page_switch("WrongPage")
+    assert allowed is False
+    assert "Walkthrough is active" in reason
+
+
+def test_check_page_switch_allows_expected_page(main_view):
+    _block_with_milestone(main_view)
+    assert main_view._check_page_switch("ExpectedPage") == (True, None)
+    main_view._milestone_dialog = None
+    main_view._walkthrough_active = True
+    assert main_view._check_page_switch("ExpectedPage") == (True, None)
+
+
+def test_check_page_switch_does_not_touch_state(main_view):
+    _block_with_milestone(main_view)
+    dialog = main_view._milestone_dialog
+    main_view._check_page_switch("ExpectedPage")
+    assert main_view._milestone_dialog is dialog
+    assert main_view._expected_next_view == "ExpectedPage"
+
+
+def test_request_page_switch_blocked_does_nothing_but_log(main_view, mocker, caplog):
+    _block_with_milestone(main_view)
+    highlight = mocker.patch.object(main_view, "sync_sidebar_highlight")
+    switch = mocker.patch.object(main_view, "switch_to_page")
+    with caplog.at_level(logging.INFO):
+        main_view._request_page_switch("WrongPage")
+    highlight.assert_not_called()
+    switch.assert_not_called()
+    assert "Cannot switch to 'WrongPage'" in caplog.text
+
+
+def test_request_page_switch_allowed_highlights_and_switches(main_view, mocker, caplog):
+    highlight = mocker.patch.object(main_view, "sync_sidebar_highlight")
+    switch = mocker.patch.object(main_view, "switch_to_page")
+    with caplog.at_level(logging.INFO):
+        main_view._request_page_switch("AnyPage")
+    highlight.assert_called_once_with("AnyPage")
+    switch.assert_called_once_with("AnyPage")
+    assert "blocked" not in caplog.text and "Cannot switch" not in caplog.text
+
+
+@pytest.mark.parametrize(
+    "handler, subclass",
+    [
+        ("on_raw_data_view_click", "RawDataController"),
+        ("on_event_analysis_click", "EventAnalysisController"),
+        ("on_metadata_click", "MetadataController"),
+    ],
+)
+def test_sidebar_click_blocked_by_milestone_instantiates_nothing(
+    main_view, mocker, caplog, handler, subclass
+):
+    _block_with_milestone(main_view)
+    emitted = MagicMock()
+    main_view.instantiate_analysis_tab.connect(emitted)
+    highlight = mocker.patch.object(main_view, "sync_sidebar_highlight")
+    with caplog.at_level(logging.INFO):
+        getattr(main_view, handler)()
+    emitted.assert_not_called()
+    highlight.assert_not_called()
+    assert "Cannot switch to" in caplog.text
+
+
+def test_menu_analysis_tab_blocked_by_milestone_instantiates_nothing(main_view, mocker):
+    _block_with_milestone(main_view)
+    emitted = MagicMock()
+    main_view.instantiate_analysis_tab.connect(emitted)
+    main_view.on_load_analysis_tab_button_click("ProteinController")
+    emitted.assert_not_called()
+
+
+def test_non_dedicated_tab_matching_milestone_target_proceeds(main_view, mocker):
+    _block_with_milestone(main_view, expected="ClusteringView")
+    emitted = MagicMock()
+    main_view.instantiate_analysis_tab.connect(emitted)
+    main_view.on_load_analysis_tab_button_click("ClusteringController")
+    emitted.assert_called_once_with("ClusteringController")
+
+
+def test_handle_menu_click_blocked_by_milestone(main_view, mocker):
+    main_view.add_page("MyPage", QWidget())
+    main_view.add_page("VisiblePage", QWidget())
+    _block_with_milestone(main_view)
+    highlight = mocker.patch.object(main_view, "sync_sidebar_highlight")
+    main_view.handle_menu_click("MyPage")
+    assert main_view.get_current_view() == "VisiblePage"
+    highlight.assert_called_once_with("VisiblePage")
+
+
+def test_on_settings_button_click_blocked_by_milestone(main_view, mocker, caplog):
+    _block_with_milestone(main_view)
+    add_page = mocker.patch.object(main_view, "add_page")
+    with caplog.at_level(logging.INFO):
+        main_view.on_settings_button_click()
+    add_page.assert_not_called()
+    assert "Cannot switch to 'Settings'" in caplog.text
+
+
+def _checked_icons(main_view):
+    icons = main_view.icon_menu_widget
+    return [
+        button
+        for button in (
+            icons.raw_data_icon_button,
+            icons.event_analysis_icon_button,
+            icons.metadata_icon_button,
+            icons.add_icon_button,
+            icons.settings_icon_button,
+        )
+        if button.isChecked()
+    ]
+
+
+def test_refused_sidebar_click_clears_the_highlight_on_the_main_page(main_view):
+    _block_with_milestone(main_view)
+    main_view.icon_menu_widget.metadata_icon_button.click()
+    assert main_view.get_current_view() == "MainView"
+    assert _checked_icons(main_view) == []
+
+
+def test_refused_sidebar_click_restores_the_visible_pages_highlight(main_view):
+    main_view.add_page("RawDataView", QWidget())
+    main_view.sync_sidebar_highlight("RawDataView")
+    _block_with_milestone(main_view)
+    main_view.icon_menu_widget.metadata_icon_button.click()
+    assert main_view.get_current_view() == "RawDataView"
+    assert _checked_icons(main_view) == [
+        main_view.icon_menu_widget.raw_data_icon_button
+    ]
+
+
+def test_refused_settings_click_restores_the_visible_pages_highlight(main_view):
+    main_view.add_page("RawDataView", QWidget())
+    main_view.sync_sidebar_highlight("RawDataView")
+    _block_with_milestone(main_view)
+    main_view.icon_menu_widget.settings_icon_button.click()
+    assert _checked_icons(main_view) == [
+        main_view.icon_menu_widget.raw_data_icon_button
+    ]
+
+
+def test_dismissing_the_analysis_tabs_dropdown_restores_the_highlight(
+    main_view, mocker
+):
+    main_view.add_page("RawDataView", QWidget())
+    main_view.sync_sidebar_highlight("RawDataView")
+    icons = main_view.icon_menu_widget
+    icons.add_icon_button.click()
+    assert _checked_icons(main_view) == [icons.add_icon_button]
+    main_view._plugins_menu_anchor = icons.add_icon_button
+    menu_class = mocker.patch("poriscope.views.main_view.QMenu")
+    menu_class.return_value.sizeHint.return_value.height.return_value = 40
+    main_view.populate_plugins_menu({})
+    assert _checked_icons(main_view) == [icons.raw_data_icon_button]
+
+
+def test_closing_the_help_window_restores_the_highlight(main_view):
+    main_view.add_page("RawDataView", QWidget())
+    main_view.sync_sidebar_highlight("RawDataView")
+    icons = main_view.icon_menu_widget
+    icons.help_icon_button.setChecked(True)
+    assert icons.raw_data_icon_button.isChecked() is False
+    main_view.on_help_window_closed(QCloseEvent())
+    assert _checked_icons(main_view) == [icons.raw_data_icon_button]
+
+
+def test_analysis_tabs_icon_is_blocked_during_a_milestone(main_view):
+    requested = MagicMock()
+    main_view.request_analysis_tabs.connect(requested)
+    _block_with_milestone(main_view)
+    main_view.icon_menu_widget.add_icon_button.click()
+    requested.assert_not_called()
+    assert _checked_icons(main_view) == []
+
+
+def test_help_icon_is_blocked_during_a_milestone(main_view):
+    _block_with_milestone(main_view)
+    main_view.icon_menu_widget.help_icon_button.click()
+    assert main_view.help_window is None
+    assert main_view.icon_menu_widget.help_icon_button.isChecked() is False
+
+
+def test_analysis_tabs_icon_still_requests_the_list_when_nothing_is_active(main_view):
+    requested = MagicMock()
+    main_view.request_analysis_tabs.connect(requested)
+    main_view.icon_menu_widget.add_icon_button.click()
+    requested.assert_called_once()
 
 
 def test_get_intro_text_returns_specific(main_view):
