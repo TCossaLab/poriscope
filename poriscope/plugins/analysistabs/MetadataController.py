@@ -651,6 +651,8 @@ class MetadataController(MetaSubsetTabController):
         if ran is None:
             return
         plot_data, executed = ran
+        if self._ambiguous_raw_columns(plot_data, columns, subset_name):
+            return
 
         missing = [c for c in columns if c not in plot_data.columns]
         if missing:

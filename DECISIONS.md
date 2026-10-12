@@ -878,7 +878,7 @@ starts paying for itself.
 
 ---
 
-## 2026-09-14 - A raw SQL filter runs as written, and its scope is the user's (superseded 2026-10-11)
+## 2026-09-14 - A raw SQL filter runs as written, and its scope is the user's (superseded 2026-10-10)
 
 **Context.** A raw filter is a complete `SELECT`, but every plot path passes it where a
 WHERE body is expected, so it is refused at six call sites (2026-09-12). Making it work was
@@ -899,7 +899,7 @@ the smaller alternative before this ruling.
 to have a filter only expressible as raw SQL - then withdrawing it is cheaper than building it.
 
 
-**Superseded 2026-10-11** (Carolina, approved by Kyle): a raw filter is restricted to the Scope selection, as the
+**Superseded 2026-10-10** (Carolina, approved by Kyle): a raw filter is restricted to the Scope selection, as the
 1.9.0 Protein tab intended (it appended `experiment_id`/`channel_db_id` to the `SELECT`, and
 never produced a plot). The query is wrapped, not edited: `SELECT * FROM (<query>) WHERE
 <selection>`, which needs it to return `experiment_id` and `channel_id`; without them it is

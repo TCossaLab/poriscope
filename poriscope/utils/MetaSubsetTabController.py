@@ -25,6 +25,7 @@
 # Kyle Briggs
 
 import logging
+import re
 from typing import Any, Dict, List, Optional, Sequence, Tuple, override
 
 import numpy as np
@@ -392,6 +393,32 @@ class MetaSubsetTabController(MetaController):
         return " OR ".join(terms)
 
     @log(logger=logger)
+    def _raw_failure_reason(self, loader: str, query: str) -> str:
+        """
+        Say why a raw query could not run, in the loader's own words.
+
+        ``query_database_directly`` answers None for a query it could not run and
+        logs the reason; the validator gives the same reason as text, which is what
+        a SQL viewer would have shown, for example ``no such column: nope``.
+
+        :param loader: the database loader plugin's key
+        :type loader: str
+        :param query: the SQL that failed
+        :type query: str
+        :return: the SQL error, or a pointer to the log if the validator has none
+        :rtype: str
+        """
+        try:
+            valid, debug = self.model.call(
+                "MetaDatabaseLoader", loader, "validate_filter_query", query
+            )
+        except Exception:
+            return "see the log for the SQL error"
+        if valid or not debug:
+            return "see the log for the SQL error"
+        return str(debug).split("\n\n")[-1].strip()
+
+    @log(logger=logger)
     def _run_raw_filter(
         self,
         loader: str,
@@ -437,10 +464,11 @@ class MetaSubsetTabController(MetaController):
                     f"{wrapped} LIMIT 0",
                 )
                 if probe is not None:
+                    # SQLite matches column names without regard to case, so the
+                    # check does too: the selection is applied by name in its WHERE.
+                    present = {str(c).lower() for c in probe.columns}
                     missing = [
-                        c
-                        for c in ("experiment_id", "channel_id")
-                        if c not in probe.columns
+                        c for c in ("experiment_id", "channel_id") if c not in present
                     ]
                     if missing:
                         self.add_text_to_display.emit(
@@ -466,12 +494,129 @@ class MetaSubsetTabController(MetaController):
             return None
         if rows is None:
             self.add_text_to_display.emit(
-                f"Could not run the raw filter {subset_name}: see the log for the "
-                "SQL error",
+                f"Could not run the raw filter {subset_name}: "
+                f"{self._raw_failure_reason(loader, query)}",
                 self.__class__.__name__,
             )
             return None
         return rows, query
+
+    @log(logger=logger)
+    def _ambiguous_raw_columns(
+        self, rows: pd.DataFrame, needed: Sequence[str], subset_name: str
+    ) -> bool:
+        """
+        Refuse a raw result that holds a column the plot needs under the same name twice.
+
+        A join's ``SELECT *`` returns both tables' ``id``. Wrapped as a subquery SQLite
+        keeps the first and renames the second ``id:1``, so the plot would silently read
+        whichever table came first; unwrapped, both keep the name and a lookup by name
+        returns a table, not a column. A plot cannot choose, so the query has to say
+        which one it means. Reports the refusal itself.
+
+        :param rows: the raw filter's result
+        :type rows: pd.DataFrame
+        :param needed: the columns the plot reads
+        :type needed: Sequence[str]
+        :param subset_name: the filter's name, for the message
+        :type subset_name: str
+        :return: True if a needed column is duplicated, in which case the caller must stop
+        :rtype: bool
+        """
+        names = [str(c) for c in rows.columns]
+        duplicated = set()
+        for name in names:
+            sibling = re.fullmatch(r"(.+):\d+", name)
+            if names.count(name) > 1:
+                duplicated.add(name)
+            elif sibling and sibling.group(1) in names:
+                duplicated.add(sibling.group(1))
+        clash = [c for c in needed if c in duplicated]
+        if not clash:
+            return False
+        self.add_text_to_display.emit(
+            f"{subset_name}'s query returns {', '.join(clash)} more than once, so the "
+            "plot cannot tell which one it means. Name the one you want, for example "
+            f"SELECT e.{clash[0]} AS {clash[0]}, ... and give the other a different name",
+            self.__class__.__name__,
+        )
+        return True
+
+    @log(logger=logger)
+    def _ids_are_events(
+        self, loader: str, rows: pd.DataFrame, subset_name: str
+    ) -> bool:
+        """
+        Check that a raw result's ``id`` column holds events' ids, not some other table's.
+
+        A join can return the ``id`` of a sublevel where the plot wants the event's, and
+        the numbers load real events - just not the ones the query selected. Each row
+        also says which experiment and channel it belongs to, and the ``events`` table
+        says it for every id, so the two are compared: an id that names no event, or an
+        event of another experiment or channel, means the ``id`` is not the event's.
+        Nothing is compared when the result carries no experiment and channel to
+        compare with. Reports the refusal itself.
+
+        :param loader: the database loader plugin's key
+        :type loader: str
+        :param rows: the raw filter's result, which has an ``id`` column
+        :type rows: pd.DataFrame
+        :param subset_name: the filter's name, for the message
+        :type subset_name: str
+        :return: True if every id is an event of the experiment and channel its row names, or there is nothing to compare
+        :rtype: bool
+        """
+        lowered = {str(c).lower(): c for c in rows.columns}
+        if "experiment_id" not in lowered or "channel_id" not in lowered:
+            return True
+        claimed = pd.DataFrame(
+            {
+                "id": rows["id"],
+                "experiment_id": rows[lowered["experiment_id"]],
+                "channel_id": rows[lowered["channel_id"]],
+            }
+        ).dropna()
+        claimed = claimed.astype(int).drop_duplicates()
+        ids = ",".join(str(i) for i in claimed["id"].unique())
+        try:
+            real = self.model.call(
+                "MetaDatabaseLoader",
+                loader,
+                "query_database_directly",
+                f"SELECT id, experiment_id, channel_id FROM events WHERE id IN ({ids})",
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to check the ids of {subset_name}: {e!r}")
+            self.add_text_to_display.emit(
+                f"Could not check that {subset_name}'s id column holds event ids: {e}",
+                self.__class__.__name__,
+            )
+            return False
+        if real is None:
+            self.add_text_to_display.emit(
+                f"Could not check that {subset_name}'s id column holds event ids: "
+                "see the log for the SQL error",
+                self.__class__.__name__,
+            )
+            return False
+        matched = claimed.merge(
+            real.astype(int),
+            on=["id", "experiment_id", "channel_id"],
+            how="left",
+            indicator=True,
+        )
+        wrong = matched.loc[matched["_merge"] != "both", "id"].unique()
+        if len(wrong) == 0:
+            return True
+        self.add_text_to_display.emit(
+            f"{subset_name}'s id column does not hold the events' ids: {len(wrong)} of "
+            f"its {claimed['id'].nunique()} ids are not an event of the experiment and "
+            "channel their row names, so they would load the wrong events. The id the "
+            "plot needs is the events table's id, for example SELECT e.id AS id, ... "
+            "FROM events e ...",
+            self.__class__.__name__,
+        )
+        return False
 
     @log(logger=logger)
     def _raw_filter_conditions(
@@ -510,6 +655,8 @@ class MetaSubsetTabController(MetaController):
         if ran is None:
             return None
         rows, executed = ran
+        if self._ambiguous_raw_columns(rows, ["id"], subset_name):
+            return None
         if "id" not in rows.columns:
             self.add_text_to_display.emit(
                 f"{subset_name}'s query does not return the column this plot needs "
@@ -525,6 +672,8 @@ class MetaSubsetTabController(MetaController):
                 "experiments and channels, so there is nothing to plot",
                 self.__class__.__name__,
             )
+            return None
+        if not self._ids_are_events(loader, rows, subset_name):
             return None
         ids = ",".join(str(int(i)) for i in rows["id"].dropna().unique())
         return f"e.id IN ({ids})", executed

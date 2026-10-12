@@ -118,6 +118,16 @@ is a complete ``SELECT``, three things are yours to provide:
   all-points histograms and Protein distribution plots load the events themselves, so the
   query must also return the events table's ``id``, for example
   ``SELECT id, experiment_id, channel_id, duration FROM events WHERE duration > 100``.
+* **One column per name.** If your query joins tables, ``SELECT *`` returns both tables'
+  ``id``, and a plot cannot tell which one is the event's. A query that returns a column
+  the plot reads more than once is refused with a message saying so; name the one you mean
+  and give the other a different name, for example ``SELECT e.id AS id, s.id AS sublevel_id,
+  ...``.
+* **Your query runs first, then the selection is applied to its rows.** A ``LIMIT`` therefore
+  counts across the whole database before the selection narrows it, so ``LIMIT 5`` with one
+  channel ticked can return fewer than five rows. An aggregate without ``GROUP BY`` returns
+  a single row with an arbitrary ``experiment_id`` and ``channel_id``, exactly as it does
+  in any SQL viewer; group by ``experiment_id, channel_id`` to get one row per channel.
 * **No single-event plots yet.** Plot Events, the event navigation arrows and the Protein
   tab's Plot Histogram step through individual events, which a raw filter cannot yet do;
   selecting one there is refused with a message on the status panel. Use an Assisted

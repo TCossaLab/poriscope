@@ -297,6 +297,40 @@ class TestLoadRawMetadataSubset:
         assert len(controller.model.calls_to("query_database_directly")) == 1
         controller.view.update_plot_data.assert_not_called()
 
+    def test_a_plotted_column_returned_twice_is_refused(
+        self, controller: MetadataController
+    ) -> None:
+        """
+        Two ``duration`` columns, one renamed ``duration:1`` by the subquery: the plot
+        would read the first silently, so the query has to say which it means.
+        """
+        controller.model = RecordingModel(
+            self.answers(
+                query_database_directly=self.FRAME.assign(**{"duration:1": [9.0]})
+            )
+        )
+
+        controller.load_metadata_subset("ldr", ["duration"], self.RAW, SCOPE, "q_raw")
+
+        assert "duration more than once" in panel_text(controller)
+        controller.view.update_plot_data.assert_not_called()
+
+    def test_a_duplicate_the_plot_does_not_read_is_not_in_the_way(
+        self, controller: MetadataController
+    ) -> None:
+        """
+        A doubled ``experiment_id`` is harmless: the plot reads ``duration`` only.
+        """
+        controller.model = RecordingModel(
+            self.answers(
+                query_database_directly=self.FRAME.assign(**{"experiment_id:1": [7]})
+            )
+        )
+
+        controller.load_metadata_subset("ldr", ["duration"], self.RAW, SCOPE, "q_raw")
+
+        controller.view.update_plot_data.assert_called_once()
+
     def test_a_missing_plot_column_is_named_and_nothing_is_set(
         self, controller: MetadataController
     ) -> None:
@@ -339,6 +373,47 @@ class TestLoadRawMetadataSubset:
 
         assert "exp1" in panel_text(controller)
         controller.view.update_plot_data.assert_not_called()
+
+    def test_scope_column_names_are_matched_without_regard_to_case(
+        self, controller: MetadataController
+    ) -> None:
+        """
+        SQLite matches ``Experiment_ID`` to ``experiment_id`` in the selection's WHERE,
+        so refusing it for its case would refuse a query a SQL viewer accepts.
+        """
+        shouting = pd.DataFrame(
+            {"Experiment_ID": [7], "CHANNEL_ID": [1], "duration": [150.0]}
+        )
+        controller.model = RecordingModel(
+            self.answers(query_database_directly=shouting)
+        )
+
+        controller.load_metadata_subset("ldr", ["duration"], self.RAW, SCOPE, "q_raw")
+
+        controller.view.update_plot_data.assert_called_once()
+
+    def test_a_failed_query_shows_the_sql_error(
+        self, controller: MetadataController
+    ) -> None:
+        """
+        What a SQL viewer would have said, not a pointer to the log.
+        """
+        controller.model = RecordingModel(
+            self.answers(
+                query_database_directly=None,
+                validate_filter_query=(
+                    False,
+                    "Invalid query\n\nSELECT nope FROM events\n\nno such column: nope",
+                ),
+            )
+        )
+
+        controller.load_metadata_subset(
+            "ldr", ["duration"], "SELECT nope", SCOPE, "q_raw"
+        )
+
+        assert "no such column: nope" in panel_text(controller)
+        assert "see the log" not in panel_text(controller)
 
     def test_a_raising_loader_reports_and_sets_nothing(
         self, controller: MetadataController

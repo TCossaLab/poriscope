@@ -251,7 +251,8 @@ class TestRawFilterLoadsItsOwnEvents:
 
         fetched = controller._fetch_event_subset("ldr", RAW, SCOPE, "mine_raw")
 
-        _, (executed,) = controller.model.calls_to("query_database_directly")
+        _, (executed,), check = controller.model.calls_to("query_database_directly")
+        assert check[0].startswith("SELECT id, experiment_id, channel_id FROM events")
         assert RAW in executed
         assert executed.endswith("WHERE (experiment_id = 7 AND channel_id IN (2))")
         assert controller.model.calls_to("load_event_data") == [("e.id IN (4,9)", None)]
@@ -294,6 +295,80 @@ class TestRawFilterLoadsItsOwnEvents:
         assert "mine_raw" in _said(controller)
         assert "SELECT id" in _said(controller)
         assert controller.model.calls_to("load_event_data") == []
+
+    def test_an_id_returned_twice_is_refused_naming_the_fix(
+        self, cls: type, mocker: MockerFixture
+    ) -> None:
+        """
+        A join's ``SELECT *`` returns both tables' ``id``; wrapped, SQLite renames the
+        second ``id:1`` and the first would be read silently, so nothing is loaded.
+        """
+        doubled = FRAME.assign(**{"id:1": [1, 2, 3]})
+        controller = _controller(
+            cls, mocker, self.answers(query_database_directly=doubled)
+        )
+
+        assert controller._fetch_event_subset("ldr", RAW, SCOPE, "mine_raw") is None
+
+        assert "id more than once" in _said(controller)
+        assert "AS id" in _said(controller)
+        assert controller.model.calls_to("load_event_data") == []
+
+    def test_a_duplicated_scope_column_is_not_in_the_way(
+        self, cls: type, mocker: MockerFixture
+    ) -> None:
+        """
+        ``experiment_id`` in both tables holds the same value, and only ``id`` is read.
+        """
+        generator = iter([])
+        doubled = FRAME.assign(**{"experiment_id:1": [7] * 3})
+        controller = _controller(
+            cls,
+            mocker,
+            self.answers(query_database_directly=doubled, load_event_data=generator),
+        )
+
+        fetched = controller._fetch_event_subset("ldr", RAW, SCOPE, "mine_raw")
+
+        assert fetched is not None
+
+    def test_an_id_that_is_not_the_events_is_refused(
+        self, cls: type, mocker: MockerFixture
+    ) -> None:
+        """
+        The query claims these ids are events of experiment 7 channel 2, and the events
+        table says otherwise - the ``id`` is another table's, and would load the wrong
+        events without a word.
+        """
+        controller = _controller(cls, mocker, self.answers())
+        events_table = pd.DataFrame(
+            {"id": [4, 9], "experiment_id": [7, 7], "channel_id": [1, 1]}
+        )
+        answers = iter([FRAME, FRAME, events_table])
+        controller.model.call = lambda *a: (
+            next(answers) if a[2] == "query_database_directly" else 7
+        )
+
+        assert controller._fetch_event_subset("ldr", RAW, SCOPE, "mine_raw") is None
+
+        assert "does not hold the events' ids" in _said(controller)
+        assert "e.id AS id" in _said(controller)
+
+    def test_an_id_with_no_event_at_all_is_refused(
+        self, cls: type, mocker: MockerFixture
+    ) -> None:
+        """
+        A sublevel's id can be larger than any event's.
+        """
+        controller = _controller(cls, mocker, self.answers())
+        answers = iter([FRAME, FRAME, FRAME.iloc[0:0]])
+        controller.model.call = lambda *a: (
+            next(answers) if a[2] == "query_database_directly" else 7
+        )
+
+        assert controller._fetch_event_subset("ldr", RAW, SCOPE, "mine_raw") is None
+
+        assert "does not hold the events' ids" in _said(controller)
 
     def test_a_query_that_returns_no_events_says_so(
         self, cls: type, mocker: MockerFixture

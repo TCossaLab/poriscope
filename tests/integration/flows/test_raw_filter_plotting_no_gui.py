@@ -93,6 +93,18 @@ def metadata_tab(qapp: Any, tmp_path: Path, sample_metadata_db: str) -> Triad:
     filters["missing_raw"] = "SELECT experiment_id, channel_id, id FROM events"
     filters["noscope_raw"] = "SELECT duration FROM events"
     filters["events_raw"] = "SELECT id, experiment_id, channel_id, duration FROM events"
+    # SELECT * over a join returns both tables' id; sublevels first would be read.
+    filters["join_raw"] = (
+        "SELECT * FROM sublevels s JOIN events e ON s.event_db_id = e.id"
+    )
+    filters["aliased_raw"] = (
+        "SELECT e.id AS id, e.experiment_id, e.channel_id, s.id AS sublevel_id, "
+        "e.duration FROM events e JOIN sublevels s ON s.event_db_id = e.id"
+    )
+    # The sublevel's id, where the events' is wanted: real numbers, wrong events.
+    filters["sublevel_id_raw"] = (
+        "SELECT s.id AS id, s.experiment_id, s.channel_id FROM sublevels s"
+    )
     filters["no_id_raw"] = "SELECT experiment_id, channel_id, duration FROM events"
     filters["short"] = "duration >= 0"
     for name, query in filters.items():
@@ -276,6 +288,60 @@ def test_a_raw_filter_without_an_id_column_draws_no_event_plot(
         "no_id_raw",
         "duration",
         ["0"],
+        plot_type="Raw All Points Histogram",
+    )
+
+    assert metadata_tab.tab_view.plotted_datasets == set()
+
+
+@pytest.mark.timeout(120)
+def test_a_join_returning_two_ids_draws_no_event_plot(metadata_tab: Triad) -> None:
+    """
+    ``SELECT *`` over a join reads the first table's ``id`` when wrapped, which would
+    load the wrong events; it is refused instead.
+    """
+    plot(
+        metadata_tab,
+        "join_raw",
+        "duration",
+        ["0"],
+        plot_type="Raw All Points Histogram",
+    )
+
+    assert metadata_tab.tab_view.plotted_datasets == set()
+
+
+@pytest.mark.timeout(120)
+def test_a_join_that_names_its_ids_plots_an_event_plot(metadata_tab: Triad) -> None:
+    """
+    Naming each ``id`` differently keeps both and plots the event's.
+    """
+    plot(
+        metadata_tab,
+        "aliased_raw",
+        "duration",
+        ["0"],
+        plot_type="Raw All Points Histogram",
+    )
+
+    assert {(e[2], e[4]) for e in metadata_tab.tab_view.plotted_datasets} == {
+        (0, "aliased_raw")
+    }
+
+
+@pytest.mark.timeout(120)
+def test_a_sublevel_id_where_the_event_id_is_wanted_draws_no_event_plot(
+    metadata_tab: Triad,
+) -> None:
+    """
+    The numbers are valid event ids of some other events, so only comparing them with
+    the experiment and channel their rows name shows they are not the events' own.
+    """
+    plot(
+        metadata_tab,
+        "sublevel_id_raw",
+        "duration",
+        ["1"],
         plot_type="Raw All Points Histogram",
     )
 
