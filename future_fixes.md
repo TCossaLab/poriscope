@@ -63,12 +63,6 @@ Step 10 waits for both tracks.
   `MetaView.update_actions_from_json:389` (`:396`). Saved action files carry no compatibility
   obligation (Kyle). Declared names, registry dispatch, small JSON-round-trippable arguments, and a
   docstring on `register_action` (`LogDecorator.py:177`, none today). Breaking.
-- **A milestone blocks the page switch but not what caused it.** `MainView.switch_to_page:895`
-  refuses (`:912`) while `_milestone_dialog` is up, but every caller does its work first:
-  `on_raw_data_view_click:611`/`on_event_analysis_click:617`/`on_metadata_click:623` emit
-  `instantiate_analysis_tab` then `sync_sidebar_highlight` then `switch_to_page`;
-  `handle_menu_click:692` and `on_load_analysis_tab_button_click:714` (`:722`) highlight first.
-  Move the guards at `:899-924` into a predicate asked before the handlers act.
 
 ### Step 10 - docs dead-link gate and release prep
 
@@ -388,6 +382,20 @@ absorbs what it needs and stands alone, leaving 20240101 a clean deletion.
   startup (`main_app.py:122-125`) append the plugin folder and its parent and never remove a
   previous one, so after the folder changes an abandoned folder's module still wins a name clash
   until relaunch.
+- **A user tab's view and model class names are not checked for uniqueness at load, and the page
+  guard guesses a non-dedicated tab's view as `<Name>View`.** `main_model.py:269-283` dedups only the
+  controller; `scripts/new_plugin.py:1687` checks all four names but a hand-written tab skips it. Two
+  user views sharing a bare module name may collide in `sys.modules` (not reproduced).
+  `MainView.on_load_analysis_tab_button_click` guesses the view name from the controller name.
+  Reproduce the collision first. Then read each controller's `view:`/`model:` annotations
+  (`typing.get_type_hints`, no instantiation) in one helper, treating the inherited `MetaView` as
+  undeclared; use it to reject a taken name at load and as the guard's exact page name, falling back
+  to the guess. Makes an optional `view_class` and a base class that builds the view unnecessary.
+- **The walkthrough overlay does not block clicks outside the highlighted widget.**
+  `Overlay` (`walkthrough.py:165`) sets `WA_TransparentForMouseEvents` (`:177`), so only the
+  page-switch refusal and the icon guards in `MainView` stop an out-of-sequence click. Mask
+  everything except the target. The Plugins dropdown is a separate `QMenu` popup the overlay
+  cannot reach, so it needs its own handling.
 
 ### Base-class internals
 
