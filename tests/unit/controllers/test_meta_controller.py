@@ -17,12 +17,16 @@ from __future__ import annotations
 
 import json
 from collections import OrderedDict
+from pathlib import Path
+from typing import override
 from unittest.mock import MagicMock, mock_open
 
+import numpy as np
 import pytest
 from pytest_mock import MockerFixture
 
 from poriscope.utils.MetaController import MetaController
+from poriscope.utils.MetaModel import MetaModel
 
 # ----------------------------- fixtures ------------------------------
 
@@ -769,3 +773,49 @@ def test_init_kwargs_are_set_as_instance_attributes(
 
     assert ctrl.my_custom_attr == "hello"
     assert ctrl.another_attr == 42
+
+
+class _RealCacheModel(MetaModel):
+    """A concrete MetaModel, so the export below runs the real formatting."""
+
+    @override
+    def _init(self) -> None:
+        pass
+
+
+def test_export_plot_data_writes_every_dataset_of_an_overlay(
+    controller: MetaController,
+    mock_view: MagicMock,
+    tmp_path: Path,
+) -> None:
+    """
+    Write a file holding both datasets when two are cached under the same labels.
+
+    The tests above replace the model with a mock, so the formatting between the
+    cache and the file never ran in them. This one keeps the real model and the real
+    slot and reads the file back, which is the path a user's export takes.
+
+    :param controller: Controller under test, with its model replaced below.
+    :param mock_view: Mocked meta view that supplies the save location.
+    :param tmp_path: Per-test scratch directory.
+    """
+    model = _RealCacheModel()
+    model.cache_data = [
+        np.array([1.0, 2.0]),
+        np.array([3.0, 4.0]),
+        np.array([5.0, 6.0, 7.0]),
+        np.array([8.0, 9.0, 1.0]),
+    ]
+    model.cache_labels = ["duration (us)", "num_sublevels"] * 2
+    controller.model = model
+    target = tmp_path / "plot.csv"
+    mock_view.get_save_filename.return_value = str(target)
+
+    controller.export_plot_data()
+
+    assert target.read_text().splitlines() == [
+        "duration (us),num_sublevels,duration (us),num_sublevels",
+        "1.0,3.0,5.0,8.0",
+        "2.0,4.0,6.0,9.0",
+        ",,7.0,1.0",
+    ]

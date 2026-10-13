@@ -165,3 +165,169 @@ class TestNonNumericSeries:
         df = model.format_cache_data()
 
         assert df["x"].tolist() == [1.0, 2.0]
+
+
+def _series(*arrays):
+    """
+    Cached series for a test, as the views cache them.
+
+    :param arrays: one array or list per cached series
+    :type arrays: Any
+    :return: the same series as a list
+    :rtype: list
+    """
+    return list(arrays)
+
+
+# The cache each plot type builds when it draws more than one dataset, or more than
+# one curve, under the same axis labels. The label lists are the ones the tabs
+# produce; the values are small stand-ins of the right shape.
+_REPEATED_LABELS = {
+    "metadata scatter, two datasets": (
+        ["duration (us)", "num_sublevels", "duration (us)", "num_sublevels"],
+        _series(
+            np.array([1.0, 2.0, 3.0]),
+            np.array([4.0, 5.0, 6.0]),
+            np.array([7.0, 8.0, 9.0, 10.0]),
+            np.array([1.0, 2.0, 3.0, 4.0]),
+        ),
+    ),
+    "metadata 3D scatter, two datasets": (
+        ["x", "y", "z", "x", "y", "z"],
+        _series(*(np.arange(n, dtype=float) + k for k in range(2) for n in (3,) * 3)),
+    ),
+    "metadata histogram, two datasets": (
+        ["duration (us)", "Count", "duration (us)", "Count"],
+        _series(
+            np.array([0.5, 1.5]),
+            np.array([4.0, 2.0]),
+            np.array([0.5, 1.5]),
+            np.array([1.0, 7.0]),
+        ),
+    ),
+    "metadata kernel density, two datasets": (
+        ["duration (us)", "Density", "duration (us)", "Density"],
+        _series(
+            np.array([1.0, 2.0, 3.0]),
+            np.array([0.1, 0.4, 0.2]),
+            np.array([1.0, 2.0, 3.0]),
+            np.array([0.3, 0.3, 0.1]),
+        ),
+    ),
+    "metadata all points histogram, two datasets": (
+        ["Normalized Current (pA)", "Amplitude"] * 2,
+        _series(
+            np.array([0.1, 0.2]),
+            np.array([5.0, 6.0]),
+            np.array([0.1, 0.2]),
+            np.array([7.0, 8.0]),
+        ),
+    ),
+    "metadata categorical histogram, two datasets": (
+        ["kind", "Count", "kind", "Count"],
+        _series(
+            ["a", "b", "c"], np.array([2.0, 1.0, 1.0]), ["a", "b"], np.array([3.0, 5.0])
+        ),
+    ),
+    "protein individual, two solutions": (
+        ["V (nm$^{3}$)", "m", "V (nm$^{3}$)", "m"],
+        _series(
+            np.array([1.0, 2.0, 3.0]),
+            np.array([4.0, 5.0, 6.0]),
+            np.array([7.0, 8.0]),
+            np.array([9.0, 1.0]),
+        ),
+    ),
+    "protein ensemble, histogram and fit curve": (
+        ["Normalized Current (pA)", "Amplitude"] * 4,
+        _series(*(np.arange(4, dtype=float) * (k + 1) for k in range(8))),
+    ),
+    "event plot, one time base for two currents": (
+        ["Event 0 Time (us)", "Event 0 Filtered Current (nA)"]
+        + ["Event 0 Time (us)", "Event 0 FittedCurrent (nA)"],
+        _series(
+            np.array([0.0, 1.0, 2.0]),
+            np.array([5.0, 6.0, 7.0]),
+            np.array([0.0, 1.0, 2.0]),
+            np.array([5.5, 6.5, 7.5]),
+        ),
+    ),
+    "raw data PSD": (
+        ["Channel 3 Frequency (Hz)", "Channel 3 Spectral Power (pA^2/Hz)"]
+        + ["Channel 3 Frequency (Hz)", "Channel 3 RMS Noise (pA)"],
+        _series(
+            np.array([1.0, 2.0]),
+            np.array([9.0, 8.0]),
+            np.array([1.0, 2.0]),
+            np.array([0.5, 0.4]),
+        ),
+    ),
+}
+
+
+class TestRepeatedLabels:
+    """
+    A plot that draws several datasets, or several curves, caches each under the same
+    axis labels. Every one of them has to reach the file.
+
+    The first version of the padding keyed a dict by label, so a repeated label
+    overwrote the earlier series: an overlay of two datasets exported only the last.
+    The tests above all gave every series its own label, which is why the suite
+    passed. The cases below are the caches the tabs really build, one per plot type.
+    """
+
+    @pytest.mark.parametrize("case", list(_REPEATED_LABELS), ids=list(_REPEATED_LABELS))
+    def test_every_cached_series_gets_its_own_column(self, model, case):
+        labels, data = _REPEATED_LABELS[case]
+        model.cache_data = data
+        model.cache_labels = labels
+
+        df = model.format_cache_data()
+
+        assert list(df.columns) == labels
+
+    @pytest.mark.parametrize("case", list(_REPEATED_LABELS), ids=list(_REPEATED_LABELS))
+    def test_no_dataset_is_lost_or_moved(self, model, case):
+        labels, data = _REPEATED_LABELS[case]
+        model.cache_data = data
+        model.cache_labels = labels
+
+        df = model.format_cache_data()
+
+        for position, series in enumerate(data):
+            written = df.iloc[:, position].tolist()
+            assert written[: len(series)] == list(series)
+            assert all(v is None or v != v for v in written[len(series) :])
+
+    def test_the_last_dataset_does_not_overwrite_the_first(self, model):
+        """The reported symptom: two scatter datasets, only the second in the file."""
+        model.cache_data = [
+            np.array([1.0, 2.0]),
+            np.array([3.0, 4.0]),
+            np.array([5.0, 6.0]),
+            np.array([7.0, 8.0]),
+        ]
+        model.cache_labels = ["x", "y", "x", "y"]
+
+        csv = model.format_cache_data().to_csv(index=False)
+
+        assert csv.splitlines() == ["x,y,x,y", "1.0,3.0,5.0,7.0", "2.0,4.0,6.0,8.0"]
+
+    @pytest.mark.parametrize("seed", range(20))
+    def test_one_column_per_series_whatever_the_labels(self, model, seed):
+        """
+        The invariant under every plot type: the file has exactly as many columns as
+        series were cached, in order, whatever repeats and whatever the lengths.
+        """
+        rng = np.random.default_rng(seed)
+        count = int(rng.integers(1, 9))
+        labels = [str(rng.choice(["x", "y", "Count"])) for _ in range(count)]
+        data = [rng.random(int(rng.integers(1, 12))) for _ in range(count)]
+        model.cache_data = data
+        model.cache_labels = labels
+
+        df = model.format_cache_data()
+
+        assert list(df.columns) == labels
+        for position, series in enumerate(data):
+            assert df.iloc[: len(series), position].tolist() == series.tolist()
