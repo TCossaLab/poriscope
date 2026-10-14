@@ -541,7 +541,7 @@ class ProteinController(MetaSubsetTabController):
         there is one slot rather than one per mode.
 
         A raw filter - one whose name ends ``_raw`` - runs over the scope as a
-        subquery, and the events its ``id`` column names are loaded; see
+        subquery, and the events its event key names are loaded; see
         ``MetaSubsetTabController._raw_filter_conditions``.
 
         :param loader: the database loader plugin's key

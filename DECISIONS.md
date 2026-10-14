@@ -906,6 +906,9 @@ never produced a plot). The query is wrapped, not edited: `SELECT * FROM (<query
 refused naming what to add, never run unscoped. Found in the GUI pass: an ignored Scope
 selector read as a bug, and a raw event plot drew once per ticked channel. **Revisit if** the
 two required columns prove a burden - `id`-based scoping would drop them for event plots.
+Events are named by their key `(experiment_id, channel_id, event_id)`, not `id`: `id` is a different row in
+each table, and a sublevel's `id` that was also a same-channel event passed the check and loaded the wrong
+events silently (measured on a real database). A sublevel's key is its parent event's, so a join is safe.
 
 ---
 

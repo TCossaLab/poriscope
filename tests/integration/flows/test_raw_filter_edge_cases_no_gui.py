@@ -98,27 +98,38 @@ def event_counts(db_path: str) -> Dict[int, int]:
         )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="known gap: a wrong-table id that is also an event of the same channel passes",
-)
 @pytest.mark.timeout(120)
-def test_a_sublevel_id_that_is_also_an_event_in_the_same_channel_is_refused(
-    controller: MetadataController,
+def test_a_sublevels_key_names_its_parent_event(
+    controller: MetadataController, sample_metadata_db: str
 ) -> None:
     """
-    Sublevel ids 1-10 belong to events 1-4, but 1-10 are events of the same channel, so
-    comparing each id with the experiment and channel its row names finds nothing wrong.
-    A silent wrong answer if this is not refused.
+    A sublevel carries its parent event's experiment, channel and event number, so a
+    query on sublevels names the right events - not the events whose ``id`` happens to
+    equal a sublevel's, which is what trusting ``id`` would have loaded.
     """
     sql = (
-        "SELECT s.id AS id, s.experiment_id, s.channel_id FROM sublevels s "
+        "SELECT s.experiment_id, s.channel_id, s.event_id FROM sublevels s "
         "WHERE s.id <= 10"
     )
 
     out = controller._raw_filter_conditions("L", sql, SCOPE_CH0, "x_raw")
 
-    assert out is None, "the wrong table's id was accepted as the events' own"
+    assert out is not None
+    conditions, _ = out
+    with sqlite3.connect(sample_metadata_db) as conn:
+        parents = sorted(
+            r[0]
+            for r in conn.execute(
+                "SELECT DISTINCT e.event_id FROM sublevels s "
+                "JOIN events e ON s.event_db_id = e.id WHERE s.id <= 10"
+            )
+        )
+        by_id = sorted(
+            r[0] for r in conn.execute("SELECT event_id FROM events WHERE id <= 10")
+        )
+    named = sorted(int(i) for i in conditions.split("IN (")[1].rstrip(")").split(","))
+    assert named == parents
+    assert named != by_id
 
 
 @pytest.mark.timeout(120)

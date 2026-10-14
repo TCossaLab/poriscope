@@ -125,7 +125,7 @@ class ProteinView(MetaSubsetTabView):
     #:
     #: One request serving both distribution modes, because they ask the same thing.
     #: Carries the filter's name, whose ``_raw`` suffix marks a raw filter: the events its
-    #: ``SELECT``'s ``id`` column names, within the scope, are loaded.
+    #: ``SELECT``'s event key names, within the scope, are loaded.
     event_distribution_data_requested = Signal(str, str, object, str)
 
     #: Asks whether the database already holds fit columns, before any are written.

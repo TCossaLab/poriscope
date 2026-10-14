@@ -92,18 +92,24 @@ def metadata_tab(qapp: Any, tmp_path: Path, sample_metadata_db: str) -> Triad:
     filters = {name: query for name, query, _ in DOCUMENTED}
     filters["missing_raw"] = "SELECT experiment_id, channel_id, id FROM events"
     filters["noscope_raw"] = "SELECT duration FROM events"
-    filters["events_raw"] = "SELECT id, experiment_id, channel_id, duration FROM events"
-    # SELECT * over a join returns both tables' id; sublevels first would be read.
+    filters["events_raw"] = (
+        "SELECT experiment_id, channel_id, event_id, duration FROM events"
+    )
+    # SELECT * over a join returns both tables' key columns, which are equal.
     filters["join_raw"] = (
         "SELECT * FROM sublevels s JOIN events e ON s.event_db_id = e.id"
     )
     filters["aliased_raw"] = (
-        "SELECT e.id AS id, e.experiment_id, e.channel_id, s.id AS sublevel_id, "
+        "SELECT e.experiment_id, e.channel_id, e.event_id, s.id AS sublevel_id, "
         "e.duration FROM events e JOIN sublevels s ON s.event_db_id = e.id"
     )
-    # The sublevel's id, where the events' is wanted: real numbers, wrong events.
+    # A sublevel's id, where an event is wanted: a different row in each table.
     filters["sublevel_id_raw"] = (
         "SELECT s.id AS id, s.experiment_id, s.channel_id FROM sublevels s"
+    )
+    # A level number that is not an event's: it names events the channel does not have.
+    filters["mislabelled_raw"] = (
+        "SELECT experiment_id, channel_id, event_id + 100000 AS event_id FROM events"
     )
     filters["nav_raw"] = (
         "SELECT experiment_id, channel_id, event_id FROM events WHERE duration > 100"
@@ -114,7 +120,9 @@ def metadata_tab(qapp: Any, tmp_path: Path, sample_metadata_db: str) -> Triad:
     filters["nav_join_raw"] = (
         "SELECT * FROM sublevels s JOIN events e ON s.event_db_id = e.id"
     )
-    filters["no_id_raw"] = "SELECT experiment_id, channel_id, duration FROM events"
+    filters["no_event_id_raw"] = (
+        "SELECT experiment_id, channel_id, duration FROM events"
+    )
     filters["short"] = "duration >= 0"
     for name, query in filters.items():
         view.subset_filters[name] = query
@@ -294,7 +302,7 @@ def test_a_raw_filter_without_an_id_column_draws_no_event_plot(
     """
     plot(
         metadata_tab,
-        "no_id_raw",
+        "no_event_id_raw",
         "duration",
         ["0"],
         plot_type="Raw All Points Histogram",
@@ -304,10 +312,12 @@ def test_a_raw_filter_without_an_id_column_draws_no_event_plot(
 
 
 @pytest.mark.timeout(120)
-def test_a_join_returning_two_ids_draws_no_event_plot(metadata_tab: Triad) -> None:
+def test_a_join_returning_the_key_twice_still_plots_an_event_plot(
+    metadata_tab: Triad,
+) -> None:
     """
-    ``SELECT *`` over a join reads the first table's ``id`` when wrapped, which would
-    load the wrong events; it is refused instead.
+    ``SELECT *`` over a join returns the sublevel's key beside the event's, and the two
+    are equal, so the events are named correctly however the join is written.
     """
     plot(
         metadata_tab,
@@ -317,13 +327,17 @@ def test_a_join_returning_two_ids_draws_no_event_plot(metadata_tab: Triad) -> No
         plot_type="Raw All Points Histogram",
     )
 
-    assert metadata_tab.tab_view.plotted_datasets == set()
+    assert {(e[2], e[4]) for e in metadata_tab.tab_view.plotted_datasets} == {
+        (0, "join_raw")
+    }
 
 
 @pytest.mark.timeout(120)
-def test_a_join_that_names_its_ids_plots_an_event_plot(metadata_tab: Triad) -> None:
+def test_a_join_that_names_its_columns_plots_an_event_plot(
+    metadata_tab: Triad,
+) -> None:
     """
-    Naming each ``id`` differently keeps both and plots the event's.
+    Naming the sublevel's ``id`` differently keeps it beside the event's key.
     """
     plot(
         metadata_tab,
@@ -339,18 +353,32 @@ def test_a_join_that_names_its_ids_plots_an_event_plot(metadata_tab: Triad) -> N
 
 
 @pytest.mark.timeout(120)
-def test_a_sublevel_id_where_the_event_id_is_wanted_draws_no_event_plot(
-    metadata_tab: Triad,
-) -> None:
+def test_an_id_column_does_not_name_an_event(metadata_tab: Triad) -> None:
     """
-    The numbers are valid event ids of some other events, so only comparing them with
-    the experiment and channel their rows name shows they are not the events' own.
+    ``id`` is a different row in each table, so a sublevel's cannot stand for an event:
+    the query is asked for the event key instead of loading the wrong events.
     """
     plot(
         metadata_tab,
         "sublevel_id_raw",
         "duration",
         ["1"],
+        plot_type="Raw All Points Histogram",
+    )
+
+    assert metadata_tab.tab_view.plotted_datasets == set()
+
+
+@pytest.mark.timeout(120)
+def test_a_key_that_names_no_event_draws_no_event_plot(metadata_tab: Triad) -> None:
+    """
+    A column labelled ``event_id`` whose values are not the channel's events is refused.
+    """
+    plot(
+        metadata_tab,
+        "mislabelled_raw",
+        "duration",
+        ["0"],
         plot_type="Raw All Points Histogram",
     )
 
@@ -423,13 +451,29 @@ def test_the_arrows_step_through_a_raw_filters_events(
 
 
 @pytest.mark.timeout(120)
-@pytest.mark.parametrize("name", ["nav_no_event_id_raw", "nav_join_raw"])
-def test_plot_events_refuses_a_raw_filter_that_cannot_name_its_events(
-    metadata_tab: Triad, name: str
+def test_plot_events_refuses_a_raw_filter_without_event_id(
+    metadata_tab: Triad,
 ) -> None:
     """
-    No ``event_id`` column, or two of them: nothing is navigated.
+    No ``event_id`` column: nothing is navigated.
     """
-    navigate(metadata_tab, name, "plot_events")
+    navigate(metadata_tab, "nav_no_event_id_raw", "plot_events")
 
     assert not metadata_tab.tab_view.filtered_event_ids
+
+
+@pytest.mark.timeout(120)
+def test_plot_events_lists_each_event_once_for_a_join(
+    metadata_tab: Triad, sample_metadata_db: str
+) -> None:
+    """
+    A join repeats an event once per sublevel; the list holds it once.
+    """
+    navigate(metadata_tab, "nav_join_raw", "plot_events")
+
+    with sqlite3.connect(sample_metadata_db) as conn:
+        expected = sorted(
+            r[0]
+            for r in conn.execute("SELECT event_id FROM events WHERE channel_id = 0")
+        )
+    assert metadata_tab.tab_view.filtered_event_ids == expected

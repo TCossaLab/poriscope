@@ -114,19 +114,23 @@ is a complete ``SELECT``, a few things are yours to provide:
   message on the status panel saying what to add, rather than being run over the whole
   database. A raw filter is drawn once for each channel selected, as an Assisted one is.
 * **The plot's own columns.** A plot needs the columns you chose on its axes: if the query
-  does not return one, the status panel names it and nothing is drawn. The event overlays,
-  all-points histograms and Protein distribution plots load the events themselves, so the
-  query must also return the events table's ``id``, for example
-  ``SELECT id, experiment_id, channel_id, duration FROM events WHERE duration > 100``.
-  Plot Events, the event navigation arrows and the Protein tab's Plot Histogram step
-  through events by number, so they need ``event_id`` instead, for example
+  does not return one, the status panel names it and nothing is drawn.
+* **The event, for anything that loads events.** The event overlays, all-points
+  histograms, the Protein distribution plots, Plot Events, the event navigation arrows
+  and the Protein tab's Plot Histogram work on whole events, so the query must return the
+  event's key - ``experiment_id``, ``channel_id`` and ``event_id`` - for example
   ``SELECT experiment_id, channel_id, event_id FROM events WHERE duration > 100``.
+  These three mean the same thing in every table that has them (a sublevel's are its
+  parent event's), so a query on ``sublevels`` or a join names the right events. ``id``
+  does not: it is a different row in each table, so a query that returns only ``id`` is
+  asked for the key instead. A key that names no event in the database, such as a level
+  number labelled ``event_id``, is refused.
 * **One column per name.** If your query joins tables, ``SELECT *`` returns both tables'
-  ``id`` (and ``event_id``), and a plot cannot tell which one is the event's. A query that
-  returns a column the plot reads more than once is refused with a message saying so;
-  name the one you mean and give the other a different name, for example
-  ``SELECT e.id AS id, s.id AS sublevel_id, ...``. An ``id`` or ``event_id`` that is not
-  the event's own - a sublevel's, say - is refused the same way.
+  columns, and a plot cannot tell which duplicate of a plotted column you mean. A query
+  that returns a column the plot reads more than once is refused with a message saying
+  so; name the one you mean and give the other a different name, for example
+  ``SELECT e.duration AS duration, s.sublevel_duration, ...``. The key columns are
+  equal in both tables, so they can be returned twice.
 * **Your query runs first, then the selection is applied to its rows.** A ``LIMIT``
   therefore counts across the whole database before the selection narrows it, so
   ``LIMIT 5`` with one channel ticked can return fewer than five rows. An aggregate
@@ -307,11 +311,8 @@ Common Mistakes
 | Raw SQL filter without ``experiment_id`` | Status panel asks for the missing columns;       |
 | and ``channel_id``                       | nothing is drawn                                 |
 +------------------------------------------+--------------------------------------------------+
-| Raw SQL filter without ``id`` used for   | Status panel asks for the ``id`` column; nothing |
-| an event overlay or all-points histogram | is drawn                                         |
-+------------------------------------------+--------------------------------------------------+
-| Raw SQL filter without ``event_id`` used | Status panel asks for the ``event_id`` column;   |
-| for Plot Events or the arrows            | nothing is plotted                               |
+| Raw SQL filter without ``event_id`` used | Status panel asks for the event key; nothing is  |
+| for an event plot, Plot Events or arrows | plotted                                          |
 +------------------------------------------+--------------------------------------------------+
 | Typo in column name                      | Validation error                                 |
 +------------------------------------------+--------------------------------------------------+

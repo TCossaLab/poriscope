@@ -124,7 +124,7 @@ class MetadataView(MetaSubsetTabView):
     #: would put the whole subset in the View to produce one array.
     #:
     #: Also carries the filter's name, whose ``_raw`` suffix marks a raw filter: the
-    #: events its ``SELECT``'s ``id`` column names, within the scope, are plotted.
+    #: events its ``SELECT``'s event key names, within the scope, are plotted.
     all_points_histogram_requested = Signal(
         str, str, object, str, object, bool, object, object, str, str
     )
