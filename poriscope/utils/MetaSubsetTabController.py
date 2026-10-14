@@ -160,6 +160,52 @@ def bind_scope(sql: str, experiment_id: int, channel_id: int) -> str:
     return "".join(pieces)
 
 
+#: Statements that change the database, or its settings. A filter only reads.
+WRITING_WORDS = frozenset(
+    {
+        "insert",
+        "update",
+        "delete",
+        "drop",
+        "create",
+        "alter",
+        "attach",
+        "detach",
+        "pragma",
+        "vacuum",
+        "reindex",
+        "analyze",
+    }
+)
+
+
+def writing_keyword(sql: str) -> Optional[str]:
+    """
+    Find a keyword in a query that would change the database, if there is one.
+
+    ``WITH x AS (SELECT 1) DELETE FROM events`` starts like a read and is a write: the
+    guard that a raw filter starts with ``SELECT`` or ``WITH`` does not see it, and Python's
+    SQLite module only opens a transaction for a statement that starts with ``INSERT``,
+    ``UPDATE`` or ``DELETE``, so this one is committed. Reads the whole text outside
+    strings, quoted names and comments, whole words only (``updated_at`` is a column,
+    ``replace(...)`` a function).
+
+    :param sql: the user's query
+    :type sql: str
+    :return: the first such keyword, lower case, or None
+    :rtype: Optional[str]
+    """
+    for start, end in code_spans(sql):
+        code = sql[start:end]
+        for match in re.finditer(r"[A-Za-z_]\w*", code):
+            word = match.group(0).lower()
+            if word in WRITING_WORDS:
+                return word
+            if word == "replace" and re.match(r"\s+into\b", code[match.end() :], re.I):
+                return "replace into"
+    return None
+
+
 def selected_pairs(
     experiments_and_channels: Optional[Dict[str, Optional[List[int]]]],
 ) -> List[Tuple[str, Optional[int]]]:
@@ -683,6 +729,14 @@ class MetaSubsetTabController(MetaController):
             self.add_text_to_display.emit(
                 f"{subset_name} is not a SELECT, so it was not run: a raw filter has to "
                 "start with SELECT",
+                self.__class__.__name__,
+            )
+            return None
+        writes = writing_keyword(sql_filter)
+        if writes is not None:
+            self.add_text_to_display.emit(
+                f"{subset_name} contains {writes.upper()}, so it was not run: a raw "
+                "filter may only read the database",
                 self.__class__.__name__,
             )
             return None

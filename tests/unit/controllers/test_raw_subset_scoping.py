@@ -32,6 +32,7 @@ from poriscope.utils.MetaSubsetTabController import (
     relabelled_keys,
     scope_placeholders,
     selected_pairs,
+    writing_keyword,
 )
 from poriscope.utils.MetaSubsetTabModel import MetaSubsetTabModel
 from tests.unit.controllers._recording_model import RecordingModel
@@ -253,6 +254,29 @@ def test_the_code_spans_leave_out_strings_and_comments() -> None:
     ]
 
 
+@pytest.mark.parametrize(
+    ("sql", "found"),
+    [
+        ("SELECT a FROM t", None),
+        ("WITH x AS (SELECT 1) DELETE FROM events", "delete"),
+        ("WITH x AS (SELECT 1) UPDATE events SET a = 1", "update"),
+        ("WITH x AS (SELECT 1) INSERT INTO t SELECT 1", "insert"),
+        ("WITH x AS (SELECT 1) REPLACE INTO t SELECT 1", "replace into"),
+        ("SELECT a FROM t; DROP TABLE t", "drop"),
+        ("SELECT 'delete' AS a, \"update\" FROM t", None),
+        ("SELECT a FROM t -- DELETE FROM t", None),
+        ("SELECT /* update */ a FROM t", None),
+        ("SELECT updated_at, created, replace(a, 'x', 'y') FROM t", None),
+        ("SELECT a FROM t WHERE note = 'drop table'", None),
+    ],
+)
+def test_a_keyword_that_would_write_is_found_in_code_only(sql: str, found: str) -> None:
+    """
+    Whole words outside strings, quoted names and comments.
+    """
+    assert writing_keyword(sql) == found
+
+
 # ------------------------------------------------------------------ scoping and warnings
 
 
@@ -435,6 +459,10 @@ class TestRawFilterScopesItself:
         ("UPDATE events SET duration = 1", False),
         ("DROP TABLE events", False),
         ("-- SELECT\nDELETE FROM events", False),
+        ("WITH x AS (SELECT 1) DELETE FROM events", False),
+        ("WITH x AS (SELECT 1) UPDATE events SET duration = 1", False),
+        ("WITH x AS (SELECT 1) INSERT INTO events SELECT * FROM events", False),
+        ("SELECT updated_at, replace(a, 'x', 'y') FROM t -- drop table", True),
     ],
 )
 def test_only_a_select_is_run(
@@ -448,7 +476,7 @@ def test_only_a_select_is_run(
     out = controller._run_raw_filter("ldr", sql, None, "mine_raw")
 
     assert (out is not None) == runs
-    assert ("not a SELECT" in _said(controller)) == (not runs)
+    assert ("so it was not run" in _said(controller)) == (not runs)
     if not runs:
         assert controller.model.calls_to("query_database_directly") == []
 

@@ -13,6 +13,7 @@ import pytest
 
 from poriscope.plugins.analysistabs.MetadataController import MetadataController
 from poriscope.plugins.db_loaders.SQLiteDBLoader import SQLiteDBLoader
+from tests.synthetic_data.synthetic_metadata_db import generate_metadata_database
 
 SCOPE_CH0 = {"exp_a": [0]}
 SCOPE_CH1 = {"exp_a": [1]}
@@ -202,6 +203,47 @@ def test_only_a_select_is_run_and_the_database_is_untouched(
 
     assert query(sample_metadata_db, "SELECT COUNT(*) FROM events") == before
     assert "not a SELECT" in panel_of(controller)
+
+
+@pytest.mark.timeout(120)
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "WITH x AS (SELECT 1) DELETE FROM events",
+        "WITH x AS (SELECT 1) UPDATE events SET duration = 1",
+    ],
+)
+def test_a_write_behind_a_with_changes_nothing(tmp_path: Any, sql: str) -> None:
+    """
+    ``WITH x AS (...) DELETE`` starts like a read, and Python's SQLite module commits it.
+    Poriscope refuses it, and the loader's read connection could not write it anyway -
+    each layer on its own, on a scratch database.
+    """
+    scratch = generate_metadata_database(
+        tmp_path / "scratch.sqlite3",
+        experiments=[
+            {
+                "name": "exp_a",
+                "channels": [{"channel_id": 0, "num_events": 5, "seed": 1}],
+            }
+        ],
+    )
+    path = str(scratch.db_path)
+    ctrl = MetadataController.__new__(MetadataController)  # type: ignore[type-abstract]
+    ctrl.model = LoaderModel(open_loader(path))  # type: ignore[assignment]
+    ctrl.logger = Mock()  # type: ignore[assignment,method-assign]
+    ctrl.panel = []  # type: ignore[attr-defined]
+    ctrl.add_text_to_display = Mock()  # type: ignore[assignment,method-assign]
+    ctrl.add_text_to_display.emit = lambda message, *_: ctrl.panel.append(message)  # type: ignore[attr-defined]
+    before = query(path, "SELECT COUNT(*), SUM(duration) FROM events")
+
+    assert ctrl._run_raw_filter("L", sql, None, "x_raw") is None
+    assert "so it was not run" in panel_of(ctrl)
+    assert query(path, "SELECT COUNT(*), SUM(duration) FROM events") == before
+
+    # the second layer: past Poriscope's check, the loader's own read cannot write
+    assert open_loader(path).query_database_directly(sql) is None
+    assert query(path, "SELECT COUNT(*), SUM(duration) FROM events") == before
 
 
 @pytest.mark.timeout(120)

@@ -910,9 +910,11 @@ both warned about: a query that omits them ignores the selection, and one that s
 leaks rows (counted when the result has the columns). Events are named by
 `(experiment_id, channel_id, event_id)`, not `id`, which is a different row in each table: a
 sublevel's `id` that was also a same-channel event once loaded the wrong events silently. A
-sublevel's key is its parent event's, so a join is safe. Only a `SELECT` is run: the loader's
-validator accepts any statement (a `DELETE` ran on a scratch database, undone only because the
-connection never commits). **Revisit if** users keep omitting the placeholders.
+sublevel's key is its parent event's, so a join is safe. Only a read is run: the loader's
+validator accepts any statement, and `WITH x AS (SELECT 1) DELETE FROM events` emptied a scratch
+database (Python's SQLite module opens a transaction only for statements that start with
+`INSERT`/`UPDATE`/`DELETE`, so it committed). Poriscope refuses any writing keyword, and the loader's
+two read connections set `PRAGMA query_only = ON`. **Revisit if** users keep omitting the placeholders.
 
 ---
 
