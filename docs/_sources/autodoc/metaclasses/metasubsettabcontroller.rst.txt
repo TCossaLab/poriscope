@@ -1,0 +1,78 @@
+.. _MetaSubsetTabController:
+
+MetaSubsetTabController
+=======================
+
+**class MetaSubsetTabController()**
+
+Bases: :ref:`MetaController`
+
+Shared base for the Controllers of the two database-backed analysis tabs.
+
+MetadataController and ProteinController both drive a tab whose data
+comes from a MetaDatabaseLoader: the user picks an experiment and channels,
+builds a subset filter, and plots or exports the rows that come back. The two
+were written by copy-paste and carried seventeen methods verbatim between them;
+this base holds that shared half so there is one copy to fix.
+
+What a subclass inherits:
+
+- **Experiment and column state.** request_column_names and
+  request_experiment_structure ask the loader and hand its answer to the View,
+  which is the Model-to-View half of the mediation this layer exists for.
+- **Filter validation.** validate_filter and validate_raw_filter answer the
+  View's two validation requests by calling the loader directly, so a filter the
+  database refuses is reported through _refuse_filter rather than vanishing.
+  relay_query receives the query the loader built - or the debug message explaining
+  why it could not - and commits, renames or refuses the pending filter accordingly.
+- **Session state.** get_session_state and restore_session_state
+  override MetaController's hooks so a tab's subset filters survive a
+  save and reload.
+
+What a subclass owes it:
+
+- **Its own** logger = logging.getLogger(__name__), so that records made by
+  the methods it defines itself stay attributed to its own module. Methods
+  defined *here* log under this module, which is the same convention
+  MetaView and MetaController already follow for their shared code.
+- **self.view and self.model**, built in its _init() as
+  MetaController requires.
+
+:ivar logger: the module logger the shared methods below log under
+
+Public Methods
+--------------
+
+Abstract Methods
+~~~~~~~~~~~~~~~~
+
+These methods must be implemented by subclasses.
+
+(none)
+
+Concrete Methods
+~~~~~~~~~~~~~~~~
+
+.. automethod:: poriscope.utils.MetaSubsetTabController.MetaSubsetTabController.filter_scatterplot
+.. automethod:: poriscope.utils.MetaSubsetTabController.MetaSubsetTabController.get_session_state
+.. automethod:: poriscope.utils.MetaSubsetTabController.MetaSubsetTabController.load_event_id_cache
+.. automethod:: poriscope.utils.MetaSubsetTabController.MetaSubsetTabController.load_event_plot_data
+.. automethod:: poriscope.utils.MetaSubsetTabController.MetaSubsetTabController.load_filters
+.. automethod:: poriscope.utils.MetaSubsetTabController.MetaSubsetTabController.relay_query
+.. automethod:: poriscope.utils.MetaSubsetTabController.MetaSubsetTabController.request_column_names
+.. automethod:: poriscope.utils.MetaSubsetTabController.MetaSubsetTabController.request_experiment_structure
+.. automethod:: poriscope.utils.MetaSubsetTabController.MetaSubsetTabController.restore_session_state
+.. automethod:: poriscope.utils.MetaSubsetTabController.MetaSubsetTabController.save_filters
+.. automethod:: poriscope.utils.MetaSubsetTabController.MetaSubsetTabController.validate_filter
+.. automethod:: poriscope.utils.MetaSubsetTabController.MetaSubsetTabController.validate_raw_filter
+
+Private Methods
+---------------
+
+Abstract Methods
+~~~~~~~~~~~~~~~~
+
+These methods must be implemented by subclasses.
+
+(none)
+

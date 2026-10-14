@@ -1,0 +1,28 @@
+.. _EventAnalysisControls:
+
+EventAnalysisControls
+=====================
+
+**class EventAnalysisControls(parent: Optional[QWidget] = None)**
+
+Bases: :ref:`MetaEventTabControls`
+
+Public Methods
+--------------
+
+.. automethod:: poriscope.plugins.analysistabs.utils.eventAnalysisControls.EventAnalysisControls.collect_parameters
+.. automethod:: poriscope.plugins.analysistabs.utils.eventAnalysisControls.EventAnalysisControls.connect_signals
+.. automethod:: poriscope.plugins.analysistabs.utils.eventAnalysisControls.EventAnalysisControls.on_button_clicked
+.. automethod:: poriscope.plugins.analysistabs.utils.eventAnalysisControls.EventAnalysisControls.on_parameter_changed
+.. automethod:: poriscope.plugins.analysistabs.utils.eventAnalysisControls.EventAnalysisControls.retranslateUi
+.. automethod:: poriscope.plugins.analysistabs.utils.eventAnalysisControls.EventAnalysisControls.setupUi
+.. automethod:: poriscope.plugins.analysistabs.utils.eventAnalysisControls.EventAnalysisControls.update_eventfitters
+.. automethod:: poriscope.plugins.analysistabs.utils.eventAnalysisControls.EventAnalysisControls.update_loaders
+.. automethod:: poriscope.plugins.analysistabs.utils.eventAnalysisControls.EventAnalysisControls.update_writers
+.. automethod:: poriscope.plugins.analysistabs.utils.eventAnalysisControls.EventAnalysisControls.validate_inputs
+
+Private Methods
+---------------
+
+.. automethod:: poriscope.plugins.analysistabs.utils.eventAnalysisControls.EventAnalysisControls.__init__
+

@@ -1,0 +1,31 @@
+.. _EventAnalysisView:
+
+EventAnalysisView
+=================
+
+**class EventAnalysisView()**
+
+Bases: :ref:`MetaEventTabView`
+
+Subclass of MetaEventTabView for visualizing and interacting with event-based signal analysis.
+
+Handles event plotting, plugin integration, and user-triggered actions.
+
+Public Methods
+--------------
+
+.. automethod:: poriscope.plugins.analysistabs.EventAnalysisView.EventAnalysisView.get_current_view
+.. automethod:: poriscope.plugins.analysistabs.EventAnalysisView.EventAnalysisView.get_save_filename
+.. automethod:: poriscope.plugins.analysistabs.EventAnalysisView.EventAnalysisView.get_walkthrough_steps
+.. automethod:: poriscope.plugins.analysistabs.EventAnalysisView.EventAnalysisView.handle_parameter_change
+.. automethod:: poriscope.plugins.analysistabs.EventAnalysisView.EventAnalysisView.set_event_plot_data
+.. automethod:: poriscope.plugins.analysistabs.EventAnalysisView.EventAnalysisView.set_fitting_statuses
+.. automethod:: poriscope.plugins.analysistabs.EventAnalysisView.EventAnalysisView.update_available_plugins
+.. automethod:: poriscope.plugins.analysistabs.EventAnalysisView.EventAnalysisView.update_channels
+.. automethod:: poriscope.plugins.analysistabs.EventAnalysisView.EventAnalysisView.update_plot
+
+Private Methods
+---------------
+
+.. automethod:: poriscope.plugins.analysistabs.EventAnalysisView.EventAnalysisView._init
+

@@ -1,0 +1,28 @@
+.. _MetadataControls:
+
+MetadataControls
+================
+
+**class MetadataControls(parent: Optional[QWidget] = None)**
+
+Bases: :ref:`MetaSubsetTabControls`
+
+Public Methods
+--------------
+
+.. automethod:: poriscope.plugins.analysistabs.utils.metadatacontrols.MetadataControls.collect_parameters
+.. automethod:: poriscope.plugins.analysistabs.utils.metadatacontrols.MetadataControls.connect_signals
+.. automethod:: poriscope.plugins.analysistabs.utils.metadatacontrols.MetadataControls.on_button_clicked
+.. automethod:: poriscope.plugins.analysistabs.utils.metadatacontrols.MetadataControls.on_loader_changed
+.. automethod:: poriscope.plugins.analysistabs.utils.metadatacontrols.MetadataControls.set_event_id_input
+.. automethod:: poriscope.plugins.analysistabs.utils.metadatacontrols.MetadataControls.setupUi
+.. automethod:: poriscope.plugins.analysistabs.utils.metadatacontrols.MetadataControls.update_axes
+.. automethod:: poriscope.plugins.analysistabs.utils.metadatacontrols.MetadataControls.update_column_units_label
+.. automethod:: poriscope.plugins.analysistabs.utils.metadatacontrols.MetadataControls.update_units
+.. automethod:: poriscope.plugins.analysistabs.utils.metadatacontrols.MetadataControls.validate_inputs
+
+Private Methods
+---------------
+
+.. automethod:: poriscope.plugins.analysistabs.utils.metadatacontrols.MetadataControls.__init__
+

@@ -1,0 +1,27 @@
+.. _ProteinModel:
+
+ProteinModel
+============
+
+**class ProteinModel(**kwargs)**
+
+Bases: :ref:`MetaSubsetTabModel`
+
+Subclass of MetaSubsetTabModel for protein volume/shape-factor fitting data and storage.
+
+Public Methods
+--------------
+
+.. automethod:: poriscope.plugins.analysistabs.ProteinModel.ProteinModel.build_all_points_histogram
+.. automethod:: poriscope.plugins.analysistabs.ProteinModel.ProteinModel.build_event_histograms
+.. automethod:: poriscope.plugins.analysistabs.ProteinModel.ProteinModel.drop_fit_columns
+.. automethod:: poriscope.plugins.analysistabs.ProteinModel.ProteinModel.fit_histogram
+.. automethod:: poriscope.plugins.analysistabs.ProteinModel.ProteinModel.fit_histograms
+.. automethod:: poriscope.plugins.analysistabs.ProteinModel.ProteinModel.sample_event_geometries
+.. automethod:: poriscope.plugins.analysistabs.ProteinModel.ProteinModel.sample_vm_solutions
+
+Private Methods
+---------------
+
+.. automethod:: poriscope.plugins.analysistabs.ProteinModel.ProteinModel._init
+

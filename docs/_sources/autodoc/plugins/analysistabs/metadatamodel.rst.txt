@@ -1,0 +1,32 @@
+.. _MetadataModel:
+
+MetadataModel
+=============
+
+**class MetadataModel(**kwargs)**
+
+Bases: :ref:`MetaSubsetTabModel`
+
+Subclass of MetaSubsetTabModel for handling metadata-related processing and storage.
+
+Public Methods
+--------------
+
+.. automethod:: poriscope.plugins.analysistabs.MetadataModel.MetadataModel.build_all_points_histogram
+.. automethod:: poriscope.plugins.analysistabs.MetadataModel.MetadataModel.build_event_overlay
+.. automethod:: poriscope.plugins.analysistabs.MetadataModel.MetadataModel.calculate_heatmap
+.. automethod:: poriscope.plugins.analysistabs.MetadataModel.MetadataModel.categorical_counts
+.. automethod:: poriscope.plugins.analysistabs.MetadataModel.MetadataModel.fit_capture_rate
+.. automethod:: poriscope.plugins.analysistabs.MetadataModel.MetadataModel.histogram_bin_edges
+.. automethod:: poriscope.plugins.analysistabs.MetadataModel.MetadataModel.interevent_log_times
+.. automethod:: poriscope.plugins.analysistabs.MetadataModel.MetadataModel.kernel_densities
+.. automethod:: poriscope.plugins.analysistabs.MetadataModel.MetadataModel.kernel_density
+.. automethod:: poriscope.plugins.analysistabs.MetadataModel.MetadataModel.logscale_and_filter_datasets
+.. automethod:: poriscope.plugins.analysistabs.MetadataModel.MetadataModel.overlaid_histograms
+.. automethod:: poriscope.plugins.analysistabs.MetadataModel.MetadataModel.widen_shared_limits
+
+Private Methods
+---------------
+
+.. automethod:: poriscope.plugins.analysistabs.MetadataModel.MetadataModel._init
+

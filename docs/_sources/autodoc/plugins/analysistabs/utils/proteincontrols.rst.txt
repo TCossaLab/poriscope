@@ -1,0 +1,25 @@
+.. _ProteinControls:
+
+ProteinControls
+===============
+
+**class ProteinControls(parent: Optional[QWidget] = None)**
+
+Bases: :ref:`MetaSubsetTabControls`
+
+Public Methods
+--------------
+
+.. automethod:: poriscope.plugins.analysistabs.utils.proteincontrols.ProteinControls.collect_parameters
+.. automethod:: poriscope.plugins.analysistabs.utils.proteincontrols.ProteinControls.connect_signals
+.. automethod:: poriscope.plugins.analysistabs.utils.proteincontrols.ProteinControls.on_button_clicked
+.. automethod:: poriscope.plugins.analysistabs.utils.proteincontrols.ProteinControls.on_loader_changed
+.. automethod:: poriscope.plugins.analysistabs.utils.proteincontrols.ProteinControls.set_event_id_input
+.. automethod:: poriscope.plugins.analysistabs.utils.proteincontrols.ProteinControls.setupUi
+.. automethod:: poriscope.plugins.analysistabs.utils.proteincontrols.ProteinControls.validate_inputs
+
+Private Methods
+---------------
+
+.. automethod:: poriscope.plugins.analysistabs.utils.proteincontrols.ProteinControls.__init__
+

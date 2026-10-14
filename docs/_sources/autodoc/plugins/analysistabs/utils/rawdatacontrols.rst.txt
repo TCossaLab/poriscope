@@ -1,0 +1,29 @@
+.. _RawDataControls:
+
+RawDataControls
+===============
+
+**class RawDataControls(parent: Optional[QWidget] = None)**
+
+Bases: :ref:`MetaEventTabControls`
+
+Public Methods
+--------------
+
+.. automethod:: poriscope.plugins.analysistabs.utils.rawdatacontrols.RawDataControls.collect_parameters
+.. automethod:: poriscope.plugins.analysistabs.utils.rawdatacontrols.RawDataControls.connect_signals
+.. automethod:: poriscope.plugins.analysistabs.utils.rawdatacontrols.RawDataControls.on_button_clicked
+.. automethod:: poriscope.plugins.analysistabs.utils.rawdatacontrols.RawDataControls.on_parameter_changed
+.. automethod:: poriscope.plugins.analysistabs.utils.rawdatacontrols.RawDataControls.retranslateUi
+.. automethod:: poriscope.plugins.analysistabs.utils.rawdatacontrols.RawDataControls.set_range_inputs
+.. automethod:: poriscope.plugins.analysistabs.utils.rawdatacontrols.RawDataControls.setupUi
+.. automethod:: poriscope.plugins.analysistabs.utils.rawdatacontrols.RawDataControls.update_eventfinders
+.. automethod:: poriscope.plugins.analysistabs.utils.rawdatacontrols.RawDataControls.update_readers
+.. automethod:: poriscope.plugins.analysistabs.utils.rawdatacontrols.RawDataControls.update_writers
+.. automethod:: poriscope.plugins.analysistabs.utils.rawdatacontrols.RawDataControls.validate_inputs
+
+Private Methods
+---------------
+
+.. automethod:: poriscope.plugins.analysistabs.utils.rawdatacontrols.RawDataControls.__init__
+

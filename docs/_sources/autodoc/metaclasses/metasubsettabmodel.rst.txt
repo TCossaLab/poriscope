@@ -1,0 +1,56 @@
+.. _MetaSubsetTabModel:
+
+MetaSubsetTabModel
+==================
+
+**class MetaSubsetTabModel()**
+
+Bases: :ref:`MetaModel`
+
+Shared base for the Models of the two database-backed analysis tabs.
+
+``MetadataModel`` and ``ProteinModel`` both back a tab whose data comes from a
+``MetaDatabaseLoader``: the user picks an experiment and channels, writes a subset
+filter, and plots the rows that come back. This base holds the half of that work
+that is the same in both, so there is one copy to fix - the events-table lookups
+behind an event plot, and the subset filter file's JSON.
+
+It is the Model half of the ``MetaSubsetTab*`` family, alongside
+``MetaSubsetTabController``, ``MetaSubsetTabView`` and ``MetaSubsetTabControls``.
+Its methods live here rather than on ``MetaModel`` because the three analysis tabs
+that read a timeseries rather than a database - RawData, EventAnalysis and
+Clustering - have no events table to query and no filter file to write, and
+inheriting the API would say they did.
+
+A subclass still owes ``MetaModel`` its ``_init``.
+
+:ivar logger: the module logger the shared methods below log under
+
+Public Methods
+--------------
+
+Abstract Methods
+~~~~~~~~~~~~~~~~
+
+These methods must be implemented by subclasses.
+
+(none)
+
+Concrete Methods
+~~~~~~~~~~~~~~~~
+
+.. automethod:: poriscope.utils.MetaSubsetTabModel.MetaSubsetTabModel.load_events_by_id
+.. automethod:: poriscope.utils.MetaSubsetTabModel.MetaSubsetTabModel.load_filters
+.. automethod:: poriscope.utils.MetaSubsetTabModel.MetaSubsetTabModel.resolve_event_ids
+.. automethod:: poriscope.utils.MetaSubsetTabModel.MetaSubsetTabModel.save_filters
+
+Private Methods
+---------------
+
+Abstract Methods
+~~~~~~~~~~~~~~~~
+
+These methods must be implemented by subclasses.
+
+(none)
+

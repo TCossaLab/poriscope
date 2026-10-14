@@ -1,0 +1,13 @@
+Datareaders
+===========
+
+.. toctree::
+   :maxdepth: 1
+
+   binaryreader1x
+   chimerareader20240101
+   chimerareader20240501
+   tcossalababfreader
+   legacyelementsreader
+   chimerareadervc100
+   singlebinarydecoder

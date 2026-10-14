@@ -1,0 +1,74 @@
+.. _MetaEventTabControls:
+
+MetaEventTabControls
+====================
+
+**class MetaEventTabControls()**
+
+Bases: :ref:`MetaControls`
+
+Shared base for the control panels of the two event-oriented analysis tabs.
+
+``RawDataControls`` and ``EventAnalysisControls`` build the same three widgets
+below their tab's plot: a multi-select channel combobox, a filter combobox, and an
+event-index field. The two carried three methods verbatim between them; this base
+holds that shared half so there is one copy to fix.
+
+It extends ``MetaControls`` rather than replacing it - the widget factories, the
+icon buttons and the placeholder guard all still come from there. It also declares
+``QObjectABCMeta`` as its metaclass, which is what makes ``@abstractmethod`` below
+actually fire: ``MetaControls`` is a plain ``QWidget``, so its own metaclass is
+Shiboken's ``ObjectType``, which computes no ``__abstractmethods__`` and would let
+an unimplemented hook through silently. ``MetaView`` uses the same metaclass for
+the same reason.
+
+What a subclass inherits, on top of everything ``MetaControls`` gives it:
+
+- ``update_channels``, the largest single duplicate in the analysis-tab layer,
+  which repopulates the channel combobox from a plugin's channel list while
+  preserving whatever the user had selected.
+- ``update_filters``, which keeps the filter combobox in step with the filters
+  instantiated elsewhere in the app.
+- ``set_event_index_input``, which writes an event index into the field and
+  revalidates.
+
+What a subclass owes it:
+
+- **Its own** ``logger = logging.getLogger(__name__)``, as ``MetaControls``
+  already requires, and its own ``placeholder_texts`` - the two tabs name
+  different plugin families, so unlike the subset tabs they do not share it.
+- **A ``setupUi`` that builds** ``channel_comboBox``, ``filters_comboBox`` and
+  ``event_index_lineEdit``. They are declared below but not created here, because
+  each tab lays its panel out differently.
+- **``validate_inputs``**, declared abstract below: each tab validates a different
+  set of fields.
+
+:ivar logger: the module logger the shared methods below log under
+
+Public Methods
+--------------
+
+Abstract Methods
+~~~~~~~~~~~~~~~~
+
+These methods must be implemented by subclasses.
+
+.. automethod:: poriscope.utils.MetaEventTabControls.MetaEventTabControls.validate_inputs
+
+Concrete Methods
+~~~~~~~~~~~~~~~~
+
+.. automethod:: poriscope.utils.MetaEventTabControls.MetaEventTabControls.set_event_index_input
+.. automethod:: poriscope.utils.MetaEventTabControls.MetaEventTabControls.update_channels
+.. automethod:: poriscope.utils.MetaEventTabControls.MetaEventTabControls.update_filters
+
+Private Methods
+---------------
+
+Abstract Methods
+~~~~~~~~~~~~~~~~
+
+These methods must be implemented by subclasses.
+
+(none)
+

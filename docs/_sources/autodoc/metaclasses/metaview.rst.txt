@@ -1,0 +1,52 @@
+.. _MetaView:
+
+MetaView
+========
+
+**class MetaView()**
+
+Bases: :class:`~PySide6.QtWidgets.QWidget`, :ref:`WalkthroughMixin <walkthrough_mixin>`
+
+Abstract base class designed to provide a unified interface for different analysis tabs.
+
+This class includes a blank plot canvas for visualizing data, a dedicated space for
+control elements, and an interface for dynamically updating the plot based on user
+interactions or analysis results.
+
+Public Methods
+--------------
+
+Abstract Methods
+~~~~~~~~~~~~~~~~
+
+These methods must be implemented by subclasses.
+
+.. automethod:: poriscope.utils.MetaView.MetaView.handle_parameter_change
+.. automethod:: poriscope.utils.MetaView.MetaView.notify_plugin_state_changed
+.. automethod:: poriscope.utils.MetaView.MetaView.update_available_plugins
+
+Concrete Methods
+~~~~~~~~~~~~~~~~
+
+.. automethod:: poriscope.utils.MetaView.MetaView.handle_add_triggered
+.. automethod:: poriscope.utils.MetaView.MetaView.handle_delete_triggered
+.. automethod:: poriscope.utils.MetaView.MetaView.handle_edit_triggered
+.. automethod:: poriscope.utils.MetaView.MetaView.handle_kill_all
+.. automethod:: poriscope.utils.MetaView.MetaView.handle_kill_button
+.. automethod:: poriscope.utils.MetaView.MetaView.remove_progress_bar
+.. automethod:: poriscope.utils.MetaView.MetaView.set_available_subclasses
+.. automethod:: poriscope.utils.MetaView.MetaView.update_actions_from_json
+.. automethod:: poriscope.utils.MetaView.MetaView.update_plot_data
+.. automethod:: poriscope.utils.MetaView.MetaView.update_progressbar
+
+Private Methods
+---------------
+
+Abstract Methods
+~~~~~~~~~~~~~~~~
+
+These methods must be implemented by subclasses.
+
+.. automethod:: poriscope.utils.MetaView.MetaView._init
+.. automethod:: poriscope.utils.MetaView.MetaView._reset_actions
+

@@ -1,0 +1,29 @@
+.. _ClusteringControls:
+
+ClusteringControls
+==================
+
+**class ClusteringControls(parent: Optional[QWidget] = None)**
+
+Bases: :ref:`MetaControls`
+
+Public Methods
+--------------
+
+.. automethod:: poriscope.plugins.analysistabs.utils.clusteringcontrols.ClusteringControls.collect_parameters
+.. automethod:: poriscope.plugins.analysistabs.utils.clusteringcontrols.ClusteringControls.connect_signals
+.. automethod:: poriscope.plugins.analysistabs.utils.clusteringcontrols.ClusteringControls.on_button_clicked
+.. automethod:: poriscope.plugins.analysistabs.utils.clusteringcontrols.ClusteringControls.on_label_changed
+.. automethod:: poriscope.plugins.analysistabs.utils.clusteringcontrols.ClusteringControls.on_loader_changed
+.. automethod:: poriscope.plugins.analysistabs.utils.clusteringcontrols.ClusteringControls.retranslateUi
+.. automethod:: poriscope.plugins.analysistabs.utils.clusteringcontrols.ClusteringControls.setupUi
+.. automethod:: poriscope.plugins.analysistabs.utils.clusteringcontrols.ClusteringControls.update_clusters
+.. automethod:: poriscope.plugins.analysistabs.utils.clusteringcontrols.ClusteringControls.update_loaders
+.. automethod:: poriscope.plugins.analysistabs.utils.clusteringcontrols.ClusteringControls.update_units
+.. automethod:: poriscope.plugins.analysistabs.utils.clusteringcontrols.ClusteringControls.validate_inputs
+
+Private Methods
+---------------
+
+.. automethod:: poriscope.plugins.analysistabs.utils.clusteringcontrols.ClusteringControls.__init__
+

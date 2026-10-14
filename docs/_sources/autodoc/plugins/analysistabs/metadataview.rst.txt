@@ -1,0 +1,60 @@
+.. _MetadataView:
+
+MetadataView
+============
+
+**class MetadataView()**
+
+Bases: :ref:`MetaSubsetTabView`
+
+Subclass of MetaSubsetTabView for visualizing and interacting with metadata plots.
+
+This view supports a wide variety of statistical visualizations, including:
+1D histograms, KDEs, capture rates, scatterplots, heatmaps, and event overlays.
+Also provides walkthroughs and export options.
+
+Attributes:
+    metadata_plots (List[str]): List of supported metadata-based plot types.
+    event_data_plots (List[str]): List of supported event-based plot types.
+    subset_export_count (int): Counter for naming exported subsets.
+    plot_initialized (bool): Indicates whether a plot is currently initialized.
+    no_cached_data (bool): True if data is not cached due to size.
+
+Public Methods
+--------------
+
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView.format_axis_label
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView.get_current_view
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView.get_walkthrough_steps
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView.handle_parameter_change
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView.is_categorical_type
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView.notify_plugin_state_changed
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView.on_subset_export_started
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView.set_3d_scatterplot
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView.set_all_points_histogram
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView.set_capture_rate
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView.set_categorical_counts
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView.set_column_type
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView.set_column_units
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView.set_event_overlay
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView.set_heatmap
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView.set_histogram_bins
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView.set_kernel_densities
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView.update_available_plugins
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView.update_column_names
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView.update_column_units
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView.update_plot
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView.update_plot_features
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView.update_units
+
+Private Methods
+---------------
+
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView._init
+.. automethod:: poriscope.plugins.analysistabs.MetadataView.MetadataView._reset_actions
+
+Properties
+----------
+
+.. autoattribute:: poriscope.plugins.analysistabs.MetadataView.MetadataView._subset_controls
+

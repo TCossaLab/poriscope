@@ -1,0 +1,26 @@
+.. _BesselFilter:
+
+BesselFilter
+============
+
+**class BesselFilter(settings: Optional[dict] = None)**
+
+Bases: :ref:`MetaFilter`
+
+Subclass for defining a low-pass Bessel filter to be applied to a dataset
+
+Public Methods
+--------------
+
+.. automethod:: poriscope.plugins.filters.BesselFilter.BesselFilter.close_resources
+.. automethod:: poriscope.plugins.filters.BesselFilter.BesselFilter.get_empty_settings
+.. automethod:: poriscope.plugins.filters.BesselFilter.BesselFilter.reset_channel
+
+Private Methods
+---------------
+
+.. automethod:: poriscope.plugins.filters.BesselFilter.BesselFilter._apply_filter
+.. automethod:: poriscope.plugins.filters.BesselFilter.BesselFilter._finalize_initialization
+.. automethod:: poriscope.plugins.filters.BesselFilter.BesselFilter._init
+.. automethod:: poriscope.plugins.filters.BesselFilter.BesselFilter._validate_settings
+
