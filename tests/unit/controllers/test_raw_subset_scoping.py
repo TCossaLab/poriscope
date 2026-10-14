@@ -384,6 +384,39 @@ class TestRawFilterKeyWarnings:
         assert "2 row(s)" in _said(controller)
         assert "left out" in _said(controller)
 
+    @pytest.mark.parametrize(
+        "bad",
+        [[10.5, 11.0, 12.0, 13.0], ["a", "b", "c", "d"]],
+        ids=["fraction", "text"],
+    )
+    def test_a_key_that_is_not_a_whole_number_is_refused(
+        self, cls: type, mocker: MockerFixture, bad: list
+    ) -> None:
+        """
+        An event number is a whole number. 10.5 would be cut to 10 and name another
+        event, so it names none and the plot is refused.
+        """
+        frame = KEYS.copy()
+        frame["event_id"] = bad
+        controller = _controller(cls, mocker, answers(query_database_directly=frame))
+
+        assert controller._fetch_event_subset("ldr", RAW, SCOPE, "mine_raw") is None
+
+        assert "not a whole number" in _said(controller)
+        assert controller.model.calls_to("load_event_data") == []
+
+    def test_whole_numbers_held_as_floats_are_accepted(
+        self, cls: type, mocker: MockerFixture
+    ) -> None:
+        """
+        A column with a NULL elsewhere arrives as floats; 10.0 is still event 10.
+        """
+        frame = KEYS.copy()
+        frame["event_id"] = [10.0, 10.0, 11.0, 12.0]
+        controller = _controller(cls, mocker, answers(query_database_directly=frame))
+
+        assert controller._fetch_event_subset("ldr", RAW, SCOPE, "mine_raw") is not None
+
     def test_no_null_key_means_no_message(
         self, cls: type, mocker: MockerFixture
     ) -> None:

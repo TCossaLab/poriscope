@@ -124,7 +124,8 @@ is a complete ``SELECT``, a few things are yours to provide:
   parent event's), so a query on ``sublevels`` or a join names the right events. ``id``
   does not: it is a different row in each table, so a query that returns only ``id`` is
   asked for the key instead. A key that names no event in the database, such as a level
-  number labelled ``event_id``, is refused.
+  number labelled ``event_id``, is refused, and so is one that is not a whole number
+  (``event_id / 2``).
   A key column the query makes by renaming another expression (``level_id AS event_id``)
   draws a warning on the status panel, since nothing can check that it was meant, and rows
   whose key is ``NULL`` name no event: they are left out and the panel says how many.

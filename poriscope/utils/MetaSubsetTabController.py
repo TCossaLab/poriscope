@@ -687,6 +687,23 @@ class MetaSubsetTabController(MetaController):
                 "are plotted",
                 self.__class__.__name__,
             )
+        numbers = keys.apply(pd.to_numeric, errors="coerce")
+        # A NULL is reported below; what is present but not a whole number - 1.5, or
+        # text - cannot name an event, and truncating it would name another.
+        fractional = (numbers.notna() & (numbers % 1 != 0)) | (
+            keys.notna() & numbers.isna()
+        )
+        broken = int(fractional.any(axis=1).sum())
+        if broken:
+            example = keys[fractional.any(axis=1)].iloc[0].to_dict()
+            self.add_text_to_display.emit(
+                f"{broken} row(s) of {subset_name}'s query have an experiment_id, "
+                "channel_id or event_id that is not a whole number, so they cannot "
+                f"name an event, for example {example}",
+                self.__class__.__name__,
+            )
+            return None
+        keys = numbers
         unnamed = int(keys.isna().any(axis=1).sum())
         if unnamed:
             self.add_text_to_display.emit(
