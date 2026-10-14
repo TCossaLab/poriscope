@@ -347,6 +347,7 @@ class MetaSubsetTabController(MetaController):
 
     #: The last scope warning shown, so one query is not warned about once per channel.
     _last_scope_warning: str = ""
+    _warned_in_run: bool = False
 
     @log(logger=logger)
     @override
@@ -627,11 +628,14 @@ class MetaSubsetTabController(MetaController):
         Put a warning on the status panel unless it is the one shown last.
 
         A plot asks once per ticked channel with the same query, and the warning is
-        about the query, so it is worth saying once.
+        about the query, so it is worth saying once. A run that has nothing to warn about
+        forgets the last warning (see ``_run_raw_filter``), so a query that is fixed and
+        then broken again is warned about again.
 
         :param message: the warning
         :type message: str
         """
+        self._warned_in_run = True
         if message == self._last_scope_warning:
             return
         self._last_scope_warning = message
@@ -757,9 +761,10 @@ class MetaSubsetTabController(MetaController):
             # The loader's validator accepts any single statement, so a DELETE or an
             # UPDATE would run - and is only undone because the connection never
             # commits. A filter file can hold one without the dialog's own check.
+            first = (re.findall(r"[A-Za-z_]+", sql_filter) or ["nothing"])[0].upper()
             self.add_text_to_display.emit(
-                f"{subset_name} is not a SELECT, so it was not run: a raw filter has to "
-                "start with SELECT",
+                f"{subset_name} starts with {first}, so it was not run: a raw filter has "
+                "to start with SELECT, and can only read the database",
                 self.__class__.__name__,
             )
             return None
@@ -767,10 +772,11 @@ class MetaSubsetTabController(MetaController):
         if writes is not None:
             self.add_text_to_display.emit(
                 f"{subset_name} contains {writes.upper()}, so it was not run: a raw "
-                "filter may only read the database",
+                "filter may only read the database. Remove it, or use a plain SELECT",
                 self.__class__.__name__,
             )
             return None
+        self._warned_in_run = False
         used = scope_placeholders(sql_filter)
         pairs = selected_pairs(experiments_and_channels)
         single = len(pairs) == 1 and pairs[0][1] is not None
@@ -838,6 +844,8 @@ class MetaSubsetTabController(MetaController):
         scoped = used == {"experiment_id", "channel_id"}
         if scoped and experiment is not None and channel is not None:
             self._warn_about_leaks(rows, (experiment, channel, label), subset_name)
+        if not self._warned_in_run:
+            self._last_scope_warning = ""
         return RawRun(rows, query, experiment, channel, label, scoped)
 
     @log(logger=logger)

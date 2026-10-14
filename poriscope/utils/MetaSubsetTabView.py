@@ -28,6 +28,7 @@ import bisect
 import copy
 import logging
 import os
+import re
 from abc import abstractmethod
 from typing import Any, Dict, Iterator, List, Optional, Sequence
 
@@ -597,11 +598,14 @@ class MetaSubsetTabView(MetaView):
         """
         if filter_text.strip().upper().startswith("SELECT"):
             return False
+        first = (re.findall(r"[A-Za-z_]+", filter_text) or ["nothing"])[0].upper()
         QMessageBox.warning(
             self,
             "Invalid Raw SQL Filter",
-            "Raw SQL filters must be complete SELECT statements, e.g. SELECT "
-            "duration FROM events WHERE duration > 1000",
+            f"This raw filter starts with {first}. A raw SQL filter has to start with "
+            "SELECT, and can only read the database. For example: SELECT event_id, "
+            "duration FROM events WHERE duration > 150 AND experiment_id = "
+            ":experiment_id AND channel_id = :channel_id",
         )
         return True
 

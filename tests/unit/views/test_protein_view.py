@@ -1792,7 +1792,7 @@ class TestShowAddFilterDialog:
         ):
             mock_view._show_add_filter_dialog({"db_loader": "ldr"})
         warned.assert_called_once()
-        assert "SELECT statements" in warned.call_args[0][2]
+        assert "has to start with SELECT" in warned.call_args[0][2]
 
     def test_raw_filter_with_select_validates(self, mock_view):
         mock_view._walkthrough_active = False
@@ -1896,7 +1896,7 @@ class TestShowEditFilterDialog:
         ):
             mock_view.show_edit_filter_dialog("f1", "ldr")
         warned.assert_called_once()
-        assert "SELECT statements" in warned.call_args[0][2]
+        assert "has to start with SELECT" in warned.call_args[0][2]
 
     def test_raw_edit_with_select_validates(self, mock_view):
         mock_view.subset_filters = {"f1": "dur>1"}

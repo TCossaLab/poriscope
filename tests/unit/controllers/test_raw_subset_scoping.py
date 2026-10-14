@@ -403,6 +403,21 @@ class TestRawFilterScopesItself:
 
         assert _said(controller).count("ignores the Scope selection") == 1
 
+    def test_a_query_that_is_fixed_and_then_broken_again_is_warned_about_again(
+        self, cls: type, mocker: MockerFixture
+    ) -> None:
+        """
+        A clean run forgets the last warning, so the same mistake made again is not
+        silenced by the one before the fix.
+        """
+        controller = _event_controller(cls, mocker, WHOLE_KEY)
+
+        controller._run_raw_filter("ldr", UNSCOPED, SCOPE, "mine_raw")
+        controller._run_raw_filter("ldr", SCOPED, SCOPE, "mine_raw")
+        controller._run_raw_filter("ldr", UNSCOPED, SCOPE, "mine_raw")
+
+        assert _said(controller).count("ignores the Scope selection") == 2
+
     def test_rows_from_other_channels_are_warned_about(
         self, cls: type, mocker: MockerFixture
     ) -> None:

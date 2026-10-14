@@ -202,7 +202,8 @@ def test_only_a_select_is_run_and_the_database_is_untouched(
         assert controller._run_raw_filter("L", sql, SCOPE_CH0, "x_raw") is None
 
     assert query(sample_metadata_db, "SELECT COUNT(*) FROM events") == before
-    assert "not a SELECT" in panel_of(controller)
+    assert "starts with" in panel_of(controller)
+    assert "has to start with SELECT" in panel_of(controller)
 
 
 @pytest.mark.timeout(120)

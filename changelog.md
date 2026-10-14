@@ -230,6 +230,8 @@
 
 * The raw filter warning about rows from other channels now names an unbracketed `OR` as a cause, not only a subquery, and shows the fix
 
+* A raw filter warning is shown again when the same mistake is made after a run with nothing to warn about, and the refusal of a filter that does not start with `SELECT` or that writes now names what it starts with or contains and says it may only read
+
 * **A raw SQL filter can only read the database:** a statement that writes, including one behind `WITH`, is refused, and the loader's read connections can no longer write
 
 * The Metadata and Protein event navigation (Plot Events, the arrows) now reports a failure to read a subset's events on the status panel only, instead of also raising an error dialog

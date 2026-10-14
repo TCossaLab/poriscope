@@ -157,8 +157,10 @@ A few things are yours to provide:
   (``level_id AS event_id``) draws a warning, since nothing can check that it was meant, and
   rows whose key is ``NULL`` name no event: they are left out and the panel says how many. After
   each event plot the panel states how many events were selected and their ``event_id`` range.
-* **Only a ``SELECT`` is run.** A query has to start with ``SELECT`` (or ``WITH``); anything else
-  is not run and the panel says so.
+* **Only a ``SELECT`` is run.** The dialog asks for a query that starts with ``SELECT`` and says what
+  yours starts with if it does not. A statement that writes (``DELETE``, ``UPDATE``, ``DROP``,
+  ``WITH ... DELETE`` and the others) is never run, even if it came from a loaded file; the panel
+  names the keyword.
 
 Use this mode to write queries that need aggregations or computed columns, or when you
 simply prefer writing complete SQL.
@@ -404,8 +406,8 @@ Which plots take a filter
      - Works, one channel
      - Needs ``event_id``, one channel
    * - Plot Events and the event arrows (Metadata and Protein)
-     - Works
-     - Needs ``event_id``, one channel
+     - Works, one filter and one channel
+     - Needs ``event_id``, one filter and one channel
    * - Protein tab: Update Plot (Ensemble), Plot Histogram
      - Works, one filter and one channel
      - Needs ``event_id``, one filter and one channel
