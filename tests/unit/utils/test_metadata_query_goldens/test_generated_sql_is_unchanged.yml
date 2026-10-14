@@ -6,18 +6,20 @@ a_repeated_column_is_projected_twice:
 condition_already_qualified:
   debug: ''
   query: SELECT s.id, e.experiment_id, e.channel_id, e.event_id, e.dwell_time, s.sublevel_duration
-    FROM events e JOIN sublevels s ON e.id = s.event_db_id WHERE s.sublevel_duration
-    < 100
+    FROM events e JOIN sublevels s ON e.id = s.event_db_id WHERE (s.sublevel_duration
+    < 100 )
   table: sublevels
 condition_containing_a_subquery:
   debug: ''
   query: SELECT e.id, e.experiment_id, e.channel_id, e.event_id, e.dwell_time FROM
-    events e WHERE e.dwell_time > (SELECT AVG(sublevel_duration) FROM sublevels)
+    events e WHERE (e.dwell_time > (SELECT AVG(sublevel_duration) FROM sublevels)
+    )
   table: events
 condition_naming_a_column_inside_a_string_literal:
   debug: ''
   query: SELECT e.id, e.experiment_id, e.channel_id, e.event_id, e.dwell_time FROM
-    events e JOIN experiments exp ON exp.id = e.experiment_id WHERE exp.name = 'sublevel_duration'
+    events e JOIN experiments exp ON exp.id = e.experiment_id WHERE (exp.name = 'sublevel_duration'
+    )
   table: events
 condition_with_an_ambiguous_bare_id:
   debug: 'This filter uses "id" on its own, which is ambiguous: the query joins events
@@ -38,18 +40,19 @@ events_columns_only:
 events_plot_filtered_by_a_sublevels_column:
   debug: ''
   query: SELECT DISTINCT e.id, e.experiment_id, e.channel_id, e.event_id, e.dwell_time
-    FROM events e JOIN sublevels s ON e.id = s.event_db_id WHERE s.sublevel_duration
-    < 100
+    FROM events e JOIN sublevels s ON e.id = s.event_db_id WHERE (s.sublevel_duration
+    < 100 )
   table: events
 events_plot_filtered_by_an_experiments_column:
   debug: ''
   query: SELECT e.id, e.experiment_id, e.channel_id, e.event_id, e.dwell_time FROM
-    events e JOIN experiments exp ON exp.id = e.experiment_id WHERE exp.name = 'exp1'
+    events e JOIN experiments exp ON exp.id = e.experiment_id WHERE (exp.name = 'exp1'
+    )
   table: events
 events_with_a_simple_condition:
   debug: ''
   query: SELECT e.id, e.experiment_id, e.channel_id, e.event_id, e.dwell_time FROM
-    events e WHERE e.dwell_time > 5
+    events e WHERE (e.dwell_time > 5 )
   table: events
 experiments_columns_only:
   debug: ''
@@ -59,8 +62,8 @@ experiments_columns_only:
 scoped_and_filtered_together:
   debug: ''
   query: SELECT s.id, e.experiment_id, e.channel_id, e.event_id, e.dwell_time, s.sublevel_duration
-    FROM events e JOIN sublevels s ON e.id = s.event_db_id WHERE s.sublevel_duration
-    < 100 AND ((e.experiment_id = 1 AND e.channel_id IN (0)))
+    FROM events e JOIN sublevels s ON e.id = s.event_db_id WHERE (s.sublevel_duration
+    < 100 ) AND ((e.experiment_id = 1 AND e.channel_id IN (0)))
   table: sublevels
 scoped_to_one_experiment_all_channels:
   debug: ''
@@ -86,5 +89,6 @@ sublevels_columns_only:
 sublevels_plot_filtered_by_an_events_column:
   debug: ''
   query: SELECT DISTINCT s.id, s.experiment_id, s.channel_id, s.event_id, s.sublevel_duration
-    FROM sublevels s JOIN events e ON e.id = s.event_db_id WHERE e.dwell_time > 5
+    FROM sublevels s JOIN events e ON e.id = s.event_db_id WHERE (e.dwell_time > 5
+    )
   table: sublevels

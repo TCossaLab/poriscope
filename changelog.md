@@ -24,6 +24,10 @@
 
 * **`TCossaLabABFReader` and `LegacyElementsReader` now refuse a file whose current channel's units are not a current**, instead of reading it as pA, and no longer refuse a file for its ADC channel count or channel names
 
+* **An Assisted filter containing `OR`, or ending in a `--` comment, is now confined to the selected experiments and channels:** it used to take the selection with only its last term, or lose it, so such a filter drew every channel in the database for each one ticked
+
+* An Assisted filter whose brackets do not balance is now refused instead of run, since a stray `)` could close the brackets its condition is put in
+
 #### Data plugin API:
 
 * **`MetaEventFinder.get_single_event_data` now raises `IndexError` for an index with no event (negative included) instead of returning `None`, and a reader or filter error keeps its own message**; `get_event_data_generator` still yields `None` for an event it cannot read
