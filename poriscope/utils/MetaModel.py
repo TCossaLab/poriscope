@@ -433,16 +433,23 @@ class MetaModel(QObject, metaclass=QObjectABCMeta):
         ``None`` in a numeric column is ``NaN``, which is the empty field the old
         padding produced - while a text column now survives as text.
 
+        **The columns are built by position and named afterwards**, because a plot of
+        several datasets caches each one under the same axis labels. A mapping keyed
+        by label keeps only the last series of each label, so an overlay exported
+        only its final dataset; pandas allows repeated column names, and every
+        series reaches the file.
+
         :return: one column per cached series, or None if nothing is cached
         :rtype: Optional[pd.DataFrame]
         """
         if self.cache_data and self.cache_labels:
             max_length = max(len(arr) for arr in self.cache_data)
-            padded = {
-                label: list(arr) + [None] * (max_length - len(arr))
-                for arr, label in zip(self.cache_data, self.cache_labels, strict=True)
-            }
-            return pd.DataFrame(padded)
+            padded = [
+                list(arr) + [None] * (max_length - len(arr)) for arr in self.cache_data
+            ]
+            df = pd.DataFrame(dict(enumerate(padded)))
+            df.columns = list(self.cache_labels)
+            return df
         return None
 
     @log(logger=logger)

@@ -212,6 +212,20 @@
 
 * The API reference no longer lists `NanoTrees`' helper classes as event fitters
 
+
+## Poriscope 2.0.2: 2026-10-13
+
+### User-Facing Behaviour:
+
+* **Fixed Export Plot Data keeping only the last dataset when several were plotted together in the Metadata tab**, for example in a scatterplot; affects 2.0.0 and 2.0.1, so redo plot-data exports of overlaid datasets
+
+* **Fixed the Protein tab's Export Plot Data leaving out data**: the Ensemble export lacked the measured histogram and one of the two (V, m) solution sets, and the Individual export lacked one of the two (V, m) solution sets; affects 2.0.0 and 2.0.1, so redo those exports
+
+* **Fixed the event-plot and noise-spectrum exports dropping the repeated copy of their shared time or frequency column**, which shifted the other columns; each file again has the same columns in the same order as in 1.9.0
+
+* Whole-number columns (such as `event_id`) in plot-data exports have been written without a decimal point (`1` instead of `1.0`) since 2.0.0, so one file can show both forms; this contradicts the 2.0.0 note that numeric exports were unchanged, the values are the same, and 1.9.0's `1.0` form is not restored
+
+
 ## Poriscope 2.0.1: 2026-10-08
 
 ### User-Facing Behaviour:

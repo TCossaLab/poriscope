@@ -18,6 +18,27 @@ and deleted on 2026-09-27; it too is in git history.
 
 ---
 
+## 2026-10-13 - Plot-data export writes whole-number columns as integers; 1.9.0's `1.0` form is not restored
+
+**Context.** 2.0.0 changed `format_cache_data` to pad with `None` and let pandas infer each column, so
+categorical histograms could export. Its changelog line says "Numeric exports are unchanged", verified
+byte for byte on float arrays only. Whole-number arrays now write `1` where 1.9.0 wrote `1.0`.
+
+**Decision.** Leave it. Restoring the float form means per-column type handling, in the code that crashed on text
+categories in 1.9.0, and would change every export including those that are correct. Not part of the 2.0.2
+hotfix, which fixes only the lost repeated-label columns. The repeated time and frequency columns stay, as in 1.9.0.
+
+**Evidence.** Whole-number arrays `[1,2,3]`/`[4,5,6]`: 1.9.0 `1.0,4.0`, now `1,4`. Uneven lengths give `1,4.0`
+in one file because the padded column reads as float. Seen in a real scatterplot export: `event_id` printed `0`
+beside `0.0` in the same row. 0 of the 11 original cache-export tests used an integer array, so none pins either
+form. Values are equal and any CSV reader parses both.
+
+**Revisit if** (1) a user's pipeline breaks on `1` vs `1.0`; restore floats for numeric columns only, text kept as text.
+(2) Anything starts comparing exports across versions byte for byte. (3) Repeated identical x columns are
+deduplicated on purpose; compare values, not labels, since overlaid datasets share labels.
+
+---
+
 ## 2026-10-10 - `format_axis_label` appends a unit; it no longer replaces a different one
 
 **Context.** Three copies (`ProteinView` function, `MetadataView` method, `ClusteringView` inline) stripped
