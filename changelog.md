@@ -210,9 +210,11 @@
 
 * **Fixed the Metadata tab's heatmap being drawn one bin width narrower than its data**, which pulled every plotted point's true position inward from where it should sit on the axes
 
-* **A page switch blocked while a walkthrough or milestone is showing no longer builds the tab, rebuilds the Settings page or leaves the sidebar highlight on a page that did not open**, so no tab you never reached is saved into the session; the analysis-tabs and Help sidebar icons are blocked the same way, and closing their dropdown or window now puts the highlight back on the page that is showing
+* **While a walkthrough or milestone is showing, the sidebar buttons that would leave it (the tab buttons, Settings, the analysis-tabs list and Help) are refused without side effects**: a refused tab button no longer builds the tab or saves it into the session, a refused Settings click no longer rebuilds the Settings page, the analysis-tabs list and the Help window no longer open, and the sidebar highlight stays on the page that is showing; closing the dropdown or the Help window now also puts the highlight back on it
 
 ### Documentation:
+
+* The plugin guide now says a tab's view and model must be named `<Name>View` and `<Name>Model` after its controller, and that a tab's own walkthrough runs inside that tab, does not chain to others, and ends on its last step or the dialog's close button
 
 * The API reference no longer lists `NanoTrees`' helper classes as event fitters
 

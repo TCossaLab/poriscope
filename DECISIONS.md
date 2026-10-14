@@ -18,6 +18,49 @@ and deleted on 2026-09-27; it too is in git history.
 
 ---
 
+## 2026-10-14 - The milestone guard names a non-dedicated tab's page as `<Name>View`; no `view_class` declaration
+
+**Context.** `on_load_analysis_tab_button_click` must name the page a tab will open before the tab is built, so a
+refused click builds and saves nothing. A controller builds its view inside `__init__`, so before that only the
+controller's name is known. The plan's "Plugins" is a sidebar-highlight key, not a page, and would have refused the
+tour's own Clustering step.
+
+**Decision.** Guess the page from the controller name (`ClusteringController` -> `ClusteringView`). Reason (Carolina): the
+tabs shipped with Poriscope have a naming convention, as Python has its own; Poriscope would never name a tab's view,
+controller and model differently, and each is always named with the word View, Model or Controller. It is a convention for
+the tabs we ship, not for external ones. A test, `tests/unit/plugins/test_analysis_tab_naming.py`, checks every shipped
+tab follows it, and `ready_to_build/index.rst` states it.
+
+Rejected: an optional `view_class` on `MetaController` (base change plus generator, five tabs and the compliance test); a
+base class that builds the view and model (breaking, every `_init`); refusing only when the milestone expects one of the
+three dedicated views (fails open - a custom tab's walkthrough has no expected view, so the tab is built and then
+refused); building the tab first and checking after (the bug).
+
+**Evidence.** The five shipped controllers redeclare `view: XView` and `model: XModel`, and the generator writes the
+pattern. The loader dedups only the controller's class name (`main_model.py:269-283`); the generator checks all four
+(`new_plugin.py:1687`). The convention is not enforced for user tabs, so a wrong guess there is possible but narrow, found
+by reading the code and not run with a user-folder tab: milestones only expect built-in views, a user view reusing a
+built-in view's name would have a legitimate click refused, and a user controller reusing a built-in name loses the
+loader's name collision.
+
+**Revisit.** If a shipped tab breaks the convention or a user tab hits a milestone. Then read each controller's
+`view:`/`model:` annotations with `typing.get_type_hints`; queued in `future_fixes.md`.
+
+## 2026-10-14 - A contributor tab's walkthrough does not chain to other tabs
+
+**Context.** `get_expected_next_view` is a fixed table (Main -> RawData -> EventAnalysis -> Metadata -> Clustering), so
+a tab outside it has no expected next view and, while its walkthrough runs, every page switch, the Settings page, the
+analysis-tabs list and the Help window are refused until it ends.
+
+**Decision.** Keep it. Tabs added by contributors are for specific users, not part of the core workflow, so they should
+not take part in the tour. The walkthrough ends on its last step's Done or the dialog's X; Esc only flickers the dialog,
+and Alt+F4 closes the app. Documented in `adding_walkthrough.rst`.
+
+**Evidence.** Probe with a stand-in tab and the 2026-10-14 manual runs. A bare `dialog.close()` skips `done_signal` and
+would leave the block on, but no user route reaches it, so it is not queued.
+
+**Revisit.** If contributors need a walkthrough that continues into another tab.
+
 ## 2026-10-13 - Plot-data export writes whole-number columns as integers; 1.9.0's `1.0` form is not restored
 
 **Context.** 2.0.0 changed `format_cache_data` to pad with `None` and let pandas infer each column, so
