@@ -156,7 +156,7 @@ class MetadataView(MetaSubsetTabView):
     #: key, the destination folder, the export's name, the single selected filter (or
     #: None for the whole dataset), the experiment/channel scope, and the index this
     #: export is keyed under. ``on_subset_export_started`` comes back if it was staged.
-    csv_subset_export_requested = Signal(str, str, str, object, object, int)
+    csv_subset_export_requested = Signal(str, str, str, object, object, int, str)
 
     #: Asks for the heatmap's 2-D binning: the raw columns, their log flags, the bin
     #: request, and the drawing context handed back unchanged. Answered through
@@ -2449,8 +2449,9 @@ class MetadataView(MetaSubsetTabView):
         """
         Open a dialog to export a filtered subset of the dataset.
 
-        A raw SQL filter is refused with a message: it is a complete ``SELECT``, and the
-        export puts the filter in a ``WHERE``.
+        The selected filter's name travels with its text, because a raw filter is a
+        complete ``SELECT`` that the Controller has to bind to each selected channel
+        before the export can use it.
 
         :param loader: Name of the active database loader.
         :type loader: str
@@ -2466,19 +2467,11 @@ class MetadataView(MetaSubsetTabView):
             )
             return
 
-        raw_names = [name for name in filters or {} if name.endswith("_raw")]
-        if raw_names:
-            self.add_text_to_display.emit(
-                f"Export Subset - CSV cannot use the raw SQL filter {raw_names[0]}: "
-                "it is a complete SELECT, not a condition on the events to write. "
-                "Select an Assisted filter, or none to export the whole selection",
-                self.__class__.__name__,
-            )
-            return
-
         if filters == {}:
             filters = None
+        filter_name = ""
         if filters is not None:
+            filter_name = next(iter(filters))
             filters = list(filters.values())[0]
 
         settings = {"Folder": {"Type": str}}
@@ -2503,7 +2496,13 @@ class MetadataView(MetaSubsetTabView):
         # the bus swallowed before it, and cannot catch one now either, since a Qt
         # slot's exception does not propagate back to the emitter.
         self.csv_subset_export_requested.emit(
-            loader, folder, name, filters, selection, self.subset_export_count
+            loader,
+            folder,
+            name,
+            filters,
+            selection,
+            self.subset_export_count,
+            filter_name,
         )
 
     @log(logger=logger)

@@ -4092,6 +4092,7 @@ def test_export_csv_subset_emits_signal_on_success(
         "WHERE x > 1",
         {"exp1": [1]},
         0,
+        "Filter1",
     )
 
 

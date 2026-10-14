@@ -122,7 +122,7 @@ Step 4: Generate and Export
 
 .. tip::
 
-   Use “Export Subset” to isolate and save only the events that meet your filtering criteria. This is ideal for downstream machine learning or further statistical analysis. It takes an Assisted filter or none; a Raw SQL filter is refused with a message, because it is a complete query rather than a condition on the events to write.
+   Use “Export Subset” to isolate and save only the events that meet your filtering criteria. This is ideal for downstream machine learning or further statistical analysis. It takes one Assisted or Raw SQL filter, or none. A Raw SQL filter has to use ``:experiment_id`` and ``:channel_id`` (see :ref:`filtering-and-querying`), because an export writes files for the selected channels and an unscoped query would write the same events for every one.
 
 Step 5: Inspect Individual Events
 ---------------------------------

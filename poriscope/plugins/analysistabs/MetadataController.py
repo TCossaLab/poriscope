@@ -37,7 +37,11 @@ from poriscope.plugins.analysistabs.MetadataModel import MetadataModel
 from poriscope.plugins.analysistabs.MetadataView import MetadataView
 from poriscope.utils.DocstringDecorator import inherit_docstrings
 from poriscope.utils.LogDecorator import log
-from poriscope.utils.MetaSubsetTabController import MetaSubsetTabController
+from poriscope.utils.MetaSubsetTabController import (
+    MetaSubsetTabController,
+    scope_placeholders,
+    selected_pairs,
+)
 
 
 @inherit_docstrings
@@ -992,7 +996,70 @@ class MetadataController(MetaSubsetTabController):
             )
 
     @log(logger=logger)
-    @Slot(str, str, str, object, object, int)
+    def _raw_export_condition(
+        self,
+        loader: str,
+        sql_filter: str,
+        experiments_and_channels: Optional[Dict[str, Optional[List[int]]]],
+        filter_name: str,
+    ) -> Optional[str]:
+        """
+        Turn a raw filter into the condition an export puts in its ``WHERE``.
+
+        An export selects events by a condition on the events table, and a raw filter is
+        a complete ``SELECT``, so each selected channel's bound query is checked the way
+        a plot checks it - only a read, ``event_id`` returned, every key naming an event -
+        and then named as the events whose ``event_id`` it returns, in that channel. The
+        query stays in the condition as a subquery rather than being unrolled into a list
+        of ids, so the text does not grow with the subset.
+
+        A filter that does not use both placeholders is refused: an export writes files,
+        and an unscoped query would write the same events for every selected channel.
+        Reports its own refusal and answers with None.
+
+        :param loader: the database loader plugin's key
+        :type loader: str
+        :param sql_filter: the filter's complete ``SELECT``
+        :type sql_filter: str
+        :param experiments_and_channels: the experiment and channel scope, or None
+        :type experiments_and_channels: Optional[Dict[str, Optional[List[int]]]]
+        :param filter_name: the filter's name, for the messages
+        :type filter_name: str
+        :return: a condition that selects the filter's events, one that selects none if there are none, or None if the export is refused
+        :rtype: Optional[str]
+        """
+        if scope_placeholders(sql_filter) != {"experiment_id", "channel_id"}:
+            self.add_text_to_display.emit(
+                f"{filter_name} cannot be exported: an export writes files for the "
+                "selected channels, and its query does not use both :experiment_id and "
+                ":channel_id, so it would write the same events for every one. Add "
+                "experiment_id = :experiment_id AND channel_id = :channel_id to its WHERE",
+                self.__class__.__name__,
+            )
+            return None
+        parts: List[str] = []
+        for experiment, channel in selected_pairs(experiments_and_channels):
+            run = self._run_raw_filter(
+                loader,
+                sql_filter,
+                {experiment: None if channel is None else [channel]},
+                filter_name,
+            )
+            if run is None:
+                return None
+            keys = self._raw_event_keys(run, sql_filter, filter_name)
+            if keys is None:
+                return None
+            if keys.empty:
+                continue
+            parts.append(
+                f"(e.experiment_id = {run.experiment_id} AND e.channel_id = {run.channel} "
+                f"AND e.event_id IN (SELECT event_id FROM (\n{run.executed}\n)))"
+            )
+        return " OR ".join(parts) if parts else "1 = 0"
+
+    @log(logger=logger)
+    @Slot(str, str, str, object, object, int, str)
     def export_csv_subset(
         self,
         loader: str,
@@ -1001,6 +1068,7 @@ class MetadataController(MetaSubsetTabController):
         subset_filter: Optional[str],
         experiments_and_channels: Optional[Dict[str, Optional[List[int]]]],
         export_index: int,
+        filter_name: str = "",
     ) -> None:
         """
         Start writing one filtered subset to CSV in a worker thread.
@@ -1034,9 +1102,18 @@ class MetadataController(MetaSubsetTabController):
         :type experiments_and_channels: Optional[Dict[str, Optional[List[int]]]]
         :param export_index: the index this export's worker is keyed under
         :type export_index: int
+        :param filter_name: the selected filter's name, whose ``_raw`` suffix marks a raw filter
+        :type filter_name: str
         :return: None
         :rtype: None
         """
+        if filter_name.endswith("_raw") and subset_filter:
+            subset_filter = self._raw_export_condition(
+                loader, subset_filter, experiments_and_channels, filter_name
+            )
+            if subset_filter is None:
+                return
+
         try:
             event_count = self.model.call(
                 "MetaDatabaseLoader",
