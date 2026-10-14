@@ -209,6 +209,29 @@ def test_only_a_select_is_run_and_the_database_is_untouched(
 @pytest.mark.parametrize(
     "sql",
     [
+        "SELECT duration FROM events WHERE experiment_id = :experiment_id "
+        "AND channel_id = :channel_id ORDER BY duration LIMIT 5",
+        "SELECT duration FROM events WHERE channel_id = :channel_id LIMIT 5 OFFSET 2",
+        "SELECT duration FROM events WHERE channel_id = :channel_id -- only this one",
+    ],
+)
+def test_a_raw_filter_with_its_own_limit_or_a_trailing_comment_can_be_saved(
+    controller: MetadataController, sql: str
+) -> None:
+    """
+    The check validates the text as written. It used to add ``LIMIT 0``, which made a
+    filter that ends in its own ``LIMIT`` a syntax error, so it could not be saved.
+    """
+    controller.validate_raw_filter("L", sql, "x_raw", None)
+
+    valid = controller.view.on_raw_filter_validated.call_args[0][0]
+    assert valid is True
+
+
+@pytest.mark.timeout(120)
+@pytest.mark.parametrize(
+    "sql",
+    [
         "WITH x AS (SELECT 1) DELETE FROM events",
         "WITH x AS (SELECT 1) UPDATE events SET duration = 1",
     ],

@@ -1363,9 +1363,10 @@ class MetaSubsetTabController(MetaController):
         As on the assisted path, the call is made here so that a failure reaches the
         user rather than a log line.
 
-        ``LIMIT 0`` is appended here rather than by the View. The clause is what makes
-        the check cheap - the database parses and plans the filter without returning a
-        row - and choosing it is knowing SQL, which a widget has no business doing.
+        The placeholders are given sample values, so a filter that uses them parses.
+        The text is checked as written: ``validate_filter_query`` only plans the query,
+        never runs it, so nothing is appended to make it cheap - a ``LIMIT 0`` added to
+        a filter that ends in its own ``LIMIT`` made it a syntax error.
 
         :param loader: the database loader plugin's key
         :type loader: str
@@ -1383,7 +1384,7 @@ class MetaSubsetTabController(MetaController):
                 "MetaDatabaseLoader",
                 loader,
                 "validate_filter_query",
-                f"{bind_scope(query, 0, 0)} LIMIT 0",
+                bind_scope(query, 0, 0),
             )
         except Exception as e:
             self.logger.error(f"Failed to validate raw filter {query!r}: {e!r}")

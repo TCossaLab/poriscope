@@ -218,6 +218,8 @@
 
 * **A raw SQL subset filter can now be plotted, not only saved:** it scopes itself with `:experiment_id` and `:channel_id`, replaced by the selected experiment's id and channel for each ticked channel, and warns on the status panel when it omits them; a plot missing a column it needs says which, and every plot of events takes them from the query's `event_id`
 
+* **A raw SQL filter that ends in its own `LIMIT` can now be saved:** the check added `LIMIT 0` to its text, which made it a syntax error
+
 * **A raw SQL filter can only read the database:** a statement that writes, including one behind `WITH`, is refused, and the loader's read connections can no longer write
 
 * The Metadata and Protein event navigation (Plot Events, the arrows) now reports a failure to read a subset's events on the status panel only, instead of also raising an error dialog

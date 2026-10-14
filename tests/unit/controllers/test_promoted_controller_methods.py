@@ -300,9 +300,9 @@ class TestValidateRawFilter:
         controller.validate_raw_filter("ldr", "SELECT 1", "f1", None)
 
         assert controller.model.calls[0][2] == "validate_filter_query"
-        # The clause is appended here rather than in the View: knowing that
-        # LIMIT 0 is what makes the check cheap is knowing SQL.
-        assert controller.model.calls[0][3] == ("SELECT 1 LIMIT 0",)
+        # The text is validated as written: the check only plans the query, so
+        # nothing is appended to it.
+        assert controller.model.calls[0][3] == ("SELECT 1",)
         controller.view.on_raw_filter_validated.assert_called_once_with(
             True, "", "f1", None, "SELECT 1"
         )
