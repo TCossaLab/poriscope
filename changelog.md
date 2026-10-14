@@ -212,7 +212,13 @@
 
 * **A page switch blocked while the tutorial is running (walkthroughs and milestones) no longer builds the tab or leaves the sidebar highlight on the clicked page**, so no tab you never reached is saved into the session; the Settings, analysis-tabs and Help sidebar icons are blocked the same way
 
-* Closing the analysis-tabs dropdown or the Help window now puts the sidebar highlight back on the page that is showing
+* Closing the analysis-tabs dropdown now puts the sidebar highlight back on the page that is showing
+
+* **The Help icon now stays highlighted for as long as the Help window is open**, alongside the icon of the page you are on, instead of switching off when you click another sidebar icon, and clicking Help while its window is already open brings that window to the front
+
+* **Fixed Help → Tutorial on a tab that has no working walkthrough locking the app**; the tutorial is now treated as not running, so tabs, Settings and Help stay usable
+
+* **Help → Tutorial on a page that has no tutorial now says so**, and points to the core tabs that have one, instead of showing the generic welcome popup and then doing nothing
 
 ### Documentation:
 

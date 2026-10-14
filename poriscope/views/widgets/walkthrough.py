@@ -162,6 +162,46 @@ class IntroDialog(QDialog):
         self.close()
 
 
+class NoTutorialDialog(IntroDialog):
+    """
+    The welcome popup's twin, shown when the current page has no tutorial.
+
+    It looks like :class:`IntroDialog` but starts nothing: its button only closes it.
+
+    :param parent: Parent widget, typically the main window.
+    :type parent: Optional[QWidget]
+    :param tab_names: Display names of tabs that are known to have a tutorial.
+    :type tab_names: Sequence[str]
+    """
+
+    def __init__(
+        self, parent: Optional[QWidget] = None, tab_names: Sequence[str] = ()
+    ) -> None:
+        super().__init__(parent)
+        steps = ", ".join(f"{n}) {name}" for n, name in enumerate(tab_names, start=1))
+        self.body.setText(
+            "This page has no tutorial.<br><br>"
+            "<b>To try one:</b> open any Analysis Step of the core workflow - "
+            f"{steps} - then choose <b>Help → Tutorial</b>.<br><br>"
+            "Not every tab has a tutorial. For a tab outside this workflow, open it and "
+            "choose <b>Help → Tutorial</b> to see whether it has one."
+        )
+        self.start_button.setText("OK")
+        self.frame.setFixedSize(520, 300)
+        self.frame.move(
+            (self.width() - self.frame.width()) // 2,
+            (self.height() - self.frame.height()) // 2,
+        )
+        self.body.setGeometry(30, 65, 460, 170)
+        self.start_button.setGeometry(170, 245, 180, 34)
+
+    def emit_start(self) -> None:
+        """
+        Close the dialog without starting a walkthrough.
+        """
+        self.close()
+
+
 class Overlay(QWidget):
     """
     Dark transparent overlay that highlights widgets during the walkthrough.

@@ -25,6 +25,7 @@
 # Alejandra Carolina González González
 
 import logging
+import re
 import sys
 from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple
@@ -56,6 +57,7 @@ from poriscope.views.widgets.icon_menu_widget import IconMenuWidget
 from poriscope.views.widgets.text_menu_widget import IconTextMenuWidget
 from poriscope.views.widgets.walkthrough import (
     IntroDialog,
+    NoTutorialDialog,
     Overlay,
     StepDialog,
 )
@@ -547,17 +549,26 @@ class MainView(QMainWindow, WalkthroughMixin):
             self._refuse_page_switch(
                 "Walkthrough or milestone active. The Help window is blocked."
             )
+            # The Help icon is not in the page group, so it does not go off by itself.
+            self.icon_menu_widget.setHelpUnchecked()
+            self.text_menu_widget.setHelpUnchecked()
             return
         if self.help_window is None:
             self.help_window = HelpCentre()
             self.help_window.show()
             self.help_window.closeEvent = self.on_help_window_closed
+        else:
+            # Already open: bring it to the front rather than doing nothing.
+            self.help_window.raise_()
+            self.help_window.activateWindow()
+        # Highlighted for as long as the window is open, however it was opened.
+        self.icon_menu_widget.setHelpChecked(True)
+        self.text_menu_widget.setHelpChecked(True)
 
     @log(logger=logger)
     def on_help_window_closed(self, event: QCloseEvent) -> None:
         self.help_window = None
         self.help_window_closed.emit()
-        self._restore_sidebar_highlight()
         event.accept()
 
     @log(logger=logger)
@@ -975,9 +986,8 @@ class MainView(QMainWindow, WalkthroughMixin):
         """
         Point the sidebar highlight at the page that is showing.
 
-        For a click that does not switch pages (the analysis-tabs dropdown, the Help
-        window) or whose switch was refused, Qt has already moved the highlight to the
-        clicked button. A main page or a page with no button leaves nothing highlighted.
+        For a click that does not switch pages (the analysis-tabs dropdown) or whose
+        switch was refused, Qt has already moved the highlight to the clicked button. A main page or a page with no button leaves nothing highlighted.
         """
         current_page = self.get_current_view()
         if current_page not in self.pages or current_page == "MainView":
@@ -1130,6 +1140,47 @@ class MainView(QMainWindow, WalkthroughMixin):
         }
         return step_mapping.get(view_name, "You're starting a guided tutorial.")
 
+    def _core_tour_tab_names(self) -> List[str]:
+        """
+        Name the tabs the guided tour walks through, in order, as users read them.
+
+        The names come from the tour's own chain (``get_expected_next_view``) with the
+        camel case of each view name split into words, so there is no second list to keep.
+
+        :return: Display names such as ``"Raw Data"``, ``"Event Analysis"``.
+        :rtype: List[str]
+        """
+        names = []
+        view = self.get_expected_next_view("MainView")
+        while view is not None:
+            names.append(re.sub(r"(?<!^)(?=[A-Z])", " ", view.removesuffix("View")))
+            view = self.get_expected_next_view(view)
+        return names
+
+    def _has_walkthrough(self, view_name: str) -> bool:
+        """
+        Tell whether the page called view_name can run a tutorial.
+
+        The landing page always can, through the milestone that starts the tour. Any other
+        page needs a view that provides walkthrough steps for its own name.
+
+        :param view_name: Name of the page the tutorial was asked for.
+        :type view_name: str
+        :return: True if a tutorial can start on that page.
+        :rtype: bool
+        """
+        if view_name == "MainView":
+            return True
+        page = self.pages.get(view_name)
+        if page is None or not isinstance(page["widget"], WalkthroughMixin):
+            return False
+        widget = page["widget"]
+        try:
+            steps = widget.get_walkthrough_steps()
+            return widget.get_current_view() in [step[2] for step in steps]
+        except NotImplementedError:
+            return False
+
     def show_walkthrough_intro(self, current_view: str = "") -> None:
         if self._walkthrough_active:
             self.logger.info("Walkthrough is already active, skipping intro.")
@@ -1139,6 +1190,10 @@ class MainView(QMainWindow, WalkthroughMixin):
         # and it can derive it itself, so the argument stays optional.
         if not current_view:
             current_view = self.get_current_view()
+        if not self._has_walkthrough(current_view):
+            self.logger.info(f"{current_view} has no walkthrough, skipping intro.")
+            NoTutorialDialog(self, self._core_tour_tab_names()).exec()
+            return
         intro = IntroDialog(self, current_step=current_view)
         intro.start_walkthrough.connect(lambda: self._on_intro_finished(current_view))
         intro.exec()
@@ -1173,7 +1228,13 @@ class MainView(QMainWindow, WalkthroughMixin):
                     view_widget.walkthrough_finished.connect(
                         self._reset_walkthrough_flag
                     )
-                    view_widget.launch_walkthrough()
+                    try:
+                        view_widget.launch_walkthrough()
+                    except NotImplementedError:
+                        # A tab that never wrote a walkthrough inherits mixin defaults
+                        # that raise; without this the flag above would stay set.
+                        self.logger.info(f"{current_view} has no walkthrough.")
+                        self._walkthrough_active = False
                 else:
                     self.logger.info(
                         "Walkthrough already active. Ignoring new request."
