@@ -121,7 +121,8 @@ A few things are yours to provide:
   only one ignores half of it; the same rows are drawn for every channel, and the status panel
   says so. A placeholder in a subquery only does not scope the main table: if the result has
   ``experiment_id`` or ``channel_id``, rows from other channels are counted on the panel. With
-  nothing selected a query that uses a placeholder is refused, since there is nothing to put in.
+  nothing selected a query that uses a placeholder is refused, since there is nothing to put in;
+  to run a raw filter on the whole database, write it without the placeholders and select nothing.
   The plots that work on one channel at a time (the event overlays, Plot Events, the arrows and
   the Protein tab) ask you to select a single channel when several are ticked.
 * **The plot's own columns.** A plot needs the columns you chose on its axes: if the query does
@@ -346,6 +347,9 @@ Only in Assisted, or only in Raw
      - ``WITH`` queries, window functions, columns from several tables in one result
    * - The Scope selection cannot be forgotten
      - You choose what "matches" means for sublevels (any, all, average, count)
+   * - With nothing selected, the filter runs on the whole database
+     - With nothing selected a query that uses the placeholders is refused; to run on the
+       whole database, write it without them
 
 Aggregation *inside a subquery* works in both modes (Assisted Example 6).
 
