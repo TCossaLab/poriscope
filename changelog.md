@@ -94,6 +94,8 @@
 
 * The plugin compliance test now also checks every override of a concrete base method against the base's signature
 
+* A test now checks that every analysis tab shipped with Poriscope names its controller, model and view `<Name>Controller`, `<Name>Model` and `<Name>View`, which the walkthrough milestone guard relies on
+
 ### Data Plugin API:
 
 * `MetaFilter.get_data_requirements()` lets a filter declare settings the data must match; `BesselFilter` declares its `Samplerate`
@@ -207,6 +209,8 @@
 * **Fixed the Metadata tab's capture-rate plot always reporting at least one row dropped by the log filter, even when nothing was dropped**; the count now excludes the one fewer interval than event that n events always produce
 
 * **Fixed the Metadata tab's heatmap being drawn one bin width narrower than its data**, which pulled every plotted point's true position inward from where it should sit on the axes
+
+* **A page switch blocked while a walkthrough or milestone is showing no longer builds the tab, rebuilds the Settings page or leaves the sidebar highlight on a page that did not open**, so no tab you never reached is saved into the session; the analysis-tabs and Help sidebar icons are blocked the same way, and closing their dropdown or window now puts the highlight back on the page that is showing
 
 ### Documentation:
 
