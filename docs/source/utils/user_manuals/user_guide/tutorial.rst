@@ -28,6 +28,9 @@ While progressing through the tutorial:
 
 - It is **strongly recommended** to **perform the described action** before clicking “Next”. While not mandatory, it’s considered good practice for learning by doing.
 - At the end of each tab’s tutorial, you’ll be prompted to either continue to the next step or click “Done” to finish early.
+- While the tutorial is running, switching to another tab and opening Settings or Help are unavailable until you finish the tutorial or click the ✕ on its popup.
+
+If you choose **Help → Tutorial** on a page that has no tutorial, Poriscope says so and points you to the core workflow tabs (Raw Data, Event Analysis, Metadata, Clustering), which have tutorials. Note that other tabs may also have a tutorial. They are not registered as part of the core workflow, so you will have to try **Help → Tutorial** in them to find out.
 
 The tutorial gives a **high-level overview** of actions in each tab. To fully understand parameters, implications, and edge cases, you should **refer to this documentation alongside the tutorial**.
 

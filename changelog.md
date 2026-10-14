@@ -222,6 +222,8 @@
 
 ### Documentation:
 
+* The tutorial guide now says that switching tabs and opening Settings or Help are unavailable while the tutorial runs, and describes the message shown on a page with no tutorial
+
 * The plugin guide now says a tab's view and model must be named `<Name>View` and `<Name>Model` after its controller, and that a tab's own walkthrough runs inside that tab, does not chain to others, and ends on its last step or the dialog's close button
 
 * The API reference no longer lists `NanoTrees`' helper classes as event fitters
