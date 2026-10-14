@@ -50,6 +50,7 @@ def test_choosing_raw_sql_shows_the_hint_and_going_back_hides_it(qtbot: QtBot) -
     assert not dialog.raw_hint.isHidden()
     assert ":experiment_id" in dialog.raw_hint.text()
     assert ":channel_id" in dialog.raw_hint.text()
+    assert "event_id" in dialog.raw_hint.text()
 
     dialog.assisted_radio.setChecked(True)
     assert dialog.raw_hint.isHidden()

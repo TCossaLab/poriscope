@@ -224,6 +224,8 @@
 
 * **Export Subset - CSV now takes a raw SQL filter:** it writes the events the query names in each selected channel, and refuses a filter that does not use `:experiment_id` and `:channel_id`, saying how to fix it
 
+* The missing-`event_id` message for a raw filter now shows the query with `event_id` added, for a plain one-row-per-event `SELECT`; the filter dialog's hint and the guide's raw examples start with `event_id`
+
 * The raw filter warning about rows from other channels now names an unbracketed `OR` as a cause, not only a subquery, and shows the fix
 
 * **A raw SQL filter can only read the database:** a statement that writes, including one behind `WITH`, is refused, and the loader's read connections can no longer write

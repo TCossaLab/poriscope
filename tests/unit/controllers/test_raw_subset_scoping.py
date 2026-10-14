@@ -32,6 +32,7 @@ from poriscope.utils.MetaSubsetTabController import (
     relabelled_keys,
     scope_placeholders,
     selected_pairs,
+    with_event_id,
     writing_keyword,
 )
 from poriscope.utils.MetaSubsetTabModel import MetaSubsetTabModel
@@ -613,11 +614,14 @@ class TestRawFilterLoadsItsOwnEvents:
         controller = _event_controller(
             cls, mocker, pd.DataFrame({"duration": [1.0, 2.0]})
         )
+        without = SCOPED.replace("SELECT event_id", "SELECT duration", 1)
 
-        assert controller._fetch_event_subset("ldr", SCOPED, SCOPE, "mine_raw") is None
+        assert controller._fetch_event_subset("ldr", without, SCOPE, "mine_raw") is None
 
         assert "does not return event_id" in _said(controller)
-        assert "WHERE experiment_id = :experiment_id" in _said(controller)
+        assert "WHERE duration > 100 AND experiment_id = :experiment_id" in _said(
+            controller
+        )
         assert controller.model.calls_to("load_event_data") == []
 
     def test_an_id_column_is_not_what_names_an_event(
@@ -950,3 +954,70 @@ def test_the_distribution_chain_still_loads_an_assisted_subset(
     ]
     controller.view.set_event_query.assert_called_once_with("SELECT * FROM data")
     controller.view.set_event_data_generator.assert_called_once_with(generator)
+
+
+@pytest.mark.parametrize(
+    ("sql", "expected"),
+    [
+        (
+            "SELECT duration FROM events WHERE channel_id = :channel_id",
+            "SELECT event_id, duration FROM events WHERE channel_id = :channel_id",
+        ),
+        (
+            "  select duration, max_blockage from events;",
+            "SELECT event_id, duration, max_blockage from events",
+        ),
+        (
+            "SELECT 'group' AS label, duration FROM events -- union of nothing",
+            "SELECT event_id, 'group' AS label, duration FROM events -- union of nothing",
+        ),
+    ],
+)
+def test_a_one_row_per_event_query_gets_event_id_suggested_first(
+    sql: str, expected: str
+) -> None:
+    """
+    The suggestion keeps the user's text and placeholders as written, and words that sit
+    inside a string or a comment do not count as ``GROUP`` or ``UNION``.
+    """
+    assert with_event_id(sql) == expected
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "SELECT DISTINCT duration FROM events",
+        "SELECT AVG(duration) FROM events GROUP BY channel_id",
+        "SELECT duration FROM events UNION SELECT duration FROM events",
+        "WITH x AS (SELECT 1) SELECT duration FROM events",
+        "SELECT e.duration FROM events e JOIN sublevels s ON s.event_db_id = e.id",
+        "SELECT * FROM events",
+        "DELETE FROM events",
+    ],
+)
+def test_no_event_id_is_suggested_where_it_would_change_the_rows(sql: str) -> None:
+    """
+    The shapes that are not one row per event are never offered a rewrite.
+    """
+    assert with_event_id(sql) is None
+
+
+@pytest.mark.parametrize("cls", [MetadataController, ProteinController])
+def test_the_missing_event_id_message_shows_the_users_query_with_it_added(
+    cls: type, mocker: MockerFixture
+) -> None:
+    """
+    A plain filter is told exactly what to type, and a ``DISTINCT`` one is not.
+    """
+    plain = "SELECT duration FROM events WHERE experiment_id = :experiment_id AND channel_id = :channel_id"
+    controller = _event_controller(cls, mocker, pd.DataFrame({"duration": [1.0]}))
+
+    assert controller._fetch_event_subset("ldr", plain, SCOPE, "mine_raw") is None
+    assert f"Try: SELECT event_id, {plain[len('SELECT '):]}" in _said(controller)
+
+    distinct = plain.replace("SELECT ", "SELECT DISTINCT ")
+    controller = _event_controller(cls, mocker, pd.DataFrame({"duration": [1.0]}))
+
+    assert controller._fetch_event_subset("ldr", distinct, SCOPE, "mine_raw") is None
+    assert "Try:" not in _said(controller)
+    assert "DISTINCT, GROUP BY" in _said(controller)

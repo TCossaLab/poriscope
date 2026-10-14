@@ -110,7 +110,7 @@ the ids in the database:
 
 .. code-block:: sql
 
-   SELECT duration FROM events
+   SELECT event_id, duration FROM events
    WHERE duration > 100 AND experiment_id = :experiment_id AND channel_id = :channel_id
 
 Because the scope is inside your query, ``LIMIT``, aggregates and ``DISTINCT`` see only that
@@ -121,14 +121,26 @@ A few things are yours to provide:
   only one ignores half of it; the same rows are drawn for every channel, and the status panel
   says so. A placeholder in a subquery only does not scope the main table: if the result has
   ``experiment_id`` or ``channel_id``, rows from other channels are counted on the panel. With
-  nothing selected a query that uses a placeholder is refused, since there is nothing to put in;
-  to run a raw filter on the whole database, write it without the placeholders and select nothing.
+  nothing selected a query that uses a placeholder is refused, since there is nothing to put in.
+  The Scope starts empty and cannot be emptied again once you have chosen one, so a raw filter runs
+  on the whole database, as one dataset, only before a Scope is chosen in the session, and only if
+  it is written without the placeholders. With a Scope chosen, a query without them draws the same
+  rows once for each ticked channel and the panel warns.
   The plots that work on one channel at a time (the event overlays, Plot Events, the arrows and
   the Protein tab) ask you to select a single channel when several are ticked.
 * **The plot's own columns.** A plot needs the columns you chose on its axes: if the query does
   not return one, the status panel names it and nothing is drawn. A query that returns the same
   column name twice (a join's ``SELECT *``) is refused if the plot reads it; name the one you
   mean, for example ``SELECT e.duration AS duration, s.sublevel_duration, ...``.
+* **Start with ``event_id`` unless the query is not one row per event.** Write ``SELECT event_id,
+  duration, ...``: the extra column is ignored by a histogram or scatterplot and is what Plot
+  Events, the arrows, the event plots, the Protein tab and Export Subset - CSV need, so one filter
+  serves them all. Leave it out of a query whose own rows are grouped or combined (``DISTINCT``,
+  ``GROUP BY``, ``UNION`` or ``WITH`` at the top level; inside a subquery, as in Example 5, they do
+  not matter), where adding a column changes the rows or the query, and name the table in a join
+  (``e.event_id``). If it is missing when it is needed, the status panel shows your query with
+  ``event_id`` added for you to copy, except for a query that contains any of those words, which it
+  leaves alone to be safe; nothing is ever changed for you.
 * **``event_id`` for anything that loads events.** The event overlays, all-points histograms, the
   Protein distribution plots, Plot Events, the event navigation arrows and the Protein tab's Plot
   Histogram work on whole events, so the query must return ``event_id``, for example
@@ -154,21 +166,21 @@ simply prefer writing complete SQL.
 
 .. code-block:: sql
 
-   SELECT duration FROM events
+   SELECT event_id, duration FROM events
    WHERE duration > 100 AND experiment_id = :experiment_id AND channel_id = :channel_id
 
 **Example 2 — Same high blockage filter, written as Raw SQL:**
 
 .. code-block:: sql
 
-   SELECT duration, max_blockage FROM events
+   SELECT event_id, duration, max_blockage FROM events
    WHERE max_blockage > 2000 AND experiment_id = :experiment_id AND channel_id = :channel_id
 
 **Example 3 — Same multi-sublevel filter, written as Raw SQL:**
 
 .. code-block:: sql
 
-   SELECT fitted_ecd FROM events
+   SELECT event_id, fitted_ecd FROM events
    WHERE num_sublevels >= 3 AND max_blockage > 1500
      AND experiment_id = :experiment_id AND channel_id = :channel_id
 
@@ -176,7 +188,7 @@ simply prefer writing complete SQL.
 
 .. code-block:: sql
 
-   SELECT duration FROM events
+   SELECT event_id, duration FROM events
    WHERE experiment_id = :experiment_id AND channel_id = :channel_id
      AND id IN (
        SELECT event_db_id FROM sublevels
@@ -190,7 +202,7 @@ then keeps only events that have more than 3 sublevel rows.
 
 .. code-block:: sql
 
-   SELECT duration FROM events
+   SELECT event_id, duration FROM events
    WHERE experiment_id = :experiment_id AND channel_id = :channel_id
      AND id IN (
        SELECT event_db_id FROM sublevels
@@ -202,7 +214,7 @@ You can also aggregate a sublevel property per event and filter on that:
 
 .. code-block:: sql
 
-   SELECT duration FROM events
+   SELECT event_id, duration FROM events
    WHERE experiment_id = :experiment_id AND channel_id = :channel_id
      AND id IN (
        SELECT event_db_id FROM sublevels
@@ -219,14 +231,14 @@ Blockage range — difference between maximum and minimum blockage:
 
 .. code-block:: sql
 
-   SELECT duration, max_blockage - min_blockage AS blockage_range FROM events
+   SELECT event_id, duration, max_blockage - min_blockage AS blockage_range FROM events
    WHERE experiment_id = :experiment_id AND channel_id = :channel_id
 
 Fractional blockage — blockage normalised to baseline current:
 
 .. code-block:: sql
 
-   SELECT duration, max_blockage / ABS(baseline_current) AS fractional_blockage FROM events
+   SELECT event_id, duration, max_blockage / ABS(baseline_current) AS fractional_blockage FROM events
    WHERE experiment_id = :experiment_id AND channel_id = :channel_id
 
 Saved as: ``<subset_name>_raw``
@@ -263,7 +275,7 @@ channel:
 
 .. code-block:: sql
 
-   SELECT duration FROM events
+   SELECT event_id, duration FROM events
    WHERE duration > 100 AND experiment_id = 1 AND channel_id = 0
 
 Nothing is wrapped around it and nothing is applied to its result afterwards.
@@ -301,7 +313,7 @@ An ``OR`` has to be bracketed in Raw SQL. ``AND`` binds before ``OR``, so
 
 .. code-block:: sql
 
-   SELECT duration FROM events
+   SELECT event_id, duration FROM events
    WHERE duration > 100 OR max_blockage > 2000
      AND experiment_id = :experiment_id AND channel_id = :channel_id
 
@@ -309,7 +321,7 @@ scopes only the second term, and the first is drawn for every channel in the dat
 
 .. code-block:: sql
 
-   SELECT duration FROM events
+   SELECT event_id, duration FROM events
    WHERE (duration > 100 OR max_blockage > 2000)
      AND experiment_id = :experiment_id AND channel_id = :channel_id
 
@@ -325,7 +337,7 @@ The same events from the sublevels table, with a condition on the sublevels:
    * - Assisted
      - Raw
    * - ``sublevel_duration > 200``
-     - ``SELECT duration FROM events WHERE experiment_id = :experiment_id AND channel_id =
+     - ``SELECT event_id, duration FROM events WHERE experiment_id = :experiment_id AND channel_id =
        :channel_id AND id IN (SELECT event_db_id FROM sublevels WHERE sublevel_duration > 200)``
 
 Only in Assisted, or only in Raw
@@ -338,20 +350,28 @@ Only in Assisted, or only in Raw
    * - Only Assisted
      - Only Raw
    * - No SQL beyond a condition, and no placeholders: the Scope is added for you
-     - ``GROUP BY`` and ``HAVING`` on the query itself, ``DISTINCT``, ``UNION``
+     - Aggregates and grouping as the plotted result (``GROUP BY``, ``DISTINCT``): one row per group
    * - A column of ``sublevels`` or ``experiments`` joins in by itself
      - Computed columns (``max_blockage - min_blockage AS blockage_range``)
    * - An ``OR`` or a ``--`` comment cannot widen the scope
-     - ``ORDER BY``, ``LIMIT`` and ``OFFSET``, applied within each channel
+     - ``ORDER BY``, ``LIMIT`` and ``OFFSET`` on the plotted rows, applied within each channel
    * - Every plot works: Poriscope chooses the columns and the event ids
-     - ``WITH`` queries, window functions, columns from several tables in one result
+     - Columns from several tables in one result (a join's output)
    * - The Scope selection cannot be forgotten
-     - You choose what "matches" means for sublevels (any, all, average, count)
-   * - With nothing selected, the filter runs on the whole database
-     - With nothing selected a query that uses the placeholders is refused; to run on the
+     - The query you wrote is the one that runs, so you can paste it into a viewer
+   * - Before a Scope is chosen, the filter runs on the whole database as one dataset
+     - Before a Scope is chosen a query that uses the placeholders is refused; to run on the
        whole database, write it without them
 
-Aggregation *inside a subquery* works in both modes (Assisted Example 6).
+Which *events* a filter selects is never the difference. A subquery in an Assisted condition
+selects any set of events a raw filter can, including window functions, ``WITH`` and queries
+that compare an event with its own channel: for example the longest 10% of events in each
+channel is
+``e.id IN (SELECT id FROM (SELECT id, NTILE(10) OVER (PARTITION BY experiment_id, channel_id
+ORDER BY duration DESC) AS t FROM events) WHERE t = 1)``. What Raw adds is the *shape of the
+result*: computed columns, columns from several tables, and aggregates as the plotted values.
+For Plot Events, the arrows and the event plots only the events matter, so the two modes can
+name the same ones.
 
 Which plots take a filter
 ~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -475,7 +495,7 @@ The saved JSON format looks like:
 
    {
        "long_events_assisted": "duration > 100",
-       "multi_sublevel_raw": "SELECT duration FROM events WHERE experiment_id = :experiment_id AND channel_id = :channel_id AND id IN (SELECT event_db_id FROM sublevels GROUP BY event_db_id HAVING COUNT(*) > 3)"
+       "multi_sublevel_raw": "SELECT event_id, duration FROM events WHERE experiment_id = :experiment_id AND channel_id = :channel_id AND id IN (SELECT event_db_id FROM sublevels GROUP BY event_db_id HAVING COUNT(*) > 3)"
    }
 
 .. note::

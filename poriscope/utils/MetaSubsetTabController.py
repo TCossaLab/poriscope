@@ -206,6 +206,37 @@ def writing_keyword(sql: str) -> Optional[str]:
     return None
 
 
+#: Words that make a query describe something other than one row per event, so an
+#: ``event_id`` added to its column list would change the rows or break the query.
+SHAPE_WORDS = frozenset(
+    {"distinct", "group", "having", "union", "intersect", "except", "with", "join"}
+)
+
+
+def with_event_id(sql: str) -> Optional[str]:
+    """
+    Suggest a plain ``SELECT`` with ``event_id`` put first in its column list.
+
+    Only a suggestion for the user to read: the query is never changed. It is offered for
+    a query that has one row per event, and withheld for one with ``DISTINCT``,
+    ``GROUP BY``, ``UNION``, ``WITH`` or a join, where adding a column changes the rows
+    or is ambiguous, and for ``SELECT *``. Words inside strings and comments do not count.
+
+    :param sql: the user's query, with its placeholders as written
+    :type sql: str
+    :return: the query with ``event_id, `` after ``SELECT``, or None if it should not be suggested
+    :rtype: Optional[str]
+    """
+    head = re.match(r"\s*select\s+(?!\*)", sql, re.IGNORECASE)
+    if head is None:
+        return None
+    for start, end in code_spans(sql):
+        words = {w.lower() for w in re.findall(r"[A-Za-z_]\w*", sql[start:end])}
+        if words & SHAPE_WORDS:
+            return None
+    return f"SELECT event_id, {sql[head.end():].strip().rstrip(';')}"
+
+
 def selected_pairs(
     experiments_and_channels: Optional[Dict[str, Optional[List[int]]]],
 ) -> List[Tuple[str, Optional[int]]]:
@@ -886,10 +917,22 @@ class MetaSubsetTabController(MetaController):
         for column in rows.columns:
             lowered.setdefault(str(column).lower(), column)
         if "event_id" not in lowered:
+            suggestion = with_event_id(sql_filter)
+            if suggestion is not None:
+                shown = (
+                    suggestion if len(suggestion) <= 300 else suggestion[:300] + "..."
+                )
+                advice = f"Try: {shown}"
+            else:
+                advice = (
+                    "Add it to the SELECT, for example SELECT event_id FROM events "
+                    "WHERE experiment_id = :experiment_id AND channel_id = :channel_id. "
+                    "A query with DISTINCT, GROUP BY, UNION, WITH or a join needs a form "
+                    "that returns one row per event, with the table named (e.event_id)"
+                )
             self.add_text_to_display.emit(
                 f"{subset_name}'s query does not return event_id, which identifies an "
-                "event. Add it to the SELECT, for example SELECT event_id FROM events "
-                "WHERE experiment_id = :experiment_id AND channel_id = :channel_id",
+                f"event. {advice}",
                 self.__class__.__name__,
             )
             return None

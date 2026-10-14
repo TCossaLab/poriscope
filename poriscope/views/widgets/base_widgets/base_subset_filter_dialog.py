@@ -27,6 +27,7 @@
 import logging
 from typing import Collection, Optional
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QButtonGroup,
     QDialog,
@@ -98,10 +99,13 @@ class BaseSubsetFilterDialog(QDialog):
             self.raw_radio.setEnabled(False)
 
         self.raw_hint = QLabel(
-            "To follow the Scope selection: add WHERE experiment_id = :experiment_id "
-            "AND channel_id = :channel_id. Without it, the filter ignores the Scope "
-            "selection."
+            "To follow the <b>Scope selection</b>: <b>add WHERE experiment_id = "
+            ":experiment_id AND channel_id = :channel_id</b>. Without it, the filter "
+            "ignores the Scope selection.<br>Start with <b>SELECT event_id, ...</b> so "
+            "Plot Events and event plots work, unless the query uses DISTINCT, GROUP BY "
+            "or UNION."
         )
+        self.raw_hint.setTextFormat(Qt.RichText)
         self.raw_hint.setWordWrap(True)
         layout.addWidget(self.raw_hint)
         self.raw_radio.toggled.connect(self.raw_hint.setVisible)
