@@ -103,47 +103,47 @@ it against the SQLite database without rewriting or modifying the query content.
 
 You have full control over which columns are returned and how the query is structured.
 
-A raw filter is plotted like any other, and is restricted to the **Scope** selection (the
-experiments and channels ticked in the selection tree) in the same way. Because your query
-is a complete ``SELECT``, a few things are yours to provide:
+A raw filter scopes itself. Write ``:experiment_id`` and ``:channel_id`` where you want the
+experiment and channel ticked in the **Scope** selection, and Poriscope puts the selected
+experiment's id and the channel in, one selected channel at a time - so you never need to know
+the ids in the database:
 
-* **``experiment_id`` and ``channel_id``.** Poriscope applies the selection by wrapping
-  your query as a subquery - ``SELECT * FROM (your query) WHERE experiment_id = ... AND
-  channel_id IN (...)`` - which needs your query to return those two columns, as every
-  example below does. A query without them cannot be restricted, so it is refused with a
-  message on the status panel saying what to add, rather than being run over the whole
-  database. A raw filter is drawn once for each channel selected, as an Assisted one is.
-* **The plot's own columns.** A plot needs the columns you chose on its axes: if the query
-  does not return one, the status panel names it and nothing is drawn.
-* **The event, for anything that loads events.** The event overlays, all-points
-  histograms, the Protein distribution plots, Plot Events, the event navigation arrows
-  and the Protein tab's Plot Histogram work on whole events, so the query must return the
-  event's key - ``experiment_id``, ``channel_id`` and ``event_id`` - for example
-  ``SELECT experiment_id, channel_id, event_id FROM events WHERE duration > 100``.
-  These three mean the same thing in every table that has them (a sublevel's are its
-  parent event's), so a query on ``sublevels`` or a join names the right events. ``id``
-  does not: it is a different row in each table, so a query that returns only ``id`` is
-  asked for the key instead. A key that names no event in the database, such as a level
-  number labelled ``event_id``, is refused, and so is one that is not a whole number
-  (``event_id / 2``).
-  A key column the query makes by renaming another expression (``level_id AS event_id``)
-  draws a warning on the status panel, since nothing can check that it was meant, and rows
-  whose key is ``NULL`` name no event: they are left out and the panel says how many.
-* **One column per name.** If your query joins tables, ``SELECT *`` returns both tables'
-  columns, and a plot cannot tell which duplicate of a plotted column you mean. A query
-  that returns a column the plot reads more than once is refused with a message saying
-  so; name the one you mean and give the other a different name, for example
-  ``SELECT e.duration AS duration, s.sublevel_duration, ...``. The key columns are
-  equal in both tables, so they can be returned twice.
-* **Your query runs first, then the selection is applied to its rows.** A ``LIMIT``
-  therefore counts across the whole database before the selection narrows it, so
-  ``LIMIT 5`` with one channel ticked can return fewer than five rows. An aggregate
-  without ``GROUP BY`` returns a single row with an arbitrary ``experiment_id`` and
-  ``channel_id``, exactly as it does in any SQL viewer; group by
-  ``experiment_id, channel_id`` to get one row per channel.
-  A row whose ``experiment_id`` or ``channel_id`` is ``NULL`` (a ``LEFT JOIN`` with no
-  match, say) cannot be placed in the selection; it is left out, and the status panel
-  says how many.
+.. code-block:: sql
+
+   SELECT duration FROM events
+   WHERE duration > 100 AND experiment_id = :experiment_id AND channel_id = :channel_id
+
+Because the scope is inside your query, ``LIMIT``, aggregates and ``DISTINCT`` see only that
+channel's rows, and a raw filter is drawn once for each channel selected, as an Assisted one is.
+A few things are yours to provide:
+
+* **Use both placeholders.** A query that uses neither ignores the selection, and one that uses
+  only one ignores half of it; the same rows are drawn for every channel, and the status panel
+  says so. A placeholder in a subquery only does not scope the main table: if the result has
+  ``experiment_id`` or ``channel_id``, rows from other channels are counted on the panel. With
+  nothing selected, or more than one channel, a query that uses a placeholder is refused, since
+  there is nothing to put in.
+* **The plot's own columns.** A plot needs the columns you chose on its axes: if the query does
+  not return one, the status panel names it and nothing is drawn. A query that returns the same
+  column name twice (a join's ``SELECT *``) is refused if the plot reads it; name the one you
+  mean, for example ``SELECT e.duration AS duration, s.sublevel_duration, ...``.
+* **``event_id`` for anything that loads events.** The event overlays, all-points histograms, the
+  Protein distribution plots, Plot Events, the event navigation arrows and the Protein tab's Plot
+  Histogram work on whole events, so the query must return ``event_id``, for example
+  ``SELECT event_id FROM events WHERE experiment_id = :experiment_id AND channel_id =
+  :channel_id``. A query that does not scope itself must return ``experiment_id``,
+  ``channel_id`` and ``event_id`` together, since an event number repeats from channel to
+  channel. These three mean the same thing in every table that has them (a sublevel's are its
+  parent event's), so a query on ``sublevels`` or a join names the right events. ``id`` does
+  not: it is a different row in each table, so a query that returns only ``id`` is asked for
+  ``event_id`` instead. A key that names no event in the database, such as a level number
+  labelled ``event_id``, is refused, and so is one that is not a whole number
+  (``event_id / 2``). A key column the query makes by renaming another expression
+  (``level_id AS event_id``) draws a warning, since nothing can check that it was meant, and
+  rows whose key is ``NULL`` name no event: they are left out and the panel says how many. After
+  each event plot the panel states how many events were selected and their ``event_id`` range.
+* **Only a ``SELECT`` is run.** A query has to start with ``SELECT`` (or ``WITH``); anything else
+  is not run and the panel says so.
 
 Use this mode to write queries that need aggregations or computed columns, or when you
 simply prefer writing complete SQL.
@@ -152,28 +152,31 @@ simply prefer writing complete SQL.
 
 .. code-block:: sql
 
-   SELECT experiment_id, channel_id, duration FROM events WHERE duration > 100
+   SELECT duration FROM events
+   WHERE duration > 100 AND experiment_id = :experiment_id AND channel_id = :channel_id
 
 **Example 2 — Same high blockage filter, written as Raw SQL:**
 
 .. code-block:: sql
 
-   SELECT experiment_id, channel_id, duration, max_blockage FROM events
-   WHERE max_blockage > 2000
+   SELECT duration, max_blockage FROM events
+   WHERE max_blockage > 2000 AND experiment_id = :experiment_id AND channel_id = :channel_id
 
 **Example 3 — Same multi-sublevel filter, written as Raw SQL:**
 
 .. code-block:: sql
 
-   SELECT experiment_id, channel_id, fitted_ecd FROM events
+   SELECT fitted_ecd FROM events
    WHERE num_sublevels >= 3 AND max_blockage > 1500
+     AND experiment_id = :experiment_id AND channel_id = :channel_id
 
 **Example 4 — Same cross-table filter, written as Raw SQL:**
 
 .. code-block:: sql
 
-   SELECT experiment_id, channel_id, duration FROM events
-   WHERE id IN (
+   SELECT duration FROM events
+   WHERE experiment_id = :experiment_id AND channel_id = :channel_id
+     AND id IN (
        SELECT event_db_id FROM sublevels
        WHERE sublevel_duration > 200
    )
@@ -185,8 +188,9 @@ then keeps only events that have more than 3 sublevel rows.
 
 .. code-block:: sql
 
-   SELECT experiment_id, channel_id, duration FROM events
-   WHERE id IN (
+   SELECT duration FROM events
+   WHERE experiment_id = :experiment_id AND channel_id = :channel_id
+     AND id IN (
        SELECT event_db_id FROM sublevels
        GROUP BY event_db_id
        HAVING COUNT(*) > 3
@@ -196,8 +200,9 @@ You can also aggregate a sublevel property per event and filter on that:
 
 .. code-block:: sql
 
-   SELECT experiment_id, channel_id, duration FROM events
-   WHERE id IN (
+   SELECT duration FROM events
+   WHERE experiment_id = :experiment_id AND channel_id = :channel_id
+     AND id IN (
        SELECT event_db_id FROM sublevels
        GROUP BY event_db_id
        HAVING AVG(sublevel_duration) > 150
@@ -212,15 +217,15 @@ Blockage range — difference between maximum and minimum blockage:
 
 .. code-block:: sql
 
-   SELECT experiment_id, channel_id, duration,
-          max_blockage - min_blockage AS blockage_range FROM events
+   SELECT duration, max_blockage - min_blockage AS blockage_range FROM events
+   WHERE experiment_id = :experiment_id AND channel_id = :channel_id
 
 Fractional blockage — blockage normalised to baseline current:
 
 .. code-block:: sql
 
-   SELECT experiment_id, channel_id, duration,
-          max_blockage / ABS(baseline_current) AS fractional_blockage FROM events
+   SELECT duration, max_blockage / ABS(baseline_current) AS fractional_blockage FROM events
+   WHERE experiment_id = :experiment_id AND channel_id = :channel_id
 
 Saved as: ``<subset_name>_raw``
 
@@ -312,10 +317,10 @@ Common Mistakes
 +------------------------------------------+--------------------------------------------------+
 | Full SELECT entered in Assisted mode     | Fails validation — treated as a WHERE clause     |
 +------------------------------------------+--------------------------------------------------+
-| Raw SQL filter without ``experiment_id`` | Status panel asks for the missing columns;       |
-| and ``channel_id``                       | nothing is drawn                                 |
+| Raw SQL filter without                   | Status panel warns that it ignores the Scope     |
+| ``:experiment_id`` / ``:channel_id``     | selection; the same rows draw for every channel  |
 +------------------------------------------+--------------------------------------------------+
-| Raw SQL filter without ``event_id`` used | Status panel asks for the event key; nothing is  |
+| Raw SQL filter without ``event_id`` used | Status panel asks for ``event_id``; nothing is   |
 | for an event plot, Plot Events or arrows | plotted                                          |
 +------------------------------------------+--------------------------------------------------+
 | Typo in column name                      | Validation error                                 |

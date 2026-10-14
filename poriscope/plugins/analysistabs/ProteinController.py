@@ -540,8 +540,8 @@ class ProteinController(MetaSubsetTabController):
         Both distribution modes - individual and ensemble - run this same chain, so
         there is one slot rather than one per mode.
 
-        A raw filter - one whose name ends ``_raw`` - runs over the scope as a
-        subquery, and the events its event key names are loaded; see
+        A raw filter - one whose name ends ``_raw`` - scopes itself with
+        ``:experiment_id`` and ``:channel_id``, and the events its event key names are loaded; see
         ``MetaSubsetTabController._raw_filter_conditions``.
 
         :param loader: the database loader plugin's key
@@ -591,7 +591,7 @@ class ProteinController(MetaSubsetTabController):
         :type experiments_and_channels: Optional[Dict[str, Optional[List[int]]]]
         :param subset_name: the selected filter's name, whose ``_raw`` suffix marks a raw filter
         :type subset_name: str
-        :return: the query that ran (the user's ``SELECT`` wrapped in the selection, for a raw filter) and a generator over its events, or None
+        :return: the query that ran (the user's ``SELECT`` with the selection bound in, for a raw filter) and a generator over its events, or None
         :rtype: Optional[Tuple[str, Generator]]
         """
         is_raw = subset_name.endswith("_raw")

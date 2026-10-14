@@ -223,11 +223,14 @@ class TestLoadMetadataSubset:
 
 class TestLoadRawMetadataSubset:
     """
-    A raw filter is a complete ``SELECT``: wrapped in the selection, never built.
+    A raw filter is a complete ``SELECT`` that scopes itself, never built.
     """
 
-    RAW = "SELECT experiment_id, channel_id, duration FROM events"
-    FRAME = pd.DataFrame({"experiment_id": [7], "channel_id": [1], "duration": [150.0]})
+    RAW = (
+        "SELECT duration FROM events "
+        "WHERE experiment_id = :experiment_id AND channel_id = :channel_id"
+    )
+    FRAME = pd.DataFrame({"duration": [150.0]})
 
     def answers(self, **overrides: object) -> dict:
         """
@@ -245,24 +248,23 @@ class TestLoadRawMetadataSubset:
             **overrides,
         }
 
-    def test_it_restricts_the_query_to_the_selection_and_never_builds_one(
+    def test_it_binds_the_selection_into_the_query_and_never_builds_one(
         self, controller: MetadataController
     ) -> None:
         """
-        The query is wrapped as a subquery and the selection applied to its rows; the
-        scoped builder must not run at all.
+        The query scopes itself; the scoped builder must not run at all.
         """
         controller.model = RecordingModel(self.answers())
 
         controller.load_metadata_subset("ldr", ["duration"], self.RAW, SCOPE, "q_raw")
 
-        probe, final, _count = controller.model.calls_to("query_database_directly")
-        assert probe[0].endswith("LIMIT 0")
-        assert final[0].startswith("SELECT * FROM (")
-        assert self.RAW in final[0]
-        assert final[0].endswith("WHERE (experiment_id = 7 AND channel_id IN (1))")
+        bound = (
+            "SELECT duration FROM events " "WHERE experiment_id = 7 AND channel_id = 1"
+        )
+        assert controller.model.calls_to("query_database_directly") == [(bound,)]
         assert controller.model.calls_to("construct_metadata_query") == []
         assert controller.model.calls_to("load_metadata") == []
+        controller.view.set_query.assert_called_once_with(bound, "raw query")
         controller.view.update_plot_data.assert_called_once()
         controller.view.set_column_units.assert_called_once_with(["ms"])
 
@@ -270,32 +272,45 @@ class TestLoadRawMetadataSubset:
         self, controller: MetadataController
     ) -> None:
         """
-        Nothing selected restricts nothing, so the query needs no scope columns.
+        Nothing selected means nothing to scope to, so a query without placeholders runs
+        over everything and says nothing.
+        """
+        controller.model = RecordingModel(self.answers())
+        plain = "SELECT duration FROM events"
+
+        controller.load_metadata_subset("ldr", ["duration"], plain, None, "q_raw")
+
+        assert controller.model.calls_to("query_database_directly") == [(plain,)]
+        controller.view.set_query.assert_called_once_with(plain, "raw query")
+        assert "ignores the Scope selection" not in panel_text(controller)
+
+    def test_placeholders_with_no_selection_are_refused(
+        self, controller: MetadataController
+    ) -> None:
+        """
+        There is nothing to bind into them.
         """
         controller.model = RecordingModel(self.answers())
 
         controller.load_metadata_subset("ldr", ["duration"], self.RAW, None, "q_raw")
 
-        assert controller.model.calls_to("query_database_directly") == [(self.RAW,)]
-        controller.view.set_query.assert_called_once_with(self.RAW, "raw query")
+        assert "no experiment and channel is selected" in panel_text(controller)
+        controller.view.update_plot_data.assert_not_called()
 
-    def test_a_query_without_the_scope_columns_is_refused_and_says_what_to_add(
+    def test_a_query_that_ignores_the_selection_is_warned_about_and_still_plots(
         self, controller: MetadataController
     ) -> None:
         """
-        It is not run over the whole database instead.
+        No placeholders, so the same rows would be drawn for every channel.
         """
-        controller.model = RecordingModel(
-            self.answers(query_database_directly=pd.DataFrame({"duration": [1.0]}))
-        )
+        controller.model = RecordingModel(self.answers())
 
         controller.load_metadata_subset(
             "ldr", ["duration"], "SELECT duration FROM events", SCOPE, "q_raw"
         )
 
-        assert "experiment_id and channel_id" in panel_text(controller)
-        assert len(controller.model.calls_to("query_database_directly")) == 1
-        controller.view.update_plot_data.assert_not_called()
+        assert "ignores the Scope selection" in panel_text(controller)
+        controller.view.update_plot_data.assert_called_once()
 
     def test_a_plotted_column_returned_twice_is_refused(
         self, controller: MetadataController
@@ -330,43 +345,6 @@ class TestLoadRawMetadataSubset:
         controller.load_metadata_subset("ldr", ["duration"], self.RAW, SCOPE, "q_raw")
 
         controller.view.update_plot_data.assert_called_once()
-
-    def test_rows_the_selection_cannot_place_are_counted_on_the_panel(
-        self, controller: MetadataController
-    ) -> None:
-        """
-        A NULL scope column matches no experiment or channel, so the selection drops the
-        row silently unless the count is reported.
-        """
-        model = RecordingModel(self.answers())
-        asked = model.call
-
-        def call(metaclass: str, key: str, method: str, *args: object) -> object:
-            result = asked(metaclass, key, method, *args)
-            if method == "query_database_directly" and "COUNT(*)" in str(args[0]):
-                return pd.DataFrame({"n": [3]})
-            return result
-
-        model.call = call  # type: ignore[method-assign]
-        controller.model = model
-
-        controller.load_metadata_subset("ldr", ["duration"], self.RAW, SCOPE, "q_raw")
-
-        assert "3 row(s)" in panel_text(controller)
-        assert "left out" in panel_text(controller)
-        controller.view.update_plot_data.assert_called_once()
-
-    def test_no_unplaced_rows_means_no_message(
-        self, controller: MetadataController
-    ) -> None:
-        """
-        The count is only worth a line when it is above zero.
-        """
-        controller.model = RecordingModel(self.answers())
-
-        controller.load_metadata_subset("ldr", ["duration"], self.RAW, SCOPE, "q_raw")
-
-        assert "left out" not in panel_text(controller)
 
     def test_a_missing_plot_column_is_named_and_nothing_is_set(
         self, controller: MetadataController
@@ -410,24 +388,6 @@ class TestLoadRawMetadataSubset:
 
         assert "exp1" in panel_text(controller)
         controller.view.update_plot_data.assert_not_called()
-
-    def test_scope_column_names_are_matched_without_regard_to_case(
-        self, controller: MetadataController
-    ) -> None:
-        """
-        SQLite matches ``Experiment_ID`` to ``experiment_id`` in the selection's WHERE,
-        so refusing it for its case would refuse a query a SQL viewer accepts.
-        """
-        shouting = pd.DataFrame(
-            {"Experiment_ID": [7], "CHANNEL_ID": [1], "duration": [150.0]}
-        )
-        controller.model = RecordingModel(
-            self.answers(query_database_directly=shouting)
-        )
-
-        controller.load_metadata_subset("ldr", ["duration"], self.RAW, SCOPE, "q_raw")
-
-        controller.view.update_plot_data.assert_called_once()
 
     def test_a_failed_query_shows_the_sql_error(
         self, controller: MetadataController

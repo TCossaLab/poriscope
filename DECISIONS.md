@@ -899,16 +899,20 @@ the smaller alternative before this ruling.
 to have a filter only expressible as raw SQL - then withdrawing it is cheaper than building it.
 
 
-**Superseded 2026-10-10** (Carolina, approved by Kyle): a raw filter is restricted to the Scope selection, as the
-1.9.0 Protein tab intended (it appended `experiment_id`/`channel_db_id` to the `SELECT`, and
-never produced a plot). The query is wrapped, not edited: `SELECT * FROM (<query>) WHERE
-<selection>`, which needs it to return `experiment_id` and `channel_id`; without them it is
-refused naming what to add, never run unscoped. Found in the GUI pass: an ignored Scope
-selector read as a bug, and a raw event plot drew once per ticked channel. **Revisit if** the
-two required columns prove a burden - `id`-based scoping would drop them for event plots.
-Events are named by their key `(experiment_id, channel_id, event_id)`, not `id`: `id` is a different row in
-each table, and a sublevel's `id` that was also a same-channel event passed the check and loaded the wrong
-events silently (measured on a real database). A sublevel's key is its parent event's, so a join is safe.
+**Superseded 2026-10-10** (Carolina, approved by Kyle): a raw filter follows the Scope selection,
+without the user knowing database ids. First built as a wrapper, `SELECT * FROM (<query>) WHERE
+<selection>`, then replaced by placeholders: `:experiment_id` and `:channel_id` in the query are bound
+to the selected pair, one channel at a time, so the scope sits inside the query. The wrapper applied
+the selection after the query, so it disagreed with it: on a real database `LIMIT 5` gave two
+channels 3 and 2 rows, an ungrouped aggregate landed on one channel, and the query had to return the
+scope columns, with ten safeguards (about 760 lines) around that. Placeholders trade that for two gaps,
+both warned about: a query that omits them ignores the selection, and one that scopes only a subquery
+leaks rows (counted when the result has the columns). Events are named by
+`(experiment_id, channel_id, event_id)`, not `id`, which is a different row in each table: a
+sublevel's `id` that was also a same-channel event once loaded the wrong events silently. A
+sublevel's key is its parent event's, so a join is safe. Only a `SELECT` is run: the loader's
+validator accepts any statement (a `DELETE` ran on a scratch database, undone only because the
+connection never commits). **Revisit if** users keep omitting the placeholders.
 
 ---
 

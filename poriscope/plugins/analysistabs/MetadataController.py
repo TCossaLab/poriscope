@@ -650,7 +650,7 @@ class MetadataController(MetaSubsetTabController):
         )
         if ran is None:
             return
-        plot_data, executed = ran
+        plot_data, executed = ran.rows, ran.executed
         if self._ambiguous_raw_columns(plot_data, columns, subset_name):
             return
 
@@ -706,7 +706,7 @@ class MetadataController(MetaSubsetTabController):
         :type experiments_and_channels: Optional[Dict[str, Optional[List[int]]]]
         :param subset_name: the selected filter's name, whose ``_raw`` suffix marks a raw filter
         :type subset_name: str
-        :return: the query that ran (the user's ``SELECT`` wrapped in the selection, for a raw filter) and a generator over its events, or None
+        :return: the query that ran (the user's ``SELECT`` with the selection bound in, for a raw filter) and a generator over its events, or None
         :rtype: Optional[Tuple[str, Generator]]
         """
         is_raw = subset_name.endswith("_raw")

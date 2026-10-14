@@ -26,7 +26,17 @@
 
 import logging
 import re
-from typing import Any, Dict, List, Optional, Sequence, Tuple, override
+from typing import (
+    Any,
+    Dict,
+    List,
+    NamedTuple,
+    Optional,
+    Sequence,
+    Set,
+    Tuple,
+    override,
+)
 
 import numpy as np
 import numpy.typing as npt
@@ -43,6 +53,132 @@ from poriscope.utils.MetaSubsetTabView import MetaSubsetTabView
 #: The three columns that together identify an event, and mean the same in every
 #: table that carries them.
 EVENT_KEY = ("experiment_id", "channel_id", "event_id")
+
+
+PLACEHOLDER = re.compile(r"(?<![\w:]):(experiment_id|channel_id)\b", re.IGNORECASE)
+
+
+class RawRun(NamedTuple):
+    """
+    What running a raw filter produced, and the experiment and channel it ran for.
+
+    ``experiment_id`` and ``channel`` are the selected pair, or None when nothing single
+    was selected; ``scoped`` says the query used both placeholders, so its rows belong
+    to that pair.
+    """
+
+    rows: pd.DataFrame
+    executed: str
+    experiment_id: Optional[int]
+    channel: Optional[int]
+    label: str
+    scoped: bool
+
+
+def code_spans(sql: str) -> List[Tuple[int, int]]:
+    """
+    Find the stretches of a query that are SQL, not strings, quoted names or comments.
+
+    :param sql: the user's query
+    :type sql: str
+    :return: ``(start, end)`` for each stretch of code, in order
+    :rtype: List[Tuple[int, int]]
+    """
+    spans: List[Tuple[int, int]] = []
+    start = 0
+    i = 0
+    while i < len(sql):
+        skip_to = -1
+        if sql.startswith("--", i):
+            end = sql.find("\n", i)
+            skip_to = len(sql) if end < 0 else end + 1
+        elif sql.startswith("/*", i):
+            end = sql.find("*/", i + 2)
+            skip_to = len(sql) if end < 0 else end + 2
+        elif sql[i] in "'\"`[":
+            close = "]" if sql[i] == "[" else sql[i]
+            end = sql.find(close, i + 1)
+            skip_to = len(sql) if end < 0 else end + 1
+        if skip_to < 0:
+            i += 1
+            continue
+        if i > start:
+            spans.append((start, i))
+        start = i = skip_to
+    if start < len(sql):
+        spans.append((start, len(sql)))
+    return spans
+
+
+def scope_placeholders(sql: str) -> Set[str]:
+    """
+    Find which scope placeholders a query uses: ``:experiment_id``, ``:channel_id``.
+
+    Only code counts; the same text inside a string or a comment is not a placeholder.
+
+    :param sql: the user's query
+    :type sql: str
+    :return: the names used, lower case, without the colon
+    :rtype: Set[str]
+    """
+    found: Set[str] = set()
+    for start, end in code_spans(sql):
+        found.update(m.group(1).lower() for m in PLACEHOLDER.finditer(sql[start:end]))
+    return found
+
+
+def bind_scope(sql: str, experiment_id: int, channel_id: int) -> str:
+    """
+    Put the selected experiment and channel into a query's placeholders.
+
+    The values are whole numbers Poriscope looked up, never text from the user, so
+    nothing can be injected through them. Text inside strings and comments is left as
+    written.
+
+    :param sql: the user's query
+    :type sql: str
+    :param experiment_id: the experiment's id in the database
+    :type experiment_id: int
+    :param channel_id: the channel number
+    :type channel_id: int
+    :return: the query with ``:experiment_id`` and ``:channel_id`` replaced
+    :rtype: str
+    """
+    values = {
+        "experiment_id": str(int(experiment_id)),
+        "channel_id": str(int(channel_id)),
+    }
+    pieces: List[str] = []
+    last = 0
+    for start, end in code_spans(sql):
+        pieces.append(sql[last:start])
+        pieces.append(
+            PLACEHOLDER.sub(lambda m: values[m.group(1).lower()], sql[start:end])
+        )
+        last = end
+    pieces.append(sql[last:])
+    return "".join(pieces)
+
+
+def selected_pairs(
+    experiments_and_channels: Optional[Dict[str, Optional[List[int]]]],
+) -> List[Tuple[str, Optional[int]]]:
+    """
+    List the experiments and channels a selection names, one entry per channel.
+
+    :param experiments_and_channels: the experiment and channel scope, or None
+    :type experiments_and_channels: Optional[Dict[str, Optional[List[int]]]]
+    :return: ``(experiment name, channel)`` pairs; the channel is None for a whole experiment
+    :rtype: List[Tuple[str, Optional[int]]]
+    """
+    pairs: List[Tuple[str, Optional[int]]] = []
+    for name, channels in (experiments_and_channels or {}).items():
+        if name is None:
+            continue
+        chosen: List[Optional[int]] = [c for c in channels] if channels else [None]
+        for channel in chosen:
+            pairs.append((name, None if channel is None else int(channel)))
+    return pairs
 
 
 def relabelled_keys(sql: str) -> List[Tuple[str, str]]:
@@ -131,6 +267,9 @@ class MetaSubsetTabController(MetaController):
     #: the base View and Model do not have (see MetaController.view).
     view: MetaSubsetTabView
     model: MetaSubsetTabModel
+
+    #: The last scope warning shown, so one query is not warned about once per channel.
+    _last_scope_warning: str = ""
 
     @log(logger=logger)
     @override
@@ -380,67 +519,6 @@ class MetaSubsetTabController(MetaController):
         self.logger.info(f"Filters saved to {path}")
 
     @log(logger=logger)
-    def _raw_scope_clause(
-        self,
-        loader: str,
-        experiments_and_channels: Optional[Dict[str, Optional[List[int]]]],
-        subset_name: str,
-    ) -> Optional[str]:
-        """
-        Express the experiment and channel selection as a condition on a raw filter's rows.
-
-        The same restriction the generated queries apply to an assisted filter: one
-        ``(experiment_id = ... AND channel_id IN (...))`` term per selected experiment,
-        joined by ``OR``, with the experiment names resolved to their ids. An empty
-        string means nothing is selected and so nothing restricts the rows.
-
-        Reports its own failure and answers with None.
-
-        :param loader: the database loader plugin's key
-        :type loader: str
-        :param experiments_and_channels: the experiment and channel scope, or None
-        :type experiments_and_channels: Optional[Dict[str, Optional[List[int]]]]
-        :param subset_name: the filter's name, for the messages
-        :type subset_name: str
-        :return: the condition, an empty string for no restriction, or None if an experiment could not be resolved
-        :rtype: Optional[str]
-        """
-        if not experiments_and_channels:
-            return ""
-        terms = []
-        for exp_name, channels in experiments_and_channels.items():
-            if exp_name is None:
-                continue
-            try:
-                exp_id = self.model.call(
-                    "MetaDatabaseLoader", loader, "get_experiment_id_by_name", exp_name
-                )
-            except Exception as e:
-                self.logger.error(f"Failed to resolve experiment {exp_name}: {e!r}")
-                self.add_text_to_display.emit(
-                    f"Could not look up experiment {exp_name} in {loader} to apply the "
-                    f"selection to {subset_name}: {e}",
-                    self.__class__.__name__,
-                )
-                return None
-            if exp_id is None:
-                self.add_text_to_display.emit(
-                    f"{loader} has no experiment named {exp_name}, so {subset_name} "
-                    "cannot be restricted to it",
-                    self.__class__.__name__,
-                )
-                return None
-            wanted = [int(c) for c in channels or [] if c is not None]
-            if wanted:
-                ids = ",".join(str(c) for c in wanted)
-                terms.append(
-                    f"(experiment_id = {int(exp_id)} AND channel_id IN ({ids}))"
-                )
-            else:
-                terms.append(f"(experiment_id = {int(exp_id)})")
-        return " OR ".join(terms)
-
-    @log(logger=logger)
     def _raw_failure_reason(self, loader: str, query: str) -> str:
         """
         Say why a raw query could not run, in the loader's own words.
@@ -467,23 +545,119 @@ class MetaSubsetTabController(MetaController):
         return str(debug).split("\n\n")[-1].strip()
 
     @log(logger=logger)
+    def _warn_once(self, message: str) -> None:
+        """
+        Put a warning on the status panel unless it is the one shown last.
+
+        A plot asks once per ticked channel with the same query, and the warning is
+        about the query, so it is worth saying once.
+
+        :param message: the warning
+        :type message: str
+        """
+        if message == self._last_scope_warning:
+            return
+        self._last_scope_warning = message
+        self.add_text_to_display.emit(message, self.__class__.__name__)
+
+    @log(logger=logger)
+    def _experiment_database_id(
+        self, loader: str, experiment: str, subset_name: str
+    ) -> Optional[int]:
+        """
+        Look up an experiment's id in the database from its name.
+
+        Reports its own failure and answers with None.
+
+        :param loader: the database loader plugin's key
+        :type loader: str
+        :param experiment: the experiment's name
+        :type experiment: str
+        :param subset_name: the filter's name, for the messages
+        :type subset_name: str
+        :return: the id, or None if it could not be found
+        :rtype: Optional[int]
+        """
+        try:
+            found = self.model.call(
+                "MetaDatabaseLoader", loader, "get_experiment_id_by_name", experiment
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to resolve experiment {experiment}: {e!r}")
+            self.add_text_to_display.emit(
+                f"Could not look up experiment {experiment} in {loader} for "
+                f"{subset_name}: {e}",
+                self.__class__.__name__,
+            )
+            return None
+        if found is None:
+            self.add_text_to_display.emit(
+                f"{loader} has no experiment named {experiment}, so {subset_name} "
+                "cannot be run for it",
+                self.__class__.__name__,
+            )
+            return None
+        return int(found)
+
+    @log(logger=logger)
+    def _warn_about_leaks(
+        self, rows: pd.DataFrame, run_for: Tuple[int, int, str], subset_name: str
+    ) -> None:
+        """
+        Warn that a result holds rows from other experiments or channels than the selected one.
+
+        The query was given the selection but may not have used it everywhere - a
+        placeholder in a subquery and not on the main table, say - so rows of other
+        channels would be drawn under this one's name. Only possible to see when the
+        result carries ``experiment_id`` or ``channel_id``; a warning, since the query
+        may mean it.
+
+        :param rows: the raw filter's result
+        :type rows: pd.DataFrame
+        :param run_for: the experiment id, the channel and the label the query ran for
+        :type run_for: Tuple[int, int, str]
+        :param subset_name: the filter's name, for the message
+        :type subset_name: str
+        """
+        experiment, channel, label = run_for
+        rows = rows.loc[:, ~rows.columns.duplicated()]
+        lowered: Dict[str, Any] = {}
+        for column in rows.columns:
+            lowered.setdefault(str(column).lower(), column)
+        elsewhere = pd.Series(False, index=rows.index)
+        for name, wanted in (("experiment_id", experiment), ("channel_id", channel)):
+            if name in lowered:
+                values = pd.to_numeric(rows[lowered[name]], errors="coerce")
+                elsewhere |= values.notna() & (values != wanted)
+        other = int(elsewhere.sum())
+        if other:
+            self._warn_once(
+                f"{other} of {len(rows)} rows of {subset_name}'s query are from other "
+                f"experiments or channels than the one selected ({label}), so they are "
+                "drawn under it. If you meant only this channel, put experiment_id = "
+                ":experiment_id AND channel_id = :channel_id in the WHERE of the main "
+                "table, not only in a subquery"
+            )
+
+    @log(logger=logger)
     def _run_raw_filter(
         self,
         loader: str,
         sql_filter: str,
         experiments_and_channels: Optional[Dict[str, Optional[List[int]]]],
         subset_name: str,
-    ) -> Optional[Tuple[pd.DataFrame, str]]:
+    ) -> Optional[RawRun]:
         """
-        Run a raw ``SELECT`` restricted to the experiment and channel selection.
+        Run a raw ``SELECT`` for the selected experiment and channel.
 
-        With a selection, the user's query is wrapped as a subquery and the selection
-        applied to its rows - ``SELECT * FROM (<query>) WHERE <selection>`` - which
-        leaves the query itself exactly as written but requires it to return
-        ``experiment_id`` and ``channel_id``, the only things that say which experiment
-        and channel a row belongs to. A query without them cannot be restricted, and is
-        refused naming what to add rather than being run over the whole database. With
-        no selection the query runs as written.
+        The query scopes itself: ``:experiment_id`` and ``:channel_id`` in it are
+        replaced by the selected experiment's id and the channel, one selected channel
+        at a time, so ``LIMIT``, aggregates and ``DISTINCT`` see only that channel's
+        rows and nothing is applied to the result afterwards. A query that uses neither
+        placeholder, or only one, is warned about, since it ignores the selection
+        wholly or in part; one that uses them with nothing, or several channels,
+        selected is refused. Only a ``SELECT`` is run - the loader's validator accepts
+        any statement.
 
         Reports its own failure and answers with None.
 
@@ -495,41 +669,70 @@ class MetaSubsetTabController(MetaController):
         :type experiments_and_channels: Optional[Dict[str, Optional[List[int]]]]
         :param subset_name: the filter's name, for the messages
         :type subset_name: str
-        :return: the rows, and the SQL that produced them, or None
-        :rtype: Optional[Tuple[pd.DataFrame, str]]
+        :return: the rows, the SQL that ran and the pair it ran for, or None
+        :rtype: Optional[RawRun]
         """
-        clause = self._raw_scope_clause(loader, experiments_and_channels, subset_name)
-        if clause is None:
+        if not re.match(
+            r"(?:\s|--[^\n]*(?:\n|$)|/\*.*?\*/)*(?:select|with)\b",
+            sql_filter,
+            re.IGNORECASE | re.DOTALL,
+        ):
+            # The loader's validator accepts any single statement, so a DELETE or an
+            # UPDATE would run - and is only undone because the connection never
+            # commits. A filter file can hold one without the dialog's own check.
+            self.add_text_to_display.emit(
+                f"{subset_name} is not a SELECT, so it was not run: a raw filter has to "
+                "start with SELECT",
+                self.__class__.__name__,
+            )
             return None
+        used = scope_placeholders(sql_filter)
+        pairs = selected_pairs(experiments_and_channels)
+        single = len(pairs) == 1 and pairs[0][1] is not None
         query = sql_filter.strip().rstrip(";")
-        wrapped = f"SELECT * FROM (\n{query}\n) AS raw_subset"
-        try:
-            if clause:
-                probe = self.model.call(
-                    "MetaDatabaseLoader",
-                    loader,
-                    "query_database_directly",
-                    f"{wrapped} LIMIT 0",
+        experiment: Optional[int] = None
+        channel: Optional[int] = None
+        label = ""
+        if single:
+            name, channel = pairs[0]
+            experiment = self._experiment_database_id(loader, name, subset_name)
+            if experiment is None:
+                return None
+            label = f"{name} Ch {channel}"
+        if used:
+            if not pairs:
+                self.add_text_to_display.emit(
+                    f"{subset_name}'s query uses {', '.join(':' + n for n in sorted(used))}"
+                    ", which come from the selection, and no experiment and channel is "
+                    "selected",
+                    self.__class__.__name__,
                 )
-                if probe is not None:
-                    # SQLite matches column names without regard to case, so the
-                    # check does too: the selection is applied by name in its WHERE.
-                    present = {str(c).lower() for c in probe.columns}
-                    missing = [
-                        c for c in ("experiment_id", "channel_id") if c not in present
-                    ]
-                    if missing:
-                        self.add_text_to_display.emit(
-                            f"{subset_name}'s query does not return "
-                            f"{' and '.join(missing)}, which the experiment and channel "
-                            "selection needs to restrict it. Add "
-                            f"{'it' if len(missing) == 1 else 'them'} to the SELECT, for "
-                            "example SELECT experiment_id, channel_id, duration FROM "
-                            "events WHERE ...",
-                            self.__class__.__name__,
-                        )
-                        return None
-                query = f"{wrapped} WHERE {clause}"
+                return None
+            if experiment is None or channel is None:
+                self.add_text_to_display.emit(
+                    f"{subset_name}'s query uses {', '.join(':' + n for n in sorted(used))}"
+                    ", so it runs for one experiment and one channel at a time; select "
+                    "a single channel",
+                    self.__class__.__name__,
+                )
+                return None
+            query = bind_scope(query, experiment, channel)
+            if used != {"experiment_id", "channel_id"}:
+                missing = ({"experiment_id", "channel_id"} - used).pop()
+                self._warn_once(
+                    f"{subset_name}'s query uses :{next(iter(used))} but not :{missing}"
+                    ", so the same rows are drawn for every "
+                    f"{'channel of that experiment' if missing == 'channel_id' else 'experiment'}"
+                    f". Add {missing} = :{missing} to its WHERE"
+                )
+        elif pairs:
+            self._warn_once(
+                f"{subset_name}'s query does not use :experiment_id or :channel_id, so "
+                "it ignores the Scope selection and the same rows are drawn for every "
+                "selected channel. Add experiment_id = :experiment_id AND channel_id = "
+                ":channel_id to its WHERE"
+            )
+        try:
             rows = self.model.call(
                 "MetaDatabaseLoader", loader, "query_database_directly", query
             )
@@ -547,49 +750,10 @@ class MetaSubsetTabController(MetaController):
                 self.__class__.__name__,
             )
             return None
-        if clause:
-            self._report_unplaced_rows(loader, wrapped, subset_name)
-        return rows, query
-
-    @log(logger=logger)
-    def _report_unplaced_rows(
-        self, loader: str, wrapped: str, subset_name: str
-    ) -> None:
-        """
-        Say how many rows the selection left out because it could not place them.
-
-        A ``NULL`` ``experiment_id`` or ``channel_id`` - from a ``LEFT JOIN`` that found
-        no match, say - matches no experiment or channel, so the selection's WHERE drops
-        the row without a word. Counted separately so the panel can say so. Best effort:
-        a count that cannot be made reports nothing, because the plot itself has run.
-
-        :param loader: the database loader plugin's key
-        :type loader: str
-        :param wrapped: the user's query as a subquery, without the selection
-        :type wrapped: str
-        :param subset_name: the filter's name, for the message
-        :type subset_name: str
-        """
-        try:
-            counted = self.model.call(
-                "MetaDatabaseLoader",
-                loader,
-                "query_database_directly",
-                f"SELECT COUNT(*) AS n FROM (\n{wrapped}\n) AS unplaced "
-                "WHERE experiment_id IS NULL OR channel_id IS NULL",
-            )
-        except Exception:
-            return
-        if counted is None or counted.empty or "n" not in counted.columns:
-            return
-        unplaced = int(counted["n"].iloc[0])
-        if unplaced:
-            self.add_text_to_display.emit(
-                f"{unplaced} row(s) of {subset_name}'s query have a NULL experiment_id "
-                "or channel_id, so the selection cannot place them and they were left "
-                "out",
-                self.__class__.__name__,
-            )
+        scoped = used == {"experiment_id", "channel_id"}
+        if scoped and experiment is not None and channel is not None:
+            self._warn_about_leaks(rows, (experiment, channel, label), subset_name)
+        return RawRun(rows, query, experiment, channel, label, scoped)
 
     @log(logger=logger)
     def _ambiguous_raw_columns(
@@ -598,11 +762,11 @@ class MetaSubsetTabController(MetaController):
         """
         Refuse a raw result that holds a column the plot needs under the same name twice.
 
-        A join's ``SELECT *`` returns both tables' ``id``. Wrapped as a subquery SQLite
-        keeps the first and renames the second ``id:1``, so the plot would silently read
-        whichever table came first; unwrapped, both keep the name and a lookup by name
-        returns a table, not a column. A plot cannot choose, so the query has to say
-        which one it means. Reports the refusal itself.
+        A join's ``SELECT *`` returns both tables' columns of the same name, and a lookup
+        by name returns a table, not a column; SQLite renames the second to ``name:1``
+        when the query is a subquery, and the plot would then read whichever table came
+        first. A plot cannot choose, so the query has to say which one it means.
+        Reports the refusal itself.
 
         :param rows: the raw filter's result
         :type rows: pd.DataFrame
@@ -634,7 +798,7 @@ class MetaSubsetTabController(MetaController):
 
     @log(logger=logger)
     def _raw_event_keys(
-        self, rows: pd.DataFrame, sql_filter: str, subset_name: str
+        self, run: RawRun, sql_filter: str, subset_name: str
     ) -> Optional[pd.DataFrame]:
         """
         Read the events a raw result names from their key, ``experiment_id``, ``channel_id``, ``event_id``.
@@ -642,44 +806,58 @@ class MetaSubsetTabController(MetaController):
         The three together identify an event in the database and mean the same thing
         in every table that carries them - a sublevel's are its parent event's - so a
         query that joins tables cannot name the wrong event by returning another table's
-        value, as it can with ``id``, which means a different row in each. Column names
-        are matched without regard to case, as SQLite matches them; a join that returns
-        one of them twice gives the same value twice, so the first is kept.
-
-        Reports its own refusal and answers with None.
+        value, as it can with ``id``, which means a different row in each. A query that
+        used both placeholders needs to return only ``event_id``: its rows belong to the
+        selected experiment and channel. Otherwise the result has to carry all three.
+        Column names are matched without regard to case, as SQLite matches them; a join
+        that returns one of them twice gives the same value twice, so the first is kept.
 
         A row with a ``NULL`` in the key names no event and is left out, and the panel
         says how many. A key column the query makes by renaming another expression is
         warned about, since nothing can check that it was meant.
 
-        :param rows: the raw filter's result
-        :type rows: pd.DataFrame
+        Reports its own refusal and answers with None.
+
+        :param run: the raw filter's result and the pair it ran for
+        :type run: RawRun
         :param sql_filter: the filter's complete ``SELECT``, read for renamed key columns
         :type sql_filter: str
         :param subset_name: the filter's name, for the message
         :type subset_name: str
-        :return: one row per distinct event, with the three columns as integers, or None if one is missing
+        :return: one row per distinct event, with the three columns as integers, or None if the result cannot name its events
         :rtype: Optional[pd.DataFrame]
         """
-        columns = list(EVENT_KEY)
+        rows = run.rows.loc[:, ~run.rows.columns.duplicated()]
         lowered: Dict[str, Any] = {}
         for column in rows.columns:
             lowered.setdefault(str(column).lower(), column)
-        missing = [name for name in columns if name not in lowered]
-        if missing:
+        if "event_id" not in lowered:
             self.add_text_to_display.emit(
-                f"{subset_name}'s query does not return {', '.join(missing)}, which "
-                "identify an event. Add them to the SELECT, for example SELECT "
-                "experiment_id, channel_id, event_id FROM events WHERE ...",
+                f"{subset_name}'s query does not return event_id, which identifies an "
+                "event. Add it to the SELECT, for example SELECT event_id FROM events "
+                "WHERE experiment_id = :experiment_id AND channel_id = :channel_id",
                 self.__class__.__name__,
             )
             return None
-        keys = pd.DataFrame(
-            {
-                name: rows.loc[:, ~rows.columns.duplicated()][lowered[name]]
-                for name in columns
-            }
-        )
+        known: Dict[str, Any] = {}
+        if run.scoped and run.experiment_id is not None and run.channel is not None:
+            known = {"experiment_id": run.experiment_id, "channel_id": run.channel}
+        parts: Dict[str, Any] = {}
+        for name in EVENT_KEY:
+            if name in lowered:
+                parts[name] = rows[lowered[name]]
+            elif name in known:
+                parts[name] = pd.Series(known[name], index=rows.index)
+        missing = [name for name in EVENT_KEY if name not in parts]
+        if missing:
+            self.add_text_to_display.emit(
+                f"{subset_name}'s query does not return {', '.join(missing)}, and does "
+                "not use :experiment_id and :channel_id, so its events cannot be "
+                "placed. Use the two placeholders in its WHERE, or return the columns",
+                self.__class__.__name__,
+            )
+            return None
+        keys = pd.DataFrame({name: parts[name] for name in EVENT_KEY})
         for expression, alias in relabelled_keys(sql_filter):
             self.add_text_to_display.emit(
                 f"{subset_name}'s query labels {expression!r} as {alias}, so the plot "
@@ -786,10 +964,11 @@ class MetaSubsetTabController(MetaController):
 
         An event-data plot has to load traces, which only ``load_event_data`` can do, and
         that takes a WHERE-clause body spliced into its own fixed query. The raw filter
-        runs restricted to the selection by :meth:`_run_raw_filter`, and the events it
-        names are found from their key, one condition per experiment and channel the
-        result holds. A result that does not name its events is reported rather than
-        guessed at.
+        runs for the selected experiment and channel by :meth:`_run_raw_filter`, and the
+        events it names are found from their key, one condition per experiment and
+        channel the result holds. A result that does not name its events is reported
+        rather than guessed at, and what was selected is stated on the panel, so a key
+        that names other events than the user meant is visible.
 
         Reports its own failure and answers with None.
 
@@ -804,19 +983,17 @@ class MetaSubsetTabController(MetaController):
         :return: the condition selecting those events, and the SQL that ran, or None
         :rtype: Optional[Tuple[str, str]]
         """
-        ran = self._run_raw_filter(
+        run = self._run_raw_filter(
             loader, sql_filter, experiments_and_channels, subset_name
         )
-        if ran is None:
+        if run is None:
             return None
-        rows, executed = ran
-        keys = self._raw_event_keys(rows, sql_filter, subset_name)
+        keys = self._raw_event_keys(run, sql_filter, subset_name)
         if keys is None:
             return None
         if keys.empty:
             self.add_text_to_display.emit(
-                f"{subset_name}'s query returned no events in the selected "
-                "experiments and channels, so there is nothing to plot",
+                f"{subset_name}'s query returned no events, so there is nothing to plot",
                 self.__class__.__name__,
             )
             return None
@@ -831,7 +1008,18 @@ class MetaSubsetTabController(MetaController):
                 f"(e.experiment_id = {experiment} AND e.channel_id = {channel} "
                 f"AND e.event_id IN ({ids}))"
             )
-        return " OR ".join(terms), executed
+        pairs = len(terms)
+        where = (
+            run.label
+            if pairs == 1 and run.label
+            else f"{pairs} experiment/channel pair(s)"
+        )
+        self.add_text_to_display.emit(
+            f"{subset_name}: {len(keys)} events on {where}, event_id "
+            f"{keys['event_id'].min()}-{keys['event_id'].max()}",
+            self.__class__.__name__,
+        )
+        return " OR ".join(terms), run.executed
 
     @log(logger=logger)
     def _load_raw_event_id_cache(
@@ -844,10 +1032,11 @@ class MetaSubsetTabController(MetaController):
         """
         Fill the navigation cache from a raw ``SELECT``'s event keys.
 
-        The query runs restricted to the selection like every other raw filter, and the
-        ``event_id`` values it names within it are the cache. A row per sublevel would
-        repeat each event, so each is listed once. Anything wrong is reported here and
-        leaves the View's answer at None, which is what tells it nothing ran.
+        The query runs for the selected experiment and channel like every other raw
+        filter, and the ``event_id`` values it names there are the cache. A row per
+        sublevel would repeat each event, so each is listed once, and a query that
+        ignored the selection is cut to the selected pair. Anything wrong is reported
+        here and leaves the View's answer at None, which is what tells it nothing ran.
 
         :param loader: the database loader plugin's key
         :type loader: str
@@ -860,15 +1049,19 @@ class MetaSubsetTabController(MetaController):
         :return: None
         :rtype: None
         """
-        ran = self._run_raw_filter(
+        run = self._run_raw_filter(
             loader, sql_filter, experiments_and_channels, subset_name
         )
-        if ran is None:
+        if run is None:
             return
-        rows, _ = ran
-        keys = self._raw_event_keys(rows, sql_filter, subset_name)
+        keys = self._raw_event_keys(run, sql_filter, subset_name)
         if keys is None or not self._event_keys_exist(loader, keys, subset_name):
             return
+        if run.experiment_id is not None and run.channel is not None:
+            keys = keys[
+                (keys["experiment_id"] == run.experiment_id)
+                & (keys["channel_id"] == run.channel)
+            ]
         self.view.set_event_id_rows(keys[["event_id"]].drop_duplicates())
 
     @log(logger=logger)
@@ -1136,7 +1329,7 @@ class MetaSubsetTabController(MetaController):
                 "MetaDatabaseLoader",
                 loader,
                 "validate_filter_query",
-                f"{query} LIMIT 0",
+                f"{bind_scope(query, 0, 0)} LIMIT 0",
             )
         except Exception as e:
             self.logger.error(f"Failed to validate raw filter {query!r}: {e!r}")

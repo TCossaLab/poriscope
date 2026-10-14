@@ -80,7 +80,7 @@ Step 8: Apply Filters
 
 You can restrict the events included in a fit to a named subset:
 
-1. Click the **➕** filter button to define a new filter. A Raw SQL filter is restricted to the experiment and channel selection, and must return the event's key - ``experiment_id``, ``channel_id`` and ``event_id`` - to be used for the distribution plots, Plot Events and Plot Histogram.
+1. Click the **➕** filter button to define a new filter. A Raw SQL filter scopes itself with ``:experiment_id`` and ``:channel_id``, and must return ``event_id`` to be used for the distribution plots, Plot Events and Plot Histogram.
 2. Use the filter dropdown to choose which saved subset(s) are active for the current plot.
 3. Click the info/edit button next to the dropdown to view or modify the currently selected subset.
 4. Click the delete button to remove selected subsets (individual ones can also be removed directly from the dropdown).

@@ -2,13 +2,13 @@
 How raw SQL subset filters meet the event-data plots and the event navigation.
 
 A raw filter is a complete ``SELECT``, which cannot be spliced where
-``load_event_data`` expects a WHERE-clause body - measured against a real
-``SQLiteDBLoader``, the same filter as an ordinary body yields every event and as a raw
-``SELECT`` yields none, silently. So the plots that load traces run the raw query
-restricted to the experiment and channel selection, and load the events its ``id`` column
-names; the navigation (Plot Events, the arrows) takes its list of ``event_id`` values
-from the query instead of from the query builder. What these tests pin is those two
-routes and their failures.
+``load_event_data`` expects a WHERE-clause body. It scopes itself instead: the
+experiment and channel the selection names are bound into ``:experiment_id`` and
+``:channel_id`` in its text, and the events its ``event_id`` column names are loaded
+with the key of the pair it ran for. The navigation (Plot Events, the arrows) takes its
+list of ``event_id`` values from the same query instead of from the query builder. What
+these tests pin is those routes, the warnings for a query that does not scope itself,
+and the failures.
 
 The projection comparison at the bottom used to assert that the two tabs' event-plot
 chains authored *different* queries. They do not any more: the chain is one body on
@@ -26,14 +26,64 @@ from poriscope.plugins.analysistabs.MetadataController import MetadataController
 from poriscope.plugins.analysistabs.MetadataModel import MetadataModel
 from poriscope.plugins.analysistabs.ProteinController import ProteinController
 from poriscope.plugins.analysistabs.ProteinModel import ProteinModel
-from poriscope.utils.MetaSubsetTabController import relabelled_keys
+from poriscope.utils.MetaSubsetTabController import (
+    bind_scope,
+    code_spans,
+    relabelled_keys,
+    scope_placeholders,
+    selected_pairs,
+)
 from poriscope.utils.MetaSubsetTabModel import MetaSubsetTabModel
 from tests.unit.controllers._recording_model import RecordingModel
 
 pytestmark = pytest.mark.characterization
 
 
-def _controller(cls: type, mocker: MockerFixture, answers: dict) -> Any:
+class SequencedModel(RecordingModel):
+    """
+    A recording Model that answers ``query_database_directly`` from a list, in order.
+
+    A raw filter asks it twice - the query itself, then the events table - and the two
+    answers differ; the last one is repeated if the code asks again.
+    """
+
+    def __init__(self, answers: dict, replies: list) -> None:
+        """
+        :param answers: plugin method name to canned answer
+        :type answers: dict
+        :param replies: the answers to ``query_database_directly``, in the order asked
+        :type replies: list
+        """
+        super().__init__(answers)
+        self.replies = list(replies)
+
+    def call(self, metaclass: str, key: str, method: str, *args: object) -> object:
+        """
+        Record one plugin call and answer it.
+
+        :param metaclass: the plugin family
+        :type metaclass: str
+        :param key: the plugin instance's key
+        :type key: str
+        :param method: the method being called on it
+        :type method: str
+        :param args: the positional arguments
+        :type args: object
+        :return: the canned answer
+        :rtype: object
+        """
+        if method != "query_database_directly":
+            return super().call(metaclass, key, method, *args)
+        self.calls.append((metaclass, key, method, args))
+        answer = self.replies.pop(0) if len(self.replies) > 1 else self.replies[0]
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+
+def _controller(
+    cls: type, mocker: MockerFixture, answers: dict, replies: Any = None
+) -> Any:
     """
     A bare Controller of the given class with a recording Model and a mocked View.
 
@@ -43,6 +93,8 @@ def _controller(cls: type, mocker: MockerFixture, answers: dict) -> Any:
     :type mocker: MockerFixture
     :param answers: plugin method name to canned answer
     :type answers: dict
+    :param replies: answers to ``query_database_directly`` in order, or None to use ``answers``
+    :type replies: Any
     :return: the controller under test
     :rtype: Any
     """
@@ -50,7 +102,9 @@ def _controller(cls: type, mocker: MockerFixture, answers: dict) -> Any:
     controller.view = mocker.Mock()
     controller.logger = mocker.Mock()
     controller.add_text_to_display = mocker.Mock()
-    controller.model = RecordingModel(answers)
+    controller.model = (
+        RecordingModel(answers) if replies is None else SequencedModel(answers, replies)
+    )
     return controller
 
 
@@ -68,10 +122,20 @@ def _said(controller: Any) -> str:
     )
 
 
-RAW = "SELECT experiment_id, channel_id, event_id FROM events WHERE duration > 100"
+SCOPED = (
+    "SELECT event_id FROM events WHERE duration > 100 "
+    "AND experiment_id = :experiment_id AND channel_id = :channel_id"
+)
+UNSCOPED = "SELECT experiment_id, channel_id, event_id FROM events WHERE duration > 100"
 SCOPE = {"exp1": [2]}
-#: A join repeats each event once per sublevel, so the same key arrives several times.
-KEYS = pd.DataFrame(
+#: A join repeats each event once per sublevel, so the same event arrives several times.
+EVENTS = pd.DataFrame({"event_id": [10, 10, 11, 12]})
+#: What the events table says about those events, for the check that they exist.
+IN_DATABASE = pd.DataFrame(
+    {"experiment_id": [7] * 3, "channel_id": [2] * 3, "event_id": [10, 11, 12]}
+)
+#: A query that returns the whole key, for one that does not scope itself.
+WHOLE_KEY = pd.DataFrame(
     {"experiment_id": [7] * 4, "channel_id": [2] * 4, "event_id": [10, 10, 11, 12]}
 )
 
@@ -87,7 +151,7 @@ def answers(**overrides: Any) -> dict:
     """
     return {
         "get_experiment_id_by_name": 7,
-        "query_database_directly": KEYS,
+        "query_database_directly": EVENTS,
         "construct_event_data_query": ("SELECT generated", ""),
         "load_event_data": iter([]),
         "load_metadata": pd.DataFrame({"event_id": [1, 2]}),
@@ -95,202 +159,298 @@ def answers(**overrides: Any) -> dict:
     }
 
 
+def _event_controller(
+    cls: type, mocker: MockerFixture, *replies: Any, **extra: Any
+) -> Any:
+    """
+    A Controller whose raw filter returns ``replies`` in turn, the events table last.
+
+    :param cls: MetadataController or ProteinController
+    :type cls: type
+    :param mocker: pytest-mock's fixture
+    :type mocker: MockerFixture
+    :param replies: the answers to ``query_database_directly`` in order
+    :type replies: Any
+    :param extra: plugin answers to replace
+    :type extra: Any
+    :return: the controller under test
+    :rtype: Any
+    """
+    return _controller(cls, mocker, answers(**extra), list(replies))
+
+
+# ------------------------------------------------------------------ the text helpers
+
+
+def test_a_placeholder_is_found_only_in_code() -> None:
+    """
+    The same text in a string or a comment is not a placeholder, and the name has to end
+    where the word does.
+    """
+    sql = (
+        "SELECT a FROM t WHERE experiment_id = :experiment_id -- :channel_id\n"
+        "AND note = ':channel_id' AND x = :channel_idx"
+    )
+
+    assert scope_placeholders(sql) == {"experiment_id"}
+
+
+@pytest.mark.parametrize(
+    ("sql", "found"),
+    [
+        ("SELECT 1", set()),
+        ("WHERE experiment_id = :EXPERIMENT_ID", {"experiment_id"}),
+        (
+            "WHERE channel_id = :channel_id AND experiment_id = :experiment_id",
+            {"channel_id", "experiment_id"},
+        ),
+        ('SELECT "a :channel_id" FROM t', set()),
+        ("SELECT [a :channel_id] FROM t", set()),
+        ("SELECT /* :channel_id */ 1", set()),
+    ],
+)
+def test_the_placeholders_a_query_uses(sql: str, found: set) -> None:
+    """
+    Which of the two a query uses, whatever its case or quoting.
+    """
+    assert scope_placeholders(sql) == found
+
+
+def test_binding_puts_whole_numbers_into_code_only() -> None:
+    """
+    Strings and comments are left as written.
+    """
+    sql = "SELECT 1 WHERE a = :experiment_id AND b = :channel_id AND c = ':channel_id'"
+
+    assert bind_scope(sql, 3, 7) == (
+        "SELECT 1 WHERE a = 3 AND b = 7 AND c = ':channel_id'"
+    )
+
+
+def test_selected_pairs_lists_a_channel_each() -> None:
+    """
+    One entry per channel; a whole experiment has no channel, and None names nothing.
+    """
+    assert selected_pairs({"a": [1, 3], "b": None, None: [None]}) == [
+        ("a", 1),
+        ("a", 3),
+        ("b", None),
+    ]
+    assert selected_pairs(None) == []
+    assert selected_pairs({None: [None]}) == []
+
+
+def test_the_code_spans_leave_out_strings_and_comments() -> None:
+    """
+    The stretches that are SQL, in order.
+    """
+    sql = "SELECT 'a' /* b */ FROM t -- c\nWHERE x"
+    assert [sql[a:b] for a, b in code_spans(sql)] == [
+        "SELECT ",
+        " ",
+        " FROM t ",
+        "WHERE x",
+    ]
+
+
+# ------------------------------------------------------------------ scoping and warnings
+
+
 @pytest.mark.parametrize("cls", [MetadataController, ProteinController])
-class TestRawFilterLoadsItsOwnEvents:
+class TestRawFilterScopesItself:
     """
-    A raw filter's events are the ones its event key names within the selection.
+    The selection is bound into the query, and a query that does not use it is said so.
     """
 
-    def test_the_events_it_names_within_the_selection_are_loaded(
+    def test_both_placeholders_are_bound_and_nothing_is_said(
         self, cls: type, mocker: MockerFixture
     ) -> None:
         """
-        The query is wrapped in the selection, and the events are found from their key
-        with no further scope, each listed once.
+        The query that runs is the user's own with the numbers in.
         """
-        generator = iter([])
-        controller = _controller(cls, mocker, answers(load_event_data=generator))
+        controller = _event_controller(cls, mocker, EVENTS)
 
-        fetched = controller._fetch_event_subset("ldr", RAW, SCOPE, "mine_raw")
+        run = controller._run_raw_filter("ldr", SCOPED, SCOPE, "mine_raw")
 
-        _, (executed,), *_ = controller.model.calls_to("query_database_directly")
-        assert RAW in executed
-        assert executed.endswith("WHERE (experiment_id = 7 AND channel_id IN (2))")
-        assert controller.model.calls_to("load_event_data") == [
-            (
-                "(e.experiment_id = 7 AND e.channel_id = 2 AND e.event_id IN (10,11,12))",
-                None,
-            )
-        ]
-        assert fetched == (executed, generator)
+        assert run is not None and run.scoped
+        assert run.executed.endswith("experiment_id = 7 AND channel_id = 2")
+        assert controller.model.calls_to("query_database_directly") == [(run.executed,)]
+        assert _said(controller) == ""
 
-    def test_one_condition_per_experiment_and_channel_is_built(
+    def test_a_query_that_uses_neither_is_warned_about_and_still_runs(
         self, cls: type, mocker: MockerFixture
     ) -> None:
         """
-        Event ids repeat from channel to channel, so each channel's own are listed.
+        It ignores the selection, so the same rows would be drawn for every channel.
         """
-        two_channels = pd.DataFrame(
-            {
-                "experiment_id": [7, 7],
-                "channel_id": [2, 3],
-                "event_id": [10, 10],
-            }
-        )
-        controller = _controller(
-            cls, mocker, answers(query_database_directly=two_channels)
-        )
+        controller = _event_controller(cls, mocker, WHOLE_KEY)
 
-        controller._fetch_event_subset("ldr", RAW, SCOPE, "mine_raw")
+        run = controller._run_raw_filter("ldr", UNSCOPED, SCOPE, "mine_raw")
 
-        ((conditions, _),) = controller.model.calls_to("load_event_data")
-        assert conditions.count("e.event_id IN") == 2
-        assert " OR " in conditions
+        assert run is not None and not run.scoped
+        assert "does not use :experiment_id or :channel_id" in _said(controller)
+        assert "ignores the Scope selection" in _said(controller)
 
-    def test_a_query_without_the_event_key_says_what_to_add(
+    @pytest.mark.parametrize(
+        ("only", "missing"),
+        [("experiment_id", "channel_id"), ("channel_id", "experiment_id")],
+    )
+    def test_a_query_that_uses_only_one_is_warned_about(
+        self, cls: type, mocker: MockerFixture, only: str, missing: str
+    ) -> None:
+        """
+        Half a selection draws the same rows for every channel or experiment.
+        """
+        controller = _event_controller(cls, mocker, EVENTS)
+        sql = f"SELECT event_id FROM events WHERE {only} = :{only}"
+
+        run = controller._run_raw_filter("ldr", sql, SCOPE, "mine_raw")
+
+        assert run is not None and not run.scoped
+        assert f"uses :{only} but not :{missing}" in _said(controller)
+        assert f"Add {missing} = :{missing}" in _said(controller)
+
+    def test_with_no_selection_a_query_that_needs_one_is_refused(
         self, cls: type, mocker: MockerFixture
     ) -> None:
         """
-        Nothing identifies an event, so nothing is guessed: the message names what is
-        missing and shows the shape of the fix.
+        There is nothing to bind, and running it over everything would not be what the
+        placeholders ask for.
         """
-        controller = _controller(
-            cls,
-            mocker,
-            answers(query_database_directly=KEYS.drop(columns=["event_id"])),
-        )
+        controller = _event_controller(cls, mocker, EVENTS)
 
-        assert controller._fetch_event_subset("ldr", RAW, SCOPE, "mine_raw") is None
+        for scope in (None, {}, {None: [None]}):
+            assert controller._run_raw_filter("ldr", SCOPED, scope, "mine_raw") is None
 
-        assert "event_id" in _said(controller)
-        assert "SELECT experiment_id, channel_id, event_id" in _said(controller)
-        assert controller.model.calls_to("load_event_data") == []
-
-    def test_an_id_column_is_not_what_names_an_event(
-        self, cls: type, mocker: MockerFixture
-    ) -> None:
-        """
-        ``id`` means a different row in each table, so a query that returns only it is
-        told to return the event key instead.
-        """
-        controller = _controller(
-            cls,
-            mocker,
-            answers(
-                query_database_directly=KEYS.drop(columns=["event_id"]).assign(
-                    id=[1, 2, 3, 4]
-                )
-            ),
-        )
-
-        assert controller._fetch_event_subset("ldr", RAW, SCOPE, "mine_raw") is None
-
-        assert "event_id" in _said(controller)
-
-    def test_an_event_key_returned_twice_is_not_in_the_way(
-        self, cls: type, mocker: MockerFixture
-    ) -> None:
-        """
-        A join returns the sublevel's key beside the event's, and the two are equal -
-        a sublevel's key is its parent event's - so the first is used.
-        """
-        generator = iter([])
-        doubled = KEYS.assign(**{"event_id:1": [10, 10, 11, 12]})
-        controller = _controller(
-            cls,
-            mocker,
-            answers(query_database_directly=doubled, load_event_data=generator),
-        )
-
-        fetched = controller._fetch_event_subset("ldr", RAW, SCOPE, "mine_raw")
-
-        assert fetched is not None
-
-    def test_column_names_are_matched_without_regard_to_case(
-        self, cls: type, mocker: MockerFixture
-    ) -> None:
-        """
-        SQLite matches ``Event_ID`` to ``event_id``, so a query a viewer accepts is not
-        refused for its capitals.
-        """
-        shouting = KEYS.rename(columns={"event_id": "EVENT_ID"})
-        controller = _controller(cls, mocker, answers())
-        replies = iter([shouting, shouting, shouting, KEYS])
-        controller.model.call = lambda *a: (
-            next(replies)
-            if a[2] == "query_database_directly"
-            else {
-                "get_experiment_id_by_name": 7,
-                "construct_event_data_query": ("SELECT generated", ""),
-            }.get(a[2], iter([]))
-        )
-
-        assert controller._fetch_event_subset("ldr", RAW, SCOPE, "mine_raw") is not None
-
-    def test_keys_that_name_no_event_are_refused(
-        self, cls: type, mocker: MockerFixture
-    ) -> None:
-        """
-        A column that is not an event's - a level number labelled ``event_id`` - names
-        events the database does not have, and would load the wrong ones or none.
-        """
-        controller = _controller(cls, mocker, answers())
-        replies = iter([KEYS, KEYS, KEYS, KEYS.iloc[0:1]])
-        controller.model.call = lambda *a: (
-            next(replies) if a[2] == "query_database_directly" else 7
-        )
-
-        assert controller._fetch_event_subset("ldr", RAW, SCOPE, "mine_raw") is None
-
-        assert "are not an event in the database" in _said(controller)
-
-    def test_a_query_that_returns_no_events_says_so(
-        self, cls: type, mocker: MockerFixture
-    ) -> None:
-        """
-        An empty result is not an ``IN ()`` clause that loads everything or errors.
-        """
-        controller = _controller(
-            cls, mocker, answers(query_database_directly=KEYS.iloc[0:0])
-        )
-
-        assert controller._fetch_event_subset("ldr", RAW, SCOPE, "mine_raw") is None
-
-        assert "no events" in _said(controller)
-        assert controller.model.calls_to("load_event_data") == []
-
-    def test_a_query_that_failed_validation_reports_it(
-        self, cls: type, mocker: MockerFixture
-    ) -> None:
-        """
-        ``query_database_directly`` answers None for a query it could not run.
-        """
-        controller = _controller(cls, mocker, answers(query_database_directly=None))
-
-        assert (
-            controller._fetch_event_subset("ldr", "SELECT", SCOPE, "mine_raw") is None
-        )
-
-        assert "mine_raw" in _said(controller)
-
-    def test_an_assisted_filter_still_takes_the_scoped_path(
-        self, cls: type, mocker: MockerFixture
-    ) -> None:
-        """
-        The suffix is the marker; an ordinary filter never touches the raw route.
-        """
-        generator = iter([])
-        controller = _controller(cls, mocker, answers(load_event_data=generator))
-
-        fetched = controller._fetch_event_subset(
-            "ldr", "duration < 300", SCOPE, "short events"
-        )
-
+        assert "no experiment and channel is selected" in _said(controller)
         assert controller.model.calls_to("query_database_directly") == []
-        assert controller.model.calls_to("load_event_data") == [
-            ("duration < 300", SCOPE)
-        ]
-        assert fetched == ("SELECT generated", generator)
+
+    def test_with_no_selection_a_query_without_placeholders_just_runs(
+        self, cls: type, mocker: MockerFixture
+    ) -> None:
+        """
+        Nothing was selected, so ignoring the selection is not a fault.
+        """
+        controller = _event_controller(cls, mocker, WHOLE_KEY)
+
+        run = controller._run_raw_filter("ldr", UNSCOPED, None, "mine_raw")
+
+        assert run is not None
+        assert _said(controller) == ""
+
+    @pytest.mark.parametrize("scope", [{"exp1": [1, 2]}, {"exp1": None}])
+    def test_placeholders_need_one_channel_at_a_time(
+        self, cls: type, mocker: MockerFixture, scope: dict
+    ) -> None:
+        """
+        Several channels, or a whole experiment, are not one value to bind.
+        """
+        controller = _event_controller(cls, mocker, EVENTS)
+
+        assert controller._run_raw_filter("ldr", SCOPED, scope, "mine_raw") is None
+
+        assert "one experiment and one channel at a time" in _said(controller)
+
+    def test_an_unknown_experiment_is_reported(
+        self, cls: type, mocker: MockerFixture
+    ) -> None:
+        """
+        The selection names an experiment the database does not have.
+        """
+        controller = _event_controller(
+            cls, mocker, EVENTS, get_experiment_id_by_name=None
+        )
+
+        assert controller._run_raw_filter("ldr", SCOPED, SCOPE, "mine_raw") is None
+
+        assert "exp1" in _said(controller)
+
+    def test_the_same_warning_is_shown_once_not_once_per_channel(
+        self, cls: type, mocker: MockerFixture
+    ) -> None:
+        """
+        A plot asks once per ticked channel with the same query.
+        """
+        controller = _event_controller(cls, mocker, WHOLE_KEY)
+
+        for channel in (1, 2, 3):
+            controller._run_raw_filter("ldr", UNSCOPED, {"exp1": [channel]}, "mine_raw")
+
+        assert _said(controller).count("ignores the Scope selection") == 1
+
+    def test_rows_from_other_channels_are_warned_about(
+        self, cls: type, mocker: MockerFixture
+    ) -> None:
+        """
+        A placeholder in a subquery and not on the main table leaks other channels'
+        rows, which then draw under the selected one's name.
+        """
+        leaking = pd.DataFrame(
+            {"experiment_id": [7, 7, 7], "channel_id": [2, 3, 3], "event_id": [1, 2, 3]}
+        )
+        controller = _event_controller(cls, mocker, leaking)
+
+        controller._run_raw_filter("ldr", SCOPED, SCOPE, "mine_raw")
+
+        assert "2 of 3 rows" in _said(controller)
+        assert (
+            "other experiments or channels than the one selected (exp1 Ch 2)"
+            in _said(controller)
+        )
+
+    def test_rows_that_all_belong_to_the_selection_say_nothing(
+        self, cls: type, mocker: MockerFixture
+    ) -> None:
+        """
+        No warning for the query that scoped itself.
+        """
+        controller = _event_controller(cls, mocker, WHOLE_KEY)
+
+        controller._run_raw_filter("ldr", SCOPED, SCOPE, "mine_raw")
+
+        assert "other experiments" not in _said(controller)
+
+    def test_a_result_without_those_columns_cannot_be_checked_and_says_nothing(
+        self, cls: type, mocker: MockerFixture
+    ) -> None:
+        """
+        The check needs the columns; it does not demand them.
+        """
+        controller = _event_controller(cls, mocker, EVENTS)
+
+        controller._run_raw_filter("ldr", SCOPED, SCOPE, "mine_raw")
+
+        assert _said(controller) == ""
+
+
+@pytest.mark.parametrize("cls", [MetadataController, ProteinController])
+@pytest.mark.parametrize(
+    ("sql", "runs"),
+    [
+        ("SELECT event_id FROM events", True),
+        ("  select event_id FROM events", True),
+        ("-- a note\nSELECT event_id FROM events", True),
+        ("/* a note */ WITH x AS (SELECT 1) SELECT * FROM x", True),
+        ("DELETE FROM events WHERE id > 2", False),
+        ("UPDATE events SET duration = 1", False),
+        ("DROP TABLE events", False),
+        ("-- SELECT\nDELETE FROM events", False),
+    ],
+)
+def test_only_a_select_is_run(
+    cls: type, mocker: MockerFixture, sql: str, runs: bool
+) -> None:
+    """
+    The loader's validator accepts any statement, so Poriscope checks it itself.
+    """
+    controller = _event_controller(cls, mocker, EVENTS)
+
+    out = controller._run_raw_filter("ldr", sql, None, "mine_raw")
+
+    assert (out is not None) == runs
+    assert ("not a SELECT" in _said(controller)) == (not runs)
+    if not runs:
+        assert controller.model.calls_to("query_database_directly") == []
 
 
 @pytest.mark.parametrize(
@@ -324,65 +484,209 @@ def test_a_key_column_made_by_renaming_another_is_found(
     assert len(relabelled_keys(sql)) == expected
 
 
+# ------------------------------------------------------------------ event plots
+
+
 @pytest.mark.parametrize("cls", [MetadataController, ProteinController])
-class TestRawFilterKeyWarnings:
+class TestRawFilterLoadsItsOwnEvents:
     """
-    What a raw filter's event key can get wrong without the database noticing.
+    A raw filter's events are the ones its event key names, for the selected channel.
     """
 
-    def test_a_relabelled_key_is_warned_about_and_still_plots(
+    def test_the_events_it_names_are_loaded_with_the_pair_it_ran_for(
         self, cls: type, mocker: MockerFixture
     ) -> None:
         """
-        Nothing can check that a renamed column was meant, so it is a warning, not a
-        refusal - and the events it names still load.
+        Only event_id is returned: the query scoped itself, so the pair is known, and
+        each event is listed once.
         """
         generator = iter([])
-        controller = _controller(cls, mocker, answers(load_event_data=generator))
-        sql = "SELECT experiment_id, channel_id, level_id AS event_id FROM sublevels"
-
-        fetched = controller._fetch_event_subset("ldr", sql, SCOPE, "mine_raw")
-
-        assert fetched is not None
-        assert "labels 'level_id' as event_id" in _said(controller)
-
-    def test_a_key_that_is_not_relabelled_says_nothing(
-        self, cls: type, mocker: MockerFixture
-    ) -> None:
-        """
-        No warning for the ordinary query.
-        """
-        controller = _controller(cls, mocker, answers())
-
-        controller._fetch_event_subset("ldr", RAW, SCOPE, "mine_raw")
-
-        assert "labels" not in _said(controller)
-
-    def test_rows_with_a_null_key_are_counted_on_the_panel(
-        self, cls: type, mocker: MockerFixture
-    ) -> None:
-        """
-        A NULL event_id names no event, so the row is left out - and the panel says so
-        instead of dropping it silently.
-        """
-        with_nulls = KEYS.copy()
-        with_nulls["event_id"] = [10.0, None, 11.0, None]
-        controller = _controller(cls, mocker, answers())
-        # probe, run, NULL count, then the events table's own answer for the key check
-        replies = iter([with_nulls, with_nulls, with_nulls, KEYS])
-        controller.model.call = lambda *a: (
-            next(replies)
-            if a[2] == "query_database_directly"
-            else {
-                "get_experiment_id_by_name": 7,
-                "construct_event_data_query": ("SELECT generated", ""),
-            }.get(a[2], iter([]))
+        controller = _event_controller(
+            cls, mocker, EVENTS, IN_DATABASE, load_event_data=generator
         )
 
-        controller._fetch_event_subset("ldr", RAW, SCOPE, "mine_raw")
+        fetched = controller._fetch_event_subset("ldr", SCOPED, SCOPE, "mine_raw")
 
-        assert "2 row(s)" in _said(controller)
-        assert "left out" in _said(controller)
+        assert controller.model.calls_to("load_event_data") == [
+            (
+                "(e.experiment_id = 7 AND e.channel_id = 2 AND e.event_id IN (10,11,12))",
+                None,
+            )
+        ]
+        assert fetched is not None and fetched[1] is generator
+        assert fetched[0].endswith("experiment_id = 7 AND channel_id = 2")
+
+    def test_what_was_selected_is_stated_on_the_panel(
+        self, cls: type, mocker: MockerFixture
+    ) -> None:
+        """
+        A key that names other events than the user meant is then visible.
+        """
+        controller = _event_controller(cls, mocker, EVENTS, IN_DATABASE)
+
+        controller._fetch_event_subset("ldr", SCOPED, SCOPE, "mine_raw")
+
+        assert "mine_raw: 3 events on exp1 Ch 2, event_id 10-12" in _said(controller)
+
+    def test_a_query_that_returns_the_whole_key_needs_no_placeholders(
+        self, cls: type, mocker: MockerFixture
+    ) -> None:
+        """
+        It still ignores the selection, which is warned about, but its events are named.
+        """
+        controller = _event_controller(cls, mocker, WHOLE_KEY, IN_DATABASE)
+
+        fetched = controller._fetch_event_subset("ldr", UNSCOPED, SCOPE, "mine_raw")
+
+        assert fetched is not None
+        assert "ignores the Scope selection" in _said(controller)
+
+    def test_one_condition_per_experiment_and_channel_is_built(
+        self, cls: type, mocker: MockerFixture
+    ) -> None:
+        """
+        Event ids repeat from channel to channel, so each channel's own are listed.
+        """
+        two_channels = pd.DataFrame(
+            {"experiment_id": [7, 7], "channel_id": [2, 3], "event_id": [10, 10]}
+        )
+        controller = _event_controller(cls, mocker, two_channels, two_channels)
+
+        controller._fetch_event_subset("ldr", UNSCOPED, SCOPE, "mine_raw")
+
+        ((conditions, _),) = controller.model.calls_to("load_event_data")
+        assert conditions.count("e.event_id IN") == 2
+        assert " OR " in conditions
+
+    def test_a_query_without_event_id_says_what_to_add(
+        self, cls: type, mocker: MockerFixture
+    ) -> None:
+        """
+        Nothing identifies an event, so nothing is guessed.
+        """
+        controller = _event_controller(
+            cls, mocker, pd.DataFrame({"duration": [1.0, 2.0]})
+        )
+
+        assert controller._fetch_event_subset("ldr", SCOPED, SCOPE, "mine_raw") is None
+
+        assert "does not return event_id" in _said(controller)
+        assert "WHERE experiment_id = :experiment_id" in _said(controller)
+        assert controller.model.calls_to("load_event_data") == []
+
+    def test_an_id_column_is_not_what_names_an_event(
+        self, cls: type, mocker: MockerFixture
+    ) -> None:
+        """
+        ``id`` means a different row in each table, so a query that returns only it is
+        told to return event_id instead.
+        """
+        controller = _event_controller(cls, mocker, pd.DataFrame({"id": [1, 2, 3]}))
+
+        assert controller._fetch_event_subset("ldr", SCOPED, SCOPE, "mine_raw") is None
+
+        assert "does not return event_id" in _said(controller)
+
+    def test_a_query_that_neither_scopes_itself_nor_returns_the_pair_is_refused(
+        self, cls: type, mocker: MockerFixture
+    ) -> None:
+        """
+        event_id alone repeats from channel to channel, so its events cannot be placed.
+        """
+        controller = _event_controller(cls, mocker, EVENTS)
+        sql = "SELECT event_id FROM events WHERE duration > 100"
+
+        assert controller._fetch_event_subset("ldr", sql, SCOPE, "mine_raw") is None
+
+        assert "cannot be placed" in _said(controller)
+        assert controller.model.calls_to("load_event_data") == []
+
+    def test_an_event_id_returned_twice_is_not_in_the_way(
+        self, cls: type, mocker: MockerFixture
+    ) -> None:
+        """
+        A join returns the sublevel's key beside the event's, and the two are equal - a
+        sublevel's key is its parent event's - so the first is used.
+        """
+        doubled = EVENTS.assign(**{"event_id:1": [10, 10, 11, 12]})
+        controller = _event_controller(cls, mocker, doubled, IN_DATABASE)
+
+        assert (
+            controller._fetch_event_subset("ldr", SCOPED, SCOPE, "mine_raw") is not None
+        )
+
+    def test_column_names_are_matched_without_regard_to_case(
+        self, cls: type, mocker: MockerFixture
+    ) -> None:
+        """
+        SQLite matches ``Event_ID`` to ``event_id``, so a query a viewer accepts is not
+        refused for its capitals.
+        """
+        shouting = EVENTS.rename(columns={"event_id": "EVENT_ID"})
+        controller = _event_controller(cls, mocker, shouting, IN_DATABASE)
+
+        assert (
+            controller._fetch_event_subset("ldr", SCOPED, SCOPE, "mine_raw") is not None
+        )
+
+    def test_keys_that_name_no_event_are_refused(
+        self, cls: type, mocker: MockerFixture
+    ) -> None:
+        """
+        A column that is not an event's - a level number labelled ``event_id`` - names
+        events the database does not have, and would load the wrong ones or none.
+        """
+        controller = _event_controller(cls, mocker, EVENTS, IN_DATABASE.iloc[0:1])
+
+        assert controller._fetch_event_subset("ldr", SCOPED, SCOPE, "mine_raw") is None
+
+        assert "are not an event in the database" in _said(controller)
+
+    def test_a_query_that_returns_no_events_says_so(
+        self, cls: type, mocker: MockerFixture
+    ) -> None:
+        """
+        An empty result is not an ``IN ()`` clause that loads everything or errors.
+        """
+        controller = _event_controller(cls, mocker, EVENTS.iloc[0:0])
+
+        assert controller._fetch_event_subset("ldr", SCOPED, SCOPE, "mine_raw") is None
+
+        assert "no events" in _said(controller)
+        assert controller.model.calls_to("load_event_data") == []
+
+    def test_a_query_that_failed_validation_reports_it(
+        self, cls: type, mocker: MockerFixture
+    ) -> None:
+        """
+        ``query_database_directly`` answers None for a query it could not run.
+        """
+        controller = _event_controller(cls, mocker, None)
+
+        assert (
+            controller._fetch_event_subset("ldr", "SELECT", SCOPE, "mine_raw") is None
+        )
+
+        assert "mine_raw" in _said(controller)
+
+    def test_an_assisted_filter_still_takes_the_scoped_path(
+        self, cls: type, mocker: MockerFixture
+    ) -> None:
+        """
+        The suffix is the marker; an ordinary filter never touches the raw route.
+        """
+        generator = iter([])
+        controller = _event_controller(cls, mocker, EVENTS, load_event_data=generator)
+
+        fetched = controller._fetch_event_subset(
+            "ldr", "duration < 300", SCOPE, "short events"
+        )
+
+        assert controller.model.calls_to("query_database_directly") == []
+        assert controller.model.calls_to("load_event_data") == [
+            ("duration < 300", SCOPE)
+        ]
+        assert fetched == ("SELECT generated", generator)
 
     @pytest.mark.parametrize(
         "bad",
@@ -396,11 +700,9 @@ class TestRawFilterKeyWarnings:
         An event number is a whole number. 10.5 would be cut to 10 and name another
         event, so it names none and the plot is refused.
         """
-        frame = KEYS.copy()
-        frame["event_id"] = bad
-        controller = _controller(cls, mocker, answers(query_database_directly=frame))
+        controller = _event_controller(cls, mocker, pd.DataFrame({"event_id": bad}))
 
-        assert controller._fetch_event_subset("ldr", RAW, SCOPE, "mine_raw") is None
+        assert controller._fetch_event_subset("ldr", SCOPED, SCOPE, "mine_raw") is None
 
         assert "not a whole number" in _said(controller)
         assert controller.model.calls_to("load_event_data") == []
@@ -411,23 +713,41 @@ class TestRawFilterKeyWarnings:
         """
         A column with a NULL elsewhere arrives as floats; 10.0 is still event 10.
         """
-        frame = KEYS.copy()
-        frame["event_id"] = [10.0, 10.0, 11.0, 12.0]
-        controller = _controller(cls, mocker, answers(query_database_directly=frame))
+        floats = pd.DataFrame({"event_id": [10.0, 10.0, 11.0, 12.0]})
+        controller = _event_controller(cls, mocker, floats, IN_DATABASE)
 
-        assert controller._fetch_event_subset("ldr", RAW, SCOPE, "mine_raw") is not None
+        assert (
+            controller._fetch_event_subset("ldr", SCOPED, SCOPE, "mine_raw") is not None
+        )
 
-    def test_no_null_key_means_no_message(
+    def test_rows_with_a_null_key_are_counted_on_the_panel(
         self, cls: type, mocker: MockerFixture
     ) -> None:
         """
-        The count is only worth a line when it is above zero.
+        A NULL event_id names no event, so the row is left out - and the panel says so
+        instead of dropping it silently.
         """
-        controller = _controller(cls, mocker, answers())
+        nulls = pd.DataFrame({"event_id": [10.0, None, 11.0, None]})
+        controller = _event_controller(cls, mocker, nulls, IN_DATABASE)
 
-        controller._fetch_event_subset("ldr", RAW, SCOPE, "mine_raw")
+        controller._fetch_event_subset("ldr", SCOPED, SCOPE, "mine_raw")
 
-        assert "left out" not in _said(controller)
+        assert "2 row(s)" in _said(controller)
+        assert "left out" in _said(controller)
+
+    def test_a_relabelled_key_is_warned_about_and_still_plots(
+        self, cls: type, mocker: MockerFixture
+    ) -> None:
+        """
+        Nothing can check that a renamed column was meant, so it is a warning, not a
+        refusal - and the events it names still load.
+        """
+        controller = _event_controller(cls, mocker, EVENTS, IN_DATABASE)
+        sql = SCOPED.replace("SELECT event_id", "SELECT level_id AS event_id")
+
+        assert controller._fetch_event_subset("ldr", sql, SCOPE, "mine_raw") is not None
+
+        assert "labels 'level_id' as event_id" in _said(controller)
 
 
 @pytest.mark.parametrize("cls", [MetadataController, ProteinController])
@@ -436,22 +756,40 @@ class TestRawFilterFillsTheEventNavigation:
     Plot Events and the arrows read a list of ``event_id`` values; a raw query supplies it.
     """
 
-    def test_the_event_ids_it_names_within_the_selection_are_the_list(
+    def test_the_event_ids_it_names_are_the_list(
         self, cls: type, mocker: MockerFixture
     ) -> None:
         """
         One entry per event, though a join repeats each once per sublevel, and the
         builder is never asked.
         """
-        controller = _controller(cls, mocker, answers())
+        controller = _event_controller(cls, mocker, EVENTS, IN_DATABASE)
 
-        controller.load_event_id_cache("ldr", RAW, SCOPE, "mine_raw")
+        controller.load_event_id_cache("ldr", SCOPED, SCOPE, "mine_raw")
 
         (rows,), _ = controller.view.set_event_id_rows.call_args
         assert rows["event_id"].tolist() == [10, 11, 12]
         assert controller.model.calls_to("load_metadata") == []
-        _, (final,), *_ = controller.model.calls_to("query_database_directly")
-        assert final.endswith("WHERE (experiment_id = 7 AND channel_id IN (2))")
+
+    def test_a_query_that_ignored_the_selection_is_cut_to_the_selected_pair(
+        self, cls: type, mocker: MockerFixture
+    ) -> None:
+        """
+        The arrows step through the selected channel's events, whatever the query held.
+        """
+        several = pd.DataFrame(
+            {
+                "experiment_id": [7, 7, 7],
+                "channel_id": [2, 3, 2],
+                "event_id": [10, 20, 11],
+            }
+        )
+        controller = _event_controller(cls, mocker, several, several)
+
+        controller.load_event_id_cache("ldr", UNSCOPED, SCOPE, "mine_raw")
+
+        (rows,), _ = controller.view.set_event_id_rows.call_args
+        assert rows["event_id"].tolist() == [10, 11]
 
     def test_a_query_without_event_id_says_what_to_add(
         self, cls: type, mocker: MockerFixture
@@ -459,16 +797,11 @@ class TestRawFilterFillsTheEventNavigation:
         """
         Nothing to navigate, so the View's answer stays unset and the panel says why.
         """
-        controller = _controller(
-            cls,
-            mocker,
-            answers(query_database_directly=KEYS.drop(columns=["event_id"])),
-        )
+        controller = _event_controller(cls, mocker, pd.DataFrame({"duration": [1.0]}))
 
-        controller.load_event_id_cache("ldr", RAW, SCOPE, "mine_raw")
+        controller.load_event_id_cache("ldr", SCOPED, SCOPE, "mine_raw")
 
-        assert "event_id" in _said(controller)
-        assert "SELECT experiment_id, channel_id, event_id" in _said(controller)
+        assert "does not return event_id" in _said(controller)
         controller.view.set_event_id_rows.assert_not_called()
 
     def test_an_event_id_returned_twice_is_not_in_the_way(
@@ -478,15 +811,10 @@ class TestRawFilterFillsTheEventNavigation:
         A join's ``SELECT *`` returns the sublevel's ``event_id`` beside the event's, and
         they are equal.
         """
-        controller = _controller(
-            cls,
-            mocker,
-            answers(
-                query_database_directly=KEYS.assign(**{"event_id:1": [10, 10, 11, 12]})
-            ),
-        )
+        doubled = EVENTS.assign(**{"event_id:1": [10, 10, 11, 12]})
+        controller = _event_controller(cls, mocker, doubled, IN_DATABASE)
 
-        controller.load_event_id_cache("ldr", RAW, SCOPE, "mine_raw")
+        controller.load_event_id_cache("ldr", SCOPED, SCOPE, "mine_raw")
 
         controller.view.set_event_id_rows.assert_called_once()
 
@@ -496,13 +824,9 @@ class TestRawFilterFillsTheEventNavigation:
         """
         The numbers exist, but the events table has no such event in that channel.
         """
-        controller = _controller(cls, mocker, answers())
-        replies = iter([KEYS, KEYS, KEYS, KEYS.iloc[0:1]])
-        controller.model.call = lambda *a: (
-            next(replies) if a[2] == "query_database_directly" else 7
-        )
+        controller = _event_controller(cls, mocker, EVENTS, IN_DATABASE.iloc[0:1])
 
-        controller.load_event_id_cache("ldr", RAW, SCOPE, "mine_raw")
+        controller.load_event_id_cache("ldr", SCOPED, SCOPE, "mine_raw")
 
         assert "are not an event in the database" in _said(controller)
         controller.view.set_event_id_rows.assert_not_called()
@@ -513,7 +837,7 @@ class TestRawFilterFillsTheEventNavigation:
         """
         The suffix is the marker; an ordinary filter never touches the raw route.
         """
-        controller = _controller(cls, mocker, answers())
+        controller = _event_controller(cls, mocker, EVENTS)
 
         controller.load_event_id_cache("ldr", "duration > 1", SCOPE, "short events")
 

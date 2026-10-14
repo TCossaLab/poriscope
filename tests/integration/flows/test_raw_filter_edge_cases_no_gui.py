@@ -1,8 +1,8 @@
 """
 Raw SQL filter edge cases, run against a real loader and database.
 
-Each test states what a user would need to be told, or what must match an Assisted
-filter, and runs it for real. A test that fails here is a silent wrong answer.
+Each test states what a user would need to be told, or what must match a SQL viewer, and
+runs it for real. A test that fails here is a silent wrong answer.
 """
 
 import sqlite3
@@ -15,6 +15,8 @@ from poriscope.plugins.analysistabs.MetadataController import MetadataController
 from poriscope.plugins.db_loaders.SQLiteDBLoader import SQLiteDBLoader
 
 SCOPE_CH0 = {"exp_a": [0]}
+SCOPE_CH1 = {"exp_a": [1]}
+SCOPED = "experiment_id = :experiment_id AND channel_id = :channel_id"
 
 
 def open_loader(db_path: str) -> SQLiteDBLoader:
@@ -83,19 +85,123 @@ def controller(sample_metadata_db: str) -> MetadataController:
     return ctrl
 
 
-def event_counts(db_path: str) -> Dict[int, int]:
+def panel_of(controller: MetadataController) -> str:
     """
-    How many events each channel holds.
+    Everything the controller put on the status panel, joined.
+
+    :param controller: the controller under test
+    :type controller: MetadataController
+    :return: the messages
+    :rtype: str
+    """
+    return " ".join(controller.panel)  # type: ignore[attr-defined]
+
+
+def query(db_path: str, sql: str) -> list:
+    """
+    Run a query straight against the database file.
 
     :param db_path: the metadata database
     :type db_path: str
-    :return: channel to event count
-    :rtype: Dict[int, int]
+    :param sql: the query
+    :type sql: str
+    :return: its rows
+    :rtype: list
     """
     with sqlite3.connect(db_path) as conn:
-        return dict(
-            conn.execute("SELECT channel_id, COUNT(*) FROM events GROUP BY channel_id")
-        )
+        return conn.execute(sql).fetchall()
+
+
+@pytest.mark.timeout(120)
+def test_a_limit_counts_the_selected_channels_rows_not_the_whole_database(
+    controller: MetadataController,
+) -> None:
+    """
+    The scope sits in the query's own WHERE, so ``LIMIT 5`` gives each channel its own
+    five - where applying the selection afterwards split the database's five between
+    them.
+    """
+    sql = f"SELECT duration FROM events WHERE {SCOPED} ORDER BY start_time DESC LIMIT 5"
+
+    for scope in (SCOPE_CH0, SCOPE_CH1):
+        run = controller._run_raw_filter("L", sql, scope, "x_raw")
+        assert run is not None
+        assert len(run.rows) == 5
+
+
+@pytest.mark.timeout(120)
+def test_an_aggregate_is_computed_on_each_channels_own_rows(
+    controller: MetadataController, sample_metadata_db: str
+) -> None:
+    """
+    One row per channel, each the average of its own events - not an arbitrary row of a
+    whole-database aggregate.
+    """
+    sql = f"SELECT AVG(start_time) AS m FROM events WHERE {SCOPED}"
+
+    for channel, scope in ((0, SCOPE_CH0), (1, SCOPE_CH1)):
+        run = controller._run_raw_filter("L", sql, scope, "x_raw")
+        assert run is not None and len(run.rows) == 1
+        expected = query(
+            sample_metadata_db,
+            f"SELECT AVG(start_time) FROM events WHERE channel_id = {channel}",
+        )[0][0]
+        assert run.rows["m"].iloc[0] == pytest.approx(expected)
+
+
+@pytest.mark.timeout(120)
+def test_a_query_that_only_scopes_a_subquery_is_warned_about(
+    controller: MetadataController, sample_metadata_db: str
+) -> None:
+    """
+    The main table is not scoped, so channel 1's rows come back for channel 0, and the
+    panel says how many instead of drawing them under channel 0's name unremarked.
+    """
+    sql = (
+        "SELECT experiment_id, channel_id, duration FROM events WHERE duration >= "
+        "(SELECT AVG(duration) FROM events WHERE experiment_id = :experiment_id "
+        "AND channel_id = :channel_id)"
+    )
+
+    run = controller._run_raw_filter("L", sql, SCOPE_CH0, "x_raw")
+
+    assert run is not None
+    other = query(
+        sample_metadata_db, "SELECT COUNT(*) FROM events WHERE channel_id = 1"
+    )[0][0]
+    assert f"{other} of {len(run.rows)} rows" in panel_of(controller)
+    assert "other experiments or channels" in panel_of(controller)
+
+
+@pytest.mark.timeout(120)
+def test_a_query_that_uses_only_one_placeholder_is_warned_about(
+    controller: MetadataController,
+) -> None:
+    """
+    The same rows would be drawn for every channel of the experiment.
+    """
+    sql = "SELECT duration FROM events WHERE experiment_id = :experiment_id"
+
+    run = controller._run_raw_filter("L", sql, SCOPE_CH0, "x_raw")
+
+    assert run is not None
+    assert "uses :experiment_id but not :channel_id" in panel_of(controller)
+
+
+@pytest.mark.timeout(120)
+def test_only_a_select_is_run_and_the_database_is_untouched(
+    controller: MetadataController, sample_metadata_db: str
+) -> None:
+    """
+    The loader's validator accepts a DELETE; Poriscope does not run it.
+    """
+    before = query(sample_metadata_db, "SELECT COUNT(*) FROM events")
+
+    for sql in ("DELETE FROM events", "UPDATE events SET duration = 1"):
+        assert controller._run_raw_filter("L", sql, SCOPE_CH0, "x_raw") is None
+
+    assert query(sample_metadata_db, "SELECT COUNT(*) FROM events") == before
+    assert "not a SELECT" in panel_of(controller)
 
 
 @pytest.mark.timeout(120)
@@ -116,44 +222,21 @@ def test_a_sublevels_key_names_its_parent_event(
 
     assert out is not None
     conditions, _ = out
-    with sqlite3.connect(sample_metadata_db) as conn:
-        parents = sorted(
-            r[0]
-            for r in conn.execute(
-                "SELECT DISTINCT e.event_id FROM sublevels s "
-                "JOIN events e ON s.event_db_id = e.id WHERE s.id <= 10"
-            )
+    parents = sorted(
+        r[0]
+        for r in query(
+            sample_metadata_db,
+            "SELECT DISTINCT e.event_id FROM sublevels s "
+            "JOIN events e ON s.event_db_id = e.id WHERE s.id <= 10",
         )
-        by_id = sorted(
-            r[0] for r in conn.execute("SELECT event_id FROM events WHERE id <= 10")
-        )
+    )
+    by_id = sorted(
+        r[0]
+        for r in query(sample_metadata_db, "SELECT event_id FROM events WHERE id <= 10")
+    )
     named = sorted(int(i) for i in conditions.split("IN (")[1].rstrip(")").split(","))
     assert named == parents
     assert named != by_id
-
-
-@pytest.mark.timeout(120)
-def test_rows_with_null_scope_columns_are_not_dropped_without_saying_so(
-    controller: MetadataController, sample_metadata_db: str
-) -> None:
-    """
-    A LEFT JOIN, or a CASE, can leave experiment_id NULL on some rows; the selection's
-    WHERE drops them. The panel should say that rows were left out.
-    """
-    sql = (
-        "SELECT CASE WHEN event_id % 2 = 0 THEN experiment_id END AS experiment_id, "
-        "channel_id, duration FROM events"
-    )
-
-    out = controller._run_raw_filter("L", sql, SCOPE_CH0, "x_raw")
-
-    assert out is not None
-    rows, _ = out
-    assert len(rows) < event_counts(sample_metadata_db)[0]
-    assert any(
-        "null" in message.lower() or "left out" in message.lower()
-        for message in controller.panel  # type: ignore[attr-defined]
-    ), "rows were dropped for a NULL scope column and nothing said so"
 
 
 @pytest.mark.timeout(120)
@@ -165,21 +248,34 @@ def test_rows_with_a_null_event_id_are_reported_not_dropped_silently(
     out of the plot, and the panel says how many.
     """
     sql = (
-        "SELECT experiment_id, channel_id, "
-        "CASE WHEN event_id % 2 = 0 THEN event_id END AS event_id FROM events"
+        "SELECT CASE WHEN event_id % 2 = 0 THEN event_id END AS event_id FROM events "
+        f"WHERE {SCOPED}"
     )
 
     out = controller._raw_filter_conditions("L", sql, SCOPE_CH0, "x_raw")
 
     assert out is not None
-    panel = " ".join(controller.panel)  # type: ignore[attr-defined]
+    panel = panel_of(controller)
     assert "NULL" in panel and "left out" in panel
-    with sqlite3.connect(sample_metadata_db) as conn:
-        total = conn.execute(
-            "SELECT COUNT(*) FROM events WHERE channel_id = 0"
-        ).fetchone()[0]
-    odd = total - len([1 for r in range(total) if r % 2 == 0])
-    assert odd > 0
+
+
+@pytest.mark.timeout(120)
+def test_what_an_event_plot_selected_is_stated_on_the_panel(
+    controller: MetadataController, sample_metadata_db: str
+) -> None:
+    """
+    How many events, on which channel, and their range - so a key that names other
+    events than the user meant is visible.
+    """
+    sql = f"SELECT event_id FROM events WHERE {SCOPED}"
+
+    out = controller._raw_filter_conditions("L", sql, SCOPE_CH0, "x_raw")
+
+    assert out is not None
+    count = query(
+        sample_metadata_db, "SELECT COUNT(*) FROM events WHERE channel_id = 0"
+    )[0][0]
+    assert f"x_raw: {count} events on exp_a Ch 0" in panel_of(controller)
 
 
 @pytest.mark.timeout(120)
@@ -189,13 +285,31 @@ def test_with_no_scope_a_raw_filter_returns_what_an_assisted_one_does(
 ) -> None:
     """
     No experiment named means no restriction for either kind of filter, so a raw filter
-    without the scope columns runs and returns every row, as an assisted one does.
+    without placeholders runs and returns every row, as an assisted one does.
     """
     assisted = controller.model.call(
         "M", "L", "load_metadata", ["duration"], "duration > 0", scope
     )
 
-    out = controller._run_raw_filter("L", "SELECT duration FROM events", scope, "x_raw")
+    run = controller._run_raw_filter("L", "SELECT duration FROM events", scope, "x_raw")
 
-    assert out is not None
-    assert len(out[0]) == len(assisted) > 0
+    assert run is not None
+    assert len(run.rows) == len(assisted) > 0
+    assert "ignores the Scope selection" not in panel_of(controller)
+
+
+@pytest.mark.timeout(120)
+def test_the_event_counts_the_probes_rely_on(sample_metadata_db: str) -> None:
+    """
+    Both channels hold more than the limit the tests above use.
+
+    :param sample_metadata_db: path to a generated metadata database
+    :type sample_metadata_db: str
+    """
+    counts: Dict[int, int] = dict(
+        query(
+            sample_metadata_db,
+            "SELECT channel_id, COUNT(*) FROM events GROUP BY channel_id",
+        )
+    )
+    assert counts and min(counts.values()) > 5

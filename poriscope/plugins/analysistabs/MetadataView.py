@@ -111,7 +111,8 @@ class MetadataView(MetaSubsetTabView):
     #: from.
     #:
     #: Also carries the filter's name, whose ``_raw`` suffix tells the Controller the
-    #: filter is a complete ``SELECT``, run over the scope as a subquery.
+    #: filter is a complete ``SELECT`` that scopes itself with ``:experiment_id`` and
+    #: ``:channel_id``.
     metadata_subset_requested = Signal(str, list, str, object, str)
 
     #: Asks for one event-data subset to be tallied into an all-points histogram: the
