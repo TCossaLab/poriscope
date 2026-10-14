@@ -399,3 +399,44 @@ def test_an_unbracketed_or_that_leaks_is_warned_about_when_the_result_has_the_ke
     assert run is not None
     assert set(run.rows["channel_id"]) == {0, 1}
     assert "OR is not in brackets" in panel_of(controller)
+
+
+@pytest.mark.timeout(120)
+def test_a_missing_column_of_another_table_is_told_to_join_it(
+    controller: MetadataController,
+) -> None:
+    """
+    ``sublevel_duration`` is not in ``events``, so adding it to the ``SELECT`` is not
+    enough; the message names its table and shows the join.
+    """
+    sql = (
+        "SELECT event_id, duration FROM events "
+        "WHERE experiment_id = :experiment_id AND channel_id = :channel_id"
+    )
+
+    controller.load_metadata_subset("L", ["sublevel_duration"], sql, SCOPE_CH0, "x_raw")
+
+    panel = panel_of(controller)
+    assert "needs: sublevel_duration" in panel
+    assert "column of the sublevels table" in panel
+    assert "JOIN sublevels s ON s.event_db_id = e.id" in panel
+
+
+@pytest.mark.timeout(120)
+def test_a_missing_column_of_events_is_told_to_add_it_to_the_select(
+    controller: MetadataController,
+) -> None:
+    """
+    A column of ``events`` only has to be added to the column list.
+    """
+    sql = (
+        "SELECT event_id FROM events "
+        "WHERE experiment_id = :experiment_id AND channel_id = :channel_id"
+    )
+
+    controller.load_metadata_subset("L", ["duration"], sql, SCOPE_CH0, "x_raw")
+
+    panel = panel_of(controller)
+    assert "needs: duration" in panel
+    assert "Add duration to its SELECT" in panel
+    assert "JOIN" not in panel

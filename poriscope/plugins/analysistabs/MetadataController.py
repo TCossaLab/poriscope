@@ -662,7 +662,8 @@ class MetadataController(MetaSubsetTabController):
         if missing:
             self.add_text_to_display.emit(
                 f"{subset_name}'s query does not return the column(s) this plot "
-                f"needs: {', '.join(missing)}",
+                f"needs: {', '.join(missing)}. "
+                f"{self._missing_column_advice(loader, missing)}",
                 self.__class__.__name__,
             )
             return
@@ -1057,6 +1058,63 @@ class MetadataController(MetaSubsetTabController):
                 f"AND e.event_id IN (SELECT event_id FROM (\n{run.executed}\n)))"
             )
         return " OR ".join(parts) if parts else "1 = 0"
+
+    #: How a column of another table is joined to an ``events`` query, by table name.
+    JOINS = {
+        "sublevels": (
+            "s",
+            "sublevels s ON s.event_db_id = e.id",
+        ),
+        "experiments": ("exp", "experiments exp ON exp.id = e.experiment_id"),
+    }
+
+    @log(logger=logger)
+    def _missing_column_advice(self, loader: str, missing: List[str]) -> str:
+        """
+        Say how to get the columns a raw query left out into its ``SELECT``.
+
+        A column of ``events`` only has to be added to the list. One of another table,
+        such as ``sublevel_duration``, is not in ``events`` at all, so the query has to
+        join its table, and the example shows how. The table comes from the loader; if it
+        cannot say, the advice is the plain one.
+
+        :param loader: the database loader plugin's key
+        :type loader: str
+        :param missing: the columns the plot needs that the result does not hold
+        :type missing: List[str]
+        :return: one or two sentences on what to select
+        :rtype: str
+        """
+        elsewhere: Dict[str, str] = {}
+        for column in missing:
+            try:
+                table = self.model.call(
+                    "MetaDatabaseLoader", loader, "get_table_by_column", column
+                )
+            except Exception:
+                table = None
+            if isinstance(table, str) and table != "events":
+                elsewhere[column] = table
+        here = [c for c in missing if c not in elsewhere]
+        advice = []
+        if here:
+            advice.append(f"Add {', '.join(here)} to its SELECT")
+        for column, table in elsewhere.items():
+            join = self.JOINS.get(table)
+            if join is None:
+                advice.append(
+                    f"{column} is a column of the {table} table, so the query has to "
+                    "join that table"
+                )
+                continue
+            alias, clause = join
+            advice.append(
+                f"{column} is a column of the {table} table, so the query has to join "
+                f"it, for example SELECT e.event_id, {alias}.{column} FROM events e "
+                f"JOIN {clause} WHERE e.experiment_id = :experiment_id AND "
+                "e.channel_id = :channel_id"
+            )
+        return ". ".join(advice)
 
     @log(logger=logger)
     @Slot(str, str, str, object, object, int, str)
