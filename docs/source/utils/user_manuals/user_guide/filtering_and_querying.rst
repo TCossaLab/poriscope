@@ -133,6 +133,9 @@ is a complete ``SELECT``, a few things are yours to provide:
   without ``GROUP BY`` returns a single row with an arbitrary ``experiment_id`` and
   ``channel_id``, exactly as it does in any SQL viewer; group by
   ``experiment_id, channel_id`` to get one row per channel.
+  A row whose ``experiment_id`` or ``channel_id`` is ``NULL`` (a ``LEFT JOIN`` with no
+  match, say) cannot be placed in the selection; it is left out, and the status panel
+  says how many.
 
 Use this mode to write queries that need aggregations or computed columns, or when you
 simply prefer writing complete SQL.

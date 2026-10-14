@@ -499,7 +499,49 @@ class MetaSubsetTabController(MetaController):
                 self.__class__.__name__,
             )
             return None
+        if clause:
+            self._report_unplaced_rows(loader, wrapped, subset_name)
         return rows, query
+
+    @log(logger=logger)
+    def _report_unplaced_rows(
+        self, loader: str, wrapped: str, subset_name: str
+    ) -> None:
+        """
+        Say how many rows the selection left out because it could not place them.
+
+        A ``NULL`` ``experiment_id`` or ``channel_id`` - from a ``LEFT JOIN`` that found
+        no match, say - matches no experiment or channel, so the selection's WHERE drops
+        the row without a word. Counted separately so the panel can say so. Best effort:
+        a count that cannot be made reports nothing, because the plot itself has run.
+
+        :param loader: the database loader plugin's key
+        :type loader: str
+        :param wrapped: the user's query as a subquery, without the selection
+        :type wrapped: str
+        :param subset_name: the filter's name, for the message
+        :type subset_name: str
+        """
+        try:
+            counted = self.model.call(
+                "MetaDatabaseLoader",
+                loader,
+                "query_database_directly",
+                f"SELECT COUNT(*) AS n FROM (\n{wrapped}\n) AS unplaced "
+                "WHERE experiment_id IS NULL OR channel_id IS NULL",
+            )
+        except Exception:
+            return
+        if counted is None or counted.empty or "n" not in counted.columns:
+            return
+        unplaced = int(counted["n"].iloc[0])
+        if unplaced:
+            self.add_text_to_display.emit(
+                f"{unplaced} row(s) of {subset_name}'s query have a NULL experiment_id "
+                "or channel_id, so the selection cannot place them and they were left "
+                "out",
+                self.__class__.__name__,
+            )
 
     @log(logger=logger)
     def _ambiguous_raw_columns(

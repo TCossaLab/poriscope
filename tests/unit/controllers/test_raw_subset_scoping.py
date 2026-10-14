@@ -108,7 +108,9 @@ class TestRawFilterLoadsItsOwnEvents:
 
         fetched = controller._fetch_event_subset("ldr", RAW, SCOPE, "mine_raw")
 
-        _, (executed,), check = controller.model.calls_to("query_database_directly")
+        _, (executed,), _count, check = controller.model.calls_to(
+            "query_database_directly"
+        )
         assert check[0].startswith("SELECT id, experiment_id, channel_id FROM events")
         assert RAW in executed
         assert executed.endswith("WHERE (experiment_id = 7 AND channel_id IN (2))")
@@ -201,7 +203,7 @@ class TestRawFilterLoadsItsOwnEvents:
         events_table = pd.DataFrame(
             {"id": [4, 9], "experiment_id": [7, 7], "channel_id": [1, 1]}
         )
-        answers = iter([FRAME, FRAME, events_table])
+        answers = iter([FRAME, FRAME, FRAME, events_table])
         controller.model.call = lambda *a: (
             next(answers) if a[2] == "query_database_directly" else 7
         )
@@ -218,7 +220,7 @@ class TestRawFilterLoadsItsOwnEvents:
         A sublevel's id can be larger than any event's.
         """
         controller = _controller(cls, mocker, self.answers())
-        answers = iter([FRAME, FRAME, FRAME.iloc[0:0]])
+        answers = iter([FRAME, FRAME, FRAME, FRAME.iloc[0:0]])
         controller.model.call = lambda *a: (
             next(answers) if a[2] == "query_database_directly" else 7
         )
@@ -322,7 +324,7 @@ class TestRawFilterFillsTheEventNavigation:
         (rows,), _ = controller.view.set_event_id_rows.call_args
         assert rows["event_id"].tolist() == [10, 11, 12]
         assert controller.model.calls_to("load_metadata") == []
-        _, (final,), _ = controller.model.calls_to("query_database_directly")
+        _, (final,), *_ = controller.model.calls_to("query_database_directly")
         assert final.endswith("WHERE (experiment_id = 7 AND channel_id IN (2))")
 
     def test_a_query_without_event_id_says_what_to_add(
@@ -371,7 +373,7 @@ class TestRawFilterFillsTheEventNavigation:
         The numbers exist, but the events table has no such event in that channel.
         """
         controller = _controller(cls, mocker, self.answers())
-        answers = iter([EVENT_FRAME, EVENT_FRAME, EVENT_FRAME.iloc[0:1]])
+        answers = iter([EVENT_FRAME, EVENT_FRAME, EVENT_FRAME, EVENT_FRAME.iloc[0:1]])
         controller.model.call = lambda *a: (
             next(answers) if a[2] == "query_database_directly" else 7
         )

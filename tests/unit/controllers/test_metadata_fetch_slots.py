@@ -256,7 +256,7 @@ class TestLoadRawMetadataSubset:
 
         controller.load_metadata_subset("ldr", ["duration"], self.RAW, SCOPE, "q_raw")
 
-        probe, final = controller.model.calls_to("query_database_directly")
+        probe, final, _count = controller.model.calls_to("query_database_directly")
         assert probe[0].endswith("LIMIT 0")
         assert final[0].startswith("SELECT * FROM (")
         assert self.RAW in final[0]
@@ -330,6 +330,43 @@ class TestLoadRawMetadataSubset:
         controller.load_metadata_subset("ldr", ["duration"], self.RAW, SCOPE, "q_raw")
 
         controller.view.update_plot_data.assert_called_once()
+
+    def test_rows_the_selection_cannot_place_are_counted_on_the_panel(
+        self, controller: MetadataController
+    ) -> None:
+        """
+        A NULL scope column matches no experiment or channel, so the selection drops the
+        row silently unless the count is reported.
+        """
+        model = RecordingModel(self.answers())
+        asked = model.call
+
+        def call(metaclass: str, key: str, method: str, *args: object) -> object:
+            result = asked(metaclass, key, method, *args)
+            if method == "query_database_directly" and "COUNT(*)" in str(args[0]):
+                return pd.DataFrame({"n": [3]})
+            return result
+
+        model.call = call  # type: ignore[method-assign]
+        controller.model = model
+
+        controller.load_metadata_subset("ldr", ["duration"], self.RAW, SCOPE, "q_raw")
+
+        assert "3 row(s)" in panel_text(controller)
+        assert "left out" in panel_text(controller)
+        controller.view.update_plot_data.assert_called_once()
+
+    def test_no_unplaced_rows_means_no_message(
+        self, controller: MetadataController
+    ) -> None:
+        """
+        The count is only worth a line when it is above zero.
+        """
+        controller.model = RecordingModel(self.answers())
+
+        controller.load_metadata_subset("ldr", ["duration"], self.RAW, SCOPE, "q_raw")
+
+        assert "left out" not in panel_text(controller)
 
     def test_a_missing_plot_column_is_named_and_nothing_is_set(
         self, controller: MetadataController
