@@ -218,7 +218,7 @@
 
 * **Fixed Help → Tutorial on a tab that has no working walkthrough locking the app**; the tutorial is now treated as not running, so tabs, Settings and Help stay usable
 
-* **Help → Tutorial on a page that has no tutorial now says so** instead of showing the generic welcome popup and then doing nothing
+* **Help → Tutorial on a page that has no tutorial now says so**, and points to the core tabs that have one, instead of showing the generic welcome popup and then doing nothing
 
 ### Documentation:
 

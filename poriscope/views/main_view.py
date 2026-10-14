@@ -25,6 +25,7 @@
 # Alejandra Carolina González González
 
 import logging
+import re
 import sys
 from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple
@@ -56,6 +57,7 @@ from poriscope.views.widgets.icon_menu_widget import IconMenuWidget
 from poriscope.views.widgets.text_menu_widget import IconTextMenuWidget
 from poriscope.views.widgets.walkthrough import (
     IntroDialog,
+    NoTutorialDialog,
     Overlay,
     StepDialog,
 )
@@ -1138,6 +1140,23 @@ class MainView(QMainWindow, WalkthroughMixin):
         }
         return step_mapping.get(view_name, "You're starting a guided tutorial.")
 
+    def _core_tour_tab_names(self) -> List[str]:
+        """
+        Name the tabs the guided tour walks through, in order, as users read them.
+
+        The names come from the tour's own chain (``get_expected_next_view``) with the
+        camel case of each view name split into words, so there is no second list to keep.
+
+        :return: Display names such as ``"Raw Data"``, ``"Event Analysis"``.
+        :rtype: List[str]
+        """
+        names = []
+        view = self.get_expected_next_view("MainView")
+        while view is not None:
+            names.append(re.sub(r"(?<!^)(?=[A-Z])", " ", view.removesuffix("View")))
+            view = self.get_expected_next_view(view)
+        return names
+
     def _has_walkthrough(self, view_name: str) -> bool:
         """
         Tell whether the page called view_name can run a tutorial.
@@ -1173,7 +1192,7 @@ class MainView(QMainWindow, WalkthroughMixin):
             current_view = self.get_current_view()
         if not self._has_walkthrough(current_view):
             self.logger.info(f"{current_view} has no walkthrough, skipping intro.")
-            QMessageBox.information(self, "Tutorial", "This page has no tutorial.")
+            NoTutorialDialog(self, self._core_tour_tab_names()).exec()
             return
         intro = IntroDialog(self, current_step=current_view)
         intro.start_walkthrough.connect(lambda: self._on_intro_finished(current_view))

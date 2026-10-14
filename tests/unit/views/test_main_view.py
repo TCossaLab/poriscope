@@ -1,3 +1,4 @@
+import importlib
 import logging
 from unittest.mock import MagicMock, patch
 
@@ -7,6 +8,7 @@ from PySide6.QtGui import QAction, QCloseEvent
 from PySide6.QtWidgets import QWidget
 
 from poriscope.views.main_view import MainView
+from poriscope.views.widgets.walkthrough import NoTutorialDialog
 from poriscope.views.widgets.walkthrough_mixin import WalkthroughMixin
 
 
@@ -751,11 +753,11 @@ def test_tutorial_on_a_page_with_no_walkthrough_says_so(
     main_view, mocker, tab_class, page_name
 ):
     intro = mocker.patch("poriscope.views.main_view.IntroDialog")
-    box = mocker.patch("poriscope.views.main_view.QMessageBox")
+    notice = mocker.patch("poriscope.views.main_view.NoTutorialDialog")
     main_view.add_page(page_name, tab_class())
     main_view.show_walkthrough_intro()
-    box.information.assert_called_once()
-    assert "no tutorial" in box.information.call_args.args[2]
+    notice.assert_called_once()
+    notice.return_value.exec.assert_called_once()
     intro.assert_not_called()
     assert main_view._walkthrough_active is False
 
@@ -769,19 +771,61 @@ def test_tutorial_on_a_page_with_a_walkthrough_still_shows_the_intro(main_view, 
             return [("T", "d", "StepsTab", lambda: [self])]
 
     intro = mocker.patch("poriscope.views.main_view.IntroDialog")
-    box = mocker.patch("poriscope.views.main_view.QMessageBox")
+    notice = mocker.patch("poriscope.views.main_view.NoTutorialDialog")
     main_view.add_page("StepsTab", TabWithSteps())
     main_view.show_walkthrough_intro()
-    box.information.assert_not_called()
+    notice.assert_not_called()
     intro.return_value.exec.assert_called_once()
+
+
+def test_the_core_tour_tabs_are_named_from_the_tours_own_chain(main_view):
+    assert main_view._core_tour_tab_names() == [
+        "Raw Data",
+        "Event Analysis",
+        "Metadata",
+        "Clustering",
+    ]
+
+
+def test_every_tab_the_no_tutorial_popup_points_to_has_a_walkthrough(main_view):
+    view = main_view.get_expected_next_view("MainView")
+    while view is not None:
+        module = importlib.import_module(f"poriscope.plugins.analysistabs.{view}")
+        view_class = getattr(module, view)
+        assert (
+            view_class.get_walkthrough_steps
+            is not WalkthroughMixin.get_walkthrough_steps
+        ), f"{view} is named in the no-tutorial popup but has no walkthrough"
+        view = main_view.get_expected_next_view(view)
+
+
+def test_the_no_tutorial_popup_points_to_tabs_without_claiming_they_are_the_only_ones(
+    main_view,
+):
+    notice = NoTutorialDialog(main_view, main_view._core_tour_tab_names())
+    text = notice.body.text()
+    assert "This page has no tutorial." in text
+    assert "1) Raw Data, 2) Event Analysis, 3) Metadata, 4) Clustering" in text
+    assert "To try one:" in text
+    assert "Not every tab has a tutorial." in text
+    assert "to see whether it has one" in text
+    assert notice.start_button.text() == "OK"
+
+
+def test_the_no_tutorial_popup_starts_nothing(main_view):
+    notice = NoTutorialDialog(main_view, ["Raw Data"])
+    started = MagicMock()
+    notice.start_walkthrough.connect(started)
+    notice.start_button.click()
+    started.assert_not_called()
 
 
 def test_tutorial_on_a_page_that_is_not_a_view_says_so(main_view, mocker):
     intro = mocker.patch("poriscope.views.main_view.IntroDialog")
-    box = mocker.patch("poriscope.views.main_view.QMessageBox")
+    notice = mocker.patch("poriscope.views.main_view.NoTutorialDialog")
     main_view.add_page("PlainPage", QWidget())
     main_view.show_walkthrough_intro()
-    box.information.assert_called_once()
+    notice.assert_called_once()
     intro.assert_not_called()
 
 
