@@ -475,3 +475,27 @@ def test_plot_events_lists_each_event_once_for_a_join(
             for r in conn.execute("SELECT event_id FROM events WHERE channel_id = 0")
         )
     assert metadata_tab.tab_view.filtered_event_ids == expected
+
+
+@pytest.mark.timeout(120)
+def test_a_dataset_whose_query_ignores_the_scope_says_so_in_its_label(
+    metadata_tab: Triad,
+) -> None:
+    """
+    The label names the ticked channel, so a query that does not use it is marked: its rows
+    are not that channel's. A query that scopes itself is not.
+    """
+    plot(metadata_tab, "forgot_raw", "duration", ["0", "1"])
+    labels = list(metadata_tab.tab_view.hist_labels)
+
+    assert labels
+    assert all(label.endswith("(query ignores Scope)") for label in labels)
+
+    metadata_tab.tab_view.handle_parameter_change(
+        "metadatacontrols", "reset_plot", ({},)
+    )
+    plot(metadata_tab, "long_raw", "duration", ["0"])
+
+    assert not any(
+        "ignores Scope" in label for label in metadata_tab.tab_view.hist_labels
+    )

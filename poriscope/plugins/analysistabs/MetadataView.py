@@ -256,6 +256,10 @@ class MetadataView(MetaSubsetTabView):
         # One units string per plotted column, set by set_column_units once the
         # whole subset has been fetched. None means it has not been.
         self.column_units: Optional[List[Optional[str]]] = None
+        # Added to a dataset's label by set_scope_note when its raw query does not use
+        # the Scope selection, so the legend does not name a channel the rows are not
+        # from. Empty for every other dataset.
+        self.scope_note: str = ""
         # Heterogeneous by design: the three 1-D paths - histogram, density and
         # categorical - append the raw column as a 1-D array, and the all-points
         # path appends an (x, y) tuple. Two shapes, not one: flagged for review,
@@ -1608,12 +1612,14 @@ class MetadataView(MetaSubsetTabView):
                         self.query = ""
                         self.plot_data = None
                         self.column_units = None
+                        self.scope_note = ""
                         self.metadata_subset_requested.emit(
                             loader, columns, sql_filter, exp_and_ch_arg, subset_name
                         )
                         if self.query == "":
                             return False
 
+                        dataset_label += self.scope_note
                         if self.plot_data is None or self.plot_data.empty:
                             self.add_text_to_display.emit(
                                 f"No data matching the subset {dataset_label}, skipping",
@@ -2566,6 +2572,22 @@ class MetadataView(MetaSubsetTabView):
         :rtype: None
         """
         self.column_units = units
+
+    @log(logger=logger)
+    def set_scope_note(self, note: str) -> None:
+        """
+        Receive text to add to the next dataset's label.
+
+        Said by the Controller for a raw query that does not use the Scope selection:
+        the dataset is named after the channel that was ticked, and its rows are not that
+        channel's.
+
+        :param note: text appended to the label, empty for none
+        :type note: str
+        :return: None
+        :rtype: None
+        """
+        self.scope_note = note
 
     @log(logger=logger)
     def update_available_columns(self, loader: str) -> None:
