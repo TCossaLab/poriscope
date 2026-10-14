@@ -349,7 +349,9 @@ def plot_ensemble(triad: Triad, filter_name: str, channel: str) -> None:
     :param channel: the channel, as the selection tree reports it
     :type channel: str
     """
-    triad.tab_view.handle_parameter_change("proteincontrols", "set_mode_ensemble", ({},))
+    triad.tab_view.handle_parameter_change(
+        "proteincontrols", "set_mode_ensemble", ({},)
+    )
     select(triad, filter_name, channel)
     parameters: Dict[str, Any] = {
         "db_loader": LOADER,

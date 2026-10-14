@@ -20,8 +20,8 @@ Assisted SQL
 
 In **Assisted SQL** mode, you write only the **WHERE clause** condition. Poriscope constructs the full SQL query automatically, handling column qualification, table joins, and experiment/channel scoping. You do not control which columns are returned or how the query is structured (Poriscope decides that based on what axes you select in the UI).
 
-Use this mode for most everyday filters, and if you are not familiar with SQL 
-()no SQL knowledge is required, just simple conditions like ``duration > 100``).
+Use this mode for most everyday filters, and if you are not familiar with SQL
+(no SQL knowledge is required, just simple conditions like ``duration > 100``).
 
 **Example 1 — Long events only:**
 
@@ -121,8 +121,9 @@ A few things are yours to provide:
   only one ignores half of it; the same rows are drawn for every channel, and the status panel
   says so. A placeholder in a subquery only does not scope the main table: if the result has
   ``experiment_id`` or ``channel_id``, rows from other channels are counted on the panel. With
-  nothing selected, or more than one channel, a query that uses a placeholder is refused, since
-  there is nothing to put in.
+  nothing selected a query that uses a placeholder is refused, since there is nothing to put in.
+  The plots that work on one channel at a time (the event overlays, Plot Events, the arrows and
+  the Protein tab) ask you to select a single channel when several are ticked.
 * **The plot's own columns.** A plot needs the columns you chose on its axes: if the query does
   not return one, the status panel names it and nothing is drawn. A query that returns the same
   column name twice (a join's ``SELECT *``) is refused if the plot reads it; name the one you
@@ -234,6 +235,186 @@ Saved as: ``<subset_name>_raw``
    Raw SQL filters must begin with ``SELECT``. Entering a WHERE clause in Raw SQL mode
    (e.g., ``duration > 100``) will be rejected with an error message.
 
+How the two modes run your filter
+---------------------------------
+
+What Poriscope runs
+~~~~~~~~~~~~~~~~~~~
+
+The same filter, ``duration > 100``, on channel 0 of experiment 1, plotted as a histogram of
+``duration``.
+
+**Assisted** - you write the condition, Poriscope writes the query. Roughly:
+
+.. code-block:: sql
+
+   SELECT e.id, e.experiment_id, e.channel_id, e.event_id, e.duration
+   FROM events e
+   WHERE (e.duration > 100) AND ((experiment_id = 1 AND channel_id IN (0)))
+
+The columns come from the axes you chose, and the Scope selection is added for you. Your
+condition is put in brackets before it is joined to the scope, so an ``OR`` in it cannot
+widen the scope; a condition whose brackets do not balance is refused. Tables are joined
+when the condition names their columns (``sublevel_duration``, ``voltage``).
+
+**Raw** - you write the query, Poriscope puts the ids in and runs it once for each selected
+channel:
+
+.. code-block:: sql
+
+   SELECT duration FROM events
+   WHERE duration > 100 AND experiment_id = 1 AND channel_id = 0
+
+Nothing is wrapped around it and nothing is applied to its result afterwards.
+
+Is a Raw filter the same as running the SQL in a database viewer?
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Nearly. SQLite runs the text you wrote, as you wrote it, so a raw filter returns what the same
+query returns in `DB Browser for SQLite <https://sqlitebrowser.org/>`_ with the numbers typed
+in. The status panel shows the query that ran, with the numbers in (``SQL (events):``), so you
+can paste it into a viewer and compare. An Assisted filter is not like that: you wrote only a
+condition, and the query around it is Poriscope's.
+
+The differences from a viewer:
+
+* **One channel at a time.** The placeholders become one experiment and channel, and the query
+  runs once for each channel ticked. ``LIMIT``, ``ORDER BY``, ``DISTINCT`` and aggregates
+  therefore apply *within each channel*, not across the selection: ``LIMIT 5`` with two
+  channels ticked gives five events per channel.
+* **Read only.** Only ``SELECT`` (or ``WITH``) runs. ``INSERT``, ``UPDATE``, ``DELETE``,
+  ``DROP``, ``CREATE``, ``ALTER``, ``ATTACH``, ``DETACH``, ``PRAGMA``, ``VACUUM``,
+  ``REINDEX``, ``ANALYZE`` and ``REPLACE INTO`` are refused, and the connection itself cannot
+  write, so a raw filter cannot change your database.
+* **The plot reads columns by name.** A column the plot needs has to be in the result, and
+  events are named by ``event_id`` (see above). A viewer shows you whatever you selected.
+* **Poriscope checks the result and tells you** on the status panel; a viewer says nothing.
+
+Same filter, both modes
+~~~~~~~~~~~~~~~~~~~~~~~
+
+The six examples above come in pairs. Two things differ between the modes that the pairs do
+not show.
+
+An ``OR`` has to be bracketed in Raw SQL. ``AND`` binds before ``OR``, so
+
+.. code-block:: sql
+
+   SELECT duration FROM events
+   WHERE duration > 100 OR max_blockage > 2000
+     AND experiment_id = :experiment_id AND channel_id = :channel_id
+
+scopes only the second term, and the first is drawn for every channel in the database. Write
+
+.. code-block:: sql
+
+   SELECT duration FROM events
+   WHERE (duration > 100 OR max_blockage > 2000)
+     AND experiment_id = :experiment_id AND channel_id = :channel_id
+
+In Assisted mode the condition ``duration > 100 OR max_blockage > 2000`` is enough, because
+Poriscope brackets it.
+
+The same events from the sublevels table, with a condition on the sublevels:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 50 50
+
+   * - Assisted
+     - Raw
+   * - ``sublevel_duration > 200``
+     - ``SELECT duration FROM events WHERE experiment_id = :experiment_id AND channel_id =
+       :channel_id AND id IN (SELECT event_db_id FROM sublevels WHERE sublevel_duration > 200)``
+
+Only in Assisted, or only in Raw
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table::
+   :header-rows: 1
+   :widths: 50 50
+
+   * - Only Assisted
+     - Only Raw
+   * - No SQL beyond a condition, and no placeholders: the Scope is added for you
+     - ``GROUP BY`` and ``HAVING`` on the query itself, ``DISTINCT``, ``UNION``
+   * - A column of ``sublevels`` or ``experiments`` joins in by itself
+     - Computed columns (``max_blockage - min_blockage AS blockage_range``)
+   * - An ``OR`` or a ``--`` comment cannot widen the scope
+     - ``ORDER BY``, ``LIMIT`` and ``OFFSET``, applied within each channel
+   * - Every plot works: Poriscope chooses the columns and the event ids
+     - ``WITH`` queries, window functions, columns from several tables in one result
+   * - The Scope selection cannot be forgotten
+     - You choose what "matches" means for sublevels (any, all, average, count)
+
+Aggregation *inside a subquery* works in both modes (Assisted Example 6).
+
+Which plots take a filter
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 35 35
+
+   * - Action
+     - Assisted
+     - Raw
+   * - Update Plot: Histogram, Normalized and Categorical Histogram, Kernel Density, Heatmap,
+       Scatterplot, 3D Scatterplot
+     - Works
+     - Needs the plotted columns in the result. Drawn once for each ticked channel
+   * - Update Plot: Raw and Filtered All Points Histograms (and normalized)
+     - Works
+     - Needs ``event_id``. Drawn once for each ticked channel
+   * - Update Plot: Raw and Filtered Event Overlay
+     - Works, one channel
+     - Needs ``event_id``, one channel
+   * - Plot Events and the event arrows (Metadata and Protein)
+     - Works
+     - Needs ``event_id``, one channel
+   * - Protein tab: Update Plot (Ensemble), Plot Histogram
+     - Works, one filter and one channel
+     - Needs ``event_id``, one filter and one channel
+   * - Export Subset - CSV
+     - Works, one filter
+     - Works, one filter, with both placeholders in the query
+
+Filters are never combined. Several filters ticked at once in the Metadata tab are drawn as
+separate overlaid datasets, whether they are Assisted, Raw or a mixture of both; there is no
+AND or OR between two saved filters. To combine conditions, write them into one filter. The
+Protein tab and Export Subset - CSV take one filter only.
+
+Known gaps, and how to guard against them
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Raw mode trusts what you write, so a few mistakes give a result that looks plausible. None can
+damage the database, and each is either warned about or easy to check:
+
+1. **The placeholders are left out, or only one is used.** The filter ignores the Scope
+   selection, wholly or in part, and the same rows are drawn for every channel. The status
+   panel warns, and an export is refused. Start from the dialog's hint line.
+2. **The placeholders sit in a subquery only.** The main table is not scoped. If the result
+   has ``experiment_id`` or ``channel_id`` the panel counts the rows from other channels; if
+   not, nothing can tell. Put the scope in the outer ``WHERE``.
+3. **An unbracketed ``OR``** (above). The panel warns only when the result carries the
+   ``experiment_id`` or ``channel_id`` columns, so bracket every ``OR``.
+4. **A key column that is renamed** (``level_id AS event_id``) or rows whose key is ``NULL``.
+   The panel warns, or says how many rows were left out.
+5. **Whether it is the filter you meant.** After each event plot the panel states how many
+   events were selected and their ``event_id`` range; compare it with the count the same
+   query gives in a viewer. For a plot of columns, the number of points on the histogram is
+   the number of rows.
+
+Large databases
+~~~~~~~~~~~~~~~
+
+A raw filter that names events (Plot Events, the arrows, the event plots, the Protein tab)
+checks that every ``event_id`` it returns exists, so its first read is slower than an Assisted
+filter's: roughly two to three times as long, a few seconds with 300,000 events per channel.
+It is paid once for a filter and channel; moving through the events afterwards uses the list
+already read. Reading the columns of one channel for a histogram is not slower than Assisted.
+Narrowing the query (a condition, or ``LIMIT``) shortens it.
+
 Creating a Filter
 -----------------
 
@@ -290,7 +471,7 @@ The saved JSON format looks like:
 
    {
        "long_events_assisted": "duration > 100",
-       "multi_sublevel_raw": "SELECT duration FROM events WHERE id IN (SELECT event_db_id FROM sublevels GROUP BY event_db_id HAVING COUNT(*) > 3)"
+       "multi_sublevel_raw": "SELECT duration FROM events WHERE experiment_id = :experiment_id AND channel_id = :channel_id AND id IN (SELECT event_db_id FROM sublevels GROUP BY event_db_id HAVING COUNT(*) > 3)"
    }
 
 .. note::
@@ -328,6 +509,18 @@ Common Mistakes
 | Typo in column name                      | Validation error                                 |
 +------------------------------------------+--------------------------------------------------+
 | ``event_id`` used to match a sublevel    | Empty result - use ``e.id``; see note above      |
++------------------------------------------+--------------------------------------------------+
+| ``OR`` without brackets in Raw SQL       | Only its last term is scoped; the first draws    |
+|                                          | every channel - write ``WHERE (a OR b) AND ...`` |
++------------------------------------------+--------------------------------------------------+
+| Assisted condition whose brackets do not | Refused, so a stray ``)`` cannot escape the      |
+| balance                                  | Scope                                            |
++------------------------------------------+--------------------------------------------------+
+| Raw filter without both placeholders,    | Refused with how to fix it; an export writes     |
+| exported                                 | files per channel                                |
++------------------------------------------+--------------------------------------------------+
+| ``DELETE``, ``UPDATE``, ``DROP`` ... in  | Not run - the status panel names the keyword     |
+| a Raw SQL filter                         |                                                  |
 +------------------------------------------+--------------------------------------------------+
 
 Available Columns

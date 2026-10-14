@@ -679,10 +679,10 @@ class MetaSubsetTabController(MetaController):
         if other:
             self._warn_once(
                 f"{other} of {len(rows)} rows of {subset_name}'s query are from other "
-                f"experiments or channels than the one selected ({label}), so they are "
-                "drawn under it. If you meant only this channel, put experiment_id = "
-                ":experiment_id AND channel_id = :channel_id in the WHERE of the main "
-                "table, not only in a subquery"
+                f"experiments or channels than the one selected ({label}), and they are "
+                "drawn under it. Usual causes: the scope is only in a subquery, or an OR "
+                "is not in brackets, since AND binds first. Use WHERE (a OR b) AND "
+                "experiment_id = :experiment_id AND channel_id = :channel_id"
             )
 
     @log(logger=logger)

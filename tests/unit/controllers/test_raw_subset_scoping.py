@@ -422,6 +422,24 @@ class TestRawFilterScopesItself:
             in _said(controller)
         )
 
+    def test_the_warning_names_both_usual_causes_and_the_bracketed_fix(
+        self, cls: type, mocker: MockerFixture
+    ) -> None:
+        """
+        A reader who never wrote a subquery still learns that an unbracketed ``OR`` does it.
+        """
+        leaking = pd.DataFrame(
+            {"experiment_id": [7, 7, 7], "channel_id": [2, 3, 3], "event_id": [1, 2, 3]}
+        )
+        controller = _event_controller(cls, mocker, leaking)
+
+        controller._run_raw_filter("ldr", SCOPED, SCOPE, "mine_raw")
+
+        said = _said(controller)
+        assert "only in a subquery" in said
+        assert "OR is not in brackets" in said
+        assert "WHERE (a OR b) AND experiment_id = :experiment_id" in said
+
     def test_rows_that_all_belong_to_the_selection_say_nothing(
         self, cls: type, mocker: MockerFixture
     ) -> None:

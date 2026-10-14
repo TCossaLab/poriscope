@@ -378,3 +378,24 @@ def test_the_event_counts_the_probes_rely_on(sample_metadata_db: str) -> None:
         )
     )
     assert counts and min(counts.values()) > 5
+
+
+@pytest.mark.timeout(120)
+def test_an_unbracketed_or_that_leaks_is_warned_about_when_the_result_has_the_keys(
+    controller: MetadataController, sample_metadata_db: str
+) -> None:
+    """
+    ``a OR b AND scope`` scopes only ``b``; with the key columns returned the leak is
+    counted, and the warning names the unbracketed ``OR`` as a cause.
+    """
+    sql = (
+        "SELECT experiment_id, channel_id, event_id FROM events "
+        "WHERE duration > 0 OR max_blockage > 0 "
+        "AND experiment_id = :experiment_id AND channel_id = :channel_id"
+    )
+
+    run = controller._run_raw_filter("L", sql, SCOPE_CH0, "x_raw")
+
+    assert run is not None
+    assert set(run.rows["channel_id"]) == {0, 1}
+    assert "OR is not in brackets" in panel_of(controller)
