@@ -210,7 +210,7 @@
 
 * **Fixed the Metadata tab's heatmap being drawn one bin width narrower than its data**, which pulled every plotted point's true position inward from where it should sit on the axes
 
-* **A page switch blocked while a walkthrough or milestone is showing no longer builds the tab, rebuilds the Settings page or leaves the sidebar highlight on a page that did not open**, so no tab you never reached is saved into the session; the Settings, analysis-tabs and Help sidebar icons are blocked the same way, and closing the analysis-tabs dropdown or the Help window now puts the highlight back on the page that is showing
+* **A page switch blocked while the tutorial is running (walkthroughs and milestones) no longer builds the tab or leaves the sidebar highlight on the clicked page**, so no tab you never reached is saved into the session; the Settings, analysis-tabs and Help sidebar icons are blocked the same way
 
 ### Documentation:
 
