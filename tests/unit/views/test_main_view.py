@@ -635,14 +635,154 @@ def test_dismissing_the_analysis_tabs_dropdown_restores_the_highlight(
     assert _checked_icons(main_view) == [icons.raw_data_icon_button]
 
 
-def test_closing_the_help_window_restores_the_highlight(main_view):
+@pytest.fixture
+def help_open(main_view, mocker):
+    mocker.patch("poriscope.views.main_view.HelpCentre")
     main_view.add_page("RawDataView", QWidget())
     main_view.sync_sidebar_highlight("RawDataView")
-    icons = main_view.icon_menu_widget
-    icons.help_icon_button.setChecked(True)
-    assert icons.raw_data_icon_button.isChecked() is False
-    main_view.on_help_window_closed(QCloseEvent())
-    assert _checked_icons(main_view) == [icons.raw_data_icon_button]
+    return main_view
+
+
+def test_help_icon_is_highlighted_alongside_the_page_icon(help_open):
+    icons = help_open.icon_menu_widget
+    icons.help_icon_button.click()
+    assert help_open.help_window is not None
+    assert icons.help_icon_button.isChecked()
+    assert icons.raw_data_icon_button.isChecked()
+    assert help_open.text_menu_widget.help_text_button.isChecked()
+
+
+def test_help_icon_stays_highlighted_when_another_page_icon_is_clicked(help_open):
+    icons = help_open.icon_menu_widget
+    icons.help_icon_button.click()
+    icons.event_analysis_icon_button.click()
+    assert icons.help_icon_button.isChecked()
+    assert icons.event_analysis_icon_button.isChecked()
+    assert not icons.raw_data_icon_button.isChecked()
+
+
+def test_clicking_help_again_keeps_it_highlighted_while_the_window_is_open(help_open):
+    icons = help_open.icon_menu_widget
+    icons.help_icon_button.click()
+    icons.help_icon_button.click()
+    assert icons.help_icon_button.isChecked()
+
+
+def test_clicking_help_again_brings_the_open_window_to_the_front(help_open):
+    icons = help_open.icon_menu_widget
+    icons.help_icon_button.click()
+    window = help_open.help_window
+    window.reset_mock()
+    icons.help_icon_button.click()
+    window.raise_.assert_called_once_with()
+    window.activateWindow.assert_called_once_with()
+    help_open.text_menu_widget.help_text_button.click()
+    assert window.raise_.call_count == 2
+
+
+def test_help_opened_from_the_menu_bar_highlights_the_icon_too(help_open):
+    help_open.on_help_button_click()
+    assert help_open.icon_menu_widget.help_icon_button.isChecked()
+    assert help_open.text_menu_widget.help_text_button.isChecked()
+
+
+def test_closing_the_help_window_turns_only_the_help_icon_off(help_open):
+    icons = help_open.icon_menu_widget
+    icons.help_icon_button.click()
+    help_open.on_help_window_closed(QCloseEvent())
+    assert not icons.help_icon_button.isChecked()
+    assert icons.raw_data_icon_button.isChecked()
+
+
+def test_clearing_the_page_highlight_leaves_the_help_icon_alone(help_open):
+    icons = help_open.icon_menu_widget
+    icons.help_icon_button.click()
+    help_open.clear_sidebar_highlight()
+    assert icons.help_icon_button.isChecked()
+    assert not icons.raw_data_icon_button.isChecked()
+
+
+class _TabWithoutWalkthrough(QWidget, WalkthroughMixin):
+    """Like a MetaView subclass that never wrote a walkthrough."""
+
+    def __init__(self):
+        super().__init__()
+        self._init_walkthrough()
+
+
+class _TabWithMismatchedSteps(_TabWithoutWalkthrough):
+    def get_current_view(self):
+        return "MismatchedTab"
+
+    def get_walkthrough_steps(self):
+        return [("T", "d", "SomeOtherName", lambda: [self])]
+
+
+@pytest.mark.parametrize(
+    "tab_class, page_name",
+    [
+        (_TabWithoutWalkthrough, "NoWalkthroughTab"),
+        (_TabWithMismatchedSteps, "MismatchedTab"),
+    ],
+)
+def test_a_walkthrough_that_cannot_start_does_not_lock_the_app(
+    main_view, mocker, tab_class, page_name
+):
+    mocker.patch("poriscope.views.main_view.HelpCentre")
+    main_view.add_page(page_name, tab_class())
+    main_view.add_page("Other", QWidget())
+    main_view.switch_to_page(page_name)
+    main_view.launch_walkthrough_if_needed()
+    assert main_view._walkthrough_active is False
+    main_view._request_page_switch("Other")
+    assert main_view.get_current_view() == "Other"
+    main_view.icon_menu_widget.help_icon_button.click()
+    assert main_view.help_window is not None
+
+
+@pytest.mark.parametrize(
+    "tab_class, page_name",
+    [
+        (_TabWithoutWalkthrough, "NoWalkthroughTab"),
+        (_TabWithMismatchedSteps, "MismatchedTab"),
+    ],
+)
+def test_tutorial_on_a_page_with_no_walkthrough_says_so(
+    main_view, mocker, tab_class, page_name
+):
+    intro = mocker.patch("poriscope.views.main_view.IntroDialog")
+    box = mocker.patch("poriscope.views.main_view.QMessageBox")
+    main_view.add_page(page_name, tab_class())
+    main_view.show_walkthrough_intro()
+    box.information.assert_called_once()
+    assert "no tutorial" in box.information.call_args.args[2]
+    intro.assert_not_called()
+    assert main_view._walkthrough_active is False
+
+
+def test_tutorial_on_a_page_with_a_walkthrough_still_shows_the_intro(main_view, mocker):
+    class TabWithSteps(_TabWithoutWalkthrough):
+        def get_current_view(self):
+            return "StepsTab"
+
+        def get_walkthrough_steps(self):
+            return [("T", "d", "StepsTab", lambda: [self])]
+
+    intro = mocker.patch("poriscope.views.main_view.IntroDialog")
+    box = mocker.patch("poriscope.views.main_view.QMessageBox")
+    main_view.add_page("StepsTab", TabWithSteps())
+    main_view.show_walkthrough_intro()
+    box.information.assert_not_called()
+    intro.return_value.exec.assert_called_once()
+
+
+def test_tutorial_on_a_page_that_is_not_a_view_says_so(main_view, mocker):
+    intro = mocker.patch("poriscope.views.main_view.IntroDialog")
+    box = mocker.patch("poriscope.views.main_view.QMessageBox")
+    main_view.add_page("PlainPage", QWidget())
+    main_view.show_walkthrough_intro()
+    box.information.assert_called_once()
+    intro.assert_not_called()
 
 
 def test_analysis_tabs_icon_is_blocked_during_a_milestone(main_view):
@@ -659,6 +799,7 @@ def test_help_icon_is_blocked_during_a_milestone(main_view):
     main_view.icon_menu_widget.help_icon_button.click()
     assert main_view.help_window is None
     assert main_view.icon_menu_widget.help_icon_button.isChecked() is False
+    assert main_view.text_menu_widget.help_text_button.isChecked() is False
 
 
 def test_analysis_tabs_icon_still_requests_the_list_when_nothing_is_active(main_view):

@@ -266,7 +266,8 @@ class IconTextMenuWidget(QWidget):
         button.setIcon(icon)
         button.setIconSize(QSize(iconSize, iconSize))
         button.setCheckable(True)
-        button.setAutoExclusive(True)
+        # Help opens a window and is not a page, so it is not in the one-at-a-time group.
+        button.setAutoExclusive(objectName != "help")
         button.toggled.connect(lambda checked: self.emitSignal(objectName, checked))
 
         layout.addWidget(button)
@@ -313,9 +314,10 @@ class IconTextMenuWidget(QWidget):
     @log(logger=logger)
     def uncheckAll(self) -> None:
         """
-        Uncheck whichever sidebar menu button is currently highlighted, if any.
+        Uncheck whichever sidebar page button is currently highlighted, if any.
 
-        These buttons are all ``autoExclusive`` and share this widget as their
+        The Help button is left alone: it is not a page and stays highlighted for as long as
+        the Help window is open. The other buttons are all ``autoExclusive`` and share this widget as their
         parent, so Qt treats them as one radio-button-style group: a plain
         ``setChecked(False)`` is a no-op on the sole checked member, since Qt
         refuses to leave an autoExclusive group with nothing checked once
@@ -327,7 +329,6 @@ class IconTextMenuWidget(QWidget):
             self.event_analysis_text_button,
             self.metadata_text_button,
             self.plugins_text_button,
-            self.help_text_button,
             self.settings_text_button,
         ):
             if button.isChecked():

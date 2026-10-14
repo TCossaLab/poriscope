@@ -77,7 +77,6 @@ class WalkthroughMixin:
         Skips to the relevant section depending on the current view.
         """
         self.logger.debug("Walkthrough launched")
-        self._walkthrough_active = True
         self._walkthrough_index = 0
 
         current_view = self.get_current_view()
@@ -86,8 +85,11 @@ class WalkthroughMixin:
         # Ensure we are on a valid view for the walkthrough
         if current_view not in [step[2] for step in self._global_walkthrough_steps]:
             self.logger.error(f"Walkthrough cannot start from '{current_view}'")
-            self._walkthrough_active = False
+            # Whoever launched this (MainView holds its own flag from the launch) is told
+            # it ended, or it would wait for a walkthrough that never started.
+            self.walkthrough_finished.emit(current_view, False)
             return
+        self._walkthrough_active = True
 
         # Find starting point in the steps list
         for i, step in enumerate(self._global_walkthrough_steps):
