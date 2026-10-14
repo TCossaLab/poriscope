@@ -224,6 +224,8 @@
 
 * **Export Subset - CSV now takes a raw SQL filter:** it writes the events the query names in each selected channel, and refuses a filter that does not use `:experiment_id` and `:channel_id`, saying how to fix it
 
+* A raw filter that leaves out a column its plot needs now says how to add it, including the join for a column of another table such as `sublevel_duration`
+
 * The missing-`event_id` message for a raw filter now shows the query with `event_id` added, for a plain one-row-per-event `SELECT`; the filter dialog's hint and the guide's raw examples start with `event_id`
 
 * The raw filter warning about rows from other channels now names an unbracketed `OR` as a cause, not only a subquery, and shows the fix

@@ -92,6 +92,11 @@ Tab state onto the Models, heavy work off the GUI thread, event-finder and CUSUM
 
 ### Analysis tabs
 
+- **A raw filter's computed or aliased columns cannot be chosen on a plot axis.** The axis
+  menus are filled from the loader's own column list (`metadatacontrols.update_axes:671`), so
+  `max_blockage - min_blockage AS blockage_range` is returned but never selectable (found in a
+  manual pass; the tests set the axis column directly and cannot see it). List the selected raw
+  filter's result columns beside the database's.
 - **Auto-binned histogram overlays re-bin the earlier datasets.** With bins left empty,
   `MetadataModel.overlaid_histograms:450` estimates bins from all overlaid datasets, so each added
   dataset changes the first one's edges (measured on `develop`: 4 bins 56 wide alone, 7 at 32 with

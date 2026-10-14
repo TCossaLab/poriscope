@@ -81,8 +81,10 @@ Saved as: ``<subset_name>_assisted``
 
    Assisted mode handles cross-table filters automatically but cannot put a
    ``GROUP BY`` or ``HAVING`` on the query itself, and cannot return computed
-   columns (e.g., ``max_blockage - min_blockage AS blockage_range``). Use Raw SQL
-   for those cases. Aggregation *inside a subquery* does work - see Example 6.
+   columns (e.g., ``max_blockage - min_blockage AS blockage_range``); Raw SQL can
+   return them, with the limit on plotting them described under its Example 6.
+   A computed *condition* such as ``max_blockage - min_blockage > 500`` works in either
+   mode. Aggregation *inside a subquery* does work - see Example 6.
 
    Text compared against a column is left exactly as you type it, so
    ``sequence = 'duration'`` matches the literal value ``duration`` and is not
@@ -240,6 +242,14 @@ Fractional blockage — blockage normalised to baseline current:
    SELECT event_id, duration, max_blockage / ABS(baseline_current) AS fractional_blockage FROM events
    WHERE experiment_id = :experiment_id AND channel_id = :channel_id
 
+.. note::
+
+   The query returns these columns, but the **axis menus list only the database's own
+   columns**, so ``blockage_range`` and ``fractional_blockage`` cannot be chosen on an axis,
+   and a plot cannot use them yet. What a computed column is good for today is the
+   ``WHERE``, where it works in Assisted too, or reading the result in a viewer by pasting the
+   query Poriscope echoes on the status panel.
+
 Saved as: ``<subset_name>_raw``
 
 .. warning::
@@ -350,8 +360,8 @@ Only in Assisted, or only in Raw
      - Only Raw
    * - No SQL beyond a condition, and no placeholders: the Scope is added for you
      - Aggregates and grouping as the plotted result (``GROUP BY``, ``DISTINCT``): one row per group
-   * - A column of ``sublevels`` or ``experiments`` joins in by itself
-     - Computed columns (``max_blockage - min_blockage AS blockage_range``)
+   * - Any column of any table can go on an axis, and a condition on it joins the table by itself (``sublevel_duration``, ``voltage``)
+     - Computed columns in the result (``max_blockage - min_blockage AS blockage_range``); the axis menus do not list them, so they cannot be plotted yet
    * - An ``OR`` or a ``--`` comment cannot widen the scope
      - ``ORDER BY``, ``LIMIT`` and ``OFFSET`` on the plotted rows, applied within each channel
    * - Every plot works: Poriscope chooses the columns and the event ids
@@ -367,10 +377,11 @@ selects any set of events a raw filter can, including window functions, ``WITH``
 that compare an event with its own channel: for example the longest 10% of events in each
 channel is
 ``e.id IN (SELECT id FROM (SELECT id, NTILE(10) OVER (PARTITION BY experiment_id, channel_id
-ORDER BY duration DESC) AS t FROM events) WHERE t = 1)``. What Raw adds is the *shape of the
-result*: computed columns, columns from several tables, and aggregates as the plotted values.
-For Plot Events, the arrows and the event plots only the events matter, so the two modes can
-name the same ones.
+ORDER BY duration DESC) AS t FROM events) WHERE t = 1)``. What Raw adds is control of the
+*result*: computed columns, columns from several tables, and aggregates. The axis menus list
+only the database's own columns, so today a plot can use only those, selected by the query;
+the rest is for reading the result in a viewer. For Plot Events, the arrows and the event plots
+only the events matter, so the two modes can name the same ones.
 
 Which plots take a filter
 ~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -385,7 +396,7 @@ Which plots take a filter
    * - Update Plot: Histogram, Normalized and Categorical Histogram, Kernel Density, Heatmap,
        Scatterplot, 3D Scatterplot
      - Works
-     - Needs the plotted columns in the result. Drawn once for each ticked channel
+     - Needs the plotted columns in the result; a column of another table (``sublevel_duration``) needs a join, which the status panel shows. Drawn once for each ticked channel
    * - Update Plot: Raw and Filtered All Points Histograms (and normalized)
      - Works
      - Needs ``event_id``. Drawn once for each ticked channel
