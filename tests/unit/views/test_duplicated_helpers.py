@@ -506,14 +506,18 @@ class TestRebuildEventIdCacheWasPromoted:
         view.add_text_to_display.emit.assert_not_called()
 
     @pytest.mark.parametrize("view_cls", SUBSET_TABS, ids=lambda c: c.__name__)
-    def test_no_result_at_all_is_an_error(
+    def test_no_result_at_all_is_logged_below_the_dialog_level(
         self, qapp: object, view_cls: type, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """``None`` means the query could not be built or run, not an empty subset."""
+        """
+        ``None`` means the query could not be built or run, not an empty subset. The
+        Controller has said why on the status panel, so the View logs it as a WARNING,
+        which raises no dialog, instead of reporting the same failure a second time.
+        """
         view = build_subset_tab(view_cls)
         answer_query_with(view, None)
 
-        with caplog.at_level(logging.ERROR):
+        with caplog.at_level(logging.WARNING):
             assert (
                 view._rebuild_event_id_cache(
                     "loader", "dwell > 1", None, None, "subset"
@@ -522,6 +526,7 @@ class TestRebuildEventIdCacheWasPromoted:
             )
 
         assert "Could not query event ids" in caplog.text
+        assert all(r.levelno < logging.ERROR for r in caplog.records)
 
     @pytest.mark.parametrize("view_cls", SUBSET_TABS, ids=lambda c: c.__name__)
     @pytest.mark.parametrize(

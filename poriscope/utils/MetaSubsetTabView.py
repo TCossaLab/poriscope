@@ -793,12 +793,20 @@ class MetaSubsetTabView(MetaView):
                 self.__class__.__name__,
             )
             return False
-        if result is None or "event_id" not in result.columns:
-            # None means the query could not be built or run at all, and a
-            # populated result with no event_id means the loader did not honour
-            # its own contract - both are real problems rather than an empty
-            # subset. Logged at ERROR so QtHandler raises its dialog from the
-            # place that can tell the two apart.
+        if result is None:
+            # The query could not be built or run at all. The Controller has said why
+            # on the status panel, so this is logged below the level that raises a
+            # dialog rather than reporting the same failure twice.
+            self.logger.warning(
+                f"Could not query event ids for filter {sql_filter!r} - check that "
+                "the columns it names exist in the database"
+            )
+            return False
+        if "event_id" not in result.columns:
+            # A populated result with no event_id means the loader did not honour
+            # its own contract, which is a real problem rather than an empty subset.
+            # Logged at ERROR so QtHandler raises its dialog from the place that can
+            # tell the two apart.
             self.logger.error(
                 f"Could not query event ids for filter {sql_filter!r} - check that "
                 "the columns it names exist in the database"

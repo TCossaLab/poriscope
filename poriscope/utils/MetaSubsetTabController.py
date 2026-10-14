@@ -773,13 +773,21 @@ class MetaSubsetTabController(MetaController):
                 experiments_and_channels,
             )
         except Exception as e:
-            self.logger.error(f"Failed to load the filtered event ids: {e!r}")
+            self.logger.warning(f"Failed to load the filtered event ids: {e!r}")
             self.add_text_to_display.emit(
                 f"Could not read this subset's events from {loader}: {e}",
                 self.__class__.__name__,
             )
             return
 
+        if rows is None:
+            # The loader logs why and answers None rather than raising; without this
+            # the panel said nothing and the View's error was the only report.
+            self.add_text_to_display.emit(
+                f"Could not read this subset's events from {loader}: see the log "
+                "for the SQL error",
+                self.__class__.__name__,
+            )
         self.view.set_event_id_rows(rows)
 
     @log(logger=logger)

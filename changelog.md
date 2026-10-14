@@ -214,6 +214,8 @@
 
 * **A raw SQL subset filter can now be plotted, not only saved:** it is restricted to the experiment and channel selection as a subquery, so its `SELECT` must return `experiment_id` and `channel_id` (and `id` for event plots); a plot missing a column it needs says which on the status panel, and Plot Events, the arrows and Protein's Plot Histogram take their events from its `event_id` column
 
+* The Metadata and Protein event navigation (Plot Events, the arrows) now reports a failure to read a subset's events on the status panel only, instead of also raising an error dialog
+
 ### Documentation:
 
 * The API reference no longer lists `NanoTrees`' helper classes as event fitters
