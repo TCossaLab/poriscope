@@ -222,6 +222,8 @@
 
 * The subset filter dialog shows a hint in Raw SQL mode on adding `:experiment_id` and `:channel_id` to follow the Scope selection
 
+* Export Subset - CSV now refuses a raw SQL filter with a message naming it, instead of failing with a SQL syntax error
+
 * **A raw SQL filter can only read the database:** a statement that writes, including one behind `WITH`, is refused, and the loader's read connections can no longer write
 
 * The Metadata and Protein event navigation (Plot Events, the arrows) now reports a failure to read a subset's events on the status panel only, instead of also raising an error dialog

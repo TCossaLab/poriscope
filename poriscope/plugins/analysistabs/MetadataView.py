@@ -2449,6 +2449,9 @@ class MetadataView(MetaSubsetTabView):
         """
         Open a dialog to export a filtered subset of the dataset.
 
+        A raw SQL filter is refused with a message: it is a complete ``SELECT``, and the
+        export puts the filter in a ``WHERE``.
+
         :param loader: Name of the active database loader.
         :type loader: str
         :param filters: Dict of named subset filters; only a single filter may be selected for export. Typed loosely because the body rebinds this name to the single selected filter string.
@@ -2460,6 +2463,16 @@ class MetadataView(MetaSubsetTabView):
         if filters is not None and len(filters) > 1:
             self.add_text_to_display.emit(
                 "Select a single filter to export a subset", self.__class__.__name__
+            )
+            return
+
+        raw_names = [name for name in filters or {} if name.endswith("_raw")]
+        if raw_names:
+            self.add_text_to_display.emit(
+                f"Export Subset - CSV cannot use the raw SQL filter {raw_names[0]}: "
+                "it is a complete SELECT, not a condition on the events to write. "
+                "Select an Assisted filter, or none to export the whole selection",
+                self.__class__.__name__,
             )
             return
 

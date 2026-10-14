@@ -614,3 +614,36 @@ def test_the_name_a_refused_export_kept_is_reused_by_the_next_one(
         _StubDictDialog.__init__ = original_init  # type: ignore[method-assign]
 
     assert offered == ["Subset_0", "Subset_0"]
+
+
+@pytest.mark.timeout(90)
+def test_a_raw_filter_is_refused_for_export_with_a_message_and_no_files(
+    metadata_tab: Triad, tmp_path: Path
+) -> None:
+    """
+    A raw filter is a complete SELECT, not a condition on the events to write.
+
+    Spliced into the export's ``WHERE`` it was a bare syntax error. Refused up front it
+    says so, names the filter, and neither opens the dialog nor spends an export index.
+    """
+    out = tmp_path / "export_raw"
+    out.mkdir()
+    view = metadata_tab.tab_view
+    view.subset_filters["mine_raw"] = "SELECT event_id FROM events"
+    combo = view._subset_controls.filter_comboBox
+    combo.addItem("mine_raw")
+    combo.selectItem("mine_raw", select=True)
+    messages: List[str] = []
+    view.add_text_to_display.connect(lambda text, source: messages.append(text))
+    before = view.subset_export_count
+
+    _StubDictDialog.folder = str(out)
+    _StubDictDialog.subset_name = "raw_subset"
+    view.selected_experiment_and_channels_by_loader[LOADER_KEY] = {"exp_a": [0]}
+    view.handle_parameter_change(
+        "metadatacontrols", "export_csv_subset", ({"db_loader": LOADER_KEY},)
+    )
+
+    assert list(out.glob("*.csv")) == []
+    assert view.subset_export_count == before
+    assert any("mine_raw" in text and "raw SQL filter" in text for text in messages)

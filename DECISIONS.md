@@ -914,7 +914,7 @@ sublevel's key is its parent event's, so a join is safe. Only a read is run: the
 validator accepts any statement, and `WITH x AS (SELECT 1) DELETE FROM events` emptied a scratch
 database (Python's SQLite module opens a transaction only for statements that start with
 `INSERT`/`UPDATE`/`DELETE`, so it committed). Poriscope refuses any writing keyword, and the loader's
-two read connections set `PRAGMA query_only = ON`. **Revisit if** users keep omitting the placeholders.
+two read connections set `PRAGMA query_only = ON`. Measured on 600,000 events (300,000 per channel, `events` table only): one channel reads in 0.54 s raw against 0.93 s Assisted, and the navigation list takes 2.7 s raw against 1.0 s, the difference being the check that every key exists in `events`; both are paid when the filter or channel changes. Export Subset - CSV refuses a raw filter by name: its builder puts the filter body in a `WHERE`, and a `SELECT` there was a syntax error. **Revisit if** users keep omitting the placeholders, or ask to export a raw subset.
 
 ---
 

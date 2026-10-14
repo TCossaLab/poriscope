@@ -122,7 +122,7 @@ Step 4: Generate and Export
 
 .. tip::
 
-   Use “Export Subset” to isolate and save only the events that meet your filtering criteria. This is ideal for downstream machine learning or further statistical analysis.
+   Use “Export Subset” to isolate and save only the events that meet your filtering criteria. This is ideal for downstream machine learning or further statistical analysis. It takes an Assisted filter or none; a Raw SQL filter is refused with a message, because it is a complete query rather than a condition on the events to write.
 
 Step 5: Inspect Individual Events
 ---------------------------------
