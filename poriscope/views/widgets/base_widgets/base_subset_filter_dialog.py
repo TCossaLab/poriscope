@@ -97,6 +97,16 @@ class BaseSubsetFilterDialog(QDialog):
             self.assisted_radio.setEnabled(False)
             self.raw_radio.setEnabled(False)
 
+        self.raw_hint = QLabel(
+            "To follow the Scope selection: add WHERE experiment_id = :experiment_id "
+            "AND channel_id = :channel_id. Without it, the filter ignores the Scope "
+            "selection."
+        )
+        self.raw_hint.setWordWrap(True)
+        layout.addWidget(self.raw_hint)
+        self.raw_radio.toggled.connect(self.raw_hint.setVisible)
+        self.raw_hint.setVisible(self.raw_radio.isChecked())
+
         self.filter_input = QTextEdit()
         self.filter_input.setPlainText(self.default_filter)
         layout.addWidget(QLabel("Filter:"))

@@ -220,6 +220,8 @@
 
 * **A raw SQL filter that ends in its own `LIMIT` can now be saved:** the check added `LIMIT 0` to its text, which made it a syntax error
 
+* The subset filter dialog shows a hint in Raw SQL mode on adding `:experiment_id` and `:channel_id` to follow the Scope selection
+
 * **A raw SQL filter can only read the database:** a statement that writes, including one behind `WITH`, is refused, and the loader's read connections can no longer write
 
 * The Metadata and Protein event navigation (Plot Events, the arrows) now reports a failure to read a subset's events on the status panel only, instead of also raising an error dialog

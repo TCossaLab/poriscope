@@ -240,6 +240,8 @@ Creating a Filter
 1. Click the **➕** button next to the Filter dropdown.
 2. Enter a **name** for the filter.
 3. Select the mode using the **Assisted SQL** or **Raw SQL** radio buttons.
+   In Raw SQL mode the dialog reminds you to add ``WHERE experiment_id = :experiment_id AND channel_id = :channel_id``
+   to follow the Scope selection.
 4. Enter the filter expression or query in the **Filter** field.
 5. Click **OK**.
 
