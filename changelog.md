@@ -212,6 +212,8 @@
 
 * **A page switch blocked while the tutorial is running (walkthroughs and milestones) no longer builds the tab or leaves the sidebar highlight on the clicked page**, so no tab you never reached is saved into the session; the Settings, analysis-tabs and Help sidebar icons are blocked the same way
 
+* Closing the analysis-tabs dropdown or the Help window now puts the sidebar highlight back on the page that is showing
+
 ### Documentation:
 
 * The plugin guide now says a tab's view and model must be named `<Name>View` and `<Name>Model` after its controller, and that a tab's own walkthrough runs inside that tab, does not chain to others, and ends on its last step or the dialog's close button
