@@ -121,11 +121,10 @@ A few things are yours to provide:
   only one ignores half of it; the same rows are drawn for every channel, and the status panel
   says so. A placeholder in a subquery only does not scope the main table: if the result has
   ``experiment_id`` or ``channel_id``, rows from other channels are counted on the panel. With
-  nothing selected a query that uses a placeholder is refused, since there is nothing to put in.
-  The Scope starts empty and cannot be emptied again once you have chosen one, so a raw filter runs
-  on the whole database, as one dataset, only before a Scope is chosen in the session, and only if
-  it is written without the placeholders. With a Scope chosen, a query without them draws the same
-  rows once for each ticked channel and the panel warns.
+  nothing selected a query that uses a placeholder is refused, since there is nothing to put in;
+  that happens only for a database with no experiments, because the Scope starts with every
+  experiment and channel ticked and always keeps at least one. A query without the placeholders
+  draws the same rows once for each ticked channel, so tick a single channel if you want it once.
   The plots that work on one channel at a time (the event overlays, Plot Events, the arrows and
   the Protein tab) ask you to select a single channel when several are ticked.
 * **The plot's own columns.** A plot needs the columns you chose on its axes: if the query does
@@ -359,9 +358,9 @@ Only in Assisted, or only in Raw
      - Columns from several tables in one result (a join's output)
    * - The Scope selection cannot be forgotten
      - The query you wrote is the one that runs, so you can paste it into a viewer
-   * - Before a Scope is chosen, the filter runs on the whole database as one dataset
-     - Before a Scope is chosen a query that uses the placeholders is refused; to run on the
-       whole database, write it without them
+   * - The filter is drawn once for each ticked channel
+     - The same, when it uses the placeholders; without them the same rows are drawn once for
+       each ticked channel
 
 Which *events* a filter selects is never the difference. A subquery in an Assisted condition
 selects any set of events a raw filter can, including window functions, ``WITH`` and queries
