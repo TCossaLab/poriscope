@@ -157,6 +157,32 @@ def test_rows_with_null_scope_columns_are_not_dropped_without_saying_so(
 
 
 @pytest.mark.timeout(120)
+def test_rows_with_a_null_event_id_are_reported_not_dropped_silently(
+    controller: MetadataController, sample_metadata_db: str
+) -> None:
+    """
+    A CASE can leave event_id NULL on some rows, which then name no event. They are left
+    out of the plot, and the panel says how many.
+    """
+    sql = (
+        "SELECT experiment_id, channel_id, "
+        "CASE WHEN event_id % 2 = 0 THEN event_id END AS event_id FROM events"
+    )
+
+    out = controller._raw_filter_conditions("L", sql, SCOPE_CH0, "x_raw")
+
+    assert out is not None
+    panel = " ".join(controller.panel)  # type: ignore[attr-defined]
+    assert "NULL" in panel and "left out" in panel
+    with sqlite3.connect(sample_metadata_db) as conn:
+        total = conn.execute(
+            "SELECT COUNT(*) FROM events WHERE channel_id = 0"
+        ).fetchone()[0]
+    odd = total - len([1 for r in range(total) if r % 2 == 0])
+    assert odd > 0
+
+
+@pytest.mark.timeout(120)
 @pytest.mark.parametrize("scope", [None, {}])
 def test_with_no_scope_a_raw_filter_returns_what_an_assisted_one_does(
     controller: MetadataController, scope: Any

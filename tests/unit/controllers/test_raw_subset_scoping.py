@@ -26,6 +26,7 @@ from poriscope.plugins.analysistabs.MetadataController import MetadataController
 from poriscope.plugins.analysistabs.MetadataModel import MetadataModel
 from poriscope.plugins.analysistabs.ProteinController import ProteinController
 from poriscope.plugins.analysistabs.ProteinModel import ProteinModel
+from poriscope.utils.MetaSubsetTabController import relabelled_keys
 from poriscope.utils.MetaSubsetTabModel import MetaSubsetTabModel
 from tests.unit.controllers._recording_model import RecordingModel
 
@@ -290,6 +291,110 @@ class TestRawFilterLoadsItsOwnEvents:
             ("duration < 300", SCOPE)
         ]
         assert fetched == ("SELECT generated", generator)
+
+
+@pytest.mark.parametrize(
+    ("sql", "expected"),
+    [
+        ("SELECT experiment_id, channel_id, level_id AS event_id FROM sublevels", 1),
+        ("SELECT experiment_id, channel_id, e.event_id AS event_id FROM events e", 0),
+        ("SELECT experiment_id, channel_id, event_id FROM events", 0),
+        ("select experiment_id, channel_id, (event_id + 1) as EVENT_ID from t", 1),
+        ("SELECT f(a, b) AS event_id, experiment_id, channel_id FROM t", 1),
+        (
+            "SELECT CASE WHEN x > 1 THEN experiment_id END AS experiment_id, "
+            "channel_id, event_id FROM events",
+            1,
+        ),
+        (
+            "SELECT experiment_id, channel_id, event_id FROM "
+            "(SELECT experiment_id, channel_id, level_id AS event_id FROM sublevels)",
+            1,
+        ),
+        ("SELECT duration AS d, experiment_id, channel_id, event_id FROM events", 0),
+    ],
+)
+def test_a_key_column_made_by_renaming_another_is_found(
+    sql: str, expected: int
+) -> None:
+    """
+    ``level_id AS event_id`` is found, wherever it sits; the key itself, qualified or
+    not, and renames of other columns are not.
+    """
+    assert len(relabelled_keys(sql)) == expected
+
+
+@pytest.mark.parametrize("cls", [MetadataController, ProteinController])
+class TestRawFilterKeyWarnings:
+    """
+    What a raw filter's event key can get wrong without the database noticing.
+    """
+
+    def test_a_relabelled_key_is_warned_about_and_still_plots(
+        self, cls: type, mocker: MockerFixture
+    ) -> None:
+        """
+        Nothing can check that a renamed column was meant, so it is a warning, not a
+        refusal - and the events it names still load.
+        """
+        generator = iter([])
+        controller = _controller(cls, mocker, answers(load_event_data=generator))
+        sql = "SELECT experiment_id, channel_id, level_id AS event_id FROM sublevels"
+
+        fetched = controller._fetch_event_subset("ldr", sql, SCOPE, "mine_raw")
+
+        assert fetched is not None
+        assert "labels 'level_id' as event_id" in _said(controller)
+
+    def test_a_key_that_is_not_relabelled_says_nothing(
+        self, cls: type, mocker: MockerFixture
+    ) -> None:
+        """
+        No warning for the ordinary query.
+        """
+        controller = _controller(cls, mocker, answers())
+
+        controller._fetch_event_subset("ldr", RAW, SCOPE, "mine_raw")
+
+        assert "labels" not in _said(controller)
+
+    def test_rows_with_a_null_key_are_counted_on_the_panel(
+        self, cls: type, mocker: MockerFixture
+    ) -> None:
+        """
+        A NULL event_id names no event, so the row is left out - and the panel says so
+        instead of dropping it silently.
+        """
+        with_nulls = KEYS.copy()
+        with_nulls["event_id"] = [10.0, None, 11.0, None]
+        controller = _controller(cls, mocker, answers())
+        # probe, run, NULL count, then the events table's own answer for the key check
+        replies = iter([with_nulls, with_nulls, with_nulls, KEYS])
+        controller.model.call = lambda *a: (
+            next(replies)
+            if a[2] == "query_database_directly"
+            else {
+                "get_experiment_id_by_name": 7,
+                "construct_event_data_query": ("SELECT generated", ""),
+            }.get(a[2], iter([]))
+        )
+
+        controller._fetch_event_subset("ldr", RAW, SCOPE, "mine_raw")
+
+        assert "2 row(s)" in _said(controller)
+        assert "left out" in _said(controller)
+
+    def test_no_null_key_means_no_message(
+        self, cls: type, mocker: MockerFixture
+    ) -> None:
+        """
+        The count is only worth a line when it is above zero.
+        """
+        controller = _controller(cls, mocker, answers())
+
+        controller._fetch_event_subset("ldr", RAW, SCOPE, "mine_raw")
+
+        assert "left out" not in _said(controller)
 
 
 @pytest.mark.parametrize("cls", [MetadataController, ProteinController])

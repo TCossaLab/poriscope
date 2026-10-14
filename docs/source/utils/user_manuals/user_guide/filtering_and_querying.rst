@@ -125,6 +125,9 @@ is a complete ``SELECT``, a few things are yours to provide:
   does not: it is a different row in each table, so a query that returns only ``id`` is
   asked for the key instead. A key that names no event in the database, such as a level
   number labelled ``event_id``, is refused.
+  A key column the query makes by renaming another expression (``level_id AS event_id``)
+  draws a warning on the status panel, since nothing can check that it was meant, and rows
+  whose key is ``NULL`` name no event: they are left out and the panel says how many.
 * **One column per name.** If your query joins tables, ``SELECT *`` returns both tables'
   columns, and a plot cannot tell which duplicate of a plotted column you mean. A query
   that returns a column the plot reads more than once is refused with a message saying

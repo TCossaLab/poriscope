@@ -45,6 +45,50 @@ from poriscope.utils.MetaSubsetTabView import MetaSubsetTabView
 EVENT_KEY = ("experiment_id", "channel_id", "event_id")
 
 
+def relabelled_keys(sql: str) -> List[Tuple[str, str]]:
+    """
+    Find event key columns a query produces by renaming something else.
+
+    ``level_id AS event_id`` says its values are events', and nothing can check that
+    they were meant to be: when they happen to name real events they load without a
+    word. Reads the text only - an alias without ``AS`` or a rename built any other way
+    goes unseen - so it is a warning, never a refusal. A column that is the key itself,
+    possibly qualified (``e.event_id AS event_id``), is not a rename.
+
+    :param sql: the user's query
+    :type sql: str
+    :return: ``(expression, alias)`` for each key column labelled from another expression
+    :rtype: List[Tuple[str, str]]
+    """
+    found: List[Tuple[str, str]] = []
+    pattern = r"\bAS\s+[\"`\[]?(experiment_id|channel_id|event_id)[\"`\]]?(?!\w)"
+    for match in re.finditer(pattern, sql, re.IGNORECASE):
+        alias = match.group(1).lower()
+        prefix = sql[: match.start()]
+        depth = 0
+        start = 0
+        for i in range(len(prefix) - 1, -1, -1):
+            char = prefix[i]
+            if char == ")":
+                depth += 1
+            elif char == "(":
+                if depth == 0:
+                    start = i + 1
+                    break
+                depth -= 1
+            elif depth == 0 and (
+                char == ","
+                or re.search(r"\b(SELECT|DISTINCT)\s*$", prefix[: i + 1], re.IGNORECASE)
+            ):
+                start = i + 1
+                break
+        expression = prefix[start:].strip()
+        plain = rf"(?:[\w\"`\[\]]+\.)?[\"`\[]?{alias}[\"`\]]?"
+        if not re.fullmatch(plain, expression, re.IGNORECASE):
+            found.append((expression, alias))
+    return found
+
+
 class MetaSubsetTabController(MetaController):
     """
     Shared base for the Controllers of the two database-backed analysis tabs.
@@ -590,7 +634,7 @@ class MetaSubsetTabController(MetaController):
 
     @log(logger=logger)
     def _raw_event_keys(
-        self, rows: pd.DataFrame, subset_name: str
+        self, rows: pd.DataFrame, sql_filter: str, subset_name: str
     ) -> Optional[pd.DataFrame]:
         """
         Read the events a raw result names from their key, ``experiment_id``, ``channel_id``, ``event_id``.
@@ -604,8 +648,14 @@ class MetaSubsetTabController(MetaController):
 
         Reports its own refusal and answers with None.
 
+        A row with a ``NULL`` in the key names no event and is left out, and the panel
+        says how many. A key column the query makes by renaming another expression is
+        warned about, since nothing can check that it was meant.
+
         :param rows: the raw filter's result
         :type rows: pd.DataFrame
+        :param sql_filter: the filter's complete ``SELECT``, read for renamed key columns
+        :type sql_filter: str
         :param subset_name: the filter's name, for the message
         :type subset_name: str
         :return: one row per distinct event, with the three columns as integers, or None if one is missing
@@ -630,6 +680,20 @@ class MetaSubsetTabController(MetaController):
                 for name in columns
             }
         )
+        for expression, alias in relabelled_keys(sql_filter):
+            self.add_text_to_display.emit(
+                f"{subset_name}'s query labels {expression!r} as {alias}, so the plot "
+                f"takes it as the event's own {alias}. If it is not, the wrong events "
+                "are plotted",
+                self.__class__.__name__,
+            )
+        unnamed = int(keys.isna().any(axis=1).sum())
+        if unnamed:
+            self.add_text_to_display.emit(
+                f"{unnamed} row(s) of {subset_name}'s query have a NULL experiment_id, "
+                "channel_id or event_id, so they name no event and were left out",
+                self.__class__.__name__,
+            )
         return keys.dropna().astype(int).drop_duplicates()
 
     @log(logger=logger)
@@ -729,7 +793,7 @@ class MetaSubsetTabController(MetaController):
         if ran is None:
             return None
         rows, executed = ran
-        keys = self._raw_event_keys(rows, subset_name)
+        keys = self._raw_event_keys(rows, sql_filter, subset_name)
         if keys is None:
             return None
         if keys.empty:
@@ -785,7 +849,7 @@ class MetaSubsetTabController(MetaController):
         if ran is None:
             return
         rows, _ = ran
-        keys = self._raw_event_keys(rows, subset_name)
+        keys = self._raw_event_keys(rows, sql_filter, subset_name)
         if keys is None or not self._event_keys_exist(loader, keys, subset_name):
             return
         self.view.set_event_id_rows(keys[["event_id"]].drop_duplicates())
