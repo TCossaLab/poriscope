@@ -489,7 +489,7 @@ def test_a_dataset_whose_query_ignores_the_scope_says_so_in_its_label(
     labels = list(metadata_tab.tab_view.hist_labels)
 
     assert labels
-    assert all(label.endswith("(query ignores Scope)") for label in labels)
+    assert all(label.endswith("(rows not limited to this channel)") for label in labels)
 
     metadata_tab.tab_view.handle_parameter_change(
         "metadatacontrols", "reset_plot", ({},)
@@ -497,5 +497,6 @@ def test_a_dataset_whose_query_ignores_the_scope_says_so_in_its_label(
     plot(metadata_tab, "long_raw", "duration", ["0"])
 
     assert not any(
-        "ignores Scope" in label for label in metadata_tab.tab_view.hist_labels
+        "not limited to this channel" in label
+        for label in metadata_tab.tab_view.hist_labels
     )

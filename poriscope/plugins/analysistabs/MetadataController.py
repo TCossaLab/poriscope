@@ -687,7 +687,7 @@ class MetadataController(MetaSubsetTabController):
         self.view.update_plot_data(plot_data)
         self.view.set_column_units(units)
         self.view.set_scope_note(
-            " (query ignores Scope)"
+            " (rows not limited to this channel)"
             if experiments_and_channels and not ran.scoped
             else ""
         )

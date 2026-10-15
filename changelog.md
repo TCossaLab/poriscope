@@ -230,7 +230,7 @@
 
 * The raw filter warning about rows from other channels now names an unbracketed `OR` as a cause, not only a subquery, and shows the fix
 
-* A column plot of a raw filter that does not use the Scope selection now adds `(query ignores Scope)` to its legend label, since its rows are not those of the channel it is named after
+* A column plot of a raw filter that does not use the Scope selection now adds `(rows not limited to this channel)` to its legend label
 
 * A raw filter warning is shown again when the same mistake is made after a run with nothing to warn about, and the refusal of a filter that does not start with `SELECT` or that writes now names what it starts with or contains and says it may only read
 

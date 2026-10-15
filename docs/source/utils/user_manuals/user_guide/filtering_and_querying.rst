@@ -428,7 +428,7 @@ damage the database, and each is either warned about or easy to check:
 
 1. **The placeholders are left out, or only one is used.** The filter ignores the Scope
    selection, wholly or in part, and the same rows are drawn for every channel. The status
-   panel warns, the legend entries of a column plot say ``(query ignores Scope)`` because the
+   panel warns, the legend entries of a column plot say ``(rows not limited to this channel)`` because the
    rows are not that channel's, and an export is refused. Start from the dialog's hint line.
 2. **The placeholders sit in a subquery only.** The main table is not scoped. If the result
    has ``experiment_id`` or ``channel_id`` the panel counts the rows from other channels; if
