@@ -810,18 +810,23 @@ class MetaSubsetTabController(MetaController):
             query = bind_scope(query, experiment, channel)
             if used != {"experiment_id", "channel_id"}:
                 missing = ({"experiment_id", "channel_id"} - used).pop()
+                effect = (
+                    "each dataset includes every channel of that experiment, not only "
+                    "the one selected"
+                    if missing == "channel_id"
+                    else "each dataset also includes that channel number from every "
+                    "other experiment"
+                )
                 self._warn_once(
                     f"{subset_name}'s query uses :{next(iter(used))} but not :{missing}"
-                    ", so the same rows are drawn for every "
-                    f"{'channel of that experiment' if missing == 'channel_id' else 'experiment'}"
-                    f". Add {missing} = :{missing} to its WHERE"
+                    f", so {effect}. Add {missing} = :{missing} to its WHERE"
                 )
         elif pairs:
             self._warn_once(
                 f"{subset_name}'s query does not use :experiment_id or :channel_id, so "
-                "it ignores the Scope selection and the same rows are drawn for every "
-                "selected channel. Add experiment_id = :experiment_id AND channel_id = "
-                ":channel_id to its WHERE"
+                "it ignores the Scope selection: every currently selected experiment and "
+                "channel is showing the same rows. Add experiment_id = :experiment_id AND "
+                "channel_id = :channel_id to its WHERE"
             )
         try:
             rows = self.model.call(

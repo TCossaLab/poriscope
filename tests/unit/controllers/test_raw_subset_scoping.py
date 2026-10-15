@@ -334,6 +334,14 @@ class TestRawFilterScopesItself:
         assert run is not None and not run.scoped
         assert f"uses :{only} but not :{missing}" in _said(controller)
         assert f"Add {missing} = :{missing}" in _said(controller)
+        if missing == "channel_id":
+            assert "every channel of that experiment, not only the one selected" in (
+                _said(controller)
+            )
+        else:
+            assert "that channel number from every other experiment" in _said(
+                controller
+            )
 
     def test_with_no_selection_a_query_that_needs_one_is_refused(
         self, cls: type, mocker: MockerFixture
@@ -402,6 +410,7 @@ class TestRawFilterScopesItself:
             controller._run_raw_filter("ldr", UNSCOPED, {"exp1": [channel]}, "mine_raw")
 
         assert _said(controller).count("ignores the Scope selection") == 1
+        assert "is showing the same rows" in _said(controller)
 
     def test_a_query_that_is_fixed_and_then_broken_again_is_warned_about_again(
         self, cls: type, mocker: MockerFixture

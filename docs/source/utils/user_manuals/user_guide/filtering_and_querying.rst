@@ -120,8 +120,10 @@ channel's rows, and a raw filter is drawn once for each channel selected, as an 
 A few things are yours to provide:
 
 * **Use both placeholders.** A query that uses neither ignores the selection, and one that uses
-  only one ignores half of it; the same rows are drawn for every channel, and the status panel
-  says so. A placeholder in a subquery only does not scope the main table: if the result has
+  only one ignores half of it. With no placeholders the same rows are drawn for every channel; with
+  only ``:channel_id`` each dataset also holds that channel number from every other experiment; with
+  only ``:experiment_id`` each holds every channel of that experiment. The status panel says so.
+  A placeholder in a subquery only does not scope the main table: if the result has
   ``experiment_id`` or ``channel_id``, rows from other channels are counted on the panel. With
   nothing selected a query that uses a placeholder is refused, since there is nothing to put in;
   that happens only for a database with no experiments, because the Scope starts with every
@@ -428,7 +430,7 @@ damage the database, and each is either warned about or easy to check:
 
 1. **The placeholders are left out, or only one is used.** The filter ignores the Scope
    selection, wholly or in part, and the same rows are drawn for every channel. The status
-   panel warns, the legend entries of a column plot say ``(rows not limited to this channel)`` because the
+   panel warns, the legend entries of a column plot say ``(rows not limited to this experiment and channel)`` because the
    rows are not that channel's, and an export is refused. Start from the dialog's hint line.
 2. **The placeholders sit in a subquery only.** The main table is not scoped. If the result
    has ``experiment_id`` or ``channel_id`` the panel counts the rows from other channels; if
