@@ -240,9 +240,7 @@ def test_a_raw_filter_that_ignores_the_selection_is_warned_about_and_still_plots
     with sqlite3.connect(sample_metadata_db) as conn:
         everything = conn.execute("SELECT COUNT(*) FROM events").fetchone()[0]
     assert len(view.plot_data) == everything
-    assert (
-        "ignores the Scope selection" in metadata_tab.tab_controller._last_scope_warning
-    )
+    assert "has no effect on it" in metadata_tab.tab_controller._last_scope_warning
 
 
 @pytest.mark.timeout(120)

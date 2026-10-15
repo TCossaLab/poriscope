@@ -282,7 +282,7 @@ class TestLoadRawMetadataSubset:
 
         assert controller.model.calls_to("query_database_directly") == [(plain,)]
         controller.view.set_query.assert_called_once_with(plain, "raw query")
-        assert "ignores the Scope selection" not in panel_text(controller)
+        assert "has no effect on it" not in panel_text(controller)
 
     def test_placeholders_with_no_selection_are_refused(
         self, controller: MetadataController
@@ -309,7 +309,7 @@ class TestLoadRawMetadataSubset:
             "ldr", ["duration"], "SELECT duration FROM events", SCOPE, "q_raw"
         )
 
-        assert "ignores the Scope selection" in panel_text(controller)
+        assert "has no effect on it" in panel_text(controller)
         controller.view.update_plot_data.assert_called_once()
 
     def test_a_plotted_column_returned_twice_is_refused(

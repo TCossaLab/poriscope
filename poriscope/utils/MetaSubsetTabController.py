@@ -821,14 +821,6 @@ class MetaSubsetTabController(MetaController):
                     f"{subset_name}'s query uses :{next(iter(used))} but not :{missing}"
                     f", so {effect}. Add {missing} = :{missing} to its WHERE"
                 )
-        elif pairs:
-            self._warn_once(
-                f"{subset_name}'s query does not use :experiment_id or :channel_id, so "
-                "it ignores the Scope selection and runs on the whole database: each "
-                "selected experiment and channel is plotted with everything the query "
-                "finds, not with its own rows. Add experiment_id = :experiment_id AND "
-                "channel_id = :channel_id to its WHERE"
-            )
         try:
             rows = self.model.call(
                 "MetaDatabaseLoader", loader, "query_database_directly", query
@@ -847,6 +839,15 @@ class MetaSubsetTabController(MetaController):
                 self.__class__.__name__,
             )
             return None
+        if pairs and not used:
+            self._warn_once(
+                f"{subset_name}'s query does not use :experiment_id or :channel_id, so "
+                "the Scope selection has no effect on it: the query runs on the whole "
+                f"database, and each selected experiment and channel is plotted with all "
+                f"{len(rows)} rows it finds, instead of only its own. Add experiment_id = "
+                ":experiment_id AND channel_id = :channel_id to its WHERE to plot each "
+                "pair's own rows"
+            )
         scoped = used == {"experiment_id", "channel_id"}
         if scoped and experiment is not None and channel is not None:
             self._warn_about_leaks(rows, (experiment, channel, label), subset_name)

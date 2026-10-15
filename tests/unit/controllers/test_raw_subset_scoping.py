@@ -314,7 +314,7 @@ class TestRawFilterScopesItself:
 
         assert run is not None and not run.scoped
         assert "does not use :experiment_id or :channel_id" in _said(controller)
-        assert "ignores the Scope selection" in _said(controller)
+        assert "has no effect on it" in _said(controller)
 
     @pytest.mark.parametrize(
         ("only", "missing"),
@@ -409,9 +409,10 @@ class TestRawFilterScopesItself:
         for channel in (1, 2, 3):
             controller._run_raw_filter("ldr", UNSCOPED, {"exp1": [channel]}, "mine_raw")
 
-        assert _said(controller).count("ignores the Scope selection") == 1
+        assert _said(controller).count("has no effect on it") == 1
         assert "runs on the whole database" in _said(controller)
-        assert "not with its own rows" in _said(controller)
+        assert "instead of only its own" in _said(controller)
+        assert f"all {len(WHOLE_KEY)} rows it finds" in _said(controller)
 
     def test_a_query_that_is_fixed_and_then_broken_again_is_warned_about_again(
         self, cls: type, mocker: MockerFixture
@@ -426,7 +427,7 @@ class TestRawFilterScopesItself:
         controller._run_raw_filter("ldr", SCOPED, SCOPE, "mine_raw")
         controller._run_raw_filter("ldr", UNSCOPED, SCOPE, "mine_raw")
 
-        assert _said(controller).count("ignores the Scope selection") == 2
+        assert _said(controller).count("has no effect on it") == 2
 
     def test_rows_from_other_channels_are_warned_about(
         self, cls: type, mocker: MockerFixture
@@ -611,7 +612,7 @@ class TestRawFilterLoadsItsOwnEvents:
         fetched = controller._fetch_event_subset("ldr", UNSCOPED, SCOPE, "mine_raw")
 
         assert fetched is not None
-        assert "ignores the Scope selection" in _said(controller)
+        assert "has no effect on it" in _said(controller)
 
     def test_one_condition_per_experiment_and_channel_is_built(
         self, cls: type, mocker: MockerFixture

@@ -361,7 +361,7 @@ def test_with_no_scope_a_raw_filter_returns_what_an_assisted_one_does(
 
     assert run is not None
     assert len(run.rows) == len(assisted) > 0
-    assert "ignores the Scope selection" not in panel_of(controller)
+    assert "has no effect on it" not in panel_of(controller)
 
 
 @pytest.mark.timeout(120)
