@@ -824,8 +824,9 @@ class MetaSubsetTabController(MetaController):
         elif pairs:
             self._warn_once(
                 f"{subset_name}'s query does not use :experiment_id or :channel_id, so "
-                "it ignores the Scope selection: every currently selected experiment and "
-                "channel is showing the same rows. Add experiment_id = :experiment_id AND "
+                "it ignores the Scope selection and runs on the whole database: each "
+                "selected experiment and channel is plotted with everything the query "
+                "finds, not with its own rows. Add experiment_id = :experiment_id AND "
                 "channel_id = :channel_id to its WHERE"
             )
         try:
