@@ -238,6 +238,24 @@ SHAPE_CLOSING = (
     "query, add it yourself."
 )
 
+#: Said after the reason for the two shapes whose fix is not obvious from it: a join
+#: has to name the table, and a grouped or aggregated query keeps one row per event by
+#: moving the grouping into a subquery.
+SHAPE_EXAMPLE = {
+    "join": (
+        "For example: SELECT e.event_id, s.sublevel_duration FROM events e JOIN "
+        "sublevels s ON s.event_db_id = e.id WHERE e.experiment_id = :experiment_id "
+        "AND e.channel_id = :channel_id"
+    ),
+    "group": (
+        "To keep one row for each event, put the grouping in a subquery, for example: "
+        "SELECT event_id, duration FROM events WHERE experiment_id = :experiment_id "
+        "AND channel_id = :channel_id AND id IN (SELECT event_db_id FROM sublevels "
+        "GROUP BY event_db_id HAVING COUNT(*) > 3)"
+    ),
+}
+SHAPE_EXAMPLE["aggregate"] = SHAPE_EXAMPLE["group"]
+
 
 def top_level_words(sql: str) -> List[Tuple[str, int]]:
     """
@@ -1161,14 +1179,21 @@ class MetaSubsetTabController(MetaController):
                 if "aggregate" in words:
                     # One row for many events is a fact about the query, not a caution,
                     # and it covers any grouping beside it.
-                    advice = f"Not added for you, because {SHAPE_ADVICE['aggregate']}."
+                    advice = (
+                        f"Not added for you, because {SHAPE_ADVICE['aggregate']}. "
+                        f"{SHAPE_EXAMPLE['aggregate']}"
+                    )
                 elif any(word in SHAPE_ADVICE for word in words):
                     reasons = [SHAPE_ADVICE[w] for w in words if w in SHAPE_ADVICE]
                     advice = (
-                        "Not added for you, because "
-                        + "; and ".join(reasons)
-                        + f". {SHAPE_CLOSING}"
+                        "Not added for you, because " + "; and ".join(reasons) + "."
                     )
+                    example = next(
+                        (SHAPE_EXAMPLE[w] for w in words if w in SHAPE_EXAMPLE), None
+                    )
+                    if example is not None:
+                        advice += f" {example}"
+                    advice += f" {SHAPE_CLOSING}"
                 else:
                     advice = (
                         "Add it to the SELECT, for example SELECT event_id FROM events "

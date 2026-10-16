@@ -203,7 +203,8 @@ also update your filters file.
 
 For any other query, nothing is offered or changed, because adding ``event_id`` could change its rows
 or break it. The panel names the word it found (``GROUP BY``, ``DISTINCT``, an aggregate, ``UNION``
-or a join) and why Poriscope left the query alone, and a ``GROUP BY`` that returns
+or a join) and why Poriscope left the query alone, with an example of the fix for a join or a grouped
+query, and a ``GROUP BY`` that returns
 ``event_id`` without grouping by the event is warned about, and so is an aggregate that returns it.
 The check is automatic and cautious: if
 you know adding ``event_id`` is right for your query, add it yourself.

@@ -1056,6 +1056,61 @@ def test_the_missing_event_id_message_shows_the_users_query_with_it_added(
     assert "add it yourself" in _said(controller)
 
 
+@pytest.mark.parametrize("cls", [MetadataController, ProteinController])
+@pytest.mark.parametrize(
+    ("sql", "reason", "example"),
+    [
+        (
+            "SELECT e.duration FROM events e JOIN sublevels s ON s.event_db_id = e.id",
+            "it joins tables",
+            "SELECT e.event_id, s.sublevel_duration FROM events e JOIN",
+        ),
+        (
+            "SELECT duration FROM events GROUP BY duration",
+            "it uses GROUP BY",
+            "put the grouping in a subquery",
+        ),
+        (
+            "SELECT AVG(duration) FROM events",
+            "it uses an aggregate",
+            "put the grouping in a subquery",
+        ),
+    ],
+)
+def test_a_join_or_grouped_query_is_shown_how_to_keep_one_row_per_event(
+    cls: type, mocker: MockerFixture, sql: str, reason: str, example: str
+) -> None:
+    """
+    The two shapes whose fix the reason does not spell out are given an example.
+    """
+    controller = _event_controller(cls, mocker, pd.DataFrame({"duration": [1.0]}))
+
+    assert controller._fetch_event_subset("ldr", sql, SCOPE, "mine_raw") is None
+    said = _said(controller)
+    assert reason in said
+    assert example in said
+
+
+@pytest.mark.parametrize("cls", [MetadataController, ProteinController])
+def test_a_union_or_distinct_query_is_given_no_example(
+    cls: type, mocker: MockerFixture
+) -> None:
+    """
+    Their reasons already say what to do, and the user decides: no example is added, and
+    the caution is kept.
+    """
+    for sql in [
+        "SELECT duration FROM events UNION SELECT duration FROM events",
+        "SELECT DISTINCT duration FROM events",
+    ]:
+        controller = _event_controller(cls, mocker, pd.DataFrame({"duration": [1.0]}))
+
+        assert controller._fetch_event_subset("ldr", sql, SCOPE, "mine_raw") is None
+        assert "For example" not in _said(controller)
+        assert "subquery" not in _said(controller)
+        assert "add it yourself" in _said(controller)
+
+
 SCOPE_TEXT = "experiment_id = :experiment_id AND channel_id = :channel_id"
 
 

@@ -236,7 +236,7 @@
 
 * The refusal of a raw filter that does not start with `SELECT` or that writes now names what it starts with or contains and says it may only read
 
-* A plot that needs `event_id` from a plain raw filter that lacks it now asks whether to add it and carries on when you say yes; the advice ignores `GROUP BY`, `DISTINCT` and `UNION` inside a subquery or a function, names the word that stops it being added, and warns about a `GROUP BY` or aggregate that returns `event_id` without grouping by the event; the question is asked each time
+* A plot that needs `event_id` from a plain raw filter that lacks it now asks whether to add it and carries on when you say yes; the advice ignores `GROUP BY`, `DISTINCT` and `UNION` inside a subquery or a function, names the word that stops it being added (with an example for a join or a grouped query), and warns about a `GROUP BY` or aggregate that returns `event_id` without grouping by the event; the question is asked each time
 
 * A status-panel line that would only repeat the line directly above it (a warning, a refusal, the echoed query) is now left out; once another line is between, it is shown again, and the missing-`event_id` message says which plots need it
 
