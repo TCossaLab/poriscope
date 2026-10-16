@@ -237,6 +237,7 @@
 * A plot that needs `event_id` from a plain raw filter that lacks it now asks whether to add it and carries on when you say yes; the advice ignores `GROUP BY`, `DISTINCT` and `UNION` inside a subquery or a function, names the word that stops it being added, and warns about a `GROUP BY` or aggregate that returns `event_id` without grouping by the event; the question is asked each time
 * A status-panel line that would only repeat the line directly above it (a warning, a refusal, the echoed query) is now left out; once another line is between, it is shown again, and the missing-`event_id` message says which plots need it
 * Fixed the arrows reusing the event list of an earlier filter text after the `event_id` question was answered Yes and the filter was edited back to the text it had
+* The Filtering and Querying guide is now an overview with a short "Start here", plus a page each for Assisted and Raw SQL filters; it explains how scope works, when each mode fits, how filters are kept in a session and in a filters file, and what leaving the placeholders out does
 
 * The status panel now shows a filter's text when it is added or updated (`Filter 'x' updated to 'x': <query>`), and Plot Events and the event arrows print the query they ran, as Update Plot does
 
