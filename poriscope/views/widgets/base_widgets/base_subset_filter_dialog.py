@@ -27,7 +27,7 @@
 import logging
 from typing import Collection, Optional
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QSize, Qt
 from PySide6.QtWidgets import (
     QButtonGroup,
     QDialog,
@@ -40,6 +40,42 @@ from PySide6.QtWidgets import (
     QTextEdit,
     QVBoxLayout,
     QWidget,
+)
+
+from poriscope.configs.utils import get_icon
+
+#: The info icon beside the mode buttons, tinted for the current theme like the add, edit
+#: and delete buttons. Rendered large and scaled down, so it stays sharp on a high-resolution
+#: screen.
+INFO_ICON = "info-circle.svg"
+INFO_ICON_RENDER_SIZE = 64
+INFO_ICON_SIZE = 16
+
+#: Grey example shown in the empty filter box, by mode.
+ASSISTED_PLACEHOLDER = "e.g. duration > 150"
+RAW_PLACEHOLDER = (
+    "e.g. SELECT event_id, duration FROM events WHERE duration > 150 "
+    "AND experiment_id = :experiment_id AND channel_id = :channel_id"
+)
+
+#: What the info mark beside the mode buttons says when hovered, by mode.
+ASSISTED_INFO = (
+    "<p>Write only the <b>condition</b>, for example <b>duration &gt; 150</b>. "
+    "Poriscope adds the experiment and channel scope and chooses the columns for "
+    "you.</p>"
+    "<p>For more details, see <b>Help</b> → <b>Help</b> → <b>Documentation</b>, "
+    "then <b>User Guide</b> → <b>Filtering and Querying</b> → "
+    "<b>Assisted SQL filters</b>.</p>"
+)
+RAW_INFO = (
+    "<p>To follow the <b>Scope selection</b>, add <b>WHERE experiment_id = "
+    ":experiment_id AND channel_id = :channel_id</b>. Without it, the filter ignores "
+    "the Scope selection.</p>"
+    "<p>Start with <b>SELECT event_id, ...</b> so Plot Events and event plots work, "
+    "unless the query uses DISTINCT, GROUP BY or UNION.</p>"
+    "<p>For more details, see <b>Help</b> → <b>Help</b> → <b>Documentation</b>, "
+    "then <b>User Guide</b> → <b>Filtering and Querying</b> → "
+    "<b>Raw SQL filters</b>.</p>"
 )
 
 
@@ -83,8 +119,16 @@ class BaseSubsetFilterDialog(QDialog):
         self.mode_group.addButton(self.assisted_radio)
         self.mode_group.addButton(self.raw_radio)
 
+        # One info icon after each mode, and only the chosen mode's is shown, so the icon
+        # sits beside the mode it explains. They keep their space when hidden, so the
+        # radio buttons do not move when the mode changes.
+        self.assisted_info = self._info_icon(ASSISTED_INFO)
+        self.raw_info = self._info_icon(RAW_INFO)
         mode_layout.addWidget(self.assisted_radio)
+        mode_layout.addWidget(self.assisted_info)
         mode_layout.addWidget(self.raw_radio)
+        mode_layout.addWidget(self.raw_info)
+        mode_layout.addStretch()
         layout.addLayout(mode_layout)
 
         # Pre-select mode based on existing suffix when editing,
@@ -98,21 +142,10 @@ class BaseSubsetFilterDialog(QDialog):
             self.assisted_radio.setEnabled(False)
             self.raw_radio.setEnabled(False)
 
-        self.raw_hint = QLabel(
-            "To follow the <b>Scope selection</b>: <b>add WHERE experiment_id = "
-            ":experiment_id AND channel_id = :channel_id</b>. Without it, the filter "
-            "ignores the Scope selection.<br>Start with <b>SELECT event_id, ...</b> so "
-            "Plot Events and event plots work, unless the query uses DISTINCT, GROUP BY "
-            "or UNION."
-        )
-        self.raw_hint.setTextFormat(Qt.RichText)
-        self.raw_hint.setWordWrap(True)
-        layout.addWidget(self.raw_hint)
-        self.raw_radio.toggled.connect(self.raw_hint.setVisible)
-        self.raw_hint.setVisible(self.raw_radio.isChecked())
-
         self.filter_input = QTextEdit()
         self.filter_input.setPlainText(self.default_filter)
+        self.raw_radio.toggled.connect(self._show_mode_hints)
+        self._show_mode_hints(self.raw_radio.isChecked())
         layout.addWidget(QLabel("Filter:"))
         layout.addWidget(self.filter_input)
 
@@ -122,6 +155,41 @@ class BaseSubsetFilterDialog(QDialog):
         layout.addWidget(self.button_box)
         self.button_box.accepted.connect(self.try_accept)
         self.button_box.rejected.connect(self.reject)
+
+    def _info_icon(self, tooltip: str) -> QLabel:
+        """
+        Build an info icon that says ``tooltip`` when hovered and keeps its space when hidden.
+
+        :param tooltip: the text to show
+        :type tooltip: str
+        :return: the icon label
+        :rtype: QLabel
+        """
+        icon = QLabel()
+        icon.setPixmap(
+            get_icon(INFO_ICON, size=INFO_ICON_RENDER_SIZE).pixmap(
+                QSize(INFO_ICON_SIZE, INFO_ICON_SIZE), self.devicePixelRatioF()
+            )
+        )
+        icon.setToolTip(tooltip)
+        icon.setCursor(Qt.WhatsThisCursor)
+        policy = icon.sizePolicy()
+        policy.setRetainSizeWhenHidden(True)
+        icon.setSizePolicy(policy)
+        return icon
+
+    def _show_mode_hints(self, raw: bool) -> None:
+        """
+        Show the example and the info icon that belong to the chosen mode.
+
+        :param raw: True when Raw SQL is chosen
+        :type raw: bool
+        """
+        self.raw_info.setVisible(raw)
+        self.assisted_info.setVisible(not raw)
+        self.filter_input.setPlaceholderText(
+            RAW_PLACEHOLDER if raw else ASSISTED_PLACEHOLDER
+        )
 
     def try_accept(self) -> None:
         name = self.name_input.text().strip()

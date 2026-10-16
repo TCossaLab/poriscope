@@ -26,7 +26,7 @@
 import os
 import tempfile
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import QApplication
 
@@ -40,7 +40,7 @@ LIGHT_MODE_ICON_COLOR = "#000000"
 
 # Icon load/theme results are cached so repeated get_icon() calls for the
 # same (name, resolved color) so repeated calls are cheap.
-_icon_cache: dict[tuple[str, str], QIcon] = {}
+_icon_cache: dict[tuple[str, str, int | None], QIcon] = {}
 
 # Disk cache for tinted icons written out as real files, for callers that
 # need a filesystem path rather than a QIcon (Qt stylesheet "image: url()"
@@ -125,7 +125,7 @@ def _fade_pixmap(pixmap: QPixmap, opacity: float) -> QPixmap:
     return faded
 
 
-def get_icon(name: str, color: str | None = None) -> QIcon:
+def get_icon(name: str, color: str | None = None, size: int | None = None) -> QIcon:
     """
     Load an icon by filename from the icons directory, tinted for the
     current theme (or an explicit color override).
@@ -140,6 +140,11 @@ def get_icon(name: str, color: str | None = None) -> QIcon:
         bypassing theme detection. Leave as None for automatic light/dark
         selection.
     :type color: str | None
+    :param size: Optional pixel size to render a vector icon at. An SVG is
+        otherwise rasterised at its own small size, which Qt stretches and
+        blurs on a high-resolution screen; a size several times the size the
+        icon is shown at (for example 64 for a 16 px icon) keeps it sharp.
+    :type size: int | None
     :return: The loaded, tinted icon, or an empty QIcon if the file is missing.
     :rtype: QIcon
     """
@@ -152,11 +157,14 @@ def get_icon(name: str, color: str | None = None) -> QIcon:
     dark = is_dark_mode()
     resolved_color = color or (DARK_MODE_ICON_COLOR if dark else LIGHT_MODE_ICON_COLOR)
 
-    cache_key = (name, resolved_color)
+    cache_key = (name, resolved_color, size)
     if cache_key in _icon_cache:
         return _icon_cache[cache_key]
 
-    pixmap = QPixmap(path)
+    if size:
+        pixmap = QIcon(path).pixmap(QSize(size, size))
+    else:
+        pixmap = QPixmap(path)
     if pixmap.isNull():
         return QIcon()
 
