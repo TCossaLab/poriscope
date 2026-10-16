@@ -102,6 +102,8 @@
 
 * The plugin compliance test now also checks every override of a concrete base method against the base's signature
 
+* A test now checks that every analysis tab shipped with Poriscope names its controller, model and view `<Name>Controller`, `<Name>Model` and `<Name>View`, which the walkthrough milestone guard relies on
+
 ### Data Plugin API:
 
 * `MetaFilter.get_data_requirements()` lets a filter declare settings the data must match; `BesselFilter` declares its `Samplerate`
@@ -248,9 +250,37 @@
 
 * The Metadata and Protein event navigation (Plot Events, the arrows) now reports a failure to read a subset's events on the status panel only, instead of also raising an error dialog
 
+* **A page switch blocked while the tutorial is running (walkthroughs and milestones) no longer builds the tab or leaves the sidebar highlight on the clicked page**, so no tab you never reached is saved into the session; the Settings, analysis-tabs and Help sidebar icons are blocked the same way
+
+* Closing the analysis-tabs dropdown now puts the sidebar highlight back on the page that is showing
+
+* **The Help icon now stays highlighted for as long as the Help window is open**, alongside the icon of the page you are on, instead of switching off when you click another sidebar icon, and clicking Help while its window is already open brings that window to the front
+
+* **Fixed Help → Tutorial on a tab that has no working walkthrough locking the app**; the tutorial is now treated as not running, so tabs, Settings and Help stay usable
+
+* **Help → Tutorial on a page that has no tutorial now says so**, and points to the core tabs that have one, instead of showing the generic welcome popup and then doing nothing
+
 ### Documentation:
 
+* The tutorial guide now says that switching tabs and opening Settings or Help are unavailable while the tutorial runs, and describes the message shown on a page with no tutorial
+
+* The plugin guide now says a tab's view and model must be named `<Name>View` and `<Name>Model` after its controller, and that a tab's own walkthrough runs inside that tab, does not chain to others, and ends on its last step or the dialog's close button
+
 * The API reference no longer lists `NanoTrees`' helper classes as event fitters
+
+
+## Poriscope 2.0.2: 2026-10-13
+
+### User-Facing Behaviour:
+
+* **Fixed Export Plot Data keeping only the last dataset when several were plotted together in the Metadata tab**, for example in a scatterplot; affects 2.0.0 and 2.0.1, so redo plot-data exports of overlaid datasets
+
+* **Fixed the Protein tab's Export Plot Data leaving out data**: the Ensemble export lacked the measured histogram and one of the two (V, m) solution sets, and the Individual export lacked one of the two (V, m) solution sets; affects 2.0.0 and 2.0.1, so redo those exports
+
+* **Fixed the event-plot and noise-spectrum exports dropping the repeated copy of their shared time or frequency column**, which shifted the other columns; each file again has the same columns in the same order as in 1.9.0
+
+* Whole-number columns (such as `event_id`) in plot-data exports have been written without a decimal point (`1` instead of `1.0`) since 2.0.0, so one file can show both forms; this contradicts the 2.0.0 note that numeric exports were unchanged, the values are the same, and 1.9.0's `1.0` form is not restored
+
 
 ## Poriscope 2.0.1: 2026-10-08
 
@@ -462,6 +492,10 @@
 * The Event Analysis tab now says which event indices were out of range and how many events the channel actually holds, instead of reporting "No data available for plotting"
 
 * **Fixed the Event Analysis tab drawing one loader's fitter's fits over another loader's events**: it now plots the traces without fit overlays and says on the status panel which loader the fitter was fitted on
+
+* **Fit Events in the Event Analysis tab now refuses to run when the selected event fitter belongs to a different event loader than the one selected**: before, it either fit the fitter's own loader's events without saying so, while another loader was shown, or failed with a "No samplerate found for channel" error that did not say the selection was the cause; the status panel now says which loader to use
+
+* **Commit Events in the Event Analysis tab now refuses to run when the selected event loader is not the one the writer's results were fitted on**: before, it either wrote the fitter's own loader's events without saying so, while another loader was shown, or failed with a "No samplerate found for channel" error that did not say the selection was the cause; the status panel now says which loader to select
 
 * An event the Event Analysis tab cannot load, or whose fit features cannot be read, no longer abandons the whole plot: the remaining events are still drawn
 

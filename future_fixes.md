@@ -48,18 +48,6 @@ promotion updates `.duplication-baseline.json` in the same commit; each track ed
 step sections here and its own changelog lines, and rebases onto `develop` before `feature finish`.
 Step 10 waits for both tracks.
 
-### Step 9a - analysis-tab views (Carolina's track)
-
-- **Event Analysis fitting ignores which loader is selected** (flagged by Kyle, 2026-10-09; the
-  trace below is ours). The channel list comes from the selected loader but `start_fitting:493`
-  fits on the fitter's own loader (`fit_events`, `:520`), so a crossed selection may fit channels
-  that loader lacks (not yet measured). The loader never reaches the Controller: `collect_parameters` puts `"loader"` in the dict
-  (`eventAnalysisControls.py:393`) but `_extract_event_fit_parameters:637` drops it, and
-  `fitting_statuses_requested:74` / `fitting_requested:83` are `Signal(str, list, str)`. Thread it
-  through both signals, `_start_eventfitter:550`, `set_fitting_statuses:579`,
-  `request_fitting_statuses:451` and `start_fitting`, then a `get_parents()` check like
-  `load_event_plot`'s becomes possible. What a mismatch should do (refuse, warn, other) is to be ruled.
-
 ### Step 9b - breaking tab designs and the milestone guard (Carolina's track)
 
 - **Action history: record a declared action name, not a method name.** `DECISIONS.md`
@@ -69,12 +57,6 @@ Step 10 waits for both tracks.
   `MetaView.update_actions_from_json:389` (`:396`). Saved action files carry no compatibility
   obligation (Kyle). Declared names, registry dispatch, small JSON-round-trippable arguments, and a
   docstring on `register_action` (`LogDecorator.py:177`, none today). Breaking.
-- **A milestone blocks the page switch but not what caused it.** `MainView.switch_to_page:895`
-  refuses (`:912`) while `_milestone_dialog` is up, but every caller does its work first:
-  `on_raw_data_view_click:611`/`on_event_analysis_click:617`/`on_metadata_click:623` emit
-  `instantiate_analysis_tab` then `sync_sidebar_highlight` then `switch_to_page`;
-  `handle_menu_click:692` and `on_load_analysis_tab_button_click:714` (`:722`) highlight first.
-  Move the guards at `:899-924` into a predicate asked before the handlers act.
 
 ### Step 10 - docs dead-link gate and release prep
 
@@ -119,6 +101,27 @@ Tab state onto the Models, heavy work off the GUI thread, event-finder and CUSUM
   `MetaSubsetTabModel`.
 - **Plot types are bare strings repeated across View, Controls and Model** ("Heatmap"
   6 times in `MetadataView`) and persisted in saved action parameters; an enum would pin them.
+- **Event Analysis channel ticks do not follow the loader.**
+  `MetaEventTabControls.update_channels:98` ticks every channel only when the list is empty
+  (`is_first_load`, `:116`); any later load keeps just the numbers that were already ticked
+  (`:131`). Measured on the real controls: first load `[0,1,2]` -> all ticked; switching to a loader
+  holding `[5,6]` -> none ticked and Fit Events disabled, with nothing saying why. Channel numbers
+  from another recording are not the same channels, so carrying them over is wrong as well as
+  surprising. Decide the rule (tick all on every loader change, or only when nothing carries
+  over) and apply it to `RawDataView.update_channels:1152` if it shares the behaviour.
+- **Event Analysis dropdowns still allow a crossed loader/fitter/writer selection** (S9a.8-S9a.10
+  refuse it after the fact; option 3 of the S9a.8 ruling). Filter the fitter and writer lists to
+  the selected loader from the existing loader-change hook (`EventAnalysisView._handle_other_actions:683`
+  -> `request_loader_channels`), reusing `EventAnalysisController._parent_key`, and apply it again in
+  `update_available_plugins:120` or a plugin change undoes it. Estimate by reading: ~100 lines plus
+  ~15 tests, no new signal. Risks: every combobox's `currentIndexChanged` is wired to
+  `on_parameter_changed` (`eventAnalysisControls.py:87,182,224,272`), so repopulating loops without
+  signal blocking; a restored session selecting a hidden fitter silently falls back to the first
+  one; extra `parameter_changed` history entries; a loader with no fitters shows "No Event
+  Fitter". Keep the S9a.8-S9a.10 guards, since scripts and replayed actions bypass the dropdowns.
+  Needs a ruling on hiding versus greying out mismatched entries. **Not scheduled: first see how
+  the S9a.8-S9a.10 refusals are received, and revisit this if users trip over them or ask for the
+  crossing to be prevented instead.**
 
 ### Fitter performance and logging
 
@@ -297,6 +300,20 @@ absorbs what it needs and stands alone, leaving 20240101 a clean deletion.
 
 ### Numeric input and widgets
 
+- **A disabled OK or action button never says what to fix** (raised 2026-10-10 on creating a
+  fitter). Measured by reading the code: `DictDialog.check_validity:347` (plugin create/edit)
+  disables OK for an empty or out-of-range numeric field, an empty name, or an unchosen file or
+  folder, with no label, tooltip or field highlight, and `NumericLineEdit.isValid` carries the
+  range but never shows it; `TimeWidget._check_validity:171` likewise. The tab controls'
+  `validate_inputs` (Event Analysis `:293`, Raw Data, Metadata, Protein, Clustering) disable
+  Fit/Plot/Commit and only `logger.debug` the reason. `ClusteringSettingsDialog`'s
+  `plot_warning_label` (`clustering_settings_widget.py:570-616`) is the one that does it. Options:
+  (a) a one-line hint under the buttons naming the first problem and its constraint, one helper
+  shared by the dialogs and the tab controls (recommended); (b) a red border plus a tooltip with
+  the range on each bad field; (c) the range as placeholder text; (d) a tooltip on the disabled
+  button itself, which Qt still shows. (a)+(d) cover every case with the least code; (b) needs
+  per-widget state. Settings the plugin itself refuses (`Step Size` 0) already report on the
+  status panel, so this is only the dialog's own checks.
 - **Three validation stacks behave three ways**: `NumericLineEdit` disables OK without
   naming the field, `BaseLineEdit` traps focus (`event.ignore(); self.setFocus()`,
   `BaseLineEdit.py:82-86`), and the bare Qt validators check no range.
@@ -376,6 +393,20 @@ absorbs what it needs and stands alone, leaving 20240101 a clean deletion.
   startup (`main_app.py:122-125`) append the plugin folder and its parent and never remove a
   previous one, so after the folder changes an abandoned folder's module still wins a name clash
   until relaunch.
+- **A user tab's view and model class names are not checked for uniqueness at load, and the page
+  guard guesses a non-dedicated tab's view as `<Name>View`.** `main_model.py:269-283` dedups only the
+  controller; `scripts/new_plugin.py:1687` checks all four names but a hand-written tab skips it. Two
+  user views sharing a bare module name may collide in `sys.modules` (not reproduced).
+  `MainView.on_load_analysis_tab_button_click` guesses the view name from the controller name.
+  Reproduce the collision first. Then read each controller's `view:`/`model:` annotations
+  (`typing.get_type_hints`, no instantiation) in one helper, treating the inherited `MetaView` as
+  undeclared; use it to reject a taken name at load and as the guard's exact page name, falling back
+  to the guess. Makes an optional `view_class` and a base class that builds the view unnecessary.
+- **The walkthrough overlay does not block clicks outside the highlighted widget.**
+  `Overlay` (`walkthrough.py:165`) sets `WA_TransparentForMouseEvents` (`:177`), so only the
+  page-switch refusal and the icon guards in `MainView` stop an out-of-sequence click. Mask
+  everything except the target. The Plugins dropdown is a separate `QMenu` popup the overlay
+  cannot reach, so it needs its own handling.
 
 ### Base-class internals
 

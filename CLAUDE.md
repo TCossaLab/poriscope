@@ -102,6 +102,15 @@ Three rules apply regardless:
   `tests/unit/controllers/` once let a broken commit reach CI. Iterating on a single
   failing test while debugging is fine; the gate is a full green run immediately before
   the commit. Documentation-only changes (docstrings, comments, markdown) need no run.
+- **Gate a merge on a clean copy of the exact commit**, not the shared working tree: run the
+  full suite in a fresh `git worktree add --detach <path> <commit>`, after
+  `python scripts/generate_all_autodoc_rst.py` there (a clean copy lacks the gitignored autodoc,
+  so its 13 tests skip). Why: on 2026-10-10 the duplication ratchet passed in the shared
+  checkout on code that fails it in every clean copy. The cause was not found and cannot be: the
+  checkout's uncommitted and ignored state at that moment was not recorded, and every committed
+  copy fails, so nothing is left to reproduce. A clean copy takes that state out of the result,
+  which is cheaper than hunting for it. If the two ever disagree again, run
+  `git status --ignored` in the shared checkout and keep the output before touching anything.
 - `tests/unit/` mirrors `poriscope/{controllers,models,views,plugins,utils}`, with one
   exception: the analysis-tab triads under `poriscope/plugins/analysistabs/` are tested in
   `tests/unit/views/` and `tests/unit/controllers/`, while `tests/unit/plugins/analysistabs/`

@@ -25,6 +25,7 @@
 # Alejandra Carolina González González
 
 import logging
+import re
 import sys
 from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple
@@ -56,6 +57,7 @@ from poriscope.views.widgets.icon_menu_widget import IconMenuWidget
 from poriscope.views.widgets.text_menu_widget import IconTextMenuWidget
 from poriscope.views.widgets.walkthrough import (
     IntroDialog,
+    NoTutorialDialog,
     Overlay,
     StepDialog,
 )
@@ -543,10 +545,25 @@ class MainView(QMainWindow, WalkthroughMixin):
     # Button Actions
     @log(logger=logger)
     def on_help_button_click(self) -> None:
+        if self._guided_tour_active():
+            self._refuse_page_switch(
+                "Walkthrough or milestone active. The Help window is blocked."
+            )
+            # The Help icon is not in the page group, so it does not go off by itself.
+            self.icon_menu_widget.setHelpUnchecked()
+            self.text_menu_widget.setHelpUnchecked()
+            return
         if self.help_window is None:
             self.help_window = HelpCentre()
             self.help_window.show()
             self.help_window.closeEvent = self.on_help_window_closed
+        else:
+            # Already open: bring it to the front rather than doing nothing.
+            self.help_window.raise_()
+            self.help_window.activateWindow()
+        # Highlighted for as long as the window is open, however it was opened.
+        self.icon_menu_widget.setHelpChecked(True)
+        self.text_menu_widget.setHelpChecked(True)
 
     @log(logger=logger)
     def on_help_window_closed(self, event: QCloseEvent) -> None:
@@ -610,24 +627,26 @@ class MainView(QMainWindow, WalkthroughMixin):
     @log(logger=logger)
     def on_raw_data_view_click(self) -> None:
         self.on_load_analysis_tab_button_click("RawDataController")
-        self.sync_sidebar_highlight("RawDataView")
-        self.switch_to_page("RawDataView")
+        self._request_page_switch("RawDataView")
 
     @log(logger=logger)
     def on_event_analysis_click(self) -> None:
         self.on_load_analysis_tab_button_click("EventAnalysisController")
-        self.sync_sidebar_highlight("EventAnalysisView")
-        self.switch_to_page("EventAnalysisView")
+        self._request_page_switch("EventAnalysisView")
 
     @log(logger=logger)
     def on_metadata_click(self) -> None:
         self.on_load_analysis_tab_button_click("MetadataController")
-        self.sync_sidebar_highlight("MetadataView")
-        self.switch_to_page("MetadataView")
+        self._request_page_switch("MetadataView")
 
     @log(logger=logger)
     def on_plugins_button_click(self) -> None:
         """Emit signal to request analysis tabs from MainController."""
+        if self._guided_tour_active():
+            self._refuse_page_switch(
+                "Walkthrough or milestone active. The analysis tabs list is blocked."
+            )
+            return
         self.logger.info("Plugins button clicked - requesting analysis tabs.")
         # Capture the widget that triggered this click now, since by the time
         # populate_plugins_menu runs (after an async round-trip through
@@ -687,16 +706,21 @@ class MainView(QMainWindow, WalkthroughMixin):
             )  # Center the menu vertically relative to the button
 
             menu.exec(menu_pos)
+            # exec() returns once the menu closes, whether or not an item was chosen.
+            self._restore_sidebar_highlight()
 
     @log(logger=logger)
     def handle_menu_click(self, page_name: str) -> None:
         """Handles clicks on the menu items and switches to the correct view page."""
         self.logger.info(f"Menu item clicked: {page_name}")
-        self.sync_sidebar_highlight(page_name)
-        self.switch_to_page(page_name)
+        self._request_page_switch(page_name)
 
     @log(logger=logger)
     def on_settings_button_click(self) -> None:
+        allowed, reason = self._check_page_switch("Settings")
+        if not allowed:
+            self._refuse_page_switch(reason)
+            return
         self.add_page("Settings", self.settings_window)
         self.switch_to_page("Settings")
         self.get_logging_level()
@@ -712,13 +736,23 @@ class MainView(QMainWindow, WalkthroughMixin):
 
     @log(logger=logger)
     def on_load_analysis_tab_button_click(self, subclass: str) -> None:
-        self.instantiate_analysis_tab.emit(subclass)
         dedicated_view_for_subclass = {
             "RawDataController": "RawDataView",
             "EventAnalysisController": "EventAnalysisView",
             "MetadataController": "MetadataView",
         }
         page_name = dedicated_view_for_subclass.get(subclass, "Plugins")
+        # A tab without a dedicated sidebar button opens a page named after its
+        # view class, which follows the controller's name (ClusteringController
+        # -> ClusteringView); "Plugins" is only the highlight key, not a page.
+        target_page = dedicated_view_for_subclass.get(
+            subclass, subclass.removesuffix("Controller") + "View"
+        )
+        allowed, reason = self._check_page_switch(target_page)
+        if not allowed:
+            self._refuse_page_switch(reason)
+            return
+        self.instantiate_analysis_tab.emit(subclass)
         self.sync_sidebar_highlight(page_name)
 
     # Page management
@@ -891,37 +925,121 @@ class MainView(QMainWindow, WalkthroughMixin):
             wrapper.layout().removeWidget(self.settings_window)
         self.settings_window.setParent(None)
 
+    def _check_page_switch(self, page_name: str) -> Tuple[bool, Optional[str]]:
+        """
+        Decide whether switch_to_page(page_name) would currently proceed.
+
+        Pure predicate - never touches walkthrough or milestone state. A caller that performs
+        work before invoking switch_to_page (instantiating an analysis tab, syncing the
+        sidebar highlight) should check this first and skip that work entirely when it
+        refuses, rather than doing it and then discovering the refusal only inside
+        switch_to_page itself.
+
+        :param page_name: Name of the page a switch is being considered for.
+        :type page_name: str
+        :return: Whether the switch would proceed, and the log message to emit if not.
+        :rtype: Tuple[bool, Optional[str]]
+        """
+        if getattr(self, "_walkthrough_active", False):
+            if not (self._expected_next_view and page_name == self._expected_next_view):
+                return (
+                    False,
+                    f"Walkthrough is active. Page switch to '{page_name}' blocked.",
+                )
+        if self._milestone_dialog is not None:
+            if self._expected_next_view != page_name:
+                return False, (
+                    f"Milestone active. Cannot switch to '{page_name}' "
+                    f"(expected: '{self._expected_next_view}')."
+                )
+        return True, None
+
+    def _guided_tour_active(self) -> bool:
+        """
+        Tell whether a walkthrough or milestone dialog is currently holding the app.
+
+        :return: True while a walkthrough is active or a milestone dialog is showing.
+        :rtype: bool
+        """
+        return (
+            getattr(self, "_walkthrough_active", False)
+            or self._milestone_dialog is not None
+        )
+
+    @log(logger=logger)
+    def _refuse_page_switch(self, reason: Optional[str]) -> None:
+        """
+        Log why a page switch was refused and put the sidebar back on the visible page.
+
+        A sidebar button is checkable, so Qt moves its highlight at the moment of the
+        click, before any handler can refuse. Without this the highlight would sit on a
+        page that never opened.
+
+        :param reason: The refusal message from _check_page_switch.
+        :type reason: Optional[str]
+        """
+        self.logger.info(reason)
+        self._restore_sidebar_highlight()
+
+    @log(logger=logger)
+    def _restore_sidebar_highlight(self) -> None:
+        """
+        Point the sidebar highlight at the page that is showing.
+
+        For a click that does not switch pages (the analysis-tabs dropdown) or whose
+        switch was refused, Qt has already moved the highlight to the clicked button. A main page or a page with no button leaves nothing highlighted.
+        """
+        current_page = self.get_current_view()
+        if current_page not in self.pages or current_page == "MainView":
+            self.clear_sidebar_highlight()
+        elif current_page == "Settings":
+            self.icon_menu_widget.setSettingsChecked(True)
+            self.text_menu_widget.setSettingsChecked(True)
+        else:
+            self.sync_sidebar_highlight(current_page)
+
+    @log(logger=logger)
+    def _request_page_switch(self, page_name: str) -> None:
+        """
+        Sync the sidebar highlight to page_name and switch to it, unless currently refused.
+
+        The single place every caller that wants to highlight-and-switch goes through,
+        rather than calling sync_sidebar_highlight and switch_to_page separately, so a new
+        caller cannot forget the guard - it doesn't have one of its own to forget.
+
+        :param page_name: Name of the page to switch to.
+        :type page_name: str
+        """
+        allowed, reason = self._check_page_switch(page_name)
+        if not allowed:
+            self._refuse_page_switch(reason)
+            return
+        self.sync_sidebar_highlight(page_name)
+        self.switch_to_page(page_name)
+
     @log(logger=logger)
     def switch_to_page(self, page_name: str) -> None:
         """Switch to a different view while enforcing walkthrough and milestone constraints."""
 
-        # Block switching if walkthrough is active and this is not the expected next step
+        allowed, reason = self._check_page_switch(page_name)
+        if not allowed:
+            self._refuse_page_switch(reason)
+            return
+
         if getattr(self, "_walkthrough_active", False):
-            if self._expected_next_view and page_name == self._expected_next_view:
-                self.logger.info(
-                    f"Walkthrough is active and switching to expected view: {page_name}"
-                )
-            else:
-                self.logger.info(
-                    f"Walkthrough is active. Page switch to '{page_name}' blocked."
-                )
-                return
+            self.logger.info(
+                f"Walkthrough is active and switching to expected view: {page_name}"
+            )
 
         # Handle milestone enforcement
         if self._milestone_dialog is not None:
-            if self._expected_next_view != page_name:
-                self.logger.info(
-                    f"Milestone active. Cannot switch to '{page_name}' (expected: '{self._expected_next_view}')."
-                )
-                return
-            else:
-                self.logger.info(f"Switching to expected milestone target: {page_name}")
-                self.clear_milestone_dialog()
-                self._clear_analysis_proxy()
-                self._expected_next_view = None
+            self.logger.info(f"Switching to expected milestone target: {page_name}")
+            self.clear_milestone_dialog()
+            self._clear_analysis_proxy()
+            self._expected_next_view = None
 
-                # Delay walkthrough until after switch
-                QTimer.singleShot(100, self.launch_walkthrough_if_needed)
+            # Delay walkthrough until after switch
+            QTimer.singleShot(100, self.launch_walkthrough_if_needed)
 
         # Final page switch logic
         if page_name in self.pages:
@@ -1022,6 +1140,47 @@ class MainView(QMainWindow, WalkthroughMixin):
         }
         return step_mapping.get(view_name, "You're starting a guided tutorial.")
 
+    def _core_tour_tab_names(self) -> List[str]:
+        """
+        Name the tabs the guided tour walks through, in order, as users read them.
+
+        The names come from the tour's own chain (``get_expected_next_view``) with the
+        camel case of each view name split into words, so there is no second list to keep.
+
+        :return: Display names such as ``"Raw Data"``, ``"Event Analysis"``.
+        :rtype: List[str]
+        """
+        names = []
+        view = self.get_expected_next_view("MainView")
+        while view is not None:
+            names.append(re.sub(r"(?<!^)(?=[A-Z])", " ", view.removesuffix("View")))
+            view = self.get_expected_next_view(view)
+        return names
+
+    def _has_walkthrough(self, view_name: str) -> bool:
+        """
+        Tell whether the page called view_name can run a tutorial.
+
+        The landing page always can, through the milestone that starts the tour. Any other
+        page needs a view that provides walkthrough steps for its own name.
+
+        :param view_name: Name of the page the tutorial was asked for.
+        :type view_name: str
+        :return: True if a tutorial can start on that page.
+        :rtype: bool
+        """
+        if view_name == "MainView":
+            return True
+        page = self.pages.get(view_name)
+        if page is None or not isinstance(page["widget"], WalkthroughMixin):
+            return False
+        widget = page["widget"]
+        try:
+            steps = widget.get_walkthrough_steps()
+            return widget.get_current_view() in [step[2] for step in steps]
+        except NotImplementedError:
+            return False
+
     def show_walkthrough_intro(self, current_view: str = "") -> None:
         if self._walkthrough_active:
             self.logger.info("Walkthrough is already active, skipping intro.")
@@ -1031,6 +1190,10 @@ class MainView(QMainWindow, WalkthroughMixin):
         # and it can derive it itself, so the argument stays optional.
         if not current_view:
             current_view = self.get_current_view()
+        if not self._has_walkthrough(current_view):
+            self.logger.info(f"{current_view} has no walkthrough, skipping intro.")
+            NoTutorialDialog(self, self._core_tour_tab_names()).exec()
+            return
         intro = IntroDialog(self, current_step=current_view)
         intro.start_walkthrough.connect(lambda: self._on_intro_finished(current_view))
         intro.exec()
@@ -1065,7 +1228,13 @@ class MainView(QMainWindow, WalkthroughMixin):
                     view_widget.walkthrough_finished.connect(
                         self._reset_walkthrough_flag
                     )
-                    view_widget.launch_walkthrough()
+                    try:
+                        view_widget.launch_walkthrough()
+                    except NotImplementedError:
+                        # A tab that never wrote a walkthrough inherits mixin defaults
+                        # that raise; without this the flag above would stay set.
+                        self.logger.info(f"{current_view} has no walkthrough.")
+                        self._walkthrough_active = False
                 else:
                     self.logger.info(
                         "Walkthrough already active. Ignoring new request."

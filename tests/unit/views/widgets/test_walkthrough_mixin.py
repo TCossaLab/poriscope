@@ -90,6 +90,24 @@ class TestLaunchWalkthrough:
         w.launch_walkthrough()
         assert w._walkthrough_active is False
 
+    def test_invalid_view_reports_the_walkthrough_as_not_completed(self, qtbot):
+        target = MagicMock(spec=QWidget)
+        steps = [_make_step("OtherView", widget_fn=lambda: target)]
+        w = ConcreteWalkthrough(view="MainView", steps=steps)
+        qtbot.addWidget(w)
+        with qtbot.waitSignal(w.walkthrough_finished) as blocker:
+            w.launch_walkthrough()
+        assert blocker.args == ["MainView", False]
+
+    def test_valid_view_is_active_once_it_has_started(self, qtbot):
+        target = MagicMock(spec=QWidget)
+        steps = [_make_step("MainView", widget_fn=lambda: target)]
+        w = ConcreteWalkthrough(view="MainView", steps=steps)
+        qtbot.addWidget(w)
+        with patch.object(w, "_run_next_walkthrough_step"):
+            w.launch_walkthrough()
+        assert w._walkthrough_active is True
+
     def test_valid_view_sets_index_to_matching_step(self, qtbot):
         target = MagicMock(spec=QWidget)
         steps = [
