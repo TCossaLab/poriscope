@@ -79,6 +79,39 @@ worth its space again.
 
 ---
 
+## 2026-10-16 - A raw filter's name travels with its text through the subset signals
+
+**Context.** A raw filter is told from an Assisted one by its `_raw` name, and the Controller has to
+run it itself: bind the placeholders for each pair, check the result, warn and ask by the filter's
+name, and write an accepted `event_id` back to that filter. The subset and event request signals
+carried only the filter's text, which is all the Assisted path needs, because the loader builds the
+whole query. Protein carried this idea until 2026-09-12: `event_distribution_data_requested` took a
+`subset_name` whose `_raw` suffix picked a separate route for raw filters. The argument was sound;
+the route it fed never worked, because it passed a complete `SELECT` to `load_event_data` as a
+WHERE-clause body, and the 2026-09-12 entry removed both. The name travels again, this time with a
+Controller that runs the query itself.
+
+**Decision** (Carolina, 2026-10-16). Seven signals gained the name as a trailing `str`:
+`event_id_cache_requested`, `all_points_histogram_requested`, `event_overlay_requested`,
+`metadata_subset_requested`, `csv_subset_export_requested`, `event_distribution_data_requested` and
+`ensemble_histogram_requested`, with their slots, `_fetch_event_subset` and `_rebuild_event_id_cache`.
+Each signal is one declaration, one emit and one connect, plus its slot. Listed as breaking in the
+changelog.
+
+**Rejected.** Sniffing the text for `SELECT`: a one-column `SELECT` is accepted in Assisted mode, so
+the text cannot tell the modes apart, and the mode is the name's suffix. Looking the name up in the
+View's filters from the Controller: it reaches into View state where the convention is arguments, and
+identical texts under two names are ambiguous. A one-entry `{name: text}` dict in place of the text:
+it changes an argument's meaning, breaks as much and reads worse. A default value on the Python
+methods: Qt signals have a fixed arity, and an old caller would silently treat a raw filter as
+Assisted.
+
+**Revisit if** someone subclasses `MetaSubsetTabView` or `MetaSubsetTabController` outside this repo
+(today only the Metadata and Protein tabs do). Then carry the mode and name in one small value passed
+unchanged, so the next addition does not change every signal again.
+
+---
+
 ## 2026-10-10 - `format_axis_label` appends a unit; it no longer replaces a different one
 
 **Context.** Three copies (`ProteinView` function, `MetadataView` method, `ClusteringView` inline) stripped
@@ -2484,6 +2517,12 @@ work. Raw filters are refused on both tabs now rather than half-implemented on o
 **Revisit if** raw filters are wanted for real, which is a feature build rather than a fix:
 the filter would have to travel as the whole query rather than as a WHERE-clause body, which
 is a `MetaDatabaseLoader` change and wants its own plan.
+
+**Superseded 2026-10-16** (Carolina): raw filters are wanted and now work, as a complete query run
+with the scope inside it rather than as a WHERE-clause body (see the 2026-09-14 entry). So
+`_refuse_raw_filters` and its six call sites are removed, and the filter's name goes back onto the
+signals, on all of them rather than only Protein's, as it was before this entry (see the 2026-10-16
+entry on the filter's name).
 
 ---
 
