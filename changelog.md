@@ -66,7 +66,7 @@
 
 * **Breaking:** `MetadataModel.calculate_heatmap` now returns the bin edges as a fourth value, and `MetadataView.set_heatmap` takes them as a new `extent` parameter
 
-* **Breaking:** the Metadata and Protein tabs' subset and event request signals (`event_id_cache_requested`, `all_points_histogram_requested`, `event_overlay_requested`, `event_distribution_data_requested`, `ensemble_histogram_requested`, `metadata_subset_requested`), their Controller slots, `_rebuild_event_id_cache` and `_fetch_event_subset` take the selected filter's name as a new last argument, and `MetaSubsetTabView._refuse_raw_filters` is removed
+* **Breaking:** the Metadata and Protein tabs' subset and event request signals (`event_id_cache_requested`, `all_points_histogram_requested`, `event_overlay_requested`, `event_distribution_data_requested`, `ensemble_histogram_requested`, `metadata_subset_requested`, `csv_subset_export_requested`), their Controller slots, `_rebuild_event_id_cache` and `_fetch_event_subset` take the selected filter's name as a new last argument, and `MetaSubsetTabView._refuse_raw_filters` is removed
 
 * **Breaking:** `format_axis_label` is now one `MetaView` method instead of three copies, and it appends the unit rather than replacing a trailing parenthetical, so a column name containing parentheses is no longer truncated; `ProteinView`'s module-level `format_axis_label` is gone
 
