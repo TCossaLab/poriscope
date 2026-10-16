@@ -172,3 +172,55 @@ def test_brackets_inside_strings_and_comments_do_not_count(
 
     assert rows is not None
     assert len(rows) == CHANNEL_0
+
+
+STARTS_WITH_SELECT = [
+    "SELECT event_id FROM events",
+    "select event_id from events where duration > 0",
+    "  \n SELECT * FROM events",
+    "-- a note\nSELECT event_id FROM events",
+    "/* a note */ SELECT event_id FROM events",
+]
+
+
+@pytest.mark.timeout(120)
+@pytest.mark.parametrize("condition", STARTS_WITH_SELECT)
+def test_a_condition_that_starts_with_select_is_refused(
+    loader: SQLiteDBLoader, condition: str
+) -> None:
+    """
+    A complete query in an Assisted filter used to be put inside the ``WHERE`` as a
+    subquery: a one-column one was accepted and selected events by an unrelated test. It
+    is refused, saying the query belongs in Raw SQL mode.
+    """
+    query, debug, _ = loader.construct_metadata_query(
+        ["duration"], condition, {"exp_a": [0]}
+    )
+
+    assert query == ""
+    assert "cannot start with SELECT" in debug
+    assert loader.load_metadata(["duration"], condition, {"exp_a": [0]}) is None
+    assert count_events(loader, condition, {"exp_a": [0]}) == 0
+
+
+@pytest.mark.timeout(120)
+@pytest.mark.parametrize(
+    "condition",
+    [
+        "e.id IN (SELECT event_db_id FROM sublevels)",
+        "duration > 0 AND e.id IN (SELECT event_db_id FROM sublevels)",
+        "(SELECT COUNT(*) FROM sublevels) > 0",
+        "duration > 0 AND selected_note = 'SELECT'",
+    ],
+)
+def test_a_subquery_inside_a_condition_is_still_accepted(
+    loader: SQLiteDBLoader, condition: str
+) -> None:
+    """
+    Only a condition that begins with SELECT is refused; a subquery inside one is not.
+    """
+    query, debug, _ = loader.construct_metadata_query(
+        ["duration"], condition, {"exp_a": [0]}
+    )
+
+    assert "cannot start with SELECT" not in debug

@@ -490,8 +490,9 @@ class MetaDatabaseLoader(BaseDataPlugin):
             # a plot: an event is selected when any of its sublevels matches, and the
             # export then writes all of that event's sublevels.
             aliases = {"events": "e", "sublevels": "s", "experiments": "exp"}
-            if not self._brackets_balance(conditions):
-                raise ValueError("The filter's brackets do not balance")
+            refusal = self._condition_refusal(conditions)
+            if refusal is not None:
+                raise ValueError(refusal)
             qualified = self._qualify_conditions(conditions, aliases)
             ambiguous_id = self._find_ambiguous_id(qualified, aliases)
             if ambiguous_id is not None:
@@ -933,6 +934,37 @@ class MetaDatabaseLoader(BaseDataPlugin):
 
         return "".join(segments)
 
+    #: A condition that opens with its own SELECT, after any comments and spaces.
+    _LEADING_SELECT = re.compile(
+        r"\A(?:\s+|--[^\n]*(?:\n|\Z)|/\*.*?\*/)*select\b",
+        re.IGNORECASE | re.DOTALL,
+    )
+
+    def _condition_refusal(self, fragment: str) -> Optional[str]:
+        """
+        Say why an Assisted condition cannot be used, or None if it can.
+
+        An Assisted filter is a condition, put inside a ``WHERE``. One that begins with
+        ``SELECT`` is a complete query, which SQLite reads there as a subquery giving a
+        single value: a one-column query is accepted and selects events by an unrelated
+        test, while ``SELECT *`` fails with an unhelpful message. A subquery inside a
+        condition (``e.id IN (SELECT ...)``) does not begin with ``SELECT`` and is
+        unaffected. A complete query belongs in Raw SQL mode.
+
+        :param fragment: A WHERE clause body, without the leading ``WHERE``.
+        :type fragment: str
+        :return: the reason to show the user, or None if the condition can be used
+        :rtype: Optional[str]
+        """
+        if self._LEADING_SELECT.match(fragment):
+            return (
+                "An Assisted filter is a condition, not a query, so it cannot start with "
+                "SELECT. Use Raw SQL mode for a complete query"
+            )
+        if not self._brackets_balance(fragment):
+            return "The filter's brackets do not balance"
+        return None
+
     def _brackets_balance(self, fragment: str) -> bool:
         """
         Report whether a condition's brackets open and close in step.
@@ -1188,8 +1220,9 @@ class MetaDatabaseLoader(BaseDataPlugin):
         # "a OR b" would take the selection with only b; and a trailing "--" comment would
         # swallow the selection written after it.
         if conditions:
-            if not self._brackets_balance(conditions):
-                return "", "The filter's brackets do not balance", table_name
+            refusal = self._condition_refusal(conditions)
+            if refusal is not None:
+                return "", refusal, table_name
             base_conditions.append(f"({conditions}\n)")
 
         # Experiment/channel conditions (OR logic between each). Left unqualified
@@ -1293,8 +1326,9 @@ class MetaDatabaseLoader(BaseDataPlugin):
         # "a OR b" would take the selection with only b; and a trailing "--" comment would
         # swallow the selection written after it.
         if conditions:
-            if not self._brackets_balance(conditions):
-                return "", "The filter's brackets do not balance"
+            refusal = self._condition_refusal(conditions)
+            if refusal is not None:
+                return "", refusal
             base_conditions.append(f"({conditions}\n)")
 
         # Experiment/channel conditions (OR logic between each)

@@ -273,7 +273,7 @@ Common Mistakes
      - Rejected at creation: a raw filter has to start with ``SELECT``
      - :ref:`Raw SQL filters <filtering-raw>`
    * - Full ``SELECT`` entered in Assisted mode
-     - It is put inside a ``WHERE`` as a subquery: ``SELECT *`` is refused, but a one-column ``SELECT`` is accepted and does not mean a query
+     - Refused: an Assisted filter cannot start with ``SELECT``, and the message says to use Raw SQL
      - :ref:`Assisted SQL filters <filtering-assisted>`
    * - Raw filter without ``:experiment_id`` / ``:channel_id``
      - Warning on the status panel; each ticked pair is plotted with everything the query finds, and

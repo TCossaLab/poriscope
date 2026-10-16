@@ -130,6 +130,6 @@ Limits and details
 .. warning::
 
    An Assisted filter is a condition, not a query. Poriscope puts what you write inside a ``WHERE``,
-   so a full ``SELECT`` becomes a subquery there: ``SELECT * FROM events`` is refused (it returns
-   several columns), but a one-column ``SELECT`` such as ``SELECT event_id FROM events`` is
-   accepted and means something else than a query. For a complete query, use Raw SQL mode.
+   so a filter that starts with ``SELECT`` is refused, and the message says to use Raw SQL mode for a
+   complete query. A subquery inside a condition, such as ``e.id IN (SELECT event_db_id FROM
+   sublevels)``, is fine.
