@@ -26,6 +26,7 @@ from unittest.mock import MagicMock
 import numpy as np
 import pandas as pd
 import pytest
+from PySide6.QtWidgets import QMessageBox
 from pytest_mock import MockerFixture
 
 from poriscope.plugins.analysistabs.MetadataView import MetadataView
@@ -5707,3 +5708,70 @@ def test_overlay_plot_does_not_reset_a_second_overlay_of_the_same_type(
     )
 
     view._reset_actions.assert_not_called()
+
+
+def test_offer_event_id_changes_the_filter_on_yes_and_says_so(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """
+    The user sees the new text in the question; on yes the filter is replaced and the
+    status panel says it now starts with ``event_id``.
+    """
+    view.subset_filters = {"r_raw": "SELECT duration FROM events"}
+    view.add_text_to_display = mocker.Mock()  # type: ignore[assignment]
+    ask = mocker.patch(
+        "poriscope.utils.MetaSubsetTabView.QMessageBox.question",
+        return_value=QMessageBox.Yes,
+    )
+
+    changed = view.offer_event_id("r_raw", "SELECT event_id, duration FROM events")
+
+    assert changed is True
+    assert view.subset_filters["r_raw"] == "SELECT event_id, duration FROM events"
+    shown = ask.call_args[0][2]
+    assert "r_raw does not return event_id" in shown
+    assert "SELECT event_id, duration FROM events" in shown
+    assert "Use Save Filter to also update your filters file." in shown
+    assert "automatic check, offered for convenience" in shown
+    assert "edit the filter or create a new, more appropriate one yourself" in shown
+    view.add_text_to_display.emit.assert_called_once()
+
+
+def test_offer_event_id_leaves_the_filter_on_no_and_does_not_ask_again(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """
+    A no changes nothing and is remembered for that text, so the same plot is not asked
+    about twice; a different text is asked about afresh.
+    """
+    view.subset_filters = {"r_raw": "SELECT duration FROM events"}
+    view.add_text_to_display = mocker.Mock()  # type: ignore[assignment]
+    ask = mocker.patch(
+        "poriscope.utils.MetaSubsetTabView.QMessageBox.question",
+        return_value=QMessageBox.No,
+    )
+
+    first = view.offer_event_id("r_raw", "SELECT event_id, duration FROM events")
+    second = view.offer_event_id("r_raw", "SELECT event_id, duration FROM events")
+    other = view.offer_event_id("r_raw", "SELECT event_id, max_blockage FROM events")
+
+    assert (first, second, other) == (False, False, False)
+    assert ask.call_count == 2
+    assert view.subset_filters["r_raw"] == "SELECT duration FROM events"
+
+
+def test_revert_event_id_offer_puts_the_text_back_and_says_so(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """
+    When the query with ``event_id`` added cannot be used, the filter returns to what the
+    user had, and the status panel says it was changed back.
+    """
+    view.subset_filters = {"r_raw": "SELECT event_id, duration FROM events"}
+    view.add_text_to_display = mocker.Mock()  # type: ignore[assignment]
+
+    view.revert_event_id_offer("r_raw", "SELECT duration FROM events")
+
+    assert view.subset_filters["r_raw"] == "SELECT duration FROM events"
+    (message, _) = view.add_text_to_display.emit.call_args[0]
+    assert "r_raw was changed back" in message

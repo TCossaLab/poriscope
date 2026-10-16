@@ -215,23 +215,28 @@ SHAPE_WORDS = frozenset(
 #: What to do about each of them when the plot needs ``event_id`` and the query lacks it.
 SHAPE_ADVICE = {
     "group": (
-        "it uses GROUP BY, so each of its rows is a group, not an event: group by the "
-        "event itself and return it (GROUP BY e.event_id, SELECT e.event_id, ...), or "
-        "move the grouping into a subquery"
+        "it uses GROUP BY, so each of its rows is a group: event_id only fits if the "
+        "groups are events"
     ),
-    "distinct": (
-        "it uses DISTINCT, so adding event_id would change which rows are kept: if every "
-        "row is an event, write SELECT DISTINCT e.event_id, ... yourself"
-    ),
+    "distinct": "it uses DISTINCT, so adding event_id could change which rows are kept",
     "union": (
-        "it combines queries (UNION), so every part must return the same columns: add "
-        "event_id to each part"
+        "it combines queries (UNION), so event_id would have to be in every part"
     ),
-    "with": "it uses WITH, so name event_id in its final SELECT",
-    "join": "it joins tables, so name the table: SELECT e.event_id, ...",
+    "with": "it uses WITH, so event_id has to be in its final SELECT",
+    "join": "it joins tables, so event_id has to name the table it comes from",
 }
+SHAPE_ADVICE["aggregate"] = (
+    "it uses an aggregate (COUNT, SUM, AVG, MIN, MAX), so it returns one row for many "
+    "events: there is no single event for this plot to open"
+)
 SHAPE_ADVICE["intersect"] = SHAPE_ADVICE["union"]
 SHAPE_ADVICE["except"] = SHAPE_ADVICE["union"]
+
+#: Said after a reason that is a caution rather than a fact about the query's shape.
+SHAPE_CLOSING = (
+    "This is an automatic, cautious check; if you know adding event_id is right for your "
+    "query, add it yourself."
+)
 
 
 def top_level_words(sql: str) -> List[Tuple[str, int]]:
@@ -244,13 +249,13 @@ def top_level_words(sql: str) -> List[Tuple[str, int]]:
 
     :param sql: the user's query
     :type sql: str
-    :return: the lower-case words at the top level, in order, with their offsets
+    :return: the lower-case words, numbers and commas at the top level, in order, with their offsets
     :rtype: List[Tuple[str, int]]
     """
     found: List[Tuple[str, int]] = []
     depth = 0
     for start, end in code_spans(sql):
-        for match in re.finditer(r"[A-Za-z_]\w*|[()]", sql[start:end]):
+        for match in re.finditer(r"[A-Za-z_]\w*|[(),]|\d+", sql[start:end]):
             token = match.group(0)
             if token == "(":
                 depth += 1
@@ -261,30 +266,41 @@ def top_level_words(sql: str) -> List[Tuple[str, int]]:
     return found
 
 
+#: Functions that fold many rows into one. At the top level of a query without a
+#: ``GROUP BY`` they make a single row, and an ``event_id`` beside one is an arbitrary event.
+AGGREGATES = frozenset({"count", "sum", "avg", "min", "max", "total", "group_concat"})
+
+
 def shape_words(sql: str) -> List[str]:
     """
     Find the top-level words that make a query something other than one row per event.
 
+    A call to an aggregate function is reported as ``aggregate``. One inside a subquery is
+    not at the top level, and neither is a ``MIN`` or ``MAX`` with no brackets after it.
+
     :param sql: the user's query
     :type sql: str
-    :return: ``DISTINCT``, ``GROUP``, ``UNION`` and the like that the query uses, each once, in order, lower case
+    :return: ``DISTINCT``, ``GROUP``, ``UNION``, ``aggregate`` and the like that the query uses, each once, in order, lower case
     :rtype: List[str]
     """
     seen: List[str] = []
-    for word, _ in top_level_words(sql):
-        if word in SHAPE_WORDS and word not in seen:
+    for word, offset in top_level_words(sql):
+        if word in AGGREGATES and sql[offset + len(word) :].lstrip().startswith("("):
+            word = "aggregate"
+        if (word in SHAPE_WORDS or word == "aggregate") and word not in seen:
             seen.append(word)
     return seen
 
 
 def groups_without_event_id(sql: str) -> bool:
     """
-    Report a top-level ``GROUP BY`` whose list does not name ``event_id``.
+    Report a top-level ``GROUP BY`` whose list does not fix one event for each group.
 
-    A query that returns ``event_id`` and groups by something else gets one arbitrary
-    event for each group from SQLite, so the plot can open an event the row does not
-    describe. A ``GROUP BY`` inside a subquery does not count, and neither does one that
-    includes ``event_id``.
+    A query that returns ``event_id`` and groups by something else, such as the channel,
+    gets one arbitrary event for each group from SQLite, so the plot can open an event the
+    row does not describe. Grouping by ``event_id``, by the event's own ``id`` or
+    ``event_db_id``, or by a column position leaves one event in each group, so those do
+    not count, and neither does a ``GROUP BY`` inside a subquery.
 
     :param sql: the user's query
     :type sql: str
@@ -306,7 +322,41 @@ def groups_without_event_id(sql: str) -> bool:
                 }:
                     end = later_offset
                     break
-            return re.search(r"\bevent_id\b", sql[offset:end], re.IGNORECASE) is None
+            grouping = sql[offset:end]
+            fixes_the_event = re.search(
+                r"\b(event_id|id|event_db_id)\b|(?<![\w.])\d+(?![\w.])",
+                grouping,
+                re.IGNORECASE,
+            )
+            return fixes_the_event is None
+    return False
+
+
+def reads_one_event_table(sql: str) -> bool:
+    """
+    Report whether a query reads from exactly one table that carries ``event_id``.
+
+    ``events`` and ``sublevels`` both do (a sublevel's is its parent event's). A comma
+    join, a derived table or any other table would make a suggested ``event_id`` ambiguous
+    or missing, so the suggestion is only made for this plain case.
+
+    :param sql: the user's query
+    :type sql: str
+    :return: True if the top-level ``FROM`` names only ``events`` or ``sublevels``
+    :rtype: bool
+    """
+    tokens = top_level_words(sql)
+    for i, (word, _) in enumerate(tokens):
+        if word != "from":
+            continue
+        if i + 1 >= len(tokens) or tokens[i + 1][0] not in {"events", "sublevels"}:
+            return False
+        for later, _ in tokens[i + 2 :]:
+            if later in {"where", "group", "having", "order", "limit", "join"}:
+                break
+            if later == ",":
+                return False
+        return True
     return False
 
 
@@ -317,7 +367,8 @@ def with_event_id(sql: str) -> Optional[str]:
     Only a suggestion for the user to read: the query is never changed. It is offered for
     a query that has one row per event, and withheld for one whose own rows are grouped
     or combined (``DISTINCT``, ``GROUP BY``, ``UNION``, ``WITH`` or a join at its top
-    level), where adding a column changes the rows or is ambiguous, and for ``SELECT *``.
+    level), where adding a column changes the rows or is ambiguous, for ``SELECT *``,
+    and for a query that does not read from exactly one of ``events`` and ``sublevels``.
     The same words inside a subquery, a function call, a string or a comment do not count.
 
     :param sql: the user's query, with its placeholders as written
@@ -326,7 +377,7 @@ def with_event_id(sql: str) -> Optional[str]:
     :rtype: Optional[str]
     """
     head = re.match(r"\s*select\s+(?!\*)", sql, re.IGNORECASE)
-    if head is None or shape_words(sql):
+    if head is None or shape_words(sql) or not reads_one_event_table(sql):
         return None
     return f"SELECT event_id, {sql[head.end():].strip().rstrip(';')}"
 
@@ -1031,15 +1082,20 @@ class MetaSubsetTabController(MetaController):
                 shown = (
                     suggestion if len(suggestion) <= 300 else suggestion[:300] + "..."
                 )
-                advice = f"Try: {shown}"
+                advice = f"Try (automatic suggestion): {shown}"
             else:
-                reasons = [
-                    SHAPE_ADVICE[word]
-                    for word in shape_words(sql_filter)
-                    if word in SHAPE_ADVICE
-                ]
-                if reasons:
-                    advice = "Not added for you, because " + "; and ".join(reasons)
+                words = shape_words(sql_filter)
+                if "aggregate" in words:
+                    # One row for many events is a fact about the query, not a caution,
+                    # and it covers any grouping beside it.
+                    advice = f"Not added for you, because {SHAPE_ADVICE['aggregate']}."
+                elif any(word in SHAPE_ADVICE for word in words):
+                    reasons = [SHAPE_ADVICE[w] for w in words if w in SHAPE_ADVICE]
+                    advice = (
+                        "Not added for you, because "
+                        + "; and ".join(reasons)
+                        + f". {SHAPE_CLOSING}"
+                    )
                 else:
                     advice = (
                         "Add it to the SELECT, for example SELECT event_id FROM events "
@@ -1173,6 +1229,65 @@ class MetaSubsetTabController(MetaController):
         return False
 
     @log(logger=logger)
+    def _run_raw_event_keys(
+        self,
+        loader: str,
+        sql_filter: str,
+        experiments_and_channels: Optional[Dict[str, Optional[List[int]]]],
+        subset_name: str,
+    ) -> Optional[Tuple[RawRun, pd.DataFrame, str]]:
+        """
+        Run a raw filter and read the event keys of its result, offering to add ``event_id``.
+
+        When the result does not return ``event_id``, the plot cannot go on, and for a
+        plain one-row-per-event ``SELECT`` the fix is to start its column list with it.
+        The user is asked, with the new text in front of them, and on yes the filter is
+        changed and run again, so the plot carries on. A query that groups or combines its
+        rows is never offered one, and neither is one the user has already declined; both
+        get the message that says what to do instead.
+
+        Reports its own failure and answers with None.
+
+        :param loader: the database loader plugin's key
+        :type loader: str
+        :param sql_filter: the filter's complete ``SELECT``
+        :type sql_filter: str
+        :param experiments_and_channels: the experiment and channel scope, or None
+        :type experiments_and_channels: Optional[Dict[str, Optional[List[int]]]]
+        :param subset_name: the filter's name, for the messages
+        :type subset_name: str
+        :return: the run, its event keys and the filter text that was used, or None
+        :rtype: Optional[Tuple[RawRun, pd.DataFrame, str]]
+        """
+        run = self._run_raw_filter(
+            loader, sql_filter, experiments_and_channels, subset_name
+        )
+        if run is None:
+            return None
+        if not any(str(c).lower() == "event_id" for c in run.rows.columns):
+            suggestion = with_event_id(sql_filter)
+            if suggestion is not None and (
+                self.view.offer_event_id(subset_name, suggestion) is True
+            ):
+                original, sql_filter = sql_filter, suggestion
+                run = self._run_raw_filter(
+                    loader, sql_filter, experiments_and_channels, subset_name
+                )
+                if run is None or not any(
+                    str(c).lower() == "event_id" for c in run.rows.columns
+                ):
+                    # The new text is not what was meant to be tried, so the filter goes
+                    # back to what the user had rather than staying changed.
+                    self.view.revert_event_id_offer(subset_name, original)
+                    if run is None:
+                        return None
+                    sql_filter = original
+        keys = self._raw_event_keys(run, sql_filter, subset_name)
+        if keys is None:
+            return None
+        return run, keys, sql_filter
+
+    @log(logger=logger)
     def _raw_filter_conditions(
         self,
         loader: str,
@@ -1204,14 +1319,12 @@ class MetaSubsetTabController(MetaController):
         :return: the condition selecting those events, and the SQL that ran, or None
         :rtype: Optional[Tuple[str, str]]
         """
-        run = self._run_raw_filter(
+        read = self._run_raw_event_keys(
             loader, sql_filter, experiments_and_channels, subset_name
         )
-        if run is None:
+        if read is None:
             return None
-        keys = self._raw_event_keys(run, sql_filter, subset_name)
-        if keys is None:
-            return None
+        run, keys, _ = read
         if keys.empty:
             self.add_text_to_display.emit(
                 f"{subset_name}'s query returned no events, so there is nothing to plot",
@@ -1270,13 +1383,13 @@ class MetaSubsetTabController(MetaController):
         :return: None
         :rtype: None
         """
-        run = self._run_raw_filter(
+        read = self._run_raw_event_keys(
             loader, sql_filter, experiments_and_channels, subset_name
         )
-        if run is None:
+        if read is None:
             return
-        keys = self._raw_event_keys(run, sql_filter, subset_name)
-        if keys is None or not self._event_keys_exist(loader, keys, subset_name):
+        run, keys, _ = read
+        if not self._event_keys_exist(loader, keys, subset_name):
             return
         if run.experiment_id is not None and run.channel is not None:
             keys = keys[

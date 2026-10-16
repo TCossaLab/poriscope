@@ -30,6 +30,7 @@ from poriscope.utils.MetaSubsetTabController import (
     bind_scope,
     code_spans,
     groups_without_event_id,
+    reads_one_event_table,
     relabelled_keys,
     scope_placeholders,
     selected_pairs,
@@ -1041,15 +1042,17 @@ def test_the_missing_event_id_message_shows_the_users_query_with_it_added(
     controller = _event_controller(cls, mocker, pd.DataFrame({"duration": [1.0]}))
 
     assert controller._fetch_event_subset("ldr", plain, SCOPE, "mine_raw") is None
-    assert f"Try: SELECT event_id, {plain[len('SELECT '):]}" in _said(controller)
+    assert f"Try (automatic suggestion): SELECT event_id, {plain[len('SELECT '):]}" in (
+        _said(controller)
+    )
 
     distinct = plain.replace("SELECT ", "SELECT DISTINCT ")
     controller = _event_controller(cls, mocker, pd.DataFrame({"duration": [1.0]}))
 
     assert controller._fetch_event_subset("ldr", distinct, SCOPE, "mine_raw") is None
-    assert "Try:" not in _said(controller)
+    assert "Try (" not in _said(controller)
     assert "it uses DISTINCT" in _said(controller)
-    assert "SELECT DISTINCT e.event_id" in _said(controller)
+    assert "add it yourself" in _said(controller)
 
 
 SCOPE_TEXT = "experiment_id = :experiment_id AND channel_id = :channel_id"
@@ -1060,7 +1063,8 @@ SCOPE_TEXT = "experiment_id = :experiment_id AND channel_id = :channel_id"
     [
         f"SELECT duration FROM events WHERE {SCOPE_TEXT} AND id IN "
         "(SELECT event_db_id FROM sublevels GROUP BY event_db_id HAVING COUNT(*) > 3)",
-        f"SELECT COUNT(DISTINCT duration) FROM events WHERE {SCOPE_TEXT}",
+        f"SELECT duration FROM events WHERE {SCOPE_TEXT} AND duration > "
+        "(SELECT AVG(duration) FROM events)",
         f"SELECT duration FROM events WHERE {SCOPE_TEXT} AND label = 'group by union'",
         f"SELECT duration FROM events WHERE {SCOPE_TEXT} -- distinct join",
     ],
@@ -1079,9 +1083,14 @@ def test_a_word_inside_a_subquery_a_function_a_string_or_a_comment_does_not_coun
     ("sql", "words"),
     [
         ("SELECT DISTINCT duration FROM events", ["distinct"]),
-        ("SELECT AVG(duration) FROM events GROUP BY channel_id", ["group"]),
+        (
+            "SELECT AVG(duration) FROM events GROUP BY channel_id",
+            ["aggregate", "group"],
+        ),
         ("SELECT a FROM events UNION SELECT a FROM events", ["union"]),
         ("SELECT a FROM events e JOIN sublevels s ON s.event_db_id = e.id", ["join"]),
+        ("SELECT AVG(duration) FROM events", ["aggregate"]),
+        ("SELECT COUNT(DISTINCT duration) FROM events", ["aggregate"]),
     ],
 )
 def test_the_top_level_words_that_change_the_rows_are_found(
@@ -1108,6 +1117,16 @@ def test_the_top_level_words_that_change_the_rows_are_found(
             False,
         ),
         ("SELECT event_id, duration FROM events", False),
+        # Grouping by a key that is unique to the event leaves one event in each group.
+        (
+            "SELECT e.event_id, COUNT(*) FROM events e JOIN sublevels s "
+            "ON s.event_db_id = e.id GROUP BY e.id",
+            False,
+        ),
+        ("SELECT s.event_id, COUNT(*) FROM sublevels s GROUP BY s.event_db_id", False),
+        ("SELECT event_id, COUNT(*) FROM events GROUP BY 1", False),
+        # Grouping by anything else leaves an arbitrary event for each group.
+        ("SELECT event_id, COUNT(*) FROM events GROUP BY duration", True),
     ],
 )
 def test_a_top_level_group_by_that_leaves_event_id_out_is_found(
@@ -1125,21 +1144,25 @@ def test_a_top_level_group_by_that_leaves_event_id_out_is_found(
     [
         (
             f"SELECT DISTINCT duration FROM events WHERE {SCOPE_TEXT}",
-            "it uses DISTINCT",
+            "it uses DISTINCT, so adding event_id could change which rows are kept",
         ),
         (
             f"SELECT AVG(duration) FROM events WHERE {SCOPE_TEXT} GROUP BY channel_id",
-            "it uses GROUP BY, so each of its rows is a group, not an event",
+            "it uses an aggregate (COUNT, SUM, AVG, MIN, MAX)",
         ),
         (
             f"SELECT duration FROM events WHERE {SCOPE_TEXT} UNION "
             f"SELECT duration FROM events WHERE {SCOPE_TEXT}",
-            "add event_id to each part",
+            "event_id would have to be in every part",
+        ),
+        (
+            f"SELECT AVG(duration) FROM events WHERE {SCOPE_TEXT}",
+            "it uses an aggregate (COUNT, SUM, AVG, MIN, MAX)",
         ),
         (
             f"SELECT e.duration FROM events e JOIN sublevels s ON s.event_db_id = e.id "
             f"WHERE e.{SCOPE_TEXT}",
-            "name the table: SELECT e.event_id",
+            "event_id has to name the table it comes from",
         ),
     ],
 )
@@ -1156,7 +1179,7 @@ def test_a_missing_event_id_names_the_word_that_stops_it_being_added(
     said = _said(controller)
     assert "does not return event_id" in said
     assert expected in said
-    assert "Try:" not in said
+    assert "Try (" not in said
 
 
 @pytest.mark.parametrize("cls", [MetadataController, ProteinController])
@@ -1199,3 +1222,46 @@ def test_a_group_by_on_the_event_or_inside_a_subquery_is_not_warned_about(
     controller._fetch_event_subset("ldr", sql, SCOPE, "mine_raw")
 
     assert "GROUP BY but returns event_id" not in _said(controller)
+
+
+@pytest.mark.parametrize(
+    ("sql", "expected"),
+    [
+        ("SELECT duration FROM events WHERE channel_id = 1", True),
+        ("SELECT e.duration FROM events e WHERE e.channel_id = 1", True),
+        ("SELECT sublevel_duration FROM sublevels WHERE channel_id = 1", True),
+        (
+            "SELECT e.duration FROM events e, sublevels s WHERE e.id = s.event_db_id",
+            False,
+        ),
+        ("SELECT voltage FROM experiments", False),
+        ("SELECT duration FROM (SELECT duration FROM events) x", False),
+        ("SELECT 1", False),
+    ],
+)
+def test_the_suggestion_is_only_for_a_plain_read_of_events_or_sublevels(
+    sql: str, expected: bool
+) -> None:
+    """
+    A comma join, another table or a derived table would make the added ``event_id``
+    ambiguous or missing, so no query is suggested for them.
+    """
+    assert reads_one_event_table(sql) is expected
+    assert (with_event_id(sql) is not None) is expected
+
+
+@pytest.mark.parametrize("cls", [MetadataController, ProteinController])
+def test_a_filter_is_put_back_if_the_query_with_event_id_cannot_be_used(
+    cls: type, mocker: MockerFixture
+) -> None:
+    """
+    Saying yes must never leave a filter worse than it was: when the query with
+    ``event_id`` added fails to run, the view is told to restore the old text.
+    """
+    plain = f"SELECT duration FROM events WHERE {SCOPE_TEXT}"
+    controller = _event_controller(cls, mocker, pd.DataFrame({"duration": [1.0]}), None)
+    controller.view.offer_event_id.return_value = True
+
+    assert controller._fetch_event_subset("ldr", plain, SCOPE, "mine_raw") is None
+
+    controller.view.revert_event_id_offer.assert_called_once_with("mine_raw", plain)

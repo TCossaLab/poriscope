@@ -26,6 +26,7 @@ from typing import Any, Dict, List, Tuple
 import numpy as np
 import pandas as pd
 import pytest
+from PySide6.QtWidgets import QMessageBox
 
 from poriscope.plugins.db_loaders.SQLiteDBLoader import SQLiteDBLoader
 from tests.integration.flows._triad import Triad, build_triad
@@ -834,3 +835,58 @@ def test_a_raw_filter_that_writes_is_not_exported(
     assert list(out.glob("*.csv")) == []
     with sqlite3.connect(sample_metadata_db) as conn:
         assert conn.execute("SELECT COUNT(*) FROM events").fetchone()[0] == 40
+
+
+@pytest.mark.timeout(120)
+def test_an_export_of_a_plain_raw_filter_without_event_id_goes_on_when_the_offer_is_accepted(
+    metadata_tab: Triad, qtbot: Any, tmp_path: Path
+) -> None:
+    """
+    The export needs the events' keys like a plot does: the user is asked, and on yes the
+    filter starts with ``event_id`` and the export is written (the shared guard answers Yes).
+    """
+    out = tmp_path / "export_offer_yes"
+    out.mkdir()
+    with_filter(metadata_tab, "plain_raw", f"SELECT duration FROM events WHERE {SCOPE}")
+
+    events = exported_events(export(metadata_tab, qtbot, out, "yes", {"exp_a": [0]}))
+
+    assert events.groupby("channel_id").size().to_dict() == {0: 25}
+    assert metadata_tab.tab_view.subset_filters["plain_raw"].startswith(
+        "SELECT event_id, duration"
+    )
+
+
+@pytest.mark.timeout(90)
+def test_an_export_of_a_plain_raw_filter_without_event_id_writes_nothing_when_declined(
+    metadata_tab: Triad, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    Declined, the filter is unchanged, nothing is written, and the panel says what to do.
+    """
+    monkeypatch.setattr(
+        QMessageBox,
+        "question",
+        staticmethod(lambda *a, **k: QMessageBox.StandardButton.No),
+    )
+    out = tmp_path / "export_offer_no"
+    out.mkdir()
+    view = metadata_tab.tab_view
+    with_filter(metadata_tab, "plain_raw", f"SELECT duration FROM events WHERE {SCOPE}")
+    messages: List[str] = []
+    metadata_tab.tab_controller.add_text_to_display.connect(
+        lambda text, source: messages.append(text)
+    )
+
+    _StubDictDialog.folder = str(out)
+    _StubDictDialog.subset_name = "no"
+    view.selected_experiment_and_channels_by_loader[LOADER_KEY] = {"exp_a": [0]}
+    view.handle_parameter_change(
+        "metadatacontrols", "export_csv_subset", ({"db_loader": LOADER_KEY},)
+    )
+
+    assert list(out.glob("*.csv")) == []
+    assert (
+        view.subset_filters["plain_raw"] == f"SELECT duration FROM events WHERE {SCOPE}"
+    )
+    assert any("does not return event_id" in text for text in messages)

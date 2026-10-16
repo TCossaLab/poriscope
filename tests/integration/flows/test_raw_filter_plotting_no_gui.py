@@ -1,7 +1,7 @@
 """
 A raw SQL subset filter, saved, is also plotted - through a real loader.
 
-The cases are the example queries in ``filtering_and_querying.rst``, each run as the
+The cases are the example queries in ``filtering_raw.rst``, each run as the
 Metadata tab runs a raw filter: selected in the combobox, plotted from the parameters the
 controls panel sends, against a real ``SQLiteDBLoader`` over the synthetic database. A raw
 filter scopes itself - ``:experiment_id`` and ``:channel_id`` in its text are replaced by
@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 import pytest
+from PySide6.QtWidgets import QMessageBox
 
 from poriscope.plugins.db_loaders.SQLiteDBLoader import SQLiteDBLoader
 from tests.integration.flows._triad import Triad, build_triad
@@ -64,6 +65,48 @@ DOCUMENTED = [
 ]
 
 
+class Question:
+    """
+    Stand-in for the question a plot asks before it adds ``event_id`` to a filter.
+
+    The flow tests' shared guard answers every question Yes, which would accept the offer
+    in tests that are about the refusal. This one records each question and answers as told.
+    """
+
+    def __init__(self) -> None:
+        self.reply = QMessageBox.StandardButton.No
+        self.asked: List[Any] = []
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        """
+        Record the question and answer it.
+
+        :param args: what the view passed: the parent, the title, the text and the buttons
+        :type args: Any
+        :param kwargs: keyword arguments, unused
+        :type kwargs: Any
+        :return: the answer set for this test
+        :rtype: Any
+        """
+        self.asked.append(args)
+        return self.reply
+
+
+@pytest.fixture
+def question(monkeypatch: pytest.MonkeyPatch) -> Question:
+    """
+    Answer the add-``event_id`` question No unless the test says otherwise.
+
+    :param monkeypatch: pytest's monkeypatch fixture
+    :type monkeypatch: pytest.MonkeyPatch
+    :return: the recorder, whose ``reply`` the test can change
+    :rtype: Question
+    """
+    stand_in = Question()
+    monkeypatch.setattr(QMessageBox, "question", staticmethod(stand_in))
+    return stand_in
+
+
 @pytest.fixture
 def metadata_tab(qapp: Any, tmp_path: Path, sample_metadata_db: str) -> Triad:
     """
@@ -92,6 +135,7 @@ def metadata_tab(qapp: Any, tmp_path: Path, sample_metadata_db: str) -> Triad:
     filters["forgot_raw"] = "SELECT duration FROM events"
     filters["events_raw"] = f"SELECT event_id, duration FROM events WHERE {SCOPE}"
     filters["no_event_id_raw"] = f"SELECT duration FROM events WHERE {SCOPE}"
+    filters["distinct_raw"] = f"SELECT DISTINCT duration FROM events WHERE {SCOPE}"
     # SELECT * over a join returns both tables' key columns, which are equal.
     filters["join_raw"] = (
         "SELECT * FROM sublevels s JOIN events e ON s.event_db_id = e.id "
@@ -297,10 +341,10 @@ def test_a_raw_filter_plots_an_all_points_histogram_of_the_selected_events(
 
 @pytest.mark.timeout(120)
 def test_a_raw_filter_without_event_id_draws_no_event_plot(
-    metadata_tab: Triad,
+    metadata_tab: Triad, question: Question
 ) -> None:
     """
-    Nothing names the events to load, so nothing is drawn.
+    Declined, nothing names the events to load, so nothing is drawn.
     """
     plot(
         metadata_tab,
@@ -353,7 +397,9 @@ def test_a_join_that_names_its_columns_plots_an_event_plot(metadata_tab: Triad) 
 
 
 @pytest.mark.timeout(120)
-def test_an_id_column_does_not_name_an_event(metadata_tab: Triad) -> None:
+def test_an_id_column_does_not_name_an_event(
+    metadata_tab: Triad, question: Question
+) -> None:
     """
     ``id`` is a different row in each table, so a sublevel's cannot stand for an event:
     the query is asked for ``event_id`` instead of loading the wrong events.
@@ -448,10 +494,10 @@ def test_the_arrows_step_through_a_raw_filters_events(metadata_tab: Triad) -> No
 
 @pytest.mark.timeout(120)
 def test_plot_events_refuses_a_raw_filter_without_event_id(
-    metadata_tab: Triad,
+    metadata_tab: Triad, question: Question
 ) -> None:
     """
-    No ``event_id`` column: nothing is navigated.
+    No ``event_id`` column and the offer declined: nothing is navigated.
     """
     navigate(metadata_tab, "no_event_id_raw", "plot_events")
 
@@ -501,3 +547,100 @@ def test_a_dataset_whose_query_ignores_the_scope_says_so_in_its_label(
         "not limited to this experiment" in label
         for label in metadata_tab.tab_view.hist_labels
     )
+
+
+@pytest.mark.timeout(120)
+def test_a_plain_filter_without_event_id_is_offered_it_and_the_plot_goes_on_when_accepted(
+    metadata_tab: Triad, question: Question
+) -> None:
+    """
+    The user is asked with the new text in front of them; on yes the filter starts with
+    ``event_id`` and the event plot the user asked for is drawn, with no second click.
+    """
+    question.reply = QMessageBox.StandardButton.Yes
+    view = metadata_tab.tab_view
+
+    plot(
+        metadata_tab,
+        "no_event_id_raw",
+        "duration",
+        ["0"],
+        plot_type="Raw All Points Histogram",
+    )
+
+    (asked,) = question.asked
+    assert "SELECT event_id, duration FROM events" in asked[2]
+    assert "does not return event_id" in asked[2]
+    assert view.subset_filters["no_event_id_raw"].startswith(
+        "SELECT event_id, duration"
+    )
+    assert {(e[2], e[4]) for e in view.plotted_datasets} == {(0, "no_event_id_raw")}
+
+
+@pytest.mark.timeout(120)
+def test_a_declined_offer_leaves_the_filter_and_is_not_asked_again(
+    metadata_tab: Triad, question: Question
+) -> None:
+    """
+    No changes nothing and the panel says what to do; the same text is not asked about
+    again, so the user is not nagged on every plot.
+    """
+    view = metadata_tab.tab_view
+    before = view.subset_filters["no_event_id_raw"]
+
+    for _ in range(2):
+        plot(
+            metadata_tab,
+            "no_event_id_raw",
+            "duration",
+            ["0"],
+            plot_type="Raw All Points Histogram",
+        )
+
+    assert len(question.asked) == 1
+    assert view.subset_filters["no_event_id_raw"] == before
+    assert view.plotted_datasets == set()
+
+
+@pytest.mark.timeout(120)
+def test_a_query_whose_rows_are_not_events_is_never_offered_event_id(
+    metadata_tab: Triad, question: Question
+) -> None:
+    """
+    ``DISTINCT`` values are not events: nothing is asked, and nothing is changed.
+    """
+    question.reply = QMessageBox.StandardButton.Yes
+    view = metadata_tab.tab_view
+    before = view.subset_filters["distinct_raw"]
+
+    plot(
+        metadata_tab,
+        "distinct_raw",
+        "duration",
+        ["0"],
+        plot_type="Raw All Points Histogram",
+    )
+
+    assert question.asked == []
+    assert view.subset_filters["distinct_raw"] == before
+    assert view.plotted_datasets == set()
+
+
+@pytest.mark.timeout(120)
+def test_plot_events_carries_on_when_the_offer_is_accepted(
+    metadata_tab: Triad, question: Question, sample_metadata_db: str
+) -> None:
+    """
+    The navigation list is the channel's events once ``event_id`` has been added.
+    """
+    question.reply = QMessageBox.StandardButton.Yes
+
+    navigate(metadata_tab, "no_event_id_raw", "plot_events")
+
+    with sqlite3.connect(sample_metadata_db) as conn:
+        expected = sorted(
+            r[0]
+            for r in conn.execute("SELECT event_id FROM events WHERE channel_id = 0")
+        )
+    assert len(question.asked) == 1
+    assert metadata_tab.tab_view.filtered_event_ids == expected

@@ -1045,17 +1045,15 @@ class MetadataController(MetaSubsetTabController):
             return None
         parts: List[str] = []
         for experiment, channel in selected_pairs(experiments_and_channels):
-            run = self._run_raw_filter(
+            read = self._run_raw_event_keys(
                 loader,
                 sql_filter,
                 {experiment: None if channel is None else [channel]},
                 filter_name,
             )
-            if run is None:
+            if read is None:
                 return None
-            keys = self._raw_event_keys(run, sql_filter, filter_name)
-            if keys is None:
-                return None
+            run, keys, sql_filter = read
             if keys.empty:
                 continue
             parts.append(

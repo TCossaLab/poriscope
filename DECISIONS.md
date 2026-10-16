@@ -18,6 +18,67 @@ and deleted on 2026-09-27; it too is in git history.
 
 ---
 
+## 2026-10-16 - A plot offers to add `event_id` to a plain raw filter; a raw filter is never rewritten silently
+
+**Context.** Event plots, Plot Events, the arrows and the export need each raw result row to name
+an event by `event_id`. A filter written for a histogram usually lacks it, so the plot refused and
+the user had to edit the filter. Needing `event_id` is a Poriscope requirement, not an SQL one: a
+viewer never asks for it, so a user cannot know it from the SQL they write.
+
+**Decision** (Carolina, 2026-10-16). When a plot needs `event_id`, the result lacks it, and the query is a plain `SELECT`
+from `events` or `sublevels` (no top-level `DISTINCT`, `GROUP BY`, aggregate, `UNION`, `WITH`, join,
+comma join, derived table or `SELECT *`), `MetaSubsetTabView.offer_event_id` asks, showing the new
+text. Yes changes the filter in the tab (the session keeps it; Save Filter writes the file) and the
+plot carries on; the filter is put back, with a line on the panel, if the new query fails. No is
+remembered for that text. Any other query gets a message naming the word that stops it, and a
+top-level `GROUP BY` that returns `event_id` without grouping by the event is warned about. The
+offer is made because, in most cases, adding `event_id` has no consequence and a little help with a
+Poriscope-specific rule is cheap.
+
+**Rejected.**
+1. *Adding `event_id` automatically.* It needs a SQL parser, and it changes results: `DISTINCT`
+   changes rows, and a bare `event_id` beside `GROUP BY` or an aggregate is one arbitrary event per
+   group. It also breaks "runs as written".
+2. *A token such as `{event_id}` filled in per plot.* One saved filter would return different rows
+   per plot (`SELECT DISTINCT {event_id}, duration`: 5 rows in a histogram, 6 in Plot Events on the
+   example data), it does not run in a viewer, and a column plot ignores `event_id` anyway, so the
+   user still has to write something at the start of the `SELECT`.
+3. *A button in the filter dialog.* It is a reminder before the problem exists, when the user cannot
+   see why they need it; help should arrive when it matters.
+4. *Notes for column plots on `DISTINCT`, `GROUP BY` and `UNION`, and a "repeats events" warning.* A
+   viewer shows the same rows, and both fire on correct queries (`SELECT DISTINCT e.event_id`, a
+   sublevel histogram).
+
+**Evidence.** Keywords are read at bracket depth 0, outside strings and comments, so a `GROUP BY` in
+a subquery or `COUNT(DISTINCT x)` is not counted. Assisted cannot hit any of this: it writes one row
+per event itself (`SELECT DISTINCT e.id, ...` for a sublevel condition).
+
+**Revisit if.** Accepting the offer starts breaking users' queries, or users want `event_id` on
+every filter and find the question tiresome, or `DISTINCT`, `GROUP BY`, `UNION` and aggregates turn
+out to be common in raw filters.
+
+---
+
+## 2026-10-16 - The filter dialog teaches by an example in the empty box and an info icon, not a label
+
+**Context.** The Raw SQL hint ("add `WHERE experiment_id = :experiment_id AND channel_id =
+:channel_id`, start with `SELECT event_id`") was a three-line label that took space in every dialog
+and stayed after the user knew it.
+
+**Decision** (Carolina, 2026-10-16). The empty filter box shows a grey example for the chosen mode (a condition for
+Assisted, a scoped query starting with `event_id` for Raw). An info icon beside each mode's radio
+button carries the rule in a tooltip and points to the guide (Help > Help > Documentation, then User
+Guide > Filtering and Querying). The icon is drawn from `info-circle.svg` through `get_icon`, tinted
+for the theme and rendered at 64 px so it stays sharp on a high-resolution screen.
+
+**Rejected.** The label (space); a placeholder alone (it disappears as soon as the user types, which
+is when the rule matters); an "Add event_id" button (see the entry above).
+
+**Revisit if.** Users still write unscoped raw filters at the same rate: then a persistent line is
+worth its space again.
+
+---
+
 ## 2026-10-10 - `format_axis_label` appends a unit; it no longer replaces a different one
 
 **Context.** Three copies (`ProteinView` function, `MetadataView` method, `ClusteringView` inline) stripped
@@ -915,6 +976,8 @@ validator accepts any statement, and `WITH x AS (SELECT 1) DELETE FROM events` e
 database (Python's SQLite module opens a transaction only for statements that start with
 `INSERT`/`UPDATE`/`DELETE`, so it committed). Poriscope refuses any writing keyword, and the loader's
 two read connections set `PRAGMA query_only = ON`. Measured on 600,000 events (300,000 per channel, `events` table only): one channel reads in 0.54 s raw against 0.93 s Assisted, and the navigation list takes 2.7 s raw against 1.0 s, the difference being the check that every key exists in `events`; both are paid when the filter or channel changes. Export Subset - CSV takes a raw filter as one subquery per selected channel, `e.event_id IN (SELECT event_id FROM (<bound query>))` pinned to that experiment and channel, built after the plot checks pass for it; unrolling keys into an id list was rejected because its text grows with the subset. An unscoped query is refused for export, since it would write the same events for every channel. **Revisit if** users keep omitting the placeholders.
+
+**Later, same entry** (Carolina, 2026-10-16). A query that uses only one placeholder, or none, is not refused: it runs, the panel says what each dataset now holds (that channel number from every other experiment; every channel of the experiment; or everything the query finds), and a column plot's legend says "(rows not limited to this experiment and channel)". The Scope starts with everything ticked and always keeps one channel, so there is no empty-scope case to design for. No text check for an unbracketed `OR`: only a parser can say whether it escapes the scope, a viewer would not warn either, and a raw user is expected to know that `AND` binds first. The existing leak warning covers it when the result carries `experiment_id` or `channel_id`, and the guide says to bracket every `OR`.
 
 ---
 

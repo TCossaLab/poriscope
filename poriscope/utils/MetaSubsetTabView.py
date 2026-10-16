@@ -581,6 +581,71 @@ class MetaSubsetTabView(MetaView):
         combo.refreshDisplayText()
 
     @log(logger=logger)
+    def offer_event_id(self, subset_name: str, new_text: str) -> bool:
+        """
+        Ask whether to start a raw filter's column list with ``event_id``, and do it on yes.
+
+        Asked when a plot needs ``event_id`` and the filter does not return it, with the
+        new text shown so the user sees exactly what the filter becomes. The change is to
+        the filter in the open tab, which the session keeps when the app quits; Save Filter
+        writes it to a filters file. A no is remembered for that text, so the same plot does
+        not ask again, and the panel message says what to do instead.
+
+        :param subset_name: the filter's name
+        :type subset_name: str
+        :param new_text: the filter text with ``event_id`` added
+        :type new_text: str
+        :return: True if the filter was changed
+        :rtype: bool
+        """
+        declined = self.__dict__.setdefault("_declined_event_id", set())
+        if (subset_name, new_text) in declined:
+            return False
+        answer = QMessageBox.question(
+            self,
+            "Add event_id to this filter?",
+            f"{subset_name} does not return event_id, which this plot needs."
+            "\n\nChange the filter to:\n\n"
+            f"{new_text}\n\n"
+            "This is an automatic check, offered for convenience. If adding event_id "
+            "could change what your query means, choose No and edit the filter or create "
+            "a new, more appropriate one yourself."
+            "\n\n"
+            "This changes the filter in the app, and it is kept with your session when "
+            "you quit. Use Save Filter to also update your filters file.",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.Yes,
+        )
+        if answer != QMessageBox.Yes:
+            declined.add((subset_name, new_text))
+            return False
+        self.subset_filters[subset_name] = new_text
+        self.add_text_to_display.emit(
+            f"{subset_name} now starts with event_id", self.__class__.__name__
+        )
+        return True
+
+    @log(logger=logger)
+    def revert_event_id_offer(self, subset_name: str, old_text: str) -> None:
+        """
+        Put a filter back to what it was before ``event_id`` was added, and say so.
+
+        Used when the query with ``event_id`` added could not be used, so that saying yes
+        to the offer can never leave a filter worse than it was.
+
+        :param subset_name: the filter's name
+        :type subset_name: str
+        :param old_text: the filter text before the offer was accepted
+        :type old_text: str
+        """
+        self.subset_filters[subset_name] = old_text
+        self.add_text_to_display.emit(
+            f"{subset_name} was changed back: the query with event_id added could not "
+            "be used",
+            self.__class__.__name__,
+        )
+
+    @log(logger=logger)
     def _reject_non_select_raw_filter(self, filter_text: str) -> bool:
         """
         Report a raw filter that is not a complete SELECT, and say whether it was.
