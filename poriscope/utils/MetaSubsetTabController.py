@@ -206,11 +206,108 @@ def writing_keyword(sql: str) -> Optional[str]:
     return None
 
 
-#: Words that make a query describe something other than one row per event, so an
-#: ``event_id`` added to its column list would change the rows or break the query.
+#: Words that, at the top level of a query, make it describe something other than one row
+#: per event, so an ``event_id`` added to its column list would change the rows or break it.
 SHAPE_WORDS = frozenset(
     {"distinct", "group", "having", "union", "intersect", "except", "with", "join"}
 )
+
+#: What to do about each of them when the plot needs ``event_id`` and the query lacks it.
+SHAPE_ADVICE = {
+    "group": (
+        "it uses GROUP BY, so each of its rows is a group, not an event: group by the "
+        "event itself and return it (GROUP BY e.event_id, SELECT e.event_id, ...), or "
+        "move the grouping into a subquery"
+    ),
+    "distinct": (
+        "it uses DISTINCT, so adding event_id would change which rows are kept: if every "
+        "row is an event, write SELECT DISTINCT e.event_id, ... yourself"
+    ),
+    "union": (
+        "it combines queries (UNION), so every part must return the same columns: add "
+        "event_id to each part"
+    ),
+    "with": "it uses WITH, so name event_id in its final SELECT",
+    "join": "it joins tables, so name the table: SELECT e.event_id, ...",
+}
+SHAPE_ADVICE["intersect"] = SHAPE_ADVICE["union"]
+SHAPE_ADVICE["except"] = SHAPE_ADVICE["union"]
+
+
+def top_level_words(sql: str) -> List[Tuple[str, int]]:
+    """
+    List the words of a query that are not inside brackets, with where each one starts.
+
+    A word inside a subquery or a function call (``COUNT(DISTINCT x)``) belongs to that
+    part and does not change the rows of the query around it, so it is left out, and so is
+    anything inside a string, a quoted name or a comment.
+
+    :param sql: the user's query
+    :type sql: str
+    :return: the lower-case words at the top level, in order, with their offsets
+    :rtype: List[Tuple[str, int]]
+    """
+    found: List[Tuple[str, int]] = []
+    depth = 0
+    for start, end in code_spans(sql):
+        for match in re.finditer(r"[A-Za-z_]\w*|[()]", sql[start:end]):
+            token = match.group(0)
+            if token == "(":
+                depth += 1
+            elif token == ")":
+                depth -= 1
+            elif depth == 0:
+                found.append((token.lower(), start + match.start()))
+    return found
+
+
+def shape_words(sql: str) -> List[str]:
+    """
+    Find the top-level words that make a query something other than one row per event.
+
+    :param sql: the user's query
+    :type sql: str
+    :return: ``DISTINCT``, ``GROUP``, ``UNION`` and the like that the query uses, each once, in order, lower case
+    :rtype: List[str]
+    """
+    seen: List[str] = []
+    for word, _ in top_level_words(sql):
+        if word in SHAPE_WORDS and word not in seen:
+            seen.append(word)
+    return seen
+
+
+def groups_without_event_id(sql: str) -> bool:
+    """
+    Report a top-level ``GROUP BY`` whose list does not name ``event_id``.
+
+    A query that returns ``event_id`` and groups by something else gets one arbitrary
+    event for each group from SQLite, so the plot can open an event the row does not
+    describe. A ``GROUP BY`` inside a subquery does not count, and neither does one that
+    includes ``event_id``.
+
+    :param sql: the user's query
+    :type sql: str
+    :return: True if the query groups its own rows and does not group by ``event_id``
+    :rtype: bool
+    """
+    tokens = top_level_words(sql)
+    for i, (word, offset) in enumerate(tokens):
+        if word == "group" and i + 1 < len(tokens) and tokens[i + 1][0] == "by":
+            end = len(sql)
+            for later, later_offset in tokens[i + 2 :]:
+                if later in {
+                    "having",
+                    "order",
+                    "limit",
+                    "union",
+                    "intersect",
+                    "except",
+                }:
+                    end = later_offset
+                    break
+            return re.search(r"\bevent_id\b", sql[offset:end], re.IGNORECASE) is None
+    return False
 
 
 def with_event_id(sql: str) -> Optional[str]:
@@ -218,9 +315,10 @@ def with_event_id(sql: str) -> Optional[str]:
     Suggest a plain ``SELECT`` with ``event_id`` put first in its column list.
 
     Only a suggestion for the user to read: the query is never changed. It is offered for
-    a query that has one row per event, and withheld for one with ``DISTINCT``,
-    ``GROUP BY``, ``UNION``, ``WITH`` or a join, where adding a column changes the rows
-    or is ambiguous, and for ``SELECT *``. Words inside strings and comments do not count.
+    a query that has one row per event, and withheld for one whose own rows are grouped
+    or combined (``DISTINCT``, ``GROUP BY``, ``UNION``, ``WITH`` or a join at its top
+    level), where adding a column changes the rows or is ambiguous, and for ``SELECT *``.
+    The same words inside a subquery, a function call, a string or a comment do not count.
 
     :param sql: the user's query, with its placeholders as written
     :type sql: str
@@ -228,12 +326,8 @@ def with_event_id(sql: str) -> Optional[str]:
     :rtype: Optional[str]
     """
     head = re.match(r"\s*select\s+(?!\*)", sql, re.IGNORECASE)
-    if head is None:
+    if head is None or shape_words(sql):
         return None
-    for start, end in code_spans(sql):
-        words = {w.lower() for w in re.findall(r"[A-Za-z_]\w*", sql[start:end])}
-        if words & SHAPE_WORDS:
-            return None
     return f"SELECT event_id, {sql[head.end():].strip().rstrip(';')}"
 
 
@@ -939,12 +1033,19 @@ class MetaSubsetTabController(MetaController):
                 )
                 advice = f"Try: {shown}"
             else:
-                advice = (
-                    "Add it to the SELECT, for example SELECT event_id FROM events "
-                    "WHERE experiment_id = :experiment_id AND channel_id = :channel_id. "
-                    "A query with DISTINCT, GROUP BY, UNION, WITH or a join needs a form "
-                    "that returns one row per event, with the table named (e.event_id)"
-                )
+                reasons = [
+                    SHAPE_ADVICE[word]
+                    for word in shape_words(sql_filter)
+                    if word in SHAPE_ADVICE
+                ]
+                if reasons:
+                    advice = "Not added for you, because " + "; and ".join(reasons)
+                else:
+                    advice = (
+                        "Add it to the SELECT, for example SELECT event_id FROM events "
+                        "WHERE experiment_id = :experiment_id AND channel_id = "
+                        ":channel_id"
+                    )
             self.add_text_to_display.emit(
                 f"{subset_name}'s query does not return event_id, which identifies an "
                 f"event. {advice}",
@@ -970,6 +1071,14 @@ class MetaSubsetTabController(MetaController):
             )
             return None
         keys = pd.DataFrame({name: parts[name] for name in EVENT_KEY})
+        if groups_without_event_id(sql_filter):
+            self.add_text_to_display.emit(
+                f"{subset_name}'s query groups its rows with GROUP BY but returns "
+                "event_id, which is not part of the grouping, so SQLite picks one event "
+                "for each group and the plot may open the wrong one. Group by event_id, "
+                "or move the grouping into a subquery",
+                self.__class__.__name__,
+            )
         for expression, alias in relabelled_keys(sql_filter):
             self.add_text_to_display.emit(
                 f"{subset_name}'s query labels {expression!r} as {alias}, so the plot "

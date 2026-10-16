@@ -29,9 +29,11 @@ from poriscope.plugins.analysistabs.ProteinModel import ProteinModel
 from poriscope.utils.MetaSubsetTabController import (
     bind_scope,
     code_spans,
+    groups_without_event_id,
     relabelled_keys,
     scope_placeholders,
     selected_pairs,
+    shape_words,
     with_event_id,
     writing_keyword,
 )
@@ -1046,4 +1048,154 @@ def test_the_missing_event_id_message_shows_the_users_query_with_it_added(
 
     assert controller._fetch_event_subset("ldr", distinct, SCOPE, "mine_raw") is None
     assert "Try:" not in _said(controller)
-    assert "DISTINCT, GROUP BY" in _said(controller)
+    assert "it uses DISTINCT" in _said(controller)
+    assert "SELECT DISTINCT e.event_id" in _said(controller)
+
+
+SCOPE_TEXT = "experiment_id = :experiment_id AND channel_id = :channel_id"
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        f"SELECT duration FROM events WHERE {SCOPE_TEXT} AND id IN "
+        "(SELECT event_db_id FROM sublevels GROUP BY event_db_id HAVING COUNT(*) > 3)",
+        f"SELECT COUNT(DISTINCT duration) FROM events WHERE {SCOPE_TEXT}",
+        f"SELECT duration FROM events WHERE {SCOPE_TEXT} AND label = 'group by union'",
+        f"SELECT duration FROM events WHERE {SCOPE_TEXT} -- distinct join",
+    ],
+)
+def test_a_word_inside_a_subquery_a_function_a_string_or_a_comment_does_not_count(
+    sql: str,
+) -> None:
+    """
+    Only the query's own rows matter, so ``event_id`` is still suggested for these.
+    """
+    assert shape_words(sql) == []
+    assert with_event_id(sql) is not None
+
+
+@pytest.mark.parametrize(
+    ("sql", "words"),
+    [
+        ("SELECT DISTINCT duration FROM events", ["distinct"]),
+        ("SELECT AVG(duration) FROM events GROUP BY channel_id", ["group"]),
+        ("SELECT a FROM events UNION SELECT a FROM events", ["union"]),
+        ("SELECT a FROM events e JOIN sublevels s ON s.event_db_id = e.id", ["join"]),
+    ],
+)
+def test_the_top_level_words_that_change_the_rows_are_found(
+    sql: str, words: list
+) -> None:
+    """
+    Each is named, once, in the order it appears.
+    """
+    assert shape_words(sql) == words
+
+
+@pytest.mark.parametrize(
+    ("sql", "expected"),
+    [
+        ("SELECT event_id, AVG(duration) FROM events GROUP BY channel_id", True),
+        (
+            "SELECT event_id, COUNT(*) FROM events GROUP BY event_id HAVING COUNT(*) > 1",
+            False,
+        ),
+        ("SELECT event_id, COUNT(*) FROM events GROUP BY channel_id, event_id", False),
+        (
+            "SELECT event_id FROM events WHERE id IN "
+            "(SELECT event_db_id FROM sublevels GROUP BY event_db_id)",
+            False,
+        ),
+        ("SELECT event_id, duration FROM events", False),
+    ],
+)
+def test_a_top_level_group_by_that_leaves_event_id_out_is_found(
+    sql: str, expected: bool
+) -> None:
+    """
+    Only a ``GROUP BY`` of the query's own rows counts, and only if ``event_id`` is not in it.
+    """
+    assert groups_without_event_id(sql) is expected
+
+
+@pytest.mark.parametrize("cls", [MetadataController, ProteinController])
+@pytest.mark.parametrize(
+    ("sql", "expected"),
+    [
+        (
+            f"SELECT DISTINCT duration FROM events WHERE {SCOPE_TEXT}",
+            "it uses DISTINCT",
+        ),
+        (
+            f"SELECT AVG(duration) FROM events WHERE {SCOPE_TEXT} GROUP BY channel_id",
+            "it uses GROUP BY, so each of its rows is a group, not an event",
+        ),
+        (
+            f"SELECT duration FROM events WHERE {SCOPE_TEXT} UNION "
+            f"SELECT duration FROM events WHERE {SCOPE_TEXT}",
+            "add event_id to each part",
+        ),
+        (
+            f"SELECT e.duration FROM events e JOIN sublevels s ON s.event_db_id = e.id "
+            f"WHERE e.{SCOPE_TEXT}",
+            "name the table: SELECT e.event_id",
+        ),
+    ],
+)
+def test_a_missing_event_id_names_the_word_that_stops_it_being_added(
+    cls: type, mocker: MockerFixture, sql: str, expected: str
+) -> None:
+    """
+    The panel says which word the query uses and what to do about it, and gives no "Try:".
+    """
+    controller = _event_controller(cls, mocker, pd.DataFrame({"duration": [1.0]}))
+
+    assert controller._fetch_event_subset("ldr", sql, SCOPE, "mine_raw") is None
+
+    said = _said(controller)
+    assert "does not return event_id" in said
+    assert expected in said
+    assert "Try:" not in said
+
+
+@pytest.mark.parametrize("cls", [MetadataController, ProteinController])
+def test_a_group_by_that_returns_event_id_it_does_not_group_by_is_warned_about(
+    cls: type, mocker: MockerFixture
+) -> None:
+    """
+    SQLite would pick one event for each group, so the plot could open the wrong one.
+    """
+    sql = (
+        f"SELECT event_id, AVG(duration) FROM events WHERE {SCOPE_TEXT} "
+        "GROUP BY channel_id"
+    )
+    controller = _event_controller(cls, mocker, EVENTS, IN_DATABASE)
+
+    controller._fetch_event_subset("ldr", sql, SCOPE, "mine_raw")
+
+    said = _said(controller)
+    assert "groups its rows with GROUP BY but returns event_id" in said
+    assert "Group by event_id, or move the grouping into a subquery" in said
+
+
+@pytest.mark.parametrize("cls", [MetadataController, ProteinController])
+@pytest.mark.parametrize(
+    "sql",
+    [
+        f"SELECT event_id, COUNT(*) FROM events WHERE {SCOPE_TEXT} GROUP BY event_id",
+        f"SELECT event_id FROM events WHERE {SCOPE_TEXT} AND id IN "
+        "(SELECT event_db_id FROM sublevels GROUP BY event_db_id)",
+    ],
+)
+def test_a_group_by_on_the_event_or_inside_a_subquery_is_not_warned_about(
+    cls: type, mocker: MockerFixture, sql: str
+) -> None:
+    """
+    Both leave one row per event, so there is nothing to warn about.
+    """
+    controller = _event_controller(cls, mocker, EVENTS, IN_DATABASE)
+
+    controller._fetch_event_subset("ldr", sql, SCOPE, "mine_raw")
+
+    assert "GROUP BY but returns event_id" not in _said(controller)

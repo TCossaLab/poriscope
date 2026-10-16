@@ -234,6 +234,8 @@
 
 * A raw filter warning is shown again when the same mistake is made after a run with nothing to warn about, and the refusal of a filter that does not start with `SELECT` or that writes now names what it starts with or contains and says it may only read
 
+* The `event_id` advice for a raw filter ignores `GROUP BY`, `DISTINCT` and `UNION` inside a subquery or a function, names the word that stops it being added, and warns about a `GROUP BY` that returns `event_id` without grouping by it
+
 * **A raw SQL filter can only read the database:** a statement that writes, including one behind `WITH`, is refused, and the loader's read connections can no longer write
 
 * The Metadata and Protein event navigation (Plot Events, the arrows) now reports a failure to read a subset's events on the status panel only, instead of also raising an error dialog
