@@ -59,13 +59,15 @@ PLACEHOLDER = re.compile(r"(?<![\w:]):(experiment_id|channel_id)\b", re.IGNORECA
 
 
 class RawRun(NamedTuple):
-    """
-    What running a raw filter produced, and the experiment and channel it ran for.
-
-    ``experiment_id`` and ``channel`` are the selected pair, or None when nothing single
-    was selected; ``scoped`` says the query used both placeholders, so its rows belong
-    to that pair.
-    """
+    # What running a raw filter produced, and the experiment and channel it ran for.
+    # ``experiment_id`` and ``channel`` are the selected pair, or None when nothing single
+    # was selected; ``scoped`` says the query used both placeholders, so its rows belong
+    # to that pair.
+    #
+    # A comment rather than a docstring on purpose: the autodoc generator writes one page
+    # per module and lists every class with a docstring in the toctree, so a second
+    # documented class here would list this module twice and fail ``sphinx-build -W``.
+    # Helper classes in ``utils/`` (``Setting``, ``MessageBoxEmitter``) carry none either.
 
     rows: pd.DataFrame
     executed: str
