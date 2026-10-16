@@ -66,9 +66,7 @@
 
 * **Breaking:** `MetadataModel.calculate_heatmap` now returns the bin edges as a fourth value, and `MetadataView.set_heatmap` takes them as a new `extent` parameter
 
-* **Breaking:** `event_id_cache_requested` and `load_event_id_cache` take the selected filter's name as a new last argument, `_rebuild_event_id_cache` likewise, and `MetaSubsetTabView._refuse_raw_filters` is removed
-
-* **Breaking:** the Metadata and Protein event-data request signals (`all_points_histogram_requested`, `event_overlay_requested`, `event_distribution_data_requested`, `ensemble_histogram_requested`) and `metadata_subset_requested` each take the selected filter's name as a new last argument, and so do their Controller slots and `_fetch_event_subset`
+* **Breaking:** the Metadata and Protein tabs' subset and event request signals (`event_id_cache_requested`, `all_points_histogram_requested`, `event_overlay_requested`, `event_distribution_data_requested`, `ensemble_histogram_requested`, `metadata_subset_requested`), their Controller slots, `_rebuild_event_id_cache` and `_fetch_event_subset` take the selected filter's name as a new last argument, and `MetaSubsetTabView._refuse_raw_filters` is removed
 
 * **Breaking:** `format_axis_label` is now one `MetaView` method instead of three copies, and it appends the unit rather than replacing a trailing parenthetical, so a column name containing parentheses is no longer truncated; `ProteinView`'s module-level `format_axis_label` is gone
 
@@ -232,11 +230,14 @@
 
 * A column plot of a raw filter that does not use the Scope selection now adds `(rows not limited to this experiment and channel)` to its legend label, and the warning for a query with only one placeholder says which extra rows each dataset holds
 
-* A raw filter warning is shown again when the same mistake is made after a run with nothing to warn about, and the refusal of a filter that does not start with `SELECT` or that writes now names what it starts with or contains and says it may only read
+* The refusal of a raw filter that does not start with `SELECT` or that writes now names what it starts with or contains and says it may only read
 
 * A plot that needs `event_id` from a plain raw filter that lacks it now asks whether to add it and carries on when you say yes; the advice ignores `GROUP BY`, `DISTINCT` and `UNION` inside a subquery or a function, names the word that stops it being added, and warns about a `GROUP BY` or aggregate that returns `event_id` without grouping by the event; the question is asked each time
+
 * A status-panel line that would only repeat the line directly above it (a warning, a refusal, the echoed query) is now left out; once another line is between, it is shown again, and the missing-`event_id` message says which plots need it
+
 * Fixed the arrows reusing the event list of an earlier filter text after the `event_id` question was answered Yes and the filter was edited back to the text it had
+
 * The Filtering and Querying guide is now an overview with a short "Start here", plus a page each for Assisted and Raw SQL filters; it explains how scope works, when each mode fits, how filters are kept in a session and in a filters file, and what leaving the placeholders out does
 
 * The status panel now shows a filter's text when it is added or updated (`Filter 'x' updated to 'x': <query>`), and Plot Events and the event arrows print the query they ran, as Update Plot does
