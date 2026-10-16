@@ -18,6 +18,100 @@ and deleted on 2026-09-27; it too is in git history.
 
 ---
 
+## 2026-10-16 - A plot offers to add `event_id` to a plain raw filter; a raw filter is never rewritten silently
+
+**Context.** Event plots, Plot Events, the arrows and the export need each raw result row to name
+an event by `event_id`. A filter written for a histogram usually lacks it, so the plot refused and
+the user had to edit the filter. Needing `event_id` is a Poriscope requirement, not an SQL one: a
+viewer never asks for it, so a user cannot know it from the SQL they write.
+
+**Decision** (Carolina, 2026-10-16). When a plot needs `event_id`, the result lacks it, and the query is a plain `SELECT`
+from `events` or `sublevels` (no top-level `DISTINCT`, `GROUP BY`, aggregate, `UNION`, `WITH`, join,
+comma join, derived table or `SELECT *`), `MetaSubsetTabView.offer_event_id` asks, showing the new
+text. Yes changes the filter in the tab (the session keeps it; Save Filter writes the file) and the
+plot carries on; the filter is put back, with a line on the panel, if the new query fails. No is
+closed without a change, and asked again the next time a plot needs it. Any other query gets a message naming the word that stops it, and a
+top-level `GROUP BY` or aggregate that returns `event_id` without grouping by the event is warned about. The
+offer is made because, in most cases, adding `event_id` has no consequence and a little help with a
+Poriscope-specific rule is cheap.
+
+**Rejected.**
+1. *Adding `event_id` automatically.* It needs a SQL parser, and it changes results: `DISTINCT`
+   changes rows, and a bare `event_id` beside `GROUP BY` or an aggregate is one arbitrary event per
+   group. It also breaks "runs as written".
+2. *A token such as `{event_id}` filled in per plot.* One saved filter would return different rows
+   per plot (`SELECT DISTINCT {event_id}, duration`: 5 rows in a histogram, 6 in Plot Events on the
+   example data), it does not run in a viewer, and a column plot ignores `event_id` anyway, so the
+   user still has to write something at the start of the `SELECT`.
+3. *A button in the filter dialog.* It is a reminder before the problem exists, when the user cannot
+   see why they need it; help should arrive when it matters.
+4. *Notes for column plots on `DISTINCT`, `GROUP BY` and `UNION`, and a "repeats events" warning.* A
+   viewer shows the same rows, and both fire on correct queries (`SELECT DISTINCT e.event_id`, a
+   sublevel histogram).
+
+**Evidence.** Keywords are read at bracket depth 0, outside strings and comments, so a `GROUP BY` in
+a subquery or `COUNT(DISTINCT x)` is not counted. Assisted cannot hit any of this: it writes one row
+per event itself (`SELECT DISTINCT e.id, ...` for a sublevel condition).
+
+**Revisit if** Accepting the offer starts breaking users' queries, or users want `event_id` on
+every filter and find the question tiresome, or `DISTINCT`, `GROUP BY`, `UNION` and aggregates turn
+out to be common in raw filters.
+
+---
+
+## 2026-10-16 - The filter dialog teaches by an example in the empty box and an info icon, not a label
+
+**Context.** The Raw SQL hint ("add `WHERE experiment_id = :experiment_id AND channel_id =
+:channel_id`, start with `SELECT event_id`") was a three-line label that took space in every dialog
+and stayed after the user knew it.
+
+**Decision** (Carolina, 2026-10-16). The empty filter box shows a grey example for the chosen mode (a condition for
+Assisted, a scoped query starting with `event_id` for Raw); Tab in the empty box inserts it. An info icon beside each mode's radio
+button carries the rule in a tooltip and points to the guide (Help > Help > Documentation, then User
+Guide > Filtering and Querying). The icon is drawn from `info-circle.svg` through `get_icon`, tinted
+for the theme and rendered at 64 px so it stays sharp on a high-resolution screen.
+
+**Rejected.** The label (space); a placeholder alone (it disappears as soon as the user types, which
+is when the rule matters); an "Add event_id" button (see the 2026-10-16 entry on the `event_id` offer).
+
+**Revisit if** Users still write unscoped raw filters at the same rate: then a persistent line is
+worth its space again.
+
+---
+
+## 2026-10-16 - A raw filter's name travels with its text through the subset signals
+
+**Context.** A raw filter is told from an Assisted one by its `_raw` name, and the Controller has to
+run it itself: bind the placeholders for each pair, check the result, warn and ask by the filter's
+name, and write an accepted `event_id` back to that filter. The subset and event request signals
+carried only the filter's text, which is all the Assisted path needs, because the loader builds the
+whole query. Protein carried this idea until 2026-09-12: `event_distribution_data_requested` took a
+`subset_name` whose `_raw` suffix picked a separate route for raw filters. The argument was sound;
+the route it fed never worked, because it passed a complete `SELECT` to `load_event_data` as a
+WHERE-clause body, and the 2026-09-12 entry removed both. The name travels again, this time with a
+Controller that runs the query itself.
+
+**Decision** (Carolina, 2026-10-16). Seven signals gained the name as a trailing `str`:
+`event_id_cache_requested`, `all_points_histogram_requested`, `event_overlay_requested`,
+`metadata_subset_requested`, `csv_subset_export_requested`, `event_distribution_data_requested` and
+`ensemble_histogram_requested`, with their slots, `_fetch_event_subset` and `_rebuild_event_id_cache`.
+Each signal is one declaration, one emit and one connect, plus its slot. Listed as breaking in the
+changelog.
+
+**Rejected.** Sniffing the text for `SELECT`: a one-column `SELECT` is accepted in Assisted mode, so
+the text cannot tell the modes apart, and the mode is the name's suffix. Looking the name up in the
+View's filters from the Controller: it reaches into View state where the convention is arguments, and
+identical texts under two names are ambiguous. A one-entry `{name: text}` dict in place of the text:
+it changes an argument's meaning, breaks as much and reads worse. A default value on the Python
+methods: Qt signals have a fixed arity, and an old caller would silently treat a raw filter as
+Assisted.
+
+**Revisit if** someone subclasses `MetaSubsetTabView` or `MetaSubsetTabController` outside this repo
+(today only the Metadata and Protein tabs do). Then carry the mode and name in one small value passed
+unchanged, so the next addition does not change every signal again.
+
+---
+
 ## 2026-10-14 - The milestone guard names a non-dedicated tab's page as `<Name>View`; no `view_class` declaration
 
 **Context.** `on_load_analysis_tab_button_click` must name the page a tab will open before the tab is built, so a
@@ -942,7 +1036,7 @@ starts paying for itself.
 
 ---
 
-## 2026-09-14 - A raw SQL filter runs as written, and its scope is the user's
+## 2026-09-14 - A raw SQL filter runs as written, and its scope is the user's (superseded 2026-10-10)
 
 **Context.** A raw filter is a complete `SELECT`, but every plot path passes it where a
 WHERE body is expected, so it is refused at six call sites (2026-09-12). Making it work was
@@ -961,6 +1055,28 @@ the smaller alternative before this ruling.
 
 **Revisit if** users need a raw filter restricted by the selection tree, or nobody turns out
 to have a filter only expressible as raw SQL - then withdrawing it is cheaper than building it.
+
+
+**Superseded 2026-10-10** (Carolina, approved by Kyle): a raw filter follows the Scope selection,
+without the user knowing database ids. First built as a wrapper, `SELECT * FROM (<query>) WHERE
+<selection>`, then replaced by placeholders: `:experiment_id` and `:channel_id` in the query are bound
+to the selected pair, one channel at a time, so the scope sits inside the query. The wrapper applied
+the selection after the query, so it disagreed with it: on a real database `LIMIT 5` gave two
+channels 3 and 2 rows, an ungrouped aggregate landed on one channel, and the query had to return the
+scope columns, with ten safeguards (about 760 lines) around that. Placeholders trade that for two gaps,
+both warned about: a query that omits them ignores the selection, and one that scopes only a subquery
+leaks rows (counted when the result has the columns). Events are named by
+`(experiment_id, channel_id, event_id)`, not `id`, which is a different row in each table: a
+sublevel's `id` that was also a same-channel event once loaded the wrong events silently. A
+sublevel's key is its parent event's, so a join is safe. Only a read is run: the loader's
+validator accepts any statement, and `WITH x AS (SELECT 1) DELETE FROM events` emptied a scratch
+database (Python's SQLite module opens a transaction only for statements that start with
+`INSERT`/`UPDATE`/`DELETE`, so it committed). Poriscope refuses any writing keyword, and the loader's
+two read connections set `PRAGMA query_only = ON`. Measured on 600,000 events (300,000 per channel, `events` table only): one channel reads in 0.54 s raw against 0.93 s Assisted, and the navigation list takes 2.7 s raw against 1.0 s, the difference being the check that every key exists in `events`; both are paid when the filter or channel changes. Re-measured 2026-10-16 on the real schema (with its `UNIQUE (experiment_id, channel_id, event_id)` index), 300,025 events in one channel: the navigation list takes 2.1-2.2 s raw against 1.3 s Assisted, about 1.7x rather than 2.7x; the guide states only the bound. Export Subset - CSV takes a raw filter as one subquery per selected channel, `e.event_id IN (SELECT event_id FROM (<bound query>))` pinned to that experiment and channel, built after the plot checks pass for it; unrolling keys into an id list was rejected because its text grows with the subset. An unscoped query is refused for export, since it would write the same events for every channel. **Revisit if** users keep omitting the placeholders.
+
+**Later, same entry** (Carolina, 2026-10-16). A query that uses only one placeholder, or none, is not refused: it runs, the panel says what each dataset now holds (that channel number from every other experiment; every channel of the experiment; or everything the query finds), and a column plot's legend says "(rows not limited to this experiment and channel)". The Scope starts with everything ticked and always keeps one channel, so there is no empty-scope case to design for. No text check for an unbracketed `OR`: only a parser can say whether it escapes the scope, a viewer would not warn either, and a raw user is expected to know that `AND` binds first. The existing leak warning covers it when the result carries `experiment_id` or `channel_id`, and the guide says to bracket every `OR`.
+
+**Placeholder form** (Carolina, 2026-10-16). The names are `:experiment_id` and `:channel_id`, the colon form SQLite uses for named parameters and the names of the columns they stand for. There are two because the Scope is exactly an experiment and a channel. They exist because a user cannot be expected to type database ids: an experiment's `experiments.id` need not follow the order or numbering of the names the Scope shows, so ids written by hand are error prone and give a plausible-looking wrong plot. They are replaced by the whole numbers Poriscope looked up for the pair, never by user text, and text inside strings, quoted names and comments is left as written. The wrapper (`SELECT * FROM (<query>) WHERE <selection>`) was tried first and dropped as over-engineering: preventing its edge cases (a `LIMIT`, an aggregate, the scope columns) took ten safeguards and about 760 lines, and placeholders avoid them by putting the scope inside the query. The gaps placeholders leave are covered where they can be detected: a missing or partial placeholder by the panel warning, the legend label and the export refusal; a scope only in a subquery, or an unbracketed `OR`, only when the result carries `experiment_id` or `channel_id`. **Revisit if** omitting the placeholders, with the legend label and the panel warnings, is still not enough and users get wrong data, or a third thing needs binding.
 
 ---
 
@@ -2465,6 +2581,12 @@ work. Raw filters are refused on both tabs now rather than half-implemented on o
 **Revisit if** raw filters are wanted for real, which is a feature build rather than a fix:
 the filter would have to travel as the whole query rather than as a WHERE-clause body, which
 is a `MetaDatabaseLoader` change and wants its own plan.
+
+**Superseded 2026-10-16** (Carolina): raw filters are wanted and now work, as a complete query run
+with the scope inside it rather than as a WHERE-clause body (see the 2026-09-14 entry). So
+`_refuse_raw_filters` and its six call sites are removed, and the filter's name goes back onto the
+signals, on all of them rather than only Protein's, as it was before this entry (see the 2026-10-16
+entry on the filter's name).
 
 ---
 

@@ -878,6 +878,9 @@ class SQLiteDBLoader(MetaDatabaseLoader):
         cursor = None
         try:
             conn = sqlite3.connect(self.db_path)
+            # Python's SQLite module commits a WITH ... DELETE, which it does not take for
+            # a write, so a read has to be made unable to write rather than trusted not to.
+            conn.execute("PRAGMA query_only = ON")
             cursor = conn.cursor()
             cursor.execute(query)
             result = cursor.fetchall()
@@ -919,6 +922,7 @@ class SQLiteDBLoader(MetaDatabaseLoader):
         cursor = None
         try:
             conn = sqlite3.connect(self.db_path)
+            conn.execute("PRAGMA query_only = ON")
             cursor = conn.cursor()
             cursor.execute(query)
             column_names = [description[0] for description in cursor.description]

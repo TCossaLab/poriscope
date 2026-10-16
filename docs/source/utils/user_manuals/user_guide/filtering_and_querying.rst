@@ -3,192 +3,134 @@
 Filtering and Querying
 ======================
 
-Poriscope supports two modes for filtering event data: **Assisted SQL** and **Raw SQL**. Both modes are available in any tab that supports filters, including the :ref:`metadata-tab`.
+A **filter** picks which events a plot, an event view or an export uses. Poriscope supports two
+modes: **Assisted SQL** and **Raw SQL**. Both are available in any tab that supports filters,
+including the :ref:`metadata-tab`.
 
-Filters can be saved to a JSON file and reloaded in future sessions using the **Save Filter** and **Load Filter** buttons. See :ref:`saving-and-loading-filters`.
-The mode you choose at creation time is permanent and encoded directly in the filter name.
+The mode you choose when you create a filter is permanent and is encoded in the filter's name
+(``_assisted`` or ``_raw``). Filters can be saved to a JSON file and reloaded in later sessions;
+see :ref:`saving-and-loading-filters`.
 
 .. image:: /_static/images/FilterDialog.png
    :alt: Add Filter Dialog
    :align: center
 
-Filter Modes
-------------
+.. toctree::
+   :maxdepth: 1
+   :caption: The two filter modes
 
-Assisted SQL
-~~~~~~~~~~~~
+   filtering_assisted
+   filtering_raw
 
-In **Assisted SQL** mode, you write only the **WHERE clause** condition. Poriscope constructs the full SQL query automatically, handling column qualification, table joins, and experiment/channel scoping. You do not control which columns are returned or how the query is structured (Poriscope decides that based on what axes you select in the UI).
+Start here
+----------
 
-Use this mode for most everyday filters, and if you are not familiar with SQL 
-()no SQL knowledge is required, just simple conditions like ``duration > 100``).
+Three things to know before the details:
 
-**Example 1 — Long events only:**
+1. **Scope** chooses the experiments and channels. Everything starts ticked.
+2. **The filter** says which events you want. You write it as a condition (**Assisted SQL**) or as a
+   complete query (**Raw SQL**).
+3. **The plot** runs the filter once for each ticked experiment and channel and draws each result as
+   its own dataset.
 
-Filter: ``duration > 100``
+.. _choosing-a-mode:
 
-Then select **Histogram**, x-axis: ``duration`` → histogram of events longer than 100 µs.
+Choosing a mode
+---------------
 
-**Example 2 — High blockage events:**
+.. list-table::
+   :header-rows: 1
+   :widths: 20 40 40
 
-Filter: ``max_blockage > 2000``
+   * -
+     - :ref:`Assisted SQL <filtering-assisted>`
+     - :ref:`Raw SQL <filtering-raw>`
+   * - **You write**
+     - A condition, such as ``duration > 150``
+     - A complete ``SELECT``
+   * - **The experiment and channel**
+     - Added for you
+     - You add them with ``:experiment_id`` and ``:channel_id``
+   * - **The columns**
+     - Chosen by Poriscope from the axes you pick
+     - Chosen by you (start with ``event_id``)
+   * - **Good for**
+     - Everyday filters; no SQL needed
+     - Top-N, aggregates, computed or joined results
+   * - **Watch out for**
+     - Little to watch for: the scope is always applied
+     - Leaving the placeholders out, or an unbracketed ``OR``
 
-Then select **Scatterplot**, x-axis: ``duration``, y-axis: ``max_blockage`` → scatter of high-blockage events.
+One filter, two modes
+---------------------
 
-**Example 3 — Multi-sublevel events with significant blockage:**
+The same filter, "events longer than 150 µs", written both ways. The numbers come from the small
+:ref:`example database <example-database>` below, for experiment 1, channel 2, whose events over
+150 are 200 and 210.
 
-Filter: ``num_sublevels >= 3 and max_blockage > 1500``
+.. list-table::
+   :header-rows: 1
+   :widths: 18 41 41
 
-Then select **Histogram**, x-axis: ``fitted_ecd`` → distribution of ECD for complex events.
+   * -
+     - Assisted SQL
+     - Raw SQL
+   * - **What you write**
+     - ``duration > 150``
+     - ``SELECT event_id, duration FROM events WHERE duration > 150 AND experiment_id = :experiment_id AND channel_id = :channel_id``
+   * - **What Poriscope runs for experiment 1, channel 2**
+     - ``SELECT e.id, e.experiment_id, e.channel_id, e.event_id, e.duration FROM events e WHERE (e.duration > 150) AND ((experiment_id = 1 AND channel_id IN (2)))``
+     - ``SELECT event_id, duration FROM events WHERE duration > 150 AND experiment_id = 1 AND channel_id = 2``
+   * - **Rows for that pair**
+     - 2 (200 and 210)
+     - 2 (200 and 210)
+   * - **Who adds the scope**
+     - Poriscope, always
+     - You, with the two placeholders
+   * - **Who chooses the columns**
+     - Poriscope, from the axes you pick
+     - You
 
-**Example 4 — Cross-table filter** (join handled automatically by Poriscope):
+Both give the same two events. The difference is who writes the scope and the columns. For more
+details see :ref:`Assisted SQL filters <filtering-assisted>` and :ref:`Raw SQL filters <filtering-raw>`.
 
-Filter: ``sublevel_duration > 200``
+.. _example-database:
 
-Then select **Histogram**, x-axis: ``duration`` → returns the ``duration`` of events
-that contain at least one sublevel longer than 200 µs. Poriscope detects that
-``sublevel_duration`` belongs to the ``sublevels`` table and automatically joins it
-with the ``events`` table to apply the filter.
+The example database
+~~~~~~~~~~~~~~~~~~~~
 
-**Example 5 — Filter by a property of the experiment:**
-
-Filter: ``voltage > 50``
-
-Then select **Histogram**, x-axis: ``duration`` → events from the experiments run above
-50 mV. Poriscope joins the ``experiments`` table automatically, the same way it joins
-``sublevels`` in Example 4.
-
-**Example 6 - Subquery, including aggregation:**
-
-A subquery is passed through exactly as you type it, so it can do things the filter
-itself cannot. Qualify any reference to the outer row yourself - ``e.id`` for the event.
-
-Filter: ``e.id IN (SELECT event_db_id FROM sublevels WHERE filtered = 5)``
-
-Then select **Histogram**, x-axis: ``duration`` -> events with at least one sublevel
-whose ``filtered`` value is 5. Note that the filter ``filtered = 5`` says the same thing
-more simply, because Example 4's automatic join already means "at least one sublevel
-matches".
-
-Filter: ``e.id IN (SELECT event_db_id FROM sublevels GROUP BY event_db_id HAVING COUNT(*) > 3)``
-
-Then select **Histogram**, x-axis: ``duration`` -> events with more than 3 sublevels,
-which is the aggregation the note above says the filter itself cannot express.
-
-Saved as: ``<subset_name>_assisted``
-
-.. note::
-
-   Assisted mode handles cross-table filters automatically but cannot put a
-   ``GROUP BY`` or ``HAVING`` on the query itself, and cannot return computed
-   columns (e.g., ``max_blockage - min_blockage AS blockage_range``). Use Raw SQL
-   for those cases. Aggregation *inside a subquery* does work - see Example 6.
-
-   Text compared against a column is left exactly as you type it, so
-   ``sequence = 'duration'`` matches the literal value ``duration`` and is not
-   confused with the ``duration`` column. A subquery is left alone the same way:
-   it names its own tables, so its column references are never rewritten against
-   the outer query's, and a reference to the outer row has to be qualified by you.
-
-   ``id`` on its own is rejected, because every table has one and they mean different
-   rows. Write ``e.id`` for an event, ``s.id`` for a sublevel or ``exp.id`` for an
-   experiment. ``experiment_id``, ``channel_id`` and ``event_id`` need no qualifier -
-   they mean the same thing in every table.
-
-Raw SQL
-~~~~~~~
-
-In **Raw SQL** mode, you write a **complete SELECT statement**. Poriscope executes
-it against the SQLite database without rewriting or modifying the query content.
-
-You have full control over which columns are returned and how the query is structured.
-
-.. warning::
-
-   Raw SQL filters can be created, validated, saved and loaded, but cannot currently be
-   selected for a plot on either tab; selecting one is refused with a message on the
-   status panel.
-
-Use this mode to write and check queries that need aggregations or computed columns,
-or when you simply prefer writing complete SQL; for plotting, use Assisted SQL.
-
-**Example 1 — Same long events filter, written as Raw SQL:**
+The examples in this guide that give numbers use this tiny database, so you can paste it into a
+SQLite viewer such as `DB Browser for SQLite <https://sqlitebrowser.org/>`_ and run every query
+yourself. It is made up for the guide and has nothing to do with your data.
 
 .. code-block:: sql
 
-   SELECT duration FROM events WHERE duration > 100
+   CREATE TABLE events (experiment_id INTEGER, channel_id INTEGER, event_id INTEGER, duration REAL);
+   INSERT INTO events VALUES
+     (1,1,0,120), (1,1,1,180),
+     (1,2,0,200), (1,2,1,90), (1,2,2,210),
+     (2,2,0,160), (2,2,1,140), (2,2,2,230);
 
-**Example 2 — Same high blockage filter, written as Raw SQL:**
+It holds two experiments. Experiment 1 has channels 1 and 2, and experiment 2 has channel 2. Five
+of the eight events last longer than 150.
 
-.. code-block:: sql
+.. _how-scope-works:
 
-   SELECT duration, max_blockage FROM events WHERE max_blockage > 2000
+How scope works
+---------------
 
-**Example 3 — Same multi-sublevel filter, written as Raw SQL:**
+The **Scope** button lists every experiment and channel in the database, and everything starts
+ticked (at least one must stay ticked). When you plot, Poriscope takes the ticked experiments and
+channels **one pair at a time**, runs each ticked filter once for that pair, and draws the rows
+that come back as one dataset, labelled with the pair and given its own colour.
 
-.. code-block:: sql
+* In an **Assisted** filter the pair is added to the query for you.
+* In a **Raw** filter the pair is *not* added for you. ``:experiment_id`` and ``:channel_id`` stand
+  for the pair being plotted, and Poriscope replaces them with that pair's database numbers before
+  running the query. A query without them is run the same way for every pair.
 
-   SELECT fitted_ecd FROM events
-   WHERE num_sublevels >= 3 AND max_blockage > 1500
-
-**Example 4 — Same cross-table filter, written as Raw SQL:**
-
-.. code-block:: sql
-
-   SELECT duration FROM events
-   WHERE id IN (
-       SELECT event_db_id FROM sublevels
-       WHERE sublevel_duration > 200
-   )
-
-**Example 5 — Aggregation: filter by sublevel count** (not possible in Assisted):
-
-``GROUP BY`` groups all sublevel rows by their parent event. ``HAVING COUNT(*) > 3``
-then keeps only events that have more than 3 sublevel rows.
-
-.. code-block:: sql
-
-   SELECT duration FROM events
-   WHERE id IN (
-       SELECT event_db_id FROM sublevels
-       GROUP BY event_db_id
-       HAVING COUNT(*) > 3
-   )
-
-You can also aggregate a sublevel property per event and filter on that:
-
-.. code-block:: sql
-
-   SELECT duration FROM events
-   WHERE id IN (
-       SELECT event_db_id FROM sublevels
-       GROUP BY event_db_id
-       HAVING AVG(sublevel_duration) > 150
-   )
-
-**Example 6 — Computed columns** (not possible in Assisted):
-
-A computed column is derived from existing columns using arithmetic. It is defined
-in the ``SELECT`` with ``expression AS column_name``.
-
-Blockage range — difference between maximum and minimum blockage:
-
-.. code-block:: sql
-
-   SELECT duration, max_blockage - min_blockage AS blockage_range FROM events
-
-Fractional blockage — blockage normalised to baseline current:
-
-.. code-block:: sql
-
-   SELECT duration, max_blockage / ABS(baseline_current) AS fractional_blockage FROM events
-
-Saved as: ``<subset_name>_raw``
-
-.. warning::
-
-   Raw SQL filters must begin with ``SELECT``. Entering a WHERE clause in Raw SQL mode
-   (e.g., ``duration > 100``) will be rejected with an error message.
+For more details see :ref:`Scoping with placeholders <raw-scoping>` and
+:ref:`What leaving a placeholder out does <raw-leaving-placeholder-out>`.
 
 Creating a Filter
 -----------------
@@ -196,6 +138,11 @@ Creating a Filter
 1. Click the **➕** button next to the Filter dropdown.
 2. Enter a **name** for the filter.
 3. Select the mode using the **Assisted SQL** or **Raw SQL** radio buttons.
+   The empty **Filter** box shows an example for the mode you chose (press **Tab** to insert it), and an **info icon** beside the chosen mode
+   says, when you hover over it, how to write a filter in that mode and where to read more
+   (Help → Help → Documentation, then User Guide → Filtering and Querying). In Raw SQL mode it says
+   to add ``WHERE experiment_id = :experiment_id AND channel_id = :channel_id`` to follow the Scope
+   selection, and to start with ``SELECT event_id, ...``.
 4. Enter the filter expression or query in the **Filter** field.
 5. Click **OK**.
 
@@ -229,14 +176,24 @@ The mode (Assisted or Raw) is shown but cannot be changed during editing.
 Saving and Loading Filters
 --------------------------
 
-Filters can be saved to a JSON file and reloaded in future sessions.
+Your filters are kept in two ways, and they do different jobs.
+
+**Your session keeps them for you.** Filters are part of the session: **File → Save Session** stores
+them with the rest of your workspace, and the session Poriscope saves when you quit brings them back
+the next time you use **File → Restore Session** (see :ref:`menus_and_sessions`). This covers both
+the Metadata and the Protein tab, and Assisted and Raw filters alike. A filter changed in the open
+tab, such as one that gained ``event_id`` when you answered Yes to the question, is kept this way too.
+
+**A filters file is for moving them around.** **Save Filter** writes the tab's filters to a ``.json``
+file of their own, and **Load Filter** reads one back, so you can share filters with someone else,
+keep a set for one kind of database, or update a file after changing a filter:
 
 - **Save Filter**: Exports all current filters to a ``.json`` file. Both ``_assisted``
   and ``_raw`` filters are included.
 - **Load Filter**: Imports filters from a ``.json`` file. Raw filters are restored
-  directly without re-validation. Assisted filters are re-validated against the selected
-  loader's database before being added; if no loader is selected, they are added
-  unvalidated and a warning is written to the log.
+  directly without re-validation, but a filter that writes is never run. Assisted filters are
+  re-validated against the selected loader's database before being added; if no loader is
+  selected, they are added unvalidated and a warning is written to the log.
 
 The saved JSON format looks like:
 
@@ -244,7 +201,7 @@ The saved JSON format looks like:
 
    {
        "long_events_assisted": "duration > 100",
-       "multi_sublevel_raw": "SELECT duration FROM events WHERE id IN (SELECT event_db_id FROM sublevels GROUP BY event_db_id HAVING COUNT(*) > 3)"
+       "multi_sublevel_raw": "SELECT event_id, duration FROM events WHERE experiment_id = :experiment_id AND channel_id = :channel_id AND id IN (SELECT event_db_id FROM sublevels GROUP BY event_db_id HAVING COUNT(*) > 3)"
    }
 
 .. note::
@@ -263,22 +220,86 @@ The saved JSON format looks like:
    read-only folder, is reported there too; it used to look exactly like a save that
    worked.
 
+Which plots take a filter
+-------------------------
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 35 35
+
+   * - Action
+     - Assisted
+     - Raw
+   * - Update Plot: Histogram, Normalized and Categorical Histogram, Kernel Density,
+       Scatterplot, 3D Scatterplot
+     - Works
+     - Needs the plotted columns in the result; a column of another table (``sublevel_duration``)
+       needs a join, which the status panel shows. Drawn once for each ticked channel
+   * - Update Plot: Heatmap
+     - Works, one experiment, one channel and one filter
+     - Needs the plotted columns in the result, one experiment, one channel and one filter
+   * - Update Plot: Raw and Filtered All Points Histograms (and normalized)
+     - Works
+     - Needs ``event_id``. Drawn once for each ticked channel
+   * - Update Plot: Raw and Filtered Event Overlay
+     - Works, one experiment, one channel and one filter
+     - Needs ``event_id``, one experiment, one channel and one filter
+   * - Plot Events and the event arrows (Metadata and Protein)
+     - Works, one filter and one channel
+     - Needs ``event_id``, one filter and one channel
+   * - Protein tab: Update Plot (Ensemble), Plot Histogram
+     - Works, one filter and one channel
+     - Needs ``event_id``, one filter and one channel
+   * - Export Subset - CSV
+     - Works, one filter
+     - Works, one filter, with both placeholders in the query
+
+Filters are never combined. Several filters ticked at once in the Metadata tab are drawn as
+separate overlaid datasets, whether they are Assisted, Raw or a mixture of both; there is no AND or
+OR between two saved filters. To combine conditions, write them into one filter. The Protein tab
+and Export Subset - CSV take one filter only.
+
 Common Mistakes
 ---------------
 
-+------------------------------------------+--------------------------------------------------+
-| Mistake                                  | Result                                           |
-+==========================================+==================================================+
-| WHERE clause entered in Raw SQL mode     | Rejected at creation — must start with SELECT    |
-+------------------------------------------+--------------------------------------------------+
-| Full SELECT entered in Assisted mode     | Fails validation — treated as a WHERE clause     |
-+------------------------------------------+--------------------------------------------------+
-| Raw SQL filter selected for a plot       | Refused: raw SQL filters cannot be plotted       |
-+------------------------------------------+--------------------------------------------------+
-| Typo in column name                      | Validation error                                 |
-+------------------------------------------+--------------------------------------------------+
-| ``event_id`` used to match a sublevel    | Empty result - use ``e.id``; see note above      |
-+------------------------------------------+--------------------------------------------------+
+.. list-table::
+   :header-rows: 1
+   :widths: 28 44 28
+
+   * - Mistake
+     - Result
+     - For more details
+   * - WHERE clause entered in Raw SQL mode
+     - Rejected at creation: a raw filter has to start with ``SELECT``
+     - :ref:`Raw SQL filters <filtering-raw>`
+   * - Full ``SELECT`` entered in Assisted mode
+     - Refused: an Assisted filter cannot start with ``SELECT``, and the message says to use Raw SQL
+     - :ref:`Assisted SQL filters <filtering-assisted>`
+   * - Raw filter without ``:experiment_id`` / ``:channel_id``
+     - Warning on the status panel; each ticked pair is plotted with everything the query finds, and
+       the legend says "(rows not limited to this experiment and channel)"
+     - :ref:`What leaving a placeholder out does <raw-leaving-placeholder-out>`
+   * - Raw filter without ``event_id``, used for an event plot, Plot Events or the arrows
+     - For a plain query Poriscope asks whether to add it, and the plot carries on if you say yes; otherwise the panel says what stops it
+     - :ref:`Start with event_id <raw-event-id>`
+   * - Raw filter that is missing a column the plot needs
+     - The panel names it and, for another table's column, shows the join
+     - :ref:`The plot's own columns <raw-plot-columns>`
+   * - ``OR`` without brackets in a Raw filter
+     - Only its last term is scoped; the first draws every channel. Write ``WHERE (a OR b) AND ...``
+     - :ref:`Known gaps <raw-known-gaps>`
+   * - Assisted condition whose brackets do not balance
+     - Refused, so a stray ``)`` cannot escape the Scope
+     - :ref:`Assisted SQL filters <filtering-assisted>`
+   * - Raw filter without both placeholders, exported
+     - Refused with how to fix it: an export writes files for each channel
+     - :ref:`Scoping with placeholders <raw-scoping>`
+   * - ``DELETE``, ``UPDATE``, ``DROP`` ... in a Raw filter
+     - Not run; the status panel names the keyword
+     - :ref:`Raw SQL filters <filtering-raw>`
+   * - Typo in a column name
+     - Validation error
+     - `Available Columns`_
 
 Available Columns
 -----------------
@@ -316,6 +337,13 @@ Columns present in the YouTube tutorial database are listed below as a reference
 - ``sublevel_stdev`` — standard deviation of current within the sublevel
 - ``sublevel_fitted_ecd``, ``sublevel_raw_ecd`` — sublevel-level ECD values
 - ``sublevel_start_times``, ``sublevel_end_times`` — sublevel time boundaries in µs
+- ``sublevel_max_deviation`` — maximum deviation from baseline within the sublevel
+- ``level_id``, ``levels_left`` — the sublevel's position within its event
+- ``event_db_id`` — the ``id`` of the event the sublevel belongs to (``e.id``)
+
+**experiments table:**
+
+- ``name``, ``voltage``, ``thickness``, ``conductivity`` — the experiment's name and its recorded conditions
 
 .. tip::
 

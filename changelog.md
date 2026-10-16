@@ -24,6 +24,12 @@
 
 * **`TCossaLabABFReader` and `LegacyElementsReader` now refuse a file whose current channel's units are not a current**, instead of reading it as pA, and no longer refuse a file for its ADC channel count or channel names
 
+* **An Assisted filter containing `OR`, or ending in a `--` comment, is now confined to the selected experiments and channels:** it used to take the selection with only its last term, or lose it, so such a filter drew every channel in the database for each one ticked
+
+* An Assisted filter whose brackets do not balance is now refused instead of run, since a stray `)` could close the brackets its condition is put in
+
+* An Assisted filter that starts with `SELECT` is now refused, saying to use Raw SQL mode; it used to be put inside the `WHERE` as a subquery, where a one-column query was accepted and selected events by an unrelated test
+
 #### Data plugin API:
 
 * **`MetaEventFinder.get_single_event_data` now raises `IndexError` for an index with no event (negative included) instead of returning `None`, and a reader or filter error keeps its own message**; `get_event_data_generator` still yields `None` for an event it cannot read
@@ -61,6 +67,8 @@
 * **Breaking:** `_shift_range_and_update_plot` and `_get_event_index_text` have moved from `RawDataView` and `EventAnalysisView` to `MetaEventTabView`, which now requires its subclasses to implement `_event_controls` and `_handle_plot_events`
 
 * **Breaking:** `MetadataModel.calculate_heatmap` now returns the bin edges as a fourth value, and `MetadataView.set_heatmap` takes them as a new `extent` parameter
+
+* **Breaking:** the Metadata and Protein tabs' subset and event request signals (`event_id_cache_requested`, `all_points_histogram_requested`, `event_overlay_requested`, `event_distribution_data_requested`, `ensemble_histogram_requested`, `metadata_subset_requested`, `csv_subset_export_requested`), their Controller slots, `_rebuild_event_id_cache` and `_fetch_event_subset` take the selected filter's name as a new last argument, and `MetaSubsetTabView._refuse_raw_filters` is removed
 
 * **Breaking:** `format_axis_label` is now one `MetaView` method instead of three copies, and it appends the unit rather than replacing a trailing parenthetical, so a column name containing parentheses is no longer truncated; `ProteinView`'s module-level `format_axis_label` is gone
 
@@ -209,6 +217,38 @@
 * **Fixed the Metadata tab's capture-rate plot always reporting at least one row dropped by the log filter, even when nothing was dropped**; the count now excludes the one fewer interval than event that n events always produce
 
 * **Fixed the Metadata tab's heatmap being drawn one bin width narrower than its data**, which pulled every plotted point's true position inward from where it should sit on the axes
+
+* **A raw SQL subset filter can now be plotted, not only saved:** it scopes itself with `:experiment_id` and `:channel_id`, replaced by the selected experiment's id and channel for each ticked channel, and warns on the status panel when it omits them; a plot missing a column it needs says which, and every plot of events takes them from the query's `event_id`
+
+* **A raw SQL filter that ends in its own `LIMIT` can now be saved:** the check added `LIMIT 0` to its text, which made it a syntax error
+
+* The subset filter dialog shows an example in its empty filter box (Tab inserts it), a condition for Assisted and a scoped query for Raw SQL, and in Raw SQL mode an info icon beside the chosen mode whose tooltip explains the mode (for Raw SQL, to add `:experiment_id` and `:channel_id` to follow the Scope selection and to start with `event_id`) and points to Help → Help → Documentation → Filtering and Querying
+
+* **Export Subset - CSV now takes a raw SQL filter:** it writes the events the query names in each selected channel, and refuses a filter that does not use `:experiment_id` and `:channel_id`, saying how to fix it
+
+* A raw filter that leaves out a column its plot needs now says how to add it, including the join for a column of another table such as `sublevel_duration`
+
+* The missing-`event_id` message for a raw filter now shows the query with `event_id` added, for a plain one-row-per-event `SELECT`; the filter dialog's raw example and the guide's raw examples start with `event_id`
+
+* The raw filter warning about rows from other channels now names an unbracketed `OR` as a cause, not only a subquery, and shows the fix
+
+* A column plot of a raw filter that does not use the Scope selection now adds `(rows not limited to this experiment and channel)` to its legend label, and the warning for a query with only one placeholder says which extra rows each dataset holds
+
+* The refusal of a raw filter that does not start with `SELECT` or that writes now names what it starts with or contains and says it may only read
+
+* A plot that needs `event_id` from a plain raw filter that lacks it now asks whether to add it and carries on when you say yes; the advice ignores `GROUP BY`, `DISTINCT` and `UNION` inside a subquery or a function, names the word that stops it being added (with an example for a join or a grouped query), and warns about a `GROUP BY` or aggregate that returns `event_id` without grouping by the event; the question is asked each time
+
+* A status-panel line that would only repeat the line directly above it (a warning, a refusal, the echoed query) is now left out; once another line is between, it is shown again, and the missing-`event_id` message says which plots need it
+
+* Fixed the arrows reusing the event list of an earlier filter text after the `event_id` question was answered Yes and the filter was edited back to the text it had
+
+* The Filtering and Querying guide is now an overview with a short "Start here", plus a page each for Assisted and Raw SQL filters; it explains how scope works, when each mode fits, how filters are kept in a session and in a filters file, and what leaving the placeholders out does
+
+* The status panel now shows a filter's text when it is added or updated (`Filter 'x' updated to 'x': <query>`), and Plot Events and the event arrows print the query they ran, as Update Plot does
+
+* **A raw SQL filter can only read the database:** a statement that writes, including one behind `WITH`, is refused, and the loader's read connections can no longer write
+
+* The Metadata and Protein event navigation (Plot Events, the arrows) now reports a failure to read a subset's events on the status panel only, instead of also raising an error dialog
 
 * **A page switch blocked while the tutorial is running (walkthroughs and milestones) no longer builds the tab or leaves the sidebar highlight on the clicked page**, so no tab you never reached is saved into the session; the Settings, analysis-tabs and Help sidebar icons are blocked the same way
 

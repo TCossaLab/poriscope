@@ -50,12 +50,6 @@ Step 10 waits for both tracks.
 
 ### Step 9b - breaking tab designs and the milestone guard (Carolina's track)
 
-- **Raw SQL subset filters can be saved but never plotted.** Six call sites refuse them
-  (`MetaSubsetTabView._refuse_raw_filters:234`, from `MetadataView.py:1409`/`:2070` and
-  `ProteinView.py:1359`/`:1454`/`:1713`/`:1874`). Design settled (`DECISIONS.md` 2026-09-14): a raw
-  filter goes to `query_database_directly` (`MetaDatabaseLoader.py:1416`) as written, ignores the
-  experiment/channel selection, and a plot missing a column it needs says which. Clustering only
-  gets this through the shared filter base queued under Later.
 - **Action history: record a declared action name, not a method name.** `DECISIONS.md`
   2026-09-17 settled the design. 5 `@register_action` sites over 3 names, all private
   (`_reset_actions` on Clustering/Metadata/Protein views, `MetadataView._overlay_plot:1396`,
@@ -80,6 +74,18 @@ Tab state onto the Models, heavy work off the GUI thread, event-finder and CUSUM
 
 ### Analysis tabs
 
+- **A raw filter's result columns cannot be chosen on a plot axis.** The axis menus list only the
+  database's own columns (`metadatacontrols.update_axes:656`), so a computed or aliased column such
+  as `max_blockage - min_blockage AS range` is returned by the query but never selectable, and
+  every axis is picked by hand even when the result holds only the columns the user selected. Worth
+  addressing because shaping the result is the point of a raw filter, and that shaping cannot reach
+  a plot. SQL viewers that can plot choose the axes from the query's own columns and preselect them
+  automatically. Found in a manual pass; the tests set the axis column directly and cannot see it.
+- **Auto-binned histogram overlays re-bin the earlier datasets.** With bins left empty,
+  `MetadataModel.overlaid_histograms:450` estimates bins from all overlaid datasets, so each added
+  dataset changes the first one's edges (measured on `develop`: 4 bins 56 wide alone, 7 at 32 with
+  one overlay, 11 at 20 with two); a fixed bin count does not move. Decide whether to freeze the
+  edges at the first dataset.
 - **`itertools.tee` buffers the whole subset, raw arrays included**
   (`MetadataModel.py:780`, `ProteinModel.py:583`): a 16 MB peak for 200 events of 80 KB. Use
   two queries or a streaming min/max.
@@ -327,6 +333,11 @@ absorbs what it needs and stands alone, leaving 20240101 a clean deletion.
 
 ### Analysis tabs
 
+- **An Assisted filter cannot define a derived column.** It is a condition, so
+  `max_blockage - min_blockage > 500` selects events, but nothing can put a computed value such as
+  `range = max_blockage - min_blockage` on an axis. Worth addressing because it is the one way of
+  shaping a result for which the user must leave Assisted for raw SQL, and raw has its own column
+  limitation (the entry under 2.2).
 - **Event-tab arrows stop at 0 but run past the last event; consider wrapping (or declining)
   at both ends.** `MetaEventTabView._shift_range_and_update_plot:220` declines below 0 (`:274`); past
   the end it moves the field and the Controller reports the overflow (`RawDataController.py:439`,

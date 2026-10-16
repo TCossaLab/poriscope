@@ -499,6 +499,7 @@ class TestBuildEnsembleHistogram:
             1.0,
             2.0,
             3,
+            "subset",
         )
 
         controller.view.set_event_query.assert_called_once_with("SELECT 1")
@@ -540,6 +541,7 @@ class TestBuildEnsembleHistogram:
             1.0,
             2.0,
             3,
+            "subset",
         )
 
         controller.view.set_ensemble_histogram.assert_not_called()
@@ -565,6 +567,7 @@ class TestBuildEnsembleHistogram:
             1.0,
             2.0,
             3,
+            "subset",
         )
 
         controller.view.set_ensemble_histogram.assert_not_called()
@@ -587,6 +590,7 @@ class TestBuildEnsembleHistogram:
             1.0,
             2.0,
             3,
+            "subset",
         )
 
         controller.view.set_ensemble_histogram.assert_not_called()

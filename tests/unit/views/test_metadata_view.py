@@ -26,6 +26,7 @@ from unittest.mock import MagicMock
 import numpy as np
 import pandas as pd
 import pytest
+from PySide6.QtWidgets import QMessageBox
 from pytest_mock import MockerFixture
 
 from poriscope.plugins.analysistabs.MetadataView import MetadataView
@@ -1805,6 +1806,94 @@ def test_overlay_plot_defaults_experiments_and_channels_when_none(
     view.metadata_subset_requested.emit.assert_called()
 
 
+def _raw_histogram_parameters() -> dict:
+    """
+    The parameters of a duration histogram, for the raw-filter tests below.
+
+    :return: the plot parameters, before the selection is recorded into them
+    :rtype: dict
+    """
+    return {
+        "db_loader": "test_loader",
+        "plot_type": "Histogram",
+        "x_axis": "duration",
+        "x_log": False,
+        "bins": [50],
+        "sizes": False,
+    }
+
+
+def test_overlay_plot_sends_a_raw_filter_to_the_controller_with_its_name(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """A raw filter is no longer refused; its name goes out so the Controller can tell."""
+    view.figure.axes = []
+    view.get_selected_filters = mocker.Mock(
+        return_value={"mine_raw": "SELECT duration FROM events"}
+    )
+    view.selected_experiment_and_channels_by_loader = {}
+    view.canned_query = "SELECT duration FROM events"
+    view.canned_plot_data = pd.DataFrame({"duration": [1.0, 2.0, 3.0]})
+    view.canned_units = "ms"
+    view.update_plot = mocker.Mock()
+
+    result = view._overlay_plot(recorded(view, _raw_histogram_parameters()))
+
+    assert result is True
+    view.metadata_subset_requested.emit.assert_called_once()
+    assert view.metadata_subset_requested.emit.call_args[0][2:] == (
+        "SELECT duration FROM events",
+        {None: [None]},
+        "mine_raw",
+    )
+
+
+def test_overlay_plot_asks_for_a_raw_filter_once_per_selected_channel(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """A raw filter is restricted to each channel in turn, like an assisted one."""
+    view.figure.axes = []
+    view.get_selected_filters = mocker.Mock(
+        return_value={
+            "mine_raw": "SELECT experiment_id, channel_id, duration FROM events"
+        }
+    )
+    view.selected_experiment_and_channels_by_loader = {"test_loader": {"exp1": [1, 2]}}
+    view.canned_query = "SELECT 1"
+    view.canned_plot_data = pd.DataFrame({"duration": [1.0, 2.0, 3.0]})
+    view.canned_units = "ms"
+    view.update_plot = mocker.Mock()
+    view._reset_actions = mocker.Mock()
+
+    view._overlay_plot(recorded(view, _raw_histogram_parameters()))
+
+    calls = view.metadata_subset_requested.emit.call_args_list
+    assert [c[0][3] for c in calls] == [{"exp1": [1]}, {"exp1": [2]}]
+    assert {c[0][4] for c in calls} == {"mine_raw"}
+
+
+def test_overlay_plot_still_scopes_an_assisted_filter_per_channel(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """The scoped path is unchanged: one request per channel, labelled with it."""
+    view.figure.axes = []
+    view.get_selected_filters = mocker.Mock(return_value={"short": "duration < 300"})
+    view.selected_experiment_and_channels_by_loader = {"test_loader": {"exp1": [1, 2]}}
+    view.canned_query = "SELECT duration FROM events"
+    view.canned_plot_data = pd.DataFrame({"duration": [1.0, 2.0, 3.0]})
+    view.canned_units = "ms"
+    view.update_plot = mocker.Mock()
+
+    view._overlay_plot(recorded(view, _raw_histogram_parameters()))
+
+    assert view.metadata_subset_requested.emit.call_count == 2
+    labels = [c.kwargs["dataset_label"] for c in view.update_plot.call_args_list]
+    assert labels == [
+        "test_loader | exp1 Ch 1: short",
+        "test_loader | exp1 Ch 2: short",
+    ]
+
+
 def test_overlay_plot_rejects_multiple_experiments_for_event_overlay(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
@@ -1889,7 +1978,13 @@ def _subset_answers(view: MetadataView) -> Callable[..., None]:
     :rtype: Callable[..., None]
     """
 
-    def _emit(loader: str, columns: list, sql_filter: str, scope: object) -> None:
+    def _emit(
+        loader: str,
+        columns: list,
+        sql_filter: str,
+        scope: object,
+        subset_name: str,
+    ) -> None:
         view.query = getattr(view, "canned_query", "SELECT 1")
         view.plot_data = getattr(view, "canned_plot_data", None)
         units = getattr(view, "canned_units", None)
@@ -2671,7 +2766,7 @@ def test_overlay_plot_asks_for_a_raw_event_overlay(
     view._overlay_plot(recorded(view, parameters))
 
     view.event_overlay_requested.emit.assert_called_once_with(
-        "test_loader", "", {None: [None]}, "Raw Event Overlay"
+        "test_loader", "", {None: [None]}, "Raw Event Overlay", "Full Dataset"
     )
     view.all_points_histogram_requested.emit.assert_not_called()
 
@@ -3998,6 +4093,7 @@ def test_export_csv_subset_emits_signal_on_success(
         "WHERE x > 1",
         {"exp1": [1]},
         0,
+        "Filter1",
     )
 
 
@@ -5230,7 +5326,7 @@ def test_rebuild_event_id_cache_returns_false_when_no_events(
         view, "event_id_rows", pd.DataFrame()
     )
 
-    result = view._rebuild_event_id_cache("loader", "", None, None)
+    result = view._rebuild_event_id_cache("loader", "", None, None, "subset")
 
     assert result is False
     view.add_text_to_display.emit.assert_called()
@@ -5245,7 +5341,7 @@ def test_rebuild_event_id_cache_stores_event_ids(
         view, "event_id_rows", pd.DataFrame({"event_id": [10, 0, 5]})
     )
 
-    result = view._rebuild_event_id_cache("loader", "", None, None)
+    result = view._rebuild_event_id_cache("loader", "", None, None, "subset")
 
     assert result is True
     assert view.filtered_event_ids == [0, 5, 10]
@@ -5255,11 +5351,12 @@ def test_rebuild_event_id_cache_updates_current_trackers(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify current_sql_filter, current_experiment, and current_channel are updated."""
+    view.get_selected_filters = mocker.Mock(return_value={"subset": "duration > 1"})
     view.event_id_cache_requested.emit.side_effect = lambda *_: setattr(
         view, "event_id_rows", pd.DataFrame({"event_id": [1, 2, 3]})
     )
 
-    view._rebuild_event_id_cache("loader", "duration > 1", "exp1", 2)
+    view._rebuild_event_id_cache("loader", "duration > 1", "exp1", 2, "subset")
 
     assert view.current_sql_filter == "duration > 1"
     assert view.current_experiment == "exp1"
@@ -5275,7 +5372,7 @@ def test_rebuild_event_id_cache_emits_all_events_when_no_filter(
         view, "event_id_rows", pd.DataFrame({"event_id": [0, 1, 2]})
     )
 
-    view._rebuild_event_id_cache("loader", "", None, None)
+    view._rebuild_event_id_cache("loader", "", None, None, "subset")
 
     msg = view.add_text_to_display.emit.call_args[0][0]
     assert "All events" in msg
@@ -5290,7 +5387,7 @@ def test_rebuild_event_id_cache_emits_filter_name_when_filter_active(
         view, "event_id_rows", pd.DataFrame({"event_id": [3, 7]})
     )
 
-    view._rebuild_event_id_cache("loader", "duration > 1", None, None)
+    view._rebuild_event_id_cache("loader", "duration > 1", None, None, "subset")
 
     msg = view.add_text_to_display.emit.call_args[0][0]
     assert "my_filter" in msg
@@ -5306,7 +5403,7 @@ def test_rebuild_event_id_cache_emits_total_and_bounds(
         view, "event_id_rows", pd.DataFrame({"event_id": [2, 5, 9]})
     )
 
-    view._rebuild_event_id_cache("loader", "", None, None)
+    view._rebuild_event_id_cache("loader", "", None, None, "subset")
 
     msg = view.add_text_to_display.emit.call_args[0][0]
     assert "3 total" in msg
@@ -5612,3 +5709,70 @@ def test_overlay_plot_does_not_reset_a_second_overlay_of_the_same_type(
     )
 
     view._reset_actions.assert_not_called()
+
+
+def test_offer_event_id_changes_the_filter_on_yes_and_says_so(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """
+    The user sees the new text in the question; on yes the filter is replaced and the
+    status panel says it now starts with ``event_id``.
+    """
+    view.subset_filters = {"r_raw": "SELECT duration FROM events"}
+    view.add_text_to_display = mocker.Mock()  # type: ignore[assignment]
+    ask = mocker.patch(
+        "poriscope.utils.MetaSubsetTabView.QMessageBox.question",
+        return_value=QMessageBox.Yes,
+    )
+
+    changed = view.offer_event_id("r_raw", "SELECT event_id, duration FROM events")
+
+    assert changed is True
+    assert view.subset_filters["r_raw"] == "SELECT event_id, duration FROM events"
+    shown = ask.call_args[0][2]
+    assert "r_raw does not return event_id" in shown
+    assert "SELECT event_id, duration FROM events" in shown
+    assert "Use Save Filter to also update your filters file." in shown
+    assert "automatic check, offered for convenience" in shown
+    assert "edit the filter or create a new, more appropriate one yourself" in shown
+    view.add_text_to_display.emit.assert_called_once()
+
+
+def test_offer_event_id_leaves_the_filter_on_no_and_asks_again_next_time(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """
+    A no changes nothing and only closes the question: the same text is asked about again
+    the next time, so a user is never stopped from being offered the fix.
+    """
+    view.subset_filters = {"r_raw": "SELECT duration FROM events"}
+    view.add_text_to_display = mocker.Mock()  # type: ignore[assignment]
+    ask = mocker.patch(
+        "poriscope.utils.MetaSubsetTabView.QMessageBox.question",
+        return_value=QMessageBox.No,
+    )
+
+    first = view.offer_event_id("r_raw", "SELECT event_id, duration FROM events")
+    second = view.offer_event_id("r_raw", "SELECT event_id, duration FROM events")
+    other = view.offer_event_id("r_raw", "SELECT event_id, max_blockage FROM events")
+
+    assert (first, second, other) == (False, False, False)
+    assert ask.call_count == 3
+    assert view.subset_filters["r_raw"] == "SELECT duration FROM events"
+
+
+def test_revert_event_id_offer_puts_the_text_back_and_says_so(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """
+    When the query with ``event_id`` added cannot be used, the filter returns to what the
+    user had, and the status panel says it was changed back.
+    """
+    view.subset_filters = {"r_raw": "SELECT event_id, duration FROM events"}
+    view.add_text_to_display = mocker.Mock()  # type: ignore[assignment]
+
+    view.revert_event_id_offer("r_raw", "SELECT duration FROM events")
+
+    assert view.subset_filters["r_raw"] == "SELECT duration FROM events"
+    (message, _) = view.add_text_to_display.emit.call_args[0]
+    assert "r_raw was changed back" in message

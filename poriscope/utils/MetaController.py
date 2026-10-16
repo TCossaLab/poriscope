@@ -46,6 +46,10 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
 
     plugin_state_changed = Signal(str, str, str)  # metaclass, plugin_key, reason
     add_text_to_display = Signal(str, str)
+
+    #: The last line sent to the status panel, whoever sent it, so a subclass can leave out a
+    #: line that would only repeat the one directly above it.
+    last_panel_text: str = ""
     update_tab_action_history = Signal(
         str, object
     )  # name of tab subclass, OrderedDict of actions to take
@@ -92,6 +96,7 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
         self.model.update_progressbar.connect(self.view.update_progressbar)
         self.view.kill_worker.connect(self.handle_kill_worker)
         self.view.kill_all_workers.connect(self.handle_kill_all_workers)
+        self.add_text_to_display.connect(self._note_panel_text)
         self.view.add_text_to_display.connect(self.relay_add_text_to_display)
         self.model.add_text_to_display.connect(self.relay_add_text_to_display)
         self.view.save_tab_action_history.connect(self.save_tab_actions)
@@ -242,6 +247,18 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
             self.add_text_to_display.emit(
                 "Failed to write data", self.__class__.__name__
             )
+
+    @Slot(str, str)
+    def _note_panel_text(self, text: str, source: str) -> None:
+        """
+        Remember the line that has just gone to the status panel.
+
+        :param text: the line
+        :type text: str
+        :param source: who sent it
+        :type source: str
+        """
+        self.last_panel_text = text
 
     @log(logger=logger)
     @Slot(str, str)

@@ -222,7 +222,7 @@ class ProteinController(MetaSubsetTabController):
         self.view.set_xyerr_scatterplot(filtered, ax, axis_labels, dataset_label)
 
     @log(logger=logger)
-    @Slot(str, str, object, str, object, bool, str, object, float, float, int)
+    @Slot(str, str, object, str, object, bool, str, object, float, float, int, str)
     def build_ensemble_histogram(
         self,
         loader: str,
@@ -236,6 +236,7 @@ class ProteinController(MetaSubsetTabController):
         d: float,
         L: float,
         N: int,
+        subset_name: str,
     ) -> None:
         """
         Fetch one event subset and average it into a single histogram to draw.
@@ -270,10 +271,14 @@ class ProteinController(MetaSubsetTabController):
         :type L: float
         :param N: target number of samples to draw for each ensemble
         :type N: int
+        :param subset_name: the selected filter's name, whose ``_raw`` suffix marks a raw filter
+        :type subset_name: str
         :return: None
         :rtype: None
         """
-        fetched = self._fetch_event_subset(loader, sql_filter, experiments_and_channels)
+        fetched = self._fetch_event_subset(
+            loader, sql_filter, experiments_and_channels, subset_name
+        )
         if fetched is None:
             return
         query, generator = fetched
@@ -521,12 +526,13 @@ class ProteinController(MetaSubsetTabController):
         self.view.on_fit_commit_finished(loader)
 
     @log(logger=logger)
-    @Slot(str, str, object)
+    @Slot(str, str, object, str)
     def load_event_distribution_data(
         self,
         loader: str,
         sql_filter: str,
         experiments_and_channels: Optional[Dict[str, Optional[List[int]]]],
+        subset_name: str,
     ) -> None:
         """
         Build the query for one subset, load its events, and hand both to the View.
@@ -534,15 +540,9 @@ class ProteinController(MetaSubsetTabController):
         Both distribution modes - individual and ensemble - run this same chain, so
         there is one slot rather than one per mode.
 
-        **The ``_raw`` branch this replaced could never work**, which is why it is
-        gone rather than converted. It handed a complete ``SELECT`` to
-        ``load_event_data`` as its ``conditions`` argument, and that argument is a
-        WHERE-clause body: the loader spliced it in after ``WHERE``, SQLite rejected
-        the result as a syntax error, ``construct_event_data_query`` returned
-        ``("", debug)`` and the generator yielded nothing. Measured against a real
-        loader - the same filter as an ordinary WHERE body yields every event, and as
-        a raw ``SELECT`` yields none. Raw filters are refused before a plot is
-        attempted now; see ``MetaSubsetTabView._refuse_raw_filters``.
+        A raw filter - one whose name ends ``_raw`` - scopes itself with
+        ``:experiment_id`` and ``:channel_id``, and the events its event key names are loaded; see
+        ``MetaSubsetTabController._raw_filter_conditions``.
 
         :param loader: the database loader plugin's key
         :type loader: str
@@ -550,10 +550,14 @@ class ProteinController(MetaSubsetTabController):
         :type sql_filter: str
         :param experiments_and_channels: the scope the filter is built against
         :type experiments_and_channels: Optional[Dict[str, Optional[List[int]]]]
+        :param subset_name: the selected filter's name, whose ``_raw`` suffix marks a raw filter
+        :type subset_name: str
         :return: None
         :rtype: None
         """
-        fetched = self._fetch_event_subset(loader, sql_filter, experiments_and_channels)
+        fetched = self._fetch_event_subset(
+            loader, sql_filter, experiments_and_channels, subset_name
+        )
         if fetched is None:
             return
         query, generator = fetched
@@ -569,6 +573,7 @@ class ProteinController(MetaSubsetTabController):
         loader: str,
         sql_filter: str,
         experiments_and_channels: Optional[Dict[str, Optional[List[int]]]],
+        subset_name: str,
     ) -> Optional[Tuple[str, Generator]]:
         """
         Build one event subset's query and open a generator over its events.
@@ -580,13 +585,26 @@ class ProteinController(MetaSubsetTabController):
 
         :param loader: the database loader plugin's key
         :type loader: str
-        :param sql_filter: the subset filter's WHERE-clause body, empty for all rows
+        :param sql_filter: the subset filter's WHERE-clause body, empty for all rows, or a complete ``SELECT`` for a raw filter
         :type sql_filter: str
         :param experiments_and_channels: the scope the filter is built against
         :type experiments_and_channels: Optional[Dict[str, Optional[List[int]]]]
-        :return: the query that ran and a generator over its events, or None
+        :param subset_name: the selected filter's name, whose ``_raw`` suffix marks a raw filter
+        :type subset_name: str
+        :return: the query that ran (the user's ``SELECT`` with the selection bound in, for a raw filter) and a generator over its events, or None
         :rtype: Optional[Tuple[str, Generator]]
         """
+        is_raw = subset_name.endswith("_raw")
+        shown_query = sql_filter
+        if is_raw:
+            # The selection is applied to the query's own rows, so the events it names
+            # are final and are loaded by id with no further scope.
+            raw = self._raw_filter_conditions(
+                loader, sql_filter, experiments_and_channels, subset_name
+            )
+            if raw is None:
+                return None
+            (sql_filter, shown_query), experiments_and_channels = raw, None
         try:
             # Two values: construct_event_data_query is declared
             # -> Tuple[str, str] and reports a filter it cannot build as
@@ -635,4 +653,4 @@ class ProteinController(MetaSubsetTabController):
             )
             return None
 
-        return query, generator
+        return (shown_query if is_raw else query), generator

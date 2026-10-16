@@ -26,6 +26,7 @@ from typing import Any, Dict, List, Tuple
 import numpy as np
 import pandas as pd
 import pytest
+from PySide6.QtWidgets import QMessageBox
 
 from poriscope.plugins.db_loaders.SQLiteDBLoader import SQLiteDBLoader
 from tests.integration.flows._triad import Triad, build_triad
@@ -614,3 +615,278 @@ def test_the_name_a_refused_export_kept_is_reused_by_the_next_one(
         _StubDictDialog.__init__ = original_init  # type: ignore[method-assign]
 
     assert offered == ["Subset_0", "Subset_0"]
+
+
+SCOPE = "experiment_id = :experiment_id AND channel_id = :channel_id"
+
+
+def with_filter(triad: Triad, name: str, text: str) -> None:
+    """
+    Add a filter to the tab and select it, as the panel's add and tick would.
+
+    :param triad: the tab under test
+    :type triad: Triad
+    :param name: the filter's name, whose suffix gives its mode
+    :type name: str
+    :param text: the filter's WHERE condition or complete SELECT
+    :type text: str
+    """
+    view = triad.tab_view
+    combo = view._subset_controls.filter_comboBox
+    for selected in list(combo.getSelectedItems()):
+        combo.selectItem(selected, select=False)
+    view.subset_filters[name] = text
+    combo.addItem(name)
+    combo.selectItem(name, select=True)
+
+
+def exported_events(written: List[Path]) -> pd.DataFrame:
+    """
+    Read the events table out of an export.
+
+    :param written: the CSV files the export produced
+    :type written: List[Path]
+    :return: the exported events
+    :rtype: pd.DataFrame
+    """
+    (path,) = [p for p in written if p.stem.endswith("_events")]
+    return pd.read_csv(path)
+
+
+@pytest.mark.timeout(120)
+@pytest.mark.parametrize(
+    ("selection", "expected"),
+    [
+        ({"exp_a": [0]}, {0: 25}),
+        ({"exp_a": [1]}, {1: 15}),
+        ({"exp_a": [0, 1]}, {0: 25, 1: 15}),
+    ],
+)
+def test_a_raw_filter_exports_the_events_it_names_in_each_selected_channel(
+    metadata_tab: Triad,
+    qtbot: Any,
+    tmp_path: Path,
+    selection: Dict[str, List[int]],
+    expected: Dict[int, int],
+) -> None:
+    """
+    The same events the filter plots, in the channels ticked, and no others.
+    """
+    out = tmp_path / "export_raw"
+    out.mkdir()
+    with_filter(
+        metadata_tab, "mine_raw", f"SELECT event_id, duration FROM events WHERE {SCOPE}"
+    )
+
+    events = exported_events(export(metadata_tab, qtbot, out, "raw", selection))
+
+    assert events.groupby("channel_id").size().to_dict() == expected
+
+
+@pytest.mark.timeout(120)
+def test_a_raw_filter_with_its_own_condition_exports_only_those_events(
+    metadata_tab: Triad, qtbot: Any, tmp_path: Path
+) -> None:
+    """
+    A condition and a ``LIMIT`` apply within each channel, as they do when plotting.
+    """
+    out = tmp_path / "export_raw_limit"
+    out.mkdir()
+    with_filter(
+        metadata_tab,
+        "few_raw",
+        f"SELECT event_id FROM events WHERE {SCOPE} ORDER BY event_id LIMIT 4",
+    )
+
+    events = exported_events(export(metadata_tab, qtbot, out, "few", {"exp_a": [0, 1]}))
+
+    assert events.groupby("channel_id").size().to_dict() == {0: 4, 1: 4}
+
+
+@pytest.mark.timeout(120)
+def test_a_raw_export_writes_the_same_rows_as_the_equivalent_assisted_filter(
+    metadata_tab: Triad, qtbot: Any, tmp_path: Path
+) -> None:
+    """
+    The same filter in either mode exports the same events and sublevels.
+    """
+    raw_out = tmp_path / "raw"
+    assisted_out = tmp_path / "assisted"
+    raw_out.mkdir()
+    assisted_out.mkdir()
+    selection = {"exp_a": [0, 1]}
+    with_filter(
+        metadata_tab,
+        "same_raw",
+        f"SELECT event_id FROM events WHERE duration > 100 AND {SCOPE}",
+    )
+    raw = row_counts(export(metadata_tab, qtbot, raw_out, "r", selection))
+    with_filter(metadata_tab, "same_assisted", "duration > 100")
+    assisted = row_counts(export(metadata_tab, qtbot, assisted_out, "a", selection))
+
+    assert raw == assisted
+    assert raw["events"] > 0
+
+
+@pytest.mark.timeout(120)
+def test_an_assisted_or_filter_exports_only_the_selected_channel(
+    metadata_tab: Triad, qtbot: Any, tmp_path: Path
+) -> None:
+    """
+    An ``OR`` in the condition does not take the channel selection with only its last term.
+    """
+    out = tmp_path / "export_or"
+    out.mkdir()
+    with_filter(metadata_tab, "either_assisted", "duration > 0 OR max_blockage > 0")
+
+    events = exported_events(export(metadata_tab, qtbot, out, "or", {"exp_a": [1]}))
+
+    assert events.groupby("channel_id").size().to_dict() == {1: 15}
+
+
+@pytest.mark.timeout(90)
+def test_a_raw_filter_that_ignores_the_selection_is_refused_for_export(
+    metadata_tab: Triad, tmp_path: Path
+) -> None:
+    """
+    An export writes files, and an unscoped query would write the same events for every
+    selected channel, so the filter is refused with how to fix it; nothing is written
+    and no export number is spent.
+    """
+    out = tmp_path / "export_unscoped"
+    out.mkdir()
+    view = metadata_tab.tab_view
+    with_filter(metadata_tab, "forgot_raw", "SELECT event_id FROM events")
+    messages: List[str] = []
+    metadata_tab.tab_controller.add_text_to_display.connect(
+        lambda text, source: messages.append(text)
+    )
+    before = view.subset_export_count
+
+    _StubDictDialog.folder = str(out)
+    _StubDictDialog.subset_name = "unscoped"
+    view.selected_experiment_and_channels_by_loader[LOADER_KEY] = {"exp_a": [0]}
+    view.handle_parameter_change(
+        "metadatacontrols", "export_csv_subset", ({"db_loader": LOADER_KEY},)
+    )
+
+    assert list(out.glob("*.csv")) == []
+    assert view.subset_export_count == before
+    assert any("forgot_raw cannot be exported" in text for text in messages)
+    assert any(":experiment_id" in text for text in messages)
+
+
+@pytest.mark.timeout(90)
+def test_a_raw_filter_that_names_no_event_exports_nothing_and_says_so(
+    metadata_tab: Triad, tmp_path: Path
+) -> None:
+    """
+    The usual "No events match" refusal, with the name still available.
+    """
+    out = tmp_path / "export_none"
+    out.mkdir()
+    view = metadata_tab.tab_view
+    with_filter(
+        metadata_tab,
+        "none_raw",
+        f"SELECT event_id FROM events WHERE duration < 0 AND {SCOPE}",
+    )
+    messages: List[str] = []
+    metadata_tab.tab_controller.add_text_to_display.connect(
+        lambda text, source: messages.append(text)
+    )
+    before = view.subset_export_count
+
+    _StubDictDialog.folder = str(out)
+    _StubDictDialog.subset_name = "none"
+    view.selected_experiment_and_channels_by_loader[LOADER_KEY] = {"exp_a": [0]}
+    view.handle_parameter_change(
+        "metadatacontrols", "export_csv_subset", ({"db_loader": LOADER_KEY},)
+    )
+
+    assert list(out.glob("*.csv")) == []
+    assert view.subset_export_count == before
+    assert any("No events match none" in text for text in messages)
+
+
+@pytest.mark.timeout(90)
+def test_a_raw_filter_that_writes_is_not_exported(
+    metadata_tab: Triad, tmp_path: Path, sample_metadata_db: str
+) -> None:
+    """
+    The export takes the same read-only guard as a plot: the database is untouched.
+    """
+    out = tmp_path / "export_write"
+    out.mkdir()
+    view = metadata_tab.tab_view
+    with_filter(
+        metadata_tab,
+        "wipe_raw",
+        f"WITH x AS (SELECT 1) DELETE FROM events WHERE {SCOPE}",
+    )
+
+    _StubDictDialog.folder = str(out)
+    _StubDictDialog.subset_name = "wipe"
+    view.selected_experiment_and_channels_by_loader[LOADER_KEY] = {"exp_a": [0]}
+    view.handle_parameter_change(
+        "metadatacontrols", "export_csv_subset", ({"db_loader": LOADER_KEY},)
+    )
+
+    assert list(out.glob("*.csv")) == []
+    with sqlite3.connect(sample_metadata_db) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM events").fetchone()[0] == 40
+
+
+@pytest.mark.timeout(120)
+def test_an_export_of_a_plain_raw_filter_without_event_id_goes_on_when_the_offer_is_accepted(
+    metadata_tab: Triad, qtbot: Any, tmp_path: Path
+) -> None:
+    """
+    The export needs the events' keys like a plot does: the user is asked, and on yes the
+    filter starts with ``event_id`` and the export is written (the shared guard answers Yes).
+    """
+    out = tmp_path / "export_offer_yes"
+    out.mkdir()
+    with_filter(metadata_tab, "plain_raw", f"SELECT duration FROM events WHERE {SCOPE}")
+
+    events = exported_events(export(metadata_tab, qtbot, out, "yes", {"exp_a": [0]}))
+
+    assert events.groupby("channel_id").size().to_dict() == {0: 25}
+    assert metadata_tab.tab_view.subset_filters["plain_raw"].startswith(
+        "SELECT event_id, duration"
+    )
+
+
+@pytest.mark.timeout(90)
+def test_an_export_of_a_plain_raw_filter_without_event_id_writes_nothing_when_declined(
+    metadata_tab: Triad, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    Declined, the filter is unchanged, nothing is written, and the panel says what to do.
+    """
+    monkeypatch.setattr(
+        QMessageBox,
+        "question",
+        staticmethod(lambda *a, **k: QMessageBox.StandardButton.No),
+    )
+    out = tmp_path / "export_offer_no"
+    out.mkdir()
+    view = metadata_tab.tab_view
+    with_filter(metadata_tab, "plain_raw", f"SELECT duration FROM events WHERE {SCOPE}")
+    messages: List[str] = []
+    metadata_tab.tab_controller.add_text_to_display.connect(
+        lambda text, source: messages.append(text)
+    )
+
+    _StubDictDialog.folder = str(out)
+    _StubDictDialog.subset_name = "no"
+    view.selected_experiment_and_channels_by_loader[LOADER_KEY] = {"exp_a": [0]}
+    view.handle_parameter_change(
+        "metadatacontrols", "export_csv_subset", ({"db_loader": LOADER_KEY},)
+    )
+
+    assert list(out.glob("*.csv")) == []
+    assert (
+        view.subset_filters["plain_raw"] == f"SELECT duration FROM events WHERE {SCOPE}"
+    )
+    assert any("does not return event_id" in text for text in messages)

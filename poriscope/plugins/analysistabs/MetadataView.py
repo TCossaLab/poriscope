@@ -109,7 +109,11 @@ class MetadataView(MetaSubsetTabView):
     #: failure that went unnoticed left the *previous* subset's query or the previous
     #: column's units in place - a plot drawn and labelled for a subset it did not come
     #: from.
-    metadata_subset_requested = Signal(str, list, str, object)
+    #:
+    #: Also carries the filter's name, whose ``_raw`` suffix tells the Controller the
+    #: filter is a complete ``SELECT`` that scopes itself with ``:experiment_id`` and
+    #: ``:channel_id``.
+    metadata_subset_requested = Signal(str, list, str, object, str)
 
     #: Asks for one event-data subset to be tallied into an all-points histogram: the
     #: loader's key, the filter, the scope, the plot type, the bin request, the shared
@@ -119,8 +123,11 @@ class MetadataView(MetaSubsetTabView):
     #: The events are tallied where they are loaded and only the histogram comes back.
     #: Nothing outside the histogram reads them, so handing the widget a generator to walk
     #: would put the whole subset in the View to produce one array.
+    #:
+    #: Also carries the filter's name, whose ``_raw`` suffix marks a raw filter: the
+    #: events its ``SELECT``'s event key names, within the scope, are plotted.
     all_points_histogram_requested = Signal(
-        str, str, object, str, object, bool, object, object, str
+        str, str, object, str, object, bool, object, object, str, str
     )
 
     #: Asks for one event-data subset to be put on a shared normalised axis: the
@@ -130,7 +137,9 @@ class MetadataView(MetaSubsetTabView):
     #: Same reasoning as ``all_points_histogram_requested``: the events are reduced where
     #: they are loaded. The alpha each trace is drawn at stays here, because it is read by
     #: nothing outside the axes it is drawn on.
-    event_overlay_requested = Signal(str, str, object, str)
+    #:
+    #: Carries the filter's name too, for the same reason.
+    event_overlay_requested = Signal(str, str, object, str, str)
 
     #: Asks for one column's declared type, which the categorical-histogram guard
     #: needs before it will let the plot proceed. The answer arrives through
@@ -147,7 +156,7 @@ class MetadataView(MetaSubsetTabView):
     #: key, the destination folder, the export's name, the single selected filter (or
     #: None for the whole dataset), the experiment/channel scope, and the index this
     #: export is keyed under. ``on_subset_export_started`` comes back if it was staged.
-    csv_subset_export_requested = Signal(str, str, str, object, object, int)
+    csv_subset_export_requested = Signal(str, str, str, object, object, int, str)
 
     #: Asks for the heatmap's 2-D binning: the raw columns, their log flags, the bin
     #: request, and the drawing context handed back unchanged. Answered through
@@ -247,6 +256,10 @@ class MetadataView(MetaSubsetTabView):
         # One units string per plotted column, set by set_column_units once the
         # whole subset has been fetched. None means it has not been.
         self.column_units: Optional[List[Optional[str]]] = None
+        # Added to a dataset's label by set_scope_note when its raw query does not use
+        # the Scope selection, so the legend does not name a channel the rows are not
+        # from. Empty for every other dataset.
+        self.scope_note: str = ""
         # Heterogeneous by design: the three 1-D paths - histogram, density and
         # categorical - append the raw column as a 1-D array, and the all-points
         # path appends an (x, y) tuple. Two shapes, not one: flagged for review,
@@ -1414,8 +1427,6 @@ class MetadataView(MetaSubsetTabView):
         # The selection comes from the parameters, not the widgets, so a replay draws
         # what was recorded; see _record_selection.
         selected_filters = dict(parameters["selected_filters"])
-        if self._refuse_raw_filters(selected_filters):
-            return False
         loader = parameters["db_loader"]
         plot_type = parameters["plot_type"]
         experiments_and_channels: Optional[
@@ -1581,7 +1592,13 @@ class MetadataView(MetaSubsetTabView):
 
                         if (
                             self.plotted_datasets
-                            and (loader, exp, channel_id, sql_filter, subset_name)
+                            and (
+                                loader,
+                                exp,
+                                channel_id,
+                                sql_filter,
+                                subset_name,
+                            )
                             in self.plotted_datasets
                         ):  # do not overlay the same thing twice
                             continue
@@ -1595,12 +1612,14 @@ class MetadataView(MetaSubsetTabView):
                         self.query = ""
                         self.plot_data = None
                         self.column_units = None
+                        self.scope_note = ""
                         self.metadata_subset_requested.emit(
-                            loader, columns, sql_filter, exp_and_ch_arg
+                            loader, columns, sql_filter, exp_and_ch_arg, subset_name
                         )
                         if self.query == "":
                             return False
 
+                        dataset_label += self.scope_note
                         if self.plot_data is None or self.plot_data.empty:
                             self.add_text_to_display.emit(
                                 f"No data matching the subset {dataset_label}, skipping",
@@ -1700,6 +1719,7 @@ class MetadataView(MetaSubsetTabView):
                                 self.hist_min,
                                 self.hist_max,
                                 dataset_label,
+                                subset_name,
                             )
 
                         elif plot_type in [
@@ -1721,7 +1741,11 @@ class MetadataView(MetaSubsetTabView):
                             ):
                                 self._reset_actions(axis_type="2d")
                             self.event_overlay_requested.emit(
-                                loader, sql_filter, exp_and_ch_arg, plot_type
+                                loader,
+                                sql_filter,
+                                exp_and_ch_arg,
+                                plot_type,
+                                subset_name,
                             )
 
                         if self.event_query == "":
@@ -2013,8 +2037,6 @@ class MetadataView(MetaSubsetTabView):
         :type parameters: Dict[str, Any]
         """
         selected_filters = self.get_selected_filters()
-        if self._refuse_raw_filters(selected_filters):
-            return
         loader_name = parameters["db_loader"]
         experiments_and_channels = self.selected_experiment_and_channels_by_loader.get(
             loader_name
@@ -2080,7 +2102,10 @@ class MetadataView(MetaSubsetTabView):
             or not self.filtered_event_ids
         )
         if cache_needs_rebuild:
-            if not self._rebuild_event_id_cache(loader, sql_filter, exp, channel):
+            subset_name = next(iter(selected_filters))
+            if not self._rebuild_event_id_cache(
+                loader, sql_filter, exp, channel, subset_name
+            ):
                 return
         elif not self.filtered_event_ids:
             # Worded exactly as _rebuild_event_id_cache words it, since the two are
@@ -2430,6 +2455,10 @@ class MetadataView(MetaSubsetTabView):
         """
         Open a dialog to export a filtered subset of the dataset.
 
+        The selected filter's name travels with its text, because a raw filter is a
+        complete ``SELECT`` that the Controller has to bind to each selected channel
+        before the export can use it.
+
         :param loader: Name of the active database loader.
         :type loader: str
         :param filters: Dict of named subset filters; only a single filter may be selected for export. Typed loosely because the body rebinds this name to the single selected filter string.
@@ -2446,7 +2475,9 @@ class MetadataView(MetaSubsetTabView):
 
         if filters == {}:
             filters = None
+        filter_name = ""
         if filters is not None:
+            filter_name = next(iter(filters))
             filters = list(filters.values())[0]
 
         settings = {"Folder": {"Type": str}}
@@ -2471,7 +2502,13 @@ class MetadataView(MetaSubsetTabView):
         # the bus swallowed before it, and cannot catch one now either, since a Qt
         # slot's exception does not propagate back to the emitter.
         self.csv_subset_export_requested.emit(
-            loader, folder, name, filters, selection, self.subset_export_count
+            loader,
+            folder,
+            name,
+            filters,
+            selection,
+            self.subset_export_count,
+            filter_name,
         )
 
     @log(logger=logger)
@@ -2535,6 +2572,22 @@ class MetadataView(MetaSubsetTabView):
         :rtype: None
         """
         self.column_units = units
+
+    @log(logger=logger)
+    def set_scope_note(self, note: str) -> None:
+        """
+        Receive text to add to the next dataset's label.
+
+        Said by the Controller for a raw query that does not use the Scope selection:
+        the dataset is named after the channel that was ticked, and its rows are not that
+        channel's.
+
+        :param note: text appended to the label, empty for none
+        :type note: str
+        :return: None
+        :rtype: None
+        """
+        self.scope_note = note
 
     @log(logger=logger)
     def update_available_columns(self, loader: str) -> None:

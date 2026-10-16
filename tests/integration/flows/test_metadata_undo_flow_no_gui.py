@@ -52,7 +52,8 @@ def metadata_tab(qapp, tmp_path: Path, sample_metadata_db: str) -> Triad:
         name = f"F{index}"
         view.subset_filters[name] = f"duration >= {index}"
         combo.addItem(name)
-    view.subset_filters["Raw_raw"] = "SELECT * FROM events"
+    # Projects no duration column, so plotting it is refused after the query runs.
+    view.subset_filters["Raw_raw"] = "SELECT id FROM events"
     combo.addItem("Raw_raw")
 
     yield triad

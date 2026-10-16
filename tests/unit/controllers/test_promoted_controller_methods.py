@@ -300,9 +300,9 @@ class TestValidateRawFilter:
         controller.validate_raw_filter("ldr", "SELECT 1", "f1", None)
 
         assert controller.model.calls[0][2] == "validate_filter_query"
-        # The clause is appended here rather than in the View: knowing that
-        # LIMIT 0 is what makes the check cheap is knowing SQL.
-        assert controller.model.calls[0][3] == ("SELECT 1 LIMIT 0",)
+        # The text is validated as written: the check only plans the query, so
+        # nothing is appended to it.
+        assert controller.model.calls[0][3] == ("SELECT 1",)
         controller.view.on_raw_filter_validated.assert_called_once_with(
             True, "", "f1", None, "SELECT 1"
         )
@@ -369,7 +369,7 @@ class TestLoadEventIdCache:
         rows = pd.DataFrame({"event_id": [1, 2, 3]})
         controller.model = RecordingModel({"load_metadata": rows})
 
-        controller.load_event_id_cache("ldr", "dwell > 1", {"exp1": [0]})
+        controller.load_event_id_cache("ldr", "dwell > 1", {"exp1": [0]}, "subset")
 
         assert controller.model.calls_to("load_metadata") == [
             (["event_id"], "dwell > 1", {"exp1": [0]})
@@ -388,7 +388,7 @@ class TestLoadEventIdCache:
         """
         controller.model = RecordingModel({"load_metadata": pd.DataFrame()})
 
-        controller.load_event_id_cache("ldr", None, None)
+        controller.load_event_id_cache("ldr", None, None, "subset")
 
         assert controller.model.calls_to("load_metadata") == [
             (["event_id"], None, None)
@@ -408,13 +408,50 @@ class TestLoadEventIdCache:
         """
         controller.model = RecordingModel({"load_metadata": RuntimeError("no column")})
 
-        controller.load_event_id_cache("ldr", "nope > 1", None)
+        controller.load_event_id_cache("ldr", "nope > 1", None, "subset")
 
         controller.view.set_event_id_rows.assert_not_called()
         messages = [
             call.args[0] for call in controller.add_text_to_display.emit.call_args_list
         ]
         assert any("no column" in message for message in messages)
+
+    def test_a_loader_that_answers_none_is_reported_on_the_panel(
+        self, controller: MetaSubsetTabController
+    ) -> None:
+        """
+        The loader logs an SQL problem and answers None rather than raising. The panel
+        used to say nothing, which left the View's error dialog as the only report.
+
+        :param controller: the controller under test
+        :type controller: MetaSubsetTabController
+        """
+        controller.model = RecordingModel({"load_metadata": None})
+
+        controller.load_event_id_cache("ldr", "nope > 1", None, "subset")
+
+        controller.view.set_event_id_rows.assert_called_once_with(None)
+        messages = [
+            call.args[0] for call in controller.add_text_to_display.emit.call_args_list
+        ]
+        assert any("Could not read this subset's events" in m for m in messages)
+
+    def test_a_raising_loader_is_reported_without_an_error_dialog(
+        self, controller: MetaSubsetTabController
+    ) -> None:
+        """
+        The panel already carries the message; an ERROR record would raise a dialog
+        that says the same thing again.
+
+        :param controller: the controller under test
+        :type controller: MetaSubsetTabController
+        """
+        controller.model = RecordingModel({"load_metadata": RuntimeError("no column")})
+
+        controller.load_event_id_cache("ldr", "nope > 1", None, "subset")
+
+        controller.logger.error.assert_not_called()
+        controller.logger.warning.assert_called_once()
 
     def test_an_empty_result_is_still_handed_over(
         self, controller: MetaSubsetTabController
@@ -429,6 +466,6 @@ class TestLoadEventIdCache:
         rows = pd.DataFrame({"event_id": []})
         controller.model = RecordingModel({"load_metadata": rows})
 
-        controller.load_event_id_cache("ldr", "dwell > 999", None)
+        controller.load_event_id_cache("ldr", "dwell > 999", None, "subset")
 
         controller.view.set_event_id_rows.assert_called_once_with(rows)

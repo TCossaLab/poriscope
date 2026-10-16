@@ -103,7 +103,7 @@ You may apply filters to visualize only a subset of events or sublevels.
 .. warning::
 
    A filter naming a column that does not exist is refused with a message on the status
-   panel. Raw SQL filters can be saved and loaded but cannot be selected for a plot. See
+   panel. A Raw SQL filter scopes itself with ``:experiment_id`` and ``:channel_id``. See
    :ref:`filtering-and-querying` for the full syntax.
 
 Step 4: Generate and Export
@@ -122,7 +122,7 @@ Step 4: Generate and Export
 
 .. tip::
 
-   Use “Export Subset” to isolate and save only the events that meet your filtering criteria. This is ideal for downstream machine learning or further statistical analysis.
+   Use “Export Subset” to isolate and save only the events that meet your filtering criteria. This is ideal for downstream machine learning or further statistical analysis. It takes one Assisted or Raw SQL filter, or none. A Raw SQL filter has to use ``:experiment_id`` and ``:channel_id`` (see :ref:`filtering-and-querying`), because an export writes files for the selected channels and an unscoped query would write the same events for every one.
 
 Step 5: Inspect Individual Events
 ---------------------------------
@@ -132,8 +132,8 @@ Beside the plot controls is a **Plot Events** button with an arrow on either sid
 
 1. Use **Scope** to select exactly one experiment and one channel. Events are numbered
    within a channel, so a wider scope is refused with a message rather than guessed at.
-2. Select at most one subset filter. Raw SQL filters cannot be used here; the events
-   plotted are those of the filtered set.
+2. Select at most one subset filter. A Raw SQL filter must return ``event_id`` (and scope itself with
+   ``:experiment_id`` and ``:channel_id``) to be used here. The events plotted are those of the filtered set.
 3. Enter the **EVENT INDEX** to start from and **# EVENTS TO PLOT**.
 4. Click **Plot Events**. The starting index snaps forward to the next event present in
    the filtered set, wrapping around to the first, and the field updates to show where

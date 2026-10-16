@@ -490,6 +490,9 @@ class MetaDatabaseLoader(BaseDataPlugin):
             # a plot: an event is selected when any of its sublevels matches, and the
             # export then writes all of that event's sublevels.
             aliases = {"events": "e", "sublevels": "s", "experiments": "exp"}
+            refusal = self._condition_refusal(conditions)
+            if refusal is not None:
+                raise ValueError(refusal)
             qualified = self._qualify_conditions(conditions, aliases)
             ambiguous_id = self._find_ambiguous_id(qualified, aliases)
             if ambiguous_id is not None:
@@ -931,6 +934,78 @@ class MetaDatabaseLoader(BaseDataPlugin):
 
         return "".join(segments)
 
+    #: A condition that opens with its own SELECT, after any comments and spaces.
+    _LEADING_SELECT = re.compile(
+        r"\A(?:\s+|--[^\n]*(?:\n|\Z)|/\*.*?\*/)*select\b",
+        re.IGNORECASE | re.DOTALL,
+    )
+
+    def _condition_refusal(self, fragment: str) -> Optional[str]:
+        """
+        Say why an Assisted condition cannot be used, or None if it can.
+
+        An Assisted filter is a condition, put inside a ``WHERE``. One that begins with
+        ``SELECT`` is a complete query, which SQLite reads there as a subquery giving a
+        single value: a one-column query is accepted and selects events by an unrelated
+        test, while ``SELECT *`` fails with an unhelpful message. A subquery inside a
+        condition (``e.id IN (SELECT ...)``) does not begin with ``SELECT`` and is
+        unaffected. A complete query belongs in Raw SQL mode.
+
+        :param fragment: A WHERE clause body, without the leading ``WHERE``.
+        :type fragment: str
+        :return: the reason to show the user, or None if the condition can be used
+        :rtype: Optional[str]
+        """
+        if self._LEADING_SELECT.match(fragment):
+            return (
+                "An Assisted filter is a condition, not a query, so it cannot start with "
+                "SELECT. Use Raw SQL mode for a complete query"
+            )
+        if not self._brackets_balance(fragment):
+            return "The filter's brackets do not balance"
+        return None
+
+    def _brackets_balance(self, fragment: str) -> bool:
+        """
+        Report whether a condition's brackets open and close in step.
+
+        The condition is put in brackets of its own and joined to the selection with
+        ``AND``. A stray ``)`` that closes that bracket early, followed by a ``(`` that
+        reopens it, would let the condition's own ``OR`` take the selection with only
+        its last term, so a condition whose brackets do not balance is refused rather
+        than run. Brackets inside strings, quoted names and comments do not count.
+
+        :param fragment: A WHERE clause body, without the leading ``WHERE``.
+        :type fragment: str
+        :return: True if every bracket is closed once and none is closed before it opens.
+        :rtype: bool
+        """
+        depth = 0
+        i = 0
+        while i < len(fragment):
+            char = fragment[i]
+            if fragment.startswith("--", i):
+                end = fragment.find("\n", i)
+                i = len(fragment) if end < 0 else end + 1
+                continue
+            if fragment.startswith("/*", i):
+                end = fragment.find("*/", i + 2)
+                i = len(fragment) if end < 0 else end + 2
+                continue
+            if char in "'\"`[":
+                close = "]" if char == "[" else char
+                end = fragment.find(close, i + 1)
+                i = len(fragment) if end < 0 else end + 1
+                continue
+            if char == "(":
+                depth += 1
+            elif char == ")":
+                depth -= 1
+                if depth < 0:
+                    return False
+            i += 1
+        return depth == 0
+
     def _find_ambiguous_id(
         self, conditions: str, aliases: Dict[str, str]
     ) -> Optional[str]:
@@ -1140,9 +1215,15 @@ class MetaDatabaseLoader(BaseDataPlugin):
 
         base_conditions = []
 
-        # General conditions (AND logic)
+        # General conditions (AND logic). In brackets, on their own line: the condition
+        # is joined to the selection with AND, which binds tighter than OR, so an
+        # "a OR b" would take the selection with only b; and a trailing "--" comment would
+        # swallow the selection written after it.
         if conditions:
-            base_conditions.append(conditions)
+            refusal = self._condition_refusal(conditions)
+            if refusal is not None:
+                return "", refusal, table_name
+            base_conditions.append(f"({conditions}\n)")
 
         # Experiment/channel conditions (OR logic between each). Left unqualified
         # here; _qualify_conditions anchors them along with the user's own.
@@ -1240,9 +1321,15 @@ class MetaDatabaseLoader(BaseDataPlugin):
         ####
         base_conditions = []
 
-        # General conditions (AND logic)
+        # General conditions (AND logic). In brackets, on their own line: the condition
+        # is joined to the selection with AND, which binds tighter than OR, so an
+        # "a OR b" would take the selection with only b; and a trailing "--" comment would
+        # swallow the selection written after it.
         if conditions:
-            base_conditions.append(conditions)
+            refusal = self._condition_refusal(conditions)
+            if refusal is not None:
+                return "", refusal
+            base_conditions.append(f"({conditions}\n)")
 
         # Experiment/channel conditions (OR logic between each)
         experiment_conditions = []

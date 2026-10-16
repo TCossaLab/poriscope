@@ -1792,7 +1792,7 @@ class TestShowAddFilterDialog:
         ):
             mock_view._show_add_filter_dialog({"db_loader": "ldr"})
         warned.assert_called_once()
-        assert "SELECT statements" in warned.call_args[0][2]
+        assert "has to start with SELECT" in warned.call_args[0][2]
 
     def test_raw_filter_with_select_validates(self, mock_view):
         mock_view._walkthrough_active = False
@@ -1896,7 +1896,7 @@ class TestShowEditFilterDialog:
         ):
             mock_view.show_edit_filter_dialog("f1", "ldr")
         warned.assert_called_once()
-        assert "SELECT statements" in warned.call_args[0][2]
+        assert "has to start with SELECT" in warned.call_args[0][2]
 
     def test_raw_edit_with_select_validates(self, mock_view):
         mock_view.subset_filters = {"f1": "dur>1"}
@@ -2453,10 +2453,11 @@ class TestEnsembleHistogramRequest:
         mock_view._update_distribution_ensemble(recorded(mock_view, self._params()))
 
         args = mock_view.ensemble_histogram_requested.emit.call_args.args
-        dataset_label, dataset_key, d, L, N = args[6:]
+        dataset_label, dataset_key, d, L, N, subset_name = args[6:]
         assert "sub" in dataset_label
         assert dataset_key == ("ldr", "exp1", 3, "duration < 3", "sub")
         assert (d, L, N) == (20.0, 30.0, 10)
+        assert subset_name == "sub"
 
     def test_nothing_is_fetched_into_the_widget(self, mock_view):
         """

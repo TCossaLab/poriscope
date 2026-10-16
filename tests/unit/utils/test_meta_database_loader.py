@@ -1286,7 +1286,7 @@ class TestConditionQualification:
         )
         assert debug == ""
         assert "JOIN" not in query
-        assert "WHERE experiment_id = 2" in query
+        assert "WHERE (experiment_id = 2" in query
 
     def test_event_data_query_qualifies_conditions(
         self, loader: ConcreteDatabaseLoader
@@ -1332,7 +1332,7 @@ class TestAmbiguousIdRejection:
             ["amplitude"], conditions="id = 5"
         )
         assert debug == ""
-        assert "WHERE id = 5" in query
+        assert "WHERE (id = 5" in query
 
     def test_qualified_id_in_a_joined_query_is_accepted(
         self, loader: ConcreteDatabaseLoader

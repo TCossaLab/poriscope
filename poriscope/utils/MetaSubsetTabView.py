@@ -28,6 +28,7 @@ import bisect
 import copy
 import logging
 import os
+import re
 from abc import abstractmethod
 from typing import Any, Dict, Iterator, List, Optional, Sequence
 
@@ -145,7 +146,7 @@ class MetaSubsetTabView(MetaView):
     #: All five callers consume only the ``bool`` return and read ``filtered_event_ids``
     #: a statement later, which is what lets this be a request at all: clearing the
     #: answer, asking and reading it back leaves every one of them untouched.
-    event_id_cache_requested = Signal(str, object, object)
+    event_id_cache_requested = Signal(str, object, object, str)
 
     #: Asks for the full data of specific events, named by their ``event_id`` values:
     #: the loader's key, the ids, the experiment and channel they are scoped to, the
@@ -242,38 +243,6 @@ class MetaSubsetTabView(MetaView):
             )
         controls.edit_filter_requested.connect(self.show_edit_filter_dialog)
         controls.delete_filter_requested.connect(self._delete_filter_by_name)
-
-    @log(logger=logger)
-    def _refuse_raw_filters(self, selected_filters: Dict[str, str]) -> bool:
-        """
-        Refuse a plot whose subset filter is a raw ``SELECT``, and say so.
-
-        A raw filter can be written, validated, saved and loaded, but **nothing
-        downstream can consume one**. Every plotting path passes the filter text where
-        a WHERE-clause body is expected, so a complete ``SELECT`` gets spliced in after
-        ``WHERE``; measured against a real loader, SQLite rejects the result as a
-        syntax error, the query builder reports it by returning an empty query, and the
-        plot draws nothing while saying nothing.
-
-        The protein tab carried a branch that tried to scope such a filter and hand it
-        over as the query; it was removed once measurement showed it had the same
-        shape and had therefore never produced a plot either. Refusing here is the
-        honest state until raw filters are either made to work or withdrawn.
-
-        :param selected_filters: the filters selected for this plot, by name
-        :type selected_filters: Dict[str, str]
-        :return: True if a raw filter was selected, in which case the caller must stop
-        :rtype: bool
-        """
-        raw = [name for name in selected_filters if name.endswith("_raw")]
-        if not raw:
-            return False
-        self.add_text_to_display.emit(
-            f"Raw SQL filters cannot be used for plotting, so {', '.join(raw)} was "
-            "not applied - deselect it to plot this subset",
-            self.__class__.__name__,
-        )
-        return True
 
     @log(logger=logger)
     def set_event_id_rows(self, rows: Optional[pd.DataFrame]) -> None:
@@ -526,7 +495,7 @@ class MetaSubsetTabView(MetaView):
             self.commit_filter(name, filter_text, old_name)
             self.update_filter_name(old_name, name)
             self.add_text_to_display.emit(
-                f"Filter '{old_name}' updated to '{name}'.",
+                f"Filter '{old_name}' updated to '{name}': {filter_text}",
                 self.__class__.__name__,
             )
         else:  # add path
@@ -535,7 +504,7 @@ class MetaSubsetTabView(MetaView):
             self._subset_controls.filter_comboBox.selectItem(name, select=True)
             self._subset_controls.filter_comboBox.refreshDisplayText()
             self.add_text_to_display.emit(
-                f"Filter '{name}' added.",
+                f"Filter '{name}' added: {filter_text}",
                 self.__class__.__name__,
             )
 
@@ -612,6 +581,67 @@ class MetaSubsetTabView(MetaView):
         combo.refreshDisplayText()
 
     @log(logger=logger)
+    def offer_event_id(self, subset_name: str, new_text: str) -> bool:
+        """
+        Ask whether to start a raw filter's column list with ``event_id``, and do it on yes.
+
+        Asked when a plot needs ``event_id`` and the filter does not return it, with the
+        new text shown so the user sees exactly what the filter becomes. The change is to
+        the filter in the open tab, which the session keeps when the app quits; Save Filter
+        writes it to a filters file. A no only closes the question: the panel message says
+        what to do instead, and the question is asked again the next time a plot needs it.
+
+        :param subset_name: the filter's name
+        :type subset_name: str
+        :param new_text: the filter text with ``event_id`` added
+        :type new_text: str
+        :return: True if the filter was changed
+        :rtype: bool
+        """
+        answer = QMessageBox.question(
+            self,
+            "Add event_id to this filter?",
+            f"{subset_name} does not return event_id, which this plot needs."
+            "\n\nChange the filter to:\n\n"
+            f"{new_text}\n\n"
+            "This is an automatic check, offered for convenience. If adding event_id "
+            "could change what your query means, choose No and edit the filter or create "
+            "a new, more appropriate one yourself."
+            "\n\n"
+            "This changes the filter in the app, and it is kept with your session when "
+            "you quit. Use Save Filter to also update your filters file.",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.Yes,
+        )
+        if answer != QMessageBox.Yes:
+            return False
+        self.subset_filters[subset_name] = new_text
+        self.add_text_to_display.emit(
+            f"{subset_name} now starts with event_id", self.__class__.__name__
+        )
+        return True
+
+    @log(logger=logger)
+    def revert_event_id_offer(self, subset_name: str, old_text: str) -> None:
+        """
+        Put a filter back to what it was before ``event_id`` was added, and say so.
+
+        Used when the query with ``event_id`` added could not be used, so that saying yes
+        to the offer can never leave a filter worse than it was.
+
+        :param subset_name: the filter's name
+        :type subset_name: str
+        :param old_text: the filter text before the offer was accepted
+        :type old_text: str
+        """
+        self.subset_filters[subset_name] = old_text
+        self.add_text_to_display.emit(
+            f"{subset_name} was changed back: the query with event_id added could not "
+            "be used",
+            self.__class__.__name__,
+        )
+
+    @log(logger=logger)
     def _reject_non_select_raw_filter(self, filter_text: str) -> bool:
         """
         Report a raw filter that is not a complete SELECT, and say whether it was.
@@ -629,11 +659,14 @@ class MetaSubsetTabView(MetaView):
         """
         if filter_text.strip().upper().startswith("SELECT"):
             return False
+        first = (re.findall(r"[A-Za-z_]+", filter_text) or ["nothing"])[0].upper()
         QMessageBox.warning(
             self,
             "Invalid Raw SQL Filter",
-            "Raw SQL filters must be complete SELECT statements, e.g. SELECT "
-            "duration FROM events WHERE duration > 1000",
+            f"This raw filter starts with {first}. A raw SQL filter has to start with "
+            "SELECT, and can only read the database. For example: SELECT event_id, "
+            "duration FROM events WHERE duration > 150 AND experiment_id = "
+            ":experiment_id AND channel_id = :channel_id",
         )
         return True
 
@@ -689,9 +722,7 @@ class MetaSubsetTabView(MetaView):
             if dialog.is_raw:
                 # Raw SQL is validated by validate_filter_query, not by
                 # construct_metadata_query, which builds its own SQL. The filter goes
-                # out as the user wrote it, trailing semicolon aside: the "LIMIT 0" that
-                # makes the check cheap is added by the Controller, since knowing that
-                # clause is knowing SQL and this is a widget.
+                # out as the user wrote it, trailing semicolon aside.
                 if self._reject_non_select_raw_filter(filter_text):
                     return
                 name = f"{name}_raw" if not name.endswith("_raw") else name
@@ -760,6 +791,7 @@ class MetaSubsetTabView(MetaView):
         sql_filter: str,
         exp: Optional[str],
         channel: Optional[int],
+        subset_name: str,
     ) -> bool:
         """
         Fetch every event_id matching the current filter, sorted, in one query.
@@ -797,6 +829,8 @@ class MetaSubsetTabView(MetaView):
         :type exp: Optional[str]
         :param channel: Current channel identifier.
         :type channel: Optional[int]
+        :param subset_name: the selected filter's name, whose ``_raw`` suffix marks a raw filter
+        :type subset_name: str
         :return: True if the cache was populated, False if it could not be or no events matched.
         :rtype: bool
         """
@@ -812,7 +846,9 @@ class MetaSubsetTabView(MetaView):
         # without this the read below would see the previous call's value and treat
         # it as this call's answer.
         self.event_id_rows = None
-        self.event_id_cache_requested.emit(loader, sql_filter or None, exp_and_ch)
+        self.event_id_cache_requested.emit(
+            loader, sql_filter or None, exp_and_ch, subset_name
+        )
         result = self.event_id_rows
         if result is not None and result.empty:
             self.add_text_to_display.emit(
@@ -820,12 +856,20 @@ class MetaSubsetTabView(MetaView):
                 self.__class__.__name__,
             )
             return False
-        if result is None or "event_id" not in result.columns:
-            # None means the query could not be built or run at all, and a
-            # populated result with no event_id means the loader did not honour
-            # its own contract - both are real problems rather than an empty
-            # subset. Logged at ERROR so QtHandler raises its dialog from the
-            # place that can tell the two apart.
+        if result is None:
+            # The query could not be built or run at all. The Controller has said why
+            # on the status panel, so this is logged below the level that raises a
+            # dialog rather than reporting the same failure twice.
+            self.logger.warning(
+                f"Could not query event ids for filter {sql_filter!r} - check that "
+                "the columns it names exist in the database"
+            )
+            return False
+        if "event_id" not in result.columns:
+            # A populated result with no event_id means the loader did not honour
+            # its own contract, which is a real problem rather than an empty subset.
+            # Logged at ERROR so QtHandler raises its dialog from the place that can
+            # tell the two apart.
             self.logger.error(
                 f"Could not query event ids for filter {sql_filter!r} - check that "
                 "the columns it names exist in the database"
@@ -835,7 +879,13 @@ class MetaSubsetTabView(MetaView):
         # load_metadata applies no ORDER BY of its own, and the navigation that
         # reads this list bisects it.
         self.filtered_event_ids = sorted(result["event_id"].tolist())
-        self.current_sql_filter = sql_filter
+        # The text the list was read for is the filter as it now stands, not the text
+        # this call was given: accepting the offer to add event_id changes the filter
+        # while the list is read, and the staleness checks compare against the stored
+        # filter, so recording the old text would let a filter put back to it reuse
+        # this list.
+        selected = self.get_selected_filters()
+        self.current_sql_filter = next(iter(selected.values()), sql_filter)
         self.current_experiment = exp
         self.current_channel = channel
 
@@ -924,7 +974,10 @@ class MetaSubsetTabView(MetaView):
             or exp != self.current_experiment
             or channel != self.current_channel
         ):
-            if not self._rebuild_event_id_cache(loader, sql_filter, exp, channel):
+            subset_name = next(iter(selected_filters))
+            if not self._rebuild_event_id_cache(
+                loader, sql_filter, exp, channel, subset_name
+            ):
                 return
 
         ids = self.filtered_event_ids

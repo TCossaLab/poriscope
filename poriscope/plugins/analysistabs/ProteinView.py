@@ -124,10 +124,9 @@ class ProteinView(MetaSubsetTabView):
     #: ``set_event_data_generator``.
     #:
     #: One request serving both distribution modes, because they ask the same thing.
-    #: Raw filters never reach it: a complete ``SELECT`` handed where a WHERE-clause body
-    #: is expected cannot return an event, so they are refused before a plot is
-    #: attempted rather than failing silently here.
-    event_distribution_data_requested = Signal(str, str, object)
+    #: Carries the filter's name, whose ``_raw`` suffix marks a raw filter: the events its
+    #: ``SELECT``'s event key names, within the scope, are loaded.
+    event_distribution_data_requested = Signal(str, str, object, str)
 
     #: Asks whether the database already holds fit columns, before any are written.
     #: Answered through ``confirm_fit_commit``.
@@ -161,7 +160,7 @@ class ProteinView(MetaSubsetTabView):
     #: Nothing outside the histogram reads them, so handing the widget a generator to
     #: walk would put the whole subset in the View to produce one array.
     ensemble_histogram_requested = Signal(
-        str, str, object, str, object, bool, str, object, float, float, int
+        str, str, object, str, object, bool, str, object, float, float, int, str
     )
 
     #: The error-bar variant of ``scatterplot_requested``, which this tab alone
@@ -1297,8 +1296,6 @@ class ProteinView(MetaSubsetTabView):
             return
 
         selected_filters = self.get_selected_filters()
-        if self._refuse_raw_filters(selected_filters):
-            return
         if not selected_filters:
             selected_filters = {"Full Dataset": ""}
 
@@ -1324,7 +1321,10 @@ class ProteinView(MetaSubsetTabView):
             or exp != self.current_experiment
             or channel != self.current_channel
         ):
-            if not self._rebuild_event_id_cache(loader, sql_filter, exp, channel):
+            subset_name = next(iter(selected_filters))
+            if not self._rebuild_event_id_cache(
+                loader, sql_filter, exp, channel, subset_name
+            ):
                 return
 
         cache = self.filtered_event_ids
@@ -1389,8 +1389,6 @@ class ProteinView(MetaSubsetTabView):
         plot_type = "Filtered Histogram"
 
         selected_filters = self.get_selected_filters()
-        if self._refuse_raw_filters(selected_filters):
-            return
         if not selected_filters:
             selected_filters = {"Full Dataset": ""}
 
@@ -1416,7 +1414,10 @@ class ProteinView(MetaSubsetTabView):
             or exp != self.current_experiment
             or channel != self.current_channel
         ):
-            if not self._rebuild_event_id_cache(loader, sql_filter, exp, channel):
+            subset_name = next(iter(selected_filters))
+            if not self._rebuild_event_id_cache(
+                loader, sql_filter, exp, channel, subset_name
+            ):
                 return
 
         cache = self.filtered_event_ids
@@ -1645,8 +1646,6 @@ class ProteinView(MetaSubsetTabView):
         self._clear_cache()
 
         selected_filters = self.get_selected_filters()
-        if self._refuse_raw_filters(selected_filters):
-            return
         loader = parameters["db_loader"]
         plot_type = parameters["plot_type"]
         d = float(parameters["pore_diameter"])
@@ -1709,7 +1708,9 @@ class ProteinView(MetaSubsetTabView):
         # rather than describing the previous subset.
         self.event_query = ""
         self.event_data_generator = None
-        self.event_distribution_data_requested.emit(loader, sql_filter, exp_and_ch_arg)
+        self.event_distribution_data_requested.emit(
+            loader, sql_filter, exp_and_ch_arg, subset_name
+        )
 
         if self.event_query == "":
             return
@@ -1806,8 +1807,6 @@ class ProteinView(MetaSubsetTabView):
         # The selection comes from the parameters, not the widgets, so a replay draws
         # what was recorded; see _record_selection.
         selected_filters = dict(parameters["selected_filters"])
-        if self._refuse_raw_filters(selected_filters):
-            return
         loader = parameters["db_loader"]
         plot_type = parameters["plot_type"]
         d = float(parameters["pore_diameter"])
@@ -1898,6 +1897,7 @@ class ProteinView(MetaSubsetTabView):
             d,
             L,
             N,
+            subset_name,
         )
 
     @log(logger=logger)

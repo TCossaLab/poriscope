@@ -20,12 +20,14 @@ app = QApplication.instance() or QApplication(sys.argv)
 # ---------------------------------------------------------------------------
 # Stub get_icon so tests don't need poriscope assets on disk
 # ---------------------------------------------------------------------------
-_icon_patch = patch("poriscope.configs.utils.get_icon", return_value=QIcon())
-_icon_patch.start()
-
-from poriscope.views.widgets.multiselect_filter import (  # noqa: E402
-    MultiSelectFilterComboBox,
-)
+# The stub only has to cover the import: the widget binds ``get_icon`` when its module is
+# imported. Left running it replaced ``get_icon`` for the rest of the session, since pytest
+# imports every test file while collecting, so a later test that asked for a real icon got
+# an empty one.
+with patch("poriscope.configs.utils.get_icon", return_value=QIcon()):
+    from poriscope.views.widgets.multiselect_filter import (  # noqa: E402
+        MultiSelectFilterComboBox,
+    )
 
 # ---------------------------------------------------------------------------
 # Helpers
