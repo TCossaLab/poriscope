@@ -5351,6 +5351,7 @@ def test_rebuild_event_id_cache_updates_current_trackers(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify current_sql_filter, current_experiment, and current_channel are updated."""
+    view.get_selected_filters = mocker.Mock(return_value={"subset": "duration > 1"})
     view.event_id_cache_requested.emit.side_effect = lambda *_: setattr(
         view, "event_id_rows", pd.DataFrame({"event_id": [1, 2, 3]})
     )

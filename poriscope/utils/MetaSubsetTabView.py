@@ -879,7 +879,13 @@ class MetaSubsetTabView(MetaView):
         # load_metadata applies no ORDER BY of its own, and the navigation that
         # reads this list bisects it.
         self.filtered_event_ids = sorted(result["event_id"].tolist())
-        self.current_sql_filter = sql_filter
+        # The text the list was read for is the filter as it now stands, not the text
+        # this call was given: accepting the offer to add event_id changes the filter
+        # while the list is read, and the staleness checks compare against the stored
+        # filter, so recording the old text would let a filter put back to it reuse
+        # this list.
+        selected = self.get_selected_filters()
+        self.current_sql_filter = next(iter(selected.values()), sql_filter)
         self.current_experiment = exp
         self.current_channel = channel
 

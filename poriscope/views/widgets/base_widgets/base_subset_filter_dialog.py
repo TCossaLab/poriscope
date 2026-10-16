@@ -27,7 +27,8 @@
 import logging
 from typing import Collection, Optional
 
-from PySide6.QtCore import QSize, Qt
+from PySide6.QtCore import QEvent, QObject, QSize, Qt
+from PySide6.QtGui import QKeyEvent, QTextCursor
 from PySide6.QtWidgets import (
     QButtonGroup,
     QDialog,
@@ -52,11 +53,15 @@ INFO_ICON_RENDER_SIZE = 64
 INFO_ICON_SIZE = 16
 
 #: Grey example shown in the empty filter box, by mode.
-ASSISTED_PLACEHOLDER = "e.g. duration > 150"
-RAW_PLACEHOLDER = (
-    "e.g. SELECT event_id, duration FROM events WHERE duration > 150 "
+ASSISTED_EXAMPLE = "duration > 150"
+RAW_EXAMPLE = (
+    "SELECT event_id, duration FROM events WHERE duration > 150 "
     "AND experiment_id = :experiment_id AND channel_id = :channel_id"
 )
+#: Said at the end of the grey example: Tab in the empty box inserts it.
+TAB_HINT = "   (press Tab to insert)"
+ASSISTED_PLACEHOLDER = f"e.g. {ASSISTED_EXAMPLE}{TAB_HINT}"
+RAW_PLACEHOLDER = f"e.g. {RAW_EXAMPLE}{TAB_HINT}"
 
 #: What the info mark beside the mode buttons says when hovered, by mode.
 ASSISTED_INFO = (
@@ -144,6 +149,7 @@ class BaseSubsetFilterDialog(QDialog):
 
         self.filter_input = QTextEdit()
         self.filter_input.setPlainText(self.default_filter)
+        self.filter_input.installEventFilter(self)
         self.raw_radio.toggled.connect(self._show_mode_hints)
         self._show_mode_hints(self.raw_radio.isChecked())
         layout.addWidget(QLabel("Filter:"))
@@ -177,6 +183,34 @@ class BaseSubsetFilterDialog(QDialog):
         policy.setRetainSizeWhenHidden(True)
         icon.setSizePolicy(policy)
         return icon
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
+        """
+        Fill the empty filter box with the chosen mode's example when Tab is pressed.
+
+        The grey example is only a hint, so Tab accepts it, as a terminal accepts a
+        suggestion. With text in the box, Tab does what it always did.
+
+        :param watched: the object the event is for
+        :type watched: QObject
+        :param event: the event
+        :type event: QEvent
+        :return: True if the event was handled here
+        :rtype: bool
+        """
+        if (
+            watched is self.filter_input
+            and isinstance(event, QKeyEvent)
+            and event.type() == QEvent.Type.KeyPress
+            and event.key() == Qt.Key.Key_Tab
+            and not self.filter_input.toPlainText()
+        ):
+            self.filter_input.setPlainText(
+                RAW_EXAMPLE if self.raw_radio.isChecked() else ASSISTED_EXAMPLE
+            )
+            self.filter_input.moveCursor(QTextCursor.MoveOperation.End)
+            return True
+        return super().eventFilter(watched, event)
 
     def _show_mode_hints(self, raw: bool) -> None:
         """

@@ -220,7 +220,7 @@
 
 * **A raw SQL filter that ends in its own `LIMIT` can now be saved:** the check added `LIMIT 0` to its text, which made it a syntax error
 
-* The subset filter dialog shows an example in its empty filter box, a condition for Assisted and a scoped query for Raw SQL, and in Raw SQL mode an info icon beside the chosen mode whose tooltip explains the mode (for Raw SQL, to add `:experiment_id` and `:channel_id` to follow the Scope selection and to start with `event_id`) and points to Help → Help → Documentation → Filtering and Querying
+* The subset filter dialog shows an example in its empty filter box (Tab inserts it), a condition for Assisted and a scoped query for Raw SQL, and in Raw SQL mode an info icon beside the chosen mode whose tooltip explains the mode (for Raw SQL, to add `:experiment_id` and `:channel_id` to follow the Scope selection and to start with `event_id`) and points to Help → Help → Documentation → Filtering and Querying
 
 * **Export Subset - CSV now takes a raw SQL filter:** it writes the events the query names in each selected channel, and refuses a filter that does not use `:experiment_id` and `:channel_id`, saying how to fix it
 
@@ -235,6 +235,8 @@
 * A raw filter warning is shown again when the same mistake is made after a run with nothing to warn about, and the refusal of a filter that does not start with `SELECT` or that writes now names what it starts with or contains and says it may only read
 
 * A plot that needs `event_id` from a plain raw filter that lacks it now asks whether to add it and carries on when you say yes; the advice ignores `GROUP BY`, `DISTINCT` and `UNION` inside a subquery or a function, names the word that stops it being added, and warns about a `GROUP BY` or aggregate that returns `event_id` without grouping by the event; the question is asked each time
+* A status-panel line that would only repeat the line directly above it (a warning, a refusal, the echoed query) is now left out; once another line is between, it is shown again, and the missing-`event_id` message says which plots need it
+* Fixed the arrows reusing the event list of an earlier filter text after the `event_id` question was answered Yes and the filter was edited back to the text it had
 
 * The status panel now shows a filter's text when it is added or updated (`Filter 'x' updated to 'x': <query>`), and Plot Events and the event arrows print the query they ran, as Update Plot does
 

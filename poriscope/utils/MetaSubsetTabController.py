@@ -544,9 +544,6 @@ class MetaSubsetTabController(MetaController):
     model: MetaSubsetTabModel
 
     #: The last scope warning shown, so one query is not warned about once per channel.
-    _last_scope_warning: str = ""
-    _last_echoed_query: str = ""
-    _warned_in_run: bool = False
 
     @log(logger=logger)
     @override
@@ -834,8 +831,8 @@ class MetaSubsetTabController(MetaController):
         two or three.
 
         Deduplicated because a single plot builds one query per experiment and
-        channel in scope and replotting is common, so echoing every one would bury
-        the panel. Only a query that differs from the last one shown is echoed.
+        channel in scope, so echoing every one would bury the panel: a query that is
+        the line directly above is not repeated (see ``_say_once``).
 
         :param query: the SQL that was run
         :type query: str
@@ -844,31 +841,25 @@ class MetaSubsetTabController(MetaController):
         :return: None
         :rtype: None
         """
-        stripped = query.strip()
-        if stripped == self._last_echoed_query:
-            return
-        self._last_echoed_query = stripped
-        self.add_text_to_display.emit(
-            f"SQL ({table_name}):\n{stripped}", self.__class__.__name__
-        )
+        self._say_once(f"SQL ({table_name}):\n{query.strip()}")
 
     @log(logger=logger)
-    def _warn_once(self, message: str) -> None:
+    def _say_once(self, message: str) -> None:
         """
-        Put a warning on the status panel unless it is the one shown last.
+        Put a message on the status panel unless it is the line directly above.
 
-        A plot asks once per ticked channel with the same query, and the warning is
-        about the query, so it is worth saying once. A run that has nothing to warn about
-        forgets the last warning (see ``_run_raw_filter``), so a query that is fixed and
-        then broken again is warned about again.
+        A plot asks once per ticked channel with the same query, and pressing Plot Events
+        or an arrow again meets the same refusal each time; repeating the line only
+        buries the panel. Only a line that directly follows an identical one is left out:
+        once anything else has been written between them, the message is shown again, so
+        the user finds it where they are reading.
 
-        :param message: the warning
+        :param message: the line to show
         :type message: str
         """
-        self._warned_in_run = True
-        if message == self._last_scope_warning:
+        if message == self.last_panel_text:
             return
-        self._last_scope_warning = message
+        self.last_panel_text = message
         self.add_text_to_display.emit(message, self.__class__.__name__)
 
     @log(logger=logger)
@@ -942,7 +933,7 @@ class MetaSubsetTabController(MetaController):
                 elsewhere |= values.notna() & (values != wanted)
         other = int(elsewhere.sum())
         if other:
-            self._warn_once(
+            self._say_once(
                 f"{other} of {len(rows)} rows of {subset_name}'s query are from other "
                 f"experiments or channels than the one selected ({label}), and they are "
                 "drawn under it. Usual causes: the scope is only in a subquery, or an OR "
@@ -1006,7 +997,6 @@ class MetaSubsetTabController(MetaController):
                 self.__class__.__name__,
             )
             return None
-        self._warned_in_run = False
         used = scope_placeholders(sql_filter)
         pairs = selected_pairs(experiments_and_channels)
         single = len(pairs) == 1 and pairs[0][1] is not None
@@ -1047,7 +1037,7 @@ class MetaSubsetTabController(MetaController):
                     else "each dataset also includes that channel number from every "
                     "other experiment"
                 )
-                self._warn_once(
+                self._say_once(
                     f"{subset_name}'s query uses :{next(iter(used))} but not :{missing}"
                     f", so {effect}. Add {missing} = :{missing} to its WHERE"
                 )
@@ -1070,7 +1060,7 @@ class MetaSubsetTabController(MetaController):
             )
             return None
         if pairs and not used:
-            self._warn_once(
+            self._say_once(
                 f"{subset_name}'s query does not use :experiment_id or :channel_id, so "
                 "the Scope selection has no effect on it: the query runs on the whole "
                 f"database, and each selected experiment and channel is plotted with all "
@@ -1081,8 +1071,6 @@ class MetaSubsetTabController(MetaController):
         scoped = used == {"experiment_id", "channel_id"}
         if scoped and experiment is not None and channel is not None:
             self._warn_about_leaks(rows, (experiment, channel, label), subset_name)
-        if not self._warned_in_run:
-            self._last_scope_warning = ""
         return RawRun(rows, query, experiment, channel, label, scoped)
 
     @log(logger=logger)
@@ -1187,10 +1175,11 @@ class MetaSubsetTabController(MetaController):
                         "WHERE experiment_id = :experiment_id AND channel_id = "
                         ":channel_id"
                     )
-            self.add_text_to_display.emit(
+            self._say_once(
                 f"{subset_name}'s query does not return event_id, which identifies an "
-                f"event. {advice}",
-                self.__class__.__name__,
+                "event and is needed by any plot that works on whole events (Plot Events, "
+                "the arrows, the event overlays, the all-points histograms and the Protein "
+                f"tab). {advice}"
             )
             return None
         known: Dict[str, Any] = {}
@@ -1213,19 +1202,17 @@ class MetaSubsetTabController(MetaController):
             return None
         keys = pd.DataFrame({name: parts[name] for name in EVENT_KEY})
         if groups_without_event_id(sql_filter):
-            self.add_text_to_display.emit(
+            self._say_once(
                 f"{subset_name}'s query groups its rows with GROUP BY but returns "
                 "event_id, which is not part of the grouping, so SQLite picks one event "
                 "for each group and the plot may open the wrong one. Group by event_id, "
-                "or move the grouping into a subquery",
-                self.__class__.__name__,
+                "or move the grouping into a subquery"
             )
         if aggregates_without_grouping(sql_filter):
-            self.add_text_to_display.emit(
+            self._say_once(
                 f"{subset_name}'s query uses an aggregate but returns event_id, so SQLite "
                 "picks one event for the whole result and the plot may open the wrong "
-                "one. Move the aggregate into a subquery, or leave event_id out",
-                self.__class__.__name__,
+                "one. Move the aggregate into a subquery, or leave event_id out"
             )
         for expression, alias in relabelled_keys(sql_filter):
             self.add_text_to_display.emit(

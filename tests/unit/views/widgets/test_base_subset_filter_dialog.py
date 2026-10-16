@@ -8,17 +8,20 @@ themselves. Runs headlessly.
 """
 
 import pytest
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
 from pytestqt.qtbot import QtBot
 
 from poriscope.configs import utils as icon_utils
 from poriscope.configs.utils import get_icon
 from poriscope.views.widgets.base_widgets.base_subset_filter_dialog import (
+    ASSISTED_EXAMPLE,
     ASSISTED_INFO,
     ASSISTED_PLACEHOLDER,
     INFO_ICON,
     INFO_ICON_RENDER_SIZE,
     INFO_ICON_SIZE,
+    RAW_EXAMPLE,
     RAW_INFO,
     RAW_PLACEHOLDER,
     BaseSubsetFilterDialog,
@@ -218,7 +221,7 @@ def test_the_raw_example_is_a_complete_scoped_query_starting_with_event_id() -> 
     """
     What the empty Raw box shows is itself a good filter.
     """
-    example = RAW_PLACEHOLDER.removeprefix("e.g. ")
+    example = RAW_EXAMPLE
 
     assert example.startswith("SELECT event_id,")
     assert "experiment_id = :experiment_id" in example
@@ -235,3 +238,47 @@ def test_editing_a_raw_filter_opens_with_the_raw_icon(qtbot: QtBot) -> None:
     assert not dialog.raw_info.isHidden()
     assert dialog.assisted_info.isHidden()
     assert dialog.filter_input.placeholderText() == RAW_PLACEHOLDER
+
+
+@pytest.mark.timeout(60)
+def test_tab_in_the_empty_box_inserts_the_example_for_the_chosen_mode(
+    qtbot: QtBot,
+) -> None:
+    """
+    The grey example is accepted with Tab, without its ``e.g.`` or its hint, and the text
+    follows the mode.
+    """
+    dialog = make_dialog(qtbot)
+
+    qtbot.keyClick(dialog.filter_input, Qt.Key.Key_Tab)
+    assert dialog.filter_input.toPlainText() == ASSISTED_EXAMPLE
+
+    dialog.filter_input.clear()
+    dialog.raw_radio.setChecked(True)
+    qtbot.keyClick(dialog.filter_input, Qt.Key.Key_Tab)
+    assert dialog.filter_input.toPlainText() == RAW_EXAMPLE
+
+
+@pytest.mark.timeout(60)
+def test_tab_does_not_replace_text_that_is_already_in_the_box(qtbot: QtBot) -> None:
+    """
+    Only an empty box takes the example: with text in it, Tab does what it always did (it
+    inserts a tab) and never overwrites what the user typed.
+    """
+    dialog = make_dialog(qtbot, default_filter="duration > 1")
+
+    qtbot.keyClick(dialog.filter_input, Qt.Key.Key_Tab)
+
+    text = dialog.filter_input.toPlainText()
+    assert ASSISTED_EXAMPLE not in text
+    assert "duration > 1" in text
+
+
+@pytest.mark.timeout(60)
+def test_the_grey_hint_says_how_to_insert_the_example(qtbot: QtBot) -> None:
+    """
+    The placeholder tells the user about Tab, so nobody has to guess.
+    """
+    dialog = make_dialog(qtbot)
+
+    assert "press Tab to insert" in dialog.filter_input.placeholderText()

@@ -418,17 +418,17 @@ class TestRawFilterScopesItself:
         assert "instead of only its own" in _said(controller)
         assert f"all {len(WHOLE_KEY)} rows it finds" in _said(controller)
 
-    def test_a_query_that_is_fixed_and_then_broken_again_is_warned_about_again(
+    def test_a_warning_is_shown_again_once_another_line_is_between(
         self, cls: type, mocker: MockerFixture
     ) -> None:
         """
-        A clean run forgets the last warning, so the same mistake made again is not
-        silenced by the one before the fix.
+        Only a warning directly under an identical one is left out: with another line on the
+        panel between them, the warning is shown again where the user is reading.
         """
         controller = _event_controller(cls, mocker, WHOLE_KEY)
 
         controller._run_raw_filter("ldr", UNSCOPED, SCOPE, "mine_raw")
-        controller._run_raw_filter("ldr", SCOPED, SCOPE, "mine_raw")
+        controller.last_panel_text = "some other line"
         controller._run_raw_filter("ldr", UNSCOPED, SCOPE, "mine_raw")
 
         assert _said(controller).count("has no effect on it") == 2
@@ -1325,3 +1325,25 @@ def test_an_aggregate_inside_a_subquery_is_not_warned_about(
     controller._fetch_event_subset("ldr", sql, SCOPE, "mine_raw")
 
     assert "uses an aggregate but returns event_id" not in _said(controller)
+
+
+@pytest.mark.parametrize("cls", [MetadataController, ProteinController])
+def test_the_same_missing_event_id_message_is_shown_again_after_another_line(
+    cls: type, mocker: MockerFixture
+) -> None:
+    """
+    Pressing Plot Events again on the same filter meets the same refusal; directly under
+    itself the panel shows it once, but with another line between the two it is shown again.
+    """
+    lacking = pd.DataFrame({"duration": [1.0]})
+    plain = f"SELECT duration FROM events WHERE {SCOPE_TEXT}"
+    controller = _event_controller(cls, mocker, lacking)
+    controller.view.offer_event_id.return_value = False
+
+    controller._fetch_event_subset("ldr", plain, SCOPE, "mine_raw")
+    controller._fetch_event_subset("ldr", plain, SCOPE, "mine_raw")
+    assert _said(controller).count("does not return event_id") == 1
+
+    controller.last_panel_text = "some other line"
+    controller._fetch_event_subset("ldr", plain, SCOPE, "mine_raw")
+    assert _said(controller).count("does not return event_id") == 2

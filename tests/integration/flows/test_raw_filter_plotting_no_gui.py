@@ -278,13 +278,18 @@ def test_a_raw_filter_that_ignores_the_selection_is_warned_about_and_still_plots
     """
     No placeholders, so every channel gets the whole database - which the panel says.
     """
+    lines: List[str] = []
+    metadata_tab.tab_controller.add_text_to_display.connect(
+        lambda text, source: lines.append(text)
+    )
+
     plot(metadata_tab, "forgot_raw", "duration", ["0"])
 
     view = metadata_tab.tab_view
     with sqlite3.connect(sample_metadata_db) as conn:
         everything = conn.execute("SELECT COUNT(*) FROM events").fetchone()[0]
     assert len(view.plot_data) == everything
-    assert "has no effect on it" in metadata_tab.tab_controller._last_scope_warning
+    assert any("has no effect on it" in line for line in lines)
 
 
 @pytest.mark.timeout(120)
@@ -644,3 +649,25 @@ def test_plot_events_carries_on_when_the_offer_is_accepted(
         )
     assert len(question.asked) == 1
     assert metadata_tab.tab_view.filtered_event_ids == expected
+
+
+@pytest.mark.timeout(120)
+def test_an_arrow_rereads_a_filter_that_was_put_back_without_event_id(
+    metadata_tab: Triad, question: Question
+) -> None:
+    """
+    After the offer is accepted the filter is edited back to the text it had. The arrows
+    must not step through the list read for the other text: the plain query has no
+    ``event_id`` and is refused again.
+    """
+    question.reply = QMessageBox.StandardButton.Yes
+    view = metadata_tab.tab_view
+    plain = view.subset_filters["no_event_id_raw"]
+    navigate(metadata_tab, "no_event_id_raw", "plot_events")
+    assert view.filtered_event_ids
+    view.subset_filters["no_event_id_raw"] = plain
+    question.reply = QMessageBox.StandardButton.No
+
+    navigate(metadata_tab, "no_event_id_raw", "shift_range_forward")
+
+    assert len(question.asked) == 2
