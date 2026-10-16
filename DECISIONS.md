@@ -98,8 +98,10 @@ Controller that runs the query itself.
 Each signal is one declaration, one emit and one connect, plus its slot. Listed as breaking in the
 changelog.
 
-**Rejected.** Sniffing the text for `SELECT`: a one-column `SELECT` is accepted in Assisted mode, so
-the text cannot tell the modes apart, and the mode is the name's suffix. Looking the name up in the
+**Rejected.** Sniffing the text for `SELECT`: the mode is fixed by the name's suffix when the filter
+is created, so the text would be a second source that could disagree with it. (A one-column `SELECT`
+was accepted in Assisted mode when this was decided, which made the text ambiguous; an Assisted filter
+that starts with `SELECT` is refused now, but the name stays the one source.) Looking the name up in the
 View's filters from the Controller: it reaches into View state where the convention is arguments, and
 identical texts under two names are ambiguous. A one-entry `{name: text}` dict in place of the text:
 it changes an argument's meaning, breaks as much and reads worse. A default value on the Python
