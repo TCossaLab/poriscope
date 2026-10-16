@@ -30,8 +30,8 @@ from `events` or `sublevels` (no top-level `DISTINCT`, `GROUP BY`, aggregate, `U
 comma join, derived table or `SELECT *`), `MetaSubsetTabView.offer_event_id` asks, showing the new
 text. Yes changes the filter in the tab (the session keeps it; Save Filter writes the file) and the
 plot carries on; the filter is put back, with a line on the panel, if the new query fails. No is
-remembered for that text. Any other query gets a message naming the word that stops it, and a
-top-level `GROUP BY` that returns `event_id` without grouping by the event is warned about. The
+closed without a change, and asked again the next time a plot needs it. Any other query gets a message naming the word that stops it, and a
+top-level `GROUP BY` or aggregate that returns `event_id` without grouping by the event is warned about. The
 offer is made because, in most cases, adding `event_id` has no consequence and a little help with a
 Poriscope-specific rule is cheap.
 

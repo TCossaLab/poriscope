@@ -271,6 +271,42 @@ def top_level_words(sql: str) -> List[Tuple[str, int]]:
 AGGREGATES = frozenset({"count", "sum", "avg", "min", "max", "total", "group_concat"})
 
 
+def is_aggregate_call(sql: str, word: str, offset: int) -> bool:
+    """
+    Report whether a word in a query is a call to an aggregate function.
+
+    ``MIN`` and ``MAX`` with several arguments are scalar functions that pick the
+    smaller or larger of their arguments, not aggregates, so they do not count.
+
+    :param sql: the user's query
+    :type sql: str
+    :param word: the lower-case word found at the top level
+    :type word: str
+    :param offset: where the word starts in the query
+    :type offset: int
+    :return: True if the word is an aggregate function being called
+    :rtype: bool
+    """
+    if word not in AGGREGATES:
+        return False
+    rest = sql[offset + len(word) :].lstrip()
+    if not rest.startswith("("):
+        return False
+    if word not in {"min", "max"}:
+        return True
+    depth = 0
+    for char in rest:
+        if char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+            if depth == 0:
+                return True
+        elif char == "," and depth == 1:
+            return False
+    return True
+
+
 def shape_words(sql: str) -> List[str]:
     """
     Find the top-level words that make a query something other than one row per event.
@@ -285,7 +321,7 @@ def shape_words(sql: str) -> List[str]:
     """
     seen: List[str] = []
     for word, offset in top_level_words(sql):
-        if word in AGGREGATES and sql[offset + len(word) :].lstrip().startswith("("):
+        if is_aggregate_call(sql, word, offset):
             word = "aggregate"
         if (word in SHAPE_WORDS or word == "aggregate") and word not in seen:
             seen.append(word)
@@ -358,6 +394,23 @@ def reads_one_event_table(sql: str) -> bool:
                 return False
         return True
     return False
+
+
+def aggregates_without_grouping(sql: str) -> bool:
+    """
+    Report a top-level aggregate in a query that has no ``GROUP BY``.
+
+    Such a query returns one row for many events, so an ``event_id`` beside it is one
+    arbitrary event, as with a ``GROUP BY`` of something else. A query that does group is
+    covered by :func:`groups_without_event_id`.
+
+    :param sql: the user's query
+    :type sql: str
+    :return: True if the query aggregates and does not group
+    :rtype: bool
+    """
+    words = shape_words(sql)
+    return "aggregate" in words and "group" not in words
 
 
 def with_event_id(sql: str) -> Optional[str]:
@@ -1133,6 +1186,13 @@ class MetaSubsetTabController(MetaController):
                 "event_id, which is not part of the grouping, so SQLite picks one event "
                 "for each group and the plot may open the wrong one. Group by event_id, "
                 "or move the grouping into a subquery",
+                self.__class__.__name__,
+            )
+        if aggregates_without_grouping(sql_filter):
+            self.add_text_to_display.emit(
+                f"{subset_name}'s query uses an aggregate but returns event_id, so SQLite "
+                "picks one event for the whole result and the plot may open the wrong "
+                "one. Move the aggregate into a subquery, or leave event_id out",
                 self.__class__.__name__,
             )
         for expression, alias in relabelled_keys(sql_filter):

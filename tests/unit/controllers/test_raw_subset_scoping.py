@@ -27,6 +27,7 @@ from poriscope.plugins.analysistabs.MetadataModel import MetadataModel
 from poriscope.plugins.analysistabs.ProteinController import ProteinController
 from poriscope.plugins.analysistabs.ProteinModel import ProteinModel
 from poriscope.utils.MetaSubsetTabController import (
+    aggregates_without_grouping,
     bind_scope,
     code_spans,
     groups_without_event_id,
@@ -1091,6 +1092,8 @@ def test_a_word_inside_a_subquery_a_function_a_string_or_a_comment_does_not_coun
         ("SELECT a FROM events e JOIN sublevels s ON s.event_db_id = e.id", ["join"]),
         ("SELECT AVG(duration) FROM events", ["aggregate"]),
         ("SELECT COUNT(DISTINCT duration) FROM events", ["aggregate"]),
+        # MAX with several arguments picks the larger one; it does not fold rows.
+        ("SELECT MAX(duration, max_blockage) FROM events", []),
     ],
 )
 def test_the_top_level_words_that_change_the_rows_are_found(
@@ -1265,3 +1268,60 @@ def test_a_filter_is_put_back_if_the_query_with_event_id_cannot_be_used(
     assert controller._fetch_event_subset("ldr", plain, SCOPE, "mine_raw") is None
 
     controller.view.revert_event_id_offer.assert_called_once_with("mine_raw", plain)
+
+
+@pytest.mark.parametrize(
+    ("sql", "expected"),
+    [
+        ("SELECT event_id, AVG(duration) FROM events", True),
+        ("SELECT event_id, MAX(duration) FROM events", True),
+        ("SELECT event_id, AVG(duration) FROM events GROUP BY channel_id", False),
+        ("SELECT event_id, MAX(duration, max_blockage) FROM events", False),
+        (
+            "SELECT event_id FROM events WHERE duration > (SELECT AVG(duration) FROM events)",
+            False,
+        ),
+        ("SELECT event_id, duration FROM events", False),
+    ],
+)
+def test_an_aggregate_without_a_group_by_is_found(sql: str, expected: bool) -> None:
+    """
+    A group-by is the other check's; a subquery's aggregate or a two-argument ``MAX`` is not
+    an aggregate of the query's own rows.
+    """
+    assert aggregates_without_grouping(sql) is expected
+
+
+@pytest.mark.parametrize("cls", [MetadataController, ProteinController])
+def test_an_aggregate_that_returns_event_id_is_warned_about(
+    cls: type, mocker: MockerFixture
+) -> None:
+    """
+    SQLite would pick one event for the whole result, so the plot could open the wrong one.
+    """
+    sql = f"SELECT event_id, AVG(duration) AS duration FROM events WHERE {SCOPE_TEXT}"
+    controller = _event_controller(cls, mocker, EVENTS, IN_DATABASE)
+
+    controller._fetch_event_subset("ldr", sql, SCOPE, "mine_raw")
+
+    said = _said(controller)
+    assert "uses an aggregate but returns event_id" in said
+    assert "Move the aggregate into a subquery, or leave event_id out" in said
+
+
+@pytest.mark.parametrize("cls", [MetadataController, ProteinController])
+def test_an_aggregate_inside_a_subquery_is_not_warned_about(
+    cls: type, mocker: MockerFixture
+) -> None:
+    """
+    The outer rows are still events, so there is nothing to warn about.
+    """
+    sql = (
+        f"SELECT event_id FROM events WHERE {SCOPE_TEXT} AND duration > "
+        "(SELECT AVG(duration) FROM events)"
+    )
+    controller = _event_controller(cls, mocker, EVENTS, IN_DATABASE)
+
+    controller._fetch_event_subset("ldr", sql, SCOPE, "mine_raw")
+
+    assert "uses an aggregate but returns event_id" not in _said(controller)

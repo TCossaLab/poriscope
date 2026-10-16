@@ -5737,12 +5737,12 @@ def test_offer_event_id_changes_the_filter_on_yes_and_says_so(
     view.add_text_to_display.emit.assert_called_once()
 
 
-def test_offer_event_id_leaves_the_filter_on_no_and_does_not_ask_again(
+def test_offer_event_id_leaves_the_filter_on_no_and_asks_again_next_time(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """
-    A no changes nothing and is remembered for that text, so the same plot is not asked
-    about twice; a different text is asked about afresh.
+    A no changes nothing and only closes the question: the same text is asked about again
+    the next time, so a user is never stopped from being offered the fix.
     """
     view.subset_filters = {"r_raw": "SELECT duration FROM events"}
     view.add_text_to_display = mocker.Mock()  # type: ignore[assignment]
@@ -5756,7 +5756,7 @@ def test_offer_event_id_leaves_the_filter_on_no_and_does_not_ask_again(
     other = view.offer_event_id("r_raw", "SELECT event_id, max_blockage FROM events")
 
     assert (first, second, other) == (False, False, False)
-    assert ask.call_count == 2
+    assert ask.call_count == 3
     assert view.subset_filters["r_raw"] == "SELECT duration FROM events"
 
 

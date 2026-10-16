@@ -578,12 +578,12 @@ def test_a_plain_filter_without_event_id_is_offered_it_and_the_plot_goes_on_when
 
 
 @pytest.mark.timeout(120)
-def test_a_declined_offer_leaves_the_filter_and_is_not_asked_again(
+def test_a_declined_offer_leaves_the_filter_and_is_asked_again_next_time(
     metadata_tab: Triad, question: Question
 ) -> None:
     """
-    No changes nothing and the panel says what to do; the same text is not asked about
-    again, so the user is not nagged on every plot.
+    No only closes the question and changes nothing; the panel says what to do, and the
+    next plot that needs ``event_id`` asks again.
     """
     view = metadata_tab.tab_view
     before = view.subset_filters["no_event_id_raw"]
@@ -597,7 +597,7 @@ def test_a_declined_offer_leaves_the_filter_and_is_not_asked_again(
             plot_type="Raw All Points Histogram",
         )
 
-    assert len(question.asked) == 1
+    assert len(question.asked) == 2
     assert view.subset_filters["no_event_id_raw"] == before
     assert view.plotted_datasets == set()
 

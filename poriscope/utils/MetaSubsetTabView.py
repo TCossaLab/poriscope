@@ -588,8 +588,8 @@ class MetaSubsetTabView(MetaView):
         Asked when a plot needs ``event_id`` and the filter does not return it, with the
         new text shown so the user sees exactly what the filter becomes. The change is to
         the filter in the open tab, which the session keeps when the app quits; Save Filter
-        writes it to a filters file. A no is remembered for that text, so the same plot does
-        not ask again, and the panel message says what to do instead.
+        writes it to a filters file. A no only closes the question: the panel message says
+        what to do instead, and the question is asked again the next time a plot needs it.
 
         :param subset_name: the filter's name
         :type subset_name: str
@@ -598,9 +598,6 @@ class MetaSubsetTabView(MetaView):
         :return: True if the filter was changed
         :rtype: bool
         """
-        declined = self.__dict__.setdefault("_declined_event_id", set())
-        if (subset_name, new_text) in declined:
-            return False
         answer = QMessageBox.question(
             self,
             "Add event_id to this filter?",
@@ -617,7 +614,6 @@ class MetaSubsetTabView(MetaView):
             QMessageBox.Yes,
         )
         if answer != QMessageBox.Yes:
-            declined.add((subset_name, new_text))
             return False
         self.subset_filters[subset_name] = new_text
         self.add_text_to_display.emit(
