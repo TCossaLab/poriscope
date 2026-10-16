@@ -545,6 +545,7 @@ class MetaSubsetTabController(MetaController):
 
     #: The last scope warning shown, so one query is not warned about once per channel.
     _last_scope_warning: str = ""
+    _last_echoed_query: str = ""
     _warned_in_run: bool = False
 
     @log(logger=logger)
@@ -819,6 +820,37 @@ class MetaSubsetTabController(MetaController):
         if valid or not debug:
             return "see the log for the SQL error"
         return str(debug).split("\n\n")[-1].strip()
+
+    @log(logger=logger)
+    def _echo_applied_query(self, query: str, table_name: str) -> None:
+        """
+        Put the query that actually ran on the status panel, once per distinct query.
+
+        What the panel used to show was the *validation* query built when the filter
+        was created, which is a different query from the one that pulls the subset -
+        it was built from a fixed three-column guess, so it joined all three metadata
+        tables whatever the filter referenced. This shows the real one, whose joins
+        are whatever the filter and the chosen axes actually need: one table,
+        two or three.
+
+        Deduplicated because a single plot builds one query per experiment and
+        channel in scope and replotting is common, so echoing every one would bury
+        the panel. Only a query that differs from the last one shown is echoed.
+
+        :param query: the SQL that was run
+        :type query: str
+        :param table_name: the table its id column belongs to
+        :type table_name: str
+        :return: None
+        :rtype: None
+        """
+        stripped = query.strip()
+        if stripped == self._last_echoed_query:
+            return
+        self._last_echoed_query = stripped
+        self.add_text_to_display.emit(
+            f"SQL ({table_name}):\n{stripped}", self.__class__.__name__
+        )
 
     @log(logger=logger)
     def _warn_once(self, message: str) -> None:
@@ -1451,6 +1483,7 @@ class MetaSubsetTabController(MetaController):
         run, keys, _ = read
         if not self._event_keys_exist(loader, keys, subset_name):
             return
+        self._echo_applied_query(run.executed, "raw query")
         if run.experiment_id is not None and run.channel is not None:
             keys = keys[
                 (keys["experiment_id"] == run.experiment_id)
@@ -1517,7 +1550,49 @@ class MetaSubsetTabController(MetaController):
                 "for the SQL error",
                 self.__class__.__name__,
             )
+        else:
+            self._echo_event_id_query(loader, conditions, experiments_and_channels)
         self.view.set_event_id_rows(rows)
+
+    @log(logger=logger)
+    def _echo_event_id_query(
+        self,
+        loader: str,
+        conditions: Optional[str],
+        experiments_and_channels: Optional[Dict[str, Optional[List[int]]]],
+    ) -> None:
+        """
+        Put the query that read an Assisted subset's event ids on the status panel.
+
+        Plot Events and the arrows read the list with the same query an Update Plot builds,
+        so the user sees which filter text was used, as a plot shows it. Only a convenience:
+        a loader that cannot build the query says nothing here and the list is unaffected.
+
+        :param loader: the database loader plugin's key
+        :type loader: str
+        :param conditions: the subset filter, or None for every row
+        :type conditions: Optional[str]
+        :param experiments_and_channels: the experiment and channel scope, or None
+        :type experiments_and_channels: Optional[Dict[str, Optional[List[int]]]]
+        """
+        try:
+            built = self.model.call(
+                "MetaDatabaseLoader",
+                loader,
+                "construct_metadata_query",
+                ["event_id"],
+                conditions,
+                experiments_and_channels,
+            )
+        except Exception:
+            return
+        if (
+            isinstance(built, tuple)
+            and built
+            and isinstance(built[0], str)
+            and built[0]
+        ):
+            self._echo_applied_query(built[0], "events")
 
     @log(logger=logger)
     @Slot(str)
@@ -1818,7 +1893,8 @@ class MetaSubsetTabController(MetaController):
                     )
 
                 self.view.add_text_to_display.emit(
-                    f"Filter '{suffixed_name}' added.", self.__class__.__name__
+                    f"Filter '{suffixed_name}' added{': ' + filter_text if filter_text else ''}.",
+                    self.__class__.__name__,
                 )
 
                 self.view.replace_filter_item(suffixed_name)
@@ -1842,7 +1918,8 @@ class MetaSubsetTabController(MetaController):
                     )
 
                 self.view.add_text_to_display.emit(
-                    f"Filter '{old_name}' updated to '{suffixed_new_name}'.",
+                    f"Filter '{old_name}' updated to '{suffixed_new_name}'"
+                    f"{': ' + new_filter if new_filter else ''}.",
                     self.__class__.__name__,
                 )
 

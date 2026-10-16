@@ -92,11 +92,13 @@ Tab state onto the Models, heavy work off the GUI thread, event-finder and CUSUM
 
 ### Analysis tabs
 
-- **A raw filter's computed or aliased columns cannot be chosen on a plot axis.** The axis
-  menus are filled from the loader's own column list (`metadatacontrols.update_axes:671`), so
-  `max_blockage - min_blockage AS blockage_range` is returned but never selectable (found in a
-  manual pass; the tests set the axis column directly and cannot see it). List the selected raw
-  filter's result columns beside the database's.
+- **A raw filter's result columns cannot be chosen on a plot axis.** The axis menus list only the
+  database's own columns (`metadatacontrols.update_axes:656`), so a computed or aliased column such
+  as `max_blockage - min_blockage AS range` is returned by the query but never selectable, and
+  every axis is picked by hand even when the result holds only the columns the user selected. Worth
+  addressing because shaping the result is the point of a raw filter, and that shaping cannot reach
+  a plot. SQL viewers that can plot choose the axes from the query's own columns and preselect them
+  automatically. Found in a manual pass; the tests set the axis column directly and cannot see it.
 - **Auto-binned histogram overlays re-bin the earlier datasets.** With bins left empty,
   `MetadataModel.overlaid_histograms:450` estimates bins from all overlaid datasets, so each added
   dataset changes the first one's edges (measured on `develop`: 4 bins 56 wide alone, 7 at 32 with
@@ -314,6 +316,11 @@ absorbs what it needs and stands alone, leaving 20240101 a clean deletion.
 
 ### Analysis tabs
 
+- **An Assisted filter cannot define a derived column.** It is a condition, so
+  `max_blockage - min_blockage > 500` selects events, but nothing can put a computed value such as
+  `range = max_blockage - min_blockage` on an axis. Worth addressing because it is the one way of
+  shaping a result for which the user must leave Assisted for raw SQL, and raw has its own column
+  limitation (the entry under 2.2).
 - **Event-tab arrows stop at 0 but run past the last event; consider wrapping (or declining)
   at both ends.** `MetaEventTabView._shift_range_and_update_plot:220` declines below 0 (`:274`); past
   the end it moves the field and the Controller reports the overflow (`RawDataController.py:439`,

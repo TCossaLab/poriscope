@@ -62,7 +62,6 @@ class MetadataController(MetaSubsetTabController):
     #: The last SQL echoed to the status panel, so that replotting the same subset
     #: does not repeat it. Not persisted: it is display state, and a fresh session
     #: showing the query once more is the right behaviour.
-    _last_echoed_query: str = ""
 
     @log(logger=logger)
     @override
@@ -898,37 +897,6 @@ class MetadataController(MetaSubsetTabController):
         self.view.set_event_query(query)
         self._echo_applied_query(query, "events")
         self.view.set_event_overlay(traces)
-
-    @log(logger=logger)
-    def _echo_applied_query(self, query: str, table_name: str) -> None:
-        """
-        Put the query that actually ran on the status panel, once per distinct query.
-
-        What the panel used to show was the *validation* query built when the filter
-        was created, which is a different query from the one that pulls the subset -
-        it was built from a fixed three-column guess, so it joined all three metadata
-        tables whatever the filter referenced. This shows the real one, whose joins
-        are whatever the filter and the chosen axes actually need: one table,
-        two or three.
-
-        Deduplicated because a single plot builds one query per experiment and
-        channel in scope and replotting is common, so echoing every one would bury
-        the panel. Only a query that differs from the last one shown is echoed.
-
-        :param query: the SQL that was run
-        :type query: str
-        :param table_name: the table its id column belongs to
-        :type table_name: str
-        :return: None
-        :rtype: None
-        """
-        stripped = query.strip()
-        if stripped == self._last_echoed_query:
-            return
-        self._last_echoed_query = stripped
-        self.add_text_to_display.emit(
-            f"SQL ({table_name}):\n{stripped}", self.__class__.__name__
-        )
 
     @log(logger=logger)
     @Slot(str, str)

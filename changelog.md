@@ -236,6 +236,8 @@
 
 * A plot that needs `event_id` from a plain raw filter that lacks it now asks whether to add it and carries on when you say yes; the advice ignores `GROUP BY`, `DISTINCT` and `UNION` inside a subquery or a function, names the word that stops it being added, and warns about a `GROUP BY` or aggregate that returns `event_id` without grouping by the event; the question is asked each time
 
+* The status panel now shows a filter's text when it is added or updated (`Filter 'x' updated to 'x': <query>`), and Plot Events and the event arrows print the query they ran, as Update Plot does
+
 * **A raw SQL filter can only read the database:** a statement that writes, including one behind `WITH`, is refused, and the loader's read connections can no longer write
 
 * The Metadata and Protein event navigation (Plot Events, the arrows) now reports a failure to read a subset's events on the status panel only, instead of also raising an error dialog

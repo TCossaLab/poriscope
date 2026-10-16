@@ -495,7 +495,7 @@ class MetaSubsetTabView(MetaView):
             self.commit_filter(name, filter_text, old_name)
             self.update_filter_name(old_name, name)
             self.add_text_to_display.emit(
-                f"Filter '{old_name}' updated to '{name}'.",
+                f"Filter '{old_name}' updated to '{name}': {filter_text}",
                 self.__class__.__name__,
             )
         else:  # add path
@@ -504,7 +504,7 @@ class MetaSubsetTabView(MetaView):
             self._subset_controls.filter_comboBox.selectItem(name, select=True)
             self._subset_controls.filter_comboBox.refreshDisplayText()
             self.add_text_to_display.emit(
-                f"Filter '{name}' added.",
+                f"Filter '{name}' added: {filter_text}",
                 self.__class__.__name__,
             )
 
