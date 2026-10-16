@@ -53,7 +53,7 @@ Poriscope-specific rule is cheap.
 a subquery or `COUNT(DISTINCT x)` is not counted. Assisted cannot hit any of this: it writes one row
 per event itself (`SELECT DISTINCT e.id, ...` for a sublevel condition).
 
-**Revisit if.** Accepting the offer starts breaking users' queries, or users want `event_id` on
+**Revisit if** Accepting the offer starts breaking users' queries, or users want `event_id` on
 every filter and find the question tiresome, or `DISTINCT`, `GROUP BY`, `UNION` and aggregates turn
 out to be common in raw filters.
 
@@ -74,7 +74,7 @@ for the theme and rendered at 64 px so it stays sharp on a high-resolution scree
 **Rejected.** The label (space); a placeholder alone (it disappears as soon as the user types, which
 is when the rule matters); an "Add event_id" button (see the 2026-10-16 entry on the `event_id` offer).
 
-**Revisit if.** Users still write unscoped raw filters at the same rate: then a persistent line is
+**Revisit if** Users still write unscoped raw filters at the same rate: then a persistent line is
 worth its space again.
 
 ---
