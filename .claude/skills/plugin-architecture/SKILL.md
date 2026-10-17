@@ -1,6 +1,6 @@
 ---
 name: plugin-architecture
-description: How Poriscope's two-layer MVC and plugin system fit together - the app-shell triad, the GUI/analysis-tab and data-plugin families, how a tab reaches data plugins, plugin discovery and the BaseDataPlugin settings lifecycle, and where to add a new data plugin or analysis tab. Load before reading, reasoning about, designing or changing anything in a plugin, a Meta* base, an analysis tab, the app-shell controllers or session persistence - including design discussion with no code change planned.
+description: How Poriscope's two-layer MVC and plugin system fit together - the app-shell triad, the GUI/analysis-tab and data-plugin families, how a tab reaches data plugins, plugin discovery and the BaseDataPlugin settings lifecycle, where to add a new data plugin or analysis tab, and trap questions to answer from the code before designing in an area. Load before reading, reasoning about, designing or changing anything in a plugin, a Meta* base, an analysis tab, the app-shell controllers or session persistence - including design discussion with no code change planned.
 ---
 
 # Architecture
@@ -105,3 +105,40 @@ Poriscope is built from two layers that use the *same* MVC pattern recursively:
   writes the Controller/Model/View triad and its controls panel under
   `poriscope/plugins/analysistabs/`, subclassing `MetaController`/`MetaModel`/`MetaView`.
 
+## Trap questions: check before designing
+
+Each area below lists questions whose obvious answer has been wrong before. Before designing in that area,
+answer each one fresh from the code, starting where it says, and put the answers with `file:line` in your
+overview. Don't answer from this file, from memory or from a design document: the case note says what was
+assumed, not what is true now.
+
+Add a trap only with evidence: a design or claim that went wrong, with its case. No speculative entries.
+When a correction shows a wrong assumption about the codebase, propose it as a trap for its area and ask
+the user before adding it.
+
+### Tabs, sessions and the action history
+
+- **How many instances of this tab can exist, and what tears one down?**
+  Start at `MainController.instantiate_analysis_tab` and every place `analysis_tabs` is cleared.
+  *Case:* use cases assumed a second tab of the same type and a per-tab close.
+- **For each session file: who writes it, when, and who reads it on load, and does that reader accept it?**
+  Start at `MainModel.save_session`, `save_tab_actions` and `load_session`.
+  *Case:* designs assumed the action history comes back with a loaded session.
+- **Which tabs expose this mechanism to the user, as opposed to inheriting it from a base class?**
+  Start at each tab's controls panel and its `handle_parameter_change` dispatch, not at the `Meta*` base.
+  *Case:* a design wrote Undo for every tab; the logic is shared, but only one tab wires a control to it.
+- **Does replaying an action record it again?**
+  Start at `MetaView.update_actions_from_json` and `LogDecorator.register_action`, then follow the history
+  signal into `MetaController.update_tab_actions`.
+  *Case:* a design note stated that replay bypasses the decorator; rollback reasoning was built on that.
+- **Is this reset global to the tab, or scoped to a mode?**
+  Read each tab's `_reset_actions` body, not the base docstring.
+  *Case:* a design made every reset invalidate all earlier history; one tab's reset clears only the active
+  mode's state.
+- **Does a recorded method depend on anything not in its recorded arguments: a widget, or view state a
+  widget sets?**
+  Read the body of every method that is, or will be, decorated with `@register_action`, and the methods it
+  calls on `self`. List every `self.` attribute it reads, and for each, find what sets it.
+  *Case:* two recorded plot actions read the live selection mid-body, so replay applied whatever was
+  selected at replay time (`DECISIONS.md` 2026-09-17, rule 5). After that was fixed, one tab's recorded
+  reset still branched on a mode flag that the mode buttons set, which is not among its recorded arguments.
