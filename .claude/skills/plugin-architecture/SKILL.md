@@ -1,6 +1,6 @@
 ---
 name: plugin-architecture
-description: How Poriscope's two-layer MVC and plugin system fit together - the app-shell triad, the GUI/analysis-tab and data-plugin families, how a tab reaches data plugins, plugin discovery and the BaseDataPlugin settings lifecycle, and where to add a new data plugin or analysis tab. Load before adding, moving or restructuring a plugin, a Meta* base, or an analysis tab.
+description: How Poriscope's two-layer MVC and plugin system fit together - the app-shell triad, the GUI/analysis-tab and data-plugin families, how a tab reaches data plugins, plugin discovery and the BaseDataPlugin settings lifecycle, and where to add a new data plugin or analysis tab. Load before reading, reasoning about, designing or changing anything in a plugin, a Meta* base, an analysis tab, the app-shell controllers or session persistence - including design discussion with no code change planned.
 ---
 
 # Architecture
