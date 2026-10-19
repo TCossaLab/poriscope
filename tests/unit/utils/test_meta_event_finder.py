@@ -447,6 +447,24 @@ class TestShippedFindersPlaceBoundariesAtTheEdges:
         starts, ends, state = self._run(ThresholdBlockageFinder, 12.0)
         assert (starts, ends, state) == ([50], [123], False)
 
+    @pytest.mark.timeout(10)
+    def test_classic_blockage_finder_threshold_inside_the_edge_band(self):
+        # A threshold under three sigma lets a sample sit below the threshold yet inside
+        # the edge band. The end search has to step past the return crossing first: taken
+        # from the start crossing, the band's first quiet run is that crossing itself, the
+        # loop never advances, and the run can be neither finished nor aborted. The first
+        # event here is the zero-length one such a sample makes, which the duration
+        # filter drops.
+        finder = object.__new__(ClassicBlockageFinder)
+        finder.settings = {"Threshold": {"Value": 2.0}}
+        data = np.zeros(200) + 1000.0
+        data[50] = 1000.0 - 2.5
+        data[120:130] = 1000.0 - 20.0
+        starts, ends, state = finder._find_events_in_chunk(
+            data, 1000.0, 1.0, 0, False, True
+        )
+        assert (starts, ends, state) == ([51, 120], [51, 130], False)
+
 
 class TestReportChannelStatus:
     def test_init_true_returns_empty_string(self, finder):

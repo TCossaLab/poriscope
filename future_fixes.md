@@ -128,8 +128,8 @@ Tab state onto the Models, heavy work off the GUI thread, event-finder and CUSUM
 - **CUSUM costs 6.3 µs per sample, flat from 2k to 200k** (1.3 s for a 200k-sample
   event), holding the GIL, so per-channel threads give no multi-channel speedup;
   `IntraCUSUM.py:151` adds a second per-sample loop. JIT or C-port behind a golden ratchet.
-- **Event finding costs events x chunk length**: `ClassicBlockageFinder._find_events_in_chunk:202,214`
-  and `ThresholdBlockageFinder:149,157` recompute `data[index:] < threshold` over the rest of
+- **Event finding costs events x chunk length**: `ClassicBlockageFinder._find_events_in_chunk:191,207`
+  and `ThresholdBlockageFinder:162,171` recompute `data[index:] < threshold` over the rest of
   the chunk per event. 10 / 400 / 1,600 events at 4 MHz over 4 s took 0.27 / 1.47 / 5.04 s, 4.7 s
   of it in that function. Vectorise the crossings once per chunk.
 

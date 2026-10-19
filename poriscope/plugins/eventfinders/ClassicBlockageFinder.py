@@ -199,8 +199,15 @@ class ClassicBlockageFinder(MetaEventFinder):
                 entry_state = True
                 event_starts.append(event_start + offset)
             else:
-                # forward from here to where the signal rejoins the baseline; no such
-                # place in this chunk means the event straddles it
+                # forward to the return crossing, then on to where the signal rejoins the
+                # baseline; no such place in this chunk means the event straddles it. The
+                # band is wider than a threshold under three sigma, so a start crossing can
+                # itself sit within it: searched from there, the end would be the crossing
+                # and the loop would never advance.
+                pos = int(np.argmax(data[index:] > threshold))
+                if pos == 0 and not (data[index] > threshold):
+                    break
+                index += pos
                 event_end = self._event_end_from_the_baseline(data, index)
                 if event_end is None:
                     break

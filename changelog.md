@@ -128,6 +128,8 @@
 
 * **Fixed the Windows log file dropping any line containing `μ`**
 
+* **Fixed `ClassicBlockageFinder` and `BoundedBlockageFinder` hanging, and blocking quit,** on a sample below a threshold set under three baseline sigma; only unreleased 2.1 development code ever hung
+
 * **Fixed PeakFinder sometimes skipping its classification** when two channels finished fitting at the same time
 
 * **Fixed a fit's last progress bar disappearing while PeakFinder was still classifying**, and its channels' results being writable before classification finished; a channel of a multi-channel fit is now ready to write once every channel of the fit has finished, and one that finishes early says it is waiting, then reports its results when the fit ends
