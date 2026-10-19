@@ -1243,7 +1243,7 @@ class PeakFinder(MetaEventFitter):
 
         # Peaks closer together than half the prominence window are not
         # separable by it, so they are not reported separately either.
-        min_dist = max(1, wlen // 2)
+        min_dist = max(1, wlen // 4)
 
         # Diagnostics only; nothing below reads snr.
         signal_step = max(min_prom, min_height)
