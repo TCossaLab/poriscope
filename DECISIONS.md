@@ -394,8 +394,17 @@ is that channels do not interact.
 channel with only that channel's indices and levels; a warning logged while channel 1
 classifies is absent from channel 0's record; the real chain over a two-channel synthetic
 database writes `_ch0_` and `_ch1_` reports that each count only their own channel's fits
-(`tests/unit/plugins/eventfitters/test_peak_finder.py`, 229 tests green). The run barrier in
-`MetaEventFitter` and `MetaModel` is removed in the following commit, since nothing needs it.
+(`tests/unit/plugins/eventfitters/test_peak_finder.py`, 229 tests green).
+
+**Amended 2026-10-19: the run barrier goes too** (Kyle). With nothing pooling, the
+2026-10-09 machinery had no purpose: `MetaEventFitter`'s run registration, the rule that a
+channel is marked fitted only when its run ends, the "waiting" status, and `MetaModel`'s
+batch re-report are deleted. `_post_process_events(channel)` runs inside `fit_events` when
+the channel's last event is fitted, before the channel is marked and before the generator
+yields 1.0, so a bar stays up and a write waits until that channel's own post-processing is
+done, with no reference to any other channel. The hook stays a concrete no-op rather than
+returning to abstract, so the four empty overrides stay deleted. Pinned in
+`tests/unit/utils/test_meta_event_fitter_post_processing.py`.
 
 **Revisit if** a cross-channel classifier is ever wanted on purpose; it would be a new,
 explicitly named step, not a change to these per-channel ones.

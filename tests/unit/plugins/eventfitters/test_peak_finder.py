@@ -1471,7 +1471,7 @@ class TestNoopOverrides(unittest.TestCase):
         self.assertIsNone(self.pf._pre_process_events(0))
 
     def test_post_process_noop(self):
-        self.assertIsNone(self.pf._post_process_events([0]))
+        self.assertIsNone(self.pf._post_process_events(0))
 
     def test_validate_settings_noop(self):
         self.assertIsNone(self.pf._validate_settings({}))
@@ -4070,8 +4070,8 @@ def test_no_channel_is_marked_fitted_until_the_classification_is_complete(
 
 def test_the_saved_classification_report_counts_each_channels_good_fits(tmp_path):
     # The report file is report_status(), whose per-channel line counts the good
-    # fits only for a channel marked fitted, so the channels must be marked before
-    # it is written even though the base marks the last one only after the step.
+    # fits only for a channel marked fitted, so the channel must be marked before
+    # it is written even though the base marks it only after the hook returns.
     _fitter, base_file = _fit_peakfinder_run(tmp_path)
     report = base_file.with_name(
         f"{base_file.stem}_ch{EVENTS_CHANNEL}_classification_report.txt"
@@ -4117,7 +4117,8 @@ class TestChannelsAreClassifiedIndependently(unittest.TestCase):
 
     def test_each_channel_is_classified_from_its_own_events(self):
         pf = self._two_channel_pf()
-        pf._post_process_events([0, 1])
+        pf._post_process_events(0)
+        pf._post_process_events(1)
         calls = pf._classify_folded_unfolded.call_args_list
         self.assertEqual([c.args[0] for c in calls], [0, 1])
         self.assertEqual(calls[0].args[1], [0, 1, 2])
@@ -4140,7 +4141,8 @@ class TestChannelsAreClassifiedIndependently(unittest.TestCase):
                 pf.logger.warning("declined on channel one")
 
         pf._classify_peak_prominences = MagicMock(side_effect=warn_on_channel_one)
-        pf._post_process_events([0, 1])
+        pf._post_process_events(0)
+        pf._post_process_events(1)
         self.assertEqual(
             pf._classification_warnings, {0: [], 1: ["declined on channel one"]}
         )
@@ -4148,7 +4150,8 @@ class TestChannelsAreClassifiedIndependently(unittest.TestCase):
     def test_a_channel_with_no_usable_events_leaves_the_other_alone(self):
         pf = self._two_channel_pf()
         pf.event_metadata[1] = {0: {"primary_level": None, "raw_ecd": 1.0}}
-        pf._post_process_events([0, 1])
+        pf._post_process_events(0)
+        pf._post_process_events(1)
         self.assertEqual(
             [c.args[0] for c in pf._classify_folded_unfolded.call_args_list], [0]
         )

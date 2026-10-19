@@ -46,7 +46,6 @@
 
 * **`TCossaLabABFReader` and `LegacyElementsReader` are now subclasses of `ABFReader`**, `LegacyElementsReader` no longer of `TCossaLabABFReader`, and `poriscope.plugins.datareaders.helpers.ABF2Header` is removed
 
-* **`MetaEventFitter._post_process_events` now runs once per run, with the run's channels, after every channel has finished**, rather than once per channel; it does nothing by default, and an override must take `channels`
 
 * **`MetaDatabaseLoader.load_event_data` yields `padding_before` and `padding_after` as floats in microseconds**, no longer truncated to whole microseconds
 
@@ -108,6 +107,8 @@
 
 ### Data Plugin API:
 
+* `MetaEventFitter._post_process_events` is now a concrete no-op, so a fitter with no post-processing need not override it; it still takes one channel and runs when that channel's last event is fitted
+
 * `MetaFilter.get_data_requirements()` lets a filter declare settings the data must match; `BesselFilter` declares its `Samplerate`
 
 * A plugin re-applied with settings naming a different parent no longer keeps the old one in `get_parents()`
@@ -132,9 +133,9 @@
 
 * **Fixed `ClassicBlockageFinder` and `BoundedBlockageFinder` hanging, and blocking quit,** on a sample below a threshold set under three baseline sigma; only unreleased 2.1 development code ever hung
 
-* **Fixed PeakFinder sometimes skipping its classification** when two channels finished fitting at the same time
+* **Fixed PeakFinder sometimes skipping its classification** when two channels finished fitting at the same time; each channel now classifies itself as its own fitting ends
 
-* **Fixed a fit's last progress bar disappearing while PeakFinder was still classifying**, and its channels' results being writable before classification finished; a channel of a multi-channel fit is now ready to write once every channel of the fit has finished, and one that finishes early says it is waiting, then reports its results when the fit ends
+* **Fixed a channel's progress bar disappearing while PeakFinder was still classifying it**, and its results being writable before then; a channel is ready to write once its own fitting and post-processing are done, whatever the other channels are doing
 
 * PeakFinder and Basic_PeakFinder now give durations, and Basic_PeakFinder its time settings, in `us` like every other plugin; a database written before keeps `μs`
 

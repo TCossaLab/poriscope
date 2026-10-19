@@ -106,7 +106,7 @@ Step 3: Fit Events
 
 4. After confirming the settings, click **OK**.
 
-5. **Click** the **Fit Events** button to begin analysis. Once complete, results are displayed in the right-side panel, including fitted and rejected events. With **No Filter** selected you are asked to confirm first, since fitting unfiltered data is rarely intended. When several channels are fitted together, a channel that finishes early reports that it is waiting for the others, then reports its results once every channel has finished: only then can they be written or plotted, since some fitters (``PeakFinder``) refine all of them together at the end. The last channel's progress bar stays up until that refinement is done.
+5. **Click** the **Fit Events** button to begin analysis. Once complete, results are displayed in the right-side panel, including fitted and rejected events. With **No Filter** selected you are asked to confirm first, since fitting unfiltered data is rarely intended. Each channel is fitted on its own: its progress bar stays up, and its results can be written or plotted, only once its fitter has finished with it, including any post-processing such as ``PeakFinder``'s classification.
 
    An event fitter reads only the event loader it was built on, so **Fit Events** is refused, with a message on the status panel, when a different loader is selected. Select the loader the fitter was built on, or a fitter built on the selected loader.
 

@@ -62,7 +62,7 @@ class _ClassificationWarningCollector(logging.Handler):
     the log file.
 
     Attached to ``PeakFinder.logger`` for the duration of one channel's
-    classifier stages in ``_post_process_channel`` and nowhere else - see that
+    classifier stages in ``_post_process_events`` and nowhere else - see that
     method for where it starts and stops listening. The logger is shared by
     every channel, and channels are classified on their own threads, so the
     collector keeps only the records logged from the thread it was made for.
@@ -2139,28 +2139,14 @@ class PeakFinder(MetaEventFitter):
 
     @log(logger=logger)
     @override
-    def _post_process_events(self, channels: List[int]) -> None:
-        """
-        Classify each channel of the run from its own events, one channel at a time.
-
-        Called by ``MetaEventFitter`` once per run, after the last of its channels
-        finishes, and not at all if one of them was aborted or failed. Channels
-        are independent: a classifier never sees another channel's events, and
-        each channel gets its own results, report and plots. See
-        :py:meth:`_post_process_channel` for the stages.
-
-        :param channels: the channels fitted in this run
-        :type channels: List[int]
-        """
-        for channel in channels:
-            self._post_process_channel(channel)
-
-    @log(logger=logger)
-    def _post_process_channel(self, channel: int) -> None:
+    def _post_process_events(self, channel: int) -> None:
         """
         Run every classifier over one channel's events, then write that channel's report.
 
-        In order:
+        Called by ``MetaEventFitter.fit_events`` once the channel's last event is
+        fitted, and not at all if the channel was aborted. Channels are independent:
+        a classifier never sees another channel's events, and each channel gets its
+        own results, report and plots. In order:
 
         1. Pool one ``primary_level`` per event of the channel, dropping events
            with no primary level or with a non-positive ECD.
@@ -2273,7 +2259,7 @@ class PeakFinder(MetaEventFitter):
             self.logger.removeHandler(warning_collector)
             self._classification_warnings[channel] = warning_collector.records
 
-        # The base marks the channel fitted only after this step returns, but the
+        # The base marks the channel fitted only after this hook returns, but the
         # report below is report_status(), which counts a channel's good fits only
         # once it is marked. Every stage that writes event metadata is done here.
         self.eventfitting_status[channel] = True
@@ -2496,7 +2482,7 @@ class PeakFinder(MetaEventFitter):
         Called by the UI to show a channel's status, and by
         ``_save_classification_report`` to build the channel's report file at
         the end of its post-processing. The classification section is appended
-        only once ``_post_process_channel`` has produced the channel's
+        only once ``_post_process_events`` has produced the channel's
         ``_classification_results``; before that, or when ``init`` is set, only
         the base report is returned. See :py:meth:`_classification_section` for
         what the section covers.
@@ -2527,7 +2513,7 @@ class PeakFinder(MetaEventFitter):
         breakdown, and finally - when the channel's classifiers logged any - a
         "Warnings during classification" section listing every distinct
         WARNING-level message they logged, each with a ``(xN)`` suffix if it
-        repeated. See ``_post_process_channel`` for how those are collected.
+        repeated. See ``_post_process_events`` for how those are collected.
 
         :param channel: the channel whose results to render
         :type channel: int
@@ -3006,7 +2992,7 @@ class PeakFinder(MetaEventFitter):
         return classification_report
 
     # ------------------------------------------------------------------
-    # Classifiers. All four are called by _post_process_channel, in the
+    # Classifiers. All four are called by _post_process_events, in the
     # order they appear below, once a channel has been fitted. Each fits a
     # distribution built from that channel's events and writes its result
     # back onto every event or peak of the channel.
@@ -5003,7 +4989,7 @@ class PeakFinder(MetaEventFitter):
         """
         Write one channel's classification report next to the event file.
 
-        Called by ``_post_process_channel`` as its last step. The body of the
+        Called by ``_post_process_events`` as its last step. The body of the
         report is ``report_status(channel)``, so the file and the status pane
         always say the same thing; this method adds the header, the settings the
         fit used, and the footer, and writes the result to
