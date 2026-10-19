@@ -241,7 +241,7 @@ class ConcreteEventFitter(MetaEventFitter):
             "min_blockage": float(np.min(sublevel_metadata["sublevel_current"])),
         }
 
-    def _post_process_events(self, channels: List[int]) -> None:
+    def _post_process_events(self, channel: int) -> None:
         """Post-process events."""
         pass
 

@@ -277,3 +277,7 @@ A lesson learned here that generalises beyond Poriscope goes into those skills, 
   a two-minute timeout during the 1.8.0 release, and a `feature finish` passed ten minutes on
   2026-09-26. All the git work had already completed by then; only the release branch
   deletion was left undone, so check `git branch` and `git tag` before re-running anything.
+  **Leave the working tree untouched until the finish reports.** The merge lands in seconds,
+  the hook then runs for minutes, and git flow re-checks for a clean tree before deleting the
+  branch: a `git stash pop` during the hook on 2026-10-19 left the merged branch undeleted,
+  which `git branch -d` then had to finish.
