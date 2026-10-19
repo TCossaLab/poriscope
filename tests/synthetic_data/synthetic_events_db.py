@@ -892,6 +892,13 @@ def generate_multichannel_events_database(
     thickness: float = 10.0,
     conductivity: float = 1.0,
     seed_base: int = 100,
+    event_length_range_samples: Optional[Tuple[int, int]] = None,
+    event_amplitudes_pA: Optional[List[float]] = None,
+    sublevel_dip_pA: Optional[float] = None,
+    sublevel_dip_width_samples: Optional[int] = None,
+    sublevel_amplitudes_pA: Optional[List[float]] = None,
+    bessel_cutoff_hz: Optional[float] = None,
+    bessel_poles: int = 8,
 ) -> SyntheticEventsDatabase:
     """
     Write a multi-channel synthetic events database with known events.
@@ -956,6 +963,27 @@ def generate_multichannel_events_database(
         value up.
     :type seed_base: int
 
+    :param event_length_range_samples: Optional ``(min, max)`` event length
+        range in samples, overriding ``event_length_samples``; passed to
+        ``_write_channel`` for every channel.
+    :type event_length_range_samples: Optional[Tuple[int, int]]
+    :param event_amplitudes_pA: Optional per-event amplitudes, in picoamps,
+        cycled over each channel's events; passed to ``_write_channel``.
+    :type event_amplitudes_pA: Optional[List[float]]
+    :param sublevel_dip_pA: Optional extra dip planted inside every event, in
+        picoamps; passed to ``_write_channel``.
+    :type sublevel_dip_pA: Optional[float]
+    :param sublevel_dip_width_samples: Width of that dip in samples; passed to
+        ``_write_channel``.
+    :type sublevel_dip_width_samples: Optional[int]
+    :param sublevel_amplitudes_pA: Optional sublevel amplitudes per event, in
+        picoamps; passed to ``_write_channel``.
+    :type sublevel_amplitudes_pA: Optional[List[float]]
+    :param bessel_cutoff_hz: Optional low-pass cutoff applied to every trace;
+        passed to ``_write_channel``.
+    :type bessel_cutoff_hz: Optional[float]
+    :param bessel_poles: Order of that filter, defaults to 8; ignored without a cutoff.
+    :type bessel_poles: int
     :return: A SyntheticEventsDatabase describing the file and every
         channel's planted events.
     :rtype: SyntheticEventsDatabase
@@ -993,6 +1021,13 @@ def generate_multichannel_events_database(
                 voltage=voltage,
                 thickness=thickness,
                 conductivity=conductivity,
+                event_length_range_samples=event_length_range_samples,
+                event_amplitudes_pA=event_amplitudes_pA,
+                sublevel_dip_pA=sublevel_dip_pA,
+                sublevel_dip_width_samples=sublevel_dip_width_samples,
+                sublevel_amplitudes_pA=sublevel_amplitudes_pA,
+                bessel_cutoff_hz=bessel_cutoff_hz,
+                bessel_poles=bessel_poles,
             )
         conn.commit()
     finally:

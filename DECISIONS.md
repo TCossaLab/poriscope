@@ -363,6 +363,43 @@ stay marked while it does.
 **Revisit if** a caller needs one run over fits started separately, or a user wants the
 run-wide step after aborting a channel.
 
+**Superseded 2026-10-19** (Nada, via Kyle): pooling channels was a bug, not the hook's purpose.
+See the next entry.
+
+---
+
+## 2026-10-19 - PeakFinder classifies each channel on its own; channels never pool
+
+**Context.** PeakFinder's classifiers (folding, peak prominence, translocation direction,
+bound star) fitted one distribution over every channel the fitter held, wrote one set of
+result attributes and one report file for the whole run, and the 2026-10-09 run barrier
+above existed to make that pooling safe. Nada, who owns the science, confirmed the pooling
+was a bug: every channel is its own experiment and must be fitted, classified and reported
+from its own events alone.
+
+**Decision** (Nada's ruling, Kyle 2026-10-19). Each classifier takes one channel and reads
+only that channel's events. Every result store is a dict keyed by channel and dropped by
+`PeakFinder.reset_channel`; `report_status(channel)` renders that channel's section and the
+report file and the three fit plots are written per channel (`<stem>_ch<N>_...`). Channels
+are classified on their own worker threads, so the warning collector keeps only its own
+thread's records and the plots are drawn with `matplotlib.figure.Figure` rather than the
+process-global `pyplot` state. Consequence accepted: a channel fitted earlier is not
+re-classified when another channel is fitted later.
+
+**Rejected.** One report file rewritten as each channel finishes: two threads would race on
+it. Keeping the result attributes unkeyed and serialising channels: the point of the ruling
+is that channels do not interact.
+
+**Evidence.** Spies on the classifier chain over two planted channels see one call per
+channel with only that channel's indices and levels; a warning logged while channel 1
+classifies is absent from channel 0's record; the real chain over a two-channel synthetic
+database writes `_ch0_` and `_ch1_` reports that each count only their own channel's fits
+(`tests/unit/plugins/eventfitters/test_peak_finder.py`, 229 tests green). The run barrier in
+`MetaEventFitter` and `MetaModel` is removed in the following commit, since nothing needs it.
+
+**Revisit if** a cross-channel classifier is ever wanted on purpose; it would be a new,
+explicitly named step, not a change to these per-channel ones.
+
 ---
 
 ## 2026-10-09 - The `experiments_and_channels` shape stays `Optional[Dict[str, Optional[List[int]]]]`; two adjacent shapes left alone

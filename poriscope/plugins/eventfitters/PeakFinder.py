@@ -24,6 +24,7 @@
 # Nada Kerrouri
 
 import logging
+import threading
 from collections import Counter
 from typing import (
     Any,
@@ -38,10 +39,9 @@ from typing import (
     override,
 )
 
-import matplotlib
-import matplotlib.pyplot as plt
 import numpy as np
 import numpy.typing as npt
+from matplotlib.figure import Figure
 from scipy.interpolate import BSpline, make_smoothing_spline
 from scipy.optimize import curve_fit, minimize
 from scipy.signal import find_peaks, peak_widths
@@ -61,21 +61,24 @@ class _ClassificationWarningCollector(logging.Handler):
     be surfaced in the saved classification report instead of living only in
     the log file.
 
-    Attached to ``PeakFinder.logger`` for the duration of the classifier
-    stages in ``_post_process_events`` and nowhere else - see that method for
-    where it starts and stops listening. ``report_status`` reads
-    ``self._classification_warnings`` afterward; this handler has no effect
-    on what actually gets logged, since the root/module logging setup is
-    untouched.
+    Attached to ``PeakFinder.logger`` for the duration of one channel's
+    classifier stages in ``_post_process_channel`` and nowhere else - see that
+    method for where it starts and stops listening. The logger is shared by
+    every channel, and channels are classified on their own threads, so the
+    collector keeps only the records logged from the thread it was made for.
+    ``report_status`` reads ``self._classification_warnings`` afterward; this
+    handler has no effect on what actually gets logged, since the root/module
+    logging setup is untouched.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, thread: int) -> None:
         super().__init__(level=logging.WARNING)
         self.setFormatter(logging.Formatter("%(message)s"))
+        self.thread = thread
         self.records: List[str] = []
 
     def emit(self, record: logging.LogRecord) -> None:
-        if record.levelno == logging.WARNING:
+        if record.levelno == logging.WARNING and record.thread == self.thread:
             self.records.append(self.format(record))
 
 
@@ -88,12 +91,13 @@ class PeakFinder(MetaEventFitter):
     ``MetaEventFitter.fit_events()`` calls ``_pre_process_events`` once per
     channel, then ``_locate_sublevel_transitions`` /
     ``_populate_sublevel_metadata`` / ``_populate_event_metadata`` once per
-    event, then ``_post_process_events`` when the channel's last event is
-    fitted. Per-event work finds peaks and measures them; the dataset-wide
-    classifiers (folding, peak prominence, translocation direction, bound
-    star) all run from ``_post_process_events`` once every channel has
-    finished, because each of them fits a distribution that only exists
-    across the whole run.
+    event, then ``_post_process_events`` once the fitting is done. Per-event
+    work finds peaks and measures them; the channel-wide classifiers (folding,
+    peak prominence, translocation direction, bound star) all run from
+    ``_post_process_events``, one channel at a time, because each of them fits
+    a distribution that only exists across that channel's events. Channels are
+    independent: a classifier never sees another channel's events, and each
+    channel gets its own results, report and plots.
 
     ``fit_fallbacks.md`` at the repository root describes the behaviour that
     is too large to carry in docstrings: every fallback path in the
@@ -715,7 +719,7 @@ class PeakFinder(MetaEventFitter):
         lines (baseline, unfolded level, and that level offset by each of the
         two filter thresholds), one marker per peak, and the label strings
         that go with them. The three unfolded-level lines are omitted when the
-        event has no unfolded level - before the run-wide folded/unfolded
+        event has no unfolded level - before the channel's folded/unfolded
         classification has run, or when it could not separate two populations.
 
         Only metadata that is actually populated reaches a label: an event the
@@ -871,11 +875,18 @@ class PeakFinder(MetaEventFitter):
     def _init(self) -> None:
         """
         Hook for subclass setup at the start of base class initialization.
-        Nothing to do here, so this is a no-op.
 
         Called once by ``MetaEventFitter`` while the plugin is being
-        constructed, before any settings are applied.
+        constructed, before any settings are applied. Creates the per-channel
+        stores the classifiers write and ``report_status`` reads, each keyed by
+        channel so that no channel's classification can see another's.
         """
+        self._classification_results: Dict[int, Dict[str, Any]] = {}
+        self._peak_statistics: Dict[int, Dict[str, Any]] = {}
+        self._peak_prominence_classification_results: Dict[int, Dict[str, Any]] = {}
+        self._translocation_direction_results: Dict[int, Dict[str, Any]] = {}
+        self._bound_star_results: Dict[int, Dict[str, Any]] = {}
+        self._classification_warnings: Dict[int, List[str]] = {}
 
     @log(logger=logger)
     @override
@@ -883,13 +894,31 @@ class PeakFinder(MetaEventFitter):
         """
         Nothing to prepare per channel.
 
-        The run-wide classifiers need no arming: ``MetaEventFitter`` calls
-        ``_post_process_events`` once per run.
+        The classifiers need no arming: every result they write is keyed by
+        channel, and :py:meth:`reset_channel` drops a channel's before it is
+        fitted again.
 
         :param channel: the channel to preprocess
         :type channel: int
         """
         pass
+
+    @log(logger=logger)
+    @override
+    def reset_channel(self, channel: int) -> None:
+        """
+        Reset one channel's fits and drop its classification results, statistics and warnings.
+
+        :param channel: the channel identifier
+        :type channel: int
+        """
+        super().reset_channel(channel)
+        self._classification_results.pop(channel, None)
+        self._peak_statistics.pop(channel, None)
+        self._peak_prominence_classification_results.pop(channel, None)
+        self._translocation_direction_results.pop(channel, None)
+        self._bound_star_results.pop(channel, None)
+        self._classification_warnings.pop(channel, None)
 
     @log(logger=logger)
     def redefine_padding(
@@ -1430,7 +1459,7 @@ class PeakFinder(MetaEventFitter):
 
         - the ``_normalized`` variants, which divide by the event's unfolded
           level and are written in ``update_event_metadata_post_processing``
-          once that level is known across the run;
+          once that level is known for the channel;
         - ``filtered``, the peak type, initialised to 0 and assigned by
           ``filter_peaks``;
         - ``classified`` and ``classification_confidence``, initialised to NaN
@@ -1622,7 +1651,7 @@ class PeakFinder(MetaEventFitter):
             dtype=np.float64,
         )
         # Normalized against the event's unfolded level, which is only known
-        # once every channel is fitted, so filled in
+        # once the channel is fitted, so filled in
         # update_event_metadata_post_processing rather than here.
         sublevel_metadata["normalized_height"] = np.array(
             [(np.nan) for i in range(num_states)],
@@ -1815,7 +1844,7 @@ class PeakFinder(MetaEventFitter):
         modal blockage of the event between its first and last sublevel.
 
         Six fields are set to None here and filled in during post-processing,
-        once the whole run has been fitted: ``unfolded_level`` and
+        once the channel has been fitted: ``unfolded_level`` and
         ``folded_level`` by ``_classify_folded_unfolded``,
         ``translocation_direction`` and ``translocation_confidence`` by
         ``_classify_translocation_direction``, ``sequence`` by
@@ -2112,23 +2141,35 @@ class PeakFinder(MetaEventFitter):
     @override
     def _post_process_events(self, channels: List[int]) -> None:
         """
-        Run every dataset-wide classifier, once every channel of the run has finished fitting.
+        Classify each channel of the run from its own events, one channel at a time.
 
         Called by ``MetaEventFitter`` once per run, after the last of its channels
-        finishes, and not at all if one of them was aborted or failed. Each
-        classifier below fits a distribution built from every event, so it needs
-        them all at once.
+        finishes, and not at all if one of them was aborted or failed. Channels
+        are independent: a classifier never sees another channel's events, and
+        each channel gets its own results, report and plots. See
+        :py:meth:`_post_process_channel` for the stages.
+
+        :param channels: the channels fitted in this run
+        :type channels: List[int]
+        """
+        for channel in channels:
+            self._post_process_channel(channel)
+
+    @log(logger=logger)
+    def _post_process_channel(self, channel: int) -> None:
+        """
+        Run every classifier over one channel's events, then write that channel's report.
 
         In order:
 
-        1. Pool one ``primary_level`` per event across all channels, dropping
-           events with no primary level or with a non-positive ECD.
+        1. Pool one ``primary_level`` per event of the channel, dropping events
+           with no primary level or with a non-positive ECD.
         2. ``_classify_folded_unfolded`` fits that pool and, for every event,
            writes ``unfolded_level`` / ``folded_level`` and re-runs
-           ``filter_peaks`` against the run-wide levels through
+           ``filter_peaks`` against the channel's levels through
            ``update_event_metadata_post_processing``.
         3. ``_classify_peak_prominences`` fits the normalized prominences of
-           all type 1, 2 and 3 peaks and writes ``classified`` /
+           the channel's type 1, 2 and 3 peaks and writes ``classified`` /
            ``classification_confidence`` per peak.
         4. ``_classify_translocation_direction`` fits the log ratio of the ECD
            before and after each event's barcode and writes
@@ -2138,155 +2179,110 @@ class PeakFinder(MetaEventFitter):
         6. ``_classify_bound_star`` writes ``bound_star``. It runs last because
            it needs both the direction, to put the star's position into the
            molecule's frame, and the sequences, to break its report down.
-        7. ``_save_classification_report`` writes the run's report to disk.
-           The channels are marked fitted just before it, since the report's
-           good-fit counts are given only for a fitted channel; until then no
-           channel of the run can be written to a database or plotted.
+        7. ``_save_classification_report`` writes the channel's report to disk.
+           The channel is marked fitted just before it, since the report's
+           good-fit count is given only for a fitted channel.
 
         Steps 1-6 run with a ``_ClassificationWarningCollector`` attached to
-        ``self.logger``, so every ``WARNING``-level message any of them logs -
-        a degraded fit, a declined classifier, a fitted mean off its peak -
-        is captured into ``self._classification_warnings`` and surfaced in the
-        report ``report_status`` builds for step 7, rather than living
-        only in the log file.
+        ``self.logger`` for this thread, so every ``WARNING``-level message any
+        of them logs - a degraded fit, a declined classifier, a fitted mean off
+        its peak - is kept under this channel in ``self._classification_warnings``
+        and surfaced in the report ``report_status`` builds for step 7, rather
+        than living only in the log file. Another channel classifying at the
+        same time on its own thread is not heard.
 
-        :param channels: the channels fitted in this run
-        :type channels: List[int]
+        :param channel: the channel to classify
+        :type channel: int
         """
-        self.logger.info(f"Run-wide post-processing for channels {channels}")
+        self.logger.info(f"Post-processing channel {channel}")
 
-        warning_collector = _ClassificationWarningCollector()
+        warning_collector = _ClassificationWarningCollector(threading.get_ident())
         self.logger.addHandler(warning_collector)
         try:
-            self.logger.info(
-                "Starting global post-processing analysis with classification utilities"
-            )
+            events = self.event_metadata.get(channel, {})
 
-            # The classifiers pool every channel this fitter holds results for,
-            # including ones fitted in an earlier run, as they always have.
-            channels = list(self.event_metadata.keys())
+            # The folding fit runs on one primary level per event. event_indices
+            # is built index-for-index alongside it so a fitted class can be
+            # written back to the event it came from.
+            primary_levels: list[float] = []
+            event_indices: list[int] = []
+            for event_index, event_data in events.items():
+                primary_level = event_data.get("primary_level")
+                raw_ecd = event_data.get("raw_ecd")
+                if primary_level is not None and raw_ecd is not None and raw_ecd > 0:
+                    primary_levels.append(primary_level)
+                    event_indices.append(event_index)
+                else:
+                    self.logger.info(
+                        f"Event {event_index} in channel {channel} excluded: "
+                        f"primary_level={'None' if primary_level is None else f'{primary_level:.2f}'}, "
+                        f"raw_ecd={'None' if raw_ecd is None else f'{raw_ecd:.3f}'}"
+                    )
 
-            if not channels:
-                self.logger.warning("No channels found for post-processing")
-                return
-
-            # The folding fit runs on one primary level per event, pooled across
-            # every channel. all_event_info is built index-for-index alongside it
-            # so a fitted class can be written back to the event it came from.
-            all_longest_levels: list[float] = []
-            all_event_info: list[tuple[int, int]] = []
-
-            for ch in channels:
-                if ch not in self.event_metadata:
-                    continue
-
-                self.logger.info(
-                    f"Processing channel {ch}, event_metadata type: {type(self.event_metadata[ch])}, length: {len(self.event_metadata[ch]) if hasattr(self.event_metadata[ch], '__len__') else 'N/A'}"
-                )
-
-                for event_index, event_data in self.event_metadata[ch].items():
-                    if not isinstance(event_data, dict):
-                        self.logger.warning(
-                            f"Event {event_index} in channel {ch} is not a dict: {type(event_data)}"
-                        )
-                        continue
-
-                    primary_level = event_data.get("primary_level")
-                    raw_ecd = event_data.get("raw_ecd")
-
-                    if event_index < 3:
-                        self.logger.info(
-                            f"Channel {ch}, Event {event_index}: primary_level = {primary_level}, raw_ecd = {raw_ecd}"
-                        )
-
-                    if (
-                        primary_level is not None
-                        and raw_ecd is not None
-                        and raw_ecd > 0
-                    ):
-                        all_longest_levels.append(primary_level)
-                        all_event_info.append((ch, event_index))
-                    else:
-                        self.logger.info(
-                            f"Event {event_index} in channel {ch} excluded: "
-                            f"primary_level={'None' if primary_level is None else f'{primary_level:.2f}'}, "
-                            f"raw_ecd={'None' if raw_ecd is None else f'{raw_ecd:.3f}'}"
-                        )
-
-            if len(all_longest_levels) == 0:
+            if not primary_levels:
                 self.logger.warning(
-                    f"No events with valid primary_level and raw_ecd found for analysis. "
-                    f"Total events checked: {sum(len(self.event_metadata.get(ch, {})) for ch in channels)}. "
+                    f"No events with valid primary_level and raw_ecd found for analysis "
+                    f"in channel {channel}. Total events checked: {len(events)}. "
                     f"This may indicate that events are too short, have no translocation signal, "
                     f"or were trimmed too aggressively. Check event detection parameters."
                 )
                 return
 
-            all_longest_levels_array = np.array(all_longest_levels)
-
             self.logger.info(
-                f"Collected {len(all_longest_levels)} events for classification analysis"
+                f"Collected {len(primary_levels)} events in channel {channel} "
+                f"for classification analysis"
             )
 
             self._classify_folded_unfolded(
-                channels=channels,
-                all_event_info=all_event_info,
-                all_longest_levels_array=all_longest_levels_array,
+                channel, event_indices, np.asarray(primary_levels, dtype=float)
             )
-
-            self._classify_peak_prominences(channels)
-            self._classify_translocation_direction(channels)
+            self._classify_peak_prominences(channel)
+            self._classify_translocation_direction(channel)
 
             # An event's sequence is the prominence class of each of its barcode
             # (type-3) peaks, read in trace order, then reversed for a backward
             # event so every sequence is written in the molecule's own frame.
-            for ch in channels:
-                if ch not in self.sublevel_metadata:
-                    continue
-                for event_index, sublevel_data in self.sublevel_metadata[ch].items():
-                    filtered_values = np.asarray(
-                        sublevel_data.get("filtered", []), dtype=float
+            for event_index, sublevel_data in self.sublevel_metadata.get(
+                channel, {}
+            ).items():
+                filtered_values = np.asarray(
+                    sublevel_data.get("filtered", []), dtype=float
+                )
+                classified = sublevel_data.get("classified", [])
+                sequence = "".join(
+                    str(int(classified[i]))
+                    for i in range(len(filtered_values))
+                    if not np.isnan(filtered_values[i])
+                    and int(filtered_values[i]) == 3
+                    and i < len(classified)
+                    and not (
+                        isinstance(classified[i], float) and np.isnan(classified[i])
                     )
-                    classified = sublevel_data.get("classified", [])
-                    sequence = "".join(
-                        str(int(classified[i]))
-                        for i in range(len(filtered_values))
-                        if not np.isnan(filtered_values[i])
-                        and int(filtered_values[i]) == 3
-                        and i < len(classified)
-                        and not (
-                            isinstance(classified[i], float) and np.isnan(classified[i])
-                        )
-                    )
-                    if (
-                        ch in self.event_metadata
-                        and event_index in self.event_metadata[ch]
-                    ):
-                        direction = self.event_metadata[ch][event_index].get(
-                            "translocation_direction", None
-                        )
-                        if direction == "backward":
-                            sequence = sequence[::-1]
-                        self.event_metadata[ch][event_index]["sequence"] = sequence
+                )
+                if event_index in events:
+                    direction = events[event_index].get("translocation_direction", None)
+                    if direction == "backward":
+                        sequence = sequence[::-1]
+                    events[event_index]["sequence"] = sequence
 
             # Bound-star detection runs last: it needs the translocation direction
             # to put each star's observed position into the molecule's frame, and
             # the sequence strings its report section counts against.
-            self._classify_bound_star(channels)
+            self._classify_bound_star(channel)
         finally:
             self.logger.removeHandler(warning_collector)
-            self._classification_warnings = warning_collector.records
+            self._classification_warnings[channel] = warning_collector.records
 
-        # The base marks the run's channels fitted only after this step returns, but
-        # the report below is report_status(), which counts a channel's good fits only
+        # The base marks the channel fitted only after this step returns, but the
+        # report below is report_status(), which counts a channel's good fits only
         # once it is marked. Every stage that writes event metadata is done here.
-        for channel in channels:
-            self.eventfitting_status[channel] = True
+        self.eventfitting_status[channel] = True
 
-        self._save_classification_report()
+        self._save_classification_report(channel)
 
         self.logger.info(
-            "Post-processing analysis completed with automatic folded/unfolded classification."
+            f"Post-processing of channel {channel} completed with automatic "
+            f"folded/unfolded classification."
         )
 
     @log(logger=logger)
@@ -2298,7 +2294,7 @@ class PeakFinder(MetaEventFitter):
         folded_level: Optional[float] = None,
     ) -> None:
         """
-        Write the run-wide carrier levels onto one event and re-type its peaks.
+        Write the channel's carrier levels onto one event and re-type its peaks.
 
         Called by ``_classify_folded_unfolded``, once per event, as soon as the
         folding fit has decided that event's class. Nothing else calls it.
@@ -2312,7 +2308,7 @@ class PeakFinder(MetaEventFitter):
         3. ``filter_peaks`` is re-run for the event against those levels. The
            per-event pass could only guess the carrier levels from that one
            event; this pass re-types every peak against levels measured over
-           the whole run, and the ``filtered`` labels it writes are what every
+           the channel's events, and the ``filtered`` labels it writes are what every
            later stage - sequences, translocation direction, bound star, the
            report - actually reads.
 
@@ -2355,7 +2351,7 @@ class PeakFinder(MetaEventFitter):
         event_data = self.event_metadata[channel][event_index]
 
         # The normalized_* fields left as NaN during fitting can only be
-        # filled once the run-wide unfolded level is known.
+        # filled once the channel's unfolded level is known.
         if unfolded_level is not None and unfolded_level > 0:
             if (
                 "peak_height" in sublevel_data
@@ -2391,7 +2387,7 @@ class PeakFinder(MetaEventFitter):
                 )
                 sublevel_data["normalized_blockage"] = normalized_blockages
 
-        # Re-type this event's peaks against the run-wide carrier levels,
+        # Re-type this event's peaks against the channel's carrier levels,
         # replacing the labels the per-event pass assigned.
         if unfolded_level is not None and folded_level is not None:
             baseline_mean = event_data.get("baseline_current")
@@ -2495,24 +2491,15 @@ class PeakFinder(MetaEventFitter):
     @override
     def report_status(self, channel: Optional[int] = None, init: bool = False) -> str:
         """
-        Return the fitting report plus the run's full classification section.
+        Return a channel's fitting report plus its classification section, or every channel's when no channel is given.
 
         Called by the UI to show a channel's status, and by
-        ``_save_classification_report`` to build the report file written at the
-        end of post-processing. The classification section is appended only
-        once ``_post_process_events`` has produced ``_classification_results``;
-        before that, or when ``init`` is set, only the base report is returned.
-
-        The classification section covers, in order: the folding fit and its
-        folded/unfolded counts, the peak type breakdown from
-        ``_collect_peak_statistics``, the prominence fit and its class counts,
-        the translocation direction fit and its counts, the sequence tallies,
-        the bound-star tallies with a per-sequence breakdown, and finally -
-        when ``self._classification_warnings`` is non-empty - a "Warnings
-        during classification" section listing every distinct WARNING-level
-        message logged while the classifiers ran, each with a ``(xN)`` suffix
-        if it repeated. See ``_post_process_events`` for how those are
-        collected.
+        ``_save_classification_report`` to build the channel's report file at
+        the end of its post-processing. The classification section is appended
+        only once ``_post_process_channel`` has produced the channel's
+        ``_classification_results``; before that, or when ``init`` is set, only
+        the base report is returned. See :py:meth:`_classification_section` for
+        what the section covers.
 
         :param channel: the channel to report on, or None for all channels
         :type channel: Optional[int]
@@ -2521,35 +2508,44 @@ class PeakFinder(MetaEventFitter):
         :return: the status report as a string
         :rtype: str
         """
-        # The per-channel base text is built here with explicit super() calls
-        # rather than by delegating the channel=None case to the base class.
-        # MetaEventFitter.report_status() handles that case by looping
-        # over the channels and calling `self.report_status(ch, init)`,
-        # which dispatches straight back into this override - so the
-        # classification section below would be appended once per channel and
-        # once more here, duplicating the report N+1 times for N channels.
         if channel is None:
-            base_report = ""
-            for ch in self.get_channels():
-                base_report += super().report_status(ch, init)
-        else:
-            base_report = super().report_status(channel, init)
-
-        if init or not hasattr(self, "_classification_results"):
+            return "".join(self.report_status(ch, init) for ch in self.get_channels())
+        base_report = super().report_status(channel, init)
+        if init or channel not in self._classification_results:
             return base_report
+        return base_report + self._classification_section(channel)
 
+    @log(logger=logger)
+    def _classification_section(self, channel: int) -> str:
+        """
+        Render one channel's classification results as the section that follows its fitting report.
+
+        Covers, in order: the folding fit and its folded/unfolded counts, the
+        peak type breakdown from ``_collect_peak_statistics``, the prominence
+        fit and its class counts, the translocation direction fit and its
+        counts, the sequence tallies, the bound-star tallies with a per-sequence
+        breakdown, and finally - when the channel's classifiers logged any - a
+        "Warnings during classification" section listing every distinct
+        WARNING-level message they logged, each with a ``(xN)`` suffix if it
+        repeated. See ``_post_process_channel`` for how those are collected.
+
+        :param channel: the channel whose results to render
+        :type channel: int
+        :return: the classification section, starting with a blank line
+        :rtype: str
+        """
+        folding = self._classification_results[channel]
         classification_report = (
-            "\n\nClassification Results:\n\nFolding Classification Results:"
+            f"\n\nClassification Results for Ch{channel}:"
+            "\n\nFolding Classification Results:"
         )
 
-        if "skipped" in self._classification_results:
-            classification_report += (
-                f"\n  Classification skipped: {self._classification_results['reason']}"
-            )
-        elif "error" in self._classification_results:
-            classification_report += f"\n  {self._classification_results['error']}"
+        if "skipped" in folding:
+            classification_report += f"\n  Classification skipped: {folding['reason']}"
+        elif "error" in folding:
+            classification_report += f"\n  {folding['error']}"
         else:
-            results = self._classification_results
+            results = folding
             total_events = cast(int, results["total_events"])
             lower_center = cast(float, results["lower_center"])
             higher_center = results.get("higher_center")
@@ -2602,16 +2598,16 @@ class PeakFinder(MetaEventFitter):
             classification_report += f"\n  Unfolded events: {unfolded_count} ({unfolded_count/total_events:.1%})"
 
         # Add peak classification statistics if available
-        if not hasattr(self, "_peak_statistics") and hasattr(self, "sublevel_metadata"):
+        if channel not in self._peak_statistics:
             try:
-                self._collect_peak_statistics(list(self.sublevel_metadata.keys()))
+                self._collect_peak_statistics(channel)
             except Exception as e:
                 self.logger.debug(
                     f"Unable to collect peak statistics for report: {e!s}"
                 )
 
-        if hasattr(self, "_peak_statistics"):
-            peak_stats = self._peak_statistics
+        if channel in self._peak_statistics:
+            peak_stats = self._peak_statistics[channel]
             classification_report += "\n\nPeak Filtering Statistics:"
 
             total_peaks = cast(int, peak_stats["total_peaks"])
@@ -2670,8 +2666,8 @@ class PeakFinder(MetaEventFitter):
                         f"\n    {type_label}: {count} peaks ({pct:.1f}%)"
                     )
 
-        if hasattr(self, "_peak_prominence_classification_results"):
-            prominence_stats = self._peak_prominence_classification_results
+        if channel in self._peak_prominence_classification_results:
+            prominence_stats = self._peak_prominence_classification_results[channel]
             classification_report += "\n\nNormalized Peak Prominence Classification:"
 
             total_prominence_peaks = cast(int, prominence_stats.get("total_peaks", 0))
@@ -2699,7 +2695,7 @@ class PeakFinder(MetaEventFitter):
             # Every location in whichever of three units apply, chained with
             # "~": the fitted variable the plot's axis shows, the multiple of
             # the unfolded level, and the current that multiple works out to
-            # against this run's own level. The widths carry the fitted value
+            # against this channel's own level. The widths carry the fitted value
             # and a single pA span rather than a ratio, because a log-space
             # width is a multiplicative factor and has no ratio of its own -
             # see _classify_peak_prominences for the conversion.
@@ -2785,8 +2781,8 @@ class PeakFinder(MetaEventFitter):
                 classification_report += f"\n  Std ({name}): {' ~ '.join(parts)}"
 
         classification_report += "\n\nTranslocation Direction Classification:"
-        if hasattr(self, "_translocation_direction_results"):
-            td = self._translocation_direction_results
+        if channel in self._translocation_direction_results:
+            td = self._translocation_direction_results[channel]
             if "skipped" in td:
                 classification_report += f"\n  Skipped: {td['reason']}"
                 classification_report += (
@@ -2827,51 +2823,48 @@ class PeakFinder(MetaEventFitter):
         else:
             classification_report += "\n  Not run"
 
-        if hasattr(self, "event_metadata"):
-            fwd_total = bwd_total = unclassified_total = total_events = 0
-            for ch_events in self.event_metadata.values():
-                for ev_data in ch_events.values():
-                    total_events += 1
-                    direction = ev_data.get("translocation_direction", "")
-                    if direction == "forward":
-                        fwd_total += 1
-                    elif direction == "backward":
-                        bwd_total += 1
-                    else:
-                        unclassified_total += 1
-            if total_events > 0:
-                classification_report += "\n\n  Event direction breakdown (all events):"
-                classification_report += (
-                    f"\n    Forward:      {fwd_total} ({fwd_total/total_events:.1%})"
-                )
-                classification_report += (
-                    f"\n    Backward:     {bwd_total} ({bwd_total/total_events:.1%})"
-                )
-                classification_report += f"\n    Unclassified: {unclassified_total} ({unclassified_total/total_events:.1%})"
+        channel_events = self.event_metadata.get(channel, {})
+        if channel_events:
+            fwd_total = bwd_total = unclassified_total = 0
+            for ev_data in channel_events.values():
+                direction = ev_data.get("translocation_direction", "")
+                if direction == "forward":
+                    fwd_total += 1
+                elif direction == "backward":
+                    bwd_total += 1
+                else:
+                    unclassified_total += 1
+            direction_total = len(channel_events)
+            classification_report += "\n\n  Event direction breakdown (all events):"
+            classification_report += (
+                f"\n    Forward:      {fwd_total} ({fwd_total/direction_total:.1%})"
+            )
+            classification_report += (
+                f"\n    Backward:     {bwd_total} ({bwd_total/direction_total:.1%})"
+            )
+            classification_report += f"\n    Unclassified: {unclassified_total} ({unclassified_total/direction_total:.1%})"
 
-        # Sequence statistics across all channels
-        if hasattr(self, "event_metadata"):
-            sequence_counts: dict[str, int] = {}
-            total_with_sequence = 0
-            for ch, ch_events in self.event_metadata.items():
-                for ev_data in ch_events.values():
-                    seq = ev_data.get("sequence", "")
-                    if seq:
-                        sequence_counts[seq] = sequence_counts.get(seq, 0) + 1
-                        total_with_sequence += 1
+        # Sequence statistics for this channel
+        sequence_counts: dict[str, int] = {}
+        total_with_sequence = 0
+        for ev_data in channel_events.values():
+            seq = ev_data.get("sequence", "")
+            if seq:
+                sequence_counts[seq] = sequence_counts.get(seq, 0) + 1
+                total_with_sequence += 1
 
-            if sequence_counts:
-                classification_report += "\n\nSequence Statistics:"
-                classification_report += (
-                    f"\n  Events with a sequence: {total_with_sequence}"
-                )
-                for seq, count in sorted(sequence_counts.items(), key=lambda x: -x[1]):
-                    pct = count / total_with_sequence * 100
-                    classification_report += f"\n  '{seq}': {count} ({pct:.1f}%)"
+        if sequence_counts:
+            classification_report += "\n\nSequence Statistics:"
+            classification_report += (
+                f"\n  Events with a sequence: {total_with_sequence}"
+            )
+            for seq, count in sorted(sequence_counts.items(), key=lambda x: -x[1]):
+                pct = count / total_with_sequence * 100
+                classification_report += f"\n  '{seq}': {count} ({pct:.1f}%)"
 
-        # Bound-star classification across all channels
-        if hasattr(self, "_bound_star_results"):
-            star_stats = self._bound_star_results
+        # Bound-star classification for this channel
+        if channel in self._bound_star_results:
+            star_stats = self._bound_star_results[channel]
             classification_report += "\n\nBound Star Classification:"
 
             sequence_events = star_stats.get("sequence_events", 0)
@@ -2911,7 +2904,7 @@ class PeakFinder(MetaEventFitter):
                 )
                 # Only surfaced when it actually fires, which means folding
                 # classification declined and no event could be judged at all.
-                # Silence here would report a whole run as starless.
+                # Silence here would report a whole channel as starless.
                 if no_height_reference:
                     classification_report += (
                         f"\n  Candidate peaks but no unfolded level to size "
@@ -3001,7 +2994,7 @@ class PeakFinder(MetaEventFitter):
                         line += f"  {widest_text:>15}"
                     classification_report += line
 
-        warnings_seen = getattr(self, "_classification_warnings", None)
+        warnings_seen = self._classification_warnings.get(channel)
         if warnings_seen:
             counts = Counter(warnings_seen)
             classification_report += "\n\nWarnings during classification:"
@@ -3010,27 +3003,27 @@ class PeakFinder(MetaEventFitter):
                 suffix = f" (x{count})" if count > 1 else ""
                 classification_report += f"\n  - {message}{suffix}"
 
-        return base_report + classification_report
+        return classification_report
 
     # ------------------------------------------------------------------
-    # Classifiers. All four are called by _post_process_events, in the
-    # order they appear below, once every channel has been fitted. Each
-    # fits a distribution built from the whole run and writes its result
-    # back onto every event or peak.
+    # Classifiers. All four are called by _post_process_channel, in the
+    # order they appear below, once a channel has been fitted. Each fits a
+    # distribution built from that channel's events and writes its result
+    # back onto every event or peak of the channel.
     # ------------------------------------------------------------------
 
     @log(logger=logger)
     def _classify_folded_unfolded(
         self,
-        channels: list[int],
-        all_event_info: list[tuple[int, int]],
-        all_longest_levels_array: np.ndarray,
+        channel: int,
+        event_indices: list[int],
+        primary_levels: np.ndarray,
     ) -> None:
         """
         Split events into folded and unfolded carriers by blockage level.
 
         Called by ``_post_process_events``, first of the four classifiers, with
-        one ``primary_level`` per event pooled across every channel. Fits that
+        one ``primary_level`` per event of one channel. Fits that
         pool with ``fit_threshold``, takes the lower fitted centre as the
         unfolded level and the higher as the folded level, and then, for every
         event, calls ``update_event_metadata_post_processing`` - which records
@@ -3050,17 +3043,17 @@ class PeakFinder(MetaEventFitter):
         filtering always has carrier levels to type against. That cut is an
         arbitrary choice rather than a fitted boundary, so it is written out in
         the results (``threshold_rule``), on the plot and as a warning, which
-        the run's report collects. **This path never declines**: where the
+        the channel's report collects. **This path never declines**: where the
         single fit fails, the pool's median and scaled MAD (1.4826 x MAD) stand
         in for mu and sigma, and the results name which was used. An outright
         failure of the double fit is not covered: it still declines, because a
         failed fit is not evidence of a single population.
 
         Carrier-blockage filtering is already applied to
-        ``all_longest_levels_array`` by the caller and must not be repeated
+        ``primary_levels`` by the caller and must not be repeated
         here.
 
-        The fit sees the whole dataset exactly once and either succeeds or
+        The fit sees the channel's events exactly once and either succeeds or
         fails: no percentile pre-filter, and no re-fit on a narrowed subset
         when the result looks unconvincing. Retrying until something converges
         hides the fit's real success rate on live data behind whichever attempt
@@ -3068,23 +3061,23 @@ class PeakFinder(MetaEventFitter):
         both the fit and the plot, so the plotted bars cannot be binned against
         edges derived from a different subset than the fit saw.
 
-        :param channels: the indices of every channel included in this classification
-        :type channels: list[int]
-        :param all_event_info: (channel, event_index) pairs identifying the event at each position of the array below
-        :type all_event_info: list[tuple[int, int]]
-        :param all_longest_levels_array: the primary blockage level of each event, index-parallel to all_event_info
-        :type all_longest_levels_array: np.ndarray
+        :param channel: the channel whose events are classified
+        :type channel: int
+        :param event_indices: the index of the event at each position of the array below
+        :type event_indices: list[int]
+        :param primary_levels: the primary blockage level of each event, index-parallel to event_indices
+        :type primary_levels: np.ndarray
         :raises ValueError: internally only, as control flow, when histogram bin edges are degenerate; it is caught by this method's own plotting guard and does not reach callers.
         """
 
         try:
-            bt = self.fit_threshold(all_longest_levels_array)
+            bt = self.fit_threshold(primary_levels)
         except Exception as e:
             self.logger.error(f"folding double-Gaussian fit failed: {e}")
-            self._classification_results: Dict[str, Any] = {
+            self._classification_results[channel] = {
                 "error": "double-Gaussian fit failed"
             }
-            self._collect_peak_statistics(channels)
+            self._collect_peak_statistics(channel)
             return
 
         try:
@@ -3102,7 +3095,7 @@ class PeakFinder(MetaEventFitter):
                 else None
             )
             self.logger.debug(
-                f"folding fit: params={params_dbg}, centers={centers_dbg}, hist_counts_head={hcnt}, hist_bins={hbins}, n_events={all_longest_levels_array.size}"
+                f"folding fit: params={params_dbg}, centers={centers_dbg}, hist_counts_head={hcnt}, hist_bins={hbins}, n_events={primary_levels.size}"
             )
         except (TypeError, IndexError, KeyError, AttributeError):
             pass
@@ -3112,8 +3105,10 @@ class PeakFinder(MetaEventFitter):
                 "the double-Gaussian fit returned insufficient results for "
                 "classification"
             )
-            self._classification_results = {"error": "fit insufficient results"}
-            self._collect_peak_statistics(channels)
+            self._classification_results[channel] = {
+                "error": "fit insufficient results"
+            }
+            self._collect_peak_statistics(channel)
             return
 
         centers_bt = np.asarray(bt.get("centers"), dtype=float)
@@ -3122,10 +3117,10 @@ class PeakFinder(MetaEventFitter):
                 "the double-Gaussian fit did not yield two centres; cannot "
                 "classify folded/unfolded"
             )
-            self._classification_results = {
+            self._classification_results[channel] = {
                 "error": "Could not find two distinct distributions"
             }
-            self._collect_peak_statistics(channels)
+            self._collect_peak_statistics(channel)
             return
 
         # A folded/unfolded split only means something if the blockage-level
@@ -3164,7 +3159,7 @@ class PeakFinder(MetaEventFitter):
                 # Median and scaled MAD, which estimate a Gaussian's centre
                 # and width without a fit - so the population is still
                 # described, and the cut still placed, when the fit fails.
-                levels = np.asarray(all_longest_levels_array, dtype=float)
+                levels = np.asarray(primary_levels, dtype=float)
                 lower_center = float(np.nanmedian(levels))
                 unfolded_std = float(
                     1.4826 * np.nanmedian(np.abs(levels - lower_center))
@@ -3186,7 +3181,7 @@ class PeakFinder(MetaEventFitter):
                 if ratio_cut >= sigma_cut
                 else f"unfolded + {self.FOLDING_SINGLE_POPULATION_SIGMA:g} sigma"
             )
-            # Warning level on purpose: it is collected into the run's report,
+            # Warning level on purpose: it is collected into the channel's report,
             # so the reader sees that the split rests on an assumption. Kept to
             # the method and the reason; the numbers are in the report.
             self.logger.warning(
@@ -3215,25 +3210,25 @@ class PeakFinder(MetaEventFitter):
             threshold = bt.get("threshold", (lower_center + higher_center) / 2.0)
             threshold_basis = self._describe_fit_threshold(bt)
 
-        # `all_event_info` and `all_longest_levels_array` are built together,
+        # `event_indices` and `primary_levels` are built together,
         # index-for-index, by the sole caller, so this lookup cannot
         # legitimately go out of range. Checked explicitly and logged once
         # rather than swallowed, because silently dropping an event here would
         # let total_events stop reconciling with folded + unfolded.
-        n_events = min(len(all_event_info), int(all_longest_levels_array.size))
-        if n_events != len(all_event_info):
+        n_events = min(len(event_indices), int(primary_levels.size))
+        if n_events != len(event_indices):
             self.logger.warning(
-                f"_classify_folded_unfolded: all_event_info has "
-                f"{len(all_event_info)} entries but all_longest_levels_array "
-                f"has {all_longest_levels_array.size}; truncating to "
+                f"_classify_folded_unfolded: event_indices has "
+                f"{len(event_indices)} entries but primary_levels "
+                f"has {primary_levels.size}; truncating to "
                 f"{n_events} events to avoid an out-of-range lookup. This "
                 "indicates a caller bug."
             )
         folded_count = 0
         unfolded_count = 0
         for i in range(n_events):
-            ch, event_index = all_event_info[i]
-            event_primary_level = all_longest_levels_array[i]
+            event_index = event_indices[i]
+            event_primary_level = primary_levels[i]
             if event_primary_level >= threshold:
                 event_folded_level = event_primary_level
                 event_unfolded_level = event_primary_level / 2.0
@@ -3244,13 +3239,13 @@ class PeakFinder(MetaEventFitter):
                 unfolded_count += 1
             try:
                 self.update_event_metadata_post_processing(
-                    ch, event_index, event_unfolded_level, event_folded_level
+                    channel, event_index, event_unfolded_level, event_folded_level
                 )
             except Exception as e:
                 self.logger.error(f"Error updating event metadata: {e}")
 
-        self._classification_results = {
-            "total_events": len(all_event_info),
+        self._classification_results[channel] = {
+            "total_events": len(event_indices),
             "n_components": n_components,
             "folded_count": int(folded_count),
             "unfolded_count": int(unfolded_count),
@@ -3263,13 +3258,15 @@ class PeakFinder(MetaEventFitter):
             # No folded population was fitted, so there is no higher centre
             # and no centre ratio - only the assumed-unfolded one, the folded
             # level assumed at twice it, and the cut.
-            self._classification_results["single_population"] = True
-            self._classification_results["lower_std"] = unfolded_std
-            self._classification_results["lower_center_source"] = center_source
-            self._classification_results["assumed_folded_level"] = 2.0 * lower_center
-            self._classification_results["threshold_rule"] = threshold_rule
+            self._classification_results[channel]["single_population"] = True
+            self._classification_results[channel]["lower_std"] = unfolded_std
+            self._classification_results[channel]["lower_center_source"] = center_source
+            self._classification_results[channel]["assumed_folded_level"] = (
+                2.0 * lower_center
+            )
+            self._classification_results[channel]["threshold_rule"] = threshold_rule
         else:
-            self._classification_results["ratio"] = ratio
+            self._classification_results[channel]["ratio"] = ratio
 
         # The plot is built from the same histogram the fit used, so the bars
         # cannot be binned against edges the fit never saw.
@@ -3279,15 +3276,14 @@ class PeakFinder(MetaEventFitter):
             if loader is not None and hasattr(loader, "get_base_file"):
                 base_file = loader.get_base_file()
                 plot_path = base_file.with_name(
-                    f"{base_file.stem}_folding_classification.png"
+                    f"{base_file.stem}_ch{channel}_folding_classification.png"
                 )
 
-            matplotlib.use("Agg")
-
             counts, bins = bt.get("hist", (None, None))
-            arr_all = np.asarray(all_longest_levels_array)
-            arr = np.asarray(all_longest_levels_array)
-            fig, ax = plt.subplots(figsize=(12, 6))
+            arr_all = np.asarray(primary_levels)
+            arr = np.asarray(primary_levels)
+            fig = Figure(figsize=(12, 6))
+            ax = fig.subplots()
 
             # A non-zero dynamic range, or np.histogram warns.
             arr = self._jitter_degenerate_array(arr)
@@ -3458,20 +3454,19 @@ class PeakFinder(MetaEventFitter):
                 )
             )
             ax.legend()
-            plt.tight_layout()
+            fig.tight_layout()
             if plot_path is not None:
-                plt.savefig(plot_path, dpi=300, bbox_inches="tight")
+                fig.savefig(plot_path, dpi=300, bbox_inches="tight")
                 self.logger.info(f"Folding classification plot saved to {plot_path}")
-            plt.close(fig)
         except Exception as e:
             self.logger.error(f"Error saving folding classification plot: {e}")
 
     @log(logger=logger)
-    def _run_unfolded_level(
-        self, channels: list[int]
+    def _channel_unfolded_level(
+        self, channel: int
     ) -> Tuple[Optional[float], Optional[str]]:
         """
-        Return one unfolded level in pA to size the run's normalized
+        Return one unfolded level in pA to size a channel's normalized
         prominences against, and where it came from.
 
         Called by ``_classify_peak_prominences`` so its report can quote a
@@ -3480,7 +3475,7 @@ class PeakFinder(MetaEventFitter):
         picks a representative one and says which, rather than leaving a
         reader to guess what a pA figure was divided by.
 
-        The folding fit's own lower centre is preferred: it is the run-wide
+        The folding fit's own lower centre is preferred: it is the channel's
         unfolded population's mean, in pA, and is the same number the report
         prints as "Lower center (unfolded)". Where that pass declined or was
         skipped there is no fitted centre, so the median of the per-event
@@ -3488,13 +3483,13 @@ class PeakFinder(MetaEventFitter):
         primary level. With neither available the caller omits the pA column
         rather than inventing a scale.
 
-        :param channels: the channels whose events may be sampled for a level
-        :type channels: list[int]
-        :return: the level in pA and a short description of its origin, or ``(None, None)`` if the run has neither
+        :param channel: the channel whose events may be sampled for a level
+        :type channel: int
+        :return: the level in pA and a short description of its origin, or ``(None, None)`` if the channel has neither
         :rtype: Tuple[Optional[float], Optional[str]]
         """
-        folding = getattr(self, "_classification_results", None)
-        if isinstance(folding, dict):
+        folding = self._classification_results.get(channel)
+        if folding is not None:
             center = folding.get("lower_center")
             if (
                 isinstance(center, (int, float))
@@ -3506,9 +3501,7 @@ class PeakFinder(MetaEventFitter):
 
         levels = [
             float(value)
-            for ch in channels
-            for event_data in self.event_metadata.get(ch, {}).values()
-            if isinstance(event_data, dict)
+            for event_data in self.event_metadata.get(channel, {}).values()
             for value in [event_data.get("unfolded_level")]
             if isinstance(value, (int, float))
             and not isinstance(value, bool)
@@ -3521,7 +3514,7 @@ class PeakFinder(MetaEventFitter):
         return None, None
 
     @log(logger=logger)
-    def _classify_peak_prominences(self, channels: list[int]) -> None:
+    def _classify_peak_prominences(self, channel: int) -> None:
         """
         Split peaks into two normalized-prominence classes, writing
         ``classified`` and ``classification_confidence`` onto every type 1, 2
@@ -3529,7 +3522,7 @@ class PeakFinder(MetaEventFitter):
 
         Called by ``_post_process_events``, second of the four classifiers,
         after ``_classify_folded_unfolded`` has re-typed every peak - so the
-        ``filtered`` labels it selects on are the run-wide ones. Peaks of any
+        ``filtered`` labels it selects on are the channel's. Peaks of any
         other type, type -1 among them, are skipped and keep NaN. The classes
         it writes are what ``_post_process_events`` reads back to build each
         event's ``sequence``.
@@ -3548,11 +3541,11 @@ class PeakFinder(MetaEventFitter):
         what deferred the change when it was posed as fitting a log-normal
         directly. Everything the fit produces is consequently in log units:
         the split, the per-peak confidences and the plot all live there, and
-        only the threshold and centres handed to the run's report are
+        only the threshold and centres handed to the channel's report are
         exponentiated back into prominence ratios, where they mean something
         to a reader, in three units at once: the fitted decade, the multiple
         of the unfolded level, and the current that works out to against the
-        run's own unfolded level (see ``_run_unfolded_level`` for which level
+        channel's own unfolded level (see ``_channel_unfolded_level`` for which level
         that is). Fitted widths convert differently, since a log-space
         standard deviation is a multiplicative spread with no ratio of its
         own: they are reported as the total pA span of +/-1 sigma, which is
@@ -3578,7 +3571,7 @@ class PeakFinder(MetaEventFitter):
         class 0**, and the threshold is the explicit, arbitrary
         ``mu + PROMINENCE_SINGLE_POPULATION_SIGMA * sigma`` in the fitted
         variable, written out in the results (``threshold_rule``), on the plot
-        and as a warning the run's report collects. Those peaks get no
+        and as a warning the channel's report collects. Those peaks get no
         ``classification_confidence`` - NaN - since there is no second
         population to weigh them against. Only if the single fit fails does the
         double fit's own single-population threshold stand in (the first local
@@ -3590,60 +3583,54 @@ class PeakFinder(MetaEventFitter):
         not found, whereas "more prominent than this population accounts for"
         is not.
 
-        :param channels: the indices of every channel whose peaks are to be classified
-        :type channels: list[int]
+        :param channel: the channel whose peaks are to be classified
+        :type channel: int
         :raises RuntimeError: if the threshold fit returns no threshold, since there is then nothing to classify against. This one does propagate.
         :raises ValueError: internally only, as control flow, when histogram bin edges are degenerate; it is caught by this method's own plotting guard and does not reach callers.
         """
         prominence_values: list[float] = []
-        prominence_refs: list[tuple[int, int, int]] = []
+        prominence_refs: list[tuple[int, int]] = []
 
-        for ch in channels:
-            if ch not in self.sublevel_metadata:
-                continue
+        for event_index, sublevel_data in self.sublevel_metadata.get(
+            channel, {}
+        ).items():
+            filtered_values = np.asarray(sublevel_data.get("filtered", []), dtype=float)
+            prominences = np.asarray(
+                sublevel_data.get("normalized_prominence", []), dtype=float
+            )
+            peak_ids = sublevel_data.get("peak_id", [])
 
-            for event_index, sublevel_data in self.sublevel_metadata[ch].items():
-                filtered_values = np.asarray(
-                    sublevel_data.get("filtered", []), dtype=float
+            if "classified" not in sublevel_data or len(
+                sublevel_data["classified"]
+            ) != len(peak_ids):
+                self.sublevel_metadata[channel][event_index]["classified"] = np.full(
+                    len(peak_ids), np.nan, dtype=np.float64
                 )
-                prominences = np.asarray(
-                    sublevel_data.get("normalized_prominence", []), dtype=float
-                )
-                peak_ids = sublevel_data.get("peak_id", [])
+            if "classification_confidence" not in sublevel_data or len(
+                sublevel_data["classification_confidence"]
+            ) != len(peak_ids):
+                self.sublevel_metadata[channel][event_index][
+                    "classification_confidence"
+                ] = np.full(len(peak_ids), np.nan, dtype=np.float64)
 
-                if "classified" not in sublevel_data or len(
-                    sublevel_data["classified"]
-                ) != len(peak_ids):
-                    self.sublevel_metadata[ch][event_index]["classified"] = np.full(
-                        len(peak_ids), np.nan, dtype=np.float64
-                    )
-                if "classification_confidence" not in sublevel_data or len(
-                    sublevel_data["classification_confidence"]
-                ) != len(peak_ids):
-                    self.sublevel_metadata[ch][event_index][
-                        "classification_confidence"
-                    ] = np.full(len(peak_ids), np.nan, dtype=np.float64)
+            for peak_index, peak_id in enumerate(peak_ids):
+                if peak_id is None or (
+                    isinstance(peak_id, float) and np.isnan(peak_id)
+                ):
+                    continue
+                if peak_index >= len(filtered_values) or peak_index >= len(prominences):
+                    continue
 
-                for peak_index, peak_id in enumerate(peak_ids):
-                    if peak_id is None or (
-                        isinstance(peak_id, float) and np.isnan(peak_id)
-                    ):
-                        continue
-                    if peak_index >= len(filtered_values) or peak_index >= len(
-                        prominences
-                    ):
-                        continue
+                peak_type = filtered_values[peak_index]
+                if np.isnan(peak_type) or int(peak_type) not in {1, 2, 3}:
+                    continue
 
-                    peak_type = filtered_values[peak_index]
-                    if np.isnan(peak_type) or int(peak_type) not in {1, 2, 3}:
-                        continue
+                prominence = prominences[peak_index]
+                if np.isnan(prominence):
+                    continue
 
-                    prominence = prominences[peak_index]
-                    if np.isnan(prominence):
-                        continue
-
-                    prominence_values.append(float(prominence))
-                    prominence_refs.append((ch, event_index, peak_index))
+                prominence_values.append(float(prominence))
+                prominence_refs.append((event_index, peak_index))
 
         if not prominence_values:
             self.logger.warning(
@@ -3738,7 +3725,7 @@ class PeakFinder(MetaEventFitter):
                 )
                 centers = np.array([population_mean], dtype=float)
                 threshold_basis = f"class 0 + {sigmas:g} sigma"
-                # Warning level on purpose: it is collected into the run's
+                # Warning level on purpose: it is collected into the channel's
                 # report, so the reader sees that the split rests on an
                 # assumption. Kept to the method and the reason; the numbers
                 # are in the report.
@@ -3773,13 +3760,13 @@ class PeakFinder(MetaEventFitter):
                 fit_values, bt["params"], class_labels.astype(bool)
             )
 
-        for class_label, confidence_value, (ch, event_index, peak_index) in zip(
+        for class_label, confidence_value, (event_index, peak_index) in zip(
             class_labels, confidence_values, prominence_refs
         ):
-            self.sublevel_metadata[ch][event_index]["classified"][
+            self.sublevel_metadata[channel][event_index]["classified"][
                 peak_index
             ] = class_label
-            self.sublevel_metadata[ch][event_index]["classification_confidence"][
+            self.sublevel_metadata[channel][event_index]["classification_confidence"][
                 peak_index
             ] = confidence_value
 
@@ -3788,7 +3775,7 @@ class PeakFinder(MetaEventFitter):
         # units, because each answers a different question: the fitted decade
         # is what the plot's axis shows, the ratio is how many unfolded levels
         # deep the peak is, and the current is what a reader finds on a trace.
-        unfolded_reference, reference_source = self._run_unfolded_level(channels)
+        unfolded_reference, reference_source = self._channel_unfolded_level(channel)
         if single_fit is not None:
             stds = [single_fit[2]]
         else:
@@ -3813,7 +3800,7 @@ class PeakFinder(MetaEventFitter):
         # about the centre and so has no single "+/- x pA". What it does have
         # is a total width, and that is what gets reported - the pA distance
         # from the bottom of that span to the top, centre * (factor - 1/factor)
-        # against the run's unfolded level. It is the honest one-number answer
+        # against the channel's unfolded level. It is the honest one-number answer
         # to "how wide is this population in pA", and unlike the factor it is
         # in the same units as the centres above it, so the two can be compared
         # by eye. On a linear fit the width is already a ratio and only needs
@@ -3833,7 +3820,7 @@ class PeakFinder(MetaEventFitter):
                 elif not self.PROMINENCE_FIT_LOG_SCALE:
                     std_currents.append(float(std) * reference_value)
 
-        self._peak_prominence_classification_results = {
+        self._peak_prominence_classification_results[channel] = {
             "total_peaks": len(prominence_array),
             "n_components": n_components,
             "log_scale": bool(self.PROMINENCE_FIT_LOG_SCALE),
@@ -3846,7 +3833,7 @@ class PeakFinder(MetaEventFitter):
             "centers": center_ratios,
             # the multiplicative spread each width corresponds to
             "std_factors": std_factors,
-            # and in current, against the run's own unfolded level - the widths
+            # and in current, against the channel's own unfolded level - the widths
             # as the total pA span of +/-1 sigma, empty without a reference
             "unfolded_reference": unfolded_reference,
             "unfolded_reference_source": reference_source,
@@ -3865,10 +3852,12 @@ class PeakFinder(MetaEventFitter):
         if single_fit is not None:
             # One fitted population, assumed class 0; `centers` and `stds`
             # above then hold its single centre and width.
-            self._peak_prominence_classification_results["single_population"] = True
-            self._peak_prominence_classification_results["threshold_rule"] = (
-                threshold_rule
-            )
+            self._peak_prominence_classification_results[channel][
+                "single_population"
+            ] = True
+            self._peak_prominence_classification_results[channel][
+                "threshold_rule"
+            ] = threshold_rule
 
         # The plot is built from the same histogram the fit used.
         try:
@@ -3877,10 +3866,8 @@ class PeakFinder(MetaEventFitter):
             if loader is not None and hasattr(loader, "get_base_file"):
                 base_file = loader.get_base_file()
                 plot_path = base_file.with_name(
-                    f"{base_file.stem}_peak_prominence_classification.png"
+                    f"{base_file.stem}_ch{channel}_peak_prominence_classification.png"
                 )
-
-            matplotlib.use("Agg")
 
             counts, bins = bt.get("hist", (None, None))
             # The fitted variable, so the bars line up with the bins the fit
@@ -3889,7 +3876,8 @@ class PeakFinder(MetaEventFitter):
             # components are actually Gaussian in.
             arr_all = np.asarray(fit_values, dtype=float)
             arr = arr_all
-            fig, ax = plt.subplots(figsize=(12, 6))
+            fig = Figure(figsize=(12, 6))
+            ax = fig.subplots()
 
             # A non-zero dynamic range, or np.histogram warns.
             arr = self._jitter_degenerate_array(arr)
@@ -4049,18 +4037,17 @@ class PeakFinder(MetaEventFitter):
                 )
             )
             ax.legend()
-            plt.tight_layout()
+            fig.tight_layout()
             if plot_path is not None:
-                plt.savefig(plot_path, dpi=300, bbox_inches="tight")
+                fig.savefig(plot_path, dpi=300, bbox_inches="tight")
                 self.logger.info(
                     f"Peak prominence classification plot saved to {plot_path}"
                 )
-            plt.close(fig)
         except Exception as e:
             self.logger.error(f"Error saving peak prominence plot: {e}")
 
     @log(logger=logger)
-    def _classify_translocation_direction(self, channels: list[int]) -> None:
+    def _classify_translocation_direction(self, channel: int) -> None:
         """
         Decide which way round the construct threaded, writing
         ``translocation_direction`` and ``translocation_confidence`` onto every
@@ -4074,7 +4061,7 @@ class PeakFinder(MetaEventFitter):
         The construct is asymmetric about its barcode, so the ratio of the ECD
         before the first type-3 peak to the ECD after the last one says which
         way round it went. Per event that ratio is reduced to
-        ``log10(pre / post)``; over the run those values form two populations,
+        ``log10(pre / post)``; over a channel's events those values form two populations,
         and ``fit_threshold`` separates them. Events with no type-3 peak at all
         contribute nothing and keep no direction.
 
@@ -4108,84 +4095,77 @@ class PeakFinder(MetaEventFitter):
         say so. A fit that fails outright, or returns fewer than two centres,
         still declines.
 
-        :param channels: the indices of every channel whose events are to be classified
-        :type channels: list[int]
+        :param channel: the channel whose events are to be classified
+        :type channel: int
         :raises RuntimeError: if the threshold fit returns no threshold, since there is then nothing to classify against. This one does propagate.
         :raises ValueError: internally only, as control flow, when histogram bin edges are degenerate; it is caught by this method's own plotting guard and does not reach callers.
         """
-        event_refs: list[tuple[int, int]] = []
+        event_refs: list[int] = []
         log_ecds: list[float] = []
 
-        for ch in channels:
-            if ch not in self.sublevel_metadata:
+        for event_index, sublevel_data in self.sublevel_metadata.get(
+            channel, {}
+        ).items():
+            filtered_arr = np.asarray(sublevel_data.get("filtered", []), dtype=float)
+            csum = np.asarray(
+                sublevel_data.get("sublevel_cumulative_ecd", []), dtype=float
+            )
+
+            # sublevel_raw_ecd is per-sublevel, so it has to be summed
+            # into a running total to stand in for the cumulative array.
+            if csum.size == 0:
+                raw = np.asarray(sublevel_data.get("sublevel_raw_ecd", []), dtype=float)
+                if raw.size == 0:
+                    self.logger.debug(
+                        f"Ch{channel} Event{event_index}: Skipped - missing ECD data"
+                    )
+                    continue
+                csum = np.cumsum(raw)
+
+            # Select type-3 peaks strictly from post-filter labels.
+            # Do not fall back to `peak_id` selection; if no filtered
+            # labels exist or none equal 3, skip this event.
+            if filtered_arr.size == 0 or not np.any(~np.isnan(filtered_arr)):
+                # No filtered labels to use
                 continue
-            for event_index, sublevel_data in self.sublevel_metadata[ch].items():
-                filtered_arr = np.asarray(
-                    sublevel_data.get("filtered", []), dtype=float
+
+            type3_indices = np.where((~np.isnan(filtered_arr)) & (filtered_arr == 3))[0]
+            if type3_indices.size == 0:
+                # No type-3 peaks in this event
+                continue
+
+            first_type3_idx = int(type3_indices[0])
+            last_type3_idx = int(type3_indices[-1])
+
+            if first_type3_idx >= csum.size or last_type3_idx >= csum.size:
+                self.logger.debug(
+                    f"Ch{channel} Event{event_index}: Skipped - type-3 index out of bounds (first={first_type3_idx}, last={last_type3_idx}, len={csum.size})"
                 )
-                csum = np.asarray(
-                    sublevel_data.get("sublevel_cumulative_ecd", []), dtype=float
+                continue
+
+            ecd_before = (
+                float(csum[first_type3_idx - 1]) if first_type3_idx > 0 else 0.0
+            )
+            ecd_after = (
+                float(csum[-1] - csum[last_type3_idx])
+                if last_type3_idx < (csum.size - 1)
+                else 0.0
+            )
+
+            if ecd_before <= 0 or ecd_after <= 0:
+                self.logger.debug(
+                    f"Ch{channel} Event{event_index}: Skipped - invalid ECD values (before={ecd_before}, after={ecd_after})"
                 )
+                continue
 
-                # sublevel_raw_ecd is per-sublevel, so it has to be summed
-                # into a running total to stand in for the cumulative array.
-                if csum.size == 0:
-                    raw = np.asarray(
-                        sublevel_data.get("sublevel_raw_ecd", []), dtype=float
-                    )
-                    if raw.size == 0:
-                        self.logger.debug(
-                            f"Ch{ch} Event{event_index}: Skipped - missing ECD data"
-                        )
-                        continue
-                    csum = np.cumsum(raw)
-
-                # Select type-3 peaks strictly from post-filter labels.
-                # Do not fall back to `peak_id` selection; if no filtered
-                # labels exist or none equal 3, skip this event.
-                if filtered_arr.size == 0 or not np.any(~np.isnan(filtered_arr)):
-                    # No filtered labels to use
-                    continue
-
-                type3_indices = np.where(
-                    (~np.isnan(filtered_arr)) & (filtered_arr == 3)
-                )[0]
-                if type3_indices.size == 0:
-                    # No type-3 peaks in this event
-                    continue
-
-                first_type3_idx = int(type3_indices[0])
-                last_type3_idx = int(type3_indices[-1])
-
-                if first_type3_idx >= csum.size or last_type3_idx >= csum.size:
-                    self.logger.debug(
-                        f"Ch{ch} Event{event_index}: Skipped - type-3 index out of bounds (first={first_type3_idx}, last={last_type3_idx}, len={csum.size})"
-                    )
-                    continue
-
-                ecd_before = (
-                    float(csum[first_type3_idx - 1]) if first_type3_idx > 0 else 0.0
-                )
-                ecd_after = (
-                    float(csum[-1] - csum[last_type3_idx])
-                    if last_type3_idx < (csum.size - 1)
-                    else 0.0
-                )
-
-                if ecd_before <= 0 or ecd_after <= 0:
-                    self.logger.debug(
-                        f"Ch{ch} Event{event_index}: Skipped - invalid ECD values (before={ecd_before}, after={ecd_after})"
-                    )
-                    continue
-
-                event_refs.append((ch, event_index))
-                log_ecds.append(np.log10(ecd_before / ecd_after))
+            event_refs.append(event_index)
+            log_ecds.append(np.log10(ecd_before / ecd_after))
 
         if len(log_ecds) == 0:
             self.logger.warning(
                 "No events available for translocation direction classification"
             )
-            self._translocation_direction_results = {
+            self._translocation_direction_results[channel] = {
                 "skipped": True,
                 "reason": "no data",
             }
@@ -4243,7 +4223,7 @@ class PeakFinder(MetaEventFitter):
                 self.logger.error(
                     f"double-Gaussian fit failed for translocation direction: {e}"
                 )
-                self._translocation_direction_results = {
+                self._translocation_direction_results[channel] = {
                     "skipped": True,
                     "reason": "fit failure",
                 }
@@ -4259,7 +4239,7 @@ class PeakFinder(MetaEventFitter):
                     "the double-Gaussian fit did not yield two centres for "
                     "translocation direction"
                 )
-                self._translocation_direction_results = {
+                self._translocation_direction_results[channel] = {
                     "skipped": True,
                     "reason": "insufficient centers",
                 }
@@ -4325,17 +4305,17 @@ class PeakFinder(MetaEventFitter):
         backward_count = int(np.sum(class_labels == 0))
         unassigned_count = int(np.sum(class_labels == -1))
 
-        for label, confidence_value, (ch, event_index) in zip(
+        for label, confidence_value, event_index in zip(
             class_labels, confidence_values, event_refs
         ):
             if int(label) == -1:
                 continue
             direction = "forward" if int(label) == 1 else "backward"
-            if ch in self.event_metadata and event_index in self.event_metadata[ch]:
-                self.event_metadata[ch][event_index][
+            if event_index in self.event_metadata.get(channel, {}):
+                self.event_metadata[channel][event_index][
                     "translocation_direction"
                 ] = direction
-                self.event_metadata[ch][event_index][
+                self.event_metadata[channel][event_index][
                     "translocation_confidence"
                 ] = confidence_value  # type: ignore[assignment]
 
@@ -4344,7 +4324,7 @@ class PeakFinder(MetaEventFitter):
             f"Backward: {backward_count} ({backward_count/len(event_refs):.1%})"
         )
 
-        self._translocation_direction_results = {
+        self._translocation_direction_results[channel] = {
             "total_events": len(event_refs),
             "n_components": n_components,
             "forward_count": forward_count,
@@ -4355,8 +4335,10 @@ class PeakFinder(MetaEventFitter):
             "threshold_basis": threshold_basis,
         }
         if ratio_rule is not None:
-            self._translocation_direction_results["ratio_rule"] = ratio_rule
-            self._translocation_direction_results["unassigned_count"] = unassigned_count
+            self._translocation_direction_results[channel]["ratio_rule"] = ratio_rule
+            self._translocation_direction_results[channel][
+                "unassigned_count"
+            ] = unassigned_count
 
         # The plot is built from the same histogram the fit used.
         try:
@@ -4365,15 +4347,14 @@ class PeakFinder(MetaEventFitter):
             if loader is not None and hasattr(loader, "get_base_file"):
                 base_file = loader.get_base_file()
                 plot_path = base_file.with_name(
-                    f"{base_file.stem}_translocation_direction_classification.png"
+                    f"{base_file.stem}_ch{channel}_translocation_direction_classification.png"
                 )
-
-            matplotlib.use("Agg")
 
             counts, bins = bt.get("hist", (None, None))
             arr_all = np.asarray(log_ecds_arr, dtype=float)
             arr = arr_all
-            fig, ax = plt.subplots(figsize=(12, 6))
+            fig = Figure(figsize=(12, 6))
+            ax = fig.subplots()
 
             # A non-zero dynamic range, or np.histogram warns.
             arr = self._jitter_degenerate_array(arr)
@@ -4554,16 +4535,15 @@ class PeakFinder(MetaEventFitter):
             # The summary box sits top left; with no fitted curves to avoid,
             # keep the legend clear of it.
             ax.legend(loc="best" if ratio_rule is None else "upper right")
-            plt.tight_layout()
+            fig.tight_layout()
             if plot_path is not None:
-                plt.savefig(plot_path, dpi=300, bbox_inches="tight")
+                fig.savefig(plot_path, dpi=300, bbox_inches="tight")
                 self.logger.info(f"Translocation direction plot saved to {plot_path}")
-            plt.close(fig)
         except Exception as e:
             self.logger.error(f"Error saving translocation direction plot: {e}")
 
     @log(logger=logger)
-    def _classify_bound_star(self, channels: list[int]) -> None:
+    def _classify_bound_star(self, channel: int) -> None:
         """
         Identify the bound-star peak in each event and record which end of the
         molecule carried it through the pore, writing ``bound_star``.
@@ -4594,7 +4574,7 @@ class PeakFinder(MetaEventFitter):
         translocation direction keeps its -1. This is why the pass runs after
         the two that select on labels; it also makes the pass non-idempotent,
         since a re-run would no longer find that peak among the -1s, which is
-        why ``_post_process_events`` runs once per run.
+        why a channel is post-processed only once.
 
         A candidate must also be *deeper than a fold*: its modal blockage has
         to clear the folded level - twice that event's unfolded level - by the
@@ -4647,7 +4627,7 @@ class PeakFinder(MetaEventFitter):
         "Long" and "short" are the two arms as
         ``_classify_translocation_direction`` resolves them: ``"forward"`` is
         the higher-``log10(pre / post)`` population, so on a forward event the
-        pre-barcode arm is the long one. Note that this is a run-wide fitted
+        pre-barcode arm is the long one. Note that this is a channel-wide fitted
         split rather than a per-event ``pre > post`` test - which arm is long
         is decided by where the threshold between the two populations falls -
         so an event can be read as long-arm-first even where its own ECD ratio
@@ -4674,8 +4654,8 @@ class PeakFinder(MetaEventFitter):
         ``bound_star`` as None. Those are counted separately rather than being
         folded in with the events that genuinely have no star.
 
-        :param channels: List of channel indices to process
-        :type channels: list[int]
+        :param channel: the channel whose events to process
+        :type channel: int
         """
         results: Dict[str, Any] = {
             "total_events": 0,
@@ -4702,255 +4682,239 @@ class PeakFinder(MetaEventFitter):
             self.settings.get("Higher Filter Threshold", {}).get("Value", 0)
         )
 
-        for ch in channels:
-            if ch not in self.sublevel_metadata:
+        for event_index, sublevel_data in self.sublevel_metadata.get(
+            channel, {}
+        ).items():
+            results["total_events"] += 1
+
+            event_data = self.event_metadata.get(channel, {}).get(event_index)
+            sequence = ""
+            if event_data is not None and event_data.get("sequence"):
+                sequence = str(event_data["sequence"])
+
+            bucket: Optional[Dict[str, int]] = None
+            if sequence:
+                results["sequence_events"] += 1
+                bucket = per_sequence.setdefault(
+                    sequence,
+                    {
+                        "events": 0,
+                        "with_star": 0,
+                        "long_end": 0,
+                        "short_end": 0,
+                        "no_star": 0,
+                        "unresolved_direction": 0,
+                        "no_height_reference": 0,
+                        "widest_peak": 0,
+                    },
+                )
+                bucket["events"] += 1
+
+            filtered_arr = np.asarray(sublevel_data.get("filtered", []), dtype=float)
+            if filtered_arr.size == 0:
                 continue
 
-            for event_index, sublevel_data in self.sublevel_metadata[ch].items():
-                results["total_events"] += 1
-
-                event_data = self.event_metadata.get(ch, {}).get(event_index)
-                sequence = ""
-                if event_data is not None and event_data.get("sequence"):
-                    sequence = str(event_data["sequence"])
-
-                bucket: Optional[Dict[str, int]] = None
-                if sequence:
-                    results["sequence_events"] += 1
-                    bucket = per_sequence.setdefault(
-                        sequence,
-                        {
-                            "events": 0,
-                            "with_star": 0,
-                            "long_end": 0,
-                            "short_end": 0,
-                            "no_star": 0,
-                            "unresolved_direction": 0,
-                            "no_height_reference": 0,
-                            "widest_peak": 0,
-                        },
-                    )
-                    bucket["events"] += 1
-
-                filtered_arr = np.asarray(
-                    sublevel_data.get("filtered", []), dtype=float
-                )
-                if filtered_arr.size == 0:
-                    continue
-
-                type3_indices = np.where(
-                    (~np.isnan(filtered_arr)) & (filtered_arr == 3)
-                )[0]
-                if type3_indices.size == 0:
-                    # No barcode, so nothing for a star to be before or after.
-                    if bucket is not None:
-                        results["no_star"] += 1
-                        bucket["no_star"] += 1
-                    continue
-
-                first_type3_idx = int(type3_indices[0])
-                last_type3_idx = int(type3_indices[-1])
-
-                prominences = np.asarray(
-                    sublevel_data.get("prominence", []), dtype=float
-                )
-                blockages = np.asarray(
-                    sublevel_data.get("max_blockage", []), dtype=float
-                )
-
-                # A -1 label only ever lands on a peak sublevel, and a peak
-                # sublevel always carries a prominence and a blockage, so the
-                # length and NaN guards here are defensive rather than expected
-                # to fire.
-                positional_candidates = [
-                    int(idx)
-                    for idx in np.where(
-                        (~np.isnan(filtered_arr)) & (filtered_arr == -1)
-                    )[0]
-                    if (idx < first_type3_idx or idx > last_type3_idx)
-                    and idx < prominences.size
-                    and not np.isnan(prominences[idx])
-                    and idx < blockages.size
-                    and not np.isnan(blockages[idx])
-                ]
-
-                if not positional_candidates:
-                    if bucket is not None:
-                        results["no_star"] += 1
-                        bucket["no_star"] += 1
-                    continue
-
-                # A star is deeper than a fold, not merely an unclassified
-                # peak: its blockage must clear the folded level - twice this
-                # event's unfolded level - by the higher filter threshold.
-                #
-                # Both sides of this comparison are modal blockage *levels*
-                # from `find_mode_blockage_level`, which is what makes the
-                # margin mean anything. Comparing the peak's raw extremum
-                # (`peak_height`) against a level instead does not work: the
-                # extremum sits well below the peak's own modal level, by more
-                # than the tolerance itself, so folds pass a criterion meant to
-                # reject them.
-                height_floor = None
-                if event_data is not None:
-                    unfolded_level = event_data.get("unfolded_level")
-                    baseline_stdev = event_data.get("baseline_stdev")
-                    if (
-                        isinstance(unfolded_level, (int, float))
-                        and not isinstance(unfolded_level, bool)
-                        and isinstance(baseline_stdev, (int, float))
-                        and not isinstance(baseline_stdev, bool)
-                        and not np.isnan(unfolded_level)
-                        and not np.isnan(baseline_stdev)
-                    ):
-                        height_floor = 2.0 * float(
-                            unfolded_level
-                        ) + higher_threshold * float(baseline_stdev)
-
-                if height_floor is None:
-                    # The event has candidate peaks but no unfolded level to
-                    # size them against, so whether any is a star cannot be
-                    # decided. Counted apart from the events that genuinely
-                    # have none: this fires for every event at once when
-                    # folding classification declines, and that is worth
-                    # seeing.
-                    if bucket is not None:
-                        results["no_height_reference"] += 1
-                        bucket["no_height_reference"] += 1
-                    continue
-
-                candidate_indices = [
-                    idx
-                    for idx in positional_candidates
-                    if blockages[idx] > height_floor
-                ]
-
-                if not candidate_indices:
-                    if bucket is not None:
-                        results["no_star"] += 1
-                        bucket["no_star"] += 1
-                    continue
-
-                # A star is a sharp spike, not the event's broadest feature, so
-                # a candidate that is the widest peak in its own event cannot be
-                # promoted. The widest peak is the carrier body, a long fold, or
-                # a stretch of the event the peak finder resolved as one peak -
-                # all of which can clear the depth floor above while being the
-                # wrong shape entirely, because that floor tests only how deep
-                # the peak goes and never how long it lasts.
-                #
-                # Applied to the pool rather than to the winner: where a wide
-                # candidate and a narrow one both qualify, excluding the wide
-                # one lets the narrow one win instead of losing the event's
-                # star altogether. Only when the rule empties the pool does the
-                # event end up without one.
-                #
-                # `nanmax` returns one of the array's own elements, so the
-                # candidate that is the maximum compares exactly equal to it and
-                # needs no tolerance; `>=` is written rather than `==` so that
-                # peaks tied at the maximum are all excluded. A candidate whose
-                # own width is NaN cannot be the widest and is left alone.
-                widths = np.asarray(sublevel_data.get("peak_width", []), dtype=float)
-                if widths.size > 0 and not np.all(np.isnan(widths)):
-                    widest = float(np.nanmax(widths))
-                    narrower_candidates = [
-                        idx
-                        for idx in candidate_indices
-                        if not (
-                            idx < widths.size
-                            and np.isfinite(widths[idx])
-                            and widths[idx] >= widest
-                        )
-                    ]
-                    if not narrower_candidates:
-                        # Counted apart from `no_star`: an event rejected here
-                        # did have a deep enough peak in the right place, and a
-                        # run where this fires often is one where the depth
-                        # floor is admitting broad features, which is worth
-                        # seeing rather than folding in with the events that
-                        # genuinely have no candidate at all.
-                        if bucket is not None:
-                            results["widest_peak"] += 1
-                            bucket["widest_peak"] += 1
-                        continue
-                    candidate_indices = narrower_candidates
-
-                if bucket is not None and len(candidate_indices) > 1:
-                    results["multi_candidate"] += 1
-
-                # max() keeps the first of any equally prominent candidates, and
-                # candidate_indices is in ascending sublevel order, so a tie
-                # resolves to the earlier peak.
-                star_index = max(
-                    candidate_indices, key=lambda idx: float(prominences[idx])
-                )
-                star_is_before = star_index < first_type3_idx
-
-                direction = None
-                if event_data is not None:
-                    raw_direction = event_data.get("translocation_direction")
-                    if raw_direction in ("forward", "backward"):
-                        direction = str(raw_direction)
-
-                if direction is None:
-                    if bucket is not None:
-                        results["unresolved_direction"] += 1
-                        bucket["unresolved_direction"] += 1
-                    continue
-
-                # Which arm of the construct the star sits on, which is what
-                # the label names - not where it sits in the trace.
-                #
-                # `direction` is "forward" exactly when this event fell in the
-                # higher-`log10(pre / post)` population, i.e. when the
-                # pre-barcode arm is the long one. So on a forward event the
-                # star is on the long arm iff it is before the barcode, and on
-                # a backward event iff it is after it. The temporal term
-                # cancels either way, leaving a statement about the arm alone:
-                #
-                #   before + forward  -> long arm    after + forward  -> short
-                #   before + backward -> short arm   after + backward -> long
-                #
-                # Note what this is *not*: it is not "the star went through the
-                # pore first". On a backward event the long arm threads last,
-                # so a long-arm star is temporally last. Removing the threading
-                # order is the entire point of the flip - the label has to mean
-                # the same thing whichever way round the molecule went, exactly
-                # as `sequence` is reversed for the same reason.
-                star_on_long_arm = star_is_before == (direction == "forward")
-                bound_star = "long end" if star_on_long_arm else "short end"
-
-                if event_data is not None:
-                    event_data["bound_star"] = bound_star
-
-                # The winning peak stops being an unclassified -1 and carries
-                # the end it was bound to: 5 for the long end, 4 for the short.
-                # Written only here, and only for a star whose end is known -
-                # a candidate with no translocation direction has already
-                # `continue`d above and keeps its -1, because the label is the
-                # end and there is no end to name.
-                #
-                # Safe against the earlier passes because this classifier runs
-                # last: prominence classification reads types 1, 2 and 3 and
-                # the sequence builder reads 3, both before this point, and
-                # the `filter_peaks` re-run that would overwrite the label
-                # happens in _classify_folded_unfolded, earlier still. It does
-                # mean the pass is not idempotent - a second run would not
-                # find this peak in the -1 pool - which is why
-                # `_post_process_events` runs once per run.
-                sublevel_data["filtered"][star_index] = 5 if star_on_long_arm else 4
-
+            type3_indices = np.where((~np.isnan(filtered_arr)) & (filtered_arr == 3))[0]
+            if type3_indices.size == 0:
+                # No barcode, so nothing for a star to be before or after.
                 if bucket is not None:
-                    results["with_star"] += 1
-                    bucket["with_star"] += 1
-                    if star_on_long_arm:
-                        results["long_end"] += 1
-                        bucket["long_end"] += 1
-                    else:
-                        results["short_end"] += 1
-                        bucket["short_end"] += 1
+                    results["no_star"] += 1
+                    bucket["no_star"] += 1
+                continue
 
-        self._bound_star_results: Dict[str, Any] = results
+            first_type3_idx = int(type3_indices[0])
+            last_type3_idx = int(type3_indices[-1])
+
+            prominences = np.asarray(sublevel_data.get("prominence", []), dtype=float)
+            blockages = np.asarray(sublevel_data.get("max_blockage", []), dtype=float)
+
+            # A -1 label only ever lands on a peak sublevel, and a peak
+            # sublevel always carries a prominence and a blockage, so the
+            # length and NaN guards here are defensive rather than expected
+            # to fire.
+            positional_candidates = [
+                int(idx)
+                for idx in np.where((~np.isnan(filtered_arr)) & (filtered_arr == -1))[0]
+                if (idx < first_type3_idx or idx > last_type3_idx)
+                and idx < prominences.size
+                and not np.isnan(prominences[idx])
+                and idx < blockages.size
+                and not np.isnan(blockages[idx])
+            ]
+
+            if not positional_candidates:
+                if bucket is not None:
+                    results["no_star"] += 1
+                    bucket["no_star"] += 1
+                continue
+
+            # A star is deeper than a fold, not merely an unclassified
+            # peak: its blockage must clear the folded level - twice this
+            # event's unfolded level - by the higher filter threshold.
+            #
+            # Both sides of this comparison are modal blockage *levels*
+            # from `find_mode_blockage_level`, which is what makes the
+            # margin mean anything. Comparing the peak's raw extremum
+            # (`peak_height`) against a level instead does not work: the
+            # extremum sits well below the peak's own modal level, by more
+            # than the tolerance itself, so folds pass a criterion meant to
+            # reject them.
+            height_floor = None
+            if event_data is not None:
+                unfolded_level = event_data.get("unfolded_level")
+                baseline_stdev = event_data.get("baseline_stdev")
+                if (
+                    isinstance(unfolded_level, (int, float))
+                    and not isinstance(unfolded_level, bool)
+                    and isinstance(baseline_stdev, (int, float))
+                    and not isinstance(baseline_stdev, bool)
+                    and not np.isnan(unfolded_level)
+                    and not np.isnan(baseline_stdev)
+                ):
+                    height_floor = 2.0 * float(
+                        unfolded_level
+                    ) + higher_threshold * float(baseline_stdev)
+
+            if height_floor is None:
+                # The event has candidate peaks but no unfolded level to
+                # size them against, so whether any is a star cannot be
+                # decided. Counted apart from the events that genuinely
+                # have none: this fires for every event at once when
+                # folding classification declines, and that is worth
+                # seeing.
+                if bucket is not None:
+                    results["no_height_reference"] += 1
+                    bucket["no_height_reference"] += 1
+                continue
+
+            candidate_indices = [
+                idx for idx in positional_candidates if blockages[idx] > height_floor
+            ]
+
+            if not candidate_indices:
+                if bucket is not None:
+                    results["no_star"] += 1
+                    bucket["no_star"] += 1
+                continue
+
+            # A star is a sharp spike, not the event's broadest feature, so
+            # a candidate that is the widest peak in its own event cannot be
+            # promoted. The widest peak is the carrier body, a long fold, or
+            # a stretch of the event the peak finder resolved as one peak -
+            # all of which can clear the depth floor above while being the
+            # wrong shape entirely, because that floor tests only how deep
+            # the peak goes and never how long it lasts.
+            #
+            # Applied to the pool rather than to the winner: where a wide
+            # candidate and a narrow one both qualify, excluding the wide
+            # one lets the narrow one win instead of losing the event's
+            # star altogether. Only when the rule empties the pool does the
+            # event end up without one.
+            #
+            # `nanmax` returns one of the array's own elements, so the
+            # candidate that is the maximum compares exactly equal to it and
+            # needs no tolerance; `>=` is written rather than `==` so that
+            # peaks tied at the maximum are all excluded. A candidate whose
+            # own width is NaN cannot be the widest and is left alone.
+            widths = np.asarray(sublevel_data.get("peak_width", []), dtype=float)
+            if widths.size > 0 and not np.all(np.isnan(widths)):
+                widest = float(np.nanmax(widths))
+                narrower_candidates = [
+                    idx
+                    for idx in candidate_indices
+                    if not (
+                        idx < widths.size
+                        and np.isfinite(widths[idx])
+                        and widths[idx] >= widest
+                    )
+                ]
+                if not narrower_candidates:
+                    # Counted apart from `no_star`: an event rejected here
+                    # did have a deep enough peak in the right place, and a
+                    # run where this fires often is one where the depth
+                    # floor is admitting broad features, which is worth
+                    # seeing rather than folding in with the events that
+                    # genuinely have no candidate at all.
+                    if bucket is not None:
+                        results["widest_peak"] += 1
+                        bucket["widest_peak"] += 1
+                    continue
+                candidate_indices = narrower_candidates
+
+            if bucket is not None and len(candidate_indices) > 1:
+                results["multi_candidate"] += 1
+
+            # max() keeps the first of any equally prominent candidates, and
+            # candidate_indices is in ascending sublevel order, so a tie
+            # resolves to the earlier peak.
+            star_index = max(candidate_indices, key=lambda idx: float(prominences[idx]))
+            star_is_before = star_index < first_type3_idx
+
+            direction = None
+            if event_data is not None:
+                raw_direction = event_data.get("translocation_direction")
+                if raw_direction in ("forward", "backward"):
+                    direction = str(raw_direction)
+
+            if direction is None:
+                if bucket is not None:
+                    results["unresolved_direction"] += 1
+                    bucket["unresolved_direction"] += 1
+                continue
+
+            # Which arm of the construct the star sits on, which is what
+            # the label names - not where it sits in the trace.
+            #
+            # `direction` is "forward" exactly when this event fell in the
+            # higher-`log10(pre / post)` population, i.e. when the
+            # pre-barcode arm is the long one. So on a forward event the
+            # star is on the long arm iff it is before the barcode, and on
+            # a backward event iff it is after it. The temporal term
+            # cancels either way, leaving a statement about the arm alone:
+            #
+            #   before + forward  -> long arm    after + forward  -> short
+            #   before + backward -> short arm   after + backward -> long
+            #
+            # Note what this is *not*: it is not "the star went through the
+            # pore first". On a backward event the long arm threads last,
+            # so a long-arm star is temporally last. Removing the threading
+            # order is the entire point of the flip - the label has to mean
+            # the same thing whichever way round the molecule went, exactly
+            # as `sequence` is reversed for the same reason.
+            star_on_long_arm = star_is_before == (direction == "forward")
+            bound_star = "long end" if star_on_long_arm else "short end"
+
+            if event_data is not None:
+                event_data["bound_star"] = bound_star
+
+            # The winning peak stops being an unclassified -1 and carries
+            # the end it was bound to: 5 for the long end, 4 for the short.
+            # Written only here, and only for a star whose end is known -
+            # a candidate with no translocation direction has already
+            # `continue`d above and keeps its -1, because the label is the
+            # end and there is no end to name.
+            #
+            # Safe against the earlier passes because this classifier runs
+            # last: prominence classification reads types 1, 2 and 3 and
+            # the sequence builder reads 3, both before this point, and
+            # the `filter_peaks` re-run that would overwrite the label
+            # happens in _classify_folded_unfolded, earlier still. It does
+            # mean the pass is not idempotent - a second run would not
+            # find this peak in the -1 pool - which is why
+            # a channel is post-processed only once.
+            sublevel_data["filtered"][star_index] = 5 if star_on_long_arm else 4
+
+            if bucket is not None:
+                results["with_star"] += 1
+                bucket["with_star"] += 1
+                if star_on_long_arm:
+                    results["long_end"] += 1
+                    bucket["long_end"] += 1
+                else:
+                    results["short_end"] += 1
+                    bucket["short_end"] += 1
+
+        self._bound_star_results[channel] = results
 
         self.logger.info(
             f"Bound star: {results['with_star']} of {results['sequence_events']} "
@@ -4962,9 +4926,9 @@ class PeakFinder(MetaEventFitter):
         )
 
     @log(logger=logger)
-    def _collect_peak_statistics(self, channels: List[int]) -> None:
+    def _collect_peak_statistics(self, channel: int) -> None:
         """
-        Tally peak counts by filter type across the whole run into
+        Tally one channel's peak counts by filter type into
         ``self._peak_statistics``.
 
         Called by ``_classify_folded_unfolded`` - on every exit path, so the
@@ -4976,64 +4940,58 @@ class PeakFinder(MetaEventFitter):
         and keyed by the ``filtered`` label. A peak whose label is NaN counts
         as rejected.
 
-        :param channels: List of channel indices to process
-        :type channels: List[int]
+        :param channel: the channel whose peaks to count
+        :type channel: int
         """
         peak_type_counts: dict[int, int] = {}
         total_peaks = 0
         total_classified = 0
         total_unclassified = 0
 
-        for ch in channels:
-            if ch not in self.sublevel_metadata:
+        for event_index in self.sublevel_metadata.get(channel, {}):
+            sublevel_data = self.sublevel_metadata[channel][event_index]
+
+            if "filtered" not in sublevel_data:
                 continue
 
-            for event_index in self.sublevel_metadata[ch]:
-                sublevel_data = self.sublevel_metadata[ch][event_index]
+            peak_ids = np.asarray(sublevel_data.get("peak_id", []), dtype=float)
+            if peak_ids.size == 0:
+                continue
 
-                if "filtered" not in sublevel_data:
-                    continue
+            # 'peak_id' marks peak positions (1..N) while 'filtered'
+            # carries the assigned type per sublevel, NaN for non-peaks.
+            filtered_arr = np.asarray(sublevel_data.get("filtered", []), dtype=float)
+            peak_mask = ~np.isnan(peak_ids)
+            n_peaks_in_event = int(np.sum(peak_mask))
+            if n_peaks_in_event <= 0:
+                continue
 
-                peak_ids = np.asarray(sublevel_data.get("peak_id", []), dtype=float)
-                if peak_ids.size == 0:
-                    continue
+            total_peaks += n_peaks_in_event
 
-                # 'peak_id' marks peak positions (1..N) while 'filtered'
-                # carries the assigned type per sublevel, NaN for non-peaks.
-                filtered_arr = np.asarray(
-                    sublevel_data.get("filtered", []), dtype=float
-                )
-                peak_mask = ~np.isnan(peak_ids)
-                n_peaks_in_event = int(np.sum(peak_mask))
-                if n_peaks_in_event <= 0:
-                    continue
-
-                total_peaks += n_peaks_in_event
-
-                for idx in np.where(peak_mask)[0]:
-                    try:
-                        label = filtered_arr[idx]
-                        if np.isnan(label):
-                            peak_type_counts[-1] = peak_type_counts.get(-1, 0) + 1
-                        else:
-                            label_int = int(label)
-                            peak_type_counts[label_int] = (
-                                peak_type_counts.get(label_int, 0) + 1
-                            )
-                    except Exception:
+            for idx in np.where(peak_mask)[0]:
+                try:
+                    label = filtered_arr[idx]
+                    if np.isnan(label):
                         peak_type_counts[-1] = peak_type_counts.get(-1, 0) + 1
+                    else:
+                        label_int = int(label)
+                        peak_type_counts[label_int] = (
+                            peak_type_counts.get(label_int, 0) + 1
+                        )
+                except Exception:
+                    peak_type_counts[-1] = peak_type_counts.get(-1, 0) + 1
 
-                classified_arr = np.asarray(
-                    sublevel_data.get("classified", []), dtype=float
-                )
-                if classified_arr.size > 0:
-                    classified_peaks = classified_arr[peak_mask]
-                    n_classified = int(np.sum(~np.isnan(classified_peaks)))
-                    n_unclassified = int(np.sum(np.isnan(classified_peaks)))
-                    total_classified += n_classified
-                    total_unclassified += n_unclassified
+            classified_arr = np.asarray(
+                sublevel_data.get("classified", []), dtype=float
+            )
+            if classified_arr.size > 0:
+                classified_peaks = classified_arr[peak_mask]
+                n_classified = int(np.sum(~np.isnan(classified_peaks)))
+                n_unclassified = int(np.sum(np.isnan(classified_peaks)))
+                total_classified += n_classified
+                total_unclassified += n_unclassified
 
-        self._peak_statistics = {
+        self._peak_statistics[channel] = {
             "total_peaks": int(total_peaks),
             "total_classified": int(total_classified),
             "total_unclassified": int(total_unclassified),
@@ -5041,15 +4999,18 @@ class PeakFinder(MetaEventFitter):
         }
 
     @log(logger=logger)
-    def _save_classification_report(self) -> None:
+    def _save_classification_report(self, channel: int) -> None:
         """
-        Write the run's classification report next to the event file.
+        Write one channel's classification report next to the event file.
 
-        Called by ``_post_process_events`` as its last step. The body of the
-        report is ``report_status()`` with no channel, so the file and
-        the status pane always say the same thing; this method adds the header,
-        the settings the run used, and the footer, and writes the result to
-        ``<event file stem>_classification_report.txt``.
+        Called by ``_post_process_channel`` as its last step. The body of the
+        report is ``report_status(channel)``, so the file and the status pane
+        always say the same thing; this method adds the header, the settings the
+        fit used, and the footer, and writes the result to
+        ``<event file stem>_ch<channel>_classification_report.txt``.
+
+        :param channel: the channel whose report to write
+        :type channel: int
         """
         try:
             loader = getattr(self, "eventloader", None)
@@ -5061,10 +5022,10 @@ class PeakFinder(MetaEventFitter):
 
             base_file = loader.get_base_file()
             report_path = base_file.with_name(
-                f"{base_file.stem}_classification_report.txt"
+                f"{base_file.stem}_ch{channel}_classification_report.txt"
             )
 
-            report_text = self.report_status(channel=None, init=False)
+            report_text = self.report_status(channel)
 
             settings_section = "\n\nFITTING SETTINGS\n" + "-" * 80 + "\n"
             if self.settings:
@@ -5089,7 +5050,7 @@ class PeakFinder(MetaEventFitter):
 
             header = (
                 "=" * 80
-                + "\nCLASSIFICATION REPORT: DNA Folding and Peak Analysis\n"
+                + f"\nCLASSIFICATION REPORT: DNA Folding and Peak Analysis, channel {channel}\n"
                 + "=" * 80
                 + "\n"
             )
@@ -7597,7 +7558,7 @@ class PeakFinder(MetaEventFitter):
         neighbours. Writes the result into ``properties["filtered"]``.
 
         Called by ``update_event_metadata_post_processing``, once per event,
-        after ``_classify_folded_unfolded`` has measured the run-wide carrier
+        after ``_classify_folded_unfolded`` has measured the channel's carrier
         levels. Those labels are what every later stage selects on: the
         sequence builder and ``_classify_translocation_direction`` read type 3,
         ``_classify_bound_star`` reads type -1, and

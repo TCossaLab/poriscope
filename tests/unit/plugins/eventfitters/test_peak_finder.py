@@ -24,8 +24,9 @@ Coverage targets:
 """
 
 import logging
+import threading
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call as mock_call, patch
 
 import numpy as np
 
@@ -33,7 +34,10 @@ from poriscope.plugins.eventfitters.PeakFinder import (
     PeakFinder,
     _ClassificationWarningCollector,
 )
-from tests.synthetic_data.synthetic_events_db import generate_events_database
+from tests.synthetic_data.synthetic_events_db import (
+    generate_events_database,
+    generate_multichannel_events_database,
+)
 from tests.unit.plugins.conformance._recipes import (
     BASELINE_PA,
     EVENT_AMPLITUDE_PA,
@@ -64,8 +68,15 @@ def _make_pf(**setting_overrides):
     pf.sublevel_metadata = {}
     pf.event_metadata = {}
     pf.eventfitting_status = {}
+    pf.rejected = {}
     pf.event_lengths = {}
     pf.eventloader = None
+    pf._classification_results = {}
+    pf._peak_statistics = {}
+    pf._peak_prominence_classification_results = {}
+    pf._translocation_direction_results = {}
+    pf._bound_star_results = {}
+    pf._classification_warnings = {}
     pf.logger = PeakFinder.logger
     pf.settings = {
         "Event Type": {"Value": "Unspecified"},
@@ -2428,7 +2439,7 @@ class TestClassifyPeakProminences(unittest.TestCase):
         }
         pf.event_metadata = {0: {0: {}}}
         pf.fit_threshold = MagicMock(return_value=dict(self.FIT_RESULT))
-        pf._classify_peak_prominences([0])
+        pf._classify_peak_prominences(0)
         return pf
 
     def test_types_1_2_and_3_are_fitted_and_others_are_not(self):
@@ -2465,7 +2476,7 @@ class TestClassifyPeakProminences(unittest.TestCase):
         person, so the threshold and centres are converted back with 10**x.
         """
         pf = self._run([3.0] * 3, [0.10, 0.30, 0.90])
-        results = pf._peak_prominence_classification_results
+        results = pf._peak_prominence_classification_results[0]
         self.assertAlmostEqual(results["threshold"], 10.0**-1.0)
         np.testing.assert_allclose(results["centers"], 10.0 ** np.array([-1.6, -0.5]))
 
@@ -2513,13 +2524,13 @@ class TestClassifyPeakProminences(unittest.TestCase):
         }
         pf.event_metadata = {0: {0: {}}}
         pf.fit_threshold = MagicMock(return_value=dict(self.FIT_RESULT))
-        pf._classify_peak_prominences([0])
+        pf._classify_peak_prominences(0)
 
         fitted = pf.fit_threshold.call_args[0][0]
         np.testing.assert_allclose(sorted(fitted), [0.1, 0.3, 0.9])
         # and the report is not exponentiated on this path
         self.assertAlmostEqual(
-            pf._peak_prominence_classification_results["threshold"], -1.0
+            pf._peak_prominence_classification_results[0]["threshold"], -1.0
         )
 
     def test_unfolded_reference_prefers_the_folding_fits_centre(self):
@@ -2528,7 +2539,7 @@ class TestClassifyPeakProminences(unittest.TestCase):
         any per-event level, since it is the run-wide population mean.
         """
         pf = _make_pf()
-        pf._classification_results = {"lower_center": 120.0}
+        pf._classification_results = {0: {"lower_center": 120.0}}
         pf.event_metadata = {0: {0: {"unfolded_level": 50.0}}}
         pf.sublevel_metadata = {
             0: {
@@ -2540,8 +2551,8 @@ class TestClassifyPeakProminences(unittest.TestCase):
             }
         }
         pf.fit_threshold = MagicMock(return_value=dict(self.FIT_RESULT))
-        pf._classify_peak_prominences([0])
-        results = pf._peak_prominence_classification_results
+        pf._classify_peak_prominences(0)
+        results = pf._peak_prominence_classification_results[0]
         self.assertEqual(results["unfolded_reference"], 120.0)
         self.assertEqual(results["unfolded_reference_source"], "fitted unfolded centre")
 
@@ -2569,8 +2580,8 @@ class TestClassifyPeakProminences(unittest.TestCase):
             }
         }
         pf.fit_threshold = MagicMock(return_value=dict(self.FIT_RESULT))
-        pf._classify_peak_prominences([0])
-        results = pf._peak_prominence_classification_results
+        pf._classify_peak_prominences(0)
+        results = pf._peak_prominence_classification_results[0]
         self.assertEqual(results["unfolded_reference"], 50.0)
         self.assertEqual(
             results["unfolded_reference_source"], "median per-event unfolded level"
@@ -2579,7 +2590,7 @@ class TestClassifyPeakProminences(unittest.TestCase):
     def test_unfolded_reference_absent_when_neither_source_is_available(self):
         """With no folding fit and no per-event level, both come back None."""
         pf = self._run([3.0] * 3, [0.10, 0.30, 0.90])
-        results = pf._peak_prominence_classification_results
+        results = pf._peak_prominence_classification_results[0]
         self.assertIsNone(results["unfolded_reference"])
         self.assertIsNone(results["unfolded_reference_source"])
 
@@ -2590,7 +2601,7 @@ class TestClassifyPeakProminences(unittest.TestCase):
         reader gets all three unit systems for threshold, centres and std.
         """
         pf = self._run([3.0] * 3, [0.10, 0.30, 0.90])
-        results = pf._peak_prominence_classification_results
+        results = pf._peak_prominence_classification_results[0]
         self.assertTrue(results["log_scale"])
         self.assertAlmostEqual(results["threshold_fitted"], -1.0)
         np.testing.assert_allclose(results["centers_fitted"], [-1.6, -0.5])
@@ -2605,7 +2616,7 @@ class TestClassifyPeakProminences(unittest.TestCase):
         what the report carries: centre * (factor - 1/factor), in pA.
         """
         pf = _make_pf()
-        pf._classification_results = {"lower_center": 689.3}
+        pf._classification_results = {0: {"lower_center": 689.3}}
         pf.sublevel_metadata = {
             0: {
                 0: {
@@ -2617,8 +2628,8 @@ class TestClassifyPeakProminences(unittest.TestCase):
         }
         pf.event_metadata = {0: {0: {}}}
         pf.fit_threshold = MagicMock(return_value=dict(self.FIT_RESULT))
-        pf._classify_peak_prominences([0])
-        results = pf._peak_prominence_classification_results
+        pf._classify_peak_prominences(0)
+        results = pf._peak_prominence_classification_results[0]
 
         expected = []
         for center_fitted, std in zip([-1.6, -0.5], [0.2, 0.2]):
@@ -2638,13 +2649,15 @@ class TestClassifyPeakProminences(unittest.TestCase):
     def test_std_currents_are_empty_without_a_reference_level(self):
         # no folding fit and no per-event level, so there is no pA scale
         pf = self._run([3.0] * 3, [0.10, 0.30, 0.90])
-        self.assertEqual(pf._peak_prominence_classification_results["std_currents"], [])
+        self.assertEqual(
+            pf._peak_prominence_classification_results[0]["std_currents"], []
+        )
 
     def test_a_linear_std_is_only_scaled_by_the_reference(self):
         # with no log transform the width is already a ratio
         pf = _make_pf()
         pf.PROMINENCE_FIT_LOG_SCALE = False
-        pf._classification_results = {"lower_center": 500.0}
+        pf._classification_results = {0: {"lower_center": 500.0}}
         pf.sublevel_metadata = {
             0: {
                 0: {
@@ -2656,8 +2669,8 @@ class TestClassifyPeakProminences(unittest.TestCase):
         }
         pf.event_metadata = {0: {0: {}}}
         pf.fit_threshold = MagicMock(return_value=dict(self.FIT_RESULT))
-        pf._classify_peak_prominences([0])
-        results = pf._peak_prominence_classification_results
+        pf._classify_peak_prominences(0)
+        results = pf._peak_prominence_classification_results[0]
         np.testing.assert_allclose(results["std_currents"], [0.2 * 500.0, 0.2 * 500.0])
 
     def test_std_factors_empty_when_log_scale_is_off(self):
@@ -2678,8 +2691,8 @@ class TestClassifyPeakProminences(unittest.TestCase):
         }
         pf.event_metadata = {0: {0: {}}}
         pf.fit_threshold = MagicMock(return_value=dict(self.FIT_RESULT))
-        pf._classify_peak_prominences([0])
-        results = pf._peak_prominence_classification_results
+        pf._classify_peak_prominences(0)
+        results = pf._peak_prominence_classification_results[0]
         self.assertFalse(results["log_scale"])
         self.assertEqual(results["std_factors"], [])
 
@@ -2730,7 +2743,7 @@ class TestTranslocationDirectionFitSample(unittest.TestCase):
         pf.sublevel_metadata = {0: {i: _ecd_event(r) for i, r in enumerate(log_ratios)}}
         pf.event_metadata = {0: {i: {} for i in range(len(log_ratios))}}
         pf.fit_threshold = MagicMock(return_value=dict(self.FIT_RESULT))
-        pf._classify_translocation_direction([0])
+        pf._classify_translocation_direction(0)
         return pf
 
     @staticmethod
@@ -2766,7 +2779,7 @@ class TestTranslocationDirectionFitSample(unittest.TestCase):
                 f"event {i} (log ratio {ratios[i]:.2f}) was left unclassified",
             )
         self.assertEqual(
-            pf._translocation_direction_results["total_events"], len(ratios)
+            pf._translocation_direction_results[0]["total_events"], len(ratios)
         )
 
     def test_the_extremes_land_on_the_side_the_threshold_puts_them(self):
@@ -2813,7 +2826,7 @@ class TestTranslocationDirectionRatioRule(unittest.TestCase):
         pf.sublevel_metadata = {0: {i: _ecd_event(r) for i, r in enumerate(log_ratios)}}
         pf.event_metadata = {0: {i: {} for i in range(len(log_ratios))}}
         pf.fit_threshold = MagicMock(return_value=fit_result)
-        pf._classify_translocation_direction([0])
+        pf._classify_translocation_direction(0)
         return pf
 
     def _directions(self, pf, n):
@@ -2829,7 +2842,7 @@ class TestTranslocationDirectionRatioRule(unittest.TestCase):
             self._directions(pf, 5),
             ["forward", "backward", "forward", "backward", None],
         )
-        results = pf._translocation_direction_results
+        results = pf._translocation_direction_results[0]
         self.assertEqual(results["threshold"], 0.0)
         self.assertIn("too few events", results["ratio_rule"])
         self.assertEqual(results["threshold_basis"], "ECD ratio = 1")
@@ -2859,19 +2872,21 @@ class TestTranslocationDirectionRatioRule(unittest.TestCase):
         directions = self._directions(pf, len(ratios))
         self.assertEqual(directions[:38], ["forward"] * 38)
         self.assertEqual(directions[38:], ["backward"] * 2)
-        results = pf._translocation_direction_results
+        results = pf._translocation_direction_results[0]
         self.assertEqual(results["threshold"], 0.0)
         self.assertEqual(results["n_components"], 1)
         self.assertIn("one population", results["ratio_rule"])
 
     def test_the_report_states_the_rule(self):
         pf = self._run([0.3, -0.2, 0.1])
-        pf._classification_results = {"error": "not under test"}
+        pf._classification_results = {0: {"error": "not under test"}}
         pf._peak_statistics = {
-            "total_peaks": 0,
-            "total_classified": 0,
-            "total_unclassified": 0,
-            "peak_type_counts": {},
+            0: {
+                "total_peaks": 0,
+                "total_classified": 0,
+                "total_unclassified": 0,
+                "peak_type_counts": {},
+            }
         }
         with patch(
             "poriscope.utils.MetaEventFitter.MetaEventFitter.report_status",
@@ -3055,7 +3070,7 @@ class TestClassifyBoundStar(unittest.TestCase):
         pf = _make_pf()
         pf.sublevel_metadata = {0: {k: v[0] for k, v in cases.items()}}
         pf.event_metadata = {0: {k: v[1] for k, v in cases.items()}}
-        pf._classify_bound_star([0])
+        pf._classify_bound_star(0)
         return pf
 
     def _label(self, pf, key):
@@ -3108,7 +3123,7 @@ class TestClassifyBoundStar(unittest.TestCase):
             )
         )
         self.assertEqual(self._label(pf, "ev"), "long end")
-        self.assertEqual(pf._bound_star_results["multi_candidate"], 1)
+        self.assertEqual(pf._bound_star_results[0]["multi_candidate"], 1)
 
     def test_equally_prominent_candidates_resolve_to_the_earlier_peak(self):
         pf = self._run(
@@ -3131,7 +3146,7 @@ class TestClassifyBoundStar(unittest.TestCase):
             )
         )
         self.assertIsNone(self._label(pf, "ev"))
-        self.assertEqual(pf._bound_star_results["no_star"], 1)
+        self.assertEqual(pf._bound_star_results[0]["no_star"], 1)
 
     def test_event_without_type3_peaks_gets_no_label(self):
         pf = self._run(
@@ -3156,8 +3171,8 @@ class TestClassifyBoundStar(unittest.TestCase):
             )
         )
         self.assertIsNone(self._label(pf, "ev"))
-        self.assertEqual(pf._bound_star_results["unresolved_direction"], 1)
-        self.assertEqual(pf._bound_star_results["no_star"], 0)
+        self.assertEqual(pf._bound_star_results[0]["unresolved_direction"], 1)
+        self.assertEqual(pf._bound_star_results[0]["no_star"], 0)
 
     def test_counts_cover_only_sequence_bearing_events(self):
         pf = self._run(
@@ -3173,7 +3188,7 @@ class TestClassifyBoundStar(unittest.TestCase):
                 sequence="",
             ),
         )
-        results = pf._bound_star_results
+        results = pf._bound_star_results[0]
         self.assertEqual(results["total_events"], 2)
         self.assertEqual(results["sequence_events"], 1)
         self.assertEqual(results["with_star"], 1)
@@ -3195,7 +3210,7 @@ class TestClassifyBoundStar(unittest.TestCase):
                 "backward",
             ),
         )
-        results = pf._bound_star_results
+        results = pf._bound_star_results[0]
         self.assertEqual(results["long_end"], 2)
         self.assertEqual(results["short_end"], 0)
 
@@ -3211,8 +3226,8 @@ class TestClassifyBoundStar(unittest.TestCase):
             )
         )
         self.assertIsNone(self._label(pf, "ev"))
-        self.assertEqual(pf._bound_star_results["no_star"], 1)
-        self.assertEqual(pf._bound_star_results["no_height_reference"], 0)
+        self.assertEqual(pf._bound_star_results[0]["no_star"], 1)
+        self.assertEqual(pf._bound_star_results[0]["no_height_reference"], 0)
 
     def test_peak_above_the_depth_floor_is_a_star(self):
         pf = self._run(
@@ -3261,7 +3276,7 @@ class TestClassifyBoundStar(unittest.TestCase):
         )
         self.assertEqual(self._label(pf, "ev"), "short end")
         # Only one candidate survived the floor, so nothing was collapsed.
-        self.assertEqual(pf._bound_star_results["multi_candidate"], 0)
+        self.assertEqual(pf._bound_star_results[0]["multi_candidate"], 0)
 
     def test_missing_unfolded_level_is_counted_apart_from_no_star(self):
         # Folding classification declined, so no event has an unfolded level
@@ -3275,8 +3290,8 @@ class TestClassifyBoundStar(unittest.TestCase):
             )
         )
         self.assertIsNone(self._label(pf, "ev"))
-        self.assertEqual(pf._bound_star_results["no_height_reference"], 1)
-        self.assertEqual(pf._bound_star_results["no_star"], 0)
+        self.assertEqual(pf._bound_star_results[0]["no_height_reference"], 1)
+        self.assertEqual(pf._bound_star_results[0]["no_star"], 0)
 
     def test_no_candidates_outranks_a_missing_floor(self):
         # An event with no candidate peaks at all is starless regardless of
@@ -3289,8 +3304,8 @@ class TestClassifyBoundStar(unittest.TestCase):
                 unfolded_level=None,
             )
         )
-        self.assertEqual(pf._bound_star_results["no_star"], 1)
-        self.assertEqual(pf._bound_star_results["no_height_reference"], 0)
+        self.assertEqual(pf._bound_star_results[0]["no_star"], 1)
+        self.assertEqual(pf._bound_star_results[0]["no_height_reference"], 0)
 
     def test_per_sequence_buckets_split_by_sequence(self):
         pf = self._run(
@@ -3313,7 +3328,7 @@ class TestClassifyBoundStar(unittest.TestCase):
                 sequence="0000",
             ),
         )
-        per_sequence = pf._bound_star_results["per_sequence"]
+        per_sequence = pf._bound_star_results[0]["per_sequence"]
         self.assertEqual(set(per_sequence), {"1010", "0000"})
 
         first = per_sequence["1010"]
@@ -3358,7 +3373,7 @@ class TestClassifyBoundStar(unittest.TestCase):
                 sequence="",
             ),
         )
-        results = pf._bound_star_results
+        results = pf._bound_star_results[0]
         per_sequence = results["per_sequence"]
         self.assertEqual(set(per_sequence), {"11", "00"})
         for key in ("events", "with_star", "long_end", "short_end", "no_star"):
@@ -3518,7 +3533,7 @@ class TestBoundStarWidestPeakRule(unittest.TestCase):
         pf = _make_pf()
         pf.sublevel_metadata = {0: {k: v[0] for k, v in cases.items()}}
         pf.event_metadata = {0: {k: v[1] for k, v in cases.items()}}
-        pf._classify_bound_star([0])
+        pf._classify_bound_star(0)
         return pf
 
     def test_the_widest_peak_is_not_promoted(self):
@@ -3549,11 +3564,11 @@ class TestBoundStarWidestPeakRule(unittest.TestCase):
                 peak_width=[self.NAN, 500.0, 100.0, 100.0, self.NAN],
             )
         )
-        self.assertEqual(pf._bound_star_results["widest_peak"], 1)
-        self.assertEqual(pf._bound_star_results["no_star"], 0)
-        self.assertEqual(pf._bound_star_results["with_star"], 0)
+        self.assertEqual(pf._bound_star_results[0]["widest_peak"], 1)
+        self.assertEqual(pf._bound_star_results[0]["no_star"], 0)
+        self.assertEqual(pf._bound_star_results[0]["with_star"], 0)
         self.assertEqual(
-            pf._bound_star_results["per_sequence"]["0000"]["widest_peak"], 1
+            pf._bound_star_results[0]["per_sequence"]["0000"]["widest_peak"], 1
         )
 
     def test_a_narrower_candidate_is_still_promoted(self):
@@ -3569,7 +3584,7 @@ class TestBoundStarWidestPeakRule(unittest.TestCase):
         )
         self.assertEqual(pf.event_metadata[0]["ev"]["bound_star"], "long end")
         self.assertEqual(pf.sublevel_metadata[0]["ev"]["filtered"][1], 5.0)
-        self.assertEqual(pf._bound_star_results["widest_peak"], 0)
+        self.assertEqual(pf._bound_star_results[0]["widest_peak"], 0)
 
     def test_the_rule_filters_the_pool_rather_than_vetoing_the_winner(self):
         # The more prominent candidate would have won on prominence alone, but
@@ -3587,7 +3602,7 @@ class TestBoundStarWidestPeakRule(unittest.TestCase):
         filtered = pf.sublevel_metadata[0]["ev"]["filtered"]
         self.assertEqual(filtered[4], 4.0, "the narrow candidate should have won")
         self.assertEqual(filtered[1], -1.0, "the wide candidate keeps its -1")
-        self.assertEqual(pf._bound_star_results["widest_peak"], 0)
+        self.assertEqual(pf._bound_star_results[0]["widest_peak"], 0)
 
     def test_peaks_tied_at_the_maximum_width_are_all_excluded(self):
         # the candidate is not uniquely widest, but it is AT the maximum
@@ -3600,7 +3615,7 @@ class TestBoundStarWidestPeakRule(unittest.TestCase):
             )
         )
         self.assertIsNone(pf.event_metadata[0]["ev"]["bound_star"])
-        self.assertEqual(pf._bound_star_results["widest_peak"], 1)
+        self.assertEqual(pf._bound_star_results[0]["widest_peak"], 1)
 
     def test_a_candidate_with_no_width_of_its_own_is_left_alone(self):
         # it cannot be shown to be the widest, so the rule does not fire
@@ -3625,7 +3640,7 @@ class TestBoundStarWidestPeakRule(unittest.TestCase):
             )
         )
         self.assertEqual(pf.event_metadata[0]["ev"]["bound_star"], "long end")
-        self.assertEqual(pf._bound_star_results["widest_peak"], 0)
+        self.assertEqual(pf._bound_star_results[0]["widest_peak"], 0)
 
     def test_all_nan_widths_skip_the_rule(self):
         pf = self._run(
@@ -3651,8 +3666,8 @@ class TestBoundStarWidestPeakRule(unittest.TestCase):
                 peak_width=[self.NAN, 500.0, 100.0, 100.0, self.NAN],
             )
         )
-        self.assertEqual(pf._bound_star_results["no_height_reference"], 1)
-        self.assertEqual(pf._bound_star_results["widest_peak"], 0)
+        self.assertEqual(pf._bound_star_results[0]["no_height_reference"], 1)
+        self.assertEqual(pf._bound_star_results[0]["widest_peak"], 0)
 
     def test_a_peak_inside_the_barcode_does_not_shield_a_wide_candidate(self):
         # The maximum is taken over EVERY peak in the event, including ones
@@ -3667,7 +3682,7 @@ class TestBoundStarWidestPeakRule(unittest.TestCase):
         )
         # 500 is still the maximum, so the candidate at index 1 is excluded
         self.assertIsNone(pf.event_metadata[0]["ev"]["bound_star"])
-        self.assertEqual(pf._bound_star_results["widest_peak"], 1)
+        self.assertEqual(pf._bound_star_results[0]["widest_peak"], 1)
 
 
 # ---------------------------------------------------------------------------
@@ -3688,7 +3703,7 @@ class TestClassificationWarningCollector(unittest.TestCase):
     def setUp(self):
         self.logger = logging.getLogger("test._ClassificationWarningCollector")
         self.logger.setLevel(logging.DEBUG)
-        self.collector = _ClassificationWarningCollector()
+        self.collector = _ClassificationWarningCollector(threading.get_ident())
         self.logger.addHandler(self.collector)
 
     def tearDown(self):
@@ -3795,15 +3810,16 @@ class TestFoldingSinglePopulationFallback(unittest.TestCase):
             pf._fit_single_gaussian = MagicMock(return_value=single_fit)
         pf.update_event_metadata_post_processing = MagicMock()
         pf._collect_peak_statistics = MagicMock()
-        info = [(0, i) for i in range(len(levels))]
-        pf._classify_folded_unfolded([0], info, np.asarray(levels, dtype=float))
+        pf._classify_folded_unfolded(
+            0, list(range(len(levels))), np.asarray(levels, dtype=float)
+        )
         return pf
 
     def test_ratio_term_sets_the_cut_on_a_narrow_population(self):
         rng = np.random.default_rng(1)
         levels = np.concatenate([rng.normal(1000.0, 50.0, 2000), [2000.0, 2100.0]])
         pf = self._run(levels)
-        results = pf._classification_results
+        results = pf._classification_results[0]
         self.assertTrue(results["single_population"])
         self.assertIsNone(results["higher_center"])
         self.assertNotIn("ratio", results)
@@ -3816,7 +3832,7 @@ class TestFoldingSinglePopulationFallback(unittest.TestCase):
     def test_sigma_term_sets_the_cut_on_a_wide_population(self):
         levels = np.random.default_rng(2).normal(1000.0, 250.0, 3000)
         pf = self._run(levels)
-        results = pf._classification_results
+        results = pf._classification_results[0]
         mu, sigma = results["lower_center"], results["lower_std"]
         self.assertGreater(mu + 3.0 * sigma, 1.5 * mu)
         self.assertAlmostEqual(results["threshold"], mu + 3.0 * sigma)
@@ -3831,7 +3847,7 @@ class TestFoldingSinglePopulationFallback(unittest.TestCase):
         self.assertEqual(calls[-1].args, (0, len(levels) - 1, 1000.0, 2000.0))
         # an event at 1000 is unfolded: folded level = double
         self.assertEqual(calls[0].args, (0, 0, 1000.0, 2000.0))
-        self.assertAlmostEqual(pf._classification_results["threshold"], 1500.0)
+        self.assertAlmostEqual(pf._classification_results[0]["threshold"], 1500.0)
 
     def test_single_fit_failure_falls_back_to_median_and_mad(self):
         """
@@ -3841,7 +3857,7 @@ class TestFoldingSinglePopulationFallback(unittest.TestCase):
         """
         levels = np.array([990.0, 1000.0, 1000.0, 1010.0, 2000.0])
         pf = self._run(levels, single_fit=None)
-        results = pf._classification_results
+        results = pf._classification_results[0]
         self.assertNotIn("error", results)
         self.assertIn("median", results["lower_center_source"])
         self.assertAlmostEqual(results["lower_center"], 1000.0)
@@ -3855,7 +3871,7 @@ class TestFoldingSinglePopulationFallback(unittest.TestCase):
     def test_folded_level_is_assumed_twice_the_unfolded_centre(self):
         levels = np.random.default_rng(4).normal(1000.0, 50.0, 500)
         pf = self._run(levels, single_fit=(10.0, 1000.0, 50.0, 0.0))
-        results = pf._classification_results
+        results = pf._classification_results[0]
         self.assertEqual(results["lower_center_source"], "single-Gaussian fit")
         self.assertAlmostEqual(results["assumed_folded_level"], 2000.0)
 
@@ -3864,7 +3880,7 @@ class TestFoldingSinglePopulationFallback(unittest.TestCase):
         with self.assertLogs(PeakFinder.logger, level="WARNING") as captured:
             pf = self._run(levels, single_fit=(10.0, 1000.0, 50.0, 0.0))
         self.assertEqual(
-            pf._classification_results["threshold_basis"], "1.5 x unfolded"
+            pf._classification_results[0]["threshold_basis"], "1.5 x unfolded"
         )
         folding = [m for m in captured.output if "Folding:" in m]
         self.assertEqual(len(folding), 1)
@@ -3890,10 +3906,12 @@ class TestFoldingSinglePopulationFallback(unittest.TestCase):
         levels = np.random.default_rng(7).normal(1000.0, 50.0, 500)
         pf = self._run(levels)
         pf._peak_statistics = {
-            "total_peaks": 0,
-            "total_classified": 0,
-            "total_unclassified": 0,
-            "peak_type_counts": {},
+            0: {
+                "total_peaks": 0,
+                "total_classified": 0,
+                "total_unclassified": 0,
+                "peak_type_counts": {},
+            }
         }
         with patch(
             "poriscope.utils.MetaEventFitter.MetaEventFitter.report_status",
@@ -3937,13 +3955,13 @@ class TestProminenceSinglePopulationFallback(unittest.TestCase):
         )
         if single_fit != "real":
             pf._fit_single_gaussian = MagicMock(return_value=single_fit)
-        pf._classify_peak_prominences([0])
+        pf._classify_peak_prominences(0)
         return pf
 
     def test_cut_is_mu_plus_three_sigma_and_confidence_is_not_claimed(self):
         ratios = np.concatenate([np.full(40, 0.1), np.full(20, 0.08), [10.0]])
         pf = self._run(ratios, single_fit=(40.0, -1.0, 0.1, 0.0))
-        results = pf._peak_prominence_classification_results
+        results = pf._peak_prominence_classification_results[0]
         self.assertAlmostEqual(results["threshold_fitted"], -0.7)
         self.assertTrue(results["single_population"])
         self.assertIn("mu + 3 sigma", results["threshold_rule"])
@@ -3961,7 +3979,7 @@ class TestProminenceSinglePopulationFallback(unittest.TestCase):
         rng = np.random.default_rng(6)
         ratios = np.concatenate([10.0 ** rng.normal(-1.0, 0.1, 3000), [10.0]])
         pf = self._run(ratios)
-        results = pf._peak_prominence_classification_results
+        results = pf._peak_prominence_classification_results[0]
         self.assertAlmostEqual(results["threshold_fitted"], -0.7, delta=0.05)
         self.assertEqual(
             results["higher_count"],
@@ -3971,7 +3989,7 @@ class TestProminenceSinglePopulationFallback(unittest.TestCase):
     def test_keeps_the_double_fit_threshold_when_the_single_fit_fails(self):
         ratios = np.array([0.05, 0.1, 0.2, 0.5])
         pf = self._run(ratios, single_fit=None)
-        results = pf._peak_prominence_classification_results
+        results = pf._peak_prominence_classification_results[0]
         self.assertAlmostEqual(results["threshold_fitted"], -0.9)
         self.assertNotIn("single_population", results)
         np.testing.assert_array_equal(
@@ -4039,9 +4057,9 @@ def test_no_channel_is_marked_fitted_until_the_classification_is_complete(
     seen = []
     classify = PeakFinder._classify_bound_star
 
-    def spy(self, channels):
+    def spy(self, channel):
         seen.append(self.get_eventfitting_status(EVENTS_CHANNEL))
-        return classify(self, channels)
+        return classify(self, channel)
 
     monkeypatch.setattr(PeakFinder, "_classify_bound_star", spy)
     fitter, _base_file = _fit_peakfinder_run(tmp_path)
@@ -4056,7 +4074,7 @@ def test_the_saved_classification_report_counts_each_channels_good_fits(tmp_path
     # it is written even though the base marks the last one only after the step.
     _fitter, base_file = _fit_peakfinder_run(tmp_path)
     report = base_file.with_name(
-        f"{base_file.stem}_classification_report.txt"
+        f"{base_file.stem}_ch{EVENTS_CHANNEL}_classification_report.txt"
     ).read_text(encoding="utf-8")
 
     assert f"Ch{EVENTS_CHANNEL}: {EVENTS_COUNT}/{EVENTS_COUNT} good fits" in report
@@ -4069,6 +4087,170 @@ def test_progress_stays_short_of_complete_until_the_classification_has_run(tmp_p
 
     assert progress[-1] == 1.0
     assert max(progress[:-1]) < 1.0
+
+
+# ---------------------------------------------------------------------------
+# Channels are classified independently
+# ---------------------------------------------------------------------------
+
+
+class TestChannelsAreClassifiedIndependently(unittest.TestCase):
+    """
+    A classifier never sees another channel's events: each channel of a run gets
+    its own classifier pass, its own results, its own warnings and its own
+    report, and resetting one channel leaves the others' results alone.
+    """
+
+    def _two_channel_pf(self):
+        pf = _make_pf()
+        pf.event_metadata = {
+            0: {i: {"primary_level": 100.0 + i, "raw_ecd": 1.0} for i in range(3)},
+            1: {i: {"primary_level": 400.0 + i, "raw_ecd": 1.0} for i in range(2)},
+        }
+        pf.sublevel_metadata = {0: {}, 1: {}}
+        pf._classify_folded_unfolded = MagicMock()
+        pf._classify_peak_prominences = MagicMock()
+        pf._classify_translocation_direction = MagicMock()
+        pf._classify_bound_star = MagicMock()
+        pf._save_classification_report = MagicMock()
+        return pf
+
+    def test_each_channel_is_classified_from_its_own_events(self):
+        pf = self._two_channel_pf()
+        pf._post_process_events([0, 1])
+        calls = pf._classify_folded_unfolded.call_args_list
+        self.assertEqual([c.args[0] for c in calls], [0, 1])
+        self.assertEqual(calls[0].args[1], [0, 1, 2])
+        np.testing.assert_array_equal(calls[0].args[2], [100.0, 101.0, 102.0])
+        self.assertEqual(calls[1].args[1], [0, 1])
+        np.testing.assert_array_equal(calls[1].args[2], [400.0, 401.0])
+        self.assertEqual(
+            pf._classify_bound_star.call_args_list, [mock_call(0), mock_call(1)]
+        )
+        self.assertEqual(
+            pf._save_classification_report.call_args_list, [mock_call(0), mock_call(1)]
+        )
+        self.assertEqual(pf.eventfitting_status, {0: True, 1: True})
+
+    def test_a_channels_warnings_are_kept_apart_from_the_others(self):
+        pf = self._two_channel_pf()
+
+        def warn_on_channel_one(channel):
+            if channel == 1:
+                pf.logger.warning("declined on channel one")
+
+        pf._classify_peak_prominences = MagicMock(side_effect=warn_on_channel_one)
+        pf._post_process_events([0, 1])
+        self.assertEqual(
+            pf._classification_warnings, {0: [], 1: ["declined on channel one"]}
+        )
+
+    def test_a_channel_with_no_usable_events_leaves_the_other_alone(self):
+        pf = self._two_channel_pf()
+        pf.event_metadata[1] = {0: {"primary_level": None, "raw_ecd": 1.0}}
+        pf._post_process_events([0, 1])
+        self.assertEqual(
+            [c.args[0] for c in pf._classify_folded_unfolded.call_args_list], [0]
+        )
+        self.assertEqual(pf._save_classification_report.call_args_list, [mock_call(0)])
+        self.assertEqual(pf._classification_warnings[0], [])
+        self.assertEqual(len(pf._classification_warnings[1]), 1)
+        self.assertIn("in channel 1", pf._classification_warnings[1][0])
+
+    def test_reset_channel_drops_only_that_channels_classification(self):
+        pf = _make_pf()
+        for store in (
+            pf._classification_results,
+            pf._peak_statistics,
+            pf._peak_prominence_classification_results,
+            pf._translocation_direction_results,
+            pf._bound_star_results,
+        ):
+            store.update({0: {"kept": False}, 1: {"kept": True}})
+        pf._classification_warnings.update({0: ["gone"], 1: ["kept"]})
+        pf.reset_channel(0)
+        for store in (
+            pf._classification_results,
+            pf._peak_statistics,
+            pf._peak_prominence_classification_results,
+            pf._translocation_direction_results,
+            pf._bound_star_results,
+        ):
+            self.assertEqual(store, {1: {"kept": True}})
+        self.assertEqual(pf._classification_warnings, {1: ["kept"]})
+
+    def test_the_report_for_one_channel_names_only_that_channel(self):
+        pf = _make_pf()
+        pf.event_metadata = {0: {}, 1: {}}
+        pf._classification_results = {
+            0: {"error": "channel zero"},
+            1: {"error": "channel one"},
+        }
+        with patch(
+            "poriscope.utils.MetaEventFitter.MetaEventFitter.report_status",
+            return_value="",
+        ):
+            report = pf.report_status(1)
+        self.assertIn("Classification Results for Ch1", report)
+        self.assertIn("channel one", report)
+        self.assertNotIn("channel zero", report)
+
+
+class TestClassificationWarningCollectorHearsOneThread(unittest.TestCase):
+    def test_a_warning_from_another_thread_is_not_recorded(self):
+        logger = logging.getLogger("test._ClassificationWarningCollector.threads")
+        logger.setLevel(logging.DEBUG)
+        collector = _ClassificationWarningCollector(threading.get_ident())
+        logger.addHandler(collector)
+        try:
+            other = threading.Thread(
+                target=logger.warning, args=("from another thread",)
+            )
+            other.start()
+            other.join()
+            logger.warning("from this thread")
+        finally:
+            logger.removeHandler(collector)
+        self.assertEqual(collector.records, ["from this thread"])
+
+
+def test_two_channels_fitted_together_each_get_their_own_report(tmp_path):
+    database = generate_multichannel_events_database(
+        tmp_path / "events.sqlite3",
+        channels=[0, 1],
+        num_events_per_channel=EVENTS_COUNT,
+        samplerate=EVENTS_SAMPLERATE_HZ,
+        baseline_mean_pA=BASELINE_PA,
+        baseline_std_pA=NOISE_STD_PA,
+        event_amplitude_pA=EVENT_AMPLITUDE_PA,
+        sublevel_dip_pA=PEAKFINDER_DIP_PA,
+        sublevel_dip_width_samples=PEAKFINDER_DIP_WIDTH_SAMPLES,
+    )
+    loader = build_event_loader(str(database.db_path))
+    try:
+        fitter = build_event_fitter(PeakFinder, loader)
+        fits = [fitter.fit_events(0), fitter.fit_events(1)]
+        for fit in fits:
+            for _ in fit:
+                pass
+        base_file = loader.get_base_file()
+    finally:
+        loader.close_resources()
+
+    assert set(fitter._classification_results) == {0, 1}
+    for channel in (0, 1):
+        report = base_file.with_name(
+            f"{base_file.stem}_ch{channel}_classification_report.txt"
+        ).read_text(encoding="utf-8")
+        assert f"Ch{channel}: {EVENTS_COUNT}/{EVENTS_COUNT} good fits" in report
+        assert f"Classification Results for Ch{channel}" in report
+        assert f"Ch{1 - channel}:" not in report
+        # The comb events carry no barcode, so the direction classifier declines
+        # and draws nothing; the two fits that do run each leave a plot.
+        for plot in ("folding_classification", "peak_prominence_classification"):
+            assert base_file.with_name(
+                f"{base_file.stem}_ch{channel}_{plot}.png"
+            ).exists()
 
 
 if __name__ == "__main__":

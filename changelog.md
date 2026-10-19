@@ -10,6 +10,8 @@
 
 * **A second population just below the baseline no longer widens the fitted baseline sigma**
 
+* **PeakFinder classifies each channel from its own events** and never pools channels; its classification report and plots are written per channel, as `<events file>_ch<N>_classification_report.txt` and `<events file>_ch<N>_<fit>_classification.png`
+
 * **The Bessel filter now accepts low cutoffs it used to refuse;** filtered values at other cutoffs are unchanged to within a thousandth of the noise
 
 * **The CUSUM family (`CUSUM`, `ClassicCUSUM`, `IntraCUSUM`) now resolves sublevels that follow a large edge**, so fits will report more sublevels than before

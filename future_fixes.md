@@ -744,11 +744,6 @@ ABF readers moved onto `pyabf` on 2026-10-09) - inconsistent but none hang.
 
 Logic in `PeakFinder.py`, `Basic_PeakFinder.py` and `NanoTrees.py`; see the standing policy at the end.
 
-### Plugin contract
-
-- **PeakFinder switches `matplotlib.use("Agg")` process-wide from a worker thread**
-  (`:3182`, `:3694`, `:4128`); harmless today because the views only read `pl.rcParams`.
-
 ### Fitter plugin defects
 
 - **`PeakFinder.py:1889` truncates a microsecond time to a sample index** (`int(start_us * samplerate * 1e-6)`),
