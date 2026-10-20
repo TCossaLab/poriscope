@@ -18,6 +18,26 @@ and deleted on 2026-09-27; it too is in git history.
 
 ---
 
+## 2026-10-20 - The Event Analysis commit is not gated on the selected loader; fitting and plotting are
+
+**Context.** 2.0.0 made `EventAnalysisController.write_events` refuse a commit when the selected
+loader was not the one the writer's fitter was built on, alongside the same check on fitting and
+on plotting fits. A user (Nada, 2026-10-20) found it blocked writing one fitter's results while
+looking at another loader's events, which is a routine thing to do.
+
+**Decision** (Kyle, 2026-10-20). The commit guard is removed, with the loader argument it needed on
+`write_requested` and `write_events`. The fitting and plotting guards stay.
+
+**Evidence.** A writer reads its fitter, which reads only its own loader, so the selection never
+changes what a commit writes; the guard only stopped the user. Fitting and plotting read the
+selected loader's events against the fitter, so a mismatch there fits one file's events over
+another's and the plot is nonsense - that is the case the guards were added for. A channel the
+writer's fitter has not fitted is still reported and skipped per channel (changelog 2.0.0).
+
+**Revisit if** a writer ever takes the loader from the tab rather than from its fitter's parents.
+
+---
+
 ## 2026-10-16 - A plot offers to add `event_id` to a plain raw filter; a raw filter is never rewritten silently
 
 **Context.** Event plots, Plot Events, the arrows and the export need each raw result row to name

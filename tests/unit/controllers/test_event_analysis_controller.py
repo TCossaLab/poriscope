@@ -1201,36 +1201,24 @@ class TestWriteEvents:
     Never an emit-then-read: ``write_events`` returns a generator and the bus passed it
     into ``set_generator`` as an argument, so there was no attribute to park it on.
 
-    The slot also refuses a commit whose selected loader is not the one the writer's
-    results were fitted on: the writer reads its fitter, which reads its own loader, so
-    committing would otherwise write a file other than the one the user selected.
+    The selected loader is not part of the request: the writer writes its own fitter's
+    results whichever loader the tab shows, so nothing is asked of any plugin's parents.
     """
 
     @staticmethod
-    def answers(
-        controller: EventAnalysisController,
-        writes: Any = (),
-        writer_parents: Any = frozenset({("MetaEventFitter", "ef1")}),
-        fitter_parents: Any = frozenset({("MetaEventLoader", "ldr")}),
-    ) -> None:
+    def answers(controller: EventAnalysisController, writes: Any = ()) -> None:
         """
-        Install the writer's and fitter's parents and the per-channel generators.
+        Install the per-channel generators.
 
         A value that is an Exception is raised; ``writes`` is consumed one per call.
 
         :param controller: Controller under test.
         :param writes: the answers for successive ``write_events`` calls.
-        :param writer_parents: answer for the writer's ``get_parents``.
-        :param fitter_parents: answer for the fitter's ``get_parents``.
         """
         pending = list(writes)
-        parents = {
-            "MetaDatabaseWriter": writer_parents,
-            "MetaEventFitter": fitter_parents,
-        }
 
         def dispatch(metaclass, key, method, *args):
-            answer = parents[metaclass] if method == "get_parents" else pending.pop(0)
+            answer = pending.pop(0)
             if isinstance(answer, Exception):
                 raise answer
             return answer
@@ -1263,9 +1251,9 @@ class TestWriteEvents:
         """
         self.answers(controller, writes=["gen0", "gen1"])
 
-        controller.write_events("ldr", "w1", [0, 1])
+        controller.write_events("w1", [0, 1])
 
-        assert self.asked(controller, "write_events") == [
+        assert [c.args for c in controller.model.call.call_args_list] == [
             ("MetaDatabaseWriter", "w1", "write_events", 0),
             ("MetaDatabaseWriter", "w1", "write_events", 1),
         ]
@@ -1285,7 +1273,7 @@ class TestWriteEvents:
         """
         self.answers(controller, writes=["gen0"])
 
-        controller.write_events("ldr", "my_writer", [0])
+        controller.write_events("my_writer", [0])
 
         controller.model.run_generators.assert_called_once_with("my_writer")
 
@@ -1301,7 +1289,7 @@ class TestWriteEvents:
         """
         self.answers(controller)
 
-        controller.write_events("ldr", "w1", [])
+        controller.write_events("w1", [])
 
         assert self.asked(controller, "write_events") == []
         controller.model.run_generators.assert_called_once_with("w1")
@@ -1321,7 +1309,7 @@ class TestWriteEvents:
         """
         self.answers(controller, writes=["gen0", RuntimeError("boom"), "gen2"])
 
-        controller.write_events("ldr", "w1", [0, 1, 2])
+        controller.write_events("w1", [0, 1, 2])
 
         registered = [
             call.args[1] for call in controller.model.set_generator.call_args_list
@@ -1329,121 +1317,6 @@ class TestWriteEvents:
         assert registered == [0, 2]
         controller.model.run_generators.assert_called_once_with("w1")
         controller.add_text_to_display.emit.assert_called_once()
-
-    def test_a_writer_on_another_loader_refuses_the_commit(
-        self, controller: EventAnalysisController
-    ) -> None:
-        """
-        **The writer reads its fitter, which reads its own loader**, so with another
-        loader selected a commit writes the fitter's loader's same-numbered channel - or
-        stops with "No samplerate found" - while the dropdown shows a different file.
-        Nothing is asked of the writer and the message names both loaders.
-
-        :param controller: Controller under test.
-        """
-        self.answers(
-            controller,
-            writes=["gen0"],
-            fitter_parents=frozenset({("MetaEventLoader", "other-loader")}),
-        )
-
-        controller.write_events("ldr", "w1", [0, 1])
-
-        assert self.asked(controller, "write_events") == []
-        controller.model.set_generator.assert_not_called()
-        controller.model.run_generators.assert_not_called()
-        controller.add_text_to_display.emit.assert_called_once()
-        assert controller.add_text_to_display.emit.call_args[0][0] == (
-            "Commit not started: w1 writes ef1's results, which were fitted on "
-            "other-loader, but ldr is selected. Select other-loader, or a writer "
-            "whose fitter uses ldr."
-        )
-
-    def test_unreadable_writer_parents_refuse_the_commit(
-        self, controller: EventAnalysisController
-    ) -> None:
-        """
-        Fail closed: a writer whose fitter cannot be read cannot be shown to match.
-
-        :param controller: Controller under test.
-        """
-        self.answers(controller, writes=["gen0"], writer_parents=RuntimeError("boom"))
-
-        controller.write_events("ldr", "w1", [0])
-
-        assert self.asked(controller, "write_events") == []
-        controller.model.run_generators.assert_not_called()
-        controller.logger.error.assert_called_once()
-        assert controller.add_text_to_display.emit.call_args[0][0] == (
-            "Commit not started: could not establish which loader w1's results come "
-            "from, so it cannot be checked against the selected loader."
-        )
-
-    def test_unreadable_fitter_parents_refuse_the_commit(
-        self, controller: EventAnalysisController
-    ) -> None:
-        """
-        The chain has two links; the second failing is refused the same way.
-
-        :param controller: Controller under test.
-        """
-        self.answers(controller, writes=["gen0"], fitter_parents=RuntimeError("boom"))
-
-        controller.write_events("ldr", "w1", [0])
-
-        assert self.asked(controller, "write_events") == []
-        controller.logger.error.assert_called_once()
-        assert controller.add_text_to_display.emit.call_args[0][0].startswith(
-            "Commit not started: could not establish which loader w1's results come"
-        )
-
-    def test_a_writer_with_no_fitter_parent_refuses_the_commit(
-        self, controller: EventAnalysisController
-    ) -> None:
-        """
-        A parents set without a ``MetaEventFitter`` entry gives nothing to follow.
-
-        :param controller: Controller under test.
-        """
-        self.answers(
-            controller, writes=["gen0"], writer_parents=frozenset({("MetaReader", "r")})
-        )
-
-        controller.write_events("ldr", "w1", [0])
-
-        assert self.asked(controller, "write_events") == []
-        # No fitter to follow, so no fitter is asked for its parents.
-        assert [
-            call.args[:2]
-            for call in controller.model.call.call_args_list
-            if call.args[0] == "MetaEventFitter"
-        ] == []
-        controller.model.run_generators.assert_not_called()
-        assert controller.add_text_to_display.emit.call_args[0][0].startswith(
-            "Commit not started: could not establish which loader w1's results come"
-        )
-
-    def test_a_fitter_with_no_loader_parent_refuses_the_commit(
-        self, controller: EventAnalysisController
-    ) -> None:
-        """
-        A fitter whose parents hold no ``MetaEventLoader`` entry gives nothing to compare.
-
-        :param controller: Controller under test.
-        """
-        self.answers(
-            controller,
-            writes=["gen0"],
-            fitter_parents=frozenset({("MetaReader", "r")}),
-        )
-
-        controller.write_events("ldr", "w1", [0])
-
-        assert self.asked(controller, "write_events") == []
-        controller.model.run_generators.assert_not_called()
-        assert controller.add_text_to_display.emit.call_args[0][0].startswith(
-            "Commit not started: could not establish which loader w1's results come"
-        )
 
 
 # ----------------------- _init / _setup_connections ------------------

@@ -71,6 +71,8 @@
 
 * **Breaking:** the Metadata and Protein tabs' subset and event request signals (`event_id_cache_requested`, `all_points_histogram_requested`, `event_overlay_requested`, `event_distribution_data_requested`, `ensemble_histogram_requested`, `metadata_subset_requested`, `csv_subset_export_requested`), their Controller slots, `_rebuild_event_id_cache` and `_fetch_event_subset` take the selected filter's name as a new last argument, and `MetaSubsetTabView._refuse_raw_filters` is removed
 
+* **Breaking:** `EventAnalysisView.write_requested` and `EventAnalysisController.write_events` no longer carry the selected event loader as their first argument
+
 * **Breaking:** `format_axis_label` is now one `MetaView` method instead of three copies, and it appends the unit rather than replacing a trailing parenthetical, so a column name containing parentheses is no longer truncated; `ProteinView`'s module-level `format_axis_label` is gone
 
 ### Developer Tooling:
@@ -212,6 +214,8 @@
 * **The Raw Data tab's baseline readout now uses the event finders' baseline fit**, so it no longer reads high in sigma or lands on an occupied level when the trace spends over half the window there
 
 * The Event Analysis tab's event navigation arrows now say on the status panel when a shift would go below event 0, as the Raw Data tab's do
+
+* **Commit Events in the Event Analysis tab no longer refuses to run when the selected event loader is not the one the writer's results were fitted on**; the writer writes its own fitter's results whichever loader is shown, so one fitter's results can be written while another loader's events are on screen, and fitting and plotting still check the selection
 
 * A Raw Data event shift replayed from an action history with no channel selected is now refused instead of raising
 

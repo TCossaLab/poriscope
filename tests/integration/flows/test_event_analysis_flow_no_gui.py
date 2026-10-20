@@ -300,15 +300,14 @@ def test_fitting_with_another_loader_selected_is_refused(
 
 
 @pytest.mark.timeout(300)
-def test_committing_with_another_loader_selected_is_refused(
+def test_committing_with_another_loader_selected_writes_the_writers_own_fit(
     event_analysis_tab: Triad, qtbot, tmp_path: Path
 ) -> None:
     """
-    **The writer reads its fitter, which reads its own loader.** With a second loader
-    selected that has the same channel number, an unguarded commit writes the fitter's
-    own loader's channel 0 and the user believes they committed the file on screen. The
-    real chain must stop before a generator is registered, leave no output file, and
-    say why; the matched commit afterwards still writes.
+    **The selected loader does not gate a commit.** A writer writes the results of the
+    fitter it was built on, so with a second loader selected the commit still lands
+    every fitted event and says nothing, letting a user write one fitter's results while
+    looking at another loader's events. The guard that refused this went too far.
     """
     other_db = generate_events_database(
         tmp_path / "other_events.sqlite3", channel_id=0, num_events=5, seed=3
@@ -324,26 +323,8 @@ def test_committing_with_another_loader_selected_is_refused(
     controller = event_analysis_tab.tab_controller
     messages: List[str] = []
     controller.add_text_to_display.connect(lambda text, _source: messages.append(text))
-    staged: List[Any] = []
-    original = controller.model.set_generator
 
-    def spy(*args: Any, **kwargs: Any) -> None:
-        staged.append(args)
-        original(*args, **kwargs)
+    commit_events(event_analysis_tab, qtbot, [0], 25, loader="other")
 
-    controller.model.set_generator = spy
-
-    event_analysis_tab.tab_view.handle_parameter_change(
-        "eventAnalysisControls",
-        "commit_events",
-        ({"loader": "other", "writer": WRITER, "channel": ["0"]},),
-    )
-    qtbot.wait(500)
-
-    assert staged == []
-    assert not event_analysis_tab.out_db.exists()
-    assert len(messages) == 1
-    assert messages[0].startswith(f"Commit not started: {WRITER} writes {FITTER}'s")
-
-    commit_events(event_analysis_tab, qtbot, [0], 25)
     assert row_count(event_analysis_tab.out_db, "events") == 25
+    assert messages == []

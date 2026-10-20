@@ -466,22 +466,6 @@ class EventAnalysisController(MetaEventTabController):
         parent = next((k for meta, k in parents if meta == parent_metaclass), None)
         return True, parent
 
-    def _writer_source(self, writer: str) -> Tuple[Optional[str], Optional[str]]:
-        """
-        Name the event fitter a database writer writes, and the event loader that fitter
-        was built on.
-
-        :param writer: the database writer plugin's key
-        :type writer: str
-        :return: (fitter, loader); each is None where it could not be established
-        :rtype: Tuple[Optional[str], Optional[str]]
-        """
-        _, fitter = self._parent_key("MetaDatabaseWriter", writer, "MetaEventFitter")
-        if fitter is None:
-            return None, None
-        _, loader = self._parent_key("MetaEventFitter", fitter, "MetaEventLoader")
-        return fitter, loader
-
     @log(logger=logger)
     @Slot(str, str, list, str)
     def request_fitting_statuses(
@@ -634,8 +618,8 @@ class EventAnalysisController(MetaEventTabController):
         self.view.update_channels(channels)
 
     @log(logger=logger)
-    @Slot(str, str, list)
-    def write_events(self, loader: str, writer: str, channels: List[int]) -> None:
+    @Slot(str, list)
+    def write_events(self, writer: str, channels: List[int]) -> None:
         """
         Hand each channel's fitted events to a database writer and run the generators.
 
@@ -652,12 +636,11 @@ class EventAnalysisController(MetaEventTabController):
         reported and skipped and the rest still run, rather than an arbitrary writer
         exception escaping a Qt slot.
 
-        The commit is refused, before any generator is set up, when the selected loader is
-        not the one the writer's results were fitted on, or that cannot be established: the writer reads its fitter, which reads its own loader,
-        so committing would otherwise write a file other than the one the user selected.
+        The selected loader plays no part: the writer writes the results of the fitter
+        it was built on, whichever loader the tab shows, so a user can write one fitter's
+        results while looking at another loader's events. Fitting and plotting still
+        check the selection, since those read the selected loader's data.
 
-        :param loader: the event loader plugin's key selected in the tab
-        :type loader: str
         :param writer: the database writer plugin's key
         :type writer: str
         :param channels: the channels whose events are being written
@@ -665,24 +648,6 @@ class EventAnalysisController(MetaEventTabController):
         :return: None
         :rtype: None
         """
-        fitter, fitter_loader = self._writer_source(writer)
-        if fitter is None or fitter_loader is None:
-            self.add_text_to_display.emit(
-                f"Commit not started: could not establish which loader {writer}'s "
-                f"results come from, so it cannot be checked against the selected "
-                f"loader.",
-                self.__class__.__name__,
-            )
-            return
-        if fitter_loader != loader:
-            self.add_text_to_display.emit(
-                f"Commit not started: {writer} writes {fitter}'s results, which were "
-                f"fitted on {fitter_loader}, but {loader} is selected. Select "
-                f"{fitter_loader}, or a writer whose fitter uses {loader}.",
-                self.__class__.__name__,
-            )
-            return
-
         for channel in channels:
             try:
                 generator = self.model.call(
