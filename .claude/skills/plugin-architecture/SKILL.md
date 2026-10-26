@@ -142,3 +142,21 @@ the user before adding it.
   *Case:* two recorded plot actions read the live selection mid-body, so replay applied whatever was
   selected at replay time (`DECISIONS.md` 2026-09-17, rule 5). After that was fixed, one tab's recorded
   reset still branched on a mode flag that the mode buttons set, which is not among its recorded arguments.
+- **What does this Controller slot actually receive, and how is each argument built?**
+  Start at the View method that emits the signal, and the helper that builds each argument.
+  *Case:* a design said `RawDataController.start_eventfinding` loses the Timer limits; its time ranges are
+  the limits, reshaped by `RawDataView._ranges_for_channel`.
+- **Does this action chain reactively, or does the View drive it?**
+  Start at the action's View handler. After its first request, does the View read the reply or loop, or
+  does the Controller call the next View step?
+  *Case:* a design generalised Metadata's View-driven overlay plot to every subset tab; the Clustering run
+  is reactive and replays whole from its first Controller step.
+- **Do the Controller's arguments carry intent or data?**
+  Start at the slot's signature.
+  *Case:* a fix list for recording on the Controller named only the matplotlib `Axes` argument; the same
+  Metadata slots (`calculate_histogram_bins` and its siblings) also receive the plotted arrays.
+- **Does replaying only the recorded calls reproduce the result? Run it, don't predict it.**
+  Start at `tests/integration/flows/_triad.py` `build_triad`: capture the calls, replay them into a fresh
+  tab, and compare the figure, the plot cache and the tab's bookkeeping.
+  *Case:* a design predicted Metadata's plot would differ; it drew the same bars, but left the plot cache and
+  the "already plotted" record empty.
