@@ -27,10 +27,12 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from poriscope.plugins.datareaders.ChimeraReader20240501 import ChimeraReader20240501
 from poriscope.plugins.db_loaders.SQLiteDBLoader import SQLiteDBLoader
 from tests.integration.flows._triad import Triad, build_triad
 
 LOADER = "loader"
+READER = "reader"
 FILTERS = {
     "F0": "duration >= 0",
     "F1": "duration >= 1",
@@ -147,7 +149,7 @@ class Spy:
         model.call = spy  # type: ignore[method-assign]
 
 
-def capture(triad: Triad, spy: Spy) -> Dict[str, Any]:
+def capture(triad: Triad, spy: Spy, extra: Tuple[str, ...] = ()) -> Dict[str, Any]:
     """
     Capture the four things a replay must reproduce.
 
@@ -155,6 +157,8 @@ def capture(triad: Triad, spy: Spy) -> Dict[str, Any]:
     :type triad: Triad
     :param spy: the recording of the plugin calls made while the action or replay ran
     :type spy: Spy
+    :param extra: attributes this tab keeps that the shared list does not name
+    :type extra: Tuple[str, ...]
     :return: the capture
     :rtype: Dict[str, Any]
     """
@@ -166,7 +170,7 @@ def capture(triad: Triad, spy: Spy) -> Dict[str, Any]:
             name: figure_summary(fig) for name, fig in figures_of(view).items()
         },
         "bookkeeping": {
-            name: normalise(getattr(view, name, None)) for name in BOOKKEEPING
+            name: normalise(getattr(view, name, None)) for name in BOOKKEEPING + extra
         },
     }
 
@@ -207,6 +211,18 @@ def clustering_tab(tmp_path: Path, db: str) -> Triad:
     return build_triad("ClusteringController", tmp_path)
 
 
+def rawdata_tab(tmp_path: Path, chimera: Dict[str, str]) -> Triad:
+    """A RawData tab with a reader over the synthetic recording registered."""
+    triad = build_triad("RawDataController", tmp_path)
+    reader = ChimeraReader20240501()
+    settings = reader.get_empty_settings(standalone=True)
+    settings["Input File"]["Value"] = chimera["log"]
+    reader.apply_settings(settings)
+    triad.register(reader, "MetaReader", READER)
+    triad.channel = int(chimera["channel"])  # type: ignore[attr-defined]
+    return triad
+
+
 def select(triad: Triad, filter_name: str, channel: str) -> None:
     """Select one filter and one channel, as a user would."""
     view = triad.tab_view
@@ -220,7 +236,7 @@ def select(triad: Triad, filter_name: str, channel: str) -> None:
 # ---------------------------------------------------------------- the user's actions
 
 
-def metadata_act(triad: Triad) -> None:
+def metadata_act(triad: Triad, qtbot: Any) -> None:
     """Two overlays, a reset, then a plot: the Metadata recorded actions."""
     view = triad.tab_view
     histogram = {
@@ -260,7 +276,7 @@ def metadata_perturb(triad: Triad) -> None:
     view.subset_filters["F0"] = "duration >= 999"
 
 
-def protein_act(triad: Triad) -> None:
+def protein_act(triad: Triad, qtbot: Any) -> None:
     """An Ensemble plot, which records its reset and the plot."""
     view = triad.tab_view
     select(triad, "F0", "0")
@@ -302,7 +318,32 @@ def protein_perturb(triad: Triad) -> None:
     view.subset_filters["F0"] = "duration >= 999"
 
 
-def clustering_act(triad: Triad) -> None:
+def rawdata_act(triad: Triad, qtbot: Any) -> None:
+    """Update Trace, then Update PSD, as the panel sends them."""
+    view = triad.tab_view
+    panel = {
+        "reader": READER,
+        "filter": "No Filter",
+        "channel": [str(triad.channel)],  # type: ignore[attr-defined]
+        "start_time": 0.0,
+        "length": 0.01,
+    }
+    view.handle_parameter_change(
+        "rawdatacontrols", "load_data_and_update_plot", (dict(panel),)
+    )
+    view.handle_parameter_change(
+        "rawdatacontrols", "load_data_and_update_psd", (dict(panel),)
+    )
+
+
+def rawdata_perturb(triad: Triad) -> None:
+    """Change the range the panel holds and the channels it has selected."""
+    controls = triad.tab_view.rawdatacontrols
+    controls.set_range_inputs(1.0, 0.5)
+    controls.channel_comboBox.selectAllToggle(False)
+
+
+def clustering_act(triad: Triad, qtbot: Any) -> None:
     triad.tab_view._reset_actions()
 
 
@@ -314,11 +355,15 @@ def nothing(triad: Triad) -> None:
 class Scenario:
     tab: str
     covers: Tuple[str, ...]
-    build: Callable[[Path, str], Triad]
-    act: Callable[[Triad], None]
+    build: Callable[[Path, Any], Triad]
+    act: Callable[[Triad, Any], None]
     perturb: Callable[[Triad], None]
     seed: Callable[[Triad], None] = nothing
     ready_b: Callable[[Triad], None] = nothing
+    #: the pytest fixture that supplies the data the tab is built over
+    needs: str = "sample_metadata_db"
+    #: attributes this tab keeps that the shared bookkeeping list does not name
+    extra: Tuple[str, ...] = ()
 
 
 SCENARIOS = [
@@ -343,6 +388,15 @@ SCENARIOS = [
         ),
     ),
     Scenario(
+        tab="RawDataController",
+        covers=("update_trace", "update_psd"),
+        build=rawdata_tab,
+        act=rawdata_act,
+        perturb=rawdata_perturb,
+        needs="sample_chimera",
+        extra=("analysis_time_limits", "plot_samplerate"),
+    ),
+    Scenario(
         tab="ClusteringController",
         covers=("reset",),
         build=clustering_tab,
@@ -353,7 +407,7 @@ SCENARIOS = [
 
 
 def run_scenario(
-    scenario: Scenario, tmp_path: Path, db: str, *, ready_b: bool
+    scenario: Scenario, tmp_path: Path, data: Any, qtbot: Any, *, ready_b: bool
 ) -> Tuple[Any, Any, List[Any]]:
     """
     Record in tab A, replay into a perturbed tab B, and return both captures and A's history.
@@ -362,8 +416,10 @@ def run_scenario(
     :type scenario: Scenario
     :param tmp_path: scratch directory; each tab gets its own folder
     :type tmp_path: Path
-    :param db: path to the synthetic metadata database
-    :type db: str
+    :param data: what the scenario's builder needs, from the fixture it names
+    :type data: Any
+    :param qtbot: pytest-qt's fixture, for an action that runs in the background
+    :type qtbot: Any
     :param ready_b: whether to put B in the mode the action was recorded in first
     :type ready_b: bool
     :return: A's capture, B's capture, and the history recorded in A
@@ -371,13 +427,13 @@ def run_scenario(
     """
     (tmp_path / "a").mkdir()
     (tmp_path / "b").mkdir()
-    tab_a = scenario.build(tmp_path / "a", db)
-    tab_b = scenario.build(tmp_path / "b", db)
+    tab_a = scenario.build(tmp_path / "a", data)
+    tab_b = scenario.build(tmp_path / "b", data)
     try:
         scenario.seed(tab_a)
         spy_a = Spy(tab_a)
-        scenario.act(tab_a)
-        captured_a = capture(tab_a, spy_a)
+        scenario.act(tab_a, qtbot)
+        captured_a = capture(tab_a, spy_a, scenario.extra)
         history = copy.deepcopy(list(tab_a.tab_controller.tab_action_history.values()))
 
         scenario.seed(tab_b)
@@ -386,7 +442,7 @@ def run_scenario(
             scenario.ready_b(tab_b)
         spy_b = Spy(tab_b)
         tab_b.tab_controller.replay(history)
-        return captured_a, capture(tab_b, spy_b), history
+        return captured_a, capture(tab_b, spy_b, scenario.extra), history
     finally:
         tab_a.close()
         tab_b.close()
@@ -398,10 +454,11 @@ def run_scenario(
 @pytest.mark.timeout(240)
 @pytest.mark.parametrize("scenario", SCENARIOS, ids=[s.tab for s in SCENARIOS])
 def test_a_replay_reproduces_what_the_action_produced(
-    qapp, tmp_path: Path, sample_metadata_db: str, scenario: Scenario
+    qapp, qtbot, request, tmp_path: Path, scenario: Scenario
 ) -> None:
+    data = request.getfixturevalue(scenario.needs)
     captured_a, captured_b, history = run_scenario(
-        scenario, tmp_path, sample_metadata_db, ready_b=True
+        scenario, tmp_path, data, qtbot, ready_b=True
     )
 
     recorded = {entry["action"] for entry in history}
@@ -425,12 +482,12 @@ def test_a_replay_reproduces_what_the_action_produced(
     ),
 )
 def test_a_protein_plot_replays_the_same_in_the_other_mode(
-    qapp, tmp_path: Path, sample_metadata_db: str
+    qapp, qtbot, tmp_path: Path, sample_metadata_db: str
 ) -> None:
     scenario = next(s for s in SCENARIOS if s.tab == "ProteinController")
 
     captured_a, captured_b, _ = run_scenario(
-        scenario, tmp_path, sample_metadata_db, ready_b=False
+        scenario, tmp_path, sample_metadata_db, qtbot, ready_b=False
     )
 
     assert captured_b["figures"] == captured_a["figures"]

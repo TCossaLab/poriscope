@@ -32,7 +32,7 @@ from PySide6.QtCore import Slot
 from poriscope.plugins.analysistabs.RawDataModel import RawDataModel
 from poriscope.plugins.analysistabs.RawDataView import RawDataView
 from poriscope.utils.DocstringDecorator import inherit_docstrings
-from poriscope.utils.LogDecorator import log
+from poriscope.utils.LogDecorator import log, register_action
 from poriscope.utils.MetaEventTabController import MetaEventTabController
 
 
@@ -274,6 +274,7 @@ class RawDataController(MetaEventTabController):
 
     @log(logger=logger)
     @Slot(str, list, float, float, str, bool)
+    @register_action("update_trace")
     def load_trace_data(
         self,
         reader: str,
@@ -309,6 +310,7 @@ class RawDataController(MetaEventTabController):
 
     @log(logger=logger)
     @Slot(str, list, float, float, str)
+    @register_action("update_psd")
     def load_psd_data(
         self,
         reader: str,

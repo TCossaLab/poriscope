@@ -24,6 +24,7 @@ import pytest
 from pytest_mock import MockerFixture
 
 from poriscope.plugins.analysistabs.RawDataController import RawDataController
+from poriscope.utils.MetaController import declared_actions
 
 # ----------------------------- fixtures ------------------------------
 
@@ -1522,3 +1523,49 @@ def test_compute_baseline_stats_hands_mean_and_stdev_pairs_to_the_view(
     assert sent[2:4] == ([1, 2], 0.5)
     assert sent[4][0] is fit
     assert sent[4][1] is None
+
+
+# ------------------------- recorded actions --------------------------
+
+
+class TestRecordedActions:
+    """The Controller methods that produce a trace and a PSD are recorded actions."""
+
+    def test_the_trace_and_the_psd_are_declared_actions(self) -> None:
+        declared = {name for _attribute, name in declared_actions(RawDataController)}
+
+        assert {"update_trace", "update_psd"} <= declared
+
+    def test_a_trace_is_recorded_with_its_intent_and_nothing_else(
+        self, controller: RawDataController, mocker: MockerFixture
+    ) -> None:
+        controller._load_and_filter = mocker.Mock(return_value=(["d0"], [0], 1e6))
+        recorded = []
+        controller.record_action = recorded.append  # type: ignore[method-assign]
+
+        controller.load_trace_data("R", [0, 1], 3.0, 9.0, "F", True)
+
+        assert recorded == [
+            {
+                "action": "update_trace",
+                "args": ("R", [0, 1], 3.0, 9.0, "F", True),
+                "kwargs": {},
+            }
+        ]
+
+    def test_a_psd_is_recorded_with_its_intent_and_nothing_else(
+        self, controller: RawDataController, mocker: MockerFixture
+    ) -> None:
+        controller._load_and_filter = mocker.Mock(return_value=(["d0"], [0], 1e6))
+        recorded = []
+        controller.record_action = recorded.append  # type: ignore[method-assign]
+
+        controller.load_psd_data("R", [0], 3.0, 9.0, "")
+
+        assert recorded == [
+            {
+                "action": "update_psd",
+                "args": ("R", [0], 3.0, 9.0, ""),
+                "kwargs": {},
+            }
+        ]
