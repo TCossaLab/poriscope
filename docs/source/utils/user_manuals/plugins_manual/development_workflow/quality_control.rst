@@ -1460,8 +1460,9 @@ intent, never data already on the plot. Two checks hold the rule:
 ``tests/unit/utils/test_recorded_actions_read_no_widgets.py``
    walks every declared action of every analysis tab, and everything it calls on its own class
    (a Controller action is followed into its View through ``self.view``, and a property read
-   into its getter). It fails on a widget-value call (``.text()``, ``.currentText()``,
-   ``.getSelectedItems()`` and the like), a call to ``collect_parameters``,
+   into its getter). It fails on a widget-value call with no arguments (``.text()``,
+   ``.currentText()``, ``.getSelectedItems()`` and the like; ``Axes.text(x, y, s)`` draws and
+   takes arguments, so it is not one), a call to ``collect_parameters``,
    ``get_selected_filters`` or ``_get_event_index_text``, a reach into an attribute named
    ``*controls``, a read of state a widget handler sets (the analysis mode, the scope, the
    filter list, the Timer limits, the last event button), and a parameter annotated with an
