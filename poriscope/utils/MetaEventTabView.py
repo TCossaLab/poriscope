@@ -153,6 +153,23 @@ class MetaEventTabView(MetaView):
         return merged
 
     @log(logger=logger)
+    def _format_event_indices(self, events: Sequence[int]) -> str:
+        """
+        The event-index field's text for a list of events, merged into ranges: ``[0, 1, 2, 5]`` is ``0-2,5``.
+
+        The form the arrows already rewrite the field in, so a restored field reads as a
+        paged one does, and not in the spelling the user first typed.
+
+        :param events: the event indices
+        :type events: Sequence[int]
+        :return: the canonical text
+        :rtype: str
+        """
+        return self._format_ranges(
+            self._merge_ranges([(event, event) for event in sorted(set(events))])
+        )
+
+    @log(logger=logger)
     def _format_ranges(self, ranges: Sequence[tuple[float, float]]) -> str:
         """Format list of tuples into '8-11,13'"""
         return ",".join(

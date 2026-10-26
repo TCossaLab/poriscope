@@ -427,6 +427,105 @@ class RawDataView(MetaEventTabView):
             self._handle_other_actions(action_name, parameters)
 
     @log(logger=logger)
+    @override
+    def write_back(
+        self, action: str, args: Tuple[Any, ...], kwargs: Dict[str, Any]
+    ) -> None:
+        """
+        Show a recorded Raw Data action's values in the panel and the stored Timer limits.
+
+        Writes only: the plugin comboboxes, the channel selection, the range and the event
+        index are set with their signals held off, and the Find entry's Timer limits go back
+        into ``analysis_time_limits``. A value that is no longer an option is skipped and
+        said on the status panel.
+
+        :param action: the entry's declared action name
+        :type action: str
+        :param args: the entry's recorded positional arguments
+        :type args: Tuple[Any, ...]
+        :param kwargs: the entry's recorded keyword arguments
+        :type kwargs: Dict[str, Any]
+        """
+        if action in ("update_trace", "update_psd"):
+            reader, channels, start, length, data_filter = args[:5]
+            self._write_back_reader(reader, channels, data_filter)
+            self.rawdatacontrols.set_range_inputs(start, length)
+        elif action == "find_events":
+            finder, channel, _ranges, data_filter, time_limits = args
+            self._write_back_finder(finder, channel, data_filter)
+            self.analysis_time_limits.setdefault(finder, {})[channel] = copy.deepcopy(
+                time_limits
+            )
+        elif action == "plot_events":
+            finder, channel, events, data_filter = args
+            self._write_back_finder(finder, channel, data_filter)
+            self.rawdatacontrols.set_event_index_input(
+                self._format_event_indices(events)
+            )
+
+    @log(logger=logger)
+    def _write_back_reader(
+        self, reader: str, channels: Sequence[int], data_filter: str
+    ) -> None:
+        """
+        Show a reader, its channels and a filter without emitting.
+
+        Held-off signals skip the request for the reader's channel list, so it is asked for
+        here before the channels are selected.
+
+        :param reader: the reader plugin's key
+        :type reader: str
+        :param channels: the channels to select
+        :type channels: Sequence[int]
+        :param data_filter: the filter plugin's key, or "" for no filtering
+        :type data_filter: str
+        """
+        controls = self.rawdatacontrols
+        if controls.set_reader(reader):
+            self.reader_channels_requested.emit(reader)
+        else:
+            self._say_not_shown("reader", reader)
+        for channel in controls.set_channels(channels):
+            self._say_not_shown("channel", channel)
+        if not controls.set_filter(data_filter):
+            self._say_not_shown("filter", data_filter)
+
+    @log(logger=logger)
+    def _write_back_finder(self, finder: str, channel: int, data_filter: str) -> None:
+        """
+        Show an event finder, its channel and a filter without emitting.
+
+        :param finder: the event finder plugin's key
+        :type finder: str
+        :param channel: the channel to select
+        :type channel: int
+        :param data_filter: the filter plugin's key, or "" for no filtering
+        :type data_filter: str
+        """
+        controls = self.rawdatacontrols
+        if not controls.set_eventfinder(finder):
+            self._say_not_shown("event finder", finder)
+        for missing in controls.set_channels([channel]):
+            self._say_not_shown("channel", missing)
+        if not controls.set_filter(data_filter):
+            self._say_not_shown("filter", data_filter)
+
+    @log(logger=logger)
+    def _say_not_shown(self, what: str, value: Any) -> None:
+        """
+        Say on the status panel that a recorded value could not be shown.
+
+        :param what: what the value is, such as "reader"
+        :type what: str
+        :param value: the recorded value
+        :type value: Any
+        """
+        self.add_text_to_display.emit(
+            f"The recorded {what} {value} is not available here, so it is not shown in the panel",
+            self.__class__.__name__,
+        )
+
+    @log(logger=logger)
     def _handle_timer(self, parameters: Dict[str, Any]) -> None:
         """
         Open a time range selection dialog for a given event finder and update the internal time limits.

@@ -27,10 +27,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from poriscope.plugins.datareaders.ChimeraReader20240501 import ChimeraReader20240501
 from poriscope.plugins.db_loaders.SQLiteDBLoader import SQLiteDBLoader
-from poriscope.plugins.eventfinders.ClassicBlockageFinder import ClassicBlockageFinder
-from tests.integration.flows._triad import Triad, build_triad
+from tests.integration.flows._triad import Triad, build_rawdata_tab, build_triad
 
 LOADER = "loader"
 READER = "reader"
@@ -228,25 +226,8 @@ def clustering_tab(tmp_path: Path, db: str) -> Triad:
 
 
 def rawdata_tab(tmp_path: Path, chimera: Dict[str, str]) -> Triad:
-    """A RawData tab with a reader over the synthetic recording registered."""
-    triad = build_triad("RawDataController", tmp_path)
-    reader = ChimeraReader20240501()
-    settings = reader.get_empty_settings(standalone=True)
-    settings["Input File"]["Value"] = chimera["log"]
-    reader.apply_settings(settings)
-    triad.register(reader, "MetaReader", READER)
-    finder = ClassicBlockageFinder()
-    finder_settings = finder.get_empty_settings(standalone=True)
-    finder_settings["MetaReader"]["Value"] = reader
-    finder_settings["MetaReader"]["Type"] = None
-    finder_settings["Threshold"]["Value"] = 100.0
-    finder_settings["Min Duration"]["Value"] = 10.0
-    finder_settings["Max Duration"]["Value"] = 1000000.0
-    finder_settings["Min Separation"]["Value"] = 10.0
-    finder.apply_settings(finder_settings)
-    triad.register(finder, "MetaEventFinder", FINDER)
-    triad.channel = int(chimera["channel"])  # type: ignore[attr-defined]
-    return triad
+    """A RawData tab with a reader over the synthetic recording and a finder on it."""
+    return build_rawdata_tab(tmp_path, chimera, READER, FINDER)
 
 
 def select(triad: Triad, filter_name: str, channel: str) -> None:
