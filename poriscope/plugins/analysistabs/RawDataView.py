@@ -436,6 +436,13 @@ class RawDataView(MetaEventTabView):
         """
         finder = parameters["eventfinder"]
         if finder != "No Eventfinder":
+            if finder not in self.analysis_time_limits:
+                # A finder with no channels is left unregistered, so it has no limits to set.
+                self.add_text_to_display.emit(
+                    f"{finder} has no channels, so there are no time limits to set",
+                    self.__class__.__name__,
+                )
+                return
             time_widget = TimeWidget(self.analysis_time_limits[finder])
             time_widget.exec()
             result = time_widget.get_result()
