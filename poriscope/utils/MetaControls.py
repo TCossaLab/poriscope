@@ -104,6 +104,30 @@ class MetaControls(QWidget):
         """
         super().__init__(parent)
 
+    def set_combo_text(self, comboBox: QComboBox, text: str) -> bool:
+        """
+        Show ``text`` in a combobox without emitting anything, if it is one of its options.
+
+        For writing a recorded value back into a panel: a handler reacting to a value that was
+        just written would change it again.
+
+        :param comboBox: Combobox to write.
+        :type comboBox: QComboBox
+        :param text: The option to show.
+        :type text: str
+        :return: True if it was shown, False if it is not an option and the box is unchanged.
+        :rtype: bool
+        """
+        index = comboBox.findText(text)
+        if index < 0:
+            return False
+        comboBox.blockSignals(True)
+        try:
+            comboBox.setCurrentIndex(index)
+        finally:
+            comboBox.blockSignals(False)
+        return True
+
     def is_placeholder_item(self, comboBox: QComboBox) -> bool:
         """
         Report whether the combobox's current text is this tab's "nothing here yet".

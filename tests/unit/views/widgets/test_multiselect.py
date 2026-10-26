@@ -506,5 +506,54 @@ class TestOutsideClickFilter(unittest.TestCase):
         self.assertIs(self.c.eventFilter(self.probe, QEvent(QEvent.Type.User)), False)
 
 
+class TestSetSelectedItems(unittest.TestCase):
+    """The whole-value setter write-back needs: exactly these selected, nothing emitted."""
+
+    def setUp(self):
+        self.c = make_combo()
+        self.c.addItems(["a", "b", "c", "d"])
+        self.c.selectAllToggle(False)
+        app.processEvents()
+        self.emitted = []
+        self.c.selectionChanged.connect(self.emitted.append)
+
+    def tearDown(self):
+        dispose(self.c)
+
+    def test_it_selects_exactly_the_given_items(self):
+        self.c.selectItem("a", True)
+
+        self.c.setSelectedItems(["b", "d"])
+
+        self.assertEqual(sorted(self.c.getSelectedItems()), ["b", "d"])
+
+    def test_it_emits_nothing(self):
+        self.c.setSelectedItems(["b"])
+        app.processEvents()
+
+        self.assertEqual(self.emitted, [])
+
+    def test_an_empty_list_clears_the_selection(self):
+        self.c.selectItem("a", True)
+
+        self.c.setSelectedItems([])
+
+        self.assertEqual(self.c.getSelectedItems(), [])
+
+    def test_it_returns_the_names_it_could_not_select(self):
+        missing = self.c.setSelectedItems(["a", "not an option"])
+
+        self.assertEqual(missing, ["not an option"])
+        self.assertEqual(self.c.getSelectedItems(), ["a"])
+
+    def test_the_display_text_and_the_select_all_button_follow(self):
+        self.c.setSelectedItems(["a", "b"])
+        self.assertEqual(self.c._line_edit.text(), "a, b")
+        self.assertEqual(self.c.selectAllButton.text(), "Select All")
+
+        self.c.setSelectedItems(["a", "b", "c", "d"])
+        self.assertEqual(self.c.selectAllButton.text(), "Deselect All")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

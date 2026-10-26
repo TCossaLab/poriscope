@@ -24,7 +24,7 @@
 # Alejandra Carolina González González
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional, Sequence
 
 from PySide6.QtCore import QCoreApplication, QSize
 from PySide6.QtWidgets import (
@@ -561,6 +561,58 @@ class RawDataControls(MetaEventTabControls):
             self.eventfinders_comboBox.setCurrentText(current_selection)
         else:
             self.eventfinders_comboBox.setCurrentIndex(0)
+
+    def set_reader(self, reader: str) -> bool:
+        """
+        Show a reader without emitting, for writing a recorded value back.
+
+        :param reader: the reader plugin's key
+        :type reader: str
+        :return: True if it was shown, False if it is not an option
+        :rtype: bool
+        """
+        shown = self.set_combo_text(self.readers_comboBox, reader)
+        self.validate_inputs()
+        return shown
+
+    def set_filter(self, data_filter: str) -> bool:
+        """
+        Show a filter without emitting; an empty key means "No Filter".
+
+        :param data_filter: the filter plugin's key, or "" for no filtering
+        :type data_filter: str
+        :return: True if it was shown, False if it is not an option
+        :rtype: bool
+        """
+        shown = self.set_combo_text(self.filters_comboBox, data_filter or "No Filter")
+        self.validate_inputs()
+        return shown
+
+    def set_eventfinder(self, eventfinder: str) -> bool:
+        """
+        Show an event finder without emitting, for writing a recorded value back.
+
+        :param eventfinder: the event finder plugin's key
+        :type eventfinder: str
+        :return: True if it was shown, False if it is not an option
+        :rtype: bool
+        """
+        shown = self.set_combo_text(self.eventfinders_comboBox, eventfinder)
+        self.validate_inputs()
+        return shown
+
+    def set_channels(self, channels: Sequence[int]) -> List[str]:
+        """
+        Select exactly these channels without emitting, for writing a recorded value back.
+
+        :param channels: the channels to select
+        :type channels: Sequence[int]
+        :return: the channels that are not in the list, as the list spells them
+        :rtype: List[str]
+        """
+        missing = self.channel_comboBox.setSelectedItems([str(c) for c in channels])
+        self.validate_inputs()
+        return missing
 
     def set_range_inputs(self, start: float, length: float) -> None:
         self.start_time_lineEdit.blockSignals(True)
