@@ -1984,6 +1984,18 @@ make the push trigger redundant.
 
 ---
 
+## 2026-10-26 - A finder run that finds no events reports it, and the channel stays unfinished
+
+**Context.** `MetaEventFinder.find_events` ends a run with no events by calling `reset_channel`, so the status report read "event finding incomplete" for a run that completed, the same as an abort (seen after a Find over a short range with no events). `get_eventfinding_status` gates Plot Events and Start over. The writer skips a channel that reports no events (`MetaWriter.py:432`), and an unfinished channel reports 0 (`get_num_events_found`), so an empty run commits nothing for it; this entry does not change that.
+
+**Decision** (Carolina, 2026-10-26). `MetaEventFinder.no_events_found[channel]` is set after the reset when a completed run found nothing, cleared by the next `reset_channel`, and `report_status` says "no events found". The finished flag stays False, so nothing that gates on it changes.
+
+**Rejected.** Counting an empty run as finished with 0 events: Plot Events would say "No events to display", but "finished" would then mean something different to every reader of it (Start over would ask on an empty channel; loaders and finders would need rechecking), for what is a message fix.
+
+**Revisit.** If a caller needs to tell an empty run from an abort without parsing the report; `RawDataController.load_event_plot_data`'s "No events to display" branch stays unreachable while the flag is False for an empty run.
+
+---
+
 ## 2026-10-26 - A recorded call that did nothing is not recorded
 
 **Context.** Raw Data's Update Trace, Update PSD and Plot Events return early when the reader has nothing to plot, and Find can be refused or fail to launch. A decorator that records on entry would put those no-ops in the history, and replay would repeat them.

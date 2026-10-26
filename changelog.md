@@ -277,6 +277,8 @@
 
 * **Help → Tutorial on a page that has no tutorial now says so**, and points to the core tabs that have one, instead of showing the generic welcome popup and then doing nothing
 
+* An event finder run that finds no events now reports `no events found` for the channel instead of `event finding incomplete`; an aborted run still reports `incomplete`
+
 ### Documentation:
 
 * The tutorial guide now says that switching tabs and opening Settings or Help are unavailable while the tutorial runs, and describes the message shown on a page with no tutorial

@@ -330,13 +330,19 @@ absorbs what it needs and stands alone, leaving 20240101 a clean deletion.
   `range = max_blockage - min_blockage` on an axis. Worth addressing because it is the one way of
   shaping a result for which the user must leave Assisted for raw SQL, and raw has its own column
   limitation (the entry under 2.2).
-- **Event-tab arrows stop at 0 but run past the last event; consider wrapping (or declining)
-  at both ends.** `MetaEventTabView._shift_range_and_update_plot:220` declines below 0 (`:274`); past
+- **Event-tab arrows stop at 0 but run past the last event; wrap them (wanted for Raw Data's
+  Plot Events), or decline, at both ends.** `MetaEventTabView._shift_range_and_update_plot:220` declines below 0 (`:274`); past
   the end it moves the field and the Controller reports the overflow (`RawDataController.py:439`,
   `EventAnalysisController.py:150`). Pros: matches the subset tabs' wrap, symmetric ends. Cons:
   positions 0..N-1 are not a browsed set, and a multi-range field (`3, 7-9, 15-19`) has no clean
   wrap. Feasibility: the View has no event count (only the Controller reads it), so either needs
   the count pushed to the View or the shift moved to the Controller - a contract change.
+- **Check that Abort Analysis and a progress bar's cancel stop a Raw Data event finder.** Find
+  Events runs one worker per channel (`RawDataController.find_events_on_channel`); `find_events`
+  reads the abort flag at every chunk boundary (`MetaEventTabView.py:382`) and
+  `MetaModel.stop_workers:417` stops them, but a cancel can look unregistered when a chunk holds
+  many events. Not exercised end to end for finders; confirm both paths stop every channel and
+  leave the tab usable.
 - **`new_plugin.py` cannot generate a `MetaSubsetTab*` tab**, the likely shape of any
   new database-analysis tab; add `--base subset`.
 - **`update_available_plugins` is hand-written in all five Views** (`ClusteringView.py:813`,
