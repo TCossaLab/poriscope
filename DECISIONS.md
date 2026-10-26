@@ -21,7 +21,9 @@ and deleted on 2026-09-27; it too is in git history.
 ## 2026-10-25 - A recorded action is declared on the Controller, and replay is dispatched by the Controller
 
 **Context.** The 2026-09-17 rules had replay run on the View. Kyle proposed that a new tab
-integrate by decorating Controller methods, so recording moves to the Controller.
+integrate by decorating Controller methods, so recording moves to the Controller. Only a
+function that is a pure function of its arguments may be decorated: one that reads no frontend widget
+(`DECISIONS.md` 2026-09-17, rule 5), which is what makes a Controller the right home for it.
 
 **Decision.** `@register_action("name")` goes on Controller methods and records through
 `self.record_action(entry)` (`MetaController` appends to the tab history; `MetaView.record_action` keeps the
