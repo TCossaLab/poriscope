@@ -20,6 +20,7 @@ from pytest_mock import MockerFixture
 
 from poriscope.utils.LogDecorator import RESET_ACTION, register_action
 from poriscope.utils.MetaController import MetaController
+from poriscope.utils.ReplayGuard import ReplayWidgetReadError, forbid_while_replaying
 
 
 class _View:
@@ -320,3 +321,41 @@ def test_a_mock_view_does_not_break_replay(mocker: MockerFixture) -> None:
     controller.replay([_entry("start_run", "a")])
 
     assert controller.runs == [("a", 1)]  # type: ignore[attr-defined]
+
+
+class TestReplayRunsInsideTheTripwire:
+    """A recorded action that reads a widget fails during a replay, and only then."""
+
+    def test_a_widget_read_inside_a_replayed_action_raises(
+        self, mocker: MockerFixture
+    ) -> None:
+        class _Leaky(_View):
+            @register_action("leaky")
+            def leaky(self) -> None:
+                forbid_while_replaying("a widget read")
+
+        controller = _make(mocker, _Leaky())
+
+        with pytest.raises(ReplayWidgetReadError):
+            controller.replay([_entry("leaky")])
+
+    def test_the_same_read_is_fine_when_the_user_clicks(
+        self, mocker: MockerFixture
+    ) -> None:
+        class _Leaky(_View):
+            @register_action("leaky")
+            def leaky(self) -> None:
+                forbid_while_replaying("a widget read")
+
+        view = _Leaky()
+        _make(mocker, view)
+
+        view.leaky()  # called as a click calls it, outside any replay
+
+    def test_the_tripwire_is_off_again_once_the_replay_ends(
+        self, mocker: MockerFixture
+    ) -> None:
+        controller = _make(mocker)
+        controller.replay([_entry("start_run", "a")])
+
+        forbid_while_replaying("after the replay")

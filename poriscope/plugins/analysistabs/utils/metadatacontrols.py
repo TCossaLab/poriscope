@@ -51,6 +51,7 @@ from PySide6.QtWidgets import (
 from poriscope.configs.utils import get_icon
 from poriscope.utils.LogDecorator import log
 from poriscope.utils.MetaSubsetTabControls import MetaSubsetTabControls
+from poriscope.utils.ReplayGuard import forbid_while_replaying
 from poriscope.views.widgets.multiselect_filter import MultiSelectFilterComboBox
 
 
@@ -775,6 +776,7 @@ class MetadataControls(MetaSubsetTabControls):
     # Data Validation
 
     def collect_parameters(self) -> Dict[str, Any]:
+        forbid_while_replaying("collect_parameters")
         self.logger.info("Collecting parameters")
 
         # Initialize with default values to handle possible None values

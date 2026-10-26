@@ -43,6 +43,7 @@ from poriscope.utils.LogDecorator import log
 from poriscope.utils.MetaControls import MetaControls
 from poriscope.utils.MetaSubsetTabControls import MetaSubsetTabControls
 from poriscope.utils.MetaView import MetaView
+from poriscope.utils.ReplayGuard import forbid_while_replaying
 from poriscope.views.widgets.add_subset_filter_dialog import AddSubsetFilterDialog
 from poriscope.views.widgets.edit_subset_filter_dialog import EditSubsetFilterDialog
 from poriscope.views.widgets.multiselect import MultiSelectComboBox
@@ -1058,6 +1059,7 @@ class MetaSubsetTabView(MetaView):
         :return: selected filter names mapped to their SQL WHERE clauses
         :rtype: dict
         """
+        forbid_while_replaying("get_selected_filters")
         return {
             name: self.subset_filters.get(name, "")
             for name in self._subset_controls.filter_comboBox.getSelectedItems()

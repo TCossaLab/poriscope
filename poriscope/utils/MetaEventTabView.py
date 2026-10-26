@@ -33,6 +33,7 @@ from PySide6.QtWidgets import QMessageBox
 from poriscope.utils.LogDecorator import log
 from poriscope.utils.MetaEventTabControls import MetaEventTabControls
 from poriscope.utils.MetaView import MetaView
+from poriscope.utils.ReplayGuard import forbid_while_replaying
 
 
 class MetaEventTabView(MetaView):
@@ -293,6 +294,7 @@ class MetaEventTabView(MetaView):
         :return: the current text of the event-index field
         :rtype: str
         """
+        forbid_while_replaying("_get_event_index_text")
         return self._event_controls.event_index_lineEdit.text().strip()
 
     @log(logger=logger)
