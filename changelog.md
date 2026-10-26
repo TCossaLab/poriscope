@@ -89,6 +89,8 @@
 
 * `python scripts/new_plugin.py AnalysisTab` now writes a controller that redeclares `view` and `model` with the tab's own types
 
+* A recorded tab action that reads a widget is now refused while a saved action replays, and a new test fails any declared action that reads a widget or takes plotted data
+
 * The test suite now checks fitted values, the baseline sigma fit, reader recipes, writer failure paths and the Bessel filter against planted ground truth
 
 * The experiment/channel scope parameter's type annotation is now consistent across the analysis-tab controllers, `MetaSubsetTab*` and `MetaDatabaseLoader`
@@ -126,6 +128,8 @@
 ### Analysis Tabs:
 
 * `get_save_filename` now lives once on `MetaView` instead of in four Views
+
+* Protein's `_reset_actions` no longer clears a fit by reading the live analysis mode: each Update Plot clears the fit it replaces, so a replayed reset does not clear the other mode's fit
 
 ### User-Facing Behaviour:
 
