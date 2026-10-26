@@ -25,6 +25,7 @@
 # Kyle Briggs
 
 import bisect
+import copy
 import logging
 import math
 import warnings
@@ -752,7 +753,7 @@ class RawDataView(MetaEventTabView):
         :return: None
         :rtype: None
         """
-        approved: List[Tuple[int, List[Tuple[float, float]]]] = []
+        approved: List[Tuple[int, List[Tuple[float, float]], Dict[str, Any]]] = []
         for channel, finished in statuses:
             if finished:
                 reply = QMessageBox.question(
@@ -766,7 +767,11 @@ class RawDataView(MetaEventTabView):
                     continue  # Skip this channel
             try:
                 approved.append(
-                    (channel, self._ranges_for_channel(eventfinder, channel))
+                    (
+                        channel,
+                        self._ranges_for_channel(eventfinder, channel),
+                        self._limits_for_channel(eventfinder, channel),
+                    )
                 )
             except KeyError:
                 self.logger.error(
@@ -782,6 +787,25 @@ class RawDataView(MetaEventTabView):
 
         if approved:
             self.eventfinding_requested.emit(eventfinder, approved, data_filter)
+
+    @log(logger=logger)
+    def _limits_for_channel(self, eventfinder: str, channel: int) -> Dict[str, Any]:
+        """
+        A copy of the Timer limits the user set for one channel of one event finder.
+
+        Launched with the ranges and recorded with the entry, so replay can show the limits
+        again. A copy, so a later Timer edit does not rewrite what was recorded. A finder or
+        channel with no configured limits propagates ``KeyError`` from the lookup, as
+        :py:meth:`_ranges_for_channel` does; the caller reports it.
+
+        :param eventfinder: the event finder plugin's key
+        :type eventfinder: str
+        :param channel: the channel whose limits are wanted
+        :type channel: int
+        :return: the channel's limits, as the Timer stored them
+        :rtype: Dict[str, Any]
+        """
+        return copy.deepcopy(self.analysis_time_limits[eventfinder][channel])
 
     @log(logger=logger)
     def _ranges_for_channel(

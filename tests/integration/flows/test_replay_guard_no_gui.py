@@ -29,10 +29,12 @@ import pytest
 
 from poriscope.plugins.datareaders.ChimeraReader20240501 import ChimeraReader20240501
 from poriscope.plugins.db_loaders.SQLiteDBLoader import SQLiteDBLoader
+from poriscope.plugins.eventfinders.ClassicBlockageFinder import ClassicBlockageFinder
 from tests.integration.flows._triad import Triad, build_triad
 
 LOADER = "loader"
 READER = "reader"
+FINDER = "finder"
 FILTERS = {
     "F0": "duration >= 0",
     "F1": "duration >= 1",
@@ -149,7 +151,13 @@ class Spy:
         model.call = spy  # type: ignore[method-assign]
 
 
-def capture(triad: Triad, spy: Spy, extra: Tuple[str, ...] = ()) -> Dict[str, Any]:
+def capture(
+    triad: Triad,
+    spy: Spy,
+    extra: Tuple[str, ...] = (),
+    click_only_calls: Tuple[str, ...] = (),
+    probe: Callable[[Triad], Any] = lambda triad: None,
+) -> Dict[str, Any]:
     """
     Capture the four things a replay must reproduce.
 
@@ -159,12 +167,20 @@ def capture(triad: Triad, spy: Spy, extra: Tuple[str, ...] = ()) -> Dict[str, An
     :type spy: Spy
     :param extra: attributes this tab keeps that the shared list does not name
     :type extra: Tuple[str, ...]
+    :param click_only_calls: plugin methods the click path asks before it launches an action,
+        which a replay of the recorded method does not repeat
+    :type click_only_calls: Tuple[str, ...]
+    :param probe: reads state back out of the data plugins after the action or replay
+    :type probe: Callable[[Triad], Any]
     :return: the capture
     :rtype: Dict[str, Any]
     """
     view, model = triad.tab_view, triad.tab_controller.model
     return {
-        "plugin_calls": spy.calls,
+        "plugin_calls": [
+            call for call in spy.calls if call[0][2] not in click_only_calls
+        ],
+        "probe": probe(triad),
         "plot_cache": normalise((model.cache_data, model.cache_labels)),
         "figures": {
             name: figure_summary(fig) for name, fig in figures_of(view).items()
@@ -219,6 +235,16 @@ def rawdata_tab(tmp_path: Path, chimera: Dict[str, str]) -> Triad:
     settings["Input File"]["Value"] = chimera["log"]
     reader.apply_settings(settings)
     triad.register(reader, "MetaReader", READER)
+    finder = ClassicBlockageFinder()
+    finder_settings = finder.get_empty_settings(standalone=True)
+    finder_settings["MetaReader"]["Value"] = reader
+    finder_settings["MetaReader"]["Type"] = None
+    finder_settings["Threshold"]["Value"] = 100.0
+    finder_settings["Min Duration"]["Value"] = 10.0
+    finder_settings["Max Duration"]["Value"] = 1000000.0
+    finder_settings["Min Separation"]["Value"] = 10.0
+    finder.apply_settings(finder_settings)
+    triad.register(finder, "MetaEventFinder", FINDER)
     triad.channel = int(chimera["channel"])  # type: ignore[attr-defined]
     return triad
 
@@ -319,7 +345,7 @@ def protein_perturb(triad: Triad) -> None:
 
 
 def rawdata_act(triad: Triad, qtbot: Any) -> None:
-    """Update Trace, then Update PSD, as the panel sends them."""
+    """Update Trace, Update PSD, Find Events, then Plot Events, as the panel sends them."""
     view = triad.tab_view
     panel = {
         "reader": READER,
@@ -334,6 +360,26 @@ def rawdata_act(triad: Triad, qtbot: Any) -> None:
     view.handle_parameter_change(
         "rawdatacontrols", "load_data_and_update_psd", (dict(panel),)
     )
+    channel = triad.channel  # type: ignore[attr-defined]
+    view.analysis_time_limits[FINDER] = {channel: {"start": 0.0, "end": 0.0}}
+    view.handle_parameter_change(
+        "rawdatacontrols",
+        "find_events",
+        ({"eventfinder": FINDER, "filter": "No Filter", "channel": [str(channel)]},),
+    )
+    settle(triad, qtbot)
+    view.handle_parameter_change(
+        "rawdatacontrols",
+        "plot_events",
+        (
+            {
+                "eventfinder": FINDER,
+                "filter": "No Filter",
+                "channel": [str(channel)],
+                "event_index": [0, 1],
+            },
+        ),
+    )
 
 
 def rawdata_perturb(triad: Triad) -> None:
@@ -341,10 +387,36 @@ def rawdata_perturb(triad: Triad) -> None:
     controls = triad.tab_view.rawdatacontrols
     controls.set_range_inputs(1.0, 0.5)
     controls.channel_comboBox.selectAllToggle(False)
+    triad.tab_view.analysis_time_limits[FINDER] = {
+        triad.channel: {"start": 0.5, "end": 1.0}  # type: ignore[attr-defined]
+    }
 
 
 def clustering_act(triad: Triad, qtbot: Any) -> None:
     triad.tab_view._reset_actions()
+
+
+def settle(triad: Triad, qtbot: Any) -> None:
+    """Wait until no background run of this tab is left."""
+    model = triad.tab_controller.model
+    qtbot.waitUntil(
+        lambda: not any(model.workers.get(key) for key in list(model.workers)),
+        timeout=120_000,
+    )
+
+
+def found_events(triad: Triad) -> Any:
+    """What the finder holds for the channel, read back from the plugin."""
+    channel = triad.channel  # type: ignore[attr-defined]
+    model = triad.tab_controller.model
+    return {
+        "events": model.call(
+            "MetaEventFinder", FINDER, "get_num_events_found", channel
+        ),
+        "finished": model.call(
+            "MetaEventFinder", FINDER, "get_eventfinding_status", channel
+        ),
+    }
 
 
 def nothing(triad: Triad) -> None:
@@ -364,6 +436,13 @@ class Scenario:
     needs: str = "sample_metadata_db"
     #: attributes this tab keeps that the shared bookkeeping list does not name
     extra: Tuple[str, ...] = ()
+    #: plugin methods the click path asks that a replay of the recorded method does not
+    click_only_calls: Tuple[str, ...] = ()
+    #: reads state back out of the data plugins, so a background run's outcome is compared
+    probe: Callable[[Triad], Any] = lambda triad: None
+    #: replay one entry at a time and wait for background runs between them, as the
+    #: sequencer will: an entry may need the run before it to have finished
+    wait_between: bool = False
 
 
 SCENARIOS = [
@@ -389,12 +468,18 @@ SCENARIOS = [
     ),
     Scenario(
         tab="RawDataController",
-        covers=("update_trace", "update_psd"),
+        covers=("update_trace", "update_psd", "find_events", "plot_events"),
         build=rawdata_tab,
         act=rawdata_act,
         perturb=rawdata_perturb,
         needs="sample_chimera",
-        extra=("analysis_time_limits", "plot_samplerate"),
+        # analysis_time_limits is not compared: writing the recorded Timer limits back is
+        # write-back's job, tested on its own, and the replayed Find ran on the recorded
+        # ranges although this tab holds different limits, which is the point.
+        extra=("plot_samplerate",),
+        click_only_calls=("get_eventfinding_status",),
+        probe=found_events,
+        wait_between=True,
     ),
     Scenario(
         tab="ClusteringController",
@@ -433,7 +518,10 @@ def run_scenario(
         scenario.seed(tab_a)
         spy_a = Spy(tab_a)
         scenario.act(tab_a, qtbot)
-        captured_a = capture(tab_a, spy_a, scenario.extra)
+        settle(tab_a, qtbot)
+        captured_a = capture(
+            tab_a, spy_a, scenario.extra, scenario.click_only_calls, scenario.probe
+        )
         history = copy.deepcopy(list(tab_a.tab_controller.tab_action_history.values()))
 
         scenario.seed(tab_b)
@@ -441,8 +529,17 @@ def run_scenario(
         if ready_b:
             scenario.ready_b(tab_b)
         spy_b = Spy(tab_b)
-        tab_b.tab_controller.replay(history)
-        return captured_a, capture(tab_b, spy_b, scenario.extra), history
+        if scenario.wait_between:
+            for entry in history:
+                tab_b.tab_controller.replay([entry])
+                settle(tab_b, qtbot)
+        else:
+            tab_b.tab_controller.replay(history)
+            settle(tab_b, qtbot)
+        captured_b = capture(
+            tab_b, spy_b, scenario.extra, scenario.click_only_calls, scenario.probe
+        )
+        return captured_a, captured_b, history
     finally:
         tab_a.close()
         tab_b.close()

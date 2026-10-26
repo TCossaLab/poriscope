@@ -330,7 +330,7 @@ class TestEventfindingLaunch:
         controller.model.call.side_effect = ["gen0", "gen1"]
 
         controller.start_eventfinding(
-            "finder", [(0, [(0.0, 1.0)]), (2, [(1.0, 2.0)])], ""
+            "finder", [(0, [(0.0, 1.0)], {}), (2, [(1.0, 2.0)], {})], ""
         )
 
         assert controller.model.call.call_args_list == [
@@ -354,7 +354,7 @@ class TestEventfindingLaunch:
         controller.model.call.side_effect = ["gen0", "gen1"]
 
         controller.start_eventfinding(
-            "finder", [(0, [(0.0, 0.0)]), (1, [(0.0, 0.0)])], ""
+            "finder", [(0, [(0.0, 0.0)], {}), (1, [(0.0, 0.0)], {})], ""
         )
 
         assert controller.model.set_generator.call_args_list == [
@@ -362,35 +362,52 @@ class TestEventfindingLaunch:
             mocker.call("gen1", 1, "finder", "MetaEventFinder"),
         ]
 
-    def test_the_generators_run_once_for_the_finder(
-        self, controller: RawDataController
+    def test_each_channel_is_run_as_it_is_registered(
+        self, controller: RawDataController, mocker: MockerFixture
     ) -> None:
         """
-        Registration and running stay separate steps, as they were through the bus.
+        Each channel's launch registers its generator and runs it, because a replayed entry
+        has no surrounding loop to run it afterwards. ``run_generators`` starts only the
+        channels not already running, so the workers are the same.
 
         :param controller: Controller under test.
+        :param mocker: Pytest-mock fixture.
         """
         controller.model.call.side_effect = ["gen0", "gen1"]
 
         controller.start_eventfinding(
-            "finder", [(0, [(0.0, 0.0)]), (1, [(0.0, 0.0)])], ""
+            "finder", [(0, [(0.0, 0.0)], {}), (1, [(0.0, 0.0)], {})], ""
         )
 
-        controller.model.run_generators.assert_called_once_with("finder")
+        assert controller.model.run_generators.call_args_list == [
+            mocker.call("finder"),
+            mocker.call("finder"),
+        ]
 
-    def test_a_named_filter_is_fetched_once_and_passed_to_every_channel(
+    def test_a_named_filter_is_fetched_for_each_channel_and_passed_to_it(
         self, controller: RawDataController
     ) -> None:
         """
-        One fetch for the batch, reusing the helper the event-plot path uses. The
-        filter declares nothing to match, so the finder's rate is never asked for.
+        Each channel's launch fetches the filter itself, reusing the helper the event-plot
+        path uses, because a replayed entry launches one channel on its own. One fetch up
+        front checks the batch. The filter declares nothing to match, so the finder's rate
+        is never asked for.
 
         :param controller: Controller under test.
         """
-        controller.model.call.side_effect = ["a-callable", {}, "gen0", "gen1"]
+        controller.model.call.side_effect = [
+            "a-callable",
+            {},
+            "a-callable",
+            {},
+            "gen0",
+            "a-callable",
+            {},
+            "gen1",
+        ]
 
         controller.start_eventfinding(
-            "finder", [(0, [(0.0, 0.0)]), (1, [(0.0, 0.0)])], "F1"
+            "finder", [(0, [(0.0, 0.0)], {}), (1, [(0.0, 0.0)], {})], "F1"
         )
 
         find_calls = [
@@ -418,7 +435,7 @@ class TestEventfindingLaunch:
         ]
 
         controller.start_eventfinding(
-            "finder", [(0, [(0.0, 0.0)]), (1, [(0.0, 0.0)])], "F1"
+            "finder", [(0, [(0.0, 0.0)], {}), (1, [(0.0, 0.0)], {})], "F1"
         )
 
         assert not [
@@ -441,10 +458,13 @@ class TestEventfindingLaunch:
             "a-callable",
             {"Samplerate": 250100.0},
             250000.0,
+            "a-callable",
+            {"Samplerate": 250100.0},
+            250000.0,
             "gen0",
         ]
 
-        controller.start_eventfinding("finder", [(0, [(0.0, 0.0)])], "F1")
+        controller.start_eventfinding("finder", [(0, [(0.0, 0.0)], {})], "F1")
 
         find_calls = [
             call.args
@@ -461,7 +481,7 @@ class TestEventfindingLaunch:
         """
         controller.model.call.side_effect = ["gen0"]
 
-        controller.start_eventfinding("finder", [(0, [(0.0, 0.0)])], "")
+        controller.start_eventfinding("finder", [(0, [(0.0, 0.0)], {})], "")
 
         assert not [
             call
@@ -482,7 +502,7 @@ class TestEventfindingLaunch:
 
         controller.start_eventfinding(
             "finder",
-            [(0, [(0.0, 0.0)]), (1, [(0.0, 0.0)]), (2, [(0.0, 0.0)])],
+            [(0, [(0.0, 0.0)], {}), (1, [(0.0, 0.0)], {}), (2, [(0.0, 0.0)], {})],
             "",
         )
 
@@ -490,7 +510,7 @@ class TestEventfindingLaunch:
             call.args[1] for call in controller.model.set_generator.call_args_list
         ]
         assert registered == [0, 2]
-        controller.model.run_generators.assert_called_once_with("finder")
+        assert controller.model.run_generators.call_count == 2
 
 
 # ------------------- committing events -------------------------------
@@ -1569,3 +1589,168 @@ class TestRecordedActions:
                 "kwargs": {},
             }
         ]
+
+
+class TestFindEventsOnOneChannel:
+    """The per-channel launch is the recorded action: one entry per channel, with its limits."""
+
+    def test_it_is_the_declared_find_events_action(self) -> None:
+        declared = {name for _attribute, name in declared_actions(RawDataController)}
+
+        assert "find_events" in declared
+
+    def test_a_launch_records_the_channel_its_ranges_and_its_timer_limits(
+        self, controller: RawDataController
+    ) -> None:
+        controller.model.call.side_effect = ["gen3"]
+        recorded = []
+        controller.record_action = recorded.append  # type: ignore[method-assign]
+        limits = {"start": 1.0, "end": 2.0}
+
+        launched = controller.find_events_on_channel(
+            "finder", 3, [(1.0, 2.0)], "", limits
+        )
+
+        assert launched is True
+        assert recorded == [
+            {
+                "action": "find_events",
+                "args": ("finder", 3, [(1.0, 2.0)], "", limits),
+                "kwargs": {},
+            }
+        ]
+        controller.model.run_generators.assert_called_once_with("finder")
+
+    def test_a_launch_that_fails_is_not_recorded(
+        self, controller: RawDataController
+    ) -> None:
+        controller.model.call.side_effect = RuntimeError("boom")
+        recorded = []
+        controller.record_action = recorded.append  # type: ignore[method-assign]
+
+        launched = controller.find_events_on_channel("finder", 0, [(0.0, 0.0)], "", {})
+
+        assert launched is False
+        assert recorded == []
+        controller.model.run_generators.assert_not_called()
+
+    def test_a_filter_that_is_refused_is_not_recorded(
+        self, controller: RawDataController
+    ) -> None:
+        controller.model.call.side_effect = [
+            "a-callable",
+            {"Samplerate": 100000.0},
+            250000.0,
+        ]
+        recorded = []
+        controller.record_action = recorded.append  # type: ignore[method-assign]
+
+        launched = controller.find_events_on_channel(
+            "finder", 0, [(0.0, 0.0)], "F1", {}
+        )
+
+        assert launched is False
+        assert recorded == []
+
+    def test_a_batch_records_one_entry_per_channel_with_its_own_limits(
+        self, controller: RawDataController
+    ) -> None:
+        controller.model.call.side_effect = ["gen0", "gen2"]
+        recorded = []
+        controller.record_action = recorded.append  # type: ignore[method-assign]
+
+        controller.start_eventfinding(
+            "finder",
+            [
+                (0, [(0.0, 1.0)], {"start": 0.0, "end": 1.0}),
+                (2, [(5.0, 6.0)], {"start": 5.0, "end": 6.0}),
+            ],
+            "",
+        )
+
+        assert [(e["args"][1], e["args"][4]) for e in recorded] == [
+            (0, {"start": 0.0, "end": 1.0}),
+            (2, {"start": 5.0, "end": 6.0}),
+        ]
+
+    def test_a_channel_that_cannot_launch_leaves_no_entry_and_the_rest_are_recorded(
+        self, controller: RawDataController
+    ) -> None:
+        controller.model.call.side_effect = ["gen0", RuntimeError("boom"), "gen2"]
+        recorded = []
+        controller.record_action = recorded.append  # type: ignore[method-assign]
+
+        controller.start_eventfinding(
+            "finder",
+            [(0, [(0.0, 0.0)], {}), (1, [(0.0, 0.0)], {}), (2, [(0.0, 0.0)], {})],
+            "",
+        )
+
+        assert [e["args"][1] for e in recorded] == [0, 2]
+
+
+class TestPlotEventsIsRecordedWhenItPlots:
+    def test_it_is_the_declared_plot_events_action(self) -> None:
+        declared = {name for _attribute, name in declared_actions(RawDataController)}
+
+        assert "plot_events" in declared
+
+    def test_a_plot_is_recorded_with_its_intent_and_returns_true(
+        self, controller: RawDataController, mock_view: MagicMock
+    ) -> None:
+        controller.model.call.side_effect = [True, 5, {"data": [1.0]}, {"data": [2.0]}]
+        controller._event_samplerate = MagicMock(return_value=1e6)  # type: ignore[method-assign]
+        recorded = []
+        controller.record_action = recorded.append  # type: ignore[method-assign]
+
+        plotted = controller.load_event_plot_data("finder", 0, [1, 2], "")
+
+        assert plotted is True
+        assert recorded == [
+            {"action": "plot_events", "args": ("finder", 0, [1, 2], ""), "kwargs": {}}
+        ]
+        mock_view.set_event_plot_data.assert_called_once()
+
+    def test_a_finder_that_has_not_finished_plots_nothing_and_records_nothing(
+        self, controller: RawDataController
+    ) -> None:
+        controller.model.call.side_effect = [False]
+        recorded = []
+        controller.record_action = recorded.append  # type: ignore[method-assign]
+
+        plotted = controller.load_event_plot_data("finder", 0, [1], "")
+
+        assert plotted is False
+        assert recorded == []
+
+    def test_a_channel_with_no_events_plots_nothing_and_records_nothing(
+        self, controller: RawDataController
+    ) -> None:
+        controller.model.call.side_effect = [True, 0]
+        recorded = []
+        controller.record_action = recorded.append  # type: ignore[method-assign]
+
+        assert controller.load_event_plot_data("finder", 0, [1], "") is False
+        assert recorded == []
+
+
+class TestAnEmptyTraceIsNotRecorded:
+    def test_a_trace_with_no_data_returns_false_and_records_nothing(
+        self, controller: RawDataController, mocker: MockerFixture
+    ) -> None:
+        controller._load_and_filter = mocker.Mock(return_value=([], [], 1e6))
+        recorded = []
+        controller.record_action = recorded.append  # type: ignore[method-assign]
+
+        assert controller.load_trace_data("R", [0], 3.0, 9.0, "", False) is False
+        assert recorded == []
+
+    def test_a_psd_with_no_data_returns_false_and_records_nothing(
+        self, controller: RawDataController, mocker: MockerFixture
+    ) -> None:
+        controller._load_and_filter = mocker.Mock(return_value=([], [], 1e6))
+        recorded = []
+        controller.record_action = recorded.append  # type: ignore[method-assign]
+
+        assert controller.load_psd_data("R", [0], 3.0, 9.0, "") is False
+        assert recorded == []
