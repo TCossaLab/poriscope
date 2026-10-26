@@ -25,6 +25,7 @@ import numpy as np
 import pytest
 from pytest_mock import MockerFixture
 
+from poriscope.utils.LogDecorator import RESET_ACTION
 from poriscope.utils.MetaController import MetaController
 from poriscope.utils.MetaModel import MetaModel
 
@@ -108,6 +109,8 @@ def controller(
     ctrl.model = mock_model
     ctrl.logger = mocker.Mock()  # type: ignore[attr-defined]
     ctrl.tab_action_history = OrderedDict()
+    # Replay has its own tests (test_action_registry); here it is only observed.
+    ctrl.replay = mocker.Mock()  # type: ignore[method-assign]
 
     # Mock Qt signals on the instance
     for sig in [
@@ -223,12 +226,13 @@ def test_load_actions_from_json_updates_view_on_success(
     :param mock_view: Mocked meta view.
     :param mocker: Pytest-mock fixture.
     """
-    actions = {"step1": "do_something"}
+    actions = {"step1": {"action": "do_something"}}
     mocker.patch("builtins.open", mock_open(read_data=json.dumps(actions)))
 
     controller.load_actions_from_json("actions.json")
 
-    mock_view.update_actions_from_json.assert_called_once_with(actions)
+    controller.replay.assert_called_once()  # type: ignore[attr-defined]
+    assert list(controller.replay.call_args[0][0]) == list(actions.values())  # type: ignore[attr-defined]
 
 
 def test_load_actions_from_json_returns_none_on_file_error(
@@ -261,13 +265,14 @@ def test_load_actions_from_json_unwraps_class_name_key(
     :param mock_view: Mocked meta view.
     :param mocker: Pytest-mock fixture.
     """
-    inner = {"step1": "do_something"}
+    inner = {"step1": {"action": "do_something"}}
     actions = {controller.__class__.__name__: inner}
     mocker.patch("builtins.open", mock_open(read_data=json.dumps(actions)))
 
     controller.load_actions_from_json("actions.json")
 
-    mock_view.update_actions_from_json.assert_called_once_with(inner)
+    controller.replay.assert_called_once()  # type: ignore[attr-defined]
+    assert list(controller.replay.call_args[0][0]) == list(inner.values())  # type: ignore[attr-defined]
 
 
 # ----------------- relay_add_text_to_display -------------------------
@@ -452,7 +457,7 @@ def test_save_tab_actions_emits_signal_with_history_and_file(
 
     :param controller: Controller under test.
     """
-    controller.tab_action_history = OrderedDict({"0": {"function": "do_something"}})
+    controller.tab_action_history = OrderedDict({"0": {"action": "do_something"}})
     controller.save_tab_actions("session.json")
     controller.save_tab_action_history.emit.assert_called_once_with(
         controller.tab_action_history, "session.json"
@@ -485,7 +490,7 @@ def test_update_tab_actions_adds_history_entry(
     :param controller: Controller under test.
     """
     controller.tab_action_history = OrderedDict()
-    history = {"function": "do_something"}
+    history = {"action": "do_something"}
     controller.update_tab_actions(history=history)
     assert controller.tab_action_history[0] == history
     controller.update_tab_action_history.emit.assert_called_once()
@@ -515,11 +520,11 @@ def test_update_tab_actions_undo_removes_last_entry(
     :param mock_view: Mocked meta view.
     """
     controller.tab_action_history = OrderedDict(
-        {0: {"function": "step1"}, 1: {"function": "step2"}}
+        {0: {"action": "step1"}, 1: {"action": "step2"}}
     )
     controller.update_tab_actions(undo=True)
     assert 1 not in controller.tab_action_history
-    mock_view.update_actions_from_json.assert_called_once()
+    controller.replay.assert_called_once()
 
 
 def test_discarding_drops_the_last_action_without_replaying(
@@ -533,13 +538,13 @@ def test_discarding_drops_the_last_action_without_replaying(
     :param mock_view: Mocked meta view.
     """
     controller.tab_action_history = OrderedDict(
-        {0: {"function": "step1"}, 1: {"function": "step2"}}
+        {0: {"action": "step1"}, 1: {"action": "step2"}}
     )
 
     controller.discard_last_tab_action()
 
-    assert controller.tab_action_history == OrderedDict({0: {"function": "step1"}})
-    mock_view.update_actions_from_json.assert_not_called()
+    assert controller.tab_action_history == OrderedDict({0: {"action": "step1"}})
+    controller.replay.assert_not_called()
     controller.update_tab_action_history.emit.assert_called_once()
 
 
@@ -570,21 +575,21 @@ def test_undo_replays_from_the_last_reset_and_keeps_the_rest(
     """
     controller.tab_action_history = OrderedDict(
         {
-            0: {"function": "plot_a"},
-            1: {"function": "_reset_actions"},
-            2: {"function": "plot_b"},
-            3: {"function": "plot_c"},
+            0: {"action": "plot_a"},
+            1: {"action": RESET_ACTION},
+            2: {"action": "plot_b"},
+            3: {"action": "plot_c"},
         }
     )
 
     controller.update_tab_actions(undo=True)
 
-    replayed = mock_view.update_actions_from_json.call_args[0][0]
-    assert [entry["function"] for entry in replayed.values()] == [
-        "_reset_actions",
+    replayed = controller.replay.call_args[0][0]  # type: ignore[attr-defined]
+    assert [entry["action"] for entry in replayed] == [
+        RESET_ACTION,
         "plot_b",
     ]
-    assert controller.tab_action_history == OrderedDict({0: {"function": "plot_a"}})
+    assert controller.tab_action_history == OrderedDict({0: {"action": "plot_a"}})
 
 
 def test_update_tab_actions_undo_on_empty_history_returns_early(
@@ -606,21 +611,21 @@ def test_update_tab_actions_undo_skips_reset_actions_entries(
     mock_view: MagicMock,
 ) -> None:
     """
-    Continue popping entries while the last item has function == '_reset_actions'.
+    Continue popping entries while the last item has action == RESET_ACTION.
 
     :param controller: Controller under test.
     :param mock_view: Mocked meta view.
     """
     controller.tab_action_history = OrderedDict(
         {
-            0: {"function": "step1"},
-            1: {"function": "_reset_actions"},
-            2: {"function": "_reset_actions"},
+            0: {"action": "step1"},
+            1: {"action": RESET_ACTION},
+            2: {"action": RESET_ACTION},
         }
     )
     controller.update_tab_actions(undo=True)
     # All _reset_actions entries and the last real entry should be consumed
-    mock_view.update_actions_from_json.assert_called_once()
+    controller.replay.assert_called_once()
 
 
 # -------- update_tab_actions StopIteration branches ------------------
@@ -635,17 +640,17 @@ def test_update_tab_actions_undo_handles_stopiteration_after_first_popitem(
 
     After popping the only remaining entry, next(reversed(...)) raises
     StopIteration which is caught by the outer ``except StopIteration: pass``
-    block.  The method should still call update_actions_from_json.
+    block.  The method should still call replay.
 
     :param controller: Controller under test.
     :param mock_view: Mocked meta view.
     """
-    controller.tab_action_history = OrderedDict({0: {"function": "step1"}})
+    controller.tab_action_history = OrderedDict({0: {"action": "step1"}})
 
     controller.update_tab_actions(undo=True)
 
     # History is now empty — view should still receive the empty history
-    mock_view.update_actions_from_json.assert_called_once()
+    controller.replay.assert_called_once()
     controller.update_tab_action_history.emit.assert_called_once()
 
 
@@ -670,14 +675,14 @@ def test_update_tab_actions_undo_handles_stopiteration_inside_reset_actions_loop
     """
     controller.tab_action_history = OrderedDict(
         {
-            0: {"function": "_reset_actions"},
-            1: {"function": "_reset_actions"},
+            0: {"action": RESET_ACTION},
+            1: {"action": RESET_ACTION},
         }
     )
 
     controller.update_tab_actions(undo=True)
 
-    mock_view.update_actions_from_json.assert_called_once()
+    controller.replay.assert_called_once()
     controller.update_tab_action_history.emit.assert_called_once()
 
 

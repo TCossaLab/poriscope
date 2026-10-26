@@ -60,7 +60,7 @@ from PySide6.QtWidgets import (
 
 from poriscope.plugins.analysistabs.utils.proteincontrols import ProteinControls
 from poriscope.utils.DocstringDecorator import inherit_docstrings
-from poriscope.utils.LogDecorator import log, register_action
+from poriscope.utils.LogDecorator import RESET_ACTION, log, register_action
 from poriscope.utils.MetaSubsetTabControls import MetaSubsetTabControls
 from poriscope.utils.MetaSubsetTabView import MetaSubsetTabView
 from poriscope.views.widgets.walkthrough_mixin import (
@@ -663,7 +663,7 @@ class ProteinView(MetaSubsetTabView):
         self._clear_cache()
 
     @log(logger=logger)
-    @register_action()
+    @register_action(RESET_ACTION)
     @override
     def _reset_actions(self, axis_type: str = "2d") -> None:
         """
@@ -1792,7 +1792,7 @@ class ProteinView(MetaSubsetTabView):
             )
 
     @log(logger=logger)
-    @register_action()
+    @register_action("update_ensemble_distribution")
     def _update_distribution_ensemble(self, parameters: Dict[str, Any]) -> None:
         """
         Compute and plot the ΔI/I histogram and V/M scatterplot aggregated across

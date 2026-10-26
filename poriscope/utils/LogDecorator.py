@@ -28,12 +28,17 @@ import inspect
 import logging
 from typing import Any, Callable, Generator, Optional, TypeVar, Union, cast, overload
 
-from PySide6.QtCore import Signal
-
 # Bound to the decorated callable so that these decorators hand back the *same*
 # type they were given. Declaring them ``-> Callable`` instead erases the
 # signature of every method they wrap, leaving all call sites into it unchecked.
 F = TypeVar("F", bound=Callable[..., Any])
+
+#: The attribute :py:func:`register_action` sets on a method to carry its declared name.
+ACTION_NAME_ATTR = "_action_name"
+
+#: The declared name of every tab's reset action. Undo finds resets by it, so a tab's
+#: ``_reset_actions`` is declared with this constant rather than a literal.
+RESET_ACTION = "reset"
 
 
 @overload
@@ -174,7 +179,26 @@ def log(
         return decorator_log(_func)
 
 
-def register_action() -> Callable[[F], F]:
+def register_action(name: str) -> Callable[[F], F]:
+    """
+    @register_action(name): record each call of the decorated method as a named action that a saved history can replay.
+
+    The entry is ``{"action": name, "args": args, "kwargs": kwargs}``, handed to
+    ``self.record_action`` once the body has returned, so an action called inside
+    another is recorded before it. The name is the declared name, not the Python method
+    name, so the method can be renamed or moved without breaking a saved history. It is
+    also stored on the wrapper under :py:data:`ACTION_NAME_ATTR`, which is how
+    :py:meth:`MetaController.action_registry` finds the method again. A failure to
+    record is logged at INFO and never breaks the call; an object with no
+    ``record_action`` is simply not recorded.
+
+    :param name: the action's declared name, unique within one tab
+    :type name: str
+    :return: the decorator
+    :rtype: Callable[[F], F]
+    """
+
+    # Decorators always nest, because they require a closure.
     def decorator(func: F) -> F:
         @functools.wraps(func)
         def wrapper(
@@ -182,15 +206,16 @@ def register_action() -> Callable[[F], F]:
         ) -> Any:  # self is the first argument for instance methods
             result = func(self, *args, **kwargs)
 
-            signal_attr = getattr(self, "update_tab_action_history", None)
-            if signal_attr and isinstance(signal_attr, Signal):
-                history = {"function": func.__name__, "args": args, "kwargs": kwargs}
+            record = getattr(self, "record_action", None)
+            if callable(record):
+                entry = {"action": name, "args": args, "kwargs": kwargs}
                 try:
-                    signal_attr.emit(history, False)
+                    record(entry)
                 except Exception as e:
                     self.logger.info(f"Unable to log tab action: {str(e)}")
             return result
 
+        setattr(wrapper, ACTION_NAME_ATTR, name)
         return cast(F, wrapper)
 
     return decorator

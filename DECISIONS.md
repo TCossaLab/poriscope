@@ -18,6 +18,28 @@ and deleted on 2026-09-27; it too is in git history.
 
 ---
 
+## 2026-10-25 - A recorded action is declared on the Controller, and replay is dispatched by the Controller
+
+**Context.** The 2026-09-17 rules had replay run on the View. Kyle proposed that a new tab
+integrate by decorating Controller methods, so recording moves to the Controller. Only a
+function that is a pure function of its arguments may be decorated: one that reads no frontend widget
+(`DECISIONS.md` 2026-09-17, rule 5), which is what makes a Controller the right home for it.
+
+**Decision.** `@register_action("name")` goes on Controller methods and records through
+`self.record_action(entry)` (`MetaController` appends to the tab history; `MetaView.record_action` keeps the
+old View path for the 5 View methods until their tab converts). One registry per tab, built from the
+declared methods of the Controller, and during the transition of its View, serves replay, Undo and Load
+Plot Configuration; a duplicate name raises, and an unknown name or an old-format entry is reported on the
+status panel, not called. Undo finds resets by `RESET_ACTION = "reset"`.
+
+**Evidence.** The old decorator recorded by emitting a signal named `update_tab_action_history` on the
+decorated object (`LogDecorator.py`); `MetaController` has a signal of that name that sends the whole
+history to the main window, so decorating a Controller method would have sent it a malformed message.
+
+**Revisit if** a recorded Controller method has to take data rather than intent (2026-09-17 rule 4).
+
+---
+
 ## 2026-10-20 - The Event Analysis commit is not gated on the selected loader; fitting and plotting are
 
 **Context.** 2.0.0 made `EventAnalysisController.write_events` refuse a commit when the selected
@@ -1947,11 +1969,13 @@ than through `getattr` on whatever the file happens to name. Five rules:
 
 1. **Replay runs on the View.** The thing being replayed is the user's action, not a
    computation, so the decorated method is the entry point a click reaches. A conversion may
-   move what it computes to the Model; the entry point stays.
+   move what it computes to the Model; the entry point stays. *Reversed 2026-10-25: the Controller
+   dispatches replay and a Controller method is the recorded action; see that entry.*
 2. **The declared action name is the contract, not the method name.** `@register_action("overlay_plot")`
    on `_overlay_plot`, so the method may be renamed, split or re-homed freely and the saved
-   files do not care.
-3. **Replay resolves only registered actions.** An unknown name is reported, not called.
+   files do not care. *Implemented 2026-10-25.*
+3. **Replay resolves only registered actions.** An unknown name is reported, not called. *Implemented
+   2026-10-25.*
 4. **A recorded argument is small, JSON-round-trippable user intent** - a controls panel's
    `parameters` dict - never data. Arrays and frames are what replay re-derives.
 5. **A replayable action is a pure function of its recorded arguments.** Everything it

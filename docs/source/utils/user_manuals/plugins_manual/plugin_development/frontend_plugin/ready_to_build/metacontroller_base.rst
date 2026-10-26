@@ -28,7 +28,13 @@ No need to manually handle cross-plugin communication — :ref:`MetaController` 
 
 **Action history tracking**
 
-- Built-in support for tracking user actions per tab
+- Built-in support for tracking user actions per tab: decorate a method with
+  ``@register_action("name")`` and each call is recorded as
+  ``{"action": name, "args": ..., "kwargs": ...}``, so the method can be renamed or moved
+  without breaking a saved history. Name each action once per tab
+- Replay goes through the tab's registry of declared actions, ``MetaController.action_registry``:
+  a name that is not declared, or an entry from an older file, is reported on the status panel
+  and not called
 - Can save and reload these actions from a JSON file
 - Undo logic included (with safety checks and filtering): Undo replays the history from
   the last reset onward, and ``discard_last_tab_action`` drops a record without

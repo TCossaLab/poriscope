@@ -73,6 +73,8 @@
 
 * **Breaking:** `EventAnalysisView.write_requested` and `EventAnalysisController.write_events` no longer carry the selected event loader as their first argument
 
+* **Breaking:** recorded tab actions now carry a declared name: `register_action` takes it as an argument and can decorate a Controller method, `MetaController.replay` dispatches through a per-tab registry in place of `MetaView.update_actions_from_json`, and an action file saved by an earlier version is reported entry by entry on the status panel and not replayed
+
 * **Breaking:** `format_axis_label` is now one `MetaView` method instead of three copies, and it appends the unit rather than replacing a trailing parenthetical, so a column name containing parentheses is no longer truncated; `ProteinView`'s module-level `format_axis_label` is gone
 
 ### Developer Tooling:
