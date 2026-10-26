@@ -1,0 +1,452 @@
+"""
+A replayed action reproduces what the user's own action produced, whatever the panel holds now.
+
+For each tab and each declared action: run the action as the user does, in tab A, and capture what
+it produced. Then build a second tab B that is not the one the user acted in (the Load Session
+case), change everything B's widgets and stored inputs hold, replay A's recorded history into it
+and capture again. The captures must be equal. Four things are compared:
+
+* the calls that reached the data plugins (``MetaModel.call``), with their arguments;
+* the plot cache the export reads;
+* what each figure holds;
+* the tab's bookkeeping: what it believes is plotted and the fits it holds.
+
+Replay runs under the tripwire (``poriscope.utils.ReplayGuard``), so an action that reached a
+helper that reads a controls panel fails here as an error, not as a quiet difference.
+
+Every declared action must be covered: a test lists the actions each tab declares and fails for
+one no scenario records, so an action added without a fixture cannot land.
+"""
+
+import copy
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Callable, Dict, List, Tuple
+
+import numpy as np
+import pandas as pd
+import pytest
+
+from poriscope.plugins.db_loaders.SQLiteDBLoader import SQLiteDBLoader
+from tests.integration.flows._triad import Triad, build_triad
+
+LOADER = "loader"
+FILTERS = {
+    "F0": "duration >= 0",
+    "F1": "duration >= 1",
+    "F2": "duration >= 2",
+    "F3": "duration >= 3",
+}
+TABS = [
+    "RawDataController",
+    "EventAnalysisController",
+    "ClusteringController",
+    "MetadataController",
+    "ProteinController",
+]
+
+#: What a tab believes about its own plot, which a replay must rebuild.
+BOOKKEEPING = (
+    "plotted_datasets",
+    "allowed_plot_type",
+    "allowed_columns",
+    "allowed_logs",
+    "allowed_bins",
+    "allowed_sizes",
+    "fit_data",
+    "ensemble_fit_params",
+    "ensemble_fit_bins",
+    "ensemble_fit_sizes",
+)
+
+
+# ---------------------------------------------------------------- capturing
+
+
+def normalise(value: Any) -> Any:
+    """
+    Turn anything a tab holds into something two captures can be compared on.
+
+    :param value: an argument, a cached array, a frame, a set, a dict, a number
+    :type value: Any
+    :return: a plain structure of lists, dicts, strings and numbers
+    :rtype: Any
+    """
+    if isinstance(value, np.ndarray):
+        return ["array", list(value.shape), value.tolist()]
+    if isinstance(value, pd.DataFrame):
+        return [
+            "frame",
+            {str(k): normalise(v) for k, v in value.to_dict("list").items()},
+        ]
+    if isinstance(value, dict):
+        return {str(k): normalise(v) for k, v in value.items()}
+    if isinstance(value, (set, frozenset)):
+        return sorted((normalise(v) for v in value), key=repr)
+    if isinstance(value, (list, tuple)):
+        return [normalise(v) for v in value]
+    if callable(value):
+        return f"<callable {getattr(value, '__name__', type(value).__name__)}>"
+    return value
+
+
+def figure_summary(figure: Any) -> List[Any]:
+    """
+    Summarise what a figure holds, axis by axis.
+
+    :param figure: a matplotlib figure
+    :type figure: Any
+    :return: one entry per axes: counts of what is drawn, and its labels
+    :rtype: List[Any]
+    """
+    return [
+        [
+            len(ax.lines),
+            len(ax.collections),
+            len(ax.patches),
+            len(ax.texts),
+            ax.get_xlabel(),
+            ax.get_ylabel(),
+            ax.get_title(),
+        ]
+        for ax in figure.axes
+    ]
+
+
+def figures_of(view: Any) -> Dict[str, Any]:
+    """
+    The figures a tab draws on, every one of them: Protein keeps one per mode.
+
+    :param view: the tab's View
+    :type view: Any
+    :return: figure name to figure
+    :rtype: Dict[str, Any]
+    """
+    names = [
+        "figure",
+        "fig_hist_individual",
+        "fig_hist_ensemble",
+        "fig_vm_individual",
+        "fig_vm_ensemble",
+    ]
+    return {name: getattr(view, name) for name in names if hasattr(view, name)}
+
+
+class Spy:
+    """Record every call the tab's Model makes to a data plugin, from now on."""
+
+    def __init__(self, triad: Triad) -> None:
+        self.calls: List[Any] = []
+        model = triad.tab_controller.model
+        original = model.call
+
+        def spy(*args: Any, **kwargs: Any) -> Any:
+            self.calls.append(normalise((args, kwargs)))
+            return original(*args, **kwargs)
+
+        model.call = spy  # type: ignore[method-assign]
+
+
+def capture(triad: Triad, spy: Spy) -> Dict[str, Any]:
+    """
+    Capture the four things a replay must reproduce.
+
+    :param triad: the tab
+    :type triad: Triad
+    :param spy: the recording of the plugin calls made while the action or replay ran
+    :type spy: Spy
+    :return: the capture
+    :rtype: Dict[str, Any]
+    """
+    view, model = triad.tab_view, triad.tab_controller.model
+    return {
+        "plugin_calls": spy.calls,
+        "plot_cache": normalise((model.cache_data, model.cache_labels)),
+        "figures": {
+            name: figure_summary(fig) for name, fig in figures_of(view).items()
+        },
+        "bookkeeping": {
+            name: normalise(getattr(view, name, None)) for name in BOOKKEEPING
+        },
+    }
+
+
+# ---------------------------------------------------------------- building tabs
+
+
+def _with_loader(
+    triad: Triad, db: str, controls: str, filters: Dict[str, str]
+) -> Triad:
+    loader = SQLiteDBLoader()
+    settings = loader.get_empty_settings(standalone=True)
+    settings["Input File"]["Value"] = db
+    loader.apply_settings(settings)
+    triad.register(loader, "MetaDatabaseLoader", LOADER)
+    view = triad.tab_view
+    combo = view._subset_controls.filter_comboBox
+    for name, text in filters.items():
+        view.subset_filters[name] = text
+        combo.addItem(name)
+    view.handle_parameter_change(controls, "loader_changed", ({"db_loader": LOADER},))
+    return triad
+
+
+def metadata_tab(tmp_path: Path, db: str) -> Triad:
+    return _with_loader(
+        build_triad("MetadataController", tmp_path), db, "metadatacontrols", FILTERS
+    )
+
+
+def protein_tab(tmp_path: Path, db: str) -> Triad:
+    return _with_loader(
+        build_triad("ProteinController", tmp_path), db, "proteincontrols", FILTERS
+    )
+
+
+def clustering_tab(tmp_path: Path, db: str) -> Triad:
+    return build_triad("ClusteringController", tmp_path)
+
+
+def select(triad: Triad, filter_name: str, channel: str) -> None:
+    """Select one filter and one channel, as a user would."""
+    view = triad.tab_view
+    combo = view._subset_controls.filter_comboBox
+    for name in list(combo.getSelectedItems()):
+        combo.selectItem(name, select=False)
+    combo.selectItem(filter_name, select=True)
+    view.selected_experiment_and_channels_by_loader[LOADER] = {"exp_a": [channel]}
+
+
+# ---------------------------------------------------------------- the user's actions
+
+
+def metadata_act(triad: Triad) -> None:
+    """Two overlays, a reset, then a plot: the Metadata recorded actions."""
+    view = triad.tab_view
+    histogram = {
+        "db_loader": LOADER,
+        "plot_type": "Histogram",
+        "x_axis": "duration",
+        "y_axis": "duration",
+        "z_axis": "duration",
+        "x_log": False,
+        "y_log": False,
+        "z_log": False,
+        "bins": [20],
+        "sizes": False,
+    }
+    select(triad, "F0", "0")
+    view.handle_parameter_change("metadatacontrols", "update_plot", (dict(histogram),))
+    select(triad, "F1", "0")
+    view.handle_parameter_change("metadatacontrols", "update_plot", (dict(histogram),))
+    view.handle_parameter_change("metadatacontrols", "reset_plot", ({},))
+    select(triad, "F2", "0")
+    view.handle_parameter_change("metadatacontrols", "update_plot", (dict(histogram),))
+
+
+def metadata_perturb(triad: Triad) -> None:
+    """Change what the panel and the stored inputs hold, everything a click would read."""
+    view = triad.tab_view
+    select(triad, "F3", "1")
+    controls = view.metadatacontrols
+    for line_edit, text in (
+        (controls.bins_lineEdit, "7"),
+        (controls.event_id_lineEdit, "5"),
+        (controls.n_events_lineEdit, "3"),
+    ):
+        line_edit.setText(text)
+    for combo in (controls.plot_type_comboBox, controls.x_axis_comboBox):
+        combo.setCurrentIndex(combo.count() - 1)
+    view.subset_filters["F0"] = "duration >= 999"
+
+
+def protein_act(triad: Triad) -> None:
+    """An Ensemble plot, which records its reset and the plot."""
+    view = triad.tab_view
+    select(triad, "F0", "0")
+    view.handle_parameter_change("proteincontrols", "set_mode_ensemble", ({},))
+    view.handle_parameter_change(
+        "proteincontrols",
+        "update_plot",
+        (
+            {
+                "db_loader": LOADER,
+                "plot_type": "Filtered Histogram",
+                "pore_diameter": 10.0,
+                "pore_length": 10.0,
+                "n_values": 20,
+                "bins": [20],
+                "sizes": False,
+            },
+        ),
+    )
+
+
+def protein_seed(triad: Triad) -> None:
+    """Give the tab an Individual fit that no recorded action made, so a replay can be seen to leave it."""
+    triad.tab_view.fit_data = "individual fit"
+
+
+def protein_perturb(triad: Triad) -> None:
+    view = triad.tab_view
+    select(triad, "F3", "1")
+    controls = view.proteincontrols
+    for line_edit, text in (
+        (controls.pore_diameter_lineEdit, "99"),
+        (controls.pore_length_lineEdit, "98"),
+        (controls.bins_lineEdit, "7"),
+        (controls.n_values_lineEdit, "5"),
+        (controls.event_id_lineEdit, "4"),
+    ):
+        line_edit.setText(text)
+    view.subset_filters["F0"] = "duration >= 999"
+
+
+def clustering_act(triad: Triad) -> None:
+    triad.tab_view._reset_actions()
+
+
+def nothing(triad: Triad) -> None:
+    return None
+
+
+@dataclass
+class Scenario:
+    tab: str
+    covers: Tuple[str, ...]
+    build: Callable[[Path, str], Triad]
+    act: Callable[[Triad], None]
+    perturb: Callable[[Triad], None]
+    seed: Callable[[Triad], None] = nothing
+    ready_b: Callable[[Triad], None] = nothing
+
+
+SCENARIOS = [
+    Scenario(
+        tab="MetadataController",
+        covers=("reset", "overlay_plot"),
+        build=metadata_tab,
+        act=metadata_act,
+        perturb=metadata_perturb,
+    ),
+    Scenario(
+        tab="ProteinController",
+        covers=("reset", "update_ensemble_distribution"),
+        build=protein_tab,
+        act=protein_act,
+        perturb=protein_perturb,
+        seed=protein_seed,
+        # Tab B is put in the mode the plot was recorded in, because replay does not yet write
+        # the recorded mode back: see the strict xfail below.
+        ready_b=lambda triad: triad.tab_view.handle_parameter_change(
+            "proteincontrols", "set_mode_ensemble", ({},)
+        ),
+    ),
+    Scenario(
+        tab="ClusteringController",
+        covers=("reset",),
+        build=clustering_tab,
+        act=clustering_act,
+        perturb=nothing,
+    ),
+]
+
+
+def run_scenario(
+    scenario: Scenario, tmp_path: Path, db: str, *, ready_b: bool
+) -> Tuple[Any, Any, List[Any]]:
+    """
+    Record in tab A, replay into a perturbed tab B, and return both captures and A's history.
+
+    :param scenario: what to run
+    :type scenario: Scenario
+    :param tmp_path: scratch directory; each tab gets its own folder
+    :type tmp_path: Path
+    :param db: path to the synthetic metadata database
+    :type db: str
+    :param ready_b: whether to put B in the mode the action was recorded in first
+    :type ready_b: bool
+    :return: A's capture, B's capture, and the history recorded in A
+    :rtype: Tuple[Any, Any, List[Any]]
+    """
+    (tmp_path / "a").mkdir()
+    (tmp_path / "b").mkdir()
+    tab_a = scenario.build(tmp_path / "a", db)
+    tab_b = scenario.build(tmp_path / "b", db)
+    try:
+        scenario.seed(tab_a)
+        spy_a = Spy(tab_a)
+        scenario.act(tab_a)
+        captured_a = capture(tab_a, spy_a)
+        history = copy.deepcopy(list(tab_a.tab_controller.tab_action_history.values()))
+
+        scenario.seed(tab_b)
+        scenario.perturb(tab_b)
+        if ready_b:
+            scenario.ready_b(tab_b)
+        spy_b = Spy(tab_b)
+        tab_b.tab_controller.replay(history)
+        return captured_a, capture(tab_b, spy_b), history
+    finally:
+        tab_a.close()
+        tab_b.close()
+
+
+# ---------------------------------------------------------------- the tests
+
+
+@pytest.mark.timeout(240)
+@pytest.mark.parametrize("scenario", SCENARIOS, ids=[s.tab for s in SCENARIOS])
+def test_a_replay_reproduces_what_the_action_produced(
+    qapp, tmp_path: Path, sample_metadata_db: str, scenario: Scenario
+) -> None:
+    captured_a, captured_b, history = run_scenario(
+        scenario, tmp_path, sample_metadata_db, ready_b=True
+    )
+
+    recorded = {entry["action"] for entry in history}
+    assert (
+        set(scenario.covers) <= recorded
+    ), "the scenario did not record the actions it claims to cover"
+    assert captured_b["plugin_calls"] == captured_a["plugin_calls"]
+    assert captured_b["plot_cache"] == captured_a["plot_cache"]
+    assert captured_b["figures"] == captured_a["figures"]
+    assert captured_b["bookkeeping"] == captured_a["bookkeeping"]
+
+
+@pytest.mark.timeout(240)
+@pytest.mark.xfail(
+    strict=True,
+    raises=AssertionError,
+    reason=(
+        "the Protein figures follow the live mode, so a plot recorded in Ensemble mode and "
+        "replayed into a tab that is in Individual mode draws on the Individual figures; "
+        "this passes once replay writes the recorded mode back before it runs the action"
+    ),
+)
+def test_a_protein_plot_replays_the_same_in_the_other_mode(
+    qapp, tmp_path: Path, sample_metadata_db: str
+) -> None:
+    scenario = next(s for s in SCENARIOS if s.tab == "ProteinController")
+
+    captured_a, captured_b, _ = run_scenario(
+        scenario, tmp_path, sample_metadata_db, ready_b=False
+    )
+
+    assert captured_b["figures"] == captured_a["figures"]
+
+
+@pytest.mark.timeout(240)
+@pytest.mark.parametrize("tab", TABS)
+def test_every_declared_action_has_a_scenario(qapp, tmp_path: Path, tab: str) -> None:
+    """A tab that declares an action nothing records here fails, so a new action cannot land unchecked."""
+    triad = build_triad(tab, tmp_path)
+    try:
+        declared = set(triad.tab_controller.action_registry())
+    finally:
+        triad.close()
+    covered = {name for s in SCENARIOS if s.tab == tab for name in s.covers}
+
+    assert (
+        declared <= covered
+    ), f"{tab} declares {sorted(declared - covered)} with no scenario"
