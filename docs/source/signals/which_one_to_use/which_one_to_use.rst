@@ -34,7 +34,7 @@ The rule
       .. code-block:: python
 
          self.add_text_to_display.emit(text, source)
-         self.update_tab_action_history.emit(actions, False)
+         self.plugin_state_changed.emit(metaclass, key, reason)
 
       Each is a plain typed Qt signal with a named purpose. Nobody hands you a
       result, and nothing is read back afterwards.
