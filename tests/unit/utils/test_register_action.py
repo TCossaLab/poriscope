@@ -101,3 +101,49 @@ def test_an_object_with_no_record_action_still_runs_the_method() -> None:
             return "drawn"
 
     assert _Bare().draw() == "drawn"
+
+
+class _Skipper:
+    """A tab object whose action declares that returning False means it did nothing."""
+
+    logger = logging.getLogger(__name__)
+
+    def __init__(self) -> None:
+        self.entries: List[Dict[str, Any]] = []
+
+    def record_action(self, entry: Dict[str, Any]) -> None:
+        self.entries.append(entry)
+
+    @register_action("acts", skip_on_false=True)
+    def acts(self, outcome: Any) -> Any:
+        return outcome
+
+    @register_action("plain")
+    def plain(self, outcome: Any) -> Any:
+        return outcome
+
+
+def test_a_method_that_returns_false_is_not_recorded_when_it_opts_in() -> None:
+    tab = _Skipper()
+
+    result = tab.acts(False)
+
+    assert result is False
+    assert tab.entries == []
+
+
+@pytest.mark.parametrize("outcome", [True, None, 0, "done"])
+def test_only_a_literal_false_means_it_did_nothing(outcome: Any) -> None:
+    tab = _Skipper()
+
+    tab.acts(outcome)
+
+    assert [entry["action"] for entry in tab.entries] == ["acts"]
+
+
+def test_without_the_opt_in_a_false_result_is_recorded_as_before() -> None:
+    tab = _Skipper()
+
+    tab.plain(False)
+
+    assert [entry["action"] for entry in tab.entries] == ["plain"]
