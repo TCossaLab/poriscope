@@ -671,10 +671,11 @@ class ProteinView(MetaSubsetTabView):
         if @register_action is being used to keep track of actions. Only actions applied after the most
         recent call to this function will be recreated if the related file is loaded.
 
-        Also clears stored fit state for whichever analysis mode is currently active
-        (self.fit_data for Individual, self.ensemble_fit_* for Ensemble), leaving the
-        other mode's fit untouched. This means switching modes and running Update Plot,
-        or clicking Reset, only affects the fit belonging to the mode you're currently in.
+        Clears no fit state, and reads no analysis mode: the reset is recorded with only its
+        axis type, so it must replay the same whichever mode the tab is in. The plot action
+        that calls it clears the fit it is about to replace (``fit_data`` for Individual,
+        :py:meth:`_clear_ensemble_fit` for Ensemble), which leaves the other mode's fit
+        untouched.
 
         :param axis_type: Either '2d' or '3d' to determine plot projection.
         :type axis_type: str
@@ -712,17 +713,22 @@ class ProteinView(MetaSubsetTabView):
             set()
         )  # tuple of things already plotted: (loader, experiment, channel, filter, subset_name), which can be None
 
-        if self._analysis_mode == "individual":
-            # Individual-mode fit data must not survive a Reset — a stale fit committed
-            # after Reset would silently write outdated per-event values to the database.
-            self.fit_data = None
-        else:
-            # Ensemble fit results must not survive a Reset either, for the same reason.
-            self.ensemble_fit_params = None
-            self.ensemble_fit_bins = None
-            self.ensemble_fit_sizes = None
-            self.ensemble_fit_prolate_summary = None
-            self.ensemble_fit_oblate_summary = None
+    @log(logger=logger)
+    def _clear_ensemble_fit(self) -> None:
+        """
+        Forget the Ensemble fit, so a stale one cannot be committed after a new plot replaces it.
+
+        A fit committed after its plot was replaced would silently write outdated values to
+        the database. The Individual fit is untouched.
+
+        :return: None
+        :rtype: None
+        """
+        self.ensemble_fit_params = None
+        self.ensemble_fit_bins = None
+        self.ensemble_fit_sizes = None
+        self.ensemble_fit_prolate_summary = None
+        self.ensemble_fit_oblate_summary = None
 
     @log(logger=logger)
     def _plot_all_points_histogram(
@@ -1643,6 +1649,8 @@ class ProteinView(MetaSubsetTabView):
         :type parameters: Dict[str, Any]
         """
         self._reset_actions()
+        # The Individual fit this plot replaces must not survive it; see _clear_ensemble_fit.
+        self.fit_data = None
         self._clear_cache()
 
         selected_filters = self.get_selected_filters()
@@ -1802,6 +1810,7 @@ class ProteinView(MetaSubsetTabView):
         :type parameters: Dict[str, Any]
         """
         self._reset_actions()
+        self._clear_ensemble_fit()
         self._clear_cache()
 
         # The selection comes from the parameters, not the widgets, so a replay draws
@@ -1880,6 +1889,7 @@ class ProteinView(MetaSubsetTabView):
 
             if bin_sensitive and (bins_changed or sizes_changed):
                 self._reset_actions(axis_type="2d")
+                self._clear_ensemble_fit()
 
         # Cleared before asking: the Controller sets it only once the subset has
         # been fetched *and* averaged, so a failure at either step leaves it empty
