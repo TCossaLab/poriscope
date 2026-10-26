@@ -196,3 +196,6 @@ __pycache__/
 !poriscope/cdlls/wavelet/dist/wavelet.so
 !poriscope/cdlls/wavelet/dist/wavelet.dylib
 poriscope/workflow_script.py
+
+# Working documents
+.claude/plans/

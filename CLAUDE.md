@@ -181,6 +181,8 @@ revisiting.
   **Update it whenever the tooling or its configuration changes** (`mypy.ini`,
   `.pre-commit-config.yaml`, `[tool.pydoclint]`, the baseline policy), or it will go on
   telling contributors a policy that no longer holds.
+- `.claude/plans/` — working documents. They live there, never in
+  `docs/`, and are never committed; the folder is gitignored.
 
 **All three of `changelog.md`, `DECISIONS.md` and `future_fixes.md` should be as terse as
 possible.** Two of them are written for Claude, so every needless sentence is context spent
