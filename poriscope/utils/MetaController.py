@@ -37,23 +37,24 @@ from poriscope.utils.LogDecorator import ACTION_NAME_ATTR, RESET_ACTION, log
 from poriscope.utils.MetaModel import MetaModel
 from poriscope.utils.MetaView import MetaView
 from poriscope.utils.QObjectABCMeta import QObjectABCMeta
+from poriscope.utils.ReplayGuard import replaying
 
 
-def _declared_actions(owner: object) -> List[Tuple[str, str]]:
+def declared_actions(cls: type) -> List[Tuple[str, str]]:
     """
-    List the methods of an object that carry a declared action name.
+    List the methods of a class that carry a declared action name.
 
-    The class is searched, not the instance, so no property or Qt attribute is evaluated.
-    A subclass's override is the attribute that is found.
+    The class is searched, so no property or Qt attribute is evaluated and no instance is
+    needed. A subclass's override is the attribute that is found.
 
-    :param owner: the Controller or View to search
-    :type owner: object
+    :param cls: the Controller or View class to search
+    :type cls: type
     :return: (attribute name, declared action name) for each declared method
     :rtype: List[Tuple[str, str]]
     """
     declared = []
-    for attribute in dir(type(owner)):
-        name = getattr(getattr(type(owner), attribute, None), ACTION_NAME_ATTR, None)
+    for attribute in dir(cls):
+        name = getattr(getattr(cls, attribute, None), ACTION_NAME_ATTR, None)
         if isinstance(name, str):
             declared.append((attribute, name))
     return declared
@@ -284,7 +285,7 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
         if self._action_registry is None:
             registry: Dict[str, Callable[..., Any]] = {}
             for owner in (self, self.view):
-                for attribute, name in _declared_actions(owner):
+                for attribute, name in declared_actions(type(owner)):
                     if name in registry:
                         raise ValueError(
                             f"The action name '{name}' is declared twice in "
@@ -304,25 +305,31 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
         the status panel and skipped, and replay moves on. Replaying a decorated method
         records it again.
 
+        The loop runs inside :py:func:`~poriscope.utils.ReplayGuard.replaying`, so a
+        recorded action that reads a controls panel raises
+        :py:class:`~poriscope.utils.ReplayGuard.ReplayWidgetReadError` instead of using
+        today's widget values.
+
         :param entries: recorded entries, ``{"action": name, "args": [...], "kwargs": {...}}``
         :type entries: Iterable[Any]
         """
         registry = self.action_registry()
-        for entry in entries:
-            name = entry.get("action") if isinstance(entry, Mapping) else None
-            method = registry.get(name) if isinstance(name, str) else None
-            if method is None:
-                described = (
-                    f"'{name}' is not a recorded action of {self.__class__.__name__}"
-                    if isinstance(name, str)
-                    else f"an entry with no action name was found in {self.__class__.__name__}"
-                )
-                self.logger.warning(f"Not replayed: {described}")
-                self.add_text_to_display.emit(
-                    f"Not replayed: {described}", self.__class__.__name__
-                )
-                continue
-            method(*(entry.get("args") or []), **(entry.get("kwargs") or {}))
+        with replaying():
+            for entry in entries:
+                name = entry.get("action") if isinstance(entry, Mapping) else None
+                method = registry.get(name) if isinstance(name, str) else None
+                if method is None:
+                    described = (
+                        f"'{name}' is not a recorded action of {self.__class__.__name__}"
+                        if isinstance(name, str)
+                        else f"an entry with no action name was found in {self.__class__.__name__}"
+                    )
+                    self.logger.warning(f"Not replayed: {described}")
+                    self.add_text_to_display.emit(
+                        f"Not replayed: {described}", self.__class__.__name__
+                    )
+                    continue
+                method(*(entry.get("args") or []), **(entry.get("kwargs") or {}))
 
     @log(logger=logger)
     def display_write_status(self, status: bool) -> None:

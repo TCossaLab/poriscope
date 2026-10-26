@@ -39,6 +39,7 @@ from PySide6.QtWidgets import (
 )
 
 from poriscope.utils.MetaControls import MetaControls
+from poriscope.utils.ReplayGuard import forbid_while_replaying
 
 
 class ClusteringControls(MetaControls):
@@ -221,6 +222,7 @@ class ClusteringControls(MetaControls):
         :return: A dictionary containing the current selections.
         :rtype: dict
         """
+        forbid_while_replaying("collect_parameters")
         self.logger.info("Collecting parameters")
         # Initialize with default values to handle possible None values
         parameters: Dict[str, Optional[str]] = {}

@@ -41,7 +41,9 @@ No need to manually handle cross-plugin communication — :ref:`MetaController` 
   replaying anything, for an action that was refused and changed nothing
 - A recorded action must be a pure function of its recorded arguments, so put anything
   it reads from the widgets - a selection, say - into its parameters before calling it,
-  as ``MetaSubsetTabView._record_selection`` does
+  as ``MetaSubsetTabView._record_selection`` does. A replay refuses a read of a controls panel
+  (``ReplayWidgetReadError``), and a static test fails a declared action that reads a widget or
+  takes plotted data; see :ref:`recorded_actions_read_no_widgets`
 
 **Session state**
 

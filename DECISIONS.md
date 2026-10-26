@@ -18,6 +18,36 @@ and deleted on 2026-09-27; it too is in git history.
 
 ---
 
+## 2026-10-26 - A recorded action reads no widget: a tripwire, a static test and a behavioural guard
+
+**Context.** 2026-09-17 rule 5 (a recorded action is a pure function of its arguments) was met by
+hand for two plot methods and enforced by nothing; Protein's recorded reset still read the live mode.
+
+**Decision.** Three checks, built before any new action is recorded. (1) `ReplayGuard.py`: the seven
+widget-reading helpers raise `ReplayWidgetReadError` inside `MetaController.replay`. A module, not a
+per-View flag, because five of the helpers are the controls panels' `collect_parameters`, which hold no
+reference to a View or Controller. (2) A static test walks each declared action and its callees (a
+Controller action into its View, a property into its getter) and fails on a widget-value call, a panel
+helper, a `*controls` attribute, widget-derived state or an `Axes`/array parameter; a known exception goes
+in its `ALLOWED` table with the condition that removes it. (3) A behavioural flow records each action in
+one tab and replays it into a second, perturbed tab, comparing plugin calls, plot cache, figures and
+bookkeeping; a declared action with no scenario fails. Protein's reset stops clearing fits and each plot
+action clears its own: a `mode` argument was rejected because the compliance test audits `_reset_actions`'s
+signature against `MetaView`'s, and no caller needed it.
+
+**Evidence.** 5 mutations killed (restoring the mode branch; dropping the `replaying()` wrap; dropping one
+helper's guard call; the Metadata overlay reading the live filter selection, and the bins field). The
+tripwire cannot see a direct `.text()`; the static test does.
+
+**Known gap, recorded not fixed.** Protein's figures are properties that pick the Individual or Ensemble
+figure by the live mode, so a plot recorded in Ensemble and replayed into an Individual-mode tab draws on
+the wrong figures. The two Protein actions are in `ALLOWED` and a strict `xfail` pins it.
+
+**Revisit** when replay writes the recorded mode back before it runs an action: remove the `ALLOWED` entries
+and the `xfail` marker.
+
+---
+
 ## 2026-10-25 - A recorded action is declared on the Controller, and replay is dispatched by the Controller
 
 **Context.** The 2026-09-17 rules had replay run on the View. Kyle proposed that a new tab
@@ -1981,7 +2011,7 @@ than through `getattr` on whatever the file happens to name. Five rules:
 5. **A replayable action is a pure function of its recorded arguments.** Everything it
    depends on is captured when the action is recorded and passed in; the body reads **no**
    widget state. Replay has to reproduce what the user actually did, not press the button
-   again against whatever is in the entry boxes now. *Met 2026-09-25 for both decorated plot methods: the filter and channel selection is recorded in their parameters (`MetaSubsetTabView._record_selection`), without the registry.*
+   again against whatever is in the entry boxes now. *Met 2026-09-25 for both decorated plot methods: the filter and channel selection is recorded in their parameters (`MetaSubsetTabView._record_selection`), without the registry.* *Enforced 2026-10-26 by a replay tripwire, a static test and a behavioural flow; see that entry.*
 
 **Backward compatibility is explicitly not a constraint.** Kyle's ruling, 2026-09-17: the
 feature is barely used, so existing `.json` action files may be broken where doing so makes

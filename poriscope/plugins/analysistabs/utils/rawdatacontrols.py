@@ -39,6 +39,7 @@ from PySide6.QtWidgets import (
 
 from poriscope.configs.utils import get_icon
 from poriscope.utils.MetaEventTabControls import MetaEventTabControls
+from poriscope.utils.ReplayGuard import forbid_while_replaying
 from poriscope.views.float_range_line_edit import FloatRangeLineEdit
 from poriscope.views.integer_range_line_edit import IntegerRangeLineEdit
 from poriscope.views.widgets.multiselect import MultiSelectComboBox
@@ -417,6 +418,7 @@ class RawDataControls(MetaEventTabControls):
         self.readers_comboBox.setCurrentText("")
 
     def collect_parameters(self) -> Dict[str, Any]:
+        forbid_while_replaying("collect_parameters")
         self.logger.info("Collecting parameters")
 
         # Initialize with default values to handle possible None values

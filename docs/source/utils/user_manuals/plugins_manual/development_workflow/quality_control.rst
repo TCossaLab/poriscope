@@ -1447,6 +1447,41 @@ a violation, rerun with ``--update`` and commit the new allowlist alongside it.
    an ordinary assignment and counts, while a string annotation is invisible and does not.
    Neither exists in the View layer today, and both are pinned by tests.
 
+.. _recorded_actions_read_no_widgets:
+
+Recorded Actions Read No Widgets
+---------------------------------
+
+This one affects you if you decorate a method with ``@register_action``. A recorded action
+must be a pure function of its recorded arguments: a replay has to reproduce what the user
+did, not press the button again against whatever the controls panel shows now, and it takes
+intent, never data already on the plot. Two checks hold the rule:
+
+``tests/unit/utils/test_recorded_actions_read_no_widgets.py``
+   walks every declared action of every analysis tab, and everything it calls on its own class
+   (a Controller action is followed into its View through ``self.view``, and a property read
+   into its getter). It fails on a widget-value call (``.text()``, ``.currentText()``,
+   ``.getSelectedItems()`` and the like), a call to ``collect_parameters``,
+   ``get_selected_filters`` or ``_get_event_index_text``, a reach into an attribute named
+   ``*controls``, a read of state a widget handler sets (the analysis mode, the scope, the
+   filter list, the Timer limits, the last event button), and a parameter annotated with an
+   ``Axes``, a numpy array or a data frame. It reads source with ``ast`` and builds no widget.
+   A known exception is listed in the test's ``ALLOWED`` table with its reason and the condition
+   that removes it, and an entry that no longer trips is itself a failure.
+
+``poriscope.utils.ReplayGuard``
+   is a tripwire. ``MetaController.replay`` runs inside ``replaying()``, and the seven helpers
+   that read a controls panel (``get_selected_filters``, ``_get_event_index_text`` and the five
+   ``collect_parameters``) start with ``forbid_while_replaying(...)``, so a recorded action that
+   reaches one raises ``ReplayWidgetReadError`` during a replay and nowhere else. It cannot see
+   a direct ``.text()`` call; the static test covers those.
+
+``tests/integration/flows/test_replay_guard_no_gui.py`` adds the behavioural check: each
+declared action is recorded in one tab, replayed into a second tab whose widgets and stored
+inputs have all been changed, and the data-plugin calls, plot cache, figures and the tab's
+bookkeeping must match. It fails for a declared action that no scenario records, so a new
+recorded action needs a scenario in the same commit.
+
 .. _golden_net_armed:
 
 Is the Golden Net Armed?

@@ -405,6 +405,114 @@ class TestResetActions:
         assert mock_view.plotted_datasets == set()
 
 
+ENSEMBLE_FIT_ATTRIBUTES = (
+    "ensemble_fit_params",
+    "ensemble_fit_bins",
+    "ensemble_fit_sizes",
+    "ensemble_fit_prolate_summary",
+    "ensemble_fit_oblate_summary",
+)
+
+
+def _seed_fits(view):
+    """Give both modes a fit, each recognisable, so a test can see which one survives."""
+    view.fit_data = "individual fit"
+    for name in ENSEMBLE_FIT_ATTRIBUTES:
+        setattr(view, name, f"{name} value")
+
+
+class TestResetReadsNoMode:
+    """
+    A recorded reset replays the same in whichever mode the tab is in.
+
+    The reset is recorded with only its axis type, so it must not decide what to clear
+    by reading the live analysis mode: replayed in the other mode it would clear the
+    wrong fit. Each plot action clears the fit it is about to replace, instead.
+    """
+
+    @pytest.mark.parametrize("mode", ["individual", "ensemble"])
+    def test_the_reset_clears_no_fit_state_in_either_mode(self, mock_view, mode):
+        mock_view._analysis_mode = mode
+        _seed_fits(mock_view)
+
+        mock_view._reset_actions()
+
+        assert mock_view.fit_data == "individual fit"
+        for name in ENSEMBLE_FIT_ATTRIBUTES:
+            assert getattr(mock_view, name) == f"{name} value"
+
+    def test_an_ensemble_plot_replayed_in_individual_mode_clears_the_ensemble_fit_only(
+        self, mock_view
+    ):
+        """
+        The case a replay creates: the history was recorded in Ensemble mode and the
+        tab now holds an Individual fit and sits in Individual mode.
+        """
+        mock_view._analysis_mode = "individual"
+        _seed_fits(mock_view)
+        mock_view.selected_experiment_and_channels_by_loader = {
+            "ldr": {"exp1": ["0"], "exp2": ["0"]}
+        }
+        mock_view.get_selected_filters = MagicMock(return_value={})
+        parameters = {
+            "db_loader": "ldr",
+            "plot_type": "Filtered Histogram",
+            "pore_diameter": "20.0",
+            "pore_length": "30.0",
+            "n_values": "10",
+        }
+
+        mock_view._update_distribution_ensemble(recorded(mock_view, parameters))
+
+        assert mock_view.fit_data == "individual fit"
+        for name in ENSEMBLE_FIT_ATTRIBUTES:
+            assert getattr(mock_view, name) is None
+
+    def test_the_ensemble_plot_clears_the_ensemble_fit_it_replaces(self, mock_view):
+        mock_view._analysis_mode = "ensemble"
+        _seed_fits(mock_view)
+        mock_view.selected_experiment_and_channels_by_loader = {
+            "ldr": {"exp1": ["0"], "exp2": ["0"]}
+        }
+        mock_view.get_selected_filters = MagicMock(return_value={})
+        parameters = {
+            "db_loader": "ldr",
+            "plot_type": "Filtered Histogram",
+            "pore_diameter": "20.0",
+            "pore_length": "30.0",
+            "n_values": "10",
+        }
+
+        mock_view._update_distribution_ensemble(recorded(mock_view, parameters))
+
+        for name in ENSEMBLE_FIT_ATTRIBUTES:
+            assert getattr(mock_view, name) is None
+        assert mock_view.fit_data == "individual fit"
+
+    def test_the_individual_plot_clears_the_individual_fit_it_replaces(self, mock_view):
+        mock_view._analysis_mode = "individual"
+        _seed_fits(mock_view)
+        mock_view.selected_experiment_and_channels_by_loader = {
+            "ldr": {"exp1": ["0"], "exp2": ["0"]}
+        }
+        mock_view.get_selected_filters = MagicMock(return_value={})
+        parameters = {
+            "db_loader": "ldr",
+            "plot_type": "Filtered Histogram",
+            "pore_diameter": "20.0",
+            "pore_length": "30.0",
+            "n_values": "10",
+            "bins": [50],
+            "sizes": False,
+        }
+
+        mock_view._update_distribution_individual(parameters)
+
+        assert mock_view.fit_data is None
+        for name in ENSEMBLE_FIT_ATTRIBUTES:
+            assert getattr(mock_view, name) == f"{name} value"
+
+
 # ===========================================================================
 # _clear_figure_state
 # ===========================================================================
