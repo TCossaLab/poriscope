@@ -1482,11 +1482,6 @@ inputs have all been changed, and the data-plugin calls, plot cache, figures and
 bookkeeping must match. It fails for a declared action that no scenario records, so a new
 recorded action needs a scenario in the same commit.
 
-One exception is known and recorded: Protein's figures follow the live analysis mode, so a plot
-recorded in Ensemble mode and replayed into a tab in Individual mode draws on the Individual
-figures. The two Protein actions are in the ``ALLOWED`` table for it, and a strict ``xfail`` in
-the behavioural test flips when replay writes the recorded mode back before it runs the action.
-
 .. _golden_net_armed:
 
 Is the Golden Net Armed?
