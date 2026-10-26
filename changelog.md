@@ -77,6 +77,8 @@
 
 * **Breaking:** `format_axis_label` is now one `MetaView` method instead of three copies, and it appends the unit rather than replacing a trailing parenthetical, so a column name containing parentheses is no longer truncated; `ProteinView`'s module-level `format_axis_label` is gone
 
+* **Breaking:** Raw Data's Update Trace, Update PSD, Find Events and Plot Events are recorded actions, and `RawDataController.start_eventfinding` now takes each channel's Timer limits as a third element of its `channel_ranges` entries; Find Events is recorded per channel, and a call that plotted or launched nothing is not recorded (`register_action(skip_on_false=True)`)
+
 ### Developer Tooling:
 
 * The release workflow now runs only when a version tag is pushed

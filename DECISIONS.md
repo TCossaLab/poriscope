@@ -1984,6 +1984,18 @@ make the push trigger redundant.
 
 ---
 
+## 2026-10-26 - A recorded call that did nothing is not recorded
+
+**Context.** Raw Data's Update Trace, Update PSD and Plot Events return early when the reader has nothing to plot, and Find can be refused or fail to launch. A decorator that records on entry would put those no-ops in the history, and replay would repeat them.
+
+**Decision** (Carolina, 2026-10-26). `register_action(name, skip_on_false=True)` records only if the method did not return a literal `False`; the four RawData methods return `bool`. Opt-in, so existing actions keep recording unconditionally. Find is recorded per channel (`find_events_on_channel`) with its Timer limits, because a replayed entry has no batch loop around it.
+
+**Rejected.** Raising on refusal (changes what the click path sees); recording first and pruning later (history briefly lies); checking the result in each caller (every caller must remember).
+
+**Revisit.** If a recorded method needs to report more than done/not-done.
+
+---
+
 ## 2026-09-17 - Action replay records a declared action name, not a method name
 
 **Context.** `@register_action` records `func.__name__` with the call's args and kwargs, and
