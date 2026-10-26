@@ -54,7 +54,7 @@ from PySide6.QtWidgets import (
 
 from poriscope.plugins.analysistabs.utils.metadatacontrols import MetadataControls
 from poriscope.utils.DocstringDecorator import inherit_docstrings
-from poriscope.utils.LogDecorator import log, register_action
+from poriscope.utils.LogDecorator import RESET_ACTION, log, register_action
 from poriscope.utils.MetaSubsetTabControls import MetaSubsetTabControls
 from poriscope.utils.MetaSubsetTabView import MetaSubsetTabView
 from poriscope.views.widgets.dict_dialog_widget import DictDialog
@@ -392,7 +392,7 @@ class MetadataView(MetaSubsetTabView):
         return is_3d if axis_type == "3d" else not is_3d
 
     @log(logger=logger)
-    @register_action()
+    @register_action(RESET_ACTION)
     @override
     def _reset_actions(self, axis_type: str = "2d") -> None:
         """
@@ -1413,7 +1413,7 @@ class MetadataView(MetaSubsetTabView):
             )
 
     @log(logger=logger)
-    @register_action()
+    @register_action("overlay_plot")
     def _overlay_plot(self, parameters: Dict[str, Any]) -> bool:
         """
         Handle the creation of a new overlay plot based on the selected parameters.

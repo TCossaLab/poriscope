@@ -1,30 +1,22 @@
 """
 Replaying a saved action history and a saved session - both user data.
 
-Saved action files and saved sessions are both user data, and moving a decorated
-method breaks replay. Nothing tested that. A coverage review found there was
-**no checked-in ``.json`` fixture anywhere in ``tests/``**, and that
-``update_actions_from_json`` was only ever asserted against a *mock* view - so the
-replay mechanism itself had no coverage, only its call site.
+Saved action files and saved sessions are both user data, and a history that cannot be
+replayed is lost work. Both fixtures in ``saved_state/`` are real files of the shape the
+app writes, read from disk rather than synthesised by the tests that consume them.
+``metadata_action_history.json`` records actions by declared name, and deliberately
+contains an entry naming an action that no longer exists, because that is what a history
+becomes once an action is removed. ``session_1x.json`` is a whole saved session - three
+tabs, seven data plugins, a renamed plugin key and a populated subset filter - with its
+file paths scrubbed and nothing else changed.
 
-Both fixtures in ``saved_state/`` are real files of the shape the app writes, read
-from disk rather than synthesised by the tests that consume them.
-``metadata_action_history.json`` deliberately contains an entry naming a method that
-no longer exists, because that is exactly what a 1.x history becomes once a
-decorated method moves. ``session_1x.json`` is a whole saved session - three tabs, seven
-data plugins, a renamed plugin key and a populated subset filter - with its file
-paths scrubbed and nothing else changed.
-
-**The finding this pins is uncomfortable and is recorded, not fixed:** a saved
-action whose method has moved is *silently skipped*. ``update_actions_from_json``
-does ``getattr(self, name, None)`` and calls it only if truthy, so a user reloading
-a history after the refactor gets a partial replay with no error, no log line and no
-indication that anything was dropped. Recording a declared action name instead of
-``func.__name__`` is what addresses it; that is queued in ``future_fixes.md``. This
-test makes sure the decision is taken rather than discovered.
+Replay is driven through the tab's Controller, which dispatches by declared name: an
+entry whose name is not declared is reported on the status panel and skipped, never
+called and never silently dropped.
 """
 
 import json
+from collections import OrderedDict
 from pathlib import Path
 from types import MethodType
 from typing import Any, Dict
@@ -34,6 +26,7 @@ import pytest
 from poriscope.models.main_model import MainModel
 from poriscope.plugins.analysistabs.MetadataController import MetadataController
 from poriscope.plugins.analysistabs.MetadataView import MetadataView
+from poriscope.utils.LogDecorator import RESET_ACTION
 from poriscope.utils.MetaSubsetTabView import MetaSubsetTabView
 from poriscope.utils.plugin_schemas import discover_plugin_classes
 from tests.unit.views._qt_mocks import shadow_signals
@@ -80,6 +73,25 @@ def view() -> MetadataView:
     return instance
 
 
+@pytest.fixture
+def controller(view: MetadataView, mocker) -> MetadataController:
+    """
+    A MetadataController, built without Qt, that owns the view.
+
+    :param view: the view it owns
+    :param mocker: pytest-mock fixture
+    :return: the controller
+    :rtype: MetadataController
+    """
+    instance = MetadataController.__new__(MetadataController)  # type: ignore[type-abstract]
+    instance.view = view
+    instance.model = mocker.Mock()
+    instance.tab_action_history = OrderedDict()
+    for signal in ("add_text_to_display", "update_tab_action_history"):
+        setattr(instance, signal, mocker.Mock())
+    return instance
+
+
 class TestReplayingASavedActionHistory:
     """What happens when a user reloads a history file."""
 
@@ -94,47 +106,56 @@ class TestReplayingASavedActionHistory:
         """
         assert SAVED.is_file()
         assert set(history) == {"0", "1", "2"}
-        assert all("function" in entry for entry in history.values())
+        assert all("action" in entry for entry in history.values())
 
     def test_each_stored_action_is_replayed_with_its_arguments(
-        self, view: MetadataView, history: Dict[str, Dict[str, Any]], mocker
+        self,
+        controller: MetadataController,
+        history: Dict[str, Dict[str, Any]],
+        mocker,
     ) -> None:
         """
-        The mechanism: look the name up on the View and call it as saved.
+        The mechanism: look the declared name up on the tab and call it as saved.
 
-        Both surviving entries must fire, with exactly the arguments the file
+        Both declared entries must fire, with exactly the arguments the file
         records - a replay that dropped the args would silently reset the tab to
         defaults rather than to what the user saved.
         """
-        reset = mocker.patch.object(view, "_reset_actions")
-        columns = mocker.patch.object(view, "update_available_columns")
+        reset = mocker.patch.object(controller.view, "_reset_actions")
+        overlay = mocker.patch.object(controller.view, "_overlay_plot")
 
-        view.update_actions_from_json(history)
+        controller.replay(history.values())
 
         reset.assert_called_once_with("2d")
-        columns.assert_called_once_with("loader")
+        overlay.assert_called_once_with({"loader": "loader"})
 
-    def test_an_action_whose_method_has_moved_is_silently_skipped(
-        self, view: MetadataView, history: Dict[str, Dict[str, Any]], mocker
+    def test_an_action_that_is_no_longer_declared_is_reported_not_skipped_silently(
+        self,
+        controller: MetadataController,
+        history: Dict[str, Dict[str, Any]],
+        mocker,
     ) -> None:
         """
-        **The replay risk, pinned as current behaviour.**
-
-        The third entry names a method the View does not have, which is what every
-        saved history becomes once a decorated method moves. Replay
-        neither raises nor logs - it just does less than the user asked for. If
-        this test ever starts failing because the replay reports the miss, that is
-        an improvement and the test should be updated to match.
+        The third entry names an action the tab does not declare, which is what
+        every saved history becomes once an action is removed. Replay does not
+        raise, but it says so on the status panel and carries on.
         """
-        mocker.patch.object(view, "_reset_actions")
-        mocker.patch.object(view, "update_available_columns")
+        mocker.patch.object(controller.view, "_reset_actions")
+        mocker.patch.object(controller.view, "_overlay_plot")
 
-        view.update_actions_from_json(history)  # must not raise
+        controller.replay(history.values())  # must not raise
 
-        assert not hasattr(view, "_method_that_no_longer_exists")
+        controller.add_text_to_display.emit.assert_called_once_with(
+            "Not replayed: 'an_action_that_no_longer_exists' is not a recorded "
+            "action of MetadataController",
+            "MetadataController",
+        )
 
     def test_replay_order_follows_the_file(
-        self, view: MetadataView, history: Dict[str, Dict[str, Any]], mocker
+        self,
+        controller: MetadataController,
+        history: Dict[str, Dict[str, Any]],
+        mocker,
     ) -> None:
         """
         Actions are replayed in the order stored, which is what makes a history a
@@ -142,30 +163,35 @@ class TestReplayingASavedActionHistory:
         """
         calls = []
         mocker.patch.object(
-            view, "_reset_actions", side_effect=lambda *a: calls.append("reset")
+            controller.view,
+            "_reset_actions",
+            side_effect=lambda *a: calls.append("reset"),
         )
         mocker.patch.object(
-            view,
-            "update_available_columns",
-            side_effect=lambda *a: calls.append("columns"),
+            controller.view,
+            "_overlay_plot",
+            side_effect=lambda *a: calls.append("overlay"),
         )
 
-        view.update_actions_from_json(history)
+        controller.replay(history.values())
 
-        assert calls == ["reset", "columns"]
+        assert calls == ["reset", "overlay"]
 
-    def test_a_decorated_method_is_reachable_by_its_recorded_name(
-        self, view: MetadataView
+    def test_a_decorated_method_is_reachable_by_its_declared_name(
+        self, controller: MetadataController
     ) -> None:
         """
-        ``@register_action`` records ``func.__name__``, and replay looks that up.
+        The registry maps the declared name to the View method.
 
         ``_reset_actions`` is decorated, so the decorator must not rename it -
-        ``functools.wraps`` is what keeps this true, and losing it would break
-        every saved history without touching any test that mocks the method.
+        ``functools.wraps`` keeps its own name - and its declared name is the
+        shared reset constant Undo looks for.
         """
-        assert getattr(view, "_reset_actions", None) is not None
-        assert view._reset_actions.__name__ == "_reset_actions"
+        registry = controller.action_registry()
+
+        assert registry[RESET_ACTION] == controller.view._reset_actions
+        assert controller.view._reset_actions.__name__ == "_reset_actions"
+        assert registry["overlay_plot"] == controller.view._overlay_plot
 
 
 class TestSessionStateRoundTrip:

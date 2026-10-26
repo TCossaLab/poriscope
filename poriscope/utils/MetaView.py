@@ -28,7 +28,7 @@ import logging
 import os
 import threading
 from abc import abstractmethod
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple, Union
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from matplotlib.backends.backend_qt5agg import (
     FigureCanvasQTAgg as FigureCanvas,
@@ -411,23 +411,18 @@ class MetaView(QWidget, WalkthroughMixin, metaclass=QObjectABCMeta):
             progress_bar.setValue(value)
 
     @log(logger=logger)
-    def update_actions_from_json(
-        self, actions: Mapping[Union[int, str], Dict[str, Any]]
-    ) -> None:
-        # Keys are ignored: the controller's in-memory history is keyed by int and a
-        # history read back from a JSON file by str, and both are replayed through here.
-        for _, val in actions.items():
-            function = val.get("function")
-            # Pre-existing gap: if a stored action dict is missing the "function"
-            # key, `function` is None here and getattr() would raise TypeError at
-            # runtime; not fixed as part of a pure type-hint pass, flagged for
-            # human review.
-            function = getattr(self, function, None)  # type: ignore[arg-type]
-            if function:
-                if callable(function):
-                    args = val.get("args")
-                    kwargs = val.get("kwargs")
-                    function(*args, **kwargs)
+    def record_action(self, entry: Dict[str, Any]) -> None:
+        """
+        Send one declared action to the Controller's history.
+
+        The hook :py:func:`~poriscope.utils.LogDecorator.register_action` calls for a
+        decorated View method. It is the transitional path: an action moves to the
+        Controller's own ``record_action`` when its tab is converted.
+
+        :param entry: ``{"action": name, "args": ..., "kwargs": ...}``
+        :type entry: Dict[str, Any]
+        """
+        self.update_tab_action_history.emit(entry, False)
 
     @log(logger=logger)
     def get_save_filename(self) -> str:

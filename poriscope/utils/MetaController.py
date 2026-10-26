@@ -29,14 +29,34 @@ import logging
 from abc import abstractmethod
 from collections import OrderedDict
 from copy import deepcopy
-from typing import Any, Dict, List, Mapping, Optional
+from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Tuple
 
 from PySide6.QtCore import QObject, Signal, Slot
 
-from poriscope.utils.LogDecorator import log
+from poriscope.utils.LogDecorator import ACTION_NAME_ATTR, RESET_ACTION, log
 from poriscope.utils.MetaModel import MetaModel
 from poriscope.utils.MetaView import MetaView
 from poriscope.utils.QObjectABCMeta import QObjectABCMeta
+
+
+def _declared_actions(owner: object) -> List[Tuple[str, str]]:
+    """
+    List the methods of an object that carry a declared action name.
+
+    The class is searched, not the instance, so no property or Qt attribute is evaluated.
+    A subclass's override is the attribute that is found.
+
+    :param owner: the Controller or View to search
+    :type owner: object
+    :return: (attribute name, declared action name) for each declared method
+    :rtype: List[Tuple[str, str]]
+    """
+    declared = []
+    for attribute in dir(type(owner)):
+        name = getattr(getattr(type(owner), attribute, None), ACTION_NAME_ATTR, None)
+        if isinstance(name, str):
+            declared.append((attribute, name))
+    return declared
 
 
 class MetaController(QObject, metaclass=QObjectABCMeta):
@@ -67,6 +87,10 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
     #: own View or Model redeclares the attribute with it.
     view: MetaView
     model: MetaModel
+
+    #: name -> method for every declared action of this tab; built on first use by
+    #: :py:meth:`action_registry`.
+    _action_registry: Optional[Dict[str, Callable[..., Any]]] = None
 
     def __init__(
         self,
@@ -229,7 +253,76 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
             return None
         if self.__class__.__name__ in actions.keys():
             actions = actions[self.__class__.__name__]  # allow loading from base file
-        self.view.update_actions_from_json(actions)
+        self.replay(actions.values())
+
+    @log(logger=logger)
+    def record_action(self, entry: Dict[str, Any]) -> None:
+        """
+        Append one declared action to this tab's history and tell the main window.
+
+        The hook :py:func:`~poriscope.utils.LogDecorator.register_action` calls for a
+        decorated Controller method.
+
+        :param entry: ``{"action": name, "args": ..., "kwargs": ...}``
+        :type entry: Dict[str, Any]
+        """
+        self.update_tab_actions(entry, False)
+
+    @log(logger=logger)
+    def action_registry(self) -> Dict[str, Callable[..., Any]]:
+        """
+        Map each declared action name to the method that runs it, for this tab.
+
+        Built once, from the decorated methods of this Controller and then, during the
+        transition to Controller recording, of its View. A method without a declaration
+        is not in it, so replay can only reach what was declared.
+
+        :raises ValueError: if one name is declared by two methods
+        :return: action name -> bound method
+        :rtype: Dict[str, Callable[..., Any]]
+        """
+        if self._action_registry is None:
+            registry: Dict[str, Callable[..., Any]] = {}
+            for owner in (self, self.view):
+                for attribute, name in _declared_actions(owner):
+                    if name in registry:
+                        raise ValueError(
+                            f"The action name '{name}' is declared twice in "
+                            f"{self.__class__.__name__}: {attribute} repeats it"
+                        )
+                    registry[name] = getattr(owner, attribute)
+            self._action_registry = registry
+        return self._action_registry
+
+    @log(logger=logger)
+    def replay(self, entries: Iterable[Any]) -> None:
+        """
+        Run recorded actions in order, each through its declared name.
+
+        An entry with no action name, or one that names no declared action of this tab
+        (an old-format entry, or a method that has since been removed), is reported on
+        the status panel and skipped, and replay moves on. Replaying a decorated method
+        records it again.
+
+        :param entries: recorded entries, ``{"action": name, "args": [...], "kwargs": {...}}``
+        :type entries: Iterable[Any]
+        """
+        registry = self.action_registry()
+        for entry in entries:
+            name = entry.get("action") if isinstance(entry, Mapping) else None
+            method = registry.get(name) if isinstance(name, str) else None
+            if method is None:
+                described = (
+                    f"'{name}' is not a recorded action of {self.__class__.__name__}"
+                    if isinstance(name, str)
+                    else f"an entry with no action name was found in {self.__class__.__name__}"
+                )
+                self.logger.warning(f"Not replayed: {described}")
+                self.add_text_to_display.emit(
+                    f"Not replayed: {described}", self.__class__.__name__
+                )
+                continue
+            method(*(entry.get("args") or []), **(entry.get("kwargs") or {}))
 
     @log(logger=logger)
     def display_write_status(self, status: bool) -> None:
@@ -427,7 +520,7 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
             except StopIteration:
                 pass
             else:
-                while last_item["function"] == "_reset_actions":
+                while last_item.get("action") == RESET_ACTION:
                     self.tab_action_history.popitem()
                     try:
                         last_item = self.tab_action_history[
@@ -444,12 +537,12 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
                 (
                     position
                     for position, (_, entry) in enumerate(entries)
-                    if entry.get("function") == "_reset_actions"
+                    if entry.get("action") == RESET_ACTION
                 ),
                 default=0,
             )
             self.tab_action_history = OrderedDict(entries[:start])
-            self.view.update_actions_from_json(OrderedDict(entries[start:]))
+            self.replay([entry for _, entry in entries[start:]])
         self.update_tab_action_history.emit(
             self.__class__.__name__, self.tab_action_history
         )

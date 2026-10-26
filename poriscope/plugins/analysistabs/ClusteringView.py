@@ -45,7 +45,7 @@ from PySide6.QtWidgets import (
 
 from poriscope.plugins.analysistabs.utils.clusteringcontrols import ClusteringControls
 from poriscope.utils.DocstringDecorator import inherit_docstrings
-from poriscope.utils.LogDecorator import log, register_action
+from poriscope.utils.LogDecorator import RESET_ACTION, log, register_action
 from poriscope.utils.MetaView import MetaView
 from poriscope.views.widgets.clustering_settings_widget import ClusteringSettingsDialog
 from poriscope.views.widgets.walkthrough_mixin import (
@@ -139,7 +139,7 @@ class ClusteringView(MetaView):
         return self.clusteringcontrols
 
     @log(logger=logger)
-    @register_action()
+    @register_action(RESET_ACTION)
     @override
     def _reset_actions(self, axis_type: str = "2d") -> None:
         """
