@@ -72,8 +72,9 @@ The pytest markers are listed in `pytest.ini`. `e2e` and `integration` are appli
 
 Two layers using the same MVC pattern recursively: an app-shell triad (`MainModel` /
 `MainView` / `MainController`) and a plugin system for everything else — analysis tabs and
-data plugins. **Load the `plugin-architecture` skill** before adding, moving or
-restructuring a plugin, a `Meta*` base or an analysis tab; it carries the two plugin
+data plugins. **Load the `plugin-architecture` skill** before reading, reasoning about,
+designing or changing a plugin, a `Meta*` base, an analysis tab or session persistence -
+including design discussion with no code planned; it carries the two plugin
 families, discovery, and the `BaseDataPlugin` settings lifecycle.
 Three rules apply regardless:
 
@@ -198,7 +199,8 @@ of every session, so it should stay a short list of standing rules.
 ## Planning and executing work
 
 **Load the `planning-and-executing-changes` skill for most planning and execution tasks** -
-any fix, feature, review, investigation or release step beyond a typo. It holds the general
+any fix, feature, design discussion, review, investigation or release step beyond a typo,
+from the first message about it, even when no plan or code is wanted yet. It holds the general
 method and its lessons; `refactoring-codebases` builds on it for refactors. Five of its rules
 hold in every session:
 
