@@ -50,14 +50,6 @@ Step 10 waits for both tracks.
 
 ### Step 9b - breaking tab designs and the milestone guard (Carolina's track)
 
-- **Action history: record a declared action name, not a method name.** `DECISIONS.md`
-  2026-09-17 settled the design. 5 `@register_action` sites over 3 names, all private
-  (`_reset_actions` on Clustering/Metadata/Protein views, `MetadataView._overlay_plot:1396`,
-  `ProteinView._update_distribution_ensemble:1860`); replay is `getattr(self, name)` via
-  `MetaView.update_actions_from_json:389` (`:396`). Saved action files carry no compatibility
-  obligation (Kyle). Declared names, registry dispatch, small JSON-round-trippable arguments, and a
-  docstring on `register_action` (`LogDecorator.py:177`, none today). Breaking.
-
 ### Step 10 - docs dead-link gate and release prep
 
 - **The API reference has no dead-link gate.** `-W` passes while references are unresolved
