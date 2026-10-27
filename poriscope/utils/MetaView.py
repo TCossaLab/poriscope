@@ -411,6 +411,25 @@ class MetaView(QWidget, WalkthroughMixin, metaclass=QObjectABCMeta):
             progress_bar.setValue(value)
 
     @log(logger=logger)
+    def write_back(
+        self, action: str, args: Tuple[Any, ...], kwargs: Dict[str, Any]
+    ) -> None:
+        """
+        Show a recorded action's values in the panel and the stored inputs the action used.
+
+        A tab overrides this to write what the entry recorded into its widgets, with their
+        automatic triggers held off, so a restored tab shows what produced its result. It only
+        writes: nothing is read back, and no action is emitted. The default shows nothing.
+
+        :param action: the entry's declared action name
+        :type action: str
+        :param args: the entry's recorded positional arguments
+        :type args: Tuple[Any, ...]
+        :param kwargs: the entry's recorded keyword arguments
+        :type kwargs: Dict[str, Any]
+        """
+
+    @log(logger=logger)
     def record_action(self, entry: Dict[str, Any]) -> None:
         """
         Send one declared action to the Controller's history.

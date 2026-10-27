@@ -21,6 +21,7 @@
 # SOFTWARE.
 #
 # Contributors:
+# Alejandra Carolina González González
 # Kyle Briggs
 
 """
@@ -174,6 +175,34 @@ class MultiSelectComboBoxBase(QComboBox, metaclass=QObjectABCMeta):
         """Rewrite the line edit from the current selection, without emitting anything."""
         self._line_edit.setText(", ".join(self.getSelectedItems()))
 
+    def setSelectedItems(self, texts: Iterable[str]) -> List[str]:
+        """
+        Select exactly these rows and no others, emitting nothing.
+
+        For writing a recorded selection back into the widget: the checked set changes, the
+        display text and the select-all button follow, and ``selectionChanged`` stays quiet
+        so no handler reacts to a value the caller has just written.
+
+        :param texts: the labels to select
+        :type texts: Iterable[str]
+        :return: the labels that are not rows of this list, in order
+        :rtype: List[str]
+        """
+        wanted = list(texts)
+        self.blockSignals(True)
+        try:
+            for text in self.getSelectedItems():
+                if text not in wanted:
+                    self.selectItem(text, False)
+            for text in wanted:
+                self.selectItem(text, True)
+        finally:
+            self.blockSignals(False)
+        self.refreshDisplayText()
+        self.updateSelectAllButton()
+        selected = self.getSelectedItems()
+        return [text for text in wanted if text not in selected]
+
     # ------------------------------------------------- what a row is, per subclass
 
     @abstractmethod
@@ -192,6 +221,17 @@ class MultiSelectComboBoxBase(QComboBox, metaclass=QObjectABCMeta):
 
         :return: the checked labels
         :rtype: List[str]
+        """
+
+    @abstractmethod
+    def selectItem(self, text: str, select: bool = True) -> None:
+        """
+        Check or uncheck the row with this label; a label that is not a row does nothing.
+
+        :param text: the row's label
+        :type text: str
+        :param select: True to check the row, False to uncheck it
+        :type select: bool
         """
 
     @abstractmethod

@@ -84,6 +84,7 @@ class MetaEventFinder(BaseDataPlugin):
         self.accepted_data: Dict[int, float] = {}
         self.rejected_events: Dict[int, Dict[str, int]] = {}
         self.eventfinding_finished: Dict[int, bool] = {}
+        self.no_events_found: Dict[int, bool] = {}
 
     # public API, must be overridden by subclasses
 
@@ -126,6 +127,8 @@ class MetaEventFinder(BaseDataPlugin):
                             for key, value in self.rejected_events[channel].items()
                         )
                     return report
+                elif self.no_events_found.get(channel):
+                    return f"\nCh{channel}: no events found"
                 else:
                     return f"\nCh{channel}: event finding incomplete"
 
@@ -178,6 +181,7 @@ class MetaEventFinder(BaseDataPlugin):
         self.rejected_data[channel] = 0
         self.accepted_data[channel] = 0
         self.eventfinding_finished[channel] = False
+        self.no_events_found[channel] = False
 
     @log(logger=logger)
     def get_samplerate(self) -> float:
@@ -350,6 +354,9 @@ class MetaEventFinder(BaseDataPlugin):
             else:
                 self.logger.info(f"No events found in channel {channel}")
                 self.reset_channel(channel)
+                # The run completed, so the report says so. The channel stays unfinished:
+                # there is nothing for Plot Events or the writer to use.
+                self.no_events_found[channel] = True
         else:
             self.logger.info(f"Eventfinding aborted in channel {channel}")
             self.reset_channel(channel)

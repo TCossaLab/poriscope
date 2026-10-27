@@ -77,6 +77,8 @@
 
 * **Breaking:** `format_axis_label` is now one `MetaView` method instead of three copies, and it appends the unit rather than replacing a trailing parenthetical, so a column name containing parentheses is no longer truncated; `ProteinView`'s module-level `format_axis_label` is gone
 
+* **Breaking:** Raw Data's Update Trace, Update PSD, Find Events and Plot Events are recorded actions, and `RawDataController.start_eventfinding` now takes each channel's Timer limits as a third element of its `channel_ranges` entries; Find Events is recorded per channel, and a call that plotted or launched nothing is not recorded (`register_action(skip_on_false=True)`)
+
 ### Developer Tooling:
 
 * The release workflow now runs only when a version tag is pushed
@@ -274,6 +276,8 @@
 * **Fixed Help → Tutorial on a tab that has no working walkthrough locking the app**; the tutorial is now treated as not running, so tabs, Settings and Help stay usable
 
 * **Help → Tutorial on a page that has no tutorial now says so**, and points to the core tabs that have one, instead of showing the generic welcome popup and then doing nothing
+
+* An event finder run that finds no events now reports `no events found` for the channel instead of `event finding incomplete`; an aborted run still reports `incomplete`
 
 ### Documentation:
 

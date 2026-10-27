@@ -34,6 +34,8 @@ from typing import Any, Dict, List
 
 from poriscope.controllers.main_controller import MainController
 from poriscope.models.main_model import MainModel
+from poriscope.plugins.datareaders.ChimeraReader20240501 import ChimeraReader20240501
+from poriscope.plugins.eventfinders.ClassicBlockageFinder import ClassicBlockageFinder
 from poriscope.utils.BaseDataPlugin import BaseDataPlugin
 from poriscope.views.main_view import MainView
 
@@ -153,3 +155,49 @@ def build_triad(subclass: str, tmp_path: Path) -> Triad:
         tab_controller=tab_controller,
         tab_view=tab_controller.view,
     )
+
+
+def build_rawdata_tab(
+    tmp_path: Path,
+    chimera: Dict[str, str],
+    reader_key: str = "reader",
+    finder_key: str = "finder",
+) -> Triad:
+    """
+    Build a Raw Data tab with a reader over a synthetic recording and a finder on it registered.
+
+    The finder is wired to the reader through its settings the way the plugin dialog would,
+    including the ``Type = None`` reset that marks a resolved plugin reference. The recording's
+    channel is left on the triad as ``channel``.
+
+    :param tmp_path: a scratch directory to use as the app's data root
+    :type tmp_path: Path
+    :param chimera: the generated recording's paths and metadata
+    :type chimera: Dict[str, str]
+    :param reader_key: the key to register the reader under
+    :type reader_key: str
+    :param finder_key: the key to register the finder under
+    :type finder_key: str
+    :return: the assembled triad
+    :rtype: Triad
+    """
+    triad = build_triad("RawDataController", tmp_path)
+    reader = ChimeraReader20240501()
+    reader_settings = reader.get_empty_settings(standalone=True)
+    reader_settings["Input File"]["Value"] = chimera["log"]
+    reader.apply_settings(reader_settings)
+    triad.register(reader, "MetaReader", reader_key)
+
+    finder = ClassicBlockageFinder()
+    finder_settings = finder.get_empty_settings(standalone=True)
+    finder_settings["MetaReader"]["Value"] = reader
+    finder_settings["MetaReader"]["Type"] = None
+    finder_settings["Threshold"]["Value"] = 100.0
+    finder_settings["Min Duration"]["Value"] = 10.0
+    finder_settings["Max Duration"]["Value"] = 1000000.0
+    finder_settings["Min Separation"]["Value"] = 10.0
+    finder.apply_settings(finder_settings)
+    triad.register(finder, "MetaEventFinder", finder_key)
+
+    triad.channel = int(chimera["channel"])  # type: ignore[attr-defined]
+    return triad

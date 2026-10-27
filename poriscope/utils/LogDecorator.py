@@ -179,7 +179,7 @@ def log(
         return decorator_log(_func)
 
 
-def register_action(name: str) -> Callable[[F], F]:
+def register_action(name: str, *, skip_on_false: bool = False) -> Callable[[F], F]:
     """
     @register_action(name): record each call of the decorated method as a named action that a saved history can replay.
 
@@ -192,8 +192,16 @@ def register_action(name: str) -> Callable[[F], F]:
     record is logged at INFO and never breaks the call; an object with no
     ``record_action`` is simply not recorded.
 
+    A method can opt in, with ``skip_on_false``, to saying that a call did nothing: it
+    returns ``False`` when it refused, or drew nothing, and that call is not recorded.
+    Without it a refused call would stay in the history and, once the history keeps
+    only the latest run of an action, replace a good one. Only a literal ``False``
+    counts, so a method that returns ``None`` is recorded either way.
+
     :param name: the action's declared name, unique within one tab
     :type name: str
+    :param skip_on_false: do not record a call whose method returned ``False``
+    :type skip_on_false: bool
     :return: the decorator
     :rtype: Callable[[F], F]
     """
@@ -205,6 +213,8 @@ def register_action(name: str) -> Callable[[F], F]:
             self: Any, *args: Any, **kwargs: Any
         ) -> Any:  # self is the first argument for instance methods
             result = func(self, *args, **kwargs)
+            if skip_on_false and result is False:
+                return result
 
             record = getattr(self, "record_action", None)
             if callable(record):

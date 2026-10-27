@@ -32,7 +32,7 @@ from PySide6.QtCore import Slot
 from poriscope.plugins.analysistabs.RawDataModel import RawDataModel
 from poriscope.plugins.analysistabs.RawDataView import RawDataView
 from poriscope.utils.DocstringDecorator import inherit_docstrings
-from poriscope.utils.LogDecorator import log
+from poriscope.utils.LogDecorator import log, register_action
 from poriscope.utils.MetaEventTabController import MetaEventTabController
 
 
@@ -123,59 +123,106 @@ class RawDataController(MetaEventTabController):
     def start_eventfinding(
         self,
         eventfinder: str,
-        channel_ranges: List[Tuple[int, List[Tuple[float, float]]]],
+        channel_ranges: List[Tuple[int, List[Tuple[float, float]], Dict[str, Any]]],
         data_filter: str,
     ) -> None:
         """
-        Launch the finder over the approved channels and run the resulting generators.
+        Launch the finder over the approved channels, one channel at a time.
 
-        The second half. ``chunk_length`` is passed explicitly as 1.0 because the View
-        always did, even though it is also the parameter's default - keeping it makes the
-        move visibly behaviour-preserving rather than relying on the default not changing.
-
-        A channel that cannot be launched is reported and skipped, and the ones that did
-        register still run, for the same reason as ``commit_events``.
+        The second half. A filter that cannot be used is refused here, once, before any
+        channel starts; each channel is then launched by :py:meth:`find_events_on_channel`,
+        which is the recorded action. A channel that cannot be launched is reported and
+        skipped, and the ones that did register still run, for the same reason as
+        ``commit_events``.
 
         :param eventfinder: the event finder plugin's key
         :type eventfinder: str
-        :param channel_ranges: each approved channel with the ranges to search
-        :type channel_ranges: List[Tuple[int, List[Tuple[float, float]]]]
+        :param channel_ranges: each approved channel with the ranges to search and the Timer
+            limits they came from
+        :type channel_ranges: List[Tuple[int, List[Tuple[float, float]], Dict[str, Any]]]
         :param data_filter: the filter plugin's key, or "" for no filtering
         :type data_filter: str
         :return: None
         :rtype: None
         """
         try:
-            callable_filter = self._resolve_callable_filter(
+            self._resolve_callable_filter(
                 data_filter, lambda: self._event_samplerate(eventfinder)
             )
         except ValueError:
             return
-        for channel, ranges in channel_ranges:
-            self.logger.info(
-                f"Launching find_events for channel {channel} over {len(ranges)} range(s)"
+        for channel, ranges, time_limits in channel_ranges:
+            self.find_events_on_channel(
+                eventfinder, channel, ranges, data_filter, time_limits
             )
-            try:
-                generator = self.model.call(
-                    "MetaEventFinder",
-                    eventfinder,
-                    "find_events",
-                    channel,
-                    ranges,
-                    1.0,
-                    callable_filter,
-                )
-            except Exception as e:
-                self.logger.error(
-                    f"Unable to start event finding on channel {channel}: {repr(e)}"
-                )
-                self.add_text_to_display.emit(
-                    f"Unable to start event finding on channel {channel}: {e}",
-                    self.__class__.__name__,
-                )
-                continue
-            self.model.set_generator(generator, channel, eventfinder, "MetaEventFinder")
+
+    @log(logger=logger)
+    @register_action("find_events", skip_on_false=True)
+    def find_events_on_channel(
+        self,
+        eventfinder: str,
+        channel: int,
+        ranges: List[Tuple[float, float]],
+        data_filter: str,
+        time_limits: Dict[str, Any],
+    ) -> bool:
+        """
+        Launch the finder on one channel and run it.
+
+        ``chunk_length`` is passed explicitly as 1.0 because the View always did, even though
+        it is also the parameter's default - keeping it makes the move visibly
+        behaviour-preserving rather than relying on the default not changing.
+
+        The generator is registered and run here, not by the caller, because a replayed entry
+        launches one channel with no loop around it. ``run_generators`` starts only the channels
+        not already running, so a batch starts the same workers as before.
+
+        :param eventfinder: the event finder plugin's key
+        :type eventfinder: str
+        :param channel: the channel to search
+        :type channel: int
+        :param ranges: the time ranges to search, in seconds
+        :type ranges: List[Tuple[float, float]]
+        :param data_filter: the filter plugin's key, or "" for no filtering
+        :type data_filter: str
+        :param time_limits: the Timer limits the ranges came from; recorded so that replay can
+            show them again, and not used by the search
+        :type time_limits: Dict[str, Any]
+        :return: True if the channel was launched, False if the filter was refused or it could
+            not be launched
+        :rtype: bool
+        """
+        try:
+            callable_filter = self._resolve_callable_filter(
+                data_filter, lambda: self._event_samplerate(eventfinder)
+            )
+        except ValueError:
+            return False
+        self.logger.info(
+            f"Launching find_events for channel {channel} over {len(ranges)} range(s)"
+        )
+        try:
+            generator = self.model.call(
+                "MetaEventFinder",
+                eventfinder,
+                "find_events",
+                channel,
+                ranges,
+                1.0,
+                callable_filter,
+            )
+        except Exception as e:
+            self.logger.error(
+                f"Unable to start event finding on channel {channel}: {repr(e)}"
+            )
+            self.add_text_to_display.emit(
+                f"Unable to start event finding on channel {channel}: {e}",
+                self.__class__.__name__,
+            )
+            return False
+        self.model.set_generator(generator, channel, eventfinder, "MetaEventFinder")
         self.model.run_generators(eventfinder)
+        return True
 
     @log(logger=logger)
     @Slot(str, list)
@@ -274,6 +321,7 @@ class RawDataController(MetaEventTabController):
 
     @log(logger=logger)
     @Slot(str, list, float, float, str, bool)
+    @register_action("update_trace", skip_on_false=True)
     def load_trace_data(
         self,
         reader: str,
@@ -282,7 +330,7 @@ class RawDataController(MetaEventTabController):
         length: float,
         data_filter: str,
         baseline: bool,
-    ) -> None:
+    ) -> bool:
         """
         Load and optionally filter a trace, then hand it back for plotting.
 
@@ -298,17 +346,19 @@ class RawDataController(MetaEventTabController):
         :type data_filter: str
         :param baseline: whether the user asked for the baseline band
         :type baseline: bool
-        :return: None
-        :rtype: None
+        :return: True if a trace was plotted, False if the reader had nothing to plot
+        :rtype: bool
         """
         data_list, kept, samplerate = self._load_and_filter(
             reader, channels, start, length, data_filter
         )
         time_bases = self.model.time_bases(data_list, samplerate, offset=start)
         self.view.set_trace_data(data_list, time_bases, kept, start, baseline)
+        return bool(data_list)
 
     @log(logger=logger)
     @Slot(str, list, float, float, str)
+    @register_action("update_psd", skip_on_false=True)
     def load_psd_data(
         self,
         reader: str,
@@ -316,7 +366,7 @@ class RawDataController(MetaEventTabController):
         start: float,
         length: float,
         data_filter: str,
-    ) -> None:
+    ) -> bool:
         """
         Load and optionally filter a trace, then hand it back for the PSD.
 
@@ -333,8 +383,8 @@ class RawDataController(MetaEventTabController):
         :type length: float
         :param data_filter: the filter plugin's key, or "" for no filtering
         :type data_filter: str
-        :return: None
-        :rtype: None
+        :return: True if a PSD was drawn, False if the reader had nothing to analyse
+        :rtype: bool
         """
         # The PSD path does not plot against time, so the samplerate is discarded
         # here rather than carried - the View still holds one for the PSD request.
@@ -342,16 +392,18 @@ class RawDataController(MetaEventTabController):
             reader, channels, start, length, data_filter
         )
         self.view.set_trace_for_psd(data_list, kept)
+        return bool(data_list)
 
     @log(logger=logger)
     @Slot(str, int, list, str)
+    @register_action("plot_events", skip_on_false=True)
     def load_event_plot_data(
         self,
         eventfinder: str,
         channel: int,
         events: List[int],
         data_filter: str,
-    ) -> None:
+    ) -> bool:
         """
         Check the finder, bound the indices, resolve the filter, and load each event.
 
@@ -376,8 +428,8 @@ class RawDataController(MetaEventTabController):
         :type events: List[int]
         :param data_filter: the filter plugin's key, or "" for no filtering
         :type data_filter: str
-        :return: None
-        :rtype: None
+        :return: True if events were plotted, False if there was nothing to plot
+        :rtype: bool
         """
         try:
             finished = self.model.call(
@@ -391,13 +443,13 @@ class RawDataController(MetaEventTabController):
                 f"Unable to read eventfinding status for channel {channel}: {e}",
                 self.__class__.__name__,
             )
-            return
+            return False
         if finished is False:
             self.add_text_to_display.emit(
                 f"Eventfinding not finished in channel {channel}",
                 self.__class__.__name__,
             )
-            return
+            return False
 
         try:
             num_events = self.model.call(
@@ -411,16 +463,16 @@ class RawDataController(MetaEventTabController):
                 f"Unable to read the event count for channel {channel}: {e}",
                 self.__class__.__name__,
             )
-            return
+            return False
         if num_events == 0:
             self.add_text_to_display.emit(
                 f"No events to display from channel {channel}",
                 self.__class__.__name__,
             )
-            return
+            return False
 
         if not events:
-            return
+            return False
 
         out_of_range = [event for event in events if event >= num_events]
         events = [event for event in events if event < num_events]
@@ -440,7 +492,7 @@ class RawDataController(MetaEventTabController):
                 self.__class__.__name__,
             )
         if not events:
-            return
+            return False
 
         # Held as well as pushed: the View still needs it for the PSD request, and the
         # Model needs it to build each event's time axis.
@@ -450,7 +502,7 @@ class RawDataController(MetaEventTabController):
                 data_filter, lambda: samplerate
             )
         except ValueError:
-            return
+            return False
         self.view.update_plot_samplerate(samplerate)
 
         event_data: List[Any] = []
@@ -478,6 +530,7 @@ class RawDataController(MetaEventTabController):
             self.model.time_bases(event_data, samplerate, scale=1e6),
             kept,
         )
+        return bool(event_data)
 
     @log(logger=logger)
     def _event_samplerate(self, eventfinder: str) -> float:

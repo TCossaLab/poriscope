@@ -7,7 +7,7 @@ intent, never the data already on the plot (rule 4). This test walks every decla
 of every analysis tab, and everything it calls on its own class (and, for a Controller
 action, on its View through ``self.view``), and fails on:
 
-1. a widget-value call: ``.text()``, ``.currentText()``, ``.getSelectedItems()`` and the like;
+1. a widget-value call with no arguments: ``.text()``, ``.currentText()``, ``.getSelectedItems()`` and the like;
 2. a call to a helper that reads a controls panel;
 3. a reach into a controls panel: an attribute named ``*controls``;
 4. a read of state a widget handler sets, listed below with its reason;
@@ -40,7 +40,8 @@ import poriscope.plugins.analysistabs as analysistabs_package
 from poriscope.utils.LogDecorator import register_action
 from poriscope.utils.MetaController import MetaController, declared_actions
 
-#: Calls that read the value of a widget.
+#: Calls that read the value of a widget. A read takes no arguments, which is what tells
+#: ``QLineEdit.text()`` from the drawing call ``Axes.text(x, y, s)``.
 WIDGET_VALUE_CALLS = {
     "text",
     "currentText",
@@ -182,7 +183,7 @@ def findings_for(
                 called = (
                     node.func.attr if isinstance(node.func, ast.Attribute) else None
                 )
-                if called in WIDGET_VALUE_CALLS:
+                if called in WIDGET_VALUE_CALLS and not node.args and not node.keywords:
                     found.append(
                         Finding(
                             action_name, "widget value", f"{name} calls .{called}()"
@@ -414,4 +415,27 @@ class TestTheRulesFireOnDoubles:
 
         assert [(f.rule, f.detail) for f in found] == [
             ("widget-derived state", "figure reads _analysis_mode")
+        ]
+
+    def test_a_drawing_call_that_takes_arguments_is_not_a_widget_read(self) -> None:
+        """``Axes.text(x, y, s)`` writes; ``QLineEdit.text()`` reads. Only the second takes no arguments."""
+
+        class Draws:
+            @register_action("draws")
+            def draws(self, ax) -> None:  # type: ignore[no-untyped-def]
+                ax.text(0.98, 0.95, "label")
+                ax.text(x=0.1, y=0.2, s="keywords")
+
+        assert findings_for("Draws.draws", Draws, "draws") == []
+
+    def test_an_argument_less_text_call_is_still_a_widget_read(self) -> None:
+        class Reads:
+            @register_action("reads")
+            def reads(self) -> None:
+                self.field.text()
+
+        found = findings_for("Reads.reads", Reads, "reads")
+
+        assert [(f.rule, f.detail) for f in found] == [
+            ("widget value", "reads calls .text()")
         ]

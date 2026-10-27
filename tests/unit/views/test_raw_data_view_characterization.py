@@ -165,7 +165,7 @@ class TestStartEventfinder:
         wired.set_eventfinding_statuses("finder", [(0, False)], "")
 
         question.assert_not_called()
-        assert [channel for channel, _ in self.approved(wired)] == [0]
+        assert [channel for channel, *_ in self.approved(wired)] == [0]
 
     def test_declining_the_overwrite_prompt_skips_only_that_channel(
         self, wired: RawDataView, mocker
@@ -185,7 +185,7 @@ class TestStartEventfinder:
 
         wired.set_eventfinding_statuses("finder", [(0, True), (1, True)], "")
 
-        assert [channel for channel, _ in self.approved(wired)] == [1]
+        assert [channel for channel, *_ in self.approved(wired)] == [1]
 
     def test_declining_every_channel_launches_nothing(
         self, wired: RawDataView, mocker
@@ -200,6 +200,22 @@ class TestStartEventfinder:
         wired.set_eventfinding_statuses("finder", [(0, True)], "")
 
         wired.eventfinding_requested.emit.assert_not_called()
+
+    def test_each_channel_is_launched_with_a_copy_of_its_timer_limits(
+        self, wired: RawDataView
+    ) -> None:
+        """
+        Recorded with the entry so replay can show them again, and copied so a later Timer
+        edit does not rewrite what was recorded.
+        """
+        stored = {"start": 1.5, "end": 3.0}
+        self.limits(wired, "finder", 0, stored)
+
+        wired.set_eventfinding_statuses("finder", [(0, False)], "")
+
+        channel, ranges, limits = self.approved(wired)[0]
+        assert (channel, ranges, limits) == (0, [(1.5, 3.0)], stored)
+        assert limits is not stored
 
     def test_the_filter_key_is_carried_through_to_the_launch(
         self, wired: RawDataView

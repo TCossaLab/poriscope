@@ -250,3 +250,114 @@ def test_the_status_report_covers_the_finder_and_each_channel(found) -> None:
     """
     finder, _reader, _starts, _ends = found
     assert_reports_whole_and_each_channel(finder, CHIMERA_CHANNEL)
+
+
+def _event_free_range(finder, channel):
+    """
+    Return a range inside the gap between the first two found events.
+
+    :param finder: A finder that has already run over the whole recording.
+    :type finder: MetaEventFinder
+    :param channel: The channel it ran on.
+    :type channel: int
+    :return: A ``[(start, end)]`` range, in seconds, that holds no event.
+    :rtype: list
+    """
+    starts, ends = finder.get_event_indices()
+    samplerate = finder.get_samplerate()
+    margin = 0.05
+    return [
+        (
+            ends[channel][0] / samplerate + margin,
+            starts[channel][1] / samplerate - margin,
+        )
+    ]
+
+
+@pytest.mark.conformance
+def test_a_run_that_finds_no_events_says_so_and_is_not_marked_finished(found) -> None:
+    """
+    A run over a range with no events completes, so its report must not say "incomplete".
+
+    The channel still reads as not finished, because Plot Events and the writer gate on
+    that flag and there is nothing for them to use.
+
+    :param found: Finder, reader and index lists from the fixture.
+    :type found: tuple
+    """
+    finder, _reader, _starts, _ends = found
+    empty = _event_free_range(finder, CHIMERA_CHANNEL)
+
+    for _progress in finder.find_events(CHIMERA_CHANNEL, empty, 3.0, identity):
+        pass
+
+    report = finder.report_status(CHIMERA_CHANNEL)
+    assert "no events found" in report.lower(), report
+    assert "incomplete" not in report, report
+    assert finder.get_eventfinding_status(CHIMERA_CHANNEL) is False
+    assert finder.get_num_events_found(CHIMERA_CHANNEL) == 0
+
+
+@pytest.mark.conformance
+def test_an_aborted_run_still_says_incomplete(found) -> None:
+    """
+    An abort leaves the channel unfinished and reports it as incomplete, not as empty.
+
+    :param found: Finder, reader and index lists from the fixture.
+    :type found: tuple
+    """
+    finder, _reader, _starts, _ends = found
+
+    run = finder.find_events(CHIMERA_CHANNEL, [(0.0, 0.0)], 0.01, identity)
+    next(run)
+    with pytest.raises(StopIteration):
+        run.send(True)
+
+    report = finder.report_status(CHIMERA_CHANNEL)
+    assert "incomplete" in report, report
+    assert "no events found" not in report.lower(), report
+
+
+@pytest.mark.conformance
+def test_a_later_run_clears_the_no_events_report(found) -> None:
+    """
+    Finding events after an empty run reports them, with no leftover "no events" text.
+
+    :param found: Finder, reader and index lists from the fixture.
+    :type found: tuple
+    """
+    finder, _reader, _starts, _ends = found
+    empty = _event_free_range(finder, CHIMERA_CHANNEL)
+    for _progress in finder.find_events(CHIMERA_CHANNEL, empty, 3.0, identity):
+        pass
+
+    for _progress in finder.find_events(CHIMERA_CHANNEL, [(0.0, 0.0)], 3.0, identity):
+        pass
+
+    report = finder.report_status(CHIMERA_CHANNEL)
+    assert "Found" in report, report
+    assert "no events found" not in report.lower(), report
+    assert finder.get_eventfinding_status(CHIMERA_CHANNEL) is True
+
+
+@pytest.mark.conformance
+def test_an_abort_after_an_empty_run_reports_incomplete(found) -> None:
+    """
+    A new run clears the "no events" state, so an abort right after an empty run is incomplete.
+
+    :param found: Finder, reader and index lists from the fixture.
+    :type found: tuple
+    """
+    finder, _reader, _starts, _ends = found
+    empty = _event_free_range(finder, CHIMERA_CHANNEL)
+    for _progress in finder.find_events(CHIMERA_CHANNEL, empty, 3.0, identity):
+        pass
+
+    run = finder.find_events(CHIMERA_CHANNEL, [(0.0, 0.0)], 0.01, identity)
+    next(run)
+    with pytest.raises(StopIteration):
+        run.send(True)
+
+    report = finder.report_status(CHIMERA_CHANNEL)
+    assert "incomplete" in report, report
+    assert "no events found" not in report.lower(), report

@@ -32,6 +32,11 @@ No need to manually handle cross-plugin communication — :ref:`MetaController` 
   ``@register_action("name")`` and each call is recorded as
   ``{"action": name, "args": ..., "kwargs": ...}``, so the method can be renamed or moved
   without breaking a saved history. Name each action once per tab
+- A method that can do nothing - refused, or with nothing to show - opts out of recording with
+  ``@register_action("name", skip_on_false=True)`` and returns ``False`` when it did nothing. That
+  call is not recorded: recording adds one entry per call to the tab's history, so a call that did
+  nothing can never stand in for an earlier call that succeeded. Only Undo and
+  ``discard_last_tab_action`` remove entries
 - Replay goes through the tab's registry of declared actions, ``MetaController.action_registry``:
   a name that is not declared, or an entry from an older file, is reported on the status panel
   and not called

@@ -691,6 +691,21 @@ def test_handle_timer_no_eventfinder_does_nothing(view, mocker):
     time_widget.assert_not_called()
 
 
+def test_handle_timer_for_a_finder_with_no_registered_channels_says_so(view, mocker):
+    """
+    A finder with no channels is never given time limits (``register_eventfinder_channels``
+    leaves it unregistered so the next push retries it), but it stays in the dropdown. The
+    Timer used to raise ``KeyError`` for it; it now says there is nothing to set.
+    """
+    time_widget = mocker.patch("poriscope.plugins.analysistabs.RawDataView.TimeWidget")
+    view.analysis_time_limits = {}
+
+    view._handle_timer({"eventfinder": "no_channels"})
+
+    time_widget.assert_not_called()
+    assert "no_channels" in view.add_text_to_display.emit.call_args.args[0]
+
+
 # ---------------------------------------------------------------------------
 # _shift_range_and_update_trace
 # ---------------------------------------------------------------------------
