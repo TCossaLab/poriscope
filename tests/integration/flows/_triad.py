@@ -30,11 +30,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 
 from poriscope.controllers.main_controller import MainController
 from poriscope.models.main_model import MainModel
 from poriscope.plugins.datareaders.ChimeraReader20240501 import ChimeraReader20240501
+from poriscope.plugins.db_loaders.SQLiteDBLoader import SQLiteDBLoader
 from poriscope.plugins.dbwriters.SQLiteDBWriter import SQLiteDBWriter
 from poriscope.plugins.eventfinders.ClassicBlockageFinder import ClassicBlockageFinder
 from poriscope.plugins.eventfitters.CUSUM import CUSUM
@@ -269,4 +270,60 @@ def build_event_analysis_tab(
     triad.register(writer, "MetaDatabaseWriter", writer_key)
 
     triad.out_db = out  # type: ignore[attr-defined]
+    return triad
+
+
+#: Two columns every synthetic metadata database carries, so a clustering has something real
+#: to work on without depending on a fitter's output shape.
+CLUSTERING_COLUMNS = ("duration", "max_deviation")
+
+
+def hdbscan_config(columns: Tuple[str, ...] = CLUSTERING_COLUMNS) -> Dict[str, Any]:
+    """
+    Build an HDBSCAN configuration over the given columns, in the shape the settings dialog returns.
+
+    :param columns: the metadata columns to cluster on
+    :type columns: Tuple[str, ...]
+    :return: the configuration
+    :rtype: Dict[str, Any]
+    """
+    return {
+        "columns": [
+            {"column": name, "unit": None, "log": False, "norm": True, "plot": True}
+            for name in columns
+        ],
+        "filter": None,
+        "method": "HDBSCAN",
+        "method_params": {
+            "HDBSCAN_Cluster_Size_input": 5,
+            "HDBSCAN_Min_Points_input": 1,
+            "HDBSCAN_Sensitivity_input": 1.0,
+        },
+    }
+
+
+def build_clustering_tab(
+    tmp_path: Path, metadata_db: str, loader_key: str = "loader"
+) -> Triad:
+    """
+    Build a Clustering tab with a database loader over a metadata database registered.
+
+    The database path is left on the triad as ``db_path``.
+
+    :param tmp_path: a scratch directory to use as the app's data root
+    :type tmp_path: Path
+    :param metadata_db: path to a generated metadata database
+    :type metadata_db: str
+    :param loader_key: the key to register the loader under
+    :type loader_key: str
+    :return: the assembled triad
+    :rtype: Triad
+    """
+    triad = build_triad("ClusteringController", tmp_path)
+    loader = SQLiteDBLoader()
+    settings = loader.get_empty_settings(standalone=True)
+    settings["Input File"]["Value"] = metadata_db
+    loader.apply_settings(settings)
+    triad.register(loader, "MetaDatabaseLoader", loader_key)
+    triad.db_path = metadata_db  # type: ignore[attr-defined]
     return triad

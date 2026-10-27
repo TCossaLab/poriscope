@@ -28,6 +28,7 @@ import pytest
 from pytest_mock import MockerFixture
 
 from poriscope.plugins.analysistabs.ClusteringController import ClusteringController
+from poriscope.utils.MetaController import declared_actions
 
 # ----------------------------- fixtures ------------------------------
 
@@ -777,3 +778,142 @@ class TestCluster:
 
         mock_view.set_clustering_result.assert_not_called()
         controller.add_text_to_display.emit.assert_called_once()
+
+
+class TestTheClusteringResultIsKeptOnTheModel:
+    """The Model holds the latest result, so the recorded run can tell whether it produced one."""
+
+    def test_a_result_is_stored_before_it_reaches_the_view(
+        self, controller: ClusteringController, mock_view: MagicMock
+    ) -> None:
+        clustered, labels, confidence = MagicMock(), [0, 1], [0.5, 0.5]
+        controller.model.cluster.return_value = (clustered, labels, confidence)
+        mock_view.set_clustering_result.side_effect = lambda *args: stored.append(
+            controller.model.result
+        )
+        stored: list = []
+
+        controller.cluster(*TestCluster._request())
+
+        assert stored == [(clustered, labels, confidence)]
+
+    def test_a_failed_clustering_leaves_the_previous_result(
+        self, controller: ClusteringController
+    ) -> None:
+        controller.model.result = "the previous result"
+        controller.model.cluster.side_effect = ValueError("sklearn refused")
+
+        controller.cluster(*TestCluster._request())
+
+        assert controller.model.result == "the previous result"
+
+
+class TestTheRunIsTheRecordedClusterRun:
+    """``load_metadata_for_clustering`` is ``cluster_run``; a run that produced no result is not recorded."""
+
+    @staticmethod
+    def _config() -> dict:
+        return TestLoadMetadataForClustering()._config()
+
+    @staticmethod
+    def recording(controller: ClusteringController) -> list:
+        """
+        Capture what the controller records.
+
+        :param controller: Controller under test.
+        :return: the list each recorded entry is appended to.
+        """
+        recorded: list = []
+        controller.record_action = recorded.append  # type: ignore[method-assign]
+        return recorded
+
+    @staticmethod
+    def rows_load(controller: ClusteringController, mocker: MockerFixture) -> None:
+        """
+        Answer the query and the load as a loader would.
+
+        :param controller: Controller under test.
+        :param mocker: Pytest-mock fixture.
+        """
+        controller.model.call.side_effect = [
+            ("SELECT 1", "", "events"),
+            mocker.Mock(empty=False),
+        ]
+
+    def test_it_is_the_declared_cluster_run_action(self) -> None:
+        declared = {name for _attribute, name in declared_actions(ClusteringController)}
+
+        assert "cluster_run" in declared
+
+    def test_a_run_that_produced_a_result_is_recorded_with_its_intent(
+        self, controller: ClusteringController, mocker: MockerFixture
+    ) -> None:
+        self.rows_load(controller, mocker)
+        controller.model.result = None
+        controller.view.on_metadata_loaded.side_effect = lambda *args: setattr(
+            controller.model, "result", "a new result"
+        )
+        recorded = self.recording(controller)
+        config = self._config()
+
+        produced = controller.load_metadata_for_clustering(config, "L")
+
+        assert produced is True
+        assert recorded == [
+            {"action": "cluster_run", "args": (config, "L"), "kwargs": {}}
+        ]
+
+    def test_a_clustering_that_failed_downstream_is_not_recorded(
+        self, controller: ClusteringController, mocker: MockerFixture
+    ) -> None:
+        """``cluster`` reports a failure and returns; the run cannot see it except through the Model."""
+        self.rows_load(controller, mocker)
+        controller.model.result = "the previous result"
+        recorded = self.recording(controller)
+
+        produced = controller.load_metadata_for_clustering(self._config(), "L")
+
+        assert produced is False
+        assert recorded == []
+
+    def test_a_failed_run_keeps_the_previous_result(
+        self, controller: ClusteringController, mocker: MockerFixture
+    ) -> None:
+        """Commit and Merge still act on the clustering on screen after a run that failed."""
+        controller.model.call.side_effect = RuntimeError("boom")
+        controller.model.result = "the previous result"
+
+        controller.load_metadata_for_clustering(self._config(), "L")
+
+        assert controller.model.result == "the previous result"
+
+    @pytest.mark.parametrize(
+        "answers",
+        [
+            [RuntimeError("query refused")],
+            [("", "no such column", "events")],
+            [("SELECT 1", "", "events"), RuntimeError("load refused")],
+            [("SELECT 1", "", "events"), None],
+        ],
+        ids=["query raises", "empty query", "load raises", "no rows"],
+    )
+    def test_a_run_that_stopped_early_is_not_recorded(
+        self, controller: ClusteringController, answers: list
+    ) -> None:
+        controller.model.call.side_effect = answers
+        controller.model.result = None
+        recorded = self.recording(controller)
+
+        assert controller.load_metadata_for_clustering(self._config(), "L") is False
+        assert recorded == []
+
+    def test_a_config_the_view_refuses_is_not_recorded(
+        self, controller: ClusteringController, mocker: MockerFixture
+    ) -> None:
+        self.rows_load(controller, mocker)
+        controller.model.result = None
+        controller.view.on_metadata_loaded.side_effect = ValueError("bad parameters")
+        recorded = self.recording(controller)
+
+        assert controller.load_metadata_for_clustering(self._config(), "L") is False
+        assert recorded == []

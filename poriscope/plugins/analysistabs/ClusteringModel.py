@@ -60,7 +60,9 @@ class ClusteringModel(MetaModel):
     @log(logger=logger)
     @override
     def _init(self) -> None:
-        pass
+        #: The latest clustering result, (clustered frame, labels, confidence), or None before
+        #: the first one. A run that fails leaves the previous one, which is still on screen.
+        self.result: Optional[Tuple[pd.DataFrame, Any, Any]] = None
 
     @log(logger=logger)
     def build_clustering_frame(

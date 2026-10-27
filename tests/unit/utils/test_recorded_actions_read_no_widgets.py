@@ -63,6 +63,7 @@ WIDGET_DERIVED_ATTRIBUTES = {
     "selected_experiment_and_channels_by_loader": "set by the scope tree dialog",
     "subset_filters": "edited through the filter dialogs and the filter combobox",
     "analysis_time_limits": "set by the Timer dialog",
+    "clustering_config_map": "set by the clustering settings dialog",
     "_last_event_action": "set by whichever event button was last clicked",
 }
 
@@ -416,6 +417,18 @@ class TestTheRulesFireOnDoubles:
                     pass
 
         assert [f.rule for f in findings_for("Mode.mode", Mode, "mode")] == [
+            "widget-derived state"
+        ]
+
+    def test_the_stored_clustering_settings_are_widget_derived_state(self) -> None:
+        """The settings dialog stores them, as the Timer dialog stores RawData's limits."""
+
+        class Stored:
+            @register_action("stored")
+            def stored(self, loader: str) -> None:
+                self.clustering_config_map.get(loader)
+
+        assert [f.rule for f in findings_for("Stored.stored", Stored, "stored")] == [
             "widget-derived state"
         ]
 
