@@ -1984,6 +1984,18 @@ make the push trigger redundant.
 
 ---
 
+## 2026-10-27 - Clustering's result lives in the Model; how it is drawn stays in the View
+
+**Context.** Recording Merge meant giving it a Controller method. It mutated `ClusteringView.cluster_data`, a frame the View held, and Commit sent that frame from the View. A recorded run also had to tell whether it produced anything: `cluster` runs inside the View's emit and reports its own failure, so `load_metadata_for_clustering` could not see it.
+
+**Decision** (Carolina, 2026-10-27). The result, (frame, labels, confidence), is `ClusteringModel.result`. `ClusteringController.merge_clusters` folds labels there (new arrays) and asks the View to redraw; Commit takes the rows from `ClusteringModel.cluster_columns()`, so `cluster_commit_requested` lost its frame. The recorded run is recorded only when a new result reached the Model. The display flags (`logs`, `normalized`, `plot_units`, `plot`) stay on the View: they say how to draw, `update_plot` sets them from the run's own arguments, and the Controller never uses them. `update_plot` draws a copy of the frame it is given, because it writes the label columns into it; that is the one point both a run and a merge pass through. `cluster` keeps taking the loaded rows: it is not recorded, and changing it would remove `cluster_requested` for no replay gain.
+
+**Rejected.** A thin Controller method calling today's View merge (smallest, no breaking signal) left the replayed logic and the result in the View. Copying only in the merge redraw missed the first run.
+
+**Revisit if** another caller needs the display flags (move them to the Model then), or a run must be recorded before its clustering finishes (the success test reads the Model after the emit returns, which relies on the same-thread connection).
+
+---
+
 ## 2026-10-26 - A recorded Event Analysis fit carries no loader
 
 **Context.** `request_fitting_statuses` refuses a fit when the loader selected in the tab is not the one the fitter was built on, once, before any channel starts (`EventAnalysisController.py:473`). The recorded fit (`fit_events`, `fit_channel`) could carry the loader and repeat that check.

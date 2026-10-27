@@ -79,6 +79,8 @@
 
 * **Breaking:** Raw Data's Update Trace, Update PSD, Find Events and Plot Events are recorded actions, and `RawDataController.start_eventfinding` now takes each channel's Timer limits as a third element of its `channel_ranges` entries; Find Events is recorded per channel, and a call that plotted or launched nothing is not recorded (`register_action(skip_on_false=True)`)
 
+* **Breaking:** Clustering's run and Merge are recorded actions on `ClusteringController`, and the clustering result is `ClusteringModel.result`: `ClusteringView.cluster_data` is gone, `cluster_commit_requested` no longer carries the frame, and `ClusteringController.commit_clusters` no longer takes `cluster_data`
+
 ### Developer Tooling:
 
 * The release workflow now runs only when a version tag is pushed
@@ -280,6 +282,8 @@
 * **Help → Tutorial on a page that has no tutorial now says so**, and points to the core tabs that have one, instead of showing the generic welcome popup and then doing nothing
 
 * An event finder run that finds no events now reports `no events found` for the channel instead of `event finding incomplete`; an aborted run still reports `incomplete`
+
+* Clustering's Commit with no clustering yet now says so on the status panel instead of raising an error inside the tab
 
 ### Documentation:
 
