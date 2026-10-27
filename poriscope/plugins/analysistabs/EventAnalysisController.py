@@ -34,7 +34,7 @@ from PySide6.QtCore import Slot
 from poriscope.plugins.analysistabs.EventAnalysisModel import EventAnalysisModel
 from poriscope.plugins.analysistabs.EventAnalysisView import EventAnalysisView
 from poriscope.utils.DocstringDecorator import inherit_docstrings
-from poriscope.utils.LogDecorator import log
+from poriscope.utils.LogDecorator import log, register_action
 from poriscope.utils.MetaEventTabController import MetaEventTabController
 
 
@@ -70,6 +70,7 @@ class EventAnalysisController(MetaEventTabController):
 
     @log(logger=logger)
     @Slot(str, str, int, list, str, bool)
+    @register_action("plot_events", skip_on_false=True)
     def load_event_plot(
         self,
         loader: str,
@@ -78,7 +79,7 @@ class EventAnalysisController(MetaEventTabController):
         events: List[int],
         data_filter: str,
         raw: bool,
-    ) -> None:
+    ) -> bool:
         """
         Load the selected events, their raw traces and their fits, ready to plot.
 
@@ -124,8 +125,8 @@ class EventAnalysisController(MetaEventTabController):
         :type data_filter: str
         :param raw: whether to overlay each event's unfiltered trace
         :type raw: bool
-        :return: None
-        :rtype: None
+        :return: True if events were plotted, False if there was nothing to plot
+        :rtype: bool
         """
         try:
             num_available = self.model.call(
@@ -139,10 +140,10 @@ class EventAnalysisController(MetaEventTabController):
                 f"Unable to read the event count for channel {channel}: {e}",
                 self.__class__.__name__,
             )
-            return
+            return False
 
         if not events:
-            return
+            return False
 
         out_of_range = [event for event in events if event >= num_available]
         events = [event for event in events if event < num_available]
@@ -158,7 +159,7 @@ class EventAnalysisController(MetaEventTabController):
                 self.__class__.__name__,
             )
         if not events:
-            return
+            return False
 
         # The View no longer holds a samplerate: the time axis is a property of the
         # samples and the rate they were taken at, so the Model builds it and the
@@ -169,7 +170,7 @@ class EventAnalysisController(MetaEventTabController):
                 data_filter, lambda: samplerate
             )
         except ValueError:
-            return
+            return False
 
         fitting_done = False
         if eventfitter != "No Event Fitter":
@@ -254,6 +255,7 @@ class EventAnalysisController(MetaEventTabController):
             plabels,
             raw,
         )
+        return bool(event_data)
 
     @log(logger=logger)
     def _loader_samplerate(self, loader: str, channel: int) -> float:

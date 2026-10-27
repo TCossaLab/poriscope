@@ -18,6 +18,7 @@ from pytest_mock import MockerFixture
 from poriscope.plugins.analysistabs.EventAnalysisController import (
     EventAnalysisController,
 )
+from poriscope.utils.MetaController import declared_actions
 
 # ----------------------------- fixtures ------------------------------
 
@@ -1388,3 +1389,120 @@ def test_update_available_plugins_logs_debug(
     """
     controller.update_available_plugins({"MetaReader": ["R1"]})
     controller.logger.debug.assert_called_once()  # type: ignore[attr-defined]
+
+
+class TestPlotEventsIsRecordedWhenItPlots:
+    """``load_event_plot`` is the recorded ``plot_events``; a call that drew nothing is not recorded."""
+
+    @staticmethod
+    def recording(controller: EventAnalysisController) -> list:
+        """
+        Capture what the controller records.
+
+        :param controller: Controller under test.
+        :return: the list each recorded entry is appended to.
+        """
+        recorded: list = []
+        controller.record_action = recorded.append  # type: ignore[method-assign]
+        return recorded
+
+    def test_it_is_the_declared_plot_events_action(self) -> None:
+        declared = {
+            name for _attribute, name in declared_actions(EventAnalysisController)
+        }
+
+        assert "plot_events" in declared
+
+    def test_a_plot_is_recorded_with_its_intent_and_returns_true(
+        self, controller: EventAnalysisController, mock_view: MagicMock
+    ) -> None:
+        TestLoadEventPlot.answers(controller, get_num_events=5)
+        recorded = self.recording(controller)
+
+        plotted = controller.load_event_plot("ldr", "ef", 2, [0, 1], "F1", True)
+
+        assert plotted is True
+        assert recorded == [
+            {
+                "action": "plot_events",
+                "args": ("ldr", "ef", 2, [0, 1], "F1", True),
+                "kwargs": {},
+            }
+        ]
+        mock_view.set_event_plot_data.assert_called_once()
+
+    def test_the_recorded_events_are_the_ones_asked_for_not_the_truncated_ones(
+        self, controller: EventAnalysisController
+    ) -> None:
+        """A replay truncates against the loader's count again, exactly as the click did."""
+        TestLoadEventPlot.answers(
+            controller, get_num_events=2, load_event=[{"data": "a"}, {"data": "b"}]
+        )
+        recorded = self.recording(controller)
+
+        controller.load_event_plot("ldr", "No Event Fitter", 3, [0, 1, 9], "", False)
+
+        assert recorded[0]["args"][3] == [0, 1, 9]
+
+    def test_an_unreadable_count_is_not_recorded(
+        self, controller: EventAnalysisController
+    ) -> None:
+        TestLoadEventPlot.answers(controller, get_num_events=RuntimeError("boom"))
+        recorded = self.recording(controller)
+
+        assert (
+            controller.load_event_plot("ldr", "No Event Fitter", 0, [0], "", False)
+            is False
+        )
+        assert recorded == []
+
+    def test_no_selected_events_is_not_recorded(
+        self, controller: EventAnalysisController
+    ) -> None:
+        TestLoadEventPlot.answers(controller)
+        recorded = self.recording(controller)
+
+        assert (
+            controller.load_event_plot("ldr", "No Event Fitter", 0, [], "", False)
+            is False
+        )
+        assert recorded == []
+
+    def test_a_wholly_out_of_range_selection_is_not_recorded(
+        self, controller: EventAnalysisController
+    ) -> None:
+        TestLoadEventPlot.answers(controller, get_num_events=2)
+        recorded = self.recording(controller)
+
+        assert (
+            controller.load_event_plot("ldr", "No Event Fitter", 0, [5, 9], "", False)
+            is False
+        )
+        assert recorded == []
+
+    def test_a_refused_filter_is_not_recorded(
+        self, controller: EventAnalysisController
+    ) -> None:
+        TestLoadEventPlot.answers(
+            controller, get_data_requirements={"Samplerate": 100000.0}
+        )
+        recorded = self.recording(controller)
+
+        assert (
+            controller.load_event_plot("ldr", "No Event Fitter", 0, [0], "F1", False)
+            is False
+        )
+        assert recorded == []
+
+    def test_every_event_failing_to_load_is_not_recorded(
+        self, controller: EventAnalysisController
+    ) -> None:
+        """Nothing was drawn, so there is nothing to replay."""
+        TestLoadEventPlot.answers(controller, load_event=None)
+        recorded = self.recording(controller)
+
+        assert (
+            controller.load_event_plot("ldr", "No Event Fitter", 0, [0, 1], "", False)
+            is False
+        )
+        assert recorded == []

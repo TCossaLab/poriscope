@@ -20,10 +20,8 @@ from typing import Any, List
 
 import pytest
 
-from poriscope.plugins.dbwriters.SQLiteDBWriter import SQLiteDBWriter
-from poriscope.plugins.eventfitters.CUSUM import CUSUM
 from poriscope.plugins.eventloaders.SQLiteEventLoader import SQLiteEventLoader
-from tests.integration.flows._triad import Triad, build_triad
+from tests.integration.flows._triad import Triad, build_event_analysis_tab
 from tests.synthetic_data.synthetic_events_db import generate_events_database
 
 LOADER = "events"
@@ -78,44 +76,7 @@ def event_analysis_tab(qapp, tmp_path: Path, sample_events_db: str) -> Triad:
     :return: the assembled triad
     :rtype: Triad
     """
-    triad = build_triad("EventAnalysisController", tmp_path)
-
-    # The application names a plugin when it instantiates it, so a dependent built
-    # afterwards records that name as its parent.
-    loader = SQLiteEventLoader()
-    loader.set_key(LOADER)
-    loader_settings = loader.get_empty_settings(standalone=True)
-    loader_settings["Input File"]["Value"] = sample_events_db
-    loader.apply_settings(loader_settings)
-    triad.register(loader, "MetaEventLoader", LOADER)
-
-    fitter = CUSUM()
-    fitter.set_key(FITTER)
-    fitter_settings = fitter.get_empty_settings(standalone=True)
-    fitter_settings["MetaEventLoader"]["Value"] = loader
-    fitter_settings["MetaEventLoader"]["Type"] = None
-    fitter_settings["Max Sublevels"]["Value"] = 10
-    fitter_settings["Rise Time"]["Value"] = 10.0
-    fitter_settings["Step Size"]["Value"] = 100.0
-    fitter_settings["Sensitivity"]["Value"] = 1.0
-    fitter.apply_settings(fitter_settings)
-    triad.register(fitter, "MetaEventFitter", FITTER)
-
-    out = tmp_path / "metadata.sqlite3"
-    writer = SQLiteDBWriter()
-    writer.set_key(WRITER)
-    writer_settings = writer.get_empty_settings(standalone=True)
-    writer_settings["MetaEventFitter"]["Value"] = fitter
-    writer_settings["MetaEventFitter"]["Type"] = None
-    writer_settings["Experiment Name"]["Value"] = "flow_test"
-    writer_settings["Voltage"]["Value"] = 200.0
-    writer_settings["Membrane Thickness"]["Value"] = 10.0
-    writer_settings["Conductivity"]["Value"] = 1.0
-    writer_settings["Output File"]["Value"] = str(out)
-    writer.apply_settings(writer_settings)
-    triad.register(writer, "MetaDatabaseWriter", WRITER)
-
-    triad.out_db = out  # type: ignore[attr-defined]
+    triad = build_event_analysis_tab(tmp_path, sample_events_db, LOADER, FITTER, WRITER)
 
     yield triad
 

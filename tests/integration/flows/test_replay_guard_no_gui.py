@@ -28,11 +28,17 @@ import pandas as pd
 import pytest
 
 from poriscope.plugins.db_loaders.SQLiteDBLoader import SQLiteDBLoader
-from tests.integration.flows._triad import Triad, build_rawdata_tab, build_triad
+from tests.integration.flows._triad import (
+    Triad,
+    build_event_analysis_tab,
+    build_rawdata_tab,
+    build_triad,
+)
 
 LOADER = "loader"
 READER = "reader"
 FINDER = "finder"
+EVENTS = "events"
 FILTERS = {
     "F0": "duration >= 0",
     "F1": "duration >= 1",
@@ -225,6 +231,11 @@ def clustering_tab(tmp_path: Path, db: str) -> Triad:
     return build_triad("ClusteringController", tmp_path)
 
 
+def eventanalysis_tab(tmp_path: Path, events_db: str) -> Triad:
+    """An Event Analysis tab with a loader over a synthetic events database."""
+    return build_event_analysis_tab(tmp_path, events_db, EVENTS)
+
+
 def rawdata_tab(tmp_path: Path, chimera: Dict[str, str]) -> Triad:
     """A RawData tab with a reader over the synthetic recording and a finder on it."""
     return build_rawdata_tab(tmp_path, chimera, READER, FINDER)
@@ -373,6 +384,32 @@ def rawdata_perturb(triad: Triad) -> None:
     }
 
 
+def eventanalysis_act(triad: Triad, qtbot: Any) -> None:
+    """Plot three events of channel 0, as the panel sends them."""
+    triad.tab_view.handle_parameter_change(
+        "eventAnalysisControls",
+        "plot_events",
+        (
+            {
+                "loader": EVENTS,
+                "eventfitter": "No Event Fitter",
+                "filter": "No Filter",
+                "channel": ["0"],
+                "event_index": [0, 1, 2],
+                "raw": False,
+            },
+        ),
+    )
+
+
+def eventanalysis_perturb(triad: Triad) -> None:
+    """Change the raw checkbox, the channel selection and the event index the panel holds."""
+    controls = triad.tab_view.eventAnalysisControls
+    controls.set_raw(True)
+    controls.set_channels([])
+    controls.set_event_index_input("7-9")
+
+
 def clustering_act(triad: Triad, qtbot: Any) -> None:
     triad.tab_view._reset_actions()
 
@@ -461,6 +498,14 @@ SCENARIOS = [
         click_only_calls=("get_eventfinding_status",),
         probe=found_events,
         wait_between=True,
+    ),
+    Scenario(
+        tab="EventAnalysisController",
+        covers=("plot_events",),
+        build=eventanalysis_tab,
+        act=eventanalysis_act,
+        perturb=eventanalysis_perturb,
+        needs="sample_events_db",
     ),
     Scenario(
         tab="ClusteringController",
