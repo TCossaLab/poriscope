@@ -6,11 +6,16 @@ It is the default skill for most planning and execution work; `refactoring-codeb
 
 ## Install
 
-- **Claude Code (personal):** copy this folder to `~/.claude/skills/planning-and-executing-changes/`.
-  Install `refactoring-codebases` beside it: that skill links into this one by relative path
-  (`../planning-and-executing-changes/...`).
+- **Project (the tracked source):** this folder lives at `<repo>/.claude/skills/planning-and-executing-changes/`
+  and is committed, so version control keeps it current. Edit this copy. `refactoring-codebases` must
+  sit beside it: that skill links into this one by relative path (`../planning-and-executing-changes/...`).
+- **Personal:** copy the folder to `~/.claude/skills/planning-and-executing-changes/` only on a machine
+  with no project copy. A personal skill wins the bare name over a project skill, so a personal copy
+  beside a repo copy silently shadows the tracked one.
 - **claude.ai:** zip the folder (the zip must contain the `planning-and-executing-changes/` directory)
-  and upload it under Settings > Features > Skills. Upload both skills.
+  and upload it under Settings > Features > Skills. Upload both skills. Claude Code downloads the
+  upload into `~/.claude/skills/synced/` and loads it as `anthropic-skills:planning-and-executing-changes`;
+  that download is never edited and never uploaded back, so re-upload from this folder after a change.
 
 ## Layout
 

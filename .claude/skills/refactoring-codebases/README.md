@@ -11,10 +11,16 @@ for moving code while preserving behaviour.
 
 ## Install
 
-- **Claude Code (personal):** copy this folder to `~/.claude/skills/refactoring-codebases/`.
-- **Claude Code (project):** copy it to `<repo>/.claude/skills/refactoring-codebases/`.
-- **claude.ai:** zip the folder (the zip must contain the `refactoring-codebases/` directory)
-  and upload it under Settings > Features > Skills.
+- **Project (the tracked source):** this folder lives at `<repo>/.claude/skills/refactoring-codebases/`
+  beside `planning-and-executing-changes`, which it links into by relative path, and is committed, so
+  version control keeps it current. Edit this copy.
+- **Personal:** copy the folder to `~/.claude/skills/refactoring-codebases/` only on a machine with no
+  project copy. A personal skill wins the bare name over a project skill, so a personal copy beside a
+  repo copy silently shadows the tracked one.
+- **claude.ai:** zip the folder (the zip must contain the `refactoring-codebases/` directory) and
+  upload it under Settings > Features > Skills. Claude Code downloads the upload into
+  `~/.claude/skills/synced/` and loads it as `anthropic-skills:refactoring-codebases`; that download is
+  never edited and never uploaded back, so re-upload from this folder after a change.
 - **API:** upload through the Skills API (`/v1/skills`).
 
 ## Layout
