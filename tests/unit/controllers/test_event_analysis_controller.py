@@ -1023,19 +1023,25 @@ class TestFittingLaunch:
             mocker.call("gen1", 1, "ef1", "MetaEventFitter"),
         ]
 
-    def test_the_generators_run_once_for_the_fitter(
-        self, controller: EventAnalysisController
+    def test_each_channel_is_run_as_it_is_registered(
+        self, controller: EventAnalysisController, mocker: MockerFixture
     ) -> None:
         """
-        Registration and running stay separate steps, as through the bus.
+        Each channel's launch registers its generator and runs it, because a replayed entry
+        has no surrounding loop to run it afterwards. ``run_generators`` starts only the
+        channels not already running, so the workers are the same.
 
         :param controller: Controller under test.
+        :param mocker: Pytest-mock fixture.
         """
         controller.model.call.side_effect = ["gen0", "gen1"]
 
         controller.start_fitting("ef1", [0, 1], "")
 
-        controller.model.run_generators.assert_called_once_with("ef1")
+        assert controller.model.run_generators.call_args_list == [
+            mocker.call("ef1"),
+            mocker.call("ef1"),
+        ]
 
     def test_a_named_filter_is_fetched_once_and_passed_to_every_channel(
         self, controller: EventAnalysisController
@@ -1135,8 +1141,111 @@ class TestFittingLaunch:
             call.args[1] for call in controller.model.set_generator.call_args_list
         ]
         assert registered == [0, 2]
-        controller.model.run_generators.assert_called_once_with("ef1")
+        assert controller.model.run_generators.call_count == 2
         controller.add_text_to_display.emit.assert_called_once()
+
+
+class TestFitChannelIsTheRecordedFitEvents:
+    """The per-channel launch is the recorded action: one entry per channel."""
+
+    @staticmethod
+    def recording(controller: EventAnalysisController) -> list:
+        """
+        Capture what the controller records.
+
+        :param controller: Controller under test.
+        :return: the list each recorded entry is appended to.
+        """
+        recorded: list = []
+        controller.record_action = recorded.append  # type: ignore[method-assign]
+        return recorded
+
+    def test_it_is_the_declared_fit_events_action(self) -> None:
+        declared = {
+            name for _attribute, name in declared_actions(EventAnalysisController)
+        }
+
+        assert "fit_events" in declared
+
+    def test_a_launch_records_the_fitter_channel_and_filter_and_runs_it(
+        self, controller: EventAnalysisController
+    ) -> None:
+        controller.model.call.side_effect = ["gen3"]
+        recorded = self.recording(controller)
+
+        launched = controller.fit_channel("ef1", 3, "")
+
+        assert launched is True
+        assert recorded == [
+            {"action": "fit_events", "args": ("ef1", 3, ""), "kwargs": {}}
+        ]
+        controller.model.set_generator.assert_called_once_with(
+            "gen3", 3, "ef1", "MetaEventFitter"
+        )
+        controller.model.run_generators.assert_called_once_with("ef1")
+
+    def test_a_launch_that_fails_is_not_recorded_and_runs_nothing(
+        self, controller: EventAnalysisController
+    ) -> None:
+        controller.model.call.side_effect = RuntimeError("boom")
+        recorded = self.recording(controller)
+
+        launched = controller.fit_channel("ef1", 0, "")
+
+        assert launched is False
+        assert recorded == []
+        controller.model.run_generators.assert_not_called()
+        controller.add_text_to_display.emit.assert_called_once()
+
+    def test_a_filter_that_is_refused_is_not_recorded(
+        self, controller: EventAnalysisController
+    ) -> None:
+        controller.model.call.side_effect = [
+            "a-callable",
+            {"Samplerate": 100000.0},
+            250000.0,
+        ]
+        recorded = self.recording(controller)
+
+        launched = controller.fit_channel("ef1", 0, "F1")
+
+        assert launched is False
+        assert recorded == []
+        controller.model.run_generators.assert_not_called()
+
+    def test_a_batch_records_one_entry_per_launched_channel(
+        self, controller: EventAnalysisController
+    ) -> None:
+        controller.model.call.side_effect = ["gen0", "gen2"]
+        recorded = self.recording(controller)
+
+        controller.start_fitting("ef1", [0, 2], "")
+
+        assert [entry["args"] for entry in recorded] == [
+            ("ef1", 0, ""),
+            ("ef1", 2, ""),
+        ]
+
+    def test_a_channel_that_cannot_launch_leaves_no_entry_and_the_rest_are_recorded(
+        self, controller: EventAnalysisController
+    ) -> None:
+        controller.model.call.side_effect = ["gen0", RuntimeError("boom"), "gen2"]
+        recorded = self.recording(controller)
+
+        controller.start_fitting("ef1", [0, 1, 2], "")
+
+        assert [entry["args"][1] for entry in recorded] == [0, 2]
+
+    def test_the_loader_is_not_part_of_the_recorded_arguments(
+        self, controller: EventAnalysisController
+    ) -> None:
+        """The loader check is made on the click path, so a replayed fit cannot be refused by it."""
+        controller.model.call.side_effect = ["gen0"]
+        recorded = self.recording(controller)
+
+        controller.start_fitting("ef1", [0], "")
+
+        assert len(recorded[0]["args"]) == 3
 
 
 class TestRequestLoaderChannels:

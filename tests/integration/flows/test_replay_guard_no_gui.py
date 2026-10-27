@@ -39,6 +39,7 @@ LOADER = "loader"
 READER = "reader"
 FINDER = "finder"
 EVENTS = "events"
+FITTER = "fitter"
 FILTERS = {
     "F0": "duration >= 0",
     "F1": "duration >= 1",
@@ -232,8 +233,8 @@ def clustering_tab(tmp_path: Path, db: str) -> Triad:
 
 
 def eventanalysis_tab(tmp_path: Path, events_db: str) -> Triad:
-    """An Event Analysis tab with a loader over a synthetic events database."""
-    return build_event_analysis_tab(tmp_path, events_db, EVENTS)
+    """An Event Analysis tab with a loader and a fitter over a synthetic events database."""
+    return build_event_analysis_tab(tmp_path, events_db, EVENTS, FITTER)
 
 
 def rawdata_tab(tmp_path: Path, chimera: Dict[str, str]) -> Triad:
@@ -385,14 +386,28 @@ def rawdata_perturb(triad: Triad) -> None:
 
 
 def eventanalysis_act(triad: Triad, qtbot: Any) -> None:
-    """Plot three events of channel 0, as the panel sends them."""
-    triad.tab_view.handle_parameter_change(
+    """Fit channel 0, wait for the fitter, then plot three events with their fits, as the panel sends them."""
+    view = triad.tab_view
+    view.handle_parameter_change(
+        "eventAnalysisControls",
+        "fit_events",
+        (
+            {
+                "loader": EVENTS,
+                "eventfitter": FITTER,
+                "filter": "No Filter",
+                "channel": ["0"],
+            },
+        ),
+    )
+    settle(triad, qtbot)
+    view.handle_parameter_change(
         "eventAnalysisControls",
         "plot_events",
         (
             {
                 "loader": EVENTS,
-                "eventfitter": "No Event Fitter",
+                "eventfitter": FITTER,
                 "filter": "No Filter",
                 "channel": ["0"],
                 "event_index": [0, 1, 2],
@@ -403,11 +418,23 @@ def eventanalysis_act(triad: Triad, qtbot: Any) -> None:
 
 
 def eventanalysis_perturb(triad: Triad) -> None:
-    """Change the raw checkbox, the channel selection and the event index the panel holds."""
+    """Change the fitter, the raw checkbox, the channel selection and the event index the panel holds."""
     controls = triad.tab_view.eventAnalysisControls
+    # One fitter is registered, so another option is added the way a second fitter would appear.
+    controls.eventfitters_comboBox.addItem("another fitter")
+    controls.set_eventfitter("another fitter")
     controls.set_raw(True)
     controls.set_channels([])
     controls.set_event_index_input("7-9")
+
+
+def fitted_events(triad: Triad) -> Any:
+    """What the fitter holds for channel 0, read back from the plugin."""
+    model = triad.tab_controller.model
+    return {
+        "fitted": model.call("MetaEventFitter", FITTER, "get_eventfitting_status", 0),
+        "report": model.call("MetaEventFitter", FITTER, "report_status", 0),
+    }
 
 
 def clustering_act(triad: Triad, qtbot: Any) -> None:
@@ -501,11 +528,18 @@ SCENARIOS = [
     ),
     Scenario(
         tab="EventAnalysisController",
-        covers=("plot_events",),
+        covers=("fit_events", "plot_events"),
         build=eventanalysis_tab,
         act=eventanalysis_act,
         perturb=eventanalysis_perturb,
         needs="sample_events_db",
+        # The click path asks which loader the fitter was built on and whether the channel is
+        # already fitted before it launches; plotting with a fitter asks the same two, so both
+        # are left out of the comparison. What the fit and the plot did is compared through
+        # the figure and the state read back from the fitter.
+        click_only_calls=("get_parents", "get_eventfitting_status"),
+        probe=fitted_events,
+        wait_between=True,
     ),
     Scenario(
         tab="ClusteringController",
@@ -592,6 +626,22 @@ def test_a_replay_reproduces_what_the_action_produced(
     assert captured_b["plot_cache"] == captured_a["plot_cache"]
     assert captured_b["figures"] == captured_a["figures"]
     assert captured_b["bookkeeping"] == captured_a["bookkeeping"]
+
+
+@pytest.mark.timeout(240)
+def test_a_replayed_fit_leaves_the_channel_fitted_in_both_tabs(
+    qapp, qtbot, tmp_path: Path, sample_events_db: str
+) -> None:
+    """The two tabs agreeing is not enough: a fit that never ran would agree with itself."""
+    scenario = next(s for s in SCENARIOS if s.tab == "EventAnalysisController")
+
+    captured_a, captured_b, _ = run_scenario(
+        scenario, tmp_path, sample_events_db, qtbot, ready_b=True
+    )
+
+    for captured in (captured_a, captured_b):
+        assert captured["probe"]["fitted"] is True
+        assert "good fits" in captured["probe"]["report"]
 
 
 @pytest.mark.timeout(240)
