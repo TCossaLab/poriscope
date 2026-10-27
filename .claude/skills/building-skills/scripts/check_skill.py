@@ -43,10 +43,28 @@ import re
 import sys
 from pathlib import Path
 
-SPEC_KEYS = {"name", "description", "license", "compatibility", "metadata", "allowed-tools"}
+SPEC_KEYS = {
+    "name",
+    "description",
+    "license",
+    "compatibility",
+    "metadata",
+    "allowed-tools",
+}
 CLAUDE_CODE_KEYS = SPEC_KEYS | {
-    "when_to_use", "argument-hint", "arguments", "disable-model-invocation", "user-invocable",
-    "disallowed-tools", "model", "effort", "context", "agent", "background", "hooks", "paths",
+    "when_to_use",
+    "argument-hint",
+    "arguments",
+    "disable-model-invocation",
+    "user-invocable",
+    "disallowed-tools",
+    "model",
+    "effort",
+    "context",
+    "agent",
+    "background",
+    "hooks",
+    "paths",
     "shell",
 }
 NAME_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
@@ -123,35 +141,49 @@ def check_skill(skill: Path, siblings: list[Path], rep: Report) -> None:
     text = skill_md.read_text(encoding="utf-8")
     fm = parse_frontmatter(text)
     if fm is None:
-        rep.error("SKILL.md: frontmatter missing, not on line 1, or unterminated - the skill loads with no description")
+        rep.error(
+            "SKILL.md: frontmatter missing, not on line 1, or unterminated - the skill loads with no description"
+        )
         fm = {}
 
     name = fm.get("name", skill.name)
     if name != skill.name:
         rep.error(f"name '{name}' does not match folder '{skill.name}'")
     if len(name) > 64 or not NAME_RE.match(name):
-        rep.error(f"name '{name}' breaks the spec (lowercase letters, digits, single hyphens, <= 64)")
+        rep.error(
+            f"name '{name}' breaks the spec (lowercase letters, digits, single hyphens, <= 64)"
+        )
 
     desc = fm.get("description", "")
     if not desc:
         rep.error("no description - nothing for the model to match a request against")
     elif len(desc) > DESC_HARD_CAP:
-        rep.error(f"description is {len(desc)} chars; Claude Code truncates at {DESC_HARD_CAP}")
+        rep.error(
+            f"description is {len(desc)} chars; Claude Code truncates at {DESC_HARD_CAP}"
+        )
     elif len(desc) > DESC_UPLOAD_CAP:
-        rep.warn(f"description is {len(desc)} chars; a claude.ai/API upload rejects over {DESC_UPLOAD_CAP}")
+        rep.warn(
+            f"description is {len(desc)} chars; a claude.ai/API upload rejects over {DESC_UPLOAD_CAP}"
+        )
     else:
         rep.ok(f"description {len(desc)} chars")
 
     for key in fm:
         if key not in CLAUDE_CODE_KEYS:
-            rep.warn(f"frontmatter key '{key}' is unknown to Claude Code and silently ignored")
+            rep.warn(
+                f"frontmatter key '{key}' is unknown to Claude Code and silently ignored"
+            )
         elif key not in SPEC_KEYS:
-            rep.warn(f"frontmatter key '{key}' works in Claude Code but fails a claude.ai/API upload")
+            rep.warn(
+                f"frontmatter key '{key}' works in Claude Code but fails a claude.ai/API upload"
+            )
 
     n_lines, n_chars = len(text.splitlines()), len(text)
     if n_lines > MAX_LINES or n_chars > MAX_CHARS:
-        rep.warn(f"SKILL.md is {n_lines} lines / {n_chars} chars (limits {MAX_LINES} / {MAX_CHARS}); "
-                 "compaction keeps only the first ~5,000 tokens")
+        rep.warn(
+            f"SKILL.md is {n_lines} lines / {n_chars} chars (limits {MAX_LINES} / {MAX_CHARS}); "
+            "compaction keeps only the first ~5,000 tokens"
+        )
     else:
         rep.ok(f"SKILL.md {n_lines} lines / {n_chars} chars (~{n_chars // 4} tokens)")
 
@@ -166,7 +198,9 @@ def check_skill(skill: Path, siblings: list[Path], rep: Report) -> None:
             path = target.split("#", 1)[0]
             if path and not (md.parent / path).exists():
                 broken += 1
-                rep.error(f"{md.relative_to(skill)}: link to '{target}' does not resolve")
+                rep.error(
+                    f"{md.relative_to(skill)}: link to '{target}' does not resolve"
+                )
     if not broken:
         rep.ok("all relative links resolve")
 
@@ -174,8 +208,13 @@ def check_skill(skill: Path, siblings: list[Path], rep: Report) -> None:
     if ref.is_dir():
         for md in sorted(ref.glob("*.md")):
             md_text = md.read_text(encoding="utf-8")
-            if len(md_text.splitlines()) > CONTENTS_THRESHOLD and "## Contents" not in md_text:
-                rep.warn(f"{md.relative_to(skill)} is over {CONTENTS_THRESHOLD} lines with no '## Contents'")
+            if (
+                len(md_text.splitlines()) > CONTENTS_THRESHOLD
+                and "## Contents" not in md_text
+            ):
+                rep.warn(
+                    f"{md.relative_to(skill)} is over {CONTENTS_THRESHOLD} lines with no '## Contents'"
+                )
 
     own = lesson_heading_ids(skill)
     index_file = ref / "lesson-index.md"
@@ -187,7 +226,9 @@ def check_skill(skill: Path, siblings: list[Path], rep: Report) -> None:
     seen: set[str] = set()
     for lid in own + sibling_ids:
         if lid in seen:
-            rep.error(f"lesson ID {lid} is used more than once across this skill and its siblings")
+            rep.error(
+                f"lesson ID {lid} is used more than once across this skill and its siblings"
+            )
         seen.add(lid)
     if not index_file.is_file():
         rep.error("lessons exist but reference/lesson-index.md does not")
@@ -199,14 +240,21 @@ def check_skill(skill: Path, siblings: list[Path], rep: Report) -> None:
         rep.error(f"lesson {lid} has a heading but no lesson-index entry")
     for lid in orphans:
         hint = "" if siblings else " (if it lives in a sibling skill, pass --siblings)"
-        rep.error(f"lesson-index lists {lid} but no reference file has its heading{hint}")
+        rep.error(
+            f"lesson-index lists {lid} but no reference file has its heading{hint}"
+        )
     if not missing and not orphans:
         rep.ok(f"{len(own)} lesson headings and the index agree")
 
 
 def differing_files(a: Path, b: Path) -> int:
     def walk(cmp: filecmp.dircmp) -> int:
-        n = len(cmp.left_only) + len(cmp.right_only) + len(cmp.diff_files) + len(cmp.funny_files)
+        n = (
+            len(cmp.left_only)
+            + len(cmp.right_only)
+            + len(cmp.diff_files)
+            + len(cmp.funny_files)
+        )
         return n + sum(walk(sub) for sub in cmp.subdirs.values())
 
     return walk(filecmp.dircmp(a, b))
@@ -221,7 +269,9 @@ def check_root(root: Path, rep: Report) -> None:
         if child.name in IGNORED_TOP_LEVEL:
             continue
         if child.name.startswith("anthropic-skills"):
-            rep.error(f"{child.name}: names starting 'anthropic-skills' do not load outside a plugin")
+            rep.error(
+                f"{child.name}: names starting 'anthropic-skills' do not load outside a plugin"
+            )
         if (child / "SKILL.md").is_file():
             personal[child.name] = child
             rep.ok(f"{child.name}")
@@ -230,8 +280,10 @@ def check_root(root: Path, rep: Report) -> None:
         if nested:
             for found in nested:
                 rel = found.relative_to(root)
-                rep.error(f"{rel}: nested too deep - only <root>/<name>/SKILL.md is discovered, "
-                          f"so this skill never loads")
+                rep.error(
+                    f"{rel}: nested too deep - only <root>/<name>/SKILL.md is discovered, "
+                    f"so this skill never loads"
+                )
                 personal.setdefault(found.parent.name, found.parent)
         else:
             rep.warn(f"{child.name}: folder has no SKILL.md")
@@ -244,20 +296,34 @@ def check_root(root: Path, rep: Report) -> None:
                 continue
             n = differing_files(personal[name], synced_md.parent)
             if n:
-                rep.warn(f"{name}: a claude.ai synced copy also loads (as anthropic-skills:{name}) and "
-                         f"differs from {personal[name].relative_to(root)} in {n} file(s) - "
-                         f"re-upload the source or remove the stale copy")
+                rep.warn(
+                    f"{name}: a claude.ai synced copy also loads (as anthropic-skills:{name}) and "
+                    f"differs from {personal[name].relative_to(root)} in {n} file(s) - "
+                    f"re-upload the source or remove the stale copy"
+                )
             else:
                 rep.ok(f"{name}: synced copy is identical")
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n", 1)[0])
-    parser.add_argument("skill", nargs="?", type=Path, help="a skill folder (the one holding SKILL.md)")
-    parser.add_argument("--root", nargs="?", const=Path.home() / ".claude" / "skills", type=Path,
-                        help="check a skills root's layout instead (default ~/.claude/skills)")
-    parser.add_argument("--siblings", nargs="*", type=Path, default=[],
-                        help="skills sharing this one's lesson-ID space, for the index and uniqueness checks")
+    parser.add_argument(
+        "skill", nargs="?", type=Path, help="a skill folder (the one holding SKILL.md)"
+    )
+    parser.add_argument(
+        "--root",
+        nargs="?",
+        const=Path.home() / ".claude" / "skills",
+        type=Path,
+        help="check a skills root's layout instead (default ~/.claude/skills)",
+    )
+    parser.add_argument(
+        "--siblings",
+        nargs="*",
+        type=Path,
+        default=[],
+        help="skills sharing this one's lesson-ID space, for the index and uniqueness checks",
+    )
     args = parser.parse_args()
     if args.root is None and args.skill is None:
         parser.error("give a skill folder, or --root")
@@ -268,7 +334,9 @@ def main() -> int:
         check_root(args.root.expanduser(), rep)
     if args.skill is not None:
         print(f"== skill {args.skill}")
-        check_skill(args.skill.expanduser(), [s.expanduser() for s in args.siblings], rep)
+        check_skill(
+            args.skill.expanduser(), [s.expanduser() for s in args.siblings], rep
+        )
     return 1 if rep.errors else 0
 
 
