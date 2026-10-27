@@ -356,3 +356,34 @@ class ClusteringControls(MetaControls):
         self.label_x_comboBox.addItems(cluster_names)
         self.label_y_comboBox.clear()
         self.label_y_comboBox.addItems(cluster_names)
+
+    def set_db_loader(self, loader: str) -> bool:
+        """
+        Show a database loader without emitting, for writing a recorded value back.
+
+        :param loader: the database loader plugin's key
+        :type loader: str
+        :return: True if it was shown, False if it is not an option
+        :rtype: bool
+        """
+        shown = self.set_combo_text(self.db_loader_comboBox, loader)
+        self.validate_inputs()
+        return shown
+
+    def set_merge_labels(self, keep: int, merge: int) -> bool:
+        """
+        Show the two cluster labels of a merge without emitting, for writing a recorded value back.
+
+        Each is shown if it is one of the current cluster labels, independently of the other.
+
+        :param keep: the label the merged cluster joins
+        :type keep: int
+        :param merge: the label that is merged into ``keep``
+        :type merge: int
+        :return: True if both were shown, False if either is not a current label
+        :rtype: bool
+        """
+        kept = self.set_combo_text(self.label_x_comboBox, str(keep))
+        merged = self.set_combo_text(self.label_y_comboBox, str(merge))
+        self.validate_inputs()
+        return kept and merged
