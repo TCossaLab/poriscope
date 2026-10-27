@@ -380,6 +380,16 @@ class TestCheckClusterColumn:
 
         controller.view.on_cluster_column_checked.assert_called_once_with("L", None)
 
+    def test_with_no_clustering_there_is_nothing_to_commit(self, controller) -> None:
+        """The Model holds the result now, so this is where Commit is refused, with a message."""
+        controller.model.result = None
+
+        controller.check_cluster_column("L")
+
+        controller.model.find_cluster_column_table.assert_not_called()
+        controller.view.on_cluster_column_checked.assert_not_called()
+        controller.add_text_to_display.emit.assert_called_once()
+
     def test_a_failure_stops_the_flow_and_tells_the_user(self, controller) -> None:
         """
         The View is not called, so no confirmation dialog appears.
@@ -403,11 +413,11 @@ class TestCommitClusters:
         """The common path: no existing result, so straight to the write."""
         controller.model.commit_cluster_columns.return_value = True
 
-        controller.commit_clusters("L", "frame", "events", None)
+        controller.commit_clusters("L", "events", None)
 
         controller.model.drop_cluster_columns.assert_not_called()
         controller.model.commit_cluster_columns.assert_called_once_with(
-            "L", "frame", "events"
+            "L", controller.model.cluster_columns.return_value, "events"
         )
 
     def test_it_drops_before_writing_when_asked(self, controller) -> None:
@@ -415,7 +425,7 @@ class TestCommitClusters:
         controller.model.drop_cluster_columns.return_value = True
         controller.model.commit_cluster_columns.return_value = True
 
-        controller.commit_clusters("L", "frame", "events", "events")
+        controller.commit_clusters("L", "events", "events")
 
         controller.model.drop_cluster_columns.assert_called_once_with("L", "events")
         controller.model.commit_cluster_columns.assert_called_once()
@@ -429,7 +439,7 @@ class TestCommitClusters:
         """
         controller.model.drop_cluster_columns.return_value = False
 
-        controller.commit_clusters("L", "frame", "events", "events")
+        controller.commit_clusters("L", "events", "events")
 
         controller.model.commit_cluster_columns.assert_not_called()
         controller.add_text_to_display.emit.assert_called_once()
@@ -438,7 +448,7 @@ class TestCommitClusters:
         """A raise and a False must lead to the same place."""
         controller.model.drop_cluster_columns.side_effect = RuntimeError("locked")
 
-        controller.commit_clusters("L", "frame", "events", "events")
+        controller.commit_clusters("L", "events", "events")
 
         controller.model.commit_cluster_columns.assert_not_called()
 
@@ -446,7 +456,7 @@ class TestCommitClusters:
         """It refreshes its own columns and notifies the other tabs on success."""
         controller.model.commit_cluster_columns.return_value = True
 
-        controller.commit_clusters("L", "frame", "events", None)
+        controller.commit_clusters("L", "events", None)
 
         controller.view.on_clusters_committed.assert_called_once_with("L", True)
 
@@ -454,7 +464,7 @@ class TestCommitClusters:
         """False reaches the View, which then does not notify anyone of a change."""
         controller.model.commit_cluster_columns.side_effect = RuntimeError("disk full")
 
-        controller.commit_clusters("L", "frame", "events", None)
+        controller.commit_clusters("L", "events", None)
 
         controller.view.on_clusters_committed.assert_called_once_with("L", False)
 
@@ -916,4 +926,60 @@ class TestTheRunIsTheRecordedClusterRun:
         recorded = self.recording(controller)
 
         assert controller.load_metadata_for_clustering(self._config(), "L") is False
+        assert recorded == []
+
+
+class TestMergeIsTheRecordedMergeClusters:
+    """``merge_clusters`` edits the Model's result and asks the View to draw it."""
+
+    @staticmethod
+    def recording(controller: ClusteringController) -> list:
+        """
+        Capture what the controller records.
+
+        :param controller: Controller under test.
+        :return: the list each recorded entry is appended to.
+        """
+        recorded: list = []
+        controller.record_action = recorded.append  # type: ignore[method-assign]
+        return recorded
+
+    def test_it_is_the_declared_merge_clusters_action(self) -> None:
+        declared = {name for _attribute, name in declared_actions(ClusteringController)}
+
+        assert "merge_clusters" in declared
+
+    def test_the_merge_button_reaches_it(
+        self, controller: ClusteringController, mock_view: MagicMock
+    ) -> None:
+        controller._setup_connections()
+
+        mock_view.merge_requested.connect.assert_called_once_with(
+            controller.merge_clusters
+        )
+
+    def test_a_merge_is_recorded_and_drawn_from_the_models_result(
+        self, controller: ClusteringController, mock_view: MagicMock
+    ) -> None:
+        merged = ("frame", [0, 0], [1.0, 1.0])
+        controller.model.merge_clusters.return_value = merged
+        recorded = self.recording(controller)
+
+        assert controller.merge_clusters(0, 1) is True
+
+        controller.model.merge_clusters.assert_called_once_with(0, 1)
+        mock_view.show_clusters.assert_called_once_with(*merged)
+        assert recorded == [{"action": "merge_clusters", "args": (0, 1), "kwargs": {}}]
+
+    def test_with_no_clustering_nothing_is_merged_or_recorded(
+        self, controller: ClusteringController, mock_view: MagicMock
+    ) -> None:
+        controller.model.result = None
+        recorded = self.recording(controller)
+
+        assert controller.merge_clusters(0, 1) is False
+
+        controller.model.merge_clusters.assert_not_called()
+        mock_view.show_clusters.assert_not_called()
+        controller.add_text_to_display.emit.assert_called_once()
         assert recorded == []

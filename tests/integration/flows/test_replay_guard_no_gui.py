@@ -441,8 +441,14 @@ def fitted_events(triad: Triad) -> Any:
 
 
 def clustering_act(triad: Triad, qtbot: Any) -> None:
-    """Run a clustering as the panel does once the settings dialog is accepted."""
-    triad.tab_view._load_metadata_and_request_clustering(hdbscan_config(), LOADER)
+    """Run a clustering as the panel does once the settings dialog is accepted, then merge label 1 into 0."""
+    view = triad.tab_view
+    view._load_metadata_and_request_clustering(hdbscan_config(), LOADER)
+    view.handle_parameter_change(
+        "clusteringcontrols",
+        "merge_clusters",
+        ({"db_loader": LOADER, "label_x": "0", "label_y": "1"},),
+    )
 
 
 def clustering_perturb(triad: Triad) -> None:
@@ -569,7 +575,7 @@ SCENARIOS = [
     ),
     Scenario(
         tab="ClusteringController",
-        covers=("reset", "cluster_run"),
+        covers=("reset", "cluster_run", "merge_clusters"),
         build=clustering_tab,
         act=clustering_act,
         perturb=clustering_perturb,
@@ -672,10 +678,10 @@ def test_a_replayed_fit_leaves_the_channel_fitted_in_both_tabs(
 
 
 @pytest.mark.timeout(240)
-def test_a_replayed_clustering_labels_every_row_in_both_tabs(
+def test_a_replayed_clustering_and_merge_happen_in_both_tabs(
     qapp, qtbot, tmp_path: Path, sample_metadata_db: str
 ) -> None:
-    """The two tabs agreeing is not enough: a run that clustered nothing would agree with itself."""
+    """The two tabs agreeing is not enough: a run or a merge that did nothing would agree with itself."""
     scenario = next(s for s in SCENARIOS if s.tab == "ClusteringController")
 
     captured_a, captured_b, _ = run_scenario(
@@ -684,7 +690,9 @@ def test_a_replayed_clustering_labels_every_row_in_both_tabs(
 
     for captured in (captured_a, captured_b):
         assert captured["probe"], "no clustering result was produced"
-        assert sum(captured["probe"].values()) > 0
+        assert sum(captured["probe"].values()) == 40
+        assert "1" not in captured["probe"], "label 1 was not merged into 0"
+        assert "0" in captured["probe"]
 
 
 @pytest.mark.timeout(240)

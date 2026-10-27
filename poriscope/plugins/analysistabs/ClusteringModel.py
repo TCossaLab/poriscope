@@ -65,6 +65,55 @@ class ClusteringModel(MetaModel):
         self.result: Optional[Tuple[pd.DataFrame, Any, Any]] = None
 
     @log(logger=logger)
+    def merge_clusters(
+        self, keep: int, merge: int
+    ) -> Tuple[pd.DataFrame, np.ndarray, np.ndarray]:
+        """
+        Fold one cluster into another in the latest result.
+
+        The merged rows take ``keep``'s label and a confidence of 1. New arrays replace the
+        stored ones, so a result handed out earlier keeps what it showed.
+
+        :param keep: the label the merged cluster joins
+        :type keep: int
+        :param merge: the label that is merged into ``keep``
+        :type merge: int
+        :raises ValueError: if there is no clustering to merge
+        :return: the new result, (clustered frame, labels, confidence)
+        :rtype: Tuple[pd.DataFrame, np.ndarray, np.ndarray]
+        """
+        if self.result is None:
+            raise ValueError("There is no clustering to merge")
+        frame, labels, confidence = self.result
+        labels = np.asarray(labels).copy()
+        confidence = np.asarray(confidence, dtype=float).copy()
+        merged = labels == merge
+        confidence[merged] = 1
+        labels[merged] = keep
+        self.result = (frame, labels, confidence)
+        return frame, labels, confidence
+
+    @log(logger=logger)
+    def cluster_columns(self) -> pd.DataFrame:
+        """
+        The id, label and confidence of every row of the latest result, as Commit writes them.
+
+        :raises ValueError: if there is no clustering to commit
+        :return: one row per clustered event
+        :rtype: pd.DataFrame
+        """
+        if self.result is None:
+            raise ValueError("There is no clustering to commit")
+        frame, labels, confidence = self.result
+        return pd.DataFrame(
+            {
+                "id": frame["id"].values,
+                "cluster_label": np.asarray(labels),
+                "cluster_confidence": np.asarray(confidence),
+            }
+        )
+
+    @log(logger=logger)
     def build_clustering_frame(
         self,
         plot_data: pd.DataFrame,

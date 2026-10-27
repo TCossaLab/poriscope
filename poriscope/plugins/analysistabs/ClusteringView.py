@@ -89,10 +89,14 @@ class ClusteringView(MetaView):
     #: together rather than either side of a value parked here.
     cluster_column_check_requested = Signal(str)
 
-    #: Asks the Controller to commit the current clustering result, dropping an
-    #: existing one first when the last argument names its table. Two round trips
-    #: rather than one because a modal confirmation sits between them.
-    cluster_commit_requested = Signal(str, object, str, object)
+    #: Asks the Controller to commit the current clustering result to a table, dropping
+    #: an existing one first when the last argument names its table. The result is the
+    #: Model's, so it is not carried. Two round trips rather than one because a modal
+    #: confirmation sits between them.
+    cluster_commit_requested = Signal(str, str, object)
+
+    #: Asks the Controller to merge one cluster label into another: keep, then merge.
+    merge_requested = Signal(int, int)
 
     #: Asks the Controller to build the metadata query and load the rows for it; the
     #: rows arrive at ``on_metadata_loaded``. One request rather than a query and a load
@@ -109,17 +113,19 @@ class ClusteringView(MetaView):
         Initializes the ClusteringView's internal state and clears cache.
         """
         self._clear_cache()
-        self.cluster_data: Optional[pd.DataFrame] = None
         self.query = ""
         # Set by update_column_names when the loader answers. Initialised here
         # because the clustering settings dialog reads it. Created only by that
         # callback, a loader whose columns could not be read would leave the dialog
         # raising AttributeError instead of opening empty.
         self.columns: List[str] = []
-        # Positional units for the currently plotted columns, set by
-        # update_plot and read back by _merge_clusters when it replots.
-        # Declared here so the attribute exists before the first plot.
+        # How the last clustering was drawn, set by update_plot and read back by
+        # show_clusters when a merge redraws it. Positional, one per column; plot_units is
+        # kept apart from self.units, the column-name -> unit map the settings dialog uses.
+        self.logs: Sequence[bool] = []
+        self.normalized: Sequence[bool] = []
         self.plot_units: Sequence[Optional[str]] = []
+        self.plot: Sequence[bool] = []
         # Held between emitting cluster_requested and set_clustering_result
         # receiving the answer; None means no request is outstanding.
         self._pending_cluster_display: Optional[Tuple[Any, ...]] = None
@@ -196,9 +202,7 @@ class ClusteringView(MetaView):
             self._handle_clustering_settings(parameters)
 
         elif action_name == "merge_clusters":
-            keep = parameters["label_x"]
-            merge = parameters["label_y"]
-            self._merge_clusters(keep, merge)
+            self._request_merge(parameters["label_x"], parameters["label_y"])
         elif action_name == "commit_clusters":
             loader = parameters["db_loader"]
             self._commit_clusters(loader)
@@ -206,41 +210,44 @@ class ClusteringView(MetaView):
             self._handle_other_actions(action_name, parameters)
 
     @log(logger=logger)
-    def _merge_clusters(self, keep: Any, merge: Any) -> None:
+    def _request_merge(self, keep: Optional[str], merge: Optional[str]) -> None:
         """
-        Merges two clusters by reassigning the label.
+        Ask the Controller to merge the two cluster labels the dropdowns show.
 
-        :param keep: Cluster label to keep. Arrives as combo box text (or None when unset) and is reassigned in place by int() below, hence the loose annotation.
-        :type keep: Any
-        :param merge: Cluster label to merge into the keep label. Arrives as combo box text (or None when unset) and is reassigned in place by int() below, hence the loose annotation.
-        :type merge: Any
+        :param keep: the label to keep, as the dropdown shows it, or None when unset
+        :type keep: Optional[str]
+        :param merge: the label to merge into ``keep``, as the dropdown shows it, or None when unset
+        :type merge: Optional[str]
         """
-        if self.cluster_data is None:
+        if keep is None or merge is None:
             self.add_text_to_display.emit(
-                "No clusters defined, unable to merge", self.__class__.__name__
+                "Choose two cluster labels to merge", self.__class__.__name__
             )
             return
-        else:
-            try:
-                keep = int(keep)
-                merge = int(merge)
-            except TypeError:
-                self.logger.error(
-                    f"cluster selections {keep} and {merge} cannot be converted to ints"
-                )
-                return
-            self.cluster_data.loc[
-                self.cluster_data["cluster_label"] == merge, "cluster_confidence"
-            ] = 1
-            self.cluster_data.loc[
-                self.cluster_data["cluster_label"] == merge, "cluster_label"
-            ] = keep
+        self.merge_requested.emit(int(keep), int(merge))
 
+    @log(logger=logger)
+    def show_clusters(
+        self,
+        data: pd.DataFrame,
+        labels: Union[Sequence[Any], np.ndarray],
+        confidence: Union[Sequence[Any], np.ndarray],
+    ) -> None:
+        """
+        Redraw a clustering result with the display settings of the run that produced it.
+
+        :param data: the clustered frame
+        :type data: pd.DataFrame
+        :param labels: cluster label per row
+        :type labels: Union[Sequence[Any], np.ndarray]
+        :param confidence: cluster confidence per row
+        :type confidence: Union[Sequence[Any], np.ndarray]
+        """
         self._reset_actions()
         self.update_plot(
-            self.cluster_data,
-            self.cluster_data["cluster_label"].values,
-            self.cluster_data["cluster_confidence"].values,
+            data,
+            labels,
+            confidence,
             self.logs,
             self.normalized,
             self.plot_units,
@@ -259,10 +266,7 @@ class ClusteringView(MetaView):
 
         :param loader: Name or ID of the database loader plugin.
         :type loader: str
-        :raises AttributeError: If cluster data has not been set yet.
         """
-        if self.cluster_data is None:
-            raise AttributeError("cluster data has not been set, unable to commit")
         self.cluster_column_check_requested.emit(loader)
 
     @log(logger=logger)
@@ -283,11 +287,6 @@ class ClusteringView(MetaView):
         :return: None
         :rtype: None
         """
-        if self.cluster_data is None:
-            self.logger.error("Cluster column check returned with no data to commit")
-            return
-        cluster_data = self.cluster_data[["id", "cluster_label", "cluster_confidence"]]
-
         if existing_table is not None:
             reply = QMessageBox.question(
                 self,
@@ -298,9 +297,7 @@ class ClusteringView(MetaView):
             if reply != QMessageBox.Ok:
                 return
 
-        self.cluster_commit_requested.emit(
-            loader, cluster_data, self.table_name, existing_table
-        )
+        self.cluster_commit_requested.emit(loader, self.table_name, existing_table)
 
     @log(logger=logger)
     def on_clusters_committed(self, loader: str, status: bool) -> None:
@@ -683,7 +680,8 @@ class ClusteringView(MetaView):
         :type plot: Sequence[bool]
         """
 
-        self.labels = labels
+        # The frame is the Model's; the label columns below go on a copy of it.
+        data = data.copy()
         self.logs = logs
         self.normalized = normalized
         # Kept separate from self.units, which is the column-name -> unit map
@@ -784,7 +782,6 @@ class ClusteringView(MetaView):
         col_labels["cluster_label"] = "cluster_label"
         col_labels["cluster_confidence"] = "cluster_confidence"
         col_labels["id"] = "id"
-        self.cluster_data = data
         cache_data = [(data[col].values, col_labels[col]) for col in data.columns]
         self._update_cache(*cache_data)
         self._commit_cache()

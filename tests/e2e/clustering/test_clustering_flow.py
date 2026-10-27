@@ -406,15 +406,13 @@ def test_clustering_flow(
     #
     # Labels being committed here come from the LAST clustering run
     # (HDBSCAN, no filter), not the earlier Gaussian Mixtures + merge
-    # result -- switching methods replaces self.cluster_data entirely.
+    # result -- switching methods replaces the Model's result entirely.
     # HDBSCAN doesn't take a fixed cluster count and can produce any
     # label set including -1 (noise), so this deliberately does not
     # assert a specific label set -- only that the DB exactly mirrors
     # whatever was actually in memory at commit time.
     # =========================================================
-    expected_cluster_data = clustering_view.cluster_data[
-        ["id", "cluster_label", "cluster_confidence"]
-    ].copy()
+    expected_cluster_data = clustering_controller.model.cluster_columns()
     expected_by_id = {
         int(row["id"]): (int(row["cluster_label"]), float(row["cluster_confidence"]))
         for _, row in expected_cluster_data.iterrows()

@@ -164,8 +164,7 @@ def test_clustering_labels_every_row_it_loaded(clustering_tab: Triad) -> None:
     """
     cluster(clustering_tab, hdbscan_config())
 
-    data = clustering_tab.tab_view.cluster_data
-    assert data is not None
+    data = clustering_tab.tab_controller.model.cluster_columns()
     assert len(data) == 40
     assert "cluster_label" in data.columns
     assert "cluster_confidence" in data.columns
@@ -206,13 +205,8 @@ def test_the_committed_labels_match_the_rows_they_were_computed_for(
     """
     cluster(clustering_tab, hdbscan_config())
     table = clustering_tab.tab_view.table_name
-    expected = dict(
-        zip(
-            clustering_tab.tab_view.cluster_data["id"],
-            clustering_tab.tab_view.cluster_data["cluster_label"],
-            strict=True,
-        )
-    )
+    labelled = clustering_tab.tab_controller.model.cluster_columns()
+    expected = dict(zip(labelled["id"], labelled["cluster_label"], strict=True))
 
     clustering_tab.tab_view.handle_parameter_change(
         "clusteringcontrols", "commit_clusters", ({"db_loader": LOADER_KEY},)
