@@ -216,7 +216,9 @@ project one for the bare name. Five of its rules hold in every session:
   they surfaced rather than filing them.
 - Code, comments and tests never cite a plan document or its step numbers; describe the mechanism.
 
-A lesson learned here that generalises beyond Poriscope goes into those skills, not this file.
+A lesson learned here that generalises beyond Poriscope goes into those skills, not this file;
+load the `building-skills` skill (also under `.claude/skills/`) before adding a lesson to a skill or
+creating, moving, syncing or checking one.
 
 ## General Instructions
 
