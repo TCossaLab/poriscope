@@ -50,6 +50,12 @@ Step 10 waits for both tracks.
 
 ### Step 9b - breaking tab designs and the milestone guard (Carolina's track)
 
+- **A replay scenario failed once and was not diagnosed (2026-10-26).**
+  `test_replay_guard_no_gui.py::test_a_replay_reproduces_what_the_action_produced[EventAnalysisController]`
+  failed once, in the first run after its second-tab perturbation was made effective; the output was not kept.
+  0 failures in about 110 later runs (14 quiet, 15 parallel, 60 with output saved). If it recurs, save the
+  output and diagnose before going on; `settle` (`test_replay_guard_no_gui.py`) waits on `model.workers`.
+
 ### Step 10 - docs dead-link gate and release prep
 
 - **The API reference has no dead-link gate.** `-W` passes while references are unresolved

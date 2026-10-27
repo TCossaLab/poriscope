@@ -35,7 +35,10 @@ from typing import Any, Dict, List
 from poriscope.controllers.main_controller import MainController
 from poriscope.models.main_model import MainModel
 from poriscope.plugins.datareaders.ChimeraReader20240501 import ChimeraReader20240501
+from poriscope.plugins.dbwriters.SQLiteDBWriter import SQLiteDBWriter
 from poriscope.plugins.eventfinders.ClassicBlockageFinder import ClassicBlockageFinder
+from poriscope.plugins.eventfitters.CUSUM import CUSUM
+from poriscope.plugins.eventloaders.SQLiteEventLoader import SQLiteEventLoader
 from poriscope.utils.BaseDataPlugin import BaseDataPlugin
 from poriscope.views.main_view import MainView
 
@@ -200,4 +203,70 @@ def build_rawdata_tab(
     triad.register(finder, "MetaEventFinder", finder_key)
 
     triad.channel = int(chimera["channel"])  # type: ignore[attr-defined]
+    return triad
+
+
+def build_event_analysis_tab(
+    tmp_path: Path,
+    events_db: str,
+    loader_key: str = "events",
+    fitter_key: str = "fitter",
+    writer_key: str = "writer",
+) -> Triad:
+    """
+    Build an Event Analysis tab with a loader, a CUSUM fitter and a writer registered.
+
+    The application names a plugin when it instantiates it, so each dependent is built after
+    the plugin it depends on and records that name as its parent. The writer's output path is
+    left on the triad as ``out_db``.
+
+    :param tmp_path: a scratch directory to use as the app's data root
+    :type tmp_path: Path
+    :param events_db: path to a generated events database
+    :type events_db: str
+    :param loader_key: the key to register the event loader under
+    :type loader_key: str
+    :param fitter_key: the key to register the fitter under
+    :type fitter_key: str
+    :param writer_key: the key to register the database writer under
+    :type writer_key: str
+    :return: the assembled triad
+    :rtype: Triad
+    """
+    triad = build_triad("EventAnalysisController", tmp_path)
+
+    loader = SQLiteEventLoader()
+    loader.set_key(loader_key)
+    loader_settings = loader.get_empty_settings(standalone=True)
+    loader_settings["Input File"]["Value"] = events_db
+    loader.apply_settings(loader_settings)
+    triad.register(loader, "MetaEventLoader", loader_key)
+
+    fitter = CUSUM()
+    fitter.set_key(fitter_key)
+    fitter_settings = fitter.get_empty_settings(standalone=True)
+    fitter_settings["MetaEventLoader"]["Value"] = loader
+    fitter_settings["MetaEventLoader"]["Type"] = None
+    fitter_settings["Max Sublevels"]["Value"] = 10
+    fitter_settings["Rise Time"]["Value"] = 10.0
+    fitter_settings["Step Size"]["Value"] = 100.0
+    fitter_settings["Sensitivity"]["Value"] = 1.0
+    fitter.apply_settings(fitter_settings)
+    triad.register(fitter, "MetaEventFitter", fitter_key)
+
+    out = tmp_path / "metadata.sqlite3"
+    writer = SQLiteDBWriter()
+    writer.set_key(writer_key)
+    writer_settings = writer.get_empty_settings(standalone=True)
+    writer_settings["MetaEventFitter"]["Value"] = fitter
+    writer_settings["MetaEventFitter"]["Type"] = None
+    writer_settings["Experiment Name"]["Value"] = "flow_test"
+    writer_settings["Voltage"]["Value"] = 200.0
+    writer_settings["Membrane Thickness"]["Value"] = 10.0
+    writer_settings["Conductivity"]["Value"] = 1.0
+    writer_settings["Output File"]["Value"] = str(out)
+    writer.apply_settings(writer_settings)
+    triad.register(writer, "MetaDatabaseWriter", writer_key)
+
+    triad.out_db = out  # type: ignore[attr-defined]
     return triad

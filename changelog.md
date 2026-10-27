@@ -133,6 +133,8 @@
 
 * Protein's `_reset_actions` no longer clears a fit by reading the live analysis mode: each Update Plot clears the fit it replaces, so a replayed reset does not clear the other mode's fit
 
+* Event Analysis's Plot Events and Fit Events are recorded actions (a fit is recorded per channel), and a call that plotted or launched nothing is not recorded; `EventAnalysisView.write_back` shows a recorded entry's values in the panel, though nothing calls it yet
+
 ### User-Facing Behaviour:
 
 #### General:

@@ -678,6 +678,70 @@ class EventAnalysisView(MetaEventTabView):
         self.logger.info("Updated channels in EventAnalysisTab")
 
     @log(logger=logger)
+    @override
+    def write_back(
+        self, action: str, args: Tuple[Any, ...], kwargs: Dict[str, Any]
+    ) -> None:
+        """
+        Show a recorded Event Analysis action's values in the panel.
+
+        Writes only: the plugin comboboxes, the channel selection, the raw box and the event index are
+        set with their signals held off. A value that is no longer an option is skipped and said on the
+        status panel. A fit entry carries no loader, so the loader is left as it is.
+
+        :param action: the entry's declared action name
+        :type action: str
+        :param args: the entry's recorded positional arguments
+        :type args: Tuple[Any, ...]
+        :param kwargs: the entry's recorded keyword arguments
+        :type kwargs: Dict[str, Any]
+        """
+        controls = self.eventAnalysisControls
+        if action == "plot_events":
+            loader, eventfitter, channel, events, data_filter, raw = args
+            self._write_back_loader(loader)
+            self._write_back_fitter(eventfitter, channel, data_filter)
+            controls.set_raw(bool(raw))
+            controls.set_event_index_input(self._format_event_indices(events))
+        elif action == "fit_events":
+            eventfitter, channel, data_filter = args
+            self._write_back_fitter(eventfitter, channel, data_filter)
+
+    @log(logger=logger)
+    def _write_back_loader(self, loader: str) -> None:
+        """
+        Show an event loader without emitting, then ask for its channels.
+
+        Held-off signals skip the request for the loader's channel list, so it is asked for here
+        before the channels are selected.
+
+        :param loader: the event loader plugin's key
+        :type loader: str
+        """
+        if self.eventAnalysisControls.set_loader(loader):
+            self.loader_channels_requested.emit(loader)
+        else:
+            self._say_not_shown("loader", loader)
+
+    @log(logger=logger)
+    def _write_back_fitter(
+        self, eventfitter: str, channel: int, data_filter: str
+    ) -> None:
+        """
+        Show an event fitter, its channel and a filter without emitting.
+
+        :param eventfitter: the event fitter plugin's key, or "No Event Fitter"
+        :type eventfitter: str
+        :param channel: the channel to select
+        :type channel: int
+        :param data_filter: the filter plugin's key, or "" for no filtering
+        :type data_filter: str
+        """
+        if not self.eventAnalysisControls.set_eventfitter(eventfitter):
+            self._say_not_shown("event fitter", eventfitter)
+        self._write_back_channels_and_filter([channel], data_filter)
+
+    @log(logger=logger)
     def _handle_other_actions(
         self, action_name: str, parameters: Dict[str, Any]
     ) -> None:

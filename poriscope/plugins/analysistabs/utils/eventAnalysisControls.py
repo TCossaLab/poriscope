@@ -504,6 +504,44 @@ class EventAnalysisControls(MetaEventTabControls):
         else:
             self.eventfitters_comboBox.setCurrentIndex(0)
 
+    def set_loader(self, loader: str) -> bool:
+        """
+        Show an event loader without emitting, for writing a recorded value back.
+
+        :param loader: the event loader plugin's key
+        :type loader: str
+        :return: True if it was shown, False if it is not an option
+        :rtype: bool
+        """
+        shown = self.set_combo_text(self.loaders_comboBox, loader)
+        self.validate_inputs()
+        return shown
+
+    def set_eventfitter(self, eventfitter: str) -> bool:
+        """
+        Show an event fitter without emitting, for writing a recorded value back.
+
+        :param eventfitter: the event fitter plugin's key, or "No Event Fitter"
+        :type eventfitter: str
+        :return: True if it was shown, False if it is not an option
+        :rtype: bool
+        """
+        shown = self.set_combo_text(self.eventfitters_comboBox, eventfitter)
+        self.validate_inputs()
+        return shown
+
+    def set_raw(self, raw: bool) -> None:
+        """
+        Show the raw-trace checkbox's state without emitting, for writing a recorded value back.
+
+        :param raw: whether each event's unfiltered trace is overlaid
+        :type raw: bool
+        """
+        self.raw_checkbox.blockSignals(True)
+        self.raw_checkbox.setChecked(raw)
+        self.raw_checkbox.blockSignals(False)
+        self.validate_inputs()
+
 
 if __name__ == "__main__":
     import sys

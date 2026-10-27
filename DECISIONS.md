@@ -1984,6 +1984,34 @@ make the push trigger redundant.
 
 ---
 
+## 2026-10-26 - A recorded Event Analysis fit carries no loader
+
+**Context.** `request_fitting_statuses` refuses a fit when the loader selected in the tab is not the one the fitter was built on, once, before any channel starts (`EventAnalysisController.py:473`). The recorded fit (`fit_events`, `fit_channel`) could carry the loader and repeat that check.
+
+**Decision** (Carolina, 2026-10-26). `fit_channel` takes the fitter, the channel and the filter key only. The loader check stays on the click path, where the loader is selected.
+
+**Why.** A fitter reads only its own loader, so the selection never changes what a fit computes (`MetaEventFitter.fit_events` uses `self.eventloader`, `:558`, `:570`, `:587`; `DECISIONS.md` 2026-10-20), and `fit_channel` never reads a loader. The check guards what the user is looking at against what the fitter reads, so a recorded loader could only repeat it with the old selection and would not change what runs. `plot_events` does carry the loader because a plot reads the selected loader's events.
+
+**Revisit if** a replayed entry can run a fit under a fitter key whose fitter now sits on a different loader than when it was recorded: the replay would then fit a file the original did not. The Edit dialog cannot cause it, because it disables the source-plugin dropdown when editing (`DataPluginController.edit_plugin` passes `editable_source_plugins=False`, `dict_dialog_widget.py:190-193`). Deleting the fitter and creating another under the same key can; deleting a plugin is meant to drop the recorded entries that name it, which closes it once that is built. If it is not, record the fitter's loader and refuse on replay when it differs.
+
+---
+
+## 2026-10-26 - Event Analysis's replay scenario does not exercise `raw`
+
+**Context.** `load_event_plot` (recorded as `plot_events`) takes `raw`, which overlays each event's unfiltered trace. It changes the plot only when a filter is selected. The behavioural replay scenario (`test_replay_guard_no_gui.py`) runs with "No Filter", because no filter plugin is registered in `build_event_analysis_tab`, so changing the raw checkbox in the second tab changes nothing the scenario compares. The scenario therefore cannot tell a replay that uses the recorded `raw` from one that reads the checkbox or ignores it.
+
+**Decision** (Carolina, 2026-10-26). Leave it. The scenario stays without a filter plugin and `raw` is not exercised by it.
+
+**Why.** Each plausible mistake is caught by another layer, measured by mutation on 2026-10-26. Reading `raw` from the checkbox: killed by the static test and by the unit tests, survived the scenario. Ignoring the `raw` argument (a constant `False`): killed by the `TestLoadEventPlot` raw tests, survived the static test and the scenario. A filter plugin would add setup (a registered filter, its callable and its samplerate declaration) to cover one checkbox that matters only under a filter, which the cheaper layers already cover.
+
+**Revisit when** any of these holds, and then register a filter in `build_event_analysis_tab`, plot with it in the scenario with `raw` true, and set `raw` false in the second tab:
+- the `TestLoadEventPlot` raw tests are removed or weakened, so that no layer asserts `raw` drives the unfiltered overlay;
+- a bug is reported where a replayed Event Analysis plot shows the wrong overlay;
+- another recorded argument turns out to matter only under a filter, so the same blind spot appears twice;
+- the scenario gains a filter plugin for another reason, at which point `raw` costs nothing to add.
+
+---
+
 ## 2026-10-26 - A finder run that finds no events reports it, and the channel stays unfinished
 
 **Context.** `MetaEventFinder.find_events` ends a run with no events by calling `reset_channel`, so the status report read "event finding incomplete" for a run that completed, the same as an abort (seen after a Find over a short range with no events). `get_eventfinding_status` gates Plot Events and Start over. The writer skips a channel that reports no events (`MetaWriter.py:432`), and an unfinished channel reports 0 (`get_num_events_found`), so an empty run commits nothing for it; this entry does not change that.

@@ -34,7 +34,7 @@ from PySide6.QtCore import Slot
 from poriscope.plugins.analysistabs.EventAnalysisModel import EventAnalysisModel
 from poriscope.plugins.analysistabs.EventAnalysisView import EventAnalysisView
 from poriscope.utils.DocstringDecorator import inherit_docstrings
-from poriscope.utils.LogDecorator import log
+from poriscope.utils.LogDecorator import log, register_action
 from poriscope.utils.MetaEventTabController import MetaEventTabController
 
 
@@ -70,6 +70,7 @@ class EventAnalysisController(MetaEventTabController):
 
     @log(logger=logger)
     @Slot(str, str, int, list, str, bool)
+    @register_action("plot_events", skip_on_false=True)
     def load_event_plot(
         self,
         loader: str,
@@ -78,7 +79,7 @@ class EventAnalysisController(MetaEventTabController):
         events: List[int],
         data_filter: str,
         raw: bool,
-    ) -> None:
+    ) -> bool:
         """
         Load the selected events, their raw traces and their fits, ready to plot.
 
@@ -124,8 +125,8 @@ class EventAnalysisController(MetaEventTabController):
         :type data_filter: str
         :param raw: whether to overlay each event's unfiltered trace
         :type raw: bool
-        :return: None
-        :rtype: None
+        :return: True if events were plotted, False if there was nothing to plot
+        :rtype: bool
         """
         try:
             num_available = self.model.call(
@@ -139,10 +140,10 @@ class EventAnalysisController(MetaEventTabController):
                 f"Unable to read the event count for channel {channel}: {e}",
                 self.__class__.__name__,
             )
-            return
+            return False
 
         if not events:
-            return
+            return False
 
         out_of_range = [event for event in events if event >= num_available]
         events = [event for event in events if event < num_available]
@@ -158,7 +159,7 @@ class EventAnalysisController(MetaEventTabController):
                 self.__class__.__name__,
             )
         if not events:
-            return
+            return False
 
         # The View no longer holds a samplerate: the time axis is a property of the
         # samples and the rate they were taken at, so the Model builds it and the
@@ -169,7 +170,7 @@ class EventAnalysisController(MetaEventTabController):
                 data_filter, lambda: samplerate
             )
         except ValueError:
-            return
+            return False
 
         fitting_done = False
         if eventfitter != "No Event Fitter":
@@ -254,6 +255,7 @@ class EventAnalysisController(MetaEventTabController):
             plabels,
             raw,
         )
+        return bool(event_data)
 
     @log(logger=logger)
     def _loader_samplerate(self, loader: str, channel: int) -> float:
@@ -542,12 +544,9 @@ class EventAnalysisController(MetaEventTabController):
         self, eventfitter: str, channels: List[int], data_filter: str
     ) -> None:
         """
-        Fit the approved channels and run the resulting generators.
+        Fit the approved channels, one channel at a time.
 
-        ``silent`` and ``indices`` are passed explicitly as False and None because the
-        View always did, even though both match their defaults: stating them means this
-        call does not change meaning if a default ever does.
-
+        Each channel is launched by :py:meth:`fit_channel`, which is the recorded action.
         A channel that cannot be launched is reported and skipped, and the ones that did
         register still run, for the same reason as ``write_events``.
 
@@ -561,34 +560,61 @@ class EventAnalysisController(MetaEventTabController):
         :rtype: None
         """
         for channel in channels:
-            try:
-                callable_filter = self._resolve_callable_filter(
-                    data_filter,
-                    functools.partial(self._fitter_samplerate, eventfitter, channel),
-                )
-            except ValueError:
-                continue
-            try:
-                generator = self.model.call(
-                    "MetaEventFitter",
-                    eventfitter,
-                    "fit_events",
-                    channel,
-                    False,
-                    callable_filter,
-                    None,
-                )
-            except Exception as e:
-                self.logger.error(
-                    f"Unable to set up event fitter generator {eventfitter} for channel {channel}: {repr(e)}"
-                )
-                self.add_text_to_display.emit(
-                    f"Unable to start fitting on channel {channel}: {e}",
-                    self.__class__.__name__,
-                )
-                continue
-            self.model.set_generator(generator, channel, eventfitter, "MetaEventFitter")
+            self.fit_channel(eventfitter, channel, data_filter)
+
+    @log(logger=logger)
+    @register_action("fit_events", skip_on_false=True)
+    def fit_channel(self, eventfitter: str, channel: int, data_filter: str) -> bool:
+        """
+        Launch the fitter on one channel and run it.
+
+        ``silent`` and ``indices`` are passed explicitly as False and None because the
+        View always did, even though both match their defaults: stating them means this
+        call does not change meaning if a default ever does.
+
+        The generator is registered and run here, not by the caller, because a replayed
+        entry launches one channel with no loop around it. ``run_generators`` starts only
+        the channels not already running, so a batch starts the same workers as before.
+
+        :param eventfitter: the event fitter plugin's key
+        :type eventfitter: str
+        :param channel: the channel to fit
+        :type channel: int
+        :param data_filter: the filter plugin's key, or "" for no filtering
+        :type data_filter: str
+        :return: True if the channel was launched, False if the filter was refused or it
+            could not be launched
+        :rtype: bool
+        """
+        try:
+            callable_filter = self._resolve_callable_filter(
+                data_filter,
+                functools.partial(self._fitter_samplerate, eventfitter, channel),
+            )
+        except ValueError:
+            return False
+        try:
+            generator = self.model.call(
+                "MetaEventFitter",
+                eventfitter,
+                "fit_events",
+                channel,
+                False,
+                callable_filter,
+                None,
+            )
+        except Exception as e:
+            self.logger.error(
+                f"Unable to set up event fitter generator {eventfitter} for channel {channel}: {repr(e)}"
+            )
+            self.add_text_to_display.emit(
+                f"Unable to start fitting on channel {channel}: {e}",
+                self.__class__.__name__,
+            )
+            return False
+        self.model.set_generator(generator, channel, eventfitter, "MetaEventFitter")
         self.model.run_generators(eventfitter)
+        return True
 
     @log(logger=logger)
     @Slot(str)
