@@ -26,7 +26,7 @@
 
 import logging
 from abc import abstractmethod
-from typing import Sequence
+from typing import List, Sequence
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QComboBox, QListWidgetItem
@@ -64,6 +64,8 @@ class MetaEventTabControls(MetaControls, metaclass=QObjectABCMeta):
       instantiated elsewhere in the app.
     - ``set_event_index_input``, which writes an event index into the field and
       revalidates.
+    - ``set_filter`` and ``set_channels``, which show a recorded filter and channel
+      selection without emitting, for ``MetaView.write_back``.
 
     What a subclass owes it:
 
@@ -175,3 +177,29 @@ class MetaEventTabControls(MetaControls, metaclass=QObjectABCMeta):
         self.event_index_lineEdit.set_range(value)
         self.event_index_lineEdit.blockSignals(False)
         self.validate_inputs()
+
+    def set_filter(self, data_filter: str) -> bool:
+        """
+        Show a filter without emitting; an empty key means "No Filter".
+
+        :param data_filter: the filter plugin's key, or "" for no filtering
+        :type data_filter: str
+        :return: True if it was shown, False if it is not an option
+        :rtype: bool
+        """
+        shown = self.set_combo_text(self.filters_comboBox, data_filter or "No Filter")
+        self.validate_inputs()
+        return shown
+
+    def set_channels(self, channels: Sequence[int]) -> List[str]:
+        """
+        Select exactly these channels without emitting, for writing a recorded value back.
+
+        :param channels: the channels to select
+        :type channels: Sequence[int]
+        :return: the channels that are not in the list, as the list spells them
+        :rtype: List[str]
+        """
+        missing = self.channel_comboBox.setSelectedItems([str(c) for c in channels])
+        self.validate_inputs()
+        return missing
