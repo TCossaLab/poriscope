@@ -25,6 +25,7 @@
 # Kyle Briggs
 
 
+import copy
 import logging
 import os
 import sys
@@ -114,6 +115,8 @@ class ClusteringView(MetaView):
         """
         self._clear_cache()
         self.query = ""
+        # The settings each loader's dialog last accepted, so the next one opens preset.
+        self.clustering_config_map: Dict[str, Dict[str, Any]] = {}
         # Set by update_column_names when the loader answers. Initialised here
         # because the clustering settings dialog reads it. Created only by that
         # callback, a loader whose columns could not be read would leave the dialog
@@ -188,17 +191,9 @@ class ClusteringView(MetaView):
         if action_name == "export_plot_data":
             self.export_plot_data.emit()
         elif action_name == "loader_changed":
-            loader = parameters["db_loader"]
-            self.update_available_columns(loader)
-            self.units: Dict[str, Optional[str]] = {}
-            for col in getattr(self, "columns", []):
-                self.update_units(loader, col)
+            self._refresh_loader(parameters["db_loader"])
         elif action_name == "open_cluster_settings":
-            loader = parameters["db_loader"]
-            self.update_available_columns(loader)
-            self.units = {}
-            for col in getattr(self, "columns", []):
-                self.update_units(loader, col)
+            self._refresh_loader(parameters["db_loader"])
             self._handle_clustering_settings(parameters)
 
         elif action_name == "merge_clusters":
@@ -208,6 +203,52 @@ class ClusteringView(MetaView):
             self._commit_clusters(loader)
         else:
             self._handle_other_actions(action_name, parameters)
+
+    @log(logger=logger)
+    def _refresh_loader(self, loader: str) -> None:
+        """
+        Ask for a loader's columns and their units, which the settings dialog lists.
+
+        :param loader: the database loader plugin's key
+        :type loader: str
+        """
+        self.update_available_columns(loader)
+        self.units: Dict[str, Optional[str]] = {}
+        for col in getattr(self, "columns", []):
+            self.update_units(loader, col)
+
+    @log(logger=logger)
+    @override
+    def write_back(
+        self, action: str, args: Tuple[Any, ...], kwargs: Dict[str, Any]
+    ) -> None:
+        """
+        Show a recorded Clustering action's values in the panel and the stored settings.
+
+        Writes only: a run's loader is set with its signals held off, its columns are asked
+        for as a loader change would, and a copy of its settings is stored for the next
+        dialog; a merge's two labels are set the same way. A value that is no longer an
+        option is skipped and said on the status panel.
+
+        :param action: the entry's declared action name
+        :type action: str
+        :param args: the entry's recorded positional arguments
+        :type args: Tuple[Any, ...]
+        :param kwargs: the entry's recorded keyword arguments
+        :type kwargs: Dict[str, Any]
+        """
+        controls = self.clusteringcontrols
+        if action == "cluster_run":
+            config, loader = args
+            if controls.set_db_loader(loader):
+                self._refresh_loader(loader)
+            else:
+                self._say_not_shown("database", loader)
+            self.clustering_config_map[loader] = copy.deepcopy(config)
+        elif action == "merge_clusters":
+            keep, merge = args
+            if not controls.set_merge_labels(keep, merge):
+                self._say_not_shown("cluster labels", f"{keep} and {merge}")
 
     @log(logger=logger)
     def _request_merge(self, keep: Optional[str], merge: Optional[str]) -> None:
@@ -415,26 +456,6 @@ class ClusteringView(MetaView):
         :type parameters: Dict[str, Any]
         """
         title = parameters.get("db_loader", "Clustering Settings")
-
-        # Initialize config storage
-        if not hasattr(self, "clustering_config_map"):
-            self.clustering_config_map: Dict[
-                str,
-                Dict[
-                    str,
-                    Union[
-                        str,
-                        List[str],
-                        bool,
-                        List[bool],
-                        int,
-                        List[int],
-                        float,
-                        List[float],
-                        None,
-                    ],
-                ],
-            ] = {}
 
         # Restore config based on the title aka selected DB
         config_for_title = self.clustering_config_map.get(title, None)

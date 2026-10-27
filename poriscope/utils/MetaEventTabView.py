@@ -170,21 +170,6 @@ class MetaEventTabView(MetaView):
         )
 
     @log(logger=logger)
-    def _say_not_shown(self, what: str, value: Any) -> None:
-        """
-        Say on the status panel that a recorded value could not be shown.
-
-        :param what: what the value is, such as "reader"
-        :type what: str
-        :param value: the recorded value
-        :type value: Any
-        """
-        self.add_text_to_display.emit(
-            f"The recorded {what} {value} is not available here, so it is not shown in the panel",
-            self.__class__.__name__,
-        )
-
-    @log(logger=logger)
     def _write_back_channels_and_filter(
         self, channels: Sequence[int], data_filter: str
     ) -> None:
