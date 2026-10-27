@@ -170,6 +170,42 @@ class MetaEventTabView(MetaView):
         )
 
     @log(logger=logger)
+    def _say_not_shown(self, what: str, value: Any) -> None:
+        """
+        Say on the status panel that a recorded value could not be shown.
+
+        :param what: what the value is, such as "reader"
+        :type what: str
+        :param value: the recorded value
+        :type value: Any
+        """
+        self.add_text_to_display.emit(
+            f"The recorded {what} {value} is not available here, so it is not shown in the panel",
+            self.__class__.__name__,
+        )
+
+    @log(logger=logger)
+    def _write_back_channels_and_filter(
+        self, channels: Sequence[int], data_filter: str
+    ) -> None:
+        """
+        Show a recorded channel selection and filter without emitting, saying what is not an option.
+
+        The two fields every event tab's recorded entry carries; the tab shows its own plugin
+        comboboxes around this.
+
+        :param channels: the channels to select
+        :type channels: Sequence[int]
+        :param data_filter: the filter plugin's key, or "" for no filtering
+        :type data_filter: str
+        """
+        controls = self._event_controls
+        for missing in controls.set_channels(channels):
+            self._say_not_shown("channel", missing)
+        if not controls.set_filter(data_filter):
+            self._say_not_shown("filter", data_filter)
+
+    @log(logger=logger)
     def _format_ranges(self, ranges: Sequence[tuple[float, float]]) -> str:
         """Format list of tuples into '8-11,13'"""
         return ",".join(
