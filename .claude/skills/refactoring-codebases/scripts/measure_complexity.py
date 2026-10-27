@@ -43,7 +43,10 @@ def _score(func: ast.AST) -> int:
         node = stack.pop()
         if isinstance(node, _SCOPES):
             continue  # measured separately
-        if isinstance(node, (ast.If, ast.IfExp, ast.For, ast.AsyncFor, ast.While, ast.ExceptHandler)):
+        if isinstance(
+            node,
+            (ast.If, ast.IfExp, ast.For, ast.AsyncFor, ast.While, ast.ExceptHandler),
+        ):
             score += 1
         elif isinstance(node, ast.BoolOp):
             score += len(node.values) - 1
@@ -78,40 +81,56 @@ def measure_text(source: str, path: str) -> dict[str, int]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("files", nargs="+")
-    ap.add_argument("--threshold", type=int, default=10, help="report functions strictly over this")
+    ap.add_argument(
+        "--threshold", type=int, default=10, help="report functions strictly over this"
+    )
     ap.add_argument("--baseline")
     mode = ap.add_mutually_exclusive_group()
     mode.add_argument("--check", action="store_true")
     mode.add_argument("--update", action="store_true")
-    ap.add_argument("--all", action="store_true", help="print every function, not just offenders")
+    ap.add_argument(
+        "--all", action="store_true", help="print every function, not just offenders"
+    )
     args = ap.parse_args(argv)
 
     scores: dict[str, int] = {}
     for f in args.files:
-        scores.update(measure_text(Path(f).read_text(encoding="utf-8"), f.replace("\\", "/")))
+        scores.update(
+            measure_text(Path(f).read_text(encoding="utf-8"), f.replace("\\", "/"))
+        )
     over = {k: v for k, v in sorted(scores.items()) if v > args.threshold}
     shown = scores if args.all else over
     for k, v in sorted(shown.items(), key=lambda kv: -kv[1]):
         print(f"{v:4d}  {k}")
-    print(f"functions={len(scores)} over_{args.threshold}={len(over)} total_over={sum(over.values())}")
+    print(
+        f"functions={len(scores)} over_{args.threshold}={len(over)} total_over={sum(over.values())}"
+    )
 
     if not args.baseline:
         return 0
     bpath = Path(args.baseline)
     payload = {"threshold": args.threshold, "over": over}
     if args.update:
-        bpath.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        bpath.write_text(
+            json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
         print(f"Baseline written: {bpath}")
         return 0
     if args.check:
         if not bpath.exists():
-            print(f"FAIL: baseline {bpath} is missing (is it ignored by version control?)")
+            print(
+                f"FAIL: baseline {bpath} is missing (is it ignored by version control?)"
+            )
             return 1
         base = json.loads(bpath.read_text(encoding="utf-8"))
         if base.get("threshold") != args.threshold:
-            print(f"FAIL: baseline threshold {base.get('threshold')} != {args.threshold}")
+            print(
+                f"FAIL: baseline threshold {base.get('threshold')} != {args.threshold}"
+            )
             return 1
         b = base.get("over", {})
         ok = b == over
@@ -121,7 +140,9 @@ def main(argv: list[str] | None = None) -> int:
         if ok:
             print("Ratchet: exact match with baseline.")
             return 0
-        print("Ratchet mismatch: bank an improvement with --update in the same commit, and record why.")
+        print(
+            "Ratchet mismatch: bank an improvement with --update in the same commit, and record why."
+        )
         return 1
     return 0
 

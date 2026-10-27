@@ -34,19 +34,32 @@ def defined_names(source: str) -> set[str]:
     for node in ast.walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             names.add(node.name)
-        elif isinstance(node, ast.Attribute) and isinstance(node.ctx, ast.Store) \
-                and isinstance(node.value, ast.Name) and node.value.id in ("self", "cls"):
+        elif (
+            isinstance(node, ast.Attribute)
+            and isinstance(node.ctx, ast.Store)
+            and isinstance(node.value, ast.Name)
+            and node.value.id in ("self", "cls")
+        ):
             names.add(node.attr)
     return names
 
 
 def names_at_ref(ref: str, src: str) -> set[str]:
-    listing = subprocess.run(["git", "ls-tree", "-r", "--name-only", ref, "--", src], check=True,
-                             capture_output=True, text=True).stdout.split("\n")
+    listing = subprocess.run(
+        ["git", "ls-tree", "-r", "--name-only", ref, "--", src],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.split("\n")
     names: set[str] = set()
     for path in filter(lambda p: p.endswith(".py"), listing):
-        text = subprocess.run(["git", "show", f"{ref}:{path}"], capture_output=True, text=True,
-                              encoding="utf-8", errors="replace").stdout
+        text = subprocess.run(
+            ["git", "show", f"{ref}:{path}"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        ).stdout
         names |= defined_names(text)
     return names
 
@@ -59,19 +72,30 @@ def names_now(src: str) -> set[str]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--baseline", required=True, help="git ref before the refactor (tag or sha)")
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    ap.add_argument(
+        "--baseline", required=True, help="git ref before the refactor (tag or sha)"
+    )
     ap.add_argument("--src", required=True, help="source directory (repo-relative)")
     ap.add_argument("--tests", required=True, help="test directory to search")
-    ap.add_argument("--min-length", type=int, default=4, help="ignore shorter names (noise)")
+    ap.add_argument(
+        "--min-length", type=int, default=4, help="ignore shorter names (noise)"
+    )
     args = ap.parse_args(argv)
 
-    gone = {n for n in names_at_ref(args.baseline, args.src) - names_now(args.src)
-            if len(n) >= args.min_length and not (n.startswith("__") and n.endswith("__"))}
+    gone = {
+        n
+        for n in names_at_ref(args.baseline, args.src) - names_now(args.src)
+        if len(n) >= args.min_length and not (n.startswith("__") and n.endswith("__"))
+    }
     if not gone:
         print("No names were removed between the baseline and HEAD.")
         return 0
-    pattern = re.compile(r"\b(" + "|".join(sorted(map(re.escape, gone), key=len, reverse=True)) + r")\b")
+    pattern = re.compile(
+        r"\b(" + "|".join(sorted(map(re.escape, gone), key=len, reverse=True)) + r")\b"
+    )
     hits: dict[str, list[str]] = {}
     for path in Path(args.tests).rglob("*"):
         if not path.is_file():
@@ -83,8 +107,10 @@ def main(argv: list[str] | None = None) -> int:
         for i, line in enumerate(lines, 1):
             for name in {m.group(1) for m in pattern.finditer(line)}:
                 hits.setdefault(name, []).append(f"{path.as_posix()}:{i}")
-    print(f"{len(gone)} names defined at {args.baseline} are gone from {args.src}; "
-          f"{len(hits)} are still named in {args.tests}.\n")
+    print(
+        f"{len(gone)} names defined at {args.baseline} are gone from {args.src}; "
+        f"{len(hits)} are still named in {args.tests}.\n"
+    )
     for name in sorted(hits, key=lambda n: (-len(hits[n]), n)):
         locs = hits[name]
         print(f"{name}  ({len(locs)})")

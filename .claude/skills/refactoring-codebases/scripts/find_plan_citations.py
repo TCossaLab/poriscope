@@ -38,12 +38,27 @@ DEFAULT_PATTERNS = [
 
 
 # Data formats whose content is not prose (SVG path data such as "3a.5" is an arc command).
-SKIP_SUFFIXES = {".svg", ".csv", ".tsv", ".png", ".jpg", ".gif", ".ico", ".pdf", ".lock"}
+SKIP_SUFFIXES = {
+    ".svg",
+    ".csv",
+    ".tsv",
+    ".png",
+    ".jpg",
+    ".gif",
+    ".ico",
+    ".pdf",
+    ".lock",
+}
 
 
 def candidate_files(roots: list[str]) -> list[Path]:
     try:
-        out = subprocess.run(["git", "ls-files", "--", *roots], check=True, capture_output=True, text=True).stdout
+        out = subprocess.run(
+            ["git", "ls-files", "--", *roots],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
         files = [Path(p) for p in out.splitlines() if p]
         if files:
             return files
@@ -52,26 +67,48 @@ def candidate_files(roots: list[str]) -> list[Path]:
     files = []
     for r in roots:
         p = Path(r)
-        files.extend([p] if p.is_file() else [q for q in p.rglob("*") if q.is_file() and ".git" not in q.parts])
+        files.extend(
+            [p]
+            if p.is_file()
+            else [q for q in p.rglob("*") if q.is_file() and ".git" not in q.parts]
+        )
     return files
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("roots", nargs="*", default=["."])
     ap.add_argument("--pattern", action="append", default=[], help="additional regex")
-    ap.add_argument("--only", action="store_true", help="use only --pattern regexes, not the defaults")
-    ap.add_argument("--exclude", action="append", default=[], help="path substring to skip (e.g. the plan)")
-    ap.add_argument("--no-skip", action="store_true", help=f"also scan {sorted(SKIP_SUFFIXES)}")
+    ap.add_argument(
+        "--only",
+        action="store_true",
+        help="use only --pattern regexes, not the defaults",
+    )
+    ap.add_argument(
+        "--exclude",
+        action="append",
+        default=[],
+        help="path substring to skip (e.g. the plan)",
+    )
+    ap.add_argument(
+        "--no-skip", action="store_true", help=f"also scan {sorted(SKIP_SUFFIXES)}"
+    )
     args = ap.parse_args(argv)
 
-    patterns = [re.compile(p) for p in ((args.pattern if args.only else DEFAULT_PATTERNS + args.pattern))]
+    patterns = [
+        re.compile(p)
+        for p in ((args.pattern if args.only else DEFAULT_PATTERNS + args.pattern))
+    ]
     by_ext: Counter[str] = Counter()
     scanned: Counter[str] = Counter()
     total = 0
     for path in candidate_files(args.roots):
         posix = path.as_posix()
-        if any(x in posix for x in args.exclude) or (path.suffix.lower() in SKIP_SUFFIXES and not args.no_skip):
+        if any(x in posix for x in args.exclude) or (
+            path.suffix.lower() in SKIP_SUFFIXES and not args.no_skip
+        ):
             continue
         try:
             lines = path.read_text(encoding="utf-8").splitlines()
@@ -85,10 +122,18 @@ def main(argv: list[str] | None = None) -> int:
                 by_ext[path.suffix or "(none)"] += len(found)
                 print(f"{posix}:{i}: {', '.join(found)}  |  {line.strip()[:120]}")
     print(f"\n{total} citation(s).")
-    print("File types scanned: " + ", ".join(f"{k} x{v}" for k, v in sorted(scanned.items())))
+    print(
+        "File types scanned: "
+        + ", ".join(f"{k} x{v}" for k, v in sorted(scanned.items()))
+    )
     if by_ext:
-        print("Citations by type:  " + ", ".join(f"{k} x{v}" for k, v in sorted(by_ext.items())))
-    print("Check the scanned types cover every kind of artefact the rule names (code, tests, scripts, docs).")
+        print(
+            "Citations by type:  "
+            + ", ".join(f"{k} x{v}" for k, v in sorted(by_ext.items()))
+        )
+    print(
+        "Check the scanned types cover every kind of artefact the rule names (code, tests, scripts, docs)."
+    )
     return 1 if total else 0
 
 

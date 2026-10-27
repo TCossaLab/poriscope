@@ -21,7 +21,8 @@ Mutation file (JSON list):
        "test": "pytest -q tests/unit/test_model.py::TestStatus"}
     ]
 
-Anchors are matched byte-exactly against the file (CRLF files keep "
+Anchors are matched byte-exactly against the file (CRLF files keep "
+
 "), so prefer
 single-line anchors. Keep each test command narrow - one test class - so a mutation costs seconds.
 
@@ -40,11 +41,15 @@ from pathlib import Path
 
 
 def run(cmd: str) -> int:
-    return subprocess.run(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode
+    return subprocess.run(
+        cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+    ).returncode
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("mutations")
     ap.add_argument("--skip-baseline", action="store_true")
     args = ap.parse_args(argv)
@@ -53,7 +58,9 @@ def main(argv: list[str] | None = None) -> int:
     if not args.skip_baseline:
         for cmd in sorted({m["test"] for m in muts}):
             if run(cmd) != 0:
-                print(f"BASELINE FAILS: {cmd}\nFix the unmutated run first; mutation results would be meaningless.")
+                print(
+                    f"BASELINE FAILS: {cmd}\nFix the unmutated run first; mutation results would be meaningless."
+                )
                 return 2
         print("Baseline: every test command passes unmutated.\n")
 
@@ -61,7 +68,9 @@ def main(argv: list[str] | None = None) -> int:
     for m in muts:
         path = Path(m["file"])
         original = path.read_bytes()
-        text = original.decode("utf-8")  # bytes-exact: CRLF files keep their line endings
+        text = original.decode(
+            "utf-8"
+        )  # bytes-exact: CRLF files keep their line endings
         name = m.get("name", m["anchor"][:40])
         count = text.count(m["anchor"])
         if count != 1:
@@ -85,17 +94,23 @@ def main(argv: list[str] | None = None) -> int:
             print(f"RESTORE FAILED for {path} - stop and restore from version control.")
             return 3
         verdict = "KILLED" if code != 0 else "SURVIVED"
-        results.append((verdict, name, f"{time.time() - t0:.1f}s  removed: {m['anchor']!r}"))
+        results.append(
+            (verdict, name, f"{time.time() - t0:.1f}s  removed: {m['anchor']!r}")
+        )
 
     width = max(len(r[1]) for r in results) if results else 10
     for verdict, name, detail in results:
         print(f"{verdict:9s} {name:{width}s}  {detail}")
     survived = sum(r[0] == "SURVIVED" for r in results)
     botched = sum(r[0] == "BOTCHED" for r in results)
-    print(f"\n{len(results)} mutations: {len(results) - survived - botched} killed, {survived} survived, {botched} botched.")
+    print(
+        f"\n{len(results)} mutations: {len(results) - survived - botched} killed, {survived} survived, {botched} botched."
+    )
     if survived:
-        print("SURVIVED: the input may be too clean for this mechanism, or the code may be dead weight. "
-              "Ask what degenerate case it was written for and probe that before concluding either.")
+        print(
+            "SURVIVED: the input may be too clean for this mechanism, or the code may be dead weight. "
+            "Ask what degenerate case it was written for and probe that before concluding either."
+        )
     return 1 if survived or botched else 0
 
 

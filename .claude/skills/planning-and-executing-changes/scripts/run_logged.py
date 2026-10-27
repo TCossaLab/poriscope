@@ -30,14 +30,24 @@ from pathlib import Path
 
 # Default: pytest-style final summary, e.g. "==== 12 passed, 1 skipped in 3.2s ====".
 DEFAULT_SUMMARY = r"\b\d+ (passed|failed|errors?|skipped|xfailed|xpassed|deselected)\b"
-FAILURE_WORDS = re.compile(r"\b[1-9]\d* (failed|errors?)\b|\bFailed\b|\bFAILED\b|\bERROR\b")
+FAILURE_WORDS = re.compile(
+    r"\b[1-9]\d* (failed|errors?)\b|\bFailed\b|\bFAILED\b|\bERROR\b"
+)
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     parser.add_argument("--log", required=True, help="log file to write (overwritten)")
-    parser.add_argument("--summary", default=DEFAULT_SUMMARY, help="regex identifying summary/verdict lines")
-    parser.add_argument("command", nargs=argparse.REMAINDER, help="command to run, after --")
+    parser.add_argument(
+        "--summary",
+        default=DEFAULT_SUMMARY,
+        help="regex identifying summary/verdict lines",
+    )
+    parser.add_argument(
+        "command", nargs=argparse.REMAINDER, help="command to run, after --"
+    )
     args = parser.parse_args(argv)
 
     command = args.command[1:] if args.command[:1] == ["--"] else args.command
@@ -55,8 +65,15 @@ def main(argv: list[str] | None = None) -> int:
             # it runs: a Python child block-buffers output written to a pipe, and a hung
             # run otherwise leaves only the COMMAND= line behind.
             env = dict(os.environ, PYTHONUNBUFFERED="1")
-            proc = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-                                    encoding="utf-8", errors="replace", env=env)
+            proc = subprocess.Popen(
+                command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                env=env,
+            )
         except FileNotFoundError as exc:
             log.write(f"LAUNCH FAILED: {exc}\nREALEXIT=127\n")
             print(f"LAUNCH FAILED: {exc} - nothing ran. Log: {log_path}")
@@ -72,7 +89,9 @@ def main(argv: list[str] | None = None) -> int:
     text = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
     pattern = re.compile(args.summary)
     body = text[1:]  # skip the COMMAND= header line the script itself wrote
-    summary = [ln for ln in body if pattern.search(ln) and not ln.startswith("REALEXIT=")]
+    summary = [
+        ln for ln in body if pattern.search(ln) and not ln.startswith("REALEXIT=")
+    ]
 
     print(f"Command : {' '.join(command)}")
     print(f"Log     : {log_path}  ({len(text)} lines, {elapsed:.1f}s)")
@@ -85,15 +104,21 @@ def main(argv: list[str] | None = None) -> int:
 
     verdict_ok = True
     if not summary:
-        print("WARNING: no summary line found - do not call this run green. Read the log.")
+        print(
+            "WARNING: no summary line found - do not call this run green. Read the log."
+        )
         verdict_ok = False
     elif code != 0 and not failure_seen:
-        print("WARNING: summary looks green but the process exited non-zero - it died after the "
-              "tests (teardown, threads, atexit). Treat as a failure and read the end of the log.")
+        print(
+            "WARNING: summary looks green but the process exited non-zero - it died after the "
+            "tests (teardown, threads, atexit). Treat as a failure and read the end of the log."
+        )
         verdict_ok = False
     elif code == 0 and failure_seen:
-        print("WARNING: a summary line reports failures but the exit code is 0 - the wrapper may be "
-              "swallowing the real status.")
+        print(
+            "WARNING: a summary line reports failures but the exit code is 0 - the wrapper may be "
+            "swallowing the real status."
+        )
         verdict_ok = False
     if code == 0 and verdict_ok:
         print("VERDICT: green (summary read, exit 0)")

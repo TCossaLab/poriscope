@@ -37,8 +37,13 @@ from pathlib import Path
 def read_source(spec: str) -> str:
     """Read ``path`` or ``REV:path`` (git). A Windows drive letter is not a revision."""
     if ":" in spec and not (len(spec) > 1 and spec[1] == ":" and spec[0].isalpha()):
-        return subprocess.run(["git", "show", spec], check=True, capture_output=True, text=True,
-                              encoding="utf-8").stdout
+        return subprocess.run(
+            ["git", "show", spec],
+            check=True,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+        ).stdout
     return Path(spec).read_text(encoding="utf-8")
 
 
@@ -64,8 +69,12 @@ class _StripDocstrings(ast.NodeTransformer):
     def _strip(self, node):
         self.generic_visit(node)
         body = getattr(node, "body", None)
-        if body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant) \
-                and isinstance(body[0].value.value, str):
+        if (
+            body
+            and isinstance(body[0], ast.Expr)
+            and isinstance(body[0].value, ast.Constant)
+            and isinstance(body[0].value.value, str)
+        ):
             node.body = body[1:] or [ast.Pass()]
         return node
 
@@ -73,11 +82,15 @@ class _StripDocstrings(ast.NodeTransformer):
 
 
 def code_dump(source: str) -> str:
-    return ast.dump(_StripDocstrings().visit(ast.parse(source)), include_attributes=False)
+    return ast.dump(
+        _StripDocstrings().visit(ast.parse(source)), include_attributes=False
+    )
 
 
 def cmd_methods(args) -> int:
-    old, new = qualified_defs(read_source(args.old)), qualified_defs(read_source(args.new))
+    old, new = qualified_defs(read_source(args.old)), qualified_defs(
+        read_source(args.new)
+    )
     lost, gained = sorted(old - new), sorted(new - old)
     print("Lost:   " + (", ".join(lost) or "(none)"))
     print("Gained: " + (", ".join(gained) or "(none)"))
@@ -101,9 +114,24 @@ def cmd_prose(args) -> int:
     pairs: list[tuple[str, str, str]] = []
     if args.git:
         rev_a, rev_b = args.git
-        names = subprocess.run(["git", "diff", "--name-only", "--diff-filter=M", rev_a, rev_b, "--", *args.paths],
-                               check=True, capture_output=True, text=True).stdout.split()
-        pairs = [(n, f"{rev_a}:{n}", f"{rev_b}:{n}") for n in names if n.endswith(".py")]
+        names = subprocess.run(
+            [
+                "git",
+                "diff",
+                "--name-only",
+                "--diff-filter=M",
+                rev_a,
+                rev_b,
+                "--",
+                *args.paths,
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.split()
+        pairs = [
+            (n, f"{rev_a}:{n}", f"{rev_b}:{n}") for n in names if n.endswith(".py")
+        ]
     else:
         if len(args.paths) != 2:
             print("prose needs OLD NEW, or --git REV_A REV_B [pathspec]")
@@ -123,7 +151,9 @@ def cmd_prose(args) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     sub = ap.add_subparsers(dest="mode", required=True)
     m = sub.add_parser("methods")
     m.add_argument("old")
