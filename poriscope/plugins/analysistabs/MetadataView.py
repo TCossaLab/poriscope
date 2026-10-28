@@ -159,21 +159,19 @@ class MetadataView(MetaSubsetTabView):
     csv_subset_export_requested = Signal(str, str, str, object, object, int, str)
 
     #: Asks for the heatmap's 2-D binning: the raw columns, their log flags, the bin
-    #: request, and the drawing context handed back unchanged. Answered through
-    #: ``set_heatmap``.
+    #: request, and the labels handed back unchanged. Answered through
+    #: ``show_heatmap``, which draws on this View's own axes.
     #:
     #: The columns leave raw: the NaN mask, the log filter and the binning are one
     #: calculation and splitting them would compute the surviving row set twice. The
     #: imshow, the colourbar and the cache entry stay here - they are drawing, and the
     #: values they use never leave the View.
-    heatmap_requested = Signal(
-        object, object, object, object, bool, object, str, str, str
-    )
+    heatmap_requested = Signal(object, object, object, object, bool, str, str, str)
 
     #: The same for the three columns of a 3-D scatterplot. Answered through
-    #: ``set_3d_scatterplot``, which is separate because the 3-D axes and the z label
+    #: ``show_3d_scatterplot``, which is separate because the 3-D axes and the z label
     #: are not a special case of the 2-D drawing.
-    scatterplot_3d_requested = Signal(object, object, object, object, str)
+    scatterplot_3d_requested = Signal(object, object, object, str)
 
     #: Asks for every overlaid dataset's kernel density: the raw columns, the log
     #: flag, the bin request, the shared limits so far, and the drawing context
@@ -200,14 +198,14 @@ class MetadataView(MetaSubsetTabView):
     )
 
     #: Asks for the capture-rate binning and its exponential fit: the event times
-    #: as they came out of the column, the bin request, and the drawing context.
-    #: Answered through ``set_capture_rate``.
+    #: as they came out of the column, the bin request, and the labels.
+    #: Answered through ``show_capture_rate``, which draws on this View's own axes.
     #:
     #: The bin edges come back with the fit, so the histogram is drawn on exactly the
     #: edges the fit was made against - computing them twice would let the two disagree.
     #: This carries the event-time column rather than the log inter-event times, because
     #: the gaps are derived from it wherever the fit is.
-    capture_rate_requested = Signal(object, object, bool, object, str, str, str)
+    capture_rate_requested = Signal(object, object, bool, str, str, str)
 
     #: Asks for the per-category counts of every overlaid dataset at once, with the
     #: drawing context handed back unchanged. Answered through
@@ -608,11 +606,11 @@ class MetadataView(MetaSubsetTabView):
             x_label = f"log10({x_label})"
 
         self.capture_rate_requested.emit(
-            data, bins, sizes, ax, x_label, y_label, dataset_label
+            data, bins, sizes, x_label, y_label, dataset_label
         )
 
     @log(logger=logger)
-    def set_capture_rate(
+    def show_capture_rate(
         self,
         bin_edges: npt.NDArray[np.float64],
         bincenters: npt.NDArray[np.float64],
@@ -621,7 +619,6 @@ class MetadataView(MetaSubsetTabView):
         rate: float,
         error: float,
         data: npt.NDArray[np.float64],
-        ax: Axes,
         x_label: str,
         y_label: str,
         dataset_label: str,
@@ -651,8 +648,6 @@ class MetadataView(MetaSubsetTabView):
         :type error: float
         :param data: the log inter-event times the histogram is built from
         :type data: npt.NDArray[np.float64]
-        :param ax: the axis object on which to plot
-        :type ax: Axes
         :param x_label: the x axis label, already formatted
         :type x_label: str
         :param y_label: the y axis label
@@ -662,6 +657,7 @@ class MetadataView(MetaSubsetTabView):
         :return: None
         :rtype: None
         """
+        ax = self.axes
         ax.hist(
             data,
             bins=bin_edges,
@@ -965,17 +961,16 @@ class MetadataView(MetaSubsetTabView):
             y_label = f"log10({y_label})"
 
         self.heatmap_requested.emit(
-            x, y, [logx, logy], bins, sizes, ax, x_label, y_label, dataset_label
+            x, y, [logx, logy], bins, sizes, x_label, y_label, dataset_label
         )
 
     @log(logger=logger)
-    def set_heatmap(
+    def show_heatmap(
         self,
         x: npt.NDArray[np.float64],
         y: npt.NDArray[np.float64],
         z: npt.NDArray[np.float64],
         extent: Sequence[float],
-        ax: Axes,
         x_label: str,
         y_label: str,
         dataset_label: str,
@@ -995,8 +990,6 @@ class MetadataView(MetaSubsetTabView):
         :type z: npt.NDArray[np.float64]
         :param extent: the image's drawing bounds in bin-edge coordinates, ``[xmin, xmax, ymin, ymax]``
         :type extent: Sequence[float]
-        :param ax: the axis object on which to plot
-        :type ax: Axes
         :param x_label: the x axis label, already formatted
         :type x_label: str
         :param y_label: the y axis label, already formatted
@@ -1006,6 +999,7 @@ class MetadataView(MetaSubsetTabView):
         :return: None
         :rtype: None
         """
+        ax = self.axes
         im = ax.imshow(
             z,
             origin="lower",
@@ -1146,16 +1140,14 @@ class MetadataView(MetaSubsetTabView):
         self.scatterplot_3d_requested.emit(
             columns,
             [logx, logy, logz],
-            ax,
             [x_label, y_label, z_label],
             dataset_label,
         )
 
     @log(logger=logger)
-    def set_3d_scatterplot(
+    def show_3d_scatterplot(
         self,
         columns: Sequence[npt.NDArray[np.float64]],
-        ax: Axes3D,
         axis_labels: Sequence[str],
         dataset_label: str,
     ) -> None:
@@ -1163,13 +1155,11 @@ class MetadataView(MetaSubsetTabView):
         Draw a 3-D scatterplot of three filtered columns.
 
         The answering half of ``scatterplot_3d_requested``, and the same reasoning as
-        :meth:`set_scatterplot`. The axes are rebuilt here if what arrived is a 2-D
-        pair, which a change of plot type can leave behind.
+        :meth:`set_scatterplot`. The axes are rebuilt here if they are 2-D, which a
+        change of plot type can leave behind.
 
         :param columns: the filtered x, y and z values
         :type columns: Sequence[npt.NDArray[np.float64]]
-        :param ax: the axis object on which to plot
-        :type ax: Axes3D
         :param axis_labels: the x, y and z axis labels, already formatted
         :type axis_labels: Sequence[str]
         :param dataset_label: Label to apply to the scatter points.
@@ -1180,9 +1170,9 @@ class MetadataView(MetaSubsetTabView):
         xdata, ydata, zdata = columns
         x_label, y_label, z_label = axis_labels
 
-        if not isinstance(ax, Axes3D):
+        if not isinstance(self.axes, Axes3D):
             self._reset_actions(axis_type="3d")
-            ax = self.axes
+        ax = self.axes
 
         ax.scatter(xdata, ydata, zdata, label=dataset_label)
         ax.set_xlabel(x_label)

@@ -67,7 +67,7 @@
 
 * **Breaking:** `_shift_range_and_update_plot` and `_get_event_index_text` have moved from `RawDataView` and `EventAnalysisView` to `MetaEventTabView`, which now requires its subclasses to implement `_event_controls` and `_handle_plot_events`
 
-* **Breaking:** `MetadataModel.calculate_heatmap` now returns the bin edges as a fourth value, and `MetadataView.set_heatmap` takes them as a new `extent` parameter
+* **Breaking:** `MetadataModel.calculate_heatmap` now returns the bin edges as a fourth value, and `MetadataView.show_heatmap` takes them as a new `extent` parameter
 
 * **Breaking:** the Metadata and Protein tabs' subset and event request signals (`event_id_cache_requested`, `all_points_histogram_requested`, `event_overlay_requested`, `event_distribution_data_requested`, `ensemble_histogram_requested`, `metadata_subset_requested`, `csv_subset_export_requested`), their Controller slots, `_rebuild_event_id_cache` and `_fetch_event_subset` take the selected filter's name as a new last argument, and `MetaSubsetTabView._refuse_raw_filters` is removed
 
@@ -84,6 +84,8 @@
 * **Breaking:** a recorded tab action saves every value under its parameter name, defaults included, instead of as an unlabelled list, so a `write_back` override reads them from `kwargs`; an action file saved with unlabelled values still replays
 
 * **Breaking:** Metadata's overlay plot is recorded on `MetadataController.overlay_plot`, which takes the loader, plot type, axes, log flags, bins, Sizes, filters and scope by name; `MetadataView._overlay_plot` is no longer a recorded action, and a plot configuration saved before this is reported and not replayed
+
+* **Breaking:** Metadata's heatmap, capture-rate and 3D-scatter requests no longer carry the plot's `Axes`: `heatmap_requested`, `capture_rate_requested`, `scatterplot_3d_requested` and the `MetadataController` slots they reach lose their `ax` argument, and `set_heatmap`, `set_capture_rate` and `set_3d_scatterplot` become `show_heatmap`, `show_capture_rate` and `show_3d_scatterplot`, which draw on the View's own axes
 
 ### Developer Tooling:
 

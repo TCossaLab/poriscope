@@ -817,9 +817,7 @@ class TestFitCaptureRate:
         :return: None
         :rtype: None
         """
-        controller.fit_capture_rate(
-            np.asarray(times), None, False, MagicMock(), "x", "y", "label"
-        )
+        controller.fit_capture_rate(np.asarray(times), None, False, "x", "y", "label")
 
     @staticmethod
     def _messages(controller):
@@ -910,7 +908,7 @@ class TestFitCaptureRate:
         self, controller, mock_view
     ) -> None:
         """
-        ``set_capture_rate`` draws the histogram from this, so handing back the raw
+        ``show_capture_rate`` draws the histogram from this, so handing back the raw
         times would plot event times against inter-event-time bins.
         """
         log_times = np.arange(20.0)
@@ -920,8 +918,9 @@ class TestFitCaptureRate:
         self._request(controller, list(range(30)))
 
         np.testing.assert_array_equal(
-            mock_view.set_capture_rate.call_args.args[6], log_times
+            mock_view.show_capture_rate.call_args.args[6], log_times
         )
+        assert mock_view.show_capture_rate.call_args.args[7:] == ("x", "y", "label")
 
     def test_a_fit_that_will_not_converge_is_reported(self, controller) -> None:
         controller.model.interevent_log_times.return_value = np.arange(20.0)
@@ -1335,7 +1334,7 @@ class TestCalculateHeatmap(_StatusPanelMixin):
         controller.model.calculate_heatmap.return_value = ("xb", "yb", "z", "ext")
 
         controller.calculate_heatmap(
-            raw_x, raw_y, [True, False], None, False, MagicMock(), "xl", "yl", "dl"
+            raw_x, raw_y, [True, False], None, False, "xl", "yl", "dl"
         )
 
         call = controller.model.logscale_and_filter_columns.call_args
@@ -1355,13 +1354,12 @@ class TestCalculateHeatmap(_StatusPanelMixin):
             [False, False],
             None,
             False,
-            MagicMock(),
             "xl",
             "yl",
             "dl",
         )
 
-        mock_view.set_heatmap.assert_not_called()
+        mock_view.show_heatmap.assert_not_called()
         messages = [
             call.args[0] for call in controller.add_text_to_display.emit.call_args_list
         ]
@@ -1445,12 +1443,15 @@ class TestFilter3dScatterplot(_StatusPanelMixin):
                 np.array([7.0, 8.0, 9.0]),
             ],
             [False, False, False],
-            MagicMock(),
+            ["xl", "yl", "zl"],
+            "dl",
+        )
+        assert mock_view.show_3d_scatterplot.call_args.args[1:] == (
             ["xl", "yl", "zl"],
             "dl",
         )
 
-        columns = mock_view.set_3d_scatterplot.call_args.args[0]
+        columns = mock_view.show_3d_scatterplot.call_args.args[0]
         assert [list(column) for column in columns] == [
             [1.0, 3.0],
             [4.0, 6.0],
@@ -1463,10 +1464,10 @@ class TestFilter3dScatterplot(_StatusPanelMixin):
         controller.model.logscale_and_filter_columns.side_effect = ValueError("nope")
 
         controller.filter_3d_scatterplot(
-            [np.array([1.0])], [False], MagicMock(), ["xl", "yl", "zl"], "dl"
+            [np.array([1.0])], [False], ["xl", "yl", "zl"], "dl"
         )
 
-        mock_view.set_3d_scatterplot.assert_not_called()
+        mock_view.show_3d_scatterplot.assert_not_called()
         messages = [
             call.args[0] for call in controller.add_text_to_display.emit.call_args_list
         ]

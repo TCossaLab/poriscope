@@ -825,13 +825,13 @@ def _answer_capture_rate(view, numbins=4):
     :return: None
     :rtype: None
     """
-    data, _bins, _sizes, ax, x_label, y_label, dataset_label = (
+    data, _bins, _sizes, x_label, y_label, dataset_label = (
         view.capture_rate_requested.emit.call_args.args
     )
     edges = np.linspace(np.min(data), np.max(data), numbins + 1)
     centers = edges[:-1] + np.diff(edges) / 2.0
     counts = np.ones_like(centers)
-    view.set_capture_rate(
+    view.show_capture_rate(
         edges,
         centers,
         counts,
@@ -839,7 +839,6 @@ def _answer_capture_rate(view, numbins=4):
         1.0,
         0.1,
         data,
-        ax,
         x_label,
         y_label,
         dataset_label,
@@ -1180,7 +1179,7 @@ def _answer_heatmap(view, x_bins, y_bins, z_grid, extent=None):
     Answer ``heatmap_requested`` the way MetadataController does.
 
     ``_plot_heatmap`` stops at the binning: it emits the filtered columns
-    and ``set_heatmap`` does every bit of drawing. The binning result is supplied
+    and ``show_heatmap`` does every bit of drawing. The binning result is supplied
     here rather than computed, which is what the mocked ``_calculate_heatmap``
     used to do for these tests.
 
@@ -1203,7 +1202,7 @@ def _answer_heatmap(view, x_bins, y_bins, z_grid, extent=None):
     if extent is None:
         extent = [x_bins.min(), x_bins.max(), y_bins.min(), y_bins.max()]
     context = view.heatmap_requested.emit.call_args.args[5:]
-    view.set_heatmap(x_bins, y_bins, z_grid, extent, *context)
+    view.show_heatmap(x_bins, y_bins, z_grid, extent, *context)
 
 
 def test_plot_heatmap_requests_the_binning(
@@ -1215,10 +1214,10 @@ def test_plot_heatmap_requests_the_binning(
     view._plot_heatmap(view.axes, data, ["x", "y"], ["u1", "u2"], [False, False])
 
     view.heatmap_requested.emit.assert_called_once()
-    # the raw columns go out, and the drawing context comes back untouched
+    # the raw columns and the labels go out; the axes stay in the View
     emitted = view.heatmap_requested.emit.call_args.args
-    assert emitted[5] is view.axes
-    assert len(emitted) == 9
+    assert all(arg is not view.axes for arg in emitted)
+    assert len(emitted) == 8
 
 
 def test_plot_heatmap_sets_axis_labels(
@@ -1430,7 +1429,7 @@ def _answer_3d_scatterplot(view: MetadataView, columns: tuple) -> None:
     :rtype: None
     """
     context = view.scatterplot_3d_requested.emit.call_args.args[2:]
-    view.set_3d_scatterplot(columns, *context)
+    view.show_3d_scatterplot(columns, *context)
 
 
 _THREE_FILTERED = (

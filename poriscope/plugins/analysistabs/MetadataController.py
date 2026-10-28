@@ -210,7 +210,7 @@ class MetadataController(MetaSubsetTabController):
         )
 
     @log(logger=logger)
-    @Slot(object, object, object, object, bool, object, str, str, str)
+    @Slot(object, object, object, object, bool, str, str, str)
     def calculate_heatmap(
         self,
         xdata: npt.NDArray[np.float64],
@@ -218,7 +218,6 @@ class MetadataController(MetaSubsetTabController):
         log_flags: Sequence[bool],
         bins: Any,
         sizes: bool,
-        ax: Axes,
         x_label: str,
         y_label: str,
         dataset_label: str,
@@ -227,9 +226,9 @@ class MetadataController(MetaSubsetTabController):
         Filter and bin the heatmap's two columns, and hand the result back to draw.
 
         A request slot, the same shape as ``ClusteringController.cluster``: the View
-        asks, this calls the Model, and the answer goes back through a setter. The
-        drawing context arrives and departs unchanged; this slot marshals and does not
-        interpret it.
+        asks, this calls the Model, and the answer goes back to be drawn on the View's
+        own axes. The labels arrive and depart unchanged; this slot marshals and does
+        not interpret them.
 
         An invalid bin entry raises out of the Model and is **reported here rather than
         propagating**, because nothing between here and ``_overlay_plot`` catches it and
@@ -245,8 +244,6 @@ class MetadataController(MetaSubsetTabController):
         :type bins: Any
         :param sizes: does the bins parameter refer to bin sizes (True) or counts (False)
         :type sizes: bool
-        :param ax: the axis object the View will draw on
-        :type ax: Axes
         :param x_label: the x axis label, already formatted
         :type x_label: str
         :param y_label: the y axis label, already formatted
@@ -269,15 +266,14 @@ class MetadataController(MetaSubsetTabController):
                 f"Unable to build the heatmap: {e}", self.__class__.__name__
             )
             return
-        self.view.set_heatmap(x, y, z, extent, ax, x_label, y_label, dataset_label)
+        self.view.show_heatmap(x, y, z, extent, x_label, y_label, dataset_label)
 
     @log(logger=logger)
-    @Slot(object, object, object, object, str)
+    @Slot(object, object, object, str)
     def filter_3d_scatterplot(
         self,
         columns: Sequence[npt.NDArray[np.float64]],
         log_flags: Sequence[bool],
-        ax: Axes,
         axis_labels: Sequence[str],
         dataset_label: str,
     ) -> None:
@@ -291,8 +287,6 @@ class MetadataController(MetaSubsetTabController):
         :type columns: Sequence[npt.NDArray[np.float64]]
         :param log_flags: log-scale each column?
         :type log_flags: Sequence[bool]
-        :param ax: the axis object the View will draw on
-        :type ax: Axes
         :param axis_labels: the axis labels, already formatted
         :type axis_labels: Sequence[str]
         :param dataset_label: string to label the dataset
@@ -310,7 +304,7 @@ class MetadataController(MetaSubsetTabController):
                 f"Unable to filter the 3D scatterplot: {e}", self.__class__.__name__
             )
             return
-        self.view.set_3d_scatterplot(filtered, ax, axis_labels, dataset_label)
+        self.view.show_3d_scatterplot(filtered, axis_labels, dataset_label)
 
     @log(logger=logger)
     @Slot(object, bool, object, bool, object, object, object, str, str, str)
@@ -537,13 +531,12 @@ class MetadataController(MetaSubsetTabController):
         self.view.set_categorical_counts(counts, labels, ax, x_label, y_label)
 
     @log(logger=logger)
-    @Slot(object, object, bool, object, str, str, str)
+    @Slot(object, object, bool, str, str, str)
     def fit_capture_rate(
         self,
         data: npt.NDArray[np.float64],
         bins: Any,
         sizes: bool,
-        ax: Axes,
         x_label: str,
         y_label: str,
         dataset_label: str,
@@ -568,8 +561,6 @@ class MetadataController(MetaSubsetTabController):
         :type bins: Any
         :param sizes: does bins refer to a bin width (True) or a count (False)
         :type sizes: bool
-        :param ax: the axis object the View will draw on
-        :type ax: Axes
         :param x_label: the x axis label, already formatted
         :type x_label: str
         :param y_label: the y axis label
@@ -608,7 +599,7 @@ class MetadataController(MetaSubsetTabController):
                 f"Unable to fit the capture rate: {e}", self.__class__.__name__
             )
             return
-        self.view.set_capture_rate(
+        self.view.show_capture_rate(
             bin_edges,
             bincenters,
             val,
@@ -616,7 +607,6 @@ class MetadataController(MetaSubsetTabController):
             rate,
             error,
             log_times,
-            ax,
             x_label,
             y_label,
             dataset_label,
