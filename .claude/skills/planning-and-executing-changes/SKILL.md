@@ -182,6 +182,9 @@ Also standing, with evidence in the reference files:
 | The fix is growing well past the size of the bug | Stop and ask | E24 |
 | A metric moved the way you wanted | Prove it was earned | I12 |
 | A background run "exited 0" | Read the summary line and the sentinel | V2 |
+| A test or gate failed and you are about to rerun it | Is its full output saved to a file? | V17 |
+| You are writing a manual-pass step or an expected message | Is the control enabled in that state, and did you see the message in a run of the app? Read its enable condition or try it | V4 |
+| You are about to say what a function does, or what a change would cause, from a grep hit or a diff hunk | Open the whole function and read it top to bottom, or say the claim is unverified | E30 |
 | Every gate is green after changing app code | Launch the app | V3 |
 | A probe will construct the real app | Redirect its user-data paths first | V10 |
 | You are about to record something as landed | Check what it does, and the date of what you found | V12 |

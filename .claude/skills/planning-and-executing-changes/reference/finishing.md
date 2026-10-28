@@ -47,6 +47,8 @@ A test that failed once in a full run and passed alone has a real race. Find it 
 *Case:* an export flow waited for two of the three tables it asserted on; the fix was to wait for the table
 the export writes last.
 
+Save its output first, before any rerun (V17).
+
 ## X9 · Suite time grows with coverage; measure before calling it a regression
 
 Normalise per test and compare phases. On the source refactor, 2,950 -> 4,215 tests took 409 -> 517 s, which

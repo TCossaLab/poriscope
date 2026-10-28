@@ -20,6 +20,9 @@ program still work for a person using it?*
 - V12 "Landed" is a claim about behaviour, so a text match cannot settle it
 - V13 Separate environment artefacts from measurements
 - V14 Bisect, don't argue
+- V15 A merge of upstream work produces a tree nobody has tested
+- V16 A long run must say where it is while it runs
+- V17 Save a failure's output before any rerun
 
 ## The verification routine
 
@@ -88,12 +91,25 @@ Then pause at commit boundaries that move application code. Rules for the checkl
   cannot show that an identical line arrived twice.
 - **Only list steps a human can actually perform.** A failure path that needs a plugin to raise or a
   file to be corrupt belongs in an automated test; say in the checklist that it is covered there.
+- **Check that each step is possible in the state it assumes.** For every control a step clicks, read what
+  enables it (its validation function) or launch the app and try it: a button that is disabled in that
+  state makes the step impossible, however reachable its code path looks. An expected message is a claim
+  too. Take it from a run of the app, not from the code path that could emit it; if you could not run it,
+  label it "expected from the code, unverified". When a step fails because it cannot be done, the checklist
+  was wrong, not the program.
 - **Say plainly when a commit carries no app risk** (instrument-only commits) to save attention for those
   that do.
 - **Record every pass dated**, so a later failure is attributable. Manual passes found four defects in
   nine checks on one step that ended with every automated gate green.
 
 *Also:* have each checklist item name the code it exercises, so a pass that finds nothing still says what ran.
+
+*Case:* an event finder that found no events left its channel unfinished, and the pass told the user to click
+Plot Events on that channel and expect a "not finished" message. The button is disabled there (it needs a
+reader, a selected channel and a valid event index), so the step could not be performed and the message was
+reachable only in a state the pass never described. An earlier pass in the same series told the user to change
+an axis and overlay a second plot, which resets the figure instead; both were steps written from the call
+path without checking what the interface allows.
 
 ## V5 · Assert on the surface the user reads, not the call that writes to it
 
@@ -236,3 +252,15 @@ line by line, but the Python child block-buffered its piped output and the log w
 fixed in the script since), so nothing showed where it was. The guess was contention with the app the
 user had open; the cause was the computer hibernating after a power problem. Rerun with streamed
 verbose output and a 300-second per-test timeout, it passed in 7 minutes.
+
+## V17 · Save a failure's output before any rerun
+
+The first failure is the only one that carries the evidence, so write its full output to a file before
+any rerun (redirect the run; do not read a tail and re-run). A loop of reruns saves every failing run's
+output too. A failure that will not reproduce is not closed: record it as open, with the file and the run
+counts, and read the next full and clean-copy runs for it.
+
+*Case:* a replay scenario failed once in about 35 runs, right after its perturbation was made effective. The output
+was not kept, so a hundred quiet reruns afterwards proved nothing and the cause stayed unknown.
+
+*See also:* V2 for reading the run you saved, and V9 for recording what a non-reproduction ruled out.

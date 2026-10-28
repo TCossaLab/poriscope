@@ -20,6 +20,7 @@ what does this edit cost that the diff does not show?*
 - E25 Fix the contract at the call sites rather than guessing at runtime
 - E26 An atomic replace can be refused on Windows; retry it, bounded
 - E29 One value, many readers: map the pipeline from input to outcome at every entry point
+- E30 A grep hit is a line, not a function; read the whole body before saying what it does or what a change would cause
 
 ## E3 · Measure a "no-op" before promoting it, and read the comment as a claim
 
@@ -161,3 +162,21 @@ reason: one handler was read as the only place the scope is set (another loaded 
 and the loader was read as plotting everything for an empty scope (the caller replaced it with a
 sentinel that the loader refuses, as an earlier decision entry already recorded).
 
+## E30 · A grep hit is a line, not a function; read the whole body before saying what it does or what a change would cause
+
+A claim about behaviour, or about what a change would break, rests on the whole function it names. A grep,
+a `file:line` from a plan or two lines of a diff show where something is, not what runs first. Before
+stating what a function does or what a change would cause, open the function and read it from top to
+bottom, including the lines between the hits. If you cannot yet, say the claim is unverified. A rejected
+option's reason needs this most: a reason you want to be true is the one you check least, and a wrong one
+outlives the conversation in the decision log.
+
+*Case:* an event finder left a channel unfinished when a run found no events, and the options were to leave
+that flag alone or to mark such a channel finished. Grep showed the writer's event-count read on one line
+and its finished check seven lines later. The rejected option was written up as "the writer could commit a
+channel with no events". The zero-events check sits between those two lines and runs first, so the writer
+skips an empty channel either way; the decision-log entry, and the answer given in the conversation, had
+to be corrected when the user asked whether an empty channel could be committed. The same fault was
+already recorded three times in that project's corrections log (a behaviour stated from partial reading),
+and recording it did not stop a repeat: the log is read after a mistake, and nothing required reading the
+function before the claim.

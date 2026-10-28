@@ -83,6 +83,7 @@ IDs are unique across the two skills.
 - **E25** Fix the contract at the call sites rather than guessing at runtime
 - **E26** An atomic replace can be refused on Windows; retry it, bounded
 - **E29** One value, many readers: map the pipeline from input to outcome at every entry point
+- **E30** A grep hit is a line, not a function; read the whole body before saying what it does or what a change would cause
 
 ## Verification (V) - [verification.md](verification.md)
 
@@ -102,6 +103,7 @@ IDs are unique across the two skills.
 - **V14** Bisect, don't argue
 - **V15** A merge of upstream work produces a tree nobody has tested
 - **V16** A long run must say where it is while it runs
+- **V17** Save a failure's output before any rerun
 
 ## Finishing (X) - [finishing.md](finishing.md)
 
