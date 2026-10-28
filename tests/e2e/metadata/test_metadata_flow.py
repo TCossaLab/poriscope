@@ -707,10 +707,9 @@ def test_metadata_flow(
     assert (
         _legend_label_count(md_view.figure) == 0
     ), "Expected Reset to fully clear the plot (0 legend entries)"
-    assert md_view.hist_data == [], "Expected Reset to clear cached hist_data"
-    assert (
-        md_view.plotted_datasets == set()
-    ), "Expected Reset to clear plotted_datasets bookkeeping"
+    kept = controller.analysis_tabs["MetadataController"].model.overlay
+    assert kept.values == [], "Expected Reset to clear the accumulated datasets"
+    assert kept.datasets == set(), "Expected Reset to clear the plotted datasets"
     print("[DEBUG] Reset confirmed: plot and bookkeeping cleared")
 
     # =========================================================

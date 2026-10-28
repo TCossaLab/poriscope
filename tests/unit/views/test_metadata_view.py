@@ -5,7 +5,7 @@ Tests for poriscope.plugins.analysistabs.MetadataView.
 Comprehensive test coverage for:
 - Initialization (_init)
 - Control area setup (_set_control_area)
-- Figure state management (_clear_figure_state, _reset_actions, reset_plot,
+- Figure state management (_clear_figure_state, _reset_actions, clear_plot,
   finish_plot)
 - File dialog (get_save_filename)
 - Drawing methods the Controller calls (show_kernel_densities, show_capture_rate,
@@ -28,7 +28,7 @@ import ast
 import logging
 import sys
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, List, Optional
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -97,6 +97,7 @@ def view(mocker: MockerFixture, mock_qt_dependencies: None) -> MetadataView:
     # Mock signals
     view_instance.add_text_to_display = mocker.Mock()
     view_instance.add_text_to_display.emit = mocker.Mock()
+    view_instance.reset_requested = mocker.Mock()
     view_instance.update_tab_action_history = mocker.Mock()
     view_instance.update_tab_action_history.emit = mocker.Mock()
     view_instance.discard_last_tab_action = mocker.Mock()
@@ -164,26 +165,6 @@ def test_init_sets_subset_export_count_zero(view: MetadataView) -> None:
     assert view.subset_export_count == 0
 
 
-def test_init_sets_hist_min_none(view: MetadataView) -> None:
-    """Verify hist_min is initialized to None."""
-    assert view.hist_min is None
-
-
-def test_init_sets_hist_max_none(view: MetadataView) -> None:
-    """Verify hist_max is initialized to None."""
-    assert view.hist_max is None
-
-
-def test_init_sets_hist_data_empty_list(view: MetadataView) -> None:
-    """Verify hist_data is initialized to empty list."""
-    assert view.hist_data == []
-
-
-def test_init_sets_hist_labels_empty_list(view: MetadataView) -> None:
-    """Verify hist_labels is initialized to empty list."""
-    assert view.hist_labels == []
-
-
 def test_init_sets_current_sql_filter_none(view: MetadataView) -> None:
     """Verify current_sql_filter is initialized to None."""
     assert view.current_sql_filter is None
@@ -204,34 +185,21 @@ def test_init_sets_subset_filters_empty_dict(view: MetadataView) -> None:
     assert view.subset_filters == {}
 
 
-def test_init_sets_plotted_datasets_empty_set(view: MetadataView) -> None:
-    """Verify plotted_datasets is initialized to empty set."""
-    assert view.plotted_datasets == set()
-
-
-def test_init_sets_allowed_plot_type_none(view: MetadataView) -> None:
-    """Verify allowed_plot_type is initialized to None."""
-    assert view.allowed_plot_type is None
-
-
-def test_init_sets_allowed_columns_empty_list(view: MetadataView) -> None:
-    """Verify allowed_columns is initialized to empty list."""
-    assert view.allowed_columns == []
-
-
-def test_init_sets_allowed_logs_empty_list(view: MetadataView) -> None:
-    """Verify allowed_logs is initialized to empty list."""
-    assert view.allowed_logs == []
-
-
-def test_init_sets_allowed_bins_none(view: MetadataView) -> None:
-    """Verify allowed_bins is initialized to None."""
-    assert view.allowed_bins is None
-
-
-def test_init_sets_allowed_sizes_none(view: MetadataView) -> None:
-    """Verify allowed_sizes is initialized to None."""
-    assert view.allowed_sizes is None
+def test_init_keeps_nothing_of_the_overlay(view: MetadataView) -> None:
+    """What the overlaid figure holds is the Model's to keep, not the View's."""
+    for name in (
+        "hist_data",
+        "hist_labels",
+        "hist_min",
+        "hist_max",
+        "plotted_datasets",
+        "allowed_plot_type",
+        "allowed_columns",
+        "allowed_logs",
+        "allowed_bins",
+        "allowed_sizes",
+    ):
+        assert not hasattr(view, name), name
 
 
 # ----------------------------- Control Area Tests ------------------------------
@@ -411,148 +379,49 @@ def test_clear_figure_state_returns_early_when_no_figure(view: MetadataView) -> 
 # ----------------------------- Reset Actions Tests ------------------------------
 
 
-def test_reset_actions_clears_figure_state(view: MetadataView) -> None:
+def test_reset_actions_asks_the_controller_for_a_recorded_reset(
+    view: MetadataView, mocker: MockerFixture
+) -> None:
+    """The figure is cleared by the Controller's reset, which records it; not here."""
+    view.reset_requested = mocker.Mock()
+
+    view._reset_actions(axis_type="3d")
+
+    view.reset_requested.emit.assert_called_once_with("3d")
+    view.figure.clear.assert_not_called()
+
+
+def test_clear_plot_clears_figure_state(view: MetadataView) -> None:
     """Verify figure is cleared."""
-    view._reset_actions()
+    view.clear_plot()
 
     view.figure.clear.assert_called()
 
 
-def test_reset_actions_redraws_canvas(view: MetadataView) -> None:
+def test_clear_plot_redraws_canvas(view: MetadataView) -> None:
     """Verify canvas is redrawn."""
-    view._reset_actions()
+    view.clear_plot()
 
     view.canvas.draw.assert_called()
-
-
-def test_reset_actions_resets_hist_min(view: MetadataView) -> None:
-    """Verify hist_min is reset to None."""
-    view.hist_min = 10.0
-
-    view._reset_actions()
-
-    assert view.hist_min is None
-
-
-def test_reset_actions_resets_hist_max(view: MetadataView) -> None:
-    """Verify hist_max is reset to None."""
-    view.hist_max = 100.0
-
-    view._reset_actions()
-
-    assert view.hist_max is None
-
-
-def test_reset_actions_resets_hist_data(view: MetadataView) -> None:
-    """Verify hist_data is reset to empty list."""
-    view.hist_data = [[1.0, 2.0, 3.0]]  # type: ignore[assignment]
-
-    view._reset_actions()
-
-    assert view.hist_data == []
-
-
-def test_reset_actions_resets_hist_labels(view: MetadataView) -> None:
-    """Verify hist_labels is reset to empty list."""
-    view.hist_labels = ["label1", "label2"]
-
-    view._reset_actions()
-
-    assert view.hist_labels == []
-
-
-def test_reset_actions_resets_allowed_plot_type(view: MetadataView) -> None:
-    """Verify allowed_plot_type is reset to None."""
-    view.allowed_plot_type = "Histogram"
-
-    view._reset_actions()
-
-    assert view.allowed_plot_type is None
-
-
-def test_reset_actions_resets_allowed_columns(view: MetadataView) -> None:
-    """Verify allowed_columns is reset to empty list."""
-    view.allowed_columns = ["x", "y"]
-
-    view._reset_actions()
-
-    assert view.allowed_columns == []
-
-
-def test_reset_actions_resets_allowed_logs(view: MetadataView) -> None:
-    """Verify allowed_logs is reset to empty list."""
-    view.allowed_logs = [True, False]
-
-    view._reset_actions()
-
-    assert view.allowed_logs == []
-
-
-def test_reset_actions_resets_allowed_bins(view: MetadataView) -> None:
-    """Verify allowed_bins is reset to None."""
-    view.allowed_bins = 50  # type: ignore[assignment]
-
-    view._reset_actions()
-
-    assert view.allowed_bins is None
-
-
-def test_reset_actions_resets_allowed_sizes(view: MetadataView) -> None:
-    """Verify allowed_sizes is reset to None."""
-    view.allowed_sizes = True  # type: ignore[assignment]
-
-    view._reset_actions()
-
-    assert view.allowed_sizes is None
-
-
-def test_reset_actions_resets_plotted_datasets(view: MetadataView) -> None:
-    """Verify plotted_datasets is reset to empty set."""
-    view.plotted_datasets.add(("loader", "exp", 1, "filter", "name"))
-
-    view._reset_actions()
-
-    assert view.plotted_datasets == set()
 
 
 # ----------------------------- show_kernel_densities Tests ------------------------------
 #
 # The estimate, the filter and the widened limits are computed by MetadataModel and
 # chosen by MetadataController; these tests hand show_kernel_densities a finished
-# answer and pin the drawing and the accumulation it does.
+# answer and pin the drawing.
 
 
-def test_show_kernel_densities_accumulates_the_newest_dataset(
+def test_show_kernel_densities_draws_one_curve_per_label_and_keeps_none(
     view: MetadataView,
 ) -> None:
-    """Verify the raw column and its label join the overlay when it is drawn."""
-    view.show_kernel_densities(
-        np.array([1.0, 2.0, 3.0]),
-        "test",
-        [(np.array([1.0, 2.0]), np.array([0.1, 0.2]))],
-        0.0,
-        1.0,
-        "x",
-    )
+    """Every dataset handed over is drawn under its label; nothing is kept here."""
+    curve = (np.array([1.0, 2.0]), np.array([0.1, 0.2]))
 
-    assert len(view.hist_data) == 1
-    assert list(view.hist_data[0]) == [1.0, 2.0, 3.0]
-    assert view.hist_labels == ["test"]
+    view.show_kernel_densities([curve, curve], ["d1", "d2"], "x")
 
-
-def test_show_kernel_densities_takes_the_widened_limits(view: MetadataView) -> None:
-    """Verify the shared limits the Model widened come back onto the view."""
-    view.show_kernel_densities(
-        np.array([1.0, 2.0, 3.0]),
-        "",
-        [(np.array([1.0, 2.0]), np.array([0.1, 0.2]))],
-        1.0,
-        3.0,
-        "x",
-    )
-
-    assert view.hist_min == 1.0
-    assert view.hist_max == 3.0
+    assert [c.kwargs["label"] for c in view.axes.plot.call_args_list] == ["d1", "d2"]
+    assert not hasattr(view, "hist_data")
 
 
 def test_show_kernel_densities_clears_axes(view: MetadataView) -> None:
@@ -565,12 +434,7 @@ def test_show_kernel_densities_clears_axes(view: MetadataView) -> None:
     view.axes.clear.assert_not_called()
 
     view.show_kernel_densities(
-        np.array([1.0, 2.0]),
-        "",
-        [(np.array([1.0, 2.0]), np.array([0.1, 0.2]))],
-        0.0,
-        1.0,
-        "x",
+        [(np.array([1.0, 2.0]), np.array([0.1, 0.2]))], [""], "x"
     )
 
     view.axes.clear.assert_called()
@@ -736,22 +600,20 @@ def test_format_axis_label_keeps_every_existing_parenthetical(
 # ----------------------------- show_histogram_bins Tests ------------------------------
 
 
-def _show_histogram_bins(view, values, dataset_label="", logx=False, norm=False):
+def _show_histogram_bins(view, datasets, labels, logx=False, norm=False):
     """
-    Tally ``values`` with the real Model and hand the result to ``show_histogram_bins``.
+    Tally ``datasets`` with the real Model and hand the result to ``show_histogram_bins``.
 
-    The tally runs over every dataset already on the view plus the new one, and the
-    new one goes in raw, which is what ``MetadataController`` does. The real Model is
-    used so these tests still exercise the counting they were written over; what the
-    bin decision returns for a given request is asserted directly in
+    The real Model is used so these tests still exercise the counting they were written
+    over; what the bin decision returns for a given request is asserted directly in
     ``tests/unit/models/test_metadata_model.py``.
 
     :param view: the view to draw on
     :type view: MetadataView
-    :param values: the new dataset's raw column values
-    :type values: np.ndarray
-    :param dataset_label: the new dataset's label
-    :type dataset_label: str
+    :param datasets: every overlaid dataset's raw column values
+    :type datasets: List[np.ndarray]
+    :param labels: one label per dataset
+    :type labels: List[str]
     :param logx: whether the column is log-scaled
     :type logx: bool
     :param norm: whether each dataset is normalised to a fraction
@@ -759,34 +621,22 @@ def _show_histogram_bins(view, values, dataset_label="", logx=False, norm=False)
     :return: None
     :rtype: None
     """
-    datasets = list(view.hist_data) + [values]
     model = MetadataModel()
     filtered = model.logscale_and_filter_datasets(datasets, logx)
-    hist_min, hist_max = model.widen_shared_limits(
-        filtered[-1], view.hist_min, view.hist_max
-    )
+    hist_min, hist_max = None, None
+    for values in filtered:
+        hist_min, hist_max = model.widen_shared_limits(values, hist_min, hist_max)
     _edges, centers, widths, counts = model.overlaid_histograms(
         filtered, 8, False, hist_min, hist_max, norm
     )
-    view.show_histogram_bins(
-        values,
-        dataset_label,
-        centers,
-        widths,
-        counts,
-        hist_min,
-        hist_max,
-        "x (u)",
-        logx,
-        norm,
-    )
+    view.show_histogram_bins(centers, widths, counts, labels, "x (u)", logx, norm)
 
 
 def test_show_histogram_bins_labels_a_normalized_histogram_as_a_fraction(
     view: MetadataView,
 ) -> None:
     """Verify histogram is normalized when norm=True."""
-    _show_histogram_bins(view, np.array([1.0, 2.0, 3.0, 4.0]), norm=True)
+    _show_histogram_bins(view, [np.array([1.0, 2.0, 3.0, 4.0])], [""], norm=True)
 
     ylabel_call = view.axes.set_ylabel.call_args
     assert ylabel_call is not None
@@ -797,7 +647,7 @@ def test_show_histogram_bins_sets_log10_label_when_logscale_true(
     view: MetadataView,
 ) -> None:
     """Verify log10 label is set when logscale is True."""
-    _show_histogram_bins(view, np.array([1.0, 10.0, 100.0]), logx=True)
+    _show_histogram_bins(view, [np.array([1.0, 10.0, 100.0])], [""], logx=True)
 
     xlabel_call = view.axes.set_xlabel.call_args
     assert xlabel_call is not None
@@ -806,17 +656,16 @@ def test_show_histogram_bins_sets_log10_label_when_logscale_true(
 
 def test_show_histogram_bins_overlays_multiple_datasets(view: MetadataView) -> None:
     """
-    Verify multiple datasets can be overlaid.
-
-    Each one joins the accumulator as it is drawn, and every accumulated dataset is
-    redrawn: the second draw puts up one bar series per dataset.
+    Verify multiple datasets can be overlaid: one bar series per dataset handed over,
+    and nothing kept here.
     """
-    _show_histogram_bins(view, np.array([1.0, 2.0, 3.0]), dataset_label="d1")
-    view.axes.bar.reset_mock()
-    _show_histogram_bins(view, np.array([4.0, 5.0, 6.0]), dataset_label="d2")
+    _show_histogram_bins(
+        view,
+        [np.array([1.0, 2.0, 3.0]), np.array([4.0, 5.0, 6.0])],
+        ["d1", "d2"],
+    )
 
-    assert len(view.hist_data) == 2
-    assert view.hist_labels == ["d1", "d2"]
+    assert not hasattr(view, "hist_data")
     assert [call.kwargs["label"] for call in view.axes.bar.call_args_list] == [
         "d1",
         "d2",
@@ -993,17 +842,17 @@ def test_show_3d_scatterplot_rebuilds_two_dimensional_axes(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """
-    A 2-D pair left by the previous plot type is replaced before drawing.
-
-    The check sits with the drawing, which is the half that needs the axes.
+    A guard: the Controller starts a new figure first, so reaching it is said, and the
+    axes are cleared rather than drawn on.
     """
-    type(view.axes).__name__ = "Axes"
-    view._reset_actions = mocker.Mock()
+    view.clear_plot = mocker.Mock()
     view.axes.set_zlabel = mocker.Mock()
 
     view.show_3d_scatterplot(_THREE_FILTERED, ("x (u1)", "y (u2)", "z (u3)"), "a label")
 
-    view._reset_actions.assert_called_once_with(axis_type="3d")
+    view.clear_plot.assert_called_once_with("3d")
+    said = [call.args[0] for call in view.add_text_to_display.emit.call_args_list]
+    assert said == ["The figure could not take this plot, so it was cleared first"]
 
 
 # ----------------------------- Plot All Points Histogram Tests ------------------------------
@@ -1015,8 +864,8 @@ def test_plot_all_points_histogram_plots_data(
     """Verify plot is called with data."""
     view._plot_all_points_histogram(
         view.axes,
-        np.array([1.0, 2.0]),
-        np.array([3.0, 4.0]),
+        [(np.array([1.0, 2.0]), np.array([3.0, 4.0]))],
+        ["a label"],
         ["x", "y"],
         ["u1", "u2"],
     )
@@ -1030,8 +879,8 @@ def test_plot_all_points_histogram_normalizes_when_norm_true(
     """Verify data is normalized when norm=True."""
     view._plot_all_points_histogram(
         view.axes,
-        np.array([1.0, 2.0]),
-        np.array([10.0, 20.0]),
+        [(np.array([1.0, 2.0]), np.array([10.0, 20.0]))],
+        ["a label"],
         ["x", "y"],
         ["u1", "u2"],
         norm=True,
@@ -1048,8 +897,8 @@ def test_plot_all_points_histogram_clears_axes(
     """Verify axes are cleared before plotting."""
     view._plot_all_points_histogram(
         view.axes,
-        np.array([1.0, 2.0]),
-        np.array([3.0, 4.0]),
+        [(np.array([1.0, 2.0]), np.array([3.0, 4.0]))],
+        ["a label"],
         ["x", "y"],
         ["u1", "u2"],
     )
@@ -1066,8 +915,8 @@ def test_plot_all_points_histogram_caches_the_normalized_curve_as_drawn(
     """
     view._plot_all_points_histogram(
         view.axes,
-        np.array([1.0, 2.0, 3.0]),
-        np.array([10.0, 40.0, 30.0]),
+        [(np.array([1.0, 2.0, 3.0]), np.array([10.0, 40.0, 30.0]))],
+        ["a label"],
         ["x", "y"],
         ["u1", "u2"],
         norm=True,
@@ -1124,47 +973,22 @@ def _event_plot_data_answer(view: MetadataView) -> Callable[..., None]:
 #
 # The tally itself is MetadataModel.build_all_points_histogram, pinned in
 # tests/unit/models/test_metadata_model.py. What is left
-# here is the drawing half, and the shared limits the Controller hands over.
-
-
-def test_show_all_points_histogram_takes_the_widened_limits(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
-    """Verify the limits the tally widened come back onto the view."""
-    view.hist_min = None
-    view.hist_max = None
-    view._plot_all_points_histogram = mocker.Mock()
-
-    view.show_all_points_histogram(
-        np.array([1.0, 2.0]),
-        np.array([10.0, 20.0]),
-        -3.0,
-        7.0,
-        "Raw All Points Histogram",
-        "a label",
-    )
-
-    assert view.hist_min == -3.0
-    assert view.hist_max == 7.0
+# here is the drawing half.
 
 
 def test_show_all_points_histogram_draws_the_counts(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify the bin centers and counts reach the drawing method unchanged."""
+    """Verify every subset's curve and label reach the drawing method unchanged."""
     view._plot_all_points_histogram = mocker.Mock()
-    x = np.array([1.0, 2.0])
-    y = np.array([10.0, 20.0])
+    curves = [(np.array([1.0, 2.0]), np.array([10.0, 20.0]))]
 
-    view.show_all_points_histogram(
-        x, y, 0.0, 3.0, "Raw All Points Histogram", "a label"
-    )
+    view.show_all_points_histogram(curves, ["a label"], "Raw All Points Histogram")
 
     view._plot_all_points_histogram.assert_called_once()
     args, kwargs = view._plot_all_points_histogram.call_args
-    assert args[1] is x
-    assert args[2] is y
-    assert kwargs["dataset_label"] == "a label"
+    assert args[1] is curves
+    assert args[2] == ["a label"]
     assert kwargs["norm"] is False
 
 
@@ -1182,12 +1006,7 @@ def test_show_all_points_histogram_normalizes_for_a_normalized_type(
     view._plot_all_points_histogram = mocker.Mock()
 
     view.show_all_points_histogram(
-        np.array([1.0, 2.0]),
-        np.array([10.0, 20.0]),
-        0.0,
-        3.0,
-        plot_type,
-        "a label",
+        [(np.array([1.0, 2.0]), np.array([10.0, 20.0]))], ["a label"], plot_type
     )
 
     assert view._plot_all_points_histogram.call_args[1]["norm"] is True
@@ -1200,12 +1019,9 @@ def test_show_all_points_histogram_redraws_the_canvas(
     view._plot_all_points_histogram = mocker.Mock()
 
     view.show_all_points_histogram(
-        np.array([1.0, 2.0]),
-        np.array([10.0, 20.0]),
-        0.0,
-        3.0,
+        [(np.array([1.0, 2.0]), np.array([10.0, 20.0]))],
+        ["a label"],
         "Raw All Points Histogram",
-        "a label",
     )
 
     view.canvas.draw.assert_called()
@@ -3137,8 +2953,7 @@ class TestIsCategoricalType:
 class TestShowCategoricalCounts:
     """
     The tally is ``MetadataModel.categorical_counts``, run here for real over the
-    datasets already on the view plus the new one, which is what the Controller hands
-    over; what the counting produces for nulls, NaNs and numeric ordering is asserted in
+    datasets handed in, as the Controller hands them over; what the counting produces for nulls, NaNs and numeric ordering is asserted in
     ``tests/unit/models/test_metadata_model.py``.
     """
 
@@ -3151,9 +2966,12 @@ class TestShowCategoricalCounts:
         values: np.ndarray,
         dataset_label: str = "",
         x_label: str = "category",
+        earlier: Optional[List[np.ndarray]] = None,
     ) -> None:
-        counts = MetadataModel().categorical_counts(list(view.hist_data) + [values])
-        view.show_categorical_counts(values, dataset_label, counts, x_label, "Count")
+        datasets = list(earlier or []) + [values]
+        labels = [f"earlier {i}" for i in range(len(datasets) - 1)] + [dataset_label]
+        counts = MetadataModel().categorical_counts(datasets)
+        view.show_categorical_counts(counts, labels, x_label, "Count")
 
     def test_calls_bar(self, view: MetadataView) -> None:
         self._show(view, self._data())
@@ -3172,11 +2990,9 @@ class TestShowCategoricalCounts:
         self._show(view, self._data())
         view.axes.tick_params.assert_called()
 
-    def test_appends_to_hist_data(self, view: MetadataView) -> None:
-        before = len(view.hist_data)
+    def test_keeps_nothing_of_the_overlay(self, view: MetadataView) -> None:
         self._show(view, self._data(), dataset_label="ds")
-        assert len(view.hist_data) == before + 1
-        assert view.hist_labels[-1] == "ds"
+        assert not hasattr(view, "hist_data")
 
     def test_counts_categories_correctly(self, view: MetadataView) -> None:
         # A=3, B=2, C=1
@@ -3189,10 +3005,11 @@ class TestShowCategoricalCounts:
         assert counts[idx_a] == 3.0
 
     def test_overlays_multiple_datasets(self, view: MetadataView) -> None:
-        self._show(view, self._data(), dataset_label="d1")
-        self._show(view, np.array(["A", "D"]), dataset_label="d2")
-        assert len(view.hist_data) == 2
-        assert len(view.hist_labels) == 2
+        self._show(
+            view, np.array(["A", "D"]), dataset_label="d2", earlier=[self._data()]
+        )
+        labels = [c.kwargs["label"] for c in view.axes.bar.call_args_list]
+        assert labels == ["earlier 0", "d2"]
 
 
 # ===========================================================================

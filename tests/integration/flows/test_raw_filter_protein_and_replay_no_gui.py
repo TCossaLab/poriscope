@@ -261,7 +261,13 @@ def on_figure(triad: Triad) -> Set[Tuple[int, str]]:
     :return: the plotted datasets
     :rtype: Set[Tuple[int, str]]
     """
-    return {(entry[2], entry[4]) for entry in triad.tab_view.plotted_datasets}
+    # Metadata's Model keeps them; Protein's View still does.
+    view = triad.tab_view
+    if hasattr(view, "plotted_datasets"):
+        plotted = view.plotted_datasets
+    else:
+        plotted = triad.tab_controller.model.overlay.datasets
+    return {(entry[2], entry[4]) for entry in plotted}
 
 
 def undo(triad: Triad) -> None:

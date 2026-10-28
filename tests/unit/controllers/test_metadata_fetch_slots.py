@@ -211,9 +211,7 @@ class TestLoadMetadataSubset:
         """
         controller.model = RecordingModel(dict(self.ANSWERS))
 
-        controller.load_metadata_subset(
-            "ldr", ["duration"], "", SCOPE, "subset"
-        )
+        controller.load_metadata_subset("ldr", ["duration"], "", SCOPE, "subset")
         controller.load_metadata_subset("ldr", ["duration"], "", SCOPE, "subset")
 
         echoes = [
@@ -518,11 +516,14 @@ class TestBuildAllPointsHistogram:
         assert drawn is True
         assert "SELECT * FROM events" in panel_text(controller)
         controller.view.show_all_points_histogram.assert_called_once()
-        args = controller.view.show_all_points_histogram.call_args[0]
-        assert len(args[0]) == 4
-        assert args[1].sum() == 6
-        assert args[4] == "Raw All Points Histogram"
-        assert args[5] == "a label"
+        curves, labels, plot_type = controller.view.show_all_points_histogram.call_args[
+            0
+        ]
+        ((centers, counts),) = curves
+        assert len(centers) == 4
+        assert counts.sum() == 6
+        assert labels == ["a label"]
+        assert plot_type == "Raw All Points Histogram"
 
     def test_the_limits_it_was_given_are_widened_not_replaced(
         self, controller: MetadataController
@@ -552,9 +553,8 @@ class TestBuildAllPointsHistogram:
             "subset",
         )
 
-        args = controller.view.show_all_points_histogram.call_args[0]
-        assert args[2] == -100.0
-        assert args[3] == 100.0
+        assert controller.model.overlay.hist_min == -100.0
+        assert controller.model.overlay.hist_max == 100.0
 
     def test_a_query_the_loader_refuses_to_build_stops_the_plot(
         self, controller: MetadataController

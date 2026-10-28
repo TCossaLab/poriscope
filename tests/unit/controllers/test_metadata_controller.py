@@ -22,6 +22,7 @@ from poriscope.plugins.analysistabs.MetadataController import MetadataController
 from poriscope.plugins.analysistabs.MetadataModel import MetadataModel
 from poriscope.plugins.analysistabs.MetadataView import MetadataView
 from poriscope.utils.MetaController import declared_actions
+from poriscope.utils.MetaSubsetTabModel import OverlayState
 
 # ----------------------------- fixtures ------------------------------
 
@@ -78,6 +79,8 @@ def controller(mock_view: MagicMock, mocker: MockerFixture) -> MetadataControlle
     ctrl: MetadataController = MetadataController.__new__(MetadataController)  # type: ignore[type-abstract]
     ctrl.view = mock_view
     ctrl.model = mocker.Mock()
+    # A real Model always starts with an empty overlay.
+    ctrl.model.overlay = OverlayState()
     ctrl.logger = mocker.Mock()  # type: ignore[assignment,method-assign]
     mocker.patch("poriscope.utils.MetaSubsetTabController.QMessageBox.warning")
     return ctrl
@@ -974,8 +977,10 @@ class TestCountCategories:
         assert controller.count_categories([newest], ["d1"], "x", "y") is True
 
         mock_view.show_categorical_counts.assert_called_once_with(
-            newest, "d1", counts, "x", "y"
+            counts, ["d1"], "x", "y"
         )
+        assert controller.model.overlay.values[-1] is newest
+        assert controller.model.overlay.labels == ["d1"]
 
     def test_a_column_the_tally_cannot_sort_is_reported(self, controller) -> None:
         """
@@ -1098,17 +1103,10 @@ class TestCalculateHistogramBins(_StatusPanelMixin):
         self._run(controller, [raw])
 
         mock_view.show_histogram_bins.assert_called_once_with(
-            raw,
-            "d1",
-            "centers",
-            "widths",
-            ["counts"],
-            0.0,
-            1.0,
-            "x (ms)",
-            False,
-            False,
+            "centers", "widths", ["counts"], ["d1"], "x (ms)", False, False
         )
+        kept = controller.model.overlay
+        assert (kept.hist_min, kept.hist_max) == (0.0, 1.0)
 
     def test_a_binning_failure_is_reported_and_draws_nothing(
         self, controller, mock_view
@@ -1160,9 +1158,8 @@ class TestCalculateHistogramBins(_StatusPanelMixin):
 
         self._run(controller, [np.array([1.0, np.nan, 4.0])])
 
-        args = mock_view.show_histogram_bins.call_args.args
-        assert args[5] == 1.0
-        assert args[6] == 4.0
+        assert controller.model.overlay.hist_min == 1.0
+        assert controller.model.overlay.hist_max == 4.0
 
     def test_the_limits_describe_the_logscaled_values(
         self, controller, mock_view
@@ -1175,18 +1172,17 @@ class TestCalculateHistogramBins(_StatusPanelMixin):
 
         self._run(controller, [np.array([1.0, 10.0, 100.0])], logx=True)
 
-        args = mock_view.show_histogram_bins.call_args.args
-        assert args[5] == pytest.approx(0.0)
-        assert args[6] == pytest.approx(2.0)
+        assert controller.model.overlay.hist_min == pytest.approx(0.0)
+        assert controller.model.overlay.hist_max == pytest.approx(2.0)
 
 
 class TestEstimateKernelDensities(_StatusPanelMixin):
     """
     The density's half of the same conversion.
 
-    It shares ``hist_data`` and the pair of shared limits with the histogram, which
-    is why the two converted in one branch: the Model can only take over the
-    filtering if what is accumulated is raw, and both write both.
+    It shares the accumulated datasets and the pair of shared limits with the
+    histogram, which is why the two converted in one branch: the Model can only take
+    over the filtering if what is accumulated is raw, and both write both.
     """
 
     @staticmethod
@@ -1226,11 +1222,11 @@ class TestEstimateKernelDensities(_StatusPanelMixin):
 
         assert controller.model.kernel_densities.call_args.args[0] is filtered
 
-    def test_the_view_is_handed_the_raw_newest_dataset_to_accumulate(
+    def test_the_raw_newest_dataset_is_kept_and_the_view_draws(
         self, controller, mock_view
     ) -> None:
         """
-        The View accumulates the *raw* column, not the filtered one: the Model
+        The Model keeps the *raw* column, not the filtered one: the Model
         refilters every accumulated dataset on each update, which it can only do if
         what it is given has not been filtered already.
         """
@@ -1244,8 +1240,11 @@ class TestEstimateKernelDensities(_StatusPanelMixin):
         self._run(controller, [raw])
 
         mock_view.show_kernel_densities.assert_called_once_with(
-            raw, "d1", [("x", "y")], 0.5, 0.6, "x (ms)"
+            [("x", "y")], ["d1"], "x (ms)"
         )
+        assert controller.model.overlay.values == [raw]
+        kept = controller.model.overlay
+        assert (kept.hist_min, kept.hist_max) == (0.5, 0.6)
 
     def test_a_subset_that_filters_away_is_reported_and_draws_nothing(
         self, controller, mock_view
@@ -1253,7 +1252,7 @@ class TestEstimateKernelDensities(_StatusPanelMixin):
         """
         A dataset that filtered away must not stay in the overlay, or the next plot
         redraws it and hits the same empty array from inside the loop. Refusing it
-        here is what keeps it out, since the View accumulates in the setter.
+        here is what keeps it out, since it is kept only once drawn.
         """
         controller.model = MetadataModel()
 
@@ -1278,10 +1277,10 @@ class TestEstimateKernelDensities(_StatusPanelMixin):
 
         self._run(controller, [np.array([1.0, 4.0])])
 
-        args = mock_view.show_kernel_densities.call_args.args
-        assert isinstance(args[3], float)
-        assert isinstance(args[4], float)
-        assert args[4] - args[3] == 3.0
+        kept = controller.model.overlay
+        assert isinstance(kept.hist_min, float)
+        assert isinstance(kept.hist_max, float)
+        assert kept.hist_max - kept.hist_min == 3.0
 
     def test_an_estimate_failure_is_reported_and_draws_nothing(
         self, controller, mock_view
@@ -1566,11 +1565,11 @@ class TestAClickedOverlayThatDrewNothing:
         drawn: bool,
         changes_figure: bool,
     ) -> None:
-        mock_view.plotted_datasets = {("L", "exp_a", 0, "", "F0")}
+        controller.model.overlay = OverlayState(datasets={("L", "exp_a", 0, "", "F0")})
 
         def draw(*_args: object) -> bool:
             if changes_figure:
-                mock_view.plotted_datasets = set()
+                controller.model.overlay = OverlayState()
             return drawn
 
         controller._overlay_metadata_dataset = MagicMock(side_effect=draw)  # type: ignore[method-assign]

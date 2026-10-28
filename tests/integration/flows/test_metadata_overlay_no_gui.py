@@ -15,8 +15,11 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 import numpy as np
 import pytest
 
+from poriscope.plugins.analysistabs.MetadataController import MetadataController
 from poriscope.plugins.analysistabs.MetadataView import MetadataView
 from poriscope.plugins.db_loaders.SQLiteDBLoader import SQLiteDBLoader
+from poriscope.utils.MetaController import declared_actions
+from poriscope.utils.MetaSubsetTabModel import FigureKind, OverlayState
 from tests.integration.flows._triad import Triad, build_triad
 
 LOADER = "loader"
@@ -104,9 +107,14 @@ def overlay(
     )
 
 
+def kept(triad: Triad) -> OverlayState:
+    """What the Model keeps of the overlaid figure."""
+    return triad.tab_controller.model.overlay
+
+
 def on_figure(triad: Triad) -> Set[Tuple[Optional[int], str]]:
     """The datasets the figure holds, as (channel, filter name) pairs."""
-    return {(entry[2], entry[4]) for entry in triad.tab_view.plotted_datasets}
+    return {(entry[2], entry[4]) for entry in kept(triad).datasets}
 
 
 def history(triad: Triad) -> List[str]:
@@ -205,7 +213,7 @@ def test_a_dataset_whose_computation_fails_is_not_counted_as_drawn(
     assert overlay(tab, plot_type, axes=axes, bins=None) is False
 
     assert on_figure(tab) == set()
-    assert tab.tab_view.hist_data == []
+    assert kept(tab).values == []
     assert any(message in s for s in tab.said)
 
 
@@ -274,6 +282,31 @@ def test_axes_that_cannot_take_the_plot_start_a_new_figure(tab: Triad) -> None:
 
 
 @pytest.mark.timeout(120)
+def test_an_all_points_histogram_on_axes_that_cannot_take_it_starts_a_new_figure(
+    tab: Triad,
+) -> None:
+    """The event grid Plot Events draws is reset first, and the reset is recorded."""
+    overlay(tab, "Raw All Points Histogram", filters=["F0"])
+    tab.tab_view.figure.add_subplot(2, 1, 2)
+
+    overlay(tab, "Raw All Points Histogram", filters=["F1"])
+
+    assert on_figure(tab) == {(0, "F1")}
+    assert history(tab)[-2:] == ["reset", "overlay_plot"]
+
+
+@pytest.mark.timeout(120)
+def test_the_decision_reads_what_the_model_keeps(tab: Triad) -> None:
+    """The figure is untouched; only the Model says another plot type is up."""
+    overlay(tab, filters=["F0"])
+    kept(tab).plot_type = "Scatterplot"
+
+    overlay(tab, filters=["F1"])
+
+    assert on_figure(tab) == {(0, "F1")}
+
+
+@pytest.mark.timeout(120)
 def test_an_all_points_bins_change_starts_a_new_figure(tab: Triad) -> None:
     overlay(tab, "Raw All Points Histogram", filters=["F0"])
 
@@ -313,6 +346,73 @@ def test_a_second_event_overlay_of_the_same_type_adds_to_the_figure(
 
     assert on_figure(tab) == {(0, "F0"), (0, "F1")}
     assert history(tab).count("reset") == resets
+
+
+# ------------------------------------------------------------------ what is kept, and where
+
+
+@pytest.mark.timeout(120)
+@pytest.mark.parametrize(
+    "plot_type", ["Histogram", "Kernel Density Plot", "Raw All Points Histogram"]
+)
+def test_two_overlays_accumulate_in_the_model_and_the_view_keeps_none(
+    tab: Triad, plot_type: str
+) -> None:
+    axes = ["max_deviation", "start_time", "max_blockage"]
+    overlay(tab, plot_type, filters=["F0"], axes=axes)
+    overlay(tab, plot_type, filters=["F1"], axes=axes)
+
+    assert len(kept(tab).values) == 2
+    assert len(kept(tab).labels) == 2
+    assert kept(tab).hist_min is not None and kept(tab).hist_max is not None
+    for name in (
+        "hist_data",
+        "hist_labels",
+        "hist_min",
+        "hist_max",
+        "plotted_datasets",
+        "allowed_plot_type",
+        "allowed_columns",
+        "allowed_logs",
+        "allowed_bins",
+        "allowed_sizes",
+    ):
+        assert not hasattr(tab.tab_view, name), name
+
+
+@pytest.mark.timeout(120)
+@pytest.mark.parametrize(
+    "plot_type, kind",
+    [
+        ("Histogram", FigureKind.OVERLAY_2D),
+        ("3D Scatterplot", FigureKind.OVERLAY_3D),
+        ("Raw All Points Histogram", FigureKind.OVERLAY_2D),
+        ("Raw Event Overlay", FigureKind.OVERLAY_2D),
+    ],
+)
+def test_the_model_records_the_figure_kind(
+    tab: Triad, plot_type: str, kind: FigureKind
+) -> None:
+    assert kept(tab).figure is FigureKind.EMPTY_2D
+
+    overlay(tab, plot_type)
+
+    assert kept(tab).figure is kind
+
+
+@pytest.mark.timeout(120)
+def test_reset_is_recorded_on_the_controller_and_empties_what_is_kept(
+    tab: Triad,
+) -> None:
+    overlay(tab, "3D Scatterplot")
+
+    tab.tab_view.handle_parameter_change("metadatacontrols", "reset_plot", ({},))
+
+    assert history(tab)[-1] == "reset"
+    assert kept(tab) == OverlayState()
+    assert len(tab.tab_view.figure.axes) == 1
+    assert "reset" in {name for _, name in declared_actions(MetadataController)}
+    assert "reset" not in {name for _, name in declared_actions(MetadataView)}
 
 
 # ------------------------------------------------------------------ refusals

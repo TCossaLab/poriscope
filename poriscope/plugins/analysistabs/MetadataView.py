@@ -32,9 +32,7 @@ from typing import (
     List,
     Optional,
     Sequence,
-    Set,
     Tuple,
-    Union,
     override,
 )
 
@@ -49,7 +47,7 @@ from PySide6.QtCore import Signal, Slot
 
 from poriscope.plugins.analysistabs.utils.metadatacontrols import MetadataControls
 from poriscope.utils.DocstringDecorator import inherit_docstrings
-from poriscope.utils.LogDecorator import RESET_ACTION, log, register_action
+from poriscope.utils.LogDecorator import log
 from poriscope.utils.MetaSubsetTabControls import MetaSubsetTabControls
 from poriscope.utils.MetaSubsetTabView import MetaSubsetTabView
 from poriscope.views.widgets.dict_dialog_widget import DictDialog
@@ -109,6 +107,10 @@ class MetadataView(MetaSubsetTabView):
     #: panel shows then.
     overlay_plot_requested = Signal(str, str, list, list, object, bool, object, object)
 
+    #: Asks the Controller for a recorded reset of the figure, with the projection of
+    #: its fresh axes: from Reset, and from Plot Events before it draws its grid.
+    reset_requested = Signal(str)
+
     logger = logging.getLogger(__name__)
 
     @log(logger=logger)
@@ -120,38 +122,14 @@ class MetadataView(MetaSubsetTabView):
         self._clear_cache()
         self.no_cached_data = False
         self.subset_export_count = 0
-        self.hist_min: Optional[float] = None
-        self.hist_max: Optional[float] = None
         # Set by set_event_plot_data_generator once the whole event-plot chain has
         # succeeded. None means it has not been fetched.
         self.plot_events_generator = None
-        # Heterogeneous by design: the three 1-D paths - histogram, density and
-        # categorical - append the raw column as a 1-D array, and the all-points
-        # path appends an (x, y) tuple. Two shapes, not one: flagged for review,
-        # since a single element type is the fix and it is a change of its own.
-        self.hist_data: List[Any] = []
-        self.hist_labels: List[Any] = []
         self.subset_filters = {}
         self.available_experiment_and_channels_by_loader: Dict[
             str, Dict[str, List[str]]
         ] = {}
         self.selected_experiment_and_channels_by_loader = {}
-        self.allowed_plot_type: Optional[str] = None
-        self.allowed_columns: List[str] = []
-        self.allowed_logs: List[bool] = []
-        # The bins list from the controls, as the overlay drawn was asked for it.
-        self.allowed_bins: Optional[List[Union[int, float]]] = None
-        self.allowed_sizes: Optional[bool] = None
-
-        self.plotted_datasets: Set[
-            Tuple[
-                Optional[str],
-                Optional[str],
-                Optional[int],
-                Optional[str],
-                Optional[str],
-            ]
-        ] = set()
         self.vertical: Optional[List[float]] = None
         self.horizontal: Optional[List[float]] = None
         self.points: Optional[List[Tuple[float, float]]] = None
@@ -159,7 +137,6 @@ class MetadataView(MetaSubsetTabView):
         self.hlabels: Optional[List[str]] = None
         self.plabels: Optional[List[str]] = None
         self._heatmap_colorbar: Optional[Colorbar] = None
-        # list of tuples of things already plotted: (loader, experiment, channel, filter, subset name), which can be None
 
         # Cache for filter-aware event navigation — rebuilt only when filter/scope changes
         self.filtered_event_ids = []
@@ -258,46 +235,49 @@ class MetadataView(MetaSubsetTabView):
         return is_3d if axis_type == "3d" else not is_3d
 
     @log(logger=logger)
-    @register_action(RESET_ACTION)
-    def reset_plot(self, axis_type: str = "2d") -> None:
+    def clear_plot(self, axis_type: str = "2d") -> None:
         """
-        Clear the figure, create fresh axes and forget what was drawn.
+        Clear the figure and create fresh axes, without recording anything.
 
-        A recorded action: Undo replays from the last one, and a new figure starts with
-        one. The Controller calls it when an overlay needs a new figure.
+        Called by ``MetadataController.reset``, which records the reset and forgets
+        what the figure held.
 
         :param axis_type: Either '2d' or '3d' to determine plot projection.
         :type axis_type: str
         """
-        # Canonical figure reset
         self._clear_figure_state(axis_type=axis_type, create_default_axes=True)
-
         self.canvas.draw()
-
-        # Reset plot bookkeeping variables
-        self.hist_min = None
-        self.hist_max = None
-        self.hist_data = []
-        self.hist_labels = []
-        self.allowed_plot_type = None
-        self.allowed_columns = []
-        self.allowed_logs = []
-        self.allowed_bins = None
-        self.allowed_sizes = None
-        self.plotted_datasets = (
-            set()
-        )  # tuple of things already plotted: (loader, experiment, channel, filter, subset_name), which can be None
 
     @log(logger=logger)
     @override
     def _reset_actions(self, axis_type: str = "2d") -> None:
         """
-        Clear the figure; the same as :meth:`reset_plot`, which records it.
+        Ask the Controller for a recorded reset, which clears the figure through :meth:`clear_plot`.
 
         :param axis_type: Either '2d' or '3d' to determine plot projection.
         :type axis_type: str
         """
-        self.reset_plot(axis_type)
+        self.reset_requested.emit(axis_type)
+
+    @log(logger=logger)
+    def _clear_unready_axes(self, axis_type: str) -> None:
+        """
+        Clear axes that cannot take the plot about to be drawn, and say so.
+
+        The Controller starts a new figure before drawing on one that cannot take the
+        plot, so this is a guard: reaching it means that decision missed a case.
+
+        :param axis_type: Either '2d' or '3d', the projection the plot needs.
+        :type axis_type: str
+        """
+        if self._axes_valid(axis_type=axis_type):
+            return
+        self.logger.warning(f"The axes could not take a {axis_type} plot")
+        self.add_text_to_display.emit(
+            "The figure could not take this plot, so it was cleared first",
+            self.__class__.__name__,
+        )
+        self.clear_plot(axis_type)
 
     @log(logger=logger)
     def axes_ready(self, axis_type: str = "2d") -> bool:
@@ -325,11 +305,8 @@ class MetadataView(MetaSubsetTabView):
     @log(logger=logger)
     def show_kernel_densities(
         self,
-        values: npt.NDArray[np.float64],
-        dataset_label: str,
         densities: Sequence[Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]],
-        hist_min: float,
-        hist_max: float,
+        labels: Sequence[str],
         x_label: str,
     ) -> None:
         """
@@ -337,37 +314,24 @@ class MetadataView(MetaSubsetTabView):
 
         Called by ``MetadataController.overlay_plot``. The curve arrives already
         evaluated, so it is computed once rather than the three times drawing it would
-        otherwise need. The newest dataset joins the overlay here as its **raw** column,
-        because the Model re-filters every accumulated dataset on each update and a
-        pre-filtered one would be filtered twice.
+        otherwise need.
 
-        :param values: the newest dataset's raw column values, to accumulate
-        :type values: npt.NDArray[np.float64]
-        :param dataset_label: the newest dataset's label
-        :type dataset_label: str
         :param densities: one (positions, density) pair per dataset
         :type densities: Sequence[Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]]
-        :param hist_min: the shared lower limit, widened by this dataset
-        :type hist_min: float
-        :param hist_max: the shared upper limit, widened by this dataset
-        :type hist_max: float
+        :param labels: one label per dataset, index-aligned with densities
+        :type labels: Sequence[str]
         :param x_label: the x axis label, already formatted
         :type x_label: str
         :return: None
         :rtype: None
         """
-        self.hist_data.append(values)
-        self.hist_labels.append(dataset_label)
-        self.hist_min = hist_min
-        self.hist_max = hist_max
-
         ax = self.axes
         ax.clear()
         self._clear_cache()
 
         y_label = "Probability Density"
 
-        for (x, y), label in zip(densities, self.hist_labels, strict=True):
+        for (x, y), label in zip(densities, labels, strict=True):
             ax.plot(x, y, label=label)
             ax.fill_between(x, y, alpha=0.3)
             self._update_cache((x, x_label), (y, y_label))
@@ -445,13 +409,10 @@ class MetadataView(MetaSubsetTabView):
     @log(logger=logger)
     def show_histogram_bins(
         self,
-        values: npt.NDArray[np.float64],
-        dataset_label: str,
         bincenters: npt.NDArray[np.float64],
         widths: npt.NDArray[np.float64],
         counts: Sequence[npt.NDArray[np.float64]],
-        hist_min: float,
-        hist_max: float,
+        labels: Sequence[str],
         x_label: str,
         logx: bool,
         norm: bool,
@@ -464,20 +425,14 @@ class MetadataView(MetaSubsetTabView):
         themselves do not come back: nothing here draws with them once the counting is
         done elsewhere, and returning them would invite a second tally against them.
 
-        :param values: the newest dataset's raw column values, to accumulate
-        :type values: npt.NDArray[np.float64]
-        :param dataset_label: the newest dataset's label
-        :type dataset_label: str
         :param bincenters: the center of each bin, which the bars are drawn at
         :type bincenters: npt.NDArray[np.float64]
         :param widths: the width of each bin
         :type widths: npt.NDArray[np.float64]
-        :param counts: one array of per-bin counts per overlaid dataset, index-aligned with the accumulated labels
+        :param counts: one array of per-bin counts per overlaid dataset
         :type counts: Sequence[npt.NDArray[np.float64]]
-        :param hist_min: the shared lower limit, widened by this dataset
-        :type hist_min: float
-        :param hist_max: the shared upper limit, widened by this dataset
-        :type hist_max: float
+        :param labels: one label per dataset, index-aligned with counts
+        :type labels: Sequence[str]
         :param x_label: the x axis label, already formatted but not yet log-marked
         :type x_label: str
         :param logx: was the data log-scaled, and so should the label say so
@@ -487,17 +442,12 @@ class MetadataView(MetaSubsetTabView):
         :return: None
         :rtype: None
         """
-        self.hist_data.append(values)
-        self.hist_labels.append(dataset_label)
-        self.hist_min = hist_min
-        self.hist_max = hist_max
-
         ax = self.axes
         ax.clear()
         self._clear_cache()
 
         # Every accumulated dataset is redrawn, against the tallies the Model made.
-        for val, lab in zip(counts, self.hist_labels, strict=True):
+        for val, lab in zip(counts, labels, strict=True):
             x_lab = x_label
             y_lab = "Count" if not norm else "Fraction"
             if logx:
@@ -522,9 +472,8 @@ class MetadataView(MetaSubsetTabView):
     @log(logger=logger)
     def show_categorical_counts(
         self,
-        values: npt.NDArray[Any],
-        dataset_label: str,
         counts: Sequence[Tuple[Sequence[str], npt.NDArray[np.float64]]],
+        labels: Sequence[str],
         x_label: str,
         y_label: str,
     ) -> None:
@@ -533,15 +482,12 @@ class MetadataView(MetaSubsetTabView):
 
         The tallies are made by :meth:`MetadataModel.categorical_counts`, because
         counting occurrences is aggregation rather than drawing and the tallies are
-        exported with the plot. The newest dataset joins the overlay here, once there is
-        something to draw, as the histogram's and the density's do.
+        exported with the plot.
 
-        :param values: the newest dataset's raw column values, to accumulate
-        :type values: npt.NDArray[Any]
-        :param dataset_label: the newest dataset's label
-        :type dataset_label: str
-        :param counts: per dataset, its category names and their counts, index-aligned with the accumulated labels
+        :param counts: per dataset, its category names and their counts
         :type counts: Sequence[Tuple[Sequence[str], npt.NDArray[np.float64]]]
+        :param labels: one label per dataset, index-aligned with counts
+        :type labels: Sequence[str]
         :param x_label: the x axis label, already formatted
         :type x_label: str
         :param y_label: the y axis label
@@ -549,14 +495,11 @@ class MetadataView(MetaSubsetTabView):
         :return: None
         :rtype: None
         """
-        self.hist_data.append(values)
-        self.hist_labels.append(dataset_label)
-
         ax = self.axes
         ax.clear()
         self._clear_cache()
 
-        for (categories, val), lab in zip(counts, self.hist_labels, strict=True):
+        for (categories, val), lab in zip(counts, labels, strict=True):
             ax.bar(
                 categories,
                 val,
@@ -686,8 +629,7 @@ class MetadataView(MetaSubsetTabView):
         Draw a 3-D scatterplot of three filtered columns.
 
         Called by ``MetadataController.overlay_plot``, and the same reasoning as
-        :meth:`set_scatterplot`. The axes are rebuilt here if they are 2-D, which a
-        change of plot type can leave behind.
+        :meth:`set_scatterplot`.
 
         :param columns: the filtered x, y and z values
         :type columns: Sequence[npt.NDArray[np.float64]]
@@ -701,8 +643,7 @@ class MetadataView(MetaSubsetTabView):
         xdata, ydata, zdata = columns
         x_label, y_label, z_label = axis_labels
 
-        if not isinstance(self.axes, Axes3D):
-            self._reset_actions(axis_type="3d")
+        self._clear_unready_axes("3d")
         ax = self.axes
 
         ax.scatter(xdata, ydata, zdata, label=dataset_label)
@@ -717,11 +658,10 @@ class MetadataView(MetaSubsetTabView):
     def _plot_all_points_histogram(
         self,
         ax: Axes,
-        x: npt.NDArray[np.float64],
-        y: npt.NDArray[np.float64],
+        curves: Sequence[Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]],
+        labels: Sequence[str],
         cols: Sequence[str],
         units: Sequence[Optional[str]],
-        dataset_label: str = "",
         norm: bool = False,
     ) -> None:
         """
@@ -729,16 +669,14 @@ class MetadataView(MetaSubsetTabView):
 
         :param ax: Matplotlib axes to draw the histogram on.
         :type ax: Axes
-        :param x: the current level at the middle of each bin
-        :type x: npt.NDArray[np.float64]
-        :param y: how many samples fell in each bin
-        :type y: npt.NDArray[np.float64]
+        :param curves: per subset, the current level at the middle of each bin and how many samples fell in it
+        :type curves: Sequence[Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]]
+        :param labels: one label per subset, index-aligned with curves
+        :type labels: Sequence[str]
         :param cols: Names for x and y axes.
         :type cols: Sequence[str]
         :param units: Units corresponding to the axes.
         :type units: Sequence[Optional[str]]
-        :param dataset_label: Label for the plotted dataset.
-        :type dataset_label: str
         :param norm: normalize output to [0,1]?
         :type norm: bool
         """
@@ -748,16 +686,12 @@ class MetadataView(MetaSubsetTabView):
         x_label = self.format_axis_label(x_label, x_units)
         y_label = self.format_axis_label(y_label, y_units)
         if norm is True:
-            y = y.astype(float)
-            y /= sum(y)
             y_label = f"Normalized {y_label}"
 
         ax.clear()
         self._clear_cache()
-        self.hist_data.append((x, y))
-        self.hist_labels.append(dataset_label)
 
-        for (x, y), label in zip(self.hist_data, self.hist_labels):
+        for (x, y), label in zip(curves, labels, strict=True):
             # Normalised, each curve is drawn with its peak at 1, and the export
             # carries the curve as drawn.
             shown = y if norm is False else y / np.max(y)
@@ -834,59 +768,36 @@ class MetadataView(MetaSubsetTabView):
     @log(logger=logger)
     def show_all_points_histogram(
         self,
-        bincenters: npt.NDArray[np.float64],
-        counts: npt.NDArray[np.float64],
-        hist_min: float,
-        hist_max: float,
+        curves: Sequence[Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]],
+        labels: Sequence[str],
         plot_type: str,
-        dataset_label: str,
     ) -> None:
         """
-        Draw one subset's all-points histogram, and take the limits it widened.
+        Draw every overlaid subset's all-points histogram.
 
-        The tally is made by
+        The tallies are made by
         :meth:`MetadataModel.build_all_points_histogram`, because walking a subset's
         events and binning every sample of them is aggregation rather than drawing, and
         the result is exported with the plot.
 
-        :param bincenters: the current level at the middle of each bin
-        :type bincenters: npt.NDArray[np.float64]
-        :param counts: how many samples fell in each bin
-        :type counts: npt.NDArray[np.float64]
-        :param hist_min: the shared lower limit, widened by this subset
-        :type hist_min: float
-        :param hist_max: the shared upper limit, widened by this subset
-        :type hist_max: float
+        :param curves: per subset, the current level at the middle of each bin and how many samples fell in it
+        :type curves: Sequence[Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]]
+        :param labels: one label per subset, index-aligned with curves
+        :type labels: Sequence[str]
         :param plot_type: the all-points histogram variant being drawn
         :type plot_type: str
-        :param dataset_label: the label this subset is drawn under
-        :type dataset_label: str
         :return: None
         :rtype: None
         """
-        # The axes check first, then the limits: a reset clears the accumulated
-        # limits, so taking them before it would throw away the ones this subset
-        # just widened. The old arrangement set them inside the tally and then let
-        # ``update_plot`` reset underneath it.
-        if not self._axes_valid(axis_type="2d"):
-            self._reset_actions(axis_type="2d")
+        self._clear_unready_axes("2d")
         ax = self.axes
-
-        self.hist_min = hist_min
-        self.hist_max = hist_max
 
         norm = plot_type in [
             "Normalized Raw All Points Histogram",
             "Normalized Filtered All Points Histogram",
         ]
         self._plot_all_points_histogram(
-            ax,
-            bincenters,
-            counts,
-            ("Current", "Count"),
-            ("pA", ""),
-            dataset_label=dataset_label,
-            norm=norm,
+            ax, curves, labels, ("Current", "Count"), ("pA", ""), norm=norm
         )
         self.canvas.draw()
         self._commit_cache()
@@ -1315,7 +1226,7 @@ class MetadataView(MetaSubsetTabView):
         :rtype: None
         """
         # Reset metadata plot state so the next "Update Plot" click starts fresh instead of trying to overlay onto the event grid
-        self._reset_actions()  # clears figure, creates default axes, draws empty canvas, records in history
+        self._reset_actions()  # a recorded reset: clears the figure and what the overlay kept
 
         self._clear_figure_state(create_default_axes=False)
 

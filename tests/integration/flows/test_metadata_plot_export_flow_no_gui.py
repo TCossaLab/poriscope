@@ -143,7 +143,7 @@ def test_a_scatter_of_two_datasets_exports_both(
     """Export keeps the first dataset's points as well as the second's."""
     plot(metadata_tab, "everything")
     plot(metadata_tab, "long")
-    assert len(metadata_tab.tab_view.plotted_datasets) == 2
+    assert len(metadata_tab.tab_controller.model.overlay.datasets) == 2
 
     rows = export_plot_data(metadata_tab, tmp_path / "plot.csv")
 

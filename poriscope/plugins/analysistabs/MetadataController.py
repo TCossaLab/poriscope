@@ -48,12 +48,13 @@ from PySide6.QtCore import Slot
 from poriscope.plugins.analysistabs.MetadataModel import MetadataModel
 from poriscope.plugins.analysistabs.MetadataView import MetadataView
 from poriscope.utils.DocstringDecorator import inherit_docstrings
-from poriscope.utils.LogDecorator import log, register_action
+from poriscope.utils.LogDecorator import RESET_ACTION, log, register_action
 from poriscope.utils.MetaSubsetTabController import (
     MetaSubsetTabController,
     scope_placeholders,
     selected_pairs,
 )
+from poriscope.utils.MetaSubsetTabModel import FigureKind, OverlayState
 
 #: The plot types drawn from a metadata subset's rows.
 METADATA_PLOTS = (
@@ -172,6 +173,22 @@ class MetadataController(MetaSubsetTabController):
         self.view.plot_features_requested.connect(self.request_plot_features)
         self.view.csv_subset_export_requested.connect(self.export_csv_subset)
         self.view.overlay_plot_requested.connect(self.request_overlay_plot)
+        self.view.reset_requested.connect(self.reset)
+
+    @log(logger=logger)
+    @register_action(RESET_ACTION)
+    def reset(self, axis_type: str = "2d") -> None:
+        """
+        Clear the figure and forget what it held.
+
+        A recorded action: Undo replays from the last one. Reset and Plot Events ask for
+        it, and so does an overlay that needs a new figure.
+
+        :param axis_type: Either '2d' or '3d', the projection of the fresh axes
+        :type axis_type: str
+        """
+        self.model.overlay = OverlayState(figure=FigureKind.empty(axis_type))
+        self.view.clear_plot(axis_type)
 
     @log(logger=logger)
     @Slot(str, str, list, list, object, bool, object, object)
@@ -218,12 +235,12 @@ class MetadataController(MetaSubsetTabController):
             loader, axes[0]
         ):
             return
-        before = set(self.view.plotted_datasets)
+        before = set(self.model.overlay.datasets)
         drawn = self.overlay_plot(
             loader, plot_type, axes, logs, bins, sizes, filters, scope
         )
         if drawn is False:
-            if self.view.plotted_datasets == before:
+            if self.model.overlay.datasets == before:
                 self.discard_last_tab_action()
             else:
                 self.update_tab_actions(None, True)
@@ -408,29 +425,24 @@ class MetadataController(MetaSubsetTabController):
             return None
 
         axis_type = "3d" if plot_type == "3D Scatterplot" else "2d"
-        bins_changed = view.allowed_bins != bins
-        sizes_changed = view.allowed_sizes != sizes
+        state = self.model.overlay
+        bins_changed = state.bins != bins
+        sizes_changed = state.sizes != sizes
         if (
-            not view.axes_ready(axis_type)
-            or (
-                view.allowed_columns
-                and not all(col in view.allowed_columns for col in columns)
-            )
-            or (
-                view.allowed_logs
-                and not all(log in view.allowed_logs for log in logscales)
-            )
-            or (
-                view.allowed_plot_type is not None
-                and plot_type != view.allowed_plot_type
-            )
+            not state.figure.accepts(axis_type)
+            # Plot Events replaces the figure with an event grid without telling the
+            # Model, so the axes are asked as well.
+            or not view.axes_ready(axis_type)
+            or (state.columns and not all(col in state.columns for col in columns))
+            or (state.logs and not all(log in state.logs for log in logscales))
+            or (state.plot_type is not None and plot_type != state.plot_type)
             or (plot_type in _BIN_SENSITIVE_PLOTS and (bins_changed or sizes_changed))
         ):
-            view.reset_plot(axis_type)
+            self.reset(axis_type)
 
         channel_id = int(channel) if channel is not None else None
         key = (loader, exp, channel_id, sql_filter, subset_name)
-        if key in view.plotted_datasets:
+        if key in self.model.overlay.datasets:
             return False
 
         # The selection tree reports channels as display strings.
@@ -462,12 +474,14 @@ class MetadataController(MetaSubsetTabController):
         view.finish_plot()
         if not drawn:
             return False
-        view.allowed_plot_type = plot_type
-        view.allowed_bins = bins
-        view.allowed_sizes = sizes
-        view.allowed_columns = columns
-        view.allowed_logs = logscales
-        view.plotted_datasets.add(key)
+        state = self.model.overlay
+        state.figure = FigureKind.overlay(axis_type)
+        state.plot_type = plot_type
+        state.bins = bins
+        state.sizes = sizes
+        state.columns = columns
+        state.logs = logscales
+        state.datasets.add(key)
         return True
 
     @log(logger=logger)
@@ -505,6 +519,7 @@ class MetadataController(MetaSubsetTabController):
         :rtype: Optional[bool]
         """
         view = self.view
+        state = self.model.overlay
         if plot_type in _ONE_BINS_ENTRY_PLOTS:
             try:
                 bins = _one_bins_entry(bins)
@@ -523,12 +538,12 @@ class MetadataController(MetaSubsetTabController):
 
         if plot_type in ("Histogram", "Normalized Histogram"):
             return self.calculate_histogram_bins(
-                list(view.hist_data) + [values[0]],
+                list(state.values) + [values[0]],
                 logscales[0],
                 bins,
                 sizes,
-                view.hist_min,
-                view.hist_max,
+                state.hist_min,
+                state.hist_max,
                 plot_type == "Normalized Histogram",
                 labels[0],
                 columns[0],
@@ -536,12 +551,12 @@ class MetadataController(MetaSubsetTabController):
             )
         if plot_type == "Kernel Density Plot":
             return self.estimate_kernel_densities(
-                list(view.hist_data) + [values[0]],
+                list(state.values) + [values[0]],
                 logscales[0],
                 bins,
                 sizes,
-                view.hist_min,
-                view.hist_max,
+                state.hist_min,
+                state.hist_max,
                 logged[0],
                 columns[0],
                 label,
@@ -550,8 +565,8 @@ class MetadataController(MetaSubsetTabController):
             # Not filtered or log-scaled, unlike every other 1-D path: the values here
             # are category names, which have no NaN mask and no logarithm.
             return self.count_categories(
-                list(view.hist_data) + [values[0]],
-                list(view.hist_labels) + [label],
+                list(state.values) + [values[0]],
+                list(state.labels) + [label],
                 labels[0],
                 "Count",
             )
@@ -655,15 +670,19 @@ class MetadataController(MetaSubsetTabController):
         :return: True if drawn, None if the whole plot must stop
         :rtype: Optional[bool]
         """
-        view = self.view
         # The selection tree reports channels as display strings.
         scope: Dict[Any, Any] = {exp: [channel]}
-        type_changed = (
-            view.allowed_plot_type is not None and plot_type != view.allowed_plot_type
+        state = self.model.overlay
+        # Plot Events replaces the figure with an event grid without telling the Model,
+        # so the axes are asked as well.
+        new_figure = (
+            not state.figure.accepts("2d")
+            or not self.view.axes_ready("2d")
+            or (state.plot_type is not None and plot_type != state.plot_type)
         )
         if plot_type in _ALL_POINTS_PLOTS:
-            if type_changed or view.allowed_bins != bins or view.allowed_sizes != sizes:
-                view.reset_plot("2d")
+            if new_figure or state.bins != bins or state.sizes != sizes:
+                self.reset("2d")
             drawn = self.build_all_points_histogram(
                 loader,
                 sql_filter,
@@ -671,27 +690,29 @@ class MetadataController(MetaSubsetTabController):
                 plot_type,
                 bins,
                 sizes,
-                view.hist_min,
-                view.hist_max,
+                self.model.overlay.hist_min,
+                self.model.overlay.hist_max,
                 label,
                 subset_name,
             )
         else:
             bins, sizes = None, False
-            if type_changed or not view.axes_ready("2d"):
-                view.reset_plot("2d")
+            if new_figure:
+                self.reset("2d")
             drawn = self.build_event_overlay(
                 loader, sql_filter, scope, plot_type, subset_name
             )
         if not drawn:
             return None
-        view.allowed_plot_type = plot_type
-        view.allowed_bins = bins
-        view.allowed_sizes = sizes
-        view.allowed_columns = []
-        view.allowed_logs = []
+        state = self.model.overlay
+        state.figure = FigureKind.OVERLAY_2D
+        state.plot_type = plot_type
+        state.bins = bins
+        state.sizes = sizes
+        state.columns = []
+        state.logs = []
         channel_id = int(channel) if channel is not None else None
-        view.plotted_datasets.add((loader, exp, channel_id, sql_filter, subset_name))
+        state.datasets.add((loader, exp, channel_id, sql_filter, subset_name))
         return True
 
     @log(logger=logger)
@@ -850,9 +871,9 @@ class MetadataController(MetaSubsetTabController):
         A request slot, the same shape as :meth:`calculate_heatmap`. The labels arrive
         and depart unchanged; this slot marshals and does not interpret them.
 
-        The newest dataset is the last of ``datasets`` and has not been accumulated
-        by the View yet, so a subset that loses every point to the filter is refused
-        here and leaves no label behind.
+        The newest dataset is the last of ``datasets`` and joins what the Model keeps
+        only once its result is drawn, so a subset that loses every point to the filter
+        is refused here and leaves no label behind.
 
         :param datasets: one raw column array per overlaid dataset, newest last
         :type datasets: Sequence[npt.NDArray[np.float64]]
@@ -908,9 +929,8 @@ class MetadataController(MetaSubsetTabController):
             )
             return False
 
-        self.view.show_kernel_densities(
-            datasets[-1], dataset_label, densities, hist_min, hist_max, x_label
-        )
+        labels = self._accumulate(datasets[-1], dataset_label, hist_min, hist_max)
+        self.view.show_kernel_densities(densities, labels, x_label)
         return True
 
     @log(logger=logger)
@@ -990,17 +1010,9 @@ class MetadataController(MetaSubsetTabController):
             )
             return False
 
+        labels = self._accumulate(datasets[-1], dataset_label, hist_min, hist_max)
         self.view.show_histogram_bins(
-            datasets[-1],
-            dataset_label,
-            bincenters,
-            widths,
-            counts,
-            hist_min,
-            hist_max,
-            x_label,
-            logx,
-            norm,
+            bincenters, widths, counts, labels, x_label, logx, norm
         )
         return True
 
@@ -1040,10 +1052,41 @@ class MetadataController(MetaSubsetTabController):
                 f"Unable to count categories: {e}", self.__class__.__name__
             )
             return False
-        self.view.show_categorical_counts(
-            datasets[-1], labels[-1], counts, x_label, y_label
+        state = self.model.overlay
+        shown = self._accumulate(
+            datasets[-1], labels[-1], state.hist_min, state.hist_max
         )
+        self.view.show_categorical_counts(counts, shown, x_label, y_label)
         return True
+
+    @log(logger=logger)
+    def _accumulate(
+        self,
+        values: Any,
+        label: str,
+        hist_min: Optional[float],
+        hist_max: Optional[float],
+    ) -> List[str]:
+        """
+        Add the newest dataset to what the overlaid figure redraws, once it is drawable.
+
+        :param values: the newest dataset's values, in the shape its plot type keeps
+        :type values: Any
+        :param label: the newest dataset's label
+        :type label: str
+        :param hist_min: the shared lower limit, widened by this dataset
+        :type hist_min: Optional[float]
+        :param hist_max: the shared upper limit, widened by this dataset
+        :type hist_max: Optional[float]
+        :return: every accumulated dataset's label, newest last
+        :rtype: List[str]
+        """
+        state = self.model.overlay
+        state.values.append(values)
+        state.labels.append(label)
+        state.hist_min = hist_min
+        state.hist_max = hist_max
+        return list(state.labels)
 
     @log(logger=logger)
     def fit_capture_rate(
@@ -1442,8 +1485,9 @@ class MetadataController(MetaSubsetTabController):
             return False
 
         self._echo_applied_query(query, "events")
+        labels = self._accumulate((bincenters, counts), dataset_label, new_min, new_max)
         self.view.show_all_points_histogram(
-            bincenters, counts, new_min, new_max, plot_type, dataset_label
+            list(self.model.overlay.values), labels, plot_type
         )
         return True
 

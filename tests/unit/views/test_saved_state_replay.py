@@ -121,7 +121,7 @@ class TestReplayingASavedActionHistory:
         records - a replay that dropped the args would silently reset the tab to
         defaults rather than to what the user saved.
         """
-        reset = mocker.patch.object(controller.view, "reset_plot", autospec=True)
+        reset = mocker.patch.object(controller, "reset", autospec=True)
         overlay = mocker.patch.object(controller, "overlay_plot", autospec=True)
 
         controller.replay(history.values())
@@ -137,7 +137,7 @@ class TestReplayingASavedActionHistory:
         parameters dict. Its values no longer fit, so it is reported and skipped, and
         replay goes on to the rest of the file instead of stopping at it.
         """
-        reset = mocker.patch.object(controller.view, "reset_plot", autospec=True)
+        reset = mocker.patch.object(controller, "reset", autospec=True)
         overlay = mocker.patch.object(controller, "overlay_plot", autospec=True)
         saved_before = {"action": "overlay_plot", "args": [{"loader": "loader"}]}
 
@@ -159,7 +159,7 @@ class TestReplayingASavedActionHistory:
         every saved history becomes once an action is removed. Replay does not
         raise, but it says so on the status panel and carries on.
         """
-        mocker.patch.object(controller.view, "reset_plot", autospec=True)
+        mocker.patch.object(controller, "reset", autospec=True)
         mocker.patch.object(controller, "overlay_plot", autospec=True)
 
         controller.replay(history.values())  # must not raise
@@ -182,8 +182,8 @@ class TestReplayingASavedActionHistory:
         """
         calls = []
         mocker.patch.object(
-            controller.view,
-            "reset_plot",
+            controller,
+            "reset",
             autospec=True,
             side_effect=lambda *a, **k: calls.append("reset"),
         )
@@ -202,17 +202,16 @@ class TestReplayingASavedActionHistory:
         self, controller: MetadataController
     ) -> None:
         """
-        The registry maps each declared name to the method that runs it: the reset on
-        the View, the overlay on the Controller.
+        The registry maps each declared name to the Controller method that runs it.
 
-        ``reset_plot`` is decorated, so the decorator must not rename it -
+        ``reset`` is decorated, so the decorator must not rename it -
         ``functools.wraps`` keeps its own name - and its declared name is the
         shared reset constant Undo looks for.
         """
         registry = controller.action_registry()
 
-        assert registry[RESET_ACTION] == controller.view.reset_plot
-        assert controller.view.reset_plot.__name__ == "reset_plot"
+        assert registry[RESET_ACTION] == controller.reset
+        assert controller.reset.__name__ == "reset"
         assert registry["overlay_plot"] == controller.overlay_plot
 
 

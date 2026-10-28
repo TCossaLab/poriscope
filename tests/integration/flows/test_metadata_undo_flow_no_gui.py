@@ -127,7 +127,9 @@ def on_figure(triad: Triad) -> Set[Tuple[int, str]]:
     :return: the plotted datasets
     :rtype: Set[Tuple[int, str]]
     """
-    return {(entry[2], entry[4]) for entry in triad.tab_view.plotted_datasets}
+    return {
+        (entry[2], entry[4]) for entry in triad.tab_controller.model.overlay.datasets
+    }
 
 
 def count_queries(triad: Triad) -> List[Any]:
