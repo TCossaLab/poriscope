@@ -217,6 +217,12 @@ class MetadataView(MetaSubsetTabView):
     #: it does not belong in the widget. One request for all the datasets, like
     #: ``density_requested``, so no answer is parked between them.
     categorical_counts_requested = Signal(object, object, object, str, str)
+    #: Asks the Controller to draw an overlay: the loader's key, the plot type, the x, y
+    #: and z columns, their log flags, the bin request, the Sizes flag, the selected
+    #: filters (name to SQL) and the scope. The intent a click captured, which is what the
+    #: Controller records, so a replay draws what was asked for rather than what the
+    #: panel shows then.
+    overlay_plot_requested = Signal(str, str, list, list, object, bool, object, object)
 
     logger = logging.getLogger(__name__)
 
@@ -1413,7 +1419,59 @@ class MetadataView(MetaSubsetTabView):
             )
 
     @log(logger=logger)
-    @register_action("overlay_plot")
+    def plot_overlay(
+        self,
+        loader: str,
+        plot_type: str,
+        axes: List[Optional[str]],
+        logs: List[bool],
+        bins: Optional[List[Union[int, float]]],
+        sizes: bool,
+        filters: Dict[str, str],
+        scope: Dict[str, List[str]],
+    ) -> bool:
+        """
+        Draw an overlay from the intent the Controller recorded.
+
+        :param loader: the database loader plugin's key
+        :type loader: str
+        :param plot_type: the plot type chosen
+        :type plot_type: str
+        :param axes: the x, y and z columns, whichever the plot type uses
+        :type axes: List[Optional[str]]
+        :param logs: the x, y and z log-scale flags
+        :type logs: List[bool]
+        :param bins: a bin count, or a bin width when sizes is True, or None to estimate
+        :type bins: Optional[List[Union[int, float]]]
+        :param sizes: does bins refer to a bin width (True) or a count (False)
+        :type sizes: bool
+        :param filters: the selected filters, name to SQL
+        :type filters: Dict[str, str]
+        :param scope: the selected experiments and their channels
+        :type scope: Dict[str, List[str]]
+        :return: True if at least one dataset was drawn
+        :rtype: bool
+        """
+        x_axis, y_axis, z_axis = axes
+        x_log, y_log, z_log = logs
+        return self._overlay_plot(
+            {
+                "db_loader": loader,
+                "plot_type": plot_type,
+                "x_axis": x_axis,
+                "y_axis": y_axis,
+                "z_axis": z_axis,
+                "x_log": x_log,
+                "y_log": y_log,
+                "z_log": z_log,
+                "bins": bins,
+                "sizes": sizes,
+                "selected_filters": filters,
+                "experiments_and_channels": scope,
+            }
+        )
+
+    @log(logger=logger)
     def _overlay_plot(self, parameters: Dict[str, Any]) -> bool:
         """
         Handle the creation of a new overlay plot based on the selected parameters.
@@ -1977,17 +2035,16 @@ class MetadataView(MetaSubsetTabView):
                     # This prevents _overlay_plot from running and avoids the history rollback entirely.
                     return
             self._record_selection(parameters)
-            before = set(self.plotted_datasets)
-            success = self._overlay_plot(parameters)
-            if success is False:
-                # The call was recorded whatever it returned. If the figure is as it
-                # was - everything already plotted, or refused before drawing - drop
-                # that record; if the refusal changed the figure (it reset it, or drew
-                # part of the request), undo it, which redraws from the history.
-                if self.plotted_datasets == before:
-                    self.discard_last_tab_action.emit()
-                else:
-                    self.update_tab_action_history.emit(None, True)
+            self.overlay_plot_requested.emit(
+                parameters["db_loader"],
+                parameters["plot_type"],
+                [parameters["x_axis"], parameters["y_axis"], parameters["z_axis"]],
+                [parameters["x_log"], parameters["y_log"], parameters["z_log"]],
+                parameters["bins"],
+                parameters["sizes"],
+                parameters["selected_filters"],
+                parameters["experiments_and_channels"],
+            )
         elif action_name == "reset_plot":
             self._reset_actions()
         elif action_name == "load_plot":

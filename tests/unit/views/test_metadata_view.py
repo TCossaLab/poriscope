@@ -179,6 +179,8 @@ def view(mocker: MockerFixture, mock_qt_dependencies: None) -> MetadataView:
     view_instance.capture_rate_requested = mocker.Mock()
     # Answered by MetadataController.count_categories in the real app.
     view_instance.categorical_counts_requested = mocker.Mock()
+    # Received by MetadataController.request_overlay_plot in the real app.
+    view_instance.overlay_plot_requested = mocker.Mock()
     # Answered by MetaSubsetTabController.load_event_id_cache in the real app;
     # each test that drives _rebuild_event_id_cache sets its own answer.
     view_instance.event_id_cache_requested = mocker.Mock()
@@ -3444,61 +3446,37 @@ def test_handle_parameter_change_raises_for_new_axis(
         view.handle_parameter_change("metadata", "new_axis", (parameters,))
 
 
-def test_handle_parameter_change_calls_overlay_plot_on_update(
+def test_update_plot_asks_the_controller_with_the_intent_the_click_captured(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify _overlay_plot is called on update_plot action."""
+    """The click hands the Controller its intent; drawing and recording happen there."""
     view._overlay_plot = mocker.Mock(return_value=True)  # type: ignore[method-assign]
-    parameters = {"db_loader": "loader", "plot_type": "Histogram"}
+    parameters = {
+        "db_loader": "loader",
+        "plot_type": "Histogram",
+        "x_axis": "duration",
+        "y_axis": "start_time",
+        "z_axis": "event_id",
+        "x_log": True,
+        "y_log": False,
+        "z_log": False,
+        "bins": [20],
+        "sizes": False,
+    }
 
     view.handle_parameter_change("metadata", "update_plot", (parameters,))
 
-    view._overlay_plot.assert_called_once_with(parameters)
-
-
-def test_a_refusal_that_left_the_figure_unchanged_is_discarded(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
-    """
-    Nothing drawn and nothing cleared: drop the record, replay nothing.
-
-    Undoing here cleared the figure and replayed the whole history with the current
-    selection - a double-click on Plot lost every earlier overlay but the last.
-    """
-    view.plotted_datasets = {("loader", "exp", 0, "", "A")}
-    view._overlay_plot = mocker.Mock(return_value=False)  # type: ignore[method-assign]
-
-    view.handle_parameter_change(
-        "metadata", "update_plot", ({"db_loader": "loader", "plot_type": "Histogram"},)
+    view.overlay_plot_requested.emit.assert_called_once_with(
+        "loader",
+        "Histogram",
+        ["duration", "start_time", "event_id"],
+        [True, False, False],
+        [20],
+        False,
+        parameters["selected_filters"],
+        parameters["experiments_and_channels"],
     )
-
-    view.discard_last_tab_action.emit.assert_called_once_with()
-    view.update_tab_action_history.emit.assert_not_called()
-
-
-def test_a_refusal_that_changed_the_figure_is_undone(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
-    """
-    A refused call that reset the figure first is undone, which redraws it.
-
-    The overlay is stubbed the way the real one behaves on this path: it resets the
-    figure, clearing ``plotted_datasets``, and then refuses.
-    """
-    view.plotted_datasets = {("loader", "exp", 0, "", "A")}
-
-    def reset_then_refuse(parameters):
-        view.plotted_datasets = set()
-        return False
-
-    view._overlay_plot = mocker.Mock(side_effect=reset_then_refuse)  # type: ignore[method-assign]
-
-    view.handle_parameter_change(
-        "metadata", "update_plot", ({"db_loader": "loader", "plot_type": "Histogram"},)
-    )
-
-    view.update_tab_action_history.emit.assert_called_once_with(None, True)
-    view.discard_last_tab_action.emit.assert_not_called()
+    view._overlay_plot.assert_not_called()
 
 
 def test_handle_parameter_change_resets_plot(
@@ -5093,41 +5071,45 @@ class TestHandleParameterChangeCategoricalGuard:
             "db_loader": "test_loader",
             "plot_type": "Categorical Histogram",
             "x_axis": col,
+            "y_axis": col,
+            "z_axis": col,
+            "x_log": False,
+            "y_log": False,
+            "z_log": False,
+            "bins": None,
+            "sizes": False,
         }
 
     def test_non_categorical_type_emits_warning_and_returns_early(
         self, view: MetadataView, mocker: MockerFixture
     ) -> None:
-        """When column type is continuous, emits a message and skips _overlay_plot."""
+        """When column type is continuous, emits a message and asks for no plot."""
         view.canned_column_type = "REAL"
-        view._overlay_plot = mocker.Mock(return_value=True)
 
         view.handle_parameter_change("metadata", "update_plot", (self._params(),))
 
-        view._overlay_plot.assert_not_called()
+        view.overlay_plot_requested.emit.assert_not_called()
         view.add_text_to_display.emit.assert_called()
 
     def test_categorical_type_proceeds_to_overlay_plot(
         self, view: MetadataView, mocker: MockerFixture
     ) -> None:
-        """When column type is categorical (e.g. INTEGER), _overlay_plot is called."""
+        """When column type is categorical (e.g. INTEGER), the plot is asked for."""
         view.canned_column_type = "INTEGER"
-        view._overlay_plot = mocker.Mock(return_value=True)
 
         view.handle_parameter_change("metadata", "update_plot", (self._params(),))
 
-        view._overlay_plot.assert_called_once()
+        view.overlay_plot_requested.emit.assert_called_once()
 
     def test_none_column_type_proceeds_to_overlay_plot(
         self, view: MetadataView, mocker: MockerFixture
     ) -> None:
         """When column type is None (unknown), treated as categorical — proceeds."""
         view.canned_column_type = None
-        view._overlay_plot = mocker.Mock(return_value=True)
 
         view.handle_parameter_change("metadata", "update_plot", (self._params(),))
 
-        view._overlay_plot.assert_called_once()
+        view.overlay_plot_requested.emit.assert_called_once()
 
 
 # ===========================================================================

@@ -122,12 +122,31 @@ class TestReplayingASavedActionHistory:
         defaults rather than to what the user saved.
         """
         reset = mocker.patch.object(controller.view, "_reset_actions")
-        overlay = mocker.patch.object(controller.view, "_overlay_plot")
+        overlay = mocker.patch.object(controller.view, "plot_overlay")
 
         controller.replay(history.values())
 
+        reset.assert_called_once_with(axis_type="2d")
+        overlay.assert_called_once_with(**history["1"]["kwargs"])
+
+    def test_an_overlay_saved_before_its_values_were_named_is_reported_not_raised(
+        self, controller: MetadataController, mocker
+    ) -> None:
+        """
+        A plot configuration saved before the overlay took named intent held one
+        parameters dict. Its values no longer fit, so it is reported and skipped, and
+        replay goes on to the rest of the file instead of stopping at it.
+        """
+        reset = mocker.patch.object(controller.view, "_reset_actions")
+        overlay = mocker.patch.object(controller.view, "plot_overlay")
+        saved_before = {"action": "overlay_plot", "args": [{"loader": "loader"}]}
+
+        controller.replay([saved_before, {"action": "reset", "args": ["2d"]}])
+
+        overlay.assert_not_called()
         reset.assert_called_once_with("2d")
-        overlay.assert_called_once_with({"loader": "loader"})
+        message = controller.add_text_to_display.emit.call_args[0][0]
+        assert message.startswith("Not replayed") and "overlay_plot" in message
 
     def test_an_action_that_is_no_longer_declared_is_reported_not_skipped_silently(
         self,
@@ -141,7 +160,7 @@ class TestReplayingASavedActionHistory:
         raise, but it says so on the status panel and carries on.
         """
         mocker.patch.object(controller.view, "_reset_actions")
-        mocker.patch.object(controller.view, "_overlay_plot")
+        mocker.patch.object(controller.view, "plot_overlay")
 
         controller.replay(history.values())  # must not raise
 
@@ -165,12 +184,12 @@ class TestReplayingASavedActionHistory:
         mocker.patch.object(
             controller.view,
             "_reset_actions",
-            side_effect=lambda *a: calls.append("reset"),
+            side_effect=lambda *a, **k: calls.append("reset"),
         )
         mocker.patch.object(
             controller.view,
-            "_overlay_plot",
-            side_effect=lambda *a: calls.append("overlay"),
+            "plot_overlay",
+            side_effect=lambda **k: calls.append("overlay"),
         )
 
         controller.replay(history.values())
@@ -181,7 +200,8 @@ class TestReplayingASavedActionHistory:
         self, controller: MetadataController
     ) -> None:
         """
-        The registry maps the declared name to the View method.
+        The registry maps each declared name to the method that runs it: the reset on
+        the View, the overlay on the Controller.
 
         ``_reset_actions`` is decorated, so the decorator must not rename it -
         ``functools.wraps`` keeps its own name - and its declared name is the
@@ -191,7 +211,7 @@ class TestReplayingASavedActionHistory:
 
         assert registry[RESET_ACTION] == controller.view._reset_actions
         assert controller.view._reset_actions.__name__ == "_reset_actions"
-        assert registry["overlay_plot"] == controller.view._overlay_plot
+        assert registry["overlay_plot"] == controller.overlay_plot
 
 
 class TestSessionStateRoundTrip:

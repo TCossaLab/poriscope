@@ -83,6 +83,8 @@
 
 * **Breaking:** a recorded tab action saves every value under its parameter name, defaults included, instead of as an unlabelled list, so a `write_back` override reads them from `kwargs`; an action file saved with unlabelled values still replays
 
+* **Breaking:** Metadata's overlay plot is recorded on `MetadataController.overlay_plot`, which takes the loader, plot type, axes, log flags, bins, Sizes, filters and scope by name; `MetadataView._overlay_plot` is no longer a recorded action, and a plot configuration saved before this is reported and not replayed
+
 ### Developer Tooling:
 
 * The release workflow now runs only when a version tag is pushed

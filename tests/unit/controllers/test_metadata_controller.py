@@ -20,6 +20,8 @@ from pytest_mock import MockerFixture
 
 from poriscope.plugins.analysistabs.MetadataController import MetadataController
 from poriscope.plugins.analysistabs.MetadataModel import MetadataModel
+from poriscope.plugins.analysistabs.MetadataView import MetadataView
+from poriscope.utils.MetaController import declared_actions
 
 # ----------------------------- fixtures ------------------------------
 
@@ -1469,3 +1471,130 @@ class TestFilter3dScatterplot(_StatusPanelMixin):
             call.args[0] for call in controller.add_text_to_display.emit.call_args_list
         ]
         assert any("Unable to filter the 3D scatterplot" in m for m in messages)
+
+
+# ----------------------- recorded overlay plot -----------------
+
+
+def _overlay_request() -> Dict[str, object]:
+    """The intent a click on Update Plot hands the Controller, by parameter name."""
+    return {
+        "loader": "L",
+        "plot_type": "Histogram",
+        "axes": ["duration", "start_time", "event_id"],
+        "logs": [True, False, False],
+        "bins": [20],
+        "sizes": False,
+        "filters": {"F0": "duration >= 0"},
+        "scope": {"exp_a": ["0"]},
+    }
+
+
+class TestTheOverlayIsRecordedOnTheController:
+    @staticmethod
+    def recording(controller: MetadataController) -> list:
+        """
+        Capture what the controller records.
+
+        :param controller: Controller under test.
+        :return: the list each recorded entry is appended to.
+        """
+        recorded: list = []
+        controller.record_action = recorded.append  # type: ignore[method-assign]
+        return recorded
+
+    def test_the_overlay_is_declared_on_the_controller_and_not_on_the_view(
+        self,
+    ) -> None:
+        on_controller = {name for _a, name in declared_actions(MetadataController)}
+        on_view = {name for _a, name in declared_actions(MetadataView)}
+
+        assert "overlay_plot" in on_controller
+        assert "overlay_plot" not in on_view
+
+    def test_an_overlay_is_recorded_with_its_intent_by_name(
+        self, controller: MetadataController, mock_view: MagicMock
+    ) -> None:
+        mock_view.plot_overlay.return_value = True
+        recorded = self.recording(controller)
+
+        drawn = controller.overlay_plot(**_overlay_request())
+
+        assert drawn is True
+        assert recorded == [
+            {"action": "overlay_plot", "args": (), "kwargs": _overlay_request()}
+        ]
+        mock_view.plot_overlay.assert_called_once_with(**_overlay_request())
+
+    def test_a_positional_call_records_the_same_entry(
+        self, controller: MetadataController, mock_view: MagicMock
+    ) -> None:
+        """Qt delivers a signal's payload positionally; the entry is named all the same."""
+        mock_view.plot_overlay.return_value = True
+        recorded = self.recording(controller)
+
+        controller.overlay_plot(*_overlay_request().values())
+
+        assert recorded[0]["kwargs"] == _overlay_request()
+
+    def test_the_signal_reaches_the_click_path(self, mocker: MockerFixture) -> None:
+        ctrl = MetadataController.__new__(MetadataController)  # type: ignore[type-abstract]
+        ctrl.view = mocker.Mock()
+        ctrl.model = mocker.Mock()
+
+        ctrl._setup_connections()
+
+        ctrl.view.overlay_plot_requested.connect.assert_called_once_with(
+            ctrl.request_overlay_plot
+        )
+
+
+class TestAClickedOverlayThatDrewNothing:
+    """
+    The click path's roll-back, which a replay does not take: a refusal that left the
+    figure as it was drops its record, and one that changed the figure is undone.
+    """
+
+    @staticmethod
+    def click(
+        controller: MetadataController,
+        mock_view: MagicMock,
+        drawn: bool,
+        changes_figure: bool,
+    ) -> None:
+        mock_view.plotted_datasets = {("L", "exp_a", 0, "", "F0")}
+
+        def draw(**_kwargs: object) -> bool:
+            if changes_figure:
+                mock_view.plotted_datasets = set()
+            return drawn
+
+        mock_view.plot_overlay.side_effect = draw
+        controller.discard_last_tab_action = MagicMock()  # type: ignore[method-assign]
+        controller.update_tab_actions = MagicMock()  # type: ignore[method-assign]
+        controller.record_action = MagicMock()  # type: ignore[method-assign]
+        controller.request_overlay_plot(*_overlay_request().values())
+
+    def test_a_drawn_overlay_is_kept(
+        self, controller: MetadataController, mock_view: MagicMock
+    ) -> None:
+        self.click(controller, mock_view, drawn=True, changes_figure=True)
+
+        controller.discard_last_tab_action.assert_not_called()  # type: ignore[attr-defined]
+        controller.update_tab_actions.assert_not_called()  # type: ignore[attr-defined]
+
+    def test_a_refusal_that_left_the_figure_alone_drops_its_record(
+        self, controller: MetadataController, mock_view: MagicMock
+    ) -> None:
+        self.click(controller, mock_view, drawn=False, changes_figure=False)
+
+        controller.discard_last_tab_action.assert_called_once_with()  # type: ignore[attr-defined]
+        controller.update_tab_actions.assert_not_called()  # type: ignore[attr-defined]
+
+    def test_a_refusal_that_changed_the_figure_is_undone(
+        self, controller: MetadataController, mock_view: MagicMock
+    ) -> None:
+        self.click(controller, mock_view, drawn=False, changes_figure=True)
+
+        controller.update_tab_actions.assert_called_once_with(None, True)  # type: ignore[attr-defined]
+        controller.discard_last_tab_action.assert_not_called()  # type: ignore[attr-defined]

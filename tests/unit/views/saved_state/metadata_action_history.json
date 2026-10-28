@@ -1,13 +1,40 @@
 {
   "0": {
     "action": "reset",
-    "args": ["2d"],
-    "kwargs": {}
+    "args": [],
+    "kwargs": {
+      "axis_type": "2d"
+    }
   },
   "1": {
     "action": "overlay_plot",
-    "args": [{"loader": "loader"}],
-    "kwargs": {}
+    "args": [],
+    "kwargs": {
+      "loader": "loader",
+      "plot_type": "Histogram",
+      "axes": [
+        "duration",
+        "start_time",
+        "event_id"
+      ],
+      "logs": [
+        false,
+        false,
+        false
+      ],
+      "bins": [
+        20
+      ],
+      "sizes": false,
+      "filters": {
+        "F0": "duration >= 0"
+      },
+      "scope": {
+        "exp_a": [
+          "0"
+        ]
+      }
+    }
   },
   "2": {
     "action": "an_action_that_no_longer_exists",

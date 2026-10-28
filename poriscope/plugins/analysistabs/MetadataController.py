@@ -26,7 +26,17 @@
 
 
 import logging
-from typing import Any, Dict, Generator, List, Optional, Sequence, Tuple, override
+from typing import (
+    Any,
+    Dict,
+    Generator,
+    List,
+    Optional,
+    Sequence,
+    Tuple,
+    Union,
+    override,
+)
 
 import numpy as np
 import numpy.typing as npt
@@ -36,7 +46,7 @@ from PySide6.QtCore import Slot
 from poriscope.plugins.analysistabs.MetadataModel import MetadataModel
 from poriscope.plugins.analysistabs.MetadataView import MetadataView
 from poriscope.utils.DocstringDecorator import inherit_docstrings
-from poriscope.utils.LogDecorator import log
+from poriscope.utils.LogDecorator import log, register_action
 from poriscope.utils.MetaSubsetTabController import (
     MetaSubsetTabController,
     scope_placeholders,
@@ -76,7 +86,7 @@ class MetadataController(MetaSubsetTabController):
     @override
     def _setup_connections(self) -> None:
         """
-        Wire this tab's own fourteen intents on top of the eight the subset base wires.
+        Wire this tab's own fifteen intents on top of the eight the subset base wires.
 
         :return: None
         :rtype: None
@@ -98,6 +108,106 @@ class MetadataController(MetaSubsetTabController):
         self.view.histogram_bins_requested.connect(self.calculate_histogram_bins)
         self.view.capture_rate_requested.connect(self.fit_capture_rate)
         self.view.categorical_counts_requested.connect(self.count_categories)
+        self.view.overlay_plot_requested.connect(self.request_overlay_plot)
+
+    @log(logger=logger)
+    @Slot(str, str, list, list, object, bool, object, object)
+    def request_overlay_plot(
+        self,
+        loader: str,
+        plot_type: str,
+        axes: List[Optional[str]],
+        logs: List[bool],
+        bins: Optional[List[Union[int, float]]],
+        sizes: bool,
+        filters: Dict[str, str],
+        scope: Dict[str, List[str]],
+    ) -> None:
+        """
+        Draw the overlay a click on Update Plot asked for, and roll back one that drew nothing.
+
+        The roll-back is the click's alone; a replay calls :meth:`overlay_plot` directly.
+        A refusal that left the figure as it was drops its record, so Undo does not spend a
+        step restoring an identical figure; one that changed the figure - it reset it, or
+        drew part of the request - is undone, which redraws from the history.
+
+        :param loader: the database loader plugin's key
+        :type loader: str
+        :param plot_type: the plot type chosen
+        :type plot_type: str
+        :param axes: the x, y and z columns, whichever the plot type uses
+        :type axes: List[Optional[str]]
+        :param logs: the x, y and z log-scale flags
+        :type logs: List[bool]
+        :param bins: a bin count, or a bin width when sizes is True, or None to estimate
+        :type bins: Optional[List[Union[int, float]]]
+        :param sizes: does bins refer to a bin width (True) or a count (False)
+        :type sizes: bool
+        :param filters: the selected filters, name to SQL
+        :type filters: Dict[str, str]
+        :param scope: the selected experiments and their channels
+        :type scope: Dict[str, List[str]]
+        :return: None
+        :rtype: None
+        """
+        before = set(self.view.plotted_datasets)
+        drawn = self.overlay_plot(
+            loader, plot_type, axes, logs, bins, sizes, filters, scope
+        )
+        if drawn is False:
+            if self.view.plotted_datasets == before:
+                self.discard_last_tab_action()
+            else:
+                self.update_tab_actions(None, True)
+
+    @log(logger=logger)
+    @register_action("overlay_plot")
+    def overlay_plot(
+        self,
+        loader: str,
+        plot_type: str,
+        axes: List[Optional[str]],
+        logs: List[bool],
+        bins: Optional[List[Union[int, float]]],
+        sizes: bool,
+        filters: Dict[str, str],
+        scope: Dict[str, List[str]],
+    ) -> bool:
+        """
+        Overlay every selected subset on the figure, or start a new figure for it.
+
+        A recorded action: it takes the intent the click captured, so a replay draws what
+        was recorded whatever the panel now shows.
+
+        :param loader: the database loader plugin's key
+        :type loader: str
+        :param plot_type: the plot type chosen
+        :type plot_type: str
+        :param axes: the x, y and z columns, whichever the plot type uses
+        :type axes: List[Optional[str]]
+        :param logs: the x, y and z log-scale flags
+        :type logs: List[bool]
+        :param bins: a bin count, or a bin width when sizes is True, or None to estimate
+        :type bins: Optional[List[Union[int, float]]]
+        :param sizes: does bins refer to a bin width (True) or a count (False)
+        :type sizes: bool
+        :param filters: the selected filters, name to SQL
+        :type filters: Dict[str, str]
+        :param scope: the selected experiments and their channels
+        :type scope: Dict[str, List[str]]
+        :return: True if at least one dataset was drawn
+        :rtype: bool
+        """
+        return self.view.plot_overlay(
+            loader=loader,
+            plot_type=plot_type,
+            axes=axes,
+            logs=logs,
+            bins=bins,
+            sizes=sizes,
+            filters=filters,
+            scope=scope,
+        )
 
     @log(logger=logger)
     @Slot(object, object, object, object, bool, object, str, str, str)
