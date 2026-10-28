@@ -139,6 +139,8 @@
 
 * Event Analysis's Plot Events and Fit Events are recorded actions (a fit is recorded per channel), and a call that plotted or launched nothing is not recorded; `EventAnalysisView.write_back` shows a recorded entry's values in the panel, though nothing calls it yet
 
+* A replayed action whose saved values no longer fit its parameters is reported on the status panel and skipped, and the rest of the file still replays
+
 ### User-Facing Behaviour:
 
 #### General:

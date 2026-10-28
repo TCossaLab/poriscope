@@ -24,6 +24,7 @@
 # Kyle Briggs
 # Alejandra Carolina González González
 
+import inspect
 import json
 import logging
 from abc import abstractmethod
@@ -302,8 +303,10 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
 
         An entry with no action name, or one that names no declared action of this tab
         (an old-format entry, or a method that has since been removed), is reported on
-        the status panel and skipped, and replay moves on. Replaying a decorated method
-        records it again.
+        the status panel and skipped, and replay moves on. So is an entry whose values no
+        longer fit its action's parameters - one saved before they changed - which is
+        checked before the call, so an action's own ``TypeError`` still propagates.
+        Replaying a decorated method records it again.
 
         The loop runs inside :py:func:`~poriscope.utils.ReplayGuard.replaying`, so a
         recorded action that reads a controls panel raises
@@ -329,7 +332,21 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
                         f"Not replayed: {described}", self.__class__.__name__
                     )
                     continue
-                method(*(entry.get("args") or []), **(entry.get("kwargs") or {}))
+                args = entry.get("args") or []
+                kwargs = entry.get("kwargs") or {}
+                try:
+                    inspect.signature(method).bind(*args, **kwargs)
+                except TypeError:
+                    described = (
+                        f"the recorded values of '{name}' do not fit that action of "
+                        f"{self.__class__.__name__} any more"
+                    )
+                    self.logger.warning(f"Not replayed: {described}")
+                    self.add_text_to_display.emit(
+                        f"Not replayed: {described}", self.__class__.__name__
+                    )
+                    continue
+                method(*args, **kwargs)
 
     @log(logger=logger)
     def display_write_status(self, status: bool) -> None:
