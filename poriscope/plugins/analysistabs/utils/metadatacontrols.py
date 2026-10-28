@@ -861,7 +861,7 @@ class MetadataControls(MetaSubsetTabControls):
 
         db_loader_loaded = True
         # Plot types below need 2+ distinct axes; catch duplicate axis
-        # selections early instead of letting _overlay_plot silently bail.
+        # selections here, before the overlay is asked for and refuses them.
         needs_two_axes = plot_type in ("Scatterplot", "Heatmap")
         needs_three_axes = plot_type == "3D Scatterplot"
         duplicate_axes = False

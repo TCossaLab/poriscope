@@ -121,8 +121,8 @@ class TestReplayingASavedActionHistory:
         records - a replay that dropped the args would silently reset the tab to
         defaults rather than to what the user saved.
         """
-        reset = mocker.patch.object(controller.view, "_reset_actions")
-        overlay = mocker.patch.object(controller.view, "plot_overlay")
+        reset = mocker.patch.object(controller.view, "reset_plot", autospec=True)
+        overlay = mocker.patch.object(controller, "overlay_plot", autospec=True)
 
         controller.replay(history.values())
 
@@ -137,8 +137,8 @@ class TestReplayingASavedActionHistory:
         parameters dict. Its values no longer fit, so it is reported and skipped, and
         replay goes on to the rest of the file instead of stopping at it.
         """
-        reset = mocker.patch.object(controller.view, "_reset_actions")
-        overlay = mocker.patch.object(controller.view, "plot_overlay")
+        reset = mocker.patch.object(controller.view, "reset_plot", autospec=True)
+        overlay = mocker.patch.object(controller, "overlay_plot", autospec=True)
         saved_before = {"action": "overlay_plot", "args": [{"loader": "loader"}]}
 
         controller.replay([saved_before, {"action": "reset", "args": ["2d"]}])
@@ -159,8 +159,8 @@ class TestReplayingASavedActionHistory:
         every saved history becomes once an action is removed. Replay does not
         raise, but it says so on the status panel and carries on.
         """
-        mocker.patch.object(controller.view, "_reset_actions")
-        mocker.patch.object(controller.view, "plot_overlay")
+        mocker.patch.object(controller.view, "reset_plot", autospec=True)
+        mocker.patch.object(controller, "overlay_plot", autospec=True)
 
         controller.replay(history.values())  # must not raise
 
@@ -183,13 +183,15 @@ class TestReplayingASavedActionHistory:
         calls = []
         mocker.patch.object(
             controller.view,
-            "_reset_actions",
+            "reset_plot",
+            autospec=True,
             side_effect=lambda *a, **k: calls.append("reset"),
         )
         mocker.patch.object(
-            controller.view,
-            "plot_overlay",
-            side_effect=lambda **k: calls.append("overlay"),
+            controller,
+            "overlay_plot",
+            autospec=True,
+            side_effect=lambda *a, **k: calls.append("overlay"),
         )
 
         controller.replay(history.values())
@@ -203,14 +205,14 @@ class TestReplayingASavedActionHistory:
         The registry maps each declared name to the method that runs it: the reset on
         the View, the overlay on the Controller.
 
-        ``_reset_actions`` is decorated, so the decorator must not rename it -
+        ``reset_plot`` is decorated, so the decorator must not rename it -
         ``functools.wraps`` keeps its own name - and its declared name is the
         shared reset constant Undo looks for.
         """
         registry = controller.action_registry()
 
-        assert registry[RESET_ACTION] == controller.view._reset_actions
-        assert controller.view._reset_actions.__name__ == "_reset_actions"
+        assert registry[RESET_ACTION] == controller.view.reset_plot
+        assert controller.view.reset_plot.__name__ == "reset_plot"
         assert registry["overlay_plot"] == controller.overlay_plot
 
 

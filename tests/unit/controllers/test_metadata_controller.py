@@ -969,10 +969,12 @@ class TestCountCategories:
         counts = [(["a"], np.array([1.0]))]
         controller.model.categorical_counts.return_value = counts
 
-        controller.count_categories([np.array(["a"])], ["d1"], "x", "y")
+        newest = np.array(["a"])
+
+        assert controller.count_categories([newest], ["d1"], "x", "y") is True
 
         mock_view.show_categorical_counts.assert_called_once_with(
-            counts, ["d1"], "x", "y"
+            newest, "d1", counts, "x", "y"
         )
 
     def test_a_column_the_tally_cannot_sort_is_reported(self, controller) -> None:
@@ -1504,9 +1506,14 @@ class TestTheOverlayIsRecordedOnTheController:
         assert "overlay_plot" not in on_view
 
     def test_an_overlay_is_recorded_with_its_intent_by_name(
-        self, controller: MetadataController, mock_view: MagicMock
+        self, controller: MetadataController
     ) -> None:
-        mock_view.plot_overlay.return_value = True
+        """
+        One dataset per experiment, channel and filter; what each draws is pinned in
+        ``tests/integration/flows/test_metadata_overlay_no_gui.py``.
+        """
+        dataset = MagicMock(return_value=True)
+        controller._overlay_metadata_dataset = dataset  # type: ignore[method-assign]
         recorded = self.recording(controller)
 
         drawn = controller.overlay_plot(**_overlay_request())
@@ -1515,13 +1522,19 @@ class TestTheOverlayIsRecordedOnTheController:
         assert recorded == [
             {"action": "overlay_plot", "args": (), "kwargs": _overlay_request()}
         ]
-        mock_view.plot_overlay.assert_called_once_with(**_overlay_request())
+        dataset.assert_called_once()
+        assert dataset.call_args.args[6:10] == (
+            "exp_a",
+            "0",
+            "F0",
+            "duration >= 0",
+        )
 
     def test_a_positional_call_records_the_same_entry(
-        self, controller: MetadataController, mock_view: MagicMock
+        self, controller: MetadataController
     ) -> None:
         """Qt delivers a signal's payload positionally; the entry is named all the same."""
-        mock_view.plot_overlay.return_value = True
+        controller._overlay_metadata_dataset = MagicMock(return_value=True)  # type: ignore[method-assign]
         recorded = self.recording(controller)
 
         controller.overlay_plot(*_overlay_request().values())
@@ -1555,12 +1568,12 @@ class TestAClickedOverlayThatDrewNothing:
     ) -> None:
         mock_view.plotted_datasets = {("L", "exp_a", 0, "", "F0")}
 
-        def draw(**_kwargs: object) -> bool:
+        def draw(*_args: object) -> bool:
             if changes_figure:
                 mock_view.plotted_datasets = set()
             return drawn
 
-        mock_view.plot_overlay.side_effect = draw
+        controller._overlay_metadata_dataset = MagicMock(side_effect=draw)  # type: ignore[method-assign]
         controller.discard_last_tab_action = MagicMock()  # type: ignore[method-assign]
         controller.update_tab_actions = MagicMock()  # type: ignore[method-assign]
         controller.record_action = MagicMock()  # type: ignore[method-assign]

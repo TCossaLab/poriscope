@@ -24,7 +24,6 @@
 # Alejandra Carolina González González
 # Kyle Briggs
 
-import copy
 import logging
 import warnings
 from typing import (
@@ -42,15 +41,11 @@ from typing import (
 import matplotlib.pyplot as pl
 import numpy as np
 import numpy.typing as npt
-import pandas as pd
 from matplotlib.axes import Axes
 from matplotlib.colorbar import Colorbar
 from matplotlib.lines import Line2D
 from mpl_toolkits.mplot3d import Axes3D
 from PySide6.QtCore import Signal, Slot
-from PySide6.QtWidgets import (
-    QMessageBox,
-)
 
 from poriscope.plugins.analysistabs.utils.metadatacontrols import MetadataControls
 from poriscope.utils.DocstringDecorator import inherit_docstrings
@@ -78,10 +73,7 @@ class MetadataView(MetaSubsetTabView):
     Also provides walkthroughs and export options.
 
     Attributes:
-        metadata_plots (List[str]): List of supported metadata-based plot types.
-        event_data_plots (List[str]): List of supported event-based plot types.
         subset_export_count (int): Counter for naming exported subsets.
-        plot_initialized (bool): Indicates whether a plot is currently initialized.
         no_cached_data (bool): True if data is not cached due to size.
     """
 
@@ -98,54 +90,6 @@ class MetadataView(MetaSubsetTabView):
     #: from ``MetaSubsetTabView``.
     column_names_requested = Signal(str)
 
-    #: Asks the Controller for one metadata subset, ready to plot: the loader's key,
-    #: the columns this plot type needs, the filter, and the experiment/channel scope.
-    #: The Controller builds the query, loads the rows and looks up each column's
-    #: units, then hands all three back through ``set_query``, ``update_plot_data``
-    #: and ``set_column_units`` - or hands back nothing and reports why.
-    #:
-    #: One request rather than three, because the answers are only useful together:
-    #: asking separately meant parking each on an attribute and reading it back, and a
-    #: failure that went unnoticed left the *previous* subset's query or the previous
-    #: column's units in place - a plot drawn and labelled for a subset it did not come
-    #: from.
-    #:
-    #: Also carries the filter's name, whose ``_raw`` suffix tells the Controller the
-    #: filter is a complete ``SELECT`` that scopes itself with ``:experiment_id`` and
-    #: ``:channel_id``.
-    metadata_subset_requested = Signal(str, list, str, object, str)
-
-    #: Asks for one event-data subset to be tallied into an all-points histogram: the
-    #: loader's key, the filter, the scope, the plot type, the bin request, the shared
-    #: limits so far, and the label the result is drawn under. Answered through
-    #: ``set_all_points_histogram``.
-    #:
-    #: The events are tallied where they are loaded and only the histogram comes back.
-    #: Nothing outside the histogram reads them, so handing the widget a generator to walk
-    #: would put the whole subset in the View to produce one array.
-    #:
-    #: Also carries the filter's name, whose ``_raw`` suffix marks a raw filter: the
-    #: events its ``SELECT``'s event key names, within the scope, are plotted.
-    all_points_histogram_requested = Signal(
-        str, str, object, str, object, bool, object, object, str, str
-    )
-
-    #: Asks for one event-data subset to be put on a shared normalised axis: the
-    #: loader's key, the filter, the scope and the plot type. Answered through
-    #: ``set_event_overlay``.
-    #:
-    #: Same reasoning as ``all_points_histogram_requested``: the events are reduced where
-    #: they are loaded. The alpha each trace is drawn at stays here, because it is read by
-    #: nothing outside the axes it is drawn on.
-    #:
-    #: Carries the filter's name too, for the same reason.
-    event_overlay_requested = Signal(str, str, object, str, str)
-
-    #: Asks for one column's declared type, which the categorical-histogram guard
-    #: needs before it will let the plot proceed. The answer arrives through
-    #: ``set_column_type``, and stays ``None`` when the lookup failed.
-    column_type_requested = Signal(str, str)
-
     #: Asks for one event's plot features - the lines, points and labels a fitter left
     #: behind. Emitted once per event on the plot path, and answered through
     #: ``update_plot_features``, which the Controller calls only when the lookup
@@ -158,65 +102,6 @@ class MetadataView(MetaSubsetTabView):
     #: export is keyed under. ``on_subset_export_started`` comes back if it was staged.
     csv_subset_export_requested = Signal(str, str, str, object, object, int, str)
 
-    #: Asks for the heatmap's 2-D binning: the raw columns, their log flags, the bin
-    #: request, and the labels handed back unchanged. Answered through
-    #: ``show_heatmap``, which draws on this View's own axes.
-    #:
-    #: The columns leave raw: the NaN mask, the log filter and the binning are one
-    #: calculation and splitting them would compute the surviving row set twice. The
-    #: imshow, the colourbar and the cache entry stay here - they are drawing, and the
-    #: values they use never leave the View.
-    heatmap_requested = Signal(object, object, object, object, bool, str, str, str)
-
-    #: The same for the three columns of a 3-D scatterplot. Answered through
-    #: ``show_3d_scatterplot``, which is separate because the 3-D axes and the z label
-    #: are not a special case of the 2-D drawing.
-    scatterplot_3d_requested = Signal(object, object, object, str)
-
-    #: Asks for every overlaid dataset's kernel density: the raw columns, the log
-    #: flag, the bin request, the shared limits so far, and the labels handed back
-    #: unchanged. Answered through ``show_kernel_densities``, which draws on this
-    #: View's own axes.
-    #:
-    #: One request for every overlaid dataset rather than one each, so no intermediate
-    #: answer is parked on the widget between them. The columns leave raw because the
-    #: filtering and the shared limits are computed from the same surviving rows the
-    #: density is.
-    density_requested = Signal(
-        object, bool, object, bool, object, object, str, str, str
-    )
-
-    #: Asks for the shared bin edges every overlaid histogram dataset is drawn on,
-    #: and the counts against them: the raw columns, the log flag, the bin request
-    #: and the limits so far. Answered through ``show_histogram_bins``, which draws on
-    #: this View's own axes.
-    #:
-    #: The counts come back with the edges rather than being tallied here: tallying
-    #: values into bins is aggregation, and its result is exported with the plot rather
-    #: than only drawn. The filtering and the shared limits travel with them because this
-    #: and ``density_requested`` write the same accumulated limits and must agree.
-    histogram_bins_requested = Signal(
-        object, bool, object, bool, object, object, bool, str, str, str
-    )
-
-    #: Asks for the capture-rate binning and its exponential fit: the event times
-    #: as they came out of the column, the bin request, and the labels.
-    #: Answered through ``show_capture_rate``, which draws on this View's own axes.
-    #:
-    #: The bin edges come back with the fit, so the histogram is drawn on exactly the
-    #: edges the fit was made against - computing them twice would let the two disagree.
-    #: This carries the event-time column rather than the log inter-event times, because
-    #: the gaps are derived from it wherever the fit is.
-    capture_rate_requested = Signal(object, object, bool, str, str, str)
-
-    #: Asks for the per-category counts of every overlaid dataset at once, with the
-    #: labels handed back unchanged. Answered through ``show_categorical_counts``,
-    #: which draws on this View's own axes.
-    #:
-    #: Counting occurrences is aggregation and the answer is exported with the plot, so
-    #: it does not belong in the widget. One request for all the datasets, like
-    #: ``density_requested``, so no answer is parked between them.
-    categorical_counts_requested = Signal(object, object, str, str)
     #: Asks the Controller to draw an overlay: the loader's key, the plot type, the x, y
     #: and z columns, their log flags, the bin request, the Sizes flag, the selected
     #: filters (name to SQL) and the scope. The intent a click captured, which is what the
@@ -233,39 +118,13 @@ class MetadataView(MetaSubsetTabView):
         Initialize the MetadataView instance.
         """
         self._clear_cache()
-        self.plot_initialized = False
         self.no_cached_data = False
         self.subset_export_count = 0
-        self.metadata_plots = [
-            "Histogram",
-            "Normalized Histogram",
-            "Categorical Histogram",
-            "Kernel Density Plot",
-            "Capture Rate",
-            "Heatmap",
-            "Scatterplot",
-            "3D Scatterplot",
-        ]
-        self.event_data_plots = [
-            "Raw Event Overlay",
-            "Filtered Event Overlay",
-            "Raw All Points Histogram",
-            "Normalized Raw All Points Histogram",
-            "Filtered All Points Histogram",
-            "Normalized Filtered All Points Histogram",
-        ]
         self.hist_min: Optional[float] = None
         self.hist_max: Optional[float] = None
         # Set by set_event_plot_data_generator once the whole event-plot chain has
         # succeeded. None means it has not been fetched.
         self.plot_events_generator = None
-        # One units string per plotted column, set by set_column_units once the
-        # whole subset has been fetched. None means it has not been.
-        self.column_units: Optional[List[Optional[str]]] = None
-        # Added to a dataset's label by set_scope_note when its raw query does not use
-        # the Scope selection, so the legend does not name a channel the rows are not
-        # from. Empty for every other dataset.
-        self.scope_note: str = ""
         # Heterogeneous by design: the three 1-D paths - histogram, density and
         # categorical - append the raw column as a 1-D array, and the all-points
         # path appends an (x, y) tuple. Two shapes, not one: flagged for review,
@@ -280,7 +139,8 @@ class MetadataView(MetaSubsetTabView):
         self.allowed_plot_type: Optional[str] = None
         self.allowed_columns: List[str] = []
         self.allowed_logs: List[bool] = []
-        self.allowed_bins: Optional[Union[int, float]] = None
+        # The bins list from the controls, as the overlay drawn was asked for it.
+        self.allowed_bins: Optional[List[Union[int, float]]] = None
         self.allowed_sizes: Optional[bool] = None
 
         self.plotted_datasets: Set[
@@ -399,12 +259,12 @@ class MetadataView(MetaSubsetTabView):
 
     @log(logger=logger)
     @register_action(RESET_ACTION)
-    @override
-    def _reset_actions(self, axis_type: str = "2d") -> None:
+    def reset_plot(self, axis_type: str = "2d") -> None:
         """
-        Clears the figure and reinitializes axes. This will also add a flag to the tab action history
-        if @register_action is being used to keep track of actions. Only actions applied after the most
-        recent call to this function will be recreated if the related file is loaded.
+        Clear the figure, create fresh axes and forget what was drawn.
+
+        A recorded action: Undo replays from the last one, and a new figure starts with
+        one. The Controller calls it when an overlay needs a new figure.
 
         :param axis_type: Either '2d' or '3d' to determine plot projection.
         :type axis_type: str
@@ -429,69 +289,38 @@ class MetadataView(MetaSubsetTabView):
         )  # tuple of things already plotted: (loader, experiment, channel, filter, subset_name), which can be None
 
     @log(logger=logger)
-    def _plot_1d_density(
-        self,
-        ax: Axes,
-        data: Any,
-        cols: Sequence[str],
-        units: Sequence[Optional[str]],
-        logscales: Sequence[bool],
-        dataset_label: str = "",
-        bins: Any = None,
-        sizes: bool = False,
-    ) -> None:
+    @override
+    def _reset_actions(self, axis_type: str = "2d") -> None:
         """
-        :param ax: the axis object on which to plot
-        :type ax: Axes
-        :param data: Dataframe of metadata to plot. Typed loosely because the body rebinds this name to the extracted column array.
-        :type data: Any
-        :param cols: Sequence of column names, only the first will be used
-        :type cols: Sequence[str]
-        :param units: Sequence of unit strings for axis labels, only the first entry will be used
-        :type units: Sequence[Optional[str]]
-        :param logscales: logscale the data in the given column before building the density plot?
-        :type logscales: Sequence[bool]
-        :param dataset_label: string to label the dataset
-        :type dataset_label: str
-        :param bins: Number of bins (if sizes==False) or size of bins (if sizes==True) for use when binning. Arrives as a single-element list from the controls and is rebound to a scalar (or None, to fall back to an automatic estimate) in the body, hence the loose annotation.
-        :type bins: Any
-        :param sizes: does the bins parameter refer to bin sizes (True) or widths (False)
-        :type sizes: bool
-        :raises ValueError: If bins is an empty list.
+        Clear the figure; the same as :meth:`reset_plot`, which records it.
 
-        Ask for a 1d kernel density, with optional logscaling before binning
+        :param axis_type: Either '2d' or '3d' to determine plot projection.
+        :type axis_type: str
         """
+        self.reset_plot(axis_type)
 
-        if bins is not None:
-            if isinstance(bins, list) and len(bins) >= 1:
-                bins = bins[0]
-            else:
-                raise ValueError(f"Invalid bins entry {bins}")
+    @log(logger=logger)
+    def axes_ready(self, axis_type: str = "2d") -> bool:
+        """
+        Can the next overlay be drawn on the current axes?
 
-        (column,) = cols
-        (x_units,) = units
-        (logx,) = logscales
+        Not when the figure holds more than one axes - the event grid Plot Events draws -
+        or when the axes are stale or of the other projection.
 
-        x_label = self.format_axis_label(column, x_units)
-        if logx:
-            x_label = f"log10({x_label})"
+        :param axis_type: Either '2d' or '3d', the projection the plot needs.
+        :type axis_type: str
+        :return: True if the current axes can take the plot
+        :rtype: bool
+        """
+        return len(self.figure.axes) <= 1 and self._axes_valid(axis_type=axis_type)
 
-        # The newest dataset travels alongside the ones already accumulated rather
-        # than being appended first: the Model decides whether anything survives the
-        # filter, and a subset that loses every point must not leave a label behind.
-        # ``show_kernel_densities`` does the appending, once there is something to
-        # draw.
-        self.density_requested.emit(
-            list(self.hist_data) + [data[column].values],
-            logx,
-            bins,
-            sizes,
-            self.hist_min,
-            self.hist_max,
-            x_label,
-            column,
-            dataset_label,
-        )
+    @log(logger=logger)
+    def finish_plot(self) -> None:
+        """
+        Draw the canvas and hand the plotted data to the export cache, after a dataset.
+        """
+        self.canvas.draw()
+        self._commit_cache()
 
     @log(logger=logger)
     def show_kernel_densities(
@@ -506,7 +335,7 @@ class MetadataView(MetaSubsetTabView):
         """
         Draw one filled density curve per overlaid dataset.
 
-        The answering half of ``density_requested``. The curve arrives already
+        Called by ``MetadataController.overlay_plot``. The curve arrives already
         evaluated, so it is computed once rather than the three times drawing it would
         otherwise need. The newest dataset joins the overlay here as its **raw** column,
         because the Model re-filters every accumulated dataset on each update and a
@@ -548,67 +377,6 @@ class MetadataView(MetaSubsetTabView):
         ax.legend(loc="best")
 
     @log(logger=logger)
-    def _plot_capture_rate(
-        self,
-        ax: Axes,
-        data: Any,
-        cols: Sequence[str],
-        units: Sequence[Optional[str]],
-        logscales: Sequence[bool],
-        dataset_label: str = "",
-        bins: Any = None,
-        sizes: bool = False,
-    ) -> None:
-        """
-        :param ax: the axis object on which to plot
-        :type ax: Axes
-        :param data: Dataframe of metadata to plot. Typed loosely because the body rebinds this name to the extracted column array.
-        :type data: Any
-        :param cols: Sequence of column names, only the first will be used
-        :type cols: Sequence[str]
-        :param units: Sequence of unit strings for axis labels, only the first entry will be used
-        :type units: Sequence[Optional[str]]
-        :param logscales: logscale the data in the given column before building the density plot? only the first will be used
-        :type logscales: Sequence[bool]
-        :param dataset_label: string to label the dataset
-        :type dataset_label: str
-        :param bins: Number of bins (if sizes==False) or size of bins (if sizes==True) for use when binning. Arrives as a single-element list from the controls and is rebound to a scalar (or None, to fall back to an automatic estimate) in the body, hence the loose annotation.
-        :type bins: Any
-        :param sizes: does the bins parameter refer to bin sizes (True) or widths (False)
-        :type sizes: bool
-        :raises ValueError: If bins is an empty list, or too little data survives the log filter to estimate a capture rate.
-
-        Calculate the capture rate for the given subset
-        """
-
-        if bins is not None:
-            if isinstance(bins, list) and len(bins) >= 1:
-                bins = bins[0]
-            else:
-                raise ValueError(f"Invalid bins entry {bins}")
-
-        (x_label,) = cols
-        (x_units,) = units
-        (logx,) = logscales
-        # The column goes out as it stands. Turning event times into log10 inter-event
-        # times is the measurement rather than the drawing, so the Model does it, and
-        # the two conditions that used to be judged here - too little surviving data,
-        # and how much the log filter dropped - are judged by the Controller on the
-        # answer. The ValueError this method can still raise is the bins one above,
-        # which is why update_plot's handler stays live.
-        data = data[x_label].values
-
-        x_label = f"Interevent Time ({x_units})"
-        y_label = "Count"
-
-        if logx:
-            x_label = f"log10({x_label})"
-
-        self.capture_rate_requested.emit(
-            data, bins, sizes, x_label, y_label, dataset_label
-        )
-
-    @log(logger=logger)
     def show_capture_rate(
         self,
         bin_edges: npt.NDArray[np.float64],
@@ -625,7 +393,7 @@ class MetadataView(MetaSubsetTabView):
         """
         Draw the inter-event time histogram and the exponential fitted to it.
 
-        The answering half of ``capture_rate_requested``. The binning and the fit are
+        Called by ``MetadataController.overlay_plot``. The binning and the fit are
         made together below, so both describe the same intervals.
 
         The histogram is drawn on the **edges the fit was made against**, rather than
@@ -675,71 +443,6 @@ class MetadataView(MetaSubsetTabView):
         ax.legend(loc="best")
 
     @log(logger=logger)
-    def _plot_1d_histogram(
-        self,
-        ax: Axes,
-        data: Any,
-        cols: Sequence[str],
-        units: Sequence[Optional[str]],
-        logscales: Sequence[bool],
-        dataset_label: str = "",
-        bins: Any = None,
-        sizes: bool = False,
-        norm: bool = False,
-    ) -> None:
-        """
-        :param ax: the axis object on which to plot
-        :type ax: Axes
-        :param data: Dataframe of metadata to plot. Typed loosely because the body rebinds this name to the extracted column array.
-        :type data: Any
-        :param cols: Sequence of column names, only the first will be used
-        :type cols: Sequence[str]
-        :param units: Sequence of unit strings for axis labels, only the first entry will be used
-        :type units: Sequence[Optional[str]]
-        :param logscales: logscale the data in the given column before building the density plot? only the first will be used
-        :type logscales: Sequence[bool]
-        :param dataset_label: string to label the dataset
-        :type dataset_label: str
-        :param bins: Number of bins (if sizes==False) or size of bins (if sizes==True) for use when binning. Arrives as a single-element list from the controls and is rebound to a scalar (or None, to fall back to an automatic estimate) in the body, hence the loose annotation.
-        :type bins: Any
-        :param sizes: does the bins parameter refer to bin sizes (True) or widths (False)
-        :type sizes: bool
-        :param norm: normalize output to [0,1]?
-        :type norm: bool
-        :raises ValueError: If bins is an empty list.
-
-        Ask for a 1d histogram, with optional logscaling and normalization
-        """
-        if bins is not None:
-            if isinstance(bins, list) and len(bins) >= 1:
-                bins = bins[0]
-            else:
-                raise ValueError(f"Invalid bins entry {bins}")
-
-        (column,) = cols
-        (x_units,) = units
-        (logx,) = logscales
-
-        # Every overlaid dataset goes down together: the filter, the shared limits
-        # and the edges are all decided from all of them at once, which is what
-        # makes the bars comparable, and the counts come back one array per dataset.
-        # The newest travels alongside rather than being accumulated first, for the
-        # reason ``_plot_1d_density`` records - the two share this accumulator and
-        # this pair of limits, which is why they converted together.
-        self.histogram_bins_requested.emit(
-            list(self.hist_data) + [data[column].values],
-            logx,
-            bins,
-            sizes,
-            self.hist_min,
-            self.hist_max,
-            norm,
-            self.format_axis_label(column, x_units),
-            column,
-            dataset_label,
-        )
-
-    @log(logger=logger)
     def show_histogram_bins(
         self,
         values: npt.NDArray[np.float64],
@@ -756,7 +459,7 @@ class MetadataView(MetaSubsetTabView):
         """
         Draw every overlaid dataset onto one shared set of bin edges.
 
-        The answering half of ``histogram_bins_requested``. This is handed each
+        Called by ``MetadataController.overlay_plot``. This is handed each
         dataset's tallies rather than the edges to tally against, and the edges
         themselves do not come back: nothing here draws with them once the counting is
         done elsewhere, and returning them would invite a second tally against them.
@@ -817,71 +520,28 @@ class MetadataView(MetaSubsetTabView):
         ax.legend(loc="best")
 
     @log(logger=logger)
-    def _plot_categorical_histogram(
-        self,
-        ax: Axes,
-        data: pd.DataFrame,
-        cols: Sequence[str],
-        units: Sequence[Optional[str]],
-        dataset_label: str = "",
-    ) -> None:
-        """
-        Calculate and plot a 1d categorical bar chart showing counts of unique values.
-
-        :param ax: the axis object on which to plot
-        :type ax: Axes
-        :param data: Dataframe of metadata to plot, only the first named column will be used
-        :type data: pd.DataFrame
-        :param cols: Sequence of column names, only the first will be used
-        :type cols: Sequence[str]
-        :param units: Sequence of unit strings for axis labels, only the first entry will be used
-        :type units: Sequence[Optional[str]]
-        :param dataset_label: string to label the dataset
-        :type dataset_label: str
-        """
-        (x_label,) = cols
-        (x_units,) = units
-
-        # Extract the specific column's values
-        data_vals = data[x_label].values
-
-        # Deliberately not filtered or log-scaled, unlike every other 1-D path: the
-        # values here are category names, which have no NaN mask and no logarithm.
-        # A commented-out call to the numeric filter used to stand here saying so.
-
-        ax.clear()
-        self._clear_cache()
-
-        # Store processed data for overlay
-        self.hist_data.append(data_vals)
-        self.hist_labels.append(dataset_label)
-
-        self.categorical_counts_requested.emit(
-            list(self.hist_data),
-            list(self.hist_labels),
-            self.format_axis_label(x_label, x_units),
-            "Count",
-        )
-
-    @log(logger=logger)
     def show_categorical_counts(
         self,
+        values: npt.NDArray[Any],
+        dataset_label: str,
         counts: Sequence[Tuple[Sequence[str], npt.NDArray[np.float64]]],
-        labels: Sequence[str],
         x_label: str,
         y_label: str,
     ) -> None:
         """
         Draw one bar series per overlaid dataset.
 
-        The answering half of ``categorical_counts_requested``. The tallies are made by
-        :meth:`MetadataModel.categorical_counts`, because counting occurrences is
-        aggregation rather than drawing and the tallies are exported with the plot.
+        The tallies are made by :meth:`MetadataModel.categorical_counts`, because
+        counting occurrences is aggregation rather than drawing and the tallies are
+        exported with the plot. The newest dataset joins the overlay here, once there is
+        something to draw, as the histogram's and the density's do.
 
-        :param counts: per dataset, its category names and their counts, index-aligned with labels
+        :param values: the newest dataset's raw column values, to accumulate
+        :type values: npt.NDArray[Any]
+        :param dataset_label: the newest dataset's label
+        :type dataset_label: str
+        :param counts: per dataset, its category names and their counts, index-aligned with the accumulated labels
         :type counts: Sequence[Tuple[Sequence[str], npt.NDArray[np.float64]]]
-        :param labels: one label per overlaid dataset
-        :type labels: Sequence[str]
         :param x_label: the x axis label, already formatted
         :type x_label: str
         :param y_label: the y axis label
@@ -889,8 +549,14 @@ class MetadataView(MetaSubsetTabView):
         :return: None
         :rtype: None
         """
+        self.hist_data.append(values)
+        self.hist_labels.append(dataset_label)
+
         ax = self.axes
-        for (categories, val), lab in zip(counts, labels, strict=True):
+        ax.clear()
+        self._clear_cache()
+
+        for (categories, val), lab in zip(counts, self.hist_labels, strict=True):
             ax.bar(
                 categories,
                 val,
@@ -907,57 +573,6 @@ class MetadataView(MetaSubsetTabView):
         ax.legend(loc="best")
 
     @log(logger=logger)
-    def _plot_heatmap(
-        self,
-        ax: Axes,
-        data: pd.DataFrame,
-        cols: Sequence[str],
-        units: Sequence[Optional[str]],
-        logscales: Sequence[bool],
-        dataset_label: str = "",
-        bins: Any = None,
-        sizes: bool = False,
-    ) -> None:
-        """
-        Calculate a 2d heatmap with optional logscaling
-
-        :param ax: the axis object on which to plot
-        :type ax: Axes
-        :param data: Dataframe of metadata to plot, only the first two named columns will be used
-        :type data: pd.DataFrame
-        :param cols: Sequence of column names, only the first two entries will be used
-        :type cols: Sequence[str]
-        :param units: Sequence of unit strings for axis labels, only the first two entries will be used
-        :type units: Sequence[Optional[str]]
-        :param logscales: logscale the data in the given column before building the density plot? only the first two entries will be used
-        :type logscales: Sequence[bool]
-        :param dataset_label: string to label the dataset
-        :type dataset_label: str
-        :param bins: Number of bins (if sizes==False) or size of bins (if sizes==True) for use when binning. Arrives as a single-element list from the controls and is rebound to a scalar (or None, to fall back to an automatic estimate) in the body, hence the loose annotation.
-        :type bins: Any
-        :param sizes: does the bins parameter refer to bin sizes (True) or widths (False)
-        :type sizes: bool
-        """
-        x_label, y_label = cols
-        x_units, y_units = units
-        logx, logy = logscales
-
-        x = data[x_label].values
-        y = data[y_label].values
-
-        x_label = self.format_axis_label(x_label, x_units)
-        y_label = self.format_axis_label(y_label, y_units)
-
-        if logx:
-            x_label = f"log10({x_label})"
-        if logy:
-            y_label = f"log10({y_label})"
-
-        self.heatmap_requested.emit(
-            x, y, [logx, logy], bins, sizes, x_label, y_label, dataset_label
-        )
-
-    @log(logger=logger)
     def show_heatmap(
         self,
         x: npt.NDArray[np.float64],
@@ -971,7 +586,7 @@ class MetadataView(MetaSubsetTabView):
         """
         Draw the binned heatmap, its colourbar and its cache entry.
 
-        The answering half of ``heatmap_requested``. The binning is made by
+        Called by ``MetadataController.overlay_plot``. The binning is made by
         ``MetadataModel``; everything here is matplotlib configuration, which stays
         because none of it leaves the View.
 
@@ -1040,102 +655,25 @@ class MetadataView(MetaSubsetTabView):
         ax.legend(handles=[proxy], loc="best", handlelength=0, handleheight=0)
 
     @log(logger=logger)
-    def _plot_scatterplot(
+    def show_scatterplot(
         self,
-        ax: Axes,
-        data: pd.DataFrame,
-        cols: Sequence[str],
-        units: Sequence[Optional[str]],
-        logscales: Sequence[bool],
-        dataset_label: str = "",
+        columns: Sequence[npt.NDArray[np.float64]],
+        axis_labels: Sequence[str],
+        dataset_label: str,
     ) -> None:
         """
-        Ask for a scatterplot's two columns, filtered and log-scaled.
+        Draw a scatterplot of two filtered columns on this View's own axes.
 
-        :param ax: Matplotlib axes object.
-        :type ax: Axes
-        :param data: DataFrame containing the columns to plot.
-        :type data: pd.DataFrame
-        :param cols: Sequence containing two column names for x and y axes.
-        :type cols: Sequence[str]
-        :param units: Corresponding units for x and y axes.
-        :type units: Sequence[Optional[str]]
-        :param logscales: Log-scaling flags for x and y axes.
-        :type logscales: Sequence[bool]
-        :param dataset_label: Label for the dataset.
-        :type dataset_label: str
-        """
-        x_label, y_label = cols
-        x_units, y_units = units
-        logx, logy = logscales
-
-        columns = [data[x_label].values, data[y_label].values]
-
-        x_label = self.format_axis_label(x_label, x_units)
-        y_label = self.format_axis_label(y_label, y_units)
-
-        if logx:
-            x_label = f"log10({x_label})"
-        if logy:
-            y_label = f"log10({y_label})"
-
-        self.scatterplot_requested.emit(
-            columns, [logx, logy], ax, [x_label, y_label], dataset_label
-        )
-
-    @log(logger=logger)
-    def _plot_3d_scatterplot(
-        self,
-        ax: Axes3D,
-        data: pd.DataFrame,
-        cols: Sequence[str],
-        units: Sequence[Optional[str]],
-        logscales: Sequence[bool],
-        dataset_label: str = "",
-    ) -> None:
-        """
-        Ask for a 3-D scatterplot's three columns, filtered and log-scaled.
-
-        :param ax: A 3D Matplotlib axes object.
-        :type ax: Axes3D
-        :param data: DataFrame with the columns to plot.
-        :type data: pd.DataFrame
-        :param cols: Sequence with three column names for x, y, and z.
-        :type cols: Sequence[str]
-        :param units: Corresponding units.
-        :type units: Sequence[Optional[str]]
-        :param logscales: Log scale flags for each axis.
-        :type logscales: Sequence[bool]
+        :param columns: the filtered x and y values
+        :type columns: Sequence[npt.NDArray[np.float64]]
+        :param axis_labels: the x and y axis labels, already formatted
+        :type axis_labels: Sequence[str]
         :param dataset_label: Label to apply to the scatter points.
         :type dataset_label: str
+        :return: None
+        :rtype: None
         """
-        x_label, y_label, z_label = cols
-        x_units, y_units, z_units = units
-        logx, logy, logz = logscales
-
-        columns = [
-            data[x_label].values,
-            data[y_label].values,
-            data[z_label].values,
-        ]
-
-        x_label = self.format_axis_label(x_label, x_units)
-        y_label = self.format_axis_label(y_label, y_units)
-        z_label = self.format_axis_label(z_label, z_units)
-
-        if logx:
-            x_label = f"log10({x_label})"
-        if logy:
-            y_label = f"log10({y_label})"
-        if logz:
-            z_label = f"log10({z_label})"
-
-        self.scatterplot_3d_requested.emit(
-            columns,
-            [logx, logy, logz],
-            [x_label, y_label, z_label],
-            dataset_label,
-        )
+        self.set_scatterplot(columns, self.axes, axis_labels, dataset_label)
 
     @log(logger=logger)
     def show_3d_scatterplot(
@@ -1147,7 +685,7 @@ class MetadataView(MetaSubsetTabView):
         """
         Draw a 3-D scatterplot of three filtered columns.
 
-        The answering half of ``scatterplot_3d_requested``, and the same reasoning as
+        Called by ``MetadataController.overlay_plot``, and the same reasoning as
         :meth:`set_scatterplot`. The axes are rebuilt here if they are 2-D, which a
         change of plot type can leave behind.
 
@@ -1220,123 +758,15 @@ class MetadataView(MetaSubsetTabView):
         self.hist_labels.append(dataset_label)
 
         for (x, y), label in zip(self.hist_data, self.hist_labels):
-            if norm is False:
-                ax.plot(x, y, label=label)
-            else:
-                ax.plot(x, y / np.max(y), label=label)
-            self._update_cache((x, x_label), (y, y_label))
+            # Normalised, each curve is drawn with its peak at 1, and the export
+            # carries the curve as drawn.
+            shown = y if norm is False else y / np.max(y)
+            ax.plot(x, shown, label=label)
+            self._update_cache((x, x_label), (shown, y_label))
 
         ax.set_xlabel(x_label)
         ax.set_ylabel(y_label)
         ax.legend(loc="best")
-
-    @log(logger=logger)
-    def update_plot(
-        self,
-        plot_type: str,
-        data: pd.DataFrame,
-        cols: Sequence[str],
-        units: Sequence[Optional[str]],
-        logscales: Sequence[bool],
-        dataset_label: str = "",
-        bins: Any = None,
-        sizes: bool = False,
-    ) -> None:
-        """
-        Update the plot area with the provided data across multiple channels in a grid layout.
-
-        :param plot_type: The kind of plot to draw (e.g. "Histogram", "Scatterplot", "Heatmap"); selects which internal plotting method is dispatched to.
-        :type plot_type: str
-        :param data: a pandas dataframe with column headers matching x_col, y_col, z_col
-        :type data: pd.DataFrame
-        :param cols: a sequence of strings corresponding to column headers in the dataframe
-        :type cols: Sequence[str]
-        :param units: a sequence of strings corresponding to column units in the dataframe
-        :type units: Sequence[Optional[str]]
-        :param logscales: a sequence of bools indicating whether the given axis should be logscaled
-        :type logscales: Sequence[bool]
-        :param dataset_label: string to label the dataset
-        :type dataset_label: str
-        :param bins: Number of bins (if sizes==False) or size of bins (if sizes==True) for use when binning. Arrives as a single-element list from the controls and is rebound to a scalar (or None, to fall back to an automatic estimate) in the body, hence the loose annotation.
-        :type bins: Any
-        :param sizes: does the bins parameter refer to bin sizes (True) or widths (False)
-        :type sizes: bool
-        :raises NotImplementedError: If plot_type is not one of the supported plot types.
-        """
-        axis_type = "3d" if plot_type == "3D Scatterplot" else "2d"
-        if not self._axes_valid(axis_type=axis_type):
-            self._reset_actions(axis_type=axis_type)
-        ax = self.axes
-
-        if plot_type in ["Histogram", "Normalized Histogram"]:
-            norm = False if plot_type != "Normalized Histogram" else True
-            self._plot_1d_histogram(
-                ax,
-                data,
-                cols,
-                units,
-                logscales,
-                dataset_label=dataset_label,
-                bins=bins,
-                sizes=sizes,
-                norm=norm,
-            )
-        elif plot_type == "Categorical Histogram":
-            self._plot_categorical_histogram(
-                ax, data, cols, units, dataset_label=dataset_label
-            )
-        elif plot_type == "Kernel Density Plot":
-            self._plot_1d_density(
-                ax,
-                data,
-                cols,
-                units,
-                logscales,
-                dataset_label=dataset_label,
-                bins=bins,
-                sizes=sizes,
-            )
-        elif plot_type == "Capture Rate":
-            try:
-                self._plot_capture_rate(
-                    ax,
-                    data,
-                    cols,
-                    units,
-                    logscales,
-                    dataset_label=dataset_label,
-                    bins=bins,
-                    sizes=sizes,
-                )
-            except ValueError:
-                self.add_text_to_display.emit(
-                    f"No data available to plot in {dataset_label} after filtering",
-                    self.__class__.__name__,
-                )
-        elif plot_type == "Scatterplot":
-            self._plot_scatterplot(
-                ax, data, cols, units, logscales, dataset_label=dataset_label
-            )
-        elif plot_type == "Heatmap":
-            self._plot_heatmap(
-                ax,
-                data,
-                cols,
-                units,
-                logscales,
-                dataset_label=dataset_label,
-                bins=bins,
-                sizes=sizes,
-            )
-        elif plot_type == "3D Scatterplot":
-            self._plot_3d_scatterplot(
-                ax, data, cols, units, logscales, dataset_label=dataset_label
-            )
-        else:
-            raise NotImplementedError(f"Plot type {plot_type} is not yet supported")
-
-        self.canvas.draw()
-        self._commit_cache()
 
     @log(logger=logger)
     @override
@@ -1402,417 +832,7 @@ class MetadataView(MetaSubsetTabView):
             )
 
     @log(logger=logger)
-    def plot_overlay(
-        self,
-        loader: str,
-        plot_type: str,
-        axes: List[Optional[str]],
-        logs: List[bool],
-        bins: Optional[List[Union[int, float]]],
-        sizes: bool,
-        filters: Dict[str, str],
-        scope: Dict[str, List[str]],
-    ) -> bool:
-        """
-        Draw an overlay from the intent the Controller recorded.
-
-        :param loader: the database loader plugin's key
-        :type loader: str
-        :param plot_type: the plot type chosen
-        :type plot_type: str
-        :param axes: the x, y and z columns, whichever the plot type uses
-        :type axes: List[Optional[str]]
-        :param logs: the x, y and z log-scale flags
-        :type logs: List[bool]
-        :param bins: a bin count, or a bin width when sizes is True, or None to estimate
-        :type bins: Optional[List[Union[int, float]]]
-        :param sizes: does bins refer to a bin width (True) or a count (False)
-        :type sizes: bool
-        :param filters: the selected filters, name to SQL
-        :type filters: Dict[str, str]
-        :param scope: the selected experiments and their channels
-        :type scope: Dict[str, List[str]]
-        :return: True if at least one dataset was drawn
-        :rtype: bool
-        """
-        x_axis, y_axis, z_axis = axes
-        x_log, y_log, z_log = logs
-        return self._overlay_plot(
-            {
-                "db_loader": loader,
-                "plot_type": plot_type,
-                "x_axis": x_axis,
-                "y_axis": y_axis,
-                "z_axis": z_axis,
-                "x_log": x_log,
-                "y_log": y_log,
-                "z_log": z_log,
-                "bins": bins,
-                "sizes": sizes,
-                "selected_filters": filters,
-                "experiments_and_channels": scope,
-            }
-        )
-
-    @log(logger=logger)
-    def _overlay_plot(self, parameters: Dict[str, Any]) -> bool:
-        """
-        Handle the creation of a new overlay plot based on the selected parameters.
-
-        :param parameters: A dictionary of plotting parameters selected by the user.
-        :type parameters: Dict[str, Any]
-        :return: True if at least one dataset was plotted, False otherwise - including when every requested dataset was skipped as already plotted, so that the caller can roll the recorded action back rather than leave an undo step that would restore an identical figure.
-        :rtype: bool
-        """
-
-        # The selection comes from the parameters, not the widgets, so a replay draws
-        # what was recorded; see _record_selection.
-        selected_filters = dict(parameters["selected_filters"])
-        loader = parameters["db_loader"]
-        plot_type = parameters["plot_type"]
-        experiments_and_channels: Optional[
-            Union[Dict[str, List[str]], Dict[Any, Any]]
-        ] = copy.deepcopy(parameters["experiments_and_channels"])
-
-        self.plot_initialized = True
-
-        if experiments_and_channels is None or len(experiments_and_channels) == 0:
-            experiments_and_channels = {None: [None]}
-
-        if selected_filters is None or selected_filters == {}:
-            selected_filters = {"Full Dataset": ""}
-
-        if plot_type in ["Raw Event Overlay", "Filtered Event Overlay", "Heatmap"]:
-            if len(experiments_and_channels) > 1:
-                self.logger.warning(
-                    f"Only a single experiment can be used for {plot_type}"
-                )
-                self.add_text_to_display.emit(
-                    f"Only a single experiment can be used for {plot_type}",
-                    self.__class__.__name__,
-                )
-                return False
-
-            for channels in experiments_and_channels.values():
-                if len(channels) > 1:
-                    self.logger.warning(
-                        f"Only a single channel can be used for {plot_type}"
-                    )
-                    self.add_text_to_display.emit(
-                        f"Only a single channel can be used for {plot_type}",
-                        self.__class__.__name__,
-                    )
-                    return False
-
-            if len(selected_filters) > 1:
-                self.add_text_to_display.emit(
-                    f"Only a single subset can be used for {plot_type}",
-                    self.__class__.__name__,
-                )
-                return False
-
-        # Tracks whether anything actually made it onto the axes. A click that
-        # skips every dataset as already-plotted must not leave a recorded
-        # action behind, or Undo would spend a step restoring the same figure.
-        plotted_any = False
-
-        for exp, channels in experiments_and_channels.items():
-            for channel in channels:
-                exp_and_ch_arg = {exp: [channel]}
-                # The selection tree hands back the channel as a display
-                # string; plotted_datasets keys on the real int channel id.
-                # Normalise once so the membership test and the insert below
-                # cannot disagree.
-                channel_id = int(channel) if channel is not None else None
-
-                for subset_name, sql_filter in selected_filters.items():
-                    bins = None
-
-                    dataset_label = (
-                        f"{loader} | {exp} Ch {channel}: {subset_name}"
-                        if exp is not None
-                        else f"{loader} | {subset_name}"
-                    )
-                    sizes = False
-                    columns: List[str] = []
-                    logscales: List[bool] = []
-
-                    if plot_type in self.metadata_plots:
-                        if plot_type in [
-                            "Kernel Density Plot",
-                            "Histogram",
-                            "Normalized Histogram",
-                            "Categorical Histogram",
-                        ]:
-                            columns = [parameters["x_axis"]]
-                            logscales = [parameters["x_log"]]
-                            bins = parameters["bins"]
-                            sizes = parameters["sizes"]
-
-                        elif plot_type in ["Scatterplot", "Heatmap"]:
-                            columns = [parameters["x_axis"], parameters["y_axis"]]
-                            logscales = [parameters["x_log"], parameters["y_log"]]
-                            bins = parameters["bins"]
-                            sizes = parameters["sizes"]
-
-                        elif plot_type in ["3D Scatterplot"]:
-                            columns = [
-                                parameters["x_axis"],
-                                parameters["y_axis"],
-                                parameters["z_axis"],
-                            ]
-                            logscales = [
-                                parameters["x_log"],
-                                parameters["y_log"],
-                                parameters["z_log"],
-                            ]
-
-                        elif plot_type in ["Capture Rate"]:
-                            columns = ["start_time"]
-                            logscales = [True]
-                            bins = parameters["bins"]
-                            sizes = parameters["sizes"]
-
-                        else:
-                            self.add_text_to_display.emit(
-                                f"Unsupported Plot Type: {plot_type}",
-                                self.__class__.__name__,
-                            )
-                            return False
-
-                        bin_sensitive = plot_type in [
-                            "Histogram",
-                            "Normalized Histogram",
-                            "Kernel Density Plot",
-                            "Capture Rate",
-                            "Heatmap",
-                        ]
-                        bins_changed = getattr(self, "allowed_bins", None) != bins
-                        sizes_changed = getattr(self, "allowed_sizes", None) != sizes
-
-                        # reset the plot if the plot options change or the figure is in an unexpected state
-                        axis_type = "3d" if plot_type == "3D Scatterplot" else "2d"
-                        axes_is_stale = len(
-                            self.figure.axes
-                        ) > 1 or not self._axes_valid(axis_type=axis_type)
-
-                        if (
-                            axes_is_stale
-                            or (
-                                self.allowed_columns
-                                and not all(
-                                    col in self.allowed_columns for col in columns
-                                )
-                            )
-                            or (
-                                self.allowed_logs
-                                and not all(
-                                    log in self.allowed_logs for log in logscales
-                                )
-                            )
-                            or (
-                                self.allowed_plot_type is not None
-                                and plot_type != self.allowed_plot_type
-                            )
-                            or (bin_sensitive and (bins_changed or sizes_changed))
-                        ):
-                            axis_type = "3d" if plot_type == "3D Scatterplot" else "2d"
-                            self._reset_actions(axis_type=axis_type)
-
-                        seen = set()
-                        for col in columns:
-                            if col in seen:
-                                QMessageBox.warning(
-                                    self,
-                                    "Duplicate Axis",
-                                    "All columns should be different for a meaningful plot "
-                                    f"(got '{col}' more than once).",
-                                )
-                                return False
-                            seen.add(col)
-
-                        if (
-                            self.plotted_datasets
-                            and (
-                                loader,
-                                exp,
-                                channel_id,
-                                sql_filter,
-                                subset_name,
-                            )
-                            in self.plotted_datasets
-                        ):  # do not overlay the same thing twice
-                            continue
-
-                        # All three cleared before asking, not just plot_data: the
-                        # Controller sets them only once the whole subset has been
-                        # fetched, so a partial failure leaves them empty rather than
-                        # holding the previous subset's query, rows or units. Clear
-                        # all three or none: clearing one and reading three back is how
-                        # a stale value gets drawn under a new label.
-                        self.query = ""
-                        self.plot_data = None
-                        self.column_units = None
-                        self.scope_note = ""
-                        self.metadata_subset_requested.emit(
-                            loader, columns, sql_filter, exp_and_ch_arg, subset_name
-                        )
-                        if self.query == "":
-                            return False
-
-                        dataset_label += self.scope_note
-                        if self.plot_data is None or self.plot_data.empty:
-                            self.add_text_to_display.emit(
-                                f"No data matching the subset {dataset_label}, skipping",
-                                self.__class__.__name__,
-                            )
-                            continue
-                        else:
-                            self.add_text_to_display.emit(
-                                f"{len(self.plot_data)} rows in subset {dataset_label}",
-                                self.__class__.__name__,
-                            )
-
-                        units = self.column_units
-                        if units is None:
-                            self.add_text_to_display.emit(
-                                f"Could not read the units of {columns} from {loader}",
-                                self.__class__.__name__,
-                            )
-                            return False
-
-                        if len(columns) != len(units):
-                            self.add_text_to_display.emit(
-                                "cols and units must have equal length",
-                                self.__class__.__name__,
-                            )
-                            return False
-                        if not all(col in self.plot_data.columns for col in columns):
-                            self.add_text_to_display.emit(
-                                f"All columns {columns} must be present in the provided dataframe",
-                                self.__class__.__name__,
-                            )
-                            return False
-
-                        self.update_plot(
-                            plot_type,
-                            self.plot_data,
-                            columns,
-                            units,
-                            logscales,
-                            dataset_label=dataset_label,
-                            bins=bins,
-                            sizes=sizes,
-                        )
-
-                    elif plot_type in self.event_data_plots:
-                        # Cleared for the same reason as the metadata group above.
-                        # The Controller sets it only once the subset has been
-                        # fetched *and* reduced, so a failure at either step leaves
-                        # it empty and the guard below rolls the action back.
-                        self.event_query = ""
-
-                        if plot_type in [
-                            "Raw All Points Histogram",
-                            "Normalized Raw All Points Histogram",
-                            "Filtered All Points Histogram",
-                            "Normalized Filtered All Points Histogram",
-                        ]:
-                            bins = parameters["bins"]
-                            sizes = parameters["sizes"]
-
-                            bin_sensitive = True
-                            bins_changed = getattr(self, "allowed_bins", None) != bins
-                            sizes_changed = (
-                                getattr(self, "allowed_sizes", None) != sizes
-                            )
-                            # A change of plot type resets here as it does for
-                            # the metadata plots above. Without it, `hist_data`
-                            # kept whatever the previous type left in it, and the
-                            # shapes are not interchangeable: the 1-D paths store
-                            # a column and this one stores an (x, y) pair, so
-                            # drawing a histogram and then an all-points
-                            # histogram unpacked a bare array as a pair and
-                            # raised "too many values to unpack".
-                            plot_type_changed = (
-                                self.allowed_plot_type is not None
-                                and plot_type != self.allowed_plot_type
-                            )
-                            if plot_type_changed or (
-                                bin_sensitive and (bins_changed or sizes_changed)
-                            ):
-                                axis_type = (
-                                    "3d"
-                                    if isinstance(getattr(self, "axes", None), Axes3D)
-                                    else "2d"
-                                )
-                                self._reset_actions(axis_type=axis_type)
-
-                            # After the reset, so the limits handed down are the ones
-                            # this plot is actually accumulating against.
-                            self.all_points_histogram_requested.emit(
-                                loader,
-                                sql_filter,
-                                exp_and_ch_arg,
-                                plot_type,
-                                bins,
-                                sizes,
-                                self.hist_min,
-                                self.hist_max,
-                                dataset_label,
-                                subset_name,
-                            )
-
-                        elif plot_type in [
-                            "Raw Event Overlay",
-                            "Filtered Event Overlay",
-                        ]:
-                            # A change of plot type resets here as it does
-                            # everywhere else in this method. Checking only that
-                            # the axes are *valid* is not enough: a 2-D axes still
-                            # carrying an all-points histogram's line is perfectly
-                            # valid, so the overlay drew straight over it and two
-                            # unrelated pictures ended up superimposed.
-                            plot_type_changed = (
-                                self.allowed_plot_type is not None
-                                and plot_type != self.allowed_plot_type
-                            )
-                            if plot_type_changed or not self._axes_valid(
-                                axis_type="2d"
-                            ):
-                                self._reset_actions(axis_type="2d")
-                            self.event_overlay_requested.emit(
-                                loader,
-                                sql_filter,
-                                exp_and_ch_arg,
-                                plot_type,
-                                subset_name,
-                            )
-
-                        if self.event_query == "":
-                            return False
-
-                    self.allowed_plot_type = plot_type
-                    self.allowed_bins = bins
-                    self.allowed_sizes = sizes
-
-                    if plot_type in self.metadata_plots:
-                        self.allowed_columns = columns
-                        self.allowed_logs = logscales
-                    else:
-                        # event plots don't have metadata axes/log flags
-                        self.allowed_columns = []
-                        self.allowed_logs = []
-
-                    self.plotted_datasets.add(
-                        (loader, exp, channel_id, sql_filter, subset_name)
-                    )
-                    plotted_any = True
-
-        return plotted_any
-
-    @log(logger=logger)
-    def set_all_points_histogram(
+    def show_all_points_histogram(
         self,
         bincenters: npt.NDArray[np.float64],
         counts: npt.NDArray[np.float64],
@@ -1824,7 +844,7 @@ class MetadataView(MetaSubsetTabView):
         """
         Draw one subset's all-points histogram, and take the limits it widened.
 
-        The answering half of ``all_points_histogram_requested``. The tally is made by
+        The tally is made by
         :meth:`MetadataModel.build_all_points_histogram`, because walking a subset's
         events and binning every sample of them is aggregation rather than drawing, and
         the result is exported with the plot.
@@ -1872,27 +892,14 @@ class MetadataView(MetaSubsetTabView):
         self._commit_cache()
 
     @log(logger=logger)
-    def set_column_type(self, column_type: Optional[str]) -> None:
-        """
-        Receive the type asked for by ``column_type_requested``.
-
-        Set only when the lookup succeeded, so the ``None`` the caller cleared it to
-        survives a failure and the categorical guard refuses the plot.
-
-        :param column_type: SQL type name of the queried column, or None on failure.
-        :type column_type: Optional[str]
-        """
-        self.column_type = column_type
-
-    @log(logger=logger)
-    def set_event_overlay(
+    def show_event_overlay(
         self,
         traces: Sequence[Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]],
     ) -> None:
         """
         Overlay one subset's event traces on a shared normalised time axis.
 
-        The answering half of ``event_overlay_requested``. The baseline subtraction and
+        The baseline subtraction and
         the per-event time base are made by :meth:`MetadataModel.build_event_overlay` -
         both are exported with the plot; what is left here is the drawing,
         including the alpha each trace is given - a shorter event is drawn more
@@ -1999,24 +1006,6 @@ class MetadataView(MetaSubsetTabView):
             raise NotImplementedError("No new axis for you")
             # self._undo_plot()
         elif action_name == "update_plot":
-            if parameters.get("plot_type") == "Categorical Histogram":
-                loader = parameters["db_loader"]
-                x_axis_col = parameters["x_axis"]
-
-                # Cleared first: the Controller sets it only when the lookup
-                # succeeded, so a failure reads as "not a categorical column"
-                # rather than as the previous column's type.
-                self.column_type = None
-                self.column_type_requested.emit(loader, x_axis_col)
-
-                if not self.is_categorical_type(self.column_type):
-                    self.add_text_to_display.emit(
-                        f"Categorical histograms can only be plotted for columns that correspond to discrete values: {x_axis_col} has type {self.column_type}",
-                        self.__class__.__name__,
-                    )
-                    # Exit immediately out of handle_parameter_change.
-                    # This prevents _overlay_plot from running and avoids the history rollback entirely.
-                    return
             self._record_selection(parameters)
             self.overlay_plot_requested.emit(
                 parameters["db_loader"],
@@ -2594,40 +1583,6 @@ class MetadataView(MetaSubsetTabView):
         if not loader or loader == "No Event Database":
             return
         self.column_units_requested.emit(loader, column, axis)
-
-    @log(logger=logger)
-    def set_column_units(self, units: List[Optional[str]]) -> None:
-        """
-        Receive one units string per plotted column, in the columns' own order.
-
-        One list in one call, rather than one string per round trip accumulated here.
-        Accumulating them meant a lookup that failed appended the *previous* column's
-        units instead of nothing, and the axis was labelled with the wrong unit; handed
-        over together, the count either matches the columns or the answer is missing
-        entirely.
-
-        :param units: one units string per column, None where the loader has none
-        :type units: List[Optional[str]]
-        :return: None
-        :rtype: None
-        """
-        self.column_units = units
-
-    @log(logger=logger)
-    def set_scope_note(self, note: str) -> None:
-        """
-        Receive text to add to the next dataset's label.
-
-        Said by the Controller for a raw query that does not use the Scope selection:
-        the dataset is named after the channel that was ticked, and its rows are not that
-        channel's.
-
-        :param note: text appended to the label, empty for none
-        :type note: str
-        :return: None
-        :rtype: None
-        """
-        self.scope_note = note
 
     @log(logger=logger)
     def update_available_columns(self, loader: str) -> None:

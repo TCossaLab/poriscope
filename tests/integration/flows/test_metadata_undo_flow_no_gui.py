@@ -140,7 +140,14 @@ def count_queries(triad: Triad) -> List[Any]:
     :rtype: List[Any]
     """
     queries: List[Any] = []
-    triad.tab_view.metadata_subset_requested.connect(lambda *args: queries.append(args))
+    controller = triad.tab_controller
+    fetch = controller.load_metadata_subset
+
+    def counted(*args: Any, **kwargs: Any) -> Any:
+        queries.append(args)
+        return fetch(*args, **kwargs)
+
+    controller.load_metadata_subset = counted  # type: ignore[method-assign]
     return queries
 
 

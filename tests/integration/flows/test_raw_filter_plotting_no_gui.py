@@ -254,8 +254,8 @@ def test_a_documented_raw_filter_plots_exactly_its_own_rows_in_the_selected_chan
 
     view = metadata_tab.tab_view
     assert {(entry[2], entry[4]) for entry in view.plotted_datasets} == {(0, name)}
-    assert len(view.plot_data) == rows_for(sample_metadata_db, query, 0)
-    assert column in view.plot_data.columns
+    # The histogram keeps each dataset's raw column, so its length is the rows plotted.
+    assert len(view.hist_data[-1]) == rows_for(sample_metadata_db, query, 0)
 
 
 @pytest.mark.timeout(120)
@@ -288,7 +288,7 @@ def test_a_raw_filter_that_ignores_the_selection_is_warned_about_and_still_plots
     view = metadata_tab.tab_view
     with sqlite3.connect(sample_metadata_db) as conn:
         everything = conn.execute("SELECT COUNT(*) FROM events").fetchone()[0]
-    assert len(view.plot_data) == everything
+    assert len(view.hist_data[-1]) == everything
     assert any("has no effect on it" in line for line in lines)
 
 
@@ -326,8 +326,14 @@ def test_a_raw_filter_plots_an_all_points_histogram_of_the_selected_events(
 ) -> None:
     """
     Event-data plots take the events the query names for the selected channel; it
-    returns only ``event_id``, because it scoped itself.
+    returns only ``event_id``, because it scoped itself. The query that ran is the one
+    the status panel shows.
     """
+    lines: List[str] = []
+    metadata_tab.tab_controller.add_text_to_display.connect(
+        lambda text, source: lines.append(text)
+    )
+
     plot(
         metadata_tab,
         "events_raw",
@@ -340,7 +346,7 @@ def test_a_raw_filter_plots_an_all_points_histogram_of_the_selected_events(
     assert {(entry[2], entry[4]) for entry in view.plotted_datasets} == {
         (1, "events_raw")
     }
-    assert "channel_id = 1" in view.event_query
+    assert any("channel_id = 1" in line for line in lines)
     assert view.hist_max is not None
 
 

@@ -1,0 +1,486 @@
+"""
+Metadata tab, headless: what one recorded overlay plot draws, refuses and reports.
+
+``MetadataController.overlay_plot`` is the recorded action behind Update Plot. These tests
+call it the way a replay does, with the intent a click recorded, against a real Metadata
+tab, a real ``SQLiteDBLoader`` and the synthetic database. They assert on what a user can
+see - which datasets are on the figure, what was drawn, what the status panel said, what
+the history recorded - so they hold whichever layer the loop, its reset-or-add decision
+and its bookkeeping live in.
+"""
+
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Set, Tuple
+
+import numpy as np
+import pytest
+
+from poriscope.plugins.analysistabs.MetadataView import MetadataView
+from poriscope.plugins.db_loaders.SQLiteDBLoader import SQLiteDBLoader
+from tests.integration.flows._triad import Triad, build_triad
+
+LOADER = "loader"
+FILTERS = {
+    "F0": "duration >= 0",
+    "F1": "duration >= 1",
+    "none": "duration >= 999999999",
+}
+ALL_PLOT_TYPES = [
+    "Histogram",
+    "Normalized Histogram",
+    "Categorical Histogram",
+    "Kernel Density Plot",
+    "Capture Rate",
+    "Heatmap",
+    "Scatterplot",
+    "3D Scatterplot",
+    "Raw Event Overlay",
+    "Filtered Event Overlay",
+    "Raw All Points Histogram",
+    "Normalized Raw All Points Histogram",
+    "Filtered All Points Histogram",
+    "Normalized Filtered All Points Histogram",
+]
+
+
+@pytest.fixture
+def tab(qapp: Any, tmp_path: Path, sample_metadata_db: str, monkeypatch) -> Triad:
+    """
+    A Metadata tab with a real loader over the synthetic database, and a few filters.
+
+    A warning box would block a headless run, so ``QMessageBox.warning`` records its
+    calls instead of opening; ``tab.warnings`` holds them.
+    """
+    triad = build_triad("MetadataController", tmp_path)
+    loader = SQLiteDBLoader()
+    settings = loader.get_empty_settings(standalone=True)
+    settings["Input File"]["Value"] = sample_metadata_db
+    loader.apply_settings(settings)
+    triad.register(loader, "MetaDatabaseLoader", LOADER)
+    for name, query in FILTERS.items():
+        triad.tab_view.subset_filters[name] = query
+        triad.tab_view._subset_controls.filter_comboBox.addItem(name)
+
+    warnings: List[Tuple[Any, ...]] = []
+    monkeypatch.setattr(
+        "PySide6.QtWidgets.QMessageBox.warning",
+        lambda *args, **kwargs: warnings.append(args),
+    )
+    said: List[str] = []
+    triad.tab_view.add_text_to_display.connect(lambda text, source: said.append(text))
+    triad.tab_controller.add_text_to_display.connect(
+        lambda text, source: said.append(text)
+    )
+    triad.warnings = warnings  # type: ignore[attr-defined]
+    triad.said = said  # type: ignore[attr-defined]
+
+    yield triad
+
+    triad.close()
+
+
+def overlay(
+    triad: Triad,
+    plot_type: str = "Histogram",
+    filters: Optional[List[str]] = None,
+    channels: Optional[List[str]] = None,
+    axes: Optional[List[str]] = None,
+    logs: Optional[List[bool]] = None,
+    bins: Any = "default",
+    sizes: bool = False,
+    scope: Optional[Dict[str, List[str]]] = None,
+) -> bool:
+    """Run the recorded overlay with this intent, as a replay does."""
+    names = ["F0"] if filters is None else filters
+    return triad.tab_controller.overlay_plot(
+        loader=LOADER,
+        plot_type=plot_type,
+        axes=axes or ["max_deviation", "start_time", "max_blockage"],
+        logs=logs or [False, False, False],
+        bins=[20] if bins == "default" else bins,
+        sizes=sizes,
+        filters={name: FILTERS[name] for name in names},
+        scope=({"exp_a": channels or ["0"]} if scope is None else scope),
+    )
+
+
+def on_figure(triad: Triad) -> Set[Tuple[Optional[int], str]]:
+    """The datasets the figure holds, as (channel, filter name) pairs."""
+    return {(entry[2], entry[4]) for entry in triad.tab_view.plotted_datasets}
+
+
+def history(triad: Triad) -> List[str]:
+    return [
+        entry["action"] for entry in triad.tab_controller.tab_action_history.values()
+    ]
+
+
+def drawn(triad: Triad) -> int:
+    """How many artists the figure's axes carry: lines, bars, images and points."""
+    total = 0
+    for ax in triad.tab_view.figure.axes:
+        total += len(ax.lines) + len(ax.patches) + len(ax.images) + len(ax.collections)
+    return total
+
+
+# ------------------------------------------------------------------ every plot type
+
+
+@pytest.mark.timeout(120)
+@pytest.mark.parametrize(
+    "plot_type", [p for p in ALL_PLOT_TYPES if p != "Capture Rate"]
+)
+def test_every_plot_type_draws_one_dataset(tab: Triad, plot_type: str) -> None:
+    """
+    Columns that vary; every event has the same duration in the synthetic data. Capture
+    Rate is in the failure test below: the synthetic events are evenly spaced, so every
+    inter-event gap is the same and no bin count fits them.
+    """
+    axes = ["max_deviation", "start_time", "max_blockage"]
+    if plot_type == "Categorical Histogram":
+        axes = ["event_id", "start_time", "max_blockage"]
+
+    assert overlay(tab, plot_type, axes=axes) is True
+
+    assert on_figure(tab) == {(0, "F0")}
+    assert drawn(tab) > 0
+
+
+# ------------------------------------------------------------------ loop and labels
+
+
+@pytest.mark.timeout(120)
+def test_two_filters_are_two_datasets_on_one_figure(tab: Triad) -> None:
+    overlay(tab, filters=["F0", "F1"])
+
+    assert on_figure(tab) == {(0, "F0"), (0, "F1")}
+    assert any("rows in subset loader | exp_a Ch 0: F0" in s for s in tab.said)
+
+
+@pytest.mark.timeout(120)
+def test_two_channels_are_two_datasets(tab: Triad) -> None:
+    overlay(tab, channels=["0", "1"])
+
+    assert on_figure(tab) == {(0, "F0"), (1, "F0")}
+
+
+@pytest.mark.timeout(120)
+def test_no_filter_means_the_full_dataset(tab: Triad) -> None:
+    overlay(tab, filters=[])
+
+    assert on_figure(tab) == {(0, "Full Dataset")}
+
+
+@pytest.mark.timeout(120)
+def test_no_scope_is_refused_by_the_loader_and_draws_nothing(tab: Triad) -> None:
+    """
+    An empty scope becomes one dataset with no experiment, which the loader cannot
+    query. The panel fills the scope when a loader is chosen, so a click never sends one.
+    """
+    assert overlay(tab, scope={}) is False
+
+    assert on_figure(tab) == set()
+    assert any("Could not build the query for this subset" in s for s in tab.said)
+
+
+@pytest.mark.timeout(120)
+@pytest.mark.parametrize(
+    "plot_type, message",
+    [
+        ("Kernel Density Plot", "Unable to estimate the density"),
+        ("Capture Rate", "Unable to fit the capture rate"),
+    ],
+)
+def test_a_dataset_whose_computation_fails_is_not_counted_as_drawn(
+    tab: Triad, plot_type: str, message: str
+) -> None:
+    """
+    Every event has the same duration, so its density cannot be estimated, and the
+    events are evenly spaced, so the capture rate has nothing to fit. That is said, and
+    the dataset is not recorded as on the figure, or plotting it again would be skipped
+    as already plotted.
+    """
+    axes = ["duration", "start_time", "max_deviation"]
+
+    assert overlay(tab, plot_type, axes=axes, bins=None) is False
+
+    assert on_figure(tab) == set()
+    assert tab.tab_view.hist_data == []
+    assert any(message in s for s in tab.said)
+
+
+@pytest.mark.timeout(120)
+def test_a_subset_with_no_rows_is_said_and_skipped(tab: Triad) -> None:
+    assert overlay(tab, filters=["none", "F0"]) is True
+
+    assert on_figure(tab) == {(0, "F0")}
+    assert any("No data matching the subset" in s for s in tab.said)
+
+
+@pytest.mark.timeout(120)
+def test_only_an_empty_subset_draws_nothing(tab: Triad) -> None:
+    assert overlay(tab, filters=["none"]) is False
+
+    assert on_figure(tab) == set()
+
+
+@pytest.mark.timeout(120)
+def test_a_dataset_already_on_the_figure_is_skipped(tab: Triad) -> None:
+    overlay(tab)
+    before = drawn(tab)
+
+    assert overlay(tab) is False
+
+    assert on_figure(tab) == {(0, "F0")}
+    assert drawn(tab) == before
+
+
+# ------------------------------------------------------------------ reset or add
+
+
+@pytest.mark.timeout(120)
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"axes": ["start_time", "max_deviation", "max_blockage"]},
+        {"logs": [True, False, False]},
+        {"plot_type": "Kernel Density Plot"},
+        {"bins": [7]},
+        {"bins": [0.5], "sizes": True},
+    ],
+    ids=["column", "log flag", "plot type", "bins", "sizes"],
+)
+def test_a_changed_option_starts_a_new_figure(
+    tab: Triad, change: Dict[str, Any]
+) -> None:
+    overlay(tab, filters=["F0"])
+
+    overlay(tab, filters=["F1"], **change)
+
+    assert on_figure(tab) == {(0, "F1")}
+    assert history(tab)[-2:] == ["reset", "overlay_plot"]
+
+
+@pytest.mark.timeout(120)
+def test_axes_that_cannot_take_the_plot_start_a_new_figure(tab: Triad) -> None:
+    """A figure holding more than one axes - an event grid - is reset first."""
+    overlay(tab, filters=["F0"])
+    tab.tab_view.figure.add_subplot(2, 1, 2)
+
+    overlay(tab, filters=["F1"])
+
+    assert on_figure(tab) == {(0, "F1")}
+    assert history(tab)[-2:] == ["reset", "overlay_plot"]
+
+
+@pytest.mark.timeout(120)
+def test_an_all_points_bins_change_starts_a_new_figure(tab: Triad) -> None:
+    overlay(tab, "Raw All Points Histogram", filters=["F0"])
+
+    overlay(tab, "Raw All Points Histogram", filters=["F1"], bins=[7])
+
+    assert on_figure(tab) == {(0, "F1")}
+
+
+@pytest.mark.timeout(120)
+def test_a_bins_change_does_not_reset_a_plot_that_ignores_bins(tab: Triad) -> None:
+    overlay(tab, "Scatterplot", filters=["F0"])
+
+    overlay(tab, "Scatterplot", filters=["F1"], bins=[7])
+
+    assert on_figure(tab) == {(0, "F0"), (0, "F1")}
+
+
+@pytest.mark.timeout(120)
+def test_an_event_overlay_after_another_plot_type_starts_a_new_figure(
+    tab: Triad,
+) -> None:
+    overlay(tab, "Raw All Points Histogram")
+
+    overlay(tab, "Raw Event Overlay", filters=["F1"])
+
+    assert on_figure(tab) == {(0, "F1")}
+
+
+@pytest.mark.timeout(120)
+def test_a_second_event_overlay_of_the_same_type_adds_to_the_figure(
+    tab: Triad,
+) -> None:
+    overlay(tab, "Raw Event Overlay", filters=["F0"])
+    resets = history(tab).count("reset")
+
+    overlay(tab, "Raw Event Overlay", filters=["F1"])
+
+    assert on_figure(tab) == {(0, "F0"), (0, "F1")}
+    assert history(tab).count("reset") == resets
+
+
+# ------------------------------------------------------------------ refusals
+
+
+@pytest.mark.timeout(120)
+@pytest.mark.parametrize("plot_type", ["Heatmap", "Raw Event Overlay"])
+def test_a_single_dataset_type_refuses_two_filters(tab: Triad, plot_type: str) -> None:
+    assert overlay(tab, plot_type, filters=["F0", "F1"]) is False
+
+    assert on_figure(tab) == set()
+    assert any("Only a single subset" in s for s in tab.said)
+
+
+@pytest.mark.timeout(120)
+@pytest.mark.parametrize("plot_type", ["Heatmap", "Filtered Event Overlay"])
+def test_a_single_dataset_type_refuses_two_channels(tab: Triad, plot_type: str) -> None:
+    assert overlay(tab, plot_type, channels=["0", "1"]) is False
+
+    assert any("Only a single channel" in s for s in tab.said)
+
+
+@pytest.mark.timeout(120)
+def test_a_single_dataset_type_refuses_two_experiments(tab: Triad) -> None:
+    assert overlay(tab, "Heatmap", scope={"exp_a": ["0"], "exp_b": ["0"]}) is False
+
+    assert any("Only a single experiment" in s for s in tab.said)
+
+
+@pytest.mark.timeout(120)
+def test_an_unsupported_plot_type_is_refused(tab: Triad) -> None:
+    assert overlay(tab, "Pie Chart") is False
+
+    assert any("Unsupported Plot Type" in s for s in tab.said)
+
+
+@pytest.mark.timeout(120)
+def test_the_same_column_twice_is_refused_before_the_figure_is_touched(
+    tab: Triad,
+) -> None:
+    """Said on the status panel, with no dialog, and the figure keeps what it had."""
+    overlay(tab, "Histogram", filters=["F0"])
+
+    refused = overlay(
+        tab,
+        "Scatterplot",
+        filters=["F1"],
+        axes=["duration", "duration", "max_deviation"],
+    )
+
+    assert refused is False
+    assert on_figure(tab) == {(0, "F0")}
+    assert tab.warnings == []  # type: ignore[attr-defined]
+    assert any("All columns should be different" in s for s in tab.said)
+
+
+@pytest.mark.timeout(120)
+@pytest.mark.parametrize(
+    "plot_type", ["Histogram", "Kernel Density Plot", "Capture Rate"]
+)
+def test_an_empty_bins_entry_is_reported_and_draws_nothing(
+    tab: Triad, plot_type: str
+) -> None:
+    """Typing only "," in Bins passes the panel's check and arrives as an empty list."""
+    assert overlay(tab, plot_type, bins=[]) is False
+
+    assert on_figure(tab) == set()
+    assert any("Invalid bins entry" in s for s in tab.said)
+
+
+# ------------------------------------------------------------------ categorical, from a click
+
+
+@pytest.mark.timeout(120)
+def test_a_click_for_a_categorical_histogram_of_a_real_column_is_refused_unrecorded(
+    tab: Triad,
+) -> None:
+    before = history(tab)
+
+    tab.tab_controller.request_overlay_plot(
+        LOADER,
+        "Categorical Histogram",
+        ["duration", "duration", "duration"],
+        [False, False, False],
+        None,
+        False,
+        {"F0": FILTERS["F0"]},
+        {"exp_a": ["0"]},
+    )
+
+    assert history(tab) == before
+    assert on_figure(tab) == set()
+    assert any("Categorical histograms can only be plotted" in s for s in tab.said)
+
+
+@pytest.mark.timeout(120)
+def test_a_click_for_a_categorical_histogram_of_an_integer_column_plots(
+    tab: Triad,
+) -> None:
+    tab.tab_controller.request_overlay_plot(
+        LOADER,
+        "Categorical Histogram",
+        ["event_id", "event_id", "event_id"],
+        [False, False, False],
+        None,
+        False,
+        {"F0": FILTERS["F0"]},
+        {"exp_a": ["0"]},
+    )
+
+    assert on_figure(tab) == {(0, "F0")}
+    assert history(tab)[-1] == "overlay_plot"
+
+
+# ------------------------------------------------------------------ labels
+
+
+@pytest.mark.timeout(120)
+@pytest.mark.parametrize(
+    "plot_type, x_label, y_label",
+    [
+        ("Kernel Density Plot", "log10(max_deviation (pA))", "Probability Density"),
+        ("Scatterplot", "log10(max_deviation (pA))", "start_time (s)"),
+        ("Heatmap", "log10(max_deviation (pA))", "start_time (s)"),
+        ("Normalized Raw All Points Histogram", "Current (pA)", "Normalized Count"),
+    ],
+)
+def test_the_axis_labels_carry_units_and_the_log_scale(
+    tab: Triad, plot_type: str, x_label: str, y_label: str
+) -> None:
+    overlay(tab, plot_type, logs=[True, False, False])
+
+    ax = tab.tab_view.axes
+    assert ax.get_xlabel() == x_label
+    assert ax.get_ylabel() == y_label
+
+
+# ------------------------------------------------------------------ what is exported
+
+
+@pytest.mark.timeout(120)
+def test_a_normalised_all_points_histogram_exports_what_it_draws(tab: Triad) -> None:
+    overlay(tab, "Normalized Raw All Points Histogram")
+
+    line = tab.tab_view.axes.get_lines()[0]
+    exported = tab.tab_view.data_cache[1]
+    np.testing.assert_allclose(np.asarray(exported), line.get_ydata())
+    assert np.max(line.get_ydata()) == pytest.approx(1.0)
+
+
+# ------------------------------------------------------------------ the requests are gone
+
+
+@pytest.mark.parametrize(
+    "signal",
+    [
+        "metadata_subset_requested",
+        "column_type_requested",
+        "histogram_bins_requested",
+        "density_requested",
+        "categorical_counts_requested",
+        "heatmap_requested",
+        "capture_rate_requested",
+        "scatterplot_3d_requested",
+        "all_points_histogram_requested",
+        "event_overlay_requested",
+    ],
+)
+def test_the_view_no_longer_asks_the_controller_for_each_dataset(signal: str) -> None:
+    """The Controller runs the loop, so it calls the Model and the View directly."""
+    assert not hasattr(MetadataView, signal)

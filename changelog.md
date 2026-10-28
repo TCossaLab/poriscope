@@ -87,6 +87,8 @@
 
 * **Breaking:** Metadata's plot requests no longer carry the plot's `Axes`: `heatmap_requested`, `capture_rate_requested`, `scatterplot_3d_requested`, `histogram_bins_requested`, `density_requested`, `categorical_counts_requested` and the `MetadataController` slots they reach lose their `ax` argument, and the `MetadataView` methods that answer them are renamed from `set_*` to `show_*` (`show_heatmap`, `show_capture_rate`, `show_3d_scatterplot`, `show_histogram_bins`, `show_kernel_densities`, `show_categorical_counts`), which draw on the View's own axes
 
+* **Breaking:** Metadata's overlay loop, its reset-or-add decision and the subset fetch run in `MetadataController.overlay_plot`: the View's ten per-dataset request signals, `_overlay_plot`, `update_plot`, the `_plot_*` methods and `set_column_type`, `set_column_units` and `set_scope_note` are gone; `load_metadata_subset` returns a `MetadataSubset`, the compute methods and `build_all_points_histogram`/`build_event_overlay` return whether they drew and are no longer slots, `request_column_type` is gone, `set_all_points_histogram`/`set_event_overlay` become `show_all_points_histogram`/`show_event_overlay`, `show_categorical_counts` takes the newest dataset and accumulates it, and the recorded reset is `MetadataView.reset_plot`
+
 ### Developer Tooling:
 
 * The release workflow now runs only when a version tag is pushed
@@ -242,6 +244,12 @@
 * The Metadata and Protein event navigation arrows now refuse a scope with more than one experiment, channel or filter, as Plot Events does, instead of moving the Event ID without plotting
 
 * Closing the Metadata and Protein experiment and channel selection with nothing ticked now keeps the previous selection and says so, instead of leaving an empty selection that every plot refused and that reopening the selection silently re-ticked in full
+
+* The Metadata tab's normalised all-points histograms now export the curves as they are drawn, each with its peak at 1
+
+* A Metadata plot whose calculation fails - a density with nothing to estimate, a capture rate with nothing to fit - is no longer counted as drawn, so plotting it again is not skipped
+
+* A Metadata plot with a Bins entry that holds no number (only a comma), or the same column on two axes, is now refused on the status panel instead of raising an error or opening a dialog, and the figure is left as it was
 
 * **Fixed the Metadata tab's capture-rate plot always reporting at least one row dropped by the log filter, even when nothing was dropped**; the count now excludes the one fewer interval than event that n events always produce
 
