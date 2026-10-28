@@ -201,8 +201,10 @@ of every session, so it should stay a short list of standing rules.
 **Load the `planning-and-executing-changes` skill for most planning and execution tasks** -
 any fix, feature, design discussion, review, investigation or release step beyond a typo,
 from the first message about it, even when no plan or code is wanted yet. It holds the general
-method and its lessons; `refactoring-codebases` builds on it for refactors. Five of its rules
-hold in every session:
+method and its lessons; `refactoring-codebases` builds on it for refactors. Both live in
+`.claude/skills/` beside `plugin-architecture` and are tracked in git: edit the repo copy, and
+do not keep a same-named copy in `~/.claude/skills/`, because a personal skill shadows the
+project one for the bare name. Five of its rules hold in every session:
 
 - Re-derive every inherited claim - plan figures, handoff notes, subagent reports, comments, a
   user's diagnosis, your own earlier reasoning - before building on it.
@@ -214,7 +216,9 @@ hold in every session:
   they surfaced rather than filing them.
 - Code, comments and tests never cite a plan document or its step numbers; describe the mechanism.
 
-A lesson learned here that generalises beyond Poriscope goes into those skills, not this file.
+A lesson learned here that generalises beyond Poriscope goes into those skills, not this file;
+load the `building-skills` skill (also under `.claude/skills/`) before adding a lesson to a skill or
+creating, moving, syncing or checking one.
 
 ## General Instructions
 
