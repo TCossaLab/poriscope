@@ -40,7 +40,6 @@ from typing import (
 
 import numpy as np
 import numpy.typing as npt
-from matplotlib.axes import Axes
 from PySide6.QtCore import Slot
 
 from poriscope.plugins.analysistabs.MetadataModel import MetadataModel
@@ -307,7 +306,7 @@ class MetadataController(MetaSubsetTabController):
         self.view.show_3d_scatterplot(filtered, axis_labels, dataset_label)
 
     @log(logger=logger)
-    @Slot(object, bool, object, bool, object, object, object, str, str, str)
+    @Slot(object, bool, object, bool, object, object, str, str, str)
     def estimate_kernel_densities(
         self,
         datasets: Sequence[npt.NDArray[np.float64]],
@@ -316,7 +315,6 @@ class MetadataController(MetaSubsetTabController):
         sizes: bool,
         hist_min: Optional[float],
         hist_max: Optional[float],
-        ax: Axes,
         x_label: str,
         column: str,
         dataset_label: str,
@@ -324,8 +322,8 @@ class MetadataController(MetaSubsetTabController):
         """
         Filter every overlaid dataset, then estimate each one's density.
 
-        A request slot, the same shape as :meth:`calculate_heatmap`. The drawing context
-        arrives and departs unchanged; this slot marshals and does not interpret it.
+        A request slot, the same shape as :meth:`calculate_heatmap`. The labels arrive
+        and depart unchanged; this slot marshals and does not interpret them.
 
         The newest dataset is the last of ``datasets`` and has not been accumulated
         by the View yet, so a subset that loses every point to the filter is refused
@@ -343,8 +341,6 @@ class MetadataController(MetaSubsetTabController):
         :type hist_min: Optional[float]
         :param hist_max: the shared upper limit so far, or None for the first dataset
         :type hist_max: Optional[float]
-        :param ax: the axis object the View will draw on
-        :type ax: Axes
         :param x_label: the x axis label, already formatted
         :type x_label: str
         :param column: the column's own name, for the message when nothing survives
@@ -387,12 +383,12 @@ class MetadataController(MetaSubsetTabController):
             )
             return
 
-        self.view.set_kernel_densities(
-            datasets[-1], dataset_label, densities, hist_min, hist_max, ax, x_label
+        self.view.show_kernel_densities(
+            datasets[-1], dataset_label, densities, hist_min, hist_max, x_label
         )
 
     @log(logger=logger)
-    @Slot(object, bool, object, bool, object, object, bool, object, str, str, str)
+    @Slot(object, bool, object, bool, object, object, bool, str, str, str)
     def calculate_histogram_bins(
         self,
         datasets: Sequence[npt.NDArray[np.float64]],
@@ -402,7 +398,6 @@ class MetadataController(MetaSubsetTabController):
         hist_min: Optional[float],
         hist_max: Optional[float],
         norm: bool,
-        ax: Axes,
         x_label: str,
         column: str,
         dataset_label: str,
@@ -429,8 +424,6 @@ class MetadataController(MetaSubsetTabController):
         :type hist_max: Optional[float]
         :param norm: normalise each dataset to a fraction rather than a count
         :type norm: bool
-        :param ax: the axis object the View will draw on
-        :type ax: Axes
         :param x_label: the x axis label, already formatted
         :type x_label: str
         :param column: the column's own name, for the message when nothing survives
@@ -472,7 +465,7 @@ class MetadataController(MetaSubsetTabController):
             )
             return
 
-        self.view.set_histogram_bins(
+        self.view.show_histogram_bins(
             datasets[-1],
             dataset_label,
             bincenters,
@@ -480,28 +473,25 @@ class MetadataController(MetaSubsetTabController):
             counts,
             hist_min,
             hist_max,
-            ax,
             x_label,
             logx,
             norm,
         )
 
     @log(logger=logger)
-    @Slot(object, object, object, str, str)
+    @Slot(object, object, str, str)
     def count_categories(
         self,
         datasets: List[npt.NDArray[Any]],
         labels: List[str],
-        ax: Axes,
         x_label: str,
         y_label: str,
     ) -> None:
         """
         Tally each overlaid dataset's categories, and hand them back to be drawn.
 
-        A request slot, the same shape as :meth:`estimate_kernel_densities`. The drawing
-        context arrives and departs unchanged; this slot marshals and does not interpret
-        it.
+        A request slot, the same shape as :meth:`estimate_kernel_densities`. The labels
+        arrive and depart unchanged; this slot marshals and does not interpret them.
 
         A column of a type the tally cannot sort raises out of the Model and is reported
         here rather than escaping a Qt slot - which is what used to happen, since
@@ -511,8 +501,6 @@ class MetadataController(MetaSubsetTabController):
         :type datasets: List[npt.NDArray[Any]]
         :param labels: one label per dataset, index-aligned with datasets
         :type labels: List[str]
-        :param ax: the axis object the View will draw on
-        :type ax: Axes
         :param x_label: the x axis label, already formatted
         :type x_label: str
         :param y_label: the y axis label
@@ -528,7 +516,7 @@ class MetadataController(MetaSubsetTabController):
                 f"Unable to count categories: {e}", self.__class__.__name__
             )
             return
-        self.view.set_categorical_counts(counts, labels, ax, x_label, y_label)
+        self.view.show_categorical_counts(counts, labels, x_label, y_label)
 
     @log(logger=logger)
     @Slot(object, object, bool, str, str, str)

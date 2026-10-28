@@ -85,7 +85,7 @@
 
 * **Breaking:** Metadata's overlay plot is recorded on `MetadataController.overlay_plot`, which takes the loader, plot type, axes, log flags, bins, Sizes, filters and scope by name; `MetadataView._overlay_plot` is no longer a recorded action, and a plot configuration saved before this is reported and not replayed
 
-* **Breaking:** Metadata's heatmap, capture-rate and 3D-scatter requests no longer carry the plot's `Axes`: `heatmap_requested`, `capture_rate_requested`, `scatterplot_3d_requested` and the `MetadataController` slots they reach lose their `ax` argument, and `set_heatmap`, `set_capture_rate` and `set_3d_scatterplot` become `show_heatmap`, `show_capture_rate` and `show_3d_scatterplot`, which draw on the View's own axes
+* **Breaking:** Metadata's plot requests no longer carry the plot's `Axes`: `heatmap_requested`, `capture_rate_requested`, `scatterplot_3d_requested`, `histogram_bins_requested`, `density_requested`, `categorical_counts_requested` and the `MetadataController` slots they reach lose their `ax` argument, and the `MetadataView` methods that answer them are renamed from `set_*` to `show_*` (`show_heatmap`, `show_capture_rate`, `show_3d_scatterplot`, `show_histogram_bins`, `show_kernel_densities`, `show_categorical_counts`), which draw on the View's own axes
 
 ### Developer Tooling:
 

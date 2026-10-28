@@ -961,19 +961,18 @@ class TestCountCategories:
         """
         datasets = [np.array(["a"]), np.array(["b"])]
 
-        controller.count_categories(datasets, ["d1", "d2"], MagicMock(), "x", "y")
+        controller.count_categories(datasets, ["d1", "d2"], "x", "y")
 
         assert controller.model.categorical_counts.call_args.args[0] is datasets
 
     def test_the_tallies_go_back_to_the_view(self, controller, mock_view) -> None:
         counts = [(["a"], np.array([1.0]))]
         controller.model.categorical_counts.return_value = counts
-        ax = MagicMock()
 
-        controller.count_categories([np.array(["a"])], ["d1"], ax, "x", "y")
+        controller.count_categories([np.array(["a"])], ["d1"], "x", "y")
 
-        mock_view.set_categorical_counts.assert_called_once_with(
-            counts, ["d1"], ax, "x", "y"
+        mock_view.show_categorical_counts.assert_called_once_with(
+            counts, ["d1"], "x", "y"
         )
 
     def test_a_column_the_tally_cannot_sort_is_reported(self, controller) -> None:
@@ -986,7 +985,7 @@ class TestCountCategories:
             "'<' not supported between instances of 'NoneType' and 'str'"
         )
 
-        controller.count_categories([np.array(["a"])], ["d1"], MagicMock(), "x", "y")
+        controller.count_categories([np.array(["a"])], ["d1"], "x", "y")
 
         messages = [
             c.args[0] for c in controller.add_text_to_display.emit.call_args_list
@@ -997,9 +996,9 @@ class TestCountCategories:
         """A stale bar chart must not be left under this dataset's label."""
         controller.model.categorical_counts.side_effect = ValueError("boom")
 
-        controller.count_categories([np.array(["a"])], ["d1"], MagicMock(), "x", "y")
+        controller.count_categories([np.array(["a"])], ["d1"], "x", "y")
 
-        mock_view.set_categorical_counts.assert_not_called()
+        mock_view.show_categorical_counts.assert_not_called()
 
 
 # ------------------------- calculate_histogram_bins --------------------------
@@ -1030,7 +1029,7 @@ class TestCalculateHistogramBins(_StatusPanelMixin):
     """The command path: raw datasets in, tallies back through a setter."""
 
     @staticmethod
-    def _run(controller, datasets, norm=False, logx=False, ax=None):
+    def _run(controller, datasets, norm=False, logx=False):
         """
         Drive the slot the way the View's request does.
 
@@ -1042,8 +1041,6 @@ class TestCalculateHistogramBins(_StatusPanelMixin):
         :type norm: bool
         :param logx: log-scale the values before binning
         :type logx: bool
-        :param ax: the drawing context to pass through
-        :type ax: object
         :return: None
         :rtype: None
         """
@@ -1055,7 +1052,6 @@ class TestCalculateHistogramBins(_StatusPanelMixin):
             None,
             None,
             norm,
-            ax if ax is not None else MagicMock(),
             "x (ms)",
             "x",
             "d1",
@@ -1096,11 +1092,10 @@ class TestCalculateHistogramBins(_StatusPanelMixin):
             "widths",
             ["counts"],
         )
-        ax = MagicMock()
 
-        self._run(controller, [raw], ax=ax)
+        self._run(controller, [raw])
 
-        mock_view.set_histogram_bins.assert_called_once_with(
+        mock_view.show_histogram_bins.assert_called_once_with(
             raw,
             "d1",
             "centers",
@@ -1108,7 +1103,6 @@ class TestCalculateHistogramBins(_StatusPanelMixin):
             ["counts"],
             0.0,
             1.0,
-            ax,
             "x (ms)",
             False,
             False,
@@ -1128,7 +1122,7 @@ class TestCalculateHistogramBins(_StatusPanelMixin):
             c.args[0] for c in controller.add_text_to_display.emit.call_args_list
         ]
         assert any("Unable to bin the histogram" in m for m in messages)
-        mock_view.set_histogram_bins.assert_not_called()
+        mock_view.show_histogram_bins.assert_not_called()
 
     def test_a_subset_that_filters_away_is_reported_and_draws_nothing(
         self, controller, mock_view
@@ -1149,7 +1143,7 @@ class TestCalculateHistogramBins(_StatusPanelMixin):
             c.args[0] for c in controller.add_text_to_display.emit.call_args_list
         ]
         assert any("nothing to histogram" in m for m in messages)
-        mock_view.set_histogram_bins.assert_not_called()
+        mock_view.show_histogram_bins.assert_not_called()
 
     def test_the_limits_describe_the_filtered_values(
         self, controller, mock_view
@@ -1164,7 +1158,7 @@ class TestCalculateHistogramBins(_StatusPanelMixin):
 
         self._run(controller, [np.array([1.0, np.nan, 4.0])])
 
-        args = mock_view.set_histogram_bins.call_args.args
+        args = mock_view.show_histogram_bins.call_args.args
         assert args[5] == 1.0
         assert args[6] == 4.0
 
@@ -1179,7 +1173,7 @@ class TestCalculateHistogramBins(_StatusPanelMixin):
 
         self._run(controller, [np.array([1.0, 10.0, 100.0])], logx=True)
 
-        args = mock_view.set_histogram_bins.call_args.args
+        args = mock_view.show_histogram_bins.call_args.args
         assert args[5] == pytest.approx(0.0)
         assert args[6] == pytest.approx(2.0)
 
@@ -1194,7 +1188,7 @@ class TestEstimateKernelDensities(_StatusPanelMixin):
     """
 
     @staticmethod
-    def _run(controller, datasets, logx=False, ax=None):
+    def _run(controller, datasets, logx=False):
         """
         Drive the slot the way the View's request does.
 
@@ -1204,8 +1198,6 @@ class TestEstimateKernelDensities(_StatusPanelMixin):
         :type datasets: list
         :param logx: log-scale the values before binning
         :type logx: bool
-        :param ax: the drawing context to pass through
-        :type ax: object
         :return: None
         :rtype: None
         """
@@ -1216,7 +1208,6 @@ class TestEstimateKernelDensities(_StatusPanelMixin):
             False,
             None,
             None,
-            ax if ax is not None else MagicMock(),
             "x (ms)",
             "x",
             "d1",
@@ -1247,12 +1238,11 @@ class TestEstimateKernelDensities(_StatusPanelMixin):
         ]
         controller.model.widen_shared_limits.return_value = (0.5, 0.6)
         controller.model.kernel_densities.return_value = [("x", "y")]
-        ax = MagicMock()
 
-        self._run(controller, [raw], ax=ax)
+        self._run(controller, [raw])
 
-        mock_view.set_kernel_densities.assert_called_once_with(
-            raw, "d1", [("x", "y")], 0.5, 0.6, ax, "x (ms)"
+        mock_view.show_kernel_densities.assert_called_once_with(
+            raw, "d1", [("x", "y")], 0.5, 0.6, "x (ms)"
         )
 
     def test_a_subset_that_filters_away_is_reported_and_draws_nothing(
@@ -1271,7 +1261,7 @@ class TestEstimateKernelDensities(_StatusPanelMixin):
             c.args[0] for c in controller.add_text_to_display.emit.call_args_list
         ]
         assert any("nothing to plot" in m for m in messages)
-        mock_view.set_kernel_densities.assert_not_called()
+        mock_view.show_kernel_densities.assert_not_called()
 
     def test_the_limits_are_numbers_not_column_names(
         self, controller, mock_view
@@ -1286,7 +1276,7 @@ class TestEstimateKernelDensities(_StatusPanelMixin):
 
         self._run(controller, [np.array([1.0, 4.0])])
 
-        args = mock_view.set_kernel_densities.call_args.args
+        args = mock_view.show_kernel_densities.call_args.args
         assert isinstance(args[3], float)
         assert isinstance(args[4], float)
         assert args[4] - args[3] == 3.0
@@ -1304,7 +1294,7 @@ class TestEstimateKernelDensities(_StatusPanelMixin):
             c.args[0] for c in controller.add_text_to_display.emit.call_args_list
         ]
         assert any("Unable to estimate the density" in m for m in messages)
-        mock_view.set_kernel_densities.assert_not_called()
+        mock_view.show_kernel_densities.assert_not_called()
 
 
 # ---------------------------- the filter's move ------------------------------

@@ -594,7 +594,7 @@ def _answer_density(view, densities, hist_min=0.0, hist_max=1.0):
 
     The estimate, the filter, the shared limits and the accumulation are all
     below ``_plot_1d_density``: the View emits the raw columns and
-    ``set_kernel_densities`` does every bit of drawing and all of the bookkeeping.
+    ``show_kernel_densities`` does every bit of drawing and all of the bookkeeping.
     What the Controller decides in between is asserted in
     ``tests/unit/controllers/test_metadata_controller.py``.
 
@@ -610,9 +610,9 @@ def _answer_density(view, densities, hist_min=0.0, hist_max=1.0):
     :rtype: None
     """
     args = view.density_requested.emit.call_args.args
-    datasets, ax, x_label, dataset_label = args[0], args[6], args[7], args[9]
-    view.set_kernel_densities(
-        datasets[-1], dataset_label, densities, hist_min, hist_max, ax, x_label
+    datasets, x_label, dataset_label = args[0], args[6], args[8]
+    view.show_kernel_densities(
+        datasets[-1], dataset_label, densities, hist_min, hist_max, x_label
     )
 
 
@@ -634,7 +634,8 @@ def test_plot_1d_density_sends_the_raw_column_and_the_log_flag(
     assert [list(dataset) for dataset in emitted[0]] == [[1.0, 2.0, 5.0, 10.0]]
     assert emitted[1] is True
     assert emitted[2] == 7
-    assert emitted[8] == "x"
+    assert emitted[7] == "x"
+    assert all(arg is not view.axes for arg in emitted)
 
 
 def test_plot_1d_density_does_not_accumulate_before_the_answer(
@@ -643,7 +644,7 @@ def test_plot_1d_density_does_not_accumulate_before_the_answer(
     """
     A dataset that filters away must not stay in the overlay, or the next plot
     redraws it and hits the same empty array from inside the loop. Nothing is
-    accumulated until ``set_kernel_densities`` runs, and the Controller does not
+    accumulated until ``show_kernel_densities`` runs, and the Controller does not
     call it when nothing survived.
     """
     data: pd.DataFrame = pd.DataFrame({"x": np.array([np.nan, np.nan])})
@@ -655,7 +656,7 @@ def test_plot_1d_density_does_not_accumulate_before_the_answer(
     assert view.hist_labels == []
 
 
-def test_set_kernel_densities_accumulates_the_newest_dataset(
+def test_show_kernel_densities_accumulates_the_newest_dataset(
     view: MetadataView,
 ) -> None:
     """Verify the raw column and its label join the overlay when it is drawn."""
@@ -669,7 +670,7 @@ def test_set_kernel_densities_accumulates_the_newest_dataset(
     assert view.hist_labels == ["test"]
 
 
-def test_set_kernel_densities_takes_the_widened_limits(view: MetadataView) -> None:
+def test_show_kernel_densities_takes_the_widened_limits(view: MetadataView) -> None:
     """Verify the shared limits the Model widened come back onto the view."""
     data: pd.DataFrame = pd.DataFrame({"x": np.array([1.0, 2.0, 3.0])})
 
@@ -682,7 +683,7 @@ def test_set_kernel_densities_takes_the_widened_limits(view: MetadataView) -> No
     assert view.hist_max == 3.0
 
 
-def test_set_kernel_densities_clears_axes(view: MetadataView) -> None:
+def test_show_kernel_densities_clears_axes(view: MetadataView) -> None:
     """
     Verify the axes are cleared before drawing, and not before that.
 
@@ -802,11 +803,11 @@ def _answer_categorical_counts(view):
     """
     from poriscope.plugins.analysistabs.MetadataModel import MetadataModel
 
-    datasets, labels, ax, x_label, y_label = (
+    datasets, labels, x_label, y_label = (
         view.categorical_counts_requested.emit.call_args.args
     )
     counts = MetadataModel.__new__(MetadataModel).categorical_counts(datasets)
-    view.set_categorical_counts(counts, labels, ax, x_label, y_label)
+    view.show_categorical_counts(counts, labels, x_label, y_label)
 
 
 def _answer_capture_rate(view, numbins=4):
@@ -1012,7 +1013,7 @@ def _answer_histogram_bins(view, numbins=8):
 
     The bin decision, the counting, the filter, the shared limits and the
     accumulation are all below ``_plot_1d_histogram``: the View emits every
-    overlaid dataset raw and ``set_histogram_bins`` is handed the tallies. The real
+    overlaid dataset raw and ``show_histogram_bins`` is handed the tallies. The real
     Model is used here so these tests still exercise the counting they were written
     over; what the bin decision returns for a given request is asserted directly in
     ``tests/unit/models/test_metadata_model.py``.
@@ -1034,7 +1035,6 @@ def _answer_histogram_bins(view, numbins=8):
         hist_min,
         hist_max,
         norm,
-        ax,
         x_label,
         _column,
         dataset_label,
@@ -1046,7 +1046,7 @@ def _answer_histogram_bins(view, numbins=8):
     _edges, centers, widths, counts = model.overlaid_histograms(
         filtered, numbins, False, hist_min, hist_max, norm
     )
-    view.set_histogram_bins(
+    view.show_histogram_bins(
         datasets[-1],
         dataset_label,
         centers,
@@ -1054,7 +1054,6 @@ def _answer_histogram_bins(view, numbins=8):
         counts,
         hist_min,
         hist_max,
-        ax,
         x_label,
         logx,
         norm,
@@ -1097,7 +1096,8 @@ def test_plot_1d_histogram_sends_the_raw_column_and_the_log_flag(
     emitted = view.histogram_bins_requested.emit.call_args.args
     assert [list(dataset) for dataset in emitted[0]] == [[1.0, 2.0, 5.0, 10.0]]
     assert emitted[1] is True
-    assert emitted[9] == "x"
+    assert emitted[8] == "x"
+    assert all(arg is not view.axes for arg in emitted)
 
 
 def test_plot_1d_histogram_normalizes_when_norm_true(

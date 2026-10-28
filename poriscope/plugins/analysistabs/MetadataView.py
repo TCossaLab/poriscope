@@ -174,27 +174,29 @@ class MetadataView(MetaSubsetTabView):
     scatterplot_3d_requested = Signal(object, object, object, str)
 
     #: Asks for every overlaid dataset's kernel density: the raw columns, the log
-    #: flag, the bin request, the shared limits so far, and the drawing context
-    #: handed back unchanged. Answered through ``set_kernel_densities``.
+    #: flag, the bin request, the shared limits so far, and the labels handed back
+    #: unchanged. Answered through ``show_kernel_densities``, which draws on this
+    #: View's own axes.
     #:
     #: One request for every overlaid dataset rather than one each, so no intermediate
     #: answer is parked on the widget between them. The columns leave raw because the
     #: filtering and the shared limits are computed from the same surviving rows the
     #: density is.
     density_requested = Signal(
-        object, bool, object, bool, object, object, object, str, str, str
+        object, bool, object, bool, object, object, str, str, str
     )
 
     #: Asks for the shared bin edges every overlaid histogram dataset is drawn on,
     #: and the counts against them: the raw columns, the log flag, the bin request
-    #: and the limits so far. Answered through ``set_histogram_bins``.
+    #: and the limits so far. Answered through ``show_histogram_bins``, which draws on
+    #: this View's own axes.
     #:
     #: The counts come back with the edges rather than being tallied here: tallying
     #: values into bins is aggregation, and its result is exported with the plot rather
     #: than only drawn. The filtering and the shared limits travel with them because this
     #: and ``density_requested`` write the same accumulated limits and must agree.
     histogram_bins_requested = Signal(
-        object, bool, object, bool, object, object, bool, object, str, str, str
+        object, bool, object, bool, object, object, bool, str, str, str
     )
 
     #: Asks for the capture-rate binning and its exponential fit: the event times
@@ -208,13 +210,13 @@ class MetadataView(MetaSubsetTabView):
     capture_rate_requested = Signal(object, object, bool, str, str, str)
 
     #: Asks for the per-category counts of every overlaid dataset at once, with the
-    #: drawing context handed back unchanged. Answered through
-    #: ``set_categorical_counts``.
+    #: labels handed back unchanged. Answered through ``show_categorical_counts``,
+    #: which draws on this View's own axes.
     #:
     #: Counting occurrences is aggregation and the answer is exported with the plot, so
     #: it does not belong in the widget. One request for all the datasets, like
     #: ``density_requested``, so no answer is parked between them.
-    categorical_counts_requested = Signal(object, object, object, str, str)
+    categorical_counts_requested = Signal(object, object, str, str)
     #: Asks the Controller to draw an overlay: the loader's key, the plot type, the x, y
     #: and z columns, their log flags, the bin request, the Sizes flag, the selected
     #: filters (name to SQL) and the scope. The intent a click captured, which is what the
@@ -477,7 +479,7 @@ class MetadataView(MetaSubsetTabView):
         # The newest dataset travels alongside the ones already accumulated rather
         # than being appended first: the Model decides whether anything survives the
         # filter, and a subset that loses every point must not leave a label behind.
-        # ``set_kernel_densities`` does the appending, once there is something to
+        # ``show_kernel_densities`` does the appending, once there is something to
         # draw.
         self.density_requested.emit(
             list(self.hist_data) + [data[column].values],
@@ -486,21 +488,19 @@ class MetadataView(MetaSubsetTabView):
             sizes,
             self.hist_min,
             self.hist_max,
-            ax,
             x_label,
             column,
             dataset_label,
         )
 
     @log(logger=logger)
-    def set_kernel_densities(
+    def show_kernel_densities(
         self,
         values: npt.NDArray[np.float64],
         dataset_label: str,
         densities: Sequence[Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]],
         hist_min: float,
         hist_max: float,
-        ax: Axes,
         x_label: str,
     ) -> None:
         """
@@ -522,8 +522,6 @@ class MetadataView(MetaSubsetTabView):
         :type hist_min: float
         :param hist_max: the shared upper limit, widened by this dataset
         :type hist_max: float
-        :param ax: the axis object on which to plot
-        :type ax: Axes
         :param x_label: the x axis label, already formatted
         :type x_label: str
         :return: None
@@ -534,6 +532,7 @@ class MetadataView(MetaSubsetTabView):
         self.hist_min = hist_min
         self.hist_max = hist_max
 
+        ax = self.axes
         ax.clear()
         self._clear_cache()
 
@@ -735,14 +734,13 @@ class MetadataView(MetaSubsetTabView):
             self.hist_min,
             self.hist_max,
             norm,
-            ax,
             self.format_axis_label(column, x_units),
             column,
             dataset_label,
         )
 
     @log(logger=logger)
-    def set_histogram_bins(
+    def show_histogram_bins(
         self,
         values: npt.NDArray[np.float64],
         dataset_label: str,
@@ -751,7 +749,6 @@ class MetadataView(MetaSubsetTabView):
         counts: Sequence[npt.NDArray[np.float64]],
         hist_min: float,
         hist_max: float,
-        ax: Axes,
         x_label: str,
         logx: bool,
         norm: bool,
@@ -778,8 +775,6 @@ class MetadataView(MetaSubsetTabView):
         :type hist_min: float
         :param hist_max: the shared upper limit, widened by this dataset
         :type hist_max: float
-        :param ax: the axis object on which to plot
-        :type ax: Axes
         :param x_label: the x axis label, already formatted but not yet log-marked
         :type x_label: str
         :param logx: was the data log-scaled, and so should the label say so
@@ -794,6 +789,7 @@ class MetadataView(MetaSubsetTabView):
         self.hist_min = hist_min
         self.hist_max = hist_max
 
+        ax = self.axes
         ax.clear()
         self._clear_cache()
 
@@ -863,17 +859,15 @@ class MetadataView(MetaSubsetTabView):
         self.categorical_counts_requested.emit(
             list(self.hist_data),
             list(self.hist_labels),
-            ax,
             self.format_axis_label(x_label, x_units),
             "Count",
         )
 
     @log(logger=logger)
-    def set_categorical_counts(
+    def show_categorical_counts(
         self,
         counts: Sequence[Tuple[Sequence[str], npt.NDArray[np.float64]]],
         labels: Sequence[str],
-        ax: Axes,
         x_label: str,
         y_label: str,
     ) -> None:
@@ -888,8 +882,6 @@ class MetadataView(MetaSubsetTabView):
         :type counts: Sequence[Tuple[Sequence[str], npt.NDArray[np.float64]]]
         :param labels: one label per overlaid dataset
         :type labels: Sequence[str]
-        :param ax: the axis object to draw on
-        :type ax: Axes
         :param x_label: the x axis label, already formatted
         :type x_label: str
         :param y_label: the y axis label
@@ -897,6 +889,7 @@ class MetadataView(MetaSubsetTabView):
         :return: None
         :rtype: None
         """
+        ax = self.axes
         for (categories, val), lab in zip(counts, labels, strict=True):
             ax.bar(
                 categories,
