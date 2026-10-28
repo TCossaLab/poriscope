@@ -1196,7 +1196,7 @@ class MetaDatabaseLoader(BaseDataPlugin):
 
         # The id column and the table name travel together: callers write derived
         # columns back with UPDATE <table_name> ... WHERE id = ?, so the id returned
-        # must belong to that table (see ClusteringView.commit_cluster_data).
+        # must belong to that table (see ClusteringModel.commit_cluster_columns).
         table_name = "sublevels" if sublevels_columns else "events"
         id_alias = aliases[table_name]
 

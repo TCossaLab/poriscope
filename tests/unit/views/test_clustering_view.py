@@ -92,8 +92,9 @@ def _make_cluster_data(n=50):
 
 
 class TestInit:
-    def test_cluster_data_none(self, view):
-        assert view.cluster_data is None
+    def test_the_view_keeps_no_cluster_frame(self, view):
+        """The result is the Model's; the View only draws what it is handed."""
+        assert not hasattr(view, "cluster_data")
 
     def test_query_empty(self, view):
         assert view.query == ""
@@ -207,49 +208,77 @@ class TestHandleOtherActions:
 # ===========================================================================
 
 
-class TestMergeClusters:
-    def _setup(self, view):
-        view.cluster_data = _make_cluster_data()
-        view.logs = [False, False]
-        view.normalized = [False, False]
-        view.units = {"duration": "ms", "current": "pA"}
+class TestTheMergeClick:
+    """The Merge button sends the two labels to the Controller as ints."""
+
+    def test_it_asks_the_controller_to_merge_the_two_labels(self, view):
+        asked = []
+        view.merge_requested.connect(lambda keep, merge: asked.append((keep, merge)))
+
+        view.handle_parameter_change(
+            "M",
+            "merge_clusters",
+            ({"db_loader": "ldr", "label_x": "0", "label_y": "1"},),
+        )
+
+        assert asked == [(0, 1)]
+
+    def test_a_missing_label_asks_nothing_and_says_so(self, view):
+        asked = []
+        said = []
+        view.merge_requested.connect(lambda keep, merge: asked.append((keep, merge)))
+        view.add_text_to_display.connect(lambda message, source: said.append(message))
+
+        view.handle_parameter_change(
+            "M",
+            "merge_clusters",
+            ({"db_loader": "ldr", "label_x": None, "label_y": "1"},),
+        )
+
+        assert asked == []
+        assert said
+
+
+class TestShowClusters:
+    """The redraw a merge asks for: reset, then plot with the display flags of the last run."""
+
+    def _flags(self, view):
+        view.logs = [False, True]
+        view.normalized = [True, False]
         view.plot_units = ["ms", "pA"]
         view.plot = [True, True]
 
-    def test_no_cluster_data_returns_early(self, view):
-        view.cluster_data = None
-        with patch.object(view, "update_plot") as mock:
-            view._merge_clusters(0, 1)
-        mock.assert_not_called()
-
-    def test_invalid_types_returns_early(self, view):
-        view.cluster_data = _make_cluster_data()
-        with patch.object(view, "update_plot") as mock:
-            view._merge_clusters(None, None)
-        mock.assert_not_called()
-
-    def test_merges_label_1_into_0(self, view):
-        self._setup(view)
-        with patch.object(view, "_reset_actions"), patch.object(view, "update_plot"):
-            view._merge_clusters(0, 1)
-        # All rows previously labelled 1 should now be 0
-        assert (view.cluster_data["cluster_label"] == 1).sum() == 0
-
-    def test_merged_rows_get_confidence_1(self, view):
-        self._setup(view)
-        with patch.object(view, "_reset_actions"), patch.object(view, "update_plot"):
-            view._merge_clusters(0, 1)
-        # Rows that were 1 now have confidence 1
-        assert (view.cluster_data["cluster_confidence"] == 1).all()
-
-    def test_calls_update_plot_after_merge(self, view):
-        self._setup(view)
+    def test_it_resets_then_plots_with_the_last_runs_display_flags(self, view):
+        self._flags(view)
+        data = _make_cluster_data()
+        labels, confidence = (
+            data["cluster_label"].values,
+            data["cluster_confidence"].values,
+        )
+        calls = []
         with (
-            patch.object(view, "_reset_actions"),
-            patch.object(view, "update_plot") as mock_plot,
+            patch.object(
+                view,
+                "_reset_actions",
+                side_effect=lambda *a, **k: calls.append("reset"),
+            ),
+            patch.object(
+                view,
+                "update_plot",
+                side_effect=lambda *a, **k: calls.append(("plot", a)),
+            ),
         ):
-            view._merge_clusters(0, 1)
-        mock_plot.assert_called_once()
+            view.show_clusters(data, labels, confidence)
+
+        assert calls[0] == "reset"
+        _, args = calls[1]
+        assert args[1] is labels and args[2] is confidence
+        assert list(args[3:]) == [
+            [False, True],
+            [True, False],
+            ["ms", "pA"],
+            [True, True],
+        ]
 
 
 # ===========================================================================
@@ -602,10 +631,11 @@ class TestHandleParameterChange:
         mock.assert_called_once()
 
     def test_routes_merge_clusters(self, view):
-        with patch.object(view, "_merge_clusters") as mock:
-            p = self._p({"label_x": 0, "label_y": 1})
-            view.handle_parameter_change("M", "merge_clusters", (p,))
-        mock.assert_called_once_with(0, 1)
+        asked = []
+        view.merge_requested.connect(lambda keep, merge: asked.append((keep, merge)))
+        p = self._p({"label_x": "0", "label_y": "1"})
+        view.handle_parameter_change("M", "merge_clusters", (p,))
+        assert asked == [(0, 1)]
 
     def test_routes_commit_clusters(self, view):
         with patch.object(view, "_commit_clusters") as mock:
@@ -710,7 +740,7 @@ class TestUpdatePlot:
         assert view.axes.get_xlabel() == "Log10 Rate (per pore) (Hz)"
         assert view.axes.get_ylabel() == "Normalized current"
 
-    def test_stores_cluster_data(self, view):
+    def test_keeps_the_display_flags_for_a_redraw(self, view):
         df, labels, conf = self._make_labelled_df()
         self._setup_axes(view)
         with (
@@ -727,9 +757,36 @@ class TestUpdatePlot:
                 units=["ms", "pA"],
                 plot=[True, True, False],
             )
-        assert view.cluster_data is not None
+        assert (view.logs, view.normalized, view.plot_units, view.plot) == (
+            [False, False],
+            [False, False],
+            ["ms", "pA"],
+            [True, True, False],
+        )
 
-    def test_stores_labels(self, view):
+    def test_leaves_the_frame_it_is_handed_unchanged(self, view):
+        """The frame is the Model's; the label columns go on a copy, after a run and after a merge."""
+        df, labels, conf = self._make_labelled_df()
+        before = df.copy()
+        self._setup_axes(view)
+        with (
+            patch.object(view.canvas, "draw"),
+            patch.object(view, "_update_cache"),
+            patch.object(view, "_commit_cache"),
+        ):
+            view.update_plot(
+                df,
+                labels,
+                conf,
+                logs=[False, False],
+                normalized=[False, False],
+                units=["ms", "pA"],
+                plot=[True, True, False],
+            )
+        pd.testing.assert_frame_equal(df, before)
+
+    def test_keeps_no_frame_or_labels(self, view):
+        """The result stays with the Model, so there is one copy of it."""
         df, labels, conf = self._make_labelled_df()
         self._setup_axes(view)
         with (
@@ -746,7 +803,8 @@ class TestUpdatePlot:
                 units=["ms", "pA"],
                 plot=[True, True, False],
             )
-        np.testing.assert_array_equal(view.labels, labels)
+        assert not hasattr(view, "cluster_data")
+        assert not hasattr(view, "labels")
 
     def test_invalid_plot_dims_returns_early(self, view):
         df, labels, conf = self._make_labelled_df()
@@ -859,25 +917,26 @@ class TestUpdatePlot:
 
 
 class TestCommitClusters:
-    def test_raises_when_no_cluster_data(self, view):
-        view.cluster_data = None
-        with pytest.raises(AttributeError, match="cluster data has not been set"):
-            view._commit_clusters("loader1")
-
-    def test_proceeds_with_cluster_data(self, view):
-        view.cluster_data = pd.DataFrame(
-            {
-                "id": [1, 2],
-                "cluster_label": [0, 1],
-                "cluster_confidence": [1.0, 0.9],
-            }
-        )
+    def test_it_asks_the_controller_to_check_for_an_existing_result(self, view):
+        """The Controller refuses when there is no clustering; the View holds no frame to check."""
         asked = []
         view.cluster_column_check_requested.connect(asked.append)
 
         view._commit_clusters("loader1")
 
         assert asked == ["loader1"]
+
+    def test_the_commit_request_carries_no_frame(self, view):
+        """The Controller takes the frame from the Model."""
+        view.set_query("SELECT 1", "events")
+        asked = []
+        view.cluster_commit_requested.connect(
+            lambda loader, table, existing: asked.append((loader, table, existing))
+        )
+
+        view.on_cluster_column_checked("loader1", None)
+
+        assert asked == [("loader1", "events", None)]
 
 
 # ===========================================================================

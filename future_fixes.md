@@ -55,6 +55,8 @@ Step 10 waits for both tracks.
   failed once, in the first run after its second-tab perturbation was made effective; the output was not kept.
   0 failures in about 110 later runs (14 quiet, 15 parallel, 60 with output saved). If it recurs, save the
   output and diagnose before going on; `settle` (`test_replay_guard_no_gui.py`) waits on `model.workers`.
+  Look first at `DECISIONS.md` 2026-09-12 (the harness not stopping workers) and the Event Analysis flow's
+  wait note (`test_event_analysis_flow_no_gui.py`).
 
 ### Step 10 - docs dead-link gate and release prep
 

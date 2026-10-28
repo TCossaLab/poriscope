@@ -33,7 +33,7 @@ import pandas as pd
 from poriscope.plugins.analysistabs.ClusteringModel import ClusteringModel
 from poriscope.plugins.analysistabs.ClusteringView import ClusteringView
 from poriscope.utils.DocstringDecorator import inherit_docstrings
-from poriscope.utils.LogDecorator import log
+from poriscope.utils.LogDecorator import log, register_action
 from poriscope.utils.MetaController import MetaController
 
 
@@ -73,6 +73,7 @@ class ClusteringController(MetaController):
         self.view.cluster_column_check_requested.connect(self.check_cluster_column)
         self.view.cluster_commit_requested.connect(self.commit_clusters)
         self.view.metadata_load_requested.connect(self.load_metadata_for_clustering)
+        self.view.merge_requested.connect(self.merge_clusters)
 
     @log(logger=logger)
     def cluster(
@@ -124,10 +125,12 @@ class ClusteringController(MetaController):
                 f"Unable to cluster data: {e}", self.__class__.__name__
             )
             return
+        self.model.result = (clustered, labels, confidence)
         self.view.set_clustering_result(clustered, labels, confidence)
 
     @log(logger=logger)
-    def load_metadata_for_clustering(self, config: Dict[str, Any], loader: str) -> None:
+    @register_action("cluster_run", skip_on_false=True)
+    def load_metadata_for_clustering(self, config: Dict[str, Any], loader: str) -> bool:
         """
         Build the metadata query, load its rows, and hand them to the View.
 
@@ -144,9 +147,12 @@ class ClusteringController(MetaController):
         :type config: Dict[str, Any]
         :param loader: the database loader's plugin key
         :type loader: str
-        :return: None
-        :rtype: None
+        :return: True if a new clustering result was produced, False if the run stopped before one
+        :rtype: bool
         """
+        # ``cluster`` runs inside the View's emit and reports its own failure, so whether
+        # this run produced anything is read off the Model afterwards.
+        previous = self.model.result
         columns = [val["column"] for val in config["columns"]]
         sql_filter = config["filter"]
 
@@ -163,7 +169,7 @@ class ClusteringController(MetaController):
             self.add_text_to_display.emit(
                 f"Unable to build the metadata query: {e}", self.__class__.__name__
             )
-            return
+            return False
 
         # Cleared as well as set: an empty query means the build was refused, and
         # leaving the previous one on the View would let it be read as this
@@ -182,7 +188,7 @@ class ClusteringController(MetaController):
                 debug or "The metadata query could not be built",
                 self.__class__.__name__,
             )
-            return
+            return False
 
         try:
             plot_data = self.model.call(
@@ -193,7 +199,7 @@ class ClusteringController(MetaController):
             self.add_text_to_display.emit(
                 f"Unable to load metadata: {e}", self.__class__.__name__
             )
-            return
+            return False
 
         # .empty as well as None: the loader returns an empty frame for a query that
         # matched nothing, and clustering an empty frame raises an opaque error from
@@ -202,7 +208,7 @@ class ClusteringController(MetaController):
             self.add_text_to_display.emit(
                 "No data matches the given query", self.__class__.__name__
             )
-            return
+            return False
 
         try:
             self.view.on_metadata_loaded(config, loader, plot_data)
@@ -211,6 +217,31 @@ class ClusteringController(MetaController):
             self.add_text_to_display.emit(
                 f"Unable to cluster data: {e}", self.__class__.__name__
             )
+            return False
+        return self.model.result is not previous
+
+    @log(logger=logger)
+    @register_action("merge_clusters", skip_on_false=True)
+    def merge_clusters(self, keep: int, merge: int) -> bool:
+        """
+        Fold one cluster into another in the latest result, and draw it.
+
+        The result is the Model's, so a replayed merge acts on the replayed clustering.
+
+        :param keep: the label the merged cluster joins
+        :type keep: int
+        :param merge: the label that is merged into ``keep``
+        :type merge: int
+        :return: True if the clusters were merged, False if there is no clustering yet
+        :rtype: bool
+        """
+        if self.model.result is None:
+            self.add_text_to_display.emit(
+                "No clusters defined, unable to merge", self.__class__.__name__
+            )
+            return False
+        self.view.show_clusters(*self.model.merge_clusters(keep, merge))
+        return True
 
     @log(logger=logger)
     def check_cluster_column(self, loader: str) -> None:
@@ -225,6 +256,11 @@ class ClusteringController(MetaController):
         :return: None
         :rtype: None
         """
+        if self.model.result is None:
+            self.add_text_to_display.emit(
+                "No clusters defined, unable to commit", self.__class__.__name__
+            )
+            return
         try:
             existing_table = self.model.find_cluster_column_table(loader)
         except Exception as e:
@@ -240,7 +276,6 @@ class ClusteringController(MetaController):
     def commit_clusters(
         self,
         loader: str,
-        cluster_data: Any,
         table_name: str,
         drop_from_table: Optional[str],
     ) -> None:
@@ -253,8 +288,6 @@ class ClusteringController(MetaController):
 
         :param loader: the database loader's plugin key
         :type loader: str
-        :param cluster_data: the id, label and confidence columns to write
-        :type cluster_data: Any
         :param table_name: the table to write them into
         :type table_name: str
         :param drop_from_table: the table to drop an existing result from, or None
@@ -276,7 +309,9 @@ class ClusteringController(MetaController):
                 return
 
         try:
-            status = self.model.commit_cluster_columns(loader, cluster_data, table_name)
+            status = self.model.commit_cluster_columns(
+                loader, self.model.cluster_columns(), table_name
+            )
         except Exception as e:
             self.logger.error(f"Unable to write clustering data: {repr(e)}")
             status = False

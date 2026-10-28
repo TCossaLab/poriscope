@@ -460,3 +460,70 @@ class TestBuildClusteringFrame:
 
         np.testing.assert_allclose(frame["a"].to_numpy(), [1.0, 10.0])
         np.testing.assert_allclose(frame["b"].to_numpy(), [0.0, 1.0])
+
+
+class TestTheResultMergeAndCommitColumns:
+    """The Model owns the latest clustering result; Merge and Commit act on it."""
+
+    @staticmethod
+    def _result() -> tuple:
+        frame = pd.DataFrame({"duration": [1.0, 2.0, 3.0, 4.0], "id": [10, 11, 12, 13]})
+        labels = np.array([0, 1, 1, -1])
+        confidence = np.array([0.9, 0.4, 0.6, 0.0])
+        return frame, labels, confidence
+
+    def test_there_is_no_result_before_the_first_clustering(
+        self, model: ClusteringModel
+    ) -> None:
+        assert model.result is None
+
+    def test_a_merge_moves_the_merged_rows_to_the_kept_label_with_full_confidence(
+        self, model: ClusteringModel
+    ) -> None:
+        model.result = self._result()
+
+        frame, labels, confidence = model.merge_clusters(0, 1)
+
+        np.testing.assert_array_equal(labels, [0, 0, 0, -1])
+        np.testing.assert_array_equal(confidence, [0.9, 1.0, 1.0, 0.0])
+        assert model.result[1] is labels
+
+    def test_a_merge_does_not_change_the_arrays_it_replaces(
+        self, model: ClusteringModel
+    ) -> None:
+        """A result handed out earlier, to a plot or a commit, keeps what it showed."""
+        before = self._result()
+        model.result = before
+
+        model.merge_clusters(0, 1)
+
+        np.testing.assert_array_equal(before[1], [0, 1, 1, -1])
+        np.testing.assert_array_equal(before[2], [0.9, 0.4, 0.6, 0.0])
+
+    def test_merging_with_no_result_is_refused(self, model: ClusteringModel) -> None:
+        with pytest.raises(ValueError):
+            model.merge_clusters(0, 1)
+
+    def test_the_commit_columns_pair_each_id_with_its_label_and_confidence(
+        self, model: ClusteringModel
+    ) -> None:
+        model.result = self._result()
+
+        columns = model.cluster_columns()
+
+        assert list(columns.columns) == ["id", "cluster_label", "cluster_confidence"]
+        assert columns["id"].tolist() == [10, 11, 12, 13]
+        assert columns["cluster_label"].tolist() == [0, 1, 1, -1]
+        assert columns["cluster_confidence"].tolist() == [0.9, 0.4, 0.6, 0.0]
+
+    def test_the_commit_columns_follow_a_merge(self, model: ClusteringModel) -> None:
+        model.result = self._result()
+        model.merge_clusters(0, 1)
+
+        assert model.cluster_columns()["cluster_label"].tolist() == [0, 0, 0, -1]
+
+    def test_commit_columns_with_no_result_are_refused(
+        self, model: ClusteringModel
+    ) -> None:
+        with pytest.raises(ValueError):
+            model.cluster_columns()

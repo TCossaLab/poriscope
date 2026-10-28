@@ -24,14 +24,9 @@ from typing import Any, Dict, List
 import pytest
 from PySide6.QtWidgets import QDialog
 
-from poriscope.plugins.db_loaders.SQLiteDBLoader import SQLiteDBLoader
-from tests.integration.flows._triad import Triad, build_triad
+from tests.integration.flows._triad import Triad, build_clustering_tab, hdbscan_config
 
 LOADER_KEY = "loader"
-
-#: Two columns every synthetic metadata database carries, so the clustering has
-#: something real to work on without the flow depending on a fitter's output shape.
-COLUMNS = ("duration", "max_deviation")
 
 
 class _StubSettingsDialog:
@@ -73,30 +68,6 @@ class _StubSettingsDialog:
         return type(self).config
 
 
-def clustering_config(columns: tuple = COLUMNS) -> Dict[str, Any]:
-    """
-    Build a HDBSCAN configuration over the given columns.
-
-    :param columns: the metadata columns to cluster on
-    :type columns: tuple
-    :return: a config of the shape the dialog returns
-    :rtype: Dict[str, Any]
-    """
-    return {
-        "columns": [
-            {"column": name, "unit": None, "log": False, "norm": True, "plot": True}
-            for name in columns
-        ],
-        "filter": None,
-        "method": "HDBSCAN",
-        "method_params": {
-            "HDBSCAN_Cluster_Size_input": 5,
-            "HDBSCAN_Min_Points_input": 1,
-            "HDBSCAN_Sensitivity_input": 1.0,
-        },
-    }
-
-
 @pytest.fixture(autouse=True)
 def stub_the_settings_dialog(mocker) -> None:
     """
@@ -127,14 +98,7 @@ def clustering_tab(qapp, tmp_path: Path, sample_metadata_db: str) -> Triad:
     :return: the assembled triad
     :rtype: Triad
     """
-    triad = build_triad("ClusteringController", tmp_path)
-
-    loader = SQLiteDBLoader()
-    settings = loader.get_empty_settings(standalone=True)
-    settings["Input File"]["Value"] = sample_metadata_db
-    loader.apply_settings(settings)
-    triad.register(loader, "MetaDatabaseLoader", LOADER_KEY)
-    triad.db_path = sample_metadata_db  # type: ignore[attr-defined]
+    triad = build_clustering_tab(tmp_path, sample_metadata_db, LOADER_KEY)
 
     yield triad
 
@@ -198,10 +162,9 @@ def test_clustering_labels_every_row_it_loaded(clustering_tab: Triad) -> None:
     rows were dropped or duplicated between the query and the clustering - which
     would then be committed against mismatched ids.
     """
-    cluster(clustering_tab, clustering_config())
+    cluster(clustering_tab, hdbscan_config())
 
-    data = clustering_tab.tab_view.cluster_data
-    assert data is not None
+    data = clustering_tab.tab_controller.model.cluster_columns()
     assert len(data) == 40
     assert "cluster_label" in data.columns
     assert "cluster_confidence" in data.columns
@@ -217,7 +180,7 @@ def test_committing_writes_the_columns_into_the_database(
     Asserting against the file rather than the loader means the test does not
     depend on the same code path that performed the write.
     """
-    cluster(clustering_tab, clustering_config())
+    cluster(clustering_tab, hdbscan_config())
     table = clustering_tab.tab_view.table_name
 
     clustering_tab.tab_view.handle_parameter_change(
@@ -240,15 +203,10 @@ def test_the_committed_labels_match_the_rows_they_were_computed_for(
     it. Every committed row is compared back to the label the clustering assigned
     to that same event id.
     """
-    cluster(clustering_tab, clustering_config())
+    cluster(clustering_tab, hdbscan_config())
     table = clustering_tab.tab_view.table_name
-    expected = dict(
-        zip(
-            clustering_tab.tab_view.cluster_data["id"],
-            clustering_tab.tab_view.cluster_data["cluster_label"],
-            strict=True,
-        )
-    )
+    labelled = clustering_tab.tab_controller.model.cluster_columns()
+    expected = dict(zip(labelled["id"], labelled["cluster_label"], strict=True))
 
     clustering_tab.tab_view.handle_parameter_change(
         "clusteringcontrols", "commit_clusters", ({"db_loader": LOADER_KEY},)

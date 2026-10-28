@@ -30,9 +30,11 @@ import pytest
 from poriscope.plugins.db_loaders.SQLiteDBLoader import SQLiteDBLoader
 from tests.integration.flows._triad import (
     Triad,
+    build_clustering_tab,
     build_event_analysis_tab,
     build_rawdata_tab,
     build_triad,
+    hdbscan_config,
 )
 
 LOADER = "loader"
@@ -229,7 +231,8 @@ def protein_tab(tmp_path: Path, db: str) -> Triad:
 
 
 def clustering_tab(tmp_path: Path, db: str) -> Triad:
-    return build_triad("ClusteringController", tmp_path)
+    """A Clustering tab with a database loader over the synthetic metadata database."""
+    return build_clustering_tab(tmp_path, db, LOADER)
 
 
 def eventanalysis_tab(tmp_path: Path, events_db: str) -> Triad:
@@ -438,7 +441,36 @@ def fitted_events(triad: Triad) -> Any:
 
 
 def clustering_act(triad: Triad, qtbot: Any) -> None:
-    triad.tab_view._reset_actions()
+    """Run a clustering as the panel does once the settings dialog is accepted, then merge label 1 into 0."""
+    view = triad.tab_view
+    view._load_metadata_and_request_clustering(hdbscan_config(), LOADER)
+    view.handle_parameter_change(
+        "clusteringcontrols",
+        "merge_clusters",
+        ({"db_loader": LOADER, "label_x": "0", "label_y": "1"},),
+    )
+
+
+def clustering_perturb(triad: Triad) -> None:
+    """Change the loader the panel shows and the settings stored for the next dialog."""
+    view = triad.tab_view
+    view.clusteringcontrols.db_loader_comboBox.addItem("another database")
+    view.clusteringcontrols.set_db_loader("another database")
+    other = hdbscan_config(("duration",))
+    other["method_params"]["HDBSCAN_Cluster_Size_input"] = 50
+    view.clustering_config_map = {LOADER: other}
+
+
+def cluster_labels(triad: Triad) -> Any:
+    """How many rows each cluster label holds, read from the result the Model keeps."""
+    result = triad.tab_controller.model.result
+    if result is None:
+        return None
+    _clustered, labels, _confidence = result
+    counts: Dict[str, int] = {}
+    for label in labels:
+        counts[str(label)] = counts.get(str(label), 0) + 1
+    return counts
 
 
 def settle(triad: Triad, qtbot: Any) -> None:
@@ -543,10 +575,11 @@ SCENARIOS = [
     ),
     Scenario(
         tab="ClusteringController",
-        covers=("reset",),
+        covers=("reset", "cluster_run", "merge_clusters"),
         build=clustering_tab,
         act=clustering_act,
-        perturb=nothing,
+        perturb=clustering_perturb,
+        probe=cluster_labels,
     ),
 ]
 
@@ -642,6 +675,24 @@ def test_a_replayed_fit_leaves_the_channel_fitted_in_both_tabs(
     for captured in (captured_a, captured_b):
         assert captured["probe"]["fitted"] is True
         assert "good fits" in captured["probe"]["report"]
+
+
+@pytest.mark.timeout(240)
+def test_a_replayed_clustering_and_merge_happen_in_both_tabs(
+    qapp, qtbot, tmp_path: Path, sample_metadata_db: str
+) -> None:
+    """The two tabs agreeing is not enough: a run or a merge that did nothing would agree with itself."""
+    scenario = next(s for s in SCENARIOS if s.tab == "ClusteringController")
+
+    captured_a, captured_b, _ = run_scenario(
+        scenario, tmp_path, sample_metadata_db, qtbot, ready_b=True
+    )
+
+    for captured in (captured_a, captured_b):
+        assert captured["probe"], "no clustering result was produced"
+        assert sum(captured["probe"].values()) == 40
+        assert "1" not in captured["probe"], "label 1 was not merged into 0"
+        assert "0" in captured["probe"]
 
 
 @pytest.mark.timeout(240)

@@ -1464,8 +1464,10 @@ intent, never data already on the plot. Two checks hold the rule:
    ``.currentText()``, ``.getSelectedItems()`` and the like; ``Axes.text(x, y, s)`` draws and
    takes arguments, so it is not one), a call to ``collect_parameters``,
    ``get_selected_filters`` or ``_get_event_index_text``, a reach into an attribute named
-   ``*controls``, a read of state a widget handler sets (the analysis mode, the scope, the
-   filter list, the Timer limits, the last event button), and a parameter annotated with an
+   ``*controls`` (a call on the panel written as a bare statement, such as refilling a
+   dropdown, is a write and is not counted), a read of state a widget handler or dialog sets
+   (the analysis mode, the scope, the filter list, the Timer limits, the stored clustering
+   settings, the last event button), and a parameter annotated with an
    ``Axes``, a numpy array or a data frame. It reads source with ``ast`` and builds no widget.
    A known exception is listed in the test's ``ALLOWED`` table with its reason and the condition
    that removes it, and an entry that no longer trips is itself a failure.

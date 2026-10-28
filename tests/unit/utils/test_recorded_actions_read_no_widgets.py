@@ -37,6 +37,7 @@ from matplotlib.axes import Axes
 from numpy.typing import NDArray
 
 import poriscope.plugins.analysistabs as analysistabs_package
+from poriscope.plugins.analysistabs.ClusteringView import ClusteringView
 from poriscope.utils.LogDecorator import register_action
 from poriscope.utils.MetaController import MetaController, declared_actions
 
@@ -62,6 +63,7 @@ WIDGET_DERIVED_ATTRIBUTES = {
     "selected_experiment_and_channels_by_loader": "set by the scope tree dialog",
     "subset_filters": "edited through the filter dialogs and the filter combobox",
     "analysis_time_limits": "set by the Timer dialog",
+    "clustering_config_map": "set by the clustering settings dialog",
     "_last_event_action": "set by whichever event button was last clicked",
 }
 
@@ -178,6 +180,17 @@ def findings_for(
                             f"{argument.arg}: {type_name}",
                         )
                     )
+        # A panel that is only the receiver of a call written as a bare statement is being
+        # written to: the call's result is thrown away, so no value can reach the action.
+        discarded = {
+            id(statement.value.func.value)
+            for statement in ast.walk(tree)
+            if isinstance(statement, ast.Expr)
+            and isinstance(statement.value, ast.Call)
+            and isinstance(statement.value.func, ast.Attribute)
+            and isinstance(statement.value.func.value, ast.Attribute)
+            and statement.value.func.value.attr.lower().endswith("controls")
+        }
         for node in ast.walk(tree):
             if isinstance(node, ast.Call):
                 called = (
@@ -205,7 +218,7 @@ def findings_for(
                     else:
                         visit(cls, called_name, False)
             elif isinstance(node, ast.Attribute) and isinstance(node.ctx, ast.Load):
-                if node.attr.lower().endswith("controls"):
+                if node.attr.lower().endswith("controls") and id(node) not in discarded:
                     found.append(
                         Finding(action_name, "panel reach", f"{name} reads {node.attr}")
                     )
@@ -346,6 +359,56 @@ class TestTheRulesFireOnDoubles:
             "panel reach"
         ]
 
+    def test_a_panel_call_whose_result_is_discarded_is_a_write_not_a_read(
+        self,
+    ) -> None:
+        """No value comes back from a bare-statement call, so none can reach the action."""
+
+        class Refill:
+            @register_action("refill")
+            def refill(self) -> None:
+                self.clusteringcontrols.update_clusters([1, 2])
+
+        assert findings_for("Refill.refill", Refill, "refill") == []
+
+    def test_a_panel_call_whose_result_is_used_is_still_caught(self) -> None:
+        class Used:
+            @register_action("used")
+            def used(self) -> None:
+                labels = self.clusteringcontrols.update_clusters([1])
+                print(labels)
+
+        assert [f.rule for f in findings_for("Used.used", Used, "used")] == [
+            "panel reach"
+        ]
+
+    def test_a_call_through_the_panel_on_one_of_its_widgets_is_still_caught(
+        self,
+    ) -> None:
+        """Only a call made on the panel itself is exempt; one made on a widget it holds is not."""
+
+        class Through:
+            @register_action("through")
+            def through(self) -> None:
+                self.clusteringcontrols.label_x_comboBox.clear()
+
+        assert [
+            f.rule for f in findings_for("Through.through", Through, "through")
+        ] == ["panel reach"]
+
+    def test_the_clustering_redraw_that_refills_the_label_dropdowns_is_clean(
+        self,
+    ) -> None:
+        """
+        ``update_plot`` ends with ``clusteringcontrols.update_clusters(...)``, a write.
+
+        Only the panel rule is asked about: ``update_plot`` is reached from recorded actions,
+        not recorded itself, so the rule about a recorded action's parameters does not apply.
+        """
+        found = findings_for("update_plot", ClusteringView, "update_plot")
+
+        assert [f for f in found if f.rule == "panel reach"] == []
+
     def test_widget_derived_state_is_caught(self) -> None:
         class Mode:
             @register_action("mode")
@@ -354,6 +417,18 @@ class TestTheRulesFireOnDoubles:
                     pass
 
         assert [f.rule for f in findings_for("Mode.mode", Mode, "mode")] == [
+            "widget-derived state"
+        ]
+
+    def test_the_stored_clustering_settings_are_widget_derived_state(self) -> None:
+        """The settings dialog stores them, as the Timer dialog stores RawData's limits."""
+
+        class Stored:
+            @register_action("stored")
+            def stored(self, loader: str) -> None:
+                self.clustering_config_map.get(loader)
+
+        assert [f.rule for f in findings_for("Stored.stored", Stored, "stored")] == [
             "widget-derived state"
         ]
 

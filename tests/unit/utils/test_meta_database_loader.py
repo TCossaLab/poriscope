@@ -1362,7 +1362,7 @@ class TestAmbiguousIdRejection:
 
 # ---------------------------------------------------------------------------
 # Callers write derived columns back with UPDATE <table_name> ... WHERE id = ?
-# (ClusteringView.commit_cluster_data), so the returned id column has to belong
+# (ClusteringModel.commit_cluster_columns), so the returned id column has to belong
 # to the returned table name in every query shape.
 # ---------------------------------------------------------------------------
 class TestQueryShapeInvariants:
