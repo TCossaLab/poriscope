@@ -81,6 +81,8 @@
 
 * **Breaking:** Clustering's run and Merge are recorded actions on `ClusteringController`, and the clustering result is `ClusteringModel.result`: `ClusteringView.cluster_data` is gone, `cluster_commit_requested` no longer carries the frame, and `ClusteringController.commit_clusters` no longer takes `cluster_data`
 
+* **Breaking:** a recorded tab action saves every value under its parameter name, defaults included, instead of as an unlabelled list, so a `write_back` override reads them from `kwargs`; an action file saved with unlabelled values still replays
+
 ### Developer Tooling:
 
 * The release workflow now runs only when a version tag is pushed

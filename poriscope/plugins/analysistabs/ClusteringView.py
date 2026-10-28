@@ -232,21 +232,21 @@ class ClusteringView(MetaView):
 
         :param action: the entry's declared action name
         :type action: str
-        :param args: the entry's recorded positional arguments
+        :param args: the entry's recorded positional values, empty when every value has a name
         :type args: Tuple[Any, ...]
-        :param kwargs: the entry's recorded keyword arguments
+        :param kwargs: the entry's recorded values, each under its parameter name
         :type kwargs: Dict[str, Any]
         """
         controls = self.clusteringcontrols
         if action == "cluster_run":
-            config, loader = args
+            config, loader = kwargs["config"], kwargs["loader"]
             if controls.set_db_loader(loader):
                 self._refresh_loader(loader)
             else:
                 self._say_not_shown("database", loader)
             self.clustering_config_map[loader] = copy.deepcopy(config)
         elif action == "merge_clusters":
-            keep, merge = args
+            keep, merge = kwargs["keep"], kwargs["merge"]
             if not controls.set_merge_labels(keep, merge):
                 self._say_not_shown("cluster labels", f"{keep} and {merge}")
 

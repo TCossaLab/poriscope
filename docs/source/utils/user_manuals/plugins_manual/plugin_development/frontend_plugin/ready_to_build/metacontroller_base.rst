@@ -32,6 +32,10 @@ No need to manually handle cross-plugin communication — :ref:`MetaController` 
   ``@register_action("name")`` and each call is recorded as
   ``{"action": name, "args": ..., "kwargs": ...}``, so the method can be renamed or moved
   without breaking a saved history. Name each action once per tab
+- Every value is saved under its parameter name in ``kwargs``, defaults included, however the
+  call passed it, so a saved file says what each value is. Keep a recorded method's parameters
+  nameable: a method with ``*args`` or a positional-only parameter is saved as it was called.
+  Renaming a parameter of a recorded method stops older files from replaying that action
 - A method that can do nothing - refused, or with nothing to show - opts out of recording with
   ``@register_action("name", skip_on_false=True)`` and returns ``False`` when it did nothing. That
   call is not recorded: recording adds one entry per call to the tab's history, so a call that did

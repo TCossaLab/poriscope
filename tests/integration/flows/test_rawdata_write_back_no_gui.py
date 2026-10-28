@@ -14,7 +14,7 @@ from typing import Any, Dict, List
 import pytest
 
 from poriscope.utils.ReplayGuard import replaying
-from tests.integration.flows._triad import Triad, build_rawdata_tab
+from tests.integration.flows._triad import Triad, build_rawdata_tab, named
 
 READER = "reader"
 FINDER = "finder"
@@ -40,7 +40,9 @@ def test_an_update_trace_entry_shows_its_source_and_range(
     controls = tab.tab_view.rawdatacontrols
 
     tab.tab_view.write_back(
-        "update_trace", (READER, [channel], 1.0, 0.5, "", False), {}
+        "update_trace",
+        (),
+        named(tab, "update_trace", READER, [channel], 1.0, 0.5, "", False),
     )
 
     assert controls.readers_comboBox.currentText() == READER
@@ -55,7 +57,9 @@ def test_an_update_psd_entry_shows_the_same_fields(tab: Triad, actions: Any) -> 
     channel = tab.channel  # type: ignore[attr-defined]
     controls = tab.tab_view.rawdatacontrols
 
-    tab.tab_view.write_back("update_psd", (READER, [channel], 2.0, 0.25, ""), {})
+    tab.tab_view.write_back(
+        "update_psd", (), named(tab, "update_psd", READER, [channel], 2.0, 0.25, "")
+    )
 
     assert controls.channel_comboBox.getSelectedItems() == [str(channel)]
     assert controls.start_time_lineEdit.get_start() == 2.0
@@ -70,7 +74,11 @@ def test_a_find_entry_shows_its_finder_and_restores_its_timer_limits(
     view = tab.tab_view
     limits = {"start": 0.5, "end": 1.0}
 
-    view.write_back("find_events", (FINDER, channel, [(0.5, 1.0)], "", limits), {})
+    view.write_back(
+        "find_events",
+        (),
+        named(tab, "find_events", FINDER, channel, [(0.5, 1.0)], "", limits),
+    )
     limits["end"] = 99.0  # the tab holds its own copy
 
     assert view.rawdatacontrols.eventfinders_comboBox.currentText() == FINDER
@@ -94,7 +102,9 @@ def test_a_plot_events_entry_writes_the_event_index_in_canonical_form(
     channel = tab.channel  # type: ignore[attr-defined]
     view = tab.tab_view
 
-    view.write_back("plot_events", (FINDER, channel, events, ""), {})
+    view.write_back(
+        "plot_events", (), named(tab, "plot_events", FINDER, channel, events, "")
+    )
 
     assert view.rawdatacontrols.event_index_lineEdit.text() == text
     assert view.rawdatacontrols.eventfinders_comboBox.currentText() == FINDER
@@ -114,7 +124,7 @@ def test_a_named_filter_is_shown_for_every_kind_of_entry(
         "plot_events": (FINDER, channel, [0], "a filter"),
     }
 
-    tab.tab_view.write_back(action, entries[action], {})
+    tab.tab_view.write_back(action, (), named(tab, action, *entries[action]))
 
     assert controls.filters_comboBox.currentText() == "a filter"
     actions.assert_not_called()
@@ -129,7 +139,9 @@ def test_writing_back_a_reader_asks_for_its_channel_list(
     channel = tab.channel  # type: ignore[attr-defined]
 
     tab.tab_view.write_back(
-        "update_trace", (READER, [channel], 0.0, 1.0, "", False), {}
+        "update_trace",
+        (),
+        named(tab, "update_trace", READER, [channel], 0.0, 1.0, "", False),
     )
 
     assert asked == [READER]
@@ -146,7 +158,9 @@ def test_a_value_that_is_not_an_option_is_skipped_and_said(
     before = controls.readers_comboBox.currentText()
 
     tab.tab_view.write_back(
-        "update_trace", ("a reader that is gone", [0], 0.0, 1.0, "", False), {}
+        "update_trace",
+        (),
+        named(tab, "update_trace", "a reader that is gone", [0], 0.0, 1.0, "", False),
     )
 
     assert controls.readers_comboBox.currentText() == before
@@ -159,9 +173,13 @@ def test_write_back_reads_no_widget(tab: Triad, actions: Any) -> None:
 
     with replaying():
         tab.tab_view.write_back(
-            "update_trace", (READER, [channel], 1.0, 0.5, "", False), {}
+            "update_trace",
+            (),
+            named(tab, "update_trace", READER, [channel], 1.0, 0.5, "", False),
         )
-        tab.tab_view.write_back("plot_events", (FINDER, channel, [0, 1], ""), {})
+        tab.tab_view.write_back(
+            "plot_events", (), named(tab, "plot_events", FINDER, channel, [0, 1], "")
+        )
 
 
 def test_an_action_with_nothing_to_show_is_ignored(tab: Triad, actions: Any) -> None:

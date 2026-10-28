@@ -46,7 +46,90 @@ def test_a_decorated_method_records_one_entry_under_its_declared_name() -> None:
     result = tab.draw(3, scale=2.0)
 
     assert result == 6
-    assert tab.entries == [{"action": "draw", "args": (3,), "kwargs": {"scale": 2.0}}]
+    assert tab.entries == [
+        {"action": "draw", "args": (), "kwargs": {"number": 3, "scale": 2.0}}
+    ]
+
+
+def test_every_argument_is_saved_under_its_name_however_it_was_passed() -> None:
+    """A saved file says what each value is, so a reader does not need the code to tell."""
+    tab = _Recorder()
+
+    tab.draw(3, 2.0)
+    tab.draw(number=3, scale=2.0)
+    tab.draw(3, scale=2.0)
+
+    assert tab.entries[0] == tab.entries[1] == tab.entries[2]
+    assert tab.entries[0]["kwargs"] == {"number": 3, "scale": 2.0}
+
+
+def test_a_default_the_caller_left_out_is_saved_too() -> None:
+    tab = _Recorder()
+
+    tab.draw(3)
+
+    assert tab.entries[0]["kwargs"] == {"number": 3, "scale": 1.0}
+
+
+def test_a_named_entry_replays_and_records_the_same_entry() -> None:
+    tab = _Recorder()
+    tab.draw(3, scale=2.0)
+    entry = tab.entries[0]
+
+    tab.draw(*entry["args"], **entry["kwargs"])
+
+    assert tab.entries[1] == entry
+
+
+def test_an_entry_saved_with_positional_values_still_replays() -> None:
+    """Files saved before arguments were named hold an args list; replay accepts it."""
+    tab = _Recorder()
+    old_entry = {"action": "draw", "args": [3], "kwargs": {"scale": 2.0}}
+
+    result = tab.draw(*old_entry["args"], **old_entry["kwargs"])
+
+    assert result == 6
+    assert tab.entries == [
+        {"action": "draw", "args": (), "kwargs": {"number": 3, "scale": 2.0}}
+    ]
+
+
+def test_extra_keyword_arguments_are_saved_flat_so_they_replay() -> None:
+    class _Open(_Recorder):
+        @register_action("open")
+        def open(self, name: str, **options: Any) -> None:
+            pass
+
+    tab = _Open()
+
+    tab.open("a", colour="red")
+
+    assert tab.entries[0]["kwargs"] == {"name": "a", "colour": "red"}
+    tab.open(*tab.entries[0]["args"], **tab.entries[0]["kwargs"])
+    assert tab.entries[1] == tab.entries[0]
+
+
+def test_a_method_whose_values_cannot_all_be_named_is_saved_as_called() -> None:
+    """``*args`` and positional-only parameters have no name to replay by."""
+
+    class _Varied(_Recorder):
+        @register_action("many")
+        def many(self, *values: int) -> None:
+            pass
+
+        @register_action("only")
+        def only(self, value: int, /, scale: float = 1.0) -> None:
+            pass
+
+    tab = _Varied()
+
+    tab.many(1, 2)
+    tab.only(4, scale=2.0)
+
+    assert tab.entries == [
+        {"action": "many", "args": (1, 2), "kwargs": {}},
+        {"action": "only", "args": (4,), "kwargs": {"scale": 2.0}},
+    ]
 
 
 def test_the_entry_does_not_carry_the_python_method_name() -> None:

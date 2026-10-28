@@ -14,7 +14,7 @@ from typing import Any, List
 import pytest
 
 from poriscope.utils.ReplayGuard import replaying
-from tests.integration.flows._triad import Triad, build_event_analysis_tab
+from tests.integration.flows._triad import Triad, build_event_analysis_tab, named
 
 LOADER = "events"
 FITTER = "fitter"
@@ -41,7 +41,9 @@ def test_a_plot_events_entry_shows_everything_the_plot_used(
     controls.set_raw(False)
 
     tab.tab_view.write_back(
-        "plot_events", (LOADER, FITTER, CHANNEL, [0, 1, 2], "", True), {}
+        "plot_events",
+        (),
+        named(tab, "plot_events", LOADER, FITTER, CHANNEL, [0, 1, 2], "", True),
     )
 
     assert controls.loaders_comboBox.currentText() == LOADER
@@ -61,7 +63,9 @@ def test_a_fit_events_entry_shows_its_fitter_channel_and_filter(
     controls.set_eventfitter("another fitter")
     controls.set_channels([])
 
-    tab.tab_view.write_back("fit_events", (FITTER, CHANNEL, ""), {})
+    tab.tab_view.write_back(
+        "fit_events", (), named(tab, "fit_events", FITTER, CHANNEL, "")
+    )
 
     assert controls.eventfitters_comboBox.currentText() == FITTER
     assert controls.channel_comboBox.getSelectedItems() == [str(CHANNEL)]
@@ -75,7 +79,9 @@ def test_a_fit_entry_leaves_the_loader_alone_because_it_does_not_record_one(
     controls = tab.tab_view.eventAnalysisControls
     before = controls.loaders_comboBox.currentText()
 
-    tab.tab_view.write_back("fit_events", (FITTER, CHANNEL, ""), {})
+    tab.tab_view.write_back(
+        "fit_events", (), named(tab, "fit_events", FITTER, CHANNEL, "")
+    )
 
     assert controls.loaders_comboBox.currentText() == before
 
@@ -93,7 +99,9 @@ def test_the_event_index_is_written_in_canonical_form(
     tab: Triad, actions: Any, events: List[int], text: str
 ) -> None:
     tab.tab_view.write_back(
-        "plot_events", (LOADER, FITTER, CHANNEL, events, "", False), {}
+        "plot_events",
+        (),
+        named(tab, "plot_events", LOADER, FITTER, CHANNEL, events, "", False),
     )
 
     assert tab.tab_view.eventAnalysisControls.event_index_lineEdit.text() == text
@@ -111,7 +119,7 @@ def test_a_named_filter_is_shown_for_every_kind_of_entry(
         "plot_events": (LOADER, FITTER, CHANNEL, [0], "a filter", False),
     }
 
-    tab.tab_view.write_back(action, entries[action], {})
+    tab.tab_view.write_back(action, (), named(tab, action, *entries[action]))
 
     assert controls.filters_comboBox.currentText() == "a filter"
     actions.assert_not_called()
@@ -125,7 +133,9 @@ def test_writing_back_a_plot_asks_for_the_loaders_channel_list(
     tab.tab_view.loader_channels_requested.connect(asked.append)
 
     tab.tab_view.write_back(
-        "plot_events", (LOADER, FITTER, CHANNEL, [0], "", False), {}
+        "plot_events",
+        (),
+        named(tab, "plot_events", LOADER, FITTER, CHANNEL, [0], "", False),
     )
 
     assert asked == [LOADER]
@@ -143,8 +153,17 @@ def test_a_value_that_is_not_an_option_is_skipped_and_said(
 
     tab.tab_view.write_back(
         "plot_events",
-        ("a loader that is gone", "a fitter that is gone", CHANNEL, [0], "", False),
-        {},
+        (),
+        named(
+            tab,
+            "plot_events",
+            "a loader that is gone",
+            "a fitter that is gone",
+            CHANNEL,
+            [0],
+            "",
+            False,
+        ),
     )
 
     assert controls.loaders_comboBox.currentText() == before
@@ -156,9 +175,13 @@ def test_write_back_reads_no_widget(tab: Triad, actions: Any) -> None:
     """It runs under the replay tripwire: a read of a controls helper would raise."""
     with replaying():
         tab.tab_view.write_back(
-            "plot_events", (LOADER, FITTER, CHANNEL, [0, 1], "", True), {}
+            "plot_events",
+            (),
+            named(tab, "plot_events", LOADER, FITTER, CHANNEL, [0, 1], "", True),
         )
-        tab.tab_view.write_back("fit_events", (FITTER, CHANNEL, ""), {})
+        tab.tab_view.write_back(
+            "fit_events", (), named(tab, "fit_events", FITTER, CHANNEL, "")
+        )
 
 
 def test_an_action_with_nothing_to_show_is_ignored(tab: Triad, actions: Any) -> None:

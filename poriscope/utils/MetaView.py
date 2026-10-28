@@ -423,9 +423,9 @@ class MetaView(QWidget, WalkthroughMixin, metaclass=QObjectABCMeta):
 
         :param action: the entry's declared action name
         :type action: str
-        :param args: the entry's recorded positional arguments
+        :param args: the entry's recorded positional values, empty when every value has a name
         :type args: Tuple[Any, ...]
-        :param kwargs: the entry's recorded keyword arguments
+        :param kwargs: the entry's recorded values, each under its parameter name
         :type kwargs: Dict[str, Any]
         """
 

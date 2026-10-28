@@ -114,7 +114,7 @@ class TestRecordAction:
         controller.start_run("a", repeats=2)
 
         assert list(controller.tab_action_history.values()) == [
-            {"action": "start_run", "args": ("a",), "kwargs": {"repeats": 2}}
+            {"action": "start_run", "args": (), "kwargs": {"name": "a", "repeats": 2}}
         ]
 
 

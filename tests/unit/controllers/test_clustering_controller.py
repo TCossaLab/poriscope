@@ -870,7 +870,11 @@ class TestTheRunIsTheRecordedClusterRun:
 
         assert produced is True
         assert recorded == [
-            {"action": "cluster_run", "args": (config, "L"), "kwargs": {}}
+            {
+                "action": "cluster_run",
+                "args": (),
+                "kwargs": {"config": config, "loader": "L"},
+            }
         ]
 
     def test_a_clustering_that_failed_downstream_is_not_recorded(
@@ -969,7 +973,9 @@ class TestMergeIsTheRecordedMergeClusters:
 
         controller.model.merge_clusters.assert_called_once_with(0, 1)
         mock_view.show_clusters.assert_called_once_with(*merged)
-        assert recorded == [{"action": "merge_clusters", "args": (0, 1), "kwargs": {}}]
+        assert recorded == [
+            {"action": "merge_clusters", "args": (), "kwargs": {"keep": 0, "merge": 1}}
+        ]
 
     def test_with_no_clustering_nothing_is_merged_or_recorded(
         self, controller: ClusteringController, mock_view: MagicMock
