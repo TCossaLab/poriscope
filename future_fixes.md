@@ -60,11 +60,6 @@ Step 10 waits for both tracks.
 - **An overlay followed by Plot Events, in a kept history.** Undo after Plot Events pops it and replays from the last reset, so the
   overlay comes back; decide what a saved configuration keeps of an overlay that Plot Events replaced.
 
-- **An Event Analysis commit test failed once and was not diagnosed (2026-10-29).**
-  `test_event_analysis_flow_no_gui.py::test_committing_with_another_loader_selected_writes_the_writers_own_fit`
-  saw a "Ch0: Wrote 25/25 events" status line where it expects none, in a run of `tests/integration` with the unit
-  controller and view tests (2,965 passed); it passed alone right after. If it recurs, check whether that line comes
-  from the commit under test or from a worker of the earlier fit still reporting.
 - **A replay scenario failed once and was not diagnosed (2026-10-26).**
   `test_replay_guard_no_gui.py::test_a_replay_reproduces_what_the_action_produced[EventAnalysisController]`
   failed once, in the first run after its second-tab perturbation was made effective; the output was not kept.
