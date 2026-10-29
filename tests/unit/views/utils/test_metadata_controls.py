@@ -294,6 +294,67 @@ class TestPlotTypeChanged:
         self._set_plot_type(mc, "Scatterplot")
         assert "plot_type_changed" in received
 
+    #: Which of the X, Y and Z axes each plot type draws from.
+    AXES_USED = {
+        "Histogram": (True, False, False),
+        "Normalized Histogram": (True, False, False),
+        "Categorical Histogram": (True, False, False),
+        "Kernel Density Plot": (True, False, False),
+        "Capture Rate": (False, False, False),
+        "Heatmap": (True, True, False),
+        "Scatterplot": (True, True, False),
+        "3D Scatterplot": (True, True, True),
+        "Raw Event Overlay": (False, False, False),
+        "Filtered Event Overlay": (False, False, False),
+        "Raw All Points Histogram": (False, False, False),
+        "Normalized Raw All Points Histogram": (False, False, False),
+        "Filtered All Points Histogram": (False, False, False),
+        "Normalized Filtered All Points Histogram": (False, False, False),
+    }
+
+    def test_every_plot_type_on_offer_has_an_axes_layout(self, mc):
+        offered = {
+            mc.plot_type_comboBox.itemText(i)
+            for i in range(1, mc.plot_type_comboBox.count())
+        }
+        assert offered == set(self.AXES_USED)
+
+    @pytest.mark.parametrize("plot_type", sorted(AXES_USED))
+    def test_each_plot_type_enables_only_the_axes_it_draws_from(self, mc, plot_type):
+        """Each axis's dropdown, log box and units label follow it; a disabled log box is unticked."""
+        # Start from the opposite layout, every axis on and logged, so a type that
+        # left the axes alone shows.
+        self._set_plot_type(mc, "3D Scatterplot")
+        for box in (
+            mc.x_axis_logscale_checkbox,
+            mc.y_axis_logscale_checkbox,
+            mc.z_axis_logscale_checkbox,
+        ):
+            box.setChecked(True)
+
+        self._set_plot_type(mc, plot_type)
+
+        axes = (
+            (mc.x_axis_comboBox, mc.x_axis_logscale_checkbox, mc.x_axis_units_label),
+            (mc.y_axis_comboBox, mc.y_axis_logscale_checkbox, mc.y_axis_units_label),
+            (mc.z_axis_comboBox, mc.z_axis_logscale_checkbox, mc.z_axis_units_label),
+        )
+        for used, (combo, log_box, units) in zip(self.AXES_USED[plot_type], axes):
+            assert combo.isEnabled() is used
+            assert log_box.isEnabled() is used
+            assert units.isEnabled() is used
+            if not used:
+                assert not log_box.isChecked()
+
+    def test_disabled_axes_leave_update_plot_enabled(self, mc):
+        """Update Plot needs an X column; it reads the dropdown's text, enabled or not."""
+        mc.db_loader_comboBox.addItem("loader")
+        mc.update_axes(["duration", "start_time"])
+        self._set_plot_type(mc, "Capture Rate")
+
+        assert not mc.x_axis_comboBox.isEnabled()
+        assert mc.update_plot_button.isEnabled()
+
 
 # ===========================================================================
 # update_axes

@@ -25,7 +25,7 @@
 
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from PySide6.QtCore import (
     QRegularExpression,
@@ -53,6 +53,25 @@ from poriscope.utils.LogDecorator import log
 from poriscope.utils.MetaSubsetTabControls import MetaSubsetTabControls
 from poriscope.utils.ReplayGuard import forbid_while_replaying
 from poriscope.views.widgets.multiselect_filter import MultiSelectFilterComboBox
+
+#: Which of the X, Y and Z axes each plot type draws from. Capture Rate always plots the
+#: events' start times, and the event-data plots draw the events themselves.
+_AXES_USED: Dict[str, Tuple[bool, bool, bool]] = {
+    "Histogram": (True, False, False),
+    "Normalized Histogram": (True, False, False),
+    "Categorical Histogram": (True, False, False),
+    "Kernel Density Plot": (True, False, False),
+    "Capture Rate": (False, False, False),
+    "Heatmap": (True, True, False),
+    "Scatterplot": (True, True, False),
+    "3D Scatterplot": (True, True, True),
+    "Raw Event Overlay": (False, False, False),
+    "Filtered Event Overlay": (False, False, False),
+    "Raw All Points Histogram": (False, False, False),
+    "Normalized Raw All Points Histogram": (False, False, False),
+    "Filtered All Points Histogram": (False, False, False),
+    "Normalized Filtered All Points Histogram": (False, False, False),
+}
 
 
 class MetadataControls(MetaSubsetTabControls):
@@ -599,59 +618,50 @@ class MetadataControls(MetaSubsetTabControls):
     # QWidget status
     @log(logger=logger)
     def _plot_type_changed(self, index: int) -> None:
-        current_text = self.plot_type_comboBox.currentText()
-        if current_text == "Heatmap" or current_text == "Scatterplot":
-            self.x_axis_comboBox.setEnabled(True)
-            self.y_axis_comboBox.setEnabled(True)
-            self.z_axis_comboBox.setEnabled(False)
-            self.x_axis_logscale_checkbox.setEnabled(True)
-            self.y_axis_logscale_checkbox.setEnabled(True)
-            self.z_axis_logscale_checkbox.setEnabled(False)
-            self.z_axis_logscale_checkbox.setChecked(False)
-            self.x_axis_units_label.setEnabled(True)
-            self.y_axis_units_label.setEnabled(True)
-            self.z_axis_units_label.setEnabled(False)
-        elif current_text == "Histogram" or current_text == "Kernel Density Plot":
-            self.x_axis_comboBox.setEnabled(True)
-            self.y_axis_comboBox.setEnabled(False)
-            self.z_axis_comboBox.setEnabled(False)
-            self.x_axis_logscale_checkbox.setEnabled(True)
-            self.y_axis_logscale_checkbox.setEnabled(False)
-            self.z_axis_logscale_checkbox.setEnabled(False)
-            self.y_axis_logscale_checkbox.setChecked(False)
-            self.z_axis_logscale_checkbox.setChecked(False)
-            self.x_axis_units_label.setEnabled(True)
-            self.y_axis_units_label.setEnabled(False)
-            self.z_axis_units_label.setEnabled(False)
-        elif current_text == "3D Scatterplot":
-            self.x_axis_comboBox.setEnabled(True)
-            self.y_axis_comboBox.setEnabled(True)
-            self.z_axis_comboBox.setEnabled(True)
-            self.x_axis_logscale_checkbox.setEnabled(True)
-            self.y_axis_logscale_checkbox.setEnabled(True)
-            self.z_axis_logscale_checkbox.setEnabled(True)
-            self.x_axis_units_label.setEnabled(True)
-            self.y_axis_units_label.setEnabled(True)
-            self.z_axis_units_label.setEnabled(True)
-        elif current_text in [
-            "Raw All Points Histogram",
-            "Filtered All Points Histogram",
-            "Event Overlay",
-        ]:
-            self.x_axis_comboBox.setEnabled(False)
-            self.y_axis_comboBox.setEnabled(False)
-            self.z_axis_comboBox.setEnabled(False)
-            self.x_axis_logscale_checkbox.setEnabled(False)
-            self.y_axis_logscale_checkbox.setEnabled(False)
-            self.z_axis_logscale_checkbox.setEnabled(False)
-            self.x_axis_units_label.setEnabled(False)
-            self.y_axis_units_label.setEnabled(False)
-            self.z_axis_units_label.setEnabled(False)
+        self._enable_axes_for_plot_type(self.plot_type_comboBox.currentText())
         parameters = self.collect_parameters()
         self.logger.debug(
             f"Emitting actionTriggered due to parameter change with parameters {parameters}"
         )
         self.actionTriggered.emit("MetadataView", "plot_type_changed", (parameters,))
+
+    @log(logger=logger)
+    def _enable_axes_for_plot_type(self, plot_type: str) -> None:
+        """
+        Enable the axes a plot type draws from and disable the rest, without emitting.
+
+        Each axis's dropdown, log box and units label follow it, and a disabled log box is
+        unticked. The placeholder leaves the axes as they are.
+
+        :param plot_type: the plot type shown
+        :type plot_type: str
+        """
+        used = _AXES_USED.get(plot_type)
+        if used is None:
+            return
+        axes = (
+            (
+                self.x_axis_comboBox,
+                self.x_axis_logscale_checkbox,
+                self.x_axis_units_label,
+            ),
+            (
+                self.y_axis_comboBox,
+                self.y_axis_logscale_checkbox,
+                self.y_axis_units_label,
+            ),
+            (
+                self.z_axis_comboBox,
+                self.z_axis_logscale_checkbox,
+                self.z_axis_units_label,
+            ),
+        )
+        for enabled, (combo, log_box, units) in zip(used, axes):
+            combo.setEnabled(enabled)
+            log_box.setEnabled(enabled)
+            units.setEnabled(enabled)
+            if not enabled:
+                log_box.setChecked(False)
 
     @log(logger=logger)
     def update_axes(self, axes: List[str]) -> None:
