@@ -357,6 +357,160 @@ class TestPlotTypeChanged:
 
 
 # ===========================================================================
+# Setters for writing a recorded value back
+# ===========================================================================
+
+
+@pytest.fixture
+def emitted(mc):
+    """Every action the panel emits from now on."""
+    actions = []
+    mc.actionTriggered.connect(lambda _view, action, _params: actions.append(action))
+    return actions
+
+
+class TestWriteBackSetters:
+    """Each writes one field, emits no action, and says whether a value was an option."""
+
+    COLUMNS = ["duration", "start_time", "max_blockage"]
+
+    def test_set_loader_shows_an_option(self, mc, emitted):
+        mc.db_loader_comboBox.addItem("first")
+        mc.db_loader_comboBox.addItem("second")
+        emitted.clear()  # the first loader added is selected, which emits
+
+        assert mc.set_loader("second") is True
+
+        assert mc.db_loader_comboBox.currentText() == "second"
+        assert emitted == []
+
+    def test_set_loader_refuses_a_loader_not_on_offer(self, mc, emitted):
+        mc.db_loader_comboBox.addItem("first")
+
+        assert mc.set_loader("gone") is False
+
+        assert mc.db_loader_comboBox.currentText() == "first"
+
+    def test_set_plot_type_shows_it_with_its_axes(self, mc, emitted):
+        assert mc.set_plot_type("Scatterplot") is True
+
+        assert mc.plot_type_comboBox.currentText() == "Scatterplot"
+        assert mc.y_axis_comboBox.isEnabled()
+        assert not mc.z_axis_comboBox.isEnabled()
+        assert emitted == []
+
+    def test_set_plot_type_refuses_an_unknown_type(self, mc, emitted):
+        assert mc.set_plot_type("Pie Chart") is False
+
+        assert mc.plot_type_comboBox.currentText() == "Select Plot Type"
+
+    def test_set_axes_shows_each_column(self, mc, emitted):
+        mc.update_axes(self.COLUMNS)
+        emitted.clear()  # filling the axes asks for their units, which emits
+
+        assert mc.set_axes(["max_blockage", "duration", "start_time"]) is True
+
+        assert mc.x_axis_comboBox.currentText() == "max_blockage"
+        assert mc.y_axis_comboBox.currentText() == "duration"
+        assert mc.z_axis_comboBox.currentText() == "start_time"
+        assert emitted == []
+
+    def test_set_axes_shows_the_columns_that_exist_and_says_one_did_not(
+        self, mc, emitted
+    ):
+        mc.update_axes(self.COLUMNS)
+
+        assert mc.set_axes(["start_time", "gone", None]) is False
+
+        assert mc.x_axis_comboBox.currentText() == "start_time"
+        assert (
+            mc.y_axis_comboBox.currentText() == "start_time"
+        )  # update_axes' default, unchanged
+
+    def test_set_logs_ticks_each_box(self, mc, emitted):
+        mc.set_plot_type("3D Scatterplot")
+
+        mc.set_logs([True, False, True])
+
+        assert mc.x_axis_logscale_checkbox.isChecked()
+        assert not mc.y_axis_logscale_checkbox.isChecked()
+        assert mc.z_axis_logscale_checkbox.isChecked()
+        assert emitted == []
+
+    def test_set_bins_writes_widths_with_sizes_and_its_validator(self, mc, emitted):
+        mc.set_bins([0.5, 1.5], True)
+
+        assert mc.sizes_checkbox.isChecked()
+        assert mc.bins_lineEdit.text() == "0.5, 1.5"
+        assert mc.bins_lineEdit.validator() is mc.float_validator
+        assert emitted == []
+
+    def test_set_bins_writes_counts_without_sizes(self, mc, emitted):
+        mc.set_bins([0.5], True)
+
+        mc.set_bins([20], False)
+
+        assert not mc.sizes_checkbox.isChecked()
+        assert mc.bins_lineEdit.text() == "20"
+        assert mc.bins_lineEdit.validator() is mc.int_validator
+
+    def test_set_bins_clears_the_entry_for_estimated_bins(self, mc, emitted):
+        mc.bins_lineEdit.setText("7")
+
+        mc.set_bins(None, False)
+
+        assert mc.bins_lineEdit.text() == ""
+
+    def test_set_event_count_writes_the_count(self, mc, emitted):
+        mc.set_event_count(4)
+
+        assert mc.n_events_lineEdit.text() == "4"
+        assert emitted == []
+
+    def test_set_raw_ticks_the_box(self, mc, emitted):
+        mc.set_raw(True)
+
+        assert mc.raw_checkbox.isChecked()
+        assert emitted == []
+
+    def test_set_filters_selects_exactly_those(self, mc, emitted):
+        for name in ("F0", "F1", "F2"):
+            mc.filter_comboBox.addItem(name)
+        mc.filter_comboBox.selectItem("F2")
+
+        assert mc.set_filters(["F0", "F1"]) is True
+
+        assert mc.filter_comboBox.getSelectedItems() == ["F0", "F1"]
+        assert emitted == []
+
+    def test_set_filters_selects_those_on_offer_and_says_one_was_not(self, mc, emitted):
+        mc.filter_comboBox.addItem("F0")
+
+        assert mc.set_filters(["F0", "gone"]) is False
+
+        assert mc.filter_comboBox.getSelectedItems() == ["F0"]
+
+    def test_set_filters_with_none_clears_the_selection(self, mc, emitted):
+        mc.filter_comboBox.addItem("F0")
+        mc.filter_comboBox.selectItem("F0")
+
+        assert mc.set_filters([]) is True
+
+        assert mc.filter_comboBox.getSelectedItems() == []
+
+    def test_a_written_value_revalidates_the_buttons(self, mc, emitted):
+        """Update Plot follows what was written, as it follows a typed value."""
+        mc.db_loader_comboBox.addItem("loader")
+        mc.update_axes(self.COLUMNS)
+        mc.set_plot_type("Histogram")
+        assert mc.update_plot_button.isEnabled()
+
+        mc.set_bins([-1], False)
+
+        assert not mc.update_plot_button.isEnabled()
+
+
+# ===========================================================================
 # update_axes
 # ===========================================================================
 
