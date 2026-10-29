@@ -665,3 +665,45 @@ def test_a_normalised_all_points_histogram_exports_what_it_draws(tab: Triad) -> 
 def test_the_view_no_longer_asks_the_controller_for_each_dataset(signal: str) -> None:
     """The Controller runs the loop, so it calls the Model and the View directly."""
     assert not hasattr(MetadataView, signal)
+
+
+def click(triad: Triad, plot_type: str, axes: List[str], filters: List[str]) -> None:
+    """Press Update Plot with this intent, as the panel's click does."""
+    triad.tab_controller.request_overlay_plot(
+        LOADER,
+        plot_type,
+        axes,
+        [False, False, False],
+        [20],
+        False,
+        {name: FILTERS[name] for name in filters},
+        {"exp_a": ["0"]},
+    )
+
+
+@pytest.mark.timeout(120)
+@pytest.mark.parametrize("second", ["Heatmap", "Scatterplot", "Kernel Density Plot"])
+def test_undo_after_another_plot_type_brings_the_first_back(
+    tab: Triad, second: str
+) -> None:
+    axes = ["max_deviation", "start_time", "max_blockage"]
+    click(tab, "Histogram", axes, ["F0"])
+    click(tab, second, axes, ["F0"])
+
+    tab.tab_controller.update_tab_actions(None, True)
+
+    assert kept(tab).plot_type == "Histogram"
+    assert on_figure(tab) == {(0, "F0")}
+    assert drawn(tab) > 0
+    assert history(tab) == ["reset", "overlay_plot"]
+
+
+@pytest.mark.timeout(120)
+@pytest.mark.parametrize("plot_type", ["Histogram", "Heatmap", "Scatterplot"])
+def test_undo_of_the_only_plot_clears_the_figure(tab: Triad, plot_type: str) -> None:
+    click(tab, plot_type, ["max_deviation", "start_time", "max_blockage"], ["F0"])
+
+    tab.tab_controller.update_tab_actions(None, True)
+
+    assert on_figure(tab) == set()
+    assert drawn(tab) == 0

@@ -524,6 +524,10 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
         """
         Update or undo the current tab action history, and emit the updated state.
 
+        Undo removes the last action and any resets before it, then replays from the
+        last reset left. When none is left, the last reset it removed is replayed first,
+        so undoing a figure's only plot clears the figure.
+
         :param history: Dictionary representing a new action to add.
         :type history: Optional[dict]
         :param undo: If True, removes the most recent action and reverts to the previous state.
@@ -537,6 +541,9 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
                 self.tab_action_history.popitem()
             except KeyError:
                 return
+            # The reset an undone action started its figure with goes too, and is kept
+            # here: with no reset left to replay from, it clears the figure first.
+            removed_reset: Optional[Dict[str, Any]] = None
             try:
                 last_item = self.tab_action_history[
                     next(reversed(self.tab_action_history))
@@ -545,7 +552,7 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
                 pass
             else:
                 while last_item.get("action") == RESET_ACTION:
-                    self.tab_action_history.popitem()
+                    removed_reset = self.tab_action_history.popitem()[1]
                     try:
                         last_item = self.tab_action_history[
                             next(reversed(self.tab_action_history))
@@ -557,16 +564,18 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
             # thread for nothing. It is kept, not truncated, so a later Undo past the
             # reset still has it to redraw from.
             entries = list(deepcopy(self.tab_action_history).items())
-            start = max(
-                (
-                    position
-                    for position, (_, entry) in enumerate(entries)
-                    if entry.get("action") == RESET_ACTION
-                ),
-                default=0,
-            )
+            resets = [
+                position
+                for position, (_, entry) in enumerate(entries)
+                if entry.get("action") == RESET_ACTION
+            ]
+            start = max(resets, default=0)
             self.tab_action_history = OrderedDict(entries[:start])
-            self.replay([entry for _, entry in entries[start:]])
+            replayed = [entry for _, entry in entries[start:]]
+            if not resets and removed_reset is not None:
+                # Without it the figure would keep what was undone.
+                replayed.insert(0, deepcopy(removed_reset))
+            self.replay(replayed)
         self.update_tab_action_history.emit(
             self.__class__.__name__, self.tab_action_history
         )

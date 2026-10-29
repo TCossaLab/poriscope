@@ -77,7 +77,7 @@ def build_tab(controller: str, tmp_path: Path, database: str, controls: str) -> 
     )
     filters = {
         "own_raw": f"SELECT event_id, duration FROM events WHERE {SCOPE}",
-        "later_raw": f"SELECT event_id FROM events WHERE event_id >= 2 AND {SCOPE}",
+        "later_raw": f"SELECT event_id, duration FROM events WHERE event_id >= 2 AND {SCOPE}",
         "everything": "duration > 0",
     }
     combo = triad.tab_view._subset_controls.filter_comboBox
@@ -321,6 +321,7 @@ def test_undo_after_two_raw_plots_keeps_the_first_with_its_own_rows(
     """
     plot(metadata_tab, "own_raw", "0")
     plot(metadata_tab, "later_raw", "1")
+    assert on_figure(metadata_tab) == {(0, "own_raw"), (1, "later_raw")}
 
     undo(metadata_tab)
 

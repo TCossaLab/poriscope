@@ -323,7 +323,9 @@ class TestUndoUsesTheDeclaredResetName:
 
         controller.update_tab_actions(undo=True)
 
-        assert controller.view.calls == ["overlay:a"]  # type: ignore[attr-defined]
+        # No reset is left before the overlay, so the last one removed clears the
+        # figure first.
+        assert controller.view.calls == ["reset:2d", "overlay:a"]  # type: ignore[attr-defined]
 
 
 class TestLoadActionsFromJson:
