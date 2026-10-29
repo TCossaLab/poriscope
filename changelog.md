@@ -252,6 +252,8 @@
 
 * A Metadata plot with a Bins entry that holds no number (only a comma), or the same column on two axes, is now refused on the status panel instead of raising an error or opening a dialog, and the figure is left as it was
 
+* A Metadata plot after Reset, or redrawn by Undo, no longer records a second reset, and a refused plot on an empty figure leaves nothing in the action history
+
 * **Fixed the Metadata tab's capture-rate plot always reporting at least one row dropped by the log filter, even when nothing was dropped**; the count now excludes the one fewer interval than event that n events always produce
 
 * **Fixed the Metadata tab's heatmap being drawn one bin width narrower than its data**, which pulled every plotted point's true position inward from where it should sit on the axes

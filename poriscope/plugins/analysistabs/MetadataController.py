@@ -208,9 +208,10 @@ class MetadataController(MetaSubsetTabController):
 
         The roll-back is the click's alone; a replay calls :meth:`overlay_plot` directly.
         So is the categorical check, which refuses before anything is drawn or recorded.
-        A refusal that left the figure as it was drops its record, so Undo does not spend a
-        step restoring an identical figure; one that changed the figure - it reset it, or
-        drew part of the request - is undone, which redraws from the history.
+        A refusal that left the figure as it was drops what it recorded - the reset a new
+        figure starts with as well - so Undo does not spend a step restoring an identical
+        figure; one that changed the figure - it cleared what was drawn, or drew part of
+        the request - is undone, which redraws from the history.
 
         :param loader: the database loader plugin's key
         :type loader: str
@@ -236,12 +237,14 @@ class MetadataController(MetaSubsetTabController):
         ):
             return
         before = set(self.model.overlay.datasets)
+        recorded = len(self.tab_action_history)
         drawn = self.overlay_plot(
             loader, plot_type, axes, logs, bins, sizes, filters, scope
         )
         if drawn is False:
             if self.model.overlay.datasets == before:
-                self.discard_last_tab_action()
+                while len(self.tab_action_history) > recorded:
+                    self.discard_last_tab_action()
             else:
                 self.update_tab_actions(None, True)
 
@@ -428,16 +431,13 @@ class MetadataController(MetaSubsetTabController):
         state = self.model.overlay
         bins_changed = state.bins != bins
         sizes_changed = state.sizes != sizes
-        if (
-            not state.figure.accepts(axis_type)
-            # Plot Events replaces the figure with an event grid without telling the
-            # Model, so the axes are asked as well.
-            or not view.axes_ready(axis_type)
-            or (state.columns and not all(col in state.columns for col in columns))
+        options_changed = bool(
+            (state.columns and not all(col in state.columns for col in columns))
             or (state.logs and not all(log in state.logs for log in logscales))
             or (state.plot_type is not None and plot_type != state.plot_type)
             or (plot_type in _BIN_SENSITIVE_PLOTS and (bins_changed or sizes_changed))
-        ):
+        )
+        if self._needs_new_figure(axis_type, options_changed):
             self.reset(axis_type)
 
         channel_id = int(channel) if channel is not None else None
@@ -673,15 +673,11 @@ class MetadataController(MetaSubsetTabController):
         # The selection tree reports channels as display strings.
         scope: Dict[Any, Any] = {exp: [channel]}
         state = self.model.overlay
-        # Plot Events replaces the figure with an event grid without telling the Model,
-        # so the axes are asked as well.
-        new_figure = (
-            not state.figure.accepts("2d")
-            or not self.view.axes_ready("2d")
-            or (state.plot_type is not None and plot_type != state.plot_type)
-        )
+        type_changed = state.plot_type is not None and plot_type != state.plot_type
         if plot_type in _ALL_POINTS_PLOTS:
-            if new_figure or state.bins != bins or state.sizes != sizes:
+            if self._needs_new_figure(
+                "2d", type_changed or state.bins != bins or state.sizes != sizes
+            ):
                 self.reset("2d")
             drawn = self.build_all_points_histogram(
                 loader,
@@ -697,7 +693,7 @@ class MetadataController(MetaSubsetTabController):
             )
         else:
             bins, sizes = None, False
-            if new_figure:
+            if self._needs_new_figure("2d", type_changed):
                 self.reset("2d")
             drawn = self.build_event_overlay(
                 loader, sql_filter, scope, plot_type, subset_name
@@ -714,6 +710,36 @@ class MetadataController(MetaSubsetTabController):
         channel_id = int(channel) if channel is not None else None
         state.datasets.add((loader, exp, channel_id, sql_filter, subset_name))
         return True
+
+    @log(logger=logger)
+    def _needs_new_figure(self, axis_type: str, options_changed: bool) -> bool:
+        """
+        Must the next dataset start a new figure, with a recorded reset?
+
+        Always when the figure cannot take a plot of this projection. An empty figure
+        starts with a reset unless it was just reset, so every history replays onto a
+        cleared figure and a Reset is not followed by a second one. An overlaid figure
+        starts again when the plot's options changed.
+
+        :param axis_type: Either '2d' or '3d', the projection the plot needs
+        :type axis_type: str
+        :param options_changed: do the plot's options differ from those on the figure
+        :type options_changed: bool
+        :return: True if a reset must come first
+        :rtype: bool
+        """
+        figure = self.model.overlay.figure
+        # Plot Events replaces the figure with an event grid without telling the Model,
+        # so the axes are asked as well.
+        if not figure.accepts(axis_type) or not self.view.axes_ready(axis_type):
+            return True
+        if figure in (FigureKind.EMPTY_2D, FigureKind.EMPTY_3D):
+            history = self.tab_action_history
+            just_reset = bool(history) and (
+                history[next(reversed(history))].get("action") == RESET_ACTION
+            )
+            return not just_reset
+        return options_changed
 
     @log(logger=logger)
     def _plots_as_categories(self, loader: str, column: Optional[str]) -> bool:

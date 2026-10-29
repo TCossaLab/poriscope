@@ -348,6 +348,87 @@ def test_a_second_event_overlay_of_the_same_type_adds_to_the_figure(
     assert history(tab).count("reset") == resets
 
 
+# ------------------------------------------------------------------ a new figure starts with a reset
+
+#: Columns each plot type can draw from the synthetic data.
+FIRST_FIGURE_AXES = {
+    "Histogram": ["max_deviation", "start_time", "max_blockage"],
+    "Scatterplot": ["max_deviation", "start_time", "max_blockage"],
+    "Categorical Histogram": ["event_id", "start_time", "max_blockage"],
+    "Raw Event Overlay": ["max_deviation", "start_time", "max_blockage"],
+}
+
+
+def reset_by_click(triad: Triad) -> None:
+    triad.tab_view.handle_parameter_change("metadatacontrols", "reset_plot", ({},))
+
+
+@pytest.mark.timeout(120)
+@pytest.mark.parametrize("plot_type", list(FIRST_FIGURE_AXES))
+def test_the_first_dataset_on_a_new_figure_records_a_reset(
+    tab: Triad, plot_type: str
+) -> None:
+    overlay(tab, plot_type, axes=FIRST_FIGURE_AXES[plot_type])
+
+    assert history(tab) == ["reset", "overlay_plot"]
+
+
+@pytest.mark.timeout(120)
+@pytest.mark.parametrize("plot_type", list(FIRST_FIGURE_AXES))
+def test_undo_after_two_overlays_keeps_the_first(tab: Triad, plot_type: str) -> None:
+    """Undo replays from the last reset, so the second dataset goes and the first stays."""
+    axes = FIRST_FIGURE_AXES[plot_type]
+    overlay(tab, plot_type, filters=["F0"], axes=axes)
+    overlay(tab, plot_type, filters=["F1"], axes=axes)
+
+    tab.tab_controller.update_tab_actions(None, True)
+
+    assert on_figure(tab) == {(0, "F0")}
+    assert history(tab) == ["reset", "overlay_plot"]
+
+
+@pytest.mark.timeout(120)
+@pytest.mark.parametrize("plot_type", ["Histogram", "Scatterplot"])
+def test_a_reset_followed_by_an_overlay_records_one_reset(
+    tab: Triad, plot_type: str
+) -> None:
+    overlay(tab, plot_type, filters=["F0"])
+    reset_by_click(tab)
+
+    overlay(tab, plot_type, filters=["F1"])
+
+    assert history(tab) == ["reset", "overlay_plot", "reset", "overlay_plot"]
+    assert on_figure(tab) == {(0, "F1")}
+
+
+@pytest.mark.timeout(120)
+def test_a_3d_plot_after_a_reset_still_gets_three_dimensional_axes(tab: Triad) -> None:
+    """The reset a click made was 2-D, so the 3-D plot records one of its own."""
+    reset_by_click(tab)
+
+    assert overlay(tab, "3D Scatterplot") is True
+
+    assert history(tab) == ["reset", "reset", "overlay_plot"]
+    assert kept(tab).figure is FigureKind.OVERLAY_3D
+
+
+@pytest.mark.timeout(120)
+def test_a_refused_click_on_a_new_figure_leaves_no_record(tab: Triad) -> None:
+    """Nothing was drawn and the figure is as it was, so neither the reset nor the plot stays."""
+    tab.tab_controller.request_overlay_plot(
+        LOADER,
+        "Scatterplot",
+        ["max_deviation", "start_time", "max_blockage"],
+        [False, False, False],
+        [20],
+        False,
+        {"none": FILTERS["none"]},
+        {"exp_a": ["0"]},
+    )
+
+    assert history(tab) == []
+
+
 # ------------------------------------------------------------------ what is kept, and where
 
 

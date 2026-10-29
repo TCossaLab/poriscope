@@ -11,6 +11,7 @@ Covers:
 
 from __future__ import annotations
 
+from collections import OrderedDict
 from typing import Dict, List
 from unittest.mock import MagicMock
 
@@ -1572,10 +1573,19 @@ class TestAClickedOverlayThatDrewNothing:
                 controller.model.overlay = OverlayState()
             return drawn
 
+        # The history records and discards as the real one does.
+        history: OrderedDict = OrderedDict()
+        controller.tab_action_history = history
+
+        def record(entry: dict) -> None:
+            history[len(history)] = entry
+
         controller._overlay_metadata_dataset = MagicMock(side_effect=draw)  # type: ignore[method-assign]
-        controller.discard_last_tab_action = MagicMock()  # type: ignore[method-assign]
+        controller.discard_last_tab_action = MagicMock(  # type: ignore[method-assign]
+            side_effect=lambda: history.popitem()
+        )
         controller.update_tab_actions = MagicMock()  # type: ignore[method-assign]
-        controller.record_action = MagicMock()  # type: ignore[method-assign]
+        controller.record_action = record  # type: ignore[method-assign]
         controller.request_overlay_plot(*_overlay_request().values())
 
     def test_a_drawn_overlay_is_kept(
