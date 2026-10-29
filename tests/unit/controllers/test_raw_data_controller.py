@@ -1568,8 +1568,15 @@ class TestRecordedActions:
         assert recorded == [
             {
                 "action": "update_trace",
-                "args": ("R", [0, 1], 3.0, 9.0, "F", True),
-                "kwargs": {},
+                "args": (),
+                "kwargs": {
+                    "reader": "R",
+                    "channels": [0, 1],
+                    "start": 3.0,
+                    "length": 9.0,
+                    "data_filter": "F",
+                    "baseline": True,
+                },
             }
         ]
 
@@ -1585,8 +1592,14 @@ class TestRecordedActions:
         assert recorded == [
             {
                 "action": "update_psd",
-                "args": ("R", [0], 3.0, 9.0, ""),
-                "kwargs": {},
+                "args": (),
+                "kwargs": {
+                    "reader": "R",
+                    "channels": [0],
+                    "start": 3.0,
+                    "length": 9.0,
+                    "data_filter": "",
+                },
             }
         ]
 
@@ -1615,8 +1628,14 @@ class TestFindEventsOnOneChannel:
         assert recorded == [
             {
                 "action": "find_events",
-                "args": ("finder", 3, [(1.0, 2.0)], "", limits),
-                "kwargs": {},
+                "args": (),
+                "kwargs": {
+                    "eventfinder": "finder",
+                    "channel": 3,
+                    "ranges": [(1.0, 2.0)],
+                    "data_filter": "",
+                    "time_limits": limits,
+                },
             }
         ]
         controller.model.run_generators.assert_called_once_with("finder")
@@ -1668,7 +1687,9 @@ class TestFindEventsOnOneChannel:
             "",
         )
 
-        assert [(e["args"][1], e["args"][4]) for e in recorded] == [
+        assert [
+            (e["kwargs"]["channel"], e["kwargs"]["time_limits"]) for e in recorded
+        ] == [
             (0, {"start": 0.0, "end": 1.0}),
             (2, {"start": 5.0, "end": 6.0}),
         ]
@@ -1686,7 +1707,7 @@ class TestFindEventsOnOneChannel:
             "",
         )
 
-        assert [e["args"][1] for e in recorded] == [0, 2]
+        assert [e["kwargs"]["channel"] for e in recorded] == [0, 2]
 
 
 class TestPlotEventsIsRecordedWhenItPlots:
@@ -1707,7 +1728,16 @@ class TestPlotEventsIsRecordedWhenItPlots:
 
         assert plotted is True
         assert recorded == [
-            {"action": "plot_events", "args": ("finder", 0, [1, 2], ""), "kwargs": {}}
+            {
+                "action": "plot_events",
+                "args": (),
+                "kwargs": {
+                    "eventfinder": "finder",
+                    "channel": 0,
+                    "events": [1, 2],
+                    "data_filter": "",
+                },
+            }
         ]
         mock_view.set_event_plot_data.assert_called_once()
 

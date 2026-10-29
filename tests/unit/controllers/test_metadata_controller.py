@@ -11,6 +11,7 @@ Covers:
 
 from __future__ import annotations
 
+from collections import OrderedDict
 from typing import Dict, List
 from unittest.mock import MagicMock
 
@@ -20,6 +21,9 @@ from pytest_mock import MockerFixture
 
 from poriscope.plugins.analysistabs.MetadataController import MetadataController
 from poriscope.plugins.analysistabs.MetadataModel import MetadataModel
+from poriscope.plugins.analysistabs.MetadataView import MetadataView
+from poriscope.utils.MetaController import declared_actions
+from poriscope.utils.MetaSubsetTabModel import OverlayState
 
 # ----------------------------- fixtures ------------------------------
 
@@ -76,6 +80,8 @@ def controller(mock_view: MagicMock, mocker: MockerFixture) -> MetadataControlle
     ctrl: MetadataController = MetadataController.__new__(MetadataController)  # type: ignore[type-abstract]
     ctrl.view = mock_view
     ctrl.model = mocker.Mock()
+    # A real Model always starts with an empty overlay.
+    ctrl.model.overlay = OverlayState()
     ctrl.logger = mocker.Mock()  # type: ignore[assignment,method-assign]
     mocker.patch("poriscope.utils.MetaSubsetTabController.QMessageBox.warning")
     return ctrl
@@ -815,9 +821,7 @@ class TestFitCaptureRate:
         :return: None
         :rtype: None
         """
-        controller.fit_capture_rate(
-            np.asarray(times), None, False, MagicMock(), "x", "y", "label"
-        )
+        controller.fit_capture_rate(np.asarray(times), None, False, "x", "y", "label")
 
     @staticmethod
     def _messages(controller):
@@ -908,7 +912,7 @@ class TestFitCaptureRate:
         self, controller, mock_view
     ) -> None:
         """
-        ``set_capture_rate`` draws the histogram from this, so handing back the raw
+        ``show_capture_rate`` draws the histogram from this, so handing back the raw
         times would plot event times against inter-event-time bins.
         """
         log_times = np.arange(20.0)
@@ -918,8 +922,9 @@ class TestFitCaptureRate:
         self._request(controller, list(range(30)))
 
         np.testing.assert_array_equal(
-            mock_view.set_capture_rate.call_args.args[6], log_times
+            mock_view.show_capture_rate.call_args.args[6], log_times
         )
+        assert mock_view.show_capture_rate.call_args.args[7:] == ("x", "y", "label")
 
     def test_a_fit_that_will_not_converge_is_reported(self, controller) -> None:
         controller.model.interevent_log_times.return_value = np.arange(20.0)
@@ -960,20 +965,23 @@ class TestCountCategories:
         """
         datasets = [np.array(["a"]), np.array(["b"])]
 
-        controller.count_categories(datasets, ["d1", "d2"], MagicMock(), "x", "y")
+        controller.count_categories(datasets, ["d1", "d2"], "x", "y")
 
         assert controller.model.categorical_counts.call_args.args[0] is datasets
 
     def test_the_tallies_go_back_to_the_view(self, controller, mock_view) -> None:
         counts = [(["a"], np.array([1.0]))]
         controller.model.categorical_counts.return_value = counts
-        ax = MagicMock()
 
-        controller.count_categories([np.array(["a"])], ["d1"], ax, "x", "y")
+        newest = np.array(["a"])
 
-        mock_view.set_categorical_counts.assert_called_once_with(
-            counts, ["d1"], ax, "x", "y"
+        assert controller.count_categories([newest], ["d1"], "x", "y") is True
+
+        mock_view.show_categorical_counts.assert_called_once_with(
+            counts, ["d1"], "x", "y"
         )
+        assert controller.model.overlay.values[-1] is newest
+        assert controller.model.overlay.labels == ["d1"]
 
     def test_a_column_the_tally_cannot_sort_is_reported(self, controller) -> None:
         """
@@ -985,7 +993,7 @@ class TestCountCategories:
             "'<' not supported between instances of 'NoneType' and 'str'"
         )
 
-        controller.count_categories([np.array(["a"])], ["d1"], MagicMock(), "x", "y")
+        controller.count_categories([np.array(["a"])], ["d1"], "x", "y")
 
         messages = [
             c.args[0] for c in controller.add_text_to_display.emit.call_args_list
@@ -996,9 +1004,9 @@ class TestCountCategories:
         """A stale bar chart must not be left under this dataset's label."""
         controller.model.categorical_counts.side_effect = ValueError("boom")
 
-        controller.count_categories([np.array(["a"])], ["d1"], MagicMock(), "x", "y")
+        controller.count_categories([np.array(["a"])], ["d1"], "x", "y")
 
-        mock_view.set_categorical_counts.assert_not_called()
+        mock_view.show_categorical_counts.assert_not_called()
 
 
 # ------------------------- calculate_histogram_bins --------------------------
@@ -1029,7 +1037,7 @@ class TestCalculateHistogramBins(_StatusPanelMixin):
     """The command path: raw datasets in, tallies back through a setter."""
 
     @staticmethod
-    def _run(controller, datasets, norm=False, logx=False, ax=None):
+    def _run(controller, datasets, norm=False, logx=False):
         """
         Drive the slot the way the View's request does.
 
@@ -1041,8 +1049,6 @@ class TestCalculateHistogramBins(_StatusPanelMixin):
         :type norm: bool
         :param logx: log-scale the values before binning
         :type logx: bool
-        :param ax: the drawing context to pass through
-        :type ax: object
         :return: None
         :rtype: None
         """
@@ -1054,7 +1060,6 @@ class TestCalculateHistogramBins(_StatusPanelMixin):
             None,
             None,
             norm,
-            ax if ax is not None else MagicMock(),
             "x (ms)",
             "x",
             "d1",
@@ -1095,23 +1100,14 @@ class TestCalculateHistogramBins(_StatusPanelMixin):
             "widths",
             ["counts"],
         )
-        ax = MagicMock()
 
-        self._run(controller, [raw], ax=ax)
+        self._run(controller, [raw])
 
-        mock_view.set_histogram_bins.assert_called_once_with(
-            raw,
-            "d1",
-            "centers",
-            "widths",
-            ["counts"],
-            0.0,
-            1.0,
-            ax,
-            "x (ms)",
-            False,
-            False,
+        mock_view.show_histogram_bins.assert_called_once_with(
+            "centers", "widths", ["counts"], ["d1"], "x (ms)", False, False
         )
+        kept = controller.model.overlay
+        assert (kept.hist_min, kept.hist_max) == (0.0, 1.0)
 
     def test_a_binning_failure_is_reported_and_draws_nothing(
         self, controller, mock_view
@@ -1127,7 +1123,7 @@ class TestCalculateHistogramBins(_StatusPanelMixin):
             c.args[0] for c in controller.add_text_to_display.emit.call_args_list
         ]
         assert any("Unable to bin the histogram" in m for m in messages)
-        mock_view.set_histogram_bins.assert_not_called()
+        mock_view.show_histogram_bins.assert_not_called()
 
     def test_a_subset_that_filters_away_is_reported_and_draws_nothing(
         self, controller, mock_view
@@ -1148,7 +1144,7 @@ class TestCalculateHistogramBins(_StatusPanelMixin):
             c.args[0] for c in controller.add_text_to_display.emit.call_args_list
         ]
         assert any("nothing to histogram" in m for m in messages)
-        mock_view.set_histogram_bins.assert_not_called()
+        mock_view.show_histogram_bins.assert_not_called()
 
     def test_the_limits_describe_the_filtered_values(
         self, controller, mock_view
@@ -1163,9 +1159,8 @@ class TestCalculateHistogramBins(_StatusPanelMixin):
 
         self._run(controller, [np.array([1.0, np.nan, 4.0])])
 
-        args = mock_view.set_histogram_bins.call_args.args
-        assert args[5] == 1.0
-        assert args[6] == 4.0
+        assert controller.model.overlay.hist_min == 1.0
+        assert controller.model.overlay.hist_max == 4.0
 
     def test_the_limits_describe_the_logscaled_values(
         self, controller, mock_view
@@ -1178,22 +1173,21 @@ class TestCalculateHistogramBins(_StatusPanelMixin):
 
         self._run(controller, [np.array([1.0, 10.0, 100.0])], logx=True)
 
-        args = mock_view.set_histogram_bins.call_args.args
-        assert args[5] == pytest.approx(0.0)
-        assert args[6] == pytest.approx(2.0)
+        assert controller.model.overlay.hist_min == pytest.approx(0.0)
+        assert controller.model.overlay.hist_max == pytest.approx(2.0)
 
 
 class TestEstimateKernelDensities(_StatusPanelMixin):
     """
     The density's half of the same conversion.
 
-    It shares ``hist_data`` and the pair of shared limits with the histogram, which
-    is why the two converted in one branch: the Model can only take over the
-    filtering if what is accumulated is raw, and both write both.
+    It shares the accumulated datasets and the pair of shared limits with the
+    histogram, which is why the two converted in one branch: the Model can only take
+    over the filtering if what is accumulated is raw, and both write both.
     """
 
     @staticmethod
-    def _run(controller, datasets, logx=False, ax=None):
+    def _run(controller, datasets, logx=False):
         """
         Drive the slot the way the View's request does.
 
@@ -1203,8 +1197,6 @@ class TestEstimateKernelDensities(_StatusPanelMixin):
         :type datasets: list
         :param logx: log-scale the values before binning
         :type logx: bool
-        :param ax: the drawing context to pass through
-        :type ax: object
         :return: None
         :rtype: None
         """
@@ -1215,7 +1207,6 @@ class TestEstimateKernelDensities(_StatusPanelMixin):
             False,
             None,
             None,
-            ax if ax is not None else MagicMock(),
             "x (ms)",
             "x",
             "d1",
@@ -1232,11 +1223,11 @@ class TestEstimateKernelDensities(_StatusPanelMixin):
 
         assert controller.model.kernel_densities.call_args.args[0] is filtered
 
-    def test_the_view_is_handed_the_raw_newest_dataset_to_accumulate(
+    def test_the_raw_newest_dataset_is_kept_and_the_view_draws(
         self, controller, mock_view
     ) -> None:
         """
-        The View accumulates the *raw* column, not the filtered one: the Model
+        The Model keeps the *raw* column, not the filtered one: the Model
         refilters every accumulated dataset on each update, which it can only do if
         what it is given has not been filtered already.
         """
@@ -1246,13 +1237,15 @@ class TestEstimateKernelDensities(_StatusPanelMixin):
         ]
         controller.model.widen_shared_limits.return_value = (0.5, 0.6)
         controller.model.kernel_densities.return_value = [("x", "y")]
-        ax = MagicMock()
 
-        self._run(controller, [raw], ax=ax)
+        self._run(controller, [raw])
 
-        mock_view.set_kernel_densities.assert_called_once_with(
-            raw, "d1", [("x", "y")], 0.5, 0.6, ax, "x (ms)"
+        mock_view.show_kernel_densities.assert_called_once_with(
+            [("x", "y")], ["d1"], "x (ms)"
         )
+        assert controller.model.overlay.values == [raw]
+        kept = controller.model.overlay
+        assert (kept.hist_min, kept.hist_max) == (0.5, 0.6)
 
     def test_a_subset_that_filters_away_is_reported_and_draws_nothing(
         self, controller, mock_view
@@ -1260,7 +1253,7 @@ class TestEstimateKernelDensities(_StatusPanelMixin):
         """
         A dataset that filtered away must not stay in the overlay, or the next plot
         redraws it and hits the same empty array from inside the loop. Refusing it
-        here is what keeps it out, since the View accumulates in the setter.
+        here is what keeps it out, since it is kept only once drawn.
         """
         controller.model = MetadataModel()
 
@@ -1270,7 +1263,7 @@ class TestEstimateKernelDensities(_StatusPanelMixin):
             c.args[0] for c in controller.add_text_to_display.emit.call_args_list
         ]
         assert any("nothing to plot" in m for m in messages)
-        mock_view.set_kernel_densities.assert_not_called()
+        mock_view.show_kernel_densities.assert_not_called()
 
     def test_the_limits_are_numbers_not_column_names(
         self, controller, mock_view
@@ -1285,10 +1278,10 @@ class TestEstimateKernelDensities(_StatusPanelMixin):
 
         self._run(controller, [np.array([1.0, 4.0])])
 
-        args = mock_view.set_kernel_densities.call_args.args
-        assert isinstance(args[3], float)
-        assert isinstance(args[4], float)
-        assert args[4] - args[3] == 3.0
+        kept = controller.model.overlay
+        assert isinstance(kept.hist_min, float)
+        assert isinstance(kept.hist_max, float)
+        assert kept.hist_max - kept.hist_min == 3.0
 
     def test_an_estimate_failure_is_reported_and_draws_nothing(
         self, controller, mock_view
@@ -1303,7 +1296,7 @@ class TestEstimateKernelDensities(_StatusPanelMixin):
             c.args[0] for c in controller.add_text_to_display.emit.call_args_list
         ]
         assert any("Unable to estimate the density" in m for m in messages)
-        mock_view.set_kernel_densities.assert_not_called()
+        mock_view.show_kernel_densities.assert_not_called()
 
 
 # ---------------------------- the filter's move ------------------------------
@@ -1333,7 +1326,7 @@ class TestCalculateHeatmap(_StatusPanelMixin):
         controller.model.calculate_heatmap.return_value = ("xb", "yb", "z", "ext")
 
         controller.calculate_heatmap(
-            raw_x, raw_y, [True, False], None, False, MagicMock(), "xl", "yl", "dl"
+            raw_x, raw_y, [True, False], None, False, "xl", "yl", "dl"
         )
 
         call = controller.model.logscale_and_filter_columns.call_args
@@ -1353,13 +1346,12 @@ class TestCalculateHeatmap(_StatusPanelMixin):
             [False, False],
             None,
             False,
-            MagicMock(),
             "xl",
             "yl",
             "dl",
         )
 
-        mock_view.set_heatmap.assert_not_called()
+        mock_view.show_heatmap.assert_not_called()
         messages = [
             call.args[0] for call in controller.add_text_to_display.emit.call_args_list
         ]
@@ -1443,12 +1435,15 @@ class TestFilter3dScatterplot(_StatusPanelMixin):
                 np.array([7.0, 8.0, 9.0]),
             ],
             [False, False, False],
-            MagicMock(),
+            ["xl", "yl", "zl"],
+            "dl",
+        )
+        assert mock_view.show_3d_scatterplot.call_args.args[1:] == (
             ["xl", "yl", "zl"],
             "dl",
         )
 
-        columns = mock_view.set_3d_scatterplot.call_args.args[0]
+        columns = mock_view.show_3d_scatterplot.call_args.args[0]
         assert [list(column) for column in columns] == [
             [1.0, 3.0],
             [4.0, 6.0],
@@ -1461,11 +1456,158 @@ class TestFilter3dScatterplot(_StatusPanelMixin):
         controller.model.logscale_and_filter_columns.side_effect = ValueError("nope")
 
         controller.filter_3d_scatterplot(
-            [np.array([1.0])], [False], MagicMock(), ["xl", "yl", "zl"], "dl"
+            [np.array([1.0])], [False], ["xl", "yl", "zl"], "dl"
         )
 
-        mock_view.set_3d_scatterplot.assert_not_called()
+        mock_view.show_3d_scatterplot.assert_not_called()
         messages = [
             call.args[0] for call in controller.add_text_to_display.emit.call_args_list
         ]
         assert any("Unable to filter the 3D scatterplot" in m for m in messages)
+
+
+# ----------------------- recorded overlay plot -----------------
+
+
+def _overlay_request() -> Dict[str, object]:
+    """The intent a click on Update Plot hands the Controller, by parameter name."""
+    return {
+        "loader": "L",
+        "plot_type": "Histogram",
+        "axes": ["duration", "start_time", "event_id"],
+        "logs": [True, False, False],
+        "bins": [20],
+        "sizes": False,
+        "filters": {"F0": "duration >= 0"},
+        "scope": {"exp_a": ["0"]},
+    }
+
+
+class TestTheOverlayIsRecordedOnTheController:
+    @staticmethod
+    def recording(controller: MetadataController) -> list:
+        """
+        Capture what the controller records.
+
+        :param controller: Controller under test.
+        :return: the list each recorded entry is appended to.
+        """
+        recorded: list = []
+        controller.record_action = recorded.append  # type: ignore[method-assign]
+        return recorded
+
+    def test_the_overlay_is_declared_on_the_controller_and_not_on_the_view(
+        self,
+    ) -> None:
+        on_controller = {name for _a, name in declared_actions(MetadataController)}
+        on_view = {name for _a, name in declared_actions(MetadataView)}
+
+        assert "overlay_plot" in on_controller
+        assert "overlay_plot" not in on_view
+
+    def test_an_overlay_is_recorded_with_its_intent_by_name(
+        self, controller: MetadataController
+    ) -> None:
+        """
+        One dataset per experiment, channel and filter; what each draws is pinned in
+        ``tests/integration/flows/test_metadata_overlay_no_gui.py``.
+        """
+        dataset = MagicMock(return_value=True)
+        controller._overlay_metadata_dataset = dataset  # type: ignore[method-assign]
+        recorded = self.recording(controller)
+
+        drawn = controller.overlay_plot(**_overlay_request())
+
+        assert drawn is True
+        assert recorded == [
+            {"action": "overlay_plot", "args": (), "kwargs": _overlay_request()}
+        ]
+        dataset.assert_called_once()
+        assert dataset.call_args.args[6:10] == (
+            "exp_a",
+            "0",
+            "F0",
+            "duration >= 0",
+        )
+
+    def test_a_positional_call_records_the_same_entry(
+        self, controller: MetadataController
+    ) -> None:
+        """Qt delivers a signal's payload positionally; the entry is named all the same."""
+        controller._overlay_metadata_dataset = MagicMock(return_value=True)  # type: ignore[method-assign]
+        recorded = self.recording(controller)
+
+        controller.overlay_plot(*_overlay_request().values())
+
+        assert recorded[0]["kwargs"] == _overlay_request()
+
+    def test_the_signal_reaches_the_click_path(self, mocker: MockerFixture) -> None:
+        ctrl = MetadataController.__new__(MetadataController)  # type: ignore[type-abstract]
+        ctrl.view = mocker.Mock()
+        ctrl.model = mocker.Mock()
+
+        ctrl._setup_connections()
+
+        ctrl.view.overlay_plot_requested.connect.assert_called_once_with(
+            ctrl.request_overlay_plot
+        )
+
+
+class TestAClickedOverlayThatDrewNothing:
+    """
+    The click path's roll-back, which a replay does not take: a refusal that left the
+    figure as it was drops its record, and one that changed the figure is undone.
+    """
+
+    @staticmethod
+    def click(
+        controller: MetadataController,
+        mock_view: MagicMock,
+        drawn: bool,
+        changes_figure: bool,
+    ) -> None:
+        controller.model.overlay = OverlayState(datasets={("L", "exp_a", 0, "", "F0")})
+
+        def draw(*_args: object) -> bool:
+            if changes_figure:
+                controller.model.overlay = OverlayState()
+            return drawn
+
+        # The history records and discards as the real one does.
+        history: OrderedDict = OrderedDict()
+        controller.tab_action_history = history
+
+        def record(entry: dict) -> None:
+            history[len(history)] = entry
+
+        controller._overlay_metadata_dataset = MagicMock(side_effect=draw)  # type: ignore[method-assign]
+        controller.discard_last_tab_action = MagicMock(  # type: ignore[method-assign]
+            side_effect=lambda: history.popitem()
+        )
+        controller.update_tab_actions = MagicMock()  # type: ignore[method-assign]
+        controller.record_action = record  # type: ignore[method-assign]
+        controller.request_overlay_plot(*_overlay_request().values())
+
+    def test_a_drawn_overlay_is_kept(
+        self, controller: MetadataController, mock_view: MagicMock
+    ) -> None:
+        self.click(controller, mock_view, drawn=True, changes_figure=True)
+
+        controller.discard_last_tab_action.assert_not_called()  # type: ignore[attr-defined]
+        controller.update_tab_actions.assert_not_called()  # type: ignore[attr-defined]
+
+    def test_a_refusal_that_left_the_figure_alone_drops_its_record(
+        self, controller: MetadataController, mock_view: MagicMock
+    ) -> None:
+        self.click(controller, mock_view, drawn=False, changes_figure=False)
+
+        controller.discard_last_tab_action.assert_called_once_with()  # type: ignore[attr-defined]
+        controller.update_tab_actions.assert_not_called()  # type: ignore[attr-defined]
+
+    def test_a_refusal_that_changed_the_figure_is_undone(
+        self, controller: MetadataController, mock_view: MagicMock
+    ) -> None:
+        self.click(controller, mock_view, drawn=False, changes_figure=True)
+
+        controller.update_tab_actions.assert_called_once_with(None, True)  # type: ignore[attr-defined]
+        controller.discard_last_tab_action.assert_not_called()  # type: ignore[attr-defined]

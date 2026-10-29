@@ -18,7 +18,7 @@ from __future__ import annotations
 import json
 from collections import OrderedDict
 from pathlib import Path
-from typing import override
+from typing import List, override
 from unittest.mock import MagicMock, mock_open
 
 import numpy as np
@@ -590,6 +590,52 @@ def test_undo_replays_from_the_last_reset_and_keeps_the_rest(
         "plot_b",
     ]
     assert controller.tab_action_history == OrderedDict({0: {"action": "plot_a"}})
+
+
+@pytest.mark.parametrize(
+    "history, expected",
+    [
+        ([RESET_ACTION, "plot_a"], [RESET_ACTION]),
+        (["plot_a", RESET_ACTION, "plot_b"], [RESET_ACTION, "plot_a"]),
+    ],
+    ids=["the only plot", "an old history with no reset before its first plot"],
+)
+def test_undo_with_no_reset_left_replays_the_one_it_removed(
+    controller: MetaController, history: List[str], expected: List[str]
+) -> None:
+    """
+    The reset an undone plot started its figure with is replayed first, or the figure
+    would keep the plot that was undone.
+
+    :param controller: Controller under test.
+    :param history: the recorded action names, oldest first
+    :param expected: the action names replayed
+    """
+    controller.tab_action_history = OrderedDict(
+        (i, {"action": name}) for i, name in enumerate(history)
+    )
+
+    controller.update_tab_actions(undo=True)
+
+    replayed = controller.replay.call_args[0][0]  # type: ignore[attr-defined]
+    assert [entry["action"] for entry in replayed] == expected
+
+
+def test_undo_after_a_reset_replays_no_extra_reset(controller: MetaController) -> None:
+    """
+    Undoing a Reset brings back what it cleared, from the reset before it.
+
+    :param controller: Controller under test.
+    """
+    controller.tab_action_history = OrderedDict(
+        (i, {"action": name})
+        for i, name in enumerate([RESET_ACTION, "plot_a", RESET_ACTION])
+    )
+
+    controller.update_tab_actions(undo=True)
+
+    replayed = controller.replay.call_args[0][0]  # type: ignore[attr-defined]
+    assert [entry["action"] for entry in replayed] == [RESET_ACTION, "plot_a"]
 
 
 def test_update_tab_actions_undo_on_empty_history_returns_early(

@@ -25,12 +25,113 @@
 
 import json
 import logging
-from typing import Dict, Generator, List, Mapping, Optional, Sequence
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import (
+    Any,
+    Dict,
+    Generator,
+    List,
+    Mapping,
+    Optional,
+    Sequence,
+    Set,
+    Tuple,
+    Union,
+)
 
 import pandas as pd
 
 from poriscope.utils.LogDecorator import log
 from poriscope.utils.MetaModel import MetaModel
+
+#: One dataset on an overlaid figure: (loader, experiment, channel, filter SQL, filter name).
+DatasetKey = Tuple[
+    Optional[str], Optional[str], Optional[int], Optional[str], Optional[str]
+]
+
+
+class FigureKind(Enum):
+    """What the figure holds, so the next overlay can tell whether it can add to it."""
+
+    EMPTY_2D = "empty 2d"
+    EMPTY_3D = "empty 3d"
+    OVERLAY_2D = "overlay 2d"
+    OVERLAY_3D = "overlay 3d"
+    EVENT_GRID = "event grid"
+
+    @classmethod
+    def empty(cls, axis_type: str) -> "FigureKind":
+        """
+        The empty figure of one projection.
+
+        :param axis_type: Either '2d' or '3d'
+        :type axis_type: str
+        :return: the empty kind of that projection
+        :rtype: FigureKind
+        """
+        return cls.EMPTY_3D if axis_type == "3d" else cls.EMPTY_2D
+
+    @classmethod
+    def overlay(cls, axis_type: str) -> "FigureKind":
+        """
+        The overlaid figure of one projection.
+
+        :param axis_type: Either '2d' or '3d'
+        :type axis_type: str
+        :return: the overlay kind of that projection
+        :rtype: FigureKind
+        """
+        return cls.OVERLAY_3D if axis_type == "3d" else cls.OVERLAY_2D
+
+    def accepts(self, axis_type: str) -> bool:
+        """
+        Can a plot of this projection be drawn onto this figure without clearing it?
+
+        :param axis_type: Either '2d' or '3d', the projection the plot needs
+        :type axis_type: str
+        :return: True for an empty or overlaid figure of that projection
+        :rtype: bool
+        """
+        return self in (FigureKind.empty(axis_type), FigureKind.overlay(axis_type))
+
+
+@dataclass
+class OverlayState:
+    """
+    What an overlaid figure holds, kept by the Model so the Controller decides from it.
+
+    The options the figure was drawn with, the datasets on it, and what the accumulating
+    plot types redraw each time one is added: each dataset's values and label, and the
+    limits the datasets share. A reset replaces it with an empty one.
+
+    :ivar figure: what the figure holds
+    :ivar plot_type: the plot type drawn, or None on an empty figure
+    :ivar columns: the columns drawn
+    :ivar logs: the columns' log-scale flags
+    :ivar bins: the bins list the figure was drawn with
+    :ivar sizes: does bins refer to a bin width
+    :ivar datasets: the datasets on the figure
+    :ivar values: per accumulated dataset, newest last: its raw column for the
+        histogram, density and categorical plots, or its (bin centres, counts) for the
+        all-points histograms. Two shapes, not one: a single element type would be
+        cleaner, and is a change of its own.
+    :ivar labels: per accumulated dataset, its label, index-aligned with values
+    :ivar hist_min: the shared lower limit, or None before the first dataset
+    :ivar hist_max: the shared upper limit, or None before the first dataset
+    """
+
+    figure: FigureKind = FigureKind.EMPTY_2D
+    plot_type: Optional[str] = None
+    columns: List[str] = field(default_factory=list)
+    logs: List[bool] = field(default_factory=list)
+    bins: Optional[List[Union[int, float]]] = None
+    sizes: Optional[bool] = None
+    datasets: Set[DatasetKey] = field(default_factory=set)
+    values: List[Any] = field(default_factory=list)
+    labels: List[str] = field(default_factory=list)
+    hist_min: Optional[float] = None
+    hist_max: Optional[float] = None
 
 
 class MetaSubsetTabModel(MetaModel):
@@ -53,9 +154,20 @@ class MetaSubsetTabModel(MetaModel):
     A subclass still owes ``MetaModel`` its ``_init``.
 
     :ivar logger: the module logger the shared methods below log under
+    :ivar overlay: what the overlaid figure holds
     """
 
     logger = logging.getLogger(__name__)
+
+    def __init__(self, **kwargs: Any) -> None:
+        """
+        Start with an empty 2-D figure, before the subclass's ``_init`` runs.
+
+        :param \\**kwargs: Additional parameters to set as attributes on the instance
+        :type \\**kwargs: Any
+        """
+        self.overlay = OverlayState()
+        super().__init__(**kwargs)
 
     @log(logger=logger)
     def resolve_event_ids(

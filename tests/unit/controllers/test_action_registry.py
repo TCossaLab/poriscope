@@ -114,7 +114,7 @@ class TestRecordAction:
         controller.start_run("a", repeats=2)
 
         assert list(controller.tab_action_history.values()) == [
-            {"action": "start_run", "args": ("a",), "kwargs": {"repeats": 2}}
+            {"action": "start_run", "args": (), "kwargs": {"name": "a", "repeats": 2}}
         ]
 
 
@@ -216,6 +216,43 @@ class TestReplay:
         message = controller.add_text_to_display.emit.call_args[0][0]  # type: ignore[attr-defined]
         assert message.startswith("Not replayed")
 
+    @pytest.mark.parametrize(
+        "entry",
+        [
+            _entry("overlay_plot"),
+            _entry("overlay_plot", "x", "an extra value"),
+            {"action": "overlay_plot", "args": [], "kwargs": {"colour": "red"}},
+        ],
+        ids=["a value missing", "a value too many", "a name it does not take"],
+    )
+    def test_an_entry_whose_values_do_not_fit_its_action_is_reported_and_skipped(
+        self, controller: _Controller, entry: Dict[str, Any]
+    ) -> None:
+        """
+        What an entry saved before an action's parameters changed looks like: the name
+        is still declared, but its values no longer fit. It is reported like an unknown
+        name, and replay goes on, rather than raising and losing the rest.
+        """
+        controller.replay([entry, _entry("overlay_plot", "y")])
+
+        assert controller.view.calls == ["overlay:y"]  # type: ignore[attr-defined]
+        message = controller.add_text_to_display.emit.call_args[0][0]  # type: ignore[attr-defined]
+        assert message.startswith("Not replayed")
+        assert "overlay_plot" in message
+
+    def test_an_action_that_raises_a_type_error_itself_is_not_mistaken_for_a_misfit(
+        self, controller: _Controller
+    ) -> None:
+        """Only the values are checked before the call; the action's own errors propagate."""
+
+        def broken(label: str) -> None:
+            raise TypeError("inside the action")
+
+        controller.action_registry()["overlay_plot"] = broken
+
+        with pytest.raises(TypeError, match="inside the action"):
+            controller.replay([_entry("overlay_plot", "x")])
+
     def test_entries_run_in_the_order_given(self, controller: _Controller) -> None:
         controller.replay(
             [
@@ -286,7 +323,9 @@ class TestUndoUsesTheDeclaredResetName:
 
         controller.update_tab_actions(undo=True)
 
-        assert controller.view.calls == ["overlay:a"]  # type: ignore[attr-defined]
+        # No reset is left before the overlay, so the last one removed clears the
+        # figure first.
+        assert controller.view.calls == ["reset:2d", "overlay:a"]  # type: ignore[attr-defined]
 
 
 class TestLoadActionsFromJson:

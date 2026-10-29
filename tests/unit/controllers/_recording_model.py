@@ -37,6 +37,8 @@ base methods and Metadata's own fetch slots - cannot drift into two versions of 
 same double.
 """
 
+from poriscope.utils.MetaSubsetTabModel import OverlayState
+
 
 class RecordingModel:
     """
@@ -105,7 +107,8 @@ def recording_tab_model(model_class, answers: dict):
     This builds the **real** Model and replaces only its ``call`` - the plugin
     boundary - so the query construction runs for real and the arguments that reach
     the loader are still recorded. ``__new__`` skips ``MetaModel.__init__`` because
-    these methods need no instance state beyond ``call`` and the class-level logger.
+    these methods need no instance state beyond ``call``, the class-level logger and
+    the empty overlay a fresh Model starts with.
 
     :param model_class: the tab Model class to build
     :type model_class: type
@@ -119,4 +122,5 @@ def recording_tab_model(model_class, answers: dict):
     model.call = recorder.call
     model.calls = recorder.calls
     model.calls_to = recorder.calls_to
+    model.overlay = OverlayState()
     return model

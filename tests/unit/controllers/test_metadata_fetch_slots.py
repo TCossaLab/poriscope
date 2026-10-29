@@ -51,6 +51,7 @@ from pytest_mock import MockerFixture
 
 from poriscope.plugins.analysistabs.MetadataController import MetadataController
 from poriscope.plugins.analysistabs.MetadataModel import MetadataModel
+from poriscope.plugins.analysistabs.MetadataView import MetadataView
 from tests.unit.controllers._recording_model import (
     RecordingModel,
     recording_tab_model,
@@ -104,7 +105,7 @@ def panel_text(controller: MetadataController) -> str:
 
 class TestLoadMetadataSubset:
     """
-    Landed alongside ``_overlay_plot``'s conversion with no Controller-side test.
+    The overlay's fetch: the rows and each column's units, returned whole or not at all.
     """
 
     ANSWERS = {
@@ -121,15 +122,14 @@ class TestLoadMetadataSubset:
         """
         controller.model = RecordingModel(dict(self.ANSWERS))
 
-        controller.load_metadata_subset(
+        subset = controller.load_metadata_subset(
             "ldr", ["duration", "amplitude"], "", SCOPE, "subset"
         )
 
-        controller.view.set_query.assert_called_once_with(
-            "SELECT duration FROM events", "events"
-        )
-        controller.view.update_plot_data.assert_called_once()
-        controller.view.set_column_units.assert_called_once_with(["ms", "ms"])
+        assert subset is not None
+        assert "SELECT duration FROM events" in panel_text(controller)
+        assert subset is not None and not subset.rows.empty
+        assert subset.units == ["ms", "ms"]
         assert len(controller.model.calls_to("get_column_units")) == 2
 
     def test_the_columns_and_scope_reach_the_loader_unchanged(
@@ -158,11 +158,9 @@ class TestLoadMetadataSubset:
             {"construct_metadata_query": ValueError("no such column: dwel")}
         )
 
-        controller.load_metadata_subset("ldr", ["dwel"], "", SCOPE, "subset")
+        subset = controller.load_metadata_subset("ldr", ["dwel"], "", SCOPE, "subset")
 
-        controller.view.set_query.assert_not_called()
-        controller.view.update_plot_data.assert_not_called()
-        controller.view.set_column_units.assert_not_called()
+        assert subset is None
         assert "dwel" in panel_text(controller)
 
     def test_an_empty_query_reports_the_loaders_own_reason(
@@ -176,10 +174,12 @@ class TestLoadMetadataSubset:
             {"construct_metadata_query": ("", "the filter names no known column", "")}
         )
 
-        controller.load_metadata_subset("ldr", ["duration"], "bad", SCOPE, "subset")
+        subset = controller.load_metadata_subset(
+            "ldr", ["duration"], "bad", SCOPE, "subset"
+        )
 
         assert "the filter names no known column" in panel_text(controller)
-        controller.view.set_query.assert_not_called()
+        assert subset is None
 
     def test_a_failed_load_sets_nothing_either(
         self, controller: MetadataController
@@ -195,9 +195,11 @@ class TestLoadMetadataSubset:
             }
         )
 
-        controller.load_metadata_subset("ldr", ["duration"], "", SCOPE, "subset")
+        subset = controller.load_metadata_subset(
+            "ldr", ["duration"], "", SCOPE, "subset"
+        )
 
-        controller.view.set_query.assert_not_called()
+        assert subset is None
         assert "database is locked" in panel_text(controller)
 
     def test_the_query_that_ran_is_echoed_once(
@@ -256,7 +258,9 @@ class TestLoadRawMetadataSubset:
         """
         controller.model = RecordingModel(self.answers())
 
-        controller.load_metadata_subset("ldr", ["duration"], self.RAW, SCOPE, "q_raw")
+        subset = controller.load_metadata_subset(
+            "ldr", ["duration"], self.RAW, SCOPE, "q_raw"
+        )
 
         bound = (
             "SELECT duration FROM events " "WHERE experiment_id = 7 AND channel_id = 1"
@@ -264,9 +268,10 @@ class TestLoadRawMetadataSubset:
         assert controller.model.calls_to("query_database_directly") == [(bound,)]
         assert controller.model.calls_to("construct_metadata_query") == []
         assert controller.model.calls_to("load_metadata") == []
-        controller.view.set_query.assert_called_once_with(bound, "raw query")
-        controller.view.update_plot_data.assert_called_once()
-        controller.view.set_column_units.assert_called_once_with(["ms"])
+        assert subset is not None
+        assert bound in panel_text(controller)
+        assert subset is not None and not subset.rows.empty
+        assert subset.units == ["ms"]
 
     def test_with_no_selection_the_query_runs_as_written(
         self, controller: MetadataController
@@ -278,10 +283,13 @@ class TestLoadRawMetadataSubset:
         controller.model = RecordingModel(self.answers())
         plain = "SELECT duration FROM events"
 
-        controller.load_metadata_subset("ldr", ["duration"], plain, None, "q_raw")
+        subset = controller.load_metadata_subset(
+            "ldr", ["duration"], plain, None, "q_raw"
+        )
 
         assert controller.model.calls_to("query_database_directly") == [(plain,)]
-        controller.view.set_query.assert_called_once_with(plain, "raw query")
+        assert subset is not None
+        assert plain in panel_text(controller)
         assert "has no effect on it" not in panel_text(controller)
 
     def test_placeholders_with_no_selection_are_refused(
@@ -292,10 +300,12 @@ class TestLoadRawMetadataSubset:
         """
         controller.model = RecordingModel(self.answers())
 
-        controller.load_metadata_subset("ldr", ["duration"], self.RAW, None, "q_raw")
+        subset = controller.load_metadata_subset(
+            "ldr", ["duration"], self.RAW, None, "q_raw"
+        )
 
         assert "no experiment and channel is selected" in panel_text(controller)
-        controller.view.update_plot_data.assert_not_called()
+        assert subset is None
 
     def test_a_query_that_ignores_the_selection_is_warned_about_and_still_plots(
         self, controller: MetadataController
@@ -305,12 +315,12 @@ class TestLoadRawMetadataSubset:
         """
         controller.model = RecordingModel(self.answers())
 
-        controller.load_metadata_subset(
+        subset = controller.load_metadata_subset(
             "ldr", ["duration"], "SELECT duration FROM events", SCOPE, "q_raw"
         )
 
         assert "has no effect on it" in panel_text(controller)
-        controller.view.update_plot_data.assert_called_once()
+        assert subset is not None and not subset.rows.empty
 
     def test_a_plotted_column_returned_twice_is_refused(
         self, controller: MetadataController
@@ -325,10 +335,12 @@ class TestLoadRawMetadataSubset:
             )
         )
 
-        controller.load_metadata_subset("ldr", ["duration"], self.RAW, SCOPE, "q_raw")
+        subset = controller.load_metadata_subset(
+            "ldr", ["duration"], self.RAW, SCOPE, "q_raw"
+        )
 
         assert "duration more than once" in panel_text(controller)
-        controller.view.update_plot_data.assert_not_called()
+        assert subset is None
 
     def test_a_duplicate_the_plot_does_not_read_is_not_in_the_way(
         self, controller: MetadataController
@@ -342,9 +354,11 @@ class TestLoadRawMetadataSubset:
             )
         )
 
-        controller.load_metadata_subset("ldr", ["duration"], self.RAW, SCOPE, "q_raw")
+        subset = controller.load_metadata_subset(
+            "ldr", ["duration"], self.RAW, SCOPE, "q_raw"
+        )
 
-        controller.view.update_plot_data.assert_called_once()
+        assert subset is not None and not subset.rows.empty
 
     def test_a_missing_plot_column_is_named_and_nothing_is_set(
         self, controller: MetadataController
@@ -355,13 +369,12 @@ class TestLoadRawMetadataSubset:
         """
         controller.model = RecordingModel(self.answers())
 
-        controller.load_metadata_subset(
+        subset = controller.load_metadata_subset(
             "ldr", ["duration", "max_blockage"], self.RAW, SCOPE, "q_raw"
         )
 
         assert "max_blockage" in panel_text(controller)
-        controller.view.set_query.assert_not_called()
-        controller.view.update_plot_data.assert_not_called()
+        assert subset is None
 
     def test_a_query_that_failed_validation_reports_and_sets_nothing(
         self, controller: MetadataController
@@ -371,10 +384,12 @@ class TestLoadRawMetadataSubset:
         """
         controller.model = RecordingModel(self.answers(query_database_directly=None))
 
-        controller.load_metadata_subset("ldr", ["duration"], "SELECT", SCOPE, "q_raw")
+        subset = controller.load_metadata_subset(
+            "ldr", ["duration"], "SELECT", SCOPE, "q_raw"
+        )
 
         assert "q_raw" in panel_text(controller)
-        controller.view.update_plot_data.assert_not_called()
+        assert subset is None
 
     def test_an_unknown_experiment_reports_and_sets_nothing(
         self, controller: MetadataController
@@ -384,10 +399,12 @@ class TestLoadRawMetadataSubset:
         """
         controller.model = RecordingModel(self.answers(get_experiment_id_by_name=None))
 
-        controller.load_metadata_subset("ldr", ["duration"], self.RAW, SCOPE, "q_raw")
+        subset = controller.load_metadata_subset(
+            "ldr", ["duration"], self.RAW, SCOPE, "q_raw"
+        )
 
         assert "exp1" in panel_text(controller)
-        controller.view.update_plot_data.assert_not_called()
+        assert subset is None
 
     def test_a_failed_query_shows_the_sql_error(
         self, controller: MetadataController
@@ -405,10 +422,11 @@ class TestLoadRawMetadataSubset:
             )
         )
 
-        controller.load_metadata_subset(
+        subset = controller.load_metadata_subset(
             "ldr", ["duration"], "SELECT nope", SCOPE, "q_raw"
         )
 
+        assert subset is None
         assert "no such column: nope" in panel_text(controller)
         assert "see the log" not in panel_text(controller)
 
@@ -422,10 +440,12 @@ class TestLoadRawMetadataSubset:
             self.answers(query_database_directly=RuntimeError("database is locked"))
         )
 
-        controller.load_metadata_subset("ldr", ["duration"], self.RAW, SCOPE, "q_raw")
+        subset = controller.load_metadata_subset(
+            "ldr", ["duration"], self.RAW, SCOPE, "q_raw"
+        )
 
         assert "database is locked" in panel_text(controller)
-        controller.view.set_query.assert_not_called()
+        assert subset is None
 
     def test_a_name_merely_containing_raw_takes_the_scoped_path(
         self, controller: MetadataController
@@ -452,9 +472,9 @@ class TestBuildAllPointsHistogram:
 
     This replaced ``load_event_subset``: the generator used to be handed
     to the View, which walked it twice inside the widget. The Controller keeps it and
-    passes it to the Model, so what has to be pinned here is that the query and the
-    counts arrive together and that every way the round trip can fail leaves the query
-    unset - which is the only thing the View has to tell a failure by.
+    passes it to the Model, so what has to be pinned here is that the counts reach the
+    View with the query shown, and that every way the round trip can fail answers False
+    and draws nothing - which is how the overlay loop tells a failure.
     """
 
     #: One event, whose first three samples are the pre-event baseline.
@@ -480,7 +500,7 @@ class TestBuildAllPointsHistogram:
             },
         )
 
-        controller.build_all_points_histogram(
+        drawn = controller.build_all_points_histogram(
             "ldr",
             "duration < 300",
             SCOPE,
@@ -493,13 +513,17 @@ class TestBuildAllPointsHistogram:
             "subset",
         )
 
-        controller.view.set_event_query.assert_called_once_with("SELECT * FROM events")
-        controller.view.set_all_points_histogram.assert_called_once()
-        args = controller.view.set_all_points_histogram.call_args[0]
-        assert len(args[0]) == 4
-        assert args[1].sum() == 6
-        assert args[4] == "Raw All Points Histogram"
-        assert args[5] == "a label"
+        assert drawn is True
+        assert "SELECT * FROM events" in panel_text(controller)
+        controller.view.show_all_points_histogram.assert_called_once()
+        curves, labels, plot_type = controller.view.show_all_points_histogram.call_args[
+            0
+        ]
+        ((centers, counts),) = curves
+        assert len(centers) == 4
+        assert counts.sum() == 6
+        assert labels == ["a label"]
+        assert plot_type == "Raw All Points Histogram"
 
     def test_the_limits_it_was_given_are_widened_not_replaced(
         self, controller: MetadataController
@@ -529,9 +553,8 @@ class TestBuildAllPointsHistogram:
             "subset",
         )
 
-        args = controller.view.set_all_points_histogram.call_args[0]
-        assert args[2] == -100.0
-        assert args[3] == 100.0
+        assert controller.model.overlay.hist_min == -100.0
+        assert controller.model.overlay.hist_max == 100.0
 
     def test_a_query_the_loader_refuses_to_build_stops_the_plot(
         self, controller: MetadataController
@@ -551,7 +574,7 @@ class TestBuildAllPointsHistogram:
             }
         )
 
-        controller.build_all_points_histogram(
+        drawn = controller.build_all_points_histogram(
             "ldr",
             "nope > 1",
             SCOPE,
@@ -565,8 +588,8 @@ class TestBuildAllPointsHistogram:
         )
 
         assert controller.model.calls_to("load_event_data") == []
-        controller.view.set_event_query.assert_not_called()
-        controller.view.set_all_points_histogram.assert_not_called()
+        assert drawn is False
+        controller.view.show_all_points_histogram.assert_not_called()
         assert "no such column: nope" in panel_text(controller)
 
     def test_a_failed_load_reports_and_draws_nothing(
@@ -583,7 +606,7 @@ class TestBuildAllPointsHistogram:
             }
         )
 
-        controller.build_all_points_histogram(
+        drawn = controller.build_all_points_histogram(
             "ldr",
             "",
             SCOPE,
@@ -596,8 +619,8 @@ class TestBuildAllPointsHistogram:
             "subset",
         )
 
-        controller.view.set_event_query.assert_not_called()
-        controller.view.set_all_points_histogram.assert_not_called()
+        assert drawn is False
+        controller.view.show_all_points_histogram.assert_not_called()
         assert "no such table: events" in panel_text(controller)
 
     def test_a_tally_that_raises_is_reported_rather_than_escaping(
@@ -617,7 +640,7 @@ class TestBuildAllPointsHistogram:
             },
         )
 
-        controller.build_all_points_histogram(
+        drawn = controller.build_all_points_histogram(
             "ldr",
             "",
             SCOPE,
@@ -630,8 +653,8 @@ class TestBuildAllPointsHistogram:
             "subset",
         )
 
-        controller.view.set_event_query.assert_not_called()
-        controller.view.set_all_points_histogram.assert_not_called()
+        assert drawn is False
+        controller.view.show_all_points_histogram.assert_not_called()
         assert "Invalid bins entry" in panel_text(controller)
 
 
@@ -665,10 +688,13 @@ class TestBuildEventOverlay:
             },
         )
 
-        controller.build_event_overlay("ldr", "", SCOPE, "Raw Event Overlay", "subset")
+        drawn = controller.build_event_overlay(
+            "ldr", "", SCOPE, "Raw Event Overlay", "subset"
+        )
 
-        controller.view.set_event_query.assert_called_once_with("SELECT * FROM events")
-        traces = controller.view.set_event_overlay.call_args[0][0]
+        assert drawn is True
+        assert "SELECT * FROM events" in panel_text(controller)
+        traces = controller.view.show_event_overlay.call_args[0][0]
         assert len(traces) == 2
         time, data = traces[0]
         assert len(time) == len(data) == 6
@@ -688,10 +714,12 @@ class TestBuildEventOverlay:
             }
         )
 
-        controller.build_event_overlay("ldr", "", SCOPE, "Raw Event Overlay", "subset")
+        drawn = controller.build_event_overlay(
+            "ldr", "", SCOPE, "Raw Event Overlay", "subset"
+        )
 
-        controller.view.set_event_query.assert_not_called()
-        controller.view.set_event_overlay.assert_not_called()
+        assert drawn is False
+        controller.view.show_event_overlay.assert_not_called()
         assert "no such table: events" in panel_text(controller)
 
     def test_an_unknown_plot_type_is_reported_rather_than_escaping(
@@ -710,11 +738,12 @@ class TestBuildEventOverlay:
             },
         )
 
-        controller.build_event_overlay(
+        drawn = controller.build_event_overlay(
             "ldr", "", SCOPE, "Sideways Event Overlay", "subset"
         )
 
-        controller.view.set_event_overlay.assert_not_called()
+        assert drawn is False
+        controller.view.show_event_overlay.assert_not_called()
         assert "Unknown plot_type" in panel_text(controller)
 
 
@@ -723,41 +752,46 @@ class TestBuildEventOverlay:
 # ===========================================================================
 
 
-class TestRequestColumnType:
+class TestPlotsAsCategories:
     """
-    One lookup, whose failure must read as "not categorical".
+    The click path's categorical check: one type lookup, and only a declared continuous
+    type refuses. A failed lookup, or a column with no declared type, is let through.
     """
 
-    def test_the_type_reaches_the_view(self, controller: MetadataController) -> None:
-        """ """
+    def test_a_discrete_type_plots(self, controller: MetadataController) -> None:
         controller.model = RecordingModel({"get_column_type": "TEXT"})
+        controller.view.is_categorical_type = MetadataView.is_categorical_type.__get__(
+            controller.view
+        )
 
-        controller.request_column_type("ldr", "category")
+        assert controller._plots_as_categories("ldr", "category") is True
 
-        controller.view.set_column_type.assert_called_once_with("TEXT")
-
-    def test_a_failed_lookup_leaves_the_view_cleared(
+    def test_a_continuous_type_is_refused_and_said(
         self, controller: MetadataController
     ) -> None:
-        """
-        The View cleared it to None before asking, and the guard refuses a None type,
-        so declining to answer is what stops the plot.
-        """
+        controller.model = RecordingModel({"get_column_type": "REAL"})
+        controller.view.is_categorical_type = MetadataView.is_categorical_type.__get__(
+            controller.view
+        )
+
+        assert controller._plots_as_categories("ldr", "duration") is False
+        assert "duration has type REAL" in panel_text(controller)
+
+    def test_a_failed_lookup_is_logged_and_lets_the_plot_through(
+        self, controller: MetadataController
+    ) -> None:
         controller.model = RecordingModel(
             {"get_column_type": RuntimeError("no such column")}
         )
+        controller.view.is_categorical_type = MetadataView.is_categorical_type.__get__(
+            controller.view
+        )
 
-        controller.request_column_type("ldr", "nope")
-
-        controller.view.set_column_type.assert_not_called()
+        assert controller._plots_as_categories("ldr", "nope") is True
         assert controller.logger.error.called
 
 
 # ===========================================================================
-# load_event_plot_data - the three-emit chain, run in one place
-# ===========================================================================
-
-
 class TestLoadEventPlotData:
     """
     Resolve the experiment, resolve the ids within scope, load exactly those rows.

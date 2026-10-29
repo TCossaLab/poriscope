@@ -28,6 +28,7 @@ package's ``conftest`` runs offscreen, as the rest of the suite does.
 
 from __future__ import annotations
 
+import inspect
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
@@ -271,6 +272,20 @@ def build_event_analysis_tab(
 
     triad.out_db = out  # type: ignore[attr-defined]
     return triad
+
+
+def named(triad: Triad, action: str, *values: Any) -> Dict[str, Any]:
+    """
+    A recorded entry's values, each under the name the recording gives it.
+
+    Named through the recorded method's own signature, defaults filled in, so an entry
+    written here has the shape the decorator saves, and a renamed parameter fails the test
+    rather than being copied into it.
+    """
+    method = inspect.unwrap(triad.tab_controller.action_registry()[action])
+    bound = inspect.signature(method).bind(None, *values)
+    bound.apply_defaults()
+    return {name: value for name, value in bound.arguments.items() if name != "self"}
 
 
 #: Two columns every synthetic metadata database carries, so a clustering has something real

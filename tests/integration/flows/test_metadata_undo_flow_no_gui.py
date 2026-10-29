@@ -127,7 +127,9 @@ def on_figure(triad: Triad) -> Set[Tuple[int, str]]:
     :return: the plotted datasets
     :rtype: Set[Tuple[int, str]]
     """
-    return {(entry[2], entry[4]) for entry in triad.tab_view.plotted_datasets}
+    return {
+        (entry[2], entry[4]) for entry in triad.tab_controller.model.overlay.datasets
+    }
 
 
 def count_queries(triad: Triad) -> List[Any]:
@@ -140,7 +142,14 @@ def count_queries(triad: Triad) -> List[Any]:
     :rtype: List[Any]
     """
     queries: List[Any] = []
-    triad.tab_view.metadata_subset_requested.connect(lambda *args: queries.append(args))
+    controller = triad.tab_controller
+    fetch = controller.load_metadata_subset
+
+    def counted(*args: Any, **kwargs: Any) -> Any:
+        queries.append(args)
+        return fetch(*args, **kwargs)
+
+    controller.load_metadata_subset = counted  # type: ignore[method-assign]
     return queries
 
 

@@ -214,8 +214,9 @@ class MetaSubsetTabView(MetaView):
     #: Declared here without a value so the contract is visible and mypy can see it,
     #: while reading one before its setter has run stays the AttributeError it is now.
     experiment_id: Optional[int]
-    #: Optional because ``_overlay_plot`` clears it before asking for a subset, so a
-    #: load that fails is not read back as the previous subset's events.
+    #: Optional because ``ProteinView._update_distribution_individual`` clears it before
+    #: asking for a subset, so a load that fails is not read back as the previous
+    #: subset's events.
     event_data_generator: Optional[Iterator[Any]]
     event_query: str
     query: str

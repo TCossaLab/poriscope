@@ -18,6 +18,40 @@ and deleted on 2026-09-27; it too is in git history.
 
 ---
 
+## 2026-10-28 - Every recorded value is saved under its parameter name, and replay checks an entry fits
+
+**Context.** An entry saved its arguments as called, so a saved file showed bare values in order.
+
+**Decision.** `register_action` binds each call to the method's signature and saves every value by name, defaults
+filled in, in every tab. Replay binds a saved entry before calling it, and reports and skips one that no longer fits.
+**Open:** a Metadata plot configuration saved before this holds one parameters dict and is reported, not replayed;
+whether such files are converted is ruled with the saved-history format.
+
+**Rejected.** Saving positionally (unreadable); converting old files now (the saved-history format changes again).
+
+**Revisit** when the saved-history format is next changed.
+
+---
+
+## 2026-10-28 - Metadata's overlay is decided on the Controller and kept by the Model
+
+**Context.** The loop, its reset-or-add decision and its bookkeeping lived in `MetadataView`, which handed the
+Controller the plot's `Axes`; a recorded action could not be checked or replayed without a figure.
+
+**Decision.** `MetadataController.overlay_plot` runs the loop and the View only draws. What the figure holds is an
+`OverlayState` on `MetaSubsetTabModel`, its kind (empty, overlay, event grid) included. The recorded reset is
+`MetadataController.reset`. An empty figure records a reset before its first dataset unless it was just reset, so
+every history replays onto a cleared figure.
+
+**Rejected.** A recorded Controller method over the View's loop (seven slots kept taking the `Axes`); the state on
+`MetadataModel` only (Protein holds the same fields, so it would move again); a View query for whether the figure can
+take a plot (a recorded action would read View state, which the replay static test forbids).
+
+**Revisit** when Plot Events is recorded on the Controller and sets the figure kind: drop the interim
+`MetadataView.axes_ready` check.
+
+---
+
 ## 2026-10-26 - A recorded action reads no widget: a tripwire, a static test and a behavioural guard
 
 **Context.** 2026-09-17 rule 5 (a recorded action is a pure function of its arguments) was met by
@@ -497,8 +531,8 @@ for someone to re-discover and get nervous about.
   `None` (e.g. `{"exp1": [None]}`) is intentional: `tests/unit/utils/test_meta_database_loader.py:1088-1092`
   pins it as the expected refusal for a malformed per-experiment value. `None` is only
   meaningful as the whole per-experiment value ("all channels"), never as a list member.
-- `MetadataView._overlay_plot`'s `{None: [None]}` "nothing selected" sentinel
-  (`MetadataView.py:1419-1420`) reaches `MetaDatabaseLoader.construct_metadata_query`'s
+- `MetadataController.overlay_plot`'s `{None: [None]}` "nothing selected" sentinel
+  (`MetadataController.py:295`) reaches `MetaDatabaseLoader.construct_metadata_query`'s
   `KeyError(f"Could not find experiment ID(s) for: {exp_name}")` guard, but that `KeyError`
   is already caught by `load_metadata_subset`/`_fetch_event_subset`'s own
   `try/except Exception` and reported to the status panel. Reachable, but already a caught,
@@ -509,7 +543,7 @@ unification, and folding a second, unrelated logic change into a type-consistenc
 conflating two different kinds of change in one commit.
 
 **Revisit if** the `{None: [None]}` sentinel's error message ("...for: None") is reported as
-confusing by a user - then it is a small, separate wording fix in `MetadataView._overlay_plot`
+confusing by a user - then it is a small, separate wording fix in `MetadataController.overlay_plot`
 and its `ProteinView` counterparts, not a behavior change.
 
 ---
@@ -2071,7 +2105,8 @@ than through `getattr` on whatever the file happens to name. Five rules:
 3. **Replay resolves only registered actions.** An unknown name is reported, not called. *Implemented
    2026-10-25.*
 4. **A recorded argument is small, JSON-round-trippable user intent** - a controls panel's
-   `parameters` dict - never data. Arrays and frames are what replay re-derives.
+   `parameters` dict - never data. Arrays and frames are what replay re-derives. *Reshaped 2026-10-28: the
+   intent is the action's explicit parameters, each saved by name; see that entry.*
 5. **A replayable action is a pure function of its recorded arguments.** Everything it
    depends on is captured when the action is recorded and passed in; the body reads **no**
    widget state. Replay has to reproduce what the user actually did, not press the button

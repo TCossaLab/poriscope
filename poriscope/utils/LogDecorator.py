@@ -26,7 +26,18 @@
 import functools
 import inspect
 import logging
-from typing import Any, Callable, Generator, Optional, TypeVar, Union, cast, overload
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Generator,
+    Optional,
+    Tuple,
+    TypeVar,
+    Union,
+    cast,
+    overload,
+)
 
 # Bound to the decorated callable so that these decorators hand back the *same*
 # type they were given. Declaring them ``-> Callable`` instead erases the
@@ -179,11 +190,55 @@ def log(
         return decorator_log(_func)
 
 
+def _arguments_by_name(
+    signature: inspect.Signature,
+    owner: Any,
+    args: Tuple[Any, ...],
+    kwargs: Dict[str, Any],
+) -> Tuple[Tuple[Any, ...], Dict[str, Any]]:
+    """
+    The values a call was made with, each under its parameter name, defaults filled in.
+
+    A saved history is read by people as well as replayed, and a bare list of values does
+    not say which is the channel and which the filter. Extra keyword arguments are kept
+    flat, so the entry replays as ``method(**kwargs)``. A method with ``*args`` or a
+    positional-only parameter has values with no name to replay by, so its call is kept
+    as it was made.
+
+    :param signature: the decorated method's own signature, ``self`` included
+    :type signature: inspect.Signature
+    :param owner: the object the method was called on
+    :type owner: Any
+    :param args: the positional values the call was made with, after ``self``
+    :type args: Tuple[Any, ...]
+    :param kwargs: the keyword values the call was made with
+    :type kwargs: Dict[str, Any]
+    :return: the positional and keyword values to record; the positional part is empty when every value has a name
+    :rtype: Tuple[Tuple[Any, ...], Dict[str, Any]]
+    """
+    parameters = list(signature.parameters.values())[1:]
+    unnamed = (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.VAR_POSITIONAL)
+    if any(parameter.kind in unnamed for parameter in parameters):
+        return args, kwargs
+    bound = signature.bind(owner, *args, **kwargs)
+    bound.apply_defaults()
+    named: Dict[str, Any] = {}
+    for parameter in parameters:
+        value = bound.arguments[parameter.name]
+        if parameter.kind is inspect.Parameter.VAR_KEYWORD:
+            named.update(value)
+        else:
+            named[parameter.name] = value
+    return (), named
+
+
 def register_action(name: str, *, skip_on_false: bool = False) -> Callable[[F], F]:
     """
     @register_action(name): record each call of the decorated method as a named action that a saved history can replay.
 
-    The entry is ``{"action": name, "args": args, "kwargs": kwargs}``, handed to
+    The entry is ``{"action": name, "args": args, "kwargs": kwargs}``, with every value
+    under its parameter name in ``kwargs`` and ``args`` empty, however the call passed
+    them (see :py:func:`_arguments_by_name`). It is handed to
     ``self.record_action`` once the body has returned, so an action called inside
     another is recorded before it. The name is the declared name, not the Python method
     name, so the method can be renamed or moved without breaking a saved history. It is
@@ -208,6 +263,8 @@ def register_action(name: str, *, skip_on_false: bool = False) -> Callable[[F], 
 
     # Decorators always nest, because they require a closure.
     def decorator(func: F) -> F:
+        signature = inspect.signature(func)
+
         @functools.wraps(func)
         def wrapper(
             self: Any, *args: Any, **kwargs: Any
@@ -218,8 +275,11 @@ def register_action(name: str, *, skip_on_false: bool = False) -> Callable[[F], 
 
             record = getattr(self, "record_action", None)
             if callable(record):
-                entry = {"action": name, "args": args, "kwargs": kwargs}
                 try:
+                    saved_args, saved_kwargs = _arguments_by_name(
+                        signature, self, args, kwargs
+                    )
+                    entry = {"action": name, "args": saved_args, "kwargs": saved_kwargs}
                     record(entry)
                 except Exception as e:
                     self.logger.info(f"Unable to log tab action: {str(e)}")

@@ -67,7 +67,7 @@
 
 * **Breaking:** `_shift_range_and_update_plot` and `_get_event_index_text` have moved from `RawDataView` and `EventAnalysisView` to `MetaEventTabView`, which now requires its subclasses to implement `_event_controls` and `_handle_plot_events`
 
-* **Breaking:** `MetadataModel.calculate_heatmap` now returns the bin edges as a fourth value, and `MetadataView.set_heatmap` takes them as a new `extent` parameter
+* **Breaking:** `MetadataModel.calculate_heatmap` now returns the bin edges as a fourth value, and `MetadataView.show_heatmap` takes them as a new `extent` parameter
 
 * **Breaking:** the Metadata and Protein tabs' subset and event request signals (`event_id_cache_requested`, `all_points_histogram_requested`, `event_overlay_requested`, `event_distribution_data_requested`, `ensemble_histogram_requested`, `metadata_subset_requested`, `csv_subset_export_requested`), their Controller slots, `_rebuild_event_id_cache` and `_fetch_event_subset` take the selected filter's name as a new last argument, and `MetaSubsetTabView._refuse_raw_filters` is removed
 
@@ -80,6 +80,15 @@
 * **Breaking:** Raw Data's Update Trace, Update PSD, Find Events and Plot Events are recorded actions, and `RawDataController.start_eventfinding` now takes each channel's Timer limits as a third element of its `channel_ranges` entries; Find Events is recorded per channel, and a call that plotted or launched nothing is not recorded (`register_action(skip_on_false=True)`)
 
 * **Breaking:** Clustering's run and Merge are recorded actions on `ClusteringController`, and the clustering result is `ClusteringModel.result`: `ClusteringView.cluster_data` is gone, `cluster_commit_requested` no longer carries the frame, and `ClusteringController.commit_clusters` no longer takes `cluster_data`
+
+* **Breaking:** a recorded tab action saves every value under its parameter name, defaults included, instead of as an unlabelled list, so a `write_back` override reads them from `kwargs`; an action file saved with unlabelled values still replays
+
+* **Breaking:** Metadata's overlay plot is recorded on `MetadataController.overlay_plot`, which takes the loader, plot type, axes, log flags, bins, Sizes, filters and scope by name, in place of the View's `_overlay_plot`, and a plot configuration saved before this is reported and not replayed
+
+* **Breaking:** Metadata's plot requests no longer carry the plot's `Axes`: `heatmap_requested`, `capture_rate_requested`, `scatterplot_3d_requested`, `histogram_bins_requested`, `density_requested`, `categorical_counts_requested` and the `MetadataController` slots they reach lose their `ax` argument, and the `MetadataView` methods that answer them are renamed from `set_*` to `show_*` (`show_heatmap`, `show_capture_rate`, `show_3d_scatterplot`, `show_histogram_bins`, `show_kernel_densities`, `show_categorical_counts`), which draw on the View's own axes
+
+* **Breaking:** Metadata's overlay loop, its reset-or-add decision and the subset fetch run in `MetadataController.overlay_plot`: the View's ten per-dataset request signals, `_overlay_plot`, `update_plot`, the `_plot_*` methods and `set_column_type`, `set_column_units` and `set_scope_note` are gone; `load_metadata_subset` returns a `MetadataSubset`, the compute methods and `build_all_points_histogram`/`build_event_overlay` return whether they drew and are no longer slots, `request_column_type` is gone, and `set_all_points_histogram`/`set_event_overlay` become `show_all_points_histogram`/`show_event_overlay`
+* **Breaking:** what Metadata's overlaid figure holds - its datasets, the options it was drawn with, the accumulated values and their shared limits, and what kind of figure it is - is kept in the Model's `overlay` (an `OverlayState`, on `MetaSubsetTabModel`) rather than in `MetadataView`'s `hist_*`, `allowed_*` and `plotted_datasets`, which are gone; the recorded reset is `MetadataController.reset`, asked for by `MetadataView.reset_requested` and drawn by `MetadataView.clear_plot`, and `show_histogram_bins`, `show_kernel_densities`, `show_categorical_counts` and `show_all_points_histogram` take every dataset's result and label and keep nothing
 
 ### Developer Tooling:
 
@@ -136,6 +145,8 @@
 * Protein's `_reset_actions` no longer clears a fit by reading the live analysis mode: each Update Plot clears the fit it replaces, so a replayed reset does not clear the other mode's fit
 
 * Event Analysis's Plot Events and Fit Events are recorded actions (a fit is recorded per channel), and a call that plotted or launched nothing is not recorded; `EventAnalysisView.write_back` shows a recorded entry's values in the panel, though nothing calls it yet
+
+* A replayed action whose saved values no longer fit its parameters is reported on the status panel and skipped, and the rest of the file still replays
 
 ### User-Facing Behaviour:
 
@@ -234,6 +245,16 @@
 * The Metadata and Protein event navigation arrows now refuse a scope with more than one experiment, channel or filter, as Plot Events does, instead of moving the Event ID without plotting
 
 * Closing the Metadata and Protein experiment and channel selection with nothing ticked now keeps the previous selection and says so, instead of leaving an empty selection that every plot refused and that reopening the selection silently re-ticked in full
+
+* The Metadata tab's normalised all-points histograms now export the curves as they are drawn, each with its peak at 1
+
+* A Metadata plot whose calculation fails - a density with nothing to estimate, a capture rate with nothing to fit - is no longer counted as drawn, so plotting it again is not skipped
+
+* A Metadata plot with a Bins entry that holds no number (only a comma), or the same column on two axes, is now refused on the status panel instead of raising an error or opening a dialog, and the figure is left as it was
+
+* A Metadata plot after Reset, or redrawn by Undo, no longer records a second reset, and a refused plot on an empty figure leaves nothing in the action history
+
+* **Fixed Undo of a figure's only plot leaving it drawn** in the analysis tabs that record a reset: the figure is now cleared
 
 * **Fixed the Metadata tab's capture-rate plot always reporting at least one row dropped by the log filter, even when nothing was dropped**; the count now excludes the one fewer interval than event that n events always produce
 

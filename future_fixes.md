@@ -50,6 +50,16 @@ Step 10 waits for both tracks.
 
 ### Step 9b - breaking tab designs and the milestone guard (Carolina's track)
 
+- **Metadata's fetch methods annotate channels as `int`; the selection tree passes strings (2026-10-28).**
+  `MetadataController.py:1205`, `:1297`, `:1370`, `:1454`, `:1525` declare `Optional[Dict[str, Optional[List[int]]]]`;
+  `overlay_plot` hands them `{exp: [channel]}` with `channel` a display string (`:448`, `:673` pass it as `Dict[Any,
+  Any]`). Settle the runtime shape with the loader's `_id_tuple` before changing either side.
+- **`MetaView.discard_last_tab_action` has no emitter (2026-10-28).** `MetaView.py:75`, wired at
+  `MetaController.py:130`; the Metadata roll-back now calls the Controller method directly. Removing it narrows a
+  `Meta*` base (breaking): a signal change for approval.
+- **An overlay followed by Plot Events, in a kept history.** Undo after Plot Events pops it and replays from the last reset, so the
+  overlay comes back; decide what a saved configuration keeps of an overlay that Plot Events replaced.
+
 - **A replay scenario failed once and was not diagnosed (2026-10-26).**
   `test_replay_guard_no_gui.py::test_a_replay_reproduces_what_the_action_produced[EventAnalysisController]`
   failed once, in the first run after its second-tab perturbation was made effective; the output was not kept.

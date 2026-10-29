@@ -267,8 +267,12 @@ def test_committing_with_another_loader_selected_writes_the_writers_own_fit(
     """
     **The selected loader does not gate a commit.** A writer writes the results of the
     fitter it was built on, so with a second loader selected the commit still lands
-    every fitted event and says nothing, letting a user write one fitter's results while
-    looking at another loader's events. The guard that refused this went too far.
+    every fitted event and says nothing but its own write report, letting a user write
+    one fitter's results while looking at another loader's events. The guard that refused
+    this went too far.
+
+    The report arrives when the writer's thread finishes, which can be after the rows
+    land, so it is waited for before the panel is read.
     """
     other_db = generate_events_database(
         tmp_path / "other_events.sqlite3", channel_id=0, num_events=5, seed=3
@@ -286,6 +290,9 @@ def test_committing_with_another_loader_selected_writes_the_writers_own_fit(
     controller.add_text_to_display.connect(lambda text, _source: messages.append(text))
 
     commit_events(event_analysis_tab, qtbot, [0], 25, loader="other")
+    qtbot.waitUntil(lambda: bool(messages), timeout=120_000)
 
     assert row_count(event_analysis_tab.out_db, "events") == 25
-    assert messages == []
+    # The writer's report, with its (empty) list of rejected events.
+    assert len(messages) == 1
+    assert messages[0].strip().startswith("Ch0: Wrote 25/25 events")

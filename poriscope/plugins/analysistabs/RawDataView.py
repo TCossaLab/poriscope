@@ -441,26 +441,28 @@ class RawDataView(MetaEventTabView):
 
         :param action: the entry's declared action name
         :type action: str
-        :param args: the entry's recorded positional arguments
+        :param args: the entry's recorded positional values, empty when every value has a name
         :type args: Tuple[Any, ...]
-        :param kwargs: the entry's recorded keyword arguments
+        :param kwargs: the entry's recorded values, each under its parameter name
         :type kwargs: Dict[str, Any]
         """
         if action in ("update_trace", "update_psd"):
-            reader, channels, start, length, data_filter = args[:5]
-            self._write_back_reader(reader, channels, data_filter)
-            self.rawdatacontrols.set_range_inputs(start, length)
+            self._write_back_reader(
+                kwargs["reader"], kwargs["channels"], kwargs["data_filter"]
+            )
+            self.rawdatacontrols.set_range_inputs(kwargs["start"], kwargs["length"])
         elif action == "find_events":
-            finder, channel, _ranges, data_filter, time_limits = args
-            self._write_back_finder(finder, channel, data_filter)
+            finder, channel = kwargs["eventfinder"], kwargs["channel"]
+            self._write_back_finder(finder, channel, kwargs["data_filter"])
             self.analysis_time_limits.setdefault(finder, {})[channel] = copy.deepcopy(
-                time_limits
+                kwargs["time_limits"]
             )
         elif action == "plot_events":
-            finder, channel, events, data_filter = args
-            self._write_back_finder(finder, channel, data_filter)
+            self._write_back_finder(
+                kwargs["eventfinder"], kwargs["channel"], kwargs["data_filter"]
+            )
             self.rawdatacontrols.set_event_index_input(
-                self._format_event_indices(events)
+                self._format_event_indices(kwargs["events"])
             )
 
     @log(logger=logger)

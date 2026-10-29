@@ -195,6 +195,10 @@ def capture(
         "bookkeeping": {
             name: normalise(getattr(view, name, None)) for name in BOOKKEEPING + extra
         },
+        # What the Model keeps of an overlaid figure, where a tab keeps it there.
+        "overlay": (
+            normalise(vars(model.overlay)) if hasattr(model, "overlay") else None
+        ),
     }
 
 

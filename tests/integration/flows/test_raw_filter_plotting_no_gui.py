@@ -252,10 +252,14 @@ def test_a_documented_raw_filter_plots_exactly_its_own_rows_in_the_selected_chan
     """
     plot(metadata_tab, name, column, ["0"])
 
-    view = metadata_tab.tab_view
-    assert {(entry[2], entry[4]) for entry in view.plotted_datasets} == {(0, name)}
-    assert len(view.plot_data) == rows_for(sample_metadata_db, query, 0)
-    assert column in view.plot_data.columns
+    assert {
+        (entry[2], entry[4])
+        for entry in metadata_tab.tab_controller.model.overlay.datasets
+    } == {(0, name)}
+    # The histogram keeps each dataset's raw column, so its length is the rows plotted.
+    assert len(metadata_tab.tab_controller.model.overlay.values[-1]) == rows_for(
+        sample_metadata_db, query, 0
+    )
 
 
 @pytest.mark.timeout(120)
@@ -266,7 +270,8 @@ def test_a_raw_filter_is_drawn_once_per_selected_channel(metadata_tab: Triad) ->
     plot(metadata_tab, "long_raw", "duration", ["0", "1"])
 
     datasets = {
-        (entry[2], entry[4]) for entry in metadata_tab.tab_view.plotted_datasets
+        (entry[2], entry[4])
+        for entry in metadata_tab.tab_controller.model.overlay.datasets
     }
     assert datasets == {(0, "long_raw"), (1, "long_raw")}
 
@@ -285,10 +290,9 @@ def test_a_raw_filter_that_ignores_the_selection_is_warned_about_and_still_plots
 
     plot(metadata_tab, "forgot_raw", "duration", ["0"])
 
-    view = metadata_tab.tab_view
     with sqlite3.connect(sample_metadata_db) as conn:
         everything = conn.execute("SELECT COUNT(*) FROM events").fetchone()[0]
-    assert len(view.plot_data) == everything
+    assert len(metadata_tab.tab_controller.model.overlay.values[-1]) == everything
     assert any("has no effect on it" in line for line in lines)
 
 
@@ -301,7 +305,7 @@ def test_a_plotted_column_the_query_does_not_return_draws_nothing(
     """
     plot(metadata_tab, "no_event_id_raw", "max_blockage", ["0"])
 
-    assert metadata_tab.tab_view.plotted_datasets == set()
+    assert metadata_tab.tab_controller.model.overlay.datasets == set()
 
 
 @pytest.mark.timeout(120)
@@ -315,7 +319,8 @@ def test_an_assisted_filter_is_still_scoped_beside_a_raw_one(
     plot(metadata_tab, "short", "duration", ["0", "1"])
 
     datasets = {
-        (entry[2], entry[4]) for entry in metadata_tab.tab_view.plotted_datasets
+        (entry[2], entry[4])
+        for entry in metadata_tab.tab_controller.model.overlay.datasets
     }
     assert datasets == {(0, "long_raw"), (0, "short"), (1, "short")}
 
@@ -326,8 +331,14 @@ def test_a_raw_filter_plots_an_all_points_histogram_of_the_selected_events(
 ) -> None:
     """
     Event-data plots take the events the query names for the selected channel; it
-    returns only ``event_id``, because it scoped itself.
+    returns only ``event_id``, because it scoped itself. The query that ran is the one
+    the status panel shows.
     """
+    lines: List[str] = []
+    metadata_tab.tab_controller.add_text_to_display.connect(
+        lambda text, source: lines.append(text)
+    )
+
     plot(
         metadata_tab,
         "events_raw",
@@ -336,12 +347,12 @@ def test_a_raw_filter_plots_an_all_points_histogram_of_the_selected_events(
         plot_type="Raw All Points Histogram",
     )
 
-    view = metadata_tab.tab_view
-    assert {(entry[2], entry[4]) for entry in view.plotted_datasets} == {
-        (1, "events_raw")
-    }
-    assert "channel_id = 1" in view.event_query
-    assert view.hist_max is not None
+    assert {
+        (entry[2], entry[4])
+        for entry in metadata_tab.tab_controller.model.overlay.datasets
+    } == {(1, "events_raw")}
+    assert any("channel_id = 1" in line for line in lines)
+    assert metadata_tab.tab_controller.model.overlay.hist_max is not None
 
 
 @pytest.mark.timeout(120)
@@ -359,7 +370,7 @@ def test_a_raw_filter_without_event_id_draws_no_event_plot(
         plot_type="Raw All Points Histogram",
     )
 
-    assert metadata_tab.tab_view.plotted_datasets == set()
+    assert metadata_tab.tab_controller.model.overlay.datasets == set()
 
 
 @pytest.mark.timeout(120)
@@ -378,9 +389,9 @@ def test_a_join_returning_the_key_twice_still_plots_an_event_plot(
         plot_type="Raw All Points Histogram",
     )
 
-    assert {(e[2], e[4]) for e in metadata_tab.tab_view.plotted_datasets} == {
-        (0, "join_raw")
-    }
+    assert {
+        (e[2], e[4]) for e in metadata_tab.tab_controller.model.overlay.datasets
+    } == {(0, "join_raw")}
 
 
 @pytest.mark.timeout(120)
@@ -396,9 +407,9 @@ def test_a_join_that_names_its_columns_plots_an_event_plot(metadata_tab: Triad) 
         plot_type="Raw All Points Histogram",
     )
 
-    assert {(e[2], e[4]) for e in metadata_tab.tab_view.plotted_datasets} == {
-        (0, "aliased_raw")
-    }
+    assert {
+        (e[2], e[4]) for e in metadata_tab.tab_controller.model.overlay.datasets
+    } == {(0, "aliased_raw")}
 
 
 @pytest.mark.timeout(120)
@@ -417,7 +428,7 @@ def test_an_id_column_does_not_name_an_event(
         plot_type="Raw All Points Histogram",
     )
 
-    assert metadata_tab.tab_view.plotted_datasets == set()
+    assert metadata_tab.tab_controller.model.overlay.datasets == set()
 
 
 @pytest.mark.timeout(120)
@@ -433,7 +444,7 @@ def test_a_key_that_names_no_event_draws_no_event_plot(metadata_tab: Triad) -> N
         plot_type="Raw All Points Histogram",
     )
 
-    assert metadata_tab.tab_view.plotted_datasets == set()
+    assert metadata_tab.tab_controller.model.overlay.datasets == set()
 
 
 def navigate(triad: Triad, filter_name: str, action: str, channel: str = "0") -> None:
@@ -535,7 +546,7 @@ def test_a_dataset_whose_query_ignores_the_scope_says_so_in_its_label(
     are not that channel's. A query that scopes itself is not.
     """
     plot(metadata_tab, "forgot_raw", "duration", ["0", "1"])
-    labels = list(metadata_tab.tab_view.hist_labels)
+    labels = list(metadata_tab.tab_controller.model.overlay.labels)
 
     assert labels
     assert all(
@@ -550,7 +561,7 @@ def test_a_dataset_whose_query_ignores_the_scope_says_so_in_its_label(
 
     assert not any(
         "not limited to this experiment" in label
-        for label in metadata_tab.tab_view.hist_labels
+        for label in metadata_tab.tab_controller.model.overlay.labels
     )
 
 
@@ -579,7 +590,9 @@ def test_a_plain_filter_without_event_id_is_offered_it_and_the_plot_goes_on_when
     assert view.subset_filters["no_event_id_raw"].startswith(
         "SELECT event_id, duration"
     )
-    assert {(e[2], e[4]) for e in view.plotted_datasets} == {(0, "no_event_id_raw")}
+    assert {
+        (e[2], e[4]) for e in metadata_tab.tab_controller.model.overlay.datasets
+    } == {(0, "no_event_id_raw")}
 
 
 @pytest.mark.timeout(120)
@@ -604,7 +617,7 @@ def test_a_declined_offer_leaves_the_filter_and_is_asked_again_next_time(
 
     assert len(question.asked) == 2
     assert view.subset_filters["no_event_id_raw"] == before
-    assert view.plotted_datasets == set()
+    assert metadata_tab.tab_controller.model.overlay.datasets == set()
 
 
 @pytest.mark.timeout(120)
@@ -628,7 +641,7 @@ def test_a_query_whose_rows_are_not_events_is_never_offered_event_id(
 
     assert question.asked == []
     assert view.subset_filters["distinct_raw"] == before
-    assert view.plotted_datasets == set()
+    assert metadata_tab.tab_controller.model.overlay.datasets == set()
 
 
 @pytest.mark.timeout(120)

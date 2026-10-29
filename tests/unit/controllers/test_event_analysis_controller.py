@@ -1177,7 +1177,11 @@ class TestFitChannelIsTheRecordedFitEvents:
 
         assert launched is True
         assert recorded == [
-            {"action": "fit_events", "args": ("ef1", 3, ""), "kwargs": {}}
+            {
+                "action": "fit_events",
+                "args": (),
+                "kwargs": {"eventfitter": "ef1", "channel": 3, "data_filter": ""},
+            }
         ]
         controller.model.set_generator.assert_called_once_with(
             "gen3", 3, "ef1", "MetaEventFitter"
@@ -1221,9 +1225,9 @@ class TestFitChannelIsTheRecordedFitEvents:
 
         controller.start_fitting("ef1", [0, 2], "")
 
-        assert [entry["args"] for entry in recorded] == [
-            ("ef1", 0, ""),
-            ("ef1", 2, ""),
+        assert [entry["kwargs"] for entry in recorded] == [
+            {"eventfitter": "ef1", "channel": 0, "data_filter": ""},
+            {"eventfitter": "ef1", "channel": 2, "data_filter": ""},
         ]
 
     def test_a_channel_that_cannot_launch_leaves_no_entry_and_the_rest_are_recorded(
@@ -1234,7 +1238,7 @@ class TestFitChannelIsTheRecordedFitEvents:
 
         controller.start_fitting("ef1", [0, 1, 2], "")
 
-        assert [entry["args"][1] for entry in recorded] == [0, 2]
+        assert [entry["kwargs"]["channel"] for entry in recorded] == [0, 2]
 
     def test_the_loader_is_not_part_of_the_recorded_arguments(
         self, controller: EventAnalysisController
@@ -1245,7 +1249,7 @@ class TestFitChannelIsTheRecordedFitEvents:
 
         controller.start_fitting("ef1", [0], "")
 
-        assert len(recorded[0]["args"]) == 3
+        assert set(recorded[0]["kwargs"]) == {"eventfitter", "channel", "data_filter"}
 
 
 class TestRequestLoaderChannels:
@@ -1534,8 +1538,15 @@ class TestPlotEventsIsRecordedWhenItPlots:
         assert recorded == [
             {
                 "action": "plot_events",
-                "args": ("ldr", "ef", 2, [0, 1], "F1", True),
-                "kwargs": {},
+                "args": (),
+                "kwargs": {
+                    "loader": "ldr",
+                    "eventfitter": "ef",
+                    "channel": 2,
+                    "events": [0, 1],
+                    "data_filter": "F1",
+                    "raw": True,
+                },
             }
         ]
         mock_view.set_event_plot_data.assert_called_once()
@@ -1551,7 +1562,7 @@ class TestPlotEventsIsRecordedWhenItPlots:
 
         controller.load_event_plot("ldr", "No Event Fitter", 3, [0, 1, 9], "", False)
 
-        assert recorded[0]["args"][3] == [0, 1, 9]
+        assert recorded[0]["kwargs"]["events"] == [0, 1, 9]
 
     def test_an_unreadable_count_is_not_recorded(
         self, controller: EventAnalysisController

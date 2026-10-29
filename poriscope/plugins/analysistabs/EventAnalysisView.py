@@ -691,21 +691,23 @@ class EventAnalysisView(MetaEventTabView):
 
         :param action: the entry's declared action name
         :type action: str
-        :param args: the entry's recorded positional arguments
+        :param args: the entry's recorded positional values, empty when every value has a name
         :type args: Tuple[Any, ...]
-        :param kwargs: the entry's recorded keyword arguments
+        :param kwargs: the entry's recorded values, each under its parameter name
         :type kwargs: Dict[str, Any]
         """
         controls = self.eventAnalysisControls
         if action == "plot_events":
-            loader, eventfitter, channel, events, data_filter, raw = args
-            self._write_back_loader(loader)
-            self._write_back_fitter(eventfitter, channel, data_filter)
-            controls.set_raw(bool(raw))
-            controls.set_event_index_input(self._format_event_indices(events))
+            self._write_back_loader(kwargs["loader"])
+            self._write_back_fitter(
+                kwargs["eventfitter"], kwargs["channel"], kwargs["data_filter"]
+            )
+            controls.set_raw(bool(kwargs["raw"]))
+            controls.set_event_index_input(self._format_event_indices(kwargs["events"]))
         elif action == "fit_events":
-            eventfitter, channel, data_filter = args
-            self._write_back_fitter(eventfitter, channel, data_filter)
+            self._write_back_fitter(
+                kwargs["eventfitter"], kwargs["channel"], kwargs["data_filter"]
+            )
 
     @log(logger=logger)
     def _write_back_loader(self, loader: str) -> None:
