@@ -24,8 +24,18 @@
 # Alejandra Carolina González González
 
 
+import contextlib
 import logging
-from typing import Any, Dict, List, Optional
+from typing import (
+    Any,
+    Dict,
+    Iterator,
+    List,
+    Optional,
+    Sequence,
+    Tuple,
+    Union,
+)
 
 from PySide6.QtCore import (
     QRegularExpression,
@@ -53,6 +63,25 @@ from poriscope.utils.LogDecorator import log
 from poriscope.utils.MetaSubsetTabControls import MetaSubsetTabControls
 from poriscope.utils.ReplayGuard import forbid_while_replaying
 from poriscope.views.widgets.multiselect_filter import MultiSelectFilterComboBox
+
+#: Which of the X, Y and Z axes each plot type draws from. Capture Rate always plots the
+#: events' start times, and the event-data plots draw the events themselves.
+_AXES_USED: Dict[str, Tuple[bool, bool, bool]] = {
+    "Histogram": (True, False, False),
+    "Normalized Histogram": (True, False, False),
+    "Categorical Histogram": (True, False, False),
+    "Kernel Density Plot": (True, False, False),
+    "Capture Rate": (False, False, False),
+    "Heatmap": (True, True, False),
+    "Scatterplot": (True, True, False),
+    "3D Scatterplot": (True, True, True),
+    "Raw Event Overlay": (False, False, False),
+    "Filtered Event Overlay": (False, False, False),
+    "Raw All Points Histogram": (False, False, False),
+    "Normalized Raw All Points Histogram": (False, False, False),
+    "Filtered All Points Histogram": (False, False, False),
+    "Normalized Filtered All Points Histogram": (False, False, False),
+}
 
 
 class MetadataControls(MetaSubsetTabControls):
@@ -599,59 +628,50 @@ class MetadataControls(MetaSubsetTabControls):
     # QWidget status
     @log(logger=logger)
     def _plot_type_changed(self, index: int) -> None:
-        current_text = self.plot_type_comboBox.currentText()
-        if current_text == "Heatmap" or current_text == "Scatterplot":
-            self.x_axis_comboBox.setEnabled(True)
-            self.y_axis_comboBox.setEnabled(True)
-            self.z_axis_comboBox.setEnabled(False)
-            self.x_axis_logscale_checkbox.setEnabled(True)
-            self.y_axis_logscale_checkbox.setEnabled(True)
-            self.z_axis_logscale_checkbox.setEnabled(False)
-            self.z_axis_logscale_checkbox.setChecked(False)
-            self.x_axis_units_label.setEnabled(True)
-            self.y_axis_units_label.setEnabled(True)
-            self.z_axis_units_label.setEnabled(False)
-        elif current_text == "Histogram" or current_text == "Kernel Density Plot":
-            self.x_axis_comboBox.setEnabled(True)
-            self.y_axis_comboBox.setEnabled(False)
-            self.z_axis_comboBox.setEnabled(False)
-            self.x_axis_logscale_checkbox.setEnabled(True)
-            self.y_axis_logscale_checkbox.setEnabled(False)
-            self.z_axis_logscale_checkbox.setEnabled(False)
-            self.y_axis_logscale_checkbox.setChecked(False)
-            self.z_axis_logscale_checkbox.setChecked(False)
-            self.x_axis_units_label.setEnabled(True)
-            self.y_axis_units_label.setEnabled(False)
-            self.z_axis_units_label.setEnabled(False)
-        elif current_text == "3D Scatterplot":
-            self.x_axis_comboBox.setEnabled(True)
-            self.y_axis_comboBox.setEnabled(True)
-            self.z_axis_comboBox.setEnabled(True)
-            self.x_axis_logscale_checkbox.setEnabled(True)
-            self.y_axis_logscale_checkbox.setEnabled(True)
-            self.z_axis_logscale_checkbox.setEnabled(True)
-            self.x_axis_units_label.setEnabled(True)
-            self.y_axis_units_label.setEnabled(True)
-            self.z_axis_units_label.setEnabled(True)
-        elif current_text in [
-            "Raw All Points Histogram",
-            "Filtered All Points Histogram",
-            "Event Overlay",
-        ]:
-            self.x_axis_comboBox.setEnabled(False)
-            self.y_axis_comboBox.setEnabled(False)
-            self.z_axis_comboBox.setEnabled(False)
-            self.x_axis_logscale_checkbox.setEnabled(False)
-            self.y_axis_logscale_checkbox.setEnabled(False)
-            self.z_axis_logscale_checkbox.setEnabled(False)
-            self.x_axis_units_label.setEnabled(False)
-            self.y_axis_units_label.setEnabled(False)
-            self.z_axis_units_label.setEnabled(False)
+        self._enable_axes_for_plot_type(self.plot_type_comboBox.currentText())
         parameters = self.collect_parameters()
         self.logger.debug(
             f"Emitting actionTriggered due to parameter change with parameters {parameters}"
         )
         self.actionTriggered.emit("MetadataView", "plot_type_changed", (parameters,))
+
+    @log(logger=logger)
+    def _enable_axes_for_plot_type(self, plot_type: str) -> None:
+        """
+        Enable the axes a plot type draws from and disable the rest, without emitting.
+
+        Each axis's dropdown, log box and units label follow it, and a disabled log box is
+        unticked. The placeholder leaves the axes as they are.
+
+        :param plot_type: the plot type shown
+        :type plot_type: str
+        """
+        used = _AXES_USED.get(plot_type)
+        if used is None:
+            return
+        axes = (
+            (
+                self.x_axis_comboBox,
+                self.x_axis_logscale_checkbox,
+                self.x_axis_units_label,
+            ),
+            (
+                self.y_axis_comboBox,
+                self.y_axis_logscale_checkbox,
+                self.y_axis_units_label,
+            ),
+            (
+                self.z_axis_comboBox,
+                self.z_axis_logscale_checkbox,
+                self.z_axis_units_label,
+            ),
+        )
+        for enabled, (combo, log_box, units) in zip(used, axes):
+            combo.setEnabled(enabled)
+            log_box.setEnabled(enabled)
+            units.setEnabled(enabled)
+            if not enabled:
+                log_box.setChecked(False)
 
     @log(logger=logger)
     def update_axes(self, axes: List[str]) -> None:
@@ -1006,3 +1026,159 @@ class MetadataControls(MetaSubsetTabControls):
         button = button_mapping.get(button_type)
         if button is not None:
             button.setChecked(False)
+
+    def set_loader(self, loader: str) -> bool:
+        """
+        Show a database loader without emitting, for writing a recorded value back.
+
+        :param loader: the database loader plugin's key
+        :type loader: str
+        :return: True if it was shown, False if it is not an option
+        :rtype: bool
+        """
+        shown = self.set_combo_text(self.db_loader_comboBox, loader)
+        self.validate_inputs()
+        return shown
+
+    def set_plot_type(self, plot_type: str) -> bool:
+        """
+        Show a plot type and the axes it draws from without emitting, for writing a recorded value back.
+
+        :param plot_type: the plot type
+        :type plot_type: str
+        :return: True if it was shown, False if it is not an option
+        :rtype: bool
+        """
+        shown = self.set_combo_text(self.plot_type_comboBox, plot_type)
+        if shown:
+            self._enable_axes_for_plot_type(plot_type)
+        self.validate_inputs()
+        return shown
+
+    def set_axes(self, axes: Sequence[Optional[str]]) -> bool:
+        """
+        Show the X, Y and Z columns without emitting, for writing a recorded value back.
+
+        Each is shown if it is one of the loader's columns, independently of the others; an
+        axis recorded as None is left as it is.
+
+        :param axes: the X, Y and Z columns
+        :type axes: Sequence[Optional[str]]
+        :return: True if every recorded column was shown, False if any is not an option
+        :rtype: bool
+        """
+        shown = True
+        for combo, column in zip(
+            (self.x_axis_comboBox, self.y_axis_comboBox, self.z_axis_comboBox), axes
+        ):
+            if column is not None and not self.set_combo_text(combo, column):
+                shown = False
+        self.validate_inputs()
+        return shown
+
+    def set_logs(self, logs: Sequence[bool]) -> None:
+        """
+        Show the X, Y and Z log-scale flags without emitting, for writing a recorded value back.
+
+        :param logs: the X, Y and Z log-scale flags
+        :type logs: Sequence[bool]
+        """
+        for box, logged in zip(
+            (
+                self.x_axis_logscale_checkbox,
+                self.y_axis_logscale_checkbox,
+                self.z_axis_logscale_checkbox,
+            ),
+            logs,
+        ):
+            box.blockSignals(True)
+            box.setChecked(bool(logged))
+            box.blockSignals(False)
+
+    def set_bins(
+        self, bins: Optional[Sequence[Union[int, float]]], sizes: bool
+    ) -> None:
+        """
+        Show the bins entry and Sizes together without emitting, for writing a recorded value back.
+
+        Sizes goes first, because it decides which entries the bins field accepts.
+
+        :param bins: the bin counts, or the bin widths when ``sizes`` is True, or None to estimate
+        :type bins: Optional[Sequence[Union[int, float]]]
+        :param sizes: does bins refer to a bin width
+        :type sizes: bool
+        """
+        self.sizes_checkbox.blockSignals(True)
+        self.sizes_checkbox.setChecked(sizes)
+        self.sizes_checkbox.blockSignals(False)
+        self._on_sizes_checkbox_toggled(sizes)
+        self.bins_lineEdit.blockSignals(True)
+        self.bins_lineEdit.setText(
+            ", ".join(str(entry) for entry in bins) if bins else ""
+        )
+        self.bins_lineEdit.blockSignals(False)
+        self.validate_inputs()
+
+    def set_event_count(self, count: int) -> None:
+        """
+        Show how many events Plot Events draws without emitting, for writing a recorded value back.
+
+        :param count: the number of events
+        :type count: int
+        """
+        self.n_events_lineEdit.blockSignals(True)
+        self.n_events_lineEdit.setText(str(count))
+        self.n_events_lineEdit.blockSignals(False)
+        self.validate_inputs()
+
+    def set_raw(self, raw: bool) -> None:
+        """
+        Show the raw-trace checkbox's state without emitting, for writing a recorded value back.
+
+        :param raw: whether each event's unfiltered trace is drawn as well
+        :type raw: bool
+        """
+        self.raw_checkbox.blockSignals(True)
+        self.raw_checkbox.setChecked(raw)
+        self.raw_checkbox.blockSignals(False)
+        self.validate_inputs()
+
+    def set_filters(self, names: Sequence[str]) -> bool:
+        """
+        Select exactly these filters, for writing a recorded value back.
+
+        The multiselect's own signal still fires: only ``validate_inputs`` listens to it, and
+        it keeps the box's displayed text in step. No action is emitted.
+
+        :param names: the filters to select; none selects the full dataset
+        :type names: Sequence[str]
+        :return: True if every filter was selected, False if any is not an option
+        :rtype: bool
+        """
+        combo = self.filter_comboBox
+        for name in combo.getSelectedItems():
+            combo.selectItem(name, select=False)
+        for name in names:
+            combo.selectItem(name)
+        return set(names) <= set(combo.getSelectedItems())
+
+    @contextlib.contextmanager
+    def axis_signals_held(self) -> Iterator[None]:
+        """
+        Hold off the axis dropdowns' signals while their columns are refilled, for write-back.
+
+        A refill changes each dropdown's selection, which asks for its units through an
+        emitted action that reads the panel; write-back asks for the units itself.
+
+        :return: a context in which the three axis dropdowns emit nothing
+        :rtype: Iterator[None]
+        """
+        combos = (self.x_axis_comboBox, self.y_axis_comboBox, self.z_axis_comboBox)
+        for combo in combos:
+            combo.blockSignals(True)
+        try:
+            yield
+        finally:
+            for combo in combos:
+                combo.blockSignals(False)
+            self.validate_inputs()
