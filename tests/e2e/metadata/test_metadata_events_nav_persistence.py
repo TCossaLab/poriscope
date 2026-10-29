@@ -9,7 +9,7 @@ Run with:
 Stages (no SQL filter active for stages 1-4; SQL filters only enter at stage 5):
 1) Open tab, add loader, scope select-all.
 2) Plot Events: event_id=0, n_events=4 -> expect 2 lines/event (filtered
-   + fit; MetadataView._update_event_plot plots these UNCONDITIONALLY,
+   + fit; MetadataView.show_events plots these UNCONDITIONALLY,
    confirmed from source - unlike EventAnalysisView, filter state doesn't
    gate them). Then event_id=3, n_events=2 -> expect 4 lines total.
 3) Navigation/wraparound: 1x RIGHT then 3x LEFT (back). Rather than
@@ -304,7 +304,7 @@ def test_metadata_events_and_filters(
 
     # =========================================================
     # STAGE 2: Plot Events, no filter. Confirmed from source:
-    # _update_event_plot always plots filtered_data + fit_data
+    # show_events always plots filtered_data + fit_data
     # unconditionally -> 2 lines/event baseline, regardless of filter.
     # =========================================================
     controls.event_id_lineEdit.setText("0")

@@ -89,11 +89,12 @@ class MetadataView(MetaSubsetTabView):
     #: from ``MetaSubsetTabView``.
     column_names_requested = Signal(str)
 
-    #: Asks for one event's plot features - the lines, points and labels a fitter left
-    #: behind. Emitted once per event on the plot path, and answered through
-    #: ``update_plot_features``, which the Controller calls only when the lookup
-    #: succeeded and the labels it returned match their features.
-    plot_features_requested = Signal(str, int, int, int)
+    #: Asks the Controller to draw a grid of events: the loader's key, the ``event_id``
+    #: values the Event ID resolved to through the filtered-event cache, the experiment,
+    #: the channel as the selection tree reports it, the filter's name and SQL, and the
+    #: Raw flag. The events a click resolved, which is what the Controller records, so a
+    #: replay draws them whatever the panel and the cache hold then.
+    plot_events_requested = Signal(str, list, object, object, str, str, bool)
 
     #: Asks for a filtered subset to be written to CSV in a worker thread: the loader's
     #: key, the destination folder, the export's name, the single selected filter (or
@@ -109,7 +110,7 @@ class MetadataView(MetaSubsetTabView):
     overlay_plot_requested = Signal(str, str, list, list, object, bool, object, object)
 
     #: Asks the Controller for a recorded reset of the figure, with the projection of
-    #: its fresh axes: from Reset, and from Plot Events before it draws its grid.
+    #: its fresh axes: from Reset.
     reset_requested = Signal(str)
 
     logger = logging.getLogger(__name__)
@@ -123,20 +124,11 @@ class MetadataView(MetaSubsetTabView):
         self._clear_cache()
         self.no_cached_data = False
         self.subset_export_count = 0
-        # Set by set_event_plot_data_generator once the whole event-plot chain has
-        # succeeded. None means it has not been fetched.
-        self.plot_events_generator = None
         self.subset_filters = {}
         self.available_experiment_and_channels_by_loader: Dict[
             str, Dict[str, List[str]]
         ] = {}
         self.selected_experiment_and_channels_by_loader = {}
-        self.vertical: Optional[List[float]] = None
-        self.horizontal: Optional[List[float]] = None
-        self.points: Optional[List[Tuple[float, float]]] = None
-        self.vlabels: Optional[List[str]] = None
-        self.hlabels: Optional[List[str]] = None
-        self.plabels: Optional[List[str]] = None
         self._heatmap_colorbar: Optional[Colorbar] = None
 
         # Cache for filter-aware event navigation — rebuilt only when filter/scope changes
@@ -233,7 +225,7 @@ class MetadataView(MetaSubsetTabView):
         """
         Check whether self.axes currently refers to a live axes object that
         is actually attached to self.figure and has the requested
-        projection. After _update_event_plot() rebuilds the figure into a
+        projection. After show_events() rebuilds the figure into a
         grid of per-event subplots, self.axes is left pointing at an axes
         that has been removed from the figure (a stale reference); reusing
         it would silently draw onto an orphaned, invisible axes.
@@ -294,21 +286,6 @@ class MetadataView(MetaSubsetTabView):
             self.__class__.__name__,
         )
         self.clear_plot(axis_type)
-
-    @log(logger=logger)
-    def axes_ready(self, axis_type: str = "2d") -> bool:
-        """
-        Can the next overlay be drawn on the current axes?
-
-        Not when the figure holds more than one axes - the event grid Plot Events draws -
-        or when the axes are stale or of the other projection.
-
-        :param axis_type: Either '2d' or '3d', the projection the plot needs.
-        :type axis_type: str
-        :return: True if the current axes can take the plot
-        :rtype: bool
-        """
-        return len(self.figure.axes) <= 1 and self._axes_valid(axis_type=axis_type)
 
     @log(logger=logger)
     def finish_plot(self) -> None:
@@ -1081,128 +1058,22 @@ class MetadataView(MetaSubsetTabView):
         # Update the event_id field to reflect the snapped position
         self.metadatacontrols.set_event_id_input(snapped_start_id)
 
-        # Ask for exactly these events' data. Resolving the snapped event_ids to
-        # database ids is part of that request rather than something done here: the
-        # ids have to be scoped to the current experiment and channel, because
-        # event_id is only unique within a channel and an unscoped match silently
-        # picks up rows from other channels that happen to share one.
-        #
-        # Cleared first: the Controller sets the generator only once the whole chain
-        # has succeeded, and reports which part did not, so a failure here is not
-        # mistaken for the previous plot's events.
-        self.plot_events_generator = None
-        self.event_plot_data_requested.emit(
-            loader, snapped_event_ids, exp, channel, exp_and_ch, "events"
+        # The Controller fetches exactly these events, scoped to the experiment and
+        # channel, because event_id is only unique within a channel and an unscoped match
+        # silently picks up rows from other channels that happen to share one. It reports
+        # which part failed, so nothing is said here.
+        self.plot_events_requested.emit(
+            loader,
+            list(snapped_event_ids),
+            exp,
+            selected_channel,
+            next(iter(selected_filters)),
+            sql_filter,
+            use_raw,
         )
-        event_generator = self.plot_events_generator
-        if event_generator is None:
-            return
-
-        data_list = []
-        # One entry per subplot; each entry is the whole feature list for
-        # that subplot, or None when the fitter supplied no features.
-        vertical_lines: List[Optional[List[float]]] = []
-        vertical_labels: List[Optional[List[str]]] = []
-        horizontal_lines: List[Optional[List[float]]] = []
-        horizontal_labels: List[Optional[List[str]]] = []
-        points: List[Optional[List[Tuple[float, float]]]] = []
-        plabels: List[Optional[List[str]]] = []
-
-        for event in event_generator:
-            data_list.append(event)
-            vertical_lines.append(None)
-            vertical_labels.append(None)
-            horizontal_lines.append(None)
-            horizontal_labels.append(None)
-            points.append(None)
-            plabels.append(None)
-            experiment_id = event["experiment_id"]
-            channel_id = event["channel_id"]
-            event_id_val = event["event_id"]
-            # Called with no arguments to clear all six before asking, for the same
-            # reason the generator is cleared above: a lookup that fails leaves them
-            # unset, and this event gets no features rather than the last one's.
-            #
-            # The try/except that used to wrap this emit is gone with it. It could
-            # never fire: the bus swallowed every exception a plugin raised, and a
-            # Qt slot's exception does not propagate back to the emitter either
-            # (measured on PySide6 6.9.0 - emit returns normally and the traceback
-            # goes to sys.excepthook), so the Controller reports failures itself.
-            self.update_plot_features()
-            self.plot_features_requested.emit(
-                loader, experiment_id, channel_id, event_id_val
-            )
-            if self.vertical is not None:
-                vertical_lines[-1] = self.vertical
-                vertical_labels[-1] = self.vlabels
-                self.vertical = None
-                self.vlabels = None
-            if self.horizontal is not None:
-                horizontal_lines[-1] = self.horizontal
-                horizontal_labels[-1] = self.hlabels
-                self.horizontal = None
-                self.hlabels = None
-            if self.points is not None:
-                points[-1] = self.points
-                plabels[-1] = self.plabels
-                self.points = None
-                self.plabels = None
-
-        if data_list:
-            self._update_event_plot(
-                data_list,
-                horizontal_lines,
-                vertical_lines,
-                points,
-                horizontal_labels,
-                vertical_labels,
-                plabels,
-                use_raw=use_raw,
-            )
-        else:
-            self.add_text_to_display.emit(
-                f"No data available for plotting with indices in the specified range {snapped_event_ids}",
-                self.__class__.__name__,
-            )
-            self.logger.info(
-                f"No data available for plotting with indices in the specified range {snapped_event_ids}"
-            )
 
     @log(logger=logger)
-    def update_plot_features(
-        self,
-        vertical: Optional[List[float]] = None,
-        horizontal: Optional[List[float]] = None,
-        points: Optional[List[Tuple[float, float]]] = None,
-        vlabels: Optional[List[str]] = None,
-        hlabels: Optional[List[str]] = None,
-        plabels: Optional[List[str]] = None,
-    ) -> None:
-        """
-        Update feature overlays for the plot, such as vertical/horizontal lines and labeled points.
-
-        :param vertical: List of vertical line positions.
-        :type vertical: Optional[List[float]]
-        :param horizontal: List of horizontal line positions.
-        :type horizontal: Optional[List[float]]
-        :param points: List of (x, y) point coordinates.
-        :type points: Optional[List[Tuple[float, float]]]
-        :param vlabels: Labels for vertical lines.
-        :type vlabels: Optional[List[str]]
-        :param hlabels: Labels for horizontal lines.
-        :type hlabels: Optional[List[str]]
-        :param plabels: Labels for points.
-        :type plabels: Optional[List[str]]
-        """
-        self.vertical = vertical
-        self.horizontal = horizontal
-        self.points = points
-        self.vlabels = vlabels
-        self.hlabels = hlabels
-        self.plabels = plabels
-
-    @log(logger=logger)
-    def _update_event_plot(
+    def show_events(
         self,
         event_data: Sequence[Dict[str, Any]],
         horizontal_lines: Sequence[Optional[List[float]]],
@@ -1241,9 +1112,6 @@ class MetadataView(MetaSubsetTabView):
         :return: None
         :rtype: None
         """
-        # Reset metadata plot state so the next "Update Plot" click starts fresh instead of trying to overlay onto the event grid
-        self._reset_actions()  # a recorded reset: clears the figure and what the overlay kept
-
         self._clear_figure_state(create_default_axes=False)
 
         num_events = len(event_data)

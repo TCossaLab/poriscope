@@ -28,7 +28,7 @@ import ast
 import logging
 import sys
 from pathlib import Path
-from typing import Any, Callable, List, Optional
+from typing import Any, List, Optional
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -121,16 +121,9 @@ def view(mocker: MockerFixture, mock_qt_dependencies: None) -> MetadataView:
     # leaves the cached structure as it is, which is the Controller answering with an
     # unchanged one; the test of the refresh itself files a new structure instead.
     view_instance.experiment_structure_requested = mocker.Mock()
-    # The three intents whose answer is not drawn by the Controller itself. The one
-    # whose answer is read back on the next statement replays a canned_* value; the two
-    # that are fire-and-forget - the per-event feature lookup and the CSV export, which
-    # runs in a worker - are bare Mocks, so a test that wants features parks them
-    # itself and a test that wants the export just asserts on the emit.
-    view_instance.event_plot_data_requested = mocker.Mock()
-    view_instance.event_plot_data_requested.emit.side_effect = _event_plot_data_answer(
-        view_instance
-    )
-    view_instance.plot_features_requested = mocker.Mock()
+    # Fire-and-forget intents: Plot Events, which the Controller draws, and the CSV
+    # export, which runs in a worker. A test asserts on the emit.
+    view_instance.plot_events_requested = mocker.Mock()
     view_instance.csv_subset_export_requested = mocker.Mock()
     # The shared base signal MetaSubsetTabView declares; ProteinView still emits it.
     view_instance.scatterplot_requested = mocker.Mock()
@@ -939,36 +932,6 @@ def test_finish_plot_redraws_canvas_and_commits_the_cache(view: MetadataView) ->
     view._commit_cache.assert_called_once()
 
 
-# ----------------------------- Plot Events answer ------------------------------
-
-
-def _event_plot_data_answer(view: MetadataView) -> Callable[..., None]:
-    """
-    Stand in for the Controller answering ``event_plot_data_requested``.
-
-    The one intent replaced three chained emits, so a test that used to park an
-    experiment id and a query result now parks only the generator they were resolved
-    in order to fetch - as ``canned_plot_events_generator``.
-
-    :param view: the view whose answer to set
-    :type view: MetadataView
-    :return: a side_effect for the mocked intent emit
-    :rtype: Callable[..., None]
-    """
-
-    def _emit(
-        loader: str,
-        event_ids: list,
-        exp: object,
-        channel: object,
-        scope: object,
-        action_label: str,
-    ) -> None:
-        view.plot_events_generator = getattr(view, "canned_plot_events_generator", None)
-
-    return _emit
-
-
 # ----------------------------- show_all_points_histogram Tests ------------------------------
 #
 # The tally itself is MetadataModel.build_all_points_histogram, pinned in
@@ -1773,7 +1736,7 @@ _FULL_EVENT = {
 }
 
 
-# ----------------------------- Update Event Plot Tests ------------------------------
+# ----------------------------- show_events Tests ------------------------------
 
 
 def _make_event(event_id: int = 1, n_samples: int = 2) -> dict:
@@ -1801,9 +1764,7 @@ def _none_lists(n: int):
     )
 
 
-def test_update_event_plot_clears_figure(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
+def test_show_events_clears_figure(view: MetadataView, mocker: MockerFixture) -> None:
     """Verify figure is cleared before plotting events."""
     view.figure.axes = []
     view.figure.get_axes = mocker.Mock(return_value=[])
@@ -1812,12 +1773,12 @@ def test_update_event_plot_clears_figure(
     view._factors = mocker.Mock(return_value=(1, 1))
     event_data = [_make_event()]
 
-    view._update_event_plot(event_data, *_none_lists(1))
+    view.show_events(event_data, *_none_lists(1))
 
     view._clear_figure_state.assert_called()
 
 
-def test_update_event_plot_creates_subplots(
+def test_show_events_creates_subplots(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify subplots are created for each event."""
@@ -1828,12 +1789,12 @@ def test_update_event_plot_creates_subplots(
     view._factors = mocker.Mock(return_value=(2, 2))
     event_data = [_make_event(i) for i in range(4)]
 
-    view._update_event_plot(event_data, *_none_lists(4))
+    view.show_events(event_data, *_none_lists(4))
 
     assert view.figure.add_subplot.call_count == 4
 
 
-def test_update_event_plot_plots_all_traces(
+def test_show_events_plots_all_traces(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify raw (use_raw=True), filtered, and fit traces are plotted."""
@@ -1846,12 +1807,12 @@ def test_update_event_plot_plots_all_traces(
     view.figure.add_subplot = mocker.Mock(return_value=mock_ax)
     event_data = [_make_event()]
 
-    view._update_event_plot(event_data, *_none_lists(1), use_raw=True)
+    view.show_events(event_data, *_none_lists(1), use_raw=True)
 
     assert mock_ax.plot.call_count == 3
 
 
-def test_update_event_plot_sets_subplot_titles(
+def test_show_events_sets_subplot_titles(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify subplot titles contain exp/channel/event info."""
@@ -1874,7 +1835,7 @@ def test_update_event_plot_sets_subplot_titles(
         }
     ]
 
-    view._update_event_plot(event_data, *_none_lists(1))
+    view.show_events(event_data, *_none_lists(1))
 
     mock_ax.set_title.assert_called_once()
     title = mock_ax.set_title.call_args[0][0]
@@ -1883,7 +1844,7 @@ def test_update_event_plot_sets_subplot_titles(
     assert "Event 42" in title
 
 
-def test_update_event_plot_converts_current_to_nanoamps(
+def test_show_events_converts_current_to_nanoamps(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify current data is divided by 1000 (pA to nA)."""
@@ -1906,13 +1867,13 @@ def test_update_event_plot_converts_current_to_nanoamps(
         }
     ]
 
-    view._update_event_plot(event_data, *_none_lists(1), use_raw=False)
+    view.show_events(event_data, *_none_lists(1), use_raw=False)
 
     calls = mock_ax.plot.call_args_list
     np.testing.assert_array_almost_equal(calls[0][0][1], np.array([1.1, 2.1]))
 
 
-def test_update_event_plot_converts_time_to_microseconds(
+def test_show_events_converts_time_to_microseconds(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify time axis is in microseconds."""
@@ -1925,15 +1886,13 @@ def test_update_event_plot_converts_time_to_microseconds(
     view.figure.add_subplot = mocker.Mock(return_value=mock_ax)
     event_data = [_make_event(n_samples=2)]
 
-    view._update_event_plot(event_data, *_none_lists(1), use_raw=True)
+    view.show_events(event_data, *_none_lists(1), use_raw=True)
 
     calls = mock_ax.plot.call_args_list
     np.testing.assert_array_almost_equal(calls[0][0][0], np.array([0.0, 100.0]))
 
 
-def test_update_event_plot_updates_cache(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
+def test_show_events_updates_cache(view: MetadataView, mocker: MockerFixture) -> None:
     """Verify _update_cache is called for each plotted trace."""
     view.figure.axes = []
     view.figure.get_axes = mocker.Mock(return_value=[])
@@ -1942,12 +1901,12 @@ def test_update_event_plot_updates_cache(
     view._factors = mocker.Mock(return_value=(1, 1))
     event_data = [_make_event()]
 
-    view._update_event_plot(event_data, *_none_lists(1), use_raw=False)
+    view.show_events(event_data, *_none_lists(1), use_raw=False)
 
     assert view._update_cache.call_count == 2
 
 
-def test_update_event_plot_sets_ylabel_on_leftmost_subplots(
+def test_show_events_sets_ylabel_on_leftmost_subplots(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify y-axis labels are set only on leftmost subplots."""
@@ -1966,7 +1925,7 @@ def test_update_event_plot_sets_ylabel_on_leftmost_subplots(
     view.figure.add_subplot = mocker.Mock(side_effect=create_mock_ax)
     event_data = [_make_event(i) for i in range(6)]
 
-    view._update_event_plot(event_data, *_none_lists(6))
+    view.show_events(event_data, *_none_lists(6))
 
     assert mock_axes[0].set_ylabel.called
     assert not mock_axes[1].set_ylabel.called
@@ -1976,7 +1935,7 @@ def test_update_event_plot_sets_ylabel_on_leftmost_subplots(
     assert not mock_axes[5].set_ylabel.called
 
 
-def test_update_event_plot_sets_xlabel_on_bottom_subplots(
+def test_show_events_sets_xlabel_on_bottom_subplots(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
     """Verify x-axis labels are set only on bottom row subplots."""
@@ -1995,7 +1954,7 @@ def test_update_event_plot_sets_xlabel_on_bottom_subplots(
     view.figure.add_subplot = mocker.Mock(side_effect=create_mock_ax)
     event_data = [_make_event(i) for i in range(6)]
 
-    view._update_event_plot(event_data, *_none_lists(6))
+    view.show_events(event_data, *_none_lists(6))
 
     assert not mock_axes[0].set_xlabel.called
     assert not mock_axes[1].set_xlabel.called
@@ -2005,26 +1964,35 @@ def test_update_event_plot_sets_xlabel_on_bottom_subplots(
     assert mock_axes[5].set_xlabel.called
 
 
-def test_update_event_plot_redraws_canvas(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
+def test_show_events_redraws_canvas(view: MetadataView, mocker: MockerFixture) -> None:
     """Verify canvas.draw() is called after plotting."""
     view.figure.axes = []
     view.figure.get_axes = mocker.Mock(return_value=[])
     view.figure.get_size_inches = mocker.Mock(return_value=(8.0, 6.0))
-    view._reset_actions = mocker.Mock()  # prevents first canvas.draw()
-    view._clear_figure_state = mocker.Mock()  # prevents second figure manipulation
+    view._clear_figure_state = mocker.Mock()
     view._factors = mocker.Mock(return_value=(1, 1))
     event_data = [_make_event()]
 
-    view._update_event_plot(event_data, *_none_lists(1))
+    view.show_events(event_data, *_none_lists(1))
 
     view.canvas.draw.assert_called_once()
 
 
-def test_update_event_plot_commits_cache(
+def test_show_events_asks_for_no_reset(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
+    """The grid replaces the figure without a recorded reset; the Controller decides whether one is recorded."""
+    view.figure.axes = []
+    view.figure.get_axes = mocker.Mock(return_value=[])
+    view.figure.get_size_inches = mocker.Mock(return_value=(8.0, 6.0))
+    view._factors = mocker.Mock(return_value=(1, 1))
+
+    view.show_events([_make_event()], *_none_lists(1))
+
+    view.reset_requested.emit.assert_not_called()
+
+
+def test_show_events_commits_cache(view: MetadataView, mocker: MockerFixture) -> None:
     """Verify _commit_cache() is called after plotting."""
     view.figure.axes = []
     view.figure.get_axes = mocker.Mock(return_value=[])
@@ -2033,7 +2001,7 @@ def test_update_event_plot_commits_cache(
     view._factors = mocker.Mock(return_value=(1, 1))
     event_data = [_make_event()]
 
-    view._update_event_plot(event_data, *_none_lists(1))
+    view.show_events(event_data, *_none_lists(1))
 
     view._commit_cache.assert_called_once()
 
@@ -3061,8 +3029,6 @@ def test_handle_plot_events_uses_cache_for_navigation(
     view.current_sql_filter = ""
     view.current_experiment = "exp1"
     view.current_channel = 1
-    view._update_event_plot = mocker.Mock()
-    view.canned_plot_events_generator = iter([_FULL_EVENT])
     parameters = {
         "db_loader": "test_loader",
         "event_id": 3,
@@ -3085,8 +3051,6 @@ def test_handle_plot_events_snaps_an_id_past_the_cache_to_the_first(
     view.current_sql_filter = ""
     view.current_experiment = "exp1"
     view.current_channel = 1
-    view._update_event_plot = mocker.Mock()
-    view.canned_plot_events_generator = iter([_FULL_EVENT])
     parameters = {
         "db_loader": "test_loader",
         "event_id": 99,
@@ -3315,8 +3279,6 @@ def test_handle_plot_events_snaps_to_nearest_filtered_event(
     view.current_sql_filter = ""
     view.current_experiment = "exp1"
     view.current_channel = 1
-    view._update_event_plot = mocker.Mock()
-    view.canned_plot_events_generator = iter([dict(_FULL_EVENT)])
 
     view._handle_plot_events(
         {"db_loader": "test_loader", "event_id": 3, "n_events": 1, "raw": False}
@@ -3336,8 +3298,6 @@ def test_handle_plot_events_wraps_to_first_when_past_last(
     view.current_sql_filter = ""
     view.current_experiment = "exp1"
     view.current_channel = 1
-    view._update_event_plot = mocker.Mock()
-    view.canned_plot_events_generator = iter([dict(_FULL_EVENT)])
 
     view._handle_plot_events(
         {"db_loader": "test_loader", "event_id": 99, "n_events": 1, "raw": False}
@@ -3377,8 +3337,6 @@ def test_handle_plot_events_does_not_rebuild_cache_when_scope_unchanged(
     view.current_experiment = "exp1"
     view.current_channel = 1
     view._rebuild_event_id_cache = mocker.Mock(return_value=True)
-    view._update_event_plot = mocker.Mock()
-    view.canned_plot_events_generator = iter([dict(_FULL_EVENT)])
 
     view._handle_plot_events(
         {"db_loader": "test_loader", "event_id": 0, "n_events": 1, "raw": False}
@@ -3390,12 +3348,7 @@ def test_handle_plot_events_does_not_rebuild_cache_when_scope_unchanged(
 def test_handle_plot_events_requests_the_snapped_ids_in_scope(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify the event-plot intent carries the snapped ids and the current scope.
-
-    Was ``..._returns_early_when_no_db_ids``, which drove the db-id resolution the
-    View used to do a statement at a time. That whole chain is the Controller's now,
-    so what is left to pin here is the request it sends.
-    """
+    """Verify Plot Events asks for the snapped ids, the scope, the filter and Raw."""
     view.metadatacontrols = mocker.Mock()
     view.get_selected_filters = mocker.Mock(return_value={"Full Dataset": ""})
     view.selected_experiment_and_channels_by_loader = {"test_loader": {"exp1": [1]}}
@@ -3403,23 +3356,22 @@ def test_handle_plot_events_requests_the_snapped_ids_in_scope(
     view.current_sql_filter = ""
     view.current_experiment = "exp1"
     view.current_channel = 1
-    view._update_event_plot = mocker.Mock()
 
     view._handle_plot_events(
         {"db_loader": "test_loader", "event_id": 4, "n_events": 2, "raw": False}
     )
 
-    view.event_plot_data_requested.emit.assert_called_once_with(
-        "test_loader", [5, 10], "exp1", 1, {"exp1": [1]}, "events"
+    view.plot_events_requested.emit.assert_called_once_with(
+        "test_loader", [5, 10], "exp1", 1, "Full Dataset", "", False
     )
 
 
 def test_handle_plot_events_leaves_the_reporting_to_the_controller(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
-    """Verify nothing is plotted, and nothing said, when no generator comes back.
+    """Verify the click draws nothing and says nothing once it has asked.
 
-    The Controller reports which part of the chain failed, so a message from here as
+    The Controller reports which part of the fetch failed, so a message from here as
     well would say the same thing twice.
     """
     view.metadatacontrols = mocker.Mock()
@@ -3429,14 +3381,13 @@ def test_handle_plot_events_leaves_the_reporting_to_the_controller(
     view.current_sql_filter = ""
     view.current_experiment = "exp1"
     view.current_channel = 1
-    view._update_event_plot = mocker.Mock()
 
     view._handle_plot_events(
         {"db_loader": "test_loader", "event_id": 0, "n_events": 1, "raw": False}
     )
 
-    assert view.plot_events_generator is None
-    view._update_event_plot.assert_not_called()
+    view.plot_events_requested.emit.assert_called_once()
+    view.figure.add_subplot.assert_not_called()
     view.add_text_to_display.emit.assert_not_called()
 
 

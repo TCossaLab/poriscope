@@ -180,6 +180,13 @@ class MetaSubsetTabModel(MetaModel):
         self.overlay = OverlayState(figure=FigureKind.empty(axis_type))
 
     @log(logger=logger)
+    def clear_overlay_for_event_grid(self) -> None:
+        """
+        Forget what the figure held: it now holds a grid of events, which no overlay adds to.
+        """
+        self.overlay = OverlayState(figure=FigureKind.EVENT_GRID)
+
+    @log(logger=logger)
     def add_overlay_dataset(
         self,
         key: DatasetKey,

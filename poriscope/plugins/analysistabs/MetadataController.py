@@ -113,6 +113,20 @@ class MetadataSubset(NamedTuple):
     scope_note: str
 
 
+#: One event's fitted features: vertical lines, horizontal lines, points, and each
+#: one's labels, any of them None when the fitter supplied none.
+PlotFeatures = Tuple[
+    Optional[List[float]],
+    Optional[List[float]],
+    Optional[List[Tuple[float, float]]],
+    Optional[List[str]],
+    Optional[List[str]],
+    Optional[List[str]],
+]
+#: An event drawn without features.
+_NO_FEATURES: PlotFeatures = (None, None, None, None, None, None)
+
+
 def _one_bins_entry(bins: Any) -> Any:
     """
     The single bins entry a 1-D plot uses, from the list the controls send.
@@ -170,7 +184,7 @@ class MetadataController(MetaSubsetTabController):
         super()._setup_connections()
         self.view.column_units_requested.connect(self.request_column_units)
         self.view.column_names_requested.connect(self.request_column_names)
-        self.view.plot_features_requested.connect(self.request_plot_features)
+        self.view.plot_events_requested.connect(self.plot_events)
         self.view.csv_subset_export_requested.connect(self.export_csv_subset)
         self.view.overlay_plot_requested.connect(self.request_overlay_plot)
         self.view.reset_requested.connect(self.reset)
@@ -181,8 +195,9 @@ class MetadataController(MetaSubsetTabController):
         """
         Clear the figure and forget what it held.
 
-        A recorded action: Undo replays from the last one. Reset and Plot Events ask for
-        it, and so does an overlay that needs a new figure.
+        A recorded action: Undo replays from the last one. Reset asks for it, and so do an
+        overlay that needs a new figure and Plot Events on a figure whose history holds
+        none.
 
         :param axis_type: Either '2d' or '3d', the projection of the fresh axes
         :type axis_type: str
@@ -731,9 +746,7 @@ class MetadataController(MetaSubsetTabController):
         :rtype: bool
         """
         figure = self.model.overlay.figure
-        # Plot Events replaces the figure with an event grid without telling the Model,
-        # so the axes are asked as well.
-        if not figure.accepts(axis_type) or not self.view.axes_ready(axis_type):
+        if not figure.accepts(axis_type):
             return True
         if figure in (FigureKind.EMPTY_2D, FigureKind.EMPTY_3D):
             history = self.tab_action_history
@@ -742,6 +755,96 @@ class MetadataController(MetaSubsetTabController):
             )
             return not just_reset
         return options_changed
+
+    @log(logger=logger)
+    @register_action("plot_events", skip_on_false=True)
+    def plot_events(
+        self,
+        loader: str,
+        event_ids: List[int],
+        experiment: Optional[str],
+        channel: Optional[str],
+        subset_name: str,
+        sql_filter: str,
+        raw: bool,
+    ) -> bool:
+        """
+        Draw a grid of these events, each with the features its fitter left, in place of the figure.
+
+        A recorded action: it takes the events the click resolved from the Event ID through
+        the filtered-event cache, so a replay draws these events whatever the panel and the
+        cache hold then. The filter's name and SQL are not used to fetch - the ids already
+        are the subset - and are kept so the entry says which subset they came from.
+
+        The grid replaces the figure without a recorded reset, so Undo after it replays
+        from the last reset and the figure before it comes back. When the history holds
+        no reset, one is recorded first, so Undo clears the grid instead of leaving it
+        drawn.
+
+        :param loader: the database loader plugin's key
+        :type loader: str
+        :param event_ids: the ``event_id`` values to draw, in grid order
+        :type event_ids: List[int]
+        :param experiment: the experiment the events belong to
+        :type experiment: Optional[str]
+        :param channel: the channel the events belong to, as the selection tree reports it
+        :type channel: Optional[str]
+        :param subset_name: the name of the filter the events were taken from
+        :type subset_name: str
+        :param sql_filter: that filter's SQL
+        :type sql_filter: str
+        :param raw: draw each event's raw trace as well
+        :type raw: bool
+        :return: True if drawn, False if no event could be loaded
+        :rtype: bool
+        """
+        channel_id = int(channel) if channel is not None else None
+        scope: Dict[Any, Any] = {experiment: [channel]}
+        events = self.fetch_event_plot_data(
+            loader, event_ids, experiment, channel_id, scope, "events"
+        )
+        if events is None:
+            return False
+
+        event_data: List[Dict[str, Any]] = []
+        features: List[PlotFeatures] = []
+        for event in events:
+            event_data.append(event)
+            features.append(
+                self._plot_features(
+                    loader,
+                    event["experiment_id"],
+                    event["channel_id"],
+                    event["event_id"],
+                )
+            )
+        if not event_data:
+            message = (
+                "No data available for plotting with indices in the specified range "
+                f"{event_ids}"
+            )
+            self._say(message)
+            self.logger.info(message)
+            return False
+
+        history = self.tab_action_history.values()
+        if not any(entry.get("action") == RESET_ACTION for entry in history):
+            self.reset("2d")
+        self.model.clear_overlay_for_event_grid()
+        vertical, horizontal, points, vlabels, hlabels, plabels = (
+            list(column) for column in zip(*features)
+        )
+        self.view.show_events(
+            event_data,
+            horizontal,
+            vertical,
+            points,
+            hlabels,
+            vlabels,
+            plabels,
+            use_raw=raw,
+        )
+        return True
 
     @log(logger=logger)
     def _plots_as_categories(self, loader: str, column: Optional[str]) -> bool:
@@ -1545,50 +1648,6 @@ class MetadataController(MetaSubsetTabController):
         return True
 
     @log(logger=logger)
-    @Slot(str, int, int, int)
-    def request_plot_features(
-        self, loader: str, experiment_id: int, channel_id: int, event_id: int
-    ) -> None:
-        """
-        Fetch one event's fitted features and hand them to the View.
-
-        Asked once per event on the plot path, so a failure is logged and the event is
-        plotted without features rather than stopping the plot. The View clears the six
-        feature attributes before each request and reads them back after, so an event
-        whose lookup failed gets none rather than the previous event's.
-
-        ``update_features``' label-length validation is called here rather than
-        inlined, and its ``ValueError`` is caught for the same reason the bus caught
-        it: one fitter returning mismatched labels should not abandon the plot.
-
-        :param loader: the database loader plugin's key
-        :type loader: str
-        :param experiment_id: the event's experiment id
-        :type experiment_id: int
-        :param channel_id: the event's channel id
-        :type channel_id: int
-        :param event_id: the event's id within that channel
-        :type event_id: int
-        :return: None
-        :rtype: None
-        """
-        try:
-            features = self.model.call(
-                "MetaDatabaseLoader",
-                loader,
-                "get_plot_features",
-                experiment_id,
-                channel_id,
-                event_id,
-            )
-            self.update_features(*features)
-        except Exception as e:
-            self.logger.error(
-                f"Features for event {event_id} in channel {channel_id} of "
-                f"experiment {experiment_id} could not be loaded, skipping: {e!r}"
-            )
-
-    @log(logger=logger)
     def _raw_export_condition(
         self,
         loader: str,
@@ -1869,54 +1928,52 @@ class MetadataController(MetaSubsetTabController):
             self.logger.warning("No column names received to update.")
 
     @log(logger=logger)
-    def update_features(
-        self,
-        vertical: Optional[list[float]] = None,
-        horizontal: Optional[list[float]] = None,
-        points: Optional[list[tuple[float, float]]] = None,
-        vlabels: Optional[list[str]] = None,
-        hlabels: Optional[list[str]] = None,
-        plabels: Optional[list[str]] = None,
-    ) -> None:
+    def _plot_features(
+        self, loader: str, experiment_id: int, channel_id: int, event_id: int
+    ) -> PlotFeatures:
         """
-        Update the plot with visual annotations including vertical lines, horizontal lines, and point markers.
+        One event's fitted features: its vertical and horizontal lines, its points, and their labels.
 
-        Validates that each visual feature has a corresponding label (or explicit None) if labels are provided.
+        A failed lookup, or labels that do not match their features, is logged and costs
+        that event its features, not the plot.
 
-        :param vertical: Vertical line positions for the event being plotted.
-        :type vertical: Optional[list[float]]
-        :param horizontal: Horizontal line positions for the event being plotted.
-        :type horizontal: Optional[list[float]]
-        :param points: (x, y) point coordinates for the event being plotted.
-        :type points: Optional[list[tuple[float, float]]]
-        :param vlabels: Labels for the vertical lines.
-        :type vlabels: Optional[list[str]]
-        :param hlabels: Labels for the horizontal lines.
-        :type hlabels: Optional[list[str]]
-        :param plabels: Labels for the point markers.
-        :type plabels: Optional[list[str]]
-        :raises ValueError: If a label list is provided and its length does not match the corresponding feature list.
+        :param loader: the database loader plugin's key
+        :type loader: str
+        :param experiment_id: the event's experiment id
+        :type experiment_id: int
+        :param channel_id: the event's channel id
+        :type channel_id: int
+        :param event_id: the event's id within that channel
+        :type event_id: int
+        :return: the vertical lines, horizontal lines, points and each one's labels, or six Nones
+        :rtype: PlotFeatures
         """
-        if (
-            vertical is not None
-            and vlabels is not None
-            and len(vlabels) != len(vertical)
+        try:
+            features = self.model.call(
+                "MetaDatabaseLoader",
+                loader,
+                "get_plot_features",
+                experiment_id,
+                channel_id,
+                event_id,
+            )
+            vertical, horizontal, points, vlabels, hlabels, plabels = features
+        except Exception as e:
+            self.logger.error(
+                f"Features for event {event_id} in channel {channel_id} of "
+                f"experiment {experiment_id} could not be loaded, skipping: {e!r}"
+            )
+            return _NO_FEATURES
+        for name, values, labels in (
+            ("vertical line", vertical, vlabels),
+            ("horizontal line", horizontal, hlabels),
+            ("point", points, plabels),
         ):
-            raise ValueError(
-                "There must be a label (which can be explicitly None) for every vertical line feature, or no labels at all"
-            )
-        if (
-            horizontal is not None
-            and hlabels is not None
-            and len(hlabels) != len(horizontal)
-        ):
-            raise ValueError(
-                "There must be a label (which can be explicitly None) for every horizontal line feature, or no labels at all"
-            )
-        if points is not None and plabels is not None and len(points) != len(plabels):
-            raise ValueError(
-                "There must be a label (which can be explicitly None) for every point feature, or no labels at all"
-            )
-        self.view.update_plot_features(
-            vertical, horizontal, points, vlabels, hlabels, plabels
-        )
+            if values is not None and labels is not None and len(labels) != len(values):
+                self.logger.error(
+                    f"Features for event {event_id} in channel {channel_id} of "
+                    f"experiment {experiment_id} skipped: there must be a label (which "
+                    f"can be explicitly None) for every {name} feature, or no labels at all"
+                )
+                return _NO_FEATURES
+        return (vertical, horizontal, points, vlabels, hlabels, plabels)
