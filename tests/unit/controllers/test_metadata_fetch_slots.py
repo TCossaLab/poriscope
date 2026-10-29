@@ -44,6 +44,8 @@ and out of ``test_promoted_controller_methods`` because none of these is shared 
 the protein tab - ``ProteinView`` never builds a metadata query.
 """
 
+from collections import OrderedDict
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -52,6 +54,7 @@ from pytest_mock import MockerFixture
 from poriscope.plugins.analysistabs.MetadataController import MetadataController
 from poriscope.plugins.analysistabs.MetadataModel import MetadataModel
 from poriscope.plugins.analysistabs.MetadataView import MetadataView
+from poriscope.utils.MetaSubsetTabModel import FigureKind
 from tests.unit.controllers._recording_model import (
     RecordingModel,
     recording_tab_model,
@@ -955,13 +958,13 @@ class TestLoadEventPlotData:
 
 
 # ===========================================================================
-# request_plot_features
+# plot_events - the events and each one's features, drawn as a grid
 # ===========================================================================
 
 
-class TestRequestPlotFeatures:
+class TestPlotEvents:
     """
-    One lookup per plotted event, whose failure must not abandon the plot.
+    One feature lookup per event, whose failure costs that event its features, not the plot.
     """
 
     FEATURES = (
@@ -972,56 +975,118 @@ class TestRequestPlotFeatures:
         ["baseline"],
         ["peak"],
     )
+    EVENT = {"experiment_id": 7, "channel_id": 1, "event_id": 5}
 
-    def test_the_six_features_reach_the_view(
+    def answers(self, features: object) -> dict:
+        """
+        The loader's answers for one event in experiment 7, channel 1.
+
+        :param features: what ``get_plot_features`` answers, or an exception to raise
+        :type features: object
+        :return: plugin method name to answer
+        :rtype: dict
+        """
+        return {
+            "get_experiment_id_by_name": 7,
+            "query_database_directly": pd.DataFrame({"id": [11]}),
+            "load_event_data": iter([dict(self.EVENT)]),
+            "get_plot_features": features,
+        }
+
+    def plot(self, controller: MetadataController, answers: dict) -> bool:
+        """
+        Plot event 5 of exp1, channel 1, on a figure whose history already holds a reset.
+
+        :param controller: the controller under test
+        :type controller: MetadataController
+        :param answers: the loader's answers
+        :type answers: dict
+        :return: what ``plot_events`` returned
+        :rtype: bool
+        """
+        controller.model = recording_tab_model(MetadataModel, answers)
+        controller.tab_action_history = OrderedDict({0: {"action": "reset"}})
+        return controller.plot_events("ldr", [5], "exp1", "1", "F0", "", False)
+
+    def drawn_features(self, controller: MetadataController) -> tuple:
+        """
+        The features ``show_events`` was handed for the one event, in the loader's order.
+
+        :param controller: the controller under test
+        :type controller: MetadataController
+        :return: vertical, horizontal, points and their labels
+        :rtype: tuple
+        """
+        args, kwargs = controller.view.show_events.call_args
+        _events, horizontal, vertical, points, hlabels, vlabels, plabels = args
+        return (
+            vertical[0],
+            horizontal[0],
+            points[0],
+            vlabels[0],
+            hlabels[0],
+            plabels[0],
+        )
+
+    def test_each_event_is_drawn_with_its_features(
         self, controller: MetadataController
     ) -> None:
-        """
-        Unpacked here now, where the bus splatted the tuple across the callback's
-        parameters based on the loader's declared return type.
-        """
-        controller.model = RecordingModel({"get_plot_features": self.FEATURES})
+        assert self.plot(controller, self.answers(self.FEATURES)) is True
 
-        controller.request_plot_features("ldr", 7, 1, 5)
-
-        controller.view.update_plot_features.assert_called_once_with(*self.FEATURES)
         (asked,) = controller.model.calls_to("get_plot_features")
         assert asked == (7, 1, 5)
+        assert self.drawn_features(controller) == self.FEATURES
+        events = controller.view.show_events.call_args.args[0]
+        assert events == [self.EVENT]
 
-    def test_a_failed_lookup_is_logged_and_the_view_left_alone(
+    def test_a_failed_lookup_draws_the_event_without_features(
         self, controller: MetadataController
     ) -> None:
-        """
-        The View clears the six before each event and reads them back after, so an
-        event whose lookup failed is plotted without features rather than with the
-        previous event's.
-        """
-        controller.model = RecordingModel(
-            {"get_plot_features": KeyError("no such event")}
-        )
+        assert self.plot(controller, self.answers(KeyError("no such event"))) is True
 
-        controller.request_plot_features("ldr", 7, 1, 5)
-
-        controller.view.update_plot_features.assert_not_called()
+        assert self.drawn_features(controller) == (None,) * 6
         assert controller.logger.error.called
 
-    def test_mismatched_labels_do_not_escape_the_slot(
+    def test_mismatched_labels_draw_the_event_without_features(
         self, controller: MetadataController
     ) -> None:
-        """
-        ``update_features``' own validation raises, and one fitter returning labels
-        that do not match its features should cost that event, not the plot. An
-        exception escaping here would not reach the View either - a Qt slot's does not
-        propagate back to the emitter - it would just vanish into ``sys.excepthook``.
-        """
-        controller.model = RecordingModel(
-            {"get_plot_features": ([1.0, 2.0], None, None, ["only one"], None, None)}
-        )
+        """One fitter returning labels that do not match its features costs that event, not the plot."""
+        answers = self.answers(([1.0, 2.0], None, None, ["only one"], None, None))
 
-        controller.request_plot_features("ldr", 7, 1, 5)
+        assert self.plot(controller, answers) is True
 
-        controller.view.update_plot_features.assert_not_called()
+        assert self.drawn_features(controller) == (None,) * 6
         assert controller.logger.error.called
+
+    def test_no_event_loaded_draws_nothing_and_says_so(
+        self, controller: MetadataController
+    ) -> None:
+        answers = self.answers(self.FEATURES)
+        answers["load_event_data"] = iter([])
+
+        assert self.plot(controller, answers) is False
+
+        controller.view.show_events.assert_not_called()
+        assert "No data available for plotting" in panel_text(controller)
+
+    def test_a_refused_fetch_draws_nothing(
+        self, controller: MetadataController
+    ) -> None:
+        """The fetch reports why; the experiment does not resolve here."""
+        answers = self.answers(self.FEATURES)
+        answers["get_experiment_id_by_name"] = None
+
+        assert self.plot(controller, answers) is False
+
+        controller.view.show_events.assert_not_called()
+        assert "has no experiment named exp1" in panel_text(controller)
+
+    def test_the_model_is_told_the_figure_holds_an_event_grid(
+        self, controller: MetadataController
+    ) -> None:
+        self.plot(controller, self.answers(self.FEATURES))
+
+        assert controller.model.overlay.figure is FigureKind.EVENT_GRID
 
 
 # ===========================================================================

@@ -88,7 +88,8 @@
 * **Breaking:** Metadata's plot requests no longer carry the plot's `Axes`: `heatmap_requested`, `capture_rate_requested`, `scatterplot_3d_requested`, `histogram_bins_requested`, `density_requested`, `categorical_counts_requested` and the `MetadataController` slots they reach lose their `ax` argument, and the `MetadataView` methods that answer them are renamed from `set_*` to `show_*` (`show_heatmap`, `show_capture_rate`, `show_3d_scatterplot`, `show_histogram_bins`, `show_kernel_densities`, `show_categorical_counts`), which draw on the View's own axes
 
 * **Breaking:** Metadata's overlay loop, its reset-or-add decision and the subset fetch run in `MetadataController.overlay_plot`: the View's ten per-dataset request signals, `_overlay_plot`, `update_plot`, the `_plot_*` methods and `set_column_type`, `set_column_units` and `set_scope_note` are gone; `load_metadata_subset` returns a `MetadataSubset`, the compute methods and `build_all_points_histogram`/`build_event_overlay` return whether they drew and are no longer slots, `request_column_type` is gone, and `set_all_points_histogram`/`set_event_overlay` become `show_all_points_histogram`/`show_event_overlay`
-* **Breaking:** what Metadata's overlaid figure holds - its datasets, the options it was drawn with, the accumulated values and their shared limits, and what kind of figure it is - is kept in the Model's `overlay` (an `OverlayState`, on `MetaSubsetTabModel`) rather than in `MetadataView`'s `hist_*`, `allowed_*` and `plotted_datasets`, which are gone; the recorded reset is `MetadataController.reset`, asked for by `MetadataView.reset_requested` and drawn by `MetadataView.clear_plot`, and `show_histogram_bins`, `show_kernel_densities`, `show_categorical_counts` and `show_all_points_histogram` take every dataset's result and label and keep nothing
+* **Breaking:** what Metadata's overlaid figure holds - its datasets, the options it was drawn with, the accumulated values and their shared limits, and what kind of figure it is - is kept in the Model's `overlay` (an `OverlayState`, on `MetaSubsetTabModel`, changed through its `clear_overlay`, `add_overlay_dataset` and `accumulate_overlay_values`) rather than in `MetadataView`'s `hist_*`, `allowed_*` and `plotted_datasets`, which are gone; the recorded reset is `MetadataController.reset`, asked for by `MetadataView.reset_requested` and drawn by `MetadataView.clear_plot`, and `show_histogram_bins`, `show_kernel_densities`, `show_categorical_counts` and `show_all_points_histogram` take every dataset's result and label and keep nothing
+* **Breaking:** Metadata's Plot Events and its arrows are recorded on `MetadataController.plot_events`, which takes the loader, the event ids the Event ID resolved to, the experiment, the channel, the filter's name and SQL, and Raw by name; the View asks for it through `plot_events_requested`, `MetadataView._update_event_plot` is the public `show_events`, and `plot_features_requested`, `update_plot_features` and its six feature attributes, `axes_ready`, `request_plot_features` and `MetadataController.update_features` are gone
 
 ### Developer Tooling:
 
@@ -254,7 +255,11 @@
 
 * A Metadata plot after Reset, or redrawn by Undo, no longer records a second reset, and a refused plot on an empty figure leaves nothing in the action history
 
+* The Metadata tab's Plot Events and its arrows are now part of the plot history: Undo steps back one block of events at a time and then to the plot they replaced, Undo of Plot Events on an empty figure clears it, and a saved plot configuration replays them
+
 * **Fixed Undo of a figure's only plot leaving it drawn** in the analysis tabs that record a reset: the figure is now cleared
+
+* A new Metadata tab opens on empty axes, as it shows after Reset, instead of a blank canvas
 
 * **Fixed the Metadata tab's capture-rate plot always reporting at least one row dropped by the log filter, even when nothing was dropped**; the count now excludes the one fewer interval than event that n events always produce
 

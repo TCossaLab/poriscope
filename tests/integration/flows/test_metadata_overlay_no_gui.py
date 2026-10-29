@@ -108,6 +108,19 @@ def overlay(
     )
 
 
+def event_grid(triad: Triad) -> bool:
+    """Draw two events of channel 0 in a grid, as a replayed Plot Events does."""
+    return triad.tab_controller.plot_events(
+        loader=LOADER,
+        event_ids=[0, 1],
+        experiment="exp_a",
+        channel="0",
+        subset_name="F0",
+        sql_filter=FILTERS["F0"],
+        raw=False,
+    )
+
+
 def kept(triad: Triad) -> OverlayState:
     """What the Model keeps of the overlaid figure."""
     return triad.tab_controller.model.overlay
@@ -271,29 +284,31 @@ def test_a_changed_option_starts_a_new_figure(
 
 
 @pytest.mark.timeout(120)
-def test_axes_that_cannot_take_the_plot_start_a_new_figure(tab: Triad) -> None:
-    """A figure holding more than one axes - an event grid - is reset first."""
+def test_an_overlay_on_an_event_grid_starts_a_new_figure(tab: Triad) -> None:
+    """The grid Plot Events draws is reset first, and the reset is recorded."""
     overlay(tab, filters=["F0"])
-    tab.tab_view.figure.add_subplot(2, 1, 2)
+    assert event_grid(tab)
 
     overlay(tab, filters=["F1"])
 
     assert on_figure(tab) == {(0, "F1")}
     assert history(tab)[-2:] == ["reset", "overlay_plot"]
+    assert len(tab.tab_view.figure.axes) == 1
 
 
 @pytest.mark.timeout(120)
-def test_an_all_points_histogram_on_axes_that_cannot_take_it_starts_a_new_figure(
+def test_an_all_points_histogram_on_an_event_grid_starts_a_new_figure(
     tab: Triad,
 ) -> None:
-    """The event grid Plot Events draws is reset first, and the reset is recorded."""
+    """The grid Plot Events draws is reset first, and the reset is recorded."""
     overlay(tab, "Raw All Points Histogram", filters=["F0"])
-    tab.tab_view.figure.add_subplot(2, 1, 2)
+    assert event_grid(tab)
 
     overlay(tab, "Raw All Points Histogram", filters=["F1"])
 
     assert on_figure(tab) == {(0, "F1")}
     assert history(tab)[-2:] == ["reset", "overlay_plot"]
+    assert len(tab.tab_view.figure.axes) == 1
 
 
 @pytest.mark.timeout(120)
@@ -350,6 +365,15 @@ def test_a_second_event_overlay_of_the_same_type_adds_to_the_figure(
 
 
 # ------------------------------------------------------------------ a new figure starts with a reset
+
+
+@pytest.mark.timeout(120)
+def test_a_new_tab_s_figure_is_what_the_model_says_it_is(tab: Triad) -> None:
+    """An empty 2-D figure with its axes ready, before anything is plotted."""
+    assert kept(tab).figure is FigureKind.EMPTY_2D
+    assert tab.tab_view.figure.axes == [tab.tab_view.axes]
+    assert tab.tab_view.axes.name == "rectilinear"
+
 
 #: Columns each plot type can draw from the synthetic data.
 FIRST_FIGURE_AXES = {

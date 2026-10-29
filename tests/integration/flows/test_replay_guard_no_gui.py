@@ -302,6 +302,23 @@ def metadata_perturb(triad: Triad) -> None:
     view.subset_filters["F0"] = "duration >= 999"
 
 
+def metadata_events_act(triad: Triad, qtbot: Any) -> None:
+    """Plot Events on an empty figure, then the forward arrow, as the panel sends them."""
+    view = triad.tab_view
+    select(triad, "F0", "0")
+    view.handle_parameter_change(
+        "metadatacontrols",
+        "plot_events",
+        ({"db_loader": LOADER, "event_id": 0, "n_events": 3, "raw": False},),
+    )
+    typed = int(view.metadatacontrols.event_id_lineEdit.text())
+    view.handle_parameter_change(
+        "metadatacontrols",
+        "shift_range_forward",
+        ({"db_loader": LOADER, "event_id": typed, "n_events": 3, "raw": False},),
+    )
+
+
 def protein_act(triad: Triad, qtbot: Any) -> None:
     """An Ensemble plot, which records its reset and the plot."""
     view = triad.tab_view
@@ -524,6 +541,8 @@ class Scenario:
     #: replay one entry at a time and wait for background runs between them, as the
     #: sequencer will: an entry may need the run before it to have finished
     wait_between: bool = False
+    #: the test id, for a tab with more than one scenario
+    name: str = ""
 
 
 SCENARIOS = [
@@ -533,6 +552,18 @@ SCENARIOS = [
         build=metadata_tab,
         act=metadata_act,
         perturb=metadata_perturb,
+    ),
+    Scenario(
+        tab="MetadataController",
+        name="MetadataController-events",
+        covers=("reset", "plot_events"),
+        build=metadata_tab,
+        act=metadata_events_act,
+        # The filter, the scope and the Event ID the click would read all change.
+        perturb=metadata_perturb,
+        # The click path builds the filtered-event cache the Event ID is resolved
+        # through; the replay is handed the resolved ids.
+        click_only_calls=("load_metadata", "construct_metadata_query"),
     ),
     Scenario(
         tab="ProteinController",
@@ -646,7 +677,9 @@ def run_scenario(
 
 
 @pytest.mark.timeout(240)
-@pytest.mark.parametrize("scenario", SCENARIOS, ids=[s.tab for s in SCENARIOS])
+@pytest.mark.parametrize(
+    "scenario", SCENARIOS, ids=[s.name or s.tab for s in SCENARIOS]
+)
 def test_a_replay_reproduces_what_the_action_produced(
     qapp, qtbot, request, tmp_path: Path, scenario: Scenario
 ) -> None:

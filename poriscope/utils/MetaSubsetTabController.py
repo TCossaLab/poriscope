@@ -29,6 +29,7 @@ import re
 from typing import (
     Any,
     Dict,
+    Generator,
     List,
     NamedTuple,
     Optional,
@@ -625,12 +626,49 @@ class MetaSubsetTabController(MetaController):
         :return: None
         :rtype: None
         """
+        generator = self.fetch_event_plot_data(
+            loader, event_ids, exp, channel, experiments_and_channels, action_label
+        )
+        if generator is not None:
+            self.view.set_event_plot_data_generator(generator)
+
+    @log(logger=logger)
+    def fetch_event_plot_data(
+        self,
+        loader: str,
+        event_ids: List[int],
+        exp: Optional[str],
+        channel: Optional[int],
+        experiments_and_channels: Optional[Dict[str, Optional[List[int]]]],
+        action_label: str,
+    ) -> Optional[Generator]:
+        """
+        Resolve ``event_id`` values to database ids within scope, and return those rows.
+
+        The work behind :meth:`load_event_plot_data`, for a caller that draws the events
+        itself. Reports its own refusals, as that method describes, and answers None.
+
+        :param loader: the database loader plugin's key
+        :type loader: str
+        :param event_ids: the ``event_id`` values to plot, already snapped to the cache
+        :type event_ids: List[int]
+        :param exp: the experiment the events belong to, or None to leave it out of scope
+        :type exp: Optional[str]
+        :param channel: the channel the events belong to, or None for all channels
+        :type channel: Optional[int]
+        :param experiments_and_channels: the scope handed on to ``load_event_data``
+        :type experiments_and_channels: Optional[Dict[str, Optional[List[int]]]]
+        :param action_label: what the caller is plotting, for its messages
+        :type action_label: str
+        :return: a generator over the events, or None if they could not be loaded
+        :rtype: Optional[Generator]
+        """
         if not event_ids:
             self.add_text_to_display.emit(
                 f"No events were requested, so there are no {action_label} to plot",
                 self.__class__.__name__,
             )
-            return
+            return None
 
         exp_id = None
         if exp is not None:
@@ -644,14 +682,14 @@ class MetaSubsetTabController(MetaController):
                     f"Could not look up experiment {exp} in {loader}: {e}",
                     self.__class__.__name__,
                 )
-                return
+                return None
             if exp_id is None:
                 self.add_text_to_display.emit(
                     f"{loader} has no experiment named {exp}, so these {action_label} "
                     "cannot be scoped to it",
                     self.__class__.__name__,
                 )
-                return
+                return None
 
         try:
             id_result = self.model.resolve_event_ids(loader, event_ids, exp_id, channel)
@@ -661,14 +699,14 @@ class MetaSubsetTabController(MetaController):
                 f"Could not look up these events in {loader}: {e}",
                 self.__class__.__name__,
             )
-            return
+            return None
 
         if id_result is None or id_result.empty:
             self.add_text_to_display.emit(
                 f"No data available for the requested {action_label}: {event_ids}",
                 self.__class__.__name__,
             )
-            return
+            return None
         if "id" not in id_result.columns:
             # A populated result without the column it was asked for means the loader
             # did not honour its own contract, which is a different problem from an
@@ -684,7 +722,7 @@ class MetaSubsetTabController(MetaController):
                 f"{message} in experiment {exp} channel {channel}",
             )
             self.add_text_to_display.emit(message, self.__class__.__name__)
-            return
+            return None
 
         db_ids = ",".join(str(i) for i in id_result["id"].tolist())
         try:
@@ -697,16 +735,16 @@ class MetaSubsetTabController(MetaController):
                 f"Could not load these events from {loader}: {e}",
                 self.__class__.__name__,
             )
-            return
+            return None
 
         if generator is None:
             self.add_text_to_display.emit(
                 f"No data available for the requested {action_label}: {event_ids}",
                 self.__class__.__name__,
             )
-            return
+            return None
 
-        self.view.set_event_plot_data_generator(generator)
+        return generator
 
     @log(logger=logger)
     @Slot(object, object, object, object, str)
