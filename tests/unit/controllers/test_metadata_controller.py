@@ -23,7 +23,7 @@ from poriscope.plugins.analysistabs.MetadataController import MetadataController
 from poriscope.plugins.analysistabs.MetadataModel import MetadataModel
 from poriscope.plugins.analysistabs.MetadataView import MetadataView
 from poriscope.utils.MetaController import declared_actions
-from poriscope.utils.MetaSubsetTabModel import OverlayState
+from poriscope.utils.MetaSubsetTabModel import MetaSubsetTabModel, OverlayState
 
 # ----------------------------- fixtures ------------------------------
 
@@ -80,8 +80,11 @@ def controller(mock_view: MagicMock, mocker: MockerFixture) -> MetadataControlle
     ctrl: MetadataController = MetadataController.__new__(MetadataController)  # type: ignore[type-abstract]
     ctrl.view = mock_view
     ctrl.model = mocker.Mock()
-    # A real Model always starts with an empty overlay.
+    # A real Model always starts with an empty overlay, and changes it only through its
+    # own methods, which are kept real here.
     ctrl.model.overlay = OverlayState()
+    for name in ("clear_overlay", "add_overlay_dataset", "accumulate_overlay_values"):
+        setattr(ctrl.model, name, getattr(MetaSubsetTabModel, name).__get__(ctrl.model))
     ctrl.logger = mocker.Mock()  # type: ignore[assignment,method-assign]
     mocker.patch("poriscope.utils.MetaSubsetTabController.QMessageBox.warning")
     return ctrl

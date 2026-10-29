@@ -170,6 +170,83 @@ class MetaSubsetTabModel(MetaModel):
         super().__init__(**kwargs)
 
     @log(logger=logger)
+    def clear_overlay(self, axis_type: str) -> None:
+        """
+        Forget what the figure held: it is now an empty figure of this projection.
+
+        :param axis_type: Either '2d' or '3d', the projection of the fresh axes
+        :type axis_type: str
+        """
+        self.overlay = OverlayState(figure=FigureKind.empty(axis_type))
+
+    @log(logger=logger)
+    def add_overlay_dataset(
+        self,
+        key: DatasetKey,
+        figure: FigureKind,
+        plot_type: str,
+        bins: Optional[List[Union[int, float]]],
+        sizes: bool,
+        columns: List[str],
+        logs: List[bool],
+    ) -> None:
+        """
+        Note one dataset as drawn, with the options the figure is now drawn with.
+
+        :param key: the dataset drawn
+        :type key: DatasetKey
+        :param figure: what the figure holds now
+        :type figure: FigureKind
+        :param plot_type: the plot type drawn
+        :type plot_type: str
+        :param bins: the bins list the figure was drawn with
+        :type bins: Optional[List[Union[int, float]]]
+        :param sizes: does bins refer to a bin width
+        :type sizes: bool
+        :param columns: the columns drawn
+        :type columns: List[str]
+        :param logs: the columns' log-scale flags
+        :type logs: List[bool]
+        """
+        state = self.overlay
+        state.figure = figure
+        state.plot_type = plot_type
+        state.bins = bins
+        state.sizes = sizes
+        state.columns = columns
+        state.logs = logs
+        state.datasets.add(key)
+
+    @log(logger=logger)
+    def accumulate_overlay_values(
+        self,
+        values: Any,
+        label: str,
+        hist_min: Optional[float],
+        hist_max: Optional[float],
+    ) -> List[str]:
+        """
+        Add the newest dataset to what the overlaid figure redraws, once it is drawable.
+
+        :param values: the newest dataset's values, in the shape its plot type keeps
+        :type values: Any
+        :param label: the newest dataset's label
+        :type label: str
+        :param hist_min: the shared lower limit, widened by this dataset
+        :type hist_min: Optional[float]
+        :param hist_max: the shared upper limit, widened by this dataset
+        :type hist_max: Optional[float]
+        :return: every accumulated dataset's label, newest last
+        :rtype: List[str]
+        """
+        state = self.overlay
+        state.values.append(values)
+        state.labels.append(label)
+        state.hist_min = hist_min
+        state.hist_max = hist_max
+        return list(state.labels)
+
+    @log(logger=logger)
     def resolve_event_ids(
         self,
         loader: str,

@@ -54,7 +54,7 @@ from poriscope.utils.MetaSubsetTabController import (
     scope_placeholders,
     selected_pairs,
 )
-from poriscope.utils.MetaSubsetTabModel import FigureKind, OverlayState
+from poriscope.utils.MetaSubsetTabModel import FigureKind
 
 #: The plot types drawn from a metadata subset's rows.
 METADATA_PLOTS = (
@@ -187,7 +187,7 @@ class MetadataController(MetaSubsetTabController):
         :param axis_type: Either '2d' or '3d', the projection of the fresh axes
         :type axis_type: str
         """
-        self.model.overlay = OverlayState(figure=FigureKind.empty(axis_type))
+        self.model.clear_overlay(axis_type)
         self.view.clear_plot(axis_type)
 
     @log(logger=logger)
@@ -474,14 +474,15 @@ class MetadataController(MetaSubsetTabController):
         view.finish_plot()
         if not drawn:
             return False
-        state = self.model.overlay
-        state.figure = FigureKind.overlay(axis_type)
-        state.plot_type = plot_type
-        state.bins = bins
-        state.sizes = sizes
-        state.columns = columns
-        state.logs = logscales
-        state.datasets.add(key)
+        self.model.add_overlay_dataset(
+            key,
+            FigureKind.overlay(axis_type),
+            plot_type,
+            bins,
+            sizes,
+            columns,
+            logscales,
+        )
         return True
 
     @log(logger=logger)
@@ -700,15 +701,16 @@ class MetadataController(MetaSubsetTabController):
             )
         if not drawn:
             return None
-        state = self.model.overlay
-        state.figure = FigureKind.OVERLAY_2D
-        state.plot_type = plot_type
-        state.bins = bins
-        state.sizes = sizes
-        state.columns = []
-        state.logs = []
         channel_id = int(channel) if channel is not None else None
-        state.datasets.add((loader, exp, channel_id, sql_filter, subset_name))
+        self.model.add_overlay_dataset(
+            (loader, exp, channel_id, sql_filter, subset_name),
+            FigureKind.OVERLAY_2D,
+            plot_type,
+            bins,
+            sizes,
+            [],
+            [],
+        )
         return True
 
     @log(logger=logger)
@@ -955,7 +957,9 @@ class MetadataController(MetaSubsetTabController):
             )
             return False
 
-        labels = self._accumulate(datasets[-1], dataset_label, hist_min, hist_max)
+        labels = self.model.accumulate_overlay_values(
+            datasets[-1], dataset_label, hist_min, hist_max
+        )
         self.view.show_kernel_densities(densities, labels, x_label)
         return True
 
@@ -1036,7 +1040,9 @@ class MetadataController(MetaSubsetTabController):
             )
             return False
 
-        labels = self._accumulate(datasets[-1], dataset_label, hist_min, hist_max)
+        labels = self.model.accumulate_overlay_values(
+            datasets[-1], dataset_label, hist_min, hist_max
+        )
         self.view.show_histogram_bins(
             bincenters, widths, counts, labels, x_label, logx, norm
         )
@@ -1079,40 +1085,11 @@ class MetadataController(MetaSubsetTabController):
             )
             return False
         state = self.model.overlay
-        shown = self._accumulate(
+        shown = self.model.accumulate_overlay_values(
             datasets[-1], labels[-1], state.hist_min, state.hist_max
         )
         self.view.show_categorical_counts(counts, shown, x_label, y_label)
         return True
-
-    @log(logger=logger)
-    def _accumulate(
-        self,
-        values: Any,
-        label: str,
-        hist_min: Optional[float],
-        hist_max: Optional[float],
-    ) -> List[str]:
-        """
-        Add the newest dataset to what the overlaid figure redraws, once it is drawable.
-
-        :param values: the newest dataset's values, in the shape its plot type keeps
-        :type values: Any
-        :param label: the newest dataset's label
-        :type label: str
-        :param hist_min: the shared lower limit, widened by this dataset
-        :type hist_min: Optional[float]
-        :param hist_max: the shared upper limit, widened by this dataset
-        :type hist_max: Optional[float]
-        :return: every accumulated dataset's label, newest last
-        :rtype: List[str]
-        """
-        state = self.model.overlay
-        state.values.append(values)
-        state.labels.append(label)
-        state.hist_min = hist_min
-        state.hist_max = hist_max
-        return list(state.labels)
 
     @log(logger=logger)
     def fit_capture_rate(
@@ -1511,7 +1488,9 @@ class MetadataController(MetaSubsetTabController):
             return False
 
         self._echo_applied_query(query, "events")
-        labels = self._accumulate((bincenters, counts), dataset_label, new_min, new_max)
+        labels = self.model.accumulate_overlay_values(
+            (bincenters, counts), dataset_label, new_min, new_max
+        )
         self.view.show_all_points_histogram(
             list(self.model.overlay.values), labels, plot_type
         )
