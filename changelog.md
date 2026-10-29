@@ -256,6 +256,8 @@
 
 * **Fixed Undo of a figure's only plot leaving it drawn** in the analysis tabs that record a reset: the figure is now cleared
 
+* A new Metadata tab opens on empty axes, as it shows after Reset, instead of a blank canvas
+
 * **Fixed the Metadata tab's capture-rate plot always reporting at least one row dropped by the log filter, even when nothing was dropped**; the count now excludes the one fewer interval than event that n events always produce
 
 * **Fixed the Metadata tab's heatmap being drawn one bin width narrower than its data**, which pulled every plotted point's true position inward from where it should sit on the axes

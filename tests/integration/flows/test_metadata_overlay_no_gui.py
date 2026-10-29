@@ -351,6 +351,15 @@ def test_a_second_event_overlay_of_the_same_type_adds_to_the_figure(
 
 # ------------------------------------------------------------------ a new figure starts with a reset
 
+
+@pytest.mark.timeout(120)
+def test_a_new_tab_s_figure_is_what_the_model_says_it_is(tab: Triad) -> None:
+    """An empty 2-D figure with its axes ready, before anything is plotted."""
+    assert kept(tab).figure is FigureKind.EMPTY_2D
+    assert len(tab.tab_view.figure.axes) == 1
+    assert tab.tab_view.axes_ready("2d")
+
+
 #: Columns each plot type can draw from the synthetic data.
 FIRST_FIGURE_AXES = {
     "Histogram": ["max_deviation", "start_time", "max_blockage"],

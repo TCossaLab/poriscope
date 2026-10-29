@@ -44,6 +44,7 @@ from matplotlib.colorbar import Colorbar
 from matplotlib.lines import Line2D
 from mpl_toolkits.mplot3d import Axes3D
 from PySide6.QtCore import Signal, Slot
+from PySide6.QtWidgets import QLayout
 
 from poriscope.plugins.analysistabs.utils.metadatacontrols import MetadataControls
 from poriscope.utils.DocstringDecorator import inherit_docstrings
@@ -157,6 +158,21 @@ class MetadataView(MetaSubsetTabView):
         :rtype: MetaSubsetTabControls
         """
         return self.metadatacontrols
+
+    @log(logger=logger)
+    @override
+    def _set_custom_display_area(self, layout: QLayout) -> None:
+        """
+        Lay out the canvas as every tab does, then give it empty 2-D axes.
+
+        A new Model starts with an empty 2-D figure, so the figure starts as one too and
+        the two agree before the first plot.
+
+        :param layout: the layout the display area is added to
+        :type layout: QLayout
+        """
+        super()._set_custom_display_area(layout)
+        self._clear_figure_state(axis_type="2d", create_default_axes=True)
 
     @log(logger=logger)
     def _build_controls(self) -> MetadataControls:
