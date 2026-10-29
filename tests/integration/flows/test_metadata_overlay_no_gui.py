@@ -27,6 +27,7 @@ FILTERS = {
     "F0": "duration >= 0",
     "F1": "duration >= 1",
     "none": "duration >= 999999999",
+    "few": "event_id < 5",
 }
 ALL_PLOT_TYPES = [
     "Histogram",
@@ -707,3 +708,58 @@ def test_undo_of_the_only_plot_clears_the_figure(tab: Triad, plot_type: str) -> 
 
     assert on_figure(tab) == set()
     assert drawn(tab) == 0
+
+
+# ------------------------------------------------------------------ what Export Plot Data holds
+
+#: Columns each dataset adds to the export, per plot type that caches one. The event
+#: overlays are not cached (too much data), and Capture Rate has nothing to fit in the
+#: synthetic data, so it is drawn in no test here.
+EXPORTED_COLUMNS = {
+    "Histogram": 2,
+    "Normalized Histogram": 2,
+    "Kernel Density Plot": 2,
+    "Categorical Histogram": 2,
+    "Scatterplot": 2,
+    "3D Scatterplot": 3,
+    "Heatmap": 3,
+    "Raw All Points Histogram": 2,
+    "Normalized Raw All Points Histogram": 2,
+    "Filtered All Points Histogram": 2,
+    "Normalized Filtered All Points Histogram": 2,
+}
+
+
+@pytest.mark.timeout(120)
+@pytest.mark.parametrize("plot_type", list(EXPORTED_COLUMNS))
+def test_the_export_holds_every_dataset_on_the_figure(
+    tab: Triad, plot_type: str
+) -> None:
+    """
+    The export is what Export Plot Data writes: one set of columns per dataset drawn,
+    two filters where the plot type overlays them, so a dataset added later is not lost
+    from it.
+    """
+    axes = ["max_deviation", "start_time", "max_blockage"]
+    if plot_type == "Categorical Histogram":
+        axes = ["event_id", "start_time", "max_blockage"]
+    names = ["F0"] if plot_type == "Heatmap" else ["F0", "few"]
+
+    assert overlay(tab, plot_type, filters=names, axes=axes) is True
+
+    model = tab.tab_controller.model
+    assert on_figure(tab) == {(0, name) for name in names}
+    assert len(model.cache_data) == EXPORTED_COLUMNS[plot_type] * len(names)
+    assert len(model.cache_labels) == len(model.cache_data)
+    assert all(len(column) > 0 for column in model.cache_data)
+
+
+@pytest.mark.timeout(120)
+def test_an_exported_histogram_counts_each_filters_own_rows(tab: Triad) -> None:
+    """Each filter's exported counts add up to the rows that filter selected."""
+    overlay(tab, "Histogram", filters=["F0", "few"])
+
+    counts = tab.tab_controller.model.cache_data[1::2]
+    rows = [len(values) for values in kept(tab).values]
+    assert [int(np.sum(c)) for c in counts] == rows
+    assert rows[0] > rows[1] == 5
