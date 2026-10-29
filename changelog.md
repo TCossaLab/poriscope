@@ -83,7 +83,7 @@
 
 * **Breaking:** a recorded tab action saves every value under its parameter name, defaults included, instead of as an unlabelled list, so a `write_back` override reads them from `kwargs`; an action file saved with unlabelled values still replays
 
-* **Breaking:** Metadata's overlay plot is recorded on `MetadataController.overlay_plot`, which takes the loader, plot type, axes, log flags, bins, Sizes, filters and scope by name; `MetadataView._overlay_plot` is no longer a recorded action, and a plot configuration saved before this is reported and not replayed
+* **Breaking:** Metadata's overlay plot is recorded on `MetadataController.overlay_plot`, which takes the loader, plot type, axes, log flags, bins, Sizes, filters and scope by name, in place of the View's `_overlay_plot`, and a plot configuration saved before this is reported and not replayed
 
 * **Breaking:** Metadata's plot requests no longer carry the plot's `Axes`: `heatmap_requested`, `capture_rate_requested`, `scatterplot_3d_requested`, `histogram_bins_requested`, `density_requested`, `categorical_counts_requested` and the `MetadataController` slots they reach lose their `ax` argument, and the `MetadataView` methods that answer them are renamed from `set_*` to `show_*` (`show_heatmap`, `show_capture_rate`, `show_3d_scatterplot`, `show_histogram_bins`, `show_kernel_densities`, `show_categorical_counts`), which draw on the View's own axes
 
