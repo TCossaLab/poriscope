@@ -149,6 +149,8 @@
 
 * A replayed action whose saved values no longer fit its parameters is reported on the status panel and skipped, and the rest of the file still replays
 
+* `MetadataView.write_back` shows a recorded overlay's or Plot Events' values in the panel and the tab's scope, selecting a filter only if it still holds the recorded SQL, though nothing calls it yet
+
 ### User-Facing Behaviour:
 
 #### General:
@@ -260,6 +262,8 @@
 * **Fixed Undo of a figure's only plot leaving it drawn** in the analysis tabs that record a reset: the figure is now cleared
 
 * A new Metadata tab opens on empty axes, as it shows after Reset, instead of a blank canvas
+
+* **Fixed the Metadata tab's X, Y and Z axes keeping the enabled state of the previous plot type** for Normalized Histogram, Categorical Histogram, Capture Rate, the event overlays and the normalised all-points histograms; each plot type now enables only the axes it draws from
 
 * **Fixed the Metadata tab's capture-rate plot always reporting at least one row dropped by the log filter, even when nothing was dropped**; the count now excludes the one fewer interval than event that n events always produce
 
