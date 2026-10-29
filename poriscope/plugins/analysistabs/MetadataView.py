@@ -24,6 +24,7 @@
 # Alejandra Carolina González González
 # Kyle Briggs
 
+import copy
 import logging
 import warnings
 from typing import (
@@ -950,6 +951,96 @@ class MetadataView(MetaSubsetTabView):
             self._export_csv_subset(loader, selected_filters, selection)
         else:
             self._handle_other_actions(action_name, parameters)
+
+    @log(logger=logger)
+    @override
+    def write_back(
+        self, action: str, args: Tuple[Any, ...], kwargs: Dict[str, Any]
+    ) -> None:
+        """
+        Show a recorded Metadata action's values in the panel and the tab's scope.
+
+        Writes only. An overlay shows its loader - whose columns are asked for first, so the
+        axes can be chosen from them - then its axes, plot type, log flags, bins and Sizes,
+        filters and scope, and asks for each axis's units. Plot Events shows its loader,
+        filter and scope, the first event it drew as the Event ID, how many it drew and Raw.
+        A filter is selected only if one of that name still holds the recorded SQL. A value
+        that is no longer an option is skipped and said on the status panel.
+
+        :param action: the entry's declared action name
+        :type action: str
+        :param args: the entry's recorded positional values, empty when every value has a name
+        :type args: Tuple[Any, ...]
+        :param kwargs: the entry's recorded values, each under its parameter name
+        :type kwargs: Dict[str, Any]
+        """
+        controls = self.metadatacontrols
+        if action == "overlay_plot":
+            loader, axes = kwargs["loader"], kwargs["axes"]
+            self._write_back_loader(loader)
+            if not controls.set_axes(axes):
+                self._say_not_shown(
+                    "columns", ", ".join(str(column) for column in axes if column)
+                )
+            if not controls.set_plot_type(kwargs["plot_type"]):
+                self._say_not_shown("plot type", kwargs["plot_type"])
+            controls.set_logs(kwargs["logs"])
+            controls.set_bins(kwargs["bins"], bool(kwargs["sizes"]))
+            self._write_back_filters(kwargs["filters"])
+            self.selected_experiment_and_channels_by_loader[loader] = copy.deepcopy(
+                kwargs["scope"]
+            )
+            for axis, column in zip(("x_axis", "y_axis", "z_axis"), axes):
+                if column is not None:
+                    self.update_units(loader, column, axis)
+        elif action == "plot_events":
+            loader, event_ids = kwargs["loader"], kwargs["event_ids"]
+            self._write_back_loader(loader)
+            self._write_back_filters({kwargs["subset_name"]: kwargs["sql_filter"]})
+            self.selected_experiment_and_channels_by_loader[loader] = {
+                kwargs["experiment"]: [kwargs["channel"]]
+            }
+            if event_ids:
+                controls.set_event_id_input(event_ids[0])
+            controls.set_event_count(len(event_ids))
+            controls.set_raw(bool(kwargs["raw"]))
+
+    @log(logger=logger)
+    def _write_back_loader(self, loader: str) -> None:
+        """
+        Show a database loader without emitting, then ask for its columns.
+
+        Held-off signals skip the request a loader change makes, so it is asked for here,
+        with the axis dropdowns held off too while the answer refills them.
+
+        :param loader: the database loader plugin's key
+        :type loader: str
+        """
+        controls = self.metadatacontrols
+        if not controls.set_loader(loader):
+            self._say_not_shown("database", loader)
+            return
+        with controls.axis_signals_held():
+            self.update_available_columns(loader)
+
+    @log(logger=logger)
+    def _write_back_filters(self, filters: Dict[str, str]) -> None:
+        """
+        Select the recorded filters that still exist under their name with the same SQL.
+
+        Plot Events records no filter as the full dataset with no SQL, and an overlay as no
+        filter at all; both clear the selection.
+
+        :param filters: the recorded filters, name to SQL
+        :type filters: Dict[str, str]
+        """
+        names = []
+        for name, sql in filters.items():
+            if self.subset_filters.get(name) == sql:
+                names.append(name)
+            elif not (name == "Full Dataset" and not sql):
+                self._say_not_shown("filter", name)
+        self.metadatacontrols.set_filters(names)
 
     @log(logger=logger)
     def _replot_after_shift(self, parameters: Dict[str, Any]) -> None:

@@ -24,8 +24,18 @@
 # Alejandra Carolina González González
 
 
+import contextlib
 import logging
-from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
+from typing import (
+    Any,
+    Dict,
+    Iterator,
+    List,
+    Optional,
+    Sequence,
+    Tuple,
+    Union,
+)
 
 from PySide6.QtCore import (
     QRegularExpression,
@@ -1151,3 +1161,24 @@ class MetadataControls(MetaSubsetTabControls):
         for name in names:
             combo.selectItem(name)
         return set(names) <= set(combo.getSelectedItems())
+
+    @contextlib.contextmanager
+    def axis_signals_held(self) -> Iterator[None]:
+        """
+        Hold off the axis dropdowns' signals while their columns are refilled, for write-back.
+
+        A refill changes each dropdown's selection, which asks for its units through an
+        emitted action that reads the panel; write-back asks for the units itself.
+
+        :return: a context in which the three axis dropdowns emit nothing
+        :rtype: Iterator[None]
+        """
+        combos = (self.x_axis_comboBox, self.y_axis_comboBox, self.z_axis_comboBox)
+        for combo in combos:
+            combo.blockSignals(True)
+        try:
+            yield
+        finally:
+            for combo in combos:
+                combo.blockSignals(False)
+            self.validate_inputs()
