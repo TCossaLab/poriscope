@@ -18,6 +18,23 @@ and deleted on 2026-09-27; it too is in git history.
 
 ---
 
+## 2026-10-29 - Metadata's Plot Events records a reset only when the history holds none
+
+**Context.** Plot Events' clear of the figure is unrecorded, so Undo after it replays from the last reset and the
+overlay it replaced comes back. With no reset in the history, Undo removed Plot Events and replayed nothing, leaving the
+event grid drawn.
+
+**Decision** (Carolina, 2026-10-29). `MetadataController.plot_events` records a reset before it draws when the history
+holds none, after the events have loaded, so a fetch that loads nothing records nothing. Otherwise the clear stays
+unrecorded. Every history then starts from a cleared figure, as the overlay's first-figure reset already ensures.
+
+**Rejected.** Always unrecorded (Undo left the grid drawn); always recorded (replaying a saved reset and Plot Events
+records the reset twice, as Plot Events did before this).
+
+**Revisit** if Plot Events gets a figure of its own, or a saved configuration keeps only part of a history.
+
+---
+
 ## 2026-10-28 - Every recorded value is saved under its parameter name, and replay checks an entry fits
 
 **Context.** An entry saved its arguments as called, so a saved file showed bare values in order.
@@ -47,8 +64,8 @@ every history replays onto a cleared figure.
 `MetadataModel` only (Protein holds the same fields, so it would move again); a View query for whether the figure can
 take a plot (a recorded action would read View state, which the replay static test forbids).
 
-**Revisit** when Plot Events is recorded on the Controller and sets the figure kind: drop the interim
-`MetadataView.axes_ready` check.
+**Revisit** if a figure can change without the Model being told: the decision reads only the Model's figure kind,
+which Plot Events sets to the event grid.
 
 ---
 

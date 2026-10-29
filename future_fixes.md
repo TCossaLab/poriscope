@@ -51,9 +51,10 @@ Step 10 waits for both tracks.
 ### Step 9b - breaking tab designs and the milestone guard (Carolina's track)
 
 - **Metadata's fetch methods annotate channels as `int`; the selection tree passes strings (2026-10-28).**
-  `MetadataController.py:1205`, `:1297`, `:1370`, `:1454`, `:1525` declare `Optional[Dict[str, Optional[List[int]]]]`;
-  `overlay_plot` hands them `{exp: [channel]}` with `channel` a display string (`:448`, `:673` pass it as `Dict[Any,
-  Any]`). Settle the runtime shape with the loader's `_id_tuple` before changing either side.
+  `MetadataController`'s `load_metadata_subset`, `_load_raw_metadata_subset`, `_fetch_event_subset`,
+  `build_all_points_histogram` and `build_event_overlay` declare `Optional[Dict[str, Optional[List[int]]]]`;
+  `overlay_plot` and `plot_events` hand them `{exp: [channel]}` with `channel` a display string (each passes it as
+  `Dict[Any, Any]`). Settle the runtime shape with the loader's `_id_tuple` before changing either side.
 - **`MetaView.discard_last_tab_action` has no emitter (2026-10-28).** `MetaView.py:75`, wired at
   `MetaController.py:130`; the Metadata roll-back now calls the Controller method directly. Removing it narrows a
   `Meta*` base (breaking): a signal change for approval.
