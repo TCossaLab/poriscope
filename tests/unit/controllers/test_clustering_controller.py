@@ -25,6 +25,7 @@ from __future__ import annotations
 from collections import OrderedDict
 from unittest.mock import MagicMock
 
+import numpy as np
 import pytest
 from pytest_mock import MockerFixture
 
@@ -913,6 +914,7 @@ class TestTheResetIsTheControllers:
         """A merge redraws the run's result; a reset before it would mark a new figure the merge depends on."""
         controller.tab_action_history[0] = dict(RESET_2D)
         controller.tab_action_history[1] = {"action": "cluster_run"}
+        TestMergeIsTheRecordedMergeClusters.clustered(controller)
         recorded = recording_into_history(controller)
         controller.model.merge_clusters.return_value = ("frame", [0], [1.0])
 
@@ -1065,9 +1067,23 @@ class TestMergeIsTheRecordedMergeClusters:
             controller.merge_clusters
         )
 
+    @staticmethod
+    def clustered(controller: ClusteringController) -> None:
+        """
+        Hold a clustering result on the Model, as a run leaves one.
+
+        :param controller: Controller under test.
+        """
+        controller.model.result = (
+            "frame",
+            np.array([0, 1, 1, -1]),
+            np.array([0.9, 0.4, 0.6, 0.0]),
+        )
+
     def test_a_merge_is_recorded_and_drawn_from_the_models_result(
         self, controller: ClusteringController, mock_view: MagicMock
     ) -> None:
+        self.clustered(controller)
         merged = ("frame", [0, 0], [1.0, 1.0])
         controller.model.merge_clusters.return_value = merged
         recorded = self.recording(controller)
@@ -1079,6 +1095,34 @@ class TestMergeIsTheRecordedMergeClusters:
         assert recorded == [
             {"action": "merge_clusters", "args": (), "kwargs": {"keep": 0, "merge": 1}}
         ]
+
+    def test_a_merge_says_how_many_events_it_moved(
+        self, controller: ClusteringController
+    ) -> None:
+        self.clustered(controller)
+        controller.model.merge_clusters.return_value = ("frame", [0, 0], [1.0, 1.0])
+
+        controller.merge_clusters(0, 1)
+
+        controller.add_text_to_display.emit.assert_called_once_with(
+            "Merged cluster 1 into cluster 0 (2 events)", "ClusteringController"
+        )
+
+    def test_a_label_merged_into_itself_is_refused_and_not_recorded(
+        self, controller: ClusteringController, mock_view: MagicMock
+    ) -> None:
+        """Both dropdowns list the same labels, so KEEP and MERGE WITH can name one."""
+        self.clustered(controller)
+        recorded = self.recording(controller)
+
+        assert controller.merge_clusters(0, 0) is False
+
+        controller.model.merge_clusters.assert_not_called()
+        mock_view.show_clusters.assert_not_called()
+        controller.add_text_to_display.emit.assert_called_once_with(
+            "Choose two different cluster labels to merge", "ClusteringController"
+        )
+        assert recorded == []
 
     def test_with_no_clustering_nothing_is_merged_or_recorded(
         self, controller: ClusteringController, mock_view: MagicMock

@@ -336,6 +336,8 @@
 
 * Clustering's Commit with no clustering yet now says so on the status panel instead of raising an error inside the tab
 
+* Clustering's Merge now says on the status panel how many events it moved, and refuses the same label in both dropdowns instead of redrawing and recording a merge that changed nothing
+
 ### Documentation:
 
 * The tutorial guide now says that switching tabs and opening Settings or Help are unavailable while the tutorial runs, and describes the message shown on a page with no tutorial

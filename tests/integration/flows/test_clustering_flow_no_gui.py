@@ -332,3 +332,49 @@ def test_a_replay_records_the_history_it_replays(
     finally:
         tab_a.close()
         tab_b.close()
+
+
+def said(triad: Triad) -> List[str]:
+    """
+    Collect what the tab's Controller says on the status panel from now on.
+
+    :param triad: the tab under test
+    :type triad: Triad
+    :return: the list each message is appended to
+    :rtype: List[str]
+    """
+    messages: List[str] = []
+    triad.tab_controller.add_text_to_display.connect(
+        lambda text, _source: messages.append(text)
+    )
+    return messages
+
+
+@pytest.mark.timeout(90)
+def test_a_merge_says_on_the_panel_how_many_events_it_moved(
+    clustering_tab: Triad,
+) -> None:
+    cluster(clustering_tab, hdbscan_config())
+    _frame, labels, _confidence = clustering_tab.tab_controller.model.result
+    moved = int((labels == 1).sum())
+    messages = said(clustering_tab)
+
+    merge(clustering_tab, "0", "1")
+
+    assert messages == [f"Merged cluster 1 into cluster 0 ({moved} events)"]
+
+
+@pytest.mark.timeout(90)
+def test_a_label_merged_into_itself_changes_nothing_and_says_so(
+    clustering_tab: Triad,
+) -> None:
+    cluster(clustering_tab, hdbscan_config())
+    before = recorded(clustering_tab)
+    result = clustering_tab.tab_controller.model.result
+    messages = said(clustering_tab)
+
+    merge(clustering_tab, "0", "0")
+
+    assert messages == ["Choose two different cluster labels to merge"]
+    assert recorded(clustering_tab) == before
+    assert clustering_tab.tab_controller.model.result is result

@@ -28,6 +28,7 @@
 import logging
 from typing import Any, Dict, List, Optional, override
 
+import numpy as np
 import pandas as pd
 
 from poriscope.plugins.analysistabs.ClusteringModel import ClusteringModel
@@ -254,7 +255,7 @@ class ClusteringController(MetaController):
     @register_action("merge_clusters", skip_on_false=True)
     def merge_clusters(self, keep: int, merge: int) -> bool:
         """
-        Fold one cluster into another in the latest result, and draw it.
+        Fold one cluster into another in the latest result, draw it, and say how many events moved.
 
         The result is the Model's, so a replayed merge acts on the replayed clustering.
 
@@ -262,7 +263,7 @@ class ClusteringController(MetaController):
         :type keep: int
         :param merge: the label that is merged into ``keep``
         :type merge: int
-        :return: True if the clusters were merged, False if there is no clustering yet
+        :return: True if the clusters were merged, False if there is no clustering yet or both labels are the same
         :rtype: bool
         """
         if self.model.result is None:
@@ -270,7 +271,17 @@ class ClusteringController(MetaController):
                 "No clusters defined, unable to merge", self.__class__.__name__
             )
             return False
+        if keep == merge:
+            self.add_text_to_display.emit(
+                "Choose two different cluster labels to merge", self.__class__.__name__
+            )
+            return False
+        moved = int(np.count_nonzero(np.asarray(self.model.result[1]) == merge))
         self.view.show_clusters(*self.model.merge_clusters(keep, merge))
+        self.add_text_to_display.emit(
+            f"Merged cluster {merge} into cluster {keep} ({moved} events)",
+            self.__class__.__name__,
+        )
         return True
 
     @log(logger=logger)

@@ -92,8 +92,9 @@ Step 3: Merge Clusters (Optional)
 
 After clustering is complete:
 
-1. Use the ``KEEP LABEL`` and ``MERGE WITH`` dropdowns to select two clusters.
-2. Click **Merge** to reassign all events in the ``MERGE`` cluster to the ``KEEP`` cluster.
+1. Use the ``KEEP LABEL`` and ``MERGE WITH`` dropdowns to select two different clusters.
+2. Click **Merge** to reassign all events in the ``MERGE`` cluster to the ``KEEP`` cluster. The
+   status panel says how many events moved; the same label in both dropdowns is refused.
 
 
 Step 4: Commit Cluster Labels
