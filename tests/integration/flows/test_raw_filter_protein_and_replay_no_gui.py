@@ -196,7 +196,7 @@ def test_protein_plot_events_draws_the_events_a_raw_filter_names(
     The traces fetched are the selected channel's, found by the query's event key: three
     events come back for the three asked for, and the figure was handed them to draw.
     """
-    drawn = mocker.spy(protein_tab.tab_view, "_update_event_plot")
+    drawn = mocker.spy(protein_tab.tab_view, "show_events")
     select(protein_tab, "own_raw", "1")
 
     plot_events(protein_tab, event_id=0, n_events=3)

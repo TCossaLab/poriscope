@@ -340,6 +340,23 @@ def protein_act(triad: Triad, qtbot: Any) -> None:
     )
 
 
+def protein_events_act(triad: Triad, qtbot: Any) -> None:
+    """Plot Events, then the forward arrow, as the panel sends them."""
+    view = triad.tab_view
+    select(triad, "F0", "0")
+    view.handle_parameter_change(
+        "proteincontrols",
+        "plot_events",
+        ({"db_loader": LOADER, "event_id": 0, "n_events": 3, "raw": False},),
+    )
+    typed = int(view.proteincontrols.event_id_lineEdit.text())
+    view.handle_parameter_change(
+        "proteincontrols",
+        "shift_range_forward",
+        ({"db_loader": LOADER, "event_id": typed, "n_events": 3, "raw": False},),
+    )
+
+
 def protein_individual_act(triad: Triad, qtbot: Any) -> None:
     """An Individual plot, which records its reset and the plot."""
     view = triad.tab_view
@@ -607,6 +624,18 @@ SCENARIOS = [
         act=protein_individual_act,
         perturb=protein_perturb,
         probe=individual_fit,
+    ),
+    Scenario(
+        tab="ProteinController",
+        name="ProteinController-events",
+        covers=("plot_events",),
+        build=protein_tab,
+        act=protein_events_act,
+        # The filter, the scope and the Event ID the click would read all change.
+        perturb=protein_perturb,
+        # The click path builds the filtered-event cache the Event ID is resolved
+        # through; the replay is handed the resolved ids.
+        click_only_calls=("load_metadata", "construct_metadata_query"),
     ),
     Scenario(
         tab="RawDataController",

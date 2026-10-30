@@ -100,6 +100,7 @@ class ProteinController(MetaSubsetTabController):
         )
         self.view.ensemble_report_requested.connect(self.report_ensemble_fit)
         self.view.event_histogram_fits_requested.connect(self.fit_event_histograms)
+        self.view.plot_events_requested.connect(self.plot_events)
 
     @log(logger=logger)
     @register_action(RESET_ACTION)
@@ -457,6 +458,65 @@ class ProteinController(MetaSubsetTabController):
             )
             return None
         return filtered
+
+    @log(logger=logger)
+    @register_action("plot_events", skip_on_false=True)
+    def plot_events(
+        self,
+        loader: str,
+        event_ids: List[int],
+        experiment: Optional[str],
+        channel: Optional[str],
+        subset_name: str,
+        sql_filter: str,
+        raw: bool,
+    ) -> bool:
+        """
+        Draw these events on the event page, one subplot each, in the order given.
+
+        A recorded action: it takes the events the click resolved from the Event ID through
+        the filtered-event cache, so a replay draws these events whatever the panel and the
+        cache hold then. The filter's name and SQL are not used to fetch - the ids already
+        are the subset - and are kept so the entry says which subset they came from. The
+        event page is neither mode's figure, so no reset is recorded.
+
+        :param loader: the database loader plugin's key
+        :type loader: str
+        :param event_ids: the ``event_id`` values to draw, in grid order
+        :type event_ids: List[int]
+        :param experiment: the experiment the events belong to
+        :type experiment: Optional[str]
+        :param channel: the channel the events belong to, as the selection tree reports it
+        :type channel: Optional[str]
+        :param subset_name: the name of the filter the events were taken from
+        :type subset_name: str
+        :param sql_filter: that filter's SQL
+        :type sql_filter: str
+        :param raw: draw each event's raw trace as well
+        :type raw: bool
+        :return: True if drawn, False if refused or no event could be loaded
+        :rtype: bool
+        """
+        channel_id = int(channel) if channel is not None else None
+        scope: Dict[Any, Any] = {experiment: [channel]}
+        events = self.fetch_event_plot_data(
+            loader, event_ids, experiment, channel_id, scope, "events"
+        )
+        if events is None:
+            # Refused, and the fetch has said why; naming the event would contradict it.
+            return False
+        order = {event_id: i for i, event_id in enumerate(event_ids)}
+        event_data = sorted(
+            events, key=lambda event: order.get(event["event_id"], len(order))
+        )
+        if not event_data:
+            self.add_text_to_display.emit(
+                f"No data available for event_id {event_ids[0] if event_ids else None}",
+                self.__class__.__name__,
+            )
+            return False
+        self.view.show_events(event_data, use_raw=raw)
+        return True
 
     @log(logger=logger)
     @Slot()

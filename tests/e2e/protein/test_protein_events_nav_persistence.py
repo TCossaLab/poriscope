@@ -364,8 +364,9 @@ def test_protein_events_nav_and_filters(
 
     # =========================================================
     # STAGE 5: RAW checkbox. Confirmed real behavior:
-    # _handle_plot_events -> _update_event_plot(events, use_raw=<checkbox
-    # state>) (see TestHandlePlotEvents.test_calls_update_event_plot_with_data).
+    # _handle_plot_events -> ProteinController.plot_events(..., raw=<checkbox
+    # state>) -> show_events(events, use_raw=raw) (see
+    # TestHandlePlotEvents.test_asks_for_the_resolved_events_with_their_subset).
     # =========================================================
     controls.event_id_lineEdit.setText(str(ids[0]))
     controls.n_events_lineEdit.setText("3")
@@ -383,7 +384,7 @@ def test_protein_events_nav_and_filters(
     print(f"[DEBUG] RAW checked: {lines_before_raw} -> {lines_with_raw} lines")
     assert lines_with_raw != lines_before_raw, (
         "Expected the line count to change once RAW is checked and the plot "
-        "is re-drawn (use_raw flag reaches _update_event_plot per the real "
+        "is re-drawn (the Raw flag reaches show_events per the real "
         "unit test's confirmed call signature)"
     )
     controls.raw_checkbox.setChecked(False)

@@ -634,25 +634,25 @@ class TestShiftRangeAndUpdatePlot:
 
 
 # ===========================================================================
-# _update_event_plot
+# show_events
 # ===========================================================================
 
 
-class TestUpdateEventPlot:
+class TestShowEvents:
     def test_switches_to_event_mode(self, mock_view):
-        mock_view._update_event_plot([_make_event(1), _make_event(2)])
+        mock_view.show_events([_make_event(1), _make_event(2)])
         assert mock_view._display_mode == "event"
 
     def test_canvas_drawn(self, mock_view):
-        mock_view._update_event_plot([_make_event(1)])
+        mock_view.show_events([_make_event(1)])
         assert mock_view._display_mode == "event"
 
     def test_multi_event_grid(self, mock_view):
-        mock_view._update_event_plot([_make_event(i) for i in range(1, 5)])
+        mock_view.show_events([_make_event(i) for i in range(1, 5)])
 
     def test_cache_committed(self, mock_view):
         # Verify the method completes without error; cache internals are MetaView's
-        mock_view._update_event_plot([_make_event(1)])
+        mock_view.show_events([_make_event(1)])
 
 
 # ===========================================================================
@@ -1005,8 +1005,8 @@ class TestPipeline:
         assert len(df_prolate) <= 20 and len(df_oblate) <= 20
         assert list(df_prolate.columns) == ["V", "m", "a", "b"]
 
-    def test_update_event_plot_end_to_end(self, mock_view):
-        mock_view._update_event_plot([_make_event(1), _make_event(2)])
+    def test_show_events_end_to_end(self, mock_view):
+        mock_view.show_events([_make_event(1), _make_event(2)])
         assert mock_view._display_mode == "event"
 
     def test_update_event_histogram_end_to_end(self, mock_view):
@@ -1445,40 +1445,33 @@ class TestHandlePlotEvents:
         mock_view.current_experiment = "exp1"
         mock_view.current_channel = 0
 
+    def _asked(self, mock_view):
+        asked = []
+        mock_view.plot_events_requested.connect(lambda *args: asked.append(args))
+        return asked
+
     def test_sets_last_event_action(self, mock_view):
         self._setup(mock_view)
-        mock_view._fetch_event_data = MagicMock(return_value=[])
         mock_view._last_event_action = "plot_histogram"
-        with patch.object(mock_view, "_update_event_plot"):
-            mock_view._handle_plot_events(
-                {"db_loader": "ldr", "event_id": 1, "n_events": 1}
-            )
+        mock_view._handle_plot_events(
+            {"db_loader": "ldr", "event_id": 1, "n_events": 1}
+        )
         assert mock_view._last_event_action == "plot_events"
 
-    def test_calls_update_event_plot_with_data(self, mock_view):
+    def test_asks_for_the_resolved_events_with_their_subset(self, mock_view):
         self._setup(mock_view)
-        events = [_make_event(1)]
-        mock_view._fetch_event_data = MagicMock(return_value=events)
-        with patch.object(mock_view, "_update_event_plot") as mock_plot:
-            mock_view._handle_plot_events(
-                {"db_loader": "ldr", "event_id": 1, "n_events": 1}
-            )
-        mock_plot.assert_called_once_with(events, use_raw=False)
+        asked = self._asked(mock_view)
 
-    def test_no_data_emits_warning(self, mock_view):
-        self._setup(mock_view)
-        mock_view._fetch_event_data = MagicMock(return_value=[])
-        received = []
-        mock_view.add_text_to_display.connect(lambda m, s: received.append(m))
         mock_view._handle_plot_events(
-            {"db_loader": "ldr", "event_id": 1, "n_events": 2}
+            {"db_loader": "ldr", "event_id": 2, "n_events": 2, "raw": True}
         )
-        assert any("No data available" in m for m in received)
+
+        assert asked == [("ldr", [2, 3], "exp1", "0", "Full Dataset", "", True)]
 
     def test_an_id_past_the_cache_snaps_to_the_first_and_says_so(self, mock_view):
         """Plotting an Event ID past every filtered one starts at the first."""
         self._setup(mock_view)
-        mock_view._fetch_event_data = MagicMock(return_value=[])
+        asked = self._asked(mock_view)
         received = []
         mock_view.add_text_to_display.connect(lambda m, s: received.append(m))
 
@@ -1486,7 +1479,7 @@ class TestHandlePlotEvents:
             {"db_loader": "ldr", "event_id": 99, "n_events": 2}
         )
 
-        assert mock_view._fetch_event_data.call_args[0][0]["event_index"] == [1, 2]
+        assert asked[0][1] == [1, 2]
         assert (
             "Event ID 99 is past the last filtered event (3); "
             "wrapped around to the first filtered event (1)"

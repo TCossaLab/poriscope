@@ -844,3 +844,55 @@ class TestReset:
         controller.view.clear_plot.assert_called_once_with("2d", "ensemble")
         assert controller.model.individual_fit is individual
         assert controller.model.ensemble_fit is ensemble
+
+
+class TestPlotEvents:
+    """The recorded Plot Events: these events, from this experiment and channel, drawn."""
+
+    def _plot(self, controller, raw=False):
+        return controller.plot_events("ldr", [3, 1], "exp1", "0", "F", "SELECT 1", raw)
+
+    def test_the_events_are_drawn_in_the_order_asked(self, controller) -> None:
+        controller.view.show_events = MagicMock()
+        asked = []
+
+        def fetch(*args):
+            asked.append(args)
+            return iter([_event(1), _event(3)])
+
+        controller.fetch_event_plot_data = fetch
+
+        assert self._plot(controller, raw=True) is True
+
+        assert asked == [("ldr", [3, 1], "exp1", 0, {"exp1": ["0"]}, "events")]
+        (events,) = controller.view.show_events.call_args.args
+        assert [event["event_id"] for event in events] == [3, 1]
+        assert controller.view.show_events.call_args.kwargs == {"use_raw": True}
+
+    def test_a_refused_fetch_draws_nothing_and_says_nothing_more(
+        self, controller, mocker
+    ) -> None:
+        """Whoever refused it has said why; naming the event would contradict that."""
+        controller.view.show_events = MagicMock()
+        controller.add_text_to_display = mocker.Mock()
+        controller.add_text_to_display.emit = mocker.Mock()
+        controller.fetch_event_plot_data = lambda *a: None
+
+        assert self._plot(controller) is False
+
+        controller.view.show_events.assert_not_called()
+        assert not controller.tab_action_history
+        controller.add_text_to_display.emit.assert_not_called()
+
+    def test_an_empty_fetch_names_the_event_asked_for(self, controller, mocker) -> None:
+        controller.view.show_events = MagicMock()
+        controller.add_text_to_display = mocker.Mock()
+        controller.add_text_to_display.emit = mocker.Mock()
+        controller.fetch_event_plot_data = lambda *a: iter([])
+
+        assert self._plot(controller) is False
+
+        controller.view.show_events.assert_not_called()
+        assert not controller.tab_action_history
+        (message, _), _ = controller.add_text_to_display.emit.call_args
+        assert message == "No data available for event_id 3"

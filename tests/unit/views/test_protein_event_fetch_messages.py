@@ -69,45 +69,32 @@ def _messages(view):
 
 
 class TestPlotEvents:
-    """What the caller says about each of the fetch's three outcomes."""
+    """The click resolves the Event ID and asks for exactly those events, or says why not."""
 
-    def test_a_refused_fetch_adds_no_second_message(self, view):
-        with (
-            patch.object(ProteinView, "get_selected_filters", return_value={}),
-            patch.object(ProteinView, "_fetch_event_data", return_value=None),
-            patch.object(ProteinView, "_update_event_plot") as draw,
+    def test_the_resolved_events_are_asked_for_in_silence(self, view):
+        with patch.object(
+            ProteinView, "get_selected_filters", return_value={"F": "SELECT 1"}
         ):
-            view._handle_plot_events(dict(PARAMS))
+            view.current_sql_filter = "SELECT 1"
+            view._handle_plot_events({**PARAMS, "raw": True})
 
         assert _messages(view) == []
-        draw.assert_not_called()
+        view.plot_events_requested.emit.assert_called_once_with(
+            "ldr", [10], "exp1", 0, "F", "SELECT 1", True
+        )
 
-    def test_an_empty_fetch_is_reported(self, view):
-        """
-        The fetch ran and found nothing, which nobody else has said - so this is the
-        one outcome the caller does speak about, and it names the event it asked for.
-        """
-        with (
-            patch.object(ProteinView, "get_selected_filters", return_value={}),
-            patch.object(ProteinView, "_fetch_event_data", return_value=[]),
-            patch.object(ProteinView, "_update_event_plot") as draw,
-        ):
+    def test_two_channels_in_scope_is_refused_before_anything_is_asked(self, view):
+        view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": [0, 1]}}
+        view._rebuild_event_id_cache = MagicMock()
+
+        with patch.object(ProteinView, "get_selected_filters", return_value={}):
             view._handle_plot_events(dict(PARAMS))
 
-        assert any("No data available for event_id 10" in m for m in _messages(view))
-        draw.assert_not_called()
-
-    def test_events_that_arrive_are_drawn_in_silence(self, view):
-        events = [{"event_id": 10}]
-        with (
-            patch.object(ProteinView, "get_selected_filters", return_value={}),
-            patch.object(ProteinView, "_fetch_event_data", return_value=events),
-            patch.object(ProteinView, "_update_event_plot") as draw,
-        ):
-            view._handle_plot_events(dict(PARAMS))
-
-        assert _messages(view) == []
-        draw.assert_called_once_with(events, use_raw=False)
+        assert _messages(view) == [
+            "Only a single channel can be used for plotting events"
+        ]
+        view._rebuild_event_id_cache.assert_not_called()
+        view.plot_events_requested.emit.assert_not_called()
 
 
 class TestPlotHistogram:
