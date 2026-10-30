@@ -155,6 +155,10 @@
 
 * `MetadataView.write_back` shows a recorded overlay's or Plot Events' values in the panel and the tab's scope, selecting a filter only if it still holds the recorded SQL, though nothing calls it yet
 
+* `ProteinView.write_back` shows a recorded Update Plot's, Plot Events' or Plot Histogram's values in the panel and the tab's scope, with a distribution plot's mode and its page, though nothing calls it yet
+
+* The write-back setters `set_loader`, `set_bins`, `set_event_count`, `set_raw` and `set_filters` move from `MetadataControls` to `MetaSubsetTabControls`, and `_write_back_filters` from `MetadataView` to `MetaSubsetTabView`; `ProteinControls` adds `set_pore`, `set_n_values` and `set_mode`
+
 ### User-Facing Behaviour:
 
 #### General:
