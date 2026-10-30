@@ -357,3 +357,42 @@ def test_a_replayed_plot_events_records_once(metadata_tab: Triad) -> None:
 
     assert actions(metadata_tab) == ["reset", "plot_events"]
     assert drawn_event_ids(metadata_tab) == drawn
+
+
+def panel_lines(triad: Triad) -> List[str]:
+    """Every line that reaches the status panel from now on."""
+    lines: List[str] = []
+    triad.tab_controller.add_text_to_display.connect(
+        lambda text, _source: lines.append(text)
+    )
+    return lines
+
+
+def test_a_refusal_clicked_again_is_not_repeated_on_the_panel(
+    metadata_tab: Triad,
+) -> None:
+    """The View's refusal is the line directly above the second click's, so it is left out."""
+    lines = panel_lines(metadata_tab)
+    select(metadata_tab, ["F0"], ["0", "1"])
+
+    for _ in range(3):
+        plot_events(metadata_tab)
+
+    assert lines == ["Only a single channel can be used for plotting events"]
+
+
+def test_a_refusal_is_shown_again_once_another_line_is_between(
+    metadata_tab: Triad,
+) -> None:
+    lines = panel_lines(metadata_tab)
+    select(metadata_tab, ["F0"], ["0", "1"])
+    plot_events(metadata_tab)
+    metadata_tab.tab_controller.add_text_to_display.emit("another line", "test")
+
+    plot_events(metadata_tab)
+
+    assert lines == [
+        "Only a single channel can be used for plotting events",
+        "another line",
+        "Only a single channel can be used for plotting events",
+    ]

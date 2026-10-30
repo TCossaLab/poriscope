@@ -3320,8 +3320,9 @@ def test_handle_plot_events_does_not_rebuild_cache_when_scope_unchanged(
     view._rebuild_event_id_cache.assert_not_called()
 
 
+@pytest.mark.parametrize("raw", [False, True])
 def test_handle_plot_events_requests_the_snapped_ids_in_scope(
-    view: MetadataView, mocker: MockerFixture
+    view: MetadataView, mocker: MockerFixture, raw: bool
 ) -> None:
     """Verify Plot Events asks for the snapped ids, the scope, the filter and Raw."""
     view.metadatacontrols = mocker.Mock()
@@ -3333,11 +3334,11 @@ def test_handle_plot_events_requests_the_snapped_ids_in_scope(
     view.current_channel = 1
 
     view._handle_plot_events(
-        {"db_loader": "test_loader", "event_id": 4, "n_events": 2, "raw": False}
+        {"db_loader": "test_loader", "event_id": 4, "n_events": 2, "raw": raw}
     )
 
     view.plot_events_requested.emit.assert_called_once_with(
-        "test_loader", [5, 10], "exp1", 1, "Full Dataset", "", False
+        "test_loader", [5, 10], "exp1", 1, "Full Dataset", "", raw
     )
 
 

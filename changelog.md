@@ -149,6 +149,8 @@
 
 * `get_save_filename` now lives once on `MetaView` instead of in four Views
 
+* The Metadata and Protein tabs' event plots resolve the Event ID through one `MetaSubsetTabView._resolve_events`, which refuses the scope with `_refuse_scope` before it builds the filtered-event cache
+
 * Event Analysis's Plot Events and Fit Events are recorded actions (a fit is recorded per channel), and a call that plotted or launched nothing is not recorded; `EventAnalysisView.write_back` shows a recorded entry's values in the panel, though nothing calls it yet
 
 * A replayed action whose saved values no longer fit its parameters is reported on the status panel and skipped, and the rest of the file still replays
@@ -305,7 +307,7 @@
 
 * The `event_id` question is now asked when you click, before the plot is recorded, so Undo and a saved plot configuration redraw the plot you approved without asking again
 
-* A status-panel line that would only repeat the line directly above it (a warning, a refusal, the echoed query) is now left out; once another line is between, it is shown again, and the missing-`event_id` message says which plots need it
+* In the Metadata and Protein tabs, a status-panel line that would only repeat the line directly above it (a warning, a refusal, the echoed query, whichever part of the tab says it) is now left out; once another line is between, it is shown again, and the missing-`event_id` message says which plots need it
 
 * Fixed the arrows reusing the event list of an earlier filter text after the `event_id` question was answered Yes and the filter was edited back to the text it had
 

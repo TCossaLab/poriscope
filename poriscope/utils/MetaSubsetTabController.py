@@ -807,6 +807,25 @@ class MetaSubsetTabController(MetaController):
         self._say_once(f"SQL ({table_name}):\n{query.strip()}")
 
     @log(logger=logger)
+    @Slot(str, str)
+    @override
+    def relay_add_text_to_display(self, text: str, source: str) -> None:
+        """
+        Relay a line from the View or the Model to the status panel, unless it is the line directly above.
+
+        The View's scope refusals meet the same click again and again, as the Controller's
+        own messages do; see ``_say_once``.
+
+        :param text: the line
+        :type text: str
+        :param source: who sent it
+        :type source: str
+        """
+        if text == self.last_panel_text:
+            return
+        super().relay_add_text_to_display(text, source)
+
+    @log(logger=logger)
     def _say_once(self, message: str) -> None:
         """
         Put a message on the status panel unless it is the line directly above.

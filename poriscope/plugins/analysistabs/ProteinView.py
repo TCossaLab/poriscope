@@ -998,66 +998,6 @@ class ProteinView(MetaSubsetTabView):
             self._handle_plot_events(parameters)
 
     @log(logger=logger)
-    def _refuse_scope(self, loader_name: str, action_label: str) -> bool:
-        """
-        Say on the status panel why the selected filters and scope cannot be plotted from, if so.
-
-        Events are plotted from one subset of one channel of one experiment.
-
-        :param loader_name: the database loader plugin's key
-        :type loader_name: str
-        :param action_label: what the caller is plotting, for its messages
-        :type action_label: str
-        :return: True if refused, after saying why
-        :rtype: bool
-        """
-        selected_filters = self.get_selected_filters()
-        experiments_and_channels = self.selected_experiment_and_channels_by_loader.get(
-            loader_name
-        )
-
-        if experiments_and_channels is None:
-            self.add_text_to_display.emit(
-                f"No experiments or channels are in scope, select at least one to plot {action_label}",
-                self.__class__.__name__,
-            )
-            return True
-
-        if selected_filters is not None and len(selected_filters) > 1:
-            self.add_text_to_display.emit(
-                "Unable to plot more than one subset at a time, select only one filter to apply",
-                self.__class__.__name__,
-            )
-            return True
-
-        if (
-            self.selected_experiment_and_channels_by_loader[loader_name] is None
-            or len(self.selected_experiment_and_channels_by_loader[loader_name]) == 0
-        ):
-            self.add_text_to_display.emit(
-                f"No experiments or channels are in scope, select at least one to plot {action_label}",
-                self.__class__.__name__,
-            )
-            return True
-
-        if len(experiments_and_channels) > 1:
-            self.add_text_to_display.emit(
-                f"Only a single experiment can be used for plotting {action_label}",
-                self.__class__.__name__,
-            )
-            return True
-
-        for channels in experiments_and_channels.values():
-            if len(channels) > 1:
-                self.add_text_to_display.emit(
-                    f"Only a single channel can be used for plotting {action_label}",
-                    self.__class__.__name__,
-                )
-                return True
-
-        return False
-
-    @log(logger=logger)
     def _handle_plot_events(self, parameters: dict) -> None:
         """
         Ask for the events the Event ID resolves to to be drawn.
@@ -1090,66 +1030,6 @@ class ProteinView(MetaSubsetTabView):
                 parameters.get("bins"),
                 bool(parameters.get("sizes", False)),
             )
-
-    @log(logger=logger)
-    def _resolve_events(
-        self, parameters: Dict[str, Any], action_label: str
-    ) -> Optional[Tuple[str, List[int], Any, Any, str, str]]:
-        """
-        Resolve the Event ID to events through the filtered-event cache, or say why not.
-
-        Refuses a scope events cannot be plotted from before building the cache, then
-        snaps the Event ID to the cache and writes it back to the panel. The Controller
-        records the request with the events this names.
-
-        :param parameters: Dictionary containing db_loader, event_id (int) and n_events (int).
-        :type parameters: Dict[str, Any]
-        :param action_label: what is being plotted, for the messages
-        :type action_label: str
-        :return: the loader, the event ids, the experiment, the channel as the selection
-            tree reports it, the filter's name and its SQL; or None after saying why
-        :rtype: Optional[Tuple[str, List[int], Any, Any, str, str]]
-        """
-        loader = parameters.get("db_loader")
-        if not loader:
-            self.add_text_to_display.emit(
-                f"No experiments or channels are in scope, select at least one to plot {action_label}",
-                self.__class__.__name__,
-            )
-            return None
-        if self._refuse_scope(loader, action_label):
-            return None
-
-        selected_filters = self.get_selected_filters()
-        if not selected_filters:
-            selected_filters = {"Full Dataset": ""}
-        subset_name = next(iter(selected_filters))
-        sql_filter = selected_filters[subset_name]
-        experiments_and_channels = self.selected_experiment_and_channels_by_loader[
-            loader
-        ]
-        exp = next(iter(experiments_and_channels.keys()))
-        selected_channel = next(iter(experiments_and_channels.values()))[0]
-        channel = int(selected_channel) if selected_channel is not None else None
-
-        # Rebuild the event_id cache if the filter or scope has changed
-        if (
-            not self.filtered_event_ids
-            or sql_filter != self.current_sql_filter
-            or exp != self.current_experiment
-            or channel != self.current_channel
-        ):
-            if not self._rebuild_event_id_cache(
-                loader, sql_filter, exp, channel, subset_name
-            ):
-                return None
-
-        cache = self.filtered_event_ids
-        n_events = parameters.get("n_events") or 1
-        idx = self._snap_to_filtered(parameters.get("event_id") or 0)
-        self.proteincontrols.set_event_id_input(cache[idx])
-        event_ids = [cache[i] for i in range(idx, min(idx + n_events, len(cache)))]
-        return loader, event_ids, exp, selected_channel, subset_name, sql_filter
 
     @log(logger=logger)
     def show_events(

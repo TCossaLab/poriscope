@@ -1036,113 +1036,21 @@ class MetadataView(MetaSubsetTabView):
     @log(logger=logger)
     def _handle_plot_events(self, parameters: Dict[str, Any]) -> None:
         """
-        Handle loading and plotting of selected events based on provided parameters.
+        Ask for the events the Event ID resolves to to be drawn.
 
-        :param parameters: Dictionary containing eventfinder, filter, channels, and event indices.
+        The Controller fetches exactly these events, scoped to the experiment and channel,
+        because event_id is only unique within a channel. It reports which part failed, so
+        nothing is said here.
+
+        :param parameters: Dictionary containing db_loader, event_id (int), n_events (int)
+                           and raw (bool).
         :type parameters: Dict[str, Any]
         """
-        selected_filters = self.get_selected_filters()
-        loader_name = parameters["db_loader"]
-        experiments_and_channels = self.selected_experiment_and_channels_by_loader.get(
-            loader_name
-        )
-        if experiments_and_channels is None:
-            self.add_text_to_display.emit(
-                "No experiments or channels are in scope, select at least one to plot events",
-                self.__class__.__name__,
+        resolved = self._resolve_events(parameters, "events")
+        if resolved is not None:
+            self.plot_events_requested.emit(
+                *resolved, bool(parameters.get("raw", False))
             )
-            return
-
-        if selected_filters is not None and len(selected_filters) > 1:
-            self.add_text_to_display.emit(
-                "Unable to plot more than one subset at a time, select only one filter to apply",
-                self.__class__.__name__,
-            )
-            return
-
-        if (
-            self.selected_experiment_and_channels_by_loader[loader_name] is None
-            or len(self.selected_experiment_and_channels_by_loader[loader_name]) == 0
-        ):
-            self.add_text_to_display.emit(
-                "No experiments or channels are in scope, select at least one to plot events",
-                self.__class__.__name__,
-            )
-            return
-
-        if len(experiments_and_channels) > 1:
-            self.add_text_to_display.emit(
-                "Only a single experiment can be used for plotting events",
-                self.__class__.__name__,
-            )
-            return
-
-        for channels in experiments_and_channels.values():
-            if len(channels) > 1:
-                self.add_text_to_display.emit(
-                    "Only a single channel can be used for plotting events",
-                    self.__class__.__name__,
-                )
-                return
-
-        if selected_filters is None or selected_filters == {}:
-            selected_filters = {"Full Dataset": ""}
-
-        event_id = parameters.get("event_id") or 0
-        n_events = parameters.get("n_events", 1)
-        use_raw = parameters.get("raw", False)
-
-        sql_filter = next(iter(selected_filters.values()))
-        exp_and_ch = self.selected_experiment_and_channels_by_loader[loader_name]
-        loader = parameters["db_loader"]
-        exp = next(iter(exp_and_ch.keys()))
-        selected_channel = next(iter(exp_and_ch.values()))[0]
-        channel = int(selected_channel) if selected_channel is not None else None
-
-        # Rebuild cache only when filter or scope changes — display panel emitted inside
-        cache_needs_rebuild = (
-            sql_filter != self.current_sql_filter
-            or exp != self.current_experiment
-            or channel != self.current_channel
-            or not self.filtered_event_ids
-        )
-        if cache_needs_rebuild:
-            subset_name = next(iter(selected_filters))
-            if not self._rebuild_event_id_cache(
-                loader, sql_filter, exp, channel, subset_name
-            ):
-                return
-        elif not self.filtered_event_ids:
-            # Worded exactly as _rebuild_event_id_cache words it, since the two are
-            # the same finding reached by different routes: the cache is current and
-            # empty here, rather than having just been rebuilt and come back empty.
-            self.add_text_to_display.emit(
-                "No filtered events found for the current scope.",
-                self.__class__.__name__,
-            )
-            return
-
-        ids = self.filtered_event_ids
-        snap_idx = self._snap_to_filtered(event_id)
-        snapped_event_ids = ids[snap_idx : snap_idx + n_events]
-        snapped_start_id = snapped_event_ids[0]
-
-        # Update the event_id field to reflect the snapped position
-        self.metadatacontrols.set_event_id_input(snapped_start_id)
-
-        # The Controller fetches exactly these events, scoped to the experiment and
-        # channel, because event_id is only unique within a channel and an unscoped match
-        # silently picks up rows from other channels that happen to share one. It reports
-        # which part failed, so nothing is said here.
-        self.plot_events_requested.emit(
-            loader,
-            list(snapped_event_ids),
-            exp,
-            selected_channel,
-            next(iter(selected_filters)),
-            sql_filter,
-            use_raw,
-        )
 
     @log(logger=logger)
     def show_events(

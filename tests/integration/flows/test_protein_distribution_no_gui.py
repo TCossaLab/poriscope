@@ -333,3 +333,31 @@ def test_report_all_with_no_ensemble_fit_says_so(protein_tab: Triad) -> None:
         "No ensemble fit available to report. Run Update Plot in Ensemble mode first."
         in messages
     )
+
+
+def test_an_event_plot_refusal_clicked_again_is_not_repeated_on_the_panel(
+    protein_tab: Triad,
+) -> None:
+    """The View's refusal is the line directly above the second click's, so it is left out."""
+    lines: List[str] = []
+    protein_tab.tab_controller.add_text_to_display.connect(
+        lambda text, _source: lines.append(text)
+    )
+    protein_tab.tab_view.selected_experiment_and_channels_by_loader[LOADER] = {
+        "exp_a": ["0", "1"]
+    }
+
+    for action in ("plot_histogram",) * 3:
+        press(
+            protein_tab,
+            action,
+            {
+                "db_loader": LOADER,
+                "event_id": 0,
+                "n_events": 1,
+                "bins": [20],
+                "sizes": False,
+            },
+        )
+
+    assert lines == ["Only a single channel can be used for plotting histograms"]

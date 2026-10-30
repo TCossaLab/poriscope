@@ -74,7 +74,8 @@ What ``MetaSubsetTabView`` gives you, on top of ``MetaView``: the query setters
 ``get_subset_filters``), the
 filtered-event cache
 (``_rebuild_event_id_cache``, ``set_event_id_rows``), event navigation through it
-(``_shift_range_and_update_plot``, ``_snap_to_filtered``), write-back's filter selection
+(``_shift_range_and_update_plot``, ``_snap_to_filtered``), an event plot's click
+(``_resolve_events``, ``_refuse_scope``), write-back's filter selection
 (``_write_back_filters``), scatterplot drawing
 (``set_scatterplot``), the experiment-selection tree (``show_selection_tree``,
 ``request_experiment_structure``) and ``get_save_filename``.
