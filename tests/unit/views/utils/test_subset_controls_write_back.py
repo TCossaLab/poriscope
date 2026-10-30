@@ -43,9 +43,7 @@ def emitted(panel: MetaSubsetTabControls) -> List[str]:
     :rtype: List[str]
     """
     actions: List[str] = []
-    panel.actionTriggered.connect(
-        lambda _view, action, _params: actions.append(action)
-    )
+    panel.actionTriggered.connect(lambda _view, action, _params: actions.append(action))
     return actions
 
 
@@ -120,7 +118,9 @@ def test_set_filters_selects_exactly_those(panel, emitted) -> None:
     assert emitted == []
 
 
-def test_set_filters_selects_those_on_offer_and_says_one_was_not(panel, emitted) -> None:
+def test_set_filters_selects_those_on_offer_and_says_one_was_not(
+    panel, emitted
+) -> None:
     panel.filter_comboBox.addItem("F0")
 
     assert panel.set_filters(["F0", "gone"]) is False

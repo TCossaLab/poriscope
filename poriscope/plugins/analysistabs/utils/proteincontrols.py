@@ -749,6 +749,53 @@ class ProteinControls(MetaSubsetTabControls):
         self.commit_individual.setEnabled(is_commit_individual_valid)
         self.report_all.setEnabled(is_report_all_valid)
 
+    def set_pore(self, diameter: float, length: float) -> None:
+        """
+        Show the pore diameter and length, for writing a recorded value back.
+
+        Each field's only listener is ``validate_inputs``, so writing it asks for nothing.
+
+        :param diameter: the pore diameter
+        :type diameter: float
+        :param length: the pore length
+        :type length: float
+        """
+        self.pore_diameter_lineEdit.setText(str(diameter))
+        self.pore_length_lineEdit.setText(str(length))
+
+    def set_n_values(self, n_values: int) -> None:
+        """
+        Show how many geometries are sampled, for writing a recorded value back.
+
+        The field's only listener is ``validate_inputs``, so writing it asks for nothing.
+
+        :param n_values: the number of samples
+        :type n_values: int
+        """
+        self.n_values_lineEdit.setText(str(n_values))
+
+    def set_mode(self, mode: str) -> bool:
+        """
+        Check the Individual or Ensemble button without asking for the mode, for writing a recorded value back.
+
+        Checking a button does not emit ``clicked``, which is what asks for the mode;
+        its ``toggled`` only restyles the pair and revalidates.
+
+        :param mode: 'individual' or 'ensemble'
+        :type mode: str
+        :return: True if it was shown, False if it is not a mode
+        :rtype: bool
+        """
+        button = {
+            "individual": self.individual_button,
+            "ensemble": self.ensemble_button,
+        }.get(mode)
+        if button is None:
+            return False
+        button.setChecked(True)
+        self.validate_inputs()
+        return True
+
     # Actions
     def on_button_clicked(self, button_type: str) -> None:
         """Handles button clicks and emits appropriate signals."""
