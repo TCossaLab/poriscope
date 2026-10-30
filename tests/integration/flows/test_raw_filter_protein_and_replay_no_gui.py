@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, Dict, Set, Tuple
 
 import pytest
+from PySide6.QtWidgets import QMessageBox
 
 from poriscope.plugins.db_loaders.SQLiteDBLoader import SQLiteDBLoader
 from tests.integration.flows._triad import Triad, build_triad
@@ -420,3 +421,132 @@ def test_a_saved_plot_configuration_replays_raw_plots_on_their_own_channels(
 
     assert on_figure(metadata_tab) == {(0, "own_raw"), (1, "own_raw")}
     assert plotted_row_count(metadata_tab) == CHANNEL_0 + CHANNEL_1
+
+
+# ------------------------------------------------- the event_id question and replay
+
+#: A raw filter written for a column plot: it does not return event_id.
+NO_EVENT_ID = f"SELECT duration FROM events WHERE {SCOPE}"
+
+
+def event_overlay(triad: Triad, filter_name: str, channel: str) -> None:
+    """
+    Select one filter and one channel, and press Update Plot for a Raw Event Overlay.
+
+    :param triad: the tab under test
+    :type triad: Triad
+    :param filter_name: the filter to select
+    :type filter_name: str
+    :param channel: the channel, as the selection tree reports it
+    :type channel: str
+    """
+    select(triad, filter_name, channel)
+    triad.tab_view.handle_parameter_change(
+        "metadatacontrols",
+        "update_plot",
+        (
+            {
+                "db_loader": LOADER,
+                "plot_type": "Raw Event Overlay",
+                "x_axis": "duration",
+                "y_axis": "duration",
+                "z_axis": "duration",
+                "x_log": False,
+                "y_log": False,
+                "z_log": False,
+                "bins": [20],
+                "sizes": False,
+            },
+        ),
+    )
+
+
+@pytest.fixture
+def no_event_id(metadata_tab: Triad, mocker: Any) -> Any:
+    """
+    Give the tab a raw filter without event_id, and answer the question it raises.
+
+    :return: the patched question, answering yes unless a test changes it
+    :rtype: Any
+    """
+    view = metadata_tab.tab_view
+    view.subset_filters["noid_raw"] = NO_EVENT_ID
+    view._subset_controls.filter_comboBox.addItem("noid_raw")
+    return mocker.patch(
+        "poriscope.utils.MetaSubsetTabView.QMessageBox.question",
+        return_value=QMessageBox.Yes,
+    )
+
+
+def recorded_filters(triad: Triad) -> list:
+    return [
+        entry["kwargs"]["filters"]
+        for entry in triad.tab_controller.tab_action_history.values()
+        if entry["action"] == "overlay_plot"
+    ]
+
+
+@pytest.mark.timeout(120)
+def test_the_event_id_question_is_asked_before_the_plot_is_recorded(
+    metadata_tab: Triad, no_event_id: Any
+) -> None:
+    """The entry holds the text that ran, so a replay has nothing to ask."""
+    event_overlay(metadata_tab, "noid_raw", "0")
+
+    assert no_event_id.call_count == 1
+    (filters,) = recorded_filters(metadata_tab)
+    assert filters["noid_raw"].startswith("SELECT event_id")
+    assert on_figure(metadata_tab) == {(0, "noid_raw")}
+
+
+@pytest.mark.timeout(120)
+def test_undo_redraws_such_a_plot_without_asking_again(
+    metadata_tab: Triad, no_event_id: Any
+) -> None:
+    event_overlay(metadata_tab, "noid_raw", "0")
+    event_overlay(metadata_tab, "noid_raw", "1")
+
+    undo(metadata_tab)
+
+    assert no_event_id.call_count == 1
+    assert on_figure(metadata_tab) == {(0, "noid_raw")}
+
+
+@pytest.mark.timeout(120)
+def test_a_declined_question_records_nothing(
+    metadata_tab: Triad, no_event_id: Any
+) -> None:
+    no_event_id.return_value = QMessageBox.No
+
+    event_overlay(metadata_tab, "noid_raw", "0")
+
+    assert no_event_id.call_count == 1
+    assert recorded_filters(metadata_tab) == []
+    assert metadata_tab.tab_view.subset_filters["noid_raw"] == NO_EVENT_ID
+
+
+@pytest.mark.timeout(120)
+def test_a_replay_never_asks_and_refuses_an_entry_without_event_id(
+    metadata_tab: Triad, no_event_id: Any
+) -> None:
+    """An entry saved before the question moved to the click, or edited since."""
+    entry = {
+        "action": "overlay_plot",
+        "args": (),
+        "kwargs": {
+            "loader": LOADER,
+            "plot_type": "Raw Event Overlay",
+            "axes": ["duration", "duration", "duration"],
+            "logs": [False, False, False],
+            "bins": [20],
+            "sizes": False,
+            "filters": {"noid_raw": NO_EVENT_ID},
+            "scope": {"exp_a": ["0"]},
+        },
+    }
+
+    metadata_tab.tab_controller.replay([entry])
+
+    assert no_event_id.call_count == 0
+    assert on_figure(metadata_tab) == set()
+    assert metadata_tab.tab_view.subset_filters["noid_raw"] == NO_EVENT_ID

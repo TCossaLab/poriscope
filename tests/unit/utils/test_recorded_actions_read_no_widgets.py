@@ -70,8 +70,23 @@ WIDGET_DERIVED_ATTRIBUTES = {
 #: Annotation names that mean a recorded action was handed plotted data.
 DATA_TYPES = {"Axes", "Figure", "NDArray", "ndarray", "DataFrame", "Series"}
 
+_EVENT_ID_QUESTION = (
+    "the question whether to add event_id to a raw filter is never asked while a saved "
+    "action is replayed (ReplayGuard.is_replaying), and the click asks it before the "
+    "action is recorded, so the entry holds the text that ran; pinned by "
+    "test_a_replay_never_asks_and_refuses_an_entry_without_event_id"
+)
+
 #: (action, rule, detail) -> the reason it is allowed.
-ALLOWED: Dict[Tuple[str, str, str], str] = {}
+ALLOWED: Dict[Tuple[str, str, str], str] = {
+    (
+        action,
+        "widget-derived state",
+        f"{method} reads subset_filters",
+    ): _EVENT_ID_QUESTION
+    for action in ("MetadataController.overlay_plot",)
+    for method in ("offer_event_id", "revert_event_id_offer")
+}
 
 
 @dataclass(frozen=True)
