@@ -471,7 +471,7 @@ class TestResolveEventIds:
 
     The protein copy used to project the event_id column as well, on the recorded
     grounds that its caller re-sorts the rows into the order it asked for them in.
-    It does not: ``ProteinView._fetch_event_data`` sorts on the event_id the loader
+    It does not: ``ProteinController._events_to_plot`` sorts on the event_id the loader
     reports with each event, so the extra column was read by nothing. The tests
     below are the protein-side pin that the shared body still authors the same
     scoped query.

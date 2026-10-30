@@ -264,7 +264,7 @@ def test_protein_events_nav_and_filters(
 
     # =========================================================
     # STAGE 2: Plot Events, event_id=0, n_events=3. Confirmed real
-    # behavior: _fetch_event_data requires exactly one experiment/channel
+    # behavior: _refuse_scope requires exactly one experiment/channel
     # and at most one filter -- satisfied here (single leaf, no filter
     # selected yet).
     # =========================================================

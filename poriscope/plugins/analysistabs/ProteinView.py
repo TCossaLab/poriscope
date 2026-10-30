@@ -184,7 +184,6 @@ class ProteinView(MetaSubsetTabView):
         self.current_channel = None
         self.filtered_event_ids = []
         self.subset_filters = {}
-        self.plot_events_generator = None
         self.available_experiment_and_channels_by_loader: Dict[
             str, Dict[str, List[str]]
         ] = {}
@@ -924,68 +923,6 @@ class ProteinView(MetaSubsetTabView):
             self._handle_plot_histogram(parameters)
         else:
             self._handle_plot_events(parameters)
-
-    @log(logger=logger)
-    def _fetch_event_data(
-        self, parameters: Dict[str, Any], action_label: str = "events"
-    ) -> Optional[list[dict]]:
-        """
-        Validate the request, ask for exactly the events named, and order the answer.
-
-        The scope guards stay here because they are about what the widget is showing;
-        resolving ``event_index`` to database ids and loading those rows is one intent
-        answered by ``MetaSubsetTabController.load_event_plot_data``. Always
-        fetches fresh rather than caching event blobs in memory — event_id is only
-        unique within an experiment/channel scope, and a per-event_id blob cache is an
-        easy invariant to accidentally violate later; the targeted DB query is already
-        O(events requested) rather than O(distance into the dataset), so the extra
-        memoization isn't worth the correctness risk.
-
-        **A refusal returns None and an empty fetch returns an empty list**, which is
-        what lets the caller keep quiet about the first and speak about the second.
-        Every refusal here, and every failure in the Controller's half, is reported by
-        whoever refused it; returning ``[]`` for both made the caller add "no data
-        available for event_id N" underneath, naming the event when the real reason was
-        two channels in scope or an experiment the database no longer holds.
-
-        :param parameters: Dictionary containing db_loader, filter, channels, and event indices.
-        :type parameters: Dict[str, Any]
-        :param action_label: Label used in error messages to identify the plot type.
-        :type action_label: str
-        :return: the fetched events in the order requested, empty if the fetch found none, or None if the request was refused and reported
-        :rtype: Optional[list[dict]]
-        """
-        loader_name = parameters["db_loader"]
-        if self._refuse_scope(loader_name, action_label):
-            return None
-
-        event_index = parameters["event_index"]
-        exp_and_ch = self.selected_experiment_and_channels_by_loader[loader_name]
-        exp = next(iter(exp_and_ch.keys()))
-        selected_channel = next(iter(exp_and_ch.values()))[0]
-        channel = int(selected_channel) if selected_channel is not None else None
-
-        # Cleared first: the Controller sets the generator only once the whole chain
-        # has succeeded, and reports which part did not, so a failure here is not
-        # mistaken for the previous plot's events.
-        self.plot_events_generator = None
-        self.event_plot_data_requested.emit(
-            loader_name, list(event_index), exp, channel, exp_and_ch, action_label
-        )
-        generator = self.plot_events_generator
-        if generator is None:
-            # The Controller sets the generator only once the whole chain has
-            # succeeded, and reports which part did not - so this is a refusal that
-            # has already been explained, not an empty result.
-            return None
-
-        data_list = list(generator)
-
-        # restore the caller's requested order
-        order = {eid: i for i, eid in enumerate(event_index)}
-        data_list.sort(key=lambda e: order.get(e["event_id"], len(order)))
-
-        return data_list
 
     @log(logger=logger)
     def _refuse_scope(self, loader_name: str, action_label: str) -> bool:

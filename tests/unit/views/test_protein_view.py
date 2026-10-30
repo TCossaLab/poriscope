@@ -5,7 +5,7 @@ Covers the ProteinView analysis tab end-to-end, including:
   - format_axis_label (module-level helper)
   - Plotting: _plot_all_points_histogram, _plot_scatterplot,
     _plot_xyerr_scatterplot, update_plot
-  - Event/histogram navigation and caching: _fetch_event_data,
+  - Event/histogram navigation and caching: _refuse_scope, _resolve_events,
     _handle_plot_events, _handle_plot_histogram, _shift_range_and_update_plot
   - Filter management: add/edit/delete/save/load, and raw-SQL validation
     callbacks (on_raw_filter_validated)
@@ -297,10 +297,6 @@ class TestFormatAxisLabel:
 
 
 class TestStateSetters:
-    def test_set_event_plot_data_generator(self, mock_view):
-        g = iter([])
-        mock_view.set_event_plot_data_generator(g)
-        assert mock_view.plot_events_generator is g
 
     def test_get_current_view(self, mock_view):
         assert mock_view.get_current_view() == "ProteinView"
@@ -1243,166 +1239,47 @@ class TestHandleParameterChange:
         assert mock.call_args[0][0] == "totally_unknown"
 
 
-class TestFetchEventData:
-    """
-    ``None`` means refused and already reported; ``[]`` means the fetch ran and
-    found nothing. The callers tell the two apart so a refusal does not get a
-    second, contradictory line naming the event - see
-    ``test_protein_event_fetch_messages.py``.
-    """
+class TestRefuseScope:
+    """Events are plotted from one subset of one channel of one experiment, or the click says why not."""
 
-    def _params(self):
-        return {"db_loader": "ldr", "event_index": [1]}
-
-    def test_no_experiments_is_refused(self, mock_view):
-        mock_view.selected_experiment_and_channels_by_loader = {}
-        mock_view.get_selected_filters = MagicMock(return_value={})
-        result = mock_view._fetch_event_data(self._params())
-        assert result is None
-
-    def test_no_experiments_emits_message(self, mock_view):
-        mock_view.selected_experiment_and_channels_by_loader = {}
-        mock_view.get_selected_filters = MagicMock(return_value={})
+    @pytest.mark.parametrize(
+        ("scope", "filters", "message"),
+        [
+            ({}, {}, "No experiments or channels are in scope"),
+            ({"ldr": {}}, {}, "No experiments or channels are in scope"),
+            ({"ldr": {"exp1": ["0"]}}, {"f1": "a", "f2": "b"}, "more than one subset"),
+            ({"ldr": {"exp1": ["0"], "exp2": ["0"]}}, {}, "single experiment"),
+            ({"ldr": {"exp1": ["0", "1"]}}, {}, "single channel"),
+        ],
+        ids=[
+            "no scope",
+            "empty scope",
+            "two filters",
+            "two experiments",
+            "two channels",
+        ],
+    )
+    def test_a_scope_that_cannot_be_plotted_is_refused_with_its_reason(
+        self, mock_view, scope, filters, message
+    ):
+        mock_view.selected_experiment_and_channels_by_loader = scope
+        mock_view.get_selected_filters = MagicMock(return_value=filters)
         received = []
         mock_view.add_text_to_display.connect(lambda m, s: received.append(m))
-        mock_view._fetch_event_data(self._params())
-        assert any("No experiments or channels" in m for m in received)
 
-    def test_multiple_filters_is_refused(self, mock_view):
-        mock_view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": ["0"]}}
-        mock_view.get_selected_filters = MagicMock(return_value={"f1": "a", "f2": "b"})
-        result = mock_view._fetch_event_data(self._params())
-        assert result is None
+        assert mock_view._refuse_scope("ldr", "events") is True
 
-    def test_multiple_filters_emits_message(self, mock_view):
+        assert len(received) == 1 and message in received[0]
+
+    def test_one_subset_of_one_channel_is_let_through_in_silence(self, mock_view):
         mock_view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": ["0"]}}
-        mock_view.get_selected_filters = MagicMock(return_value={"f1": "a", "f2": "b"})
+        mock_view.get_selected_filters = MagicMock(return_value={"f1": "a"})
         received = []
         mock_view.add_text_to_display.connect(lambda m, s: received.append(m))
-        mock_view._fetch_event_data(self._params())
-        assert any("more than one subset" in m for m in received)
 
-    def test_empty_loader_selection_is_refused(self, mock_view):
-        mock_view.selected_experiment_and_channels_by_loader = {"ldr": {}}
-        mock_view.get_selected_filters = MagicMock(return_value={})
-        result = mock_view._fetch_event_data(self._params())
-        assert result is None
+        assert mock_view._refuse_scope("ldr", "events") is False
 
-    def test_multiple_experiments_is_refused(self, mock_view):
-        mock_view.selected_experiment_and_channels_by_loader = {
-            "ldr": {"exp1": ["0"], "exp2": ["0"]}
-        }
-        mock_view.get_selected_filters = MagicMock(return_value={})
-        result = mock_view._fetch_event_data(self._params())
-        assert result is None
-
-    def test_multiple_experiments_emits_message(self, mock_view):
-        mock_view.selected_experiment_and_channels_by_loader = {
-            "ldr": {"exp1": ["0"], "exp2": ["0"]}
-        }
-        mock_view.get_selected_filters = MagicMock(return_value={})
-        received = []
-        mock_view.add_text_to_display.connect(lambda m, s: received.append(m))
-        mock_view._fetch_event_data(self._params())
-        assert any("single experiment" in m for m in received)
-
-    def test_multiple_channels_is_refused(self, mock_view):
-        mock_view.selected_experiment_and_channels_by_loader = {
-            "ldr": {"exp1": ["0", "1"]}
-        }
-        mock_view.get_selected_filters = MagicMock(return_value={})
-        result = mock_view._fetch_event_data(self._params())
-        assert result is None
-
-    def test_multiple_channels_emits_message(self, mock_view):
-        mock_view.selected_experiment_and_channels_by_loader = {
-            "ldr": {"exp1": ["0", "1"]}
-        }
-        mock_view.get_selected_filters = MagicMock(return_value={})
-        received = []
-        mock_view.add_text_to_display.connect(lambda m, s: received.append(m))
-        mock_view._fetch_event_data(self._params())
-        assert any("single channel" in m for m in received)
-
-    def test_empty_filters_default_to_full_dataset(self, mock_view):
-        """When no filters selected, defaults to {'Full Dataset': ''}. Nothing answers
-        the event-plot request in this test, so the generator is never populated;
-        requesting no event indices keeps the code from pulling from a None generator.
-        """
-        mock_view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": ["0"]}}
-        mock_view.get_selected_filters = MagicMock(return_value={})
-        mock_view.plot_events_generator = None
-        mock_view.current_sql_filter = None
-        mock_view.current_experiment = None
-        mock_view.current_channel = None
-        mock_view.cached_events = {}
-        params = {"db_loader": "ldr", "event_index": []}
-        result = mock_view._fetch_event_data(params)
-        assert result is None
-
-    def test_asks_the_controller_for_exactly_the_events_requested(self, mock_view):
-        """
-        The resolve-and-load chain is one intent answered by
-        ``ProteinController.load_event_plot_data``, so the stub stands in for the
-        Controller by setting the generator the way it does - a stub that does nothing
-        where the real collaborator sets the answer would make every assertion below
-        vacuous.
-        """
-        mock_view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": ["0"]}}
-        mock_view.get_selected_filters = MagicMock(return_value={"Full Dataset": ""})
-        mock_view.current_sql_filter = ""
-        mock_view.current_experiment = "exp1"
-        mock_view.current_channel = 0
-
-        requested = []
-
-        def answer(loader, event_ids, exp, channel, scope, action_label):
-            requested.append((loader, event_ids, exp, channel, scope, action_label))
-            mock_view.plot_events_generator = iter([_make_event(1)])
-
-        mock_view.event_plot_data_requested.connect(answer)
-
-        result = mock_view._fetch_event_data(self._params())
-
-        assert requested == [("ldr", [1], "exp1", 0, {"exp1": ["0"]}, "events")]
-        assert len(result) == 1
-        assert result[0]["event_id"] == 1
-
-    def test_a_chain_that_did_not_finish_plots_nothing(self, mock_view):
-        """
-        The generator is cleared before the intent goes out, so a Controller that
-        returned early leaves None rather than the previous plot's events - the stale
-        read this step exists to remove.
-        """
-        mock_view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": ["0"]}}
-        mock_view.get_selected_filters = MagicMock(return_value={"Full Dataset": ""})
-        mock_view.plot_events_generator = iter([_make_event(99)])
-        mock_view.event_plot_data_requested.connect(lambda *a: None)
-
-        assert mock_view._fetch_event_data(self._params()) is None
-
-    def test_the_answer_comes_back_in_the_order_it_was_asked_for(self, mock_view):
-        """
-        ``load_event_data`` yields in whatever order the database gives, and the
-        navigation cares about the order it requested. The re-sort keys off the
-        ``event_id`` the loader reports on each event, against the indices asked
-        for - not off anything the id-resolution query projects.
-        """
-        mock_view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": ["0"]}}
-        mock_view.get_selected_filters = MagicMock(return_value={"Full Dataset": ""})
-        mock_view.event_plot_data_requested.connect(
-            lambda *a: setattr(
-                mock_view,
-                "plot_events_generator",
-                iter([_make_event(7), _make_event(3), _make_event(5)]),
-            )
-        )
-
-        result = mock_view._fetch_event_data(
-            {"db_loader": "ldr", "event_index": [3, 5, 7]}
-        )
-
-        assert [e["event_id"] for e in result] == [3, 5, 7]
+        assert received == []
 
 
 class TestHandlePlotEvents:

@@ -1,25 +1,16 @@
 """
-``ProteinView``'s event fetch says one thing about a failure, never two.
+``ProteinView``'s event-plot click says one thing about a refusal, never two.
 
 Found in a manual Windows pass over the event-plot promotion.
 The tab reported a refusal and then contradicted it::
 
-    ProteinController: SQLiteDBLoader_1 has no experiment named x, so these events
-                       cannot be scoped to it
-    ProteinView:       No data available for event_id 10
-
-and, with two channels in scope::
-
     ProteinView: Only a single channel can be used for plotting events
     ProteinView: No data available for event_id 10
 
-The second line names the event as the problem in both cases, which is the one thing
-that was not wrong. ``_fetch_event_data`` returned ``[]`` for a refusal and for an
-empty result alike, so its callers could not tell them apart; it returns ``None`` for
-a refusal now. The metadata tab never had the second line, which is why only this tab
-showed it.
-
-These tests pin the three outcomes at the caller and the refusal at the fetch itself.
+The second line named the event as the problem, which was the one thing that was not
+wrong. The click now refuses before it asks for anything, and says nothing when it
+asks; what the fetch says is ``ProteinController``'s, tested in
+``tests/unit/controllers/test_protein_controller.py``.
 """
 
 from unittest.mock import MagicMock, patch
@@ -95,45 +86,3 @@ class TestPlotEvents:
         ]
         view._rebuild_event_id_cache.assert_not_called()
         view.plot_events_requested.emit.assert_not_called()
-
-
-class TestFetchRefusals:
-    """The fetch's own guards return None, which is what keeps the caller quiet."""
-
-    def test_two_channels_in_scope_is_refused_once(self, view):
-        view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": [0, 1]}}
-
-        with patch.object(ProteinView, "get_selected_filters", return_value={}):
-            result = view._fetch_event_data({"db_loader": "ldr", "event_index": [10]})
-
-        assert result is None
-        assert _messages(view) == [
-            "Only a single channel can be used for plotting events"
-        ]
-
-    def test_two_experiments_in_scope_is_refused_once(self, view):
-        view.selected_experiment_and_channels_by_loader = {
-            "ldr": {"exp1": [0], "exp2": [0]}
-        }
-
-        with patch.object(ProteinView, "get_selected_filters", return_value={}):
-            result = view._fetch_event_data({"db_loader": "ldr", "event_index": [10]})
-
-        assert result is None
-        assert _messages(view) == [
-            "Only a single experiment can be used for plotting events"
-        ]
-
-    def test_a_controller_that_hands_back_nothing_is_a_refusal(self, view):
-        """
-        The generator is set only once the Controller's whole chain has succeeded,
-        and it reports which part did not - the experiment rename in the docstring
-        above is this path. So None here means "already explained", not "no events".
-        """
-        view.plot_events_generator = None
-
-        with patch.object(ProteinView, "get_selected_filters", return_value={}):
-            result = view._fetch_event_data({"db_loader": "ldr", "event_index": [10]})
-
-        assert result is None
-        assert _messages(view) == []

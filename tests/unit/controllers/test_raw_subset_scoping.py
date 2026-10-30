@@ -932,8 +932,8 @@ def test_the_two_tabs_share_one_projection() -> None:
 
     The protein copy used to project ``id, event_id``, recorded in three places as
     being needed because its caller re-sorts the rows into the order it asked for
-    them in. It is not: ``ProteinView._fetch_event_data`` sorts on the ``event_id``
-    the loader reports with each event, against the indices it requested, so nothing
+    them in. It is not: ``ProteinController._events_to_plot`` sorts on the ``event_id``
+    the loader reports with each event, against the ids it requested, so nothing
     ever read the extra column. Narrowing the projection and running the whole suite
     failed only assertions on the query text itself.
 
