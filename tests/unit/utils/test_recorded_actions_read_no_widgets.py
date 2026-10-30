@@ -70,19 +70,26 @@ WIDGET_DERIVED_ATTRIBUTES = {
 #: Annotation names that mean a recorded action was handed plotted data.
 DATA_TYPES = {"Axes", "Figure", "NDArray", "ndarray", "DataFrame", "Series"}
 
-_FIGURE_FOLLOWS_THE_MODE = (
-    "the figure properties pick the Individual or Ensemble figure by the live mode, so a "
-    "replay in the other mode draws on the other mode's figures; remove these entries when "
-    "replay writes the recorded mode back before it runs the action"
+_EVENT_ID_QUESTION = (
+    "the question whether to add event_id to a raw filter is never asked while a saved "
+    "action is replayed (ReplayGuard.is_replaying), and the click asks it before the "
+    "action is recorded, so the entry holds the text that ran; pinned by "
+    "test_a_replay_never_asks_and_refuses_an_entry_without_event_id"
 )
 
 #: (action, rule, detail) -> the reason it is allowed.
 ALLOWED: Dict[Tuple[str, str, str], str] = {
-    (f"ProteinView.{action}", "widget-derived state", f"{prop} reads _analysis_mode"): (
-        _FIGURE_FOLLOWS_THE_MODE
+    (
+        action,
+        "widget-derived state",
+        f"{method} reads subset_filters",
+    ): _EVENT_ID_QUESTION
+    for action in (
+        "MetadataController.overlay_plot",
+        "ProteinController.update_individual_distribution",
+        "ProteinController.update_ensemble_distribution",
     )
-    for action in ("reset", "update_ensemble_distribution")
-    for prop in ("fig_hist", "fig_vm", "canvas_hist", "canvas_vm")
+    for method in ("offer_event_id", "revert_event_id_offer")
 }
 
 

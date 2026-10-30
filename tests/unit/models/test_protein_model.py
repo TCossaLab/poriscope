@@ -1102,9 +1102,7 @@ class TestSampleEventGeometries:
     """
     Every list is index-aligned with ``event_data``, so an event whose histogram
     could not be built and one whose fit was refused are skipped the same way and
-    neither shifts the others. That was ``ProteinView.set_distribution_fits``'s
-    documented contract; it moved here with the sampling, which is the half that
-    can get it wrong.
+    neither shifts the others.
     """
 
     def test_one_row_per_fitted_event(self, model):

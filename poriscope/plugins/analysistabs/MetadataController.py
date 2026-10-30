@@ -222,7 +222,9 @@ class MetadataController(MetaSubsetTabController):
         Draw the overlay a click on Update Plot asked for, and roll back one that drew nothing.
 
         The roll-back is the click's alone; a replay calls :meth:`overlay_plot` directly.
-        So is the categorical check, which refuses before anything is drawn or recorded.
+        So are the categorical check, which refuses before anything is drawn or recorded,
+        and, for an event-data plot, the question whether to add ``event_id`` to a raw
+        filter that lacks it, so the plot is recorded with the text that ran.
         A refusal that left the figure as it was drops what it recorded - the reset a new
         figure starts with as well - so Undo does not spend a step restoring an identical
         figure; one that changed the figure - it cleared what was drawn, or drew part of
@@ -251,6 +253,11 @@ class MetadataController(MetaSubsetTabController):
             loader, axes[0]
         ):
             return
+        if plot_type in EVENT_DATA_PLOTS:
+            resolved = self._ask_event_id_for_raw_filters(loader, filters, scope)
+            if resolved is None:
+                return
+            filters = resolved
         before = set(self.model.overlay.datasets)
         recorded = len(self.tab_action_history)
         drawn = self.overlay_plot(
@@ -326,12 +333,7 @@ class MetadataController(MetaSubsetTabController):
                         if exp is not None
                         else f"{loader} | {subset_name}"
                     )
-                    overlay = (
-                        self._overlay_metadata_dataset
-                        if plot_type in METADATA_PLOTS
-                        else self._overlay_event_dataset
-                    )
-                    outcome = overlay(
+                    dataset = (
                         loader,
                         plot_type,
                         axes,
@@ -344,6 +346,10 @@ class MetadataController(MetaSubsetTabController):
                         sql_filter,
                         label,
                     )
+                    if plot_type in METADATA_PLOTS:
+                        outcome = self._overlay_metadata_dataset(*dataset)
+                    else:
+                        outcome = self._overlay_event_dataset(*dataset)
                     if outcome is None:
                         return False
                     plotted_any = plotted_any or outcome
@@ -616,10 +622,6 @@ class MetadataController(MetaSubsetTabController):
     ) -> bool:
         """
         Filter a scatterplot's two columns and have the View draw them.
-
-        The same work as the shared :meth:`filter_scatterplot`, which Protein still
-        reaches through its request and which hands the drawing an axes; Metadata's View
-        draws on its own.
 
         :param columns: the raw x and y values
         :type columns: Sequence[npt.NDArray[np.float64]]
@@ -956,8 +958,8 @@ class MetadataController(MetaSubsetTabController):
         """
         The same for a 3-D scatterplot's three columns.
 
-        Separate from :meth:`filter_scatterplot` because the View's two drawing
-        halves are separate: a 3-D scatter rebuilds the axes and carries a z label.
+        Separate from :meth:`_scatterplot` because the View's two drawing halves are
+        separate: a 3-D scatter rebuilds the axes and carries a z label.
 
         :param columns: the raw x, y and z values
         :type columns: Sequence[npt.NDArray[np.float64]]

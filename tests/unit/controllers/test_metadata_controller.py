@@ -1361,29 +1361,27 @@ class TestCalculateHeatmap(_StatusPanelMixin):
         assert any("Unable to build the heatmap" in message for message in messages)
 
 
-class TestFilterScatterplot(_StatusPanelMixin):
-    """Two columns in, two filtered columns back through the setter."""
+class TestScatterplot(_StatusPanelMixin):
+    """Two columns in, two filtered columns drawn by the View on its own axes."""
 
     def test_the_filtered_columns_reach_the_view(self, controller, mock_view) -> None:
         """
-        Against the real Model rather than a stub of it, because what this slot
-        forwards is exactly the thing a stub cannot get wrong - it would pin whatever
-        contract it was written against.
+        Against the real Model rather than a stub of it, because what this forwards is
+        exactly the thing a stub cannot get wrong - it would pin whatever contract it
+        was written against.
         """
         controller.model = MetadataModel()
-        ax = MagicMock()
 
-        controller.filter_scatterplot(
+        drawn = controller._scatterplot(
             [np.array([1.0, np.nan, 3.0]), np.array([4.0, 5.0, 6.0])],
             [False, False],
-            ax,
             ["xl", "yl"],
             "dl",
         )
 
-        columns, out_ax, labels, label = mock_view.set_scatterplot.call_args.args
+        assert drawn is True
+        columns, labels, label = mock_view.show_scatterplot.call_args.args
         assert [list(column) for column in columns] == [[1.0, 3.0], [4.0, 6.0]]
-        assert out_ax is ax
         assert list(labels) == ["xl", "yl"]
         assert label == "dl"
 
@@ -1391,15 +1389,14 @@ class TestFilterScatterplot(_StatusPanelMixin):
         """A log-scaled axis comes back as its base-10 logarithm."""
         controller.model = MetadataModel()
 
-        controller.filter_scatterplot(
+        controller._scatterplot(
             [np.array([1.0, 100.0]), np.array([4.0, 6.0])],
             [True, False],
-            MagicMock(),
             ["xl", "yl"],
             "dl",
         )
 
-        columns = mock_view.set_scatterplot.call_args.args[0]
+        columns = mock_view.show_scatterplot.call_args.args[0]
         assert list(columns[0]) == [0.0, 2.0]
         assert list(columns[1]) == [4.0, 6.0]
 
@@ -1408,11 +1405,10 @@ class TestFilterScatterplot(_StatusPanelMixin):
     ) -> None:
         controller.model.logscale_and_filter_columns.side_effect = ValueError("nope")
 
-        controller.filter_scatterplot(
-            [np.array([1.0])], [False], MagicMock(), ["xl", "yl"], "dl"
-        )
+        drawn = controller._scatterplot([np.array([1.0])], [False], ["xl", "yl"], "dl")
 
-        mock_view.set_scatterplot.assert_not_called()
+        assert drawn is False
+        mock_view.show_scatterplot.assert_not_called()
         messages = [
             call.args[0] for call in controller.add_text_to_display.emit.call_args_list
         ]

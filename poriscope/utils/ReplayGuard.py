@@ -65,6 +65,19 @@ def replaying() -> Iterator[None]:
         _replaying.reset(token)
 
 
+def is_replaying() -> bool:
+    """
+    Is a saved action being replayed?
+
+    For a step that would ask the user something: a replay is not answered by the user, so
+    it reports instead of asking.
+
+    :return: True inside :py:func:`replaying`
+    :rtype: bool
+    """
+    return bool(_replaying.get())
+
+
 def forbid_while_replaying(name: str) -> None:
     """
     Raise if a saved action is being replayed; the first statement of a widget-reading helper.

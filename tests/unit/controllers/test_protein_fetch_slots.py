@@ -41,7 +41,7 @@ from pytest_mock import MockerFixture
 
 from poriscope.plugins.analysistabs.ProteinController import ProteinController
 from poriscope.plugins.analysistabs.ProteinModel import ProteinModel
-from poriscope.plugins.analysistabs.ProteinView import FIT_COLUMNS
+from poriscope.plugins.analysistabs.ProteinView import FIT_COLUMN_UNITS, FIT_COLUMNS
 from tests.unit.controllers._recording_model import (
     RecordingModel,
     recording_tab_model,
@@ -342,14 +342,27 @@ class TestLoadEventPlotData:
 
 def fit_frame() -> pd.DataFrame:
     """
-    The fitted columns the View hands over, keyed by event id.
+    The Individual fit the Model keeps, keyed by event id, with a column the commit does not write.
 
     :return: one row carrying every written column
     :rtype: pd.DataFrame
     """
-    frame = {"id": [1]}
+    frame = {"id": [1], "not_written": [2.0]}
     frame.update({column: [1.0] for column in FIT_COLUMNS})
     return pd.DataFrame(frame)
+
+
+def with_fit(model: object) -> object:
+    """
+    Give a stand-in Model the Individual fit a plot would have left.
+
+    :param model: the Model under test
+    :type model: object
+    :return: the same Model
+    :rtype: object
+    """
+    model.individual_fit = fit_frame()  # type: ignore[attr-defined]
+    return model
 
 
 # ===========================================================================
@@ -369,7 +382,7 @@ class TestCheckForExistingFitColumns:
         :param controller: the controller under test
         :type controller: ProteinController
         """
-        controller.model = RecordingModel({"get_table_by_column": "events"})
+        controller.model = with_fit(RecordingModel({"get_table_by_column": "events"}))
 
         controller.check_for_existing_fit_columns("ldr")
 
@@ -386,7 +399,7 @@ class TestCheckForExistingFitColumns:
         :param controller: the controller under test
         :type controller: ProteinController
         """
-        controller.model = RecordingModel({"get_table_by_column": None})
+        controller.model = with_fit(RecordingModel({"get_table_by_column": None}))
 
         controller.check_for_existing_fit_columns("ldr")
 
@@ -402,14 +415,30 @@ class TestCheckForExistingFitColumns:
         :param controller: the controller under test
         :type controller: ProteinController
         """
-        controller.model = RecordingModel(
-            {"get_table_by_column": RuntimeError("db gone")}
+        controller.model = with_fit(
+            RecordingModel({"get_table_by_column": RuntimeError("db gone")})
         )
 
         controller.check_for_existing_fit_columns("ldr")
 
         controller.view.confirm_fit_commit.assert_not_called()
         assert "Could not check ldr for existing fit data" in panel_text(controller)
+
+    def test_with_no_individual_fit_nothing_is_looked_up_and_it_is_said(
+        self, controller: ProteinController
+    ) -> None:
+        """
+        :param controller: the controller under test
+        :type controller: ProteinController
+        """
+        controller.model = RecordingModel({"get_table_by_column": None})
+        controller.model.individual_fit = None  # type: ignore[attr-defined]
+
+        controller.check_for_existing_fit_columns("ldr")
+
+        assert controller.model.calls == []
+        controller.view.confirm_fit_commit.assert_not_called()
+        assert "No individual fit available to commit" in panel_text(controller)
 
 
 class TestCommitFits:
@@ -424,18 +453,16 @@ class TestCommitFits:
         :param controller: the controller under test
         :type controller: ProteinController
         """
-        frame = fit_frame()
-        units = [None] * len(FIT_COLUMNS)
-        controller.model = RecordingModel({"add_columns_to_table": True})
+        controller.model = with_fit(RecordingModel({"add_columns_to_table": True}))
 
-        controller.commit_fits("ldr", frame, units, None)
+        controller.commit_fits("ldr", None)
 
         assert controller.model.calls_to("alter_database") == []
         ((written, sent_units, table),) = controller.model.calls_to(
             "add_columns_to_table"
         )
-        assert written is frame
-        assert sent_units is units
+        assert list(written.columns) == ["id"] + FIT_COLUMNS
+        assert sent_units == FIT_COLUMN_UNITS
         assert table == "events"
         controller.view.on_fit_commit_finished.assert_called_once_with("ldr")
 
@@ -443,19 +470,21 @@ class TestCommitFits:
         self, controller: ProteinController
     ) -> None:
         """
-        The DROP and DELETE statements are built from the frame the View sent, so a
-        column added to the write cannot be left behind by the drop.
+        The DROP and DELETE statements are built from the columns written, so a column
+        added to the write cannot be left behind by the drop.
 
         :param controller: the controller under test
         :type controller: ProteinController
         """
         # A real ProteinModel with only its plugin boundary recorded: the query
         # construction lives there, and stubbing the Model method would hide it.
-        controller.model = recording_tab_model(
-            ProteinModel, {"alter_database": True, "add_columns_to_table": True}
+        controller.model = with_fit(
+            recording_tab_model(
+                ProteinModel, {"alter_database": True, "add_columns_to_table": True}
+            )
         )
 
-        controller.commit_fits("ldr", fit_frame(), [None] * len(FIT_COLUMNS), "events")
+        controller.commit_fits("ldr", "events")
 
         ((queries,),) = controller.model.calls_to("alter_database")
         assert len(queries) == 2 * len(FIT_COLUMNS)
@@ -473,11 +502,11 @@ class TestCommitFits:
         :param controller: the controller under test
         :type controller: ProteinController
         """
-        controller.model = RecordingModel(
-            {"alter_database": False, "add_columns_to_table": True}
+        controller.model = with_fit(
+            RecordingModel({"alter_database": False, "add_columns_to_table": True})
         )
 
-        controller.commit_fits("ldr", fit_frame(), [None] * len(FIT_COLUMNS), "events")
+        controller.commit_fits("ldr", "events")
 
         assert controller.model.calls_to("add_columns_to_table") == []
         controller.view.on_fit_commit_finished.assert_not_called()
@@ -490,11 +519,13 @@ class TestCommitFits:
         :param controller: the controller under test
         :type controller: ProteinController
         """
-        controller.model = RecordingModel(
-            {"alter_database": RuntimeError("locked"), "add_columns_to_table": True}
+        controller.model = with_fit(
+            RecordingModel(
+                {"alter_database": RuntimeError("locked"), "add_columns_to_table": True}
+            )
         )
 
-        controller.commit_fits("ldr", fit_frame(), [None] * len(FIT_COLUMNS), "events")
+        controller.commit_fits("ldr", "events")
 
         assert controller.model.calls_to("add_columns_to_table") == []
         assert "clean it up manually" in panel_text(controller)
@@ -509,11 +540,11 @@ class TestCommitFits:
         :param controller: the controller under test
         :type controller: ProteinController
         """
-        controller.model = RecordingModel(
-            {"add_columns_to_table": RuntimeError("read only")}
+        controller.model = with_fit(
+            RecordingModel({"add_columns_to_table": RuntimeError("read only")})
         )
 
-        controller.commit_fits("ldr", fit_frame(), [None] * len(FIT_COLUMNS), None)
+        controller.commit_fits("ldr", None)
 
         controller.view.on_fit_commit_finished.assert_not_called()
         assert "Could not write the fit data" in panel_text(controller)

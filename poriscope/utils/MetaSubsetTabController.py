@@ -39,10 +39,7 @@ from typing import (
     override,
 )
 
-import numpy as np
-import numpy.typing as npt
 import pandas as pd
-from matplotlib.axes import Axes
 from PySide6.QtCore import Slot
 from PySide6.QtWidgets import QMessageBox
 
@@ -50,6 +47,7 @@ from poriscope.utils.LogDecorator import log
 from poriscope.utils.MetaController import MetaController
 from poriscope.utils.MetaSubsetTabModel import MetaSubsetTabModel
 from poriscope.utils.MetaSubsetTabView import MetaSubsetTabView
+from poriscope.utils.ReplayGuard import is_replaying
 
 #: The three columns that together identify an event, and mean the same in every
 #: table that carries them.
@@ -578,7 +576,6 @@ class MetaSubsetTabController(MetaController):
         self.view.filter_validation_requested.connect(self.validate_filter)
         self.view.raw_filter_validation_requested.connect(self.validate_raw_filter)
         self.view.event_id_cache_requested.connect(self.load_event_id_cache)
-        self.view.scatterplot_requested.connect(self.filter_scatterplot)
         self.view.filters_load_requested.connect(self.load_filters)
         self.view.filters_save_requested.connect(self.save_filters)
         self.view.event_plot_data_requested.connect(self.load_event_plot_data)
@@ -745,49 +742,6 @@ class MetaSubsetTabController(MetaController):
             return None
 
         return generator
-
-    @log(logger=logger)
-    @Slot(object, object, object, object, str)
-    def filter_scatterplot(
-        self,
-        columns: Sequence[npt.NDArray[np.float64]],
-        log_flags: Sequence[bool],
-        ax: Axes,
-        axis_labels: Sequence[str],
-        dataset_label: str,
-    ) -> None:
-        """
-        Filter and log-scale a scatterplot's columns, and hand them back to draw.
-
-        The View asks, this slot calls the Model, and the answer goes back through
-        a setter. Shared by both subset tabs, whose copies were identical: the
-        drawing context arrives and departs unchanged, so this marshals and does not
-        interpret it.
-
-        :param columns: the raw x and y values
-        :type columns: Sequence[npt.NDArray[np.float64]]
-        :param log_flags: log-scale each column?
-        :type log_flags: Sequence[bool]
-        :param ax: the axis object the View will draw on
-        :type ax: Axes
-        :param axis_labels: the axis labels, already formatted
-        :type axis_labels: Sequence[str]
-        :param dataset_label: string to label the dataset
-        :type dataset_label: str
-        :return: None
-        :rtype: None
-        """
-        try:
-            filtered = self.model.logscale_and_filter_columns(
-                *columns, log_flags=list(log_flags)
-            )
-        except (ValueError, TypeError, IndexError) as e:
-            self.logger.error(f"Unable to filter the scatterplot: {repr(e)}")
-            self.add_text_to_display.emit(
-                f"Unable to filter the scatterplot: {e}", self.__class__.__name__
-            )
-            return
-        self.view.set_scatterplot(filtered, ax, axis_labels, dataset_label)
 
     @log(logger=logger)
     @Slot(str, str)
@@ -1381,7 +1335,10 @@ class MetaSubsetTabController(MetaController):
         The user is asked, with the new text in front of them, and on yes the filter is
         changed and run again, so the plot carries on. A query that groups or combines its
         rows is never offered one, and neither is one the user has already declined; both
-        get the message that says what to do instead.
+        get the message that says what to do instead. Nothing is asked while a saved
+        action is replayed: the click asks before the action is recorded (see
+        :meth:`_ask_event_id_for_raw_filters`), so a recorded filter already returns
+        ``event_id``, and one that does not is refused with the same message.
 
         Reports its own failure and answers with None.
 
@@ -1403,8 +1360,10 @@ class MetaSubsetTabController(MetaController):
             return None
         if not any(str(c).lower() == "event_id" for c in run.rows.columns):
             suggestion = with_event_id(sql_filter)
-            if suggestion is not None and (
-                self.view.offer_event_id(subset_name, suggestion) is True
+            if (
+                suggestion is not None
+                and not is_replaying()
+                and self.view.offer_event_id(subset_name, suggestion) is True
             ):
                 original, sql_filter = sql_filter, suggestion
                 run = self._run_raw_filter(
@@ -1423,6 +1382,47 @@ class MetaSubsetTabController(MetaController):
         if keys is None:
             return None
         return run, keys, sql_filter
+
+    @log(logger=logger)
+    def _ask_event_id_for_raw_filters(
+        self,
+        loader: str,
+        filters: Dict[str, str],
+        scope: Dict[Any, Any],
+    ) -> Optional[Dict[str, str]]:
+        """
+        Before an event plot is recorded, ask to add ``event_id`` to any raw filter that lacks it.
+
+        For the click only: the plot it leads to is recorded with the filter text this
+        returns, so the entry holds the text that ran and a replay has nothing to ask. Each
+        raw filter is run once, for the first selected experiment and channel, since
+        whether a ``SELECT`` returns ``event_id`` does not depend on which channel it ran
+        for. A raw filter that cannot name its events, or a question the user declined,
+        stops the plot with the message that says why.
+
+        :param loader: the database loader plugin's key
+        :type loader: str
+        :param filters: the selected filters, name to SQL
+        :type filters: Dict[str, str]
+        :param scope: the selected experiments and their channels, as the selection tree reports them
+        :type scope: Dict[Any, Any]
+        :return: the filters with each raw one as it will run, or None if the plot must stop
+        :rtype: Optional[Dict[str, str]]
+        """
+        resolved = dict(filters)
+        pairs = selected_pairs(scope)
+        first: Optional[Dict[str, Optional[List[int]]]] = None
+        if pairs:
+            experiment, channel = pairs[0]
+            first = {experiment: None if channel is None else [channel]}
+        for name, sql_filter in filters.items():
+            if not name.endswith("_raw"):
+                continue
+            read = self._run_raw_event_keys(loader, sql_filter, first, name)
+            if read is None:
+                return None
+            resolved[name] = read[2]
+        return resolved
 
     @log(logger=logger)
     def _raw_filter_conditions(

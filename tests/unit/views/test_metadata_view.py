@@ -125,8 +125,6 @@ def view(mocker: MockerFixture, mock_qt_dependencies: None) -> MetadataView:
     # export, which runs in a worker. A test asserts on the emit.
     view_instance.plot_events_requested = mocker.Mock()
     view_instance.csv_subset_export_requested = mocker.Mock()
-    # The shared base signal MetaSubsetTabView declares; ProteinView still emits it.
-    view_instance.scatterplot_requested = mocker.Mock()
     # Received by MetadataController.request_overlay_plot in the real app.
     view_instance.overlay_plot_requested = mocker.Mock()
     # Answered by MetaSubsetTabController.load_event_id_cache in the real app;
@@ -1091,17 +1089,6 @@ def test_show_event_overlay_redraws_canvas(
 
 
 # ----------------------------- Set Event Data Generator Tests ------------------------------
-
-
-def test_set_event_data_generator_sets_value(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
-    """Verify event_data_generator is set correctly."""
-    generator = iter([{"data": "test"}])
-
-    view.set_event_data_generator(generator)
-
-    assert view.event_data_generator == generator
 
 
 # ----------------------------- Undo Plot Tests ------------------------------

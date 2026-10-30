@@ -7,9 +7,9 @@ persistence, and Commit Individual.
 
 One test, staged, rather than split across several: every stage after the
 first depends on cumulative state built by the ones before it (mode
-persistence across switches, Report All needing ensemble_fit_params
+persistence across switches, Report All needing the Ensemble fit
 already populated by a prior Ensemble Update Plot, Commit needing
-fit_data already populated by a prior Individual Update Plot) --
+the Individual fit already kept by a prior Individual Update Plot) --
 splitting would mean re-driving the entire loader/scope/plot setup in
 each split just to reach one assertion, with no isolation benefit, since
 the thing under test IS the cross-stage state.
@@ -19,11 +19,12 @@ SPEED: _generate_vm_ensemble does real Monte Carlo rejection sampling
 once for prolate, once for oblate -- and twice for the whole dataset in
 Ensemble mode). This test is verifying UI wiring, dispatch routing, and
 state propagation between stages, not sampling correctness -- that has
-its own dedicated unit tests (TestUpdateDistributionIndividual/Ensemble,
+its own dedicated unit tests (TestUpdateIndividualDistribution and
+TestUpdateEnsembleDistribution,
 referenced throughout this file). _generate_vm_ensemble is monkeypatched
 below to return a small fixed sample instantly so Update Plot clicks
 don't block on real sampling; everything downstream of it
-(DataFrame construction, update_plot/scatter calls, fit_data assembly)
+(DataFrame construction, update_plot/scatter calls, the fit's assembly)
 still runs for real.
 
 PLOT METRIC: Individual mode's Update Plot never draws bars/patches on
@@ -36,7 +37,7 @@ plot type. So Stage 3/4 below assert on ax_hist's collections count, not
 bars -- asserting on bars there would never pass, since the count would
 stay at 0 regardless of a successful Update Plot.
 
-FIT DETERMINISM: _update_distribution_ensemble's Prolate/Oblate scatter
+FIT DETERMINISM: ProteinController._fit_ensemble's Prolate/Oblate scatter
 plots are only ever drawn (ax_vm.collections grows) if
 _fit_and_sanity_check_double_gaussian succeeds on the real aggregate
 current histogram -- a genuine curve_fit plus a p-value/peak-separation
@@ -61,10 +62,8 @@ controls, update_plot_button, commit_individual, report_all) are
 confirmed directly against ProteinControls.py source. Action names,
 dispatch routing, and guard-clause behavior ARE confirmed directly from
 ProteinView's real unit tests (test_protein_view_final.py) and from
-ProteinView.py source (_report_ensemble_fit reads
-ensemble_fit_params/ensemble_fit_prolate_summary/
-ensemble_fit_oblate_summary, all three set at the end of a successful
-_update_distribution_ensemble), cited inline below.
+the source (Report All reports ProteinModel.ensemble_fit, which a
+successful Ensemble Update Plot sets), cited inline below.
 """
 
 import os
@@ -186,12 +185,11 @@ def test_protein_individual_ensemble_flow(
     )
 
     # SelectionTree.show_dialog() bypass, narrowing to exactly one
-    # experiment/channel: _update_distribution_individual and
-    # _update_distribution_ensemble both hard-require exactly one
+    # experiment/channel: ProteinController.update_individual_distribution
+    # and update_ensemble_distribution both hard-require exactly one
     # experiment and one channel selected (confirmed:
-    # TestUpdateDistributionIndividual/Ensemble's
-    # test_multiple_experiments_warns_and_returns /
-    # test_multiple_channels_warns_and_returns), so this fixture's
+    # TestUpdateIndividualDistribution/TestUpdateEnsembleDistribution's
+    # refusal tests), so this fixture's
     # multi-experiment shape must be narrowed down after Scope, same as
     # test_metadata_flow.py's own Stage 2 does.
     import poriscope.plugins.analysistabs.ProteinModel as protein_model_mod
@@ -267,6 +265,8 @@ def test_protein_individual_ensemble_flow(
     qtbot.waitUntil(lambda: "ProteinView" in view.pages, timeout=QT_WAIT_TIMEOUT_MS)
     view.switch_to_page("ProteinView")
     protein_view = view.pages["ProteinView"]["widget"]
+    # The Individual fit Commit Individual writes is the Model's.
+    protein_model = _controller.analysis_tabs["ProteinController"].model
     controls = protein_view.proteincontrols
 
     # =========================================================
@@ -307,7 +307,7 @@ def test_protein_individual_ensemble_flow(
 
     # =========================================================
     # STAGE 2: diameter + length. Confirmed real param keys:
-    # pore_diameter, pore_length (TestUpdateDistributionIndividual._params()).
+    # pore_diameter, pore_length (TestHandleParameterChange._params()).
     # =========================================================
     controls.pore_diameter_lineEdit.setText("20.0")
     controls.pore_length_lineEdit.setText("30.0")
@@ -322,23 +322,23 @@ def test_protein_individual_ensemble_flow(
         f"{protein_view._analysis_mode!r}"
     )
 
-    bars_before_individual = _count_collections(protein_view.ax_hist.figure)
+    bars_before_individual = _count_collections(protein_view.ax_hist_individual.figure)
     QTest.mouseClick(controls.update_plot_button, Qt.MouseButton.LeftButton)
     qtbot.waitUntil(
-        lambda: _count_collections(protein_view.ax_hist.figure)
+        lambda: _count_collections(protein_view.ax_hist_individual.figure)
         > bars_before_individual,
         timeout=QT_WAIT_TIMEOUT_MS,
     )
-    bars_individual_default_n = _count_collections(protein_view.ax_hist.figure)
+    bars_individual_default_n = _count_collections(
+        protein_view.ax_hist_individual.figure
+    )
     print(
         f"[DEBUG] Individual, default N: {bars_individual_default_n} scatter/errorbar "
         f"collections (n_values field={controls.n_values_lineEdit.text()!r})"
     )
-    assert protein_view.fit_data is not None, (
-        "Expected fit_data to be populated after a successful Individual "
-        "Update Plot -- required before Commit can run "
-        "(_commit_fits raises AttributeError('fit data has not been set') "
-        "otherwise, confirmed in TestCommitFits.test_raises_when_no_fit_data)"
+    assert protein_model.individual_fit is not None, (
+        "Expected the Individual fit to be kept after a successful Individual "
+        "Update Plot -- Commit Individual writes it"
     )
 
     # =========================================================
@@ -352,19 +352,19 @@ def test_protein_individual_ensemble_flow(
     QTest.mouseClick(controls.update_plot_button, Qt.MouseButton.LeftButton)
     qtbot.wait(QT_SHORT_PAUSE_MS)
     print(
-        f"[DEBUG] Individual, custom N=15: {_count_collections(protein_view.ax_hist.figure)} collections"
+        f"[DEBUG] Individual, custom N=15: {_count_collections(protein_view.ax_hist_individual.figure)} collections"
     )
     assert controls.n_values_lineEdit.text().strip() == "15"
 
-    fit_data_after_individual = protein_view.fit_data.copy()
+    fit_after_individual = protein_model.individual_fit.copy()
 
     # =========================================================
     # STAGE 5: switch to Ensemble mode, same D/L/N, Update Plot.
     # Confirmed dispatch: "set_mode_ensemble" sets _analysis_mode
     # (TestHandleParameterChange.test_set_mode_ensemble); "update_plot"
-    # then routes to _update_distribution_ensemble
-    # (test_update_plot_ensemble_mode). Ensemble routes to the VM
-    # scatterplot (ax.scatter, confirmed via TestPlotScatterplot), so
+    # then asks for ProteinController.update_ensemble_distribution
+    # (test_update_plot_asks_with_the_click_s_intent). Its shapes draw as
+    # the VM scatterplot (ax.scatter, confirmed via TestFiguresByMode), so
     # check collections, not bars.
     # =========================================================
     if hasattr(controls, "ensemble_radio"):
@@ -387,34 +387,31 @@ def test_protein_individual_ensemble_flow(
         f"{protein_view._analysis_mode!r}"
     )
 
-    collections_before_ensemble = _count_collections(protein_view.ax_vm.figure)
+    collections_before_ensemble = _count_collections(protein_view.ax_vm_ensemble.figure)
     QTest.mouseClick(controls.update_plot_button, Qt.MouseButton.LeftButton)
     qtbot.waitUntil(
-        lambda: _count_collections(protein_view.ax_vm.figure)
+        lambda: _count_collections(protein_view.ax_vm_ensemble.figure)
         > collections_before_ensemble,
         timeout=QT_WAIT_TIMEOUT_MS,
     )
-    collections_ensemble = _count_collections(protein_view.ax_vm.figure)
+    collections_ensemble = _count_collections(protein_view.ax_vm_ensemble.figure)
     print(f"[DEBUG] Ensemble: {collections_ensemble} scatter collections")
 
-    assert protein_view.ensemble_fit_params is not None, (
-        "Expected ensemble_fit_params to be populated after a successful "
-        "Ensemble Update Plot -- required before Report All has anything "
-        "to report (_report_ensemble_fit emits a 'No ensemble fit "
-        "available' message and returns early otherwise, per "
-        "ProteinView._report_ensemble_fit source)"
+    assert protein_model.ensemble_fit is not None, (
+        "Expected the Ensemble fit to be kept after a successful Ensemble "
+        "Update Plot -- required before Report All has anything to report "
+        "(the Controller says 'No ensemble fit available' otherwise)"
     )
 
     # =========================================================
-    # STAGE 6: Report All, still in Ensemble mode with ensemble_fit_params
-    # (and ensemble_fit_bins/ensemble_fit_prolate_summary/
-    # ensemble_fit_oblate_summary) already populated by Stage 5's Update
-    # Plot. Confirmed dispatch: "report_all" -> _report_ensemble_fit()
-    # in handle_parameter_change (ProteinView.py source); widget is
+    # STAGE 6: Report All, still in Ensemble mode with the Ensemble fit
+    # already kept by Stage 5's Update Plot. Confirmed dispatch:
+    # "report_all" -> ensemble_report_requested -> the Controller, which
+    # hands the fit to show_ensemble_report; widget is
     # controls.report_all (confirmed against ProteinControls.py source,
     # wired via button_mapping["report_all"]).
     #
-    # _report_ensemble_fit() emits its report as a single HTML string on
+    # show_ensemble_report() emits its report as a single HTML string on
     # add_text_to_display(text, class_name) -- capture it directly rather
     # than relying on caplog, since this isn't logged, it's a
     # display-panel signal.
@@ -454,30 +451,15 @@ def test_protein_individual_ensemble_flow(
 
     # =========================================================
     # STAGE 7: switch back to Individual -> the earlier Individual
-    # fit_data (from Stage 4) should still be intact, since nothing here
+    # fit (from Stage 4) should still be intact, since nothing here
     # re-clicks Update Plot. Confirmed: set_mode_individual only flips
     # _analysis_mode (test_set_mode_individual) -- no reset/clear call is
     # part of that dispatch path.
     #
-    # NOTE: this checks fit_data, not hist_data/plotted_datasets.
-    # Confirmed directly from source: _update_distribution_individual
-    # never calls update_plot("Filtered Histogram"/"Raw Histogram", ...)
-    # and never touches self.plotted_datasets -- those are populated
-    # only by _update_distribution_ensemble (_plot_all_points_histogram
-    # appends to hist_data; the per-filter loop does
-    # plotted_datasets.add(...)). And _reset_actions() clears
-    # hist_data/plotted_datasets UNCONDITIONALLY regardless of
-    # _analysis_mode -- only fit_data vs ensemble_fit_* is mode-scoped
-    # there. So hist_data/plotted_datasets are Ensemble-only
-    # bookkeeping, not "Individual's plot state" -- asserting on them
-    # here would fail even on a fully correct app, because Stage 5's
-    # Ensemble Update Plot legitimately populates them and nothing ever
-    # clears that leftover on switching back to Individual (confirmed
-    # by a real run: hist_state_after_individual was ([], set()) since
-    # Individual never wrote there, then Stage 5 populated both, and
-    # Stage 7 saw Ensemble's leftover instead of Individual's own
-    # state). fit_data IS the attribute the app actually mode-scopes for
-    # this purpose.
+    # NOTE: this checks the Individual fit, not hist_data. Only the Ensemble
+    # plot appends to hist_data (_plot_all_points_histogram), so it is
+    # Ensemble-only bookkeeping, not Individual's plot state. The fit is
+    # what the Model keeps per mode.
     # =========================================================
     if hasattr(controls, "individual_radio"):
         QTest.mouseClick(controls.individual_radio, Qt.MouseButton.LeftButton)
@@ -490,42 +472,42 @@ def test_protein_individual_ensemble_flow(
     qtbot.wait(QT_SHORT_PAUSE_MS)
     assert protein_view._analysis_mode == "individual"
 
-    assert protein_view.fit_data is not None, (
-        "Expected Individual's fit_data to survive the round-trip to "
-        "Ensemble and back -- _reset_actions() only clears fit_data when "
-        "_analysis_mode == 'individual' at the time it's called, and "
-        "Stage 5's Ensemble Update Plot ran with _analysis_mode == "
-        "'ensemble', so it should have cleared ensemble_fit_* instead"
+    assert protein_model.individual_fit is not None, (
+        "Expected the Individual fit to survive the round-trip to Ensemble "
+        "and back -- an Ensemble plot clears only the Ensemble fit"
     )
-    assert protein_view.fit_data.equals(fit_data_after_individual), (
-        "Expected Individual's own fit_data to still be intact after "
+    assert protein_model.individual_fit.equals(fit_after_individual), (
+        "Expected Individual's own fit to still be intact after "
         "switching to Ensemble and back, without re-clicking Update Plot"
     )
-    print("[DEBUG] Individual fit_data confirmed intact after mode round-trip")
+    print("[DEBUG] Individual fit confirmed intact after mode round-trip")
 
     # =========================================================
-    # STAGE 8: Commit, still in Individual mode with fit_data already
-    # populated from Stage 4's Update Plot (mode round-trip in Stage 7
+    # STAGE 8: Commit, still in Individual mode with the fit already
+    # kept from Stage 4's Update Plot (mode round-trip in Stage 7
     # didn't touch it). Confirmed dispatch: "commit_individual" ->
-    # _commit_fits(loader) (test_commit_individual_routes). _commit_fits
-    # raises AttributeError if fit_data is None
-    # (test_raises_when_no_fit_data) -- already satisfied here.
+    # _commit_fits(loader) (test_commit_individual_routes); with no fit
+    # the Controller says so on the status panel.
     #
     # Widget is controls.commit_individual (confirmed against
     # ProteinControls.py source), not a generic "commit_button".
     # =========================================================
-    assert protein_view.fit_data is not None, (
-        "Expected fit_data to still be populated going into Commit -- "
+    assert protein_model.individual_fit is not None, (
+        "Expected the Individual fit to still be kept going into Commit -- "
         "nothing between Stage 4 and here should have cleared it"
     )
 
     caplog.clear()
     QTest.mouseClick(controls.commit_individual, Qt.MouseButton.LeftButton)
     qtbot.wait(QT_SHORT_PAUSE_MS)
-    assert not any(
-        "fit data has not been set" in rec.message for rec in caplog.records
-    ), "Commit unexpectedly raised/logged the no-fit-data error"
-    print("[DEBUG] Commit Individual clicked with fit_data present -- no error raised")
+    written_to = protein_model.call(
+        "MetaDatabaseLoader",
+        controls.db_loader_comboBox.currentText(),
+        "get_table_by_column",
+        "prolate_volume",
+    )
+    assert written_to == "events", "Commit Individual did not write the fit columns"
+    print("[DEBUG] Commit Individual wrote the kept fit")
 
     for w in QtWidgets.QApplication.topLevelWidgets():
         if isinstance(w, QtWidgets.QDialog):

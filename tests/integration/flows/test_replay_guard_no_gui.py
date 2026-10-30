@@ -64,7 +64,6 @@ BOOKKEEPING = (
     "allowed_logs",
     "allowed_bins",
     "allowed_sizes",
-    "fit_data",
     "ensemble_fit_params",
     "ensemble_fit_bins",
     "ensemble_fit_sizes",
@@ -341,9 +340,36 @@ def protein_act(triad: Triad, qtbot: Any) -> None:
     )
 
 
+def protein_individual_act(triad: Triad, qtbot: Any) -> None:
+    """An Individual plot, which records its reset and the plot."""
+    view = triad.tab_view
+    select(triad, "F0", "0")
+    view.handle_parameter_change("proteincontrols", "set_mode_individual", ({},))
+    view.handle_parameter_change(
+        "proteincontrols",
+        "update_plot",
+        (
+            {
+                "db_loader": LOADER,
+                "plot_type": "Filtered Histogram",
+                "pore_diameter": 10.0,
+                "pore_length": 10.0,
+                "n_values": 20,
+                "bins": [20],
+                "sizes": False,
+            },
+        ),
+    )
+
+
+def individual_fit(triad: Triad) -> Any:
+    """The Individual fit the Model keeps, which Commit Individual writes."""
+    return normalise(triad.tab_controller.model.individual_fit)
+
+
 def protein_seed(triad: Triad) -> None:
     """Give the tab an Individual fit that no recorded action made, so a replay can be seen to leave it."""
-    triad.tab_view.fit_data = "individual fit"
+    triad.tab_controller.model.set_individual_fit(pd.DataFrame({"id": [-1]}))
 
 
 def protein_perturb(triad: Triad) -> None:
@@ -529,7 +555,6 @@ class Scenario:
     act: Callable[[Triad, Any], None]
     perturb: Callable[[Triad], None]
     seed: Callable[[Triad], None] = nothing
-    ready_b: Callable[[Triad], None] = nothing
     #: the pytest fixture that supplies the data the tab is built over
     needs: str = "sample_metadata_db"
     #: attributes this tab keeps that the shared bookkeeping list does not name
@@ -572,11 +597,16 @@ SCENARIOS = [
         act=protein_act,
         perturb=protein_perturb,
         seed=protein_seed,
-        # Tab B is put in the mode the plot was recorded in, because replay does not yet write
-        # the recorded mode back: see the strict xfail below.
-        ready_b=lambda triad: triad.tab_view.handle_parameter_change(
-            "proteincontrols", "set_mode_ensemble", ({},)
-        ),
+        probe=individual_fit,
+    ),
+    Scenario(
+        tab="ProteinController",
+        name="ProteinController-individual",
+        covers=("reset", "update_individual_distribution"),
+        build=protein_tab,
+        act=protein_individual_act,
+        perturb=protein_perturb,
+        probe=individual_fit,
     ),
     Scenario(
         tab="RawDataController",
@@ -620,7 +650,7 @@ SCENARIOS = [
 
 
 def run_scenario(
-    scenario: Scenario, tmp_path: Path, data: Any, qtbot: Any, *, ready_b: bool
+    scenario: Scenario, tmp_path: Path, data: Any, qtbot: Any
 ) -> Tuple[Any, Any, List[Any]]:
     """
     Record in tab A, replay into a perturbed tab B, and return both captures and A's history.
@@ -633,8 +663,6 @@ def run_scenario(
     :type data: Any
     :param qtbot: pytest-qt's fixture, for an action that runs in the background
     :type qtbot: Any
-    :param ready_b: whether to put B in the mode the action was recorded in first
-    :type ready_b: bool
     :return: A's capture, B's capture, and the history recorded in A
     :rtype: Tuple[Any, Any, List[Any]]
     """
@@ -654,8 +682,6 @@ def run_scenario(
 
         scenario.seed(tab_b)
         scenario.perturb(tab_b)
-        if ready_b:
-            scenario.ready_b(tab_b)
         spy_b = Spy(tab_b)
         if scenario.wait_between:
             for entry in history:
@@ -684,9 +710,7 @@ def test_a_replay_reproduces_what_the_action_produced(
     qapp, qtbot, request, tmp_path: Path, scenario: Scenario
 ) -> None:
     data = request.getfixturevalue(scenario.needs)
-    captured_a, captured_b, history = run_scenario(
-        scenario, tmp_path, data, qtbot, ready_b=True
-    )
+    captured_a, captured_b, history = run_scenario(scenario, tmp_path, data, qtbot)
 
     recorded = {entry["action"] for entry in history}
     assert (
@@ -706,7 +730,7 @@ def test_a_replayed_fit_leaves_the_channel_fitted_in_both_tabs(
     scenario = next(s for s in SCENARIOS if s.tab == "EventAnalysisController")
 
     captured_a, captured_b, _ = run_scenario(
-        scenario, tmp_path, sample_events_db, qtbot, ready_b=True
+        scenario, tmp_path, sample_events_db, qtbot
     )
 
     for captured in (captured_a, captured_b):
@@ -722,7 +746,7 @@ def test_a_replayed_clustering_and_merge_happen_in_both_tabs(
     scenario = next(s for s in SCENARIOS if s.tab == "ClusteringController")
 
     captured_a, captured_b, _ = run_scenario(
-        scenario, tmp_path, sample_metadata_db, qtbot, ready_b=True
+        scenario, tmp_path, sample_metadata_db, qtbot
     )
 
     for captured in (captured_a, captured_b):
@@ -733,25 +757,32 @@ def test_a_replayed_clustering_and_merge_happen_in_both_tabs(
 
 
 @pytest.mark.timeout(240)
-@pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason=(
-        "the Protein figures follow the live mode, so a plot recorded in Ensemble mode and "
-        "replayed into a tab that is in Individual mode draws on the Individual figures; "
-        "this passes once replay writes the recorded mode back before it runs the action"
-    ),
-)
-def test_a_protein_plot_replays_the_same_in_the_other_mode(
+def test_a_replayed_individual_plot_rebuilds_the_fit_commit_writes(
     qapp, qtbot, tmp_path: Path, sample_metadata_db: str
 ) -> None:
-    scenario = next(s for s in SCENARIOS if s.tab == "ProteinController")
+    """The two tabs agreeing is not enough: a plot that fitted nothing would agree with itself."""
+    scenario = next(s for s in SCENARIOS if s.name == "ProteinController-individual")
 
     captured_a, captured_b, _ = run_scenario(
-        scenario, tmp_path, sample_metadata_db, qtbot, ready_b=False
+        scenario, tmp_path, sample_metadata_db, qtbot
     )
 
-    assert captured_b["figures"] == captured_a["figures"]
+    assert captured_a["probe"] is not None
+    assert captured_b["probe"] == captured_a["probe"]
+
+
+@pytest.mark.timeout(240)
+def test_a_replayed_ensemble_plot_leaves_the_individual_fit(
+    qapp, qtbot, tmp_path: Path, sample_metadata_db: str
+) -> None:
+    scenario = next(s for s in SCENARIOS if s.tab == "ProteinController" and not s.name)
+
+    captured_a, captured_b, _ = run_scenario(
+        scenario, tmp_path, sample_metadata_db, qtbot
+    )
+
+    for captured in (captured_a, captured_b):
+        assert captured["probe"] == normalise(pd.DataFrame({"id": [-1]}))
 
 
 @pytest.mark.timeout(240)

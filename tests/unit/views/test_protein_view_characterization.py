@@ -61,164 +61,6 @@ def shape_frame(v: list, a: list, b: list, m: list) -> pd.DataFrame:
     return pd.DataFrame({"V": v, "a": a, "b": b, "m": m})
 
 
-def _solutions():
-    """
-    A stand-in for one family of sampled geometries.
-
-    :return: a frame with the four geometry columns
-    :rtype: pd.DataFrame
-    """
-    return pd.DataFrame(
-        {"V": [100.0, 200.0], "m": [2.0, 3.0], "a": [4.0, 6.0], "b": [2.0, 2.0]}
-    )
-
-
-class TestEnsembleGeometryFit:
-    """
-    The two halves of the chain: ask for the fit, then sample and plot from it.
-
-    **This used to be one method.** ``_fit_and_plot_ensemble_geometry`` fitted inline
-    and return a ``bool``; the fit now lives on ``ProteinModel`` and the pair is
-    ``_request_ensemble_geometry_fit`` and ``set_ensemble_geometry_fit``. The
-    ``bool`` is gone with it, because the single caller's ``if not ...: return`` was
-    its own last statement and so decided nothing - the tests that asserted on it
-    assert on what the user is told instead.
-
-    The numeric content is covered elsewhere and deliberately not repeated here:
-    the fit in ``tests/unit/models/test_protein_model.py``, the sampler in its own
-    tests. What is pinned here is the wiring - what the request carries, which
-    branch bails out, what the user is told, and which ``ensemble_fit_*``
-    attributes ``_report_ensemble_fit`` will later read back.
-
-    ``_generate_vm_ensemble`` is stubbed to return arrays because it is a Monte
-    Carlo rejection sampler that would otherwise dominate the runtime; it is
-    stubbed the way it really behaves, returning a ``(V, m)`` pair of arrays, and
-    the empty-array case it really produces for unphysical geometry is exercised
-    as its own branch below.
-    """
-
-    @pytest.fixture
-    def plot_data(self) -> pd.DataFrame:
-        """
-        A two-peaked histogram of the shape the ensemble fit consumes.
-
-        :return: the frame
-        :rtype: pd.DataFrame
-        """
-        current = np.linspace(0.0, 0.6, 200)
-        amplitude = 100.0 * np.exp(
-            -((current - 0.15) ** 2) / (2 * 0.03**2)
-        ) + 60.0 * np.exp(-((current - 0.40) ** 2) / (2 * 0.04**2))
-        return pd.DataFrame({"Normalized Current": current, "Amplitude": amplitude})
-
-    def test_the_request_half_emits_the_histogram_and_its_context(
-        self, view: ProteinView, plot_data: pd.DataFrame
-    ) -> None:
-        """
-        The asking half does nothing but ask, and carries the context with it.
-
-        Pinned because the context travelling through the round trip is what keeps
-        it off the widget between the halves; parking it here instead would still
-        draw the right plot and would reintroduce state parked on the widget between
-        a request and its answer.
-        """
-        view._request_ensemble_geometry_fit(plot_data, "Histogram", 10.0, 12.0, 50)
-
-        emitted = view.ensemble_fit_requested.emit.call_args.args
-        np.testing.assert_array_equal(
-            emitted[0], plot_data["Normalized Current"].values
-        )
-        np.testing.assert_array_equal(emitted[1], plot_data["Amplitude"].values)
-        assert emitted[3:] == ("Histogram", 10.0, 12.0, 50)
-
-    def test_a_successful_run_records_the_state_report_all_reads_back(
-        self, view: ProteinView, mocker, plot_data: pd.DataFrame
-    ) -> None:
-        """
-        The success path, pinned by the attributes it leaves behind.
-
-        ``_report_ensemble_fit`` reads every one of these, and both the fit and the
-        sampling happen on the Model, so a wiring regression here
-        would surface as an empty or stale report rather than as an exception.
-        """
-        view.allowed_bins = 75
-        view.allowed_sizes = True
-        popt = np.array([100.0, 0.15, 0.03, 60.0, 0.40, 0.04])
-        update_plot = mocker.patch.object(view, "update_plot")
-
-        view.set_ensemble_geometry_fit(
-            popt,
-            plot_data["Amplitude"].values,
-            plot_data,
-            "Histogram",
-            _solutions(),
-            _solutions(),
-        )
-
-        np.testing.assert_array_equal(view.ensemble_fit_params, popt)
-        assert view.ensemble_fit_bins == 75
-        assert view.ensemble_fit_sizes is True
-        assert view.ensemble_fit_prolate_summary is not None
-        assert view.ensemble_fit_oblate_summary is not None
-        # the fit overlay, then one scatter per solution family
-        assert update_plot.call_count == 3
-        labels = [c.kwargs["dataset_label"] for c in update_plot.call_args_list[1:]]
-        assert labels == ["Prolate Solutions", "Oblate Solutions"]
-
-    def test_an_unsampled_ensemble_still_draws_the_fit(
-        self, view: ProteinView, mocker, plot_data: pd.DataFrame
-    ) -> None:
-        """
-        The sampler bailing out is the Controller's to report, and it still calls
-        this - so the fitted curve stays on the screen and only the two empty
-        scatterplots are skipped. Refusing to call it would have taken the fit off
-        the axes along with the solutions.
-        """
-        view.allowed_bins = 100
-        view.allowed_sizes = False
-        update_plot = mocker.patch.object(view, "update_plot")
-        empty = pd.DataFrame(columns=["V", "m", "a", "b"])
-
-        view.set_ensemble_geometry_fit(
-            np.array([100.0, 0.15, 0.03, 60.0, 0.40, 0.04]),
-            plot_data["Amplitude"].values,
-            plot_data,
-            "Histogram",
-            empty,
-            empty,
-        )
-
-        assert update_plot.call_count == 1
-        assert view.ensemble_fit_prolate_summary is None
-        assert view.ensemble_fit_oblate_summary is None
-
-    def test_the_curve_that_arrives_is_what_gets_plotted(
-        self, view: ProteinView, mocker, plot_data: pd.DataFrame
-    ) -> None:
-        """
-        The fitted curve is drawn as handed over, not recomputed here.
-
-        This is the assertion that would fail if ``_double_gaussian`` were quietly
-        reintroduced into the View to evaluate the fit a second time.
-        """
-        view.allowed_bins = 100
-        view.allowed_sizes = False
-        curve = np.linspace(1.0, 2.0, len(plot_data))
-        update_plot = mocker.patch.object(view, "update_plot")
-
-        view.set_ensemble_geometry_fit(
-            np.array([100.0, 0.15, 0.03, 60.0, 0.40, 0.04]),
-            curve,
-            plot_data,
-            "Histogram",
-            _solutions(),
-            _solutions(),
-        )
-
-        drawn = update_plot.call_args_list[0].args[1]
-        np.testing.assert_array_equal(drawn["Amplitude"].values, curve)
-
-
 class TestSummarizeVmEmpty:
     """No samples at all."""
 
@@ -339,120 +181,91 @@ class TestSummarizeVmManySamples:
 
 class TestReportEnsembleFit:
     """
-    The Report All readout, which had no test pinning it.
+    The Report All readout.
 
-    It executed under the protein e2e flow but nothing named it, so nothing
-    asserted what the user is actually shown. Ensemble mode has no per-event id to
-    write results back against, so this readout is the *only* record of an ensemble
-    fit - if it silently reported the wrong numbers there would be nothing else to
-    check them against.
+    Ensemble mode has no per-event id to write results back against, so this readout
+    is the *only* record of an ensemble fit - if it silently reported the wrong numbers
+    there would be nothing else to check them against. The Controller hands it the fit
+    the Model keeps, and says itself when there is none.
     """
 
-    @pytest.fixture
-    def fitted(self, view: ProteinView) -> ProteinView:
-        """
-        A view carrying the state a completed ensemble fit leaves behind.
+    PARAMS = np.array([10.0, 0.15, 0.03, 6.0, 0.40, 0.04])
+    NONE = pd.DataFrame(columns=["V", "a", "b", "m"])
 
-        :param view: the bare view
-        :type view: ProteinView
-        :return: the view, as if an ensemble fit had just run
-        :rtype: ProteinView
+    def reported(
+        self,
+        view: ProteinView,
+        bins: object = 75,
+        sizes: bool = False,
+        prolate: pd.DataFrame = NONE,
+        oblate: pd.DataFrame = NONE,
+    ) -> str:
         """
-        view.ensemble_fit_params = np.array([10.0, 0.15, 0.03, 6.0, 0.40, 0.04])
-        view.ensemble_fit_bins = 75
-        view.ensemble_fit_sizes = False
-        view.ensemble_fit_prolate_summary = None
-        view.ensemble_fit_oblate_summary = None
-        return view
-
-    def reported(self, view: ProteinView) -> str:
-        """
-        The text the view last pushed to the status panel.
+        Report a fit and return the text the view pushed to the status panel.
 
         :param view: the view
         :type view: ProteinView
+        :param bins: the fit's bins entry
+        :type bins: object
+        :param sizes: does bins refer to a bin width
+        :type sizes: bool
+        :param prolate: the prolate solutions
+        :type prolate: pd.DataFrame
+        :param oblate: the oblate solutions
+        :type oblate: pd.DataFrame
         :return: the emitted message
         :rtype: str
         """
+        view.show_ensemble_report(self.PARAMS, bins, sizes, prolate, oblate)
         return view.add_text_to_display.emit.call_args.args[0]
 
-    def test_no_fit_reports_that_rather_than_an_empty_table(
-        self, view: ProteinView
-    ) -> None:
-        """
-        Asking for a report before running one says so, and returns.
-
-        The alternative - unpacking None into six names - would raise at the user
-        for what is an ordinary mistake.
-        """
-        view.ensemble_fit_params = None
-
-        view._report_ensemble_fit()
-
-        assert "No ensemble fit available" in self.reported(view)
-
-    def test_both_peaks_are_reported(self, fitted: ProteinView) -> None:
+    def test_both_peaks_are_reported(self, view: ProteinView) -> None:
         """All six fitted parameters reach the user, at four significant figures."""
-        fitted._report_ensemble_fit()
-        text = self.reported(fitted)
+        text = self.reported(view)
 
         assert "amplitude=10, mean=0.15, std=0.03" in text
         assert "amplitude=6, mean=0.4, std=0.04" in text
 
-    def test_a_bin_count_is_labelled_as_a_count(self, fitted: ProteinView) -> None:
+    def test_a_bin_count_is_labelled_as_a_count(self, view: ProteinView) -> None:
         """
         The binning is part of the result, since a different binning gives a
         different fit, and count and size mean different things.
         """
-        fitted._report_ensemble_fit()
+        assert "bin count = 75" in self.reported(view)
 
-        assert "bin count = 75" in self.reported(fitted)
-
-    def test_bin_sizes_are_labelled_as_sizes(self, fitted: ProteinView) -> None:
+    def test_bin_sizes_are_labelled_as_sizes(self, view: ProteinView) -> None:
         """The other branch of the same label."""
-        fitted.ensemble_fit_sizes = True
-        fitted.ensemble_fit_bins = [1.0, 2.0]
-
-        fitted._report_ensemble_fit()
-
-        assert "bin size(s) = [1.0, 2.0]" in self.reported(fitted)
+        assert "bin size(s) = [1.0, 2.0]" in self.reported(view, [1.0, 2.0], True)
 
     def test_an_unset_bin_count_falls_back_to_the_default(
-        self, fitted: ProteinView
+        self, view: ProteinView
     ) -> None:
         """``None`` means the plot used the default of 100, not that it used none."""
-        fitted.ensemble_fit_bins = None
-
-        fitted._report_ensemble_fit()
-
-        assert "bin count = 100" in self.reported(fitted)
+        assert "bin count = 100" in self.reported(view, None)
 
     def test_the_shape_summaries_are_included_when_present(
-        self, fitted: ProteinView
+        self, view: ProteinView
     ) -> None:
         """Both families are reported, each under its own heading."""
-        fitted.ensemble_fit_prolate_summary = (["V = 1.0 nm"], "N=3 samples")
-        fitted.ensemble_fit_oblate_summary = (["V = 2.0 nm"], "N=4 samples")
-
-        fitted._report_ensemble_fit()
-        text = self.reported(fitted)
+        text = self.reported(
+            view,
+            prolate=shape_frame([1.0] * 3, [2.0] * 3, [1.0] * 3, [2.0] * 3),
+            oblate=shape_frame([2.0] * 4, [2.0] * 4, [1.0] * 4, [2.0] * 4),
+        )
 
         assert "<b>Prolate</b> (N=3 samples)" in text
         assert "<b>Oblate</b> (N=4 samples)" in text
-        assert "V = 1.0 nm" in text and "V = 2.0 nm" in text
 
     def test_a_missing_summary_is_omitted_rather_than_shown_empty(
-        self, fitted: ProteinView
+        self, view: ProteinView
     ) -> None:
         """
         Sampling can produce one family and not the other, and a heading with
         nothing under it would read as a result of zero rather than as no result.
         """
-        fitted.ensemble_fit_prolate_summary = (["V = 1.0 nm"], "N=3 samples")
-        fitted.ensemble_fit_oblate_summary = None
-
-        fitted._report_ensemble_fit()
-        text = self.reported(fitted)
+        text = self.reported(
+            view, prolate=shape_frame([1.0] * 3, [2.0] * 3, [1.0] * 3, [2.0] * 3)
+        )
 
         assert "<b>Prolate</b>" in text
         assert "Oblate" not in text

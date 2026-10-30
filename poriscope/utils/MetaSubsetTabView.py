@@ -170,15 +170,6 @@ class MetaSubsetTabView(MetaView):
     #: answered.
     filters_save_requested = Signal(str, object)
 
-    #: Asks for a scatterplot's columns to be filtered and log-scaled: the raw
-    #: columns, their log flags, and the drawing context handed back unchanged.
-    #: Answered through ``set_scatterplot``.
-    #:
-    #: On the base rather than in each tab because both subset tabs draw the same
-    #: plain scatterplot from the same request. The protein tab's error-bar variant
-    #: keeps its own pair, since only it has one.
-    scatterplot_requested = Signal(object, object, object, object, str)
-
     logger = logging.getLogger(__name__)
 
     #: Where the Controller leaves the ``event_id`` rows :py:meth:`_rebuild_event_id_cache`
@@ -214,10 +205,6 @@ class MetaSubsetTabView(MetaView):
     #: Declared here without a value so the contract is visible and mypy can see it,
     #: while reading one before its setter has run stays the AttributeError it is now.
     experiment_id: Optional[int]
-    #: Optional because ``ProteinView._update_distribution_individual`` clears it before
-    #: asking for a subset, so a load that fails is not read back as the previous
-    #: subset's events.
-    event_data_generator: Optional[Iterator[Any]]
     event_query: str
     query: str
     selection_tree: SelectionTree
@@ -1092,16 +1079,6 @@ class MetaSubsetTabView(MetaView):
         """
 
     @log(logger=logger)
-    def set_event_data_generator(self, generator: Iterator[Dict[str, Any]]) -> None:
-        """
-        Set the event data generator for event-based plots.
-
-        :param generator: A generator that yields event data.
-        :type generator: Iterator[Dict[str, Any]]
-        """
-        self.event_data_generator = generator
-
-    @log(logger=logger)
     def set_scatterplot(
         self,
         columns: Sequence[npt.NDArray[np.float64]],
@@ -1110,11 +1087,11 @@ class MetaSubsetTabView(MetaView):
         dataset_label: str,
     ) -> None:
         """
-        Draw a scatterplot of two filtered columns.
+        Draw a scatterplot of two filtered columns on the given axes.
 
-        The answering half of ``scatterplot_requested``. The NaN and log filtering
-        belongs to the Model: the values it drops never reach the axes, and the ones
-        it keeps are exported with the plot.
+        Shared by both subset tabs' scatterplots. The NaN and log filtering belongs to the
+        Model, done before this is called: the values it drops never reach the axes, and
+        the ones it keeps are exported with the plot.
 
         :param columns: the filtered x and y values
         :type columns: Sequence[npt.NDArray[np.float64]]

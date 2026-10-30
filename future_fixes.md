@@ -153,10 +153,9 @@ Tab state onto the Models, heavy work off the GUI thread, event-finder and CUSUM
 ### From the 2026-09-03 review - high
 
 - **The Protein tab blocks the GUI thread with no progress and no cancel.**
-  `ProteinView._update_distribution_individual:1728` emits `distribution_fits_requested`,
-  which runs `ProteinController.fit_distribution_events:350` -> `ProteinModel.fit_histograms:326`
-  (`curve_fit` at `:153`/`:225`) and `sample_event_geometries:1001`, whose rejection sampler
-  (`_generate_vm_ensemble:748`) is bounded at 200 x 50,000, over an unbounded event count -
+  `ProteinController.update_individual_distribution:559` runs `ProteinModel.fit_histograms:370`
+  (`curve_fit` at `:197`/`:269`) and `sample_event_geometries:1045`, whose rejection sampler
+  (`_generate_vm_ensemble:792`) is bounded at 200 x 50,000, over an unbounded event count -
   all as a same-thread call. No worker, progress or cancel in the triad; no `processEvents()`
   in `poriscope/`.
 
@@ -171,11 +170,10 @@ Tab state onto the Models, heavy work off the GUI thread, event-finder and CUSUM
 
 ### From the 2026-08-25 structural audit
 
-- **Emit-then-read-an-attribute survives at six sites over typed signals.** Each clears the
+- **Emit-then-read-an-attribute survives at two sites over typed signals.** Each clears the
   attribute, emits a `*_requested` signal, then reads the attribute the Controller's answer
-  slot set: `MetadataView.py:1585-1593` (`plot_data`), `:1930-1933` (`column_type`),
-  `:2156-2160` (`plot_events_generator`); `ProteinView.py:1344`, `:1804`;
-  `MetaSubsetTabView.py:794-796` (`event_id_rows`). The other Views emit and let an answer
+  slot set: `ProteinView.py:1015-1019` (`plot_events_generator`) and
+  `MetaSubsetTabView.py:837-841` (`event_id_rows`). The other Views emit and let an answer
   slot do the work. It works only because View and Controller share a thread: every
   connection is the default AutoConnection (no `ConnectionType` anywhere in `poriscope/`), so
   moving a slot to a worker would queue the call and the read would get `None` - silently
@@ -210,7 +208,7 @@ Tab state onto the Models, heavy work off the GUI thread, event-finder and CUSUM
   the queues but do not change this.
 - **`hist_data` holds two shapes in `MetadataView`.** The three 1-D paths now all append a
   raw column array (`:509`, `:771`, `:839`); the all-points path appends an `(x, y)` tuple
-  (`:1208`), down from four shapes. `ProteinView`'s copy holds only the tuple (`:784`). Typed `List[Any]` with
+  (`:1208`), down from four shapes. `ProteinView`'s copy holds only the tuple (`:598`). Typed `List[Any]` with
   a comment; unifying the last two is a real refactor.
 
 ## Later - worth doing, not scheduled
@@ -365,7 +363,7 @@ absorbs what it needs and stands alone, leaving 20240101 a clean deletion.
 - **`new_plugin.py` cannot generate a `MetaSubsetTab*` tab**, the likely shape of any
   new database-analysis tab; add `--base subset`.
 - **`update_available_plugins` is hand-written in all five Views** (`ClusteringView.py:813`,
-  `MetadataView.py:1333`, `ProteinView.py:1008`, `RawDataView.py:376`,
+  `MetadataView.py:1333`, `ProteinView.py:764`, `RawDataView.py:376`,
   `EventAnalysisView.py:136`): `super()`, then a `try` pushing each metaclass list into the panel.
   Metadata's and Protein's are identical but for the panel attribute, so `MetaSubsetTabView` can
   own them through `_subset_controls`.
@@ -375,13 +373,12 @@ absorbs what it needs and stands alone, leaving 20240101 a clean deletion.
 - **The "my selected loader gained columns" guard is written twice**:
   `ClusteringView.notify_plugin_state_changed:831` and `MetadataView:1357` (Protein's is a no-op).
 - **Overwriting committed columns is built twice**: the confirm (`ClusteringView.on_cluster_column_checked:286`,
-  `ProteinView.confirm_fit_commit:477`) and the drop (`ClusteringModel.drop_cluster_columns:244`,
+  `ProteinView.confirm_fit_commit:326`) and the drop (`ClusteringModel.drop_cluster_columns:244`,
   `ProteinModel.drop_fit_columns:360`); Protein's `drop_fit_columns(loader, table, columns)` is
-  already the general form. Protein's prompt reads "fit data data already exists" (`ProteinView.py:500`).
-- **Figure reset differs per tab**: `ClusteringView._reset_actions:161` guards `figure.clear()`
-  with `except AttributeError` where Metadata has `_clear_figure_state:315`/`_axes_valid:355`, and
-  `ProteinView._reset_actions:671` runs clear/add_subplot/tight_layout/draw twice, once per figure
-  (`:687-705`).
+  already the general form. Protein's prompt reads "fit data data already exists" (`ProteinView.py:346`).
+- **Figure reset differs per tab**: `ClusteringView._reset_actions:153` guards `figure.clear()`
+  with `except AttributeError` where Metadata has `_clear_figure_state:185`/`_axes_valid:225`, and
+  `ProteinView.clear_plot:518` runs clear/add_subplot/tight_layout/draw once per figure of the mode.
 - **A repeated column is refused two ways**: Clustering raises `KeyError`
   (`ClusteringView.py:546`), logged at ERROR by its caller after the config is already saved
   under its title; Metadata warns in a `QMessageBox` (`MetadataView.py:1567`) and its panel
@@ -529,9 +526,7 @@ Readability only; each is behaviour-preserving and wants the covering tests read
   assigned only in `_reset_actions:176/178` and read unguarded at `:735`/`:758`, though it is
   latent: both reads are immediately preceded by a `_reset_actions()` call, and `update_plot`
   carries no `@register_action` so replay cannot reach it out of order. Fixing it properly
-  means an `Optional[Axes]` declared in `_init` plus handling at both reads. **`ProteinView.ax_hist`/`ax_vm`
-  are not instances of this** - both are properties over axes built eagerly by
-  `_set_custom_display_area`, which is on the construction path.
+  means an `Optional[Axes]` declared in `_init` plus handling at both reads.
 - **`MetaFilter.force_serial_channel_operations` is unenforceable.**
   `get_callable_filter:95` hands out `self.filter_data` as a bare bound method invoked
   inside another plugin's generator, and `@serialize_channels` is restricted to generator
@@ -568,7 +563,7 @@ Readability only; each is behaviour-preserving and wants the covering tests read
     `ProteinModel.py:654`, `MetaEventTabController.py:109`, `RawDataModel.py:101, 109`,
     `MetaDatabaseWriter.py:186`.
   - "No selection"/"select only one" user guidance at WARNING: `RawDataView.py:557`,
-    `MetaSubsetTabView.py:1059`, `ProteinView.py:1765, 1920`, and `"No column names
+    `MetaSubsetTabView.py:1059`, `ProteinController.py:458`, and `"No column names
     received"` at `ClusteringController.py:345` and `MetaSubsetTabController.py:400`. These
     belong on the panel rather than in the log at all.
   - `DataPluginController._report`/`_report_and_restore` (`:257`, `:478`, `:980`), which emit

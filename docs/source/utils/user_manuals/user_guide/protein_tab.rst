@@ -62,8 +62,8 @@ Click **Update Plot** to run the fit for the current mode. This draws:
 .. note::
 
    A distribution the tab cannot draw is refused on the status panel with the reason:
-   more than one experiment or channel in scope, or an experiment with no channel
-   selected. It used to write the reason to the log only and draw nothing.
+   more than one experiment, channel or subset in scope, an experiment with no channel
+   selected, or no usable events. The previous plot stays on screen.
 
 Step 7a: Commit Individual Fits
 ----------------------------------
