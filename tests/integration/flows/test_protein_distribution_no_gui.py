@@ -113,3 +113,29 @@ def test_a_second_ensemble_plot_records_one_reset_too(protein_tab: Triad) -> Non
     update_plot(protein_tab, "ensemble", bins=30)
 
     assert actions(protein_tab)[2:] == ["reset", "update_ensemble_distribution"]
+
+
+def test_the_recorded_reset_names_the_mode_of_the_plot_it_starts(
+    protein_tab: Triad,
+) -> None:
+    update_plot(protein_tab, "ensemble")
+
+    reset = next(iter(protein_tab.tab_controller.tab_action_history.values()))
+    assert reset["kwargs"]["mode"] == "ensemble"
+
+
+def test_an_ensemble_plot_replayed_in_individual_mode_draws_on_the_ensemble_figures(
+    protein_tab: Triad,
+) -> None:
+    """The figures a recorded plot draws on follow its mode, not the page showing."""
+    update_plot(protein_tab, "ensemble")
+    history = list(protein_tab.tab_controller.tab_action_history.values())
+    view = protein_tab.tab_view
+    drawn = [line.get_label() for line in view.ax_hist_ensemble.lines]
+    press(protein_tab, "set_mode_individual", {})
+    protein_tab.tab_controller.tab_action_history.clear()
+
+    protein_tab.tab_controller.replay(history)
+
+    assert [line.get_label() for line in view.ax_hist_ensemble.lines] == drawn
+    assert len(view.ax_hist_individual.lines) == 0

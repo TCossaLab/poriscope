@@ -192,96 +192,6 @@ class ProteinView(MetaSubsetTabView):
     #: that one.
     distribution_fits_requested = Signal(object, str, object, bool, float, float, int)
 
-    @property
-    def fig_hist(self) -> Figure:
-        return (
-            self.fig_hist_individual
-            if self._analysis_mode == "individual"
-            else self.fig_hist_ensemble
-        )
-
-    @fig_hist.setter
-    def fig_hist(self, value: Figure) -> None:
-        if self._analysis_mode == "individual":
-            self.fig_hist_individual = value
-        else:
-            self.fig_hist_ensemble = value
-
-    @property
-    def ax_hist(self) -> Axes:
-        return (
-            self.ax_hist_individual
-            if self._analysis_mode == "individual"
-            else self.ax_hist_ensemble
-        )
-
-    @ax_hist.setter
-    def ax_hist(self, value: Axes) -> None:
-        if self._analysis_mode == "individual":
-            self.ax_hist_individual = value
-        else:
-            self.ax_hist_ensemble = value
-
-    @property
-    def canvas_hist(self) -> FigureCanvas:
-        return (
-            self.canvas_hist_individual
-            if self._analysis_mode == "individual"
-            else self.canvas_hist_ensemble
-        )
-
-    @canvas_hist.setter
-    def canvas_hist(self, value: FigureCanvas) -> None:
-        if self._analysis_mode == "individual":
-            self.canvas_hist_individual = value
-        else:
-            self.canvas_hist_ensemble = value
-
-    @property
-    def fig_vm(self) -> Figure:
-        return (
-            self.fig_vm_individual
-            if self._analysis_mode == "individual"
-            else self.fig_vm_ensemble
-        )
-
-    @fig_vm.setter
-    def fig_vm(self, value: Figure) -> None:
-        if self._analysis_mode == "individual":
-            self.fig_vm_individual = value
-        else:
-            self.fig_vm_ensemble = value
-
-    @property
-    def ax_vm(self) -> Axes:
-        return (
-            self.ax_vm_individual
-            if self._analysis_mode == "individual"
-            else self.ax_vm_ensemble
-        )
-
-    @ax_vm.setter
-    def ax_vm(self, value: Axes) -> None:
-        if self._analysis_mode == "individual":
-            self.ax_vm_individual = value
-        else:
-            self.ax_vm_ensemble = value
-
-    @property
-    def canvas_vm(self) -> FigureCanvas:
-        return (
-            self.canvas_vm_individual
-            if self._analysis_mode == "individual"
-            else self.canvas_vm_ensemble
-        )
-
-    @canvas_vm.setter
-    def canvas_vm(self, value: FigureCanvas) -> None:
-        if self._analysis_mode == "individual":
-            self.canvas_vm_individual = value
-        else:
-            self.canvas_vm_ensemble = value
-
     @log(logger=logger)
     @override
     def _init(self) -> None:
@@ -551,7 +461,7 @@ class ProteinView(MetaSubsetTabView):
         that produced them. Ensemble mode has no per-event id to write these back
         to the database against, so this is a display-only report rather than a
         database commit. Takes no arguments; reads entirely from self.ensemble_fit_*
-        state set by _update_distribution_ensemble and cleared by _reset_actions.
+        state set by _update_distribution_ensemble and cleared by the next Ensemble plot.
 
         :return: None
         :rtype: None
@@ -649,50 +559,48 @@ class ProteinView(MetaSubsetTabView):
 
     @log(logger=logger)
     @register_action(RESET_ACTION)
-    @override
-    def _reset_actions(self, axis_type: str = "2d") -> None:
+    def reset(self, axis_type: str = "2d", mode: str = "individual") -> None:
         """
-        Clears the figure and reinitializes axes. This will also add a flag to the tab action history
-        if @register_action is being used to keep track of actions. Only actions applied after the most
-        recent call to this function will be recreated if the related file is loaded.
+        Clear one analysis mode's histogram and V/M figures, and what the histogram accumulated.
 
-        Clears no fit state, and reads no analysis mode: the reset is recorded with only its
-        axis type, so it must replay the same whichever mode the tab is in. The plot action
-        that calls it clears the fit it is about to replace (``fit_data`` for Individual,
-        :py:meth:`_clear_ensemble_fit` for Ensemble), which leaves the other mode's fit
-        untouched.
+        A recorded action: a plot records one before it draws, with its own mode, so a replay
+        clears the figures it was recorded on whichever mode is showing. Clears no fit: the
+        plot that calls it clears the fit it is about to replace.
 
-        :param axis_type: Either '2d' or '3d' to determine plot projection.
+        :param axis_type: Either '2d' or '3d'; the figures here are always 2-D
         :type axis_type: str
-        :return: None
-        :rtype: None
+        :param mode: 'individual' or 'ensemble', whose figures are cleared
+        :type mode: str
         """
-        self.fig_hist.clear()
-        self.ax_hist = self.fig_hist.add_subplot(1, 1, 1)
+        for kind in ("hist", "vm"):
+            figure = getattr(self, f"fig_{kind}_{mode}")
+            figure.clear()
+            setattr(self, f"ax_{kind}_{mode}", figure.add_subplot(1, 1, 1))
+            try:
+                figure.tight_layout(pad=0.5)
+            except Exception:
+                # tight_layout can fail on awkward axes geometry; the plot still
+                # renders, just less tidily, so carry on but leave a trace.
+                self.logger.debug(
+                    f"tight_layout failed for the {kind} figure", exc_info=True
+                )
+            getattr(self, f"canvas_{kind}_{mode}").draw()
 
-        self.fig_vm.clear()
-        self.ax_vm = self.fig_vm.add_subplot(1, 1, 1)
-
-        try:
-            self.fig_hist.tight_layout(pad=0.5)
-        except Exception:
-            # tight_layout can fail on awkward axes geometry; the plot still
-            # renders, just less tidily, so carry on but leave a trace.
-            self.logger.debug("tight_layout failed for self.fig_hist", exc_info=True)
-        self.canvas_hist.draw()
-        try:
-            self.fig_vm.tight_layout(pad=0.5)
-        except Exception:
-            # tight_layout can fail on awkward axes geometry; the plot still
-            # renders, just less tidily, so carry on but leave a trace.
-            self.logger.debug("tight_layout failed for self.fig_vm", exc_info=True)
-        self.canvas_vm.draw()
-
-        # Reset plot bookkeeping variables TBD
         self.hist_data = []
         self.hist_labels = []
         self.allowed_bins = None
         self.allowed_sizes = None
+
+    @log(logger=logger)
+    @override
+    def _reset_actions(self, axis_type: str = "2d") -> None:
+        """
+        Clear the figures of the mode showing; a plot calls :meth:`reset` with its own mode.
+
+        :param axis_type: Either '2d' or '3d' to determine plot projection.
+        :type axis_type: str
+        """
+        self.reset(axis_type, self._analysis_mode)
 
     @log(logger=logger)
     def _clear_ensemble_fit(self) -> None:
@@ -777,28 +685,30 @@ class ProteinView(MetaSubsetTabView):
         bins: Any = None,
         sizes: bool = False,
         err_cols: Optional[Sequence[str]] = None,
+        *,
+        mode: str,
     ) -> None:
         """
-        update the plot area
+        update the plot area of one analysis mode
         """
         # Decide which panel gets updated
         # Histogram plots -> left
         # V vs M plots / scatter / heatmap -> right
         if plot_type in ["Raw Histogram", "Filtered Histogram"]:
-            ax = self.ax_hist
-            canvas = self.canvas_hist
+            ax = getattr(self, f"ax_hist_{mode}")
+            canvas = getattr(self, f"canvas_hist_{mode}")
             self._plot_all_points_histogram(
                 ax, data, cols, units, dataset_label=dataset_label, norm=False
             )
         elif plot_type == "Scatterplot":
-            ax = self.ax_vm
-            canvas = self.canvas_vm
+            ax = getattr(self, f"ax_vm_{mode}")
+            canvas = getattr(self, f"canvas_vm_{mode}")
             self._plot_scatterplot(
                 ax, data, cols, units, logscales, dataset_label=dataset_label
             )
         elif plot_type == "Peak Scatterplot":
-            ax = self.ax_hist
-            canvas = self.canvas_hist
+            ax = getattr(self, f"ax_hist_{mode}")
+            canvas = getattr(self, f"canvas_hist_{mode}")
             self._plot_xyerr_scatterplot(
                 ax,
                 data,
@@ -1629,7 +1539,7 @@ class ProteinView(MetaSubsetTabView):
         :param parameters: Dictionary of plotting parameters collected from the controls.
         :type parameters: Dict[str, Any]
         """
-        self._reset_actions()
+        self.reset("2d", "individual")
         # The Individual fit this plot replaces must not survive it; see _clear_ensemble_fit.
         self.fit_data = None
         self._clear_cache()
@@ -1756,6 +1666,7 @@ class ProteinView(MetaSubsetTabView):
                 ["nm$^{3}$", None],
                 logscales=[False, False],
                 dataset_label="Prolate Solutions",
+                mode="individual",
             )
         if not df_oblate.empty:
             self.update_plot(
@@ -1765,6 +1676,7 @@ class ProteinView(MetaSubsetTabView):
                 ["nm$^{3}$", None],
                 logscales=[False, False],
                 dataset_label="Oblate Solutions",
+                mode="individual",
             )
         if not self.fit_data.empty:
             self.update_plot(
@@ -1774,6 +1686,7 @@ class ProteinView(MetaSubsetTabView):
                 ["arb. units", "arb. units"],
                 logscales=[False, False],
                 dataset_label="Event Peak Fit Parameters",
+                mode="individual",
                 err_cols=[
                     "min_fractional_blockage_std",
                     "max_fractional_blockage_std",
@@ -1790,7 +1703,7 @@ class ProteinView(MetaSubsetTabView):
         :param parameters: Dictionary of plotting parameters collected from the controls.
         :type parameters: Dict[str, Any]
         """
-        self._reset_actions()
+        self.reset("2d", "ensemble")
         self._clear_ensemble_fit()
         self._clear_cache()
 
@@ -1927,6 +1840,7 @@ class ProteinView(MetaSubsetTabView):
             ["pA", ""],
             logscales=[False, False],
             dataset_label=dataset_label,
+            mode="ensemble",
         )
 
         self.allowed_bins = bins
@@ -2019,6 +1933,7 @@ class ProteinView(MetaSubsetTabView):
             ["pA", ""],
             logscales=[False, False],
             dataset_label="Fit",
+            mode="ensemble",
         )
         # --- record fit + binning for Report All reporting ---
         self.ensemble_fit_params = popt
@@ -2041,6 +1956,7 @@ class ProteinView(MetaSubsetTabView):
                 ["nm$^{3}$", None],
                 logscales=[False, False],
                 dataset_label="Prolate Solutions",
+                mode="ensemble",
             )
         if not df_oblate.empty:
             self.update_plot(
@@ -2050,6 +1966,7 @@ class ProteinView(MetaSubsetTabView):
                 ["nm$^{3}$", None],
                 logscales=[False, False],
                 dataset_label="Oblate Solutions",
+                mode="ensemble",
             )
 
     @log(logger=logger)

@@ -322,14 +322,16 @@ def test_protein_individual_ensemble_flow(
         f"{protein_view._analysis_mode!r}"
     )
 
-    bars_before_individual = _count_collections(protein_view.ax_hist.figure)
+    bars_before_individual = _count_collections(protein_view.ax_hist_individual.figure)
     QTest.mouseClick(controls.update_plot_button, Qt.MouseButton.LeftButton)
     qtbot.waitUntil(
-        lambda: _count_collections(protein_view.ax_hist.figure)
+        lambda: _count_collections(protein_view.ax_hist_individual.figure)
         > bars_before_individual,
         timeout=QT_WAIT_TIMEOUT_MS,
     )
-    bars_individual_default_n = _count_collections(protein_view.ax_hist.figure)
+    bars_individual_default_n = _count_collections(
+        protein_view.ax_hist_individual.figure
+    )
     print(
         f"[DEBUG] Individual, default N: {bars_individual_default_n} scatter/errorbar "
         f"collections (n_values field={controls.n_values_lineEdit.text()!r})"
@@ -352,7 +354,7 @@ def test_protein_individual_ensemble_flow(
     QTest.mouseClick(controls.update_plot_button, Qt.MouseButton.LeftButton)
     qtbot.wait(QT_SHORT_PAUSE_MS)
     print(
-        f"[DEBUG] Individual, custom N=15: {_count_collections(protein_view.ax_hist.figure)} collections"
+        f"[DEBUG] Individual, custom N=15: {_count_collections(protein_view.ax_hist_individual.figure)} collections"
     )
     assert controls.n_values_lineEdit.text().strip() == "15"
 
@@ -387,14 +389,14 @@ def test_protein_individual_ensemble_flow(
         f"{protein_view._analysis_mode!r}"
     )
 
-    collections_before_ensemble = _count_collections(protein_view.ax_vm.figure)
+    collections_before_ensemble = _count_collections(protein_view.ax_vm_ensemble.figure)
     QTest.mouseClick(controls.update_plot_button, Qt.MouseButton.LeftButton)
     qtbot.waitUntil(
-        lambda: _count_collections(protein_view.ax_vm.figure)
+        lambda: _count_collections(protein_view.ax_vm_ensemble.figure)
         > collections_before_ensemble,
         timeout=QT_WAIT_TIMEOUT_MS,
     )
-    collections_ensemble = _count_collections(protein_view.ax_vm.figure)
+    collections_ensemble = _count_collections(protein_view.ax_vm_ensemble.figure)
     print(f"[DEBUG] Ensemble: {collections_ensemble} scatter collections")
 
     assert protein_view.ensemble_fit_params is not None, (

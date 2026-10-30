@@ -135,9 +135,8 @@ def mock_view():
     Matplotlib - it calls plot/scatter/errorbar/draw and discards the result -
     so a mocked Axes cannot diverge from a real one here.
 
-    fig_hist/ax_hist/canvas_hist and their _vm counterparts are properties that
-    dispatch on _analysis_mode, so both the individual and ensemble attributes
-    are populated and that dispatch stays real.
+    Both analysis modes' figures, axes and canvases are populated, since every
+    drawing names the mode whose figures it uses.
 
     Tests that assert construction produced something, that emit a real Qt
     signal, or that read state back off an Axes must take ``real_view``: those
@@ -537,30 +536,34 @@ class TestPlotAllPointsHistogram:
 
     def test_sets_axis_labels(self, real_view):
         real_view._plot_all_points_histogram(
-            real_view.ax_hist, self._df(), ["NC", "Amp"], ["pA", ""]
+            real_view.ax_hist_individual, self._df(), ["NC", "Amp"], ["pA", ""]
         )
-        assert "NC" in real_view.ax_hist.get_xlabel()
+        assert "NC" in real_view.ax_hist_individual.get_xlabel()
 
     def test_appends_to_hist_data(self, mock_view):
         mock_view._plot_all_points_histogram(
-            mock_view.ax_hist, self._df(), ["NC", "Amp"], ["pA", ""], "ds1"
+            mock_view.ax_hist_individual, self._df(), ["NC", "Amp"], ["pA", ""], "ds1"
         )
         assert len(mock_view.hist_data) == 1
 
     def test_accumulates_multiple_calls(self, mock_view):
         mock_view._plot_all_points_histogram(
-            mock_view.ax_hist, self._df(), ["NC", "Amp"], ["pA", ""], "ds1"
+            mock_view.ax_hist_individual, self._df(), ["NC", "Amp"], ["pA", ""], "ds1"
         )
         mock_view._plot_all_points_histogram(
-            mock_view.ax_hist, self._df(), ["NC", "Amp"], ["pA", ""], "ds2"
+            mock_view.ax_hist_individual, self._df(), ["NC", "Amp"], ["pA", ""], "ds2"
         )
         assert len(mock_view.hist_data) == 2
 
     def test_norm_flag_modifies_ylabel(self, real_view):
         real_view._plot_all_points_histogram(
-            real_view.ax_hist, self._df(), ["NC", "Amp"], ["pA", ""], norm=True
+            real_view.ax_hist_individual,
+            self._df(),
+            ["NC", "Amp"],
+            ["pA", ""],
+            norm=True,
         )
-        assert "Normalized" in real_view.ax_hist.get_ylabel()
+        assert "Normalized" in real_view.ax_hist_individual.get_ylabel()
 
 
 # ===========================================================================
@@ -594,7 +597,7 @@ class TestPlotScatterplot:
         captured = []
         real_view.scatterplot_requested.connect(lambda *args: captured.append(args))
         real_view._plot_scatterplot(
-            real_view.ax_vm, df, ["V", "m"], list(units), logscales
+            real_view.ax_vm_individual, df, ["V", "m"], list(units), logscales
         )
         return captured[0]
 
@@ -605,7 +608,7 @@ class TestPlotScatterplot:
 
         assert "V" in labels[0]
         assert "m" in labels[1]
-        assert ax is real_view.ax_vm
+        assert ax is real_view.ax_vm_individual
 
     def test_the_raw_columns_and_their_flags_go_out(self, real_view):
         """The filter is the Model's, so the columns leave unfiltered."""
@@ -657,12 +660,16 @@ class TestPlotXyerrScatterplot:
     def test_requires_err_cols(self, mock_view):
         with pytest.raises(ValueError, match="two error columns"):
             mock_view._plot_xyerr_scatterplot(
-                mock_view.ax_hist, self._df(), ["x", "y"], ["", ""], [False, False]
+                mock_view.ax_hist_individual,
+                self._df(),
+                ["x", "y"],
+                ["", ""],
+                [False, False],
             )
 
     def test_runs_without_error(self, mock_view):
         mock_view._plot_xyerr_scatterplot(
-            mock_view.ax_hist,
+            mock_view.ax_hist_individual,
             self._df(),
             ["x", "y"],
             ["", ""],
@@ -680,7 +687,7 @@ class TestPlotXyerrScatterplot:
         """
         with pytest.raises(ValueError, match="two error columns"):
             mock_view._plot_xyerr_scatterplot(
-                mock_view.ax_hist,
+                mock_view.ax_hist_individual,
                 self._df(),
                 ["x", "y"],
                 ["", ""],
@@ -707,8 +714,9 @@ class TestUpdatePlot:
             ["pA", ""],
             [False, False],
             dataset_label="d",
+            mode="individual",
         )
-        assert "NC" in real_view.ax_hist.get_xlabel()
+        assert "NC" in real_view.ax_hist_individual.get_xlabel()
 
     def test_scatterplot_routes_to_vm(self, real_view):
         """
@@ -719,9 +727,11 @@ class TestUpdatePlot:
         real_view.scatterplot_requested.connect(lambda *args: captured.append(args))
         df = pd.DataFrame({"V": np.random.rand(5), "m": np.random.rand(5)})
 
-        real_view.update_plot("Scatterplot", df, ["V", "m"], ["", ""], [False, False])
+        real_view.update_plot(
+            "Scatterplot", df, ["V", "m"], ["", ""], [False, False], mode="individual"
+        )
 
-        assert captured[0][2] is real_view.ax_vm
+        assert captured[0][2] is real_view.ax_vm_individual
 
     def test_peak_scatterplot_routes_to_hist(self, mock_view):
         df = pd.DataFrame(
@@ -739,16 +749,118 @@ class TestUpdatePlot:
             ["", ""],
             [False, False],
             err_cols=["xe", "ye"],
+            mode="individual",
         )
 
     def test_unknown_raises(self, mock_view):
         with pytest.raises(NotImplementedError):
             mock_view.update_plot(
-                "Heatmap", self._df(), ["NC", "Amp"], ["", ""], [False, False]
+                "Heatmap",
+                self._df(),
+                ["NC", "Amp"],
+                ["", ""],
+                [False, False],
+                mode="individual",
             )
 
 
 # ===========================================================================
+
+
+class TestFiguresByMode:
+    """Every drawing names the mode whose figures it uses, whichever mode is showing."""
+
+    def _df(self):
+        x = np.linspace(0, 1, 20)
+        return pd.DataFrame({"NC": x, "Amp": np.ones(20) * 0.5})
+
+    @pytest.mark.parametrize(
+        ("mode", "other", "showing"),
+        [
+            ("individual", "ensemble", "ensemble"),
+            ("ensemble", "individual", "individual"),
+        ],
+    )
+    def test_a_histogram_draws_on_its_mode_s_figure_only(
+        self, real_view, mode, other, showing
+    ):
+        real_view._analysis_mode = showing
+
+        real_view.update_plot(
+            "Filtered Histogram",
+            self._df(),
+            ["NC", "Amp"],
+            ["pA", ""],
+            [False, False],
+            dataset_label="d",
+            mode=mode,
+        )
+
+        assert len(getattr(real_view, f"ax_hist_{mode}").lines) == 1
+        assert len(getattr(real_view, f"ax_hist_{other}").lines) == 0
+
+    def test_a_scatterplot_is_asked_for_on_its_mode_s_axes(self, real_view):
+        captured = []
+        real_view.scatterplot_requested.connect(lambda *args: captured.append(args))
+        real_view._analysis_mode = "individual"
+        df = pd.DataFrame({"V": np.random.rand(5), "m": np.random.rand(5)})
+
+        real_view.update_plot(
+            "Scatterplot", df, ["V", "m"], ["", ""], [False, False], mode="ensemble"
+        )
+
+        assert captured[0][2] is real_view.ax_vm_ensemble
+
+    def _solutions(self):
+        return pd.DataFrame(
+            {"V": [1.0, 2.0], "m": [0.5, 0.6], "a": [1.0, 1.1], "b": [2.0, 2.1]}
+        )
+
+    def test_the_ensemble_answer_draws_on_the_ensemble_figures(self, mock_view, mocker):
+        """Whichever mode is showing when the fit comes back."""
+        mock_view._analysis_mode = "individual"
+        drawn = mocker.patch.object(mock_view, "update_plot")
+        plot_data = pd.DataFrame(
+            {"Normalized Current": np.linspace(0, 1, 5), "Amplitude": np.ones(5)}
+        )
+
+        mock_view.set_ensemble_geometry_fit(
+            np.ones(6),
+            np.ones(5),
+            plot_data,
+            "Filtered Histogram",
+            self._solutions(),
+            self._solutions(),
+        )
+
+        assert {call.kwargs["mode"] for call in drawn.call_args_list} == {"ensemble"}
+        assert drawn.call_count == 3
+
+    def test_the_individual_answer_draws_on_the_individual_figures(
+        self, mock_view, mocker
+    ):
+        mock_view._analysis_mode = "ensemble"
+        drawn = mocker.patch.object(mock_view, "update_plot")
+        fit_data = pd.DataFrame({"min_fractional_blockage": [0.1]})
+
+        mock_view.set_distribution_fits(self._solutions(), self._solutions(), fit_data)
+
+        assert {call.kwargs["mode"] for call in drawn.call_args_list} == {"individual"}
+        assert drawn.call_count == 3
+
+    @pytest.mark.parametrize(
+        ("mode", "other"), [("individual", "ensemble"), ("ensemble", "individual")]
+    )
+    def test_a_reset_clears_its_mode_s_figures_only(self, real_view, mode, other):
+        for side in (mode, other):
+            getattr(real_view, f"ax_hist_{side}").plot([0.0, 1.0], [0.0, 1.0])
+
+        real_view.reset("2d", mode)
+
+        assert len(getattr(real_view, f"ax_hist_{mode}").lines) == 0
+        assert len(getattr(real_view, f"ax_hist_{other}").lines) == 1
+
+
 # Range helpers (inherited from MetaView, exercised via ProteinView)
 # ===========================================================================
 
@@ -1248,8 +1360,9 @@ class TestSetCustomDisplayArea:
         assert real_view.display_stack is not None
 
     def test_creates_distribution_canvases(self, real_view):
-        assert real_view.canvas_hist is not None
-        assert real_view.canvas_vm is not None
+        for mode in ("individual", "ensemble"):
+            assert getattr(real_view, f"canvas_hist_{mode}") is not None
+            assert getattr(real_view, f"canvas_vm_{mode}") is not None
 
     def test_creates_event_canvas(self, real_view):
         assert real_view.canvas_event is not None
@@ -2296,69 +2409,6 @@ class TestCommitFitsExtended:
 # ===========================================================================
 # Mode-scoped figure/axes/canvas properties
 # ===========================================================================
-
-
-MODE_SCOPED_PROPERTIES = [
-    "fig_hist",
-    "ax_hist",
-    "canvas_hist",
-    "fig_vm",
-    "ax_vm",
-    "canvas_vm",
-]
-
-
-class TestModeScopedProperties:
-    """
-    Cover the Individual/Ensemble dispatch on the figure, axes and canvas
-    properties.
-
-    Each of these six names is a property that reads or writes the
-    ``*_individual`` or ``*_ensemble`` attribute depending on
-    ``_analysis_mode``. That dispatch is what makes switching analysis mode show
-    that mode's own last-drawn plot rather than the other one's, and nothing
-    exercised it: the whole suite passed with a getter hard-wired to one side.
-    """
-
-    @pytest.mark.parametrize("prop", MODE_SCOPED_PROPERTIES)
-    def test_getter_reads_individual_side_in_individual_mode(self, mock_view, prop):
-        mock_view._analysis_mode = "individual"
-        assert getattr(mock_view, prop) is getattr(mock_view, f"{prop}_individual")
-
-    @pytest.mark.parametrize("prop", MODE_SCOPED_PROPERTIES)
-    def test_getter_reads_ensemble_side_in_ensemble_mode(self, mock_view, prop):
-        mock_view._analysis_mode = "ensemble"
-        assert getattr(mock_view, prop) is getattr(mock_view, f"{prop}_ensemble")
-
-    @pytest.mark.parametrize("prop", MODE_SCOPED_PROPERTIES)
-    def test_getter_returns_a_different_object_per_mode(self, mock_view, prop):
-        """The two modes must not collapse onto the same object."""
-        mock_view._analysis_mode = "individual"
-        individual = getattr(mock_view, prop)
-        mock_view._analysis_mode = "ensemble"
-        assert getattr(mock_view, prop) is not individual
-
-    @pytest.mark.parametrize("prop", MODE_SCOPED_PROPERTIES)
-    def test_setter_writes_individual_side_in_individual_mode(self, mock_view, prop):
-        mock_view._analysis_mode = "individual"
-        sentinel = MagicMock()
-        setattr(mock_view, prop, sentinel)
-        assert getattr(mock_view, f"{prop}_individual") is sentinel
-
-    @pytest.mark.parametrize("prop", MODE_SCOPED_PROPERTIES)
-    def test_setter_writes_ensemble_side_in_ensemble_mode(self, mock_view, prop):
-        mock_view._analysis_mode = "ensemble"
-        sentinel = MagicMock()
-        setattr(mock_view, prop, sentinel)
-        assert getattr(mock_view, f"{prop}_ensemble") is sentinel
-
-    @pytest.mark.parametrize("prop", MODE_SCOPED_PROPERTIES)
-    def test_setter_leaves_the_other_mode_untouched(self, mock_view, prop):
-        """Writing one mode's plot must not clobber the other mode's."""
-        mock_view._analysis_mode = "individual"
-        untouched = getattr(mock_view, f"{prop}_ensemble")
-        setattr(mock_view, prop, MagicMock())
-        assert getattr(mock_view, f"{prop}_ensemble") is untouched
 
 
 # ===========================================================================

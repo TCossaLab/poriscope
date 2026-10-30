@@ -529,7 +529,6 @@ class Scenario:
     act: Callable[[Triad, Any], None]
     perturb: Callable[[Triad], None]
     seed: Callable[[Triad], None] = nothing
-    ready_b: Callable[[Triad], None] = nothing
     #: the pytest fixture that supplies the data the tab is built over
     needs: str = "sample_metadata_db"
     #: attributes this tab keeps that the shared bookkeeping list does not name
@@ -572,11 +571,6 @@ SCENARIOS = [
         act=protein_act,
         perturb=protein_perturb,
         seed=protein_seed,
-        # Tab B is put in the mode the plot was recorded in, because replay does not yet write
-        # the recorded mode back: see the strict xfail below.
-        ready_b=lambda triad: triad.tab_view.handle_parameter_change(
-            "proteincontrols", "set_mode_ensemble", ({},)
-        ),
     ),
     Scenario(
         tab="RawDataController",
@@ -620,7 +614,7 @@ SCENARIOS = [
 
 
 def run_scenario(
-    scenario: Scenario, tmp_path: Path, data: Any, qtbot: Any, *, ready_b: bool
+    scenario: Scenario, tmp_path: Path, data: Any, qtbot: Any
 ) -> Tuple[Any, Any, List[Any]]:
     """
     Record in tab A, replay into a perturbed tab B, and return both captures and A's history.
@@ -633,8 +627,6 @@ def run_scenario(
     :type data: Any
     :param qtbot: pytest-qt's fixture, for an action that runs in the background
     :type qtbot: Any
-    :param ready_b: whether to put B in the mode the action was recorded in first
-    :type ready_b: bool
     :return: A's capture, B's capture, and the history recorded in A
     :rtype: Tuple[Any, Any, List[Any]]
     """
@@ -654,8 +646,6 @@ def run_scenario(
 
         scenario.seed(tab_b)
         scenario.perturb(tab_b)
-        if ready_b:
-            scenario.ready_b(tab_b)
         spy_b = Spy(tab_b)
         if scenario.wait_between:
             for entry in history:
@@ -684,9 +674,7 @@ def test_a_replay_reproduces_what_the_action_produced(
     qapp, qtbot, request, tmp_path: Path, scenario: Scenario
 ) -> None:
     data = request.getfixturevalue(scenario.needs)
-    captured_a, captured_b, history = run_scenario(
-        scenario, tmp_path, data, qtbot, ready_b=True
-    )
+    captured_a, captured_b, history = run_scenario(scenario, tmp_path, data, qtbot)
 
     recorded = {entry["action"] for entry in history}
     assert (
@@ -706,7 +694,7 @@ def test_a_replayed_fit_leaves_the_channel_fitted_in_both_tabs(
     scenario = next(s for s in SCENARIOS if s.tab == "EventAnalysisController")
 
     captured_a, captured_b, _ = run_scenario(
-        scenario, tmp_path, sample_events_db, qtbot, ready_b=True
+        scenario, tmp_path, sample_events_db, qtbot
     )
 
     for captured in (captured_a, captured_b):
@@ -722,7 +710,7 @@ def test_a_replayed_clustering_and_merge_happen_in_both_tabs(
     scenario = next(s for s in SCENARIOS if s.tab == "ClusteringController")
 
     captured_a, captured_b, _ = run_scenario(
-        scenario, tmp_path, sample_metadata_db, qtbot, ready_b=True
+        scenario, tmp_path, sample_metadata_db, qtbot
     )
 
     for captured in (captured_a, captured_b):
@@ -730,28 +718,6 @@ def test_a_replayed_clustering_and_merge_happen_in_both_tabs(
         assert sum(captured["probe"].values()) == 40
         assert "1" not in captured["probe"], "label 1 was not merged into 0"
         assert "0" in captured["probe"]
-
-
-@pytest.mark.timeout(240)
-@pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason=(
-        "the Protein figures follow the live mode, so a plot recorded in Ensemble mode and "
-        "replayed into a tab that is in Individual mode draws on the Individual figures; "
-        "this passes once replay writes the recorded mode back before it runs the action"
-    ),
-)
-def test_a_protein_plot_replays_the_same_in_the_other_mode(
-    qapp, qtbot, tmp_path: Path, sample_metadata_db: str
-) -> None:
-    scenario = next(s for s in SCENARIOS if s.tab == "ProteinController")
-
-    captured_a, captured_b, _ = run_scenario(
-        scenario, tmp_path, sample_metadata_db, qtbot, ready_b=False
-    )
-
-    assert captured_b["figures"] == captured_a["figures"]
 
 
 @pytest.mark.timeout(240)
