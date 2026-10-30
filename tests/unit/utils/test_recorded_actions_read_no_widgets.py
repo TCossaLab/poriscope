@@ -40,6 +40,7 @@ import poriscope.plugins.analysistabs as analysistabs_package
 from poriscope.plugins.analysistabs.ClusteringView import ClusteringView
 from poriscope.utils.LogDecorator import register_action
 from poriscope.utils.MetaController import MetaController, declared_actions
+from poriscope.utils.MetaView import MetaView
 
 #: Calls that read the value of a widget. A read takes no arguments, which is what tells
 #: ``QLineEdit.text()`` from the drawing call ``Axes.text(x, y, s)``.
@@ -283,10 +284,23 @@ def _real_actions() -> List[Tuple[str, type, str, Optional[type]]]:
             actions.append(
                 (f"{controller.__name__}.{name}", controller, attribute, view)
             )
-        if view is not None:
-            for attribute, name in declared_actions(view):
-                actions.append((f"{view.__name__}.{name}", view, attribute, None))
     return actions
+
+
+def _analysis_tab_views() -> List[type]:
+    views: List[type] = []
+    for _finder, module_name, _is_package in pkgutil.walk_packages(
+        analysistabs_package.__path__, analysistabs_package.__name__ + "."
+    ):
+        module = importlib.import_module(module_name)
+        for _name, cls in inspect.getmembers(module, inspect.isclass):
+            if (
+                issubclass(cls, MetaView)
+                and cls.__module__ == module_name
+                and cls not in views
+            ):
+                views.append(cls)
+    return views
 
 
 REAL_ACTIONS = _real_actions()
@@ -304,6 +318,15 @@ class TestTheRealTabs:
         labels = {label.split(".", 1)[1] for label, *_ in REAL_ACTIONS}
 
         assert {"reset", "overlay_plot", "update_ensemble_distribution"} <= labels
+
+    def test_no_tab_view_declares_an_action(self) -> None:
+        """Only a Controller's declared methods are recorded and replayed, so one on a View would silently be neither."""
+        views = _analysis_tab_views()
+
+        assert len(views) >= 5
+        assert {view.__name__: declared_actions(view) for view in views} == {
+            view.__name__: [] for view in views
+        }
 
     @pytest.mark.parametrize(
         "label, owner, method, view",

@@ -445,20 +445,6 @@ class MetaView(QWidget, WalkthroughMixin, metaclass=QObjectABCMeta):
         )
 
     @log(logger=logger)
-    def record_action(self, entry: Dict[str, Any]) -> None:
-        """
-        Send one declared action to the Controller's history.
-
-        The hook :py:func:`~poriscope.utils.LogDecorator.register_action` calls for a
-        decorated View method. It is the transitional path: an action moves to the
-        Controller's own ``record_action`` when its tab is converted.
-
-        :param entry: ``{"action": name, "args": ..., "kwargs": ...}``
-        :type entry: Dict[str, Any]
-        """
-        self.update_tab_action_history.emit(entry, False)
-
-    @log(logger=logger)
     def get_save_filename(self) -> str:
         """
         Open a file dialog for the user to choose where to save a CSV export.
