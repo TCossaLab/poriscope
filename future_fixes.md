@@ -58,6 +58,10 @@ Step 10 waits for both tracks.
 - **`MetaView.discard_last_tab_action` has no emitter (2026-10-28).** `MetaView.py:75`, wired at
   `MetaController.py:130`; the Metadata roll-back now calls the Controller method directly. Removing it narrows a
   `Meta*` base (breaking): a signal change for approval.
+- **The Event ID is resolved twice, before P3 closes (2026-10-30).** `MetadataView._handle_plot_events:1056` and
+  `ProteinView._resolve_events:1022` refuse the scope, rebuild the filtered-event cache, snap and take the ids; one
+  copy belongs in `MetaSubsetTabView`. They differ: Metadata says "No filtered events found" for a current, empty
+  cache, Protein refuses the scope before building the cache. Changes Metadata's click: its manual pass again.
 - **An overlay followed by Plot Events, in a kept history.** Undo after Plot Events pops it and replays from the last reset, so the
   overlay comes back; decide what a saved configuration keeps of an overlay that Plot Events replaced.
 
@@ -170,10 +174,9 @@ Tab state onto the Models, heavy work off the GUI thread, event-finder and CUSUM
 
 ### From the 2026-08-25 structural audit
 
-- **Emit-then-read-an-attribute survives at two sites over typed signals.** Each clears the
+- **Emit-then-read-an-attribute survives at one site over typed signals.** It clears the
   attribute, emits a `*_requested` signal, then reads the attribute the Controller's answer
-  slot set: `ProteinView.py:1015-1019` (`plot_events_generator`) and
-  `MetaSubsetTabView.py:837-841` (`event_id_rows`). The other Views emit and let an answer
+  slot set: `MetaSubsetTabView.py:800-804` (`event_id_rows`). The other Views emit and let an answer
   slot do the work. It works only because View and Controller share a thread: every
   connection is the default AutoConnection (no `ConnectionType` anywhere in `poriscope/`), so
   moving a slot to a worker would queue the call and the read would get `None` - silently
