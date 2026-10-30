@@ -58,10 +58,6 @@ Step 10 waits for both tracks.
 - **`MetaView.discard_last_tab_action` has no emitter (2026-10-28).** `MetaView.py:75`, wired at
   `MetaController.py:130`; the Metadata roll-back now calls the Controller method directly. Removing it narrows a
   `Meta*` base (breaking): a signal change for approval.
-- **The Event ID is resolved twice, before P3 closes (2026-10-30).** `MetadataView._handle_plot_events:1056` and
-  `ProteinView._resolve_events:1022` refuse the scope, rebuild the filtered-event cache, snap and take the ids; one
-  copy belongs in `MetaSubsetTabView`. They differ: Metadata says "No filtered events found" for a current, empty
-  cache, Protein refuses the scope before building the cache. Changes Metadata's click: its manual pass again.
 - **An overlay followed by Plot Events, in a kept history.** Undo after Plot Events pops it and replays from the last reset, so the
   overlay comes back; decide what a saved configuration keeps of an overlay that Plot Events replaced.
 

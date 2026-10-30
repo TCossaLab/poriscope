@@ -75,7 +75,9 @@ def distribution_entry(tab: Triad, action: str, **changes: Any) -> Dict[str, Any
     return named(tab, action, *values.values())
 
 
-def events_entry(tab: Triad, action: str = "plot_events", **changes: Any) -> Dict[str, Any]:
+def events_entry(
+    tab: Triad, action: str = "plot_events", **changes: Any
+) -> Dict[str, Any]:
     """A recorded Plot Events (with Raw) or Plot Histogram (with bins) of three events of F0 in channel 0."""
     values: Dict[str, Any] = {
         "loader": LOADER,
@@ -152,7 +154,9 @@ def test_a_plot_histogram_entry_shows_its_bins_and_sets_the_arrows_to_histograms
     controls = view.proteincontrols
     controls.set_raw(True)
 
-    view.write_back("plot_event_histograms", (), events_entry(tab, "plot_event_histograms"))
+    view.write_back(
+        "plot_event_histograms", (), events_entry(tab, "plot_event_histograms")
+    )
 
     assert controls.filter_comboBox.getSelectedItems() == ["F0"]
     assert controls.event_id_lineEdit.text() == "4"
@@ -237,7 +241,10 @@ def test_write_back_reads_no_widget(tab: Triad, emitted: List[str]) -> None:
     """It runs under the replay tripwire: a read of a controls helper would raise."""
     view = tab.tab_view
     with replaying():
-        for action in ("update_individual_distribution", "update_ensemble_distribution"):
+        for action in (
+            "update_individual_distribution",
+            "update_ensemble_distribution",
+        ):
             view.write_back(action, (), distribution_entry(tab, action))
         view.write_back("plot_events", (), events_entry(tab))
         view.write_back(
