@@ -90,6 +90,10 @@
 * **Breaking:** Metadata's overlay loop, its reset-or-add decision and the subset fetch run in `MetadataController.overlay_plot`: the View's ten per-dataset request signals, `_overlay_plot`, `update_plot`, the `_plot_*` methods and `set_column_type`, `set_column_units` and `set_scope_note` are gone; `load_metadata_subset` returns a `MetadataSubset`, the compute methods and `build_all_points_histogram`/`build_event_overlay` return whether they drew and are no longer slots, `request_column_type` is gone, and `set_all_points_histogram`/`set_event_overlay` become `show_all_points_histogram`/`show_event_overlay`
 * **Breaking:** what Metadata's overlaid figure holds - its datasets, the options it was drawn with, the accumulated values and their shared limits, and what kind of figure it is - is kept in the Model's `overlay` (an `OverlayState`, on `MetaSubsetTabModel`, changed through its `clear_overlay`, `add_overlay_dataset` and `accumulate_overlay_values`) rather than in `MetadataView`'s `hist_*`, `allowed_*` and `plotted_datasets`, which are gone; the recorded reset is `MetadataController.reset`, asked for by `MetadataView.reset_requested` and drawn by `MetadataView.clear_plot`, and `show_histogram_bins`, `show_kernel_densities`, `show_categorical_counts` and `show_all_points_histogram` take every dataset's result and label and keep nothing
 * **Breaking:** Metadata's Plot Events and its arrows are recorded on `MetadataController.plot_events`, which takes the loader, the event ids the Event ID resolved to, the experiment, the channel, the filter's name and SQL, and Raw by name; the View asks for it through `plot_events_requested`, `MetadataView._update_event_plot` is the public `show_events`, and `plot_features_requested`, `update_plot_features` and its six feature attributes, `axes_ready`, `request_plot_features` and `MetadataController.update_features` are gone
+* **Breaking:** Protein's Update Plot is recorded on `ProteinController` per mode, as `update_individual_distribution` and `update_ensemble_distribution`, which take the loader, filters, scope, bins, Sizes, pore diameter, pore length and N by name and are asked for through `individual_distribution_requested` and `ensemble_distribution_requested`; `event_distribution_data_requested`, `distribution_fits_requested`, `ensemble_histogram_requested`, `ensemble_fit_requested` and `xyerr_scatterplot_requested` are gone with their slots, and an Ensemble plot saved before this is reported and not replayed
+* **Breaking:** Protein's fits are kept by the Model, as `ProteinModel.individual_fit` and `ensemble_fit` (an `EnsembleFit`), which Commit and Report All (`ensemble_report_requested`, `ProteinController.report_ensemble_fit`) read: `ProteinView.fit_data`, its `ensemble_fit_*` attributes and `event_data_generator` are gone, and `fit_commit_confirmed` carries only the loader and the table to overwrite
+* **Breaking:** every Protein drawing names the mode whose figures it uses: the recorded reset is `ProteinController.reset(axis_type, mode)`, drawn by `ProteinView.clear_plot`, the View draws through `show_histogram`, `show_solutions`, `show_peak_fits` and `show_ensemble_report`, and its mode-following `fig_hist`, `ax_hist`, `canvas_hist`, `fig_vm`, `ax_vm` and `canvas_vm` properties, `update_plot`, `set_distribution_fits`, `set_ensemble_histogram`, `set_ensemble_geometry_fit` and its `plotted_datasets` and `allowed_*` fields are gone
+* **Breaking:** `MetaSubsetTabView.scatterplot_requested` and `MetaSubsetTabController.filter_scatterplot` are removed; `set_scatterplot` stays
 
 ### Developer Tooling:
 
@@ -142,8 +146,6 @@
 ### Analysis Tabs:
 
 * `get_save_filename` now lives once on `MetaView` instead of in four Views
-
-* Protein's `_reset_actions` no longer clears a fit by reading the live analysis mode: each Update Plot clears the fit it replaces, so a replayed reset does not clear the other mode's fit
 
 * Event Analysis's Plot Events and Fit Events are recorded actions (a fit is recorded per channel), and a call that plotted or launched nothing is not recorded; `EventAnalysisView.write_back` shows a recorded entry's values in the panel, though nothing calls it yet
 
@@ -259,6 +261,10 @@
 
 * The Metadata tab's Plot Events and its arrows are now part of the plot history: Undo steps back one block of events at a time and then to the plot they replaced, Undo of Plot Events on an empty figure clears it, and a saved plot configuration replays them
 
+* The Protein tab's Update Plot is now part of the plot history in both modes: Undo and a saved plot configuration redraw each plot on its own mode's figures without switching the page, and Commit and Report All read the fit of the plot on screen
+
+* A refused Protein plot (more than one experiment, channel or subset, or no usable events) now leaves the previous plot in place instead of clearing it
+
 * **Fixed Undo of a figure's only plot leaving it drawn** in the analysis tabs that record a reset: the figure is now cleared
 
 * A new Metadata tab opens on empty axes, as it shows after Reset, instead of a blank canvas
@@ -288,6 +294,8 @@
 * The refusal of a raw filter that does not start with `SELECT` or that writes now names what it starts with or contains and says it may only read
 
 * A plot that needs `event_id` from a plain raw filter that lacks it now asks whether to add it and carries on when you say yes; the advice ignores `GROUP BY`, `DISTINCT` and `UNION` inside a subquery or a function, names the word that stops it being added (with an example for a join or a grouped query), and warns about a `GROUP BY` or aggregate that returns `event_id` without grouping by the event; the question is asked each time
+
+* The `event_id` question is now asked when you click, before the plot is recorded, so Undo and a saved plot configuration redraw the plot you approved without asking again
 
 * A status-panel line that would only repeat the line directly above it (a warning, a refusal, the echoed query) is now left out; once another line is between, it is shown again, and the missing-`event_id` message says which plots need it
 

@@ -18,6 +18,41 @@ and deleted on 2026-09-27; it too is in git history.
 
 ---
 
+## 2026-10-29 - The `event_id` question is asked on the click, never during a replay
+
+**Context.** The question was asked inside the recorded overlay and Protein plots, after the entry had recorded the
+filter as typed. A yes ran the new text but the history kept the old one, so Undo and a saved configuration asked again,
+and each yes rewrote the tab's filter mid-replay.
+
+**Decision** (Carolina, 2026-10-29). The click asks, through `MetaSubsetTabController._ask_event_id_for_raw_filters`,
+running each raw filter once, then calls the recorded action with the text that runs. While replaying
+(`ReplayGuard.is_replaying`) the offer is skipped and an entry still lacking `event_id` is refused with the usual message.
+
+**Rejected.** Never asking during a replay but asking inside the action (replay refuses exactly the plots approved at the
+click); asking during a replay (a modal mid-sequence that rewrites stored filters).
+
+**Revisit** if running the filter once more on the click is too slow for a large database.
+
+---
+
+## 2026-10-29 - Protein's Update Plot is recorded on the Controller per mode, and its fits are the Model's
+
+**Context.** The plot ran in `ProteinView`: its figures followed the mode showing, its fits lived on the View, an
+Ensemble plot recorded two resets, and fields recorded for an overlay decision were never read.
+
+**Decision** (Carolina, 2026-10-29). `update_individual_distribution` and `update_ensemble_distribution` on
+`ProteinController` each draw on their mode's figures by name and record one `reset(axis_type, mode)`. The fits are
+`ProteinModel.individual_fit` and `ensemble_fit`, read by Commit and Report All. The unread fields are deleted. The base's
+scatterplot round trip goes; `set_scatterplot` stays for Metadata. A refused plot leaves figure, fit and history as they were.
+
+**Rejected.** Switching the live mode before each replayed plot (a replay flips the page, and the reset still reads the
+live mode); moving the unread fields into `OverlayState` (no decision reads them); fits on the View (a replay could not
+rebuild what Commit reads); keeping the base round trip for a future subset tab (dead API the ratchets keep counting).
+
+**Revisit** if a third mode is added, or the kept history needs one history per mode.
+
+---
+
 ## 2026-10-29 - Metadata's Plot Events records a reset only when the history holds none
 
 **Context.** Plot Events' clear of the figure is unrecorded, so Undo after it replays from the last reset and the
