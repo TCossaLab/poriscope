@@ -307,7 +307,7 @@
 
 * The `event_id` question is now asked when you click, before the plot is recorded, so Undo and a saved plot configuration redraw the plot you approved without asking again
 
-* A status-panel line that would only repeat the line directly above it (a warning, a refusal, the echoed query) is now left out; once another line is between, it is shown again, and the missing-`event_id` message says which plots need it
+* In the Metadata and Protein tabs, a status-panel line that would only repeat the line directly above it (a warning, a refusal, the echoed query, whichever part of the tab says it) is now left out; once another line is between, it is shown again, and the missing-`event_id` message says which plots need it
 
 * Fixed the arrows reusing the event list of an earlier filter text after the `event_id` question was answered Yes and the filter was edited back to the text it had
 
