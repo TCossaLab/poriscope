@@ -2,10 +2,9 @@
 Tests for the per-tab action registry, ``record_action`` and ``replay`` on ``MetaController``.
 
 A recorded action is dispatched by its declared name through a registry built from the
-decorated methods of the tab's Controller and, during the transition, its View. These
-tests use a real concrete Controller and a real View-like object carrying decorated
-methods, wired the way the app wires them, so replay is exercised end to end: a recorded
-entry survives a JSON round trip and, replayed, records itself again.
+decorated methods of the tab's Controller. These tests use a real concrete Controller
+carrying decorated methods, so replay is exercised end to end: a recorded entry survives a
+JSON round trip and, replayed, records itself again.
 """
 
 from __future__ import annotations
@@ -20,33 +19,23 @@ from pytest_mock import MockerFixture
 
 from poriscope.utils.LogDecorator import RESET_ACTION, register_action
 from poriscope.utils.MetaController import MetaController
+from poriscope.utils.MetaView import MetaView
 from poriscope.utils.ReplayGuard import ReplayWidgetReadError, forbid_while_replaying
 
 
 class _View:
-    """A View-like object: decorated methods, and the transitional ``record_action``."""
+    """A View-like object with a decorated method, which the registry does not reach."""
 
     def __init__(self) -> None:
         self.calls: List[str] = []
-        self.recorded_into: Any = None
 
-    def record_action(self, entry: Dict[str, Any]) -> None:
-        self.recorded_into.update_tab_actions(entry, False)
-
-    @register_action(RESET_ACTION)
-    def _reset_actions(self, axis_type: str = "2d") -> None:
-        self.calls.append(f"reset:{axis_type}")
-
-    @register_action("overlay_plot")
-    def overlay_plot(self, label: str) -> None:
-        self.calls.append(f"overlay:{label}")
-
-    def update_available_columns(self, loader: str) -> None:
-        self.calls.append(f"columns:{loader}")
+    @register_action("view_plot")
+    def view_plot(self, label: str) -> None:
+        self.calls.append(f"view:{label}")
 
 
 class _Controller(MetaController):
-    """A concrete Controller with one decorated method of its own."""
+    """A concrete Controller with decorated methods, and one without a declaration."""
 
     def _init(self) -> None:
         pass
@@ -58,34 +47,47 @@ class _Controller(MetaController):
     def start_run(self, name: str, repeats: int = 1) -> None:
         self.runs.append((name, repeats))
 
+    @register_action(RESET_ACTION)
+    def reset(self, axis_type: str = "2d") -> None:
+        self.calls.append(f"reset:{axis_type}")
 
-def _make(mocker: MockerFixture, view: Any = None) -> _Controller:
+    @register_action("overlay_plot")
+    def overlay_plot(self, label: str) -> None:
+        self.calls.append(f"overlay:{label}")
+
+    def update_available_columns(self, loader: str) -> None:
+        self.calls.append(f"columns:{loader}")
+
+
+def _make(
+    mocker: MockerFixture, view: Any = None, cls: type = _Controller
+) -> _Controller:
     """
     Build a Controller without Qt, the way ``test_meta_controller`` does.
 
     :param mocker: pytest-mock fixture
     :param view: the View to own, a fresh ``_View`` if omitted
+    :param cls: the Controller class to build
     :return: the controller, with its signals replaced by mocks
     """
-    controller = _Controller.__new__(_Controller)  # type: ignore[type-abstract]
+    controller = cls.__new__(cls)  # type: ignore[type-abstract]
     controller.view = view if view is not None else _View()
     controller.model = mocker.Mock()
     controller.logger = mocker.Mock()  # type: ignore[attr-defined]
     controller.tab_action_history = OrderedDict()
     controller.runs = []  # type: ignore[attr-defined]
+    controller.calls = []  # type: ignore[attr-defined]
     for signal in ("add_text_to_display", "update_tab_action_history"):
         mock_signal = mocker.Mock()
         mock_signal.emit = mocker.Mock()
         setattr(controller, signal, mock_signal)
-    if isinstance(controller.view, _View):
-        controller.view.recorded_into = controller
     return controller
 
 
 @pytest.fixture
 def controller(mocker: MockerFixture) -> _Controller:
     """
-    A Controller with decorated methods, owning a View with decorated methods.
+    A Controller with decorated methods, owning a View with a decorated method.
 
     :param mocker: pytest-mock fixture
     :return: the controller
@@ -119,7 +121,7 @@ class TestRecordAction:
 
 
 class TestRegistry:
-    def test_it_holds_every_declared_name_of_the_controller_and_its_view(
+    def test_it_holds_every_declared_name_of_the_controller(
         self, controller: _Controller
     ) -> None:
         assert set(controller.action_registry()) == {
@@ -133,17 +135,27 @@ class TestRegistry:
     ) -> None:
         registered = controller.action_registry().values()
 
-        assert controller.view.update_available_columns not in registered  # type: ignore[attr-defined]
+        assert controller.update_available_columns not in registered
+
+    def test_a_method_declared_on_the_view_is_not_in_it(
+        self, controller: _Controller
+    ) -> None:
+        """Recording and replay are the Controller's; a View holds no recorded action."""
+        assert "view_plot" not in controller.action_registry()
+
+    def test_the_view_base_has_no_recording_hook(self) -> None:
+        """Without it a decorated View method has nowhere to record into."""
+        assert not hasattr(MetaView, "record_action")
 
     def test_a_name_declared_twice_raises_when_the_registry_is_built(
         self, mocker: MockerFixture
     ) -> None:
-        class _Clashing(_View):
+        class _Clashing(_Controller):
             @register_action("start_run")
             def also_start_run(self) -> None:
                 pass
 
-        controller = _make(mocker, _Clashing())
+        controller = _make(mocker, cls=_Clashing)
 
         with pytest.raises(ValueError, match="start_run"):
             controller.action_registry()
@@ -151,23 +163,26 @@ class TestRegistry:
     def test_a_subclass_override_wins_over_the_inherited_declaration(
         self, mocker: MockerFixture
     ) -> None:
-        class _Overriding(_View):
+        class _Overriding(_Controller):
             @register_action("overlay_plot")
             def overlay_plot(self, label: str) -> None:
                 self.calls.append(f"override:{label}")
 
-        view = _Overriding()
-        controller = _make(mocker, view)
+        controller = _make(mocker, cls=_Overriding)
 
         controller.replay([_entry("overlay_plot", "x")])
 
-        assert view.calls == ["override:x"]
+        assert controller.calls == ["override:x"]  # type: ignore[attr-defined]
 
     def test_a_mock_view_declares_nothing(self, mocker: MockerFixture) -> None:
         """Existing controller tests give the Controller a bare Mock for a View."""
         controller = _make(mocker, mocker.Mock())
 
-        assert set(controller.action_registry()) == {"start_run"}
+        assert set(controller.action_registry()) == {
+            "start_run",
+            RESET_ACTION,
+            "overlay_plot",
+        }
 
 
 class TestReplay:
@@ -178,12 +193,20 @@ class TestReplay:
 
         assert controller.runs == [("a", 3)]  # type: ignore[attr-defined]
 
-    def test_it_calls_a_view_method_with_the_recorded_arguments(
+    def test_it_calls_each_declared_method_with_its_recorded_arguments(
         self, controller: _Controller
     ) -> None:
         controller.replay([_entry("overlay_plot", "x"), _entry(RESET_ACTION, "3d")])
 
-        assert controller.view.calls == ["overlay:x", "reset:3d"]  # type: ignore[attr-defined]
+        assert controller.calls == ["overlay:x", "reset:3d"]  # type: ignore[attr-defined]
+
+    def test_a_view_method_named_in_a_file_is_reported_not_called(
+        self, controller: _Controller
+    ) -> None:
+        controller.replay([_entry("view_plot", "x")])
+
+        assert controller.view.calls == []  # type: ignore[attr-defined]
+        controller.add_text_to_display.emit.assert_called_once()  # type: ignore[attr-defined]
 
     def test_an_unknown_name_is_reported_and_nothing_is_called(
         self, controller: _Controller
@@ -194,7 +217,7 @@ class TestReplay:
             "Not replayed: 'no_such_action' is not a recorded action of _Controller",
             "_Controller",
         )
-        assert controller.view.calls == []  # type: ignore[attr-defined]
+        assert controller.calls == []  # type: ignore[attr-defined]
 
     def test_a_real_method_with_no_declaration_is_reported_not_called(
         self, controller: _Controller
@@ -202,7 +225,7 @@ class TestReplay:
         """Replay used to call any method of the View whose name was in the file."""
         controller.replay([_entry("update_available_columns", "loader")])
 
-        assert controller.view.calls == []  # type: ignore[attr-defined]
+        assert controller.calls == []  # type: ignore[attr-defined]
         controller.add_text_to_display.emit.assert_called_once()  # type: ignore[attr-defined]
 
     def test_an_entry_in_the_old_format_is_reported_and_replay_moves_on(
@@ -212,7 +235,7 @@ class TestReplay:
 
         controller.replay([old, _entry("overlay_plot", "x")])
 
-        assert controller.view.calls == ["overlay:x"]  # type: ignore[attr-defined]
+        assert controller.calls == ["overlay:x"]  # type: ignore[attr-defined]
         message = controller.add_text_to_display.emit.call_args[0][0]  # type: ignore[attr-defined]
         assert message.startswith("Not replayed")
 
@@ -235,7 +258,7 @@ class TestReplay:
         """
         controller.replay([entry, _entry("overlay_plot", "y")])
 
-        assert controller.view.calls == ["overlay:y"]  # type: ignore[attr-defined]
+        assert controller.calls == ["overlay:y"]  # type: ignore[attr-defined]
         message = controller.add_text_to_display.emit.call_args[0][0]  # type: ignore[attr-defined]
         assert message.startswith("Not replayed")
         assert "overlay_plot" in message
@@ -262,21 +285,21 @@ class TestReplay:
             ]
         )
 
-        assert controller.view.calls == ["overlay:a", "reset:2d", "overlay:b"]  # type: ignore[attr-defined]
+        assert controller.calls == ["overlay:a", "reset:2d", "overlay:b"]  # type: ignore[attr-defined]
 
     def test_a_recorded_entry_survives_a_json_round_trip_and_replays(
         self, controller: _Controller
     ) -> None:
         controller.start_run("a", repeats=2)
-        controller.view.overlay_plot("x")  # type: ignore[attr-defined]
+        controller.overlay_plot("x")
         saved = json.loads(json.dumps(controller.tab_action_history))
         controller.runs.clear()  # type: ignore[attr-defined]
-        controller.view.calls.clear()  # type: ignore[attr-defined]
+        controller.calls.clear()  # type: ignore[attr-defined]
 
         controller.replay(saved.values())
 
         assert controller.runs == [("a", 2)]  # type: ignore[attr-defined]
-        assert controller.view.calls == ["overlay:x"]  # type: ignore[attr-defined]
+        assert controller.calls == ["overlay:x"]  # type: ignore[attr-defined]
 
     def test_replay_records_each_action_again(self, controller: _Controller) -> None:
         """Undo relies on this: it replays from the history and the history regrows."""
@@ -303,7 +326,7 @@ class TestUndoUsesTheDeclaredResetName:
 
         controller.update_tab_actions(undo=True)
 
-        assert controller.view.calls == ["reset:2d", "overlay:b"]  # type: ignore[attr-defined]
+        assert controller.calls == ["reset:2d", "overlay:b"]  # type: ignore[attr-defined]
         assert [e["action"] for e in controller.tab_action_history.values()] == [
             "overlay_plot",
             RESET_ACTION,
@@ -325,7 +348,7 @@ class TestUndoUsesTheDeclaredResetName:
 
         # No reset is left before the overlay, so the last one removed clears the
         # figure first.
-        assert controller.view.calls == ["reset:2d", "overlay:a"]  # type: ignore[attr-defined]
+        assert controller.calls == ["reset:2d", "overlay:a"]  # type: ignore[attr-defined]
 
 
 class TestLoadActionsFromJson:
@@ -368,12 +391,12 @@ class TestReplayRunsInsideTheTripwire:
     def test_a_widget_read_inside_a_replayed_action_raises(
         self, mocker: MockerFixture
     ) -> None:
-        class _Leaky(_View):
+        class _Leaky(_Controller):
             @register_action("leaky")
             def leaky(self) -> None:
                 forbid_while_replaying("a widget read")
 
-        controller = _make(mocker, _Leaky())
+        controller = _make(mocker, cls=_Leaky)
 
         with pytest.raises(ReplayWidgetReadError):
             controller.replay([_entry("leaky")])
@@ -381,15 +404,14 @@ class TestReplayRunsInsideTheTripwire:
     def test_the_same_read_is_fine_when_the_user_clicks(
         self, mocker: MockerFixture
     ) -> None:
-        class _Leaky(_View):
+        class _Leaky(_Controller):
             @register_action("leaky")
             def leaky(self) -> None:
                 forbid_while_replaying("a widget read")
 
-        view = _Leaky()
-        _make(mocker, view)
+        controller = _make(mocker, cls=_Leaky)
 
-        view.leaky()  # called as a click calls it, outside any replay
+        controller.leaky()  # type: ignore[attr-defined]  # as a click calls it, outside any replay
 
     def test_the_tripwire_is_off_again_once_the_replay_ends(
         self, mocker: MockerFixture

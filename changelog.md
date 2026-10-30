@@ -96,6 +96,7 @@
 * **Breaking:** `MetaSubsetTabView.scatterplot_requested` and `MetaSubsetTabController.filter_scatterplot` are removed; `set_scatterplot` stays
 * **Breaking:** Protein's Plot Events and Plot Histogram are recorded on `ProteinController.plot_events` and `plot_event_histograms`, which take the loader, the event ids the Event ID resolved to, the experiment, the channel, the filter's name and SQL, and Raw or the bins and Sizes, asked for through `plot_events_requested` and `event_histograms_requested`; `event_histogram_fits_requested`, `fit_event_histograms`, `_update_event_histogram` and `_fetch_event_data` are gone, and `_update_event_plot` and `set_event_histogram_fits` are the public `show_events` and `show_event_histograms`
 * **Breaking:** the event-plot round trip leaves the subset-tab bases: `MetaSubsetTabView.event_plot_data_requested`, `set_event_plot_data_generator` and `plot_events_generator`, and `MetaSubsetTabController.load_event_plot_data`, are removed; a Controller calls `fetch_event_plot_data`
+* **Breaking:** recorded actions are declared on Controllers only: `MetaView.record_action` is removed and `MetaController.action_registry` no longer reads the View, so a `@register_action` on a View method is neither recorded nor replayed
 
 ### Developer Tooling:
 
@@ -160,6 +161,8 @@
 * `ProteinView.write_back` shows a recorded Update Plot's, Plot Events' or Plot Histogram's values in the panel and the tab's scope, with a distribution plot's mode and its page, though nothing calls it yet
 
 * The write-back setters `set_loader`, `set_bins`, `set_event_count`, `set_raw` and `set_filters` move from `MetadataControls` to `MetaSubsetTabControls`, and `_write_back_filters` from `MetadataView` to `MetaSubsetTabView`; `ProteinControls` adds `set_pore`, `set_n_values` and `set_mode`
+
+* Clustering's reset is recorded on `ClusteringController.reset`, drawn by `ClusteringView.clear_plot`: a run records one, unless the last entry is already a reset, and a merge or a 3-D plot records none
 
 ### User-Facing Behaviour:
 

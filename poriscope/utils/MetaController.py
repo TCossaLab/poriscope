@@ -275,9 +275,9 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
         """
         Map each declared action name to the method that runs it, for this tab.
 
-        Built once, from the decorated methods of this Controller and then, during the
-        transition to Controller recording, of its View. A method without a declaration
-        is not in it, so replay can only reach what was declared.
+        Built once, from the decorated methods of this Controller. A method without a
+        declaration is not in it, so replay can only reach what was declared; a View
+        records nothing and declares nothing.
 
         :raises ValueError: if one name is declared by two methods
         :return: action name -> bound method
@@ -285,14 +285,13 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
         """
         if self._action_registry is None:
             registry: Dict[str, Callable[..., Any]] = {}
-            for owner in (self, self.view):
-                for attribute, name in declared_actions(type(owner)):
-                    if name in registry:
-                        raise ValueError(
-                            f"The action name '{name}' is declared twice in "
-                            f"{self.__class__.__name__}: {attribute} repeats it"
-                        )
-                    registry[name] = getattr(owner, attribute)
+            for attribute, name in declared_actions(type(self)):
+                if name in registry:
+                    raise ValueError(
+                        f"The action name '{name}' is declared twice in "
+                        f"{self.__class__.__name__}: {attribute} repeats it"
+                    )
+                registry[name] = getattr(self, attribute)
             self._action_registry = registry
         return self._action_registry
 

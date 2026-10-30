@@ -28,10 +28,12 @@ No need to manually handle cross-plugin communication — :ref:`MetaController` 
 
 **Action history tracking**
 
-- Built-in support for tracking user actions per tab: decorate a method with
+- Built-in support for tracking user actions per tab: decorate a Controller method with
   ``@register_action("name")`` and each call is recorded as
   ``{"action": name, "args": ..., "kwargs": ...}``, so the method can be renamed or moved
-  without breaking a saved history. Name each action once per tab
+  without breaking a saved history. Name each action once per tab. Only Controller methods are
+  recorded and replayed: a decorated View method is neither, so a View asks its Controller
+  (as ``MetadataView._reset_actions`` asks for ``MetadataController.reset``)
 - Every value is saved under its parameter name in ``kwargs``, defaults included, however the
   call passed it, so a saved file says what each value is. Keep a recorded method's parameters
   nameable: a method with ``*args`` or a positional-only parameter is saved as it was called.

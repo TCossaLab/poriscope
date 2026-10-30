@@ -1470,7 +1470,8 @@ intent, never data already on the plot. Two checks hold the rule:
    settings, the last event button), and a parameter annotated with an
    ``Axes``, a numpy array or a data frame. It reads source with ``ast`` and builds no widget.
    A known exception is listed in the test's ``ALLOWED`` table with its reason and the condition
-   that removes it, and an entry that no longer trips is itself a failure.
+   that removes it, and an entry that no longer trips is itself a failure. It also fails if an
+   analysis tab's View declares an action, since only a Controller's are recorded and replayed.
 
 ``poriscope.utils.ReplayGuard``
    is a tripwire. ``MetaController.replay`` runs inside ``replaying()``, and the seven helpers

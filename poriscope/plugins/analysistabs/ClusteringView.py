@@ -46,7 +46,7 @@ from PySide6.QtWidgets import (
 
 from poriscope.plugins.analysistabs.utils.clusteringcontrols import ClusteringControls
 from poriscope.utils.DocstringDecorator import inherit_docstrings
-from poriscope.utils.LogDecorator import RESET_ACTION, log, register_action
+from poriscope.utils.LogDecorator import log
 from poriscope.utils.MetaView import MetaView
 from poriscope.views.widgets.clustering_settings_widget import ClusteringSettingsDialog
 from poriscope.views.widgets.walkthrough_mixin import (
@@ -148,11 +148,23 @@ class ClusteringView(MetaView):
         return self.clusteringcontrols
 
     @log(logger=logger)
-    @register_action(RESET_ACTION)
     @override
     def _reset_actions(self, axis_type: str = "2d") -> None:
         """
-        Clears the figure and reinitializes axes. This will also add a flag to the tab action history if @register_action is being used to keep track of actions. Only actions applied after the most recent call to this function will be recreated if the related file is loaded.
+        Clear the figure through :meth:`clear_plot`, unrecorded; the recorded reset is ``ClusteringController.reset``.
+
+        :param axis_type: Either '2d' or '3d' to determine plot projection.
+        :type axis_type: str
+        """
+        self.clear_plot(axis_type)
+
+    @log(logger=logger)
+    def clear_plot(self, axis_type: str = "2d") -> None:
+        """
+        Clear the figure, the export cache and the plot type, and create fresh axes, without recording anything.
+
+        Called by ``ClusteringController.reset``, which records the reset, and wherever a
+        drawing needs a clean figure: a merge's redraw, and a 3-D plot's projection.
 
         :param axis_type: Either '2d' or '3d' to determine plot projection.
         :type axis_type: str
@@ -284,7 +296,7 @@ class ClusteringView(MetaView):
         :param confidence: cluster confidence per row
         :type confidence: Union[Sequence[Any], np.ndarray]
         """
-        self._reset_actions()
+        self.clear_plot()
         self.update_plot(
             data,
             labels,
@@ -668,7 +680,6 @@ class ClusteringView(MetaView):
             f"{method} applied to {len(data)} rows",
             self.__class__.__name__,
         )
-        self._reset_actions()
         self.update_plot(data, labels, confidence, logs, norm, units, plot)
 
     @log(logger=logger)
@@ -764,7 +775,7 @@ class ClusteringView(MetaView):
                 ax.set_ylabel(col_labels[plot_cols[1]])
             elif dims == 3:
                 if not isinstance(ax, Axes3D):
-                    self._reset_actions(axis_type="3d")
+                    self.clear_plot(axis_type="3d")
                     ax = self.axes
                 base_color = mcolors.to_rgba_array([color] * len(subset))
                 base_color[:, -1] = (
