@@ -459,25 +459,11 @@ def test_protein_individual_ensemble_flow(
     # _analysis_mode (test_set_mode_individual) -- no reset/clear call is
     # part of that dispatch path.
     #
-    # NOTE: this checks fit_data, not hist_data/plotted_datasets.
-    # Confirmed directly from source: _update_distribution_individual
-    # never calls update_plot("Filtered Histogram"/"Raw Histogram", ...)
-    # and never touches self.plotted_datasets -- those are populated
-    # only by _update_distribution_ensemble (_plot_all_points_histogram
-    # appends to hist_data; the per-filter loop does
-    # plotted_datasets.add(...)). And _reset_actions() clears
-    # hist_data/plotted_datasets UNCONDITIONALLY regardless of
-    # _analysis_mode -- only fit_data vs ensemble_fit_* is mode-scoped
-    # there. So hist_data/plotted_datasets are Ensemble-only
-    # bookkeeping, not "Individual's plot state" -- asserting on them
-    # here would fail even on a fully correct app, because Stage 5's
-    # Ensemble Update Plot legitimately populates them and nothing ever
-    # clears that leftover on switching back to Individual (confirmed
-    # by a real run: hist_state_after_individual was ([], set()) since
-    # Individual never wrote there, then Stage 5 populated both, and
-    # Stage 7 saw Ensemble's leftover instead of Individual's own
-    # state). fit_data IS the attribute the app actually mode-scopes for
-    # this purpose.
+    # NOTE: this checks fit_data, not hist_data. Only the Ensemble plot
+    # appends to hist_data (_plot_all_points_histogram), and every reset
+    # clears it whatever the mode, so it is Ensemble-only bookkeeping, not
+    # Individual's plot state: after Stage 5's Ensemble plot it holds
+    # Ensemble's leftover. fit_data is what the app keeps per mode.
     # =========================================================
     if hasattr(controls, "individual_radio"):
         QTest.mouseClick(controls.individual_radio, Qt.MouseButton.LeftButton)

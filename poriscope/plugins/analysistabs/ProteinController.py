@@ -222,7 +222,7 @@ class ProteinController(MetaSubsetTabController):
         self.view.set_xyerr_scatterplot(filtered, ax, axis_labels, dataset_label)
 
     @log(logger=logger)
-    @Slot(str, str, object, str, object, bool, str, object, float, float, int, str)
+    @Slot(str, str, object, str, object, bool, str, float, float, int, str)
     def build_ensemble_histogram(
         self,
         loader: str,
@@ -232,7 +232,6 @@ class ProteinController(MetaSubsetTabController):
         bins: Any,
         sizes: bool,
         dataset_label: str,
-        dataset_key: Tuple[Any, ...],
         d: float,
         L: float,
         N: int,
@@ -263,8 +262,6 @@ class ProteinController(MetaSubsetTabController):
         :type sizes: bool
         :param dataset_label: the label the histogram is drawn under
         :type dataset_label: str
-        :param dataset_key: the plotted-datasets key, handed back unchanged
-        :type dataset_key: Tuple[Any, ...]
         :param d: the diameter of the pore in nanometers
         :type d: float
         :param L: the length of the pore in nanometers
@@ -305,7 +302,7 @@ class ProteinController(MetaSubsetTabController):
 
         self.view.set_event_query(query)
         self.view.set_ensemble_histogram(
-            plot_data, plot_type, bins, sizes, dataset_label, dataset_key, d, L, N
+            plot_data, plot_type, bins, sizes, dataset_label, d, L, N
         )
 
     @log(logger=logger)

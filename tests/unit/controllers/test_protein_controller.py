@@ -495,7 +495,6 @@ class TestBuildEnsembleHistogram:
             [25],
             False,
             "lbl",
-            ("k",),
             1.0,
             2.0,
             3,
@@ -504,15 +503,14 @@ class TestBuildEnsembleHistogram:
 
         controller.view.set_event_query.assert_called_once_with("SELECT 1")
         args = controller.view.set_ensemble_histogram.call_args.args
-        plot_data, plot_type, bins, sizes, label, key, d, L, N = args
+        plot_data, plot_type, bins, sizes, label, d, L, N = args
         assert list(plot_data.columns) == ["Normalized Current", "Amplitude"]
         assert len(plot_data) == 25
-        assert (plot_type, bins, sizes, label, key) == (
+        assert (plot_type, bins, sizes, label) == (
             "Filtered Histogram",
             [25],
             False,
             "lbl",
-            ("k",),
         )
         assert (d, L, N) == (1.0, 2.0, 3)
 
@@ -537,7 +535,6 @@ class TestBuildEnsembleHistogram:
             None,
             False,
             "lbl",
-            ("k",),
             1.0,
             2.0,
             3,
@@ -563,7 +560,6 @@ class TestBuildEnsembleHistogram:
             None,
             False,
             "lbl",
-            ("k",),
             1.0,
             2.0,
             3,
@@ -586,7 +582,6 @@ class TestBuildEnsembleHistogram:
             None,
             False,
             "lbl",
-            ("k",),
             1.0,
             2.0,
             3,

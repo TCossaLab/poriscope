@@ -261,13 +261,9 @@ def on_figure(triad: Triad) -> Set[Tuple[int, str]]:
     :return: the plotted datasets
     :rtype: Set[Tuple[int, str]]
     """
-    # Metadata's Model keeps them; Protein's View still does.
-    view = triad.tab_view
-    if hasattr(view, "plotted_datasets"):
-        plotted = view.plotted_datasets
-    else:
-        plotted = triad.tab_controller.model.overlay.datasets
-    return {(entry[2], entry[4]) for entry in plotted}
+    return {
+        (entry[2], entry[4]) for entry in triad.tab_controller.model.overlay.datasets
+    }
 
 
 def undo(triad: Triad) -> None:
@@ -385,7 +381,10 @@ def test_the_protein_ensemble_histogram_averages_the_selected_channels_events(
     plot_ensemble(protein_tab, "own_raw", str(channel))
 
     view = protein_tab.tab_view
-    assert on_figure(protein_tab) == {(channel, "own_raw")}
+    labels = [line.get_label() for line in view.ax_hist_ensemble.lines]
+    assert [label for label in labels if label != "Fit"] == [
+        f"{LOADER} | exp_a Ch {channel}: own_raw"
+    ]
     assert f"channel_id = {channel}" in view.event_query
 
 

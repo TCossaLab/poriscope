@@ -33,7 +33,6 @@ from typing import (
     List,
     Optional,
     Sequence,
-    Set,
     Tuple,
     Union,
     override,
@@ -160,7 +159,7 @@ class ProteinView(MetaSubsetTabView):
     #: Nothing outside the histogram reads them, so handing the widget a generator to
     #: walk would put the whole subset in the View to produce one array.
     ensemble_histogram_requested = Signal(
-        str, str, object, str, object, bool, str, object, float, float, int, str
+        str, str, object, str, object, bool, str, float, float, int, str
     )
 
     #: The error-bar variant of ``scatterplot_requested``, which this tab alone
@@ -318,24 +317,10 @@ class ProteinView(MetaSubsetTabView):
             str, Dict[str, List[str]]
         ] = {}
         self.selected_experiment_and_channels_by_loader = {}
-        self.allowed_plot_type: Optional[str] = None
-        self.allowed_columns: List[str] = []
-        self.allowed_logs: List[bool] = []
         self.allowed_bins: Optional[Any] = None
         self.allowed_sizes: Optional[bool] = None
 
         self._last_event_action: str = "plot_events"  # or "plot_histogram"
-
-        self.plotted_datasets: Set[
-            Tuple[
-                Optional[str],
-                Optional[str],
-                Optional[int],
-                Optional[str],
-                Optional[str],
-            ]
-        ] = set()
-        # list of tuples of things already plotted: (loader, experiment, channel, filter, subset name), which can be None
 
     @override
     def _set_custom_display_area(self, layout: QLayout) -> None:
@@ -706,12 +691,8 @@ class ProteinView(MetaSubsetTabView):
         # Reset plot bookkeeping variables TBD
         self.hist_data = []
         self.hist_labels = []
-        self.allowed_columns = []
         self.allowed_bins = None
         self.allowed_sizes = None
-        self.plotted_datasets = (
-            set()
-        )  # tuple of things already plotted: (loader, experiment, channel, filter, subset_name), which can be None
 
     @log(logger=logger)
     def _clear_ensemble_fit(self) -> None:
@@ -1864,11 +1845,6 @@ class ProteinView(MetaSubsetTabView):
             return
         channel = channels[0]
         exp_and_ch_arg = {exp: [channel]}
-        # The selection tree hands back the channel as a display string;
-        # plotted_datasets keys on the real int channel id. Normalise once so that a
-        # future membership test cannot disagree with the insert below, as it did in
-        # MetadataView.
-        channel_id = int(channel) if channel is not None else None
         subset_name, sql_filter = next(iter(selected_filters.items()))
 
         bins = None
@@ -1883,14 +1859,6 @@ class ProteinView(MetaSubsetTabView):
             bins = parameters["bins"]
             sizes = parameters["sizes"]
 
-            bin_sensitive = True
-            bins_changed = getattr(self, "allowed_bins", None) != bins
-            sizes_changed = getattr(self, "allowed_sizes", None) != sizes
-
-            if bin_sensitive and (bins_changed or sizes_changed):
-                self._reset_actions(axis_type="2d")
-                self._clear_ensemble_fit()
-
         # Cleared before asking: the Controller sets it only once the subset has
         # been fetched *and* averaged, so a failure at either step leaves it empty
         # rather than describing the previous subset.
@@ -1903,7 +1871,6 @@ class ProteinView(MetaSubsetTabView):
             bins,
             sizes,
             dataset_label,
-            (loader, exp, channel_id, sql_filter, subset_name),
             d,
             L,
             N,
@@ -1918,7 +1885,6 @@ class ProteinView(MetaSubsetTabView):
         bins: Any,
         sizes: bool,
         dataset_label: str,
-        dataset_key: Tuple[Any, ...],
         d: float,
         L: float,
         N: int,
@@ -1945,8 +1911,6 @@ class ProteinView(MetaSubsetTabView):
         :type sizes: bool
         :param dataset_label: the label the histogram is drawn under
         :type dataset_label: str
-        :param dataset_key: the plotted-datasets key for this subset
-        :type dataset_key: Tuple[Any, ...]
         :param d: the diameter of the pore in nanometers
         :type d: float
         :param L: the length of the pore in nanometers
@@ -1965,10 +1929,8 @@ class ProteinView(MetaSubsetTabView):
             dataset_label=dataset_label,
         )
 
-        self.allowed_plot_type = plot_type
         self.allowed_bins = bins
         self.allowed_sizes = sizes
-        self.plotted_datasets.add(dataset_key)
 
         self._request_ensemble_geometry_fit(plot_data, plot_type, d, L, N)
 

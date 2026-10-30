@@ -399,11 +399,6 @@ class TestResetActions:
         assert mock_view.allowed_bins is None
         assert mock_view.allowed_sizes is None
 
-    def test_clears_plotted_datasets(self, mock_view):
-        mock_view.plotted_datasets = {("a", "b", 0, "", "s")}
-        mock_view._reset_actions()
-        assert mock_view.plotted_datasets == set()
-
 
 ENSEMBLE_FIT_ATTRIBUTES = (
     "ensemble_fit_params",
@@ -2552,18 +2547,16 @@ class TestEnsembleHistogramRequest:
 
     def test_the_request_carries_the_drawing_context_and_the_geometry(self, mock_view):
         """
-        The label, the plotted-datasets key and the pore geometry depart unchanged
-        and come back through the setter, so nothing is parked on the widget
-        between asking and answering.
+        The label and the pore geometry depart unchanged and come back through the
+        setter, so nothing is parked on the widget between asking and answering.
         """
         self._scoped(mock_view)
 
         mock_view._update_distribution_ensemble(recorded(mock_view, self._params()))
 
         args = mock_view.ensemble_histogram_requested.emit.call_args.args
-        dataset_label, dataset_key, d, L, N, subset_name = args[6:]
+        dataset_label, d, L, N, subset_name = args[6:]
         assert "sub" in dataset_label
-        assert dataset_key == ("ldr", "exp1", 3, "duration < 3", "sub")
         assert (d, L, N) == (20.0, 30.0, 10)
         assert subset_name == "sub"
 
@@ -2601,7 +2594,7 @@ class TestSetEnsembleHistogram:
         mocker.patch.object(mock_view, "update_plot")
 
         mock_view.set_ensemble_histogram(
-            self._frame(), "Filtered Histogram", [40], False, "lbl", ("k",), 1.0, 2.0, 3
+            self._frame(), "Filtered Histogram", [40], False, "lbl", 1.0, 2.0, 3
         )
 
         assert mock_view.update_plot.call_args.args[0] == "Filtered Histogram"
@@ -2610,13 +2603,11 @@ class TestSetEnsembleHistogram:
         mocker.patch.object(mock_view, "update_plot")
 
         mock_view.set_ensemble_histogram(
-            self._frame(), "Filtered Histogram", [40], False, "lbl", ("k",), 1.0, 2.0, 3
+            self._frame(), "Filtered Histogram", [40], False, "lbl", 1.0, 2.0, 3
         )
 
-        assert mock_view.allowed_plot_type == "Filtered Histogram"
         assert mock_view.allowed_bins == [40]
         assert mock_view.allowed_sizes is False
-        assert ("k",) in mock_view.plotted_datasets
 
     def test_the_bins_are_recorded_before_the_fit_is_asked_for(self, mock_view, mocker):
         """
@@ -2633,7 +2624,7 @@ class TestSetEnsembleHistogram:
         )
 
         mock_view.set_ensemble_histogram(
-            self._frame(), "Filtered Histogram", [40], True, "lbl", ("k",), 1.0, 2.0, 3
+            self._frame(), "Filtered Histogram", [40], True, "lbl", 1.0, 2.0, 3
         )
 
         assert seen == {"bins": [40], "sizes": True}
@@ -2643,7 +2634,7 @@ class TestSetEnsembleHistogram:
         frame = self._frame()
 
         mock_view.set_ensemble_histogram(
-            frame, "Filtered Histogram", [40], False, "lbl", ("k",), 11.0, 22.0, 33
+            frame, "Filtered Histogram", [40], False, "lbl", 11.0, 22.0, 33
         )
 
         args = mock_view.ensemble_fit_requested.emit.call_args.args
