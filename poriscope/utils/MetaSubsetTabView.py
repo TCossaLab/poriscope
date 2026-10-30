@@ -214,10 +214,6 @@ class MetaSubsetTabView(MetaView):
     #: Declared here without a value so the contract is visible and mypy can see it,
     #: while reading one before its setter has run stays the AttributeError it is now.
     experiment_id: Optional[int]
-    #: Optional because ``ProteinView._update_distribution_individual`` clears it before
-    #: asking for a subset, so a load that fails is not read back as the previous
-    #: subset's events.
-    event_data_generator: Optional[Iterator[Any]]
     event_query: str
     query: str
     selection_tree: SelectionTree
@@ -1090,16 +1086,6 @@ class MetaSubsetTabView(MetaView):
         :param parameters: the navigation parameters, with ``event_id`` moved to the new event
         :type parameters: Dict[str, Any]
         """
-
-    @log(logger=logger)
-    def set_event_data_generator(self, generator: Iterator[Dict[str, Any]]) -> None:
-        """
-        Set the event data generator for event-based plots.
-
-        :param generator: A generator that yields event data.
-        :type generator: Iterator[Dict[str, Any]]
-        """
-        self.event_data_generator = generator
 
     @log(logger=logger)
     def set_scatterplot(

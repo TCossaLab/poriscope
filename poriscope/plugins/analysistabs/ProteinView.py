@@ -118,14 +118,13 @@ class ProteinView(MetaSubsetTabView):
 
     logger = logging.getLogger(__name__)
 
-    #: Asks for one subset's event data: the loader's key, the filter, and the scope
-    #: it is built against. The answers arrive through ``set_event_query`` and
-    #: ``set_event_data_generator``.
-    #:
-    #: One request serving both distribution modes, because they ask the same thing.
-    #: Carries the filter's name, whose ``_raw`` suffix marks a raw filter: the events its
-    #: ``SELECT``'s event key names, within the scope, are loaded.
-    event_distribution_data_requested = Signal(str, str, object, str)
+    #: Asks the Controller for an Individual plot: the loader's key, the selected filters
+    #: (name to SQL), the scope, the bin request, the Sizes flag, the pore diameter and
+    #: length, and how many solutions to sample per event. The intent a click captured,
+    #: which is what the Controller records, so a replay draws what was asked for.
+    individual_distribution_requested = Signal(
+        str, object, object, object, bool, float, float, int
+    )
 
     #: Asks whether the database already holds fit columns, before any are written.
     #: Answered through ``confirm_fit_commit``.
@@ -134,11 +133,11 @@ class ProteinView(MetaSubsetTabView):
     #: answer - a single request would have to open the modal from inside the Controller.
     fit_commit_requested = Signal(str)
 
-    #: Sends the approved write out: the loader's key, the fitted columns, their units,
-    #: and the table whose existing fit columns are to be dropped first (None when
-    #: there are none). The user's decision travels here rather than being parked on
-    #: this widget between the two phases.
-    fit_commit_confirmed = Signal(str, object, object, object)
+    #: Sends the approved write out: the loader's key and the table whose existing fit
+    #: columns are to be dropped first (None when there are none). The Controller writes
+    #: the Individual fit the Model keeps. The user's decision travels here rather than
+    #: being parked on this widget between the two phases.
+    fit_commit_confirmed = Signal(str, object)
 
     #: Asks for the ensemble histogram's double-gaussian fit: the bin centers, the
     #: amplitudes, and the context the drawing half needs back unchanged. Answered
@@ -182,16 +181,6 @@ class ProteinView(MetaSubsetTabView):
     #: bins.
     event_histogram_fits_requested = Signal(object, str, object, bool)
 
-    #: Asks for one fit per event on the individual distribution path, with the pore
-    #: geometry the sampling needs. Answered through ``set_distribution_fits``.
-    #:
-    #: Separate from ``event_histogram_fits_requested`` because the answers are used for
-    #: different work - that one draws per-event subplots, this one Monte Carlo samples
-    #: V/m from each fit - and one request answering two unrelated consumers would have to
-    #: be told which it was serving. It carries the bin request for the same reason as
-    #: that one.
-    distribution_fits_requested = Signal(object, str, object, bool, float, float, int)
-
     @log(logger=logger)
     @override
     def _init(self) -> None:
@@ -199,7 +188,6 @@ class ProteinView(MetaSubsetTabView):
         Initialize the ProteinView instance.
         """
         self._clear_cache()
-        self.fit_data: Optional[pd.DataFrame] = None
         self.operation_success: bool = False
         self.ensemble_fit_params: Optional[tuple] = None
         self.ensemble_fit_bins: Optional[Any] = None
@@ -353,15 +341,12 @@ class ProteinView(MetaSubsetTabView):
 
         Phase one of a two-phase commit, because the look-up interleaves with a modal
         question: whether the user is asked anything at all depends on the answer, so it
-        cannot be a single request. The Controller looks, then calls
-        :py:meth:`confirm_fit_commit` back.
+        cannot be a single request. The Controller checks it holds an Individual fit and
+        looks, then calls :py:meth:`confirm_fit_commit` back.
 
         :param loader: Name or ID of the database loader plugin.
         :type loader: str
-        :raises AttributeError: If fit data has not been set on this view.
         """
-        if self.fit_data is None:
-            raise AttributeError("fit data has not been set, unable to commit")
         self.fit_commit_requested.emit(loader)
 
     @log(logger=logger)
@@ -382,9 +367,6 @@ class ProteinView(MetaSubsetTabView):
         :return: None
         :rtype: None
         """
-        if self.fit_data is None:
-            return
-
         if table_name is not None:
             reply = QMessageBox.question(
                 self,
@@ -396,12 +378,7 @@ class ProteinView(MetaSubsetTabView):
             if reply != QMessageBox.Ok:
                 return
 
-        self.fit_commit_confirmed.emit(
-            loader,
-            self.fit_data[["id"] + FIT_COLUMNS],
-            FIT_COLUMN_UNITS,
-            table_name,
-        )
+        self.fit_commit_confirmed.emit(loader, table_name)
 
     @log(logger=logger)
     def on_fit_commit_finished(self, loader: str) -> None:
@@ -995,10 +972,18 @@ class ProteinView(MetaSubsetTabView):
         elif action_name == "update_plot":
             self._set_display_mode("distribution")
             if self._analysis_mode == "individual":
-                parameters["plot_type"] = (
-                    "Filtered Histogram"  # hard coded for now, may change later
+                loader = parameters["db_loader"]
+                scope = self.selected_experiment_and_channels_by_loader.get(loader)
+                self.individual_distribution_requested.emit(
+                    loader,
+                    self.get_selected_filters(),
+                    copy.deepcopy(scope) if scope else {},
+                    parameters.get("bins"),
+                    bool(parameters.get("sizes", False)),
+                    float(parameters["pore_diameter"]),
+                    float(parameters["pore_length"]),
+                    int(parameters.get("n_values") or 100),
                 )
-                self._update_distribution_individual(parameters)
             else:
                 parameters["plot_type"] = "Filtered Histogram"
                 self._record_selection(parameters)
@@ -1030,15 +1015,7 @@ class ProteinView(MetaSubsetTabView):
             self.mode_stack.setCurrentWidget(self.ensemble_dist_page)
 
         elif action_name == "commit_individual":
-            loader = parameters.get("db_loader")
-            try:
-                self._commit_fits(loader)
-            except AttributeError as e:
-                self.add_text_to_display.emit(
-                    "No individual fit available to commit. Run Update Plot in Individual mode first.",
-                    self.__class__.__name__,
-                )
-                self.logger.warning(f"Commit Individual failed: {e}")
+            self._commit_fits(parameters.get("db_loader"))
 
         elif action_name == "report_all":
             self._report_ensemble_fit()
@@ -1531,108 +1508,6 @@ class ProteinView(MetaSubsetTabView):
         self._commit_cache()
 
     @log(logger=logger)
-    def _update_distribution_individual(self, parameters: Dict[str, Any]) -> None:
-        """
-        Compute and plot the ΔI/I histogram and V/M scatterplot for a single
-        selected event in Individual analysis mode.
-
-        :param parameters: Dictionary of plotting parameters collected from the controls.
-        :type parameters: Dict[str, Any]
-        """
-        self.reset("2d", "individual")
-        # The Individual fit this plot replaces must not survive it; see _clear_ensemble_fit.
-        self.fit_data = None
-        self._clear_cache()
-
-        selected_filters = self.get_selected_filters()
-        loader = parameters["db_loader"]
-        plot_type = parameters["plot_type"]
-        d = float(parameters["pore_diameter"])
-        L = float(parameters["pore_length"])
-
-        # Default N to 100 if missing
-        N = int(parameters.get("n_values") or 100)
-        bins = parameters.get("bins")
-        sizes = parameters.get("sizes", False)
-
-        experiments_and_channels: Optional[
-            Union[Dict[str, List[str]], Dict[Any, Any]]
-        ] = self.selected_experiment_and_channels_by_loader.get(loader)
-
-        self.plot_initialized = True
-
-        if experiments_and_channels is None or len(experiments_and_channels) == 0:
-            experiments_and_channels = {None: [None]}
-
-        if selected_filters is None or selected_filters == {}:
-            selected_filters = {"Full Dataset": ""}
-
-        if len(experiments_and_channels) > 1:
-            self.logger.warning(f"Only a single experiment can be used for {plot_type}")
-            self.add_text_to_display.emit(
-                f"Only a single experiment can be used for {plot_type}",
-                self.__class__.__name__,
-            )
-            return
-
-        if len(selected_filters) > 1:
-            self.add_text_to_display.emit(
-                "Only a single subset can be used for protein analysis",
-                self.__class__.__name__,
-            )
-            return
-
-        # Unpacked rather than looped over. Every one of these is guaranteed to hold
-        # exactly one entry by the guards above, and writing them as loops implied a
-        # multiplicity the method refuses - which is misleading enough that it was
-        # read, in review, as a bug where per-subset accumulators are consumed
-        # outside the subset loop. They are, and it is harmless, because there is
-        # only ever one subset.
-        exp, channels = next(iter(experiments_and_channels.items()))
-        if len(channels) != 1:
-            self.logger.warning(
-                "Only a single channel at a time can be used for protein analysis"
-            )
-            self.add_text_to_display.emit(
-                "Only a single channel at a time can be used for protein analysis",
-                self.__class__.__name__,
-            )
-            return
-        channel = channels[0]
-        exp_and_ch_arg = {exp: [channel]}
-        subset_name, sql_filter = next(iter(selected_filters.items()))
-
-        # Both cleared before asking: the Controller sets them only once
-        # the whole chain has succeeded, so a failure leaves them empty
-        # rather than describing the previous subset.
-        self.event_query = ""
-        self.event_data_generator = None
-        self.event_distribution_data_requested.emit(
-            loader, sql_filter, exp_and_ch_arg, subset_name
-        )
-
-        if self.event_query == "":
-            return
-
-        if plot_type not in ["Raw Histogram", "Filtered Histogram"]:
-            self.logger.warning(f"Invalid plot type: {plot_type}")
-            return
-
-        if self.event_data_generator is None:
-            self.logger.warning(
-                "No events in dataset or unable to create event generator",
-            )
-            self.add_text_to_display.emit(
-                "No events in dataset or unable to create event generator",
-                self.__class__.__name__,
-            )
-            return
-
-        events = list(self.event_data_generator)
-
-        self.distribution_fits_requested.emit(events, plot_type, bins, sizes, d, L, N)
-
-    @log(logger=logger)
     def set_distribution_fits(
         self,
         df_prolate: pd.DataFrame,
@@ -1642,10 +1517,9 @@ class ProteinView(MetaSubsetTabView):
         """
         Plot the geometries every fitted event is consistent with.
 
-        The answering half of ``distribution_fits_requested``. The sampling is done by
-        :meth:`ProteinModel.sample_event_geometries`, because a Monte Carlo over a
-        forward model is not drawing and its output is written back to the database as
-        this tab's fit columns.
+        Called by ``ProteinController.update_individual_distribution``, which samples the
+        geometries through :meth:`ProteinModel.sample_event_geometries` and keeps the fit
+        the Commit writes; this only draws, on the Individual figures.
 
         :param df_prolate: every fitted event's prolate solutions, pooled
         :type df_prolate: pd.DataFrame
@@ -1656,8 +1530,6 @@ class ProteinView(MetaSubsetTabView):
         :return: None
         :rtype: None
         """
-        self.fit_data = fit_data
-
         if not df_prolate.empty:
             self.update_plot(
                 "Scatterplot",
@@ -1678,10 +1550,10 @@ class ProteinView(MetaSubsetTabView):
                 dataset_label="Oblate Solutions",
                 mode="individual",
             )
-        if not self.fit_data.empty:
+        if not fit_data.empty:
             self.update_plot(
                 "Peak Scatterplot",
-                self.fit_data,
+                fit_data,
                 ["min_fractional_blockage", "max_fractional_blockage"],
                 ["arb. units", "arb. units"],
                 logscales=[False, False],

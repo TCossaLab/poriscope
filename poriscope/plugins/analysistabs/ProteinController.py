@@ -25,8 +25,19 @@
 # Kyle Briggs
 
 
+import copy
 import logging
-from typing import Any, Dict, Generator, List, Optional, Sequence, Tuple, override
+from typing import (
+    Any,
+    Dict,
+    Generator,
+    List,
+    Optional,
+    Sequence,
+    Tuple,
+    Union,
+    override,
+)
 
 import numpy as np
 import numpy.typing as npt
@@ -35,9 +46,13 @@ from matplotlib.axes import Axes
 from PySide6.QtCore import Slot
 
 from poriscope.plugins.analysistabs.ProteinModel import ProteinModel
-from poriscope.plugins.analysistabs.ProteinView import ProteinView
+from poriscope.plugins.analysistabs.ProteinView import (
+    FIT_COLUMN_UNITS,
+    FIT_COLUMNS,
+    ProteinView,
+)
 from poriscope.utils.DocstringDecorator import inherit_docstrings
-from poriscope.utils.LogDecorator import log
+from poriscope.utils.LogDecorator import log, register_action
 from poriscope.utils.MetaSubsetTabController import MetaSubsetTabController
 
 
@@ -76,8 +91,8 @@ class ProteinController(MetaSubsetTabController):
         :rtype: None
         """
         super()._setup_connections()
-        self.view.event_distribution_data_requested.connect(
-            self.load_event_distribution_data
+        self.view.individual_distribution_requested.connect(
+            self.request_individual_distribution
         )
         self.view.fit_commit_requested.connect(self.check_for_existing_fit_columns)
         self.view.fit_commit_confirmed.connect(self.commit_fits)
@@ -85,7 +100,6 @@ class ProteinController(MetaSubsetTabController):
         self.view.ensemble_histogram_requested.connect(self.build_ensemble_histogram)
         self.view.xyerr_scatterplot_requested.connect(self.filter_xyerr_scatterplot)
         self.view.event_histogram_fits_requested.connect(self.fit_event_histograms)
-        self.view.distribution_fits_requested.connect(self.fit_distribution_events)
 
     @log(logger=logger)
     @Slot(object, object, object, str, float, float, int)
@@ -353,8 +367,145 @@ class ProteinController(MetaSubsetTabController):
         self.view.set_event_histogram_fits(fits, histograms, event_data)
 
     @log(logger=logger)
-    @Slot(object, str, object, bool, float, float, int)
-    def fit_distribution_events(
+    @Slot(str, object, object, object, bool, float, float, int)
+    def request_individual_distribution(
+        self,
+        loader: str,
+        filters: Dict[str, str],
+        scope: Dict[str, List[str]],
+        bins: Optional[List[Union[int, float]]],
+        sizes: bool,
+        pore_diameter: float,
+        pore_length: float,
+        n_values: int,
+    ) -> None:
+        """
+        Ask about a raw filter that lacks ``event_id``, then draw the Individual plot a click asked for.
+
+        The question is the click's alone: the plot is recorded with the filter text that
+        will run, so a replay, which calls :meth:`update_individual_distribution` directly,
+        has nothing to ask.
+
+        :param loader: the database loader plugin's key
+        :type loader: str
+        :param filters: the selected filters, name to SQL; none means the full dataset
+        :type filters: Dict[str, str]
+        :param scope: the selected experiments and their channels
+        :type scope: Dict[str, List[str]]
+        :param bins: a bin count, or a bin width when sizes is True, or None to estimate
+        :type bins: Optional[List[Union[int, float]]]
+        :param sizes: does bins refer to a bin width (True) or a count (False)
+        :type sizes: bool
+        :param pore_diameter: the diameter of the pore in nanometers
+        :type pore_diameter: float
+        :param pore_length: the length of the pore in nanometers
+        :type pore_length: float
+        :param n_values: target number of samples to draw for each event
+        :type n_values: int
+        :return: None
+        :rtype: None
+        """
+        resolved = self._ask_event_id_for_raw_filters(loader, filters, scope)
+        if resolved is None:
+            return
+        self.update_individual_distribution(
+            loader, resolved, scope, bins, sizes, pore_diameter, pore_length, n_values
+        )
+
+    @log(logger=logger)
+    @register_action("update_individual_distribution", skip_on_false=True)
+    def update_individual_distribution(
+        self,
+        loader: str,
+        filters: Dict[str, str],
+        scope: Dict[str, List[str]],
+        bins: Optional[List[Union[int, float]]],
+        sizes: bool,
+        pore_diameter: float,
+        pore_length: float,
+        n_values: int,
+    ) -> bool:
+        """
+        Fit every event of one subset, keep the fit, and draw the geometries it implies.
+
+        A recorded action: it takes the intent the click captured, so a replay draws what
+        was recorded whatever the panel shows then. One experiment, one channel and one
+        subset; anything else is refused on the status panel. The figures are reset and
+        the Individual fit replaced only once the events have been fetched and fitted, so
+        a refused or failed plot leaves both as they were and records nothing.
+
+        :param loader: the database loader plugin's key
+        :type loader: str
+        :param filters: the selected filters, name to SQL; none means the full dataset
+        :type filters: Dict[str, str]
+        :param scope: the selected experiments and their channels
+        :type scope: Dict[str, List[str]]
+        :param bins: a bin count, or a bin width when sizes is True, or None to estimate
+        :type bins: Optional[List[Union[int, float]]]
+        :param sizes: does bins refer to a bin width (True) or a count (False)
+        :type sizes: bool
+        :param pore_diameter: the diameter of the pore in nanometers
+        :type pore_diameter: float
+        :param pore_length: the length of the pore in nanometers
+        :type pore_length: float
+        :param n_values: target number of samples to draw for each event
+        :type n_values: int
+        :return: True if drawn, False if refused or nothing could be fitted
+        :rtype: bool
+        """
+        plot_type = "Filtered Histogram"
+        selected = dict(filters) if filters else {"Full Dataset": ""}
+        datasets: Dict[Any, List[Any]] = (
+            copy.deepcopy(scope) if scope else {None: [None]}
+        )
+        if len(datasets) > 1:
+            self.add_text_to_display.emit(
+                f"Only a single experiment can be used for {plot_type}",
+                self.__class__.__name__,
+            )
+            return False
+        if len(selected) > 1:
+            self.add_text_to_display.emit(
+                "Only a single subset can be used for protein analysis",
+                self.__class__.__name__,
+            )
+            return False
+        exp, channels = next(iter(datasets.items()))
+        if len(channels) != 1:
+            self.add_text_to_display.emit(
+                "Only a single channel at a time can be used for protein analysis",
+                self.__class__.__name__,
+            )
+            return False
+        subset_name, sql_filter = next(iter(selected.items()))
+
+        fetched = self._fetch_event_subset(
+            loader, sql_filter, {exp: [channels[0]]}, subset_name
+        )
+        if fetched is None:
+            return False
+        query, generator = fetched
+        fitted = self._fit_individual_events(
+            list(generator),
+            plot_type,
+            bins,
+            sizes,
+            pore_diameter,
+            pore_length,
+            n_values,
+        )
+        if fitted is None:
+            return False
+        df_prolate, df_oblate, fit_data = fitted
+
+        self.view.reset("2d", "individual")
+        self.model.set_individual_fit(fit_data)
+        self.view.set_event_query(query)
+        self.view.set_distribution_fits(df_prolate, df_oblate, fit_data)
+        return True
+
+    @log(logger=logger)
+    def _fit_individual_events(
         self,
         event_data: Sequence[Dict[str, Any]],
         plot_type: str,
@@ -363,15 +514,13 @@ class ProteinController(MetaSubsetTabController):
         d: float,
         L: float,
         N: int,
-    ) -> None:
+    ) -> Optional[Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]]:
         """
-        Bin and fit every event on the individual distribution path, and hand back.
+        Bin and fit every event, and sample the geometries each fit is consistent with.
 
-        A request slot, the same shape as ``fit_event_histograms``. The
-        events and the pore geometry pass straight through; this slot marshals and
-        does not interpret them.
+        Reports its own failure on the status panel and answers None.
 
-        :param event_data: the events being plotted, passed back to the View unchanged
+        :param event_data: the subset's events
         :type event_data: Sequence[Dict[str, Any]]
         :param plot_type: 'Raw Histogram' or 'Filtered Histogram'
         :type plot_type: str
@@ -383,10 +532,10 @@ class ProteinController(MetaSubsetTabController):
         :type d: float
         :param L: the length of the pore in nanometers
         :type L: float
-        :param N: target number of samples to draw for each ensemble
+        :param N: target number of samples to draw for each event
         :type N: int
-        :return: None
-        :rtype: None
+        :return: the pooled prolate and oblate solutions and one fit row per event, or None
+        :rtype: Optional[Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]]
         """
         try:
             histograms = self.model.build_event_histograms(
@@ -401,7 +550,7 @@ class ProteinController(MetaSubsetTabController):
             self.add_text_to_display.emit(
                 f"Unable to fit the event histograms: {e}", self.__class__.__name__
             )
-            return
+            return None
 
         if fit_data.empty:
             # Every event was refused, or the subset held none at all. Every guard in
@@ -412,9 +561,8 @@ class ProteinController(MetaSubsetTabController):
                 "nothing to plot",
                 self.__class__.__name__,
             )
-            return
-
-        self.view.set_distribution_fits(df_prolate, df_oblate, fit_data)
+            return None
+        return df_prolate, df_oblate, fit_data
 
     @log(logger=logger)
     @Slot(str)
@@ -436,6 +584,13 @@ class ProteinController(MetaSubsetTabController):
         :return: None
         :rtype: None
         """
+        if self.model.individual_fit is None:
+            self.add_text_to_display.emit(
+                "No individual fit available to commit. Run Update Plot in Individual "
+                "mode first.",
+                self.__class__.__name__,
+            )
+            return
         try:
             table_name = self.model.call(
                 "MetaDatabaseLoader", loader, "get_table_by_column", "prolate_volume"
@@ -451,16 +606,10 @@ class ProteinController(MetaSubsetTabController):
         self.view.confirm_fit_commit(loader, table_name)
 
     @log(logger=logger)
-    @Slot(str, object, object, object)
-    def commit_fits(
-        self,
-        loader: str,
-        fit_data: pd.DataFrame,
-        units: List[Optional[str]],
-        overwrite_table: Optional[str],
-    ) -> None:
+    @Slot(str, object)
+    def commit_fits(self, loader: str, overwrite_table: Optional[str]) -> None:
         """
-        Drop any fit columns being replaced, then write the new ones.
+        Drop any fit columns being replaced, then write the Individual fit the Model keeps.
 
         Phase two, reached either straight away when the database holds no fit data or
         once the user has approved the overwrite. The user's decision travels as
@@ -472,15 +621,15 @@ class ProteinController(MetaSubsetTabController):
 
         :param loader: the database loader plugin's key
         :type loader: str
-        :param fit_data: the fitted columns to write, keyed by event id
-        :type fit_data: pd.DataFrame
-        :param units: one unit per written column, ``None`` where dimensionless
-        :type units: List[Optional[str]]
         :param overwrite_table: the table holding fit columns to drop first, or None
         :type overwrite_table: Optional[str]
         :return: None
         :rtype: None
         """
+        if self.model.individual_fit is None:
+            return
+        fit_data = self.model.individual_fit[["id"] + FIT_COLUMNS]
+        units = FIT_COLUMN_UNITS
         if overwrite_table is not None:
             columns = [column for column in fit_data.columns if column != "id"]
             try:
@@ -521,48 +670,6 @@ class ProteinController(MetaSubsetTabController):
 
         self.display_write_status(bool(written))
         self.view.on_fit_commit_finished(loader)
-
-    @log(logger=logger)
-    @Slot(str, str, object, str)
-    def load_event_distribution_data(
-        self,
-        loader: str,
-        sql_filter: str,
-        experiments_and_channels: Optional[Dict[str, Optional[List[int]]]],
-        subset_name: str,
-    ) -> None:
-        """
-        Build the query for one subset, load its events, and hand both to the View.
-
-        Both distribution modes - individual and ensemble - run this same chain, so
-        there is one slot rather than one per mode.
-
-        A raw filter - one whose name ends ``_raw`` - scopes itself with
-        ``:experiment_id`` and ``:channel_id``, and the events its event key names are loaded; see
-        ``MetaSubsetTabController._raw_filter_conditions``.
-
-        :param loader: the database loader plugin's key
-        :type loader: str
-        :param sql_filter: the subset filter's WHERE-clause body, empty for all rows
-        :type sql_filter: str
-        :param experiments_and_channels: the scope the filter is built against
-        :type experiments_and_channels: Optional[Dict[str, Optional[List[int]]]]
-        :param subset_name: the selected filter's name, whose ``_raw`` suffix marks a raw filter
-        :type subset_name: str
-        :return: None
-        :rtype: None
-        """
-        fetched = self._fetch_event_subset(
-            loader, sql_filter, experiments_and_channels, subset_name
-        )
-        if fetched is None:
-            return
-        query, generator = fetched
-
-        # Set together, once the whole chain has succeeded: the View distinguishes
-        # "not fetched" from "fetched and empty" by these two being untouched.
-        self.view.set_event_query(query)
-        self.view.set_event_data_generator(generator)
 
     @log(logger=logger)
     def _fetch_event_subset(

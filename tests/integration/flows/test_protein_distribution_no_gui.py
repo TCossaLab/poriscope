@@ -139,3 +139,108 @@ def test_an_ensemble_plot_replayed_in_individual_mode_draws_on_the_ensemble_figu
 
     assert [line.get_label() for line in view.ax_hist_ensemble.lines] == drawn
     assert len(view.ax_hist_individual.lines) == 0
+
+
+def history(triad: Triad) -> List[Dict[str, Any]]:
+    """
+    The tab's recorded history, oldest first.
+
+    :param triad: the tab under test
+    :type triad: Triad
+    :return: the recorded entries
+    :rtype: List[Dict[str, Any]]
+    """
+    return list(triad.tab_controller.tab_action_history.values())
+
+
+def said(triad: Triad) -> List[str]:
+    """
+    Collect what the tab's View and Controller put on the status panel from now on.
+
+    :param triad: the tab under test
+    :type triad: Triad
+    :return: the list the messages are appended to
+    :rtype: List[str]
+    """
+    messages: List[str] = []
+    triad.tab_view.add_text_to_display.connect(lambda text, _: messages.append(text))
+    triad.tab_controller.add_text_to_display.connect(
+        lambda text, _: messages.append(text)
+    )
+    return messages
+
+
+def test_an_individual_plot_is_recorded_with_its_intent(protein_tab: Triad) -> None:
+    update_plot(protein_tab, "individual")
+
+    assert actions(protein_tab) == ["reset", "update_individual_distribution"]
+    kwargs = history(protein_tab)[-1]["kwargs"]
+    assert kwargs == {
+        "loader": LOADER,
+        "filters": {},
+        "scope": {"exp_a": ["0"]},
+        "bins": [20],
+        "sizes": False,
+        "pore_diameter": 10.0,
+        "pore_length": 10.0,
+        "n_values": 20,
+    }
+
+
+def test_the_individual_fit_is_kept_by_the_model(protein_tab: Triad) -> None:
+    update_plot(protein_tab, "individual")
+
+    fit = protein_tab.tab_controller.model.individual_fit
+    assert fit is not None and len(fit) > 0
+    assert not hasattr(protein_tab.tab_view, "fit_data")
+
+
+def test_an_ensemble_plot_leaves_the_individual_fit(protein_tab: Triad) -> None:
+    update_plot(protein_tab, "individual")
+    fit = protein_tab.tab_controller.model.individual_fit
+
+    update_plot(protein_tab, "ensemble")
+
+    assert protein_tab.tab_controller.model.individual_fit is fit
+
+
+def test_a_refused_individual_plot_records_nothing_and_leaves_the_figure(
+    protein_tab: Triad,
+) -> None:
+    update_plot(protein_tab, "individual")
+    before = history(protein_tab)
+    drawn = len(protein_tab.tab_view.ax_vm_individual.collections)
+    messages = said(protein_tab)
+    protein_tab.tab_view.selected_experiment_and_channels_by_loader[LOADER] = {
+        "exp_a": ["0", "1"]
+    }
+
+    update_plot(protein_tab, "individual")
+
+    assert history(protein_tab) == before
+    assert len(protein_tab.tab_view.ax_vm_individual.collections) == drawn
+    assert (
+        "Only a single channel at a time can be used for protein analysis" in messages
+    )
+
+
+def test_commit_individual_writes_the_model_s_fit(protein_tab: Triad) -> None:
+    update_plot(protein_tab, "individual")
+
+    press(protein_tab, "commit_individual", {"db_loader": LOADER})
+
+    table = protein_tab.tab_controller.model.call(
+        "MetaDatabaseLoader", LOADER, "get_table_by_column", "prolate_volume"
+    )
+    assert table == "events"
+
+
+def test_commit_individual_with_no_fit_says_so(protein_tab: Triad) -> None:
+    messages = said(protein_tab)
+
+    press(protein_tab, "commit_individual", {"db_loader": LOADER})
+
+    assert (
+        "No individual fit available to commit. Run Update Plot in Individual mode first."
+        in messages
+    )

@@ -64,7 +64,6 @@ BOOKKEEPING = (
     "allowed_logs",
     "allowed_bins",
     "allowed_sizes",
-    "fit_data",
     "ensemble_fit_params",
     "ensemble_fit_bins",
     "ensemble_fit_sizes",
@@ -341,9 +340,36 @@ def protein_act(triad: Triad, qtbot: Any) -> None:
     )
 
 
+def protein_individual_act(triad: Triad, qtbot: Any) -> None:
+    """An Individual plot, which records its reset and the plot."""
+    view = triad.tab_view
+    select(triad, "F0", "0")
+    view.handle_parameter_change("proteincontrols", "set_mode_individual", ({},))
+    view.handle_parameter_change(
+        "proteincontrols",
+        "update_plot",
+        (
+            {
+                "db_loader": LOADER,
+                "plot_type": "Filtered Histogram",
+                "pore_diameter": 10.0,
+                "pore_length": 10.0,
+                "n_values": 20,
+                "bins": [20],
+                "sizes": False,
+            },
+        ),
+    )
+
+
+def individual_fit(triad: Triad) -> Any:
+    """The Individual fit the Model keeps, which Commit Individual writes."""
+    return normalise(triad.tab_controller.model.individual_fit)
+
+
 def protein_seed(triad: Triad) -> None:
     """Give the tab an Individual fit that no recorded action made, so a replay can be seen to leave it."""
-    triad.tab_view.fit_data = "individual fit"
+    triad.tab_controller.model.set_individual_fit(pd.DataFrame({"id": [-1]}))
 
 
 def protein_perturb(triad: Triad) -> None:
@@ -571,6 +597,16 @@ SCENARIOS = [
         act=protein_act,
         perturb=protein_perturb,
         seed=protein_seed,
+        probe=individual_fit,
+    ),
+    Scenario(
+        tab="ProteinController",
+        name="ProteinController-individual",
+        covers=("reset", "update_individual_distribution"),
+        build=protein_tab,
+        act=protein_individual_act,
+        perturb=protein_perturb,
+        probe=individual_fit,
     ),
     Scenario(
         tab="RawDataController",
@@ -718,6 +754,35 @@ def test_a_replayed_clustering_and_merge_happen_in_both_tabs(
         assert sum(captured["probe"].values()) == 40
         assert "1" not in captured["probe"], "label 1 was not merged into 0"
         assert "0" in captured["probe"]
+
+
+@pytest.mark.timeout(240)
+def test_a_replayed_individual_plot_rebuilds_the_fit_commit_writes(
+    qapp, qtbot, tmp_path: Path, sample_metadata_db: str
+) -> None:
+    """The two tabs agreeing is not enough: a plot that fitted nothing would agree with itself."""
+    scenario = next(s for s in SCENARIOS if s.name == "ProteinController-individual")
+
+    captured_a, captured_b, _ = run_scenario(
+        scenario, tmp_path, sample_metadata_db, qtbot
+    )
+
+    assert captured_a["probe"] is not None
+    assert captured_b["probe"] == captured_a["probe"]
+
+
+@pytest.mark.timeout(240)
+def test_a_replayed_ensemble_plot_leaves_the_individual_fit(
+    qapp, qtbot, tmp_path: Path, sample_metadata_db: str
+) -> None:
+    scenario = next(s for s in SCENARIOS if s.tab == "ProteinController" and not s.name)
+
+    captured_a, captured_b, _ = run_scenario(
+        scenario, tmp_path, sample_metadata_db, qtbot
+    )
+
+    for captured in (captured_a, captured_b):
+        assert captured["probe"] == normalise(pd.DataFrame({"id": [-1]}))
 
 
 @pytest.mark.timeout(240)

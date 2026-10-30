@@ -975,15 +975,14 @@ def test_the_distribution_chain_still_loads_an_assisted_subset(
         }
     )
 
-    controller.load_event_distribution_data(
+    fetched = controller._fetch_event_subset(
         "ldr", "duration < 300", {"exp1": [2]}, "short events"
     )
 
     assert controller.model.calls_to("load_event_data") == [
         ("duration < 300", {"exp1": [2]})
     ]
-    controller.view.set_event_query.assert_called_once_with("SELECT * FROM data")
-    controller.view.set_event_data_generator.assert_called_once_with(generator)
+    assert fetched == ("SELECT * FROM data", generator)
 
 
 @pytest.mark.parametrize(

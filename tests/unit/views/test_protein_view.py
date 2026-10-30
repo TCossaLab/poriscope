@@ -297,11 +297,6 @@ class TestFormatAxisLabel:
 
 
 class TestStateSetters:
-    def test_set_event_data_generator(self, mock_view):
-        g = iter([1, 2, 3])
-        mock_view.set_event_data_generator(g)
-        assert mock_view.event_data_generator is g
-
     def test_set_event_plot_data_generator(self, mock_view):
         g = iter([])
         mock_view.set_event_plot_data_generator(g)
@@ -366,10 +361,13 @@ class TestSetDisplayMode:
 
 
 class TestCommitFits:
-    def test_raises_when_no_fit_data(self, mock_view):
-        mock_view.fit_data = None
-        with pytest.raises(AttributeError, match="fit data has not been set"):
-            mock_view._commit_fits("loader1")
+    def test_commit_individual_only_asks_the_controller(self, mock_view):
+        """Whether there is a fit to commit is the Controller's to say: the Model keeps it."""
+        mock_view.handle_parameter_change(
+            "p", "commit_individual", ({"db_loader": "loader1"},)
+        )
+
+        mock_view.fit_commit_requested.emit.assert_called_once_with("loader1")
 
 
 # ===========================================================================
@@ -409,8 +407,7 @@ ENSEMBLE_FIT_ATTRIBUTES = (
 
 
 def _seed_fits(view):
-    """Give both modes a fit, each recognisable, so a test can see which one survives."""
-    view.fit_data = "individual fit"
+    """Give the Ensemble fit recognisable values, so a test can see whether it survives."""
     for name in ENSEMBLE_FIT_ATTRIBUTES:
         setattr(view, name, f"{name} value")
 
@@ -431,7 +428,6 @@ class TestResetReadsNoMode:
 
         mock_view._reset_actions()
 
-        assert mock_view.fit_data == "individual fit"
         for name in ENSEMBLE_FIT_ATTRIBUTES:
             assert getattr(mock_view, name) == f"{name} value"
 
@@ -458,7 +454,6 @@ class TestResetReadsNoMode:
 
         mock_view._update_distribution_ensemble(recorded(mock_view, parameters))
 
-        assert mock_view.fit_data == "individual fit"
         for name in ENSEMBLE_FIT_ATTRIBUTES:
             assert getattr(mock_view, name) is None
 
@@ -481,30 +476,6 @@ class TestResetReadsNoMode:
 
         for name in ENSEMBLE_FIT_ATTRIBUTES:
             assert getattr(mock_view, name) is None
-        assert mock_view.fit_data == "individual fit"
-
-    def test_the_individual_plot_clears_the_individual_fit_it_replaces(self, mock_view):
-        mock_view._analysis_mode = "individual"
-        _seed_fits(mock_view)
-        mock_view.selected_experiment_and_channels_by_loader = {
-            "ldr": {"exp1": ["0"], "exp2": ["0"]}
-        }
-        mock_view.get_selected_filters = MagicMock(return_value={})
-        parameters = {
-            "db_loader": "ldr",
-            "plot_type": "Filtered Histogram",
-            "pore_diameter": "20.0",
-            "pore_length": "30.0",
-            "n_values": "10",
-            "bins": [50],
-            "sizes": False,
-        }
-
-        mock_view._update_distribution_individual(parameters)
-
-        assert mock_view.fit_data is None
-        for name in ENSEMBLE_FIT_ATTRIBUTES:
-            assert getattr(mock_view, name) == f"{name} value"
 
 
 # ===========================================================================
@@ -1498,30 +1469,52 @@ class TestHandleParameterChange:
             mock_view.handle_parameter_change("p", "plot_histogram", (self._params(),))
         mock.assert_called_once()
 
-    def test_update_plot_individual_mode(self, mock_view):
+    def _plot_params(self):
+        return self._params(
+            pore_diameter="20.0",
+            pore_length="30.0",
+            n_values="10",
+            bins=[50],
+            sizes=False,
+        )
+
+    def test_update_plot_individual_mode_asks_with_the_click_s_intent(self, mock_view):
         mock_view._analysis_mode = "individual"
-        with (
-            patch.object(mock_view, "_update_distribution_individual") as mock_ind,
-            patch.object(mock_view, "_update_distribution_ensemble") as mock_ens,
-        ):
-            mock_view.handle_parameter_change("p", "update_plot", (self._params(),))
-        mock_ind.assert_called_once()
+        mock_view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": ["0"]}}
+        mock_view.get_selected_filters = MagicMock(return_value={"f": "x > 1"})
+        with patch.object(mock_view, "_update_distribution_ensemble") as mock_ens:
+            mock_view.handle_parameter_change(
+                "p", "update_plot", (self._plot_params(),)
+            )
+        mock_view.individual_distribution_requested.emit.assert_called_once_with(
+            "ldr", {"f": "x > 1"}, {"exp1": ["0"]}, [50], False, 20.0, 30.0, 10
+        )
         mock_ens.assert_not_called()
+
+    def test_update_plot_individual_mode_with_no_scope_or_n(self, mock_view):
+        """N defaults to 100, and an unselected scope goes as an empty one."""
+        mock_view._analysis_mode = "individual"
+        mock_view.get_selected_filters = MagicMock(return_value={})
+        mock_view.handle_parameter_change(
+            "p",
+            "update_plot",
+            (self._params(pore_diameter="20.0", pore_length="30.0", n_values=""),),
+        )
+        args = mock_view.individual_distribution_requested.emit.call_args.args
+        assert args[2] == {}
+        assert args[7] == 100
 
     def test_update_plot_ensemble_mode(self, mock_view):
         mock_view._analysis_mode = "ensemble"
-        with (
-            patch.object(mock_view, "_update_distribution_individual") as mock_ind,
-            patch.object(mock_view, "_update_distribution_ensemble") as mock_ens,
-        ):
+        with patch.object(mock_view, "_update_distribution_ensemble") as mock_ens:
             mock_view.handle_parameter_change("p", "update_plot", (self._params(),))
         mock_ens.assert_called_once()
-        mock_ind.assert_not_called()
+        mock_view.individual_distribution_requested.emit.assert_not_called()
 
     def test_update_plot_sets_distribution_mode(self, mock_view):
         mock_view._set_display_mode("event")
-        with patch.object(mock_view, "_update_distribution_individual"):
-            mock_view.handle_parameter_change("p", "update_plot", (self._params(),))
+        mock_view.get_selected_filters = MagicMock(return_value={})
+        mock_view.handle_parameter_change("p", "update_plot", (self._plot_params(),))
         assert mock_view._display_mode == "distribution"
 
     def test_add_filter_routes(self, mock_view):
@@ -2142,99 +2135,6 @@ class TestShowEditFilterDialog:
 # ===========================================================================
 
 
-class TestUpdateDistributionIndividual:
-    def _params(self):
-        return {
-            "db_loader": "ldr",
-            "plot_type": "Filtered Histogram",
-            "pore_diameter": "20.0",
-            "pore_length": "30.0",
-            "n_values": "10",
-            "bins": [50],
-            "sizes": False,
-        }
-
-    def test_multiple_experiments_logs_warning_and_returns(self, mock_view, caplog):
-        mock_view.selected_experiment_and_channels_by_loader = {
-            "ldr": {"exp1": ["0"], "exp2": ["0"]}
-        }
-        mock_view.get_selected_filters = MagicMock(return_value={})
-        with caplog.at_level("WARNING"):
-            mock_view._update_distribution_individual(self._params())
-        assert any("single experiment" in r.message for r in caplog.records)
-
-    def test_multiple_channels_logs_warning_and_returns(self, mock_view, caplog):
-        mock_view.selected_experiment_and_channels_by_loader = {
-            "ldr": {"exp1": ["0", "1"]}
-        }
-        mock_view.get_selected_filters = MagicMock(return_value={})
-        with caplog.at_level("WARNING"):
-            mock_view._update_distribution_individual(self._params())
-        assert any("single channel" in r.message for r in caplog.records)
-
-    def test_multiple_filters_warns_and_returns(self, mock_view):
-        mock_view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": ["0"]}}
-        mock_view.get_selected_filters = MagicMock(return_value={"f1": "a", "f2": "b"})
-        received = []
-        mock_view.add_text_to_display.connect(lambda m, s: received.append(m))
-        mock_view._update_distribution_individual(self._params())
-        assert any("single subset" in m for m in received)
-
-    def test_sets_plot_initialized_true(self, mock_view):
-        mock_view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": ["0"]}}
-        mock_view.get_selected_filters = MagicMock(return_value={"f1": "a", "f2": "b"})
-        mock_view.plot_initialized = False
-        mock_view._update_distribution_individual(self._params())
-        assert mock_view.plot_initialized is True
-
-    # These four assert on the *status panel*, not the log. The caplog tests above
-    # passed throughout while the user was told nothing: QtHandler sits at ERROR and
-    # deliberately does not surface WARNING, and its own docstring says anything the
-    # user should be told belongs on add_text_to_display. Reported from a real run.
-
-    def test_multiple_experiments_are_reported_on_the_status_panel(self, mock_view):
-        mock_view.selected_experiment_and_channels_by_loader = {
-            "ldr": {"exp1": ["0"], "exp2": ["0"]}
-        }
-        mock_view.get_selected_filters = MagicMock(return_value={})
-
-        mock_view._update_distribution_individual(self._params())
-
-        said = [c.args[0] for c in mock_view.add_text_to_display.emit.call_args_list]
-        assert any("single experiment" in m for m in said)
-
-    def test_multiple_channels_are_reported_on_the_status_panel(self, mock_view):
-        mock_view.selected_experiment_and_channels_by_loader = {
-            "ldr": {"exp1": ["0", "1"]}
-        }
-        mock_view.get_selected_filters = MagicMock(return_value={})
-
-        mock_view._update_distribution_individual(self._params())
-
-        said = [c.args[0] for c in mock_view.add_text_to_display.emit.call_args_list]
-        assert any("single channel" in m for m in said)
-
-    def test_an_experiment_with_no_channel_is_reported(self, mock_view):
-        """
-        The empty case reaches the same guard as the too-many case.
-
-        The guard used to read ``> 1`` and a ``for channel in channels:`` over
-        an empty list simply never ran, so the tab drew nothing and said nothing.
-        """
-        mock_view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": []}}
-        mock_view.get_selected_filters = MagicMock(return_value={})
-
-        mock_view._update_distribution_individual(self._params())
-
-        said = [c.args[0] for c in mock_view.add_text_to_display.emit.call_args_list]
-        assert any("single channel" in m for m in said)
-
-
-# ===========================================================================
-# _update_distribution_ensemble — guard clauses
-# ===========================================================================
-
-
 class TestUpdateDistributionEnsemble:
     def _params(self):
         return {
@@ -2354,7 +2254,6 @@ class TestCommitFitsExtended:
     """
 
     def test_asks_whether_the_database_already_holds_fit_data(self, mock_view):
-        mock_view.fit_data = _fit_frame()
         asked = []
         mock_view.fit_commit_requested.connect(asked.append)
 
@@ -2363,7 +2262,6 @@ class TestCommitFitsExtended:
         assert asked == ["ldr"]
 
     def test_no_existing_columns_commits_without_asking_the_user(self, mock_view):
-        mock_view.fit_data = _fit_frame()
         sent = []
         mock_view.fit_commit_confirmed.connect(lambda *args: sent.append(args))
 
@@ -2371,25 +2269,18 @@ class TestCommitFitsExtended:
             mock_view.confirm_fit_commit("ldr", None)
 
         dialog.assert_not_called()
-        assert len(sent) == 1
-        loader, frame, units, table = sent[0]
-        assert (loader, table) == ("ldr", None)
-        assert list(frame.columns) == ["id"] + FIT_COLUMNS
-        assert len(units) == len(FIT_COLUMNS)
+        assert sent == [("ldr", None)]
 
     def test_existing_columns_ask_first_and_carry_the_table_through(self, mock_view):
-        mock_view.fit_data = _fit_frame()
         sent = []
         mock_view.fit_commit_confirmed.connect(lambda *args: sent.append(args))
 
         with patch.object(QMessageBox, "question", return_value=QMessageBox.Ok):
             mock_view.confirm_fit_commit("ldr", "events")
 
-        assert sent[0][0] == "ldr"
-        assert sent[0][3] == "events"
+        assert sent == [("ldr", "events")]
 
     def test_declining_the_overwrite_sends_nothing(self, mock_view):
-        mock_view.fit_data = _fit_frame()
         sent = []
         mock_view.fit_commit_confirmed.connect(lambda *args: sent.append(args))
 
@@ -2490,14 +2381,13 @@ class TestSetDistributionFits:
         )
         return solutions, solutions.copy(), fit_data
 
-    def test_the_summary_rows_are_kept_for_the_commit(self, mock_view, mocker):
-        """``_commit_fits`` writes these back to the database."""
+    def test_the_view_keeps_no_fit(self, mock_view, mocker):
+        """The Model keeps the fit Commit Individual writes; the View only draws it."""
         mocker.patch.object(mock_view, "update_plot")
-        prolate, oblate, fit_data = self._frames(rows=2)
 
-        mock_view.set_distribution_fits(prolate, oblate, fit_data)
+        mock_view.set_distribution_fits(*self._frames(rows=2))
 
-        assert mock_view.fit_data["id"].tolist() == [1, 2]
+        assert not hasattr(mock_view, "fit_data")
 
     def test_the_three_plots_are_requested(self, mock_view, mocker):
         """

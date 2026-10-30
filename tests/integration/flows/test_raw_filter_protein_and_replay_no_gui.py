@@ -550,3 +550,42 @@ def test_a_replay_never_asks_and_refuses_an_entry_without_event_id(
     assert no_event_id.call_count == 0
     assert on_figure(metadata_tab) == set()
     assert metadata_tab.tab_view.subset_filters["noid_raw"] == NO_EVENT_ID
+
+
+@pytest.mark.timeout(120)
+def test_a_protein_individual_plot_asks_about_event_id_before_it_is_recorded(
+    protein_tab: Triad, mocker: Any
+) -> None:
+    """As on the Metadata tab: the entry holds the text that ran."""
+    view = protein_tab.tab_view
+    view.subset_filters["noid_raw"] = NO_EVENT_ID
+    view._subset_controls.filter_comboBox.addItem("noid_raw")
+    asked = mocker.patch(
+        "poriscope.utils.MetaSubsetTabView.QMessageBox.question",
+        return_value=QMessageBox.Yes,
+    )
+    view.handle_parameter_change("proteincontrols", "set_mode_individual", ({},))
+    select(protein_tab, "noid_raw", "0")
+
+    view.handle_parameter_change(
+        "proteincontrols",
+        "update_plot",
+        (
+            {
+                "db_loader": LOADER,
+                "pore_diameter": 10.0,
+                "pore_length": 10.0,
+                "n_values": 20,
+                "bins": [20],
+                "sizes": False,
+            },
+        ),
+    )
+
+    assert asked.call_count == 1
+    entries = [
+        entry
+        for entry in protein_tab.tab_controller.tab_action_history.values()
+        if entry["action"] == "update_individual_distribution"
+    ]
+    assert entries[0]["kwargs"]["filters"]["noid_raw"].startswith("SELECT event_id")

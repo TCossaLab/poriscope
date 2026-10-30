@@ -1093,17 +1093,6 @@ def test_show_event_overlay_redraws_canvas(
 # ----------------------------- Set Event Data Generator Tests ------------------------------
 
 
-def test_set_event_data_generator_sets_value(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
-    """Verify event_data_generator is set correctly."""
-    generator = iter([{"data": "test"}])
-
-    view.set_event_data_generator(generator)
-
-    assert view.event_data_generator == generator
-
-
 # ----------------------------- Undo Plot Tests ------------------------------
 
 

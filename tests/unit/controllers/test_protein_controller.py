@@ -406,64 +406,151 @@ class TestFitEventHistograms:
         assert any("Unable to fit the event histograms" in m for m in messages)
 
 
-class TestFitDistributionEvents:
-    """The same, plus the pore geometry the sampling half needs."""
+class TestUpdateIndividualDistribution:
+    """Fetch, bin, fit and sample one subset; keep the fit; have the View draw it."""
 
-    def test_the_three_frames_reach_the_view(self, controller) -> None:
+    SCOPE = {"exp1": ["3"]}
+
+    def _fetch(self, controller, events):
         """
-        Bin, fit, sample, draw - four Model calls behind one intent, and the View
-        is handed only what it draws.
+        Answer the fetch with a query and the given events, without a real loader.
+
+        :param controller: the controller under test
+        :type controller: ProteinController
+        :param events: the events to answer with
+        :type events: list
+        :return: the recorded fetch arguments
+        :rtype: list
         """
+        asked = []
+
+        def fetch(*args):
+            asked.append(args)
+            return ("SELECT 1", iter(events))
+
+        controller._fetch_event_subset = fetch
+        return asked
+
+    def _drawing(self, controller):
+        controller.view.reset = MagicMock()
+        controller.view.set_event_query = MagicMock()
         controller.view.set_distribution_fits = MagicMock()
 
-        controller.fit_distribution_events(
-            [_two_level_event(1)], "Filtered Histogram", [60], False, 10.0, 20.0, 5
+    def _plot(self, controller, filters=None, scope=None):
+        return controller.update_individual_distribution(
+            "ldr",
+            {} if filters is None else filters,
+            self.SCOPE if scope is None else scope,
+            [60],
+            False,
+            10.0,
+            20.0,
+            5,
         )
 
+    def test_the_fit_is_kept_and_its_frames_reach_the_view(self, controller) -> None:
+        """
+        Bin, fit, sample, draw - and the fit Commit Individual writes stays with the
+        Model, after the Individual figures are reset.
+        """
+        self._drawing(controller)
+        asked = self._fetch(controller, [_two_level_event(1)])
+
+        assert self._plot(controller) is True
+
+        assert asked == [("ldr", "", {"exp1": ["3"]}, "Full Dataset")]
+        controller.view.reset.assert_called_once_with("2d", "individual")
         df_prolate, df_oblate, fit_data = (
             controller.view.set_distribution_fits.call_args.args
         )
         assert list(df_prolate.columns) == ["V", "m", "a", "b"]
         assert list(df_oblate.columns) == ["V", "m", "a", "b"]
         assert fit_data["id"].tolist() == [1]
+        assert controller.model.individual_fit is fit_data
 
-    def test_a_subset_with_nothing_fittable_is_reported_and_draws_nothing(
+    def test_a_subset_with_nothing_fittable_is_reported_and_changes_nothing(
         self, controller, mocker
     ) -> None:
         """
         Every guard in the drawing half tests a frame built from these events, so
-        without this the tab drew empty axes and said nothing at all.
+        without this the tab drew empty axes and said nothing at all. The figures and
+        the previous fit stay as they were.
         """
-        controller.view.set_distribution_fits = MagicMock()
+        self._drawing(controller)
         controller.add_text_to_display = mocker.Mock()
         controller.add_text_to_display.emit = mocker.Mock()
+        previous = pd.DataFrame({"id": [9]})
+        controller.model.set_individual_fit(previous)
         flat = _event(2)
         flat["filtered_data"] = np.zeros_like(flat["filtered_data"])
+        self._fetch(controller, [flat])
 
-        controller.fit_distribution_events(
-            [flat], "Filtered Histogram", None, False, 10.0, 20.0, 5
-        )
+        assert self._plot(controller) is False
 
+        controller.view.reset.assert_not_called()
         controller.view.set_distribution_fits.assert_not_called()
+        assert controller.model.individual_fit is previous
         messages = [
             call.args[0] for call in controller.add_text_to_display.emit.call_args_list
         ]
         assert any("nothing to plot" in m for m in messages)
 
-    def test_a_failure_is_reported_and_draws_nothing(self, controller, mocker) -> None:
-        controller.view.set_distribution_fits = MagicMock()
+    def test_a_failed_fit_is_reported(self, controller, mocker) -> None:
         controller.add_text_to_display = mocker.Mock()
         controller.add_text_to_display.emit = mocker.Mock()
 
-        controller.fit_distribution_events(
+        fitted = controller._fit_individual_events(
             [_event(1)], "Sideways Histogram", None, False, 10.0, 20.0, 5
         )
 
-        controller.view.set_distribution_fits.assert_not_called()
+        assert fitted is None
         messages = [
             call.args[0] for call in controller.add_text_to_display.emit.call_args_list
         ]
         assert any("Unable to fit the event histograms" in m for m in messages)
+
+    @pytest.mark.parametrize(
+        ("filters", "scope", "message"),
+        [
+            (
+                {},
+                {"exp1": ["3"], "exp2": ["1"]},
+                "Only a single experiment can be used for Filtered Histogram",
+            ),
+            (
+                {"a": "x > 1", "b": "x > 2"},
+                {"exp1": ["3"]},
+                "Only a single subset can be used for protein analysis",
+            ),
+            (
+                {},
+                {"exp1": ["3", "4"]},
+                "Only a single channel at a time can be used for protein analysis",
+            ),
+            (
+                {},
+                {"exp1": []},
+                "Only a single channel at a time can be used for protein analysis",
+            ),
+        ],
+        ids=["two experiments", "two subsets", "two channels", "no channel"],
+    )
+    def test_a_refused_selection_is_said_and_fetches_nothing(
+        self, controller, mocker, filters, scope, message
+    ) -> None:
+        self._drawing(controller)
+        controller.add_text_to_display = mocker.Mock()
+        controller.add_text_to_display.emit = mocker.Mock()
+        asked = self._fetch(controller, [_two_level_event(1)])
+
+        assert self._plot(controller, filters=filters, scope=scope) is False
+
+        assert asked == []
+        controller.view.reset.assert_not_called()
+        messages = [
+            call.args[0] for call in controller.add_text_to_display.emit.call_args_list
+        ]
+        assert message in messages
 
 
 class TestBuildEnsembleHistogram:

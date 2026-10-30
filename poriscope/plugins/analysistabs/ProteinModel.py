@@ -60,7 +60,20 @@ class ProteinModel(MetaSubsetTabModel):
     @log(logger=logger)
     @override
     def _init(self) -> None:
-        pass
+        """
+        Start with no Individual fit.
+        """
+        self.individual_fit: Optional[pd.DataFrame] = None
+
+    @log(logger=logger)
+    def set_individual_fit(self, fit: pd.DataFrame) -> None:
+        """
+        Keep the Individual plot's fit, one summary row per fitted event, for Commit Individual.
+
+        :param fit: one row per fitted event, keyed by its database id
+        :type fit: pd.DataFrame
+        """
+        self.individual_fit = fit
 
     @log(logger=logger)
     def _double_gaussian(

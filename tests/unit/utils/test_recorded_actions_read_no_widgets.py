@@ -84,7 +84,10 @@ ALLOWED: Dict[Tuple[str, str, str], str] = {
         "widget-derived state",
         f"{method} reads subset_filters",
     ): _EVENT_ID_QUESTION
-    for action in ("MetadataController.overlay_plot",)
+    for action in (
+        "MetadataController.overlay_plot",
+        "ProteinController.update_individual_distribution",
+    )
     for method in ("offer_event_id", "revert_event_id_offer")
 }
 
