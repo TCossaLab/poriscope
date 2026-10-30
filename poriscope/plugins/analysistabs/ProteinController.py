@@ -109,7 +109,7 @@ class ProteinController(MetaSubsetTabController):
 
         A recorded action: a plot records one before it draws, with its own mode, so a
         replay clears the figures it was recorded on whichever mode is showing. Clears no
-        fit: the plot that resets keeps the fit it draws.
+        fit: the plot that resets keeps the fit it draws. See :meth:`_start_figure`.
 
         :param axis_type: Either '2d' or '3d'; the figures here are always 2-D
         :type axis_type: str
@@ -117,6 +117,25 @@ class ProteinController(MetaSubsetTabController):
         :type mode: str
         """
         self.view.clear_plot(axis_type, mode)
+
+    @log(logger=logger)
+    def _start_figure(self, mode: str) -> None:
+        """
+        Clear a mode's figures for a new plot, recording the reset unless it is already the last entry.
+
+        A replay replays the plot's recorded reset before the plot, so the figures are
+        already clear and a second reset would be recorded beside the first.
+
+        :param mode: 'individual' or 'ensemble', whose figures the plot draws on
+        :type mode: str
+        """
+        last = next(reversed(self.tab_action_history.values()), None)
+        if (
+            last is None
+            or last.get("action") != RESET_ACTION
+            or last.get("kwargs", {}).get("mode") != mode
+        ):
+            self.reset("2d", mode)
 
     @log(logger=logger)
     def _one_subset(
@@ -279,7 +298,7 @@ class ProteinController(MetaSubsetTabController):
             )
             return False
 
-        self.reset("2d", "ensemble")
+        self._start_figure("ensemble")
         self.model.set_ensemble_fit(None)
         self.view.set_event_query(query)
         label = (
@@ -625,7 +644,7 @@ class ProteinController(MetaSubsetTabController):
             return False
         df_prolate, df_oblate, fit_data = fitted
 
-        self.reset("2d", "individual")
+        self._start_figure("individual")
         self.model.set_individual_fit(fit_data)
         self.view.set_event_query(query)
         self._show_distribution("individual", df_prolate, df_oblate, fit_data)

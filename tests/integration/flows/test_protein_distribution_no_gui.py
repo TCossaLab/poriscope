@@ -124,6 +124,43 @@ def test_the_recorded_reset_names_the_mode_of_the_plot_it_starts(
     assert reset["kwargs"]["mode"] == "ensemble"
 
 
+@pytest.mark.parametrize("mode", ["individual", "ensemble"])
+def test_a_replayed_plot_records_its_reset_once(protein_tab: Triad, mode: str) -> None:
+    """
+    A replay records the history it replays, unchanged.
+
+    The replayed reset has just cleared the plot's figures, so the plot does not record
+    a second one.
+    """
+    update_plot(protein_tab, mode)
+    controller = protein_tab.tab_controller
+    history = list(controller.tab_action_history.values())
+    controller.tab_action_history.clear()
+
+    controller.replay(history)
+
+    assert list(controller.tab_action_history.values()) == history
+
+
+def test_a_plot_after_the_other_mode_s_reset_records_its_own(
+    protein_tab: Triad,
+) -> None:
+    """Only a reset of the plot's own mode has cleared its figures."""
+    update_plot(protein_tab, "ensemble")
+    controller = protein_tab.tab_controller
+    controller.tab_action_history.clear()
+    controller.reset("2d", "ensemble")
+
+    update_plot(protein_tab, "individual")
+
+    resets = [
+        entry["kwargs"]["mode"]
+        for entry in controller.tab_action_history.values()
+        if entry["action"] == "reset"
+    ]
+    assert resets == ["ensemble", "individual"]
+
+
 def test_an_ensemble_plot_replayed_in_individual_mode_draws_on_the_ensemble_figures(
     protein_tab: Triad,
 ) -> None:
