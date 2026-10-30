@@ -266,7 +266,7 @@ class TestSessionState:
 
 
 # ===========================================================================
-# fit_event_histograms / fit_distribution_events - the binning's destination
+# plot_event_histograms and the distribution plots - the binning's destination
 # ===========================================================================
 #
 # Neither slot once had a test of its own: their callers were covered, and that
@@ -354,56 +354,90 @@ def _two_level_event(event_id=1, low=0.25, high=0.55, rng_seed=0, noise=8.0):
     }
 
 
-class TestFitEventHistograms:
-    """Bin every event, fit every histogram, hand both back to be drawn."""
+class TestPlotEventHistograms:
+    """The recorded Plot Histogram: fetch these events, bin and fit each, and have the View draw them."""
 
-    def test_the_view_is_handed_one_histogram_and_one_fit_per_event(
+    def _fetch(self, controller, events):
+        asked = []
+
+        def fetch(*args):
+            asked.append(args)
+            return iter(events)
+
+        controller.fetch_event_plot_data = fetch
+        return asked
+
+    def _plot(self, controller, bins=None, sizes=False, event_ids=(2, 1)):
+        return controller.plot_event_histograms(
+            "ldr", list(event_ids), "exp1", "0", "F", "SELECT 1", bins, sizes
+        )
+
+    def test_the_view_is_handed_one_histogram_and_one_fit_per_event_in_order(
         self, controller
     ) -> None:
         """
         The drawing half lays out one subplot per event in the order given, so the
         two lists it receives have to stay index-aligned with the events.
         """
-        controller.view.set_event_histogram_fits = MagicMock()
-        events = [_event(1), _event(2, rng_seed=1)]
+        controller.view.show_event_histograms = MagicMock()
+        asked = self._fetch(controller, [_event(1), _event(2, rng_seed=1)])
 
-        controller.fit_event_histograms(events, "Filtered Histogram", None, False)
+        assert self._plot(controller) is True
 
+        assert asked == [("ldr", [2, 1], "exp1", 0, {"exp1": ["0"]}, "histograms")]
         fits, histograms, event_data = (
-            controller.view.set_event_histogram_fits.call_args.args
+            controller.view.show_event_histograms.call_args.args
         )
-        assert event_data is events
+        assert [event["event_id"] for event in event_data] == [2, 1]
         assert len(fits) == len(histograms) == 2
         for bincenters, amplitude in histograms:
             assert len(bincenters) == len(amplitude) > 0
 
     def test_the_bin_request_reaches_the_binning(self, controller) -> None:
         """An explicit count is the cheapest way to see the request got through."""
-        controller.view.set_event_histogram_fits = MagicMock()
+        controller.view.show_event_histograms = MagicMock()
+        self._fetch(controller, [_event(1)])
 
-        controller.fit_event_histograms([_event(1)], "Filtered Histogram", [37], False)
+        self._plot(controller, bins=[37], event_ids=[1])
 
-        histograms = controller.view.set_event_histogram_fits.call_args.args[1]
+        histograms = controller.view.show_event_histograms.call_args.args[1]
         assert len(histograms[0][0]) == 37
 
-    def test_an_unusable_bin_request_is_reported_and_draws_nothing(
+    def test_an_unusable_bin_request_is_reported_and_draws_and_records_nothing(
         self, controller, mocker
     ) -> None:
         """
         A stale grid of subplots must not be left under this request's label, and
         the refusal has to reach the user rather than only the log.
         """
-        controller.view.set_event_histogram_fits = MagicMock()
+        controller.view.show_event_histograms = MagicMock()
         controller.add_text_to_display = mocker.Mock()
         controller.add_text_to_display.emit = mocker.Mock()
+        self._fetch(controller, [_event(1)])
 
-        controller.fit_event_histograms([_event(1)], "Filtered Histogram", "bad", False)
+        assert self._plot(controller, bins="bad", event_ids=[1]) is False
 
-        controller.view.set_event_histogram_fits.assert_not_called()
+        controller.view.show_event_histograms.assert_not_called()
+        assert not controller.tab_action_history
         messages = [
             call.args[0] for call in controller.add_text_to_display.emit.call_args_list
         ]
         assert any("Unable to fit the event histograms" in m for m in messages)
+
+    def test_an_empty_fetch_names_the_event_and_records_nothing(
+        self, controller, mocker
+    ) -> None:
+        controller.view.show_event_histograms = MagicMock()
+        controller.add_text_to_display = mocker.Mock()
+        controller.add_text_to_display.emit = mocker.Mock()
+        self._fetch(controller, [])
+
+        assert self._plot(controller) is False
+
+        controller.view.show_event_histograms.assert_not_called()
+        assert not controller.tab_action_history
+        (message, _), _ = controller.add_text_to_display.emit.call_args
+        assert message == "No data available for event_id 2"
 
 
 class TestUpdateIndividualDistribution:
@@ -844,3 +878,55 @@ class TestReset:
         controller.view.clear_plot.assert_called_once_with("2d", "ensemble")
         assert controller.model.individual_fit is individual
         assert controller.model.ensemble_fit is ensemble
+
+
+class TestPlotEvents:
+    """The recorded Plot Events: these events, from this experiment and channel, drawn."""
+
+    def _plot(self, controller, raw=False):
+        return controller.plot_events("ldr", [3, 1], "exp1", "0", "F", "SELECT 1", raw)
+
+    def test_the_events_are_drawn_in_the_order_asked(self, controller) -> None:
+        controller.view.show_events = MagicMock()
+        asked = []
+
+        def fetch(*args):
+            asked.append(args)
+            return iter([_event(1), _event(3)])
+
+        controller.fetch_event_plot_data = fetch
+
+        assert self._plot(controller, raw=True) is True
+
+        assert asked == [("ldr", [3, 1], "exp1", 0, {"exp1": ["0"]}, "events")]
+        (events,) = controller.view.show_events.call_args.args
+        assert [event["event_id"] for event in events] == [3, 1]
+        assert controller.view.show_events.call_args.kwargs == {"use_raw": True}
+
+    def test_a_refused_fetch_draws_nothing_and_says_nothing_more(
+        self, controller, mocker
+    ) -> None:
+        """Whoever refused it has said why; naming the event would contradict that."""
+        controller.view.show_events = MagicMock()
+        controller.add_text_to_display = mocker.Mock()
+        controller.add_text_to_display.emit = mocker.Mock()
+        controller.fetch_event_plot_data = lambda *a: None
+
+        assert self._plot(controller) is False
+
+        controller.view.show_events.assert_not_called()
+        assert not controller.tab_action_history
+        controller.add_text_to_display.emit.assert_not_called()
+
+    def test_an_empty_fetch_names_the_event_asked_for(self, controller, mocker) -> None:
+        controller.view.show_events = MagicMock()
+        controller.add_text_to_display = mocker.Mock()
+        controller.add_text_to_display.emit = mocker.Mock()
+        controller.fetch_event_plot_data = lambda *a: iter([])
+
+        assert self._plot(controller) is False
+
+        controller.view.show_events.assert_not_called()
+        assert not controller.tab_action_history
+        (message, _), _ = controller.add_text_to_display.emit.call_args
+        assert message == "No data available for event_id 3"

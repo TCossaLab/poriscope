@@ -94,6 +94,8 @@
 * **Breaking:** Protein's fits are kept by the Model, as `ProteinModel.individual_fit` and `ensemble_fit` (an `EnsembleFit`), which Commit and Report All (`ensemble_report_requested`, `ProteinController.report_ensemble_fit`) read: `ProteinView.fit_data`, its `ensemble_fit_*` attributes and `event_data_generator` are gone, and `fit_commit_confirmed` carries only the loader and the table to overwrite
 * **Breaking:** every Protein drawing names the mode whose figures it uses: the recorded reset is `ProteinController.reset(axis_type, mode)`, drawn by `ProteinView.clear_plot`, the View draws through `show_histogram`, `show_solutions`, `show_peak_fits` and `show_ensemble_report`, and its mode-following `fig_hist`, `ax_hist`, `canvas_hist`, `fig_vm`, `ax_vm` and `canvas_vm` properties, `update_plot`, `set_distribution_fits`, `set_ensemble_histogram`, `set_ensemble_geometry_fit` and its `plotted_datasets` and `allowed_*` fields are gone
 * **Breaking:** `MetaSubsetTabView.scatterplot_requested` and `MetaSubsetTabController.filter_scatterplot` are removed; `set_scatterplot` stays
+* **Breaking:** Protein's Plot Events and Plot Histogram are recorded on `ProteinController.plot_events` and `plot_event_histograms`, which take the loader, the event ids the Event ID resolved to, the experiment, the channel, the filter's name and SQL, and Raw or the bins and Sizes, asked for through `plot_events_requested` and `event_histograms_requested`; `event_histogram_fits_requested`, `fit_event_histograms`, `_update_event_histogram` and `_fetch_event_data` are gone, and `_update_event_plot` and `set_event_histogram_fits` are the public `show_events` and `show_event_histograms`
+* **Breaking:** the event-plot round trip leaves the subset-tab bases: `MetaSubsetTabView.event_plot_data_requested`, `set_event_plot_data_generator` and `plot_events_generator`, and `MetaSubsetTabController.load_event_plot_data`, are removed; a Controller calls `fetch_event_plot_data`
 
 ### Developer Tooling:
 
@@ -261,9 +263,11 @@
 
 * The Metadata tab's Plot Events and its arrows are now part of the plot history: Undo steps back one block of events at a time and then to the plot they replaced, Undo of Plot Events on an empty figure clears it, and a saved plot configuration replays them
 
-* The Protein tab's Update Plot is now part of the plot history in both modes: Undo and a saved plot configuration redraw each plot on its own mode's figures without switching the page, and Commit and Report All read the fit of the plot on screen
+* The Protein tab's Update Plot, Plot Events, Plot Histogram and their arrows are now recorded for replay, each distribution plot on its own mode's figures, though the tab has no Undo or plot configuration buttons yet; Commit and Report All read the fit of the plot on screen
 
 * A refused Protein plot (more than one experiment, channel or subset, or no usable events) now leaves the previous plot in place instead of clearing it
+
+* The Protein tab's Plot Events and Plot Histogram now refuse more than one experiment, channel or filter before reading the filtered events, so a raw filter is not asked about `event_id` for a plot that is then refused
 
 * **Fixed Undo of a figure's only plot leaving it drawn** in the analysis tabs that record a reset: the figure is now cleared
 

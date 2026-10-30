@@ -5,7 +5,7 @@ Covers the ProteinView analysis tab end-to-end, including:
   - format_axis_label (module-level helper)
   - Plotting: _plot_all_points_histogram, _plot_scatterplot,
     _plot_xyerr_scatterplot, update_plot
-  - Event/histogram navigation and caching: _fetch_event_data,
+  - Event/histogram navigation and caching: _refuse_scope, _resolve_events,
     _handle_plot_events, _handle_plot_histogram, _shift_range_and_update_plot
   - Filter management: add/edit/delete/save/load, and raw-SQL validation
     callbacks (on_raw_filter_validated)
@@ -297,10 +297,6 @@ class TestFormatAxisLabel:
 
 
 class TestStateSetters:
-    def test_set_event_plot_data_generator(self, mock_view):
-        g = iter([])
-        mock_view.set_event_plot_data_generator(g)
-        assert mock_view.plot_events_generator is g
 
     def test_get_current_view(self, mock_view):
         assert mock_view.get_current_view() == "ProteinView"
@@ -634,96 +630,69 @@ class TestShiftRangeAndUpdatePlot:
 
 
 # ===========================================================================
-# _update_event_plot
+# show_events
 # ===========================================================================
 
 
-class TestUpdateEventPlot:
+class TestShowEvents:
     def test_switches_to_event_mode(self, mock_view):
-        mock_view._update_event_plot([_make_event(1), _make_event(2)])
+        mock_view.show_events([_make_event(1), _make_event(2)])
         assert mock_view._display_mode == "event"
 
     def test_canvas_drawn(self, mock_view):
-        mock_view._update_event_plot([_make_event(1)])
+        mock_view.show_events([_make_event(1)])
         assert mock_view._display_mode == "event"
 
     def test_multi_event_grid(self, mock_view):
-        mock_view._update_event_plot([_make_event(i) for i in range(1, 5)])
+        mock_view.show_events([_make_event(i) for i in range(1, 5)])
 
     def test_cache_committed(self, mock_view):
         # Verify the method completes without error; cache internals are MetaView's
-        mock_view._update_event_plot([_make_event(1)])
+        mock_view.show_events([_make_event(1)])
 
 
 # ===========================================================================
-# _update_event_histogram
+# show_event_histograms
 # ===========================================================================
 
 
-def _answer_event_histogram_fits(view):
+def _show_event_histograms(view, events, bins=None, sizes=False):
     """
-    Run the round trip ProteinController runs, and hand the answer back to the View.
-
-    ``_update_event_histogram`` is only the request; ``set_event_histogram_fits``
-    draws the answer. These tests drive both halves, because driving only
-    the first asserts against a View that has not drawn anything yet.
+    Draw what ProteinController.plot_event_histograms would hand the View for these events.
 
     The histograms and the fits both come from a **real ProteinModel** rather than a
     stub, so their arity and their shapes are the collaborator's own rather than this
-    test's idea of them. The binning sits on the Model beside the fitting, so this
-    helper runs both calls the Controller runs.
+    test's idea of them.
 
-    :param view: the view whose request has just been emitted
+    :param view: the view to draw on
     :type view: ProteinView
+    :param events: the events to bin and fit
+    :type events: list
+    :param bins: the bin request
+    :type bins: Any
+    :param sizes: does bins refer to a bin width
+    :type sizes: bool
     :return: None
     :rtype: None
     """
-    event_data, plot_type, bins, sizes = (
-        view.event_histogram_fits_requested.emit.call_args.args
-    )
     model = ProteinModel()
-    histograms = model.build_event_histograms(event_data, plot_type, bins, sizes)
-    view.set_event_histogram_fits(
-        model.fit_histograms(histograms), histograms, event_data
-    )
+    histograms = model.build_event_histograms(events, "Filtered Histogram", bins, sizes)
+    view.show_event_histograms(model.fit_histograms(histograms), histograms, events)
 
 
-class TestUpdateEventHistogram:
-    def test_the_request_carries_the_events_and_the_bin_request(self, mock_view):
-        """
-        The binning is done below the widget, so what goes out is the events
-        themselves and how the caller asked for them to be binned.
-        """
-        events = [_make_event(i, rng_seed=i) for i in range(1, 4)]
-
-        mock_view._update_event_histogram(events, bins=[40], sizes=False)
-
-        event_data, plot_type, bins, sizes = (
-            mock_view.event_histogram_fits_requested.emit.call_args.args
-        )
-        assert event_data is events
-        assert plot_type == "Filtered Histogram"
-        assert bins == [40]
-        assert sizes is False
-
+class TestShowEventHistograms:
     def test_switches_to_event_mode(self, mock_view):
-        mock_view._update_event_histogram([_make_event(1)])
-        _answer_event_histogram_fits(mock_view)
+        _show_event_histograms(mock_view, [_make_event(1)])
         assert mock_view._display_mode == "event"
 
     def test_multiple_events(self, mock_view):
-        mock_view._update_event_histogram(
-            [_make_event(i, rng_seed=i) for i in range(1, 4)]
+        _show_event_histograms(
+            mock_view, [_make_event(i, rng_seed=i) for i in range(1, 4)]
         )
-        _answer_event_histogram_fits(mock_view)
+        assert mock_view.fig_event.add_subplot.call_count == 3
 
     def test_custom_bins(self, mock_view):
-        mock_view._update_event_histogram([_make_event(1)], bins=[50])
-        _answer_event_histogram_fits(mock_view)
-
-    def test_cache_committed(self, mock_view):
-        mock_view._update_event_histogram([_make_event(1)])
-        _answer_event_histogram_fits(mock_view)
+        _show_event_histograms(mock_view, [_make_event(1)], bins=[50])
 
     def test_an_event_with_no_fit_still_gets_its_histogram_drawn(self, mock_view):
         """
@@ -733,15 +702,12 @@ class TestUpdateEventHistogram:
         histogram itself - which is what stops a fit regression showing up as an
         empty grid rather than as a missing orange line.
         """
-        mock_view._update_event_histogram([_make_event(1)])
-        event_data, plot_type, bins, sizes = (
-            mock_view.event_histogram_fits_requested.emit.call_args.args
-        )
+        event_data = [_make_event(1)]
         histograms = ProteinModel().build_event_histograms(
-            event_data, plot_type, bins, sizes
+            event_data, "Filtered Histogram", None, False
         )
 
-        mock_view.set_event_histogram_fits([(None, None)], histograms, event_data)
+        mock_view.show_event_histograms([(None, None)], histograms, event_data)
 
         assert mock_view._display_mode == "event"
         assert mock_view.fig_event.add_subplot.call_count == 1
@@ -1005,13 +971,12 @@ class TestPipeline:
         assert len(df_prolate) <= 20 and len(df_oblate) <= 20
         assert list(df_prolate.columns) == ["V", "m", "a", "b"]
 
-    def test_update_event_plot_end_to_end(self, mock_view):
-        mock_view._update_event_plot([_make_event(1), _make_event(2)])
+    def test_show_events_end_to_end(self, mock_view):
+        mock_view.show_events([_make_event(1), _make_event(2)])
         assert mock_view._display_mode == "event"
 
-    def test_update_event_histogram_end_to_end(self, mock_view):
-        mock_view._update_event_histogram([_make_event(1)])
-        _answer_event_histogram_fits(mock_view)
+    def test_show_event_histograms_end_to_end(self, mock_view):
+        _show_event_histograms(mock_view, [_make_event(1)])
         assert mock_view._display_mode == "event"
 
 
@@ -1274,166 +1239,47 @@ class TestHandleParameterChange:
         assert mock.call_args[0][0] == "totally_unknown"
 
 
-class TestFetchEventData:
-    """
-    ``None`` means refused and already reported; ``[]`` means the fetch ran and
-    found nothing. The callers tell the two apart so a refusal does not get a
-    second, contradictory line naming the event - see
-    ``test_protein_event_fetch_messages.py``.
-    """
+class TestRefuseScope:
+    """Events are plotted from one subset of one channel of one experiment, or the click says why not."""
 
-    def _params(self):
-        return {"db_loader": "ldr", "event_index": [1]}
-
-    def test_no_experiments_is_refused(self, mock_view):
-        mock_view.selected_experiment_and_channels_by_loader = {}
-        mock_view.get_selected_filters = MagicMock(return_value={})
-        result = mock_view._fetch_event_data(self._params())
-        assert result is None
-
-    def test_no_experiments_emits_message(self, mock_view):
-        mock_view.selected_experiment_and_channels_by_loader = {}
-        mock_view.get_selected_filters = MagicMock(return_value={})
+    @pytest.mark.parametrize(
+        ("scope", "filters", "message"),
+        [
+            ({}, {}, "No experiments or channels are in scope"),
+            ({"ldr": {}}, {}, "No experiments or channels are in scope"),
+            ({"ldr": {"exp1": ["0"]}}, {"f1": "a", "f2": "b"}, "more than one subset"),
+            ({"ldr": {"exp1": ["0"], "exp2": ["0"]}}, {}, "single experiment"),
+            ({"ldr": {"exp1": ["0", "1"]}}, {}, "single channel"),
+        ],
+        ids=[
+            "no scope",
+            "empty scope",
+            "two filters",
+            "two experiments",
+            "two channels",
+        ],
+    )
+    def test_a_scope_that_cannot_be_plotted_is_refused_with_its_reason(
+        self, mock_view, scope, filters, message
+    ):
+        mock_view.selected_experiment_and_channels_by_loader = scope
+        mock_view.get_selected_filters = MagicMock(return_value=filters)
         received = []
         mock_view.add_text_to_display.connect(lambda m, s: received.append(m))
-        mock_view._fetch_event_data(self._params())
-        assert any("No experiments or channels" in m for m in received)
 
-    def test_multiple_filters_is_refused(self, mock_view):
-        mock_view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": ["0"]}}
-        mock_view.get_selected_filters = MagicMock(return_value={"f1": "a", "f2": "b"})
-        result = mock_view._fetch_event_data(self._params())
-        assert result is None
+        assert mock_view._refuse_scope("ldr", "events") is True
 
-    def test_multiple_filters_emits_message(self, mock_view):
+        assert len(received) == 1 and message in received[0]
+
+    def test_one_subset_of_one_channel_is_let_through_in_silence(self, mock_view):
         mock_view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": ["0"]}}
-        mock_view.get_selected_filters = MagicMock(return_value={"f1": "a", "f2": "b"})
+        mock_view.get_selected_filters = MagicMock(return_value={"f1": "a"})
         received = []
         mock_view.add_text_to_display.connect(lambda m, s: received.append(m))
-        mock_view._fetch_event_data(self._params())
-        assert any("more than one subset" in m for m in received)
 
-    def test_empty_loader_selection_is_refused(self, mock_view):
-        mock_view.selected_experiment_and_channels_by_loader = {"ldr": {}}
-        mock_view.get_selected_filters = MagicMock(return_value={})
-        result = mock_view._fetch_event_data(self._params())
-        assert result is None
+        assert mock_view._refuse_scope("ldr", "events") is False
 
-    def test_multiple_experiments_is_refused(self, mock_view):
-        mock_view.selected_experiment_and_channels_by_loader = {
-            "ldr": {"exp1": ["0"], "exp2": ["0"]}
-        }
-        mock_view.get_selected_filters = MagicMock(return_value={})
-        result = mock_view._fetch_event_data(self._params())
-        assert result is None
-
-    def test_multiple_experiments_emits_message(self, mock_view):
-        mock_view.selected_experiment_and_channels_by_loader = {
-            "ldr": {"exp1": ["0"], "exp2": ["0"]}
-        }
-        mock_view.get_selected_filters = MagicMock(return_value={})
-        received = []
-        mock_view.add_text_to_display.connect(lambda m, s: received.append(m))
-        mock_view._fetch_event_data(self._params())
-        assert any("single experiment" in m for m in received)
-
-    def test_multiple_channels_is_refused(self, mock_view):
-        mock_view.selected_experiment_and_channels_by_loader = {
-            "ldr": {"exp1": ["0", "1"]}
-        }
-        mock_view.get_selected_filters = MagicMock(return_value={})
-        result = mock_view._fetch_event_data(self._params())
-        assert result is None
-
-    def test_multiple_channels_emits_message(self, mock_view):
-        mock_view.selected_experiment_and_channels_by_loader = {
-            "ldr": {"exp1": ["0", "1"]}
-        }
-        mock_view.get_selected_filters = MagicMock(return_value={})
-        received = []
-        mock_view.add_text_to_display.connect(lambda m, s: received.append(m))
-        mock_view._fetch_event_data(self._params())
-        assert any("single channel" in m for m in received)
-
-    def test_empty_filters_default_to_full_dataset(self, mock_view):
-        """When no filters selected, defaults to {'Full Dataset': ''}. Nothing answers
-        the event-plot request in this test, so the generator is never populated;
-        requesting no event indices keeps the code from pulling from a None generator.
-        """
-        mock_view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": ["0"]}}
-        mock_view.get_selected_filters = MagicMock(return_value={})
-        mock_view.plot_events_generator = None
-        mock_view.current_sql_filter = None
-        mock_view.current_experiment = None
-        mock_view.current_channel = None
-        mock_view.cached_events = {}
-        params = {"db_loader": "ldr", "event_index": []}
-        result = mock_view._fetch_event_data(params)
-        assert result is None
-
-    def test_asks_the_controller_for_exactly_the_events_requested(self, mock_view):
-        """
-        The resolve-and-load chain is one intent answered by
-        ``ProteinController.load_event_plot_data``, so the stub stands in for the
-        Controller by setting the generator the way it does - a stub that does nothing
-        where the real collaborator sets the answer would make every assertion below
-        vacuous.
-        """
-        mock_view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": ["0"]}}
-        mock_view.get_selected_filters = MagicMock(return_value={"Full Dataset": ""})
-        mock_view.current_sql_filter = ""
-        mock_view.current_experiment = "exp1"
-        mock_view.current_channel = 0
-
-        requested = []
-
-        def answer(loader, event_ids, exp, channel, scope, action_label):
-            requested.append((loader, event_ids, exp, channel, scope, action_label))
-            mock_view.plot_events_generator = iter([_make_event(1)])
-
-        mock_view.event_plot_data_requested.connect(answer)
-
-        result = mock_view._fetch_event_data(self._params())
-
-        assert requested == [("ldr", [1], "exp1", 0, {"exp1": ["0"]}, "events")]
-        assert len(result) == 1
-        assert result[0]["event_id"] == 1
-
-    def test_a_chain_that_did_not_finish_plots_nothing(self, mock_view):
-        """
-        The generator is cleared before the intent goes out, so a Controller that
-        returned early leaves None rather than the previous plot's events - the stale
-        read this step exists to remove.
-        """
-        mock_view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": ["0"]}}
-        mock_view.get_selected_filters = MagicMock(return_value={"Full Dataset": ""})
-        mock_view.plot_events_generator = iter([_make_event(99)])
-        mock_view.event_plot_data_requested.connect(lambda *a: None)
-
-        assert mock_view._fetch_event_data(self._params()) is None
-
-    def test_the_answer_comes_back_in_the_order_it_was_asked_for(self, mock_view):
-        """
-        ``load_event_data`` yields in whatever order the database gives, and the
-        navigation cares about the order it requested. The re-sort keys off the
-        ``event_id`` the loader reports on each event, against the indices asked
-        for - not off anything the id-resolution query projects.
-        """
-        mock_view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": ["0"]}}
-        mock_view.get_selected_filters = MagicMock(return_value={"Full Dataset": ""})
-        mock_view.event_plot_data_requested.connect(
-            lambda *a: setattr(
-                mock_view,
-                "plot_events_generator",
-                iter([_make_event(7), _make_event(3), _make_event(5)]),
-            )
-        )
-
-        result = mock_view._fetch_event_data(
-            {"db_loader": "ldr", "event_index": [3, 5, 7]}
-        )
-
-        assert [e["event_id"] for e in result] == [3, 5, 7]
+        assert received == []
 
 
 class TestHandlePlotEvents:
@@ -1445,40 +1291,33 @@ class TestHandlePlotEvents:
         mock_view.current_experiment = "exp1"
         mock_view.current_channel = 0
 
+    def _asked(self, mock_view):
+        asked = []
+        mock_view.plot_events_requested.connect(lambda *args: asked.append(args))
+        return asked
+
     def test_sets_last_event_action(self, mock_view):
         self._setup(mock_view)
-        mock_view._fetch_event_data = MagicMock(return_value=[])
         mock_view._last_event_action = "plot_histogram"
-        with patch.object(mock_view, "_update_event_plot"):
-            mock_view._handle_plot_events(
-                {"db_loader": "ldr", "event_id": 1, "n_events": 1}
-            )
+        mock_view._handle_plot_events(
+            {"db_loader": "ldr", "event_id": 1, "n_events": 1}
+        )
         assert mock_view._last_event_action == "plot_events"
 
-    def test_calls_update_event_plot_with_data(self, mock_view):
+    def test_asks_for_the_resolved_events_with_their_subset(self, mock_view):
         self._setup(mock_view)
-        events = [_make_event(1)]
-        mock_view._fetch_event_data = MagicMock(return_value=events)
-        with patch.object(mock_view, "_update_event_plot") as mock_plot:
-            mock_view._handle_plot_events(
-                {"db_loader": "ldr", "event_id": 1, "n_events": 1}
-            )
-        mock_plot.assert_called_once_with(events, use_raw=False)
+        asked = self._asked(mock_view)
 
-    def test_no_data_emits_warning(self, mock_view):
-        self._setup(mock_view)
-        mock_view._fetch_event_data = MagicMock(return_value=[])
-        received = []
-        mock_view.add_text_to_display.connect(lambda m, s: received.append(m))
         mock_view._handle_plot_events(
-            {"db_loader": "ldr", "event_id": 1, "n_events": 2}
+            {"db_loader": "ldr", "event_id": 2, "n_events": 2, "raw": True}
         )
-        assert any("No data available" in m for m in received)
+
+        assert asked == [("ldr", [2, 3], "exp1", "0", "Full Dataset", "", True)]
 
     def test_an_id_past_the_cache_snaps_to_the_first_and_says_so(self, mock_view):
         """Plotting an Event ID past every filtered one starts at the first."""
         self._setup(mock_view)
-        mock_view._fetch_event_data = MagicMock(return_value=[])
+        asked = self._asked(mock_view)
         received = []
         mock_view.add_text_to_display.connect(lambda m, s: received.append(m))
 
@@ -1486,7 +1325,7 @@ class TestHandlePlotEvents:
             {"db_loader": "ldr", "event_id": 99, "n_events": 2}
         )
 
-        assert mock_view._fetch_event_data.call_args[0][0]["event_index"] == [1, 2]
+        assert asked[0][1] == [1, 2]
         assert (
             "Event ID 99 is past the last filtered event (3); "
             "wrapped around to the first filtered event (1)"
@@ -1502,94 +1341,64 @@ class TestHandlePlotHistogram:
         mock_view.current_experiment = "exp1"
         mock_view.current_channel = 0
 
+    def _asked(self, mock_view):
+        asked = []
+        mock_view.event_histograms_requested.connect(lambda *args: asked.append(args))
+        return asked
+
+    def _params(self, **extra):
+        return {
+            "db_loader": "ldr",
+            "event_id": 1,
+            "n_events": 1,
+            "bins": None,
+            "sizes": False,
+            **extra,
+        }
+
     def test_sets_last_event_action(self, mock_view):
         self._setup(mock_view)
-        mock_view._fetch_event_data = MagicMock(return_value=[])
-        mock_view._handle_plot_histogram(
-            {
-                "db_loader": "ldr",
-                "event_id": 1,
-                "n_events": 1,
-                "bins": None,
-                "sizes": False,
-            }
-        )
+        mock_view._handle_plot_histogram(self._params())
         assert mock_view._last_event_action == "plot_histogram"
 
     def test_an_id_past_the_cache_snaps_to_the_first_and_says_so(self, mock_view):
         """The histogram snaps an out-of-range Event ID exactly as Plot Events does."""
         self._setup(mock_view)
-        mock_view._fetch_event_data = MagicMock(return_value=[])
+        asked = self._asked(mock_view)
         received = []
         mock_view.add_text_to_display.connect(lambda m, s: received.append(m))
 
-        mock_view._handle_plot_histogram(
-            {
-                "db_loader": "ldr",
-                "event_id": 99,
-                "n_events": 2,
-                "bins": None,
-                "sizes": False,
-            }
-        )
+        mock_view._handle_plot_histogram(self._params(event_id=99, n_events=2))
 
-        assert mock_view._fetch_event_data.call_args[0][0]["event_index"] == [1, 2]
+        assert asked[0][1] == [1, 2]
         assert (
             "Event ID 99 is past the last filtered event (3); "
             "wrapped around to the first filtered event (1)"
         ) in received
 
-    def test_calls_update_event_histogram_with_data(self, mock_view):
+    def test_asks_for_the_resolved_events_with_the_bin_request(self, mock_view):
         self._setup(mock_view)
-        events = [_make_event(1)]
-        mock_view._fetch_event_data = MagicMock(return_value=events)
-        with patch.object(mock_view, "_update_event_histogram") as mock_hist:
-            mock_view._handle_plot_histogram(
-                {
-                    "db_loader": "ldr",
-                    "event_id": 1,
-                    "n_events": 1,
-                    "bins": None,
-                    "sizes": False,
-                }
-            )
-        mock_hist.assert_called_once()
-        call_args = mock_hist.call_args
-        assert call_args[0][0] == events
+        asked = self._asked(mock_view)
 
-    def test_no_data_emits_warning(self, mock_view):
+        mock_view._handle_plot_histogram(self._params(bins=[50], sizes=True))
+
+        assert asked == [("ldr", [1], "exp1", "0", "Full Dataset", "", [50], True)]
+
+    def test_two_experiments_in_scope_is_refused_and_asks_nothing(self, mock_view):
         self._setup(mock_view)
-        mock_view._fetch_event_data = MagicMock(return_value=[])
+        mock_view.selected_experiment_and_channels_by_loader = {
+            "ldr": {"exp1": ["0"], "exp2": ["0"]}
+        }
+        asked = self._asked(mock_view)
         received = []
         mock_view.add_text_to_display.connect(lambda m, s: received.append(m))
-        mock_view._handle_plot_histogram(
-            {
-                "db_loader": "ldr",
-                "event_id": 1,
-                "n_events": 1,
-                "bins": None,
-                "sizes": False,
-            }
-        )
-        assert any("No data available" in m for m in received)
 
-    def test_passes_bins_and_sizes(self, mock_view):
-        self._setup(mock_view)
-        events = [_make_event(1)]
-        mock_view._fetch_event_data = MagicMock(return_value=events)
-        with patch.object(mock_view, "_update_event_histogram") as mock_hist:
-            mock_view._handle_plot_histogram(
-                {
-                    "db_loader": "ldr",
-                    "event_id": 1,
-                    "n_events": 1,
-                    "bins": [50],
-                    "sizes": True,
-                }
-            )
-        kwargs = mock_hist.call_args[1]
-        assert kwargs.get("bins") == [50]
-        assert kwargs.get("sizes") is True
+        mock_view._handle_plot_histogram(self._params())
+
+        assert asked == []
+        assert received == [
+            "Only a single experiment can be used for plotting histograms"
+        ]
 
 
 # ===========================================================================

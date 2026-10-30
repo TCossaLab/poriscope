@@ -169,9 +169,9 @@ class TestSummarizeVmManySamples:
 
 
 # ``TestResolveEventDbIds`` lived here and is gone: the whole resolve-and-load
-# chain is in ``ProteinController.load_event_plot_data``, so there is
+# chain is in ``MetaSubsetTabController.fetch_event_plot_data``, so there is
 # no View method left for it to name. Its coverage is
-# ``tests/unit/controllers/test_protein_fetch_slots.py::TestLoadEventPlotData``,
+# ``tests/unit/controllers/test_protein_fetch_slots.py::TestFetchEventPlotData``,
 # written against the loader signatures rather than against the bus. One expectation
 # inverted rather than moved: ``test_a_failed_experiment_lookup_omits_the_clause_entirely``
 # pinned the widget dropping the experiment scope when the lookup failed, which is the

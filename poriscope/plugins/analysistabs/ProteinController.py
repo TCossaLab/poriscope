@@ -99,7 +99,8 @@ class ProteinController(MetaSubsetTabController):
             self.request_ensemble_distribution
         )
         self.view.ensemble_report_requested.connect(self.report_ensemble_fit)
-        self.view.event_histogram_fits_requested.connect(self.fit_event_histograms)
+        self.view.event_histograms_requested.connect(self.plot_event_histograms)
+        self.view.plot_events_requested.connect(self.plot_events)
 
     @log(logger=logger)
     @register_action(RESET_ACTION)
@@ -459,6 +460,155 @@ class ProteinController(MetaSubsetTabController):
         return filtered
 
     @log(logger=logger)
+    @register_action("plot_events", skip_on_false=True)
+    def plot_events(
+        self,
+        loader: str,
+        event_ids: List[int],
+        experiment: Optional[str],
+        channel: Optional[str],
+        subset_name: str,
+        sql_filter: str,
+        raw: bool,
+    ) -> bool:
+        """
+        Draw these events on the event page, one subplot each, in the order given.
+
+        A recorded action: it takes the events the click resolved from the Event ID through
+        the filtered-event cache, so a replay draws these events whatever the panel and the
+        cache hold then. The filter's name and SQL are not used to fetch - the ids already
+        are the subset - and are kept so the entry says which subset they came from. The
+        event page is neither mode's figure, so no reset is recorded.
+
+        :param loader: the database loader plugin's key
+        :type loader: str
+        :param event_ids: the ``event_id`` values to draw, in grid order
+        :type event_ids: List[int]
+        :param experiment: the experiment the events belong to
+        :type experiment: Optional[str]
+        :param channel: the channel the events belong to, as the selection tree reports it
+        :type channel: Optional[str]
+        :param subset_name: the name of the filter the events were taken from
+        :type subset_name: str
+        :param sql_filter: that filter's SQL
+        :type sql_filter: str
+        :param raw: draw each event's raw trace as well
+        :type raw: bool
+        :return: True if drawn, False if refused or no event could be loaded
+        :rtype: bool
+        """
+        event_data = self._events_to_plot(
+            loader, event_ids, experiment, channel, "events"
+        )
+        if event_data is None:
+            return False
+        self.view.show_events(event_data, use_raw=raw)
+        return True
+
+    @log(logger=logger)
+    @register_action("plot_event_histograms", skip_on_false=True)
+    def plot_event_histograms(
+        self,
+        loader: str,
+        event_ids: List[int],
+        experiment: Optional[str],
+        channel: Optional[str],
+        subset_name: str,
+        sql_filter: str,
+        bins: Any,
+        sizes: bool,
+    ) -> bool:
+        """
+        Draw each event's fractional-blockage histogram with its double-gaussian fit on the event page.
+
+        A recorded action, taking the events the click resolved, as :meth:`plot_events`
+        does. The Model bins every event and fits every histogram in one call, so the two
+        describe the same bins; an event whose fit fails is drawn without it.
+
+        :param loader: the database loader plugin's key
+        :type loader: str
+        :param event_ids: the ``event_id`` values to draw, in grid order
+        :type event_ids: List[int]
+        :param experiment: the experiment the events belong to
+        :type experiment: Optional[str]
+        :param channel: the channel the events belong to, as the selection tree reports it
+        :type channel: Optional[str]
+        :param subset_name: the name of the filter the events were taken from
+        :type subset_name: str
+        :param sql_filter: that filter's SQL
+        :type sql_filter: str
+        :param bins: a bin count, or a bin width when sizes is True, or None
+        :type bins: Any
+        :param sizes: does bins refer to a bin width (True) or a count (False)
+        :type sizes: bool
+        :return: True if drawn, False if refused, nothing loaded or the binning failed
+        :rtype: bool
+        """
+        event_data = self._events_to_plot(
+            loader, event_ids, experiment, channel, "histograms"
+        )
+        if event_data is None:
+            return False
+        try:
+            histograms = self.model.build_event_histograms(
+                event_data, "Filtered Histogram", bins, sizes
+            )
+            fits = self.model.fit_histograms(histograms)
+        except (ValueError, TypeError, IndexError) as e:
+            self.logger.error(f"Unable to fit the event histograms: {repr(e)}")
+            self.add_text_to_display.emit(
+                f"Unable to fit the event histograms: {e}", self.__class__.__name__
+            )
+            return False
+        self.view.show_event_histograms(fits, histograms, event_data)
+        return True
+
+    @log(logger=logger)
+    def _events_to_plot(
+        self,
+        loader: str,
+        event_ids: List[int],
+        experiment: Optional[str],
+        channel: Optional[str],
+        action_label: str,
+    ) -> Optional[List[Dict[str, Any]]]:
+        """
+        Fetch these events from this experiment and channel, in the order given.
+
+        :param loader: the database loader plugin's key
+        :type loader: str
+        :param event_ids: the ``event_id`` values to fetch
+        :type event_ids: List[int]
+        :param experiment: the experiment the events belong to
+        :type experiment: Optional[str]
+        :param channel: the channel the events belong to, as the selection tree reports it
+        :type channel: Optional[str]
+        :param action_label: what is being plotted, for the fetch's messages
+        :type action_label: str
+        :return: the events, or None if the fetch was refused or found none, after saying why
+        :rtype: Optional[List[Dict[str, Any]]]
+        """
+        channel_id = int(channel) if channel is not None else None
+        scope: Dict[Any, Any] = {experiment: [channel]}
+        events = self.fetch_event_plot_data(
+            loader, event_ids, experiment, channel_id, scope, action_label
+        )
+        if events is None:
+            # Refused, and the fetch has said why; naming the event would contradict it.
+            return None
+        order = {event_id: i for i, event_id in enumerate(event_ids)}
+        event_data = sorted(
+            events, key=lambda event: order.get(event["event_id"], len(order))
+        )
+        if not event_data:
+            self.add_text_to_display.emit(
+                f"No data available for event_id {event_ids[0] if event_ids else None}",
+                self.__class__.__name__,
+            )
+            return None
+        return event_data
+
+    @log(logger=logger)
     @Slot()
     def report_ensemble_fit(self) -> None:
         """
@@ -479,53 +629,6 @@ class ProteinController(MetaSubsetTabController):
         self.view.show_ensemble_report(
             fit.params, fit.bins, fit.sizes, fit.prolate, fit.oblate
         )
-
-    @log(logger=logger)
-    @Slot(object, str, object, bool)
-    def fit_event_histograms(
-        self,
-        event_data: Sequence[Dict[str, Any]],
-        plot_type: str,
-        bins: Any,
-        sizes: bool,
-    ) -> None:
-        """
-        Bin and fit every event in one call, and hand the results back to draw.
-
-        A request slot. One call rather than one per event keeps each answer off the
-        widget; see ``ProteinModel.fit_histograms``. The binning happens ahead of the
-        fitting in the same call, so the two describe the same bins and the widget is
-        handed the histograms rather than building them.
-
-        The events pass straight through: this slot marshals, it does not interpret
-        them. A failure is reported on the status panel rather than raised, because
-        Qt invoked this from a signal and nothing above it could handle it - and an
-        unusable bin request is now reported once here rather than logged once per
-        event and drawn as a grid of empty subplots.
-
-        :param event_data: the events being plotted, passed back to the View unchanged
-        :type event_data: Sequence[Dict[str, Any]]
-        :param plot_type: 'Raw Histogram' or 'Filtered Histogram'
-        :type plot_type: str
-        :param bins: a bin count, or a bin width when sizes is True, or None
-        :type bins: Any
-        :param sizes: does bins refer to a bin width (True) or a count (False)
-        :type sizes: bool
-        :return: None
-        :rtype: None
-        """
-        try:
-            histograms = self.model.build_event_histograms(
-                event_data, plot_type, bins, sizes
-            )
-            fits = self.model.fit_histograms(histograms)
-        except (ValueError, TypeError, IndexError) as e:
-            self.logger.error(f"Unable to fit the event histograms: {repr(e)}")
-            self.add_text_to_display.emit(
-                f"Unable to fit the event histograms: {e}", self.__class__.__name__
-            )
-            return
-        self.view.set_event_histogram_fits(fits, histograms, event_data)
 
     @log(logger=logger)
     @Slot(str, object, object, object, bool, float, float, int)

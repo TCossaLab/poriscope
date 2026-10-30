@@ -578,56 +578,6 @@ class MetaSubsetTabController(MetaController):
         self.view.event_id_cache_requested.connect(self.load_event_id_cache)
         self.view.filters_load_requested.connect(self.load_filters)
         self.view.filters_save_requested.connect(self.save_filters)
-        self.view.event_plot_data_requested.connect(self.load_event_plot_data)
-
-    @log(logger=logger)
-    @Slot(str, list, object, object, object, str)
-    def load_event_plot_data(
-        self,
-        loader: str,
-        event_ids: List[int],
-        exp: Optional[str],
-        channel: Optional[int],
-        experiments_and_channels: Optional[Dict[str, Optional[List[int]]]],
-        action_label: str,
-    ) -> None:
-        """
-        Resolve ``event_id`` values to database ids within scope and load those rows.
-
-        The whole chain runs here because only one place can run it end to end and say
-        which part failed. It was three separate requests once, each answer parked on a
-        View attribute and read back on the next statement; nothing outside the chain
-        ever read the intermediate answers.
-
-        **An experiment that does not resolve stops the plot** rather than widening the
-        query. ``event_id`` is unique only within an experiment and channel, so an
-        unscoped match returns whichever channel's row happens to share the number -
-        which is the "plots the wrong subset" fault, not a harmless one.
-
-        ``action_label`` names what the caller is plotting - events, histograms - and
-        appears only in the messages, which is the whole of what the two tabs' copies
-        of this method used to differ by.
-
-        :param loader: the database loader plugin's key
-        :type loader: str
-        :param event_ids: the ``event_id`` values to plot, already snapped to the cache
-        :type event_ids: List[int]
-        :param exp: the experiment the events belong to, or None to leave it out of scope
-        :type exp: Optional[str]
-        :param channel: the channel the events belong to, or None for all channels
-        :type channel: Optional[int]
-        :param experiments_and_channels: the scope handed on to ``load_event_data``
-        :type experiments_and_channels: Optional[Dict[str, Optional[List[int]]]]
-        :param action_label: what the caller is plotting, for its messages
-        :type action_label: str
-        :return: None
-        :rtype: None
-        """
-        generator = self.fetch_event_plot_data(
-            loader, event_ids, exp, channel, experiments_and_channels, action_label
-        )
-        if generator is not None:
-            self.view.set_event_plot_data_generator(generator)
 
     @log(logger=logger)
     def fetch_event_plot_data(
@@ -642,8 +592,16 @@ class MetaSubsetTabController(MetaController):
         """
         Resolve ``event_id`` values to database ids within scope, and return those rows.
 
-        The work behind :meth:`load_event_plot_data`, for a caller that draws the events
-        itself. Reports its own refusals, as that method describes, and answers None.
+        The whole chain runs here because only one place can run it end to end and say
+        which part failed. Each refusal is reported on the status panel, and answers None.
+
+        **An experiment that does not resolve stops the plot** rather than widening the
+        query. ``event_id`` is unique only within an experiment and channel, so an
+        unscoped match returns whichever channel's row happens to share the number -
+        which is the "plots the wrong subset" fault, not a harmless one.
+
+        ``action_label`` names what the caller is plotting - events, histograms - and
+        appears only in the messages.
 
         :param loader: the database loader plugin's key
         :type loader: str

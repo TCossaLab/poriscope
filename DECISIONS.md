@@ -18,6 +18,21 @@ and deleted on 2026-09-27; it too is in git history.
 
 ---
 
+## 2026-10-30 - Protein's Plot Events and Plot Histogram record no reset
+
+**Context.** Both draw on the event page, which is neither mode's figure, and the tab's one history holds all three.
+A probe showed the shared Undo, replaying from the last reset, leaves another figure's plot (and fit) in place.
+
+**Decision** (Carolina, 2026-10-30). No reset for the event plots, and no per-figure Undo: Protein has no Undo button,
+so nothing reachable replays its history partway. A replayed plot records its own reset only when the last entry is not
+already one of its mode (`ProteinController._start_figure`), so a replay records the history it replays.
+
+**Rejected.** The event page as a third figure with its own reset, and Undo per figure (both needed only by an Undo).
+
+**Revisit** if Protein gains Undo, or when P5's Go back resets a Protein tab: it must clear both modes' figures and fits.
+
+---
+
 ## 2026-10-29 - The `event_id` question is asked on the click, never during a replay
 
 **Context.** The question was asked inside the recorded overlay and Protein plots, after the entry had recorded the

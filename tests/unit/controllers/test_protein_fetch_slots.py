@@ -99,11 +99,11 @@ def ids_frame() -> pd.DataFrame:
 
 
 # ===========================================================================
-# load_event_plot_data - resolve the ids in scope, then load exactly those rows
+# fetch_event_plot_data - resolve the ids in scope, then load exactly those rows
 # ===========================================================================
 
 
-class TestLoadEventPlotData:
+class TestFetchEventPlotData:
     """
     Three emits over two View methods became one intent.
 
@@ -115,7 +115,7 @@ class TestLoadEventPlotData:
     likely to differ between the two mechanisms.
     """
 
-    def test_the_whole_chain_runs_and_the_generator_reaches_the_view(
+    def test_the_whole_chain_runs_and_the_generator_is_returned(
         self, controller: ProteinController
     ) -> None:
         """
@@ -132,7 +132,9 @@ class TestLoadEventPlotData:
             },
         )
 
-        controller.load_event_plot_data("ldr", [4, 7], "exp1", 1, SCOPE, "events")
+        fetched = controller.fetch_event_plot_data(
+            "ldr", [4, 7], "exp1", 1, SCOPE, "events"
+        )
 
         assert controller.model.calls_to("get_experiment_id_by_name") == [("exp1",)]
         assert controller.model.calls_to("query_database_directly") == [
@@ -144,7 +146,7 @@ class TestLoadEventPlotData:
         assert controller.model.calls_to("load_event_data") == [
             ("e.id IN (10,11)", SCOPE)
         ]
-        controller.view.set_event_plot_data_generator.assert_called_once_with(generator)
+        assert fetched is generator
 
     def test_an_unresolvable_experiment_stops_the_plot(
         self, controller: ProteinController
@@ -166,10 +168,12 @@ class TestLoadEventPlotData:
             {"get_experiment_id_by_name": None, "query_database_directly": ids_frame()},
         )
 
-        controller.load_event_plot_data("ldr", [4], "exp1", 1, SCOPE, "events")
+        fetched = controller.fetch_event_plot_data(
+            "ldr", [4], "exp1", 1, SCOPE, "events"
+        )
 
         assert controller.model.calls_to("query_database_directly") == []
-        controller.view.set_event_plot_data_generator.assert_not_called()
+        assert fetched is None
         assert "no experiment named exp1" in panel_text(controller)
 
     def test_a_failed_experiment_lookup_is_reported(
@@ -183,9 +187,11 @@ class TestLoadEventPlotData:
             ProteinModel, {"get_experiment_id_by_name": RuntimeError("db gone")}
         )
 
-        controller.load_event_plot_data("ldr", [4], "exp1", 1, SCOPE, "events")
+        fetched = controller.fetch_event_plot_data(
+            "ldr", [4], "exp1", 1, SCOPE, "events"
+        )
 
-        controller.view.set_event_plot_data_generator.assert_not_called()
+        assert fetched is None
         assert "Could not look up experiment exp1" in panel_text(controller)
 
     def test_a_request_with_no_scope_queries_without_one(
@@ -203,7 +209,7 @@ class TestLoadEventPlotData:
             {"query_database_directly": ids_frame(), "load_event_data": iter([])},
         )
 
-        controller.load_event_plot_data("ldr", [4, 7], None, None, None, "events")
+        controller.fetch_event_plot_data("ldr", [4, 7], None, None, None, "events")
 
         assert controller.model.calls_to("query_database_directly") == [
             ("SELECT id FROM events WHERE event_id IN (4,7)",)
@@ -221,7 +227,7 @@ class TestLoadEventPlotData:
         """
         controller.model = recording_tab_model(ProteinModel, {})
 
-        controller.load_event_plot_data("ldr", [], "exp1", 1, SCOPE, "histograms")
+        controller.fetch_event_plot_data("ldr", [], "exp1", 1, SCOPE, "histograms")
 
         assert controller.model.calls == []
         assert "no histograms to plot" in panel_text(controller)
@@ -239,9 +245,11 @@ class TestLoadEventPlotData:
             },
         )
 
-        controller.load_event_plot_data("ldr", [4], "exp1", 1, SCOPE, "events")
+        fetched = controller.fetch_event_plot_data(
+            "ldr", [4], "exp1", 1, SCOPE, "events"
+        )
 
-        controller.view.set_event_plot_data_generator.assert_not_called()
+        assert fetched is None
         assert "Could not look up these events" in panel_text(controller)
 
     def test_no_matching_rows_names_what_was_being_plotted(
@@ -262,9 +270,11 @@ class TestLoadEventPlotData:
             },
         )
 
-        controller.load_event_plot_data("ldr", [4], "exp1", 1, SCOPE, "histograms")
+        fetched = controller.fetch_event_plot_data(
+            "ldr", [4], "exp1", 1, SCOPE, "histograms"
+        )
 
-        controller.view.set_event_plot_data_generator.assert_not_called()
+        assert fetched is None
         assert "No data available for the requested histograms" in panel_text(
             controller
         )
@@ -293,9 +303,11 @@ class TestLoadEventPlotData:
             },
         )
 
-        controller.load_event_plot_data("ldr", [4], "exp1", 1, SCOPE, "events")
+        fetched = controller.fetch_event_plot_data(
+            "ldr", [4], "exp1", 1, SCOPE, "events"
+        )
 
-        controller.view.set_event_plot_data_generator.assert_not_called()
+        assert fetched is None
         controller.logger.error.assert_called_once()  # type: ignore[attr-defined]
         assert "no id column" in panel_text(controller)
 
@@ -313,9 +325,11 @@ class TestLoadEventPlotData:
             },
         )
 
-        controller.load_event_plot_data("ldr", [4, 7], "exp1", 1, SCOPE, "events")
+        fetched = controller.fetch_event_plot_data(
+            "ldr", [4, 7], "exp1", 1, SCOPE, "events"
+        )
 
-        controller.view.set_event_plot_data_generator.assert_not_called()
+        assert fetched is None
         assert "Could not load these events" in panel_text(controller)
 
     def test_a_loader_that_answers_none_is_reported(
@@ -334,9 +348,11 @@ class TestLoadEventPlotData:
             },
         )
 
-        controller.load_event_plot_data("ldr", [4, 7], "exp1", 1, SCOPE, "events")
+        fetched = controller.fetch_event_plot_data(
+            "ldr", [4, 7], "exp1", 1, SCOPE, "events"
+        )
 
-        controller.view.set_event_plot_data_generator.assert_not_called()
+        assert fetched is None
         assert "No data available for the requested events" in panel_text(controller)
 
 

@@ -2993,18 +2993,6 @@ def test_handle_parameter_change_plot_type_changed_does_not_crash(
     # No assertion needed — just must not raise
 
 
-def test_set_event_plot_data_generator_sets_generator(
-    view: MetadataView, mocker: MockerFixture
-) -> None:
-    """Verify event plot data generator is set and no longer sets plot_events_generator_updated."""
-    generator = iter([{"data": "test"}])
-
-    view.set_event_plot_data_generator(generator)
-
-    assert view.plot_events_generator == generator
-    assert not hasattr(view, "plot_events_generator_updated")
-
-
 def test_handle_plot_events_uses_cache_for_navigation(
     view: MetadataView, mocker: MockerFixture
 ) -> None:
