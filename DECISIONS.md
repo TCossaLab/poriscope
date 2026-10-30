@@ -29,7 +29,7 @@ already one of its mode (`ProteinController._start_figure`), so a replay records
 
 **Rejected.** The event page as a third figure with its own reset, and Undo per figure (both needed only by an Undo).
 
-**Revisit** if Protein gains Undo, or when P5's Go back resets a Protein tab: it must clear both modes' figures and fits.
+**Revisit** if Protein gains Undo, or when session restore's Go back resets a Protein tab: it must clear both modes' figures and fits.
 
 ---
 
