@@ -891,12 +891,10 @@ class ProteinView(MetaSubsetTabView):
             self._load_filter(parameters)
 
         elif action_name == "set_mode_individual":
-            self._analysis_mode = "individual"
-            self.mode_stack.setCurrentWidget(self.individual_dist_page)
+            self._show_mode("individual")
 
         elif action_name == "set_mode_ensemble":
-            self._analysis_mode = "ensemble"
-            self.mode_stack.setCurrentWidget(self.ensemble_dist_page)
+            self._show_mode("ensemble")
 
         elif action_name == "commit_individual":
             self._commit_fits(parameters.get("db_loader"))
@@ -906,6 +904,81 @@ class ProteinView(MetaSubsetTabView):
 
         else:
             self._handle_other_actions(action_name, parameters)
+
+    @log(logger=logger)
+    def _show_mode(self, mode: str) -> None:
+        """
+        Make an analysis mode the live one and show its page.
+
+        :param mode: 'individual' or 'ensemble'
+        :type mode: str
+        """
+        self._analysis_mode = mode
+        self.mode_stack.setCurrentWidget(
+            self.individual_dist_page
+            if mode == "individual"
+            else self.ensemble_dist_page
+        )
+
+    @log(logger=logger)
+    @override
+    def write_back(
+        self, action: str, args: Tuple[Any, ...], kwargs: Dict[str, Any]
+    ) -> None:
+        """
+        Show a recorded Protein action's values in the panel and the tab's scope.
+
+        Writes only. An Individual or Ensemble plot shows its mode - its button, its page and
+        the distribution display - then its loader, filters, scope, bins and Sizes, pore and
+        N. Plot Events and Plot Histogram show their loader, filter and scope, the first event
+        as the Event ID and how many were drawn, then Raw or the bins and Sizes, and set the
+        arrows to step that display. A filter is selected only if one of that name still holds
+        the recorded SQL. A loader that is no longer an option is skipped and said on the
+        status panel. A reset shows nothing.
+
+        :param action: the entry's declared action name
+        :type action: str
+        :param args: the entry's recorded positional values, empty when every value has a name
+        :type args: Tuple[Any, ...]
+        :param kwargs: the entry's recorded values, each under its parameter name
+        :type kwargs: Dict[str, Any]
+        """
+        controls = self.proteincontrols
+        modes = {
+            "update_individual_distribution": "individual",
+            "update_ensemble_distribution": "ensemble",
+        }
+        if action in modes:
+            loader = kwargs["loader"]
+            controls.set_mode(modes[action])
+            self._show_mode(modes[action])
+            self._set_display_mode("distribution")
+            if not controls.set_loader(loader):
+                self._say_not_shown("database", loader)
+            self._write_back_filters(kwargs["filters"])
+            self.selected_experiment_and_channels_by_loader[loader] = copy.deepcopy(
+                kwargs["scope"]
+            )
+            controls.set_bins(kwargs["bins"], bool(kwargs["sizes"]))
+            controls.set_pore(kwargs["pore_diameter"], kwargs["pore_length"])
+            controls.set_n_values(kwargs["n_values"])
+        elif action in ("plot_events", "plot_event_histograms"):
+            loader, event_ids = kwargs["loader"], kwargs["event_ids"]
+            if not controls.set_loader(loader):
+                self._say_not_shown("database", loader)
+            self._write_back_filters({kwargs["subset_name"]: kwargs["sql_filter"]})
+            self.selected_experiment_and_channels_by_loader[loader] = {
+                kwargs["experiment"]: [kwargs["channel"]]
+            }
+            if event_ids:
+                controls.set_event_id_input(event_ids[0])
+            controls.set_event_count(len(event_ids))
+            if action == "plot_events":
+                controls.set_raw(bool(kwargs["raw"]))
+                self._last_event_action = "plot_events"
+            else:
+                controls.set_bins(kwargs["bins"], bool(kwargs["sizes"]))
+                self._last_event_action = "plot_histogram"
 
     # -------------------------------------------------------------------------
     # Event navigation

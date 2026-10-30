@@ -39,9 +39,7 @@ def emitted(panel: ProteinControls) -> List[str]:
     :rtype: List[str]
     """
     actions: List[str] = []
-    panel.actionTriggered.connect(
-        lambda _view, action, _params: actions.append(action)
-    )
+    panel.actionTriggered.connect(lambda _view, action, _params: actions.append(action))
     return actions
 
 
