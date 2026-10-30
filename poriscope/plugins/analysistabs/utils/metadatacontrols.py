@@ -34,7 +34,6 @@ from typing import (
     Optional,
     Sequence,
     Tuple,
-    Union,
 )
 
 from PySide6.QtCore import (
@@ -1027,19 +1026,6 @@ class MetadataControls(MetaSubsetTabControls):
         if button is not None:
             button.setChecked(False)
 
-    def set_loader(self, loader: str) -> bool:
-        """
-        Show a database loader without emitting, for writing a recorded value back.
-
-        :param loader: the database loader plugin's key
-        :type loader: str
-        :return: True if it was shown, False if it is not an option
-        :rtype: bool
-        """
-        shown = self.set_combo_text(self.db_loader_comboBox, loader)
-        self.validate_inputs()
-        return shown
-
     def set_plot_type(self, plot_type: str) -> bool:
         """
         Show a plot type and the axes it draws from without emitting, for writing a recorded value back.
@@ -1094,73 +1080,6 @@ class MetadataControls(MetaSubsetTabControls):
             box.blockSignals(True)
             box.setChecked(bool(logged))
             box.blockSignals(False)
-
-    def set_bins(
-        self, bins: Optional[Sequence[Union[int, float]]], sizes: bool
-    ) -> None:
-        """
-        Show the bins entry and Sizes together without emitting, for writing a recorded value back.
-
-        Sizes goes first, because it decides which entries the bins field accepts.
-
-        :param bins: the bin counts, or the bin widths when ``sizes`` is True, or None to estimate
-        :type bins: Optional[Sequence[Union[int, float]]]
-        :param sizes: does bins refer to a bin width
-        :type sizes: bool
-        """
-        self.sizes_checkbox.blockSignals(True)
-        self.sizes_checkbox.setChecked(sizes)
-        self.sizes_checkbox.blockSignals(False)
-        self._on_sizes_checkbox_toggled(sizes)
-        self.bins_lineEdit.blockSignals(True)
-        self.bins_lineEdit.setText(
-            ", ".join(str(entry) for entry in bins) if bins else ""
-        )
-        self.bins_lineEdit.blockSignals(False)
-        self.validate_inputs()
-
-    def set_event_count(self, count: int) -> None:
-        """
-        Show how many events Plot Events draws without emitting, for writing a recorded value back.
-
-        :param count: the number of events
-        :type count: int
-        """
-        self.n_events_lineEdit.blockSignals(True)
-        self.n_events_lineEdit.setText(str(count))
-        self.n_events_lineEdit.blockSignals(False)
-        self.validate_inputs()
-
-    def set_raw(self, raw: bool) -> None:
-        """
-        Show the raw-trace checkbox's state without emitting, for writing a recorded value back.
-
-        :param raw: whether each event's unfiltered trace is drawn as well
-        :type raw: bool
-        """
-        self.raw_checkbox.blockSignals(True)
-        self.raw_checkbox.setChecked(raw)
-        self.raw_checkbox.blockSignals(False)
-        self.validate_inputs()
-
-    def set_filters(self, names: Sequence[str]) -> bool:
-        """
-        Select exactly these filters, for writing a recorded value back.
-
-        The multiselect's own signal still fires: only ``validate_inputs`` listens to it, and
-        it keeps the box's displayed text in step. No action is emitted.
-
-        :param names: the filters to select; none selects the full dataset
-        :type names: Sequence[str]
-        :return: True if every filter was selected, False if any is not an option
-        :rtype: bool
-        """
-        combo = self.filter_comboBox
-        for name in combo.getSelectedItems():
-            combo.selectItem(name, select=False)
-        for name in names:
-            combo.selectItem(name)
-        return set(names) <= set(combo.getSelectedItems())
 
     @contextlib.contextmanager
     def axis_signals_held(self) -> Iterator[None]:

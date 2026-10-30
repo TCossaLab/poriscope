@@ -1024,25 +1024,6 @@ class MetadataView(MetaSubsetTabView):
             self.update_available_columns(loader)
 
     @log(logger=logger)
-    def _write_back_filters(self, filters: Dict[str, str]) -> None:
-        """
-        Select the recorded filters that still exist under their name with the same SQL.
-
-        Plot Events records no filter as the full dataset with no SQL, and an overlay as no
-        filter at all; both clear the selection.
-
-        :param filters: the recorded filters, name to SQL
-        :type filters: Dict[str, str]
-        """
-        names = []
-        for name, sql in filters.items():
-            if self.subset_filters.get(name) == sql:
-                names.append(name)
-            elif not (name == "Full Dataset" and not sql):
-                self._say_not_shown("filter", name)
-        self.metadatacontrols.set_filters(names)
-
-    @log(logger=logger)
     def _replot_after_shift(self, parameters: Dict[str, Any]) -> None:
         """
         Re-plot the events after navigation; this tab has no other event display.
