@@ -1016,6 +1016,25 @@ class MetaSubsetTabView(MetaView):
             for name in self._subset_controls.filter_comboBox.getSelectedItems()
         }
 
+    @log(logger=logger)
+    def _write_back_filters(self, filters: Dict[str, str]) -> None:
+        """
+        Select the recorded filters that still exist under their name with the same SQL.
+
+        No filter is recorded either as the full dataset with no SQL or as no filter at
+        all; both clear the selection.
+
+        :param filters: the recorded filters, name to SQL
+        :type filters: Dict[str, str]
+        """
+        names = []
+        for name, sql in filters.items():
+            if self.subset_filters.get(name) == sql:
+                names.append(name)
+            elif not (name == "Full Dataset" and not sql):
+                self._say_not_shown("filter", name)
+        self._subset_controls.set_filters(names)
+
     @property
     @abstractmethod
     def _subset_controls(self) -> MetaSubsetTabControls:

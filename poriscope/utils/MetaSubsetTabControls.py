@@ -26,11 +26,11 @@
 
 import logging
 from abc import abstractmethod
-from typing import Any, Sequence
+from typing import Any, Optional, Sequence, Union
 
 from PySide6.QtCore import QSize, Signal
 from PySide6.QtGui import QRegularExpressionValidator
-from PySide6.QtWidgets import QComboBox, QLineEdit, QToolButton, QWidget
+from PySide6.QtWidgets import QCheckBox, QComboBox, QLineEdit, QToolButton, QWidget
 
 from poriscope.configs.utils import get_icon
 from poriscope.utils.LogDecorator import log
@@ -68,6 +68,8 @@ class MetaSubsetTabControls(MetaControls, metaclass=QObjectABCMeta):
       loaders instantiated elsewhere in the app.
     - **The event-id field.** ``set_event_id_input`` writes the event_id navigation
       snapped to into it, without re-emitting its edit signal, and revalidates.
+    - **Write-back setters.** ``set_loader``, ``set_bins``, ``set_event_count``,
+      ``set_raw`` and ``set_filters`` show a recorded value without emitting an action.
     - **Signals.** ``edit_filter_requested`` carries ``(filter_name, loader_name)``
       and ``delete_filter_requested`` carries a filter name, both into the tab's View.
     - **``placeholder_texts``**, which is ``("No Event Database",)`` for both tabs.
@@ -77,8 +79,8 @@ class MetaSubsetTabControls(MetaControls, metaclass=QObjectABCMeta):
     - **Its own** ``logger = logging.getLogger(__name__)``, as ``MetaControls``
       already requires.
     - **A ``setupUi`` that builds** ``db_loader_comboBox``, ``filter_comboBox``,
-      ``event_id_lineEdit``, ``bins_lineEdit``, ``int_validator`` and
-      ``float_validator``. They are declared below but not created here, because each
+      ``event_id_lineEdit``, ``n_events_lineEdit``, ``raw_checkbox``, ``bins_lineEdit``,
+      ``sizes_checkbox``, ``int_validator`` and ``float_validator``. They are declared below but not created here, because each
       tab lays its panel out differently.
     - **``validate_inputs``**, declared abstract below: ``set_event_id_input`` calls
       it after writing the field, and each tab validates a different set of fields.
@@ -103,6 +105,9 @@ class MetaSubsetTabControls(MetaControls, metaclass=QObjectABCMeta):
     filter_comboBox: MultiSelectFilterComboBox
     float_validator: QRegularExpressionValidator
     int_validator: QRegularExpressionValidator
+    n_events_lineEdit: QLineEdit
+    raw_checkbox: QCheckBox
+    sizes_checkbox: QCheckBox
 
     @abstractmethod
     def validate_inputs(self) -> None:
@@ -211,3 +216,83 @@ class MetaSubsetTabControls(MetaControls, metaclass=QObjectABCMeta):
         self.event_id_lineEdit.setText(str(value))
         self.event_id_lineEdit.blockSignals(False)
         self.validate_inputs()
+
+    def set_loader(self, loader: str) -> bool:
+        """
+        Show a database loader without emitting, for writing a recorded value back.
+
+        :param loader: the database loader plugin's key
+        :type loader: str
+        :return: True if it was shown, False if it is not an option
+        :rtype: bool
+        """
+        shown = self.set_combo_text(self.db_loader_comboBox, loader)
+        self.validate_inputs()
+        return shown
+
+    def set_bins(
+        self, bins: Optional[Sequence[Union[int, float]]], sizes: bool
+    ) -> None:
+        """
+        Show the bins entry and Sizes together without emitting, for writing a recorded value back.
+
+        Sizes goes first, because it decides which entries the bins field accepts.
+
+        :param bins: the bin counts, or the bin widths when ``sizes`` is True, or None to estimate
+        :type bins: Optional[Sequence[Union[int, float]]]
+        :param sizes: does bins refer to a bin width
+        :type sizes: bool
+        """
+        self.sizes_checkbox.blockSignals(True)
+        self.sizes_checkbox.setChecked(sizes)
+        self.sizes_checkbox.blockSignals(False)
+        self._on_sizes_checkbox_toggled(sizes)
+        self.bins_lineEdit.blockSignals(True)
+        self.bins_lineEdit.setText(
+            ", ".join(str(entry) for entry in bins) if bins else ""
+        )
+        self.bins_lineEdit.blockSignals(False)
+        self.validate_inputs()
+
+    def set_event_count(self, count: int) -> None:
+        """
+        Show how many events Plot Events draws without emitting, for writing a recorded value back.
+
+        :param count: the number of events
+        :type count: int
+        """
+        self.n_events_lineEdit.blockSignals(True)
+        self.n_events_lineEdit.setText(str(count))
+        self.n_events_lineEdit.blockSignals(False)
+        self.validate_inputs()
+
+    def set_raw(self, raw: bool) -> None:
+        """
+        Show the raw-trace checkbox's state without emitting, for writing a recorded value back.
+
+        :param raw: whether each event's unfiltered trace is drawn as well
+        :type raw: bool
+        """
+        self.raw_checkbox.blockSignals(True)
+        self.raw_checkbox.setChecked(raw)
+        self.raw_checkbox.blockSignals(False)
+        self.validate_inputs()
+
+    def set_filters(self, names: Sequence[str]) -> bool:
+        """
+        Select exactly these filters, for writing a recorded value back.
+
+        The multiselect's own signal still fires: only ``validate_inputs`` listens to it, and
+        it keeps the box's displayed text in step. No action is emitted.
+
+        :param names: the filters to select; none selects the full dataset
+        :type names: Sequence[str]
+        :return: True if every filter was selected, False if any is not an option
+        :rtype: bool
+        """
+        combo = self.filter_comboBox
+        for name in combo.getSelectedItems():
+            combo.selectItem(name, select=False)
+        for name in names:
+            combo.selectItem(name)
+        return set(names) <= set(combo.getSelectedItems())
