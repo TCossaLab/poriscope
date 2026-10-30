@@ -361,7 +361,7 @@ absorbs what it needs and stands alone, leaving 20240101 a clean deletion.
   leave the tab usable.
 - **`new_plugin.py` cannot generate a `MetaSubsetTab*` tab**, the likely shape of any
   new database-analysis tab; add `--base subset`.
-- **`update_available_plugins` is hand-written in all five Views** (`ClusteringView.py:813`,
+- **`update_available_plugins` is hand-written in all five Views** (`ClusteringView.py:824`,
   `MetadataView.py:701`, `ProteinView.py:763`, `RawDataView.py:376`,
   `EventAnalysisView.py:136`): `super()`, then a `try` pushing each metaclass list into the panel.
   Metadata's and Protein's are identical but for the panel attribute, so `MetaSubsetTabView` can
@@ -370,16 +370,16 @@ absorbs what it needs and stands alone, leaving 20240101 a clean deletion.
   `EventAnalysisView.py:119`, `MetaSubsetTabView.py:899`), all reached from
   `MetaController.py:170`; it belongs on `MetaView`.
 - **The "my selected loader gained columns" guard is written twice**:
-  `ClusteringView.notify_plugin_state_changed:831` and `MetadataView:1357` (Protein's is a no-op).
-- **Overwriting committed columns is built twice**: the confirm (`ClusteringView.on_cluster_column_checked:286`,
+  `ClusteringView.notify_plugin_state_changed:842` and `MetadataView:1357` (Protein's is a no-op).
+- **Overwriting committed columns is built twice**: the confirm (`ClusteringView.on_cluster_column_checked:326`,
   `ProteinView.confirm_fit_commit:325`) and the drop (`ClusteringModel.drop_cluster_columns:244`,
   `ProteinModel.drop_fit_columns:360`); Protein's `drop_fit_columns(loader, table, columns)` is
   already the general form. Protein's prompt reads "fit data data already exists" (`ProteinView.py:345`).
-- **Figure reset differs per tab**: `ClusteringView._reset_actions:153` guards `figure.clear()`
+- **Figure reset differs per tab**: `ClusteringView.clear_plot:162` guards `figure.clear()`
   with `except AttributeError` where Metadata has `_clear_figure_state:185`/`_axes_valid:225`, and
   `ProteinView.clear_plot:517` runs clear/add_subplot/tight_layout/draw once per figure of the mode.
 - **A repeated column is refused two ways**: Clustering raises `KeyError`
-  (`ClusteringView.py:546`), logged at ERROR by its caller after the config is already saved
+  (`ClusteringView.py:558`), logged at ERROR by its caller after the config is already saved
   under its title; Metadata warns in a `QMessageBox` (`MetadataView.py:1567`) and its panel
   already disables Update Plot (`metadatacontrols.py:865-871`). The clustering dialog's
   `_check_apply_enabled:569` could refuse it the same way.
@@ -563,7 +563,7 @@ Readability only; each is behaviour-preserving and wants the covering tests read
     `MetaDatabaseWriter.py:186`.
   - "No selection"/"select only one" user guidance at WARNING: `RawDataView.py:557`,
     `MetaSubsetTabView.py:1359`, `ProteinController.py:627`, and `"No column names
-    received"` at `ClusteringController.py:345` and `MetaSubsetTabController.py:400`. These
+    received"` at `ClusteringController.py:375` and `MetaSubsetTabController.py:400`. These
     belong on the panel rather than in the log at all.
   - `DataPluginController._report`/`_report_and_restore` (`:257`, `:478`, `:980`), which emit
     to the panel *and* log, are the model for the intended pattern.

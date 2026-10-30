@@ -18,6 +18,26 @@ and deleted on 2026-09-27; it too is in git history.
 
 ---
 
+## 2026-10-30 - Clustering records one reset per run, on the Controller, and no View records an action
+
+**Context.** Clustering's reset was recorded on `ClusteringView._reset_actions`, inside the drawing a run or a merge
+started; a 3-column plot recorded a second to switch projection, and a replayed run recorded its reset again (10
+recorded entries replayed as 16; `test_a_replay_records_the_history_it_replays` pins it now). It was the last action
+recorded on a View, so `MetaView.record_action` and the View half of `action_registry` stayed in use.
+
+**Decision** (Carolina, 2026-10-30). A run records `ClusteringController.reset` before it draws, unless the last entry
+is already a reset; the figure is cleared either way (`ClusteringView.clear_plot`). A merge and a 3-D projection clear
+unrecorded. `MetaView.record_action` and the View half of the registry are removed; a static test fails a tab View
+that declares an action. `MetaView.update_tab_action_history` stays: Metadata's Undo emits it.
+
+**Rejected.** A reset before each merge (a reset ends what came before it, parting a merge from its run); no recorded
+Clustering reset (the one tab without one); skipping the clear with the recording, as `ProteinController._start_figure`
+does (it relies on the figure being clear whenever the last entry is a reset).
+
+**Revisit** if a merge draws anything but the run's result, or a 3-D projection has to be replayed on its own.
+
+---
+
 ## 2026-10-30 - Protein's Plot Events and Plot Histogram record no reset
 
 **Context.** Both draw on the event page, which is neither mode's figure, and the tab's one history holds all three.
