@@ -341,20 +341,24 @@ def protein_act(triad: Triad, qtbot: Any) -> None:
 
 
 def protein_events_act(triad: Triad, qtbot: Any) -> None:
-    """Plot Events, then the forward arrow, as the panel sends them."""
+    """Plot Events and Plot Histogram, each followed by the forward arrow, as the panel sends them."""
     view = triad.tab_view
     select(triad, "F0", "0")
-    view.handle_parameter_change(
-        "proteincontrols",
-        "plot_events",
-        ({"db_loader": LOADER, "event_id": 0, "n_events": 3, "raw": False},),
-    )
-    typed = int(view.proteincontrols.event_id_lineEdit.text())
-    view.handle_parameter_change(
-        "proteincontrols",
-        "shift_range_forward",
-        ({"db_loader": LOADER, "event_id": typed, "n_events": 3, "raw": False},),
-    )
+    panel = {
+        "db_loader": LOADER,
+        "n_events": 3,
+        "raw": False,
+        "bins": [20],
+        "sizes": False,
+    }
+    for action in ("plot_events", "plot_histogram"):
+        view.handle_parameter_change(
+            "proteincontrols", action, ({**panel, "event_id": 0},)
+        )
+        typed = int(view.proteincontrols.event_id_lineEdit.text())
+        view.handle_parameter_change(
+            "proteincontrols", "shift_range_forward", ({**panel, "event_id": typed},)
+        )
 
 
 def protein_individual_act(triad: Triad, qtbot: Any) -> None:
@@ -628,7 +632,7 @@ SCENARIOS = [
     Scenario(
         tab="ProteinController",
         name="ProteinController-events",
-        covers=("plot_events",),
+        covers=("plot_events", "plot_event_histograms"),
         build=protein_tab,
         act=protein_events_act,
         # The filter, the scope and the Event ID the click would read all change.

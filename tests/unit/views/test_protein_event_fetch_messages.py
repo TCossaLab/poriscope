@@ -97,32 +97,6 @@ class TestPlotEvents:
         view.plot_events_requested.emit.assert_not_called()
 
 
-class TestPlotHistogram:
-    """The same contract on the other caller, which had the same two lines."""
-
-    def test_a_refused_fetch_adds_no_second_message(self, view):
-        with (
-            patch.object(ProteinView, "get_selected_filters", return_value={}),
-            patch.object(ProteinView, "_fetch_event_data", return_value=None),
-            patch.object(ProteinView, "_update_event_histogram") as draw,
-        ):
-            view._handle_plot_histogram({**PARAMS, "bins": 50, "sizes": False})
-
-        assert _messages(view) == []
-        draw.assert_not_called()
-
-    def test_an_empty_fetch_is_reported(self, view):
-        with (
-            patch.object(ProteinView, "get_selected_filters", return_value={}),
-            patch.object(ProteinView, "_fetch_event_data", return_value=[]),
-            patch.object(ProteinView, "_update_event_histogram") as draw,
-        ):
-            view._handle_plot_histogram({**PARAMS, "bins": 50, "sizes": False})
-
-        assert any("No data available for event_id 10" in m for m in _messages(view))
-        draw.assert_not_called()
-
-
 class TestFetchRefusals:
     """The fetch's own guards return None, which is what keeps the caller quiet."""
 
