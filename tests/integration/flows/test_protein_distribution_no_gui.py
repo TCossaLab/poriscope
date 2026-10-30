@@ -244,3 +244,55 @@ def test_commit_individual_with_no_fit_says_so(protein_tab: Triad) -> None:
         "No individual fit available to commit. Run Update Plot in Individual mode first."
         in messages
     )
+
+
+def test_an_ensemble_plot_is_recorded_on_the_controller_with_its_intent(
+    protein_tab: Triad,
+) -> None:
+    update_plot(protein_tab, "ensemble")
+
+    entry = history(protein_tab)[-1]
+    assert entry["action"] == "update_ensemble_distribution"
+    assert entry["kwargs"] == {
+        "loader": LOADER,
+        "filters": {},
+        "scope": {"exp_a": ["0"]},
+        "bins": [20],
+        "sizes": False,
+        "pore_diameter": 10.0,
+        "pore_length": 10.0,
+        "n_values": 20,
+    }
+    assert "update_ensemble_distribution" in type(protein_tab.tab_controller).__dict__
+
+
+def test_a_refused_ensemble_plot_records_nothing_and_leaves_the_figure(
+    protein_tab: Triad,
+) -> None:
+    update_plot(protein_tab, "ensemble")
+    before = history(protein_tab)
+    drawn = [line.get_label() for line in protein_tab.tab_view.ax_hist_ensemble.lines]
+    messages = said(protein_tab)
+    protein_tab.tab_view.selected_experiment_and_channels_by_loader[LOADER] = {
+        "exp_a": ["0", "1"]
+    }
+
+    update_plot(protein_tab, "ensemble")
+
+    assert history(protein_tab) == before
+    view = protein_tab.tab_view
+    assert [line.get_label() for line in view.ax_hist_ensemble.lines] == drawn
+    assert (
+        "Only a single channel at a time can be used for protein analysis" in messages
+    )
+
+
+def test_report_all_with_no_ensemble_fit_says_so(protein_tab: Triad) -> None:
+    messages = said(protein_tab)
+
+    press(protein_tab, "report_all", {"db_loader": LOADER})
+
+    assert (
+        "No ensemble fit available to report. Run Update Plot in Ensemble mode first."
+        in messages
+    )

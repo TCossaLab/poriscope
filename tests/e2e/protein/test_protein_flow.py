@@ -7,7 +7,7 @@ persistence, and Commit Individual.
 
 One test, staged, rather than split across several: every stage after the
 first depends on cumulative state built by the ones before it (mode
-persistence across switches, Report All needing ensemble_fit_params
+persistence across switches, Report All needing the Ensemble fit
 already populated by a prior Ensemble Update Plot, Commit needing
 the Individual fit already kept by a prior Individual Update Plot) --
 splitting would mean re-driving the entire loader/scope/plot setup in
@@ -20,7 +20,7 @@ once for prolate, once for oblate -- and twice for the whole dataset in
 Ensemble mode). This test is verifying UI wiring, dispatch routing, and
 state propagation between stages, not sampling correctness -- that has
 its own dedicated unit tests (TestUpdateIndividualDistribution and
-TestUpdateDistributionEnsemble,
+TestUpdateEnsembleDistribution,
 referenced throughout this file). _generate_vm_ensemble is monkeypatched
 below to return a small fixed sample instantly so Update Plot clicks
 don't block on real sampling; everything downstream of it
@@ -37,7 +37,7 @@ plot type. So Stage 3/4 below assert on ax_hist's collections count, not
 bars -- asserting on bars there would never pass, since the count would
 stay at 0 regardless of a successful Update Plot.
 
-FIT DETERMINISM: _update_distribution_ensemble's Prolate/Oblate scatter
+FIT DETERMINISM: ProteinController._fit_ensemble's Prolate/Oblate scatter
 plots are only ever drawn (ax_vm.collections grows) if
 _fit_and_sanity_check_double_gaussian succeeds on the real aggregate
 current histogram -- a genuine curve_fit plus a p-value/peak-separation
@@ -62,10 +62,8 @@ controls, update_plot_button, commit_individual, report_all) are
 confirmed directly against ProteinControls.py source. Action names,
 dispatch routing, and guard-clause behavior ARE confirmed directly from
 ProteinView's real unit tests (test_protein_view_final.py) and from
-ProteinView.py source (_report_ensemble_fit reads
-ensemble_fit_params/ensemble_fit_prolate_summary/
-ensemble_fit_oblate_summary, all three set at the end of a successful
-_update_distribution_ensemble), cited inline below.
+the source (Report All reports ProteinModel.ensemble_fit, which a
+successful Ensemble Update Plot sets), cited inline below.
 """
 
 import os
@@ -187,12 +185,11 @@ def test_protein_individual_ensemble_flow(
     )
 
     # SelectionTree.show_dialog() bypass, narrowing to exactly one
-    # experiment/channel: _update_distribution_individual and
-    # _update_distribution_ensemble both hard-require exactly one
+    # experiment/channel: ProteinController.update_individual_distribution
+    # and update_ensemble_distribution both hard-require exactly one
     # experiment and one channel selected (confirmed:
-    # TestUpdateDistributionIndividual/Ensemble's
-    # test_multiple_experiments_warns_and_returns /
-    # test_multiple_channels_warns_and_returns), so this fixture's
+    # TestUpdateIndividualDistribution/TestUpdateEnsembleDistribution's
+    # refusal tests), so this fixture's
     # multi-experiment shape must be narrowed down after Scope, same as
     # test_metadata_flow.py's own Stage 2 does.
     import poriscope.plugins.analysistabs.ProteinModel as protein_model_mod
@@ -310,7 +307,7 @@ def test_protein_individual_ensemble_flow(
 
     # =========================================================
     # STAGE 2: diameter + length. Confirmed real param keys:
-    # pore_diameter, pore_length (TestUpdateDistributionIndividual._params()).
+    # pore_diameter, pore_length (TestHandleParameterChange._params()).
     # =========================================================
     controls.pore_diameter_lineEdit.setText("20.0")
     controls.pore_length_lineEdit.setText("30.0")
@@ -365,9 +362,9 @@ def test_protein_individual_ensemble_flow(
     # STAGE 5: switch to Ensemble mode, same D/L/N, Update Plot.
     # Confirmed dispatch: "set_mode_ensemble" sets _analysis_mode
     # (TestHandleParameterChange.test_set_mode_ensemble); "update_plot"
-    # then routes to _update_distribution_ensemble
-    # (test_update_plot_ensemble_mode). Ensemble routes to the VM
-    # scatterplot (ax.scatter, confirmed via TestPlotScatterplot), so
+    # then asks for ProteinController.update_ensemble_distribution
+    # (test_update_plot_asks_with_the_click_s_intent). Its shapes draw as
+    # the VM scatterplot (ax.scatter, confirmed via TestFiguresByMode), so
     # check collections, not bars.
     # =========================================================
     if hasattr(controls, "ensemble_radio"):
@@ -400,24 +397,21 @@ def test_protein_individual_ensemble_flow(
     collections_ensemble = _count_collections(protein_view.ax_vm_ensemble.figure)
     print(f"[DEBUG] Ensemble: {collections_ensemble} scatter collections")
 
-    assert protein_view.ensemble_fit_params is not None, (
-        "Expected ensemble_fit_params to be populated after a successful "
-        "Ensemble Update Plot -- required before Report All has anything "
-        "to report (_report_ensemble_fit emits a 'No ensemble fit "
-        "available' message and returns early otherwise, per "
-        "ProteinView._report_ensemble_fit source)"
+    assert protein_model.ensemble_fit is not None, (
+        "Expected the Ensemble fit to be kept after a successful Ensemble "
+        "Update Plot -- required before Report All has anything to report "
+        "(the Controller says 'No ensemble fit available' otherwise)"
     )
 
     # =========================================================
-    # STAGE 6: Report All, still in Ensemble mode with ensemble_fit_params
-    # (and ensemble_fit_bins/ensemble_fit_prolate_summary/
-    # ensemble_fit_oblate_summary) already populated by Stage 5's Update
-    # Plot. Confirmed dispatch: "report_all" -> _report_ensemble_fit()
-    # in handle_parameter_change (ProteinView.py source); widget is
+    # STAGE 6: Report All, still in Ensemble mode with the Ensemble fit
+    # already kept by Stage 5's Update Plot. Confirmed dispatch:
+    # "report_all" -> ensemble_report_requested -> the Controller, which
+    # hands the fit to show_ensemble_report; widget is
     # controls.report_all (confirmed against ProteinControls.py source,
     # wired via button_mapping["report_all"]).
     #
-    # _report_ensemble_fit() emits its report as a single HTML string on
+    # show_ensemble_report() emits its report as a single HTML string on
     # add_text_to_display(text, class_name) -- capture it directly rather
     # than relying on caplog, since this isn't logged, it's a
     # display-panel signal.

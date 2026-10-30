@@ -170,15 +170,6 @@ class MetaSubsetTabView(MetaView):
     #: answered.
     filters_save_requested = Signal(str, object)
 
-    #: Asks for a scatterplot's columns to be filtered and log-scaled: the raw
-    #: columns, their log flags, and the drawing context handed back unchanged.
-    #: Answered through ``set_scatterplot``.
-    #:
-    #: On the base rather than in each tab because both subset tabs draw the same
-    #: plain scatterplot from the same request. The protein tab's error-bar variant
-    #: keeps its own pair, since only it has one.
-    scatterplot_requested = Signal(object, object, object, object, str)
-
     logger = logging.getLogger(__name__)
 
     #: Where the Controller leaves the ``event_id`` rows :py:meth:`_rebuild_event_id_cache`
@@ -1096,11 +1087,11 @@ class MetaSubsetTabView(MetaView):
         dataset_label: str,
     ) -> None:
         """
-        Draw a scatterplot of two filtered columns.
+        Draw a scatterplot of two filtered columns on the given axes.
 
-        The answering half of ``scatterplot_requested``. The NaN and log filtering
-        belongs to the Model: the values it drops never reach the axes, and the ones
-        it keeps are exported with the plot.
+        Shared by both subset tabs' scatterplots. The NaN and log filtering belongs to the
+        Model, done before this is called: the values it drops never reach the axes, and
+        the ones it keeps are exported with the plot.
 
         :param columns: the filtered x and y values
         :type columns: Sequence[npt.NDArray[np.float64]]

@@ -26,6 +26,7 @@
 
 import itertools
 import logging
+from dataclasses import dataclass
 from typing import (
     Any,
     Dict,
@@ -49,6 +50,25 @@ from poriscope.utils.LogDecorator import log
 from poriscope.utils.MetaSubsetTabModel import MetaSubsetTabModel
 
 
+@dataclass
+class EnsembleFit:
+    """
+    The Ensemble plot's fit, kept for Report All.
+
+    :ivar params: the double-Gaussian fit, as (amp1, mean1, std1, amp2, mean2, std2)
+    :ivar bins: the bins entry the histogram was built with, or None to estimate
+    :ivar sizes: does bins refer to a bin width
+    :ivar prolate: the prolate solutions sampled from the fit
+    :ivar oblate: the oblate solutions sampled from the fit
+    """
+
+    params: Any
+    bins: Any
+    sizes: bool
+    prolate: pd.DataFrame
+    oblate: pd.DataFrame
+
+
 @inherit_docstrings
 class ProteinModel(MetaSubsetTabModel):
     """
@@ -61,9 +81,10 @@ class ProteinModel(MetaSubsetTabModel):
     @override
     def _init(self) -> None:
         """
-        Start with no Individual fit.
+        Start with no Individual and no Ensemble fit.
         """
         self.individual_fit: Optional[pd.DataFrame] = None
+        self.ensemble_fit: Optional[EnsembleFit] = None
 
     @log(logger=logger)
     def set_individual_fit(self, fit: pd.DataFrame) -> None:
@@ -74,6 +95,16 @@ class ProteinModel(MetaSubsetTabModel):
         :type fit: pd.DataFrame
         """
         self.individual_fit = fit
+
+    @log(logger=logger)
+    def set_ensemble_fit(self, fit: Optional[EnsembleFit]) -> None:
+        """
+        Keep the Ensemble plot's fit for Report All, or forget it with None.
+
+        :param fit: the fit, or None when the plot that replaced it has none
+        :type fit: Optional[EnsembleFit]
+        """
+        self.ensemble_fit = fit
 
     @log(logger=logger)
     def _double_gaussian(

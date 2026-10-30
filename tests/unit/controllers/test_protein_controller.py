@@ -19,7 +19,7 @@ import pytest
 from PySide6.QtWidgets import QApplication
 
 from poriscope.plugins.analysistabs.ProteinController import ProteinController
-from poriscope.plugins.analysistabs.ProteinModel import ProteinModel
+from poriscope.plugins.analysistabs.ProteinModel import EnsembleFit, ProteinModel
 from poriscope.plugins.analysistabs.ProteinView import ProteinView
 
 # ===========================================================================
@@ -432,9 +432,10 @@ class TestUpdateIndividualDistribution:
         return asked
 
     def _drawing(self, controller):
-        controller.view.reset = MagicMock()
+        controller.view.clear_plot = MagicMock()
         controller.view.set_event_query = MagicMock()
-        controller.view.set_distribution_fits = MagicMock()
+        controller.view.show_solutions = MagicMock()
+        controller.view.show_peak_fits = MagicMock()
 
     def _plot(self, controller, filters=None, scope=None):
         return controller.update_individual_distribution(
@@ -459,14 +460,20 @@ class TestUpdateIndividualDistribution:
         assert self._plot(controller) is True
 
         assert asked == [("ldr", "", {"exp1": ["3"]}, "Full Dataset")]
-        controller.view.reset.assert_called_once_with("2d", "individual")
-        df_prolate, df_oblate, fit_data = (
-            controller.view.set_distribution_fits.call_args.args
+        controller.view.clear_plot.assert_called_once_with("2d", "individual")
+        shapes = [call.args for call in controller.view.show_solutions.call_args_list]
+        # A family that sampled nothing is not drawn; this event samples oblate only.
+        assert [(mode, label) for mode, _, label in shapes] == [
+            ("individual", "Oblate Solutions")
+        ]
+        assert all(len(columns) == 2 for _, columns, _ in shapes)
+        mode, peaks, label = controller.view.show_peak_fits.call_args.args
+        assert (mode, label, len(peaks)) == (
+            "individual",
+            "Event Peak Fit Parameters",
+            4,
         )
-        assert list(df_prolate.columns) == ["V", "m", "a", "b"]
-        assert list(df_oblate.columns) == ["V", "m", "a", "b"]
-        assert fit_data["id"].tolist() == [1]
-        assert controller.model.individual_fit is fit_data
+        assert controller.model.individual_fit["id"].tolist() == [1]
 
     def test_a_subset_with_nothing_fittable_is_reported_and_changes_nothing(
         self, controller, mocker
@@ -487,8 +494,8 @@ class TestUpdateIndividualDistribution:
 
         assert self._plot(controller) is False
 
-        controller.view.reset.assert_not_called()
-        controller.view.set_distribution_fits.assert_not_called()
+        controller.view.clear_plot.assert_not_called()
+        controller.view.show_solutions.assert_not_called()
         assert controller.model.individual_fit is previous
         messages = [
             call.args[0] for call in controller.add_text_to_display.emit.call_args_list
@@ -546,210 +553,294 @@ class TestUpdateIndividualDistribution:
         assert self._plot(controller, filters=filters, scope=scope) is False
 
         assert asked == []
-        controller.view.reset.assert_not_called()
+        controller.view.clear_plot.assert_not_called()
         messages = [
             call.args[0] for call in controller.add_text_to_display.emit.call_args_list
         ]
         assert message in messages
 
 
-class TestBuildEnsembleHistogram:
-    """Fetch one subset, average it, and hand the frame back to be drawn."""
+def _two_peaks() -> pd.DataFrame:
+    """
+    A two-peaked averaged histogram, as the Model builds one.
 
-    def _fetch(self, controller, generator):
-        """
-        Answer the fetch with a query and a generator, without a real loader.
+    :return: bin centers and amplitudes
+    :rtype: pd.DataFrame
+    """
+    current = np.linspace(0.0, 0.6, 200)
+    amplitude = 100.0 * np.exp(
+        -((current - 0.15) ** 2) / (2 * 0.03**2)
+    ) + 60.0 * np.exp(-((current - 0.40) ** 2) / (2 * 0.04**2))
+    return pd.DataFrame({"Normalized Current": current, "Amplitude": amplitude})
 
-        :param controller: the controller under test
-        :type controller: ProteinController
-        :param generator: the events to answer with
-        :type generator: object
-        :return: None
-        :rtype: None
-        """
-        controller._fetch_event_subset = lambda *a: ("SELECT 1", generator)
 
-    def test_the_frame_and_its_context_reach_the_view(self, controller) -> None:
-        controller.view.set_ensemble_histogram = MagicMock()
+def _solutions(rows: int = 2) -> pd.DataFrame:
+    """
+    One family of sampled geometries.
+
+    :param rows: how many samples
+    :type rows: int
+    :return: a frame with the four geometry columns
+    :rtype: pd.DataFrame
+    """
+    return pd.DataFrame(
+        {
+            "V": [100.0 + i for i in range(rows)],
+            "m": [2.0] * rows,
+            "a": [4.0] * rows,
+            "b": [2.0] * rows,
+        }
+    )
+
+
+class TestUpdateEnsembleDistribution:
+    """Fetch and average one subset, fit it, keep the fit, and have the View draw it all."""
+
+    SCOPE = {"exp1": ["3"]}
+
+    def _drawing(self, controller):
+        controller.view.clear_plot = MagicMock()
         controller.view.set_event_query = MagicMock()
-        self._fetch(controller, iter([_event(1), _event(2, rng_seed=1)]))
+        controller.view.show_histogram = MagicMock()
+        controller.view.show_solutions = MagicMock()
 
-        controller.build_ensemble_histogram(
+    def _fetch(self, controller, events):
+        controller._fetch_event_subset = lambda *a: ("SELECT 1", iter(events))
+
+    def _plot(self, controller, filters=None, scope=None):
+        return controller.update_ensemble_distribution(
             "ldr",
-            "",
-            None,
-            "Filtered Histogram",
+            {} if filters is None else filters,
+            self.SCOPE if scope is None else scope,
             [25],
             False,
-            "lbl",
             1.0,
             2.0,
             3,
-            "subset",
         )
 
+    def _said(self, controller, mocker):
+        controller.add_text_to_display = mocker.Mock()
+        controller.add_text_to_display.emit = mocker.Mock()
+        return lambda: [
+            call.args[0] for call in controller.add_text_to_display.emit.call_args_list
+        ]
+
+    def test_the_histogram_is_drawn_on_a_cleared_ensemble_figure(
+        self, controller
+    ) -> None:
+        self._drawing(controller)
+        self._fetch(controller, [_event(1), _event(2, rng_seed=1)])
+
+        assert self._plot(controller) is True
+
+        controller.view.clear_plot.assert_called_once_with("2d", "ensemble")
         controller.view.set_event_query.assert_called_once_with("SELECT 1")
-        args = controller.view.set_ensemble_histogram.call_args.args
-        plot_data, plot_type, bins, sizes, label, d, L, N = args
+        mode, plot_data, label = controller.view.show_histogram.call_args_list[0].args
+        assert mode == "ensemble"
         assert list(plot_data.columns) == ["Normalized Current", "Amplitude"]
         assert len(plot_data) == 25
-        assert (plot_type, bins, sizes, label) == (
-            "Filtered Histogram",
-            [25],
-            False,
-            "lbl",
-        )
-        assert (d, L, N) == (1.0, 2.0, 3)
+        assert label == "ldr | exp1 Ch 3: Full Dataset"
 
-    def test_a_subset_with_no_usable_event_is_reported_and_draws_nothing(
+    def test_a_subset_with_no_usable_event_is_reported_and_changes_nothing(
         self, controller, mocker
     ) -> None:
-        """
-        The query is not set either, so the previous figure and the previous
-        applied-query echo both stay as they were.
-        """
-        controller.view.set_ensemble_histogram = MagicMock()
-        controller.view.set_event_query = MagicMock()
-        controller.add_text_to_display = mocker.Mock()
-        controller.add_text_to_display.emit = mocker.Mock()
-        self._fetch(controller, iter([]))
+        """The previous figure, the previous fit and the history all stay."""
+        self._drawing(controller)
+        said = self._said(controller, mocker)
+        self._fetch(controller, [])
 
-        controller.build_ensemble_histogram(
-            "ldr",
-            "",
-            None,
-            "Filtered Histogram",
-            None,
-            False,
-            "lbl",
-            1.0,
-            2.0,
-            3,
-            "subset",
-        )
+        assert self._plot(controller) is False
 
-        controller.view.set_ensemble_histogram.assert_not_called()
-        controller.view.set_event_query.assert_not_called()
-        messages = [
-            call.args[0] for call in controller.add_text_to_display.emit.call_args_list
-        ]
-        assert any("No usable events" in m for m in messages)
+        controller.view.clear_plot.assert_not_called()
+        controller.view.show_histogram.assert_not_called()
+        assert any("No usable events" in m for m in said())
 
     def test_a_failed_fetch_draws_nothing(self, controller) -> None:
-        controller.view.set_ensemble_histogram = MagicMock()
+        self._drawing(controller)
         controller._fetch_event_subset = lambda *a: None
 
-        controller.build_ensemble_histogram(
-            "ldr",
-            "",
-            None,
-            "Filtered Histogram",
-            None,
-            False,
-            "lbl",
-            1.0,
-            2.0,
-            3,
-            "subset",
-        )
+        assert self._plot(controller) is False
 
-        controller.view.set_ensemble_histogram.assert_not_called()
+        controller.view.show_histogram.assert_not_called()
 
-    def test_an_unusable_plot_type_is_reported(self, controller, mocker) -> None:
-        controller.view.set_ensemble_histogram = MagicMock()
-        controller.add_text_to_display = mocker.Mock()
-        controller.add_text_to_display.emit = mocker.Mock()
-        self._fetch(controller, iter([_event(1)]))
-
-        controller.build_ensemble_histogram(
-            "ldr",
-            "",
-            None,
-            "Sideways Histogram",
-            None,
-            False,
-            "lbl",
-            1.0,
-            2.0,
-            3,
-            "subset",
-        )
-
-        controller.view.set_ensemble_histogram.assert_not_called()
-        messages = [
-            call.args[0] for call in controller.add_text_to_display.emit.call_args_list
-        ]
-        assert any("Unable to build the ensemble histogram" in m for m in messages)
-
-
-class TestFitEnsembleGeometry:
-    """The ensemble fit's two bail-outs, which the widget used to own."""
-
-    def _run(self, controller, popt_bins=None):
-        """
-        Drive the slot with a two-peaked histogram.
-
-        :param controller: the controller under test
-        :type controller: ProteinController
-        :param popt_bins: unused, kept for symmetry with the other drivers
-        :type popt_bins: object
-        :return: the frame handed in, so a test can assert against it
-        :rtype: pd.DataFrame
-        """
-        current = np.linspace(0.0, 0.6, 200)
-        amplitude = 100.0 * np.exp(
-            -((current - 0.15) ** 2) / (2 * 0.03**2)
-        ) + 60.0 * np.exp(-((current - 0.40) ** 2) / (2 * 0.04**2))
-        plot_data = pd.DataFrame(
-            {"Normalized Current": current, "Amplitude": amplitude}
-        )
-        controller.fit_ensemble_geometry(
-            current, amplitude, plot_data, "Histogram", 10.0, 10.0, 5
-        )
-        return plot_data
-
-    def test_an_unfittable_histogram_is_reported_on_the_status_panel(
+    def test_a_histogram_that_cannot_be_built_is_reported(
         self, controller, mocker
     ) -> None:
-        """
-        The first bail-out: no double Gaussian could be fitted. The user is told on
-        the status panel rather than left with an unchanged plot and no
-        explanation.
-        """
-        controller.view.set_ensemble_geometry_fit = MagicMock()
-        controller.add_text_to_display = mocker.Mock()
-        controller.add_text_to_display.emit = mocker.Mock()
-        flat = np.linspace(0.0, 1.0, 50)
-
-        controller.fit_ensemble_geometry(
-            flat, np.ones_like(flat), pd.DataFrame(), "Histogram", 10.0, 10.0, 5
+        self._drawing(controller)
+        said = self._said(controller, mocker)
+        self._fetch(controller, [_event(1)])
+        controller.model.build_all_points_histogram = MagicMock(
+            side_effect=ValueError("bad bins")
         )
 
-        controller.view.set_ensemble_geometry_fit.assert_not_called()
-        messages = [
+        assert self._plot(controller) is False
+
+        controller.view.show_histogram.assert_not_called()
+        assert any("Unable to build the ensemble histogram" in m for m in said())
+
+    def test_a_new_plot_whose_fit_fails_leaves_no_earlier_fit_to_report(
+        self, controller
+    ) -> None:
+        """Report All describes the histogram on screen, not the one it replaced."""
+        self._drawing(controller)
+        self._fetch(controller, [_event(1), _event(2, rng_seed=1)])
+        controller.model.set_ensemble_fit(
+            EnsembleFit(np.ones(6), [25], False, _solutions(), _solutions())
+        )
+        controller.model.fit_histogram = MagicMock(return_value=(None, None))
+
+        assert self._plot(controller) is True
+
+        assert controller.model.ensemble_fit is None
+
+    @pytest.mark.parametrize(
+        ("filters", "scope", "message"),
+        [
+            (
+                {},
+                {"exp1": ["3"], "exp2": ["1"]},
+                "Only a single experiment can be used for Filtered Histogram",
+            ),
+            (
+                {"a": "x > 1", "b": "x > 2"},
+                {"exp1": ["3"]},
+                "Only a single subset can be used for Filtered Histogram",
+            ),
+            (
+                {},
+                {"exp1": ["3", "4"]},
+                "Only a single channel at a time can be used for protein analysis",
+            ),
+        ],
+        ids=["two experiments", "two subsets", "two channels"],
+    )
+    def test_a_refused_selection_is_said_and_draws_nothing(
+        self, controller, mocker, filters, scope, message
+    ) -> None:
+        self._drawing(controller)
+        said = self._said(controller, mocker)
+        self._fetch(controller, [_event(1)])
+
+        assert self._plot(controller, filters=filters, scope=scope) is False
+
+        controller.view.clear_plot.assert_not_called()
+        assert message in said()
+
+
+class TestFitEnsemble:
+    """The fit of an Ensemble histogram, its two bail-outs, and what Report All will read."""
+
+    POPT = np.array([100.0, 0.15, 0.03, 60.0, 0.40, 0.04])
+
+    def _drawing(self, controller, mocker):
+        controller.view.show_histogram = MagicMock()
+        controller.view.show_solutions = MagicMock()
+        controller.add_text_to_display = mocker.Mock()
+        controller.add_text_to_display.emit = mocker.Mock()
+        return lambda: [
             call.args[0] for call in controller.add_text_to_display.emit.call_args_list
         ]
-        assert any("Unable to fit a double gaussian" in m for m in messages)
+
+    def test_a_fit_is_kept_with_its_binning_and_drawn_with_its_shapes(
+        self, controller, mocker
+    ) -> None:
+        self._drawing(controller, mocker)
+        curve = np.linspace(1.0, 2.0, 200)
+        controller.model.fit_histogram = MagicMock(return_value=(self.POPT, curve))
+        controller.model.sample_vm_solutions = MagicMock(
+            return_value=(_solutions(), _solutions())
+        )
+
+        controller._fit_ensemble(_two_peaks(), [25], True, 10.0, 12.0, 2)
+
+        fit = controller.model.ensemble_fit
+        np.testing.assert_array_equal(fit.params, self.POPT)
+        assert (fit.bins, fit.sizes) == ([25], True)
+        mode, drawn, label = controller.view.show_histogram.call_args.args
+        assert (mode, label) == ("ensemble", "Fit")
+        np.testing.assert_array_equal(drawn["Amplitude"].values, curve)
+        shapes = [call.args for call in controller.view.show_solutions.call_args_list]
+        assert [(mode, label) for mode, _, label in shapes] == [
+            ("ensemble", "Prolate Solutions"),
+            ("ensemble", "Oblate Solutions"),
+        ]
+
+    def test_an_unfittable_histogram_is_reported_and_keeps_no_fit(
+        self, controller, mocker
+    ) -> None:
+        said = self._drawing(controller, mocker)
+        controller.model.fit_histogram = MagicMock(return_value=(None, None))
+
+        controller._fit_ensemble(_two_peaks(), None, False, 10.0, 12.0, 2)
+
+        controller.view.show_histogram.assert_not_called()
+        assert controller.model.ensemble_fit is None
+        assert any("Unable to fit a double gaussian" in m for m in said())
 
     def test_unphysical_geometry_is_reported_but_the_fit_is_still_drawn(
         self, controller, mocker
     ) -> None:
-        """
-        The second bail-out: the fit was fine but no sample satisfies the geometry.
-        The fitted curve is still worth seeing, so the setter is called with two
-        empty frames rather than skipped.
-        """
-        controller.view.set_ensemble_geometry_fit = MagicMock()
+        """No sample satisfies the geometry; the fitted curve is still worth seeing."""
+        said = self._drawing(controller, mocker)
+        empty = pd.DataFrame(columns=["V", "m", "a", "b"])
+        controller.model.fit_histogram = MagicMock(
+            return_value=(self.POPT, np.ones(200))
+        )
+        controller.model.sample_vm_solutions = MagicMock(return_value=(empty, empty))
+
+        controller._fit_ensemble(_two_peaks(), None, False, 10.0, 12.0, 2)
+
+        assert any("unphysical geometry" in m for m in said())
+        controller.view.show_histogram.assert_called_once()
+        controller.view.show_solutions.assert_not_called()
+        assert controller.model.ensemble_fit is not None
+
+
+class TestReportEnsembleFit:
+    """Report All hands the View the fit the Model keeps, or says there is none."""
+
+    def test_the_fit_s_parts_reach_the_view(self, controller) -> None:
+        controller.view.show_ensemble_report = MagicMock()
+        prolate, oblate = _solutions(), _solutions(3)
+        controller.model.set_ensemble_fit(
+            EnsembleFit(np.ones(6), [25], False, prolate, oblate)
+        )
+
+        controller.report_ensemble_fit()
+
+        params, bins, sizes, sent_prolate, sent_oblate = (
+            controller.view.show_ensemble_report.call_args.args
+        )
+        assert (bins, sizes) == ([25], False)
+        assert sent_prolate is prolate and sent_oblate is oblate
+
+    def test_no_fit_reports_that_rather_than_an_empty_table(
+        self, controller, mocker
+    ) -> None:
+        controller.view.show_ensemble_report = MagicMock()
         controller.add_text_to_display = mocker.Mock()
         controller.add_text_to_display.emit = mocker.Mock()
-        empty = pd.DataFrame(columns=["V", "m", "a", "b"])
-        controller.model.sample_vm_solutions = lambda *a: (empty, empty)
 
-        self._run(controller)
+        controller.report_ensemble_fit()
 
-        messages = [
-            call.args[0] for call in controller.add_text_to_display.emit.call_args_list
-        ]
-        assert any("unphysical geometry" in m for m in messages)
-        controller.view.set_ensemble_geometry_fit.assert_called_once()
-        assert controller.view.set_ensemble_geometry_fit.call_args.args[4].empty
+        controller.view.show_ensemble_report.assert_not_called()
+        (message, _), _ = controller.add_text_to_display.emit.call_args
+        assert "No ensemble fit available" in message
+
+
+class TestReset:
+    """The recorded reset clears one mode's figures, and neither mode's fit."""
+
+    def test_it_clears_its_mode_s_figures_and_keeps_both_fits(self, controller) -> None:
+        controller.view.clear_plot = MagicMock()
+        individual = pd.DataFrame({"id": [1]})
+        ensemble = EnsembleFit(np.ones(6), None, False, _solutions(), _solutions())
+        controller.model.set_individual_fit(individual)
+        controller.model.set_ensemble_fit(ensemble)
+
+        controller.reset("2d", "ensemble")
+
+        controller.view.clear_plot.assert_called_once_with("2d", "ensemble")
+        assert controller.model.individual_fit is individual
+        assert controller.model.ensemble_fit is ensemble

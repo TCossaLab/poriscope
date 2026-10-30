@@ -389,94 +389,6 @@ class TestResetActions:
         assert mock_view.hist_labels == []
         assert not hasattr(mock_view, "hist_min")
 
-    def test_clears_bins(self, mock_view):
-        mock_view.allowed_bins = [10]
-        mock_view.allowed_sizes = True
-        mock_view._reset_actions()
-        assert mock_view.allowed_bins is None
-        assert mock_view.allowed_sizes is None
-
-
-ENSEMBLE_FIT_ATTRIBUTES = (
-    "ensemble_fit_params",
-    "ensemble_fit_bins",
-    "ensemble_fit_sizes",
-    "ensemble_fit_prolate_summary",
-    "ensemble_fit_oblate_summary",
-)
-
-
-def _seed_fits(view):
-    """Give the Ensemble fit recognisable values, so a test can see whether it survives."""
-    for name in ENSEMBLE_FIT_ATTRIBUTES:
-        setattr(view, name, f"{name} value")
-
-
-class TestResetReadsNoMode:
-    """
-    A recorded reset replays the same in whichever mode the tab is in.
-
-    The reset is recorded with only its axis type, so it must not decide what to clear
-    by reading the live analysis mode: replayed in the other mode it would clear the
-    wrong fit. Each plot action clears the fit it is about to replace, instead.
-    """
-
-    @pytest.mark.parametrize("mode", ["individual", "ensemble"])
-    def test_the_reset_clears_no_fit_state_in_either_mode(self, mock_view, mode):
-        mock_view._analysis_mode = mode
-        _seed_fits(mock_view)
-
-        mock_view._reset_actions()
-
-        for name in ENSEMBLE_FIT_ATTRIBUTES:
-            assert getattr(mock_view, name) == f"{name} value"
-
-    def test_an_ensemble_plot_replayed_in_individual_mode_clears_the_ensemble_fit_only(
-        self, mock_view
-    ):
-        """
-        The case a replay creates: the history was recorded in Ensemble mode and the
-        tab now holds an Individual fit and sits in Individual mode.
-        """
-        mock_view._analysis_mode = "individual"
-        _seed_fits(mock_view)
-        mock_view.selected_experiment_and_channels_by_loader = {
-            "ldr": {"exp1": ["0"], "exp2": ["0"]}
-        }
-        mock_view.get_selected_filters = MagicMock(return_value={})
-        parameters = {
-            "db_loader": "ldr",
-            "plot_type": "Filtered Histogram",
-            "pore_diameter": "20.0",
-            "pore_length": "30.0",
-            "n_values": "10",
-        }
-
-        mock_view._update_distribution_ensemble(recorded(mock_view, parameters))
-
-        for name in ENSEMBLE_FIT_ATTRIBUTES:
-            assert getattr(mock_view, name) is None
-
-    def test_the_ensemble_plot_clears_the_ensemble_fit_it_replaces(self, mock_view):
-        mock_view._analysis_mode = "ensemble"
-        _seed_fits(mock_view)
-        mock_view.selected_experiment_and_channels_by_loader = {
-            "ldr": {"exp1": ["0"], "exp2": ["0"]}
-        }
-        mock_view.get_selected_filters = MagicMock(return_value={})
-        parameters = {
-            "db_loader": "ldr",
-            "plot_type": "Filtered Histogram",
-            "pore_diameter": "20.0",
-            "pore_length": "30.0",
-            "n_values": "10",
-        }
-
-        mock_view._update_distribution_ensemble(recorded(mock_view, parameters))
-
-        for name in ENSEMBLE_FIT_ATTRIBUTES:
-            assert getattr(mock_view, name) is None
-
 
 # ===========================================================================
 # _clear_figure_state
@@ -538,300 +450,82 @@ class TestPlotAllPointsHistogram:
 
 
 # ===========================================================================
-# _plot_scatterplot
-# ===========================================================================
-
-
-class TestPlotScatterplot:
-    def _df(self):
-        rng = np.random.default_rng(0)
-        return pd.DataFrame({"V": rng.random(10), "m": rng.random(10)})
-
-    def _emitted(self, real_view, df, logscales, units=("nm^3", "au")):
-        """
-        Drive the request half and capture what it asked for.
-
-        The filtering is the Model's, so the request half only formats the labels
-        and asks; the drawing is ``MetaSubsetTabView.set_scatterplot``.
-
-        :param real_view: the view under test
-        :type real_view: ProteinView
-        :param df: the frame to plot
-        :type df: pd.DataFrame
-        :param logscales: the log flags for the two axes
-        :type logscales: list
-        :param units: the units for the two axes
-        :type units: tuple
-        :return: the emitted arguments
-        :rtype: tuple
-        """
-        captured = []
-        real_view.scatterplot_requested.connect(lambda *args: captured.append(args))
-        real_view._plot_scatterplot(
-            real_view.ax_vm_individual, df, ["V", "m"], list(units), logscales
-        )
-        return captured[0]
-
-    def test_labels_set(self, real_view):
-        _columns, _flags, ax, labels, _label = self._emitted(
-            real_view, self._df(), [False, False]
-        )
-
-        assert "V" in labels[0]
-        assert "m" in labels[1]
-        assert ax is real_view.ax_vm_individual
-
-    def test_the_raw_columns_and_their_flags_go_out(self, real_view):
-        """The filter is the Model's, so the columns leave unfiltered."""
-        df = self._df()
-
-        columns, flags, _ax, _labels, _label = self._emitted(
-            real_view, df, [True, False]
-        )
-
-        assert [list(column) for column in columns] == [
-            df["V"].tolist(),
-            df["m"].tolist(),
-        ]
-        assert flags == [True, False]
-
-    def test_log_x_prefix(self, real_view):
-        _columns, _flags, _ax, labels, _label = self._emitted(
-            real_view, self._df(), [True, False], units=("", "")
-        )
-
-        assert "log10" in labels[0]
-
-    def test_log_y_prefix(self, real_view):
-        _columns, _flags, _ax, labels, _label = self._emitted(
-            real_view, self._df(), [False, True], units=("", "")
-        )
-
-        assert "log10" in labels[1]
-
-
-# ===========================================================================
-# _plot_xyerr_scatterplot
-# ===========================================================================
-
-
-class TestPlotXyerrScatterplot:
-    def _df(self):
-        n = 10
-        rng = np.random.default_rng(0)
-        return pd.DataFrame(
-            {
-                "x": rng.random(n),
-                "y": rng.random(n),
-                "xe": rng.random(n) * 0.01,
-                "ye": rng.random(n) * 0.01,
-            }
-        )
-
-    def test_requires_err_cols(self, mock_view):
-        with pytest.raises(ValueError, match="two error columns"):
-            mock_view._plot_xyerr_scatterplot(
-                mock_view.ax_hist_individual,
-                self._df(),
-                ["x", "y"],
-                ["", ""],
-                [False, False],
-            )
-
-    def test_runs_without_error(self, mock_view):
-        mock_view._plot_xyerr_scatterplot(
-            mock_view.ax_hist_individual,
-            self._df(),
-            ["x", "y"],
-            ["", ""],
-            [False, False],
-            err_cols=["xe", "ye"],
-        )
-
-    def test_a_missing_error_column_is_refused(self, mock_view):
-        """
-        Both error columns are required now. The old code accepted a None and drew
-        that axis without bars; nothing ever passed one - the single caller names
-        two real columns - and supporting it through the filter would mean telling
-        the drawing half which of the four arrays it was given. Refusing it is the
-        smaller contract, and the wrong-length case already raised.
-        """
-        with pytest.raises(ValueError, match="two error columns"):
-            mock_view._plot_xyerr_scatterplot(
-                mock_view.ax_hist_individual,
-                self._df(),
-                ["x", "y"],
-                ["", ""],
-                [False, False],
-                err_cols=["xe", None],
-            )
-
-
-# ===========================================================================
-# update_plot
-# ===========================================================================
-
-
-class TestUpdatePlot:
-    def _df(self):
-        x = np.linspace(0, 1, 20)
-        return pd.DataFrame({"NC": x, "Amp": np.ones(20) * 0.5})
-
-    def test_histogram_routes_to_hist(self, real_view):
-        real_view.update_plot(
-            "Filtered Histogram",
-            self._df(),
-            ["NC", "Amp"],
-            ["pA", ""],
-            [False, False],
-            dataset_label="d",
-            mode="individual",
-        )
-        assert "NC" in real_view.ax_hist_individual.get_xlabel()
-
-    def test_scatterplot_routes_to_vm(self, real_view):
-        """
-        The panel choice is still ``update_plot``'s; what reaches the request half
-        is the axes it picked.
-        """
-        captured = []
-        real_view.scatterplot_requested.connect(lambda *args: captured.append(args))
-        df = pd.DataFrame({"V": np.random.rand(5), "m": np.random.rand(5)})
-
-        real_view.update_plot(
-            "Scatterplot", df, ["V", "m"], ["", ""], [False, False], mode="individual"
-        )
-
-        assert captured[0][2] is real_view.ax_vm_individual
-
-    def test_peak_scatterplot_routes_to_hist(self, mock_view):
-        df = pd.DataFrame(
-            {
-                "x": np.random.rand(5),
-                "y": np.random.rand(5),
-                "xe": np.zeros(5),
-                "ye": np.zeros(5),
-            }
-        )
-        mock_view.update_plot(
-            "Peak Scatterplot",
-            df,
-            ["x", "y"],
-            ["", ""],
-            [False, False],
-            err_cols=["xe", "ye"],
-            mode="individual",
-        )
-
-    def test_unknown_raises(self, mock_view):
-        with pytest.raises(NotImplementedError):
-            mock_view.update_plot(
-                "Heatmap",
-                self._df(),
-                ["NC", "Amp"],
-                ["", ""],
-                [False, False],
-                mode="individual",
-            )
-
-
+# show_* - each plot on its own mode's figure
 # ===========================================================================
 
 
 class TestFiguresByMode:
     """Every drawing names the mode whose figures it uses, whichever mode is showing."""
 
-    def _df(self):
+    MODES = [("individual", "ensemble"), ("ensemble", "individual")]
+
+    def _histogram(self):
         x = np.linspace(0, 1, 20)
-        return pd.DataFrame({"NC": x, "Amp": np.ones(20) * 0.5})
+        return pd.DataFrame({"Normalized Current": x, "Amplitude": np.ones(20) * 0.5})
 
-    @pytest.mark.parametrize(
-        ("mode", "other", "showing"),
-        [
-            ("individual", "ensemble", "ensemble"),
-            ("ensemble", "individual", "individual"),
-        ],
-    )
-    def test_a_histogram_draws_on_its_mode_s_figure_only(
-        self, real_view, mode, other, showing
-    ):
-        real_view._analysis_mode = showing
+    def _columns(self, n=2):
+        return [np.array([1.0, 2.0, 3.0]) for _ in range(n)]
 
-        real_view.update_plot(
-            "Filtered Histogram",
-            self._df(),
-            ["NC", "Amp"],
-            ["pA", ""],
-            [False, False],
-            dataset_label="d",
-            mode=mode,
-        )
+    @pytest.mark.parametrize(("mode", "other"), MODES)
+    def test_a_histogram_draws_on_its_mode_s_figure_only(self, real_view, mode, other):
+        real_view._analysis_mode = other
+
+        real_view.show_histogram(mode, self._histogram(), "d")
 
         assert len(getattr(real_view, f"ax_hist_{mode}").lines) == 1
         assert len(getattr(real_view, f"ax_hist_{other}").lines) == 0
 
-    def test_a_scatterplot_is_asked_for_on_its_mode_s_axes(self, real_view):
-        captured = []
-        real_view.scatterplot_requested.connect(lambda *args: captured.append(args))
-        real_view._analysis_mode = "individual"
-        df = pd.DataFrame({"V": np.random.rand(5), "m": np.random.rand(5)})
+    def test_a_fit_is_drawn_over_the_histogram(self, real_view):
+        real_view.show_histogram("ensemble", self._histogram(), "d")
 
-        real_view.update_plot(
-            "Scatterplot", df, ["V", "m"], ["", ""], [False, False], mode="ensemble"
-        )
+        real_view.show_histogram("ensemble", self._histogram(), "Fit")
 
-        assert captured[0][2] is real_view.ax_vm_ensemble
+        labels = [line.get_label() for line in real_view.ax_hist_ensemble.lines]
+        assert labels == ["d", "Fit"]
 
-    def _solutions(self):
-        return pd.DataFrame(
-            {"V": [1.0, 2.0], "m": [0.5, 0.6], "a": [1.0, 1.1], "b": [2.0, 2.1]}
-        )
-
-    def test_the_ensemble_answer_draws_on_the_ensemble_figures(self, mock_view, mocker):
-        """Whichever mode is showing when the fit comes back."""
-        mock_view._analysis_mode = "individual"
-        drawn = mocker.patch.object(mock_view, "update_plot")
-        plot_data = pd.DataFrame(
-            {"Normalized Current": np.linspace(0, 1, 5), "Amplitude": np.ones(5)}
-        )
-
-        mock_view.set_ensemble_geometry_fit(
-            np.ones(6),
-            np.ones(5),
-            plot_data,
-            "Filtered Histogram",
-            self._solutions(),
-            self._solutions(),
-        )
-
-        assert {call.kwargs["mode"] for call in drawn.call_args_list} == {"ensemble"}
-        assert drawn.call_count == 3
-
-    def test_the_individual_answer_draws_on_the_individual_figures(
-        self, mock_view, mocker
+    @pytest.mark.parametrize(("mode", "other"), MODES)
+    def test_solutions_draw_on_their_mode_s_v_m_figure_only(
+        self, real_view, mode, other
     ):
-        mock_view._analysis_mode = "ensemble"
-        drawn = mocker.patch.object(mock_view, "update_plot")
-        fit_data = pd.DataFrame({"min_fractional_blockage": [0.1]})
+        real_view._analysis_mode = other
 
-        mock_view.set_distribution_fits(self._solutions(), self._solutions(), fit_data)
+        real_view.show_solutions(mode, self._columns(), "Prolate Solutions")
 
-        assert {call.kwargs["mode"] for call in drawn.call_args_list} == {"individual"}
-        assert drawn.call_count == 3
+        assert len(getattr(real_view, f"ax_vm_{mode}").collections) == 1
+        assert len(getattr(real_view, f"ax_vm_{other}").collections) == 0
+        assert getattr(real_view, f"ax_vm_{mode}").get_xlabel().startswith("V")
 
-    @pytest.mark.parametrize(
-        ("mode", "other"), [("individual", "ensemble"), ("ensemble", "individual")]
-    )
-    def test_a_reset_clears_its_mode_s_figures_only(self, real_view, mode, other):
+    @pytest.mark.parametrize(("mode", "other"), MODES)
+    def test_peak_fits_draw_on_their_mode_s_histogram_figure_only(
+        self, real_view, mode, other
+    ):
+        real_view._analysis_mode = other
+
+        real_view.show_peak_fits(mode, self._columns(4), "Event Peak Fit Parameters")
+
+        assert len(getattr(real_view, f"ax_hist_{mode}").collections) > 0
+        assert len(getattr(real_view, f"ax_hist_{other}").collections) == 0
+
+    def test_each_plot_hands_what_it_drew_to_the_export_cache(self, mock_view):
+        mock_view._commit_cache = MagicMock()
+
+        mock_view.show_solutions("ensemble", self._columns(), "Oblate Solutions")
+
+        mock_view._commit_cache.assert_called_once()
+        mock_view.canvas_vm_ensemble.draw.assert_called_once()
+
+    @pytest.mark.parametrize(("mode", "other"), MODES)
+    def test_clear_plot_clears_its_mode_s_figures_only(self, real_view, mode, other):
         for side in (mode, other):
             getattr(real_view, f"ax_hist_{side}").plot([0.0, 1.0], [0.0, 1.0])
 
-        real_view.reset("2d", mode)
+        real_view.clear_plot("2d", mode)
 
         assert len(getattr(real_view, f"ax_hist_{mode}").lines) == 0
         assert len(getattr(real_view, f"ax_hist_{other}").lines) == 1
 
 
+# ===========================================================================
 # Range helpers (inherited from MetaView, exercised via ProteinView)
 # ===========================================================================
 
@@ -1478,18 +1172,34 @@ class TestHandleParameterChange:
             sizes=False,
         )
 
-    def test_update_plot_individual_mode_asks_with_the_click_s_intent(self, mock_view):
-        mock_view._analysis_mode = "individual"
+    @pytest.mark.parametrize(
+        ("mode", "asked", "not_asked"),
+        [
+            (
+                "individual",
+                "individual_distribution_requested",
+                "ensemble_distribution_requested",
+            ),
+            (
+                "ensemble",
+                "ensemble_distribution_requested",
+                "individual_distribution_requested",
+            ),
+        ],
+    )
+    def test_update_plot_asks_with_the_click_s_intent(
+        self, mock_view, mode, asked, not_asked
+    ):
+        mock_view._analysis_mode = mode
         mock_view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": ["0"]}}
         mock_view.get_selected_filters = MagicMock(return_value={"f": "x > 1"})
-        with patch.object(mock_view, "_update_distribution_ensemble") as mock_ens:
-            mock_view.handle_parameter_change(
-                "p", "update_plot", (self._plot_params(),)
-            )
-        mock_view.individual_distribution_requested.emit.assert_called_once_with(
+
+        mock_view.handle_parameter_change("p", "update_plot", (self._plot_params(),))
+
+        getattr(mock_view, asked).emit.assert_called_once_with(
             "ldr", {"f": "x > 1"}, {"exp1": ["0"]}, [50], False, 20.0, 30.0, 10
         )
-        mock_ens.assert_not_called()
+        getattr(mock_view, not_asked).emit.assert_not_called()
 
     def test_update_plot_individual_mode_with_no_scope_or_n(self, mock_view):
         """N defaults to 100, and an unselected scope goes as an empty one."""
@@ -1504,12 +1214,10 @@ class TestHandleParameterChange:
         assert args[2] == {}
         assert args[7] == 100
 
-    def test_update_plot_ensemble_mode(self, mock_view):
-        mock_view._analysis_mode = "ensemble"
-        with patch.object(mock_view, "_update_distribution_ensemble") as mock_ens:
-            mock_view.handle_parameter_change("p", "update_plot", (self._params(),))
-        mock_ens.assert_called_once()
-        mock_view.individual_distribution_requested.emit.assert_not_called()
+    def test_report_all_asks_the_controller(self, mock_view):
+        mock_view.handle_parameter_change("p", "report_all", ({},))
+
+        mock_view.ensemble_report_requested.emit.assert_called_once_with()
 
     def test_update_plot_sets_distribution_mode(self, mock_view):
         mock_view._set_display_mode("event")
@@ -2130,99 +1838,6 @@ class TestShowEditFilterDialog:
         )
 
 
-# ===========================================================================
-# _update_distribution_individual — guard clauses
-# ===========================================================================
-
-
-class TestUpdateDistributionEnsemble:
-    def _params(self):
-        return {
-            "db_loader": "ldr",
-            "plot_type": "Filtered Histogram",
-            "pore_diameter": "20.0",
-            "pore_length": "30.0",
-            "n_values": "10",
-        }
-
-    def test_multiple_experiments_logs_warning_and_returns(self, mock_view, caplog):
-        mock_view.selected_experiment_and_channels_by_loader = {
-            "ldr": {"exp1": ["0"], "exp2": ["0"]}
-        }
-        mock_view.get_selected_filters = MagicMock(return_value={})
-        with caplog.at_level("WARNING"):
-            mock_view._update_distribution_ensemble(recorded(mock_view, self._params()))
-        assert any("single experiment" in r.message for r in caplog.records)
-
-    def test_multiple_channels_logs_warning_and_returns(self, mock_view, caplog):
-        mock_view.selected_experiment_and_channels_by_loader = {
-            "ldr": {"exp1": ["0", "1"]}
-        }
-        mock_view.get_selected_filters = MagicMock(return_value={})
-        with caplog.at_level("WARNING"):
-            mock_view._update_distribution_ensemble(recorded(mock_view, self._params()))
-        assert any("single channel" in r.message for r in caplog.records)
-
-    def test_multiple_filters_warns_and_returns(self, mock_view):
-        mock_view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": ["0"]}}
-        mock_view.get_selected_filters = MagicMock(return_value={"f1": "a", "f2": "b"})
-        received = []
-        mock_view.add_text_to_display.connect(lambda m, s: received.append(m))
-        mock_view._update_distribution_ensemble(recorded(mock_view, self._params()))
-        assert any("single subset" in m for m in received)
-
-    def test_sets_plot_initialized_true(self, mock_view):
-        mock_view.selected_experiment_and_channels_by_loader = {
-            "ldr": {"exp1": ["0"], "exp2": ["0"]}
-        }
-        mock_view.get_selected_filters = MagicMock(return_value={})
-        mock_view.plot_initialized = False
-        mock_view._update_distribution_ensemble(recorded(mock_view, self._params()))
-        assert mock_view.plot_initialized is True
-
-    # These four assert on the *status panel*, not the log. The caplog tests above
-    # passed throughout while the user was told nothing: QtHandler sits at ERROR and
-    # deliberately does not surface WARNING, and its own docstring says anything the
-    # user should be told belongs on add_text_to_display. Reported from a real run.
-
-    def test_multiple_experiments_are_reported_on_the_status_panel(self, mock_view):
-        mock_view.selected_experiment_and_channels_by_loader = {
-            "ldr": {"exp1": ["0"], "exp2": ["0"]}
-        }
-        mock_view.get_selected_filters = MagicMock(return_value={})
-
-        mock_view._update_distribution_ensemble(recorded(mock_view, self._params()))
-
-        said = [c.args[0] for c in mock_view.add_text_to_display.emit.call_args_list]
-        assert any("single experiment" in m for m in said)
-
-    def test_multiple_channels_are_reported_on_the_status_panel(self, mock_view):
-        mock_view.selected_experiment_and_channels_by_loader = {
-            "ldr": {"exp1": ["0", "1"]}
-        }
-        mock_view.get_selected_filters = MagicMock(return_value={})
-
-        mock_view._update_distribution_ensemble(recorded(mock_view, self._params()))
-
-        said = [c.args[0] for c in mock_view.add_text_to_display.emit.call_args_list]
-        assert any("single channel" in m for m in said)
-
-    def test_an_experiment_with_no_channel_is_reported(self, mock_view):
-        """
-        The empty case reaches the same guard as the too-many case.
-
-        The guard used to read ``> 1`` and a ``for channel in channels:`` over
-        an empty list simply never ran, so the tab drew nothing and said nothing.
-        """
-        mock_view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": []}}
-        mock_view.get_selected_filters = MagicMock(return_value={})
-
-        mock_view._update_distribution_ensemble(recorded(mock_view, self._params()))
-
-        said = [c.args[0] for c in mock_view.add_text_to_display.emit.call_args_list]
-        assert any("single channel" in m for m in said)
-
-
 def _fit_frame() -> pd.DataFrame:
     """
     A fit-data frame carrying every column the commit writes.
@@ -2295,287 +1910,3 @@ class TestCommitFitsExtended:
         after it, and nothing downstream could notice.
         """
         assert len(FIT_COLUMN_UNITS) == len(FIT_COLUMNS)
-
-
-# ===========================================================================
-# Mode-scoped figure/axes/canvas properties
-# ===========================================================================
-
-
-# ===========================================================================
-# set_distribution_fits - the answering half of distribution_fits_requested
-# ===========================================================================
-#
-# These were written when this method had **no test reference anywhere in the
-# suite** - its body ran under the e2e suite with nothing asserting what it
-# produced - and before its computation moved to the Model, which is what makes
-# their passing against the Model afterwards evidence the computation is unchanged.
-#
-# The ensembles are real, not stubbed: N is kept small so the Monte Carlo stays
-# fast, and every assertion is about index alignment, skipping and the shape of
-# what comes out rather than about sampled values, which are drawn from a seeded
-# generator but are not the contract.
-
-
-def _blockage_fit(mean_low=0.3, mean_high=0.6, std=0.02):
-    """
-    Build a popt tuple in the order the double-gaussian fit returns it.
-
-    :param mean_low: the smaller fractional blockage
-    :type mean_low: float
-    :param mean_high: the larger fractional blockage
-    :type mean_high: float
-    :param std: the standard deviation given to both peaks
-    :type std: float
-    :return: a six-element popt, as (amp1, mean1, std1, amp2, mean2, std2)
-    :rtype: tuple
-    """
-    return (1.0, mean_low, std, 1.0, mean_high, std)
-
-
-def _histogram_pair():
-    """
-    A stand-in for one event's histogram.
-
-    Only its presence is read by the method under test - a None entry means the
-    histogram could not be built - so the contents are deliberately minimal. It was
-    a one-column DataFrame until the binning moved to the Model, which returns the
-    two arrays the drawing half actually uses.
-
-    :return: a (bin centers, amplitude) pair
-    :rtype: tuple
-    """
-    return (np.array([0.1, 0.2, 0.3]), np.array([1.0, 2.0, 1.0]))
-
-
-class TestSetDistributionFits:
-    """
-    What is left here is the drawing. The sampling and every question about which
-    events survive it live in ``ProteinModel.sample_event_geometries``, and are
-    pinned in ``tests/unit/models/test_protein_model.py``.
-    """
-
-    def _frames(self, rows=1):
-        """
-        The three frames the Model hands back.
-
-        :param rows: how many fitted events to describe
-        :type rows: int
-        :return: the prolate solutions, the oblate solutions, and the summary rows
-        :rtype: tuple
-        """
-        solutions = pd.DataFrame(
-            {"V": [100.0, 200.0], "m": [2.0, 3.0], "a": [4.0, 5.0], "b": [2.0, 2.5]}
-        )
-        fit_data = pd.DataFrame(
-            [
-                {
-                    "id": i + 1,
-                    "min_fractional_blockage": 0.3,
-                    "min_fractional_blockage_std": 0.02,
-                    "max_fractional_blockage": 0.6,
-                    "max_fractional_blockage_std": 0.02,
-                }
-                for i in range(rows)
-            ]
-        )
-        return solutions, solutions.copy(), fit_data
-
-    def test_the_view_keeps_no_fit(self, mock_view, mocker):
-        """The Model keeps the fit Commit Individual writes; the View only draws it."""
-        mocker.patch.object(mock_view, "update_plot")
-
-        mock_view.set_distribution_fits(*self._frames(rows=2))
-
-        assert not hasattr(mock_view, "fit_data")
-
-    def test_the_three_plots_are_requested(self, mock_view, mocker):
-        """
-        Two scatterplots of the sampled solutions and one errorbar plot of the
-        per-event fit parameters.
-        """
-        update_plot = mocker.patch.object(mock_view, "update_plot")
-
-        mock_view.set_distribution_fits(*self._frames())
-
-        labels = [call.kwargs["dataset_label"] for call in update_plot.call_args_list]
-        assert labels == [
-            "Prolate Solutions",
-            "Oblate Solutions",
-            "Event Peak Fit Parameters",
-        ]
-
-    def test_the_peak_plot_carries_the_error_columns(self, mock_view, mocker):
-        """The errorbar plot is the only one given ``err_cols``."""
-        update_plot = mocker.patch.object(mock_view, "update_plot")
-
-        mock_view.set_distribution_fits(*self._frames())
-
-        with_errors = [
-            call
-            for call in update_plot.call_args_list
-            if call.kwargs.get("err_cols") is not None
-        ]
-        assert len(with_errors) == 1
-        assert with_errors[0].args[0] == "Peak Scatterplot"
-
-    def test_an_empty_solution_set_draws_only_what_there_is(self, mock_view, mocker):
-        """
-        A fit that sampled nothing still has its peak parameters worth plotting, so
-        the empty scatterplots are skipped rather than the whole figure.
-        """
-        update_plot = mocker.patch.object(mock_view, "update_plot")
-        _prolate, _oblate, fit_data = self._frames()
-        empty = pd.DataFrame(columns=["V", "m", "a", "b"])
-
-        mock_view.set_distribution_fits(empty, empty, fit_data)
-
-        labels = [call.kwargs["dataset_label"] for call in update_plot.call_args_list]
-        assert labels == ["Event Peak Fit Parameters"]
-
-
-# ===========================================================================
-# The ensemble histogram's request and answer halves
-# ===========================================================================
-
-
-class TestEnsembleHistogramRequest:
-    """What ``_update_distribution_ensemble`` asks for now that it builds nothing."""
-
-    def _params(self):
-        """
-        The controls' parameters for one ensemble plot.
-
-        :return: the parameter dict
-        :rtype: dict
-        """
-        return {
-            "db_loader": "ldr",
-            "plot_type": "Filtered Histogram",
-            "pore_diameter": "20.0",
-            "pore_length": "30.0",
-            "n_values": "10",
-            "bins": [40],
-            "sizes": False,
-        }
-
-    def _scoped(self, mock_view):
-        """
-        Put one experiment, one channel and one subset in scope.
-
-        :param mock_view: the view under test
-        :type mock_view: ProteinView
-        :return: None
-        :rtype: None
-        """
-        mock_view.selected_experiment_and_channels_by_loader = {"ldr": {"exp1": ["3"]}}
-        mock_view.get_selected_filters = MagicMock(return_value={"sub": "duration < 3"})
-
-    def test_the_request_carries_the_subset_and_the_bin_request(self, mock_view):
-        self._scoped(mock_view)
-
-        mock_view._update_distribution_ensemble(recorded(mock_view, self._params()))
-
-        args = mock_view.ensemble_histogram_requested.emit.call_args.args
-        loader, sql_filter, scope, plot_type, bins, sizes = args[:6]
-        assert loader == "ldr"
-        assert sql_filter == "duration < 3"
-        assert scope == {"exp1": ["3"]}
-        assert plot_type == "Filtered Histogram"
-        assert bins == [40]
-        assert sizes is False
-
-    def test_the_request_carries_the_drawing_context_and_the_geometry(self, mock_view):
-        """
-        The label and the pore geometry depart unchanged and come back through the
-        setter, so nothing is parked on the widget between asking and answering.
-        """
-        self._scoped(mock_view)
-
-        mock_view._update_distribution_ensemble(recorded(mock_view, self._params()))
-
-        args = mock_view.ensemble_histogram_requested.emit.call_args.args
-        dataset_label, d, L, N, subset_name = args[6:]
-        assert "sub" in dataset_label
-        assert (d, L, N) == (20.0, 30.0, 10)
-        assert subset_name == "sub"
-
-    def test_nothing_is_fetched_into_the_widget(self, mock_view):
-        """
-        The events never reach it, so neither does the generator - this path does
-        not touch the attribute at all now, where it used to clear it, fill it and
-        walk it twice.
-        """
-        self._scoped(mock_view)
-
-        mock_view._update_distribution_ensemble(recorded(mock_view, self._params()))
-
-        assert not hasattr(mock_view, "event_data_generator")
-
-
-class TestSetEnsembleHistogram:
-    """The answering half: draw, record, then ask for the geometry."""
-
-    def _frame(self):
-        """
-        A stand-in for the averaged histogram the Model hands back.
-
-        :return: a two-column frame
-        :rtype: pd.DataFrame
-        """
-        return pd.DataFrame(
-            {
-                "Normalized Current": np.linspace(0.0, 1.0, 10),
-                "Amplitude": np.linspace(1.0, 2.0, 10),
-            }
-        )
-
-    def test_the_histogram_is_drawn(self, mock_view, mocker):
-        mocker.patch.object(mock_view, "update_plot")
-
-        mock_view.set_ensemble_histogram(
-            self._frame(), "Filtered Histogram", [40], False, "lbl", 1.0, 2.0, 3
-        )
-
-        assert mock_view.update_plot.call_args.args[0] == "Filtered Histogram"
-
-    def test_the_bookkeeping_describes_this_plot(self, mock_view, mocker):
-        mocker.patch.object(mock_view, "update_plot")
-
-        mock_view.set_ensemble_histogram(
-            self._frame(), "Filtered Histogram", [40], False, "lbl", 1.0, 2.0, 3
-        )
-
-        assert mock_view.allowed_bins == [40]
-        assert mock_view.allowed_sizes is False
-
-    def test_the_bins_are_recorded_before_the_fit_is_asked_for(self, mock_view, mocker):
-        """
-        ``set_ensemble_geometry_fit`` reads ``allowed_bins`` and ``allowed_sizes``
-        to describe the fit it draws, so they have to describe *this* plot by the
-        time the request goes out. The request half used to set them between the
-        drawing and the fit; moving the drawing into a setter is exactly the change
-        that could have reordered them.
-        """
-        mocker.patch.object(mock_view, "update_plot")
-        seen = {}
-        mock_view._request_ensemble_geometry_fit = lambda *a, **k: seen.update(
-            bins=mock_view.allowed_bins, sizes=mock_view.allowed_sizes
-        )
-
-        mock_view.set_ensemble_histogram(
-            self._frame(), "Filtered Histogram", [40], True, "lbl", 1.0, 2.0, 3
-        )
-
-        assert seen == {"bins": [40], "sizes": True}
-
-    def test_the_geometry_reaches_the_fit_request(self, mock_view, mocker):
-        mocker.patch.object(mock_view, "update_plot")
-        frame = self._frame()
-
-        mock_view.set_ensemble_histogram(
-            frame, "Filtered Histogram", [40], False, "lbl", 11.0, 22.0, 33
-        )
-
-        args = mock_view.ensemble_fit_requested.emit.call_args.args
-        assert args[3:] == ("Filtered Histogram", 11.0, 22.0, 33)

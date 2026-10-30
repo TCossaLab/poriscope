@@ -87,6 +87,7 @@ ALLOWED: Dict[Tuple[str, str, str], str] = {
     for action in (
         "MetadataController.overlay_plot",
         "ProteinController.update_individual_distribution",
+        "ProteinController.update_ensemble_distribution",
     )
     for method in ("offer_event_id", "revert_event_id_offer")
 }

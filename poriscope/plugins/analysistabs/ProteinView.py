@@ -34,7 +34,6 @@ from typing import (
     Optional,
     Sequence,
     Tuple,
-    Union,
     override,
 )
 
@@ -59,7 +58,7 @@ from PySide6.QtWidgets import (
 
 from poriscope.plugins.analysistabs.utils.proteincontrols import ProteinControls
 from poriscope.utils.DocstringDecorator import inherit_docstrings
-from poriscope.utils.LogDecorator import RESET_ACTION, log, register_action
+from poriscope.utils.LogDecorator import log
 from poriscope.utils.MetaSubsetTabControls import MetaSubsetTabControls
 from poriscope.utils.MetaSubsetTabView import MetaSubsetTabView
 from poriscope.views.widgets.walkthrough_mixin import (
@@ -139,33 +138,15 @@ class ProteinView(MetaSubsetTabView):
     #: being parked on this widget between the two phases.
     fit_commit_confirmed = Signal(str, object)
 
-    #: Asks for the ensemble histogram's double-gaussian fit: the bin centers, the
-    #: amplitudes, and the context the drawing half needs back unchanged. Answered
-    #: through ``set_ensemble_geometry_fit``.
-    #:
-    #: The fit and its sanity checks are made by ``ProteinModel``; only the drawing is
-    #: here. The context travels out and back through the round trip rather than being
-    #: parked on the widget between the halves, so a request that is never answered
-    #: leaves nothing behind for the next one to read.
-    ensemble_fit_requested = Signal(object, object, object, str, float, float, int)
-
-    #: Asks for one subset's events to be fetched and averaged into a single
-    #: histogram: the loader's key, the filter, the scope, the plot type, the bin
-    #: request, and the drawing context handed back unchanged. Answered through
-    #: ``set_ensemble_histogram``.
-    #:
-    #: The events are averaged where they are loaded and only the histogram comes back.
-    #: Nothing outside the histogram reads them, so handing the widget a generator to
-    #: walk would put the whole subset in the View to produce one array.
-    ensemble_histogram_requested = Signal(
-        str, str, object, str, object, bool, str, float, float, int, str
+    #: Asks the Controller for an Ensemble plot, with the same intent as
+    #: ``individual_distribution_requested``.
+    ensemble_distribution_requested = Signal(
+        str, object, object, object, bool, float, float, int
     )
 
-    #: The error-bar variant of ``scatterplot_requested``, which this tab alone
-    #: has: the raw columns and their two error columns, the log flags, and the
-    #: drawing context handed back unchanged. Answered through
-    #: ``set_xyerr_scatterplot``.
-    xyerr_scatterplot_requested = Signal(object, object, object, object, str)
+    #: Asks the Controller for Report All: it hands back the Ensemble fit the Model keeps,
+    #: through ``show_ensemble_report``.
+    ensemble_report_requested = Signal()
 
     #: Asks for one double-gaussian fit per event: the (bins, amplitude) pairs, the
     #: frames they came from, and the events themselves. Answered through
@@ -188,13 +169,6 @@ class ProteinView(MetaSubsetTabView):
         Initialize the ProteinView instance.
         """
         self._clear_cache()
-        self.operation_success: bool = False
-        self.ensemble_fit_params: Optional[tuple] = None
-        self.ensemble_fit_bins: Optional[Any] = None
-        self.ensemble_fit_sizes: Optional[bool] = None
-        self.ensemble_fit_prolate_summary: Optional[tuple] = None
-        self.ensemble_fit_oblate_summary: Optional[tuple] = None
-        self.plot_initialized = False
         self.no_cached_data = False
 
         self._analysis_mode: str = (
@@ -215,8 +189,6 @@ class ProteinView(MetaSubsetTabView):
             str, Dict[str, List[str]]
         ] = {}
         self.selected_experiment_and_channels_by_loader = {}
-        self.allowed_bins: Optional[Any] = None
-        self.allowed_sizes: Optional[bool] = None
 
         self._last_event_action: str = "plot_events"  # or "plot_histogram"
 
@@ -431,32 +403,40 @@ class ProteinView(MetaSubsetTabView):
         return (rows, f"N={n} samples")
 
     @log(logger=logger)
-    def _report_ensemble_fit(self) -> None:
+    def show_ensemble_report(
+        self,
+        params: Sequence[float],
+        bins: Any,
+        sizes: bool,
+        prolate: pd.DataFrame,
+        oblate: pd.DataFrame,
+    ) -> None:
         """
-        Report the double-Gaussian fit parameters and V/m sample summaries from the
-        most recent ensemble distribution fit, alongside the binning configuration
-        that produced them. Ensemble mode has no per-event id to write these back
-        to the database against, so this is a display-only report rather than a
-        database commit. Takes no arguments; reads entirely from self.ensemble_fit_*
-        state set by _update_distribution_ensemble and cleared by the next Ensemble plot.
+        Report the Ensemble plot's double-Gaussian fit and V/m sample summaries.
 
+        Ensemble mode has no per-event id to write these back to the database against, so
+        this is a display-only report rather than a database commit. Called by the
+        Controller with the fit the Model keeps.
+
+        :param params: the fit, as (amp1, mean1, std1, amp2, mean2, std2)
+        :type params: Sequence[float]
+        :param bins: the bins entry the histogram was built with, or None to estimate
+        :type bins: Any
+        :param sizes: does bins refer to a bin width
+        :type sizes: bool
+        :param prolate: the prolate solutions sampled from the fit
+        :type prolate: pd.DataFrame
+        :param oblate: the oblate solutions sampled from the fit
+        :type oblate: pd.DataFrame
         :return: None
         :rtype: None
         """
-        if self.ensemble_fit_params is None:
-            self.add_text_to_display.emit(
-                "No ensemble fit available to report. Run Update Plot in Ensemble mode first.",
-                self.__class__.__name__,
-            )
-            self.logger.warning("No ensemble fit available to report")
-            return
+        amp1, mean1, std1, amp2, mean2, std2 = params
 
-        amp1, mean1, std1, amp2, mean2, std2 = self.ensemble_fit_params
-
-        if self.ensemble_fit_sizes:
-            bin_desc = f"bin size(s) = {self.ensemble_fit_bins}"
+        if sizes:
+            bin_desc = f"bin size(s) = {bins}"
         else:
-            bin_desc = f"bin count = {self.ensemble_fit_bins or 100}"
+            bin_desc = f"bin count = {bins or 100}"
 
         lines = [
             "<br>",
@@ -466,14 +446,14 @@ class ProteinView(MetaSubsetTabView):
             "",
         ]
 
-        if self.ensemble_fit_prolate_summary:
-            rows, count_label = self.ensemble_fit_prolate_summary
+        if not prolate.empty:
+            rows, count_label = self._summarize_vm(prolate)
             lines.append(f"<b>Prolate</b> ({count_label})")
             lines.extend(f"&nbsp;&nbsp;{row}" for row in rows)
             lines.append("")
 
-        if self.ensemble_fit_oblate_summary:
-            rows, count_label = self.ensemble_fit_oblate_summary
+        if not oblate.empty:
+            rows, count_label = self._summarize_vm(oblate)
             lines.append(f"<b>Oblate</b> ({count_label})")
             lines.extend(f"&nbsp;&nbsp;{row}" for row in rows)
 
@@ -535,14 +515,11 @@ class ProteinView(MetaSubsetTabView):
         self._clear_cache()
 
     @log(logger=logger)
-    @register_action(RESET_ACTION)
-    def reset(self, axis_type: str = "2d", mode: str = "individual") -> None:
+    def clear_plot(self, axis_type: str = "2d", mode: str = "individual") -> None:
         """
         Clear one analysis mode's histogram and V/M figures, and what the histogram accumulated.
 
-        A recorded action: a plot records one before it draws, with its own mode, so a replay
-        clears the figures it was recorded on whichever mode is showing. Clears no fit: the
-        plot that calls it clears the fit it is about to replace.
+        Called by ``ProteinController.reset``, which records the reset; clears no fit.
 
         :param axis_type: Either '2d' or '3d'; the figures here are always 2-D
         :type axis_type: str
@@ -565,36 +542,17 @@ class ProteinView(MetaSubsetTabView):
 
         self.hist_data = []
         self.hist_labels = []
-        self.allowed_bins = None
-        self.allowed_sizes = None
 
     @log(logger=logger)
     @override
     def _reset_actions(self, axis_type: str = "2d") -> None:
         """
-        Clear the figures of the mode showing; a plot calls :meth:`reset` with its own mode.
+        Clear the figures of the mode showing, unrecorded; a plot clears its own mode's.
 
         :param axis_type: Either '2d' or '3d' to determine plot projection.
         :type axis_type: str
         """
-        self.reset(axis_type, self._analysis_mode)
-
-    @log(logger=logger)
-    def _clear_ensemble_fit(self) -> None:
-        """
-        Forget the Ensemble fit, so a stale one cannot be committed after a new plot replaces it.
-
-        A fit committed after its plot was replaced would silently write outdated values to
-        the database. The Individual fit is untouched.
-
-        :return: None
-        :rtype: None
-        """
-        self.ensemble_fit_params = None
-        self.ensemble_fit_bins = None
-        self.ensemble_fit_sizes = None
-        self.ensemble_fit_prolate_summary = None
-        self.ensemble_fit_oblate_summary = None
+        self.clear_plot(axis_type, self._analysis_mode)
 
     @log(logger=logger)
     def _plot_all_points_histogram(
@@ -651,53 +609,96 @@ class ProteinView(MetaSubsetTabView):
         ax.set_ylabel(y_label)
         ax.legend(loc="best", fontsize="x-small")
 
-    def update_plot(
-        self,
-        plot_type: str,
-        data: pd.DataFrame,
-        cols: Sequence[str],
-        units: Sequence[Optional[str]],
-        logscales: Sequence[bool],
-        dataset_label: str = "",
-        bins: Any = None,
-        sizes: bool = False,
-        err_cols: Optional[Sequence[str]] = None,
-        *,
-        mode: str,
+    def show_histogram(
+        self, mode: str, plot_data: pd.DataFrame, dataset_label: str
     ) -> None:
         """
-        update the plot area of one analysis mode
-        """
-        # Decide which panel gets updated
-        # Histogram plots -> left
-        # V vs M plots / scatter / heatmap -> right
-        if plot_type in ["Raw Histogram", "Filtered Histogram"]:
-            ax = getattr(self, f"ax_hist_{mode}")
-            canvas = getattr(self, f"canvas_hist_{mode}")
-            self._plot_all_points_histogram(
-                ax, data, cols, units, dataset_label=dataset_label, norm=False
-            )
-        elif plot_type == "Scatterplot":
-            ax = getattr(self, f"ax_vm_{mode}")
-            canvas = getattr(self, f"canvas_vm_{mode}")
-            self._plot_scatterplot(
-                ax, data, cols, units, logscales, dataset_label=dataset_label
-            )
-        elif plot_type == "Peak Scatterplot":
-            ax = getattr(self, f"ax_hist_{mode}")
-            canvas = getattr(self, f"canvas_hist_{mode}")
-            self._plot_xyerr_scatterplot(
-                ax,
-                data,
-                cols,
-                units,
-                logscales,
-                dataset_label=dataset_label,
-                err_cols=err_cols,
-            )
-        else:
-            raise NotImplementedError(f"Plot type {plot_type} is not yet supported")
+        Draw an averaged histogram, or its fit, on a mode's histogram figure, over what it holds.
 
+        :param mode: 'individual' or 'ensemble', whose figure is drawn on
+        :type mode: str
+        :param plot_data: bin centers and amplitudes, in that column order
+        :type plot_data: pd.DataFrame
+        :param dataset_label: the label the curve is drawn under
+        :type dataset_label: str
+        """
+        self._plot_all_points_histogram(
+            getattr(self, f"ax_hist_{mode}"),
+            plot_data,
+            plot_data.columns,
+            ["pA", ""],
+            dataset_label=dataset_label,
+            norm=False,
+        )
+        self._finish_plot(mode, "hist")
+
+    @log(logger=logger)
+    def show_solutions(
+        self,
+        mode: str,
+        columns: Sequence[npt.NDArray[np.float64]],
+        dataset_label: str,
+    ) -> None:
+        """
+        Draw the sampled volume and shape factor of one shape on a mode's V/M figure.
+
+        :param mode: 'individual' or 'ensemble', whose figure is drawn on
+        :type mode: str
+        :param columns: the filtered V and m values
+        :type columns: Sequence[npt.NDArray[np.float64]]
+        :param dataset_label: the shape's label
+        :type dataset_label: str
+        """
+        self.set_scatterplot(
+            columns,
+            getattr(self, f"ax_vm_{mode}"),
+            [
+                self.format_axis_label("V", "nm$^{3}$"),
+                self.format_axis_label("m", None),
+            ],
+            dataset_label,
+        )
+        self._finish_plot(mode, "vm")
+
+    @log(logger=logger)
+    def show_peak_fits(
+        self,
+        mode: str,
+        columns: Sequence[npt.NDArray[np.float64]],
+        dataset_label: str,
+    ) -> None:
+        """
+        Draw each event's two fitted blockages, with their errors, on a mode's histogram figure.
+
+        :param mode: 'individual' or 'ensemble', whose figure is drawn on
+        :type mode: str
+        :param columns: the filtered smaller and larger blockages and their two errors
+        :type columns: Sequence[npt.NDArray[np.float64]]
+        :param dataset_label: the label the points are drawn under
+        :type dataset_label: str
+        """
+        self.set_xyerr_scatterplot(
+            columns,
+            getattr(self, f"ax_hist_{mode}"),
+            [
+                self.format_axis_label("min_fractional_blockage", "arb. units"),
+                self.format_axis_label("max_fractional_blockage", "arb. units"),
+            ],
+            dataset_label,
+        )
+        self._finish_plot(mode, "hist")
+
+    @log(logger=logger)
+    def _finish_plot(self, mode: str, kind: str) -> None:
+        """
+        Lay out and draw one of a mode's figures, and hand what it holds to the export cache.
+
+        :param mode: 'individual' or 'ensemble'
+        :type mode: str
+        :param kind: 'hist' or 'vm'
+        :type kind: str
+        """
+        canvas = getattr(self, f"canvas_{kind}_{mode}")
         try:
             canvas.figure.tight_layout(pad=0.5)
         except Exception:
@@ -706,121 +707,6 @@ class ProteinView(MetaSubsetTabView):
             self.logger.debug("tight_layout failed for the plot canvas", exc_info=True)
         canvas.draw()
         self._commit_cache()
-
-    @log(logger=logger)
-    def _plot_scatterplot(
-        self,
-        ax: Axes,
-        data: pd.DataFrame,
-        cols: Sequence[str],
-        units: Sequence[Optional[str]],
-        logscales: Sequence[bool],
-        dataset_label: str = "",
-    ) -> None:
-        """
-        Ask for a scatterplot's two columns, filtered and log-scaled.
-
-        Answered through ``MetaSubsetTabView.set_scatterplot``, which both subset
-        tabs share.
-
-        :param ax: Matplotlib axes object.
-        :type ax: Axes
-        :param data: DataFrame containing the columns to plot.
-        :type data: pd.DataFrame
-        :param cols: Sequence containing two column names for x and y axes.
-        :type cols: Sequence[str]
-        :param units: Corresponding units for x and y axes.
-        :type units: Sequence[Optional[str]]
-        :param logscales: Log-scaling flags for x and y axes.
-        :type logscales: Sequence[bool]
-        :param dataset_label: Label for the dataset.
-        :type dataset_label: str
-        """
-        x_label, y_label = cols
-        x_units, y_units = units
-        logx, logy = logscales
-
-        columns = [data[x_label].values, data[y_label].values]
-
-        x_label = self.format_axis_label(x_label, x_units)
-        y_label = self.format_axis_label(y_label, y_units)
-
-        if logx:
-            x_label = f"log10({x_label})"
-        if logy:
-            y_label = f"log10({y_label})"
-
-        self.scatterplot_requested.emit(
-            columns, [logx, logy], ax, [x_label, y_label], dataset_label
-        )
-
-    @log(logger=logger)
-    def _plot_xyerr_scatterplot(
-        self,
-        ax: Axes,
-        data: pd.DataFrame,
-        cols: Sequence[str],
-        units: Sequence[Optional[str]],
-        logscales: Sequence[bool],
-        dataset_label: str = "",
-        err_cols: Optional[Sequence[str]] = None,
-    ) -> None:
-        """
-        Ask for an error-bar scatterplot's columns, filtered and log-scaled.
-
-        **The error columns travel through the same filter as the values they
-        annotate**, unscaled. They used to be taken straight off the unfiltered
-        frame while the values were filtered, so any row the filter dropped left the
-        two arrays different lengths - latent today only because the one caller
-        passes columns that never contain NaN and never log-scales them.
-
-        :param ax: Matplotlib axes object.
-        :type ax: Axes
-        :param data: DataFrame containing the columns to plot.
-        :type data: pd.DataFrame
-        :param cols: Sequence containing two column names for x and y axes.
-        :type cols: Sequence[str]
-        :param units: Corresponding units for x and y axes.
-        :type units: Sequence[Optional[str]]
-        :param logscales: Log-scaling flags for x and y axes.
-        :type logscales: Sequence[bool]
-        :param dataset_label: Label for the dataset.
-        :type dataset_label: str
-        :param err_cols: Sequence containing two column names for x and y errors.
-        :type err_cols: Optional[Sequence[str]]
-        :raises ValueError: If `err_cols` is not a list of exactly two column names.
-        """
-        if err_cols is None or len(err_cols) != 2 or not all(err_cols):
-            raise ValueError(
-                "_plot_xyerr_scatterplot() requires exactly two error columns to be specified in err_cols (e.g., [x_err, y_err])"
-            )
-
-        x_label, y_label = cols
-        x_units, y_units = units
-        logx, logy = logscales
-        x_err_label, y_err_label = err_cols
-
-        columns = [
-            data[x_label].values,
-            data[y_label].values,
-            data[x_err_label].values,
-            data[y_err_label].values,
-        ]
-
-        x_label = self.format_axis_label(x_label, x_units)
-        y_label = self.format_axis_label(y_label, y_units)
-
-        if logx:
-            x_label = f"log10({x_label})"
-        if logy:
-            y_label = f"log10({y_label})"
-
-        # The error columns are masked with the values and never scaled: an error
-        # bar is a width in the value's own units, and log-scaling it would be
-        # meaningless.
-        self.xyerr_scatterplot_requested.emit(
-            columns, [logx, logy, False, False], ax, [x_label, y_label], dataset_label
-        )
 
     @log(logger=logger)
     def set_xyerr_scatterplot(
@@ -833,10 +719,9 @@ class ProteinView(MetaSubsetTabView):
         """
         Draw a scatterplot of two filtered columns with their error bars.
 
-        The answering half of ``xyerr_scatterplot_requested``. Separate from
-        ``set_scatterplot`` because only this tab has an error-bar variant. The four
-        arrays arrive filtered together, so the bars still line up with the points
-        after any row is dropped.
+        Separate from ``set_scatterplot`` because only this tab has an error-bar variant.
+        The four arrays arrive filtered together, so the bars still line up with the
+        points after any row is dropped.
 
         :param columns: the filtered x, y, x error and y error values
         :type columns: Sequence[npt.NDArray[np.float64]]
@@ -971,23 +856,23 @@ class ProteinView(MetaSubsetTabView):
 
         elif action_name == "update_plot":
             self._set_display_mode("distribution")
-            if self._analysis_mode == "individual":
-                loader = parameters["db_loader"]
-                scope = self.selected_experiment_and_channels_by_loader.get(loader)
-                self.individual_distribution_requested.emit(
-                    loader,
-                    self.get_selected_filters(),
-                    copy.deepcopy(scope) if scope else {},
-                    parameters.get("bins"),
-                    bool(parameters.get("sizes", False)),
-                    float(parameters["pore_diameter"]),
-                    float(parameters["pore_length"]),
-                    int(parameters.get("n_values") or 100),
-                )
-            else:
-                parameters["plot_type"] = "Filtered Histogram"
-                self._record_selection(parameters)
-                self._update_distribution_ensemble(parameters)
+            loader = parameters["db_loader"]
+            scope = self.selected_experiment_and_channels_by_loader.get(loader)
+            request = (
+                self.individual_distribution_requested
+                if self._analysis_mode == "individual"
+                else self.ensemble_distribution_requested
+            )
+            request.emit(
+                loader,
+                self.get_selected_filters(),
+                copy.deepcopy(scope) if scope else {},
+                parameters.get("bins"),
+                bool(parameters.get("sizes", False)),
+                float(parameters["pore_diameter"]),
+                float(parameters["pore_length"]),
+                int(parameters.get("n_values") or 100),
+            )
 
         elif action_name == "add_filter":
             self._show_add_filter_dialog(parameters)
@@ -1018,7 +903,7 @@ class ProteinView(MetaSubsetTabView):
             self._commit_fits(parameters.get("db_loader"))
 
         elif action_name == "report_all":
-            self._report_ensemble_fit()
+            self.ensemble_report_requested.emit()
 
         else:
             self._handle_other_actions(action_name, parameters)
@@ -1506,340 +1391,6 @@ class ProteinView(MetaSubsetTabView):
         self.fig_event.set_layout_engine("constrained")
         self.canvas_event.draw()
         self._commit_cache()
-
-    @log(logger=logger)
-    def set_distribution_fits(
-        self,
-        df_prolate: pd.DataFrame,
-        df_oblate: pd.DataFrame,
-        fit_data: pd.DataFrame,
-    ) -> None:
-        """
-        Plot the geometries every fitted event is consistent with.
-
-        Called by ``ProteinController.update_individual_distribution``, which samples the
-        geometries through :meth:`ProteinModel.sample_event_geometries` and keeps the fit
-        the Commit writes; this only draws, on the Individual figures.
-
-        :param df_prolate: every fitted event's prolate solutions, pooled
-        :type df_prolate: pd.DataFrame
-        :param df_oblate: every fitted event's oblate solutions, pooled
-        :type df_oblate: pd.DataFrame
-        :param fit_data: one summary row per fitted event, keyed by its database id
-        :type fit_data: pd.DataFrame
-        :return: None
-        :rtype: None
-        """
-        if not df_prolate.empty:
-            self.update_plot(
-                "Scatterplot",
-                df_prolate,
-                ["V", "m"],
-                ["nm$^{3}$", None],
-                logscales=[False, False],
-                dataset_label="Prolate Solutions",
-                mode="individual",
-            )
-        if not df_oblate.empty:
-            self.update_plot(
-                "Scatterplot",
-                df_oblate,
-                ["V", "m"],
-                ["nm$^{3}$", None],
-                logscales=[False, False],
-                dataset_label="Oblate Solutions",
-                mode="individual",
-            )
-        if not fit_data.empty:
-            self.update_plot(
-                "Peak Scatterplot",
-                fit_data,
-                ["min_fractional_blockage", "max_fractional_blockage"],
-                ["arb. units", "arb. units"],
-                logscales=[False, False],
-                dataset_label="Event Peak Fit Parameters",
-                mode="individual",
-                err_cols=[
-                    "min_fractional_blockage_std",
-                    "max_fractional_blockage_std",
-                ],
-            )
-
-    @log(logger=logger)
-    @register_action("update_ensemble_distribution")
-    def _update_distribution_ensemble(self, parameters: Dict[str, Any]) -> None:
-        """
-        Compute and plot the ΔI/I histogram and V/M scatterplot aggregated across
-        all events in Ensemble analysis mode.
-
-        :param parameters: Dictionary of plotting parameters collected from the controls.
-        :type parameters: Dict[str, Any]
-        """
-        self.reset("2d", "ensemble")
-        self._clear_ensemble_fit()
-        self._clear_cache()
-
-        # The selection comes from the parameters, not the widgets, so a replay draws
-        # what was recorded; see _record_selection.
-        selected_filters = dict(parameters["selected_filters"])
-        loader = parameters["db_loader"]
-        plot_type = parameters["plot_type"]
-        d = float(parameters["pore_diameter"])
-        L = float(parameters["pore_length"])
-        N = int(parameters.get("n_values") or 100)
-
-        experiments_and_channels: Optional[
-            Union[Dict[str, List[str]], Dict[Any, Any]]
-        ] = copy.deepcopy(parameters["experiments_and_channels"])
-
-        self.plot_initialized = True
-
-        if experiments_and_channels is None or len(experiments_and_channels) == 0:
-            experiments_and_channels = {None: [None]}
-
-        if selected_filters is None or selected_filters == {}:
-            selected_filters = {"Full Dataset": ""}
-
-        if len(experiments_and_channels) > 1:
-            self.logger.warning(f"Only a single experiment can be used for {plot_type}")
-            self.add_text_to_display.emit(
-                f"Only a single experiment can be used for {plot_type}",
-                self.__class__.__name__,
-            )
-            return
-
-        if len(selected_filters) > 1:
-            self.add_text_to_display.emit(
-                f"Only a single subset can be used for {plot_type}",
-                self.__class__.__name__,
-            )
-            return
-
-        # Unpacked rather than looped over: the guards above guarantee exactly one
-        # experiment, one channel and one subset, and writing them as a triple-nested
-        # loop implied a multiplicity this method refuses.
-        exp, channels = next(iter(experiments_and_channels.items()))
-        if len(channels) != 1:
-            self.logger.warning(
-                "Only a single channel at a time can be used for protein analysis"
-            )
-            self.add_text_to_display.emit(
-                "Only a single channel at a time can be used for protein analysis",
-                self.__class__.__name__,
-            )
-            return
-        channel = channels[0]
-        exp_and_ch_arg = {exp: [channel]}
-        subset_name, sql_filter = next(iter(selected_filters.items()))
-
-        bins = None
-        dataset_label = (
-            f"{loader} | {exp} Ch {channel}: {subset_name}"
-            if exp is not None
-            else f"{loader} | {subset_name}"
-        )
-        sizes = False
-
-        if plot_type in ["Raw Histogram", "Filtered Histogram"]:
-            bins = parameters["bins"]
-            sizes = parameters["sizes"]
-
-        # Cleared before asking: the Controller sets it only once the subset has
-        # been fetched *and* averaged, so a failure at either step leaves it empty
-        # rather than describing the previous subset.
-        self.event_query = ""
-        self.ensemble_histogram_requested.emit(
-            loader,
-            sql_filter,
-            exp_and_ch_arg,
-            plot_type,
-            bins,
-            sizes,
-            dataset_label,
-            d,
-            L,
-            N,
-            subset_name,
-        )
-
-    @log(logger=logger)
-    def set_ensemble_histogram(
-        self,
-        plot_data: pd.DataFrame,
-        plot_type: str,
-        bins: Any,
-        sizes: bool,
-        dataset_label: str,
-        d: float,
-        L: float,
-        N: int,
-    ) -> None:
-        """
-        Draw the averaged histogram, then ask for the geometry it implies.
-
-        The answering half of ``ensemble_histogram_requested``. The averaging is done by
-        :meth:`ProteinModel.build_all_points_histogram`, because walking a subset's
-        events and binning every sample of them is aggregation rather than drawing, and
-        the result is exported with the plot.
-
-        The bookkeeping happens here rather than back in the request half because
-        ``set_ensemble_geometry_fit`` reads ``allowed_bins`` and ``allowed_sizes``,
-        so they have to describe *this* plot before the fit is asked for.
-
-        :param plot_data: the averaged histogram, as bin centers and amplitudes
-        :type plot_data: pd.DataFrame
-        :param plot_type: 'Raw Histogram' or 'Filtered Histogram'
-        :type plot_type: str
-        :param bins: the bin request this histogram was built to
-        :type bins: Any
-        :param sizes: did bins refer to a bin width (True) or a count (False)
-        :type sizes: bool
-        :param dataset_label: the label the histogram is drawn under
-        :type dataset_label: str
-        :param d: the diameter of the pore in nanometers
-        :type d: float
-        :param L: the length of the pore in nanometers
-        :type L: float
-        :param N: target number of samples to draw for each ensemble
-        :type N: int
-        :return: None
-        :rtype: None
-        """
-        self.update_plot(
-            plot_type,
-            plot_data,
-            plot_data.columns,
-            ["pA", ""],
-            logscales=[False, False],
-            dataset_label=dataset_label,
-            mode="ensemble",
-        )
-
-        self.allowed_bins = bins
-        self.allowed_sizes = sizes
-
-        self._request_ensemble_geometry_fit(plot_data, plot_type, d, L, N)
-
-    @log(logger=logger)
-    def _request_ensemble_geometry_fit(
-        self, plot_data: pd.DataFrame, plot_type: str, d: float, L: float, N: int
-    ) -> None:
-        """
-        Ask for the ensemble histogram's fit; ``set_ensemble_geometry_fit`` draws it.
-
-        Called once by _update_distribution_ensemble after its single
-        (experiment, channel, filter) combination has been plotted, using
-        whatever plot_data that produced.
-
-        Separate from the plotting half, and it returns nothing: the single caller's
-        ``if not ...: return`` was its own last statement, so a boolean would decide
-        nothing and reproducing one across the round trip would only invite a caller to
-        branch on it.
-
-        :param plot_data: the aggregated histogram DataFrame to fit against.
-        :type plot_data: pd.DataFrame
-        :param plot_type: the plot type label to reuse when plotting the fit.
-        :type plot_type: str
-        :param d: the diameter of the pore in nanometers
-        :type d: float
-        :param L: the length of the pore in nanometers
-        :type L: float
-        :param N: target number of samples to draw for each of the prolate/oblate ensembles
-        :type N: int
-        :return: None
-        :rtype: None
-        """
-        self.ensemble_fit_requested.emit(
-            plot_data["Normalized Current"].values,
-            plot_data["Amplitude"].values,
-            plot_data,
-            plot_type,
-            d,
-            L,
-            N,
-        )
-
-    @log(logger=logger)
-    def set_ensemble_geometry_fit(
-        self,
-        popt: npt.NDArray[np.float64],
-        curve: npt.NDArray[np.float64],
-        plot_data: pd.DataFrame,
-        plot_type: str,
-        df_prolate: pd.DataFrame,
-        df_oblate: pd.DataFrame,
-    ) -> None:
-        """
-        Draw the fitted ensemble and the geometries it is consistent with.
-
-        The answering half of ``ensemble_fit_requested``. The fitted curve arrives
-        already evaluated at the bins it was fitted on, which is what lets the model
-        function live on ``ProteinModel``. The sampled solutions arrive with it, since
-        they are drawn from that same fit.
-
-        An ensemble that sampled nothing still reaches here, and still draws the fit:
-        the Controller reports the bail-out, and the two empty frames simply skip
-        their scatterplots. Refusing to call this at all would have taken the fitted
-        curve off the screen with them.
-
-        :param popt: the fit parameters
-        :type popt: npt.NDArray[np.float64]
-        :param curve: the fitted curve evaluated at the histogram's bins
-        :type curve: npt.NDArray[np.float64]
-        :param plot_data: the aggregated histogram DataFrame that was fitted
-        :type plot_data: pd.DataFrame
-        :param plot_type: the plot type label to reuse when plotting the fit
-        :type plot_type: str
-        :param df_prolate: the prolate solutions, empty if none were sampled
-        :type df_prolate: pd.DataFrame
-        :param df_oblate: the oblate solutions, empty if none were sampled
-        :type df_oblate: pd.DataFrame
-        :return: None
-        :rtype: None
-        """
-        plot_data["Amplitude"] = curve
-        self.update_plot(
-            plot_type,
-            plot_data,
-            plot_data.columns,
-            ["pA", ""],
-            logscales=[False, False],
-            dataset_label="Fit",
-            mode="ensemble",
-        )
-        # --- record fit + binning for Report All reporting ---
-        self.ensemble_fit_params = popt
-        self.ensemble_fit_bins = self.allowed_bins
-        self.ensemble_fit_sizes = self.allowed_sizes
-
-        # --- record V/m summaries for Report All reporting ---
-        self.ensemble_fit_prolate_summary = (
-            self._summarize_vm(df_prolate) if not df_prolate.empty else None
-        )
-        self.ensemble_fit_oblate_summary = (
-            self._summarize_vm(df_oblate) if not df_oblate.empty else None
-        )
-
-        if not df_prolate.empty:
-            self.update_plot(
-                "Scatterplot",
-                df_prolate,
-                ["V", "m"],
-                ["nm$^{3}$", None],
-                logscales=[False, False],
-                dataset_label="Prolate Solutions",
-                mode="ensemble",
-            )
-        if not df_oblate.empty:
-            self.update_plot(
-                "Scatterplot",
-                df_oblate,
-                ["V", "m"],
-                ["nm$^{3}$", None],
-                logscales=[False, False],
-                dataset_label="Oblate Solutions",
-                mode="ensemble",
-            )
 
     @log(logger=logger)
     def _handle_other_actions(

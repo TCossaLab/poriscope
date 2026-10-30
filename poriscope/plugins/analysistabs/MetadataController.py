@@ -623,10 +623,6 @@ class MetadataController(MetaSubsetTabController):
         """
         Filter a scatterplot's two columns and have the View draw them.
 
-        The same work as the shared :meth:`filter_scatterplot`, which Protein still
-        reaches through its request and which hands the drawing an axes; Metadata's View
-        draws on its own.
-
         :param columns: the raw x and y values
         :type columns: Sequence[npt.NDArray[np.float64]]
         :param log_flags: log-scale each column?
@@ -962,8 +958,8 @@ class MetadataController(MetaSubsetTabController):
         """
         The same for a 3-D scatterplot's three columns.
 
-        Separate from :meth:`filter_scatterplot` because the View's two drawing
-        halves are separate: a 3-D scatter rebuilds the axes and carries a z label.
+        Separate from :meth:`_scatterplot` because the View's two drawing halves are
+        separate: a 3-D scatter rebuilds the axes and carries a z label.
 
         :param columns: the raw x, y and z values
         :type columns: Sequence[npt.NDArray[np.float64]]
