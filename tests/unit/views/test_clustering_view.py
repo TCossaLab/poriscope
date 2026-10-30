@@ -248,7 +248,7 @@ class TestShowClusters:
         view.plot_units = ["ms", "pA"]
         view.plot = [True, True]
 
-    def test_it_resets_then_plots_with_the_last_runs_display_flags(self, view):
+    def test_it_clears_then_plots_with_the_last_runs_display_flags(self, view):
         self._flags(view)
         data = _make_cluster_data()
         labels, confidence = (
@@ -259,7 +259,7 @@ class TestShowClusters:
         with (
             patch.object(
                 view,
-                "_reset_actions",
+                "clear_plot",
                 side_effect=lambda *a, **k: calls.append("reset"),
             ),
             patch.object(
@@ -540,17 +540,17 @@ class TestSetClusteringResult:
 
         update_plot.assert_called_once()
 
-    def test_it_resets_the_axes_before_plotting(self, view, mocker):
+    def test_it_draws_without_clearing_the_figure_itself(self, view, mocker):
         """
-        Ordering matters: the axes are cleared, then drawn.
-
-        Reversed, the new plot would be wiped by the reset.
+        ``ClusteringController.cluster`` clears the figure, recording the reset, before
+        it hands the result over; a second clear here would be unrecorded and redundant.
         """
         self._request(view)
         calls = []
-        mocker.patch.object(
-            view, "_reset_actions", side_effect=lambda *a, **k: calls.append("reset")
-        )
+        for name in ("clear_plot", "_reset_actions"):
+            mocker.patch.object(
+                view, name, side_effect=lambda *a, **k: calls.append("clear")
+            )
         mocker.patch.object(
             view, "update_plot", side_effect=lambda *a, **k: calls.append("plot")
         )
@@ -560,7 +560,7 @@ class TestSetClusteringResult:
             data, data["cluster_label"], data["cluster_confidence"]
         )
 
-        assert calls == ["reset", "plot"]
+        assert calls == ["plot"]
 
     def test_a_result_with_no_request_outstanding_is_refused(self, view, mocker):
         """
@@ -952,6 +952,38 @@ class TestResetActions:
     def test_3d_no_error(self, view):
         with patch.object(view.canvas, "draw"):
             view._reset_actions(axis_type="3d")
+
+    def test_it_clears_through_clear_plot(self, view, mocker):
+        clear_plot = mocker.patch.object(view, "clear_plot")
+
+        view._reset_actions(axis_type="3d")
+
+        clear_plot.assert_called_once_with("3d")
+
+
+class TestClearPlot:
+    """What the recorded ``ClusteringController.reset`` asks the View for."""
+
+    @pytest.mark.parametrize("axis_type, name", [("2d", "rectilinear"), ("3d", "3d")])
+    def test_it_leaves_one_empty_axes_of_the_projection_asked_for(
+        self, view, axis_type, name
+    ):
+        with patch.object(view.canvas, "draw"):
+            view.clear_plot("2d")
+            view.axes.scatter([1, 2], [3, 4])
+            view.clear_plot(axis_type)
+
+        assert [ax.name for ax in view.figure.axes] == [name]
+        assert view.axes is view.figure.axes[0]
+        assert len(view.axes.collections) == 0
+
+    def test_it_empties_the_export_cache(self, view):
+        view.data_cache = [[1.0]]
+        view.data_cache_labels = ["x"]
+        with patch.object(view.canvas, "draw"):
+            view.clear_plot()
+
+        assert view.data_cache == [] and view.data_cache_labels == []
 
 
 # ===========================================================================

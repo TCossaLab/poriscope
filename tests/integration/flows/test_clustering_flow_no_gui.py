@@ -17,16 +17,24 @@ it is deterministic - ``ClusteringView`` seeds the GMM, but HDBSCAN needs no see
 at all, so the flow cannot become flaky for reasons unrelated to what it tests.
 """
 
+import copy
 import sqlite3
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 
 import pytest
 from PySide6.QtWidgets import QDialog
 
-from tests.integration.flows._triad import Triad, build_clustering_tab, hdbscan_config
+from tests.integration.flows._triad import (
+    CLUSTERING_COLUMNS,
+    Triad,
+    build_clustering_tab,
+    hdbscan_config,
+)
 
 LOADER_KEY = "loader"
+#: Three plotted columns, so the result is drawn on 3-D axes.
+THREE_COLUMNS = CLUSTERING_COLUMNS + ("baseline_current",)
 
 
 class _StubSettingsDialog:
@@ -227,3 +235,100 @@ def test_the_committed_labels_match_the_rows_they_were_computed_for(
     assert rows, "nothing was committed"
     for row_id, label in rows:
         assert expected[row_id] == label
+
+
+def merge(triad: Triad, keep: str, merged: str) -> None:
+    """
+    Drive the tab through a merge, as the Merge button does.
+
+    :param triad: the tab under test
+    :type triad: Triad
+    :param keep: the label kept
+    :type keep: str
+    :param merged: the label merged into it
+    :type merged: str
+    :return: None
+    :rtype: None
+    """
+    triad.tab_view.handle_parameter_change(
+        "clusteringcontrols",
+        "merge_clusters",
+        ({"db_loader": LOADER_KEY, "label_x": keep, "label_y": merged},),
+    )
+
+
+def recorded(triad: Triad) -> List[Tuple[str, Dict[str, Any]]]:
+    """
+    The tab's history as (action, values) pairs.
+
+    :param triad: the tab under test
+    :type triad: Triad
+    :return: what the tab recorded, in order
+    :rtype: List[Tuple[str, Dict[str, Any]]]
+    """
+    return [
+        (entry["action"], entry["kwargs"])
+        for entry in triad.tab_controller.tab_action_history.values()
+    ]
+
+
+@pytest.mark.timeout(90)
+def test_each_run_records_one_reset_and_a_merge_records_none(
+    clustering_tab: Triad,
+) -> None:
+    """A run starts a new figure; a merge redraws the same result, and a 3-D projection is part of drawing it."""
+    cluster(clustering_tab, hdbscan_config())
+    merge(clustering_tab, "0", "1")
+    cluster(clustering_tab, hdbscan_config(THREE_COLUMNS))
+    merge(clustering_tab, "0", "1")
+
+    assert [action for action, _values in recorded(clustering_tab)] == [
+        "reset",
+        "cluster_run",
+        "merge_clusters",
+        "reset",
+        "cluster_run",
+        "merge_clusters",
+    ]
+    assert [ax.name for ax in clustering_tab.tab_view.figure.axes] == ["3d"]
+
+
+@pytest.mark.timeout(90)
+def test_a_run_that_matches_nothing_leaves_the_figure_and_records_nothing(
+    clustering_tab: Triad,
+) -> None:
+    """The reset is recorded only once there is a result to draw."""
+    cluster(clustering_tab, hdbscan_config())
+    before = recorded(clustering_tab)
+    drawn = [len(ax.collections) for ax in clustering_tab.tab_view.figure.axes]
+    nothing = hdbscan_config()
+    nothing["filter"] = "duration < -1"
+
+    cluster(clustering_tab, nothing)
+
+    assert recorded(clustering_tab) == before
+    assert [len(ax.collections) for ax in clustering_tab.tab_view.figure.axes] == drawn
+
+
+@pytest.mark.timeout(120)
+def test_a_replay_records_the_history_it_replays(
+    qapp, tmp_path: Path, sample_metadata_db: str
+) -> None:
+    """Each replayed run would otherwise record its reset a second time, after the replayed one."""
+    (tmp_path / "a").mkdir()
+    (tmp_path / "b").mkdir()
+    tab_a = build_clustering_tab(tmp_path / "a", sample_metadata_db, LOADER_KEY)
+    tab_b = build_clustering_tab(tmp_path / "b", sample_metadata_db, LOADER_KEY)
+    try:
+        cluster(tab_a, hdbscan_config())
+        merge(tab_a, "0", "1")
+        cluster(tab_a, hdbscan_config(THREE_COLUMNS))
+        history = copy.deepcopy(list(tab_a.tab_controller.tab_action_history.values()))
+
+        tab_b.tab_controller.replay(history)
+
+        assert recorded(tab_b) == recorded(tab_a)
+        assert [ax.name for ax in tab_b.tab_view.figure.axes] == ["3d"]
+    finally:
+        tab_a.close()
+        tab_b.close()

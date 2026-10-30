@@ -33,7 +33,7 @@ import pandas as pd
 from poriscope.plugins.analysistabs.ClusteringModel import ClusteringModel
 from poriscope.plugins.analysistabs.ClusteringView import ClusteringView
 from poriscope.utils.DocstringDecorator import inherit_docstrings
-from poriscope.utils.LogDecorator import log, register_action
+from poriscope.utils.LogDecorator import RESET_ACTION, log, register_action
 from poriscope.utils.MetaController import MetaController
 
 
@@ -126,7 +126,37 @@ class ClusteringController(MetaController):
             )
             return
         self.model.result = (clustered, labels, confidence)
+        self._start_figure()
         self.view.set_clustering_result(clustered, labels, confidence)
+
+    @log(logger=logger)
+    @register_action(RESET_ACTION)
+    def reset(self, axis_type: str = "2d") -> None:
+        """
+        Clear the figure.
+
+        A recorded action: a clustering records one before it draws, so every history
+        replays onto a cleared figure. A merge redraws the same result and records none,
+        and a 3-D plot sets its own projection while it draws.
+
+        :param axis_type: Either '2d' or '3d', the projection of the fresh axes
+        :type axis_type: str
+        """
+        self.view.clear_plot(axis_type)
+
+    @log(logger=logger)
+    def _start_figure(self) -> None:
+        """
+        Clear the figure for a new clustering, recording the reset unless it is already the last entry.
+
+        A replay runs the recorded reset before the run, so recording another would put
+        two in the history. The figure is cleared either way.
+        """
+        last = next(reversed(self.tab_action_history.values()), None)
+        if last is not None and last.get("action") == RESET_ACTION:
+            self.view.clear_plot()
+        else:
+            self.reset()
 
     @log(logger=logger)
     @register_action("cluster_run", skip_on_false=True)

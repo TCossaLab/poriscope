@@ -161,6 +161,8 @@
 
 * The write-back setters `set_loader`, `set_bins`, `set_event_count`, `set_raw` and `set_filters` move from `MetadataControls` to `MetaSubsetTabControls`, and `_write_back_filters` from `MetadataView` to `MetaSubsetTabView`; `ProteinControls` adds `set_pore`, `set_n_values` and `set_mode`
 
+* Clustering's reset is recorded on `ClusteringController.reset`, drawn by `ClusteringView.clear_plot`: a run records one, unless the last entry is already a reset, and a merge or a 3-D plot records none
+
 ### User-Facing Behaviour:
 
 #### General:

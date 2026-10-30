@@ -22,12 +22,15 @@ Covers:
 
 from __future__ import annotations
 
+from collections import OrderedDict
 from unittest.mock import MagicMock
 
 import pytest
 from pytest_mock import MockerFixture
 
 from poriscope.plugins.analysistabs.ClusteringController import ClusteringController
+from poriscope.plugins.analysistabs.ClusteringView import ClusteringView
+from poriscope.utils.LogDecorator import RESET_ACTION
 from poriscope.utils.MetaController import declared_actions
 
 # ----------------------------- fixtures ------------------------------
@@ -64,6 +67,8 @@ def controller(mock_view: MagicMock, mocker: MockerFixture) -> ClusteringControl
     ctrl.add_text_to_display.emit = mocker.Mock()
     ctrl.update_available_plugins = mocker.Mock()
     ctrl.update_available_plugins.emit = mocker.Mock()
+    ctrl.tab_action_history = OrderedDict()
+    ctrl.record_action = mocker.Mock()  # type: ignore[method-assign]
     return ctrl
 
 
@@ -816,6 +821,104 @@ class TestTheClusteringResultIsKeptOnTheModel:
         controller.cluster(*TestCluster._request())
 
         assert controller.model.result == "the previous result"
+
+
+def recording_into_history(controller: ClusteringController) -> list:
+    """
+    Record into the controller's history, as ``MetaController.record_action`` does.
+
+    :param controller: Controller under test.
+    :return: the list each recorded entry is also appended to.
+    """
+    recorded: list = []
+
+    def record(entry: dict) -> None:
+        controller.tab_action_history[len(controller.tab_action_history)] = entry
+        recorded.append(entry)
+
+    controller.record_action = record  # type: ignore[method-assign]
+    return recorded
+
+
+RESET_2D = {"action": RESET_ACTION, "args": (), "kwargs": {"axis_type": "2d"}}
+
+
+class TestTheResetIsTheControllers:
+    """A clustering clears the figure through a reset recorded on the Controller; the View records nothing."""
+
+    def test_reset_is_a_declared_action_of_the_controller(self) -> None:
+        declared = {name for _attribute, name in declared_actions(ClusteringController)}
+
+        assert RESET_ACTION in declared
+
+    def test_the_view_declares_no_action(self) -> None:
+        assert list(declared_actions(ClusteringView)) == []
+
+    def test_a_reset_clears_through_the_view_and_is_recorded(
+        self, controller: ClusteringController, mock_view: MagicMock
+    ) -> None:
+        recorded = recording_into_history(controller)
+
+        controller.reset("3d")
+
+        mock_view.clear_plot.assert_called_once_with("3d")
+        assert recorded == [
+            {"action": RESET_ACTION, "args": (), "kwargs": {"axis_type": "3d"}}
+        ]
+
+    def test_a_clustering_records_a_reset_and_clears_before_it_draws(
+        self, controller: ClusteringController, mock_view: MagicMock
+    ) -> None:
+        recorded = recording_into_history(controller)
+        controller.model.cluster.return_value = (MagicMock(), [0], [1.0])
+
+        controller.cluster(*TestCluster._request())
+
+        assert [call[0] for call in mock_view.method_calls] == [
+            "clear_plot",
+            "set_clustering_result",
+        ]
+        assert recorded == [RESET_2D]
+
+    def test_after_a_reset_a_clustering_clears_without_recording_another(
+        self, controller: ClusteringController, mock_view: MagicMock
+    ) -> None:
+        """A replay runs the recorded reset first; recording a second would grow the history on every replay."""
+        controller.tab_action_history[0] = dict(RESET_2D)
+        recorded = recording_into_history(controller)
+        controller.model.cluster.return_value = (MagicMock(), [0], [1.0])
+
+        controller.cluster(*TestCluster._request())
+
+        assert [call[0] for call in mock_view.method_calls] == [
+            "clear_plot",
+            "set_clustering_result",
+        ]
+        assert recorded == []
+
+    def test_a_failed_clustering_neither_clears_nor_records(
+        self, controller: ClusteringController, mock_view: MagicMock
+    ) -> None:
+        recorded = recording_into_history(controller)
+        controller.model.cluster.side_effect = ValueError("boom")
+
+        controller.cluster(*TestCluster._request())
+
+        mock_view.clear_plot.assert_not_called()
+        assert recorded == []
+
+    def test_a_merge_records_no_reset(
+        self, controller: ClusteringController, mock_view: MagicMock
+    ) -> None:
+        """A merge redraws the run's result; a reset before it would mark a new figure the merge depends on."""
+        controller.tab_action_history[0] = dict(RESET_2D)
+        controller.tab_action_history[1] = {"action": "cluster_run"}
+        recorded = recording_into_history(controller)
+        controller.model.merge_clusters.return_value = ("frame", [0], [1.0])
+
+        controller.merge_clusters(0, 1)
+
+        assert [entry["action"] for entry in recorded] == ["merge_clusters"]
 
 
 class TestTheRunIsTheRecordedClusterRun:
