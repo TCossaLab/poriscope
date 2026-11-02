@@ -100,6 +100,8 @@
 
 ### Developer Tooling:
 
+* The integration tests build their metadata database once per run and copy it into each test, instead of building it in every test
+
 * The release workflow now runs only when a version tag is pushed
 
 * Release branches now get branch CI and the docs render check on every push

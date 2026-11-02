@@ -306,14 +306,10 @@ class SQLiteDBWriter(MetaDatabaseWriter):
                 self.cursor = self.conn.cursor()
             if self.conn is None or self.cursor is None:
                 raise ValueError("Unable to open database connection in _write_event")
-            # One savepoint per event, not one per batch. Taken per call so that a
-            # failure rolls back only the event that failed; the batch stays in a
-            # single transaction and still commits once, at last_call. The previous
-            # form took this savepoint only when the connection was first opened,
-            # so rolling back to it discarded every event written since - and the
-            # conn.rollback() that followed destroyed the savepoint outright, so
-            # the next failure raised "no such savepoint" from inside the handler
-            # and masked the real error.
+            # One savepoint per event, taken per call, so that a failure rolls back
+            # only the event that failed and the events before it stay written. No
+            # transaction is open when it is taken, so releasing it commits: each
+            # event is its own commit, not one batch committed at last_call.
             self.conn.execute("SAVEPOINT write_event")
             savepoint_active = True
             # Get the experiment ID based on the experiment name
