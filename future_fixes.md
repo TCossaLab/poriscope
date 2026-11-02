@@ -475,6 +475,11 @@ Readability only; each is behaviour-preserving and wants the covering tests read
   `EventWorker` (51%) and the writers (60-69%) read lower than they are.
 - **A root `__init__.py`** has been tracked since the initial commit; harmless only
   while `tests/` has none.
+- **Can the Python floor be 3.12 rather than 3.12.10? (2026-11-02)** CI pins exactly `3.12.10` in seven
+  `setup-python` steps, which keeps those jobs on `ubuntu-24.04` (no 3.12.10 build for 26.04; `DECISIONS.md`
+  2026-11-02). The floor (`requires-python = ">=3.12.10"`, `pyproject.toml:10`; README; three install pages) came
+  from the README's "dependencies compatibility" note (`7f8cbdeb`), and no record names the dependency that needs it.
+  Run the suite on 3.12.0 and on `"3.12"` first; if both pass, loosen the floor and the pins and drop the 24.04 pin.
 
 ### Docs and records
 

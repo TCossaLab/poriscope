@@ -18,6 +18,22 @@ and deleted on 2026-09-27; it too is in git history.
 
 ---
 
+## 2026-11-02 - The Ubuntu CI jobs are pinned to ubuntu-24.04, and keep Python 3.12.10
+
+**Context.** `ubuntu-latest` moved to Ubuntu 26.04, for which `actions/setup-python` has no 3.12.10 build, so every
+Ubuntu job failed at "Set up Python" (CI (Branches) and Docs Render Check runs 41516801896 and 41516801905). The jobs had
+run on 24.04 until then.
+
+**Decision** (Carolina, 2026-11-02). The jobs that set up 3.12.10 run on `ubuntu-24.04`. `build_wavelet.yml` and the
+release's `validate-citation` set up no Python and stay on `ubuntu-latest`.
+
+**Rejected.** `python-version: "3.12"` on 26.04: no 3.12 build for 26.04 was confirmed, and CI would stop testing the
+`requires-python` floor exactly.
+
+**Revisit** when GitHub announces 24.04's retirement, or `setup-python` ships 3.12.10 for 26.04.
+
+---
+
 ## 2026-10-30 - Clustering records one reset per run, on the Controller, and no View records an action
 
 **Context.** Clustering's reset was recorded on `ClusteringView._reset_actions`, inside the drawing a run or a merge

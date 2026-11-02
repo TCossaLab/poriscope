@@ -268,7 +268,7 @@ request: ``git flow feature finish``, ``hotfix finish`` and ``release finish`` a
 locally, so a PR-only gate would never see the path most work actually takes. The
 **CI (Branches)** workflow, which runs the strict pre-commit checks and the full test
 suite, has the same push triggers plus ``feature/*`` and ``bugfix/*``. Since 2.1 it runs
-the suite on **both** ``ubuntu-latest`` (under Xvfb) and ``windows-latest`` (offscreen):
+the suite on **both** ``ubuntu-24.04`` (under Xvfb) and ``windows-latest`` (offscreen):
 Windows is the platform users run, and the platform-conditional code - including the
 wavelet DLL load - takes the other branch there. Lint, auto-fix and the mypy report run on
 the Linux leg only, since their results do not depend on the platform. A second job on the
