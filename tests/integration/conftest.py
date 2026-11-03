@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import logging
 import os
+import shutil
+from pathlib import Path
 from typing import Dict
 
 import pytest
@@ -143,22 +145,23 @@ def sample_events_db(tmp_path) -> str:
     return str(database.db_path)
 
 
-@pytest.fixture
-def sample_metadata_db(tmp_path) -> str:
+@pytest.fixture(scope="session")
+def _metadata_db_template(tmp_path_factory) -> Path:
     """
-    Generate a metadata database for the loader/clustering flow.
+    Build the metadata database once per run, for :func:`sample_metadata_db` to copy.
 
-    One experiment with two channels, so ``get_channels_by_experiment`` returns
-    something a single-channel database could not distinguish from a stub.
+    Building it drives the real ``SQLiteDBWriter``, which commits once per event. On
+    the Windows CI runner one of those commits has stalled past a test's timeout, so
+    the database is written once, not once for each of the many tests that use it.
 
-    :param tmp_path: Pytest-provided temporary directory, unique per test.
-    :type tmp_path: pathlib.Path
+    :param tmp_path_factory: pytest's session-wide temporary directory factory.
+    :type tmp_path_factory: pytest.TempPathFactory
 
     :return: Path to the written database.
-    :rtype: str
+    :rtype: Path
     """
     database = generate_metadata_database(
-        tmp_path / "synthetic_metadata.sqlite3",
+        tmp_path_factory.mktemp("metadata_db_template") / "synthetic_metadata.sqlite3",
         experiments=[
             {
                 "name": "exp_a",
@@ -172,4 +175,27 @@ def sample_metadata_db(tmp_path) -> str:
             }
         ],
     )
-    return str(database.db_path)
+    return database.db_path
+
+
+@pytest.fixture
+def sample_metadata_db(tmp_path, _metadata_db_template) -> str:
+    """
+    A metadata database for the loader/clustering flow, a copy in this test's own directory.
+
+    One experiment with two channels, so ``get_channels_by_experiment`` returns
+    something a single-channel database could not distinguish from a stub. Each test
+    gets its own copy, so one that writes to it (a commit of clustering labels, say)
+    leaves the next test's database untouched.
+
+    :param tmp_path: Pytest-provided temporary directory, unique per test.
+    :type tmp_path: pathlib.Path
+    :param _metadata_db_template: the database built once for the run.
+    :type _metadata_db_template: Path
+
+    :return: Path to this test's copy of the database.
+    :rtype: str
+    """
+    copy = tmp_path / "synthetic_metadata.sqlite3"
+    shutil.copyfile(_metadata_db_template, copy)
+    return str(copy)

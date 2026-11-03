@@ -475,6 +475,20 @@ Readability only; each is behaviour-preserving and wants the covering tests read
   `EventWorker` (51%) and the writers (60-69%) read lower than they are.
 - **A root `__init__.py`** has been tracked since the initial commit; harmless only
   while `tests/` has none.
+- **The SQLite writers commit once per event (2026-11-02).** `SQLiteDBWriter._write_event` and
+  `SQLiteEventWriter._write_data` take a savepoint per event with no transaction open, so each `RELEASE` commits: 48
+  commits for the 40-event `sample_metadata_db` build, 10 with one transaction per batch (probe). Two Windows CI runs
+  timed out on one of these commits stalling (40965910820, 41521392204). It is intermittent, not tied to a commit:
+  `85de22f1` passed on Windows (41516801896) hours before `535e0ce1`, which changed only Ubuntu entries and docs,
+  failed; each failure hit a different test (the 59th, the 157th), whichever commit stalled; 2 of about 56 runs
+  since Windows CI began (2026-10-05). The integration tests now build that database once per run, about 40 commits
+  instead of about 10,000 per Windows run; one green run cannot show the stall is gone, so watch the next Windows
+  runs before deleting this part.
+  One transaction per batch is not the fix: with the write's transaction open, a Clustering or Protein commit
+  into the same file (`SQLiteDBLoader.alter_database`, on the GUI thread) raised "database is locked" after 5.5 s,
+  where today it goes through, and a second writer into the file would fail the same way. Measure the commits' share
+  of a large write (10,000 events) first; if it matters, commit about once a second, which keeps every wait under
+  sqlite3's 5 s. The e2e `synthetic_metadata_database` fixtures still build through the writer in every test.
 - **Can the Python floor be 3.12 rather than 3.12.10? (2026-11-02)** CI pins exactly `3.12.10` in seven
   `setup-python` steps, which keeps those jobs on `ubuntu-24.04` (no 3.12.10 build for 26.04; `DECISIONS.md`
   2026-11-02). The floor (`requires-python = ">=3.12.10"`, `pyproject.toml:10`; README; three install pages) came
