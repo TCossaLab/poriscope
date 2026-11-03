@@ -14,7 +14,7 @@
 #     1) Auto-fix (non-blocking)
 #     2) Strict validation (blocking)
 # - Commits auto-fixes back to the branch if needed
-# - Runs the full test suite on ubuntu-latest under Xvfb and on windows-latest
+# - Runs the full test suite on ubuntu-24.04 under Xvfb and on windows-latest
 #   offscreen (no marker filter, e2e included). Windows is the platform users run
 #   and the one the ten platform-conditional sites - including the wavelet DLL load
 #   in WaveletFilter - take the other branch on; until 2.1 no job ran there.
@@ -60,7 +60,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        # ubuntu-24.04, not ubuntu-latest: setup-python has no Python 3.12.10 build for Ubuntu 26.04.
+        os: [ubuntu-24.04, windows-latest]
     runs-on: ${{ matrix.os }}
 
     env:
@@ -189,7 +190,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        # ubuntu-24.04, not ubuntu-latest: setup-python has no Python 3.12.10 build for Ubuntu 26.04.
+        os: [ubuntu-24.04, windows-latest]
     runs-on: ${{ matrix.os }}
     env:
       QT_QPA_PLATFORM: offscreen

@@ -102,6 +102,8 @@
 
 * The integration tests build their metadata database once per run and copy it into each test, instead of building it in every test
 
+* The CI, docs and release jobs that set up Python 3.12.10 run on `ubuntu-24.04` instead of `ubuntu-latest`, which moved to Ubuntu 26.04 with no 3.12.10 build
+
 * The release workflow now runs only when a version tag is pushed
 
 * Release branches now get branch CI and the docs render check on every push
