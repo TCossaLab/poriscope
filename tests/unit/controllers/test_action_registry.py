@@ -25,12 +25,11 @@ from poriscope.plugins.analysistabs.MetadataController import MetadataController
 from poriscope.plugins.analysistabs.ProteinController import ProteinController
 from poriscope.plugins.analysistabs.RawDataController import RawDataController
 from poriscope.utils.LogDecorator import (
-    ACTION_DECLARATION_ATTR,
     RESET_ACTION,
     ActionDeclaration,
     register_action,
 )
-from poriscope.utils.MetaController import MetaController, declared_actions
+from poriscope.utils.MetaController import MetaController, declarations_of
 from poriscope.utils.MetaView import MetaView
 from poriscope.utils.ReplayGuard import ReplayWidgetReadError, forbid_while_replaying
 
@@ -434,13 +433,6 @@ class TestReplayRunsInsideTheTripwire:
         forbid_while_replaying("after the replay")
 
 
-def _declarations(controller_class: type) -> Dict[str, ActionDeclaration]:
-    return {
-        name: getattr(getattr(controller_class, attribute), ACTION_DECLARATION_ATTR)
-        for attribute, name in declared_actions(controller_class)
-    }
-
-
 def _view(name: str, figure: str, *depends_on: str) -> ActionDeclaration:
     return ActionDeclaration(name, "view", figure=figure, depends_on=depends_on)
 
@@ -508,6 +500,6 @@ def test_each_tab_declares_what_a_restore_keeps_of_its_actions(
     A result is replaced per plugin and channel and a view per figure; the drawings a
     reset clears share its figure, and Protein's reset names the mode's figure.
     """
-    assert _declarations(controller_class) == {
+    assert declarations_of(controller_class) == {
         declaration.name: declaration for declaration in expected
     }

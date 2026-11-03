@@ -34,7 +34,13 @@ from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Tuple
 
 from PySide6.QtCore import QObject, Signal, Slot
 
-from poriscope.utils.LogDecorator import ACTION_NAME_ATTR, RESET_ACTION, log
+from poriscope.utils.LogDecorator import (
+    ACTION_DECLARATION_ATTR,
+    ACTION_NAME_ATTR,
+    RESET_ACTION,
+    ActionDeclaration,
+    log,
+)
 from poriscope.utils.MetaModel import MetaModel
 from poriscope.utils.MetaView import MetaView
 from poriscope.utils.QObjectABCMeta import QObjectABCMeta
@@ -59,6 +65,21 @@ def declared_actions(cls: type) -> List[Tuple[str, str]]:
         if isinstance(name, str):
             declared.append((attribute, name))
     return declared
+
+
+def declarations_of(cls: type) -> Dict[str, ActionDeclaration]:
+    """
+    Map each action a Controller class declares to what it declares about it.
+
+    :param cls: the Controller class to search
+    :type cls: type
+    :return: declared action name -> its declaration
+    :rtype: Dict[str, ActionDeclaration]
+    """
+    return {
+        name: getattr(getattr(cls, attribute), ACTION_DECLARATION_ATTR)
+        for attribute, name in declared_actions(cls)
+    }
 
 
 class MetaController(QObject, metaclass=QObjectABCMeta):
