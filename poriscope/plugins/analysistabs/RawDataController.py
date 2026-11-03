@@ -157,7 +157,12 @@ class RawDataController(MetaEventTabController):
             )
 
     @log(logger=logger)
-    @register_action("find_events", skip_on_false=True)
+    @register_action(
+        "find_events",
+        kind="result",
+        key=("eventfinder", "channel"),
+        skip_on_false=True,
+    )
     def find_events_on_channel(
         self,
         eventfinder: str,
@@ -321,7 +326,7 @@ class RawDataController(MetaEventTabController):
 
     @log(logger=logger)
     @Slot(str, list, float, float, str, bool)
-    @register_action("update_trace", skip_on_false=True)
+    @register_action("update_trace", kind="view", figure="plot", skip_on_false=True)
     def load_trace_data(
         self,
         reader: str,
@@ -358,7 +363,7 @@ class RawDataController(MetaEventTabController):
 
     @log(logger=logger)
     @Slot(str, list, float, float, str)
-    @register_action("update_psd", skip_on_false=True)
+    @register_action("update_psd", kind="view", figure="plot", skip_on_false=True)
     def load_psd_data(
         self,
         reader: str,
@@ -396,7 +401,13 @@ class RawDataController(MetaEventTabController):
 
     @log(logger=logger)
     @Slot(str, int, list, str)
-    @register_action("plot_events", skip_on_false=True)
+    @register_action(
+        "plot_events",
+        kind="view",
+        figure="plot",
+        depends_on=("eventfinder", "channel"),
+        skip_on_false=True,
+    )
     def load_event_plot_data(
         self,
         eventfinder: str,

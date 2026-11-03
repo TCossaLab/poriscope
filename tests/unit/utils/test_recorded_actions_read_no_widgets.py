@@ -353,7 +353,7 @@ class TestTheRulesFireOnDoubles:
 
     def test_a_panel_helper_call_is_caught(self) -> None:
         class Leaky:
-            @register_action("leaky")
+            @register_action("leaky", kind="view", figure="plot")
             def leaky(self, parameters: Dict[str, Any]) -> None:
                 self.get_selected_filters()
 
@@ -363,7 +363,7 @@ class TestTheRulesFireOnDoubles:
 
     def test_a_widget_value_read_two_calls_down_is_caught(self) -> None:
         class Deep:
-            @register_action("deep")
+            @register_action("deep", kind="view", figure="plot")
             def deep(self) -> None:
                 self._outer()
 
@@ -381,7 +381,7 @@ class TestTheRulesFireOnDoubles:
 
     def test_a_reach_into_a_controls_panel_is_caught(self) -> None:
         class Reach:
-            @register_action("reach")
+            @register_action("reach", kind="view", figure="plot")
             def reach(self) -> None:
                 self.metadatacontrols.bins_lineEdit
 
@@ -395,7 +395,7 @@ class TestTheRulesFireOnDoubles:
         """No value comes back from a bare-statement call, so none can reach the action."""
 
         class Refill:
-            @register_action("refill")
+            @register_action("refill", kind="view", figure="plot")
             def refill(self) -> None:
                 self.clusteringcontrols.update_clusters([1, 2])
 
@@ -403,7 +403,7 @@ class TestTheRulesFireOnDoubles:
 
     def test_a_panel_call_whose_result_is_used_is_still_caught(self) -> None:
         class Used:
-            @register_action("used")
+            @register_action("used", kind="view", figure="plot")
             def used(self) -> None:
                 labels = self.clusteringcontrols.update_clusters([1])
                 print(labels)
@@ -418,7 +418,7 @@ class TestTheRulesFireOnDoubles:
         """Only a call made on the panel itself is exempt; one made on a widget it holds is not."""
 
         class Through:
-            @register_action("through")
+            @register_action("through", kind="view", figure="plot")
             def through(self) -> None:
                 self.clusteringcontrols.label_x_comboBox.clear()
 
@@ -441,7 +441,7 @@ class TestTheRulesFireOnDoubles:
 
     def test_widget_derived_state_is_caught(self) -> None:
         class Mode:
-            @register_action("mode")
+            @register_action("mode", kind="view", figure="plot")
             def mode(self) -> None:
                 if self._analysis_mode == "individual":
                     pass
@@ -454,7 +454,7 @@ class TestTheRulesFireOnDoubles:
         """The settings dialog stores them, as the Timer dialog stores RawData's limits."""
 
         class Stored:
-            @register_action("stored")
+            @register_action("stored", kind="view", figure="plot")
             def stored(self, loader: str) -> None:
                 self.clustering_config_map.get(loader)
 
@@ -464,7 +464,7 @@ class TestTheRulesFireOnDoubles:
 
     def test_writing_widget_derived_state_is_not_a_read(self) -> None:
         class Writer:
-            @register_action("writer")
+            @register_action("writer", kind="view", figure="plot")
             def writer(self) -> None:
                 self._last_event_action = "plot_events"
 
@@ -472,7 +472,7 @@ class TestTheRulesFireOnDoubles:
 
     def test_a_data_parameter_is_caught(self) -> None:
         class Takes:
-            @register_action("takes")
+            @register_action("takes", kind="view", figure="plot")
             def takes(self, ax: Axes, columns: typing.Sequence[NDArray]) -> None:
                 pass
 
@@ -488,7 +488,7 @@ class TestTheRulesFireOnDoubles:
         class Controller:
             view: View
 
-            @register_action("run")
+            @register_action("run", kind="view", figure="plot")
             def run(self) -> None:
                 self.view.draw()
 
@@ -500,7 +500,7 @@ class TestTheRulesFireOnDoubles:
 
     def test_a_clean_action_has_no_findings(self) -> None:
         class Clean:
-            @register_action("clean")
+            @register_action("clean", kind="view", figure="plot")
             def clean(self, parameters: Dict[str, Any]) -> None:
                 self.value_from_arguments = parameters["x"]
 
@@ -512,7 +512,7 @@ class TestTheRulesFireOnDoubles:
             def figure(self) -> str:
                 return "one" if self._analysis_mode == "individual" else "other"
 
-            @register_action("behind")
+            @register_action("behind", kind="view", figure="plot")
             def behind(self) -> None:
                 self.figure.clear()
 
@@ -526,7 +526,7 @@ class TestTheRulesFireOnDoubles:
         """``Axes.text(x, y, s)`` writes; ``QLineEdit.text()`` reads. Only the second takes no arguments."""
 
         class Draws:
-            @register_action("draws")
+            @register_action("draws", kind="view", figure="plot")
             def draws(self, ax) -> None:  # type: ignore[no-untyped-def]
                 ax.text(0.98, 0.95, "label")
                 ax.text(x=0.1, y=0.2, s="keywords")
@@ -535,7 +535,7 @@ class TestTheRulesFireOnDoubles:
 
     def test_an_argument_less_text_call_is_still_a_widget_read(self) -> None:
         class Reads:
-            @register_action("reads")
+            @register_action("reads", kind="view", figure="plot")
             def reads(self) -> None:
                 self.field.text()
 

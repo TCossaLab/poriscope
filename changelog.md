@@ -98,6 +98,8 @@
 * **Breaking:** the event-plot round trip leaves the subset-tab bases: `MetaSubsetTabView.event_plot_data_requested`, `set_event_plot_data_generator` and `plot_events_generator`, and `MetaSubsetTabController.load_event_plot_data`, are removed; a Controller calls `fetch_event_plot_data`
 * **Breaking:** recorded actions are declared on Controllers only: `MetaView.record_action` is removed and `MetaController.action_registry` no longer reads the View, so a `@register_action` on a View method is neither recorded nor replayed
 
+* **Breaking:** `register_action` requires `kind=` (`result`, `view`, `additive` or `reset`) with the figure or key it acts on, so a tab that decorates a method without it no longer loads
+
 ### Developer Tooling:
 
 * The integration tests build their metadata database once per run and copy it into each test, instead of building it in every test

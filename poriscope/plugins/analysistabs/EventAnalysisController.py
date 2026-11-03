@@ -70,7 +70,13 @@ class EventAnalysisController(MetaEventTabController):
 
     @log(logger=logger)
     @Slot(str, str, int, list, str, bool)
-    @register_action("plot_events", skip_on_false=True)
+    @register_action(
+        "plot_events",
+        kind="view",
+        figure="plot",
+        depends_on=("eventfitter", "channel"),
+        skip_on_false=True,
+    )
     def load_event_plot(
         self,
         loader: str,
@@ -563,7 +569,12 @@ class EventAnalysisController(MetaEventTabController):
             self.fit_channel(eventfitter, channel, data_filter)
 
     @log(logger=logger)
-    @register_action("fit_events", skip_on_false=True)
+    @register_action(
+        "fit_events",
+        kind="result",
+        key=("eventfitter", "channel"),
+        skip_on_false=True,
+    )
     def fit_channel(self, eventfitter: str, channel: int, data_filter: str) -> bool:
         """
         Launch the fitter on one channel and run it.

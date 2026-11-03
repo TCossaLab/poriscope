@@ -103,7 +103,7 @@ class ProteinController(MetaSubsetTabController):
         self.view.plot_events_requested.connect(self.plot_events)
 
     @log(logger=logger)
-    @register_action(RESET_ACTION)
+    @register_action(RESET_ACTION, kind="reset", figure_from="mode")
     def reset(self, axis_type: str = "2d", mode: str = "individual") -> None:
         """
         Clear one analysis mode's figures.
@@ -223,7 +223,12 @@ class ProteinController(MetaSubsetTabController):
         )
 
     @log(logger=logger)
-    @register_action("update_ensemble_distribution", skip_on_false=True)
+    @register_action(
+        "update_ensemble_distribution",
+        kind="additive",
+        figure="ensemble",
+        skip_on_false=True,
+    )
     def update_ensemble_distribution(
         self,
         loader: str,
@@ -460,7 +465,7 @@ class ProteinController(MetaSubsetTabController):
         return filtered
 
     @log(logger=logger)
-    @register_action("plot_events", skip_on_false=True)
+    @register_action("plot_events", kind="view", figure="events", skip_on_false=True)
     def plot_events(
         self,
         loader: str,
@@ -506,7 +511,9 @@ class ProteinController(MetaSubsetTabController):
         return True
 
     @log(logger=logger)
-    @register_action("plot_event_histograms", skip_on_false=True)
+    @register_action(
+        "plot_event_histograms", kind="view", figure="events", skip_on_false=True
+    )
     def plot_event_histograms(
         self,
         loader: str,
@@ -677,7 +684,12 @@ class ProteinController(MetaSubsetTabController):
         )
 
     @log(logger=logger)
-    @register_action("update_individual_distribution", skip_on_false=True)
+    @register_action(
+        "update_individual_distribution",
+        kind="additive",
+        figure="individual",
+        skip_on_false=True,
+    )
     def update_individual_distribution(
         self,
         loader: str,
