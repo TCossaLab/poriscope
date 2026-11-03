@@ -58,6 +58,16 @@ Step 10 waits for both tracks.
 - **`MetaView.discard_last_tab_action` has no emitter (2026-10-28).** `MetaView.py:75`, wired at
   `MetaController.py:130`; the Metadata roll-back now calls the Controller method directly. Removing it narrows a
   `Meta*` base (breaking): a signal change for approval.
+- **The Ubuntu test job aborted once in native code (2026-11-03).** CI (Branches) run 41721366639 attempt 1 on
+  `a84c70ca`: `free(): invalid pointer`, `Fatal Python error: Aborted`, exit 134, after 954 passing tests; attempt 2
+  on the same commit passed (5,428). The commit changed no runtime code. Test #955 in collection order is the first
+  of `tests/unit/controllers/test_protein_fetch_slots.py`, right after `test_protein_controller.py`, which builds a
+  real `ProteinView`; a Qt widget freed twice at teardown fits, unproven. Not seen in the 30 runs before it, nor in
+  a Linux container matching the job (`python:3.12.10-slim-bookworm`, CI's apt packages, `xvfb-run`, 2026-11-03):
+  the two files together 40 times, and the whole suite with `-v` and faulthandler twice. If it recurs, rerun with
+  `-v` so the crash names its test. (In that container, as root, `test_database_indexes.py::
+  test_a_database_that_cannot_be_written_still_opens` fails: root ignores the `chmod` that makes the file read-only.)
+
 - **A replay scenario failed once and was not diagnosed (2026-10-26).**
   `test_replay_guard_no_gui.py::test_a_replay_reproduces_what_the_action_produced[EventAnalysisController]`
   failed once, in the first run after its second-tab perturbation was made effective; the output was not kept.
