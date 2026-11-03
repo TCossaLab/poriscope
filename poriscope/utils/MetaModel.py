@@ -45,6 +45,9 @@ class MetaModel(QObject, metaclass=QObjectABCMeta):
 
     update_progressbar = Signal(float, str)
     add_text_to_display = Signal(str, str)
+    #: channel, plugin key: one plugin's run on one channel has ended, its worker is
+    #: discarded and its status reported. Whether it finished is the plugin's to say.
+    run_finished = Signal(int, str)
     logger = logging.getLogger(__name__)
 
     def __init__(self, **kwargs: Any) -> None:
@@ -279,6 +282,9 @@ class MetaModel(QObject, metaclass=QObjectABCMeta):
                 )
                 self.threads[key][channel].workerthread_finished.connect(
                     self.generate_report, Qt.QueuedConnection
+                )
+                self.threads[key][channel].workerthread_finished.connect(
+                    self.run_finished, Qt.QueuedConnection
                 )
                 self.threads[key][channel].start()
 

@@ -115,6 +115,7 @@ ordinary Qt signals, because nobody is waiting for a value:
 - ``plugin_state_changed`` - tell the app a plugin's state changed
 - ``add_text_to_display`` - put a line on the status panel
 - ``update_progressbar`` - report progress from a worker
+- ``run_finished`` - a plugin's run on a channel has ended
 - ``create_plugin`` - ask the shell to instantiate something
 
 So does a tab's own **intent** signal, which is how a View asks its Controller to do

@@ -58,8 +58,8 @@ RESET_ACTION = "reset"
 
 #: What a recorded action is, which decides what a restored session keeps of it:
 #:
-#: - ``result``: a background run of one plugin on one channel (Find, Fit). The newest
-#:   entry per ``key`` replaces older ones.
+#: - ``result``: a background run of one plugin on one channel (Find, Fit), recorded only
+#:   once the run finished. The newest entry per ``key`` replaces older ones.
 #: - ``view``: a drawing that replaces what its figure showed. The newest per figure is
 #:   kept, and a view drawn from a result that was run again later is dropped.
 #: - ``additive``: a drawing added to what its figure shows (an overlay, a merge). Kept
@@ -80,7 +80,7 @@ class ActionDeclaration:
     :type name: str
     :param kind: one of :py:data:`ACTION_KINDS`
     :type kind: str
-    :param key: a result's parameters whose values identify its plugin and channel
+    :param key: a result's plugin parameter, then its channel parameter
     :type key: Tuple[str, ...]
     :param figure: the figure a drawing or reset acts on, when it is always the same one
     :type figure: str
@@ -299,8 +299,11 @@ def _checked_declaration(
             f"not '{declaration.kind}'"
         )
     if declaration.kind == "result":
-        if not declaration.key:
-            raise ValueError(f"{where}: a result names its plugin and channel in key")
+        if len(declaration.key) != 2:
+            raise ValueError(
+                f"{where}: a result names its plugin parameter, then its channel "
+                f"parameter, in key"
+            )
         if declaration.figure or declaration.figure_from or declaration.depends_on:
             raise ValueError(f"{where}: a result draws on no figure; give only key")
     else:
@@ -367,7 +370,7 @@ def register_action(
     :type name: str
     :param kind: one of :py:data:`ACTION_KINDS`
     :type kind: str
-    :param key: for a result, the parameters naming its plugin and channel
+    :param key: for a result, its plugin parameter, then its channel parameter
     :type key: Tuple[str, ...]
     :param figure: for any other kind, the figure it acts on, when that is always the same
     :type figure: str

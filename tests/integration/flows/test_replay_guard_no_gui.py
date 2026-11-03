@@ -547,10 +547,17 @@ def cluster_labels(triad: Triad) -> Any:
 
 
 def settle(triad: Triad, qtbot: Any) -> None:
-    """Wait until no background run of this tab is left."""
-    model = triad.tab_controller.model
+    """
+    Wait until no background run of this tab is left, and every finished one is recorded.
+
+    A run is recorded after its worker is discarded, from a queued signal, so an empty
+    worker list alone can come before the entry lands.
+    """
+    controller = triad.tab_controller
+    model = controller.model
     qtbot.waitUntil(
-        lambda: not any(model.workers.get(key) for key in list(model.workers)),
+        lambda: not any(model.workers.get(key) for key in list(model.workers))
+        and not controller._held_results,
         timeout=120_000,
     )
 

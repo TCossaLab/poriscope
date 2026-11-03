@@ -38,8 +38,13 @@ No need to manually handle cross-plugin communication — :ref:`MetaController` 
   The declaration lives on the decorator only; nothing of it is saved in the entry:
 
   - ``result``: a background run of one plugin on one channel, such as Find or Fit. ``key`` names
-    the parameters that identify it, ``key=("eventfinder", "channel")``; a newer run with the
-    same values replaces an older one
+    its plugin parameter, then its channel parameter, ``key=("eventfinder", "channel")``; a
+    newer run with the same values replaces an older one. A result is recorded only once its
+    run has **finished**: the click's values are held until ``MetaModel.run_finished`` says the
+    run ended, and the plugin is then asked whether that run finished (``last_run_finished``).
+    A run that was cancelled, failed or found nothing is not recorded, and the status panel
+    says so. The plugin keeps the channel's earlier results then, so an earlier run of that
+    plugin and channel stays in the history
   - ``view``: a drawing that replaces what its figure showed, such as a trace. The newest per
     figure is kept. ``depends_on`` names the parameters whose values are the key of the result
     it draws from, ``depends_on=("eventfinder", "channel")``; a view drawn from a result that was

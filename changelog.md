@@ -172,11 +172,15 @@
 
 * Clustering's reset is recorded on `ClusteringController.reset`, drawn by `ClusteringView.clear_plot`: a run records one, unless the last entry is already a reset, and a merge or a 3-D plot records none
 
+* A recorded `result` action is held until `MetaModel.run_finished` says its run ended, and `MetaController.record_finished_run` records it only if the plugin's `last_run_finished` says that run finished
+
 ### User-Facing Behaviour:
 
 #### General:
 
 * A Find or Fit that you cancel, that fails, or (a Find) that finds no events now keeps the channel's earlier events or fits instead of clearing them, and the status panel says so
+
+* A Find or Fit that was cancelled, failed or found nothing is no longer saved in the tab's history, and the status panel says so
 
 * **New Data Plugin: `ABFReader`** opens any ABF1 or ABF2 file `pyabf` can open, gap-free or episodic, with settings for the ADC channel that records current and the sweep to read; `pyabf` is now a dependency
 

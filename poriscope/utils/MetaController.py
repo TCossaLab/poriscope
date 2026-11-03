@@ -46,6 +46,14 @@ from poriscope.utils.MetaView import MetaView
 from poriscope.utils.QObjectABCMeta import QObjectABCMeta
 from poriscope.utils.ReplayGuard import replaying
 
+#: The plugin method that says whether its last run on a channel finished, per plugin
+#: family. A result whose plugin is of another family is recorded when its run ends,
+#: unasked.
+RUN_STATUS = {
+    "MetaEventFinder": "last_run_finished",
+    "MetaEventFitter": "last_run_finished",
+}
+
 
 def declared_actions(cls: type) -> List[Tuple[str, str]]:
     """
@@ -115,6 +123,12 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
     #: :py:meth:`action_registry`.
     _action_registry: Optional[Dict[str, Callable[..., Any]]] = None
 
+    #: name -> declaration for every declared action of this tab; read on first use.
+    _declarations: Optional[Dict[str, ActionDeclaration]] = None
+
+    #: (plugin key, channel) -> the entry of a result whose run has not ended yet.
+    _held_results: Optional[Dict[Tuple[Any, Any], Dict[str, Any]]] = None
+
     def __init__(
         self,
         available_subclasses: Optional[Mapping[str, List[str]]] = None,
@@ -141,6 +155,7 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
         self.view.set_available_subclasses(available_subclasses)
         self.view.plugin_state_changed.connect(self.plugin_state_changed)
         self.model.update_progressbar.connect(self.view.update_progressbar)
+        self.model.run_finished.connect(self.record_finished_run)
         self.view.kill_worker.connect(self.handle_kill_worker)
         self.view.kill_all_workers.connect(self.handle_kill_all_workers)
         self.add_text_to_display.connect(self._note_panel_text)
@@ -284,12 +299,101 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
         Append one declared action to this tab's history and tell the main window.
 
         The hook :py:func:`~poriscope.utils.LogDecorator.register_action` calls for a
-        decorated Controller method.
+        decorated Controller method. A ``result`` is held instead, under its plugin and
+        channel, until :py:meth:`record_finished_run` hears that its run ended. A second
+        launch of a run still going is refused by the Model, so the entry held first is
+        kept.
 
         :param entry: ``{"action": name, "args": ..., "kwargs": ...}``
         :type entry: Dict[str, Any]
         """
+        declaration = self._declarations_of_tab().get(entry.get("action", ""))
+        kwargs = entry.get("kwargs") or {}
+        if (
+            declaration is not None
+            and declaration.kind == "result"
+            and all(name in kwargs for name in declaration.key)
+        ):
+            run = (kwargs[declaration.key[0]], kwargs[declaration.key[1]])
+            self._held().setdefault(run, entry)
+            return
         self.update_tab_actions(entry, False)
+
+    @log(logger=logger)
+    @Slot(int, str)
+    def record_finished_run(self, channel: int, key: str) -> None:
+        """
+        Record a held result once its run ended, if the plugin says that run finished.
+
+        A run that did not finish - cancelled, failed, or with nothing found - is not
+        recorded, and the status panel says so. The plugin keeps the channel's earlier
+        results in that case, so an earlier run of the same plugin and channel stays in the
+        history. A run nothing was held for, a write say, is ignored.
+
+        :param channel: the channel the run worked on
+        :type channel: int
+        :param key: the plugin's key
+        :type key: str
+        """
+        entry = self._held().pop((key, channel), None)
+        if entry is None:
+            return
+        if self._run_finished_channel(key, channel):
+            self.update_tab_actions(entry, False)
+            return
+        self.add_text_to_display.emit(
+            f"{key} did not finish channel {channel}, so this run is not saved in the "
+            f"tab's history: restoring the session will not run it",
+            self.__class__.__name__,
+        )
+
+    def _held(self) -> Dict[Tuple[Any, Any], Dict[str, Any]]:
+        """
+        The results held until their runs end, created on first use.
+
+        :return: (plugin key, channel) -> held entry
+        :rtype: Dict[Tuple[Any, Any], Dict[str, Any]]
+        """
+        if self._held_results is None:
+            self._held_results = {}
+        return self._held_results
+
+    def _declarations_of_tab(self) -> Dict[str, ActionDeclaration]:
+        """
+        This tab's declarations, read once.
+
+        :return: declared action name -> its declaration
+        :rtype: Dict[str, ActionDeclaration]
+        """
+        if self._declarations is None:
+            self._declarations = declarations_of(type(self))
+        return self._declarations
+
+    def _run_finished_channel(self, key: str, channel: int) -> bool:
+        """
+        Ask the plugin whether its last run on the channel finished.
+
+        Called from a slot, so a status that cannot be read is logged and counts as not
+        finished rather than raised.
+
+        :param key: the plugin's key
+        :type key: str
+        :param channel: the channel
+        :type channel: int
+        :return: True if the run finished, or the plugin's family has no such status
+        :rtype: bool
+        """
+        metaclass = self.model.reporter_metaclasses.get(key)
+        method = RUN_STATUS.get(metaclass) if isinstance(metaclass, str) else None
+        if metaclass is None or method is None:
+            return True
+        try:
+            return bool(self.model.call(metaclass, key, method, channel))
+        except Exception as e:
+            self.logger.error(
+                f"Unable to tell whether {key} finished channel {channel}: {e}"
+            )
+            return False
 
     @log(logger=logger)
     def action_registry(self) -> Dict[str, Callable[..., Any]]:

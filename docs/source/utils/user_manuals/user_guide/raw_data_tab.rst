@@ -122,6 +122,14 @@ Step 3: Finding Events
 
    A range like ``0-0`` means “start to end” of the loaded signal. You can also specify ranges such as ``0-4``, ``6-7``, or open-ended intervals like ``9-0`` (9 seconds to the end). An omitted end has the same meaning as an end of ``0``, so ``3.0-`` and ``3.0-0`` both run from 3 seconds to the end of the signal.
 
+.. note::
+
+   A Find that you cancel, that fails, or that finds no events leaves the channel's earlier events
+   as they were, and the right-hand panel says so (for example *Ch1: no events found with these
+   settings, so there is nothing to plot or write; the channel keeps its earlier 50 events*). No
+   events means there is nothing to plot or write, so it never replaces a run that found some.
+   Such a run is not saved in the session either: restoring the session will not run it.
+
 6. Once events are detected (you will see confirmation in the right-hand panel), **enter the event indices** you wish to inspect.
 
 7. **Click** the **Plot Events** button to visualize those events.

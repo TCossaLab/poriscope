@@ -33,6 +33,8 @@ Built-in signals allow your model to communicate with the view, controller, or e
 - ``call()`` for reaching a data plugin and using its answer directly
 - ``update_progressbar`` to visually track long computations
 - ``add_text_to_display`` to send log output or feedback to the interface
+- ``run_finished(channel, key)``, emitted once a plugin's run on a channel has ended and its
+  status was reported; the Controller listens to it to record a finished Find or Fit
 
 **Calling a data plugin**
 

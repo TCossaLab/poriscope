@@ -277,9 +277,13 @@ def _declare(**fields: Any) -> None:
     "fields, message",
     [
         ({"kind": "chain", "figure": "plot"}, "kind must be one of"),
-        ({"kind": "result"}, "names its plugin and channel in key"),
+        ({"kind": "result"}, "names its plugin parameter, then its channel"),
         (
-            {"kind": "result", "key": ("plugin",), "figure": "plot"},
+            {"kind": "result", "key": ("plugin", "channel", "mode")},
+            "names its plugin parameter, then its channel",
+        ),
+        (
+            {"kind": "result", "key": ("plugin", "channel"), "figure": "plot"},
             "draws on no figure",
         ),
         ({"kind": "view", "figure": "plot", "key": ("plugin",)}, "only a result"),
@@ -292,7 +296,10 @@ def _declare(**fields: Any) -> None:
             {"kind": "additive", "figure": "plot", "depends_on": ("plugin",)},
             "only a view depends on a result",
         ),
-        ({"kind": "result", "key": ("finder",)}, "finder is not a parameter"),
+        (
+            {"kind": "result", "key": ("finder", "channel")},
+            "finder is not a parameter",
+        ),
         ({"kind": "reset", "figure_from": "axis"}, "axis is not a parameter"),
         (
             {"kind": "view", "figure": "plot", "depends_on": ("plugin", "chan")},

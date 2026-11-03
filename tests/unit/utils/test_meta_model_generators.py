@@ -5,7 +5,8 @@ A request names a plugin key and a channel. A request for a key with nothing sta
 every channel was skipped before staging - does nothing. A request for a (key, channel)
 whose worker is still running is refused: the running one carries on, the new generator
 is closed without having started, and the status panel says the request was ignored
-rather than dropping it silently.
+rather than dropping it silently. When a worker ends, the Model reports the plugin's
+status and then says the run finished, so a Controller can decide what to record.
 """
 
 import inspect
@@ -114,3 +115,24 @@ def test_a_second_request_while_one_runs_is_reported_and_closed(
         gate.set()
         pump(qapp, lambda: not instance.generators["finder"])
     assert started == ["first"]
+
+
+def test_a_finished_run_is_announced_after_its_status_is_reported(
+    qapp: QApplication, model: Tuple[Model, List[str]]
+) -> None:
+    instance, messages = model
+    instance.call = lambda *args, **kwargs: "finder status"  # type: ignore[method-assign]
+    gate, started = threading.Event(), []
+    finished: List[Tuple[int, str, List[str], bool]] = []
+    instance.run_finished.connect(
+        lambda channel, key: finished.append(
+            (channel, key, list(messages), bool(instance.workers.get(key)))
+        )
+    )
+    gate.set()
+    instance.set_generator(gated(gate, started, "run"), 3, "finder", "MetaEventFinder")
+    instance.run_generators("finder")
+
+    pump(qapp, lambda: bool(finished))
+
+    assert finished == [(3, "finder", ["finder status"], False)]
