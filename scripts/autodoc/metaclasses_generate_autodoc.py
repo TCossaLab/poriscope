@@ -236,10 +236,11 @@ for filename in os.listdir(FOLDER_ORIGIN):
         if isinstance(node, ast.ClassDef):
             class_name = node.name
             docstring = ast.get_docstring(node)
-            # A class without a docstring is skipped, which is how a helper class in
-            # utils/ stays out of the published pages. A module gets one page and one
-            # toctree entry per documented class, so a second documented class in the same
-            # module would list it twice and fail ``sphinx-build -W``.
+            # A class without a docstring is skipped. A page is for a base class that
+            # contributors build on; a supporting type or helper in utils/ has no docstring
+            # (RawRun, FigureKind, OverlayState). A module gets one page and one toctree
+            # entry per documented class, so a second documented class in the same module
+            # would list it twice and fail ``sphinx-build -W``.
             if not docstring:
                 print(f"Skipped {class_name} in {filename} (no docstring)")
                 continue

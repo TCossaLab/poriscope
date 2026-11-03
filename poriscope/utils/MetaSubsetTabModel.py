@@ -52,8 +52,6 @@ DatasetKey = Tuple[
 
 
 class FigureKind(Enum):
-    """What the figure holds, so the next overlay can tell whether it can add to it."""
-
     EMPTY_2D = "empty 2d"
     EMPTY_3D = "empty 3d"
     OVERLAY_2D = "overlay 2d"
@@ -98,29 +96,6 @@ class FigureKind(Enum):
 
 @dataclass
 class OverlayState:
-    """
-    What an overlaid figure holds, kept by the Model so the Controller decides from it.
-
-    The options the figure was drawn with, the datasets on it, and what the accumulating
-    plot types redraw each time one is added: each dataset's values and label, and the
-    limits the datasets share. A reset replaces it with an empty one.
-
-    :ivar figure: what the figure holds
-    :ivar plot_type: the plot type drawn, or None on an empty figure
-    :ivar columns: the columns drawn
-    :ivar logs: the columns' log-scale flags
-    :ivar bins: the bins list the figure was drawn with
-    :ivar sizes: does bins refer to a bin width
-    :ivar datasets: the datasets on the figure
-    :ivar values: per accumulated dataset, newest last: its raw column for the
-        histogram, density and categorical plots, or its (bin centres, counts) for the
-        all-points histograms. Two shapes, not one: a single element type would be
-        cleaner, and is a change of its own.
-    :ivar labels: per accumulated dataset, its label, index-aligned with values
-    :ivar hist_min: the shared lower limit, or None before the first dataset
-    :ivar hist_max: the shared upper limit, or None before the first dataset
-    """
-
     figure: FigureKind = FigureKind.EMPTY_2D
     plot_type: Optional[str] = None
     columns: List[str] = field(default_factory=list)
