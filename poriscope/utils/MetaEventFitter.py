@@ -383,11 +383,11 @@ class MetaEventFitter(BaseDataPlugin):
 
         :ref:`MetaEventFitter` already sets aside its own per-channel fits. A fitter that
         keeps per-channel results of its own - a classification, say - overrides this and
-        :py:meth:`_put_back_channel` together.
+        ``_put_back_channel`` together.
 
         .. warning::
 
-            This function implements core functionality required for broader plugin integration into Poriscope. If you do need to override it, you **MUST** call ``super()._set_aside_channel(channel)`` **before** any additional code that you add, add your own results to the dict it returns, and override :py:meth:`_put_back_channel` to restore them.
+            This function implements core functionality required for broader plugin integration into Poriscope. If you do need to override it, you **MUST** call ``super()._set_aside_channel(channel)`` **before** any additional code that you add, add your own results to the dict it returns, and override ``_put_back_channel`` to restore them.
 
         :param channel: the channel identifier
         :type channel: int
@@ -413,7 +413,7 @@ class MetaEventFitter(BaseDataPlugin):
 
         :param channel: the channel identifier
         :type channel: int
-        :param aside: what :py:meth:`_set_aside_channel` returned for this channel
+        :param aside: what ``_set_aside_channel`` returned for this channel
         :type aside: Dict[str, Any]
         """
         if not aside:
@@ -614,8 +614,7 @@ class MetaEventFitter(BaseDataPlugin):
 
         A fit that does not finish - cancelled, or stopped by an exception - keeps the
         channel's earlier fits: they are set aside when the fit starts
-        (:py:meth:`_set_aside_channel`) and put back when it ends any way but finished
-        (:py:meth:`_put_back_channel`). How the fit ended is kept, for
+        and put back when it ends any way but finished. How the fit ended is kept, for
         :py:meth:`last_run_finished` and the status report.
 
         An event the fitter cannot fit is rejected, never fatal to the channel: a

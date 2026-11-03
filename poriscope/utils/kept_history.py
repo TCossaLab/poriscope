@@ -30,7 +30,7 @@ A tab's live history keeps every entry, because Undo replays from the last reset
 what came before it. A restore needs only what the screen and the tab's results depend on
 now: the latest run of each result, the latest view of each figure, the drawings added since
 its last reset. :py:func:`build_kept_history` works that out from each action's declaration
-(:py:class:`~poriscope.utils.LogDecorator.ActionDeclaration`, collected by
+(``ActionDeclaration``, collected by
 :py:func:`~poriscope.utils.MetaController.declarations_of`); it
 reads no tab and changes nothing.
 """

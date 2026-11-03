@@ -950,7 +950,7 @@ class PeakFinder(MetaEventFitter):
 
         :param channel: the channel identifier
         :type channel: int
-        :param aside: what :py:meth:`_set_aside_channel` returned for this channel
+        :param aside: what ``_set_aside_channel`` returned for this channel
         :type aside: Dict[str, Any]
         """
         super()._put_back_channel(channel, aside)

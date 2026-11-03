@@ -226,11 +226,11 @@ class MetaEventFinder(BaseDataPlugin):
 
         :ref:`MetaEventFinder` already sets aside everything :py:meth:`reset_channel` clears. A finder
         that keeps per-channel results of its own overrides this and
-        :py:meth:`_put_back_channel` together.
+        ``_put_back_channel`` together.
 
         .. warning::
 
-            This function implements core functionality required for broader plugin integration into Poriscope. If you do need to override it, you **MUST** call ``super()._set_aside_channel(channel)`` **before** any additional code that you add, add your own results to the dict it returns, and override :py:meth:`_put_back_channel` to restore them.
+            This function implements core functionality required for broader plugin integration into Poriscope. If you do need to override it, you **MUST** call ``super()._set_aside_channel(channel)`` **before** any additional code that you add, add your own results to the dict it returns, and override ``_put_back_channel`` to restore them.
 
         :param channel: the channel identifier
         :type channel: int
@@ -257,7 +257,7 @@ class MetaEventFinder(BaseDataPlugin):
 
         :param channel: the channel identifier
         :type channel: int
-        :param aside: what :py:meth:`_set_aside_channel` returned for this channel
+        :param aside: what ``_set_aside_channel`` returned for this channel
         :type aside: Dict[str, Any]
         """
         if not aside:
@@ -329,9 +329,8 @@ class MetaEventFinder(BaseDataPlugin):
         Yields progress for each chunk processed.
 
         A run that does not finish - cancelled, failed, or with no events found - keeps
-        the channel's earlier results: they are set aside when the run starts
-        (:py:meth:`_set_aside_channel`) and put back when it ends any way but finished
-        (:py:meth:`_put_back_channel`). No events means nothing to plot or write, so it
+        the channel's earlier results: they are set aside when the run starts and put
+        back when it ends any way but finished. No events means nothing to plot or write, so it
         never replaces a run that found some. How the run ended is kept, for
         :py:meth:`last_run_finished` and the status report.
 

@@ -49,7 +49,7 @@ F = TypeVar("F", bound=Callable[..., Any])
 ACTION_NAME_ATTR = "_action_name"
 
 #: The attribute :py:func:`register_action` sets on a method to carry its
-#: :py:class:`ActionDeclaration`.
+#: ``ActionDeclaration``.
 ACTION_DECLARATION_ATTR = "_action_declaration"
 
 #: The declared name of every tab's reset action. Undo finds resets by it, so a tab's
@@ -70,26 +70,6 @@ ACTION_KINDS = ("result", "view", "additive", "reset")
 
 @dataclass(frozen=True)
 class ActionDeclaration:
-    """
-    What :py:func:`register_action` declares about one recorded action.
-
-    Every name in ``key``, ``figure_from`` and ``depends_on`` is a parameter of the
-    decorated method, so its value is read from the recorded entry's ``kwargs``.
-
-    :param name: the action's declared name
-    :type name: str
-    :param kind: one of :py:data:`ACTION_KINDS`
-    :type kind: str
-    :param key: a result's plugin parameter, then its channel parameter
-    :type key: Tuple[str, ...]
-    :param figure: the figure a drawing or reset acts on, when it is always the same one
-    :type figure: str
-    :param figure_from: the parameter whose value names the figure, when it varies
-    :type figure_from: str
-    :param depends_on: a view's parameters whose values are the key of the result it draws from
-    :type depends_on: Tuple[str, ...]
-    """
-
     name: str
     kind: str
     key: Tuple[str, ...] = ()
@@ -362,7 +342,7 @@ def register_action(
 
     ``kind`` and the fields after it say what a restored session keeps of the action
     (see :py:data:`ACTION_KINDS`). They are stored on the wrapper as an
-    :py:class:`ActionDeclaration` under :py:data:`ACTION_DECLARATION_ATTR`, never in the
+    ``ActionDeclaration`` under :py:data:`ACTION_DECLARATION_ATTR`, never in the
     entry, and checked when the class is defined, so a declaration that names a missing
     parameter fails on import.
 
