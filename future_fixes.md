@@ -104,12 +104,16 @@ Tab state onto the Models, heavy work off the GUI thread, event-finder and CUSUM
   (`ClusteringModel.py:193,223`, from `ClusteringController:110-122`), `load_metadata_subset`,
   all-points histograms and KDE. Workers are used only for writes and exports.
 - **The View still owns domain state, and the Controller reaches into it**: public View
-  dicts read and written at `MetaSubsetTabController.py:436,439,473` (invisible to rule 3,
-  which keys on underscores); a matplotlib `Axes` passes through 7 Controller slots;
-  `ClusteringView._merge_clusters:249-254` mutates the frame later committed, and
-  `update_plot` mutates its argument (`:732-733`); `relay_query` opens a `QMessageBox` from the
-  Controller (`MetaSubsetTabController.py:677`). Move scope, filters and the event-id cache onto
+  dicts read and written at `MetaSubsetTabController.py:1653,1656,1690` (invisible to rule 3,
+  which keys on underscores); `relay_query` opens a `QMessageBox` from the Controller
+  (`MetaSubsetTabController.py:1895`). Move scope, filters and the event-id cache onto
   `MetaSubsetTabModel`.
+- **Two data round trips through the View remain** (14 before action replay, 2 measured
+  2026-11-02): Clustering's run (`ClusteringView.on_metadata_loaded:565` receives the rows and
+  emits them back at `:646` to `ClusteringController.cluster:80`) and Raw Data's baseline band
+  (`RawDataView.py:1113` sends the loaded trace back to `RawDataController.compute_baseline_stats:747`).
+  Neither affects replay. Have the Controller go from load to compute and hand the View only the
+  result. Why the Clustering one was kept: `DECISIONS.md` 2026-10-27.
 - **Plot types are bare strings repeated across View, Controls and Model** ("Heatmap"
   6 times in `MetadataView`) and persisted in saved action parameters; an enum would pin them.
 - **Event Analysis channel ticks do not follow the loader.**
