@@ -21,6 +21,7 @@ what does this edit cost that the diff does not show?*
 - E26 An atomic replace can be refused on Windows; retry it, bounded
 - E29 One value, many readers: map the pipeline from input to outcome at every entry point
 - E30 A grep hit is a line, not a function; read the whole body before saying what it does or what a change would cause
+- E31 A new dependency is checked against the interpreter floor and the existing pins before it goes in
 
 ## E3 · Measure a "no-op" before promoting it, and read the comment as a claim
 
@@ -180,3 +181,23 @@ to be corrected when the user asked whether an empty channel could be committed.
 already recorded three times in that project's corrections log (a behaviour stated from partial reading),
 and recording it did not stop a repeat: the log is read after a mistake, and nothing required reading the
 function before the claim.
+
+## E31 · A new dependency is checked against the interpreter floor and the existing pins before it goes in
+
+Before adding a package, or raising one's pin, read its `requires-python` and its own dependency ranges
+against the project's declared interpreter floor and every existing pin, including the upper bounds a
+binary wheel carries. If it would raise the interpreter floor, move an existing pin, or restrict the
+platforms a wheel exists for, stop and ask with the numbers: which constraint moves, from what to what,
+and who it excludes. A floor that moves without that question is recorded nowhere, and the next session
+inherits it as a requirement. The same check applies to a pin placed in a shared requirements file: a
+docs or tooling package pinned beside the runtime ones raises the floor of everything installed from
+that file.
+
+*Case:* 2026-11-04, a desktop application whose packaging floor read `>=3.12.10`. The figure came from a
+README note, "use 3.12.10 to avoid dependency compatibility issues", that named no dependency; a later
+commit raised `requires-python` to match it, and when the CI runner image moved to one with no 3.12.10
+build, every Linux job was pinned to the older image to keep installing that patch. Measured that day:
+the code needed 3.12.0 (one typing feature in 40 files), every runtime dependency allowed 3.10, and the
+only package needing 3.11 was the docs builder, pinned in the shared requirements file so that the
+whole file refused to install on 3.10 although the application ran there. Three months of an exact
+patch pin, and a CI image pin, rested on a dependency nobody had looked up.

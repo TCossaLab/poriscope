@@ -84,6 +84,7 @@ IDs are unique across the two skills.
 - **E26** An atomic replace can be refused on Windows; retry it, bounded
 - **E29** One value, many readers: map the pipeline from input to outcome at every entry point
 - **E30** A grep hit is a line, not a function; read the whole body before saying what it does or what a change would cause
+- **E31** A new dependency is checked against the interpreter floor and the existing pins before it goes in
 
 ## Verification (V) - [verification.md](verification.md)
 
