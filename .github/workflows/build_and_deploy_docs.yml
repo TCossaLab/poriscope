@@ -23,8 +23,7 @@ concurrency:
 
 jobs:
   deploy:
-    # ubuntu-24.04, not ubuntu-latest: setup-python has no Python 3.12.10 build for Ubuntu 26.04.
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
 
     env:
       QT_QPA_PLATFORM: offscreen
@@ -56,10 +55,10 @@ jobs:
           sudo apt-get install -y libegl1 libgl1 libxkbcommon0
 
       # 3) Python & deps
-      - name: Set up Python 3.12.10
+      - name: Set up Python 3.12
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
         with:
-          python-version: "3.12.10"
+          python-version: "3.12"
 
       - name: Install Python dependencies
         env:

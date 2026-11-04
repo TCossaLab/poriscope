@@ -6,7 +6,7 @@ User Installation
 Prerequisites
 -------------
 
-**Python >=3.12.10**
+**Python >=3.12**
 
    Required version. Check by running::
 

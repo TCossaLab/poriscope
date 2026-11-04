@@ -268,24 +268,31 @@ request: ``git flow feature finish``, ``hotfix finish`` and ``release finish`` a
 locally, so a PR-only gate would never see the path most work actually takes. The
 **CI (Branches)** workflow, which runs the strict pre-commit checks and the full test
 suite, has the same push triggers plus ``feature/*`` and ``bugfix/*``. Since 2.1 it runs
-the suite on **both** ``ubuntu-24.04`` (under Xvfb) and ``windows-latest`` (offscreen):
-Windows is the platform users run, and the platform-conditional code - including the
-wavelet DLL load - takes the other branch there. Lint, auto-fix and the mypy report run on
-the Linux leg only, since their results do not depend on the platform. A second job on the
-same matrix builds the wheel and sdist, checks them with ``twine check --strict``, installs
-the wheel into a fresh virtual environment constrained to ``requirements.txt`` and, from a
-directory outside the checkout, imports the package and loads the wavelet binary the way
-``WaveletFilter`` does - so what a user installs is exercised, not only the editable
-checkout the suite runs against. The release workflow runs only when a ``v*`` tag is
+the suite on four legs, so both ends of the supported range are tested on every push: at
+exactly Python 3.12.0, the floor, with the runtime stack pinned to ``requirements.txt``
+(on ``ubuntu-24.04`` under Xvfb - the only image ``setup-python`` builds 3.12.0 for - and
+on ``windows-latest`` offscreen), and at the newest supported interpreter with the stack
+resolved fresh from the ranges in ``pyproject.toml``, which is what ``pip install
+poriscope`` gives a user (``ubuntu-latest`` and ``windows-latest``). Windows is the
+platform users run, and the platform-conditional code - including the wavelet DLL load -
+takes the other branch there. Lint, auto-fix and the mypy report run on the Linux floor leg
+only, since their results do not depend on the platform. A second job on the same four legs
+builds the wheel and sdist, checks them with ``twine check --strict``, installs the wheel
+into a fresh virtual environment (constrained to ``requirements.txt`` on the floor legs,
+unconstrained on the newest) and, from a directory outside the checkout, imports the
+package and loads the wavelet binary the way ``WaveletFilter`` does - so what a user
+installs is exercised, not only the editable checkout the suite runs against. The release workflow runs only when a ``v*`` tag is
 pushed: it re-runs the suite on the tagged commit, checks the distributions with twine, and
 publishes to PyPI and GitHub only if that passes.
 
 Every action the workflows use is pinned to a commit SHA, with the tag it resolved from in
 a trailing comment, and Dependabot (``.github/dependabot.yml``) opens weekly pull requests
 against ``develop`` to move those pins and the exact dependency pins in
-``requirements.txt``. ``pyproject.toml`` declares compatible-release ranges for installers;
-``requirements.txt`` holds the exact versions CI tests against, and every workflow installs
-with ``-c requirements.txt`` so a run resolves those and nothing newer.
+``requirements.txt``. ``pyproject.toml`` declares the ranges installers get, each starting
+at the version ``requirements.txt`` pins; the pull-request, docs and release workflows and
+the floor legs of branch CI install with ``requirements.txt`` so a run resolves those and
+nothing newer, and only the newest-interpreter legs resolve the ranges fresh. Move a pin
+and its lower bound together.
 
 To run exactly what the docs check runs:
 

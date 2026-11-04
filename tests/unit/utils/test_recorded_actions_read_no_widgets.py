@@ -253,7 +253,9 @@ def findings_for(
 
 
 def _view_class(controller: type) -> Optional[type]:
-    annotation = controller.__dict__.get("__annotations__", {}).get("view")
+    # inspect.get_annotations, not __dict__["__annotations__"]: since 3.14 a class's
+    # annotations are computed on demand and no longer stored in its __dict__.
+    annotation = inspect.get_annotations(controller).get("view")
     if isinstance(annotation, str):
         annotation = sys.modules[controller.__module__].__dict__.get(annotation)
     return annotation if isinstance(annotation, type) else None
