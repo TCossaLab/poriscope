@@ -73,7 +73,7 @@ def test_a_find_that_finds_nothing_is_not_recorded_and_keeps_the_earlier_one(
         ), messages
         assert messages[-1] == (
             f"{FINDER} did not finish channel {channel}, so this run is not saved in "
-            f"the tab's history: restoring the session will not run it"
+            f"the tab's history"
         )
     finally:
         triad.close()

@@ -343,7 +343,7 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
             return
         self.add_text_to_display.emit(
             f"{key} did not finish channel {channel}, so this run is not saved in the "
-            f"tab's history: restoring the session will not run it",
+            f"tab's history",
             self.__class__.__name__,
         )
 

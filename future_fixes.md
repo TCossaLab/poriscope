@@ -50,6 +50,12 @@ Step 10 waits for both tracks.
 
 ### Step 9b - breaking tab designs and the milestone guard (Carolina's track)
 
+- **Editing a plugin leaves history entries recorded with its old settings (2026-11-03).** An edit keeps the
+  plugin's old results on screen while the plugin history keeps only the new settings (`BaseDataPlugin.apply_settings`,
+  `BaseDataPlugin.py:444`), so replaying its entries would use settings they were never run with. Drop the entries
+  naming the edited plugin and the plugins built on it, as deleting one should, and say so on the status panel.
+  Telling the tabs about an edit is a signal change.
+
 - **Metadata's fetch methods annotate channels as `int`; the selection tree passes strings (2026-10-28).**
   `MetadataController`'s `load_metadata_subset`, `_load_raw_metadata_subset`, `_fetch_event_subset`,
   `build_all_points_histogram` and `build_event_overlay` declare `Optional[Dict[str, Optional[List[int]]]]`;
@@ -65,8 +71,7 @@ Step 10 waits for both tracks.
   real `ProteinView`; a Qt widget freed twice at teardown fits, unproven. Not seen in the 30 runs before it, nor in
   a Linux container matching the job (`python:3.12.10-slim-bookworm`, CI's apt packages, `xvfb-run`, 2026-11-03):
   the two files together 40 times, and the whole suite with `-v` and faulthandler twice. If it recurs, rerun with
-  `-v` so the crash names its test. (In that container, as root, `test_database_indexes.py::
-  test_a_database_that_cannot_be_written_still_opens` fails: root ignores the `chmod` that makes the file read-only.)
+  `-v` so the crash names its test.
 
 - **A replay scenario failed once and was not diagnosed (2026-10-26).**
   `test_replay_guard_no_gui.py::test_a_replay_reproduces_what_the_action_produced[EventAnalysisController]`

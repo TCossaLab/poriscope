@@ -117,8 +117,7 @@ def test_a_run_that_did_not_finish_is_not_recorded_and_the_panel_says_so(
 
     assert _history(tab) == []
     assert _panel(tab) == [
-        "A did not finish channel 1, so this run is not saved in the tab's history: "
-        "restoring the session will not run it"
+        "A did not finish channel 1, so this run is not saved in the tab's history"
     ]
 
 

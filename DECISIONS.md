@@ -27,8 +27,8 @@ what the screen and the tab's results depend on now, and the rule has to hold fo
 `additive` or `reset` - with the figure it acts on or, for a result, its plugin and channel parameters.
 `build_kept_history` drops what later entries made irrelevant: an older run of the same result, a view or overlay its
 figure no longer shows, an earlier reset of the same figure, and a view drawn from a result run again later (that view's
-figure is left empty). Nothing of the declaration is saved in an entry. Clustering needs no chain kind: a run records a
-reset first, which ends the old run and its merges.
+figure is left empty). Nothing of the declaration is saved in an entry. Clustering's run and merges are `additive`: a run
+records a reset first, which ends the old run and its merges.
 
 **Rejected.** Saving each entry's key (copies values already in `kwargs`, which can drift apart, and files saved before
 it have none); a default `kind` (a forgotten declaration would keep or drop the wrong entries without a word); keeping
@@ -57,21 +57,6 @@ every per-channel dict generically (could take a lock or cache a running generat
 
 **Revisit** if a contributor fitter's extra per-channel state is lost on a cancel: it needs its own
 `_set_aside_channel`/`_put_back_channel`.
-
----
-
-## 2026-11-03 - Editing a plugin drops the history entries that name it, as deleting it will
-
-**Context.** An edit keeps the plugin's old results on screen while the plugin history keeps only the new settings,
-so a restore would re-run recorded actions with settings the user never ran them with.
-
-**Decision** (Carolina, 2026-11-03), to be built with delete and rename: the entries naming the edited plugin and the
-plugins built on it are dropped, and the status panel says so.
-
-**Rejected.** Keeping and flagging them, or a settings fingerprint per entry (neither can reproduce the old results);
-accepting it (a restore silently differs).
-
-**Revisit** if plugins gain settings that cannot change a result.
 
 ---
 

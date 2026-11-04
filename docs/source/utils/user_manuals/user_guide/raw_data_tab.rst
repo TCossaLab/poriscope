@@ -128,7 +128,7 @@ Step 3: Finding Events
    as they were, and the right-hand panel says so (for example *Ch1: no events found with these
    settings, so there is nothing to plot or write; the channel keeps its earlier 50 events*). No
    events means there is nothing to plot or write, so it never replaces a run that found some.
-   Such a run is not saved in the session either: restoring the session will not run it.
+   Such a run is not saved in the tab's history either.
 
 6. Once events are detected (you will see confirmation in the right-hand panel), **enter the event indices** you wish to inspect.
 
