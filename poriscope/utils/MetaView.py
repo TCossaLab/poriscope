@@ -308,7 +308,7 @@ class MetaView(QWidget, WalkthroughMixin, metaclass=QObjectABCMeta):
     @abstractmethod
     def _reset_actions(self, axis_type: str = "2d") -> None:
         """
-        Clears the figure and reinitializes axes. This will also add a flag to the tab action history if @register_action is being used to keep track of actions. Only actions applied after the most recent call to this function will be recreated if the related file is loaded.
+        Clears the figure and reinitializes axes. Nothing here is recorded: a tab whose resets are part of its action history declares a reset action on its Controller, which asks the View to clear, and a replay or Undo starts from the last recorded reset.
 
         :param axis_type: Either '2d' or '3d' to determine plot projection.
         :type axis_type: str

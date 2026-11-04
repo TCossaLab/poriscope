@@ -50,6 +50,12 @@ Step 10 waits for both tracks.
 
 ### Step 9b - breaking tab designs and the milestone guard (Carolina's track)
 
+- **Editing a plugin leaves history entries recorded with its old settings (2026-11-03).** An edit keeps the
+  plugin's old results on screen while the plugin history keeps only the new settings (`BaseDataPlugin.apply_settings`,
+  `BaseDataPlugin.py:444`), so replaying its entries would use settings they were never run with. Drop the entries
+  naming the edited plugin and the plugins built on it, as deleting one should, and say so on the status panel.
+  Telling the tabs about an edit is a signal change.
+
 - **Metadata's fetch methods annotate channels as `int`; the selection tree passes strings (2026-10-28).**
   `MetadataController`'s `load_metadata_subset`, `_load_raw_metadata_subset`, `_fetch_event_subset`,
   `build_all_points_histogram` and `build_event_overlay` declare `Optional[Dict[str, Optional[List[int]]]]`;
@@ -58,8 +64,14 @@ Step 10 waits for both tracks.
 - **`MetaView.discard_last_tab_action` has no emitter (2026-10-28).** `MetaView.py:75`, wired at
   `MetaController.py:130`; the Metadata roll-back now calls the Controller method directly. Removing it narrows a
   `Meta*` base (breaking): a signal change for approval.
-- **An overlay followed by Plot Events, in a kept history.** Undo after Plot Events pops it and replays from the last reset, so the
-  overlay comes back; decide what a saved configuration keeps of an overlay that Plot Events replaced.
+- **The Ubuntu test job aborted once in native code (2026-11-03).** CI (Branches) run 41721366639 attempt 1 on
+  `a84c70ca`: `free(): invalid pointer`, `Fatal Python error: Aborted`, exit 134, after 954 passing tests; attempt 2
+  on the same commit passed (5,428). The commit changed no runtime code. Test #955 in collection order is the first
+  of `tests/unit/controllers/test_protein_fetch_slots.py`, right after `test_protein_controller.py`, which builds a
+  real `ProteinView`; a Qt widget freed twice at teardown fits, unproven. Not seen in the 30 runs before it, nor in
+  a Linux container matching the job (`python:3.12.10-slim-bookworm`, CI's apt packages, `xvfb-run`, 2026-11-03):
+  the two files together 40 times, and the whole suite with `-v` and faulthandler twice. If it recurs, rerun with
+  `-v` so the crash names its test.
 
 - **A replay scenario failed once and was not diagnosed (2026-10-26).**
   `test_replay_guard_no_gui.py::test_a_replay_reproduces_what_the_action_produced[EventAnalysisController]`

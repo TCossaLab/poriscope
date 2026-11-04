@@ -29,11 +29,34 @@ No need to manually handle cross-plugin communication — :ref:`MetaController` 
 **Action history tracking**
 
 - Built-in support for tracking user actions per tab: decorate a Controller method with
-  ``@register_action("name")`` and each call is recorded as
+  ``@register_action("name", kind=...)`` and each call is recorded as
   ``{"action": name, "args": ..., "kwargs": ...}``, so the method can be renamed or moved
   without breaking a saved history. Name each action once per tab. Only Controller methods are
   recorded and replayed: a decorated View method is neither, so a View asks its Controller
   (as ``MetadataView._reset_actions`` asks for ``MetadataController.reset``)
+- Every recorded action declares its ``kind``, which says what a restored session keeps of it.
+  The declaration lives on the decorator only; nothing of it is saved in the entry:
+
+  - ``result``: a background run of one plugin on one channel, such as Find or Fit. ``key`` names
+    its plugin parameter, then its channel parameter, ``key=("eventfinder", "channel")``; a
+    newer run with the same values replaces an older one. A result is recorded only once its
+    run has **finished**: the click's values are held until ``MetaModel.run_finished`` says the
+    run ended, and the plugin is then asked whether that run finished (``last_run_finished``).
+    A run that was cancelled, failed or found nothing is not recorded, and the status panel
+    says so. The plugin keeps the channel's earlier results then, so an earlier run of that
+    plugin and channel stays in the history
+  - ``view``: a drawing that replaces what its figure showed, such as a trace. The newest per
+    figure is kept. ``depends_on`` names the parameters whose values are the key of the result
+    it draws from, ``depends_on=("eventfinder", "channel")``; a view drawn from a result that was
+    run again later is dropped
+  - ``additive``: a drawing added to its figure, such as an overlay; kept until a later reset or
+    view on that figure
+  - ``reset``: clears its figure, and drops everything earlier on it
+
+  Every kind but ``result`` names its figure, either ``figure="plot"`` or, when a parameter
+  says which, ``figure_from="mode"``. Figure names only need to agree within one tab. A
+  declaration with a wrong field or a name that is not a parameter fails when the module is
+  imported, with a message naming the action
 - Every value is saved under its parameter name in ``kwargs``, defaults included, however the
   call passed it, so a saved file says what each value is. Keep a recorded method's parameters
   nameable: a method with ``*args`` or a positional-only parameter is saved as it was called.

@@ -110,6 +110,12 @@ Step 3: Fit Events
 
    An event fitter reads only the event loader it was built on, so **Fit Events** is refused, with a message on the status panel, when a different loader is selected. Select the loader the fitter was built on, or a fitter built on the selected loader.
 
+.. note::
+
+   A fit that you cancel or that fails leaves the channel's earlier fits as they were, and the
+   right-hand panel says so (for example *Ch1: fitting cancelled; the channel keeps its earlier
+   fits (48/50 good fits)*). Such a fit is not saved in the tab's history either.
+
 6. *(Optional)* Re-enter event indices and **click Plot Events** to view newly fitted entries.
 
 Step 4: Write to Database

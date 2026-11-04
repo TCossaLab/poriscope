@@ -18,6 +18,48 @@ and deleted on 2026-09-27; it too is in git history.
 
 ---
 
+## 2026-11-03 - A restored session keeps what each action's declared kind says it needs
+
+**Context.** A tab's live history keeps every entry, because Undo replays from the last reset. A restore needs only
+what the screen and the tab's results depend on now, and the rule has to hold for a contributor's tab too.
+
+**Decision** (Carolina, 2026-11-02). Every `register_action` declares a required `kind` - `result`, `view`,
+`additive` or `reset` - with the figure it acts on or, for a result, its plugin and channel parameters.
+`build_kept_history` drops what later entries made irrelevant: an older run of the same result, a view or overlay its
+figure no longer shows, an earlier reset of the same figure, and a view drawn from a result run again later (that view's
+figure is left empty). Nothing of the declaration is saved in an entry. Clustering's run and merges are `additive`: a run
+records a reset first, which ends the old run and its merges.
+
+**Rejected.** Saving each entry's key (copies values already in `kwargs`, which can drift apart, and files saved before
+it have none); a default `kind` (a forgotten declaration would keep or drop the wrong entries without a word); keeping
+the overlays a Plot Events replaced (the same screen for two wasted queries).
+
+**Revisit** if a tab gains a figure that a drawing both replaces and adds to, or a result that is not one plugin on one
+channel.
+
+---
+
+## 2026-11-03 - A Find or Fit is recorded when it finishes, and one that does not finish keeps the earlier results
+
+**Context.** A Find or Fit was recorded when it was launched, so a cancelled run stayed in the history and a restore
+would have run it in full. And a run cleared the channel as it started, so a cancelled, failed or empty rerun lost
+the earlier results.
+
+**Decision** (Carolina, 2026-11-02/03). A result is held until `MetaModel.run_finished` says its run ended, and
+recorded only if the plugin's `last_run_finished` says that run finished; otherwise the status panel says it was not
+saved. `MetaEventFinder` and `MetaEventFitter` set a channel's results aside as a run starts and put them back if it
+is cancelled, fails or finds no events, and the status report says what the channel keeps. No events means nothing
+to plot or write, so it never replaces a run that found some.
+
+**Rejected.** Removing the earlier run from the history when a rerun did not finish (right only while the rerun cleared
+the channel); asking whether the channel is finished (after a put-back it is, though the run was not); setting aside
+every per-channel dict generically (could take a lock or cache a running generator uses).
+
+**Revisit** if a contributor fitter's extra per-channel state is lost on a cancel: it needs its own
+`_set_aside_channel`/`_put_back_channel`.
+
+---
+
 ## 2026-11-02 - The Ubuntu CI jobs are pinned to ubuntu-24.04, and keep Python 3.12.10
 
 **Context.** `ubuntu-latest` moved to Ubuntu 26.04, for which `actions/setup-python` has no 3.12.10 build, so every

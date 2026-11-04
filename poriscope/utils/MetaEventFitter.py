@@ -51,6 +51,17 @@ from poriscope.utils.SerializeDecorator import serialize_channels
 
 Numeric = Union[int, float, np.number]
 
+#: The per-channel results a fit replaces, set aside when it starts.
+_FITTER_RESULTS = (
+    "event_metadata",
+    "sublevel_metadata",
+    "sublevel_starts",
+    "event_lengths",
+    "eventfitting_status",
+    "rejected",
+    "applied_filters",
+)
+
 
 @inherit_docstrings
 class MetaEventFitter(BaseDataPlugin):
@@ -87,6 +98,8 @@ class MetaEventFitter(BaseDataPlugin):
         self.event_lengths: Dict[int, Dict[int, int]] = {}
         self.eventfitting_status: Dict[int, bool] = {}
         self.rejected: Dict[int, Dict[str, int]] = {}
+        #: how each channel's last fit ended: ``finished``, ``cancelled`` or ``failed``
+        self.last_run: Dict[int, str] = {}
         self.applied_filters: Dict[
             int, Optional[Callable[[npt.NDArray[np.float64]], npt.NDArray[np.float64]]]
         ] = {}
@@ -310,6 +323,16 @@ class MetaEventFitter(BaseDataPlugin):
             if init:
                 return ""
             else:
+                ended = self.last_run.get(channel)
+                if ended in ("cancelled", "failed"):
+                    happened = f"fitting {ended}"
+                    if self.eventfitting_status.get(channel):
+                        return (
+                            f"\nCh{channel}: {happened}; the channel keeps its earlier "
+                            f"fits ({len(self.event_metadata[channel])}/"
+                            f"{self.eventloader.get_num_events(channel)} good fits)"
+                        )
+                    return f"\nCh{channel}: {happened}"
                 if self.eventfitting_status.get(channel):
                     report = f"\nCh{channel}: {len(self.event_metadata[channel])}/{self.eventloader.get_num_events(channel)} good fits\n"
                     if self.rejected.get(channel) is not None:
@@ -352,6 +375,69 @@ class MetaEventFitter(BaseDataPlugin):
         except KeyError:
             pass
         gc.collect()
+
+    @log(logger=logger)
+    def _set_aside_channel(self, channel: int) -> Dict[str, Any]:
+        """
+        **Purpose:** Take a channel's fits off the plugin as a fit starts, so a fit that does not finish can put them back.
+
+        :ref:`MetaEventFitter` already sets aside its own per-channel fits. A fitter that
+        keeps per-channel results of its own - a classification, say - overrides this and
+        ``_put_back_channel`` together.
+
+        .. warning::
+
+            This function implements core functionality required for broader plugin integration into Poriscope. If you do need to override it, you **MUST** call ``super()._set_aside_channel(channel)`` **before** any additional code that you add, add your own results to the dict it returns, and override ``_put_back_channel`` to restore them.
+
+        :param channel: the channel identifier
+        :type channel: int
+        :return: the channel's fits, by attribute name; empty for a channel with none
+        :rtype: Dict[str, Any]
+        """
+        return {
+            name: getattr(self, name).pop(channel)
+            for name in _FITTER_RESULTS
+            if channel in getattr(self, name)
+        }
+
+    @log(logger=logger)
+    def _put_back_channel(self, channel: int, aside: Dict[str, Any]) -> None:
+        """
+        **Purpose:** Replace whatever a fit that did not finish left on a channel with the fits set aside when it started.
+
+        A channel that had no fits when the fit started is left as the fit left it.
+
+        .. warning::
+
+            This function implements core functionality required for broader plugin integration into Poriscope. If you do need to override it, you **MUST** call ``super()._put_back_channel(channel, aside)`` **before** any additional code that you add.
+
+        :param channel: the channel identifier
+        :type channel: int
+        :param aside: what ``_set_aside_channel`` returned for this channel
+        :type aside: Dict[str, Any]
+        """
+        if not aside:
+            return
+        for name in _FITTER_RESULTS:
+            results = getattr(self, name)
+            results.pop(channel, None)
+            if name in aside:
+                results[channel] = aside[name]
+
+    @log(logger=logger)
+    def last_run_finished(self, channel: int) -> bool:
+        """
+        Did the channel's last fit finish, as opposed to being cancelled or failing?
+
+        Not the same question as :py:meth:`get_eventfitting_status`: a fit that did not
+        finish leaves the channel's earlier fits, and those may be finished.
+
+        :param channel: the channel identifier
+        :type channel: int
+        :return: True if the last fit on this channel finished
+        :rtype: bool
+        """
+        return self.last_run.get(channel) == "finished"
 
     @log(logger=logger)
     def get_samplerate(self, channel: int) -> float:
@@ -526,6 +612,11 @@ class MetaEventFitter(BaseDataPlugin):
         An aborted channel is reset, neither post-processed nor marked, and still ends
         at 1.0. A post-processing step that raises leaves the channel unfitted.
 
+        A fit that does not finish - cancelled, or stopped by an exception - keeps the
+        channel's earlier fits: they are set aside when the fit starts
+        and put back when it ends any way but finished. How the fit ended is kept, for
+        :py:meth:`last_run_finished` and the status report.
+
         An event the fitter cannot fit is rejected, never fatal to the channel: a
         ``ValueError`` from a fitter hook is a scientific rejection tallied under its
         message ("Too Few Levels"), any other exception from a hook is a fault in the
@@ -552,260 +643,273 @@ class MetaEventFitter(BaseDataPlugin):
         :yield: the fraction of events fitted, below 1.0 until the channel's post-processing is done, then 1.0; send True to abort
         :ytype: float
         """
-        if self.eventloader is None:
-            raise RuntimeError("Event loader has not been initialized.")
+        aside = self._set_aside_channel(channel)
+        outcome = "failed"
+        try:
+            if self.eventloader is None:
+                raise RuntimeError("Event loader has not been initialized.")
 
-        total_events = self.eventloader.get_num_events(channel)
-        if not indices:
-            indices = list(range(total_events))
-        else:
-            total_events = len(indices)
+            total_events = self.eventloader.get_num_events(channel)
+            if not indices:
+                indices = list(range(total_events))
+            else:
+                total_events = len(indices)
 
-        self.sublevel_starts[channel] = {}
-        self.event_metadata[channel] = {}
-        self.event_lengths[channel] = {}
-        self.sublevel_metadata[channel] = {}
-        self.rejected[channel] = {}
-        self.eventfitting_status[channel] = False
-        samplerate = self.eventloader.get_samplerate(channel)
-        self.applied_filters[channel] = data_filter
+            self.sublevel_starts[channel] = {}
+            self.event_metadata[channel] = {}
+            self.event_lengths[channel] = {}
+            self.sublevel_metadata[channel] = {}
+            self.rejected[channel] = {}
+            self.eventfitting_status[channel] = False
+            samplerate = self.eventloader.get_samplerate(channel)
+            self.applied_filters[channel] = data_filter
 
-        fitted = 0
-        self._pre_process_events(channel)
+            fitted = 0
+            self._pre_process_events(channel)
 
-        abort = False
-        for index in indices:
-            self.event_metadata[channel][index] = {}
-            self.sublevel_metadata[channel][index] = {}
+            abort = False
+            for index in indices:
+                self.event_metadata[channel][index] = {}
+                self.sublevel_metadata[channel][index] = {}
 
-            event_id = index
+                event_id = index
 
-            self.event_metadata[channel][index]["channel_id"] = channel
-            self.event_metadata[channel][index]["event_id"] = event_id
+                self.event_metadata[channel][index]["channel_id"] = channel
+                self.event_metadata[channel][index]["event_id"] = event_id
 
-            try:
-                event = self.eventloader.load_event(channel, index, data_filter)
-            except IndexError:
-                self.event_metadata[channel].pop(index)
-                self.sublevel_metadata[channel].pop(index)
-                total_events -= 1
-                continue
-            data = event["data"]
-            absolute_start_raw = event.get("absolute_start")
-            if not isinstance(absolute_start_raw, (int, float)):
-                raise ValueError("absolute_start must be numeric")
-            absolute_start = float(absolute_start_raw)
-            raw_padding_before = event.get("padding_before")
-            raw_padding_after = event.get("padding_after")
+                try:
+                    event = self.eventloader.load_event(channel, index, data_filter)
+                except IndexError:
+                    self.event_metadata[channel].pop(index)
+                    self.sublevel_metadata[channel].pop(index)
+                    total_events -= 1
+                    continue
+                data = event["data"]
+                absolute_start_raw = event.get("absolute_start")
+                if not isinstance(absolute_start_raw, (int, float)):
+                    raise ValueError("absolute_start must be numeric")
+                absolute_start = float(absolute_start_raw)
+                raw_padding_before = event.get("padding_before")
+                raw_padding_after = event.get("padding_after")
 
-            padding_before: Optional[int] = None
-            padding_after: Optional[int] = None
+                padding_before: Optional[int] = None
+                padding_after: Optional[int] = None
 
-            if raw_padding_before is not None:
-                if isinstance(raw_padding_before, int):
-                    padding_before = raw_padding_before
-                elif isinstance(raw_padding_before, float):
-                    padding_before = int(raw_padding_before)
-                else:
-                    raise TypeError("padding_before must be int, float, or None")
+                if raw_padding_before is not None:
+                    if isinstance(raw_padding_before, int):
+                        padding_before = raw_padding_before
+                    elif isinstance(raw_padding_before, float):
+                        padding_before = int(raw_padding_before)
+                    else:
+                        raise TypeError("padding_before must be int, float, or None")
 
-            if raw_padding_after is not None:
-                if isinstance(raw_padding_after, int):
-                    padding_after = raw_padding_after
-                elif isinstance(raw_padding_after, float):
-                    padding_after = int(raw_padding_after)
-                else:
-                    raise TypeError("padding_after must be int, float, or None")
+                if raw_padding_after is not None:
+                    if isinstance(raw_padding_after, int):
+                        padding_after = raw_padding_after
+                    elif isinstance(raw_padding_after, float):
+                        padding_after = int(raw_padding_after)
+                    else:
+                        raise TypeError("padding_after must be int, float, or None")
 
-            baseline_mean = event.get("baseline_mean")
-            baseline_std = event.get("baseline_std")
+                baseline_mean = event.get("baseline_mean")
+                baseline_std = event.get("baseline_std")
 
-            if not hasattr(data, "__len__"):
-                raise TypeError("Event data must be sized")
-            # One NaN or infinity poisons every statistic a fitter computes from the event,
-            # so it would otherwise be rejected for an unrelated reason or fitted into nonsense.
-            if not np.all(np.isfinite(data)):
-                self._reject_event(
-                    channel,
-                    index,
-                    "Non-finite Data",
-                    f"Event {event_id} in channel {channel} contains NaN or infinite samples and will be skipped",
-                )
-                total_events -= 1
-                continue
-            self.event_lengths[channel][index] = len(data)
-
-            self.event_metadata[channel][index]["start_time"] = (
-                absolute_start / samplerate
-            )
-
-            # find the changepoints in the event between sublevels, whatever that means
-            try:
-                sublevel_starts = self._locate_sublevel_transitions(
-                    data,
-                    samplerate,
-                    padding_before,
-                    padding_after,
-                    baseline_mean,
-                    baseline_std,
-                )
-
-            except ValueError as e:
-                self._reject_event(
-                    channel,
-                    index,
-                    str(e),
-                    f"Event {index} in channel {channel} was rejected from fitting: {e}",
-                )
-                total_events -= 1
-                continue
-            except Exception as e:
-                self._reject_event(
-                    channel,
-                    index,
-                    f"Plugin Error ({type(e).__name__})",
-                    f"Event {index} in channel {channel}: {type(e).__name__} while locating sublevel transitions: {e}",
-                    level=logging.ERROR,
-                    exc_info=True,
-                )
-                total_events -= 1
-                continue
-
-            if not isinstance(sublevel_starts, Sized) or len(sublevel_starts) == 0:
-                self._reject_event(
-                    channel,
-                    index,
-                    "No Sublevels",
-                    f"Event {index} in channel {channel}: the fitter returned no sublevel boundaries",
-                    level=logging.ERROR,
-                )
-                total_events -= 1
-                continue
-
-            # if isinstance(sublevel_starts[0], int) and sublevel_starts[0] != 0:
-            #    raise ValueError('Sublevels must include the start of the data block as the start of a sublevel') #must start counting at the start of the event, crash if not since things will break downstream otherwise
-
-            # if we do not find baseline + event + baseline for a total of three sublevels, it is not a valid event and should be skipped
-            if len(sublevel_starts) <= 3:
-                self._reject_event(
-                    channel,
-                    index,
-                    "Too Few Levels",
-                    f"Event {event_id} in channel {channel} has fewer than three sublevels and is invalid, it will be skipped",
-                )
-                total_events -= 1
-                continue
-
-            # use the previously discovered change points to generate an arbitrary dict of sublevel metadata
-            self.sublevel_starts[channel][index] = sublevel_starts
-            try:
-                sublevel_metadata = self._populate_sublevel_metadata(
-                    data, samplerate, baseline_mean, baseline_std, sublevel_starts
-                )
-            except ValueError as e:
-                self._reject_event(
-                    channel,
-                    index,
-                    str(e),
-                    f"Event {index} in channel {channel} was rejected while populating sublevel metadata: {e}",
-                )
-                total_events -= 1
-                continue
-            except Exception as e:
-                self._reject_event(
-                    channel,
-                    index,
-                    f"Plugin Error ({type(e).__name__})",
-                    f"Event {index} in channel {channel}: {type(e).__name__} while populating sublevel metadata: {e}",
-                    level=logging.ERROR,
-                    exc_info=True,
-                )
-                total_events -= 1
-                continue
-
-            invalid_sublevel_metadata = False
-            for key, val in sublevel_metadata.items():
-                if len(val) != len(sublevel_starts) - 1:
+                if not hasattr(data, "__len__"):
+                    raise TypeError("Event data must be sized")
+                # One NaN or infinity poisons every statistic a fitter computes from the event,
+                # so it would otherwise be rejected for an unrelated reason or fitted into nonsense.
+                if not np.all(np.isfinite(data)):
                     self._reject_event(
                         channel,
                         index,
-                        "Level Count Mismatch",
-                        f"Event {event_id} has in channel {channel} fewer entries for {key} ({len(val)} than sublevels ({len(sublevel_starts)} and is invalid",
+                        "Non-finite Data",
+                        f"Event {event_id} in channel {channel} contains NaN or infinite samples and will be skipped",
+                    )
+                    total_events -= 1
+                    continue
+                self.event_lengths[channel][index] = len(data)
+
+                self.event_metadata[channel][index]["start_time"] = (
+                    absolute_start / samplerate
+                )
+
+                # find the changepoints in the event between sublevels, whatever that means
+                try:
+                    sublevel_starts = self._locate_sublevel_transitions(
+                        data,
+                        samplerate,
+                        padding_before,
+                        padding_after,
+                        baseline_mean,
+                        baseline_std,
+                    )
+
+                except ValueError as e:
+                    self._reject_event(
+                        channel,
+                        index,
+                        str(e),
+                        f"Event {index} in channel {channel} was rejected from fitting: {e}",
+                    )
+                    total_events -= 1
+                    continue
+                except Exception as e:
+                    self._reject_event(
+                        channel,
+                        index,
+                        f"Plugin Error ({type(e).__name__})",
+                        f"Event {index} in channel {channel}: {type(e).__name__} while locating sublevel transitions: {e}",
+                        level=logging.ERROR,
+                        exc_info=True,
+                    )
+                    total_events -= 1
+                    continue
+
+                if not isinstance(sublevel_starts, Sized) or len(sublevel_starts) == 0:
+                    self._reject_event(
+                        channel,
+                        index,
+                        "No Sublevels",
+                        f"Event {index} in channel {channel}: the fitter returned no sublevel boundaries",
                         level=logging.ERROR,
                     )
-                    invalid_sublevel_metadata = True
-                    break
-                else:
-                    self.sublevel_metadata[channel][index][key] = val
+                    total_events -= 1
+                    continue
 
-            if invalid_sublevel_metadata:
-                total_events -= 1
-                continue
+                # if isinstance(sublevel_starts[0], int) and sublevel_starts[0] != 0:
+                #    raise ValueError('Sublevels must include the start of the data block as the start of a sublevel') #must start counting at the start of the event, crash if not since things will break downstream otherwise
 
-            self.sublevel_metadata[channel][index]["event_id"] = np.array(
-                [event_id] * (len(sublevel_starts) - 1), dtype=np.int64
-            )
-            self.sublevel_metadata[channel][index]["channel_id"] = np.array(
-                [channel] * (len(sublevel_starts) - 1), dtype=np.int64
-            )
-            self.sublevel_metadata[channel][index]["level_id"] = np.array(
-                range(len(sublevel_starts) - 1), dtype=np.int64
-            )
-            self.sublevel_metadata[channel][index]["levels_left"] = (
-                self.sublevel_metadata[channel][index]["level_id"][::-1]
-            )
+                # if we do not find baseline + event + baseline for a total of three sublevels, it is not a valid event and should be skipped
+                if len(sublevel_starts) <= 3:
+                    self._reject_event(
+                        channel,
+                        index,
+                        "Too Few Levels",
+                        f"Event {event_id} in channel {channel} has fewer than three sublevels and is invalid, it will be skipped",
+                    )
+                    total_events -= 1
+                    continue
 
-            if "sublevel_duration" not in self.sublevel_metadata[channel][index].keys():
-                raise KeyError(
-                    "Event fitters must define and poopulate sublevel_duration column in the sublevels table. The first entry must correspond to the padding before, and the last entry to the padding after the event"
+                # use the previously discovered change points to generate an arbitrary dict of sublevel metadata
+                self.sublevel_starts[channel][index] = sublevel_starts
+                try:
+                    sublevel_metadata = self._populate_sublevel_metadata(
+                        data, samplerate, baseline_mean, baseline_std, sublevel_starts
+                    )
+                except ValueError as e:
+                    self._reject_event(
+                        channel,
+                        index,
+                        str(e),
+                        f"Event {index} in channel {channel} was rejected while populating sublevel metadata: {e}",
+                    )
+                    total_events -= 1
+                    continue
+                except Exception as e:
+                    self._reject_event(
+                        channel,
+                        index,
+                        f"Plugin Error ({type(e).__name__})",
+                        f"Event {index} in channel {channel}: {type(e).__name__} while populating sublevel metadata: {e}",
+                        level=logging.ERROR,
+                        exc_info=True,
+                    )
+                    total_events -= 1
+                    continue
+
+                invalid_sublevel_metadata = False
+                for key, val in sublevel_metadata.items():
+                    if len(val) != len(sublevel_starts) - 1:
+                        self._reject_event(
+                            channel,
+                            index,
+                            "Level Count Mismatch",
+                            f"Event {event_id} has in channel {channel} fewer entries for {key} ({len(val)} than sublevels ({len(sublevel_starts)} and is invalid",
+                            level=logging.ERROR,
+                        )
+                        invalid_sublevel_metadata = True
+                        break
+                    else:
+                        self.sublevel_metadata[channel][index][key] = val
+
+                if invalid_sublevel_metadata:
+                    total_events -= 1
+                    continue
+
+                self.sublevel_metadata[channel][index]["event_id"] = np.array(
+                    [event_id] * (len(sublevel_starts) - 1), dtype=np.int64
+                )
+                self.sublevel_metadata[channel][index]["channel_id"] = np.array(
+                    [channel] * (len(sublevel_starts) - 1), dtype=np.int64
+                )
+                self.sublevel_metadata[channel][index]["level_id"] = np.array(
+                    range(len(sublevel_starts) - 1), dtype=np.int64
+                )
+                self.sublevel_metadata[channel][index]["levels_left"] = (
+                    self.sublevel_metadata[channel][index]["level_id"][::-1]
                 )
 
-            # use the sublevel metadata to finalize event-level metadata
-            try:
-                event_metadata = self._populate_event_metadata(
-                    data, samplerate, baseline_mean, baseline_std, sublevel_metadata
-                )
-            except ValueError as e:
-                self._reject_event(
-                    channel,
-                    index,
-                    str(e),
-                    f"Event {index} in channel {channel} was rejected while populating event metadata: {e}",
-                )
-                total_events -= 1
-                continue
-            except Exception as e:
-                self._reject_event(
-                    channel,
-                    index,
-                    f"Plugin Error ({type(e).__name__})",
-                    f"Event {index} in channel {channel}: {type(e).__name__} while populating event metadata: {e}",
-                    level=logging.ERROR,
-                    exc_info=True,
-                )
-                total_events -= 1
-                continue
+                if (
+                    "sublevel_duration"
+                    not in self.sublevel_metadata[channel][index].keys()
+                ):
+                    raise KeyError(
+                        "Event fitters must define and poopulate sublevel_duration column in the sublevels table. The first entry must correspond to the padding before, and the last entry to the padding after the event"
+                    )
 
-            self.event_metadata[channel][index]["num_sublevels"] = (
-                len(sublevel_starts) - 1
-            )
-            for key, val in event_metadata.items():
-                self.event_metadata[channel][index][key] = val
+                # use the sublevel metadata to finalize event-level metadata
+                try:
+                    event_metadata = self._populate_event_metadata(
+                        data, samplerate, baseline_mean, baseline_std, sublevel_metadata
+                    )
+                except ValueError as e:
+                    self._reject_event(
+                        channel,
+                        index,
+                        str(e),
+                        f"Event {index} in channel {channel} was rejected while populating event metadata: {e}",
+                    )
+                    total_events -= 1
+                    continue
+                except Exception as e:
+                    self._reject_event(
+                        channel,
+                        index,
+                        f"Plugin Error ({type(e).__name__})",
+                        f"Event {index} in channel {channel}: {type(e).__name__} while populating event metadata: {e}",
+                        level=logging.ERROR,
+                        exc_info=True,
+                    )
+                    total_events -= 1
+                    continue
 
-            # yield progress at each iteration, short of 1.0: completion is reported
-            # only once the channel's post-processing is done and it is marked fitted
-            if not silent:
-                fitted += 1
-                response = yield fitted / (total_events + 1)
-                abort = bool(response) if response is not None else False
-                if abort is True:
-                    break
-        if abort is True:
-            self.reset_channel(channel)
-        else:
+                self.event_metadata[channel][index]["num_sublevels"] = (
+                    len(sublevel_starts) - 1
+                )
+                for key, val in event_metadata.items():
+                    self.event_metadata[channel][index][key] = val
+
+                # yield progress at each iteration, short of 1.0: completion is reported
+                # only once the channel's post-processing is done and it is marked fitted
+                if not silent:
+                    fitted += 1
+                    response = yield fitted / (total_events + 1)
+                    abort = bool(response) if response is not None else False
+                    if abort is True:
+                        break
+            if abort is True:
+                self.reset_channel(channel)
+                outcome = "cancelled"
+                yield 1.0
+                return
             self._post_process_events(channel)
             self.eventfitting_status[channel] = True
-        yield 1.0
+            outcome = "finished"
+            yield 1.0
+        finally:
+            self.last_run[channel] = outcome
+            if outcome != "finished":
+                self._put_back_channel(channel, aside)
 
     @log(logger=logger)
     def get_event_metadata_generator(self, channel: int) -> Generator[

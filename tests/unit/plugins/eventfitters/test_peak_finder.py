@@ -4258,3 +4258,53 @@ def test_two_channels_fitted_together_each_get_their_own_report(tmp_path):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_a_cancelled_refit_keeps_the_channels_fits_and_classification(tmp_path):
+    """A refit cleared the channel's classification; a cancel must put it back with the fits."""
+    database = generate_events_database(
+        tmp_path / "events.sqlite3",
+        channel_id=EVENTS_CHANNEL,
+        num_events=EVENTS_COUNT,
+        samplerate=EVENTS_SAMPLERATE_HZ,
+        baseline_mean_pA=BASELINE_PA,
+        baseline_std_pA=NOISE_STD_PA,
+        event_amplitude_pA=EVENT_AMPLITUDE_PA,
+        sublevel_dip_pA=PEAKFINDER_DIP_PA,
+        sublevel_dip_width_samples=PEAKFINDER_DIP_WIDTH_SAMPLES,
+    )
+    loader = build_event_loader(str(database.db_path))
+    try:
+        fitter = build_event_fitter(PeakFinder, loader)
+        for _ in fitter.fit_events(EVENTS_CHANNEL):
+            pass
+        names = (
+            "event_metadata",
+            "sublevel_metadata",
+            "_classification_results",
+            "_peak_statistics",
+            "_peak_prominence_classification_results",
+            "_translocation_direction_results",
+            "_bound_star_results",
+        )
+        earlier = {
+            name: repr(getattr(fitter, name).get(EVENTS_CHANNEL)) for name in names
+        }
+        assert fitter._classification_results.get(EVENTS_CHANNEL)
+
+        refit = fitter.fit_events(EVENTS_CHANNEL)
+        next(refit)
+        assert refit.send(True) == 1.0
+        for _ in refit:
+            pass
+
+        assert {
+            name: repr(getattr(fitter, name).get(EVENTS_CHANNEL)) for name in names
+        } == earlier
+        assert fitter.get_eventfitting_status(EVENTS_CHANNEL) is True
+        assert not fitter.last_run_finished(EVENTS_CHANNEL)
+        assert "fitting cancelled; the channel keeps its earlier fits" in (
+            fitter.report_status(EVENTS_CHANNEL)
+        )
+    finally:
+        loader.close_resources()

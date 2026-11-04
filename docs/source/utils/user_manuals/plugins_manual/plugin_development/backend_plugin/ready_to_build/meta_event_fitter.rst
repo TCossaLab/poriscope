@@ -69,5 +69,16 @@ Methods in this section have an implementation in either :ref:`BaseDataPlugin` o
 .. automethod:: poriscope.utils.MetaEventFitter.MetaEventFitter.reset_channel
    :no-index:
 
+A fit that does not finish - cancelled, or stopped by an exception - keeps the channel's earlier
+fits: ``fit_events`` sets them aside when the fit starts and puts them back when it ends any way
+but finished. A fitter that keeps per-channel results of its own overrides both methods below,
+calling ``super()`` first, as ``PeakFinder`` does for its classification.
+
+.. automethod:: poriscope.utils.MetaEventFitter.MetaEventFitter._set_aside_channel
+   :no-index:
+
+.. automethod:: poriscope.utils.MetaEventFitter.MetaEventFitter._put_back_channel
+   :no-index:
+
 .. automethod:: poriscope.utils.MetaEventFitter.MetaEventFitter.get_plot_features
    :no-index:

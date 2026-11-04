@@ -190,7 +190,7 @@ class MetadataController(MetaSubsetTabController):
         self.view.reset_requested.connect(self.reset)
 
     @log(logger=logger)
-    @register_action(RESET_ACTION)
+    @register_action(RESET_ACTION, kind="reset", figure="plot")
     def reset(self, axis_type: str = "2d") -> None:
         """
         Clear the figure and forget what it held.
@@ -271,7 +271,7 @@ class MetadataController(MetaSubsetTabController):
                 self.update_tab_actions(None, True)
 
     @log(logger=logger)
-    @register_action("overlay_plot")
+    @register_action("overlay_plot", kind="additive", figure="plot")
     def overlay_plot(
         self,
         loader: str,
@@ -759,7 +759,7 @@ class MetadataController(MetaSubsetTabController):
         return options_changed
 
     @log(logger=logger)
-    @register_action("plot_events", skip_on_false=True)
+    @register_action("plot_events", kind="view", figure="plot", skip_on_false=True)
     def plot_events(
         self,
         loader: str,

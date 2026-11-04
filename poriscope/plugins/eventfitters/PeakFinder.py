@@ -82,6 +82,17 @@ class _ClassificationWarningCollector(logging.Handler):
             self.records.append(self.format(record))
 
 
+#: PeakFinder's per-channel classification state, cleared and set aside with its fits.
+_CLASSIFICATION_RESULTS = (
+    "_classification_results",
+    "_peak_statistics",
+    "_peak_prominence_classification_results",
+    "_translocation_direction_results",
+    "_bound_star_results",
+    "_classification_warnings",
+)
+
+
 @inherit_docstrings
 class PeakFinder(MetaEventFitter):
     """
@@ -913,12 +924,43 @@ class PeakFinder(MetaEventFitter):
         :type channel: int
         """
         super().reset_channel(channel)
-        self._classification_results.pop(channel, None)
-        self._peak_statistics.pop(channel, None)
-        self._peak_prominence_classification_results.pop(channel, None)
-        self._translocation_direction_results.pop(channel, None)
-        self._bound_star_results.pop(channel, None)
-        self._classification_warnings.pop(channel, None)
+        for name in _CLASSIFICATION_RESULTS:
+            getattr(self, name).pop(channel, None)
+
+    @log(logger=logger)
+    def _set_aside_channel(self, channel: int) -> Dict[str, Any]:
+        """
+        Set aside one channel's fits and its classification results, statistics and warnings.
+
+        :param channel: the channel identifier
+        :type channel: int
+        :return: the channel's fits and classification, by attribute name
+        :rtype: Dict[str, Any]
+        """
+        aside = super()._set_aside_channel(channel)
+        for name in _CLASSIFICATION_RESULTS:
+            if channel in getattr(self, name):
+                aside[name] = getattr(self, name).pop(channel)
+        return aside
+
+    @log(logger=logger)
+    def _put_back_channel(self, channel: int, aside: Dict[str, Any]) -> None:
+        """
+        Put back one channel's fits and its classification, as they were before a fit that did not finish.
+
+        :param channel: the channel identifier
+        :type channel: int
+        :param aside: what ``_set_aside_channel`` returned for this channel
+        :type aside: Dict[str, Any]
+        """
+        super()._put_back_channel(channel, aside)
+        if not aside:
+            return
+        for name in _CLASSIFICATION_RESULTS:
+            results = getattr(self, name)
+            results.pop(channel, None)
+            if name in aside:
+                results[channel] = aside[name]
 
     @log(logger=logger)
     def redefine_padding(

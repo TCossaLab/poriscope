@@ -17,8 +17,19 @@ from unittest.mock import MagicMock
 import pytest
 from pytest_mock import MockerFixture
 
-from poriscope.utils.LogDecorator import RESET_ACTION, register_action
-from poriscope.utils.MetaController import MetaController
+from poriscope.plugins.analysistabs.ClusteringController import ClusteringController
+from poriscope.plugins.analysistabs.EventAnalysisController import (
+    EventAnalysisController,
+)
+from poriscope.plugins.analysistabs.MetadataController import MetadataController
+from poriscope.plugins.analysistabs.ProteinController import ProteinController
+from poriscope.plugins.analysistabs.RawDataController import RawDataController
+from poriscope.utils.LogDecorator import (
+    RESET_ACTION,
+    ActionDeclaration,
+    register_action,
+)
+from poriscope.utils.MetaController import MetaController, declarations_of
 from poriscope.utils.MetaView import MetaView
 from poriscope.utils.ReplayGuard import ReplayWidgetReadError, forbid_while_replaying
 
@@ -29,7 +40,7 @@ class _View:
     def __init__(self) -> None:
         self.calls: List[str] = []
 
-    @register_action("view_plot")
+    @register_action("view_plot", kind="view", figure="plot")
     def view_plot(self, label: str) -> None:
         self.calls.append(f"view:{label}")
 
@@ -43,15 +54,15 @@ class _Controller(MetaController):
     def _setup_connections(self) -> None:
         pass
 
-    @register_action("start_run")
+    @register_action("start_run", kind="view", figure="plot")
     def start_run(self, name: str, repeats: int = 1) -> None:
         self.runs.append((name, repeats))
 
-    @register_action(RESET_ACTION)
+    @register_action(RESET_ACTION, kind="reset", figure="plot")
     def reset(self, axis_type: str = "2d") -> None:
         self.calls.append(f"reset:{axis_type}")
 
-    @register_action("overlay_plot")
+    @register_action("overlay_plot", kind="view", figure="plot")
     def overlay_plot(self, label: str) -> None:
         self.calls.append(f"overlay:{label}")
 
@@ -151,7 +162,7 @@ class TestRegistry:
         self, mocker: MockerFixture
     ) -> None:
         class _Clashing(_Controller):
-            @register_action("start_run")
+            @register_action("start_run", kind="view", figure="plot")
             def also_start_run(self) -> None:
                 pass
 
@@ -164,7 +175,7 @@ class TestRegistry:
         self, mocker: MockerFixture
     ) -> None:
         class _Overriding(_Controller):
-            @register_action("overlay_plot")
+            @register_action("overlay_plot", kind="view", figure="plot")
             def overlay_plot(self, label: str) -> None:
                 self.calls.append(f"override:{label}")
 
@@ -392,7 +403,7 @@ class TestReplayRunsInsideTheTripwire:
         self, mocker: MockerFixture
     ) -> None:
         class _Leaky(_Controller):
-            @register_action("leaky")
+            @register_action("leaky", kind="view", figure="plot")
             def leaky(self) -> None:
                 forbid_while_replaying("a widget read")
 
@@ -405,7 +416,7 @@ class TestReplayRunsInsideTheTripwire:
         self, mocker: MockerFixture
     ) -> None:
         class _Leaky(_Controller):
-            @register_action("leaky")
+            @register_action("leaky", kind="view", figure="plot")
             def leaky(self) -> None:
                 forbid_while_replaying("a widget read")
 
@@ -420,3 +431,75 @@ class TestReplayRunsInsideTheTripwire:
         controller.replay([_entry("start_run", "a")])
 
         forbid_while_replaying("after the replay")
+
+
+def _view(name: str, figure: str, *depends_on: str) -> ActionDeclaration:
+    return ActionDeclaration(name, "view", figure=figure, depends_on=depends_on)
+
+
+def _additive(name: str, figure: str) -> ActionDeclaration:
+    return ActionDeclaration(name, "additive", figure=figure)
+
+
+@pytest.mark.parametrize(
+    "controller_class, expected",
+    [
+        (
+            RawDataController,
+            [
+                ActionDeclaration(
+                    "find_events", "result", key=("eventfinder", "channel")
+                ),
+                _view("update_trace", "plot"),
+                _view("update_psd", "plot"),
+                _view("plot_events", "plot", "eventfinder", "channel"),
+            ],
+        ),
+        (
+            EventAnalysisController,
+            [
+                ActionDeclaration(
+                    "fit_events", "result", key=("eventfitter", "channel")
+                ),
+                _view("plot_events", "plot", "eventfitter", "channel"),
+            ],
+        ),
+        (
+            ClusteringController,
+            [
+                ActionDeclaration(RESET_ACTION, "reset", figure="clusters"),
+                _additive("cluster_run", "clusters"),
+                _additive("merge_clusters", "clusters"),
+            ],
+        ),
+        (
+            MetadataController,
+            [
+                ActionDeclaration(RESET_ACTION, "reset", figure="plot"),
+                _additive("overlay_plot", "plot"),
+                _view("plot_events", "plot"),
+            ],
+        ),
+        (
+            ProteinController,
+            [
+                ActionDeclaration(RESET_ACTION, "reset", figure_from="mode"),
+                _additive("update_individual_distribution", "individual"),
+                _additive("update_ensemble_distribution", "ensemble"),
+                _view("plot_events", "events"),
+                _view("plot_event_histograms", "events"),
+            ],
+        ),
+    ],
+    ids=lambda value: value.__name__ if isinstance(value, type) else "",
+)
+def test_each_tab_declares_what_a_restore_keeps_of_its_actions(
+    controller_class: type, expected: List[ActionDeclaration]
+) -> None:
+    """
+    A result is replaced per plugin and channel and a view per figure; the drawings a
+    reset clears share its figure, and Protein's reset names the mode's figure.
+    """
+    assert declarations_of(controller_class) == {
+        declaration.name: declaration for declaration in expected
+    }

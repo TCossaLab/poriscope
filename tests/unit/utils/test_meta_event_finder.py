@@ -1,5 +1,6 @@
 """Unit tests for MetaEventFinder abstract base class."""
 
+import copy
 import logging
 from typing import Dict, List, Optional, Tuple
 from unittest.mock import patch
@@ -1626,3 +1627,147 @@ class TestGaussianFitGolden:
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+# ---------------------------------------------------------------------------
+# A run that does not finish keeps the channel's earlier results
+# ---------------------------------------------------------------------------
+
+
+def _run(finder, ranges, cancel=False):
+    # One 10 s chunk finds both planted events; a cancel needs a progress step first.
+    gen = finder.find_events(0, ranges, chunk_length=1.0 if cancel else 10.0)
+    if not cancel:
+        return list(gen)
+    next(gen)
+    try:
+        gen.send(True)
+    except StopIteration:
+        pass
+    return None
+
+
+def _results(finder):
+    return {
+        name: copy.deepcopy(getattr(finder, name).get(0))
+        for name in (
+            "num_events_found",
+            "event_starts",
+            "event_ends",
+            "padding_before",
+            "padding_after",
+            "baseline_means",
+            "baseline_stds",
+            "eventfinding_finished",
+        )
+    }
+
+
+class TestARunThatDoesNotFinishKeepsTheEarlierResults:
+    def test_a_finished_run_replaces_the_earlier_one(self, finder):
+        _run(finder, [(0, 0)])
+        assert finder.num_events_found[0] == 2
+
+        _run(finder, [(0, 4.0)])
+
+        assert finder.num_events_found[0] == 1
+        assert finder.last_run_finished(0)
+        assert "Found 1 events" in finder.report_status(0)
+
+    def test_a_cancelled_rerun_keeps_the_earlier_events(self, finder):
+        _run(finder, [(0, 0)])
+        earlier = _results(finder)
+
+        _run(finder, [(0, 4.0)], cancel=True)
+
+        assert _results(finder) == earlier
+        assert finder.get_eventfinding_status(0)
+        assert not finder.last_run_finished(0)
+        assert finder.report_status(0) == (
+            "\nCh0: event finding cancelled; the channel keeps its earlier 2 events"
+        )
+
+    def test_a_rerun_with_no_events_keeps_the_earlier_events(self, finder):
+        _run(finder, [(0, 0)])
+        earlier = _results(finder)
+        finder._threshold_in_pa = lambda std: 1_000.0
+
+        _run(finder, [(0, 0)])
+
+        assert _results(finder) == earlier
+        assert not finder.last_run_finished(0)
+        assert finder.report_status(0) == (
+            "\nCh0: no events found with these settings, so there is nothing to plot "
+            "or write; the channel keeps its earlier 2 events"
+        )
+
+    def test_a_rerun_that_raises_keeps_the_earlier_events(self, finder):
+        _run(finder, [(0, 0)])
+        earlier = _results(finder)
+
+        with patch.object(
+            finder, "_find_events_single_range", side_effect=RuntimeError("boom")
+        ):
+            with pytest.raises(RuntimeError, match="boom"):
+                _run(finder, [(0, 0)])
+
+        assert _results(finder) == earlier
+        assert finder.report_status(0) == (
+            "\nCh0: event finding failed; the channel keeps its earlier 2 events"
+        )
+
+    def test_a_rerun_closed_part_way_keeps_the_earlier_events(self, finder):
+        _run(finder, [(0, 0)])
+        earlier = _results(finder)
+
+        gen = finder.find_events(0, [(0, 0)], chunk_length=1.0)
+        next(gen)
+        gen.close()
+
+        assert _results(finder) == earlier
+        assert finder.last_run[0] == "failed"
+
+    @pytest.mark.parametrize(
+        "cancel, expected",
+        [(True, "\nCh0: event finding cancelled"), (False, None)],
+    )
+    def test_a_first_run_that_does_not_finish_leaves_the_channel_cleared(
+        self, finder, cancel, expected
+    ):
+        if not cancel:
+            finder._threshold_in_pa = lambda std: 1_000.0
+            expected = (
+                "\nCh0: no events found with these settings, so there is nothing to "
+                "plot or write"
+            )
+
+        _run(finder, [(0, 0)], cancel=cancel)
+
+        assert finder.eventfinding_finished[0] is False
+        assert finder.event_starts[0] == []
+        assert not finder.last_run_finished(0)
+        assert finder.report_status(0) == expected
+
+    def test_a_run_closed_at_its_final_progress_counts_as_finished(self, finder):
+        _run(finder, [(0, 0)])
+
+        # A range's own progress reaches 1.0 before the run's last step, so stop at the
+        # step that marks the channel finished instead.
+        gen = finder.find_events(0, [(0, 4.0)], chunk_length=10.0)
+        for _progress in gen:
+            if finder.eventfinding_finished.get(0):
+                break
+        gen.close()
+
+        assert finder.num_events_found[0] == 1
+        assert finder.last_run_finished(0)
+
+    def test_the_other_channel_is_left_alone(self, finder):
+        _run(finder, [(0, 0)])
+        list(finder.find_events(1, [(0, 0)], chunk_length=10.0))
+        other = copy.deepcopy(finder.event_starts[1])
+
+        _run(finder, [(0, 0)], cancel=True)
+
+        assert finder.event_starts[1] == other
+        assert finder.last_run_finished(1)

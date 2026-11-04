@@ -16,6 +16,9 @@ helper that reads a controls panel fails here as an error, not as a quiet differ
 
 Every declared action must be covered: a test lists the actions each tab declares and fails for
 one no scenario records, so an action added without a fixture cannot land.
+
+The same scenarios replay the kept history too - what a restored session replays - and it must
+draw what the whole history drew.
 """
 
 import copy
@@ -28,6 +31,8 @@ import pandas as pd
 import pytest
 
 from poriscope.plugins.db_loaders.SQLiteDBLoader import SQLiteDBLoader
+from poriscope.utils.kept_history import build_kept_history
+from poriscope.utils.MetaController import declarations_of
 from tests.integration.flows._triad import (
     Triad,
     build_clustering_tab,
@@ -542,10 +547,17 @@ def cluster_labels(triad: Triad) -> Any:
 
 
 def settle(triad: Triad, qtbot: Any) -> None:
-    """Wait until no background run of this tab is left."""
-    model = triad.tab_controller.model
+    """
+    Wait until no background run of this tab is left, and every finished one is recorded.
+
+    A run is recorded after its worker is discarded, from a queued signal, so an empty
+    worker list alone can come before the entry lands.
+    """
+    controller = triad.tab_controller
+    model = controller.model
     qtbot.waitUntil(
-        lambda: not any(model.workers.get(key) for key in list(model.workers)),
+        lambda: not any(model.workers.get(key) for key in list(model.workers))
+        and not controller._held_results,
         timeout=120_000,
     )
 
@@ -683,7 +695,7 @@ SCENARIOS = [
 
 
 def run_scenario(
-    scenario: Scenario, tmp_path: Path, data: Any, qtbot: Any
+    scenario: Scenario, tmp_path: Path, data: Any, qtbot: Any, kept: bool = False
 ) -> Tuple[Any, Any, List[Any]]:
     """
     Record in tab A, replay into a perturbed tab B, and return both captures and A's history.
@@ -696,6 +708,8 @@ def run_scenario(
     :type data: Any
     :param qtbot: pytest-qt's fixture, for an action that runs in the background
     :type qtbot: Any
+    :param kept: replay only what a restored session keeps of A's history
+    :type kept: bool
     :return: A's capture, B's capture, and the history recorded in A
     :rtype: Tuple[Any, Any, List[Any]]
     """
@@ -712,16 +726,21 @@ def run_scenario(
             tab_a, spy_a, scenario.extra, scenario.click_only_calls, scenario.probe
         )
         history = copy.deepcopy(list(tab_a.tab_controller.tab_action_history.values()))
+        replayed = (
+            build_kept_history(history, declarations_of(type(tab_a.tab_controller)))
+            if kept
+            else history
+        )
 
         scenario.seed(tab_b)
         scenario.perturb(tab_b)
         spy_b = Spy(tab_b)
         if scenario.wait_between:
-            for entry in history:
+            for entry in replayed:
                 tab_b.tab_controller.replay([entry])
                 settle(tab_b, qtbot)
         else:
-            tab_b.tab_controller.replay(history)
+            tab_b.tab_controller.replay(replayed)
             settle(tab_b, qtbot)
         captured_b = capture(
             tab_b, spy_b, scenario.extra, scenario.click_only_calls, scenario.probe
@@ -753,6 +772,26 @@ def test_a_replay_reproduces_what_the_action_produced(
     assert captured_b["plot_cache"] == captured_a["plot_cache"]
     assert captured_b["figures"] == captured_a["figures"]
     assert captured_b["bookkeeping"] == captured_a["bookkeeping"]
+
+
+@pytest.mark.timeout(240)
+@pytest.mark.parametrize(
+    "scenario", SCENARIOS, ids=[s.name or s.tab for s in SCENARIOS]
+)
+def test_a_replay_of_the_kept_history_draws_what_the_whole_history_drew(
+    qapp, qtbot, request, tmp_path: Path, scenario: Scenario
+) -> None:
+    """
+    The plugin calls are not compared: leaving out what was replaced is the point.
+    """
+    data = request.getfixturevalue(scenario.needs)
+    captured_a, captured_b, _ = run_scenario(scenario, tmp_path, data, qtbot, kept=True)
+
+    assert captured_b["probe"] == captured_a["probe"]
+    assert captured_b["plot_cache"] == captured_a["plot_cache"]
+    assert captured_b["figures"] == captured_a["figures"]
+    assert captured_b["bookkeeping"] == captured_a["bookkeeping"]
+    assert captured_b["overlay"] == captured_a["overlay"]
 
 
 @pytest.mark.timeout(240)

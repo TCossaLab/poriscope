@@ -26,6 +26,7 @@
 import functools
 import inspect
 import logging
+from dataclasses import dataclass
 from typing import (
     Any,
     Callable,
@@ -47,9 +48,34 @@ F = TypeVar("F", bound=Callable[..., Any])
 #: The attribute :py:func:`register_action` sets on a method to carry its declared name.
 ACTION_NAME_ATTR = "_action_name"
 
+#: The attribute :py:func:`register_action` sets on a method to carry its
+#: ``ActionDeclaration``.
+ACTION_DECLARATION_ATTR = "_action_declaration"
+
 #: The declared name of every tab's reset action. Undo finds resets by it, so a tab's
-#: ``_reset_actions`` is declared with this constant rather than a literal.
+#: recorded reset is declared with this constant rather than a literal.
 RESET_ACTION = "reset"
+
+#: What a recorded action is, which decides what a restored session keeps of it:
+#:
+#: - ``result``: a background run of one plugin on one channel (Find, Fit), recorded only
+#:   once the run finished. The newest entry per ``key`` replaces older ones.
+#: - ``view``: a drawing that replaces what its figure showed. The newest per figure is
+#:   kept, and a view drawn from a result that was run again later is dropped.
+#: - ``additive``: a drawing added to what its figure shows (an overlay, a merge). Kept
+#:   until a later reset or view on its figure.
+#: - ``reset``: clears its figure. Drops everything earlier on that figure.
+ACTION_KINDS = ("result", "view", "additive", "reset")
+
+
+@dataclass(frozen=True)
+class ActionDeclaration:
+    name: str
+    kind: str
+    key: Tuple[str, ...] = ()
+    figure: str = ""
+    figure_from: str = ""
+    depends_on: Tuple[str, ...] = ()
 
 
 @overload
@@ -232,9 +258,70 @@ def _arguments_by_name(
     return (), named
 
 
-def register_action(name: str, *, skip_on_false: bool = False) -> Callable[[F], F]:
+def _checked_declaration(
+    declaration: ActionDeclaration, signature: inspect.Signature
+) -> ActionDeclaration:
     """
-    @register_action(name): record each call of the decorated method as a named action that a saved history can replay.
+    Refuse a declaration that a restored session could not act on, naming the action.
+
+    :param declaration: what the decorator was given
+    :type declaration: ActionDeclaration
+    :param signature: the decorated method's own signature
+    :type signature: inspect.Signature
+    :raises ValueError: if the kind is unknown, a field does not fit the kind, or a name is not a parameter of the method
+    :return: the declaration, unchanged
+    :rtype: ActionDeclaration
+    """
+    where = f"@register_action('{declaration.name}')"
+    if declaration.kind not in ACTION_KINDS:
+        raise ValueError(
+            f"{where}: kind must be one of {', '.join(ACTION_KINDS)}, "
+            f"not '{declaration.kind}'"
+        )
+    if declaration.kind == "result":
+        if len(declaration.key) != 2:
+            raise ValueError(
+                f"{where}: a result names its plugin parameter, then its channel "
+                f"parameter, in key"
+            )
+        if declaration.figure or declaration.figure_from or declaration.depends_on:
+            raise ValueError(f"{where}: a result draws on no figure; give only key")
+    else:
+        if declaration.key:
+            raise ValueError(f"{where}: only a result has a key")
+        if bool(declaration.figure) == bool(declaration.figure_from):
+            raise ValueError(
+                f"{where}: a {declaration.kind} names its figure in exactly one of "
+                f"figure and figure_from"
+            )
+        if declaration.depends_on and declaration.kind != "view":
+            raise ValueError(f"{where}: only a view depends on a result")
+    parameters = list(signature.parameters)[1:]
+    named = (
+        declaration.key
+        + declaration.depends_on
+        + ((declaration.figure_from,) if declaration.figure_from else ())
+    )
+    unknown = [parameter for parameter in named if parameter not in parameters]
+    if unknown:
+        raise ValueError(
+            f"{where}: {', '.join(unknown)} is not a parameter of the method"
+        )
+    return declaration
+
+
+def register_action(
+    name: str,
+    *,
+    kind: str,
+    key: Tuple[str, ...] = (),
+    figure: str = "",
+    figure_from: str = "",
+    depends_on: Tuple[str, ...] = (),
+    skip_on_false: bool = False,
+) -> Callable[[F], F]:
+    """
+    @register_action(name, kind=...): record each call of the decorated method as a named action that a saved history can replay.
 
     The entry is ``{"action": name, "args": args, "kwargs": kwargs}``, with every value
     under its parameter name in ``kwargs`` and ``args`` empty, however the call passed
@@ -253,8 +340,24 @@ def register_action(name: str, *, skip_on_false: bool = False) -> Callable[[F], 
     only the latest run of an action, replace a good one. Only a literal ``False``
     counts, so a method that returns ``None`` is recorded either way.
 
+    ``kind`` and the fields after it say what a restored session keeps of the action
+    (see :py:data:`ACTION_KINDS`). They are stored on the wrapper as an
+    ``ActionDeclaration`` under :py:data:`ACTION_DECLARATION_ATTR`, never in the
+    entry, and checked when the class is defined, so a declaration that names a missing
+    parameter fails on import.
+
     :param name: the action's declared name, unique within one tab
     :type name: str
+    :param kind: one of :py:data:`ACTION_KINDS`
+    :type kind: str
+    :param key: for a result, its plugin parameter, then its channel parameter
+    :type key: Tuple[str, ...]
+    :param figure: for any other kind, the figure it acts on, when that is always the same
+    :type figure: str
+    :param figure_from: instead of ``figure``, the parameter whose value names the figure
+    :type figure_from: str
+    :param depends_on: for a view, the parameters whose values are the key of the result it draws from
+    :type depends_on: Tuple[str, ...]
     :param skip_on_false: do not record a call whose method returned ``False``
     :type skip_on_false: bool
     :return: the decorator
@@ -264,6 +367,10 @@ def register_action(name: str, *, skip_on_false: bool = False) -> Callable[[F], 
     # Decorators always nest, because they require a closure.
     def decorator(func: F) -> F:
         signature = inspect.signature(func)
+        declaration = _checked_declaration(
+            ActionDeclaration(name, kind, key, figure, figure_from, depends_on),
+            signature,
+        )
 
         @functools.wraps(func)
         def wrapper(
@@ -286,6 +393,7 @@ def register_action(name: str, *, skip_on_false: bool = False) -> Callable[[F], 
             return result
 
         setattr(wrapper, ACTION_NAME_ATTR, name)
+        setattr(wrapper, ACTION_DECLARATION_ATTR, declaration)
         return cast(F, wrapper)
 
     return decorator

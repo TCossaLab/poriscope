@@ -131,7 +131,7 @@ class ClusteringController(MetaController):
         self.view.set_clustering_result(clustered, labels, confidence)
 
     @log(logger=logger)
-    @register_action(RESET_ACTION)
+    @register_action(RESET_ACTION, kind="reset", figure="clusters")
     def reset(self, axis_type: str = "2d") -> None:
         """
         Clear the figure.
@@ -160,7 +160,9 @@ class ClusteringController(MetaController):
             self.reset()
 
     @log(logger=logger)
-    @register_action("cluster_run", skip_on_false=True)
+    @register_action(
+        "cluster_run", kind="additive", figure="clusters", skip_on_false=True
+    )
     def load_metadata_for_clustering(self, config: Dict[str, Any], loader: str) -> bool:
         """
         Build the metadata query, load its rows, and hand them to the View.
@@ -252,7 +254,9 @@ class ClusteringController(MetaController):
         return self.model.result is not previous
 
     @log(logger=logger)
-    @register_action("merge_clusters", skip_on_false=True)
+    @register_action(
+        "merge_clusters", kind="additive", figure="clusters", skip_on_false=True
+    )
     def merge_clusters(self, keep: int, merge: int) -> bool:
         """
         Fold one cluster into another in the latest result, draw it, and say how many events moved.
