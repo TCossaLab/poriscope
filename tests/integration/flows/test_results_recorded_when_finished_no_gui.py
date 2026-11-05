@@ -3,7 +3,7 @@ A real Find is recorded once it finished, and a Find that did not finish is not.
 
 Driven through the Raw Data tab's Controller with a real reader and finder, so the
 plugin's own answer decides: the unit tests stub it. A Find that found nothing leaves the
-channel without events, and the earlier Find stays in the history.
+channel without events, so the earlier Find is removed from the history too.
 """
 
 from pathlib import Path
@@ -65,13 +65,15 @@ def test_a_find_that_finds_nothing_is_not_recorded(
         find(triad, qtbot, [(0.0, 0.00002)])
 
         assert not finished(triad, channel)
-        assert actions(triad) == [("find_events", [(0.0, 0.0)])]
+        assert actions(triad) == []
         assert any(
             f"Ch{channel}: no events found" in message for message in messages
         ), messages
         assert messages[-1] == (
             f"{FINDER} did not finish channel {channel}, so this run is not saved in "
-            f"the tab's history"
+            f"the tab's history; its earlier run on that channel is removed from the "
+            f"history too, with what was drawn from it, since the channel no longer holds "
+            f"its results"
         )
     finally:
         triad.close()

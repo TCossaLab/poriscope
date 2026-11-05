@@ -125,7 +125,9 @@ Step 3: Finding Events
 .. note::
 
    A Find that you cancel, that fails, or that finds no events leaves the channel without events,
-   and is not saved in the tab's history; the right-hand panel says so.
+   and is not saved in the tab's history. An earlier Find on that channel is removed from the
+   history too, with any events plotted from it, since the channel no longer holds them; the
+   right-hand panel says so.
 
 6. Once events are detected (you will see confirmation in the right-hand panel), **enter the event indices** you wish to inspect.
 

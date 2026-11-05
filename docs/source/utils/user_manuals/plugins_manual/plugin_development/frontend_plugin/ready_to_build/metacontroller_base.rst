@@ -44,8 +44,9 @@ No need to manually handle cross-plugin communication — :ref:`MetaController` 
     run ended, and the plugin is then asked whether the channel holds a finished run
     (``get_eventfinding_status`` or ``get_eventfitting_status``; a run clears its channel as it
     starts, so this answers for the run that just ended). A run that was cancelled, failed or
-    found nothing is not recorded, and the status panel says so; an earlier run of that plugin
-    and channel stays in the history
+    found nothing is not recorded, and the status panel says so. It cleared the channel as it
+    started, so an earlier run of that plugin and channel, and every ``view`` whose
+    ``depends_on`` names it, is removed from the history too
   - ``view``: a drawing that replaces what its figure showed, such as a trace. The newest per
     figure is kept. ``depends_on`` names the parameters whose values are the key of the result
     it draws from, ``depends_on=("eventfinder", "channel")``; a view drawn from a result that was
