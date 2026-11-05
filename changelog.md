@@ -104,7 +104,7 @@
 
 * The integration tests build their metadata database once per run and copy it into each test, instead of building it in every test
 
-* The CI, docs and release jobs that set up Python 3.12.10 run on `ubuntu-24.04` instead of `ubuntu-latest`, which moved to Ubuntu 26.04 with no 3.12.10 build
+* Branch CI runs the suite and the wheel smoke at both ends of the supported range: exactly Python 3.12.0 with the pins in `requirements.txt` (on `ubuntu-24.04`, the only image with that build, and on Windows) and Python 3.14 with the runtime stack resolved from `pyproject.toml`'s ranges (on `ubuntu-latest` and Windows); the pull-request, docs and release jobs test the floor
 
 * The release workflow now runs only when a version tag is pushed
 
@@ -175,6 +175,10 @@
 ### User-Facing Behaviour:
 
 #### General:
+
+* Poriscope installs on Python 3.12.0 through 3.14; the floor was 3.12.10, which no dependency required, and the dependency ranges now start at the versions CI tests
+
+* Plot Events in the Event Analysis and Metadata tabs no longer fails with matplotlib 3.11, which reports the colour cycle as RGB tuples instead of hex strings
 
 * A Find or Fit that was cancelled, failed or found nothing is no longer saved in the tab's history, and neither is the earlier run on that channel it cleared; the status panel says so
 

@@ -18,6 +18,36 @@ and deleted on 2026-09-27; it too is in git history.
 
 ---
 
+## 2026-11-04 - The Python floor is 3.12 with no cap, both ends of every range are tested, and 3.10 is out
+
+**Context.** `requires-python = ">=3.12.10"` came from a README note that named no dependency (`7f8cbdeb`), and the
+2026-11-02 image pin existed only to keep installing that patch. Measured on the full suite in a clean worktree of
+`ce836c54` on Windows with the `requirements.txt` pins: 3.12.0 passed all but one test (`test_meta_model_generators`
+asserted `getgeneratorstate` on a generator closed before it started, which 3.12.0 alone reports as `GEN_CREATED`);
+3.11.18 passed with `typing.override` shimmed from `typing_extensions` (40 files import it); 3.10.22 failed two writer
+tests (`SQLiteDBWriter.py:912` reads `sqlite_errorname`, added in 3.11); 3.13.18 passed. 3.14.10 cannot install the
+pins (PySide6 6.9.0 is `<3.14`; numpy 2.2.6, scipy 1.15.3, matplotlib 3.10.3 and pandas 2.2.3 ship no cp314 wheel)
+but passed on the `pyproject.toml` ranges (PySide6 6.12.0, numpy 2.5.4, matplotlib 3.11.2) once matplotlib 3.11's
+RGB-tuple colour cycle was normalised at two sites and the static tripwire read class annotations through
+`inspect.get_annotations` (PEP 649). `setup-python` builds 3.12.0 for Ubuntu 24.04 only; 26.04 starts at 3.12.13.
+
+**Decision.** `requires-python = ">=3.12"` with no upper bound: the cap is enforced already by the dependencies'
+own metadata and wheels, and a `requires-python` cap blocks every later interpreter until a release lifts it. Each
+range's lower bound is the pinned version, so both ends are tested on every push: pinned legs at exactly 3.12.0
+(`ubuntu-24.04`, `windows-latest`) and ranges legs at the newest supported interpreter (`ubuntu-latest`,
+`windows-latest`) with `requirements.txt` not applied. `requirements.txt` stays exact; a pin and its lower bound move
+together.
+
+**Rejected.** 3.11: one import line in 40 files plus `typing_extensions`, no known user, and a convention to police
+for the year 3.11 has left. 3.10: end of life October 2026, and the writer change on top. Capping matplotlib `<3.11`
+instead of normalising two colour reads: it would keep 3.14 out for a two-line fix. Three-component `~=` ranges:
+they would refuse the wheels 3.14 needs.
+
+**Revisit** if a user turns up on 3.11 (an afternoon, by the measurement above), or when a ranges leg fails: the
+fix is a tighter range for that one package, not an interpreter cap.
+
+---
+
 ## 2026-11-03 - A restored session keeps what each action's declared kind says it needs
 
 **Context.** A tab's live history keeps every entry, because Undo replays from the last reset. A restore needs only
@@ -81,6 +111,9 @@ release's `validate-citation` set up no Python and stay on `ubuntu-latest`.
 `requires-python` floor exactly.
 
 **Revisit** when GitHub announces 24.04's retirement, or `setup-python` ships 3.12.10 for 26.04.
+
+**Superseded** by 2026-11-04: the floor is 3.12.0, only the floor legs stay on 24.04, and the rejected
+`"3.12"` on 26.04 does resolve (to 3.12.16).
 
 ---
 

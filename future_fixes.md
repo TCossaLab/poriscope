@@ -536,11 +536,6 @@ Readability only; each is behaviour-preserving and wants the covering tests read
   where today it goes through, and a second writer into the file would fail the same way. Measure the commits' share
   of a large write (10,000 events) first; if it matters, commit about once a second, which keeps every wait under
   sqlite3's 5 s. The e2e `synthetic_metadata_database` fixtures still build through the writer in every test.
-- **Can the Python floor be 3.12 rather than 3.12.10? (2026-11-02)** CI pins exactly `3.12.10` in seven
-  `setup-python` steps, which keeps those jobs on `ubuntu-24.04` (no 3.12.10 build for 26.04; `DECISIONS.md`
-  2026-11-02). The floor (`requires-python = ">=3.12.10"`, `pyproject.toml:10`; README; three install pages) came
-  from the README's "dependencies compatibility" note (`7f8cbdeb`), and no record names the dependency that needs it.
-  Run the suite on 3.12.0 and on `"3.12"` first; if both pass, loosen the floor and the pins and drop the 24.04 pin.
 
 ### Docs and records
 

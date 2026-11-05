@@ -42,6 +42,7 @@ import numpy as np
 import numpy.typing as npt
 from matplotlib.axes import Axes
 from matplotlib.colorbar import Colorbar
+from matplotlib.colors import to_hex
 from matplotlib.lines import Line2D
 from mpl_toolkits.mplot3d import Axes3D
 from PySide6.QtCore import Signal, Slot
@@ -1114,11 +1115,12 @@ class MetadataView(MetaSubsetTabView):
                 strict=True,
             )
         ):
-            color_cycle = pl.rcParams["axes.prop_cycle"].by_key()["color"]
-            # Filter out black (if black is in the cycle)
-            colors_no_black = [
-                c for c in color_cycle if c.lower() != "black" and c != "#000000"
+            # matplotlib 3.10 hands the cycle out as hex strings and 3.11 as RGB tuples
+            color_cycle = [
+                to_hex(c) for c in pl.rcParams["axes.prop_cycle"].by_key()["color"]
             ]
+            # Filter out black (if black is in the cycle)
+            colors_no_black = [c for c in color_cycle if c != "#000000"]
             ax = self.figure.add_subplot(
                 num_rows, num_cols, j + 1
             )  # Create subplots in a grid

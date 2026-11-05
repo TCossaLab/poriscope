@@ -7,7 +7,7 @@ name = "poriscope"
 dynamic = ["version"]
 description = "A tool for selecting and analyzing nanopore data."
 readme = "README.md"
-requires-python = ">=3.12.10"
+requires-python = ">=3.12"
 license = { text = "MIT" }
 authors = [
     { name = "Kyle Briggs & Alejandra Carolina González González", email = "kbriggs@uottawa.ca" }
@@ -15,25 +15,29 @@ authors = [
 classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "License :: OSI Approved :: MIT License",
     "Operating System :: Microsoft :: Windows",
 ]
-# Compatible-release ranges, not exact pins: an exact pin in the wheel metadata
-# conflicts with any other package in a user's environment that needs a different
-# patch release. The exact versions CI tests against live in requirements.txt, which
-# every workflow installs with -c so a run resolves those and nothing newer.
+# Ranges, not exact pins: an exact pin in the wheel metadata conflicts with any other
+# package in a user's environment that needs a different patch release. Each lower
+# bound is the version requirements.txt pins and CI tests; each upper bound is the next
+# major. Both ends are tested on every push: branch CI runs the suite with the pins at
+# the floor interpreter, and again with these ranges resolved fresh on the newest
+# supported interpreter. Move a lower bound only together with its pin.
 dependencies = [
-    "PySide6~=6.9",
-    "numpy~=2.2",
-    "matplotlib~=3.10",
-    "pandas~=2.2",
-    "platformdirs~=4.3",
-    "scipy~=1.15",
-    "kneed~=0.8",
-    "fast-histogram~=0.14",
-    "scikit-learn~=1.6",
-    "hdbscan~=0.8.44",
-    "pyabf~=2.3",
+    "PySide6>=6.9.0,<7",
+    "numpy>=2.2.6,<3",
+    "matplotlib>=3.10.3,<4",
+    "pandas>=2.2.3,<3",
+    "platformdirs>=4.3.8,<5",
+    "scipy>=1.15.3,<2",
+    "kneed>=0.8.5,<1",
+    "fast-histogram>=0.14,<1",
+    "scikit-learn>=1.6.1,<2",
+    "hdbscan>=0.8.44,<0.9",
+    "pyabf>=2.3.8,<3",
 ]
 
 [project.optional-dependencies]

@@ -105,7 +105,8 @@ move when the work succeeds (P14)? which open design question should be settled 
 
 - **The smallest change that fixes the defect**, with no machinery around it; if it grows past the
   size of the bug, stop and ask (E24). Fix the contract at the call sites rather than guessing at
-  runtime (E25).
+  runtime (E25). A new dependency, or a raised pin, is checked against the interpreter floor and
+  the existing pins first; ask before adding one that would move either (E31).
 - **Measure a mechanism before relying on it** - that a "no-op" is one, that a decorator fires, that
   an effect has the sign you want (E3, E4, E5).
 - **Deletions and splices get a structural before/after check** (E21, E22,
@@ -180,6 +181,7 @@ Also standing, with evidence in the reference files:
 | A test passed after a mutation | Confirm the mutation happened | N4 |
 | You are deleting one statement inside a block, or splicing between anchors | Structural before/after check | E21, E22 |
 | The fix is growing well past the size of the bug | Stop and ask | E24 |
+| You are about to add a dependency or raise a pin | Read its `requires-python` and ranges against the project's floor and pins; ask if either would move | E31 |
 | A metric moved the way you wanted | Prove it was earned | I12 |
 | A background run "exited 0" | Read the summary line and the sentinel | V2 |
 | A test or gate failed and you are about to rerun it | Is its full output saved to a file? | V17 |

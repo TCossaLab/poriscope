@@ -32,6 +32,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple, Union, override
 import matplotlib.pyplot as pl
 import numpy as np
 import numpy.typing as npt
+from matplotlib.colors import to_hex
 from PySide6.QtCore import Signal, Slot
 from PySide6.QtWidgets import QMessageBox
 
@@ -347,12 +348,13 @@ class EventAnalysisView(MetaEventTabView):
         self._clear_cache()
 
         # Get the current color cycle
-        color_cycle = pl.rcParams["axes.prop_cycle"].by_key()["color"]
+        # matplotlib 3.10 hands the cycle out as hex strings and 3.11 as RGB tuples
+        color_cycle = [
+            to_hex(c) for c in pl.rcParams["axes.prop_cycle"].by_key()["color"]
+        ]
 
         # Filter out black (if black is in the cycle)
-        colors_no_black = [
-            c for c in color_cycle if c.lower() != "black" and c != "#000000"
-        ]
+        colors_no_black = [c for c in color_cycle if c != "#000000"]
 
         num_rows, num_cols = self._factors(num_events)
 

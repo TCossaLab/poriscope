@@ -9,7 +9,6 @@ rather than dropping it silently. When a worker ends, the Model reports the plug
 status and then says the run finished, so a Controller can decide what to record.
 """
 
-import inspect
 import threading
 import time
 from typing import Callable, Generator, Iterator, List, Optional, Tuple
@@ -106,7 +105,10 @@ def test_a_second_request_while_one_runs_is_reported_and_closed(
     instance.run_generators("finder")
 
     try:
-        assert inspect.getgeneratorstate(second) == inspect.GEN_CLOSED
+        # Closed before it ever started. The behaviour, not inspect.getgeneratorstate:
+        # 3.12.0 alone leaves gi_frame on a never-started generator after close().
+        with pytest.raises(StopIteration):
+            next(second)
         assert instance.generators["finder"][0] is first
         assert messages == [
             "finder is already running on channel 0; this request was ignored"
