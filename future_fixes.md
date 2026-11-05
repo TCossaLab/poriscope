@@ -80,6 +80,8 @@ Step 10 waits for both tracks.
     - 0 results handling.
     - The writers refusing a run that did not complete before deleting or writing anything.
     - If earlier results are kept again, keeping the earlier run's history entry instead of removing it.
+    - Until then, a rerun that does not finish leaves the figure showing events from the cleared run (as in 2.0); the
+      history no longer holds them, so a restore does not redraw them.
 
 - **Editing a plugin leaves history entries recorded with its old settings (2026-11-03).** An edit keeps the
   plugin's old results on screen while the plugin history keeps only the new settings (`BaseDataPlugin.apply_settings`,
