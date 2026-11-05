@@ -111,6 +111,7 @@ class ReplaySequence:
             return False
         self.failed_at = None
         self.running = True
+        self._controller.replay_state_changed.emit(False)
         self._schedule()
         return True
 
@@ -295,13 +296,13 @@ class ReplaySequence:
         self.failed_at = self._index
         step, total = self._index + 1, len(self._entries)
         if self._going_back:
+            self._entries = []
+            self._index = 0
             self._end(
                 f"going back stopped at step {step} of {total}: {reason}; the tab is "
                 f"left cleared"
             )
             self._clear_tab()
-            self._entries = []
-            self._index = 0
             return
         self._end(f"replay stopped at step {step} of {total}: {reason}")
         action = str(self._entries[self._index].get("action"))
@@ -340,9 +341,9 @@ class ReplaySequence:
 
     def _end(self, text: Optional[str]) -> None:
         """
-        End the replay and, unless ``text`` is None, say how on the status panel.
+        End the replay, say whether it can be continued, and unless ``text`` is None, say how.
 
-        :param text: what to say after the tab's name
+        :param text: what to say on the status panel after the tab's name
         :type text: Optional[str]
         """
         self.running = False
@@ -350,6 +351,7 @@ class ReplaySequence:
         self._launched = False
         self._going_back = False
         self._generation += 1
+        self._controller.replay_state_changed.emit(self.has_remaining())
         if text is not None:
             name = self._controller.__class__.__name__
             self._controller.add_text_to_display.emit(f"{name}: {text}", name)

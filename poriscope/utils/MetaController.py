@@ -99,6 +99,9 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
 
     plugin_state_changed = Signal(str, str, str)  # metaclass, plugin_key, reason
     add_text_to_display = Signal(str, str)
+    #: Whether a replay of this tab stopped or failed with entries left, which Replay
+    #: Actions would continue; sent when a replay starts (False) and when it ends.
+    replay_state_changed = Signal(bool)
 
     #: The last line sent to the status panel, whoever sent it, so a subclass can leave out a
     #: line that would only repeat the one directly above it.

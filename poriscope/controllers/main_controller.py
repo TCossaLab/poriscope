@@ -128,6 +128,7 @@ class MainController(QObject):
         )
         self.main_view.clear_cache.connect(self.main_model.clear_cache)
         self.main_view.abort_all_analysis.connect(self.handle_abort_all_analysis)
+        self.main_view.replay_actions_requested.connect(self.replay_tab_actions)
         self.main_view.reset_app_config.connect(self.reset_app_config)
         self.main_view.reset_session.connect(self.reset_session)
         self.main_view.request_analysis_tabs.connect(self.send_analysis_tabs)
@@ -590,6 +591,9 @@ class MainController(QObject):
             self.analysis_tabs[subclass].add_text_to_display.connect(
                 functools.partial(self.show_tab_text, self.analysis_tabs[subclass])
             )
+            self.analysis_tabs[subclass].replay_state_changed.connect(
+                functools.partial(self.main_view.set_replay_available, view_name)
+            )
             self.analysis_tabs[subclass].update_tab_action_history.connect(
                 self.update_tab_action_history
             )
@@ -606,6 +610,20 @@ class MainController(QObject):
             self.analysis_tabs[subclass].update_available_plugins(self.data_plugins)
             self.logger.debug(f"New analysis tab of type {subclass} added")
             self.update_plugin_history(history, "")
+
+    @log(logger=logger)
+    @Slot(str)
+    def replay_tab_actions(self, page_name: str) -> None:
+        """
+        Continue the replay of the tab whose page is showing; Replay Actions' click.
+
+        :param page_name: the page showing
+        :type page_name: str
+        """
+        for tab in self.analysis_tabs.values():
+            if tab.view.__class__.__name__ == page_name:
+                tab.start_replay()
+                return
 
     @log(logger=logger)
     def show_tab_text(self, tab: MetaController, text: str, source: str) -> None:

@@ -1592,3 +1592,62 @@ class TestReindexPages:
         main_view._reindex_pages()
 
         assert "Stray" not in main_view.pages
+
+
+# ------------------------------------------------- Replay Actions
+
+
+def test_the_replay_actions_button_sits_under_the_status_panel_disabled(main_view):
+    button = main_view.replay_actions_button
+
+    assert button.text() == "Replay Actions"
+    assert main_view.text_display_container.isAncestorOf(button)
+    assert not button.isEnabled()
+
+
+def test_the_button_follows_the_page_showing(main_view):
+    main_view.add_page("MetadataView", QWidget())
+    main_view.add_page("RawDataView", QWidget())
+
+    main_view.set_replay_available("MetadataView", True)
+    assert not main_view.replay_actions_button.isEnabled()
+
+    main_view.switch_to_page("MetadataView")
+    assert main_view.replay_actions_button.isEnabled()
+
+    main_view.switch_to_page("RawDataView")
+    assert not main_view.replay_actions_button.isEnabled()
+
+    main_view.switch_to_page("MainView")
+    assert not main_view.replay_actions_button.isEnabled()
+
+
+def test_a_page_showing_is_updated_at_once(main_view):
+    main_view.add_page("MetadataView", QWidget())
+
+    main_view.set_replay_available("MetadataView", True)
+    assert main_view.replay_actions_button.isEnabled()
+
+    main_view.set_replay_available("MetadataView", False)
+    assert not main_view.replay_actions_button.isEnabled()
+
+
+def test_removed_pages_forget_their_state(main_view):
+    main_view.add_page("MetadataView", QWidget())
+    main_view.set_replay_available("MetadataView", True)
+
+    main_view.remove_pages_except(["MainView"])
+    main_view.add_page("MetadataView", QWidget())
+
+    assert not main_view.replay_actions_button.isEnabled()
+
+
+def test_the_click_asks_for_the_page_showing(main_view):
+    main_view.add_page("MetadataView", QWidget())
+    main_view.set_replay_available("MetadataView", True)
+    asked = []
+    main_view.replay_actions_requested.connect(asked.append)
+
+    main_view.replay_actions_button.click()
+
+    assert asked == ["MetadataView"]

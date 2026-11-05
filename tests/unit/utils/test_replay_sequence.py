@@ -479,9 +479,13 @@ class TestAfterAFailure:
         tab.draws["before"] = False
         tab.clear_for_replay = MagicMock()  # type: ignore[method-assign]
         ask = self._answer(tab, "back", [])
+        states: List[bool] = []
+        tab.replay_state_changed.connect(states.append)
         sequence = _replay(tab, [_entry("boom")], qtbot)
         qtbot.waitUntil(lambda: panel[-1].startswith("_Tab: going back stopped"))
         _ended(sequence, qtbot)
+
+        assert states == [False, True, False, False]
 
         ask.assert_called_once()
         assert tab.clear_for_replay.call_count == 2
