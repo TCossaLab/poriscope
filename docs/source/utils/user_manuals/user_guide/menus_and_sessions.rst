@@ -71,8 +71,28 @@ The *Analysis* menu allows you to:
 
 - Add filters, event finders, fitters, and new analysis tabs
 - **Abort Analysis**: forcibly stops any active processes (identified by active progress bars)
-  in every open analysis tab. Each tab confirms what it stopped in the message panel on the
-  right-hand side of the main window, and says so there if it had nothing running.
+  in every open analysis tab, and stops a tab's replay. Each tab confirms what it stopped in
+  the message panel on the right-hand side of the main window, and says so there if it had
+  nothing running.
+
+.. _replay_actions:
+
+Replay Actions
+--------------
+
+The **Replay Actions** button sits under the message panel. A tab replays its actions one step
+at a time - Metadata's **Load Plot Configuration** does - and while it does, its messages are held
+back and shown together when it ends, so they do not mix with other tabs' messages. A step that
+waits for an event finder or fitter carries on only if the run finishes with results.
+
+If a step fails, a dialog names it and asks:
+
+- **Go back**: the tab is cleared and redrawn as it was before the replay.
+- **Keep**: what was replayed stays. **Replay Actions** is then enabled for that tab, and continues
+  from the step that failed once you have fixed its cause.
+
+A replay stopped by **Abort Analysis** or a tab's **❌ ALL** button also continues from where it
+stopped. The button follows the page showing, and is disabled for a tab with nothing to continue.
 
 Help Menu
 ---------

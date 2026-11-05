@@ -77,7 +77,9 @@ Step 10 waits for both tracks.
     - Always on, or an opt-in `keep_previous` on `find_events` / `fit_events`, depending on whether scripts rerun a
       channel on the same plugin instance.
     - A readable outcome (`last_run_outcome`), so a replay can tell a cancel from a failure.
-    - 0 results handling.
+    - 0 results handling. Settled input (Kyle, 2026-11-05): during a replay a run with 0 results counts as failed,
+      since it only comes from a settings issue (a Find with 0 events, a Fit with 0 good fits); live, a 0-good-fits Fit
+      still marks the channel fitted, is recorded and can be written.
     - The writers refusing a run that did not complete before deleting or writing anything.
     - If earlier results are kept again, keeping the earlier run's history entry instead of removing it.
     - Until then, a rerun that does not finish leaves the figure showing events from the cleared run (as in 2.0); the
