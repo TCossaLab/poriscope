@@ -109,8 +109,11 @@ def controller(
     ctrl.model = mock_model
     ctrl.logger = mocker.Mock()  # type: ignore[attr-defined]
     ctrl.tab_action_history = OrderedDict()
-    # Replay has its own tests (test_action_registry); here it is only observed.
+    # Replay has its own tests (test_action_registry, test_meta_controller_replay); here
+    # it is only observed.
     ctrl.replay = mocker.Mock()  # type: ignore[method-assign]
+    ctrl.start_replay = mocker.Mock(return_value=True)  # type: ignore[method-assign]
+    ctrl.replay_sequence = mocker.Mock()
 
     # Mock Qt signals on the instance
     for sig in [
@@ -231,8 +234,8 @@ def test_load_actions_from_json_updates_view_on_success(
 
     controller.load_actions_from_json("actions.json")
 
-    controller.replay.assert_called_once()  # type: ignore[attr-defined]
-    assert list(controller.replay.call_args[0][0]) == list(actions.values())  # type: ignore[attr-defined]
+    controller.start_replay.assert_called_once()  # type: ignore[attr-defined]
+    assert list(controller.start_replay.call_args[0][0]) == list(actions.values())  # type: ignore[attr-defined]
 
 
 def test_load_actions_from_json_returns_none_on_file_error(
@@ -271,8 +274,8 @@ def test_load_actions_from_json_unwraps_class_name_key(
 
     controller.load_actions_from_json("actions.json")
 
-    controller.replay.assert_called_once()  # type: ignore[attr-defined]
-    assert list(controller.replay.call_args[0][0]) == list(inner.values())  # type: ignore[attr-defined]
+    controller.start_replay.assert_called_once()  # type: ignore[attr-defined]
+    assert list(controller.start_replay.call_args[0][0]) == list(inner.values())  # type: ignore[attr-defined]
 
 
 # ----------------- relay_add_text_to_display -------------------------
@@ -395,6 +398,7 @@ def test_handle_kill_all_workers_stops_workers_when_subclass_matches(
     """
     controller.handle_kill_all_workers(controller.__class__.__name__)
     mock_model.stop_workers.assert_called_once_with(exiting=False)
+    controller.replay_sequence.stop.assert_called_once_with(quitting=False)  # type: ignore[attr-defined]
 
 
 def test_handle_kill_all_workers_passes_exiting_flag(
@@ -409,6 +413,7 @@ def test_handle_kill_all_workers_passes_exiting_flag(
     """
     controller.handle_kill_all_workers(controller.__class__.__name__, exiting=True)
     mock_model.stop_workers.assert_called_once_with(exiting=True)
+    controller.replay_sequence.stop.assert_called_once_with(quitting=True)  # type: ignore[attr-defined]
 
 
 def test_handle_kill_all_workers_does_nothing_when_subclass_does_not_match(
@@ -423,6 +428,7 @@ def test_handle_kill_all_workers_does_nothing_when_subclass_does_not_match(
     """
     controller.handle_kill_all_workers("SomeOtherController")
     mock_model.stop_workers.assert_not_called()
+    controller.replay_sequence.stop.assert_not_called()  # type: ignore[attr-defined]
 
 
 # ------------------- update_available_plugins ------------------------

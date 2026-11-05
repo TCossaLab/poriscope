@@ -391,7 +391,7 @@ def test_the_protein_ensemble_histogram_averages_the_selected_channels_events(
 
 @pytest.mark.timeout(120)
 def test_a_saved_plot_configuration_replays_raw_plots_on_their_own_channels(
-    metadata_tab: Triad, tmp_path: Path, mocker: Any
+    metadata_tab: Triad, tmp_path: Path, mocker: Any, qtbot: Any
 ) -> None:
     """
     Save two raw plots, reset, and load: both come back, each bound to its own channel.
@@ -418,6 +418,7 @@ def test_a_saved_plot_configuration_replays_raw_plots_on_their_own_channels(
     assert on_figure(metadata_tab) == set()
     view.subset_filters.pop("own_raw")
     view.handle_parameter_change("metadatacontrols", "load_plot", ({},))
+    qtbot.waitUntil(lambda: not metadata_tab.tab_controller.is_replaying())
 
     assert on_figure(metadata_tab) == {(0, "own_raw"), (1, "own_raw")}
     assert plotted_row_count(metadata_tab) == CHANNEL_0 + CHANNEL_1

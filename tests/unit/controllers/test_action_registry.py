@@ -362,31 +362,6 @@ class TestUndoUsesTheDeclaredResetName:
         assert controller.calls == ["reset:2d", "overlay:a"]  # type: ignore[attr-defined]
 
 
-class TestLoadActionsFromJson:
-    def test_a_loaded_file_is_replayed_through_the_controller(
-        self, controller: _Controller, tmp_path: Any
-    ) -> None:
-        path = tmp_path / "actions.json"
-        path.write_text(json.dumps({"0": _entry("start_run", "a")}), encoding="utf-8")
-
-        controller.load_actions_from_json(str(path))
-
-        assert controller.runs == [("a", 1)]  # type: ignore[attr-defined]
-
-    def test_a_file_keyed_by_the_class_name_is_unwrapped(
-        self, controller: _Controller, tmp_path: Any
-    ) -> None:
-        path = tmp_path / "actions.json"
-        path.write_text(
-            json.dumps({"_Controller": {"0": _entry("start_run", "b")}}),
-            encoding="utf-8",
-        )
-
-        controller.load_actions_from_json(str(path))
-
-        assert controller.runs == [("b", 1)]  # type: ignore[attr-defined]
-
-
 def test_a_mock_view_does_not_break_replay(mocker: MockerFixture) -> None:
     view: MagicMock = mocker.Mock()
     controller = _make(mocker, view)

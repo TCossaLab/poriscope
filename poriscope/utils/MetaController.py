@@ -44,6 +44,7 @@ from poriscope.utils.LogDecorator import (
 from poriscope.utils.MetaModel import MetaModel
 from poriscope.utils.MetaView import MetaView
 from poriscope.utils.QObjectABCMeta import QObjectABCMeta
+from poriscope.utils.replay_sequence import ReplaySequence
 from poriscope.utils.ReplayGuard import replaying
 
 #: The plugin method that says whether a channel holds a finished run, per plugin family.
@@ -153,10 +154,13 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
             setattr(self, k, v)
 
         self._init()
+        self.replay_sequence = ReplaySequence(self)
         self.view.set_available_subclasses(available_subclasses)
         self.view.plugin_state_changed.connect(self.plugin_state_changed)
         self.model.update_progressbar.connect(self.view.update_progressbar)
+        # Recorded first, so a replay waiting on the run sees the tab's history with it.
         self.model.run_finished.connect(self.record_finished_run)
+        self.model.run_finished.connect(self.replay_sequence.on_run_finished)
         self.view.kill_worker.connect(self.handle_kill_worker)
         self.view.kill_all_workers.connect(self.handle_kill_all_workers)
         self.add_text_to_display.connect(self._note_panel_text)
@@ -292,7 +296,41 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
             return None
         if self.__class__.__name__ in actions.keys():
             actions = actions[self.__class__.__name__]  # allow loading from base file
-        self.replay(actions.values())
+        if not self.start_replay(actions.values()):
+            self.add_text_to_display.emit(
+                f"{self.__class__.__name__}: a replay is already running; stop it, or "
+                f"let it finish, first",
+                self.__class__.__name__,
+            )
+
+    @log(logger=logger)
+    def start_replay(self, entries: Optional[Iterable[Any]] = None) -> bool:
+        """
+        Replay recorded actions one entry at a time, without blocking the window.
+
+        Each entry runs on its own turn of the event loop. A ``result`` entry waits for its
+        plugin's run on its channel to end, and the replay stops at the first entry that
+        fails; see :py:mod:`poriscope.utils.replay_sequence`. Undo replays with
+        :py:meth:`replay` instead, all at once.
+
+        :param entries: recorded entries, ``{"action": name, "args": [...], "kwargs": {...}}``;
+            None continues the last replay from the entry it stopped or failed at
+        :type entries: Optional[Iterable[Any]]
+        :return: False if a replay of this tab is already running, or there is nothing left
+            to continue
+        :rtype: bool
+        """
+        return self.replay_sequence.start(entries)
+
+    @log(logger=logger)
+    def is_replaying(self) -> bool:
+        """
+        Is a replay started by :py:meth:`start_replay` still running?
+
+        :return: True until it is done, has failed or was stopped
+        :rtype: bool
+        """
+        return self.replay_sequence.running
 
     @log(logger=logger)
     def record_action(self, entry: Dict[str, Any]) -> None:
@@ -655,11 +693,12 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
     @Slot(str)
     def handle_kill_all_workers(self, subclass: str, exiting: bool = False) -> None:
         """
-        Kill all running workers for this tab, and say so on the display panel.
+        Kill all running workers for this tab, stop its replay, and say so on the display panel.
 
-        The panel message is skipped when ``exiting`` is set: the display widget is
+        The panel messages are skipped when ``exiting`` is set: the display widget is
         being torn down along with everything else, so writing to it at that point
-        would be pointless at best.
+        would be pointless at best. A stopped replay continues from the entry it was on
+        at the next :py:meth:`start_replay` with no entries.
 
         :param subclass: Name of the controller the request is addressed to; the
             request is ignored if it names a different one.
@@ -678,6 +717,7 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
             self.add_text_to_display.emit(
                 "Stopping all running operations.", self.__class__.__name__
             )
+        self.replay_sequence.stop(quitting=exiting)
         self.model.stop_workers(exiting=exiting)
 
     # public API, should generally be left alone by subclasses

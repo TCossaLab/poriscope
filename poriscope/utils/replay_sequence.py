@@ -43,20 +43,23 @@ import functools
 import inspect
 import logging
 from copy import deepcopy
-from typing import Any, Iterable, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Iterable, List, Optional, Tuple
 
 from PySide6.QtCore import QTimer
 
 from poriscope.utils.LogDecorator import ACTION_DECLARATION_ATTR, ActionDeclaration
-from poriscope.utils.MetaController import MetaController
 from poriscope.utils.ReplayGuard import replaying
+
+if TYPE_CHECKING:
+    # MetaController creates a ReplaySequence for every tab, so it imports this module.
+    from poriscope.utils.MetaController import MetaController
 
 logger = logging.getLogger(__name__)
 
 
 class ReplaySequence:
 
-    def __init__(self, controller: MetaController) -> None:
+    def __init__(self, controller: "MetaController") -> None:
         """
         :param controller: the tab whose actions are replayed; every step is scheduled with
             it as the timer's context, so a step left over once it is destroyed never runs
