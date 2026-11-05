@@ -588,9 +588,7 @@ class MainController(QObject):
             self.analysis_tabs[subclass].plugin_state_changed.connect(
                 self.handle_plugin_state_changed
             )
-            self.analysis_tabs[subclass].add_text_to_display.connect(
-                functools.partial(self.show_tab_text, self.analysis_tabs[subclass])
-            )
+            self.analysis_tabs[subclass].add_text_to_display.connect(self.show_tab_text)
             self.analysis_tabs[subclass].replay_state_changed.connect(
                 functools.partial(self.main_view.set_replay_available, view_name)
             )
@@ -626,20 +624,25 @@ class MainController(QObject):
                 return
 
     @log(logger=logger)
-    def show_tab_text(self, tab: MetaController, text: str, source: str) -> None:
+    @Slot(str, str)
+    def show_tab_text(self, text: str, source: str) -> None:
         """
         Put an analysis tab's line on the status panel, unless the tab holds it back.
 
-        Each tab's ``add_text_to_display`` is connected here with the tab bound, and the
-        tab says what to show: nothing while it replays, then its held lines together.
+        Each tab's ``add_text_to_display`` is connected here, and the tab that sent the
+        line says what to show: nothing while it replays, then its held lines together.
+        The tab is found as the signal's sender rather than bound into the connection,
+        because a connection is held on the Qt side, out of reach of Python's garbage
+        collector: one that held the tab or this controller would keep both alive for good.
 
-        :param tab: the tab that sent the line
-        :type tab: MetaController
         :param text: the line
         :type text: str
         :param source: who sent it
         :type source: str
         """
+        tab = self.sender()
+        if not isinstance(tab, MetaController):
+            return
         for line, line_source in tab.panel_text_to_show(text, source):
             self.main_view.add_text_to_display(line, line_source)
 
