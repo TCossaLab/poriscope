@@ -481,37 +481,60 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
         :param entries: recorded entries, ``{"action": name, "args": [...], "kwargs": {...}}``
         :type entries: Iterable[Any]
         """
-        registry = self.action_registry()
         with replaying():
             for entry in entries:
-                name = entry.get("action") if isinstance(entry, Mapping) else None
-                method = registry.get(name) if isinstance(name, str) else None
-                if method is None:
-                    described = (
-                        f"'{name}' is not a recorded action of {self.__class__.__name__}"
-                        if isinstance(name, str)
-                        else f"an entry with no action name was found in {self.__class__.__name__}"
-                    )
-                    self.logger.warning(f"Not replayed: {described}")
-                    self.add_text_to_display.emit(
-                        f"Not replayed: {described}", self.__class__.__name__
-                    )
-                    continue
-                args = entry.get("args") or []
-                kwargs = entry.get("kwargs") or {}
-                try:
-                    inspect.signature(method).bind(*args, **kwargs)
-                except TypeError:
-                    described = (
-                        f"the recorded values of '{name}' do not fit that action of "
-                        f"{self.__class__.__name__} any more"
-                    )
-                    self.logger.warning(f"Not replayed: {described}")
-                    self.add_text_to_display.emit(
-                        f"Not replayed: {described}", self.__class__.__name__
-                    )
-                    continue
-                method(*args, **kwargs)
+                resolved = self.resolve_replayed_entry(entry)
+                if resolved is not None:
+                    method, args, kwargs = resolved
+                    method(*args, **kwargs)
+
+    @log(logger=logger)
+    def resolve_replayed_entry(
+        self, entry: Any
+    ) -> Optional[Tuple[Callable[..., Any], List[Any], Dict[str, Any]]]:
+        """
+        Find the method a recorded entry replays, and the values to call it with.
+
+        An entry with no action name, or one that names no declared action of this tab
+        (an old-format entry, or a method that has since been removed), is reported on
+        the status panel and gives None. So does an entry whose values no longer fit its
+        action's parameters - one saved before they changed. The fit is checked here, so
+        an action's own ``TypeError`` still comes from the call.
+
+        :param entry: a recorded entry, ``{"action": name, "args": [...], "kwargs": {...}}``
+        :type entry: Any
+        :return: the bound method, its positional and its keyword values; None if the
+            entry cannot be replayed
+        :rtype: Optional[Tuple[Callable[..., Any], List[Any], Dict[str, Any]]]
+        """
+        name = entry.get("action") if isinstance(entry, Mapping) else None
+        method = self.action_registry().get(name) if isinstance(name, str) else None
+        if method is None:
+            described = (
+                f"'{name}' is not a recorded action of {self.__class__.__name__}"
+                if isinstance(name, str)
+                else f"an entry with no action name was found in {self.__class__.__name__}"
+            )
+            self.logger.warning(f"Not replayed: {described}")
+            self.add_text_to_display.emit(
+                f"Not replayed: {described}", self.__class__.__name__
+            )
+            return None
+        args = list(entry.get("args") or [])
+        kwargs = dict(entry.get("kwargs") or {})
+        try:
+            inspect.signature(method).bind(*args, **kwargs)
+        except TypeError:
+            described = (
+                f"the recorded values of '{name}' do not fit that action of "
+                f"{self.__class__.__name__} any more"
+            )
+            self.logger.warning(f"Not replayed: {described}")
+            self.add_text_to_display.emit(
+                f"Not replayed: {described}", self.__class__.__name__
+            )
+            return None
+        return method, args, kwargs
 
     @log(logger=logger)
     def display_write_status(self, status: bool) -> None:
