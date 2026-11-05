@@ -37,11 +37,17 @@ A replay stops at the first entry that fails: one that raises, one whose action 
 ``False`` for a call that did nothing (its declaration's ``skip_on_false``), or a run that
 did not finish or found nothing. An entry that names no action of the tab, or whose values
 no longer fit it, is reported and skipped, as a synchronous replay does.
+
+When an entry fails the user is asked whether to go back or keep. **Keep** leaves what was
+replayed; the next start with no entries continues from the failed entry. **Go back** clears
+the tab, resets each channel a replayed run filled, and replays the tab's history from
+before the replay; if that fails too, the tab is left cleared, with no history.
 """
 
 import functools
 import inspect
 import logging
+from collections import OrderedDict
 from copy import deepcopy
 from typing import TYPE_CHECKING, Any, Iterable, List, Optional, Tuple
 
@@ -76,6 +82,12 @@ class ReplaySequence:
         self.waiting_for: Optional[Tuple[str, int]] = None
         #: The position of the entry the last replay failed at, None if it did not fail.
         self.failed_at: Optional[int] = None
+        #: The tab's history when the replay started, which going back replays.
+        self._history_before: "OrderedDict[int, Any]" = OrderedDict()
+        #: (metaclass, plugin key, channel) of each run the replay finished, which going
+        #: back resets.
+        self._finished_runs: List[Tuple[str, str, int]] = []
+        self._going_back = False
 
     def start(self, entries: Optional[Iterable[Any]] = None) -> bool:
         """
@@ -92,6 +104,9 @@ class ReplaySequence:
         if entries is not None:
             self._entries = deepcopy(list(entries))
             self._index = 0
+            if not self._going_back:
+                self._history_before = deepcopy(self._controller.tab_action_history)
+                self._finished_runs = []
         elif not self.has_remaining():
             return False
         self.failed_at = None
@@ -143,6 +158,8 @@ class ReplaySequence:
                 f"{key} did not leave a finished run with results on channel {channel}"
             )
             return
+        metaclass = self._controller.model.reporter_metaclasses.get(key, "")
+        self._finished_runs.append((metaclass, key, channel))
         self._index += 1
         self._schedule()
 
@@ -164,7 +181,9 @@ class ReplaySequence:
         if generation != self._generation:
             return
         if not self.has_remaining():
-            self._end("replay done")
+            self._end(
+                "back to before the replay" if self._going_back else "replay done"
+            )
             return
         resolved = self._controller.resolve_replayed_entry(self._entries[self._index])
         if resolved is None:
@@ -264,14 +283,59 @@ class ReplaySequence:
 
     def _fail(self, reason: str) -> None:
         """
-        Stop the replay at the entry it is on, for a reason the user is told.
+        Stop the replay at the entry it is on, say why, and ask whether to go back or keep.
+
+        The panel line goes out first, so the tab's held lines - what the failed run
+        reported - are on the panel before the question. Going back that fails is not
+        asked about again: the tab is left cleared.
 
         :param reason: what went wrong with the entry
         :type reason: str
         """
         self.failed_at = self._index
-        self._end(
-            f"replay stopped at step {self._index + 1} of {len(self._entries)}: {reason}"
+        step, total = self._index + 1, len(self._entries)
+        if self._going_back:
+            self._end(
+                f"going back stopped at step {step} of {total}: {reason}; the tab is "
+                f"left cleared"
+            )
+            self._clear_tab()
+            self._entries = []
+            self._index = 0
+            return
+        self._end(f"replay stopped at step {step} of {total}: {reason}")
+        action = str(self._entries[self._index].get("action"))
+        name = self._controller.__class__.__name__
+        choice = self._controller.view.ask_after_replay_failure(
+            name, step, total, action, reason
+        )
+        if choice == "back":
+            self._go_back()
+
+    def _go_back(self) -> None:
+        """Clear the tab and replay its history from before the replay."""
+        name = self._controller.__class__.__name__
+        self._controller.add_text_to_display.emit(
+            f"{name}: going back to before the replay", name
+        )
+        entries = list(self._history_before.values())
+        self._clear_tab()
+        self._going_back = True
+        self.start(entries)
+
+    def _clear_tab(self) -> None:
+        """Clear the tab, reset the channels the replay filled, and empty its history."""
+        controller = self._controller
+        controller.clear_for_replay()
+        for metaclass, key, channel in self._finished_runs:
+            try:
+                controller.model.call(metaclass, key, "reset_channel", channel)
+            except Exception as e:
+                logger.warning(f"Unable to reset {key} channel {channel}: {e}")
+        self._finished_runs = []
+        controller.tab_action_history = OrderedDict()
+        controller.update_tab_action_history.emit(
+            controller.__class__.__name__, controller.tab_action_history
         )
 
     def _end(self, text: Optional[str]) -> None:
@@ -284,6 +348,7 @@ class ReplaySequence:
         self.running = False
         self.waiting_for = None
         self._launched = False
+        self._going_back = False
         self._generation += 1
         if text is not None:
             name = self._controller.__class__.__name__

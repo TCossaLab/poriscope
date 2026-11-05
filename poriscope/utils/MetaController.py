@@ -343,6 +343,18 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
         return self.replay_sequence.running
 
     @log(logger=logger)
+    def clear_for_replay(self) -> None:
+        """
+        Clear what the tab shows and holds, before its history is replayed onto it again.
+
+        Called when the user goes back to before a replay that failed. Records nothing, and
+        leaves the history alone: the replay that follows rebuilds it. The default clears the
+        View's figure; a tab that keeps more - what a figure holds, a result on its Model -
+        overrides this to clear that too.
+        """
+        self.view.clear_figure()
+
+    @log(logger=logger)
     def panel_text_to_show(self, text: str, source: str) -> List[Tuple[str, str]]:
         """
         Say which status-panel lines to show now, given a line this tab has just sent.

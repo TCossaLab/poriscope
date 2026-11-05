@@ -39,6 +39,7 @@ class _Model:
         }
         self.finished: Dict[str, bool] = {"A": True, "B": True, "F": True}
         self.counts: Dict[str, Any] = {"F": 12}
+        self.resets: List[Any] = []
         self.update_progressbar = MagicMock()
         self.run_finished = MagicMock()
         self.add_text_to_display = MagicMock()
@@ -47,6 +48,9 @@ class _Model:
     def call(self, metaclass: str, key: str, method: str, *args: Any) -> Any:
         if method in ("get_eventfinding_status", "get_eventfitting_status"):
             return self.finished[key]
+        if method == "reset_channel":
+            self.resets.append((metaclass, key, *args))
+            return None
         if method == "get_num_events":
             count = self.counts[key]
             if isinstance(count, Exception):
@@ -393,3 +397,97 @@ class TestStop:
         qtbot.wait(20)
 
         assert calls == []
+
+
+class TestAfterAFailure:
+    """The user is asked to go back to before the replay, or keep what was replayed."""
+
+    @staticmethod
+    def _answer(tab: _Tab, choice: str, order: List[str]) -> MagicMock:
+        def ask(*args: Any) -> str:
+            order.append("asked")
+            return choice
+
+        tab.view.ask_after_replay_failure = MagicMock(side_effect=ask)
+        tab.add_text_to_display.connect(lambda text, source: order.append(text))
+        return tab.view.ask_after_replay_failure
+
+    def test_the_dialog_names_the_step_and_the_reason_after_the_panel_has_said_so(
+        self, tab: _Tab, qtbot: Any
+    ) -> None:
+        order: List[str] = []
+        ask = self._answer(tab, "keep", order)
+
+        _replay(tab, [_entry("draw", "a"), _entry("boom")], qtbot)
+
+        ask.assert_called_once_with(
+            "_Tab", 2, 2, "boom", "boom raised RuntimeError: the column is gone"
+        )
+        assert order[-2:] == [
+            "_Tab: replay stopped at step 2 of 2: boom raised RuntimeError: the "
+            "column is gone",
+            "asked",
+        ]
+
+    def test_keep_leaves_what_was_replayed_and_continues_from_the_failed_entry(
+        self, tab: _Tab, qtbot: Any
+    ) -> None:
+        self._answer(tab, "keep", [])
+        tab.draws["b"] = False
+        sequence = _replay(
+            tab, [_entry("draw", "a"), _entry("draw", "b"), _entry("draw", "c")], qtbot
+        )
+
+        assert [e["kwargs"]["label"] for e in tab.tab_action_history.values()] == ["a"]
+        assert sequence.has_remaining()
+
+        tab.draws["b"] = True
+        assert sequence.start()
+        _ended(sequence, qtbot)
+
+        assert tab.calls == ["draw:a", "draw:b", "draw:b", "draw:c"]
+
+    def test_go_back_clears_the_tab_and_rebuilds_its_history_from_before(
+        self, tab: _Tab, panel: List[str], qtbot: Any
+    ) -> None:
+        tab.draw("before")
+        tab.calls.clear()
+        tab.clear_for_replay = MagicMock(  # type: ignore[method-assign]
+            side_effect=lambda: tab.calls.append("cleared")
+        )
+        self._answer(tab, "back", [])
+        sequence = _replay(tab, [_entry("find", "A", 1), _entry("boom")], qtbot)
+        _run_ends(tab, sequence, 1, "A")
+        qtbot.waitUntil(lambda: "draw:before" in tab.calls)
+        _ended(sequence, qtbot)
+
+        assert tab.calls == ["find:A/1", "boom", "cleared", "draw:before"]
+        assert tab.model.resets == [("MetaEventFinder", "A", 1)]  # type: ignore[attr-defined]
+        assert list(tab.tab_action_history.values()) == [
+            {"action": "draw", "args": (), "kwargs": {"label": "before"}}
+        ]
+        assert panel[-2:] == [
+            "_Tab: going back to before the replay",
+            "_Tab: back to before the replay",
+        ]
+        assert not sequence.has_remaining()
+
+    def test_a_failed_go_back_leaves_the_tab_cleared_and_asks_nothing_more(
+        self, tab: _Tab, panel: List[str], qtbot: Any
+    ) -> None:
+        tab.draw("before")
+        tab.draws["before"] = False
+        tab.clear_for_replay = MagicMock()  # type: ignore[method-assign]
+        ask = self._answer(tab, "back", [])
+        sequence = _replay(tab, [_entry("boom")], qtbot)
+        qtbot.waitUntil(lambda: panel[-1].startswith("_Tab: going back stopped"))
+        _ended(sequence, qtbot)
+
+        ask.assert_called_once()
+        assert tab.clear_for_replay.call_count == 2
+        assert list(tab.tab_action_history.values()) == []
+        assert panel[-1] == (
+            "_Tab: going back stopped at step 1 of 1: draw did nothing; the tab is "
+            "left cleared"
+        )
+        assert not sequence.has_remaining()

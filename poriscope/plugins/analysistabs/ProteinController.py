@@ -120,6 +120,20 @@ class ProteinController(MetaSubsetTabController):
         self.view.clear_plot(axis_type, mode)
 
     @log(logger=logger)
+    @override
+    def clear_for_replay(self) -> None:
+        """
+        Clear both modes' figures and both fits, recording nothing, before a replay rebuilds them.
+
+        A reset clears one mode's figures and keeps its fit; going back must leave neither
+        mode with a fit a commit could still write.
+        """
+        self.view.clear_plot("2d", "individual")
+        self.view.clear_plot("2d", "ensemble")
+        self.model.individual_fit = None
+        self.model.ensemble_fit = None
+
+    @log(logger=logger)
     def _start_figure(self, mode: str) -> None:
         """
         Clear a mode's figures for a new plot, recording the reset unless it is already the last entry.

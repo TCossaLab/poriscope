@@ -146,6 +146,18 @@ class ClusteringController(MetaController):
         self.view.clear_plot(axis_type)
 
     @log(logger=logger)
+    @override
+    def clear_for_replay(self) -> None:
+        """
+        Clear the figure and drop the clustering result, recording nothing, before a replay rebuilds them.
+
+        Without the result a merge, a plot or a commit after going back would use a
+        clustering the tab no longer shows.
+        """
+        self.view.clear_plot()
+        self.model.result = None
+
+    @log(logger=logger)
     def _start_figure(self) -> None:
         """
         Clear the figure for a new clustering, recording the reset unless it is already the last entry.

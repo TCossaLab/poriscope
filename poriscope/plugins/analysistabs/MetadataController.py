@@ -206,6 +206,15 @@ class MetadataController(MetaSubsetTabController):
         self.view.clear_plot(axis_type)
 
     @log(logger=logger)
+    @override
+    def clear_for_replay(self) -> None:
+        """
+        Clear the figure and forget what it held, recording nothing, before a replay rebuilds it.
+        """
+        self.model.clear_overlay("2d")
+        self.view.clear_plot("2d")
+
+    @log(logger=logger)
     @Slot(str, str, list, list, object, bool, object, object)
     def request_overlay_plot(
         self,
