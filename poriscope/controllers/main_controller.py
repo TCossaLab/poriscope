@@ -25,6 +25,7 @@
 # Alejandra Carolina González González
 
 import copy
+import functools
 import logging
 import sys
 from pathlib import Path
@@ -35,6 +36,7 @@ from PySide6.QtCore import QObject, Slot
 from poriscope.controllers.DataPluginController import DataPluginController
 from poriscope.models.main_model import MainModel
 from poriscope.utils.LogDecorator import log
+from poriscope.utils.MetaController import MetaController
 from poriscope.views.main_view import MainView
 
 
@@ -586,7 +588,7 @@ class MainController(QObject):
                 self.handle_plugin_state_changed
             )
             self.analysis_tabs[subclass].add_text_to_display.connect(
-                self.main_view.add_text_to_display
+                functools.partial(self.show_tab_text, self.analysis_tabs[subclass])
             )
             self.analysis_tabs[subclass].update_tab_action_history.connect(
                 self.update_tab_action_history
@@ -604,6 +606,24 @@ class MainController(QObject):
             self.analysis_tabs[subclass].update_available_plugins(self.data_plugins)
             self.logger.debug(f"New analysis tab of type {subclass} added")
             self.update_plugin_history(history, "")
+
+    @log(logger=logger)
+    def show_tab_text(self, tab: MetaController, text: str, source: str) -> None:
+        """
+        Put an analysis tab's line on the status panel, unless the tab holds it back.
+
+        Each tab's ``add_text_to_display`` is connected here with the tab bound, and the
+        tab says what to show: nothing while it replays, then its held lines together.
+
+        :param tab: the tab that sent the line
+        :type tab: MetaController
+        :param text: the line
+        :type text: str
+        :param source: who sent it
+        :type source: str
+        """
+        for line, line_source in tab.panel_text_to_show(text, source):
+            self.main_view.add_text_to_display(line, line_source)
 
     @log(logger=logger)
     @Slot(str)

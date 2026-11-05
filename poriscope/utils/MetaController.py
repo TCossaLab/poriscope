@@ -131,6 +131,12 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
     #: (plugin key, channel) -> the entry of a result whose run has not ended yet.
     _held_results: Optional[Dict[Tuple[Any, Any], Dict[str, Any]]] = None
 
+    #: (text, source) of each status-panel line held back while this tab replays.
+    _held_panel_text: Optional[List[Tuple[str, str]]] = None
+
+    #: True while a line is sent that must reach the panel even during a replay.
+    _panel_text_now: bool = False
+
     def __init__(
         self,
         available_subclasses: Optional[Mapping[str, List[str]]] = None,
@@ -297,11 +303,15 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
         if self.__class__.__name__ in actions.keys():
             actions = actions[self.__class__.__name__]  # allow loading from base file
         if not self.start_replay(actions.values()):
-            self.add_text_to_display.emit(
-                f"{self.__class__.__name__}: a replay is already running; stop it, or "
-                f"let it finish, first",
-                self.__class__.__name__,
-            )
+            self._panel_text_now = True
+            try:
+                self.add_text_to_display.emit(
+                    f"{self.__class__.__name__}: a replay is already running; stop it, "
+                    f"or let it finish, first",
+                    self.__class__.__name__,
+                )
+            finally:
+                self._panel_text_now = False
 
     @log(logger=logger)
     def start_replay(self, entries: Optional[Iterable[Any]] = None) -> bool:
@@ -331,6 +341,36 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
         :rtype: bool
         """
         return self.replay_sequence.running
+
+    @log(logger=logger)
+    def panel_text_to_show(self, text: str, source: str) -> List[Tuple[str, str]]:
+        """
+        Say which status-panel lines to show now, given a line this tab has just sent.
+
+        While the tab replays, its lines are held back and nothing is shown, so the panel
+        does not interleave them with other tabs' lines. The first line once the replay has
+        ended - it says how the replay ended - comes with the held lines before it, in order.
+        A line the tab must show at once, such as refusing a second replay, is shown
+        alone and holds nothing back.
+        The tab's own ``add_text_to_display`` carries every line as it is sent.
+
+        :param text: the line
+        :type text: str
+        :param source: who sent it
+        :type source: str
+        :return: (text, source) of each line to show now, in order
+        :rtype: List[Tuple[str, str]]
+        """
+        if self._panel_text_now:
+            return [(text, source)]
+        if self._held_panel_text is None:
+            self._held_panel_text = []
+        if self.is_replaying():
+            self._held_panel_text.append((text, source))
+            return []
+        shown = self._held_panel_text + [(text, source)]
+        self._held_panel_text = []
+        return shown
 
     @log(logger=logger)
     def record_action(self, entry: Dict[str, Any]) -> None:
