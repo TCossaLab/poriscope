@@ -75,15 +75,3 @@ Optional Method Overrides
 	  
 .. automethod:: poriscope.utils.MetaEventFinder.MetaEventFinder.reset_channel
    :no-index:
-
-A run that does not finish - cancelled, failed, or with no events found - keeps the channel's
-earlier results: ``find_events`` sets them aside when the run starts and puts them back when it
-ends any way but finished, since no events means nothing to plot or write and must not replace a
-run that found some. The base sets aside everything ``reset_channel`` clears. A finder that keeps
-per-channel results of its own overrides both methods below, calling ``super()`` first.
-
-.. automethod:: poriscope.utils.MetaEventFinder.MetaEventFinder._set_aside_channel
-   :no-index:
-
-.. automethod:: poriscope.utils.MetaEventFinder.MetaEventFinder._put_back_channel
-   :no-index:

@@ -44,26 +44,6 @@ from poriscope.utils.SerializeDecorator import serialize_channels
 WIDTH_AT_60_PERCENT_PER_SIGMA = 2.0 * np.sqrt(2.0 * np.log(1.0 / 0.6))
 
 
-#: How a run ended, as kept in ``last_run``.
-RUN_OUTCOMES = ("finished", "no events", "cancelled", "failed")
-
-#: The per-channel results a run replaces, set aside when it starts.
-_FINDER_RESULTS = (
-    "num_events_found",
-    "event_starts",
-    "event_ends",
-    "padding_before",
-    "padding_after",
-    "baseline_means",
-    "baseline_stds",
-    "rejected_data",
-    "accepted_data",
-    "rejected_events",
-    "eventfinding_finished",
-    "no_events_found",
-)
-
-
 @inherit_docstrings
 class MetaEventFinder(BaseDataPlugin):
     """
@@ -105,8 +85,6 @@ class MetaEventFinder(BaseDataPlugin):
         self.rejected_events: Dict[int, Dict[str, int]] = {}
         self.eventfinding_finished: Dict[int, bool] = {}
         self.no_events_found: Dict[int, bool] = {}
-        #: how each channel's last run ended: one of :py:data:`RUN_OUTCOMES`
-        self.last_run: Dict[int, str] = {}
 
     # public API, must be overridden by subclasses
 
@@ -133,20 +111,6 @@ class MetaEventFinder(BaseDataPlugin):
             if init:
                 return ""
             else:
-                ended = self.last_run.get(channel)
-                if ended in ("no events", "cancelled", "failed"):
-                    happened = {
-                        "no events": "no events found with these settings, so there is "
-                        "nothing to plot or write",
-                        "cancelled": "event finding cancelled",
-                        "failed": "event finding failed",
-                    }[ended]
-                    if self.eventfinding_finished.get(channel):
-                        return (
-                            f"\nCh{channel}: {happened}; the channel keeps its earlier "
-                            f"{self.num_events_found[channel]} events"
-                        )
-                    return f"\nCh{channel}: {happened}"
                 if self.eventfinding_finished.get(channel):
                     report = (
                         f"\nCh{channel}: Found {self.num_events_found[channel]} events"
@@ -220,70 +184,6 @@ class MetaEventFinder(BaseDataPlugin):
         self.no_events_found[channel] = False
 
     @log(logger=logger)
-    def _set_aside_channel(self, channel: int) -> Dict[str, Any]:
-        """
-        **Purpose:** Take a channel's results off the plugin as a run starts, so a run that does not finish can put them back.
-
-        :ref:`MetaEventFinder` already sets aside everything :py:meth:`reset_channel` clears. A finder
-        that keeps per-channel results of its own overrides this and
-        ``_put_back_channel`` together.
-
-        .. warning::
-
-            This function implements core functionality required for broader plugin integration into Poriscope. If you do need to override it, you **MUST** call ``super()._set_aside_channel(channel)`` **before** any additional code that you add, add your own results to the dict it returns, and override ``_put_back_channel`` to restore them.
-
-        :param channel: the channel identifier
-        :type channel: int
-        :return: the channel's results, by attribute name; empty for a channel with none
-        :rtype: Dict[str, Any]
-        """
-        return {
-            name: getattr(self, name).pop(channel)
-            for name in _FINDER_RESULTS
-            if channel in getattr(self, name)
-        }
-
-    @log(logger=logger)
-    def _put_back_channel(self, channel: int, aside: Dict[str, Any]) -> None:
-        """
-        **Purpose:** Replace whatever a run that did not finish left on a channel with the results set aside when it started.
-
-        A channel that had no results when the run started is left as the run left it,
-        cleared.
-
-        .. warning::
-
-            This function implements core functionality required for broader plugin integration into Poriscope. If you do need to override it, you **MUST** call ``super()._put_back_channel(channel, aside)`` **before** any additional code that you add.
-
-        :param channel: the channel identifier
-        :type channel: int
-        :param aside: what ``_set_aside_channel`` returned for this channel
-        :type aside: Dict[str, Any]
-        """
-        if not aside:
-            return
-        for name in _FINDER_RESULTS:
-            results = getattr(self, name)
-            results.pop(channel, None)
-            if name in aside:
-                results[channel] = aside[name]
-
-    @log(logger=logger)
-    def last_run_finished(self, channel: int) -> bool:
-        """
-        Did the channel's last run finish, as opposed to being cancelled, failing or finding no events?
-
-        Not the same question as :py:meth:`get_eventfinding_status`: a run that did not
-        finish leaves the channel's earlier results, and those may be finished.
-
-        :param channel: the channel identifier
-        :type channel: int
-        :return: True if the last run on this channel finished
-        :rtype: bool
-        """
-        return self.last_run.get(channel) == "finished"
-
-    @log(logger=logger)
     def get_samplerate(self) -> float:
         """
         Return the samplerate of the associated reader object.
@@ -328,12 +228,6 @@ class MetaEventFinder(BaseDataPlugin):
         Orchestrates event finding over multiple (start, end) ranges for a single channel.
         Yields progress for each chunk processed.
 
-        A run that does not finish - cancelled, failed, or with no events found - keeps
-        the channel's earlier results: they are set aside when the run starts and put
-        back when it ends any way but finished. No events means nothing to plot or write, so it
-        never replaces a run that found some. How the run ended is kept, for
-        :py:meth:`last_run_finished` and the status report.
-
         :param channel: The channel to process.
         :type channel: int
         :param ranges: List of (start, end) tuples in seconds.
@@ -348,134 +242,124 @@ class MetaEventFinder(BaseDataPlugin):
         :yield: fractional progress (0.0-1.0)
         :ytype: float
         """
-        aside = self._set_aside_channel(channel)
-        outcome = "failed"
-        try:
-            if self.reader is None:
-                raise AttributeError(
-                    "Eventfinders need an attached MetaReader object to function"
-                )
-            if channel not in self.reader.get_channels():
-                self.logger.error(
-                    f"Reader {self.reader.get_key()} only has channels {self.reader.get_channels()}. "
-                    f"Requested channel={channel} is invalid"
-                )
-                raise RuntimeError(f"Invalid channel: {channel}")
-
-            self.logger.info(
-                f"Starting eventfinding on channel {channel} for {len(ranges)} ranges"
+        if self.reader is None:
+            raise AttributeError(
+                "Eventfinders need an attached MetaReader object to function"
             )
+        if channel not in self.reader.get_channels():
+            self.logger.error(
+                f"Reader {self.reader.get_key()} only has channels {self.reader.get_channels()}. "
+                f"Requested channel={channel} is invalid"
+            )
+            raise RuntimeError(f"Invalid channel: {channel}")
 
-            # Exactly what reset_channel does, and it was written out here a second time.
-            # Calling it means a finder that overrides reset_channel to clear state of its own
-            # gets that cleared too, which is what starting a run on this channel should mean.
-            self.reset_channel(channel)
+        self.logger.info(
+            f"Starting eventfinding on channel {channel} for {len(ranges)} ranges"
+        )
 
-            self.reader.get_samplerate()
-            total_found = 0
-            ranges = [
-                (
-                    (start, end)
-                    if end is not None and end > 0
-                    else (
-                        start,
-                        self.reader.get_channel_length(channel)
-                        / self.reader.get_samplerate(),
-                    )
+        # Exactly what reset_channel does, and it was written out here a second time.
+        # Calling it means a finder that overrides reset_channel to clear state of its own
+        # gets that cleared too, which is what starting a run on this channel should mean.
+        self.reset_channel(channel)
+
+        self.reader.get_samplerate()
+        total_found = 0
+        ranges = [
+            (
+                (start, end)
+                if end is not None and end > 0
+                else (
+                    start,
+                    self.reader.get_channel_length(channel)
+                    / self.reader.get_samplerate(),
                 )
-                for start, end in ranges
-            ]
+            )
+            for start, end in ranges
+        ]
 
-            ranges = self._merge_overlapping_ranges(ranges)
-            lengths = [end - start for start, end in ranges]
+        ranges = self._merge_overlapping_ranges(ranges)
+        lengths = [end - start for start, end in ranges]
 
-            total_length = sum(length for length in lengths if length > 0)
-            completed = float(0)
-            abort: Optional[bool] = False
-            for i, (start, end) in enumerate(ranges):
-                if start < 0:
-                    self.logger.info(f"Setting start to 0 instead of {start}")
-                    start = 0
+        total_length = sum(length for length in lengths if length > 0)
+        completed = float(0)
+        abort: Optional[bool] = False
+        for i, (start, end) in enumerate(ranges):
+            if start < 0:
+                self.logger.info(f"Setting start to 0 instead of {start}")
+                start = 0
 
-                if end is None or end == 0:
-                    end = (
-                        self.reader.get_channel_length(channel)
-                        / self.reader.get_samplerate()
-                    )
-                    self.logger.info(
-                        f"Range {i}: Interpreted as ({start}, end) → ({start}, {end})"
-                    )
-
-                if start >= end:
-                    self.logger.warning(
-                        f"Range {i}: Skipping invalid range ({start}, {end})"
-                    )
-                    continue
-
+            if end is None or end == 0:
+                end = (
+                    self.reader.get_channel_length(channel)
+                    / self.reader.get_samplerate()
+                )
                 self.logger.info(
-                    f"Processing range {i+1}/{len(ranges)}: ({start}, {end})"
+                    f"Range {i}: Interpreted as ({start}, end) → ({start}, {end})"
                 )
-                events_before = len(self.event_starts[channel])
 
-                weight = (end - start) / total_length
-                for value in self._find_events_single_range(
-                    channel, start, end, chunk_length, data_filter
-                ):
-                    abort = yield value * weight + completed
-                    abort = bool(abort)
-                    if abort is True:
-                        break
+            if start >= end:
+                self.logger.warning(
+                    f"Range {i}: Skipping invalid range ({start}, {end})"
+                )
+                continue
 
-                events_after = len(self.event_starts[channel])
-                events_in_range = events_after - events_before
-                total_found += events_in_range
-                self.logger.info(f"Range {i+1}: Found {events_in_range} events")
-                completed += weight
+            self.logger.info(f"Processing range {i+1}/{len(ranges)}: ({start}, {end})")
+            events_before = len(self.event_starts[channel])
 
+            weight = (end - start) / total_length
+            for value in self._find_events_single_range(
+                channel, start, end, chunk_length, data_filter
+            ):
+                abort = yield value * weight + completed
+                abort = bool(abort)
                 if abort is True:
-                    self.logger.info(
-                        f"Eventfinding aborted after range {i+1}/{len(ranges)} in channel {channel}"
-                    )
                     break
 
-            # Final consistency check
-            if abort is False:
-                if (
-                    len(self.event_starts[channel]) > 0
-                    and len(self.event_ends[channel]) > 0
-                ):
-                    if self.event_starts[channel][-1] > self.event_ends[channel][-1]:
-                        self.event_starts[channel].pop()
-                    if self.event_ends[channel][0] < self.event_starts[channel][0]:
-                        self.event_ends[channel].pop(0)
+            events_after = len(self.event_starts[channel])
+            events_in_range = events_after - events_before
+            total_found += events_in_range
+            self.logger.info(f"Range {i+1}: Found {events_in_range} events")
+            completed += weight
 
-                    if len(self.event_starts[channel]) != len(self.event_ends[channel]):
-                        self.logger.warning(
-                            f"Mismatched event starts and ends: {len(self.event_starts[channel])} vs {len(self.event_ends[channel])} in channel {channel}"
-                        )
-                        self.reset_channel(channel)
-                        raise RuntimeError("Mismatched number of event starts and ends")
+            if abort is True:
+                self.logger.info(
+                    f"Eventfinding aborted after range {i+1}/{len(ranges)} in channel {channel}"
+                )
+                break
 
-                    self.num_events_found[channel] = len(self.event_starts[channel])
-                    self.eventfinding_finished[channel] = True
-                    self.logger.info(
-                        f"Total events found for channel {channel}: {total_found}"
+        # Final consistency check
+        if abort is False:
+            if (
+                len(self.event_starts[channel]) > 0
+                and len(self.event_ends[channel]) > 0
+            ):
+                if self.event_starts[channel][-1] > self.event_ends[channel][-1]:
+                    self.event_starts[channel].pop()
+                if self.event_ends[channel][0] < self.event_starts[channel][0]:
+                    self.event_ends[channel].pop(0)
+
+                if len(self.event_starts[channel]) != len(self.event_ends[channel]):
+                    self.logger.warning(
+                        f"Mismatched event starts and ends: {len(self.event_starts[channel])} vs {len(self.event_ends[channel])} in channel {channel}"
                     )
-                    outcome = "finished"
-                    yield 1.0
-                    return
+                    self.reset_channel(channel)
+                    raise RuntimeError("Mismatched number of event starts and ends")
+
+                self.num_events_found[channel] = len(self.event_starts[channel])
+                self.eventfinding_finished[channel] = True
+                self.logger.info(
+                    f"Total events found for channel {channel}: {total_found}"
+                )
+                yield 1.0
+            else:
                 self.logger.info(f"No events found in channel {channel}")
                 self.reset_channel(channel)
+                # The run completed, so the report says so. The channel stays unfinished:
+                # there is nothing for Plot Events or the writer to use.
                 self.no_events_found[channel] = True
-                outcome = "no events"
-                return
+        else:
             self.logger.info(f"Eventfinding aborted in channel {channel}")
             self.reset_channel(channel)
-            outcome = "cancelled"
-        finally:
-            self.last_run[channel] = outcome
-            if outcome != "finished":
-                self._put_back_channel(channel, aside)
 
     @log(logger=logger)
     def _find_events_single_range(

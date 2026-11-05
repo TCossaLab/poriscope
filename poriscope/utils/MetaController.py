@@ -46,12 +46,13 @@ from poriscope.utils.MetaView import MetaView
 from poriscope.utils.QObjectABCMeta import QObjectABCMeta
 from poriscope.utils.ReplayGuard import replaying
 
-#: The plugin method that says whether its last run on a channel finished, per plugin
-#: family. A result whose plugin is of another family is recorded when its run ends,
+#: The plugin method that says whether a channel holds a finished run, per plugin family.
+#: A run clears its channel as it starts, so once a run ends this says whether that run
+#: finished. A result whose plugin is of another family is recorded when its run ends,
 #: unasked.
 RUN_STATUS = {
-    "MetaEventFinder": "last_run_finished",
-    "MetaEventFitter": "last_run_finished",
+    "MetaEventFinder": "get_eventfinding_status",
+    "MetaEventFitter": "get_eventfitting_status",
 }
 
 
@@ -326,9 +327,8 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
         Record a held result once its run ended, if the plugin says that run finished.
 
         A run that did not finish - cancelled, failed, or with nothing found - is not
-        recorded, and the status panel says so. The plugin keeps the channel's earlier
-        results in that case, so an earlier run of the same plugin and channel stays in the
-        history. A run nothing was held for, a write say, is ignored.
+        recorded, and the status panel says so; an earlier run of the same plugin and
+        channel stays in the history. A run nothing was held for, a write say, is ignored.
 
         :param channel: the channel the run worked on
         :type channel: int
@@ -371,9 +371,10 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
 
     def _run_finished_channel(self, key: str, channel: int) -> bool:
         """
-        Ask the plugin whether its last run on the channel finished.
+        Ask the plugin whether the channel holds a finished run.
 
-        Called from a slot, so a status that cannot be read is logged and counts as not
+        A run clears its channel as it starts, so right after a run ends this says whether
+        that run finished. Called from a slot, so a status that cannot be read is logged and counts as not
         finished rather than raised.
 
         :param key: the plugin's key

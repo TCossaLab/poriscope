@@ -2,8 +2,8 @@
 A real Find is recorded once it finished, and a Find that did not finish is not.
 
 Driven through the Raw Data tab's Controller with a real reader and finder, so the
-plugin's own answer decides: the unit tests stub it. A Find that found nothing keeps the
-channel's earlier events, so the earlier Find stays in the history beside them.
+plugin's own answer decides: the unit tests stub it. A Find that found nothing leaves the
+channel without events, and the earlier Find stays in the history.
 """
 
 from pathlib import Path
@@ -48,7 +48,7 @@ def actions(triad: Triad) -> List[Any]:
 
 
 @pytest.mark.timeout(240)
-def test_a_find_that_finds_nothing_is_not_recorded_and_keeps_the_earlier_one(
+def test_a_find_that_finds_nothing_is_not_recorded(
     qapp, qtbot, tmp_path: Path, sample_chimera: Dict[str, str]
 ) -> None:
     triad = build_rawdata_tab(tmp_path, sample_chimera)
@@ -64,12 +64,10 @@ def test_a_find_that_finds_nothing_is_not_recorded_and_keeps_the_earlier_one(
 
         find(triad, qtbot, [(0.0, 0.00002)])
 
-        assert finished(triad, channel)
+        assert not finished(triad, channel)
         assert actions(triad) == [("find_events", [(0.0, 0.0)])]
         assert any(
-            "no events found with these settings, so there is nothing to plot or "
-            "write; the channel keeps its earlier" in message
-            for message in messages
+            f"Ch{channel}: no events found" in message for message in messages
         ), messages
         assert messages[-1] == (
             f"{FINDER} did not finish channel {channel}, so this run is not saved in "

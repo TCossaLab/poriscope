@@ -275,17 +275,17 @@ def _event_free_range(finder, channel):
 
 
 @pytest.mark.conformance
-def test_a_run_that_finds_no_events_says_so_and_keeps_the_earlier_events(found) -> None:
+def test_a_run_that_finds_no_events_says_so_and_is_not_marked_finished(found) -> None:
     """
     A run over a range with no events completes, so its report must not say "incomplete".
 
-    No events means nothing to plot or write, so the channel keeps the events the fixture's
-    run found, and the report says both.
+    The channel still reads as not finished, because Plot Events and the writer gate on
+    that flag and there is nothing for them to use.
 
     :param found: Finder, reader and index lists from the fixture.
     :type found: tuple
     """
-    finder, _reader, starts, _ends = found
+    finder, _reader, _starts, _ends = found
     empty = _event_free_range(finder, CHIMERA_CHANNEL)
 
     for _progress in finder.find_events(CHIMERA_CHANNEL, empty, 3.0, identity):
@@ -294,21 +294,19 @@ def test_a_run_that_finds_no_events_says_so_and_keeps_the_earlier_events(found) 
     report = finder.report_status(CHIMERA_CHANNEL)
     assert "no events found" in report.lower(), report
     assert "incomplete" not in report, report
-    assert f"keeps its earlier {len(starts)} events" in report, report
-    assert finder.get_eventfinding_status(CHIMERA_CHANNEL) is True
-    assert finder.get_num_events_found(CHIMERA_CHANNEL) == len(starts)
-    assert not finder.last_run_finished(CHIMERA_CHANNEL)
+    assert finder.get_eventfinding_status(CHIMERA_CHANNEL) is False
+    assert finder.get_num_events_found(CHIMERA_CHANNEL) == 0
 
 
 @pytest.mark.conformance
-def test_an_aborted_run_says_cancelled_and_keeps_the_earlier_events(found) -> None:
+def test_an_aborted_run_still_says_incomplete(found) -> None:
     """
-    An abort reports the run as cancelled, not as empty, and the channel keeps its events.
+    An abort leaves the channel unfinished and reports it as incomplete, not as empty.
 
     :param found: Finder, reader and index lists from the fixture.
     :type found: tuple
     """
-    finder, _reader, starts, _ends = found
+    finder, _reader, _starts, _ends = found
 
     run = finder.find_events(CHIMERA_CHANNEL, [(0.0, 0.0)], 0.01, identity)
     next(run)
@@ -316,9 +314,8 @@ def test_an_aborted_run_says_cancelled_and_keeps_the_earlier_events(found) -> No
         run.send(True)
 
     report = finder.report_status(CHIMERA_CHANNEL)
-    assert "event finding cancelled" in report, report
+    assert "incomplete" in report, report
     assert "no events found" not in report.lower(), report
-    assert finder.get_num_events_found(CHIMERA_CHANNEL) == len(starts)
 
 
 @pytest.mark.conformance
@@ -344,9 +341,9 @@ def test_a_later_run_clears_the_no_events_report(found) -> None:
 
 
 @pytest.mark.conformance
-def test_an_abort_after_an_empty_run_reports_the_abort(found) -> None:
+def test_an_abort_after_an_empty_run_reports_incomplete(found) -> None:
     """
-    A new run clears the "no events" report, so an abort right after an empty run says cancelled.
+    A new run clears the "no events" state, so an abort right after an empty run is incomplete.
 
     :param found: Finder, reader and index lists from the fixture.
     :type found: tuple
@@ -362,5 +359,5 @@ def test_an_abort_after_an_empty_run_reports_the_abort(found) -> None:
         run.send(True)
 
     report = finder.report_status(CHIMERA_CHANNEL)
-    assert "event finding cancelled" in report, report
+    assert "incomplete" in report, report
     assert "no events found" not in report.lower(), report

@@ -112,9 +112,8 @@ Step 3: Fit Events
 
 .. note::
 
-   A fit that you cancel or that fails leaves the channel's earlier fits as they were, and the
-   right-hand panel says so (for example *Ch1: fitting cancelled; the channel keeps its earlier
-   fits (48/50 good fits)*). Such a fit is not saved in the tab's history either.
+   A fit that you cancel or that fails leaves the channel without fits, and is not saved in the
+   tab's history; the right-hand panel says so.
 
 6. *(Optional)* Re-enter event indices and **click Plot Events** to view newly fitted entries.
 

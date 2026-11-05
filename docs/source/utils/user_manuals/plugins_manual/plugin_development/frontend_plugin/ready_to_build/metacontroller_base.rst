@@ -41,10 +41,11 @@ No need to manually handle cross-plugin communication — :ref:`MetaController` 
     its plugin parameter, then its channel parameter, ``key=("eventfinder", "channel")``; a
     newer run with the same values replaces an older one. A result is recorded only once its
     run has **finished**: the click's values are held until ``MetaModel.run_finished`` says the
-    run ended, and the plugin is then asked whether that run finished (``last_run_finished``).
-    A run that was cancelled, failed or found nothing is not recorded, and the status panel
-    says so. The plugin keeps the channel's earlier results then, so an earlier run of that
-    plugin and channel stays in the history
+    run ended, and the plugin is then asked whether the channel holds a finished run
+    (``get_eventfinding_status`` or ``get_eventfitting_status``; a run clears its channel as it
+    starts, so this answers for the run that just ended). A run that was cancelled, failed or
+    found nothing is not recorded, and the status panel says so; an earlier run of that plugin
+    and channel stays in the history
   - ``view``: a drawing that replaces what its figure showed, such as a trace. The newest per
     figure is kept. ``depends_on`` names the parameters whose values are the key of the result
     it draws from, ``depends_on=("eventfinder", "channel")``; a view drawn from a result that was
