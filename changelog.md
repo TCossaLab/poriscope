@@ -170,7 +170,7 @@
 
 * Clustering's reset is recorded on `ClusteringController.reset`, drawn by `ClusteringView.clear_plot`: a run records one, unless the last entry is already a reset, and a merge or a 3-D plot records none
 
-* A recorded `result` action is held until `MetaModel.run_finished` says its run ended, and `MetaController.record_finished_run` records it only if the plugin's `last_run_finished` says that run finished
+* A recorded `result` action is held until `MetaModel.run_finished` says its run ended, and `MetaController.record_finished_run` records it only if the plugin then says the channel holds a finished run (`get_eventfinding_status` / `get_eventfitting_status`)
 
 ### User-Facing Behaviour:
 
