@@ -46,12 +46,13 @@ from poriscope.utils.MetaView import MetaView
 from poriscope.utils.QObjectABCMeta import QObjectABCMeta
 from poriscope.utils.ReplayGuard import replaying
 
-#: The plugin method that says whether its last run on a channel finished, per plugin
-#: family. A result whose plugin is of another family is recorded when its run ends,
+#: The plugin method that says whether a channel holds a finished run, per plugin family.
+#: A run clears its channel as it starts, so once a run ends this says whether that run
+#: finished. A result whose plugin is of another family is recorded when its run ends,
 #: unasked.
 RUN_STATUS = {
-    "MetaEventFinder": "last_run_finished",
-    "MetaEventFitter": "last_run_finished",
+    "MetaEventFinder": "get_eventfinding_status",
+    "MetaEventFitter": "get_eventfitting_status",
 }
 
 
@@ -326,9 +327,10 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
         Record a held result once its run ended, if the plugin says that run finished.
 
         A run that did not finish - cancelled, failed, or with nothing found - is not
-        recorded, and the status panel says so. The plugin keeps the channel's earlier
-        results in that case, so an earlier run of the same plugin and channel stays in the
-        history. A run nothing was held for, a write say, is ignored.
+        recorded, and the status panel says so. It cleared the channel as it started, so an
+        earlier run of the same plugin and channel, and every view drawn from it, is removed
+        from the history too: a restore must not bring back results the tab no longer holds.
+        A run nothing was held for, a write say, is ignored.
 
         :param channel: the channel the run worked on
         :type channel: int
@@ -341,11 +343,49 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
         if self._run_finished_channel(key, channel):
             self.update_tab_actions(entry, False)
             return
-        self.add_text_to_display.emit(
+        text = (
             f"{key} did not finish channel {channel}, so this run is not saved in the "
-            f"tab's history",
-            self.__class__.__name__,
+            f"tab's history"
         )
+        if self._forget_run(key, channel):
+            text += (
+                "; its earlier run on that channel is removed from the history too, with "
+                "what was drawn from it, since the channel no longer holds its results"
+            )
+            self.update_tab_action_history.emit(
+                self.__class__.__name__, self.tab_action_history
+            )
+        self.add_text_to_display.emit(text, self.__class__.__name__)
+
+    def _forget_run(self, key: str, channel: int) -> bool:
+        """
+        Remove every recorded run of one plugin on one channel, and the views drawn from it.
+
+        :param key: the plugin's key
+        :type key: str
+        :param channel: the channel
+        :type channel: int
+        :return: True if anything was removed
+        :rtype: bool
+        """
+        declarations = self._declarations_of_tab()
+        kept = []
+        for recorded in self.tab_action_history.values():
+            declaration = declarations.get(recorded.get("action", ""))
+            if declaration is not None:
+                names = (
+                    declaration.key
+                    if declaration.kind == "result"
+                    else declaration.depends_on
+                )
+                kwargs = recorded.get("kwargs") or {}
+                if names and tuple(kwargs.get(n) for n in names) == (key, channel):
+                    continue
+            kept.append(recorded)
+        if len(kept) == len(self.tab_action_history):
+            return False
+        self.tab_action_history = OrderedDict(enumerate(kept))
+        return True
 
     def _held(self) -> Dict[Tuple[Any, Any], Dict[str, Any]]:
         """
@@ -371,9 +411,10 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
 
     def _run_finished_channel(self, key: str, channel: int) -> bool:
         """
-        Ask the plugin whether its last run on the channel finished.
+        Ask the plugin whether the channel holds a finished run.
 
-        Called from a slot, so a status that cannot be read is logged and counts as not
+        A run clears its channel as it starts, so right after a run ends this says whether
+        that run finished. Called from a slot, so a status that cannot be read is logged and counts as not
         finished rather than raised.
 
         :param key: the plugin's key

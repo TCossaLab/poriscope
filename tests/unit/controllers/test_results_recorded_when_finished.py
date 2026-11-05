@@ -2,10 +2,10 @@
 A result - a background run of one plugin on one channel - is recorded only once it finished.
 
 The click's values are held from launch. When the Model says that plugin's run on that
-channel ended, the Controller asks the plugin whether that run finished: if it did, the held
-entry is recorded; if not (cancelled, failed, nothing found) it is dropped and the status
-panel says so. The plugin keeps the channel's earlier results then, so an earlier run of the
-same plugin and channel stays in the history.
+channel ended, the Controller asks the plugin whether the channel holds a finished run, which a
+run clears as it starts: if it does, the held entry is recorded; if not (cancelled, failed,
+nothing found) it is dropped and the status panel says so. An earlier run of the same plugin
+and channel stays in the history.
 """
 
 from collections import OrderedDict
@@ -93,18 +93,20 @@ def test_a_launched_run_is_recorded_only_when_it_finishes(tab: _Tab) -> None:
 
 
 @pytest.mark.parametrize(
-    "plugin, metaclass",
-    [("A", "MetaEventFinder"), ("F", "MetaEventFitter")],
+    "plugin, metaclass, status",
+    [
+        ("A", "MetaEventFinder", "get_eventfinding_status"),
+        ("F", "MetaEventFitter", "get_eventfitting_status"),
+    ],
 )
-def test_the_plugin_is_asked_whether_that_run_finished(
-    tab: _Tab, plugin: str, metaclass: str
+def test_the_plugin_is_asked_whether_the_channel_holds_a_finished_run(
+    tab: _Tab, plugin: str, metaclass: str, status: str
 ) -> None:
-    """Not whether the channel is finished: a run that did not finish keeps earlier results."""
     tab.find(plugin, 2, [])
 
     tab.record_finished_run(2, plugin)
 
-    tab.model.call.assert_called_once_with(metaclass, plugin, "last_run_finished", 2)
+    tab.model.call.assert_called_once_with(metaclass, plugin, status, 2)
 
 
 def test_a_run_that_did_not_finish_is_not_recorded_and_the_panel_says_so(
@@ -152,20 +154,52 @@ def test_a_run_nothing_was_held_for_asks_no_plugin(tab: _Tab) -> None:
     assert _history(tab) == []
 
 
-def test_a_rerun_that_did_not_finish_leaves_the_earlier_run_and_its_views(
+def test_a_rerun_that_did_not_finish_removes_the_earlier_run_and_what_was_drawn_from_it(
     tab: _Tab,
 ) -> None:
+    """The rerun cleared the channel, so the history must not keep a run it no longer holds."""
     tab.find("A", 1, [[0.0, 1.0]])
     tab.record_finished_run(1, "A")
     tab.show("A", 1)
-    before = _history(tab)
+    tab.trace(2.0)
+    tab.find("A", 2, [])
+    tab.record_finished_run(2, "A")
+    tab.find("B", 1, [])
+    tab.record_finished_run(1, "B")
+    tab.show("A", 2)
 
     tab.model.call.return_value = False
     tab.find("A", 1, [[5.0, 6.0]])
     tab.record_finished_run(1, "A")
 
+    assert _history(tab) == [
+        _entry("trace", start=2.0),
+        _entry("find", finder="A", channel=2, ranges=[]),
+        _entry("find", finder="B", channel=1, ranges=[]),
+        _entry("show", finder="A", channel=2),
+    ]
+    tab.update_tab_action_history.emit.assert_called_with("_Tab", tab.tab_action_history)  # type: ignore[attr-defined]
+    assert _panel(tab)[-1] == (
+        "A did not finish channel 1, so this run is not saved in the tab's history; its "
+        "earlier run on that channel is removed from the history too, with what was drawn "
+        "from it, since the channel no longer holds its results"
+    )
+
+
+def test_a_first_run_that_did_not_finish_removes_nothing(tab: _Tab) -> None:
+    tab.trace(2.0)
+    tab.find("B", 1, [])
+    tab.record_finished_run(1, "B")
+    before = _history(tab)
+
+    tab.model.call.return_value = False
+    tab.find("A", 1, [])
+    tab.record_finished_run(1, "A")
+
     assert _history(tab) == before
-    assert len(_panel(tab)) == 1
+    assert _panel(tab) == [
+        "A did not finish channel 1, so this run is not saved in the tab's history"
+    ]
 
 
 def test_a_status_that_cannot_be_read_counts_as_not_finished(tab: _Tab) -> None:

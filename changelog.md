@@ -140,8 +140,6 @@
 
 ### Data Plugin API:
 
-* `MetaEventFinder` and `MetaEventFitter` set a channel's results aside as a run starts and put them back if it does not finish (`_set_aside_channel`, `_put_back_channel`, which `PeakFinder` overrides for its classification), and `last_run_finished` says whether a channel's last run finished
-
 * `MetaEventFitter._post_process_events` is now a concrete no-op, so a fitter with no post-processing need not override it; it still takes one channel and runs when that channel's last event is fitted
 
 * `MetaFilter.get_data_requirements()` lets a filter declare settings the data must match; `BesselFilter` declares its `Samplerate`
@@ -172,7 +170,7 @@
 
 * Clustering's reset is recorded on `ClusteringController.reset`, drawn by `ClusteringView.clear_plot`: a run records one, unless the last entry is already a reset, and a merge or a 3-D plot records none
 
-* A recorded `result` action is held until `MetaModel.run_finished` says its run ended, and `MetaController.record_finished_run` records it only if the plugin's `last_run_finished` says that run finished
+* A recorded `result` action is held until `MetaModel.run_finished` says its run ended, and `MetaController.record_finished_run` records it only if the plugin then says the channel holds a finished run (`get_eventfinding_status` / `get_eventfitting_status`)
 
 ### User-Facing Behaviour:
 
@@ -182,9 +180,7 @@
 
 * Plot Events in the Event Analysis and Metadata tabs no longer fails with matplotlib 3.11, which reports the colour cycle as RGB tuples instead of hex strings
 
-* A Find or Fit that you cancel, that fails, or (a Find) that finds no events now keeps the channel's earlier events or fits instead of clearing them, and the status panel says so
-
-* A Find or Fit that was cancelled, failed or found nothing is no longer saved in the tab's history, and the status panel says so
+* A Find or Fit that was cancelled, failed or found nothing is no longer saved in the tab's history, and neither is the earlier run on that channel it cleared; the status panel says so
 
 * **New Data Plugin: `ABFReader`** opens any ABF1 or ABF2 file `pyabf` can open, gap-free or episodic, with settings for the ADC channel that records current and the sweep to read; `pyabf` is now a dependency
 

@@ -50,6 +50,39 @@ Step 10 waits for both tracks.
 
 ### Step 9b - breaking tab designs and the milestone guard (Carolina's track)
 
+- **Keep a channel's earlier results when a Find/Fit rerun doesn't produce results (2026-11-04).** A rerun clears the
+  channel as it starts, so a cancelled, failed or 0-result rerun loses earlier results. A working approach is in
+  history: `f4cbcc67` added it and `312fe6c2` removed it (`git revert 312fe6c2` or `git cherry-pick f4cbcc67`).
+  - How it worked, on `MetaEventFinder` and `MetaEventFitter` each:
+    - Which results belong to a channel: a module tuple naming the per-channel result dicts, `_FINDER_RESULTS` (12:
+      event starts and ends, paddings, baselines, counts, rejections, the finished flags) and `_FITTER_RESULTS` (7:
+      event and sublevel metadata, sublevel starts, event lengths, rejections, applied filters, the fitted flag).
+    - As a run starts, `_set_aside_channel(channel)` `pop`s those entries for the channel into a dict (a move, no
+      copy) instead of clearing them.
+    - In the run's `finally`, `_put_back_channel(channel, aside)` restores them unless the run finished with results;
+      if it did, they are dropped.
+    - PeakFinder overrides both to add its six classification dicts (`_CLASSIFICATION_RESULTS`).
+    - `last_run` (per channel: finished, no events, cancelled, failed) and `last_run_finished(channel)` record how the
+      run ended, since after a put-back the channel reads finished even though the rerun was not.
+  - Measured: one extra copy of the rerun channel's results, only during the run: ~1 MB per 10,000 events for finders,
+    ~37 MB per 10,000 good fits for NoFitter and CUSUM, ~89 MB for PeakFinder (synthetic 200 and 2,000 events and a
+    real 2 kbp recording, `ce836c54` vs `ff3a82a2`, 2026-11-04).
+  - Why it is queued: it was the fix chosen for the gap that recording a Find or Fit only once it finishes opens (see
+    `DECISIONS.md` 2026-11-03), but it turned out to be an enabler for a bigger change, so it was withdrawn and the
+    gap closed in the tab instead. To plan:
+    - Where it lives: potentially one copy of the set-aside and put-back on `BaseDataPlugin` (Kyle, 2026-11-04).
+      Based on a preliminary review of `f4cbcc67`, it would be shared by every family: each family only declares its
+      result fields, and PeakFinder, or any plugin with per-channel results of its own, extends its family's list
+      instead of overriding methods.
+    - Always on, or an opt-in `keep_previous` on `find_events` / `fit_events`, depending on whether scripts rerun a
+      channel on the same plugin instance.
+    - A readable outcome (`last_run_outcome`), so a replay can tell a cancel from a failure.
+    - 0 results handling.
+    - The writers refusing a run that did not complete before deleting or writing anything.
+    - If earlier results are kept again, keeping the earlier run's history entry instead of removing it.
+    - Until then, a rerun that does not finish leaves the figure showing events from the cleared run (as in 2.0); the
+      history no longer holds them, so a restore does not redraw them.
+
 - **Editing a plugin leaves history entries recorded with its old settings (2026-11-03).** An edit keeps the
   plugin's old results on screen while the plugin history keeps only the new settings (`BaseDataPlugin.apply_settings`,
   `BaseDataPlugin.py:444`), so replaying its entries would use settings they were never run with. Drop the entries

@@ -69,24 +69,32 @@ channel.
 
 ---
 
-## 2026-11-03 - A Find or Fit is recorded when it finishes, and one that does not finish keeps the earlier results
+## 2026-11-03 - A Find or Fit is recorded only once it finishes, and a rerun that does not finish removes the earlier run
 
-**Context.** A Find or Fit was recorded when it was launched, so a cancelled run stayed in the history and a restore
-would have run it in full. And a run cleared the channel as it started, so a cancelled, failed or empty rerun lost
-the earlier results.
+**Context.** Each Find or Fit raises two separate questions: what the tab's *history* holds, which is what a restore
+replays, and what the *channel* holds, which is the plugin's results. A run clears its channel as it starts. A Find or
+Fit used to be recorded when it was clicked, so a run that was then cancelled stayed in the history and a restore would
+have run it in full.
 
-**Decision** (Carolina, 2026-11-02/03). A result is held until `MetaModel.run_finished` says its run ended, and
-recorded only if the plugin's `last_run_finished` says that run finished; otherwise the status panel says it was not
-saved. `MetaEventFinder` and `MetaEventFitter` set a channel's results aside as a run starts and put them back if it
-is cancelled, fails or finds no events, and the status report says what the channel keeps. No events means nothing
-to plot or write, so it never replaces a run that found some.
+**Decision 1, the history** (Carolina, 2026-11-02). A click's values are held until `MetaModel.run_finished` says the
+run ended. The tab then asks the plugin whether the channel holds a finished run (`get_eventfinding_status` /
+`get_eventfitting_status`); since the run cleared the channel, the answer is this run's. If yes, the entry is recorded;
+if not (cancelled, failed, nothing found), it is dropped and the status panel says so.
 
-**Rejected.** Removing the earlier run from the history when a rerun did not finish (right only while the rerun cleared
-the channel); asking whether the channel is finished (after a put-back it is, though the run was not); setting aside
-every per-channel dict generically (could take a lock or cache a running generator uses).
+**Decision 2, keeping the two in agreement** (Carolina, 2026-11-04). Decision 1 alone opens a gap: a rerun that does not
+finish is not recorded, but it has cleared the channel, so the earlier run's entry would describe results the tab no
+longer holds and a restore would bring them back. So the tab also removes the earlier run of that plugin and channel
+from the history, with every `view` whose `depends_on` names it, and the panel says so. This is an exception to the live
+history keeping every entry; only Undo reads that, and no tab with a Find or Fit has Undo.
 
-**Revisit** if a contributor fitter's extra per-channel state is lost on a cancel: it needs its own
-`_set_aside_channel`/`_put_back_channel`.
+**Rejected.** Closing the gap from the plugin side instead: the rerun puts the channel's earlier results back, so the
+earlier run's history entry stays true (built 2026-11-03, `f4cbcc67`). It turned out to be the enabler of a larger
+change, so it was withdrawn and is queued in `future_fixes.md`, Step 9b, "Keep a channel's earlier results when a
+Find/Fit rerun doesn't produce results".
+
+**Revisit both together** when that queued work lands. If a rerun keeps the earlier results, decision 2 must go (the
+earlier run's history entry describes what the channel holds again, so it must stay), and decision 1 must ask how the
+run ended rather than the channel status, which reads finished after a put-back even though the rerun was not.
 
 ---
 
