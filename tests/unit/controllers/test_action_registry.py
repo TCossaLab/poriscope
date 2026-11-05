@@ -434,11 +434,15 @@ class TestReplayRunsInsideTheTripwire:
 
 
 def _view(name: str, figure: str, *depends_on: str) -> ActionDeclaration:
-    return ActionDeclaration(name, "view", figure=figure, depends_on=depends_on)
+    return ActionDeclaration(
+        name, "view", figure=figure, depends_on=depends_on, skip_on_false=True
+    )
 
 
-def _additive(name: str, figure: str) -> ActionDeclaration:
-    return ActionDeclaration(name, "additive", figure=figure)
+def _additive(name: str, figure: str, skip_on_false: bool = True) -> ActionDeclaration:
+    return ActionDeclaration(
+        name, "additive", figure=figure, skip_on_false=skip_on_false
+    )
 
 
 @pytest.mark.parametrize(
@@ -448,7 +452,10 @@ def _additive(name: str, figure: str) -> ActionDeclaration:
             RawDataController,
             [
                 ActionDeclaration(
-                    "find_events", "result", key=("eventfinder", "channel")
+                    "find_events",
+                    "result",
+                    key=("eventfinder", "channel"),
+                    skip_on_false=True,
                 ),
                 _view("update_trace", "plot"),
                 _view("update_psd", "plot"),
@@ -459,7 +466,10 @@ def _additive(name: str, figure: str) -> ActionDeclaration:
             EventAnalysisController,
             [
                 ActionDeclaration(
-                    "fit_events", "result", key=("eventfitter", "channel")
+                    "fit_events",
+                    "result",
+                    key=("eventfitter", "channel"),
+                    skip_on_false=True,
                 ),
                 _view("plot_events", "plot", "eventfitter", "channel"),
             ],
@@ -476,7 +486,7 @@ def _additive(name: str, figure: str) -> ActionDeclaration:
             MetadataController,
             [
                 ActionDeclaration(RESET_ACTION, "reset", figure="plot"),
-                _additive("overlay_plot", "plot"),
+                _additive("overlay_plot", "plot", skip_on_false=False),
                 _view("plot_events", "plot"),
             ],
         ),
