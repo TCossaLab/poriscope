@@ -6,7 +6,7 @@ the Qt side, out of sight of Python's garbage collector, so a connected callable
 the shell or the tab strongly keeps both alive for as long as the tab's signal exists - for
 good. Every ``MainModel`` imports the plugin modules afresh, so each kept tab also keeps its
 plugin classes registered as subclasses of the ``Meta*`` bases, and every later
-``issubclass`` against those bases slows down: across the suite that grew into timeouts.
+``issubclass`` against those bases slows down, until a long test run times out.
 Real shell and tab, built and closed the way every flow in this directory does it.
 """
 
