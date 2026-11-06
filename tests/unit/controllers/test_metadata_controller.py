@@ -1642,6 +1642,7 @@ def test_clearing_the_history_clears_the_figure_and_records_nothing(
     """
     controller.record_action = mocker.Mock()  # type: ignore[method-assign]
     controller.set_history_aside = mocker.Mock()  # type: ignore[method-assign]
+    controller._say = mocker.Mock()  # type: ignore[method-assign]
     controller.model.overlay.plot_type = "Histogram"
 
     controller.clear_history("3d")
@@ -1666,3 +1667,32 @@ def test_a_reset_the_tab_makes_itself_is_still_recorded(
 
     controller.record_action.assert_called_once()
     controller.set_history_aside.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "set_aside, said",
+    [
+        (True, "Reset: plot and history cleared; Undo now will bring it back"),
+        (False, "Reset: plot cleared"),
+    ],
+    ids=["with a history", "with nothing to set aside"],
+)
+def test_the_reset_button_says_what_it_cleared(
+    controller: MetadataController, mocker: MockerFixture, set_aside: bool, said: str
+) -> None:
+    """
+    :param controller: Controller under test.
+    :param mocker: Pytest-mock fixture.
+    :param set_aside: whether the Reset had a history to set aside
+    :param said: the status-panel line expected
+    """
+    controller._say = mocker.Mock()  # type: ignore[method-assign]
+
+    def set_aside_or_not() -> None:
+        controller._history_set_aside = OrderedDict() if set_aside else None
+
+    controller.set_history_aside = set_aside_or_not  # type: ignore[method-assign]
+
+    controller.clear_history()
+
+    controller._say.assert_called_once_with(said)

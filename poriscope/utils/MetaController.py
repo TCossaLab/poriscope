@@ -818,7 +818,8 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
         last reset left. When none is left, the last reset it removed is replayed first,
         so undoing a figure's only plot clears the figure. Undo on a history the Reset
         button emptied (:py:meth:`set_history_aside`) brings that history back by
-        replaying it, which records it again; recording anything else drops it.
+        replaying it, which records it again; recording anything else drops it, and the
+        status panel says the Reset's clear is final.
 
         :param history: Dictionary representing a new action to add.
         :type history: Optional[dict]
@@ -827,6 +828,10 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
         """
         if not undo:
             if history:
+                if self._history_set_aside is not None:
+                    self.add_text_to_display.emit(
+                        "Reset: plot and history cleared", self.__class__.__name__
+                    )
                 self._history_set_aside_dropped = (
                     None if self.tab_action_history else self._history_set_aside
                 )
@@ -896,6 +901,9 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
             return
         if not self.tab_action_history and self._history_set_aside_dropped is not None:
             self._history_set_aside = self._history_set_aside_dropped
+            self.add_text_to_display.emit(
+                "Reset: Undo now will bring it back", self.__class__.__name__
+            )
         self._history_set_aside_dropped = None
         self.update_tab_action_history.emit(
             self.__class__.__name__, self.tab_action_history

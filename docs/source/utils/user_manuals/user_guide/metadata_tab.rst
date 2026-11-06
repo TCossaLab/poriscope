@@ -122,7 +122,8 @@ Step 4: Generate and Export
      you are asked whether to **Go back** to the plot you had before loading, or **Keep** what
      was replayed and continue later with **Replay Actions** (see :ref:`replay_actions`).
    - **Reset**: Clear the plot and the tab's history of plots. Plotting anything after it
-     makes the clear final.
+     makes the clear final. The message panel says which: whether **Undo** will bring the
+     plots back, or that they are cleared for good.
    - **Export Subset - CSV**: Save the currently filtered data to CSV for external analysis.
    - **Export Plot Data**: Save the data behind the current plot.
 

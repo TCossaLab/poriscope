@@ -972,3 +972,50 @@ def test_a_refused_plot_after_the_reset_keeps_what_was_set_aside(
 
     replayed = controller.replay.call_args[0][0]  # type: ignore[attr-defined]
     assert _names(replayed) == [RESET_ACTION, "plot_a"]
+
+
+def test_the_first_entry_kept_after_the_reset_says_the_clear_is_final(
+    controller: MetaController,
+) -> None:
+    """
+    :param controller: Controller under test.
+    """
+    controller.tab_action_history = _history(RESET_ACTION, "plot_a")
+    controller.set_history_aside()
+
+    controller.update_tab_actions({"action": "plot_b"})
+    controller.update_tab_actions({"action": "plot_c"})
+
+    controller.add_text_to_display.emit.assert_called_once_with(  # type: ignore[attr-defined]
+        "Reset: plot and history cleared", type(controller).__name__
+    )
+
+
+def test_an_entry_with_nothing_set_aside_says_nothing(
+    controller: MetaController,
+) -> None:
+    """
+    :param controller: Controller under test.
+    """
+    controller.update_tab_actions({"action": "plot_a"})
+
+    controller.add_text_to_display.emit.assert_not_called()  # type: ignore[attr-defined]
+
+
+def test_a_refused_plot_after_the_reset_says_undo_still_brings_it_back(
+    controller: MetaController,
+) -> None:
+    """
+    :param controller: Controller under test.
+    """
+    controller.tab_action_history = _history(RESET_ACTION, "plot_a")
+    controller.set_history_aside()
+
+    controller.update_tab_actions({"action": "plot_b"})
+    controller.discard_last_tab_action()
+
+    said = [c.args[0] for c in controller.add_text_to_display.emit.call_args_list]  # type: ignore[attr-defined]
+    assert said == [
+        "Reset: plot and history cleared",
+        "Reset: Undo now will bring it back",
+    ]

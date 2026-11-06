@@ -190,7 +190,7 @@
 
 * Abort Analysis and a tab's **❌ ALL** button also stop that tab's replay
 
-* Metadata's **Reset** clears the tab's history of plots, so Save Plot Configuration and the saved session keep only what followed it; **Undo** straight after brings it all back
+* Metadata's **Reset** clears the tab's history of plots, so Save Plot Configuration and the saved session keep only what followed it; **Undo** straight after brings it all back, and the status panel says which
 
 * A replay opens no error dialogs of its own: an error a replayed step logs goes to the log file, and a failed step is reported only by the Go back / Keep question
 

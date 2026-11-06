@@ -211,7 +211,8 @@ class MetadataController(MetaSubsetTabController):
         Clear the figure and empty the history; the Reset button.
 
         Recorded by nothing: an Undo straight after brings the history back, and anything
-        recorded first drops it (:py:meth:`set_history_aside`). The resets the tab makes
+        recorded first drops it (:py:meth:`set_history_aside`). The status panel says which
+        was cleared. The resets the tab makes
         itself - a new figure, the first Plot Events - stay recorded through :py:meth:`reset`.
 
         :param axis_type: Either '2d' or '3d', the projection of the fresh axes
@@ -219,6 +220,10 @@ class MetadataController(MetaSubsetTabController):
         """
         self._clear_figure(axis_type)
         self.set_history_aside()
+        if self._history_set_aside is not None:
+            self._say("Reset: plot and history cleared; Undo now will bring it back")
+        else:
+            self._say("Reset: plot cleared")
 
     def _clear_figure(self, axis_type: str) -> None:
         """
