@@ -417,23 +417,24 @@ def test_undo_after_two_overlays_keeps_the_first(tab: Triad, plot_type: str) -> 
 def test_a_reset_followed_by_an_overlay_records_one_reset(
     tab: Triad, plot_type: str
 ) -> None:
+    """The click empties the history, so it starts again with the overlay's own reset."""
     overlay(tab, plot_type, filters=["F0"])
     reset_by_click(tab)
 
     overlay(tab, plot_type, filters=["F1"])
 
-    assert history(tab) == ["reset", "overlay_plot", "reset", "overlay_plot"]
+    assert history(tab) == ["reset", "overlay_plot"]
     assert on_figure(tab) == {(0, "F1")}
 
 
 @pytest.mark.timeout(120)
 def test_a_3d_plot_after_a_reset_still_gets_three_dimensional_axes(tab: Triad) -> None:
-    """The reset a click made was 2-D, so the 3-D plot records one of its own."""
+    """The click leaves 2-D axes and records nothing, so the 3-D plot records a reset of its own."""
     reset_by_click(tab)
 
     assert overlay(tab, "3D Scatterplot") is True
 
-    assert history(tab) == ["reset", "reset", "overlay_plot"]
+    assert history(tab) == ["reset", "overlay_plot"]
     assert kept(tab).figure is FigureKind.OVERLAY_3D
 
 
@@ -507,14 +508,15 @@ def test_the_model_records_the_figure_kind(
 
 
 @pytest.mark.timeout(120)
-def test_reset_is_recorded_on_the_controller_and_empties_what_is_kept(
+def test_the_reset_click_empties_the_history_and_what_is_kept(
     tab: Triad,
 ) -> None:
+    """The click records nothing; the reset a new figure records is the Controller's."""
     overlay(tab, "3D Scatterplot")
 
     tab.tab_view.handle_parameter_change("metadatacontrols", "reset_plot", ({},))
 
-    assert history(tab)[-1] == "reset"
+    assert history(tab) == []
     assert kept(tab) == OverlayState()
     assert len(tab.tab_view.figure.axes) == 1
     assert "reset" in {name for _, name in declared_actions(MetadataController)}

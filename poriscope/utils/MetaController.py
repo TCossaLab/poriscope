@@ -140,6 +140,14 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
     #: True while a line is sent that must reach the panel even during a replay.
     _panel_text_now: bool = False
 
+    #: The history the Reset button emptied, kept for an Undo straight after it; anything
+    #: recorded and kept after the Reset drops it, so at most one history is kept aside.
+    _history_set_aside: Optional["OrderedDict[int, Dict[str, Any]]"] = None
+
+    #: What the last recorded entry dropped from :py:attr:`_history_set_aside`, put back
+    #: if that entry is discarded: a refused plot leaves nothing kept after the Reset.
+    _history_set_aside_dropped: Optional["OrderedDict[int, Dict[str, Any]]"] = None
+
     def __init__(
         self,
         available_subclasses: Optional[Mapping[str, List[str]]] = None,
@@ -808,7 +816,9 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
 
         Undo removes the last action and any resets before it, then replays from the
         last reset left. When none is left, the last reset it removed is replayed first,
-        so undoing a figure's only plot clears the figure.
+        so undoing a figure's only plot clears the figure. Undo on a history the Reset
+        button emptied (:py:meth:`set_history_aside`) brings that history back by
+        replaying it, which records it again; recording anything else drops it.
 
         :param history: Dictionary representing a new action to add.
         :type history: Optional[dict]
@@ -817,7 +827,15 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
         """
         if not undo:
             if history:
+                self._history_set_aside_dropped = (
+                    None if self.tab_action_history else self._history_set_aside
+                )
+                self._history_set_aside = None
                 self.tab_action_history[len(self.tab_action_history)] = history
+        elif not self.tab_action_history and self._history_set_aside is not None:
+            set_aside = list(self._history_set_aside.values())
+            self._history_set_aside = None
+            self.replay(set_aside)
         else:
             try:
                 self.tab_action_history.popitem()
@@ -876,6 +894,27 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
             self.tab_action_history.popitem()
         except KeyError:
             return
+        if not self.tab_action_history and self._history_set_aside_dropped is not None:
+            self._history_set_aside = self._history_set_aside_dropped
+        self._history_set_aside_dropped = None
+        self.update_tab_action_history.emit(
+            self.__class__.__name__, self.tab_action_history
+        )
+
+    @log(logger=logger)
+    def set_history_aside(self) -> None:
+        """
+        Empty the history for the Reset button, keeping it for an Undo straight after.
+
+        Undo on the emptied history replays what was set aside
+        (:py:meth:`update_tab_actions`); anything recorded and kept first drops it. A Reset
+        of an already empty history keeps what an earlier one set aside.
+        """
+        if not self.tab_action_history:
+            return
+        self._history_set_aside = self.tab_action_history
+        self._history_set_aside_dropped = None
+        self.tab_action_history = OrderedDict()
         self.update_tab_action_history.emit(
             self.__class__.__name__, self.tab_action_history
         )

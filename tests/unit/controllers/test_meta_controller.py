@@ -18,7 +18,7 @@ from __future__ import annotations
 import json
 from collections import OrderedDict
 from pathlib import Path
-from typing import List, override
+from typing import Any, Dict, List, override
 from unittest.mock import MagicMock, mock_open
 
 import numpy as np
@@ -876,3 +876,99 @@ def test_export_plot_data_writes_every_dataset_of_an_overlay(
         "2.0,4.0,6.0,9.0",
         ",,7.0,1.0",
     ]
+
+
+# ------------- the Reset button sets the history aside -------------
+
+
+def _names(entries: Any) -> List[str]:
+    return [entry["action"] for entry in entries]
+
+
+def _history(*names: str) -> "OrderedDict[int, Dict[str, Any]]":
+    return OrderedDict((i, {"action": name}) for i, name in enumerate(names))
+
+
+def test_setting_the_history_aside_empties_it_and_says_so(
+    controller: MetaController,
+) -> None:
+    """
+    :param controller: Controller under test.
+    """
+    controller.tab_action_history = _history(RESET_ACTION, "plot_a")
+
+    controller.set_history_aside()
+
+    assert controller.tab_action_history == OrderedDict()
+    controller.update_tab_action_history.emit.assert_called_once_with(  # type: ignore[attr-defined]
+        type(controller).__name__, OrderedDict()
+    )
+
+
+def test_undo_straight_after_brings_back_what_was_set_aside_once(
+    controller: MetaController,
+) -> None:
+    """
+    :param controller: Controller under test.
+    """
+    controller.tab_action_history = _history(RESET_ACTION, "plot_a", "plot_b")
+    controller.set_history_aside()
+
+    controller.update_tab_actions(undo=True)
+    controller.update_tab_actions(undo=True)
+
+    assert controller.replay.call_count == 1  # type: ignore[attr-defined]
+    replayed = controller.replay.call_args[0][0]  # type: ignore[attr-defined]
+    assert _names(replayed) == [RESET_ACTION, "plot_a", "plot_b"]
+
+
+def test_recording_after_the_reset_drops_what_was_set_aside(
+    controller: MetaController,
+) -> None:
+    """
+    :param controller: Controller under test.
+    """
+    controller.tab_action_history = _history(RESET_ACTION, "plot_a")
+    controller.set_history_aside()
+
+    controller.update_tab_actions({"action": "plot_b"})
+    controller.update_tab_actions(undo=True)
+    controller.update_tab_actions(undo=True)
+
+    for call in controller.replay.call_args_list:  # type: ignore[attr-defined]
+        assert "plot_a" not in _names(call[0][0])
+
+
+def test_a_reset_of_an_empty_history_keeps_what_an_earlier_one_set_aside(
+    controller: MetaController,
+) -> None:
+    """
+    :param controller: Controller under test.
+    """
+    controller.tab_action_history = _history(RESET_ACTION, "plot_a")
+    controller.set_history_aside()
+    controller.set_history_aside()
+
+    controller.update_tab_actions(undo=True)
+
+    replayed = controller.replay.call_args[0][0]  # type: ignore[attr-defined]
+    assert _names(replayed) == [RESET_ACTION, "plot_a"]
+
+
+def test_a_refused_plot_after_the_reset_keeps_what_was_set_aside(
+    controller: MetaController,
+) -> None:
+    """
+    A refused plot is recorded and then discarded, so nothing was kept after the Reset.
+
+    :param controller: Controller under test.
+    """
+    controller.tab_action_history = _history(RESET_ACTION, "plot_a")
+    controller.set_history_aside()
+
+    controller.update_tab_actions({"action": "plot_b"})
+    controller.discard_last_tab_action()
+    controller.update_tab_actions(undo=True)
+
+    replayed = controller.replay.call_args[0][0]  # type: ignore[attr-defined]
+    assert _names(replayed) == [RESET_ACTION, "plot_a"]

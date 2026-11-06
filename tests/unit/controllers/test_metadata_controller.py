@@ -23,7 +23,11 @@ from poriscope.plugins.analysistabs.MetadataController import MetadataController
 from poriscope.plugins.analysistabs.MetadataModel import MetadataModel
 from poriscope.plugins.analysistabs.MetadataView import MetadataView
 from poriscope.utils.MetaController import declared_actions
-from poriscope.utils.MetaSubsetTabModel import MetaSubsetTabModel, OverlayState
+from poriscope.utils.MetaSubsetTabModel import (
+    FigureKind,
+    MetaSubsetTabModel,
+    OverlayState,
+)
 
 # ----------------------------- fixtures ------------------------------
 
@@ -1610,3 +1614,55 @@ class TestAClickedOverlayThatDrewNothing:
 
         controller.update_tab_actions.assert_called_once_with(None, True)  # type: ignore[attr-defined]
         controller.discard_last_tab_action.assert_not_called()  # type: ignore[attr-defined]
+
+
+# ------------------ the Reset button and recorded resets ------------------
+
+
+def test_the_reset_button_reaches_the_unrecorded_clear(mocker: MockerFixture) -> None:
+    """
+    :param mocker: Pytest-mock fixture.
+    """
+    ctrl: MetadataController = MetadataController.__new__(MetadataController)  # type: ignore[type-abstract]
+    ctrl.view = mocker.Mock()
+    ctrl.model = mocker.Mock()
+
+    ctrl._setup_connections()
+
+    ctrl.view.reset_requested.connect.assert_called_once_with(ctrl.clear_history)
+
+
+def test_clearing_the_history_clears_the_figure_and_records_nothing(
+    controller: MetadataController, mock_view: MagicMock, mocker: MockerFixture
+) -> None:
+    """
+    :param controller: Controller under test.
+    :param mock_view: Mocked metadata view.
+    :param mocker: Pytest-mock fixture.
+    """
+    controller.record_action = mocker.Mock()  # type: ignore[method-assign]
+    controller.set_history_aside = mocker.Mock()  # type: ignore[method-assign]
+    controller.model.overlay.plot_type = "Histogram"
+
+    controller.clear_history("3d")
+
+    assert controller.model.overlay == OverlayState(figure=FigureKind.empty("3d"))
+    mock_view.clear_plot.assert_called_once_with("3d")
+    controller.set_history_aside.assert_called_once_with()
+    controller.record_action.assert_not_called()
+
+
+def test_a_reset_the_tab_makes_itself_is_still_recorded(
+    controller: MetadataController, mocker: MockerFixture
+) -> None:
+    """
+    :param controller: Controller under test.
+    :param mocker: Pytest-mock fixture.
+    """
+    controller.record_action = mocker.Mock()  # type: ignore[method-assign]
+    controller.set_history_aside = mocker.Mock()  # type: ignore[method-assign]
+
+    controller.reset("2d")
+
+    controller.record_action.assert_called_once()
+    controller.set_history_aside.assert_not_called()
