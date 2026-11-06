@@ -309,8 +309,7 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
             self._panel_text_now = True
             try:
                 self.add_text_to_display.emit(
-                    f"{self.__class__.__name__}: a replay is already running; stop it, "
-                    f"or let it finish, first",
+                    "a replay is already running; stop it, or let it finish, first",
                     self.__class__.__name__,
                 )
             finally:

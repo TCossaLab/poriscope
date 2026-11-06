@@ -158,7 +158,7 @@ class TestOrder:
 
         assert tab.calls == ["draw:marks", "event loop turn", "draw:b"]
         assert not sequence.running
-        assert panel[-1] == "_Tab: replay done"
+        assert panel[-1] == "replay done"
 
     def test_an_unknown_entry_is_reported_and_the_rest_run(
         self, tab: _Tab, panel: List[str], qtbot: Any
@@ -168,7 +168,7 @@ class TestOrder:
         assert tab.calls == ["draw:b"]
         assert panel == [
             "Not replayed: 'gone' is not a recorded action of _Tab",
-            "_Tab: replay done",
+            "replay done",
         ]
 
     def test_a_replayed_action_is_recorded_again(self, tab: _Tab, qtbot: Any) -> None:
@@ -195,7 +195,7 @@ class TestSynchronousFailure:
         assert not sequence.running
         assert sequence.failed_at == 0
         assert panel == [
-            "_Tab: replay stopped at step 1 of 2: boom raised RuntimeError: the column "
+            "replay stopped at step 1 of 2: boom raised RuntimeError: the column "
             "is gone"
         ]
 
@@ -208,7 +208,7 @@ class TestSynchronousFailure:
 
         assert tab.calls == ["draw:a"]
         assert sequence.failed_at == 0
-        assert panel == ["_Tab: replay stopped at step 1 of 2: draw did nothing"]
+        assert panel == ["replay stopped at step 1 of 2: draw did nothing"]
 
     def test_an_overlay_that_drew_nothing_does_not(
         self, tab: _Tab, panel: List[str], qtbot: Any
@@ -218,7 +218,7 @@ class TestSynchronousFailure:
 
         assert tab.calls == ["overlay:x", "draw:b"]
         assert sequence.failed_at is None
-        assert panel == ["_Tab: replay done"]
+        assert panel == ["replay done"]
 
 
 class TestResults:
@@ -237,7 +237,7 @@ class TestResults:
         _ended(sequence, qtbot)
 
         assert tab.calls == ["find:A/1", "draw:b"]
-        assert panel == ["_Tab: replay done"]
+        assert panel == ["replay done"]
 
     @pytest.mark.parametrize("plugin", ["A", "F"])
     def test_a_run_that_did_not_finish_stops_the_replay(
@@ -255,7 +255,7 @@ class TestResults:
         assert panel == [
             f"{plugin} did not finish channel 3, so this run is not saved in the tab's "
             f"history",
-            f"_Tab: replay stopped at step 1 of 2: {plugin} did not leave a finished "
+            f"replay stopped at step 1 of 2: {plugin} did not leave a finished "
             f"run with results on channel 3",
         ]
 
@@ -271,7 +271,7 @@ class TestResults:
 
         assert sequence.failed_at == 0
         assert panel == [
-            "_Tab: replay stopped at step 1 of 1: F did not leave a finished run with "
+            "replay stopped at step 1 of 1: F did not leave a finished run with "
             "results on channel 3"
         ]
 
@@ -335,7 +335,7 @@ class TestStop:
 
         assert not sequence.running
         assert tab.calls == ["find:A/1"]
-        assert panel == ["_Tab: replay stopped"]
+        assert panel == ["replay stopped"]
 
         assert sequence.start()
         qtbot.waitUntil(lambda: sequence.waiting_for is not None)
@@ -424,7 +424,7 @@ class TestAfterAFailure:
             "_Tab", 2, 2, "boom", "boom raised RuntimeError: the column is gone"
         )
         assert order[-2:] == [
-            "_Tab: replay stopped at step 2 of 2: boom raised RuntimeError: the "
+            "replay stopped at step 2 of 2: boom raised RuntimeError: the "
             "column is gone",
             "asked",
         ]
@@ -467,8 +467,8 @@ class TestAfterAFailure:
             {"action": "draw", "args": (), "kwargs": {"label": "before"}}
         ]
         assert panel[-2:] == [
-            "_Tab: going back to before the replay",
-            "_Tab: back to before the replay",
+            "going back to before the replay",
+            "back to before the replay",
         ]
         assert not sequence.has_remaining()
 
@@ -482,7 +482,7 @@ class TestAfterAFailure:
         states: List[bool] = []
         tab.replay_state_changed.connect(states.append)
         sequence = _replay(tab, [_entry("boom")], qtbot)
-        qtbot.waitUntil(lambda: panel[-1].startswith("_Tab: going back stopped"))
+        qtbot.waitUntil(lambda: panel[-1].startswith("going back stopped"))
         _ended(sequence, qtbot)
 
         assert states == [False, True, False, False]
@@ -491,7 +491,7 @@ class TestAfterAFailure:
         assert tab.clear_for_replay.call_count == 2
         assert list(tab.tab_action_history.values()) == []
         assert panel[-1] == (
-            "_Tab: going back stopped at step 1 of 1: draw did nothing; the tab is "
+            "going back stopped at step 1 of 1: draw did nothing; the tab is "
             "left cleared"
         )
         assert not sequence.has_remaining()

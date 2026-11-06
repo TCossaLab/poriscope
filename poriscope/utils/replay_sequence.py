@@ -315,9 +315,8 @@ class ReplaySequence:
 
     def _go_back(self) -> None:
         """Clear the tab and replay its history from before the replay."""
-        name = self._controller.__class__.__name__
         self._controller.add_text_to_display.emit(
-            f"{name}: going back to before the replay", name
+            "going back to before the replay", self._controller.__class__.__name__
         )
         entries = list(self._history_before.values())
         self._clear_tab()
@@ -343,7 +342,7 @@ class ReplaySequence:
         """
         End the replay, say whether it can be continued, and unless ``text`` is None, say how.
 
-        :param text: what to say on the status panel after the tab's name
+        :param text: what to say on the status panel, which shows it under the tab's name
         :type text: Optional[str]
         """
         self.running = False
@@ -353,5 +352,6 @@ class ReplaySequence:
         self._generation += 1
         self._controller.replay_state_changed.emit(self.has_remaining())
         if text is not None:
-            name = self._controller.__class__.__name__
-            self._controller.add_text_to_display.emit(f"{name}: {text}", name)
+            self._controller.add_text_to_display.emit(
+                text, self._controller.__class__.__name__
+            )

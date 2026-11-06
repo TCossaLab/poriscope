@@ -116,7 +116,7 @@ def test_a_loaded_file_is_replayed_one_entry_at_a_time(
     assert tab.is_replaying()
     qtbot.waitUntil(lambda: not tab.is_replaying())
     assert tab.calls == ["draw:a", "draw:b"]
-    assert panel == ["_Tab: replay done"]
+    assert panel == ["replay done"]
 
 
 def test_a_file_loaded_during_a_replay_is_refused(
@@ -129,9 +129,7 @@ def test_a_file_loaded_during_a_replay_is_refused(
 
     tab.load_actions_from_json(str(path))
 
-    assert panel == [
-        "_Tab: a replay is already running; stop it, or let it finish, first"
-    ]
+    assert panel == ["a replay is already running; stop it, or let it finish, first"]
     tab.model.run_finished.emit(1, "A")
     qtbot.waitUntil(lambda: not tab.is_replaying())
     assert "draw:late" not in tab.calls
@@ -149,7 +147,7 @@ def test_stopping_the_tabs_operations_stops_its_replay(
 
     assert not tab.is_replaying()
     assert tab.calls == ["find:A/1"]
-    assert panel == ["Stopping all running operations.", "_Tab: replay stopped"]
+    assert panel == ["Stopping all running operations.", "replay stopped"]
 
 
 def test_the_next_start_continues_from_the_stopped_entry(tab: _Tab, qtbot: Any) -> None:

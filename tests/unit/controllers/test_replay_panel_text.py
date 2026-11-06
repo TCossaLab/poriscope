@@ -134,7 +134,7 @@ def test_a_replaying_tabs_lines_are_held_until_it_is_done(
         "drew a",
         "Ch1: searching",
         "drew b",
-        "_Tab: replay done",
+        "replay done",
     ]
 
 
@@ -168,7 +168,7 @@ def test_a_stopped_replay_shows_its_held_lines_then_says_it_stopped(
         "drew a",
         "Ch1: searching",
         "Stopping all running operations.",
-        "_Tab: replay stopped",
+        "replay stopped",
     ]
 
 
@@ -182,6 +182,6 @@ def test_a_refused_load_is_shown_at_once(
     tab.load_actions_from_json(str(path))
 
     assert _shown(main) == [
-        "_Tab: a replay is already running; stop it, or let it finish, first"
+        "a replay is already running; stop it, or let it finish, first"
     ]
     assert tab.is_replaying()
