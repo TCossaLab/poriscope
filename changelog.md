@@ -190,6 +190,8 @@
 
 * Abort Analysis and a tab's **❌ ALL** button also stop that tab's replay
 
+* A replay opens no error dialogs of its own: an error a replayed step logs goes to the log file, and a failed step is reported only by the Go back / Keep question
+
 * A Find or Fit that was cancelled, failed or found nothing is no longer saved in the tab's history, and neither is the earlier run on that channel it cleared; the status panel says so
 
 * **New Data Plugin: `ABFReader`** opens any ABF1 or ABF2 file `pyabf` can open, gap-free or episodic, with settings for the ADC channel that records current and the sweep to read; `pyabf` is now a dependency

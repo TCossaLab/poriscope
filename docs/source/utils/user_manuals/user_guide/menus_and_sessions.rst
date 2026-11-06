@@ -85,7 +85,9 @@ at a time - Metadata's **Load Plot Configuration** does - and while it does, its
 back and shown together when it ends, so they do not mix with other tabs' messages. A step that
 waits for an event finder or fitter carries on only if the run finishes with results.
 
-If a step fails, a dialog names it and asks:
+If a step fails, a dialog names it and asks the question below. It is the only dialog a
+replay opens: an error a replayed step logs goes to the log file, not to a dialog of its own,
+and what the step reports is on the message panel.
 
 - **Go back**: the tab is cleared and redrawn as it was before the replay.
 - **Keep**: what was replayed stays. **Replay Actions** is then enabled for that tab, and continues

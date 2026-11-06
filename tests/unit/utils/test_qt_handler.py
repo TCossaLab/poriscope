@@ -18,6 +18,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from poriscope.utils.QtHandler import MAX_PENDING_RECORDS, QtHandler
+from poriscope.utils.ReplayGuard import replaying
 
 
 def make_record(level: int, message: str = "something happened") -> logging.LogRecord:
@@ -216,3 +217,29 @@ class TestQueueingIsUnchanged:
             handler.show_message_box(make_record(logging.ERROR))
 
         assert handler._dialog_open is False
+
+
+class TestWhileReplaying:
+    """A replayed step's errors do not open dialogs; the replay asks its own question."""
+
+    def test_an_error_logged_while_replaying_opens_no_dialog(
+        self, handler: QtHandler
+    ) -> None:
+        handler.emitter = MagicMock()
+
+        with replaying():
+            handler.emit(make_record(logging.ERROR))
+
+        handler.emitter.emit_message.emit.assert_not_called()
+
+    def test_an_error_logged_after_the_replay_still_does(
+        self, handler: QtHandler
+    ) -> None:
+        handler.emitter = MagicMock()
+        record = make_record(logging.ERROR)
+        with replaying():
+            pass
+
+        handler.emit(record)
+
+        handler.emitter.emit_message.emit.assert_called_once_with(record)
