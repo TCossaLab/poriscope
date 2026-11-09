@@ -186,6 +186,31 @@ def test_a_type_in_the_settings_comes_back_a_type(main_model, tmp_path):
     assert main_model.load_session(path).plugin_history == history
 
 
+def test_a_subset_filter_named_type_in_a_saved_action_stays_text(main_model, tmp_path):
+    """
+    Type names are turned back into types under a ``Type`` key; a recorded filter named
+    ``Type`` is data, and the actions, a list, are never walked for them.
+    """
+    path = tmp_path / "session.json"
+    entry = {
+        "action": "overlay_plot",
+        "args": [],
+        "kwargs": {"filters": {"Type": "float"}},
+    }
+    history = {
+        "MetadataController": {
+            "metaclass": "MetaController",
+            "subclass": "MetadataController",
+            "actions": [entry],
+        }
+    }
+
+    main_model.save_session(history, path)
+
+    loaded = main_model.load_session(path).plugin_history
+    assert loaded["MetadataController"]["actions"] == [entry]
+
+
 def test_load_session_default_path(main_model):
     """Restore reads the default session file."""
     default = Path(main_model.session_path, "plugin_history.json")

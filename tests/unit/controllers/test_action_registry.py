@@ -413,6 +413,37 @@ class TestReplayRunsInsideTheTripwire:
         forbid_while_replaying("after the replay")
 
 
+class TestKeptActions:
+    """What a tab gives the session file: the entries a restore replays."""
+
+    def test_it_keeps_what_a_restore_needs_of_the_history(
+        self, controller: _Controller
+    ) -> None:
+        controller.start_run("a")
+        controller.overlay_plot("b")
+
+        assert controller.kept_actions() == [
+            {"action": "overlay_plot", "args": (), "kwargs": {"label": "b"}}
+        ]
+        assert len(controller.tab_action_history) == 2
+
+    def test_a_history_the_reset_button_set_aside_is_not_kept(
+        self, controller: _Controller
+    ) -> None:
+        """Memory only: the session keeps only what followed the Reset."""
+        controller.overlay_plot("b")
+        controller.set_history_aside()
+
+        assert controller.kept_actions() == []
+
+    def test_it_hands_back_a_copy(self, controller: _Controller) -> None:
+        controller.overlay_plot("b")
+
+        controller.kept_actions()[0]["kwargs"]["label"] = "changed"
+
+        assert controller.tab_action_history[0]["kwargs"]["label"] == "b"
+
+
 def _view(
     name: str, figure: str, *depends_on: str, plugin_args: Tuple[str, ...] = ()
 ) -> ActionDeclaration:

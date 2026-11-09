@@ -104,6 +104,8 @@
 
 * **Breaking:** `MainModel.load_session` returns a `LoadedSession` and raises `SessionRefused`, whose reason the message shows, instead of returning `None`, and `MainModel.save_session` takes `last_tab`
 
+* **Breaking:** each tab's kept actions are saved in its entry of the session file, by Save Session and after every change to the tab's history, and the separate action autosave `tab_action_history.json` is no longer written
+
 ### Developer Tooling:
 
 * The integration tests build their metadata database once per run and copy it into each test, instead of building it in every test

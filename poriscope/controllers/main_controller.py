@@ -75,7 +75,6 @@ class MainController(QObject):
         )
 
         self.plugin_history: Dict[str, Any] = {}
-        self.tab_action_history: Dict[str, Any] = {}
         #: The analysis tab whose history changed last, saved with the session.
         self.last_tab: str = ""
 
@@ -336,7 +335,6 @@ class MainController(QObject):
 
             self.analysis_tabs.clear()
             self.plugin_history.clear()
-            self.tab_action_history.clear()
             self.last_tab = ""
         finally:
             self._suppress_session_save = False
@@ -495,13 +493,16 @@ class MainController(QObject):
     @log(logger=logger)
     def _sync_tab_session_state_into_history(self) -> None:
         """
-        Snapshot each open analysis tab's extra session state into its plugin history entry.
+        Snapshot each open analysis tab's state and actions into its plugin history entry.
 
         A tab may keep state beyond what MainController already tracks (e.g. Metadata
         and Protein build a filter list entirely on their own view) via
         ``MetaController.get_session_state()``, which defaults to returning nothing.
         This merges whatever a tab does return into its corresponding history entry so
         it round-trips through session save/load along with the rest of the tab's state.
+
+        The tab's kept actions go in the entry as ``actions``, written here rather than
+        through ``get_session_state``, which a tab may override without calling the base.
         """
         for subclass, tab in self.analysis_tabs.items():
             if tab is None:
@@ -512,6 +513,7 @@ class MainController(QObject):
             state = tab.get_session_state()
             if state:
                 entry.update(copy.deepcopy(state))
+            entry["actions"] = tab.kept_actions()
 
     @Slot(str, str, str)
     def handle_plugin_state_changed(
@@ -524,9 +526,21 @@ class MainController(QObject):
     @log(logger=logger)
     @Slot(str, object)
     def update_tab_action_history(self, key: str, history: Any) -> None:
-        self.tab_action_history[key] = history
+        """
+        Save the session after a tab's history changed, with that tab as the last one.
+
+        The history itself is read from the tab when the session is written
+        (:py:meth:`_sync_tab_session_state_into_history`).
+
+        :param key: the tab whose history changed
+        :type key: str
+        :param history: its live history, as the tab sends it
+        :type history: Any
+        """
+        self.last_tab = key
+        self._sync_tab_session_state_into_history()
         if not self._suppress_session_save:
-            self.main_model.save_tab_actions(self.tab_action_history)
+            self.main_model.save_session(self.plugin_history, last_tab=self.last_tab)
 
     @log(logger=logger)
     @Slot(str)

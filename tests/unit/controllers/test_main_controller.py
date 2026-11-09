@@ -24,6 +24,7 @@ Covers:
 from __future__ import annotations
 
 import sys
+from collections import OrderedDict
 from pathlib import Path
 from typing import Dict, List
 from unittest.mock import MagicMock
@@ -282,46 +283,97 @@ def test_update_plugin_history_rename_entry(
     mock_main_model.save_session.assert_called()
 
 
-def test_update_tab_action_history_stores_and_saves(
+def test_a_history_change_saves_the_session_with_each_tabs_kept_actions(
     controller: MainController,
     mock_main_model: MagicMock,
+    mocker: MockerFixture,
 ) -> None:
     """
-    Store the tab action history and save it via the model.
+    The tab's kept actions go in its entry of the one session file, with the last tab.
 
     :param controller: Controller under test.
     :param mock_main_model: Mocked main model.
+    :param mocker: Pytest-mock fixture.
     """
-    controller.tab_action_history = {}
-    history = {"action": "opened"}
+    kept = [{"action": "overlay_plot", "args": [], "kwargs": {"loader": "DB1"}}]
+    controller.plugin_history = {
+        "MetadataController": {
+            "metaclass": "MetaController",
+            "subclass": "MetadataController",
+        }
+    }
+    tab = mocker.Mock()
+    tab.get_session_state.return_value = {}
+    tab.kept_actions.return_value = kept
+    controller.analysis_tabs = {"MetadataController": tab}
 
-    controller.update_tab_action_history("SomeTab", history)
+    controller.update_tab_action_history("MetadataController", OrderedDict())
 
-    assert controller.tab_action_history["SomeTab"] == history
-    mock_main_model.save_tab_actions.assert_called_once_with(
-        controller.tab_action_history
+    assert controller.last_tab == "MetadataController"
+    assert controller.plugin_history["MetadataController"]["actions"] == kept
+    mock_main_model.save_session.assert_called_once_with(
+        controller.plugin_history, last_tab="MetadataController"
     )
+    mock_main_model.save_tab_actions.assert_not_called()
 
 
-def test_update_tab_action_history_overwrites_existing_key(
+def test_every_open_tab_saves_its_actions_with_any_session_save(
     controller: MainController,
     mock_main_model: MagicMock,
+    mocker: MockerFixture,
 ) -> None:
     """
-    Overwrite an existing tab action entry when the same key is updated.
+    Save Session, and the autosave after a plugin change, carry every tab's actions too.
 
     :param controller: Controller under test.
     :param mock_main_model: Mocked main model.
+    :param mocker: Pytest-mock fixture.
     """
-    controller.tab_action_history = {"SomeTab": {"action": "opened"}}
-    new_history = {"action": "closed"}
+    controller.plugin_history = {
+        "RawDataController": {
+            "metaclass": "MetaController",
+            "subclass": "RawDataController",
+        },
+        "R1": {"metaclass": "MetaReader", "subclass": "SomeReader"},
+    }
+    tab = mocker.Mock()
+    tab.get_session_state.return_value = {}
+    tab.kept_actions.return_value = []
+    controller.analysis_tabs = {"RawDataController": tab}
 
-    controller.update_tab_action_history("SomeTab", new_history)
+    controller.save_session("session.json")
 
-    assert controller.tab_action_history["SomeTab"] == new_history
-    mock_main_model.save_tab_actions.assert_called_once_with(
-        controller.tab_action_history
-    )
+    assert controller.plugin_history["RawDataController"]["actions"] == []
+    assert "actions" not in controller.plugin_history["R1"]
+
+
+def test_a_tabs_actions_are_saved_even_when_its_own_session_state_is_overridden(
+    controller: MainController,
+    mocker: MockerFixture,
+) -> None:
+    """
+    Metadata and Protein override ``get_session_state`` without calling the base, so
+    the actions are written beside it, not through it.
+
+    :param controller: Controller under test.
+    :param mocker: Pytest-mock fixture.
+    """
+    controller.plugin_history = {
+        "MetadataController": {
+            "metaclass": "MetaController",
+            "subclass": "MetadataController",
+        }
+    }
+    tab = mocker.Mock()
+    tab.get_session_state.return_value = {"subset_filters": {"f": "x > 1"}}
+    tab.kept_actions.return_value = [{"action": "reset", "args": [], "kwargs": {}}]
+    controller.analysis_tabs = {"MetadataController": tab}
+
+    controller.save_session("session.json")
+
+    entry = controller.plugin_history["MetadataController"]
+    assert entry["subset_filters"] == {"f": "x > 1"}
+    assert entry["actions"] == [{"action": "reset", "args": [], "kwargs": {}}]
 
 
 def test_setup_connections_connects_main_signals(
@@ -723,7 +775,7 @@ def test_sync_tab_session_state_into_history_ignores_tabs_with_no_state(
     mocker: MockerFixture,
 ) -> None:
     """
-    Leave a tab's history entry untouched when get_session_state returns nothing.
+    A tab with no extra state gets only its actions in its history entry.
 
     :param controller: Controller under test.
     :param mocker: Pytest-mock fixture.
@@ -731,12 +783,14 @@ def test_sync_tab_session_state_into_history_ignores_tabs_with_no_state(
     controller.plugin_history = {"RawDataController": {"metaclass": "MetaController"}}
     tab = mocker.Mock()
     tab.get_session_state.return_value = {}
+    tab.kept_actions.return_value = []
     controller.analysis_tabs = {"RawDataController": tab}
 
     controller._sync_tab_session_state_into_history()
 
     assert controller.plugin_history["RawDataController"] == {
-        "metaclass": "MetaController"
+        "metaclass": "MetaController",
+        "actions": [],
     }
 
 
@@ -1344,14 +1398,12 @@ class TestResetSession:
 
     def test_clears_the_in_memory_workspace(self, controller):
         controller.plugin_history = {"reader_1": {"metaclass": "MetaReader"}}
-        controller.tab_action_history = {"RawDataController": ["action"]}
         controller.analysis_tabs = {"RawDataController": MagicMock()}
         controller.data_plugin_controller.delete_all_plugins.return_value = []
 
         controller.reset_session()
 
         assert controller.plugin_history == {}
-        assert controller.tab_action_history == {}
         assert controller.analysis_tabs == {}
 
     def test_does_not_overwrite_the_saved_session(self, controller):

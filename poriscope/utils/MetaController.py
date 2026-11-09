@@ -34,6 +34,7 @@ from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Tuple
 
 from PySide6.QtCore import QObject, Signal, Slot
 
+from poriscope.utils.kept_history import build_kept_history
 from poriscope.utils.LogDecorator import (
     ACTION_DECLARATION_ATTR,
     ACTION_NAME_ATTR,
@@ -925,6 +926,23 @@ class MetaController(QObject, metaclass=QObjectABCMeta):
         self.tab_action_history = OrderedDict()
         self.update_tab_action_history.emit(
             self.__class__.__name__, self.tab_action_history
+        )
+
+    @log(logger=logger)
+    def kept_actions(self) -> List[Dict[str, Any]]:
+        """
+        The entries of this tab's history a restored session replays, for the session file.
+
+        Built from the live history by
+        :py:func:`~poriscope.utils.kept_history.build_kept_history`, so a superseded run or
+        view is left out. What the Reset button set aside is not included: it is kept in
+        memory only, for an Undo straight after.
+
+        :return: copies of the kept entries, oldest first
+        :rtype: List[Dict[str, Any]]
+        """
+        return build_kept_history(
+            list(self.tab_action_history.values()), self._declarations_of_tab()
         )
 
     @log(logger=logger)
